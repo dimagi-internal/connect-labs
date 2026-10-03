@@ -746,6 +746,10 @@ def landed_basis_words(quote, tender) -> str:
             basis, source = from_term[label], f"Incoterm {quote.incoterm}"
         if basis == "included":
             parts.append(f"{label} included")
+        elif basis == "excluded" and amount is not None and not amount and label == "duties":
+            # A zero said on the quote, said as the quote's word -- not "0.00 added",
+            # which read as a figure we had guessed.
+            parts.append("duty stated as zero on the quote")
         elif basis == "excluded" and amount is not None:
             parts.append(f"{label} {money_digits(amount)} {currency} added")
         else:

@@ -96,6 +96,7 @@ TAB_FOR_VIEW = {
     "supply_chain:contract_edit": "supply_chain:orders",
     "supply_chain:invoice_record": "supply_chain:orders",
     "supply_chain:invoice_edit": "supply_chain:orders",
+    "supply_chain:invoice_dispute": "supply_chain:orders",
     "supply_chain:charge_record": "supply_chain:orders",
     "supply_chain:payment_record": "supply_chain:orders",
     "supply_chain:advance_payment_record": "supply_chain:orders",

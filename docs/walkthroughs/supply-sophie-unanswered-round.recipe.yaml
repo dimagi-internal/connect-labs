@@ -46,9 +46,9 @@ scenes:
     seconds: 1.5
     target: testid:tender-duty-terms
   - kind: hover
-    note: park the cursor on the Draft reminders button the next scene uses, clear of "3 of 6 replied"
+    note: park the cursor on the What this tender buys heading, off the buttons and the Outreach table
     seconds: 0.6
-    target: testid:draft-reminders
+    target: css:h2:has-text('What this tender buys')
   - kind: hold
     seconds: 1.5
   concept_claim: The round's page says it is past its deadline and that its import
@@ -68,13 +68,13 @@ scenes:
   - kind: wait_for
     target: css:#drafts
   - kind: click
-    note: open the round's draft emails from the header's Draft reminders, which opens the panel and scrolls to it
+    note: open Sahel's drafted reminder from Sahel's own row, which opens the draft emails at Sahel's card, its heading just under the top bar
     say: drafts
-    target: testid:draft-reminders
+    target: css:tr:has-text('Sahel Nutrition Industries') [data-testid=row-draft-reminder]
   - kind: wait_for
     target: css:#drafts[open]
-  - kind: scroll_to
-    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] textarea
+  - kind: hold
+    seconds: 0.8
   - kind: hover
     note: the line that says when she asked Sahel and when she last reminded them
     say: reminder
@@ -86,14 +86,14 @@ scenes:
     seconds: 1.8
     target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=chase-date]
   - kind: hover
-    note: park the cursor on Sahel's name, the card's heading, off the message, the why line and the date field
+    note: park the cursor on the To line's blank right, off the message, the facts row and the date field
     seconds: 0.6
-    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] p:first-child span:first-child
+    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] div:has(> [data-testid=copy-to])
   - kind: hold
     note: the drafted reminder, open, with today's date ready to record
     seconds: 2.5
   - kind: snapshot
-    note: the canonical frame is Sahel's open drafted reminder card, with Chased on reading today beside Record chase
+    note: the canonical frame is Sahel's whole drafted reminder card, its facts row, and Chased on reading today beside Record chase -- the only chase control in frame
   - kind: click
     must_succeed: true
     note: record the day she chased Sahel, from the draft itself; the round lands on Sahel's row, which scene 3 opens on
@@ -107,7 +107,8 @@ scenes:
     seconds: 0.6
     target: testid:draft-reminders
   - kind: hold
-    seconds: 1.2
+    note: the chase recorded -- Sahel's Last chased reads today, the 3rd reminder, and when the next falls due
+    seconds: 2.0
   concept_claim: The round drafts a reminder for each silent supplier that says when
     they were asked and last reminded, with a Chased on field holding today's date
     and a Record chase button on the draft itself.
@@ -135,8 +136,8 @@ scenes:
   - kind: wait_for
     target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=source-excerpt]
   - kind: scroll_to
-    note: centre Kanem's email, the event under Sahel's, so Sahel's opened email sits whole above it and the Quotes table leaves the frame; the camera only moves down
-    target: css:[data-testid=email-event]:has-text('Kanem Foods')
+    note: centre Sahel's opened email, so the History heading and its Replies only toggle sit whole above it, clear of the top bar
+    target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=source-excerpt]
   - kind: hold
     say: wrote
     seconds: 2.0
@@ -146,9 +147,9 @@ scenes:
     seconds: 1.8
     target: text:Replied with a quote on 3 Oct 2026
   - kind: hover
-    note: park the cursor on Kanem's event below, off Sahel's email and the History heading
+    note: park the cursor in the History heading's blank middle, off every control and Sahel's email
     seconds: 0.6
-    target: css:[data-testid=email-event]:has-text('Kanem Foods') [data-testid=source-toggle]
+    target: css:h2:has-text('History')
   - kind: hold
     seconds: 1.2
   - kind: snapshot
@@ -173,14 +174,14 @@ scenes:
     say: Harmattan
     seconds: 2.0
     target: text:Harmattan Therapeutics
-  - kind: scroll_to
-    note: down to the Needs info cards, Kanem's pack size and Sahel's three blockers
+  - kind: scroll
+    note: down to the Needs info cards, Kanem's pack size and Sahel's three blockers (a scroll_to here is clamped at the page's foot)
     say: Kanem
-    target: css:[data-testid=needs-info]
+    value: bottom
   - kind: hover
-    note: park the cursor on the Needs info heading's words at the left, off the cards
+    note: park the cursor in the Needs info heading's blank right, off the cards
     seconds: 0.6
-    target: testid:needs-info-title
+    target: css:h2:has([data-testid=needs-info-title])
   - kind: hold
     say: Sahel
     seconds: 2.5
@@ -192,9 +193,9 @@ scenes:
     seconds: 2.0
     target: testid:comparison-duty-terms
   - kind: hover
-    note: park the cursor on the comparison's own title, off the note and the banner (css:h1 alone resolved to the brand link)
+    note: park the cursor in the Comparable heading's blank middle, off the title, the duty note and the banner
     seconds: 0.6
-    target: css:h1:has-text('Comparison')
+    target: css:h2:has-text('Comparable')
   - kind: hold
     seconds: 2.0
   - kind: snapshot
@@ -253,18 +254,18 @@ scenes:
     say: comparison
     seconds: 2.0
     target: testid:comparison-duty-terms
-  - kind: scroll_to
-    note: down to Sahel's card, where duty is no longer among what blocks it
-    target: css:[data-testid=needs-info] [data-quote-id]:has-text('Sahel Nutrition Industries')
+  - kind: scroll
+    note: down to Sahel's card, where duty is no longer among what blocks it (the page's foot)
+    value: bottom
   - kind: hover
     note: the card's line that says duty is waived because we import
     say: waived
     seconds: 2.0
     target: css:[data-testid=needs-info] [data-quote-id]:has-text('Sahel Nutrition Industries') [data-testid=card-landed-basis]
   - kind: hover
-    note: park the cursor on the Needs info heading's words, off Sahel's card
+    note: park the cursor in the Needs info heading's blank right, off its words and Sahel's card
     seconds: 0.6
-    target: testid:needs-info-title
+    target: css:h2:has([data-testid=needs-info-title])
   - kind: hold
     seconds: 2.0
   - kind: snapshot
@@ -301,16 +302,20 @@ scenes:
     note: the forwarder's email, centred and read
     seconds: 2.0
   - kind: scroll_to
-    note: frame the Invoices table through the forwarder's email below it in one shot
-    target: text:Nothing attached
+    note: frame the Invoices table, its heading clear of the top bar, through the forwarder's email below it in one shot
+    target: css:h3:has-text('Evidence')
   - kind: hover
     say: invoice
     seconds: 1.8
     target: testid:above-agreed-tag
   - kind: hover
-    note: park the cursor on the Quantity billed column header, off the figures and the email
+    note: the Dispute action beside Pay on the invoice billed above agreed
+    seconds: 1.2
+    target: testid:invoice-dispute
+  - kind: hover
+    note: park the cursor in the Total row's empty Issued cell, off the figures, the headers and the email
     seconds: 0.6
-    target: text:Quantity billed
+    target: css:[data-testid=invoice-above-agreed-row] td:nth-child(2)
   - kind: hold
     seconds: 1.5
   concept_claim: The order says it is waiting on us for the import permit, with the
@@ -347,9 +352,9 @@ scenes:
     say: invoice
     seconds: 1.5
   - kind: hover
-    note: park the cursor on the View as of label above the table, off the table
+    note: park the cursor on the table's caption, off the table and the View as of control
     seconds: 0.6
-    target: text:View as of
+    target: text:Where everything stands
   - kind: hold
     seconds: 1.5
   concept_claim: The overview names each supplier who has not replied with the day

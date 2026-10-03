@@ -164,13 +164,18 @@ sits above who is invited and what the tender buys.
           {% if o.waiting_on_us %}<div data-testid="waiting-on-us-row" class="text-sm text-message-warning-text">{{ o.waiting_on_us }}</div>{% endif %}
         </td>
         <td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap">{{ o.sent_on|day|default:"—" }}</td>
-        {% if o.changed and changed_cell == "last_chased" %}<td class="px-4 py-2 text-sm text-gray-900 font-semibold whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count">· {{ o.reminder_text }}</span>{% endif %}{% include "supply_chain/procurement/_new_tag.html" %}</td>{% else %}<td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count" class="text-gray-600">· {{ o.reminder_text }}</span>{% endif %}</td>{% endif %}
+        {% if o.changed and changed_cell == "last_chased" %}<td class="px-4 py-2 text-sm text-gray-900 font-semibold whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count">· {{ o.reminder_text }}</span>{% endif %}{% if o.next_due %} <span data-testid="next-due" class="font-normal text-gray-600">· next due {{ o.next_due|date:"j M" }}</span>{% endif %}{% include "supply_chain/procurement/_new_tag.html" %}</td>{% else %}<td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count" class="text-gray-600">· {{ o.reminder_text }}</span>{% endif %}</td>{% endif %}
         {% comment %}Silence in words, counted from the latest ask -- the invitation or the last
         chase -- muted rather than alarmed; a bare "No" said nothing about how long.{% endcomment %}
         <td class="px-4 py-2 text-sm whitespace-nowrap {% if o.changed and changed_cell == "replied" %}text-gray-900 font-semibold{% else %}text-gray-600{% endif %}" data-testid="replied">{% if o.responded %}{% if o.responded_on %}{{ o.responded_on|day }}{% else %}Yes{% endif %}{% if o.changed and changed_cell == "replied" %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% else %}<span data-testid="no-reply" class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-sm font-medium text-gray-900 ring-1 ring-inset ring-gray-300">No reply{% if o.silent_days is not None %} · {{ o.silent_days }} day{{ o.silent_days|pluralize }}{% endif %}</span>{% if o.changed and changed_cell == "replied" %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% endif %}</td>
         <td class="px-4 py-2 text-sm text-gray-600" data-testid="response-kind">{% if o.responded %}{{ o.response_kind|humanise|capfirst|default:"—" }}{% endif %}</td>
           <td class="px-4 py-2 text-sm text-right whitespace-nowrap">
             {% if not supply_as_of %}
+            {% comment %}A silent supplier whose reminder is due: its drafted reminder, from its own
+            row, opened at its card so no other supplier's draft is in view.{% endcomment %}
+            {% if o.draft_anchor %}<a data-testid="row-draft-reminder" href="#{{ o.draft_anchor }}"
+               onclick="return window.openDraft && window.openDraft('{{ o.draft_anchor }}');"
+               class="text-brand-indigo hover:underline mr-3">Draft reminder</a>{% endif %}
             <a href="{% url 'supply_chain:procurement_outreach_reply' o.id %}"
                class="text-brand-indigo hover:underline">{% if o.responded %}Record another reply{% else %}Record a reply{% endif %}</a>
             {% comment %}Delete is for an invitation recorded in error -- rare, and not the row's
@@ -193,7 +198,10 @@ sits above who is invited and what the tender buys.
   </div>
 </div>
 
-<div class="bg-white border border-brand-border-light rounded-lg p-4 mb-6">
+{% comment %}Shown only when it has something to hold: an invitation, an invite control,
+or nobody asked at all. An empty card read as a blank section.{% endcomment %}
+{% if invited_orgs or not asked_names or invitable_orgs and not supply_as_of and not tender_is_over %}
+<div data-testid="invited-suppliers" class="bg-white border border-brand-border-light rounded-lg p-4 mb-6">
   <h2 class="text-sm font-semibold text-gray-900">Invited suppliers</h2>
   {% comment %}Who can see the round is said once, in the header's Visibility line, and who
   was asked once, in Outreach above: this panel holds only marketplace invitations and the
@@ -230,6 +238,7 @@ sits above who is invited and what the tender buys.
     </form>
   {% endif %}
 </div>
+{% endif %}
 
 {% if buys %}
 <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-6">
@@ -283,7 +292,15 @@ next action on anyone (design doc section 22).
           <span class="font-semibold text-gray-900">{{ d.supplier_name }}</span>
           <span class="text-sm text-gray-600">· {% if d.kind == "request" %}Quote request{% elif d.kind == "reminder" %}Reminder{% elif d.kind == "reply" %}Our answers{% else %}Follow-up{% endif %}</span>
         </p>
+        {% if d.facts %}
+          {% comment %}A reminder's facts as a labelled row, set apart from the card's body
+          copy: when we asked, when we last reminded, which reminder this is.{% endcomment %}
+          <dl class="mt-2 flex flex-wrap gap-x-5 gap-y-1 rounded-md bg-gray-50 border border-gray-200 px-3 py-2 text-sm" data-testid="draft-why">
+            {% for f in d.facts %}<div class="flex gap-1.5"><dt class="text-gray-600">{{ f.label }}</dt><dd class="font-medium text-gray-900">{{ f.value }}</dd></div>{% endfor %}
+          </dl>
+        {% else %}
         <p class="text-sm text-gray-700 mt-1" data-testid="draft-why">{{ d.why }}</p>
+        {% endif %}
         {% comment %}The address gets the same Copy as the subject and the message: all three
         go into her own mailbox.{% endcomment %}
         <div class="text-sm text-gray-700 mt-2 flex items-center gap-2">
@@ -309,8 +326,11 @@ next action on anyone (design doc section 22).
         <div class="flex gap-2 items-start">
           {% comment %}Sized to the message (rows from the view): the body is what the
           draft is for, and a fixed two-line box showed only its greeting.{% endcomment %}
+          <div class="flex-1">
           <textarea id="draft-text-{{ forloop.counter }}" data-testid="draft-text" readonly rows="{{ d.rows|default:10 }}"
-                    style="height: auto" class="base-input text-sm flex-1 font-sans py-2 leading-relaxed" onfocus="this.select()">{{ d.text }}</textarea>
+                    style="height: auto" class="base-input text-sm w-full font-sans py-2 leading-relaxed" onfocus="this.select()">{{ d.text }}</textarea>
+          <p data-testid="draft-more" class="hidden text-xs text-gray-600 mt-1">Scroll the message for the rest; Copy takes all of it.</p>
+          </div>
           <button type="button"
                   class="px-3 py-2 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md whitespace-nowrap"
                   onclick="navigator.clipboard.writeText(document.getElementById('draft-text-{{ forloop.counter }}').value); this.textContent='Copied';">
@@ -333,6 +353,7 @@ next action on anyone (design doc section 22).
           <form method="post" action="{% url 'supply_chain:procurement_outreach_chase' d.outreach_id %}"
                 class="mt-3 flex flex-wrap items-center gap-2" data-testid="chase-form">
             {% csrf_token %}
+            <p data-testid="chase-help" class="basis-full text-sm text-gray-600">After you send it, record the chase: the next reminder falls due {{ drafts.reminder_interval_days }} day{{ drafts.reminder_interval_days|pluralize }} after this date.</p>
             <label for="chase-date-{{ forloop.counter }}" class="text-sm text-gray-700">Chased on</label>
             <input id="chase-date-{{ forloop.counter }}" data-testid="chase-date" type="text" name="last_reminder_on"
                    value="{% now 'j M Y' %}" placeholder="e.g. {% now 'j M Y' %}" required autocomplete="off"
@@ -340,7 +361,6 @@ next action on anyone (design doc section 22).
             {% comment %}The card's one action, filled: copying is a step towards it.{% endcomment %}
             <button type="submit" data-testid="record-chase"
                     class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">Record chase</button>
-            <p data-testid="chase-help" class="basis-full text-sm text-gray-600">After you send it, record the chase: the next reminder falls due {{ drafts.reminder_interval_days }} day{{ drafts.reminder_interval_days|pluralize }} after this date.</p>
           </form>
         {% endif %}
       </div>
@@ -357,12 +377,34 @@ next action on anyone (design doc section 22).
     // to the supplier is cut off mid-line inside the box.
     var panel = document.getElementById("drafts");
     function fit() {
+      // Up to 12 whole lines, so a long reminder's restated questions do not push
+      // the card's own Record chase below the fold, and no line is cut in half.
       panel.querySelectorAll("textarea[data-testid=draft-text]").forEach(function (box) {
         box.style.height = "auto";
-        box.style.height = (box.scrollHeight + 2) + "px";
+        var cs = window.getComputedStyle(box);
+        var lh = parseFloat(cs.lineHeight) || 22;
+        var pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + 2;
+        var full = box.scrollHeight + 2;
+        var cap = Math.round(pad + lh * 12);
+        box.style.height = Math.min(full, cap) + "px";
+        var more = box.parentNode.querySelector("[data-testid=draft-more]");
+        if (more) { more.classList.toggle("hidden", full <= cap); }
       });
     }
-    panel.addEventListener("toggle", function () { if (panel.open) { fit(); } });
+    var pending = null;
+    function land(anchor) {
+      var target = document.getElementById(anchor);
+      if (target) { target.scrollIntoView({block: "start"}); }
+    }
+    panel.addEventListener("toggle", function () {
+      if (panel.open) { fit(); if (pending) { land(pending); pending = null; } }
+    });
+    // A row's "Draft reminder": open the panel, size its messages, then land on that card.
+    window.openDraft = function (anchor) {
+      if (history.replaceState) { history.replaceState(null, "", "#" + anchor); }
+      if (panel.open) { fit(); land(anchor); } else { pending = anchor; panel.open = true; }
+      return false;
+    };
     var hash = window.location.hash;
     if (hash === "#drafts" || hash.indexOf("#draft-supplier-") === 0 || hash.indexOf("#draft-reply-") === 0) {
       document.getElementById("drafts").open = true;
