@@ -194,7 +194,7 @@ class TestTheComparison:
         body = self._page(client_in_program, world)
         banner = _text(re.search(r'<div data-testid="comparison-banner"[^>]*>(.*?)</div>', body, re.S).group(1))
         assert banner.startswith("1 of 2 quotes can be compared on ")
-        assert "Northgate Rehearsal Commodities: " in banner
+        assert "Northgate Rehearsal Commodities sachets per carton" in banner
         for word in ("PROVISIONAL", "provisional", "beat"):
             assert word not in banner
         button = _text(

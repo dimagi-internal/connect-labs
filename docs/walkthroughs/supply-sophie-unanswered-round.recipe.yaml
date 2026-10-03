@@ -180,46 +180,44 @@ scenes:
   - kind: wait_for
     target: text:Kanem Foods
   - kind: hover
+    say: not settled
+    seconds: 2.0
+    target: testid:duty-terms-chip
+  - kind: hover
     say: Harmattan
     seconds: 2.0
     target: text:Harmattan Therapeutics
-  - kind: scroll
-    note: down to the Needs info cards, Kanem's pack size and Sahel's three blockers (a scroll_to here is clamped at the page's foot)
-    say: Kanem
-    value: bottom
+  - kind: scroll_to
+    note: the Comparable heading to the top, so Harmattan's one comparable quote, the Needs info heading, the Round terms line (not settled) and Sahel's card with its duties-amount blocker share one frame -- the frame scene 5 returns to after the duty answer
+    target: css:#comparable
   - kind: hover
-    note: park the cursor in the Needs info heading's blank right, off the cards
-    seconds: 0.6
-    target: css:h2:has([data-testid=needs-info-title])
-  - kind: hold
+    note: Sahel's duties amount blocker -- the row scene 5's answer removes
     say: Sahel
     seconds: 2.5
-  - kind: scroll
-    note: back up to the round's duty terms note and the summary banner naming every missing fact (a scroll_to here cannot move the page, it is already near the top)
-    value: top
+    target: "css:[data-testid=needs-info] [data-quote-id]:has-text('Sahel Nutrition Industries') [data-testid=blocking]:has-text('Duties')"
   - kind: hover
-    say: not settled
-    seconds: 2.0
-    target: testid:comparison-duty-terms
-  - kind: hover
-    note: park the cursor in the fixed top bar's blank middle, off the Comparable heading, the duty note and the panel; the bar is fixed, so hovering cannot scroll the page
+    note: park the cursor in the fixed top bar's blank middle, off the table, the Round terms line and the cards; the bar is fixed, so hovering cannot scroll the page
     seconds: 0.6
     target: css:header.fixed
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the canonical frame is the duty terms note (not settled), the "1 of 3 quotes can be compared" banner naming each missing fact, and Harmattan under Comparable
+    note: the canonical frame is Harmattan under Comparable (its landed total marked duty basis stated by supplier, round terms not settled), the Needs info heading, Round terms not settled, and Sahel's card blocked on exchange rate, freight amount and duties amount
   concept_claim: The comparison states the round's import duty terms and names the
     missing facts on each quote that cannot be compared, including a reply that has
     only just arrived, without ranking across them or guessing a figure.
   design_intent: The comparison earns its place by saying what is missing, not by
     ranking quotes that cannot be ranked; seen before the duty answer, it shows what
     an unsettled duty question costs.
-  show: Sophie opens the round's comparison, reads the fact each quote is missing
-    and from whom, and the note that the round's import duty terms are not settled.
+  show: Sophie opens the round's comparison, reads that its import duty terms are
+    not settled, Harmattan's one comparable quote costed on the duty it stated, and
+    Sahel's card blocked on its exchange rate, freight amount and duties amount.
   url: /supply/procurement/tenders/${round2_tender_id}/compare/?program_id=${program_id}
 - id: what-we-owe-northgate
   actions:
+  - kind: hold
+    note: a settle before the first wait_for, so the scene's before-frame is the tender page itself, not the comparison left from scene 4
+    seconds: 0.5
   - kind: wait_for
     target: text:What we owe them
   - kind: scroll_to
@@ -248,8 +246,8 @@ scenes:
     must_succeed: true
     target: css:[data-changed]
   - kind: hover
-    note: the importer question, answered into her reply to Northgate
-    seconds: 2.0
+    note: the importer question, answered into her reply to Northgate, with the round's import duty terms it set
+    seconds: 2.5
     target: css:[data-commitment-id='${importer_question_id}']
   - kind: goto
     must_succeed: true
@@ -264,8 +262,8 @@ scenes:
     seconds: 2.0
     target: testid:comparison-duty-terms
   - kind: scroll_to
-    note: the Needs info heading to the top (the section is at least a screen tall, so the scroll is not clamped at the page foot), the Round terms line right under it and Sahel's card below, its duty line citing her answer to Northgate -- cause and effect in one frame
-    target: css:#needs-info
+    note: the same frame as scene 4 -- the Comparable heading to the top, Harmattan's quote, the Needs info heading with the Round terms line (now the waiver) and Sahel's card below, its duties-amount blocker gone and its Duty line citing her answer to Northgate
+    target: css:#comparable
   - kind: hover
     note: the card's own Duty line -- waived because we import, the round's terms set from her answer to Northgate
     say: waived
@@ -278,7 +276,7 @@ scenes:
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the canonical frame is the Needs info heading with the Round terms line under it (the waiver, set from her answer to Northgate), and Sahel's Needs info card under the waiver -- its Duty line reading duty waived (our import), set from her answer to Northgate, with only the exchange rate and freight left blocking it
+    note: the canonical frame matches scene 4's -- Harmattan under Comparable, the Needs info heading with the Round terms line (the waiver, set 3 Oct), and Sahel's card under the waiver, its Duty line reading waived (our import) with its round terms from her answer to Northgate, and only the exchange rate and freight left blocking it
   concept_claim: Answering a supplier's question about who imports can set the round's
     import duty terms, and the round's comparison then states those terms and costs
     a quote that leaves duty out under them, so duty is no longer among what blocks
@@ -312,7 +310,7 @@ scenes:
     seconds: 2.0
   - kind: scroll_to
     note: centre the invoice's Freight line, so the Invoices heading and its column headers sit whole under the top bar, with the history's Waiting on us line and why it is ours (we are the consignee) below
-    target: css:tr:has([data-testid=above-agreed-tag]):has-text('Freight')
+    target: "css:[data-testid=invoice-variance-table] tr:has([data-testid=above-agreed-tag]):has-text('Freight')"
   - kind: hover
     say: invoice
     seconds: 1.8
@@ -322,9 +320,9 @@ scenes:
     seconds: 1.2
     target: testid:invoice-dispute
   - kind: hover
-    note: park the cursor in the Total row's empty Issued cell, off the figures, the headers and the email
+    note: park the cursor on the billed-against-agreed table's own header row, off the figures, the actions and the email
     seconds: 0.6
-    target: css:[data-testid=invoice-above-agreed-row] td:nth-child(2)
+    target: testid:invoice-variance-head
   - kind: hold
     seconds: 1.5
   concept_claim: The order says it is waiting on us for the import permit, with the

@@ -129,6 +129,9 @@ class Row:
     waiting_lines: tuple = ()
     # Who placed an order, when it is not the program's own organisation.
     buyer: str = ""
+    # The tender an order was placed from, "RUTF round 1": said under its
+    # reference so the order and its round read as one story.
+    origin: str = ""
     # The order this row is; None on a tender's row.
     contract_id: int | None = None
     # The tender this row is, or the order was placed from; None when an
@@ -412,6 +415,7 @@ def _tender_rows(program_id, today, until):
             today,
             award,
             provisional=tender.pk in provisional,
+            waiver_on_file=tender.pk in waiver_on_file,
         )
         ours_items = list(owed.get(tender.pk, []))
         deadline_passed = tender.status == "open" and tender.response_deadline and tender.response_deadline < today
@@ -471,7 +475,7 @@ def _tender_rows(program_id, today, until):
                 award_why=_one_line(provisional[tender.pk].rationale) if is_provisional else "",
                 provisional_caveat=_provisional_caveat(provisional[tender.pk], silent) if is_provisional else "",
                 award_price=_award_price(award) if awardee else "",
-                **_last_change(tender_scope_revisions(tender.pk, program_id=program_id, until=until)),
+                **_last_change(tender_scope_revisions(tender.pk, program_id=program_id, until=until, orders=False)),
             )
         )
     return rows
@@ -499,7 +503,7 @@ def _owed_by_tender(program_id, tender_ids) -> dict:
     return out
 
 
-def _tender_state(tender, outreach, quotes, contracted, today, award=None, *, provisional=False):
+def _tender_state(tender, outreach, quotes, contracted, today, award=None, *, provisional=False, waiver_on_file=True):
     """(waiting on, a second line under it, flags, waiting-on lines, silent count) for one tender.
 
     While any live quote is kept out of the comparison -- before an award, or
@@ -617,9 +621,14 @@ def _tender_state(tender, outreach, quotes, contracted, today, award=None, *, pr
             # Duty left off the list because the round's waiver settled it, said so: a
             # missing "duties amount" otherwise read as forgotten rather than resolved.
             waived = _quotes_leaving_duty_out(live)
+            # While the waiver document is not on file the cover is conditional, and said so.
+            covered = (
+                "duty covered by the waiver"
+                if waiver_on_file
+                else "duty covered by the waiver once its document is on file"
+            )
             blocked_names = [
-                (name, f"{gaps} · duty covered by the waiver" if gaps and name in waived else gaps)
-                for name, gaps in blocked_names
+                (name, f"{gaps} · {covered}" if gaps and name in waived else gaps) for name, gaps in blocked_names
             ]
         if blocked_names:
             lines.append(
@@ -728,7 +737,9 @@ def _award_gaps(award) -> str:
 def _order_rows(program_id, today, until, own_org_id):
     from connect_labs.supply_chain.models import Contract, Invoice, Payment, Receipt, Shipment
 
-    contracts = list(Contract.objects.filter(program_id=program_id).select_related("supplier__org", "buyer_org"))
+    contracts = list(
+        Contract.objects.filter(program_id=program_id).select_related("supplier__org", "buyer_org", "tender")
+    )
     ids = [c.pk for c in contracts]
     shipments = {}
     for s in Shipment.objects.filter(contract__program_id=program_id, contract_id__in=ids):
@@ -814,6 +825,7 @@ def _order_rows(program_id, today, until, own_org_id):
                 waiting_lines=waiting_lines,
                 stale=stale,
                 tender_id=contract.tender_id,
+                origin=(contract.tender.label or f"tender {contract.tender_id}") if contract.tender_id else "",
                 contract_id=contract.pk,
                 buyer=(
                     contract.buyer_org.name
@@ -958,7 +970,9 @@ def _order_state(
         latest = records.latest_moving_shipment(in_transit)
         if latest is not None and latest.status not in ("dispatched", "in_transit"):
             # Held on us exactly when the order page says so: any hold we owe on the order.
-            where = records.shipment_whereabouts(latest.status, bool(holds))
+            # The stage is the fact only -- "at customs, held" -- since the
+            # row's Waiting on already says the move is ours.
+            where = records.shipment_whereabouts(latest.status) + (", held" if holds else "")
         stage = where if stage == "dispatched" else f"{stage}, {where}"
     elif stage == "paid" and received and contract.status != "part_received":
         stage = DELIVERED_AND_PAID

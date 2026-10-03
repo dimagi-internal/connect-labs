@@ -743,6 +743,26 @@ def _awaiting_words(rfq) -> str:
     return f"{n} awaiting a reply on {_plural(rounds, 'open round')}"
 
 
+def evaluation_words(evaluation) -> str:
+    """The Evaluation cell's caption: "comparable", or the count tender by tender.
+
+    Across several tenders the program's total ("1 of 4") is broken down by
+    tender -- "RUTF round 2: 1 of 3 · RUTF round 1: awarded" -- so it reads back
+    to the "1 of 3" one round's comparison page says.
+    """
+    tail = " · provisional" if evaluation.get("provisional") else ""
+    parts = evaluation.get("by_tender") or []
+    if len(parts) < 2:
+        return "comparable" + tail
+    return (
+        " · ".join(
+            f"{p['label']}: awarded" if p["awarded"] else f"{p['label']}: {p['comparable']} of {p['of']} comparable"
+            for p in parts
+        )
+        + tail
+    )
+
+
 @register.filter
 def source_stages(source):
     """chain_summary's source counts, as stage cells.
@@ -778,7 +798,7 @@ def source_stages(source):
         _cell(
             "Evaluation",
             f"{evaluation['comparable']} of {evaluation['of']}",
-            "comparable" + across(evaluation) + (" · provisional" if evaluation["provisional"] else ""),
+            evaluation_words(evaluation),
             sourcing,
         ),
         _cell(
@@ -1437,3 +1457,30 @@ def duty_terms_words(value) -> str:
     from connect_labs.supply_chain.records import DUTY_TERMS_LABELS
 
     return DUTY_TERMS_LABELS.get(value or "", DUTY_TERMS_LABELS[""])
+
+
+@register.filter
+def ai_words(actor) -> str:
+    """ "AI assistant" for an agent's pill: "ACE (agent)" named an internal product.
+
+    The buyer knows it as the AI; which agent it was goes in the pill's tooltip
+    (`ai_agent_name`). Any other label is returned as it is.
+    """
+    text = str(actor or "")
+    return "AI assistant" if text.endswith(" (agent)") else text
+
+
+@register.filter
+def ai_agent_name(actor) -> str:
+    """ "ACE" from "ACE (agent)", for the AI pill's tooltip; "" for any other label."""
+    text = str(actor or "")
+    return text.removesuffix(" (agent)") if text.endswith(" (agent)") else ""
+
+
+@register.filter
+def in_sentence(name) -> str:
+    """A product name inside running text, lower case unless it is an acronym ("of
+    ready-to-use therapeutic food", "of RUTF") -- the drafted emails' own rule."""
+    from connect_labs.supply_chain.procurement.services.render import in_sentence as _in_sentence
+
+    return _in_sentence(name)

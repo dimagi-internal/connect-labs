@@ -125,7 +125,8 @@ class TestTheComparison:
         quote = _quote(da, world, duties_basis="excluded", duties_amount="0.00")
         words = landed_basis_words(quote, quote.tender)
         assert "0.00 USD added" not in words
-        assert "duty stated as zero" in words
+        # Since DDD 003 batch 7 in the history's words too: excluded from the price, 0.00 stated.
+        assert "duty excluded from the price, stated as 0.00" in words
         assert "on the quote" not in words
 
     def test_terms_set_by_an_answer_say_so_and_the_award_says_the_round_is_incomplete(

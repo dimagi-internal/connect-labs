@@ -647,7 +647,7 @@ class TestHomePage:
         assert "0 of 1 replied" in table
         assert "arrival (ETA 5 Sep)" in table
         assert "Kano Health Partners" in table
-        assert "data-ai" in table and "<span>ACE (agent)</span>" in table and 'aria-label="AI"' in table
+        assert "data-ai" in table and "<span>AI assistant</span>" in table and 'aria-label="AI"' in table
 
     def test_as_of_before_round_2_existed_leaves_it_out(self, client_in_program, da, base):
         _tender(da, "Round 1", AUG_3)

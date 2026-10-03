@@ -26,7 +26,7 @@
       name to read an email was found by nobody.
       {% endcomment %}
       {% if not in_event %}
-      <span data-testid="actor-badge" {% if entry.is_ai %}data-ai {% endif %}class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-sm {% if entry.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-900 ring-1 ring-inset ring-gray-300{% endif %}"><span data-testid="actor-pill" class="inline-flex items-center gap-1">{% if entry.is_ai %}{% include "supply_chain/_ai_glyph.html" with actor=entry.actor %}{% endif %}<span>{{ entry.actor }}</span></span></span>
+      <span data-testid="actor-badge" {% if entry.is_ai %}data-ai {% endif %}class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-sm {% if entry.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-900 ring-1 ring-inset ring-gray-300{% endif %}"><span data-testid="actor-pill" class="inline-flex items-center gap-1">{% if entry.is_ai %}{% include "supply_chain/_ai_glyph.html" with actor=entry.actor %}{% endif %}<span{% with name=entry.actor|ai_agent_name %}{% if name %} title="Agent: {{ name }}"{% endif %}{% endwith %}>{{ entry.actor|ai_words }}</span></span></span>
       {% if entry.excerpt %}
         {% comment %}One label, open or shut ("Source email"); the caret turns to say which --
         the details' own open state, no script. Two labels for one control read as two
