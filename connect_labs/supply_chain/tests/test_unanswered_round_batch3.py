@@ -200,9 +200,7 @@ class TestTheComparison:
         button = _text(
             re.search(r'<summary data-testid="award-open" data-anyway[^>]*>(.*?)</summary>', body, re.S).group(1)
         )
-        assert button.startswith("Award Kanem ") and button.endswith(
-            " anyway (1 quote still incomplete) 1 other quote can&#x27;t be compared yet: see Needs info"
-        )
+        assert button.startswith("Award Kanem ") and button.endswith(" anyway (1 quote still incomplete)")
 
     def test_decided_on_is_empty_until_an_award_is_started(self, da, world, client_in_program):
         op(da, "quote_record", data=_comparable(world))
@@ -249,7 +247,7 @@ class TestTheOrderPage:
         sub = re.search(r'<tr data-testid="invoice-against-agreed".*?</tr>', body, re.S).group(0)
         assert "Unit price per carton USD 51.20 USD 49.80 +USD 1.40" in _text(sub)
         assert 'data-testid="above-agreed-tag"' in sub
-        amount_cell = re.search(r'data-testid="invoice-above-agreed"[^>]*>(.*?)</div>', body, re.S).group(1)
+        amount_cell = re.search(r'data-testid="invoice-above-agreed"[^>]*>(.*?)</td>', body, re.S).group(1)
         assert "unit price" not in amount_cell
 
     def test_a_payment_an_invoice_acknowledges_reads_as_linked(self, da, world, client_in_program):

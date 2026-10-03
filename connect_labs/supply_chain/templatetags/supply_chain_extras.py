@@ -997,8 +997,22 @@ def record_kind_lead(text, sender=""):
     if named and name.strip() and sender and str(sender).rstrip().endswith(name.strip()):
         rest = after
     return mark_safe(
-        f'<span data-testid="record-kind" class="font-semibold">{escape(kind)}</span> · {bold_after_arrow(rest)}'
+        f'<span data-testid="record-kind" class="font-semibold">{escape(kind)}</span> · {_terms_kept_whole(rest)}'
     )
+
+
+def _terms_kept_whole(text):
+    """A record's " · "-separated terms, each short one kept on one line.
+
+    "valid to 2 Nov 2026 · lead time 5 weeks · shelf life 24 months" broke
+    inside "shelf / life" at the line's end; a short term now moves down whole.
+    A long one (the price with its basis) may still wrap, or it would overflow.
+    """
+    pieces = []
+    for piece in str(text).split(" · "):
+        rendered = bold_after_arrow(piece)
+        pieces.append(f'<span class="whitespace-nowrap">{rendered}</span>' if len(piece) <= 32 else str(rendered))
+    return mark_safe(" · ".join(pieces))
 
 
 @register.filter

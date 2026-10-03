@@ -265,12 +265,10 @@ class TestTheComparison:
         label = html.unescape(
             _text(re.search(r'data-testid="award-label"[^>]*>(.*?)</span>', button.group(1)).group(1))
         )
-        caveat = html.unescape(
-            _text(re.search(r'data-testid="award-caveat"[^>]*>(.*?)</a>', button.group(1)).group(1))
-        )
-        # Since the 002 run's batch 3 the caveat is helper text under the action, not in it.
+        # Since the 003 run's batch 6 the label alone says it: the "see Needs info" link
+        # under it repeated the panel above the table.
+        assert 'data-testid="award-caveat"' not in button.group(1)
         assert label.startswith("Award Kanem ") and label.endswith(" anyway (1 quote still incomplete)")
-        assert caveat == "1 other quote can't be compared yet: see Needs info"
         assert 'title="Northgate Rehearsal Commodities has not stated ' in button.group(0)
 
     def test_an_empty_trailing_column_is_dropped_but_not_one_between_figures(self):

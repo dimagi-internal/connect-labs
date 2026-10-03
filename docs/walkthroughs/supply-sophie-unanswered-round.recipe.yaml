@@ -202,9 +202,9 @@ scenes:
     seconds: 2.0
     target: testid:comparison-duty-terms
   - kind: hover
-    note: park the cursor in the Comparable heading's blank middle, off the title, the duty note and the banner
+    note: park the cursor in the fixed top bar's blank middle, off the Comparable heading, the duty note and the panel; the bar is fixed, so hovering cannot scroll the page
     seconds: 0.6
-    target: css:h2:has-text('Comparable')
+    target: css:header.fixed
   - kind: hold
     seconds: 2.0
   - kind: snapshot

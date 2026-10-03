@@ -177,7 +177,7 @@ sits above who is invited and what the tender buys.
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Last chased</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Replied</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Response kind</th>
-          <th class="px-4 py-2 text-right text-xs font-medium text-gray-600 uppercase tracking-wider">Actions</th>
+          <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Actions</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-gray-200">
@@ -191,15 +191,17 @@ sits above who is invited and what the tender buys.
              class="text-brand-indigo hover:underline">{{ supplier_names|dictkey:o.supplier_id|default:"Supplier" }}</a>
           {% comment %}A reply that was questions leaves the move with us: said on the
           supplier's own row, so the round reads whose turn it is.{% endcomment %}
-          {% if o.waiting_on_us %}<div data-testid="waiting-on-us-row" class="text-sm text-message-warning-text">{{ o.waiting_on_us }}</div>{% endif %}
+          {% if o.waiting_on_us %}<div data-testid="waiting-on-us-row" class="text-xs whitespace-nowrap text-message-warning-text">{{ o.waiting_on_us }}</div>{% endif %}
         </td>
         <td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap">{{ o.sent_on|day|default:"—" }}</td>
-        {% if o.changed and changed_cell == "last_chased" %}<td class="px-4 py-2 text-sm text-gray-900 font-semibold whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count">· {{ o.reminder_text }}</span>{% endif %}{% include "supply_chain/procurement/_new_tag.html" %}{% if o.next_due %}<span data-testid="next-due" class="block font-normal text-gray-600">next due {{ o.next_due|date:"j M" }}</span>{% endif %}</td>{% else %}<td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count" class="text-gray-600">· {{ o.reminder_text }}</span>{% endif %}</td>{% endif %}
+        {% if o.changed and changed_cell == "last_chased" %}<td class="px-4 py-2 text-sm text-gray-900 font-semibold whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count">· {{ o.reminder_text }}</span>{% endif %}{% if o.next_due %}<span data-testid="next-due" class="block font-normal text-gray-600">next due {{ o.next_due|date:"j M" }}{% include "supply_chain/procurement/_new_tag.html" %}</span>{% else %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}</td>{% else %}<td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count" class="text-gray-600">· {{ o.reminder_text }}</span>{% endif %}</td>{% endif %}
         {% comment %}Silence in words, counted from the latest ask -- the invitation or the last
         chase -- muted rather than alarmed; a bare "No" said nothing about how long.{% endcomment %}
         <td class="px-4 py-2 text-sm whitespace-nowrap {% if o.changed and changed_cell == "replied" %}text-gray-900 font-semibold{% else %}text-gray-600{% endif %}" data-testid="replied">{% if o.responded %}{% if o.responded_on %}{{ o.responded_on|day }}{% else %}Yes{% endif %}{% if o.changed and changed_cell == "replied" %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% else %}<span data-testid="no-reply" class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-900 ring-1 ring-inset ring-gray-300">No reply{% if o.silent_days is not None %} · {{ o.silent_days }} day{{ o.silent_days|pluralize }}{% endif %}</span>{% if o.changed and changed_cell == "replied" %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% endif %}</td>
-        <td class="px-4 py-2 text-sm text-gray-600" data-testid="response-kind">{% if o.responded %}{% if o.response_kind == "needs_info" %}Questions for us{% else %}{{ o.response_kind|humanise|capfirst|default:"—" }}{% endif %}{% else %}—{% endif %}</td>
-          <td class="px-4 py-2 text-sm whitespace-nowrap text-right">
+        <td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap" data-testid="response-kind">{% if o.responded %}{% if o.response_kind == "needs_info" %}Questions for us{% else %}{{ o.response_kind|humanise|capfirst|default:"—" }}{% endif %}{% else %}—{% endif %}</td>
+          {% comment %}The actions sit at the start of their cell, under the Actions heading: right-aligned,
+          the heading stood over the menu alone and the links floated under no heading.{% endcomment %}
+          <td class="px-4 py-2 text-sm whitespace-nowrap text-left">
             {% if not supply_as_of %}
             {% comment %}Two fixed slots -- the drafted reminder, then the reply -- so the column
             aligns whether or not a row has a reminder due.{% endcomment %}
@@ -214,7 +216,7 @@ sits above who is invited and what the tender buys.
                class="text-brand-indigo hover:underline">{% if o.responded %}Record another reply{% else %}Record a reply{% endif %}</a>
             {% comment %}Delete is for an invitation recorded in error -- rare, and not the row's
             business: tucked in a small menu so the reply is the one visible action.{% endcomment %}
-            <details data-testid="row-more" class="inline-flex items-center ml-2 text-left">
+            <details data-testid="row-more" class="inline-flex items-center text-left">
               <summary class="cursor-pointer list-none [&::-webkit-details-marker]:hidden px-1.5 rounded text-gray-700 hover:bg-gray-100" title="More" aria-label="More actions">⋯</summary>
               <div class="inline-block ml-1 rounded-md border border-gray-200 bg-white shadow-sm">
                 <a href="{% url 'supply_chain:procurement_outreach_delete' o.id %}"
