@@ -202,7 +202,7 @@ duty out is missing a figure depends on who imports.{% endcomment %}
                 so the figure in the row is read as a price for an amount. The total itself is in
                 the row: said again here it read as a second figure.{% endcomment %}
                 {% with total=row.figures.landed_total_as_quoted %}
-                {% if row.landed_basis or row.quantity_quoted and total.amount is not None %}<p class="mb-1 text-xs text-gray-700">{% if row.quantity_quoted and total.amount is not None %}<span data-testid="landed-quantity" class="font-medium text-gray-900">Quoted for {{ row.quantity_quoted }}</span>{% if row.landed_basis %} · {% endif %}{% endif %}{% if row.landed_basis %}<span data-testid="landed-basis">{{ row.landed_basis }}</span>{% endif %}</p>{% endif %}
+                {% if row.landed_basis or row.quantity_quoted and total.amount is not None %}<p class="mb-1 text-xs text-gray-700">{% if row.quantity_quoted and total.amount is not None %}<span data-testid="landed-quantity" class="font-medium text-gray-900">Quoted for {{ row.quantity_quoted }}</span>{% if row.landed_basis %} · {% endif %}{% endif %}{% if row.landed_basis %}<span data-testid="landed-basis">{{ row.delivery_basis }}</span>{% if row.duty_line %}{% if row.delivery_basis %} · {% endif %}<span data-testid="landed-duty" class="font-medium text-gray-900">{{ row.duty_line }}</span>{% endif %}{% endif %}</p>{% endif %}
                 {% endwith %}
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                   {% include "supply_chain/procurement/_specification.html" with specification=row.specification inline=True %}
@@ -378,7 +378,12 @@ duty out is missing a figure depends on who imports.{% endcomment %}
       {% if row.received_on %}<p data-testid="received-on" class="text-xs text-gray-600 mb-1">Received {{ row.received_on|day }}</p>{% endif %}
       {% comment %}What its landed figures already rest on -- "duty waived (our import)" under the
       round's waiver -- so a fact the round's terms settled reads as settled, not as forgotten.{% endcomment %}
-      {% if row.landed_basis %}<p data-testid="card-landed-basis" class="text-xs text-gray-700 mb-1">{{ row.landed_basis|capfirst }}</p>{% endif %}
+      {% comment %}The duty the round's terms settled has a line of its own at body size, citing
+      the answer that set the terms, so the card carries its own cause.{% endcomment %}
+      {% if row.landed_basis %}<div data-testid="card-landed-basis" class="mb-1">
+        {% if row.delivery_basis %}<p data-testid="card-delivery-basis" class="text-xs text-gray-700">{{ row.delivery_basis|capfirst }}</p>{% endif %}
+        {% if row.duty_line %}<p data-testid="card-duty" class="text-sm text-gray-900"><span class="font-medium">{{ row.duty_line }}</span>{% if duty_terms_answer %} <span class="text-gray-700">— the round's terms, </span><a data-testid="card-duty-source" class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}?changed=commitment-{{ duty_terms_answer.commitment_id }}#owed">set {{ duty_terms_answer.on|date:"j M" }} from your answer to {{ duty_terms_answer.owed_to }}</a>{% endif %}</p>{% endif %}
+      </div>{% endif %}
       {% comment %}
       Each gap and the question that clears it on one row of a compact two-column
       list -- missing fact | question -- at regular weight under a small "Blocking"
@@ -388,7 +393,7 @@ duty out is missing a figure depends on who imports.{% endcomment %}
       "Can't compare yet" flag, so the two cannot disagree. Then the facts they
       are read against, then the email that asks them, then the rest to confirm.
       {% endcomment %}
-      <div data-testid="blockers" class="mt-1 w-full grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-0.5 text-sm">
+      <div data-testid="blockers" class="mt-1 w-full grid grid-cols-1 sm:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-x-8 gap-y-0.5 text-sm">
         <p class="text-xs font-medium uppercase tracking-wide text-gray-600">Blocking</p>
         <p class="hidden sm:block text-xs font-medium uppercase tracking-wide text-gray-600">Question that clears it</p>
         {% for blocker in row.blockers %}
@@ -414,7 +419,7 @@ duty out is missing a figure depends on who imports.{% endcomment %}
       {% with rest=row|also_confirm unstated=row|not_blocking %}
         {% if rest or unstated or row.blockers %}
           <details data-testid="also-confirm" class="mt-1">
-            <summary class="cursor-pointer text-sm text-brand-indigo">Other things to confirm (<span data-testid="not-blocking-rule" title="{{ ranking_rule }}" class="cursor-help underline decoration-dotted underline-offset-2">not blocking</span>)</summary>
+            <summary class="cursor-pointer text-sm text-brand-indigo">Other things to confirm (<span data-testid="not-blocking-rule" title="{{ ranking_rule }}">not blocking</span>)</summary>
             {% if rest %}{% include "supply_chain/procurement/_row_questions.html" with row=row questions=rest %}{% endif %}
             {% if unstated %}
               <p data-testid="not-blocking" class="mt-1 text-xs text-gray-600">Not stated: {{ unstated|join:", " }}</p>

@@ -70,7 +70,7 @@ class TestTheComparisonUnderTheWaiver:
         note = _text(re.search(r'data-testid="comparison-duty-terms".*?</p>', body, re.S).group(0))
         assert " — duty counts as zero" in note and "--" not in note
         if 'data-testid="needs-info"' in body:
-            assert "duty waived (our import)" in _text(body.split('data-testid="needs-info"')[1])
+            assert "duty waived (our import)" in _text(body.split('data-testid="needs-info"')[1]).lower()
 
     def test_the_banner_lists_each_supplier_s_missing_facts(self):
         row = {

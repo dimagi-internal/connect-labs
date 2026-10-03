@@ -971,6 +971,23 @@ def bold_after_arrow(text):
 
 
 @register.filter
+def record_kind_lead(text):
+    """A record line under an email with its kind set apart: "<b>Outreach</b> · Sahel · Replied ...".
+
+    Under an email's excerpt, what was recorded from it read at the same weight
+    as the evidence; the record's kind in semibold marks the line as the record.
+    The rest reads as `bold_after_arrow` reads it.
+    """
+    text = str(text or "")
+    kind, sep, rest = text.partition(" · ")
+    if not sep or len(kind) > 24:
+        return bold_after_arrow(text)
+    return mark_safe(
+        f'<span data-testid="record-kind" class="font-semibold">{escape(kind)}</span> · {bold_after_arrow(rest)}'
+    )
+
+
+@register.filter
 def quantity_text(value):
     """A derived quantity (a consumption rate, a balance) to at most two places.
 

@@ -268,7 +268,7 @@ def _extras(quote: Quote, tender=None) -> Derived:
                 # from, so a reader chasing the gap looks in the right place:
                 # "excluded" from a bare EXW is not the same evidence as
                 # "excluded" typed by somebody reading the supplier's email.
-                via = f" (read from Incoterm {quote.incoterm})" if implied and implied == basis else ""
+                via = f" (per Incoterm {quote.incoterm})" if implied and implied == basis else ""
                 reasons.append(f"{label} excluded from the quote but no {label} amount recorded{via}")
             else:
                 total += amount

@@ -46,12 +46,12 @@
       {% if tender.status == "awarded" or tender.status == "closed" %}
         {% comment %}Who could bid no longer matters once replies are closed: "Open to
         all suppliers" on an awarded tender read as still taking bids.{% endcomment %}
-        <span data-testid="tender-state-pill" class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700 border border-gray-200">{% if tender.status == "awarded" %}Closed — awarded{% else %}Closed{% endif %}</span>
+        <span data-testid="tender-state-pill" class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-900 ring-1 ring-inset ring-gray-300">{% if tender.status == "awarded" %}Closed — awarded{% else %}Closed{% endif %}</span>
         No longer taking bids.
       {% elif tender.visibility == "private" %}
-        <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 border">Restricted</span> Only the suppliers you invite see it on the supplier marketplace.
+        <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-900 ring-1 ring-inset ring-gray-300">Restricted</span> Only the suppliers you invite see it on the supplier marketplace.
       {% else %}
-        <span class="px-2 py-0.5 rounded-full text-xs bg-message-info text-message-info-text border border-message-info-border">Open to all suppliers</span>
+        <span class="inline-flex items-center rounded-full bg-message-info px-2 py-0.5 text-xs font-medium text-message-info-text ring-1 ring-inset ring-message-info-border">Open to all suppliers</span>
         {% if tender.status == "open" %}Listed on the <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market_tender' tender.id %}">supplier marketplace</a>: any registered supplier can bid.{% elif tender.status == "draft" %}Listed on the supplier marketplace while it is open.{% endif %}
       {% endif %}
       </dd>
@@ -147,7 +147,7 @@ sits above who is invited and what the tender buys.
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Last chased</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Replied</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Response kind</th>
-          <th class="px-4 py-2 text-right text-xs font-medium text-gray-600 uppercase tracking-wider">Actions</th>
+          <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Actions</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-gray-200">
@@ -161,21 +161,25 @@ sits above who is invited and what the tender buys.
              class="text-brand-indigo hover:underline">{{ supplier_names|dictkey:o.supplier_id|default:"Supplier" }}</a>
           {% comment %}A reply that was questions leaves the move with us: said on the
           supplier's own row, so the round reads whose turn it is.{% endcomment %}
-          {% if o.waiting_on_us %}<div data-testid="waiting-on-us-row" class="text-sm text-message-warning-text">{{ o.waiting_on_us }}</div>{% endif %}
+          {% if o.waiting_on_us %}<div data-testid="waiting-on-us-row" class="text-sm text-message-warning-text whitespace-nowrap">{{ o.waiting_on_us }}</div>{% endif %}
         </td>
         <td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap">{{ o.sent_on|day|default:"—" }}</td>
         {% if o.changed and changed_cell == "last_chased" %}<td class="px-4 py-2 text-sm text-gray-900 font-semibold whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count">· {{ o.reminder_text }}</span>{% endif %}{% if o.next_due %} <span data-testid="next-due" class="font-normal text-gray-600">· next due {{ o.next_due|date:"j M" }}</span>{% endif %}{% include "supply_chain/procurement/_new_tag.html" %}</td>{% else %}<td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count" class="text-gray-600">· {{ o.reminder_text }}</span>{% endif %}</td>{% endif %}
         {% comment %}Silence in words, counted from the latest ask -- the invitation or the last
         chase -- muted rather than alarmed; a bare "No" said nothing about how long.{% endcomment %}
-        <td class="px-4 py-2 text-sm whitespace-nowrap {% if o.changed and changed_cell == "replied" %}text-gray-900 font-semibold{% else %}text-gray-600{% endif %}" data-testid="replied">{% if o.responded %}{% if o.responded_on %}{{ o.responded_on|day }}{% else %}Yes{% endif %}{% if o.changed and changed_cell == "replied" %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% else %}<span data-testid="no-reply" class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-sm font-medium text-gray-900 ring-1 ring-inset ring-gray-300">No reply{% if o.silent_days is not None %} · {{ o.silent_days }} day{{ o.silent_days|pluralize }}{% endif %}</span>{% if o.changed and changed_cell == "replied" %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% endif %}</td>
-        <td class="px-4 py-2 text-sm text-gray-600" data-testid="response-kind">{% if o.responded %}{{ o.response_kind|humanise|capfirst|default:"—" }}{% endif %}</td>
-          <td class="px-4 py-2 text-sm text-right whitespace-nowrap">
+        <td class="px-4 py-2 text-sm whitespace-nowrap {% if o.changed and changed_cell == "replied" %}text-gray-900 font-semibold{% else %}text-gray-600{% endif %}" data-testid="replied">{% if o.responded %}{% if o.responded_on %}{{ o.responded_on|day }}{% else %}Yes{% endif %}{% if o.changed and changed_cell == "replied" %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% else %}<span data-testid="no-reply" class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-900 ring-1 ring-inset ring-gray-300">No reply{% if o.silent_days is not None %} · {{ o.silent_days }} day{{ o.silent_days|pluralize }}{% endif %}</span>{% if o.changed and changed_cell == "replied" %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% endif %}</td>
+        <td class="px-4 py-2 text-sm text-gray-600" data-testid="response-kind">{% if o.responded %}{{ o.response_kind|humanise|capfirst|default:"—" }}{% else %}—{% endif %}</td>
+          <td class="px-4 py-2 text-sm whitespace-nowrap">
             {% if not supply_as_of %}
+            {% comment %}Two fixed slots -- the drafted reminder, then the reply -- so the column
+            aligns whether or not a row has a reminder due.{% endcomment %}
+            <div class="inline-grid grid-cols-[7rem_auto_auto] items-center">
+            <span>
             {% comment %}A silent supplier whose reminder is due: its drafted reminder, from its own
             row, opened at its card so no other supplier's draft is in view.{% endcomment %}
             {% if o.draft_anchor %}<a data-testid="row-draft-reminder" href="#{{ o.draft_anchor }}"
                onclick="return window.openDraft && window.openDraft('{{ o.draft_anchor }}');"
-               class="text-brand-indigo hover:underline mr-3">Draft reminder</a>{% endif %}
+               class="text-brand-indigo hover:underline">Draft reminder</a>{% endif %}</span>
             <a href="{% url 'supply_chain:procurement_outreach_reply' o.id %}"
                class="text-brand-indigo hover:underline">{% if o.responded %}Record another reply{% else %}Record a reply{% endif %}</a>
             {% comment %}Delete is for an invitation recorded in error -- rare, and not the row's
@@ -187,6 +191,7 @@ sits above who is invited and what the tender buys.
                    class="inline-block px-2 py-0.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-red-700">Delete</a>
               </div>
             </details>
+            </div>
             {% endif %}
           </td>
       </tr>
@@ -288,9 +293,9 @@ next action on anyone (design doc section 22).
       {% comment %}Each draft is its own card headed by who it goes to, so one draft's
       Copy and Record chase cannot be read as a neighbour's.{% endcomment %}
       <div data-testid="draft"{% if d.anchor %} id="{{ d.anchor }}"{% endif %} data-supplier-id="{{ d.supplier_id }}" class="border border-gray-200 rounded-lg p-4 mt-3 scroll-mt-20">
-        <p class="text-base">
+        <p class="text-lg">
           <span class="font-semibold text-gray-900">{{ d.supplier_name }}</span>
-          <span class="text-sm text-gray-600">· {% if d.kind == "request" %}Quote request{% elif d.kind == "reminder" %}Reminder{% elif d.kind == "reply" %}Our answers{% else %}Follow-up{% endif %}</span>
+          <span class="text-base text-gray-600">· {% if d.kind == "request" %}Quote request{% elif d.kind == "reminder" %}Reminder{% elif d.kind == "reply" %}Our answers{% else %}Follow-up{% endif %}</span>
         </p>
         {% if d.facts %}
           {% comment %}A reminder's facts as a labelled row, set apart from the card's body
@@ -301,13 +306,31 @@ next action on anyone (design doc section 22).
         {% else %}
         <p class="text-sm text-gray-700 mt-1" data-testid="draft-why">{{ d.why }}</p>
         {% endif %}
+        {% if d.kind == "reminder" and d.outreach_id %}
+          {% comment %}Under the reminder's facts, so the whole message can show and the record
+          of the chase is still in view beside them. The day the reminder went, here: the date and one button, so sending
+          the reminder and saying so are one stop rather than a trip to a form. The day
+          reads as the page's other days do ("2 Oct 2026"); YYYY-MM-DD is accepted too.{% endcomment %}
+          <form method="post" action="{% url 'supply_chain:procurement_outreach_chase' d.outreach_id %}"
+                class="mt-2 flex flex-wrap items-center gap-2" data-testid="chase-form">
+            {% csrf_token %}
+            <p data-testid="chase-help" class="basis-full text-sm text-gray-600">After you send it, record the chase: the next reminder falls due {{ drafts.reminder_interval_days }} day{{ drafts.reminder_interval_days|pluralize }} after this date.</p>
+            <label for="chase-date-{{ forloop.counter }}" class="text-sm text-gray-700">Chased on</label>
+            <input id="chase-date-{{ forloop.counter }}" data-testid="chase-date" type="text" name="last_reminder_on"
+                   value="{% now 'j M Y' %}" placeholder="e.g. {% now 'j M Y' %}" required autocomplete="off"
+                   class="base-input text-sm w-36">
+            {% comment %}The card's one action, filled: copying is a step towards it.{% endcomment %}
+            <button type="submit" data-testid="record-chase"
+                    class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">Record chase</button>
+          </form>
+        {% endif %}
         {% comment %}The address gets the same Copy as the subject and the message: all three
         go into her own mailbox.{% endcomment %}
         <div class="text-sm text-gray-700 mt-2 flex items-center gap-2">
           <span class="text-gray-600">To:</span>
           {% if d.to %}<span id="draft-to-{{ forloop.counter }}">{{ d.to }}</span>
           <button type="button" data-testid="copy-to"
-                  class="px-2 py-0.5 text-xs border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md whitespace-nowrap"
+                  class="px-2.5 py-1 text-xs border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md whitespace-nowrap"
                   onclick="navigator.clipboard.writeText(document.getElementById('draft-to-{{ forloop.counter }}').textContent); this.textContent='Copied';">
             <i class="fa-regular fa-copy mr-1"></i> Copy
           </button>{% else %}<span class="text-gray-600">no address on file</span>{% endif %}
@@ -316,8 +339,8 @@ next action on anyone (design doc section 22).
         <div class="flex gap-2">
           <input id="draft-subject-{{ forloop.counter }}" type="text" readonly value="{{ d.subject }}"
                  class="base-input text-sm flex-1" onfocus="this.select()">
-          <button type="button"
-                  class="px-3 py-2 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md whitespace-nowrap"
+          <button type="button" data-testid="copy-subject"
+                  class="self-center px-2.5 py-1 text-xs border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md whitespace-nowrap"
                   onclick="navigator.clipboard.writeText(document.getElementById('draft-subject-{{ forloop.counter }}').value); this.textContent='Copied';">
             <i class="fa-regular fa-copy mr-1"></i> Copy
           </button>
@@ -328,11 +351,11 @@ next action on anyone (design doc section 22).
           draft is for, and a fixed two-line box showed only its greeting.{% endcomment %}
           <div class="flex-1">
           <textarea id="draft-text-{{ forloop.counter }}" data-testid="draft-text" readonly rows="{{ d.rows|default:10 }}"
-                    style="height: auto" class="base-input text-sm w-full font-sans py-2 leading-relaxed" onfocus="this.select()">{{ d.text }}</textarea>
+                    style="height: auto" class="base-input text-sm w-full font-sans py-2 leading-snug" onfocus="this.select()">{{ d.text }}</textarea>
           <p data-testid="draft-more" class="hidden text-xs text-gray-600 mt-1">Scroll the message for the rest; Copy takes all of it.</p>
           </div>
-          <button type="button"
-                  class="px-3 py-2 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md whitespace-nowrap"
+          <button type="button" data-testid="copy-message"
+                  class="mt-2 px-2.5 py-1 text-xs border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md whitespace-nowrap"
                   onclick="navigator.clipboard.writeText(document.getElementById('draft-text-{{ forloop.counter }}').value); this.textContent='Copied';">
             <i class="fa-regular fa-copy mr-1"></i> Copy
           </button>
@@ -344,23 +367,6 @@ next action on anyone (design doc section 22).
             {% csrf_token %}
             {% for pk in d.answered_ids %}<input type="hidden" name="commitment_id" value="{{ pk }}">{% endfor %}
             <button type="submit" class="px-3 py-1.5 text-sm border border-gray-300 text-brand-indigo hover:bg-gray-50 rounded-md">Mark this reply sent</button>
-          </form>
-        {% endif %}
-        {% if d.kind == "reminder" and d.outreach_id %}
-          {% comment %}The day the reminder went, here: the date and one button, so sending
-          the reminder and saying so are one stop rather than a trip to a form. The day
-          reads as the page's other days do ("2 Oct 2026"); YYYY-MM-DD is accepted too.{% endcomment %}
-          <form method="post" action="{% url 'supply_chain:procurement_outreach_chase' d.outreach_id %}"
-                class="mt-3 flex flex-wrap items-center gap-2" data-testid="chase-form">
-            {% csrf_token %}
-            <p data-testid="chase-help" class="basis-full text-sm text-gray-600">After you send it, record the chase: the next reminder falls due {{ drafts.reminder_interval_days }} day{{ drafts.reminder_interval_days|pluralize }} after this date.</p>
-            <label for="chase-date-{{ forloop.counter }}" class="text-sm text-gray-700">Chased on</label>
-            <input id="chase-date-{{ forloop.counter }}" data-testid="chase-date" type="text" name="last_reminder_on"
-                   value="{% now 'j M Y' %}" placeholder="e.g. {% now 'j M Y' %}" required autocomplete="off"
-                   class="base-input text-sm w-36">
-            {% comment %}The card's one action, filled: copying is a step towards it.{% endcomment %}
-            <button type="submit" data-testid="record-chase"
-                    class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">Record chase</button>
           </form>
         {% endif %}
       </div>
@@ -377,16 +383,13 @@ next action on anyone (design doc section 22).
     // to the supplier is cut off mid-line inside the box.
     var panel = document.getElementById("drafts");
     function fit() {
-      // Up to 12 whole lines, so a long reminder's restated questions do not push
-      // the card's own Record chase below the fold, and no line is cut in half.
+      // The whole message: a capped box cut the restated questions mid-line, and
+      // the draft is what the card is for.
       panel.querySelectorAll("textarea[data-testid=draft-text]").forEach(function (box) {
         box.style.height = "auto";
-        var cs = window.getComputedStyle(box);
-        var lh = parseFloat(cs.lineHeight) || 22;
-        var pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + 2;
         var full = box.scrollHeight + 2;
-        var cap = Math.round(pad + lh * 12);
-        box.style.height = Math.min(full, cap) + "px";
+        var cap = full;
+        box.style.height = full + "px";
         var more = box.parentNode.querySelector("[data-testid=draft-more]");
         if (more) { more.classList.toggle("hidden", full <= cap); }
       });
@@ -461,9 +464,8 @@ next action on anyone (design doc section 22).
           {% endif %}
         </td>
         <td class="px-4 py-2 text-sm text-gray-600 tabular-nums">
-          {% if q.as_quoted_amount %}{{ q.as_quoted_currency }} {{ q.as_quoted_amount|money }}{% else %}no price{% endif %}
-          <div class="text-xs text-gray-600">{{ q.priced_per|default:q.as_quoted_unit|words }}</div>
-          {% if q.per_pack_note %}<div data-testid="per-pack-note" class="text-xs text-gray-600">{{ q.per_pack_note }}</div>{% endif %}
+          <span class="whitespace-nowrap">{% if q.as_quoted_amount %}{{ q.as_quoted_currency }} {{ q.as_quoted_amount|money }}{% else %}no price{% endif %}</span>
+          <div class="text-xs text-gray-600 whitespace-nowrap">{{ q.priced_per|default:q.as_quoted_unit|words }}{% if q.per_pack_note %}{% if q.per_pack_note|slice:":1" == "(" %} <span data-testid="per-pack-note" tabindex="0" role="img" aria-label="{{ q.per_pack_note }}" title="{{ q.per_pack_note }}" class="cursor-help"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span>{% else %} · <span data-testid="per-pack-note">{{ q.per_pack_note }}</span>{% endif %}{% endif %}</div>
         </td>
         <td data-testid="price-basis" class="px-4 py-2 text-sm text-gray-600">{{ q.price_basis|default:"not stated" }}</td>
         <td class="px-4 py-2 text-sm text-gray-600">{{ q.received_on|day|default:"—" }}</td>

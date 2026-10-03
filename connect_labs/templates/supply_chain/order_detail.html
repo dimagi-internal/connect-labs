@@ -779,11 +779,11 @@ The section stays only if one was somehow recorded, so it is not hidden.
         as a detail of the bill rather than money that had already gone.{% endcomment %}
         {% for payment in invoice.payments %}{% if payment.advance %}
         <tr data-testid="advance-row">
-          <td class="px-4 py-2 font-medium text-gray-900">Advance paid</td>
-          <td class="px-4 py-2 text-gray-700">{{ payment.paid_on|day }}</td>
-          <td class="px-4 py-2 text-right tabular-nums">{{ payment.currency }} {{ payment.amount|money }}</td>
+          <td class="px-4 py-2 font-medium text-gray-900 whitespace-nowrap">Advance paid</td>
+          <td class="px-4 py-2 text-gray-700 whitespace-nowrap">{{ payment.paid_on|day }}</td>
+          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">{{ payment.currency }} {{ payment.amount|money }}</td>
           <td class="px-4 py-2 text-right text-gray-600">—</td>
-          <td class="px-4 py-2 text-gray-700">applied to {{ invoice.reference|default:invoice.id }}{% if payment.method %} · by {{ payment.method|words }}{% endif %}</td>
+          <td class="px-4 py-2 text-gray-700">applied to <span class="whitespace-nowrap">{{ invoice.reference|default:invoice.id }}</span>{% if payment.method %} · by {{ payment.method|words }}{% endif %}</td>
           <td class="px-4 py-2 text-sm">{% if payment.confirmed_by_payee_on %}<span class="text-gray-700">confirmed by the payee {{ payment.confirmed_by_payee_on|day }}</span>{% else %}<span class="text-gray-700">not confirmed by the payee</span>{% endif %}</td>
           <td class="px-4 py-2 text-right whitespace-nowrap">
             {% if not payment.confirmed_by_payee_on and not supply_as_of %}
@@ -793,9 +793,9 @@ The section stays only if one was somehow recorded, so it is not hidden.
         </tr>
         {% endif %}{% endfor %}
         <tr>
-          <td class="px-4 py-2 font-medium text-gray-900">{{ invoice.reference|default:invoice.id }}</td>
-          <td class="px-4 py-2 text-gray-600">{{ invoice.issued_on|day|default:"—" }}</td>
-          <td class="px-4 py-2 text-right tabular-nums">
+          <td class="px-4 py-2 font-medium text-gray-900 whitespace-nowrap">{{ invoice.reference|default:invoice.id }}</td>
+          <td class="px-4 py-2 text-gray-600 whitespace-nowrap">{{ invoice.issued_on|day|default:"—" }}</td>
+          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">
             {% if invoice.amount %}{{ invoice.currency }} {{ invoice.amount|money }}{% else %}—{% endif %}
           </td>
           <td class="px-4 py-2 text-right tabular-nums">
@@ -838,9 +838,9 @@ The section stays only if one was somehow recorded, so it is not hidden.
         the figures belong to.{% endcomment %}
         {% for mark in invoice.above_agreed %}
           <tr data-testid="{% if mark.tag %}invoice-above-agreed-row{% else %}invoice-against-agreed{% endif %}" class="bg-gray-50/60 text-sm">
-            <td class="px-4 py-1.5 pl-8 text-gray-900">{{ mark.label }}</td>
+            <td class="px-4 py-1.5 pl-8 text-gray-900 whitespace-nowrap">{{ mark.label }}</td>
             <td class="px-4 py-1.5"></td>
-            <td class="px-4 py-1.5 text-right tabular-nums text-gray-900"{% if mark.tag %} data-testid="invoice-above-agreed"{% endif %}>{% if mark.billed %}<div>{{ mark.currency }} {{ mark.billed }} billed</div><div class="text-gray-600">{{ mark.currency }} {{ mark.agreed }} agreed</div>{% if mark.difference %}<div data-testid="invoice-difference" class="font-medium text-gray-900">+{{ mark.currency }} {{ mark.difference }}</div>{% endif %}{% else %}+{{ mark.text }}{% endif %}</td>
+            <td class="px-4 py-1.5 text-right tabular-nums text-gray-900 whitespace-nowrap"{% if mark.tag %} data-testid="invoice-above-agreed"{% endif %}>{% if mark.billed %}<div>{{ mark.currency }} {{ mark.billed }} billed</div><div class="text-gray-600">{{ mark.currency }} {{ mark.agreed }} agreed</div>{% if mark.difference %}<div data-testid="invoice-difference" class="font-medium text-gray-900">+{{ mark.currency }} {{ mark.difference }}</div>{% endif %}{% else %}+{{ mark.text }}{% endif %}</td>
             <td class="px-4 py-1.5"></td>
             <td class="px-4 py-1.5"><span data-testid="above-agreed-tag" class="inline-flex items-center whitespace-nowrap rounded-full border border-message-warning-border/50 bg-message-warning px-1.5 py-0.5 text-xs font-medium text-message-warning-text">above agreed</span></td>
             <td class="px-4 py-1.5" colspan="2"></td>

@@ -89,6 +89,10 @@ class Entry:
     # On the line that made a shipment wait on a document we owe, while it
     # still does: "Waiting on us: import permit" (fulfilment/services/holds.py).
     hold: str = ""
+    # Why that document is ours, in plain words, for a reader the email's trade
+    # shorthand ("CONSIGNEE TO PROVIDE FORM M") does not reach: "we are the
+    # consignee: the program imports these goods". Import documents only.
+    hold_reason: str = ""
     # Why an AI-entered quote's line offers no Correct or Void: "voided" or
     # "corrected", so every such line says something in that place.
     fix_status: str = ""
@@ -680,6 +684,8 @@ def _mark_holds(built):
                 # The record's own name for it, when it carries one ("Form M").
                 local = str(document.get("name") or "").strip()
                 entry.hold = f"Waiting on us: {what}" + (f" ({local})" if local else "")
+                if "import" in what:
+                    entry.hold_reason = "we are the consignee: the program imports these goods"
                 break
 
 
