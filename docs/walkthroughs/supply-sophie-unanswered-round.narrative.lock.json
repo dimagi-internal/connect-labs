@@ -104,6 +104,11 @@
           "description": "The comparison page compares Harmattan's quote on landed total and names what blocks the others: sachets per carton on Kanem's; the exchange rate, the freight amount and the duties amount on Sahel's.",
           "id": "comparison-missing-per-supplier",
           "verify": "Playwright: /compare/ reads '1 of 3 quotes can be compared on landed total'; Harmattan Therapeutics is under Comparable with a landed total; the Kanem Foods Ltd card shows 'Blocking: Sachets per carton not stated on the quote'; the Sahel Nutrition Industries card shows 'Quote is in EUR and no exchange rate was recorded', 'Freight excluded from the quote but no freight amount recorded' and 'Duties excluded from the quote but no duties amount recorded', and no quantity mismatch"
+        },
+        {
+          "id": "comparison-duty-terms-note",
+          "description": "A one-line note at the top of the comparison states the round's import duty terms and what they mean for quotes that leave duty out.",
+          "verify": "Playwright: [data-testid=comparison-duty-terms] reads 'Import duties for this round: not settled'"
         }
       ],
       "id": "whats-still-missing",

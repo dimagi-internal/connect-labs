@@ -173,32 +173,44 @@ scenes:
   actions:
   - kind: wait_for
     target: text:Kanem Foods
-  - kind: scroll_to
-    note: frame the "1 of 3 quotes can be compared on landed total" summary and the Comparable table's headers
-    target: testid:comparison-banner
   - kind: hover
     say: Harmattan
     seconds: 2.0
     target: text:Harmattan Therapeutics
   - kind: scroll_to
-    note: frame the Needs info heading and both cards under it; the Comparable table's unlabelled figures leave the frame
+    note: down to the Needs info cards, Kanem's pack size and Sahel's three blockers
     say: Kanem
     target: css:[data-testid=needs-info]
   - kind: hover
-    note: park the cursor on the Needs info heading's words at the left, off the cards and mid-frame
+    note: park the cursor on the Needs info heading's words at the left, off the cards
     seconds: 0.6
     target: testid:needs-info-title
   - kind: hold
     say: Sahel
     seconds: 2.5
-  concept_claim: The comparison names the missing facts on each quote that cannot
-    be relied on, including a reply that has only just arrived, without ranking across
-    them or guessing a figure.
+  - kind: scroll_to
+    note: back up to the round's duty terms note and the summary banner naming every missing fact
+    target: testid:comparison-duty-terms
+  - kind: hover
+    say: not settled
+    seconds: 2.0
+    target: testid:comparison-duty-terms
+  - kind: hover
+    note: park the cursor on the page title, off the note and the banner
+    seconds: 0.6
+    target: css:h1
+  - kind: hold
+    seconds: 2.0
+  - kind: snapshot
+    note: the canonical frame is the duty terms note (not settled), the "1 of 3 quotes can be compared" banner naming each missing fact, and Harmattan under Comparable
+  concept_claim: The comparison states the round's import duty terms and names the
+    missing facts on each quote that cannot be compared, including a reply that has
+    only just arrived, without ranking across them or guessing a figure.
   design_intent: The comparison earns its place by saying what is missing, not by
     ranking quotes that cannot be ranked; seen before the duty answer, it shows what
     an unsettled duty question costs.
-  show: Sophie opens the round's comparison and reads, quote by quote, the fact each
-    one is missing and from whom.
+  show: Sophie opens the round's comparison, reads the fact each quote is missing
+    and from whom, and the note that the round's import duty terms are not settled.
   url: /supply/procurement/tenders/${round2_tender_id}/compare/?program_id=${program_id}
 - id: what-we-owe-northgate
   actions:
