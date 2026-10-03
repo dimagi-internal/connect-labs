@@ -269,12 +269,15 @@ def _extras(quote: Quote, tender=None) -> Derived:
         if basis == "included":
             continue
         if basis == "excluded":
-            if amount is None and label == "duties" and implied == "excluded" and terms != "supplier_ddp":
+            if label == "duties" and implied == "excluded" and terms != "supplier_ddp":
                 # The quote's own Incoterm puts the import on us (EXW, FCA, CPT, DAP ...):
-                # import duty is never the supplier's to state, so its absence is
-                # not a gap in their quote. It is ours to cost, by the round's duty
-                # terms -- and while those are not settled, no landed total can be
-                # given. A round-owned blocker, never a question in their email.
+                # import duty is never the supplier's to state, so neither its absence
+                # nor a figure the supplier wrote decides it. It is ours to cost, by
+                # the round's duty terms -- and while those are not settled, no landed
+                # total can be given, whatever the quote said. One rule for every
+                # buyer-import quote: a CPT quote stating 0.00 waits exactly as an EXW
+                # quote stating nothing does. A round-owned blocker, never a question
+                # in their email.
                 reasons.append(ROUND_DUTY_TERMS_REASON)
                 continue
             if amount is None:

@@ -72,7 +72,7 @@ paragraphs of method above a one-row table.{% endcomment %}
     {% for approval in standing.approvals %}
       <div class="mt-0.5">
         Approved by <b>{{ approval.approver.name|default:"—" }}</b> ({{ approval.role|words }})
-        on {{ approval.decided_on|day|default:"an unrecorded date" }}{% if approval.answered_by_approver %}, through {{ approval.approver.name }}'s own link{% endif %}
+        on {{ approval.decided_on|day|default:"an unrecorded date" }}{% if approval.answered_by_approver %}, through {{ approval.approver.name|possessive }} own link{% endif %}
         — <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:award_detail' approval.award.id %}">the award to {{ approval.supplier|default:"the supplier" }}</a>{% if approval.documents %}, with {{ approval.documents|length }} signed confirmation{{ approval.documents|length|pluralize }}{% endif %}.
       </div>
     {% endfor %}

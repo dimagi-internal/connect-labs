@@ -62,7 +62,7 @@ from connect_labs.supply_chain.procurement.forms import (
 )
 from connect_labs.supply_chain.procurement.operations import DEFAULT_REMINDER_INTERVAL_DAYS
 from connect_labs.supply_chain.procurement.services.comparison import RANKING_RULE
-from connect_labs.supply_chain.values import day_text, quantity_phrase, unit_noun
+from connect_labs.supply_chain.values import day_text, possessive, quantity_phrase, unit_noun
 from connect_labs.supply_chain.views import mark_changed, owed_context
 
 
@@ -605,6 +605,7 @@ def _and_list(words) -> str:
 # quote is converted at is ours to record, so "Sahel has not stated exchange
 # rate" blamed the supplier for our own blank (unanswered round, batch 1).
 _BUYER_RECORDED = {"exchange rate"}
+_ROUND_DUTY_TERMS_LABEL = "round duty terms"
 _CURRENCY = re.compile(r"\bin ([A-Z]{3})\b")
 
 
@@ -645,7 +646,13 @@ def missing_item(row) -> str:
     stilted. A gap that is ours (the exchange rate) keeps its currency.
     """
     blockers = row.get("blockers") or []
-    labels = [label for label in dict.fromkeys(b.get("label") or b.get("fact") or "" for b in blockers) if label]
+    # The round's own duty terms are said once, above the list (`waiting_on_duty_terms`):
+    # they are not a fact any supplier has left out.
+    labels = [
+        label
+        for label in dict.fromkeys(b.get("label") or b.get("fact") or "" for b in blockers)
+        if label and label != _ROUND_DUTY_TERMS_LABEL
+    ]
     if not labels:
         return ""
     words = []
@@ -936,6 +943,17 @@ class ComparisonView(_Base):
             }
             for row in (comparison or {}).get("blocked") or []
             if (item := missing_item(row))
+        ]
+        # The round's own decision, said once above the per-supplier gaps: every quote whose
+        # Incoterm makes the import ours waits on the round's duty terms, whatever duty
+        # figure its supplier wrote, so "settle the terms" is the round's first move.
+        context["waiting_on_duty_terms"] = [
+            row.get("supplier_name") or "A supplier"
+            for row in (comparison or {}).get("blocked") or []
+            if any(
+                "round's duty terms are not settled" in (b.get("fact") or b.get("label") or "").lower()
+                for b in row.get("blockers") or []
+            )
         ]
         context["ranking_rule"] = RANKING_RULE
         if comparison and context["table_columns"]:
@@ -1641,7 +1659,7 @@ class ApprovalDocumentAttachView(_AwardScreen):
     def intro(self):
         approval = self.approval()
         return (
-            f"Evidence for {approval.approver_org.name}'s {approval.role} approval of this award — their "
+            f"Evidence for {possessive(approval.approver_org.name)} {approval.role} approval of this award — their "
             "letter, their email, the registration they granted. Upload the file or link to where it lives."
         )
 

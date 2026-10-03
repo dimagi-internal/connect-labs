@@ -113,7 +113,7 @@ the award, so the page says so where the order button would otherwise be.
                 {% if approval.decision_note %}<div class="text-xs text-gray-600 mt-0.5">{{ approval.decision_note }}</div>{% endif %}
                 {% if approval.status != "requested" %}
                   <div class="text-xs text-gray-600 mt-0.5">
-                    {% if approval.answered_by_approver %}Answered by {{ approval.approver.name }} through {{ approval.approver.name }}'s own link{% else %}Recorded by the programme team{% endif %}
+                    {% if approval.answered_by_approver %}Answered by {{ approval.approver.name }} through {{ approval.approver.name|possessive }} own link{% else %}Recorded by the programme team{% endif %}
                   </div>
                 {% endif %}
               </td>

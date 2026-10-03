@@ -11,11 +11,21 @@ from connect_labs.supply_chain.values import (
     day_text,
     is_counted_unit,
     money_digits,
+    possessive,
     quantity_digits,
     unit_noun,
 )
 
 register = template.Library()
+
+
+@register.filter(name="possessive")
+def possessive_filter(value):
+    """`possessive` for a template: the name escaped, its apostrophe left as an apostrophe."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return mark_safe(escape(text) + possessive(text)[len(text) :])
 
 
 @register.filter
