@@ -162,7 +162,7 @@ scenes:
     note: the history line that says Sahel replied with a quote, and on what day
     say: answers
     seconds: 1.8
-    target: text:Replied with a quote on 3 Oct 2026
+    target: text:Replied with a quote on ${today_date}
   - kind: hover
     note: park the cursor on the day row's blank middle, off the heading, the filter and Sahel's email
     seconds: 0.6
@@ -181,7 +181,7 @@ scenes:
     its own evidence.'
   show: Sophie lands on the round's history turned to replies only, with Sahel's
     email first, opens the Source email toggle on Sahel's email, and reads the excerpt
-    and sender beside what the AI recorded from it, the reply dated 3 Oct 2026.
+    and sender beside what the AI recorded from it, the reply dated the day it came in.
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#history
 - id: whats-still-missing
   actions:
@@ -210,7 +210,7 @@ scenes:
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the canonical frame is the round's duty terms (not settled), the banner saying none of the three quotes can be compared and that the round's own duty terms come first, and the Needs info cards -- Harmattan's and Sahel's Duty lines both reading ours to cost (round terms not settled), Kanem's pack size and Sahel's exchange rate and freight still owed
+    note: the canonical frame is the round's duty terms (not settled), the banner saying none of the three quotes can be compared and that the round's own duty terms come first, and the Needs info cards -- Harmattan's and Sahel's Duty lines both reading ours to cost (round terms not settled), Kanem's pack size and Sahel's freight still owed, and Sahel's price in euros with no exchange rate recorded yet
   concept_claim: The comparison states the round's import duty terms, holds every quote
     whose Incoterm leaves the import to us until those terms are settled, whatever duty
     figure its supplier wrote, and names the missing facts on each quote, without ranking
@@ -221,7 +221,8 @@ scenes:
   show: Sophie opens the round's comparison and reads that none of the three quotes
     can be compared yet; the round's own import duty terms come first, because Harmattan's
     carriage-paid and Sahel's ex-works quotes both leave the import to us, and each card
-    names what its supplier still owes -- Kanem's pack size, Sahel's freight and exchange rate.
+    names what its supplier still owes -- Kanem's pack size, Sahel's freight -- and Sahel's
+    price is in euros, with no exchange rate recorded yet.
   url: /supply/procurement/tenders/${round2_tender_id}/compare/?program_id=${program_id}
 - id: what-we-owe-northgate
   actions:
