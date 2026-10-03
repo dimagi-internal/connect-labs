@@ -155,6 +155,11 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
         chased = max((o.last_reminder_on for o in mine if o.last_reminder_on), default=None)
         anchor = f"draft-supplier-{sid}"
         row = {"name": supplier.name, "supplier_id": sid, "href": reverse("supply_chain:supplier_detail", args=[sid])}
+        # Last chased reads the same chase record as Invitations, replied or not.
+        count = max(((reminder_counts or {}).get(o.pk, 0) for o in mine), default=0)
+        if chased:
+            count = max(count, 1)
+        row["chased"] = (_day(chased) + (f" · {_ordinal(count)}" if count else "")) if chased else ""
         if theirs_quotes:
             quote = theirs_quotes[-1]
             compared_row = rows_by_quote.get(quote.pk)
@@ -179,11 +184,7 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
         elif sid in silent:
             days = (today - asked).days if asked else None
             row["chip"] = {"label": f"Silent {days}d" if days is not None else "Silent", "tone": THEIRS}
-            count = max(((reminder_counts or {}).get(o.pk, 0) for o in mine), default=0)
-            if chased:
-                count = max(count, 1)
             row["missing"] = []
-            row["chased"] = (_day(chased) + (f" · {_ordinal(count)}" if count else "")) if chased else ""
             if anchor in draft_anchors:
                 row["action"] = {"label": "Remind", "href": f"#{anchor}"}
             elif mine:
@@ -263,7 +264,7 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
             "sub": " · ".join(
                 p
                 for p in (
-                    f"{waiting_us} waiting on us" if waiting_us else "",
+                    f"{_plural(waiting_us, 'quote')} with facts on us" if waiting_us else "",
                     (
                         f"{_plural(supplier_facts, 'fact')} missing from {_plural(supplier_count, 'supplier')}"
                         if supplier_facts
@@ -305,8 +306,11 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
     awardee = award.quote.supplier.name if award and award.quote_id else ""
     collecting_note = f"{len(replied)} of {len(invited)} answered" if invited else ""
     if tender.status == "open" and deadline:
+        ahead = (deadline - today).days
         collecting_note += (" · " if collecting_note else "") + (
-            "deadline passed" if deadline < today else f"until {_day(deadline)}"
+            "deadline passed"
+            if ahead < 0
+            else "deadline today" if ahead == 0 else f"deadline in {_plural(ahead, 'day')}"
         )
     notes = [
         (
@@ -462,7 +466,11 @@ def comparison_grid(
     from connect_labs.supply_chain.procurement.services.pricing import buyer_imports
     from connect_labs.supply_chain.records import freight_and_duties_for_incoterm
 
-    rows = [*comparison.get("comparable", []), *comparison.get("blocked", [])]
+    # One column order on every visit, by supplier: a quote turning comparable keeps its place.
+    rows = sorted(
+        [*comparison.get("comparable", []), *comparison.get("blocked", [])],
+        key=lambda r: ((r.get("supplier_name") or "").lower(), r.get("quote_id") or 0),
+    )
     columns, cells = [], {
         k: [] for k in ("price", "pack", "term", "imports", "freight", "duty", "fx", "spec", "landed")
     }
@@ -499,7 +507,9 @@ def comparison_grid(
                 chips.append({"label": f"{_plural(len(supplier_gaps), 'fact')} on supplier", "tone": THEIRS})
             for g in our_gaps:
                 if g == _ROUND_DUTY:
-                    actions.append({"label": "Settle duty terms", "href": "#duty-terms", "owner": rules.US})
+                    actions.append(
+                        {"label": "Settle duty terms", "href": "#duty-terms", "owner": rules.US, "terms": True}
+                    )
                 elif g == _WAIVER_DOC:
                     actions.append(
                         {

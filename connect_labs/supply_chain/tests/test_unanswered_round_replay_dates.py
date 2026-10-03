@@ -34,7 +34,7 @@ def test_story_dates_keep_their_distance_from_the_render_day(replay, today):
     assert _ago(replay, "2026-09-15", today) == 17  # the ask: "No reply · 17 days"
     assert _ago(replay, "2026-09-18", today) == 14  # first reminder = ask + 3
     assert _ago(replay, "2026-09-23", today) == 9  # Sahel's second reminder
-    assert _ago(replay, "2026-09-29", today) == 3  # the deadline: "3 days ago"
+    assert _ago(replay, "2026-10-06", today) == -4  # the deadline: "in 4 days"
     assert _ago(replay, "2026-07-28", today) == 66  # round 1's advance
 
 
@@ -42,7 +42,7 @@ def test_on_the_story_day_nothing_moves(replay):
     assert replay.story_day("2026-09-15", replay.STORY_TODAY) == "2026-09-15"
     dates = replay.story_dates(replay.STORY_TODAY)
     assert dates["ask_date"] == "15 Sep 2026"
-    assert dates["deadline_date"] == "29 Sep 2026"
+    assert dates["deadline_date"] == "6 Oct 2026"
     assert dates["second_reminder_date"] == "23 Sep 2026"
     assert dates["northgate_asked_date"] == "18 Sep 2026"
     assert dates["advance_paid_date"] == "28 Jul 2026"
@@ -52,7 +52,7 @@ def test_on_the_story_day_nothing_moves(replay):
 def test_the_display_dates_follow_the_render_day(replay):
     dates = replay.story_dates(dt.date(2026, 11, 20))
     assert dates["ask_date"] == "3 Nov 2026"
-    assert dates["deadline_date"] == "17 Nov 2026"
+    assert dates["deadline_date"] == "24 Nov 2026"
     assert dates["today_date"] == "20 Nov 2026"
 
 
@@ -66,9 +66,9 @@ def test_seeded_round_reads_the_same_age_whatever_the_day(replay):
     out = replay.seed_world(create_buyer=True, today=today)
 
     tender = Tender.objects.get(id=out["round2_tender_id"])
-    assert (today - tender.response_deadline).days == 3
+    assert (tender.response_deadline - today).days == 4  # still ahead: chasing is worth it
     passed = _deadline_passed({"status": "open", "response_deadline": tender.response_deadline.isoformat()}, today)
-    assert passed["days"] == 3
+    assert not passed
 
     sahel = Outreach.objects.get(id=out["sahel_outreach_id"])
     assert _days_since_ask({"sent_on": sahel.sent_on.isoformat()}, today) == 17

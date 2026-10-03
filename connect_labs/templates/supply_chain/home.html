@@ -25,8 +25,8 @@ tenders and orders sit folded below.
     </div>
     <div class="flex flex-wrap gap-3">
       {% if not supply_as_of %}
-      <div class="stat-tile stat-tile--ours flex-row items-baseline gap-2" data-testid="standing-our-moves"><span class="stat-tile-value">{{ move_counts.ours }}</span><span class="text-message-warning-text text-sm font-medium">on us</span></div>
-      <div class="stat-tile flex-row items-baseline gap-2" data-testid="standing-their-moves"><span class="stat-tile-value">{{ move_counts.theirs }}</span><span class="text-sm text-gray-600">waiting on suppliers</span></div>
+      <div class="stat-tile flex-row items-center gap-2" data-testid="standing-our-moves"><span class="stat-tile-value">{{ move_counts.ours }}</span><span class="status-chip status-chip--ours">on us</span></div>
+      <div class="stat-tile flex-row items-center gap-2" data-testid="standing-their-moves"><span class="stat-tile-value">{{ move_counts.theirs }}</span><span class="status-chip status-chip--theirs">waiting on suppliers</span></div>
       {% endif %}
     </div>
   </div>
@@ -58,7 +58,7 @@ tenders and orders sit folded below.
               <div class="flex flex-col gap-1.5">
                 <div class="stage-minibar" aria-hidden="true">{% for b in row.bars %}<div class="stage-seg stage-seg--{{ b }}"></div>{% endfor %}</div>
                 <span class="flex flex-col text-xs" data-testid="row-stage"><span class="font-semibold text-gray-900" data-testid="row-stage-name">{{ row.stage_name }}</span>{% if row.stage_detail %}<span class="text-gray-600">{{ row.stage_detail }}</span>{% endif %}</span>
-                {% if row.missing %}<span class="flex flex-wrap gap-1" data-testid="row-missing">{% for fact, n in row.missing %}<span class="status-chip status-chip--neutral" data-fact="{{ fact }}">{{ fact }}: {{ n }} quote{{ n|pluralize }}</span>{% endfor %}</span>{% endif %}
+                {% if row.missing %}<span class="flex flex-wrap gap-1" data-testid="row-missing">{% for fact, n, owner in row.missing %}<span class="status-chip status-chip--{% if owner == 'us' %}ours{% else %}theirs{% endif %}" data-fact="{{ fact }}" data-owner="{{ owner }}">{{ fact }} · {% if owner == 'us' %}us{% else %}supplier{% endif %}{% if n > 1 %} · {{ n }} quotes{% endif %}</span>{% endfor %}</span>{% endif %}
               </div>
             </td>
             <td class="px-3 py-4" data-testid="next-move">

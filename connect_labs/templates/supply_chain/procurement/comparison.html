@@ -1,7 +1,7 @@
 {% extends "supply_chain/base.html" %}
 {% load supply_chain_extras %}
 {% block supply_content %}
-<div class="flex flex-col gap-5" data-testid="comparison-page">
+<div class="flex flex-col gap-4" data-testid="comparison-page">
   <div class="flex flex-wrap items-center justify-between gap-3">
     <nav class="flex flex-wrap items-center gap-2 text-sm text-gray-600" aria-label="Breadcrumb"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:home' %}">Procurements</a><span aria-hidden="true">›</span><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}">{{ tender.label|default:"Tender" }}</a><span aria-hidden="true">›</span><span>Comparison</span></nav>
     {% if not grid or not grid.quotes %}{% include "supply_chain/_src_legend.html" %}{% endif %}
@@ -19,13 +19,17 @@
     </ul>
   </div>
 {% else %}
-  <div class="flex flex-wrap items-end justify-between gap-4">
-    <div class="flex flex-col gap-1">
-      <h1 class="text-brand-deep-purple text-2xl font-semibold">Compare quotes</h1>
-      <div class="text-gray-600">{{ commodity_name }}{% if tender.label %} · {{ tender.label }}{% endif %}{% if comparison %} <span data-testid="comparable-count" class="status-chip {% if comparison.comparable_count %}status-chip--primary{% else %}status-chip--neutral{% endif %} ml-1">{{ comparison.comparable_count }} of {{ comparison.total_count }} comparable</span>{% endif %}</div>
-    </div>
-    {% comment %}The tender's import duty terms, one line, with the control that settles them.{% endcomment %}
-    <div id="duty-terms" data-testid="comparison-duty-terms" class="flex flex-wrap items-center gap-2.5 rounded-lg border px-3.5 py-2.5 text-sm {% if tender.duty_terms %}border-brand-border-light bg-white{% else %}border-message-warning-border/50 bg-message-warning{% endif %}">
+  {% comment %}A compact head, so the count, the duty terms and the grid down to Import duty share one screen:
+  the title line, then the page's status (the comparable count) on the same row as the tender's
+  duty terms -- they apply to every quote below -- with the source legend at that row's end.{% endcomment %}
+  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+    <h1 class="text-brand-deep-purple text-xl font-semibold">Compare quotes</h1>
+    <span class="text-sm text-gray-600">{{ commodity_name }}{% if tender.label %} · {{ tender.label }}{% endif %}</span>
+  </div>
+  <div class="-mt-2 flex flex-wrap items-center justify-between gap-3" data-testid="comparison-status-row">
+    <div class="flex flex-wrap items-center gap-3">
+    {% if comparison %}<span data-testid="comparable-count" class="status-chip {% if comparison.comparable_count %}status-chip--primary{% else %}status-chip--ours{% endif %} px-3 py-1 text-sm font-semibold">{{ comparison.comparable_count }} of {{ comparison.total_count }} comparable</span>{% endif %}
+    <div id="duty-terms" data-testid="comparison-duty-terms" class="flex flex-wrap items-center gap-2.5 rounded-lg border px-3 py-1.5 text-sm {% if tender.duty_terms %}border-brand-border-light bg-white{% else %}border-message-warning-border/50 bg-message-warning{% endif %}">
       <span data-testid="duty-terms-chip"><span class="text-gray-600">Import duty:</span> <strong data-testid="duty-terms-value" class="{% if tender.duty_terms %}text-gray-900{% else %}text-message-warning-text{% endif %}">{% if tender.duty_terms %}{{ tender.duty_terms|duty_terms_words }}{% else %}not settled{% endif %}</strong></span>
       {% if grid_blocked_by_terms %}<span class="text-gray-700" data-testid="duty-terms-blocks">· blocks {{ grid_blocked_by_terms|join:", " }}</span>{% endif %}
       {% if tender.duty_terms == "buyer_waiver" %}<span class="text-xs text-gray-600" data-testid="waiver-evidence">· waiver document {% if waiver_on_file %}on file{% else %}not on file{% endif %}</span>{% endif %}
@@ -40,6 +44,8 @@
       </details>
       {% endif %}
     </div>
+    </div>
+    {% if grid and grid.quotes %}{% include "supply_chain/_src_legend.html" %}{% endif %}
   </div>
 
   {% if award_error %}
@@ -56,15 +62,14 @@
   {% endif %}
 
   {% if grid and grid.quotes %}
-  <div class="flex justify-end">{% include "supply_chain/_src_legend.html" %}</div>
   <section class="border-brand-border-light overflow-hidden rounded-lg border bg-white" aria-label="Quotes side by side">
     <div class="max-w-full overflow-x-auto" tabindex="0" role="region" aria-label="Comparison, scrolls sideways">
       <table class="w-full table-fixed text-sm {% if grid.quotes|length > 3 %}min-w-[1080px]{% elif grid.quotes|length == 3 %}min-w-[860px]{% else %}min-w-[640px]{% endif %}" data-testid="comparison-grid">
         <thead class="border-b border-gray-200">
           <tr>
-            <th scope="col" class="w-52 px-5 py-4 text-left align-top text-xs font-normal text-gray-600">Fact</th>
+            <th scope="col" class="w-52 px-5 py-2.5 text-left align-top text-xs font-normal text-gray-600">Fact<span class="mt-1.5 flex flex-col items-start gap-1" data-testid="owner-legend"><span><span class="status-chip status-chip--ours">us</span> a fact on us</span><span><span class="status-chip status-chip--theirs">supplier</span> on the supplier</span></span></th>
             {% for q in grid.quotes %}
-            <th scope="col" data-quote-id="{{ q.quote_id }}" data-testid="grid-quote" class="border-l border-gray-100 px-4 py-4 text-left align-top font-normal">
+            <th scope="col" data-quote-id="{{ q.quote_id }}" data-testid="grid-quote" class="border-l border-gray-100 px-4 py-2.5 text-left align-top font-normal">
               <div class="flex flex-col gap-1">
                 <a href="{{ q.href }}" class="text-brand-deep-purple text-base font-semibold hover:underline">{{ q.name }}</a>
                 {% if q.item %}<span class="text-xs text-gray-600">{{ q.item }}</span>{% endif %}
@@ -77,16 +82,24 @@
         <tbody class="divide-y divide-gray-100">
           {% for r in grid.rows %}
           <tr data-fact="{{ r.key }}"{% if r.total %} class="bg-stone-50 text-base"{% endif %}>
-            <th scope="row" class="px-5 py-3 text-left align-top text-sm {% if r.total %}font-semibold text-gray-900{% else %}font-normal text-gray-600{% endif %}">{{ r.label }}<div class="text-xs font-normal text-gray-600">{{ r.src_label }}</div></th>
+            <th scope="row" class="px-5 py-2 text-left align-top text-sm {% if r.total %}font-semibold text-gray-900{% else %}font-normal text-gray-600{% endif %}">{{ r.label }}<div class="text-xs font-normal text-gray-600">{{ r.src_label }}</div></th>
             {% for c in r.cells %}
-            <td class="border-l border-gray-100 px-4 py-3 align-top{% if r.key == "price" or r.key == "landed" or r.key == "fx" %} tabular-nums{% endif %}{% if r.total %} font-semibold text-gray-900{% endif %}" data-testid="grid-cell" data-quote-id="{{ c.quote_id }}"{% if c.gap %} data-gap{% endif %}>{% if c.gap %}<span class="{% if c.owner == 'us' %}text-message-warning-text{% else %}text-gray-900{% endif %} font-medium"{% if c.why %} title="{{ c.why }}"{% endif %}>{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}</span>{% if c.owner %} <span class="status-chip status-chip--{% if c.owner == 'us' %}ours{% else %}theirs{% endif %}" data-testid="gap-owner">{% if c.owner == 'us' %}us{% else %}supplier{% endif %}</span>{% endif %}{% elif c.blocked %}<span class="text-sm font-normal text-gray-600" data-testid="landed-blocked">{{ c.v }}</span><span class="mt-1 flex flex-wrap gap-1">{% for b in c.blocked %}<span class="status-chip status-chip--{% if b.owner == 'us' %}ours{% else %}theirs{% endif %}">{{ b.label }} · {% if b.owner == 'us' %}us{% else %}supplier{% endif %}</span>{% endfor %}</span>{% elif c.mute %}<span class="text-gray-600">{{ c.v }}</span>{% else %}{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}{% if c.pending %} <span class="status-chip status-chip--ours" data-testid="waiver-pending">{{ c.pending }} · us</span>{% endif %}{% if c.open %}<span class="mt-1 flex flex-wrap gap-1 text-sm font-normal" data-testid="landed-open">{% for b in c.open %}<span class="status-chip status-chip--{% if b.owner == 'us' %}ours{% else %}theirs{% endif %}">{{ b.label }} · {% if b.owner == 'us' %}us{% else %}supplier{% endif %}</span>{% endfor %}</span>{% endif %}{% endif %}</td>
+            <td class="border-l border-gray-100 px-4 py-2 align-top{% if r.key == "price" or r.key == "landed" or r.key == "fx" %} tabular-nums{% endif %}{% if r.total %} font-semibold text-gray-900{% endif %}" data-testid="grid-cell" data-quote-id="{{ c.quote_id }}"{% if c.gap %} data-gap{% endif %}>{% if c.gap %}<span class="{% if c.owner == 'us' %}text-message-warning-text{% else %}text-gray-900{% endif %} font-medium"{% if c.why %} title="{{ c.why }}"{% endif %}>{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}</span>{% if c.owner %} <span class="status-chip status-chip--{% if c.owner == 'us' %}ours{% else %}theirs{% endif %}" data-testid="gap-owner">{% if c.owner == 'us' %}us{% else %}supplier{% endif %}</span>{% endif %}{% elif c.blocked %}<span class="text-sm font-normal text-gray-600" data-testid="landed-blocked">{{ c.v }}</span>{% elif c.mute %}<span class="text-gray-600">{{ c.v }}</span>{% else %}{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}{% if c.pending %} <span class="status-chip status-chip--ours" data-testid="waiver-pending">{{ c.pending }} · us</span>{% endif %}{% endif %}</td>
             {% endfor %}
           </tr>
           {% if r.total and not supply_as_of %}
-          <tr data-testid="grid-actions">
-            <th scope="row" class="px-5 py-3 text-left align-top text-sm font-normal text-gray-600">Next step<div class="text-xs font-normal text-gray-600">per quote</div></th>
+          {% comment %}The next steps, split by whose they are: ours (and the award), then the supplier's.
+          The tender-wide duty terms are settled in the line above the grid; a column points there.{% endcomment %}
+          <tr data-testid="grid-actions" data-whose="us">
+            <th scope="row" class="px-5 py-2 text-left align-top text-sm font-normal text-gray-600">Our move</th>
             {% for q in grid.quotes %}
-            <td class="border-l border-gray-100 px-4 py-3 align-top"><div class="flex flex-col items-start gap-1.5">{% for a in q.actions %}<a class="button button-sm {% if a.award and a.filled %}primary-dark{% else %}outline-style{% endif %}" data-testid="grid-action" data-owner="{{ a.owner }}" href="{{ a.href }}"{% if a.award %} onclick="var d=document.getElementById('award-{{ q.quote_id }}'); if (d) { d.open = true; d.scrollIntoView({block: 'center'}); return false; }"{% endif %}>{{ a.label }}</a>{% endfor %}</div></td>
+            <td class="border-l border-gray-100 px-4 py-2 align-top"><div class="flex flex-wrap items-start gap-1.5">{% for a in q.actions %}{% if a.owner != "suppliers" %}{% if a.terms %}<a class="text-message-warning-text py-1 text-sm font-medium hover:underline" data-testid="grid-action" data-owner="{{ a.owner }}" href="{{ a.href }}">↑ {{ a.label }}, above</a>{% else %}<a class="button button-sm {% if a.award and a.filled %}primary-dark{% else %}outline-style{% endif %}" data-testid="grid-action" data-owner="{{ a.owner }}" href="{{ a.href }}"{% if a.award %} onclick="var d=document.getElementById('award-{{ q.quote_id }}'); if (d) { d.open = true; d.scrollIntoView({block: 'center'}); return false; }"{% endif %}>{{ a.label }}</a>{% endif %}{% endif %}{% empty %}<span class="text-gray-600">—</span>{% endfor %}</div></td>
+            {% endfor %}
+          </tr>
+          <tr data-testid="grid-actions-theirs" data-whose="suppliers">
+            <th scope="row" class="px-5 py-2 text-left align-top text-sm font-normal text-gray-600">Supplier's move</th>
+            {% for q in grid.quotes %}
+            <td class="border-l border-gray-100 px-4 py-2 align-top"><div class="flex flex-wrap items-start gap-1.5">{% for a in q.actions %}{% if a.owner == "suppliers" %}<a class="button button-sm outline-style" data-testid="grid-action" data-owner="{{ a.owner }}" href="{{ a.href }}">{{ a.label }}</a>{% endif %}{% endfor %}</div></td>
             {% endfor %}
           </tr>
           {% endif %}

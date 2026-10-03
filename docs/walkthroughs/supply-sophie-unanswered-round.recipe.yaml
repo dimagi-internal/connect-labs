@@ -28,7 +28,7 @@ scenes:
   - kind: hold
     seconds: 1.5
   - kind: hover
-    note: the stage bar's current step, Collecting quotes, its note saying the deadline has passed
+    note: the stage bar's current step, Collecting quotes, its note saying the deadline is 4 days off
     say: deadline
     seconds: 2.0
     target: css:[data-testid=stage-bar] li[aria-current=step]
@@ -41,10 +41,10 @@ scenes:
     seconds: 1.8
     target: css:[data-testid=tile]:has-text('Silent')
   - kind: scroll
-    note: frame from the tender's header card -- its title, the stage bar and tiles, then the whole Suppliers table, On us and On suppliers beside
-    value: '230'
+    note: frame from the tender's header card -- its title, terms line, the stage bar and tiles, then the whole Suppliers table, On us and On suppliers beside
+    value: '280'
   - kind: hover
-    note: the tender's Terms box, under the Suppliers table, its import duty not settled -- the line scene 5 changes
+    note: the tender's terms line in its header, import duty not settled -- the line scene 5 changes
     say: duty
     seconds: 1.8
     target: testid:tender-duty-terms
@@ -59,8 +59,8 @@ scenes:
     seconds: 1.8
     target: testid:on-suppliers
   - kind: scroll
-    note: settle on the same frame -- the tender's title, stage bar, tiles and the whole Suppliers table, On us and On suppliers beside
-    value: '230'
+    note: settle on the same frame -- the tender's title, terms line, stage bar, tiles and the whole Suppliers table, On us and On suppliers beside
+    value: '280'
   - kind: hover
     note: park the cursor in the top bar's blank middle, off the page content; the bar is fixed, so hovering cannot scroll the page
     seconds: 0.6
@@ -68,7 +68,7 @@ scenes:
   - kind: hold
     seconds: 1.5
   - kind: snapshot
-    note: the canonical frame is the stage bar and the Answered / Silent tiles, the Suppliers table with each supplier's state and last chase, the Terms card with import duty not settled, and On us and On suppliers beside
+    note: the canonical frame is the header's terms line (import duty not settled, the deadline ahead), the stage bar and the Answered / Silent tiles, the Suppliers table with each supplier's state and last chase, and On us and On suppliers beside
   - kind: click
     note: Sahel's row's own Remind link opens the tender's draft emails at Sahel's drafted reminder, so scene 2 starts (and its before-frame is taken) on the open draft
     target: css:[data-testid=supplier-row][data-supplier-id='${sahel_supplier_id}'] [data-testid=supplier-action]
@@ -83,7 +83,7 @@ scenes:
     seconds: 0.8
   full_page: false
   concept_claim: The tender's status view shows the step it is on with its deadline
-    passed, how many of the suppliers asked have answered and how many are silent,
+    in days, how many of the suppliers asked have answered and how many are silent,
     each supplier's state, the suppliers it waits on with when each was last chased,
     and that its import duty terms are not settled.
   design_intent: 'Bet: framing the demo around silence, the normal case, makes every
@@ -91,9 +91,9 @@ scenes:
     stage, the counts, the supplier table and the unsettled duty terms that scene 5 settles.'
   pace: teach
   role: overview
-  show: 'Sophie opens tender 2 past its deadline and reads its stage bar, the Answered
+  show: 'Sophie opens tender 2, its deadline four days off, and reads its stage bar, the Answered
     and Silent tiles, the Suppliers table with Sahel silent, the suppliers listed On
-    suppliers with when each was chased, and the Terms box saying import duty is not settled.'
+    suppliers with when each was chased, and the terms line saying import duty is not settled.'
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
 - id: sophie-chases-sahel
   full_page: false
@@ -159,19 +159,6 @@ scenes:
 - id: sahel-finally-answers
   full_page: false
   actions:
-  - kind: goto
-    must_succeed: true
-    note: the tender again, after Sahel's email is recorded -- its Suppliers row no longer silent
-    target: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
-  - kind: wait_for
-    target: css:[data-testid=supplier-row][data-supplier-id='${sahel_supplier_id}'] [data-testid=supplier-state]
-  - kind: scroll_to
-    note: Sahel's Suppliers row, its state now its quote
-    target: css:[data-testid=supplier-row][data-supplier-id='${sahel_supplier_id}']
-  - kind: hover
-    note: Sahel's state chip, changed from silent to a quote
-    seconds: 1.8
-    target: css:[data-testid=supplier-row][data-supplier-id='${sahel_supplier_id}'] [data-testid=supplier-state]
   - kind: goto
     must_succeed: true
     note: 'land on the tender''s History, opened from its fold, its heading just under the top bar'
@@ -260,8 +247,8 @@ scenes:
     seconds: 2.0
     target: css:tr[data-fact=fx] th
   - kind: scroll
-    note: settle with the duty terms line just under the top bar -- each quote's landed cell (a dash and its gaps where not comparable), its next step, and the facts down to the Exchange rate row whole
-    value: '270'
+    note: back to the top -- the compact head (title, the 0 of 3 comparable chip, the duty terms line) and the grid down to the Exchange rate row whole, nothing under the fixed bar
+    value: '232'
   - kind: hover
     note: park the cursor in the top bar's blank middle, off the grid; the bar is fixed, so hovering cannot scroll the page
     seconds: 0.6
@@ -290,13 +277,13 @@ scenes:
   - kind: wait_for
     target: testid:tender-terms
   - kind: scroll_to
-    note: the Terms box beside the Suppliers table, On us above it
+    note: the tender's terms line, in its header
     target: testid:tender-terms
   - kind: hold
     seconds: 1.0
   - kind: click
     must_succeed: true
-    note: Settle import duty, in the tender's Terms box
+    note: Settle import duty, on the tender's terms line
     say: settle
     target: testid:duty-terms-open
   - kind: select
@@ -316,7 +303,7 @@ scenes:
   - kind: scroll_to
     target: testid:tender-terms
   - kind: hover
-    note: the Terms box now reads the waiver, marked just recorded
+    note: the terms line now reads the waiver, marked just recorded
     say: terms
     seconds: 2.0
     target: testid:tender-duty-terms
@@ -356,8 +343,8 @@ scenes:
     seconds: 2.0
     target: css:tr[data-fact=duty] th
   - kind: scroll
-    note: frame the change -- the count chip (1 of 3 comparable), the duty terms line with the waiver, each quote's header chips, Harmattan's landed figure with its open fact and its next steps, and the rows down to Import duty
-    value: '200'
+    note: back to the top -- the count chip (1 of 3 comparable) on the same row as the duty terms line with the waiver, each quote's header chips, Harmattan's landed figure, the moves split ours / the supplier's, and the rows down to Import duty
+    value: '215'
   - kind: hover
     note: park the cursor in the top bar's blank middle, off the grid
     seconds: 0.6
@@ -366,13 +353,13 @@ scenes:
     seconds: 2.0
   - kind: snapshot
     note: the canonical frame is the comparison under the waiver -- the duty terms line, one of three comparable (Harmattan), and the Import duty row settled for the quotes we import
-  concept_claim: Settling the tender's import duty terms from its Terms box is one choice;
+  concept_claim: Settling the tender's import duty terms from its terms line is one choice;
     the tender then lists the reply still owed to Northgate with a drafted email, and
     the comparison costs every quote that leaves the import to us under the terms set.
   design_intent: A question in an email stalls the tender with nobody on the hook;
     as a move on us it is Sophie's to-do with its email drafted, and one setting of
     the tender's terms settles how any quote that leaves the import to us is costed.
-  show: Sophie settles the tender's import duty in its Terms box as the program's duty
+  show: Sophie settles the tender's import duty on its terms line as the program's duty
     waiver, opens the reply to Northgate drafted from On us -- its three questions, an
     answer to write under each -- then opens the comparison, which now costs the quotes
     we import under the waiver; Harmattan's is comparable, Kanem's and Sahel's still
@@ -441,6 +428,9 @@ scenes:
   - kind: hold
     note: the forwarder's email, centred and read
     seconds: 2.0
+  - kind: scroll
+    note: back up to the order's status header -- held at customs waiting on us, billed against agreed, the days late, and On us
+    value: '310'
   - kind: hover
     note: park the cursor in the top bar's blank middle, off every heading, figure and action
     seconds: 0.6
@@ -448,7 +438,7 @@ scenes:
   - kind: hold
     seconds: 1.5
   - kind: snapshot
-    note: the canonical frame is the forwarder's email opened in the order's history -- the shipment held at the border on our import documents
+    note: the canonical frame is the order's status header -- at customs, held, waiting on us; nothing received, billed above agreed, days late; On us with the documents owed and the invoice to review
   concept_claim: The order's status view says it is held at customs waiting on us,
     lists under On us the documents we owe the forwarder and the invoice billed above
     the agreed price, and keeps the forwarder's email in the order's history.
@@ -479,11 +469,6 @@ scenes:
     seconds: 1.8
     target: testid:standing-their-moves
   - kind: hover
-    note: the order's row -- its stage, its next move and whose it is
-    say: order
-    seconds: 2.0
-    target: "css:[data-testid=overview-row][data-kind=order] [data-testid=next-move]"
-  - kind: hover
     note: the tender's row -- its stage, its next move and whose it is
     say: tender
     seconds: 2.0
@@ -493,6 +478,11 @@ scenes:
     say: Maiduguri
     seconds: 2.0
     target: "css:[data-testid=overview-row][data-kind=tender][data-tender-id='${rusf_tender_id}'] [data-testid=whose]"
+  - kind: hover
+    note: the order's row -- its stage, its next move and whose it is
+    say: order
+    seconds: 2.0
+    target: "css:[data-testid=overview-row][data-kind=order] [data-testid=next-move]"
   - kind: hover
     note: park the cursor in the top bar's blank middle, off the table
     seconds: 0.6

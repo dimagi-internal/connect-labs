@@ -520,19 +520,21 @@
 
   /* Where a fact came from: recorded by a person, from an email by AI, or worked out here. */
   .src-mark {
-    @apply mr-1.5 inline-block size-2 shrink-0 rounded-xs align-[1px];
+    @apply mr-1.5 inline-block size-2.5 shrink-0 rounded-xs align-[0px];
   }
 
+  /* Three marks told apart by shape and fill, not by two near shades of blue:
+     a filled square (recorded), a ring (from an email, recorded by AI), a dashed ring (calculated). */
   .src-mark--person {
     @apply bg-brand-deep-purple;
   }
 
   .src-mark--ai {
-    @apply bg-brand-cornflower-blue rounded-full;
+    @apply border-brand-cornflower-blue rounded-full border-[2.5px] bg-white;
   }
 
   .src-mark--calc {
-    @apply border-brand-blue-light rounded-full border-[1.5px];
+    @apply rounded-full border-[1.5px] border-dashed border-gray-500;
   }
 
   .src-ai-tag {
