@@ -109,8 +109,8 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
                   chosen day read as counted from today.{% endcomment %}
                   <span data-testid="last-change" class="block whitespace-nowrap text-gray-700" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|date:'j M Y' }}</span>
                 {% else %}
-                <span data-testid="last-change" class="block whitespace-nowrap text-gray-700" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|days_ago:standing_now }}</span>
-                {% with day=row.last_change_at|day_beside_count:standing_now %}{% if day %}<span data-testid="last-change-day" class="block whitespace-nowrap text-xs text-gray-600">{{ day }}</span>{% endif %}{% endwith %}
+                <span data-testid="last-change" class="block whitespace-nowrap text-gray-700" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|count_back:standing_now }}</span>
+                {% with day=row.last_change_at|short_day:standing_now %}{% if day %}<span data-testid="last-change-day" class="block whitespace-nowrap text-xs text-gray-600">{{ day }}</span>{% endif %}{% endwith %}
                 {% endif %}
                 {% if row.last_change_is_ai %}
                   {% comment %}Who told us, beside the AI glyph; on hover, what was recorded and from what.{% endcomment %}
@@ -138,8 +138,10 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
                   <span class="block pl-5 pt-0.5">{% for line in flag.folded|default:flag.lines %}<span data-testid="flag-line" class="block">{{ line }}</span>{% endfor %}</span>
                 </details>
                 {% else %}
-                <span data-testid="stale-flag" title="{{ flag.rule }}"
-                      class="mb-1 flex w-fit items-start gap-1.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs text-amber-900"><i class="fa-solid fa-flag mt-0.5 text-[10px] text-amber-600" aria-hidden="true"></i><span>{{ flag }}</span></span>
+                {% comment %}A flag with nothing folded under it opens the record itself: the same chip and
+                chevron as a folding flag, so every flag reads as one you can open.{% endcomment %}
+                <a data-testid="stale-flag" title="{{ flag.rule }}" href="{{ row.url }}"
+                      class="mb-1 flex w-fit items-start gap-1.5 whitespace-nowrap rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs text-amber-900 hover:bg-amber-100"><i class="fa-solid fa-flag mt-0.5 text-[10px] text-amber-600" aria-hidden="true"></i><span>{{ flag }}</span><i class="fa-solid fa-chevron-right mt-0.5 text-[9px] text-amber-700" aria-hidden="true"></i></a>
                 {% endif %}
               {% endfor %}
             </td>

@@ -21,7 +21,8 @@
         {% comment %}Where the round's terms came from is said once per card, on its duty line, in
         one link style; the Round terms line above the cards says only what the terms are. A
         waiver not yet on file is a muted chip, not a second link style.{% endcomment %}
-        {% if row.duty_line %}<p data-testid="card-duty" class="flex flex-wrap items-center gap-x-2 text-sm text-gray-900"><span><span class="text-gray-600">Duty:</span> <span class="font-medium">{{ row.duty_line }}</span></span>{% if tender.duty_terms == "buyer_waiver" and not waiver_on_file %}<a data-testid="card-waiver-missing" class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-normal text-gray-700 ring-1 ring-inset ring-gray-300 hover:text-brand-indigo" href="{% url 'supply_chain:tender_document_attach' tender_id %}?kind=duty_exemption">waiver document not on file</a>{% endif %}</p>
+        {% comment %}Unsettled round terms are the card's Blocking row already: no Duty line saying it again.{% endcomment %}
+        {% if row.duty_line and tender.duty_terms %}<p data-testid="card-duty" class="flex flex-wrap items-center gap-x-2 text-sm text-gray-900"><span><span class="text-gray-600">Duty:</span> <span class="font-medium">{{ row.duty_line }}</span></span></p>
         {% if duty_terms_answer %}<p data-testid="card-duty-provenance" class="text-sm text-gray-700"><a data-testid="card-duty-source" class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}?changed=commitment-{{ duty_terms_answer.commitment_id }}#owed">Round terms, from your answer to {{ duty_terms_answer.owed_to }}</a> · {{ duty_terms_answer.on|date:"j M" }}</p>{% endif %}{% endif %}
         {% comment %}No sentence repeating the duty blocker: the Blocking row below says it, with its question.{% endcomment %}
       </div>{% endif %}

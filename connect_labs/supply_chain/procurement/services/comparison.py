@@ -930,6 +930,19 @@ def landed_basis_words(quote, tender, *, round_duty: bool = True) -> str:
     return f"{text}, per {' and '.join(sources)}" if text and sources else text
 
 
+def _with_incoterm(text: str, quote) -> str:
+    """ "CPT Kano · delivered to ...": the term the supplier quoted, ahead of a delivered line.
+
+    A delivered line alone hid the Incoterm that decides who imports, so a card held
+    on the round's duty terms did not say why; an origin handover ("Ex works
+    Niamey") already names its term.
+    """
+    incoterm = str(getattr(quote, "incoterm", "") or "").strip()
+    if not incoterm or not text.startswith("Delivered "):
+        return text
+    return f"{incoterm} · d{text[1:]}"
+
+
 def _short_destination(text: str, tender) -> str:
     """The card's delivery line without the round's own address repeated on every card.
 
@@ -1010,8 +1023,10 @@ def compare_tender(
             row.as_quoted_note = per_pack_note(
                 figures, row.base_unit, row.pack_unit, quoted_per_pack=quoted_per_pack_words(quote, item, row)
             )
-        row.landed_basis = landed_basis_words(quote, tender)
-        row.delivery_basis = _short_destination(landed_basis_words(quote, tender, round_duty=False), tender)
+        row.landed_basis = _with_incoterm(landed_basis_words(quote, tender), quote)
+        row.delivery_basis = _with_incoterm(
+            _short_destination(landed_basis_words(quote, tender, round_duty=False), tender), quote
+        )
         row.duty_line = round_duty_words(quote, tender)
         row.duty_consequence = round_duty_consequence(quote, tender)
         if needs_duty_restated(quote, tender):

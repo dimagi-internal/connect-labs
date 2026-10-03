@@ -54,6 +54,21 @@ scenes:
     target: css:div:has(> h2#outreach)
   - kind: hold
     seconds: 1.5
+  - kind: snapshot
+    note: the canonical frame is the round's title, status and duty-terms lines and the whole Outreach table, taken before the drafts open
+  - kind: click
+    note: Sahel's row's own "Draft reminder" link opens the round's draft emails at Sahel's drafted reminder, so scene 2 starts (and its before-frame is taken) on the open draft
+    target: css:a[href*="#draft-supplier-${sahel_supplier_id}"]
+  - kind: wait_for
+    target: css:#drafts[open]
+  - kind: wait_for
+    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=record-chase]
+  - kind: scroll_to
+    note: centre Sahel's drafted reminder, its asked/last-reminded line and its Chased on field with Record chase all in view
+    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}']
+  - kind: hold
+    seconds: 0.8
+  full_page: false
   concept_claim: The round's page says it is past its deadline and that its import
     duty terms are not settled, and shows, for every supplier asked, whether they
     replied or how long they have been silent and when they were last chased.
@@ -67,14 +82,10 @@ scenes:
     last chased each, and the header line saying import duties are not settled.'
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
 - id: sophie-chases-sahel
+  full_page: false
   actions:
-  - kind: click
-    note: Sahel's row's own "Draft reminder" link opens the round's draft emails at Sahel's drafted reminder (a same-url goto is skipped by the recorder, so the panel never opened)
-    target: css:a[href*="#draft-supplier-${sahel_supplier_id}"]
-  - kind: hold
-    note: a settle before the first wait_for, so the scene's before-frame is the round's draft emails, already open at Sahel's drafted reminder, ahead of the chase it records
-    seconds: 0.8
   - kind: wait_for
+    note: scene 1 ended by opening Sahel's drafted reminder, and this scene's url differs only by its hash, so the recorder stays put and the before-frame is the open draft
     target: css:#drafts[open]
   - kind: wait_for
     target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=record-chase]
@@ -133,6 +144,7 @@ scenes:
     row highlighted with its 3rd reminder.
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#draft-supplier-${sahel_supplier_id}
 - id: sahel-finally-answers
+  full_page: false
   actions:
   - kind: wait_for
     target: css:#history
@@ -187,6 +199,7 @@ scenes:
     and sender beside what the AI recorded from it, the reply dated the day it came in.
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#history
 - id: whats-still-missing
+  full_page: false
   actions:
   - kind: wait_for
     target: text:Kanem Foods
@@ -202,9 +215,16 @@ scenes:
     note: Sahel's round-owned duty blocker -- the import is ours under ex works, so it waits on the round's terms, not on Sahel; the row scene 5's answer removes
     say: Sahel
     seconds: 2.5
-    target: "css:[data-testid=needs-info] [data-quote-id]:has-text('Sahel Nutrition Industries') [data-testid=blocking]:has-text('Import duty')"
+    target: "css:[data-testid=round-decision] [data-quote-id]:has-text('Sahel Nutrition Industries') [data-testid=blocking]:has-text('Import duty'), [data-testid=needs-info] [data-quote-id]:has-text('Sahel Nutrition Industries') [data-testid=blocking]:has-text('Import duty')"
+  - kind: scroll_to
+    note: Kanem's whole card in view while the narration says what Kanem has not stated
+    target: "css:[data-testid=needs-info] [data-quote-id]:has-text('Kanem Foods Ltd')"
+  - kind: hover
+    say: Kanem
+    seconds: 2.0
+    target: "css:[data-testid=needs-info] [data-quote-id]:has-text('Kanem Foods Ltd') [data-testid=blockers]"
   - kind: scroll
-    note: settle the page with the round's duty-terms line just under the top bar, so the duty terms, the banner with its missing-facts summary and the Needs info cards share one frame -- the frame scene 5 returns to
+    note: settle the page with the round's duty-terms line just under the top bar, so the duty terms, the banner with its missing-facts summary and the cards share one frame -- the frame scene 5 returns to
     value: '302'
   - kind: hover
     note: park the cursor on the Needs info heading's blank right, off the table and the cards; it is in view, so hovering cannot scroll the page
@@ -228,6 +248,7 @@ scenes:
     price is in euros, with no exchange rate recorded yet.
   url: /supply/procurement/tenders/${round2_tender_id}/compare/?program_id=${program_id}
 - id: what-we-owe-northgate
+  full_page: false
   actions:
   - kind: hold
     note: a settle before the first wait_for, so the scene's before-frame is the tender page itself, not the comparison left from scene 4
@@ -283,6 +304,13 @@ scenes:
     say: waived
     seconds: 2.0
     target: css:[data-testid=needs-info] [data-quote-id]:has-text('Sahel Nutrition Industries') [data-testid=card-duty]
+  - kind: scroll_to
+    note: Kanem's whole card, its delivered-duty-paid line keeping its own duty, while the narration says so
+    target: "css:[data-testid=needs-info] [data-quote-id]:has-text('Kanem Foods Ltd')"
+  - kind: hover
+    say: keeps its own duty
+    seconds: 2.0
+    target: "css:[data-testid=needs-info] [data-quote-id]:has-text('Kanem Foods Ltd') [data-testid=card-delivery-basis]"
   - kind: scroll
     note: the same frame as scene 4 -- the round's duty terms (now the waiver) just under the top bar, Harmattan's quote, the Needs info heading and Sahel's whole card, its round-terms blocker gone and its Duty line citing her answer to Northgate
     value: '302'
@@ -306,6 +334,7 @@ scenes:
     comparison, which now costs a quote that leaves duty out under the waiver.
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#owed
 - id: held-on-us
+  full_page: false
   actions:
   - kind: wait_for
     target: testid:waiting-on-us
@@ -321,20 +350,15 @@ scenes:
     say: permit
     seconds: 2.0
     target: testid:waiting-on-us
-  - kind: click
-    must_succeed: true
-    note: 'the forwarder''s message: held at the border on our import permit'
-    say: forwarder
-    target: css:[data-testid=revision-line]:has-text('Shipment · DMG-PO-2026-031 ·
-      Status dispatched') [data-testid=source-toggle]
   - kind: scroll_to
-    target: css:[data-testid=revision-line]:has-text('Shipment · DMG-PO-2026-031 ·
-      Status dispatched') [data-testid=source-excerpt]
-  - kind: hold
-    note: the forwarder's email, centred and read
+    note: down the page in the narration's order -- first what we owe the forwarder, the import permit and the customs declaration, each with Mark provided
+    target: text:What we owe them
+  - kind: hover
+    say: owe
     seconds: 2.0
+    target: text:What we owe them
   - kind: scroll_to
-    note: centre the invoice's Freight line, so the Invoices heading and its column headers sit whole under the top bar, with the history's Waiting on us line and why it is ours (we are the consignee) below
+    note: then the invoice's Freight line, the Invoices heading and its column headers whole above it
     target: "css:[data-testid=invoice-variance-table] tr:has([data-testid=above-agreed-tag]):has-text('Freight')"
   - kind: hover
     say: invoice
@@ -344,6 +368,18 @@ scenes:
     note: the Dispute action beside Pay on the invoice billed above agreed
     seconds: 1.2
     target: testid:invoice-dispute
+  - kind: click
+    must_succeed: true
+    note: 'last, further down in the history, the forwarder''s message: held at the border on our import permit'
+    say: forwarder
+    target: css:[data-testid=revision-line]:has-text('Shipment · DMG-PO-2026-031 ·
+      Status dispatched') [data-testid=source-toggle]
+  - kind: scroll_to
+    target: css:[data-testid=revision-line]:has-text('Shipment · DMG-PO-2026-031 ·
+      Status dispatched') [data-testid=source-excerpt]
+  - kind: hold
+    note: the forwarder's email, centred and read
+    seconds: 2.0
   - kind: scroll
     note: settle the page with What we owe them just under the top bar -- the Form M and PAAR the forwarder asked for, each with Mark provided, the invoice billed against agreed, and the forwarder's email below
     value: '1330'
@@ -364,6 +400,7 @@ scenes:
     the agreed price.
   url: /supply/orders/${contract_id}/?program_id=${program_id}
 - id: whose-move
+  full_page: false
   actions:
   - kind: wait_for
     target: testid:standing-table
