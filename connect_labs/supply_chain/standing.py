@@ -75,6 +75,11 @@ class Row:
         return [m.text.split(": reply")[0] for m in self.theirs if m.rule == rules.RULE_NO_REPLY]
 
     @property
+    def move_lines(self) -> list:
+        """One line per counted move, ours first: every move but the no-reply ones, which share one line."""
+        return list(self.ours) + [m for m in self.theirs if m.rule != rules.RULE_NO_REPLY]
+
+    @property
     def other_count(self) -> int:
         """The moves on the party whose move is NOT the row's next one."""
         whose = self.whose

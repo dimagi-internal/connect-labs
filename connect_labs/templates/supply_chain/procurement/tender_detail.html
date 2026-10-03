@@ -27,11 +27,11 @@ is folded away, each fold with its count.
       </div>
       <div class="flex flex-wrap items-center gap-2.5">
         {% for line in tender.lines %}
-        <a data-testid="compare-quotes" class="button button-md primary-dark" href="{% url 'supply_chain:procurement_comparison' tender.id %}?commodity={{ line.commodity_slug }}">Compare quotes{% if tender.lines|length > 1 %}: {{ commodity_names|dictkey:line.commodity_slug|default:line.commodity_slug }}{% endif %}</a>
+        <a data-testid="compare-quotes" class="button button-md {% if status.primary == 'compare' %}primary-dark{% else %}outline-style{% endif %}" href="{% url 'supply_chain:procurement_comparison' tender.id %}?commodity={{ line.commodity_slug }}">Compare quotes{% if tender.lines|length > 1 %}: {{ commodity_names|dictkey:line.commodity_slug|default:line.commodity_slug }}{% endif %}</a>
         {% endfor %}
         {% if not supply_as_of %}
-        <details class="relative" id="decide" data-testid="decide-menu">
-          <summary class="button button-md outline-style list-none [&::-webkit-details-marker]:hidden" role="button">{% if tender.status == "draft" %}Open or edit{% else %}Extend or close{% endif %}</summary>
+        <details class="relative{% if status.primary != 'compare' %} order-first{% endif %}" id="decide" data-testid="decide-menu">
+          <summary class="button button-md {% if status.primary == 'compare' %}outline-style{% else %}primary-dark{% endif %} list-none [&::-webkit-details-marker]:hidden" role="button" data-testid="decide-open">{% if tender.status == "draft" %}Open or edit{% elif status.primary == "decide" %}Decide: extend, close or award{% else %}Extend or close{% endif %}</summary>
           <div class="border-brand-border-light absolute right-0 z-20 mt-1.5 flex w-72 flex-col gap-2.5 rounded-lg border bg-white p-3.5 text-sm shadow-sm">
             {% if tender.status == "draft" %}
               <form method="post" action="{% url 'supply_chain:procurement_tender_open' tender.id %}">{% csrf_token %}<button type="submit" class="button button-sm primary-dark">Open for quotes</button></form>

@@ -63,9 +63,15 @@ tenders and orders sit folded below.
             </td>
             <td class="px-3 py-4" data-testid="next-move">
               {% with m=row.next_move %}{% if m %}
-                <a href="{{ m.href }}" class="font-medium text-gray-900 hover:underline">{{ m.text }}</a>
-                <div class="text-xs text-gray-600"><span class="move-rule{% if m.is_ours %} text-message-warning-text{% endif %}" title="{{ m.rule_title }}">{{ m.rule }}</span>{{ m.detail }}</div>
-                {% if row.silent_names %}<div class="mt-1 flex flex-wrap items-center gap-1 text-xs" data-testid="silent-names"><span class="move-rule">no reply · {{ row.silent_names|length }}</span>{% for name in row.silent_names %}<span class="status-chip status-chip--theirs">{{ name }}</span>{% endfor %}</div>{% endif %}
+                <div class="flex flex-col gap-2">
+                {% for mv in row.move_lines %}
+                <div data-testid="move-line" data-whose="{% if mv.is_ours %}us{% else %}suppliers{% endif %}">
+                  <a href="{{ mv.href }}" class="font-medium text-gray-900 hover:underline">{{ mv.text }}</a>
+                  <div class="text-xs text-gray-600"><span class="move-rule{% if mv.is_ours %} text-message-warning-text{% endif %}" title="{{ mv.rule_title }}">{{ mv.rule }}</span>{{ mv.detail }}</div>
+                </div>
+                {% endfor %}
+                {% if row.silent_names %}<div class="text-xs" data-testid="silent-names"><span class="move-rule">no reply · {{ row.silent_names|length }}</span><span class="text-gray-900">{{ row.silent_names|join:", " }}</span></div>{% endif %}
+                </div>
               {% else %}<span class="text-gray-600">—</span>{% endif %}{% endwith %}
             </td>
             <td class="px-3 py-4">{% if row.whose %}<span class="flex flex-col items-start gap-1" data-testid="whose" data-whose="{{ row.whose }}">{% if row.ours %}<span class="status-chip status-chip--ours" data-testid="whose-us" data-count="{{ row.ours|length }}">Us {{ row.ours|length }}</span>{% endif %}{% if row.theirs %}<span class="status-chip status-chip--theirs" data-testid="whose-suppliers" data-count="{{ row.theirs|length }}">Suppliers {{ row.theirs|length }}</span>{% endif %}</span>{% else %}<span class="text-gray-600">—</span>{% endif %}</td>

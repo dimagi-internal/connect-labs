@@ -499,7 +499,7 @@
 
   /* One item in an "On us" / "On someone else" list. */
   .move-item {
-    @apply flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm;
+    @apply grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 rounded-lg px-3 py-2.5 text-sm;
   }
 
   .move-item--ours {

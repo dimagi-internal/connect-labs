@@ -12,8 +12,8 @@ the draft panel at it (window.openDraft, the tender page's).
   </div>
   {% for m in moves %}
   <div class="move-item move-item--{{ whose }}" data-testid="move" data-rule="{{ m.rule }}">
-    <div class="flex min-w-0 flex-col gap-0.5"><span class="font-medium text-gray-900">{{ m.text }}{% if m.chip %} <span class="status-chip status-chip--theirs" data-testid="move-chip">{{ m.chip }}</span>{% endif %}</span><span class="text-xs text-gray-600"><span class="move-rule" title="{{ m.rule_title }}">{{ m.rule }}</span>{{ m.detail }}</span></div>
-    {% if m.due %}<span class="status-chip status-chip--neutral" data-testid="move-due">{{ m.due }}</span>{% elif not supply_as_of %}<a class="text-brand-indigo whitespace-nowrap font-semibold hover:underline" data-testid="move-cta" href="{{ m.href }}"{% if "#draft-" in m.href %} onclick="return window.openDraft &amp;&amp; window.openDraft('{{ m.href|cut:request.path|slice:"1:" }}');"{% endif %}>{{ m.cta }}</a>{% endif %}
+    <div class="flex min-w-0 flex-col gap-1"><span class="flex flex-wrap items-center gap-x-1.5 gap-y-1 font-medium text-gray-900"><span>{{ m.text }}</span>{% if m.chip %}<span class="status-chip status-chip--theirs whitespace-nowrap" data-testid="move-chip">{{ m.chip }}</span>{% endif %}</span><span class="flex flex-wrap items-center gap-y-1 text-xs text-gray-600"><span class="move-rule whitespace-nowrap" title="{{ m.rule_title }}">{{ m.rule }}</span>{% for part in m.detail_parts %}<span class="whitespace-nowrap">{{ part }}{% if not forloop.last %}&nbsp;·&nbsp;{% endif %}</span>{% endfor %}</span></div>
+    {% if m.due %}<span class="status-chip status-chip--neutral justify-self-end whitespace-nowrap" data-testid="move-due">{{ m.due }}</span>{% elif not supply_as_of %}<a class="text-brand-indigo justify-self-end whitespace-nowrap font-semibold hover:underline" data-testid="move-cta" href="{{ m.href }}"{% if "#draft-" in m.href %} onclick="return window.openDraft &amp;&amp; window.openDraft('{{ m.href|cut:request.path|slice:"1:" }}');"{% endif %}>{{ m.cta }}</a>{% endif %}
   </div>
   {% empty %}
   <p class="m-0 text-sm text-gray-600">{{ empty_text|default:"Nothing." }}</p>
