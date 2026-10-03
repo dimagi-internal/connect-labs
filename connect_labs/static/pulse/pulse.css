@@ -3286,7 +3286,7 @@
 .conn-colour {
   margin-left: auto;
 }
-.conn-colour + .conn-modes + .net-legend {
+.conn-colour ~ .net-legend {
   margin-left: 0;
 }
 .conn-modes {
@@ -3414,4 +3414,9 @@
   height: 8px;
   border-radius: 2px;
   margin-right: 5px;
+}
+.conn-size-note {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
 }
