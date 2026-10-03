@@ -532,7 +532,7 @@
   }
 
   .src-mark--calc {
-    @apply border-brand-blue-light border-[1.5px];
+    @apply border-brand-blue-light rounded-full border-[1.5px];
   }
 
   .src-ai-tag {

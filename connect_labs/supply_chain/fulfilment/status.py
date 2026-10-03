@@ -69,6 +69,8 @@ def order_status(
     contract_late=None,
     held_on_us=(),
     header_status=None,
+    held_since=None,
+    today=None,
 ) -> dict:
     """{"chip", "stages", "tiles"} for one order (dicts as the operations return them)."""
     match = match or {}
@@ -179,7 +181,9 @@ def order_status(
             "tone": "",
             # The invoice check, as a chip on the money it holds back -- not on the stage bar.
             "chips": (
-                [{"label": "hold: invoice above agreed", "tone": OURS}] if invoice_above and not paid_all else []
+                [{"label": "balance withheld: invoice above agreed", "tone": OURS}]
+                if invoice_above and not paid_all
+                else []
             ),
         }
 
@@ -191,21 +195,41 @@ def order_status(
         dispatch_days = [
             date.fromisoformat(str(s["dispatched_on"])[:10]) for s in dispatched if s.get("dispatched_on")
         ]
-        chips = []
+        chips, lines = [], []
         if due is not None:
             if dispatch_days:
                 supplier_days = max(0, (min(dispatch_days) - due).days)
             else:
                 supplier_days = int(late.get("days_late") or 0)
-            chips.append({"label": f"supplier {supplier_days} d", "tone": THEIRS})
-        if held_on_us:
-            chips.append({"label": "held on us", "tone": OURS})
+            if held_on_us and held_since is not None and today is not None and held_since >= due:
+                # Both dates recorded: the supplier's days run from due to the day the goods
+                # reached customs; the days since then are the hold on us.
+                lines = [
+                    {
+                        "label": "supplier",
+                        "words": f"due {_day(due)} → at customs {_day(held_since)}",
+                        "days": (held_since - due).days,
+                        "tone": THEIRS,
+                    },
+                    {
+                        "label": "on us",
+                        "words": f"held since {_day(held_since)}",
+                        "days": max(0, (today - held_since).days),
+                        "tone": OURS,
+                    },
+                ]
+            elif held_on_us:
+                # No recorded day the hold began: the recorded facts only, no split.
+                chips.append({"label": "held on us", "tone": OURS})
+            else:
+                chips.append({"label": f"supplier {supplier_days} d", "tone": THEIRS})
         late_tile = {
             "label": "Days late",
             "value": str(late.get("days_late", "")),
-            "sub": f"due {day_text(due)}" if due else "",
+            "sub": "" if lines else f"due {day_text(due)}" if due else "",
             "tone": "",
             "chips": chips,
+            "lines": lines,
         }
     else:
         late_tile = {
@@ -224,6 +248,7 @@ def order_status(
 
     for tile in tiles:
         tile.setdefault("chips", [])
+        tile.setdefault("lines", [])
 
     chip = None
     if header_status:
@@ -269,3 +294,23 @@ def _paid_note(match, priced, paid_all, invoice_above, contract) -> str:
     pct = _paid_percent(match, invoice_above, contract)
     words = "advance " if (match or {}).get("advance_state") else ""
     return f"{words}{_money(match.get('paid_amount'))}" + (f" · {pct}%" if pct is not None else "")
+
+
+def held_since(shipment) -> date | None:
+    """The day a shipment's move to customs was recorded (its history), or None when no change says so."""
+    from django.contrib.contenttypes.models import ContentType
+
+    from connect_labs.supply_chain.history.models import Revision
+    from connect_labs.supply_chain.models import Shipment
+
+    if not shipment or shipment.get("status") != "at_customs" or not shipment.get("id"):
+        return None
+    for revision in Revision.objects.filter(
+        content_type=ContentType.objects.get_for_model(Shipment),
+        object_id=str(shipment["id"]),
+        changes__has_key="status",
+    ).order_by("-recorded_at"):
+        pair = revision.changes.get("status") or [None, None]
+        if isinstance(pair, list) and len(pair) == 2 and pair[1] == "at_customs":
+            return revision.recorded_at.date()
+    return None

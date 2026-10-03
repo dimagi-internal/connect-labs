@@ -41,8 +41,8 @@ scenes:
     seconds: 1.8
     target: css:[data-testid=tile]:has-text('Silent')
   - kind: scroll
-    note: frame the stage bar and tiles at the top, the Suppliers table below them and the Terms card under it, On us and On suppliers beside
-    value: '360'
+    note: frame from the tender's header card -- its title, the stage bar and tiles, then the whole Suppliers table, On us and On suppliers beside
+    value: '230'
   - kind: hover
     note: the tender's Terms box, under the Suppliers table, its import duty not settled -- the line scene 5 changes
     say: duty
@@ -59,8 +59,8 @@ scenes:
     seconds: 1.8
     target: testid:on-suppliers
   - kind: scroll
-    note: settle on the same frame -- stage bar, tiles, the Suppliers table and the Terms card, On us and On suppliers beside
-    value: '360'
+    note: settle on the same frame -- the tender's title, stage bar, tiles and the whole Suppliers table, On us and On suppliers beside
+    value: '230'
   - kind: hover
     note: park the cursor in the top bar's blank middle, off the page content; the bar is fixed, so hovering cannot scroll the page
     seconds: 0.6
@@ -159,6 +159,19 @@ scenes:
 - id: sahel-finally-answers
   full_page: false
   actions:
+  - kind: goto
+    must_succeed: true
+    note: the tender again, after Sahel's email is recorded -- its Suppliers row no longer silent
+    target: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
+  - kind: wait_for
+    target: css:[data-testid=supplier-row][data-supplier-id='${sahel_supplier_id}'] [data-testid=supplier-state]
+  - kind: scroll_to
+    note: Sahel's Suppliers row, its state now its quote
+    target: css:[data-testid=supplier-row][data-supplier-id='${sahel_supplier_id}']
+  - kind: hover
+    note: Sahel's state chip, changed from silent to a quote
+    seconds: 1.8
+    target: css:[data-testid=supplier-row][data-supplier-id='${sahel_supplier_id}'] [data-testid=supplier-state]
   - kind: goto
     must_succeed: true
     note: 'land on the tender''s History, opened from its fold, its heading just under the top bar'
@@ -343,7 +356,7 @@ scenes:
     seconds: 2.0
     target: css:tr[data-fact=duty] th
   - kind: scroll
-    note: frame the change -- the count chip (1 of 3 comparable), the duty terms line with the waiver, Harmattan's landed figure and Award, and the rows down to Import duty and Exchange rate
+    note: frame the change -- the count chip (1 of 3 comparable), the duty terms line with the waiver, each quote's header chips, Harmattan's landed figure with its open fact and its next steps, and the rows down to Import duty
     value: '200'
   - kind: hover
     note: park the cursor in the top bar's blank middle, off the grid

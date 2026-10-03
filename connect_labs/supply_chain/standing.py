@@ -70,6 +70,17 @@ class Row:
         return self.step_label or self.stage
 
     @property
+    def stage_name(self) -> str:
+        """The step the bar's current segment stands for ("Collecting quotes")."""
+        return self.label.split(" · ", 1)[0]
+
+    @property
+    def stage_detail(self) -> str:
+        """What follows the step name ("4 of 6 answered")."""
+        parts = self.label.split(" · ", 1)
+        return parts[1] if len(parts) > 1 else ""
+
+    @property
     def silent_names(self) -> list[str]:
         """The suppliers the no-reply rule lists on this row, by name."""
         return [m.text.split(": reply")[0] for m in self.theirs if m.rule == rules.RULE_NO_REPLY]
@@ -236,10 +247,7 @@ def tender_stage(tender, *, invited=0, answered=0, comparable=None, quoted=None,
         words = "Collecting quotes"
         if invited:
             words += f" · {answered} of {invited} answered"
-        deadline = tender.response_deadline
-        if today and deadline and deadline < today:
-            days = (today - deadline).days
-            words += f" · deadline passed {_plural(days, 'day')}"
+        # The deadline is said once on the overview: in the row's decide move, not here.
         return 1, words
     if tender.status == "awarded":
         return 3, f"Awarding · to {awardee}" if awardee else "Awarding"
@@ -278,6 +286,10 @@ def _tender_rows(program_id, today, until):
             provisional=bool(award and award.provisional),
             contracted=False,
         )
+        # Inside the tender's own row its name is already said: the decide move drops it.
+        for m in ours:
+            if m.rule == rules.RULE_DEADLINE:
+                m.text = "Decide: extend, close or award"
         invited = {o.supplier_id for o in outreach.get(tender.pk, [])}
         answered = _replied_ids(outreach.get(tender.pk, []), quotes.get(tender.pk, []))
         awardee = award.quote.supplier.name if tender.status == "awarded" and award and award.quote_id else ""

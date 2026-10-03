@@ -74,9 +74,17 @@ def _blocked_by_terms(row) -> bool:
     return _ROUND_DUTY in (row.gaps or [])
 
 
+_WAIVER_DOC = "waiver document"
+
+
+def _gap_word(gap: str) -> str:
+    """A gap as its chip names it: the tender-wide duty gap reads as the tender's duty terms."""
+    return "duty terms" if gap == _ROUND_DUTY else gap
+
+
 def gap_owner(gap: str) -> str:
     """Whose a gap is: our tender terms and the rates we record are ours; what a quote states, the supplier's."""
-    return rules.US if gap == _ROUND_DUTY or gap.startswith("exchange rate") else rules.SUPPLIERS
+    return rules.US if gap in (_ROUND_DUTY, _WAIVER_DOC) or gap.startswith("exchange rate") else rules.SUPPLIERS
 
 
 def split_gaps(gaps) -> tuple[list, list]:
@@ -465,34 +473,42 @@ def comparison_grid(
         src = AI if row["quote_id"] in ai_quotes else PERSON
         base, pack = row.get("base_unit") or "", row.get("pack_unit") or ""
         pack_gap = f"per {unit_noun(pack)}" if pack else "per pack"
-        our_gaps, supplier_gaps = split_gaps(gaps)
         quote_url = reverse("supply_chain:procurement_quote_detail", args=[row["quote_id"]])
         anchor = f"draft-supplier-{row.get('supplier_id')}"
-        # The quote's status chips (one per party owing a fact), and one action per open gap, ours first.
+        # ONE gap list per quote: the header chips, the landed cell and the next steps all read it.
+        # A quote costed on the waiver with no copy of it on file owes one more fact: ours.
+        waiver_gap = (
+            not waiver_on_file
+            and tender.duty_terms == "buyer_waiver"
+            and _ROUND_DUTY not in gaps
+            and quote.delivery_mode != "pickup"
+            and buyer_imports(quote)
+        )
+        quote_gaps = [*gaps, *([_WAIVER_DOC] if waiver_gap else [])]
+        our_gaps, supplier_gaps = split_gaps(quote_gaps)
+        # The quote's status chips (one per party owing facts), and one action per open gap, ours first.
         chips, actions = [], []
         if row["quote_id"] in awarded:
             chips.append({"label": "Awarded", "tone": PRIMARY})
         elif row.get("is_comparable"):
             chips.append({"label": "Comparable", "tone": PRIMARY})
-            actions.append({"label": "Award", "href": f"#award-{row['quote_id']}", "award": True, "owner": ""})
-        else:
+        if row["quote_id"] not in awarded:
             if our_gaps:
-                chips.append(
-                    {
-                        "label": (
-                            "Waiting on our duty terms"
-                            if our_gaps == [_ROUND_DUTY]
-                            else f"Waiting on us · {_plural(len(our_gaps), 'fact')}"
-                        ),
-                        "tone": OURS,
-                    }
-                )
+                chips.append({"label": f"{_plural(len(our_gaps), 'fact')} on us", "tone": OURS})
             if supplier_gaps:
-                chips.append({"label": f"Missing {_plural(len(supplier_gaps), 'fact')}", "tone": THEIRS})
-            # The tender's duty terms are settled once, on the duty terms line above the grid:
-            # no column repeats that action.
+                chips.append({"label": f"{_plural(len(supplier_gaps), 'fact')} on supplier", "tone": THEIRS})
             for g in our_gaps:
-                if g != _ROUND_DUTY:
+                if g == _ROUND_DUTY:
+                    actions.append({"label": "Settle duty terms", "href": "#duty-terms", "owner": rules.US})
+                elif g == _WAIVER_DOC:
+                    actions.append(
+                        {
+                            "label": "Attach waiver document",
+                            "href": reverse("supply_chain:tender_document_attach", args=[tender.pk]),
+                            "owner": rules.US,
+                        }
+                    )
+                else:
                     actions.append({"label": f"Record {g}", "href": quote_url, "owner": rules.US})
             for g in supplier_gaps:
                 actions.append(
@@ -500,6 +516,17 @@ def comparison_grid(
                         "label": f"Ask for {g}",
                         "href": f"{tender_url}#{anchor}" if anchor in draft_anchors else quote_url,
                         "owner": rules.SUPPLIERS,
+                    }
+                )
+            if row.get("is_comparable"):
+                # Award stays offered, but is the filled button only once no gap is open on the quote.
+                actions.append(
+                    {
+                        "label": "Award",
+                        "href": f"#award-{row['quote_id']}",
+                        "award": True,
+                        "filled": not quote_gaps,
+                        "owner": "",
                     }
                 )
         if not chips:
@@ -528,8 +555,8 @@ def comparison_grid(
         def fact(value, source=src):
             return {"v": value, "gap": False, "src": source}
 
-        def blank():
-            return {"v": "—", "gap": False, "mute": True, "src": ""}
+        def blank(words="—"):
+            return {"v": words, "gap": False, "mute": True, "src": ""}
 
         cells["price"].append(
             fact((row.get("as_quoted") or "").replace(" per ", " / ")) if row.get("as_quoted") else gap("no price")
@@ -574,9 +601,12 @@ def comparison_grid(
         else:
             cells["freight"].append(blank())
         duty = _duty_cell(tender, quote, gaps, src)
+        if waiver_gap:
+            duty["pending"] = "document not on file"
+            duty["pending_owner"] = rules.US
         cells["duty"].append(duty)
         if (quote.as_quoted_currency or "USD") == "USD":
-            cells["fx"].append(blank())
+            cells["fx"].append(blank("n/a · quoted in USD"))
         elif quote.fx_rate_to_usd is not None:
             cells["fx"].append(
                 fact(f"1 {quote.as_quoted_currency} = {quote.fx_rate_to_usd.normalize():f} USD", PERSON)
@@ -588,15 +618,17 @@ def comparison_grid(
             # Not comparable: no figure, only what blocks it, each with whose it is.
             cells["landed"].append(
                 {
-                    "v": "—",
+                    "v": "not comparable",
                     "gap": False,
                     "mute": True,
                     "src": "",
-                    "blocked": [{"label": g, "owner": gap_owner(g)} for g in gaps if g != _ROUND_DUTY],
+                    "blocked": [{"label": _gap_word(g), "owner": gap_owner(g)} for g in quote_gaps],
                 }
             )
         elif isinstance(landed, dict) and landed.get("amount") not in (None, "") and not landed.get("unconfirmed"):
-            cells["landed"].append(fact(f"{landed.get('currency') or 'USD'} {money_digits(landed['amount'])}", CALC))
+            figure = fact(f"{landed.get('currency') or 'USD'} {money_digits(landed['amount'])}", CALC)
+            figure["open"] = [{"label": _gap_word(g), "owner": gap_owner(g)} for g in quote_gaps]
+            cells["landed"].append(figure)
         else:
             cells["landed"].append(blank())
         spec = row.get("specification") or {}
