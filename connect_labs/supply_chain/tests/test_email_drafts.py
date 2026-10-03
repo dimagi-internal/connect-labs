@@ -188,6 +188,20 @@ class TestTheReminder:
         assert "What is your minimum order quantity?" in draft.text
         assert _last_lines(draft.text, 3) == ["With thanks,", "Sophie Example", "Example Relief"]
 
+    def test_a_counted_reminder_says_which_it_is_and_what_is_enough_to_start(self, rutf):
+        draft = render_reminder(
+            rutf,
+            tender(),
+            northwind(),
+            sent_on=date(2026, 9, 9),
+            last_reminder_on=date(2026, 9, 24),
+            reminders_sent=2,
+            today=date(2026, 10, 3),
+        )
+        assert "This is our third reminder; we last wrote on 24 Sep 2026." in draft.text
+        assert "To start, a price per unit delivered to " in draft.text
+        assert "and your lead time are enough; the full questions are in our request of 9 Sep 2026." in draft.text
+
     def test_a_second_reminder_says_when_we_last_wrote(self, rutf):
         draft = render_reminder(
             rutf,
@@ -200,7 +214,7 @@ class TestTheReminder:
         assert "We last wrote about this on 16 Sep 2026." in draft.text
         # A later reminder refers to the questions rather than listing them a third time,
         # so the chase stays shorter than the request it chases.
-        assert "in our request of 9 Sep 2026, and again in that reminder" in draft.text
+        assert "the full questions are in our request of 9 Sep 2026." in draft.text
         assert "What is your minimum order quantity?" not in draft.text
 
     def test_a_deadline_still_ahead_is_the_reply_by_date(self, rutf):

@@ -49,6 +49,9 @@ def _source(access, commodity=None):
     # Which tenders the evaluation counts across, so "2 of 4 comparable" can
     # say it is the program's total and not one round's.
     evaluated = set()
+    # Each tender's own count, so the program's total can be read back to the
+    # "1 of 3" one round's comparison page says: {tender_pk: [label, comparable, of, awarded]}.
+    by_tender = {}
     contracted = set(tenders.filter(contracts__isnull=False).values_list("pk", flat=True))
     # An awarded tender was still evaluated: leaving it out read "Evaluation 0
     # of 0 comparable" beside "Award 3" on the tender those awards came from.
@@ -73,6 +76,11 @@ def _source(access, commodity=None):
             comparable += comparison.comparable_count
             total += comparison.total_count
             evaluated.add(tender.pk)
+            entry = by_tender.setdefault(
+                tender.pk, [tender.label or f"tender {tender.pk}", 0, 0, tender.status == "awarded"]
+            )
+            entry[1] += comparison.comparable_count
+            entry[2] += comparison.total_count
             # An award that was ordered (a contract signed on it) is no longer
             # provisional, as the overview's own tender row says.
             provisional = provisional or (comparison.provisional and tender.pk not in contracted)
@@ -99,6 +107,11 @@ def _source(access, commodity=None):
             "of": total,
             "provisional": provisional,
             "tenders": len(evaluated),
+            # Newest tender first: "RUTF round 2: 1 of 3 · RUTF round 1: awarded".
+            "by_tender": [
+                {"label": label, "comparable": c, "of": of, "awarded": awarded}
+                for _, (label, c, of, awarded) in sorted(by_tender.items(), reverse=True)
+            ],
         },
         "award": {
             "count": awards.count(),

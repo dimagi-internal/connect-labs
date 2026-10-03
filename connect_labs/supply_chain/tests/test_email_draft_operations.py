@@ -232,7 +232,7 @@ def test_marking_the_reminder_sent_restarts_the_interval(da, round_):
         da, "tender_drafts_render", tender_id=round_["tender"]["id"], today=(TODAY + timedelta(days=7)).isoformat()
     )
     reminder = by(later, "reminder")["Harmattan Foods"]
-    assert "We last wrote about this on 27 Sep 2026." in reminder["text"]
+    assert "This is our second reminder; we last wrote on 27 Sep 2026." in reminder["text"]
 
 
 def test_a_quote_with_outstanding_questions_gets_a_follow_up_and_a_complete_one_does_not(da, round_):

@@ -32,7 +32,7 @@ PROGRAM = 20997
 QUERY_BOUND_CONTRACT = (
     21  # measured 18: payments are found by their order too, an advance having no invoice; what we owe on it, one more
 )
-QUERY_BOUND_TENDER = 26  # measured 23, what we owe on the round included
+QUERY_BOUND_TENDER = 27  # measured 23, what we owe on the round included; +1 the asked Incoterm (DDD 003 b7)
 
 
 def _at(month, day, hour=9):
@@ -698,7 +698,7 @@ class TestPages:
         # Since batch 8 the new value is bold, and the AI marker is a glyph read out as "AI".
         assert 'ETA 5 Sep → <strong class="font-semibold">19 Sep</strong>' in body
         assert 'aria-label="AI"' in body
-        assert "ACE (agent)" in body
+        assert "AI assistant" in body  # since DDD 003 batch 7; the agent is in the tooltip
         assert "AI</span><span>via AI" not in body
         assert "<blockquote" in body and "Northwind dispatch" in body
 
@@ -709,7 +709,7 @@ class TestPages:
 
         live = client_in_program.get(url).content.decode()
         assert "data-timeline" in live
-        assert "ACE (agent)" in live
+        assert "AI assistant" in live
         assert "Quote · Northwind Foods · recorded: USD 42.50 per carton" in live
         assert correct in live
 

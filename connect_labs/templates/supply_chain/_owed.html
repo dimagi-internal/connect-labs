@@ -14,6 +14,7 @@ answered" / "Mark done"), empty_text.
     <div data-testid="owed-hold" class="px-4 py-2 text-sm">
       <span class="font-medium text-gray-900">{{ hold.what|capfirst }}{% if hold.name %} ({{ hold.name }}){% endif %}</span>
       <span class="text-gray-700">— the shipment is held until we provide it</span>
+      {% if hold.shipment_id and hold.kind and not supply_as_of %}{% comment %}Providing it is attaching it: the document on file clears the hold (holds.py).{% endcomment %}<a data-testid="owed-hold-provide" class="ml-2 inline-block rounded-md border border-gray-300 bg-white px-2 py-0.5 text-xs font-medium text-brand-indigo hover:bg-gray-50" href="{% url 'supply_chain:shipment_document_attach' hold.shipment_id %}?kind={{ hold.kind }}">Mark provided</a>{% endif %}
     </div>
   {% endfor %}
   {% for group in owed_open_groups %}

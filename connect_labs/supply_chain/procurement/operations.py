@@ -202,6 +202,7 @@ def reminder_render(access, outreach_id, commodity_slug=None, today=None):
         outreach.supplier,
         sent_on=outreach.sent_on,
         last_reminder_on=outreach.last_reminder_on,
+        reminders_sent=_reminders_sent(access, [outreach]),
         sender=_sender(access),
         today=day,
     )
@@ -282,6 +283,18 @@ def tender_drafts_render(access, tender_id, today=None):
     return result
 
 
+def _reminders_sent(access, rows) -> int:
+    """How many reminders went to these invitations, from the history, floored at 1
+    when one carries a last-reminded day -- the count the tender's drafts panel reads."""
+    from connect_labs.supply_chain.history.timeline import reminders_for_outreach
+
+    counts = reminders_for_outreach([r.pk for r in rows], program_id=access.program_id)
+    total = max((counts.get(r.pk, 0) for r in rows), default=0)
+    if any(getattr(r, "last_reminder_on", None) for r in rows):
+        total = max(total, 1)
+    return total
+
+
 def _requests_and_reminders(access, tender, commodities, quotes, day, interval, is_default, sender):
     """A request for an invitation never sent; a reminder for a silence past the interval."""
     quoted = {q.supplier_id for q in quotes}
@@ -321,6 +334,7 @@ def _requests_and_reminders(access, tender, commodities, quotes, day, interval, 
                 supplier,
                 sent_on=latest.sent_on,
                 last_reminder_on=reminded,
+                reminders_sent=_reminders_sent(access, rows) if reminded else 0,
                 sender=sender,
                 today=day,
             )

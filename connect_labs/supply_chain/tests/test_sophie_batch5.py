@@ -142,7 +142,7 @@ class TestWaitingOnNamesWho:
         cell = _cells(_standing_row(_home(home_client), tender_id))[2]
         # The silent supplier stacked under "No reply", with the day we asked it.
         assert "<strong>No reply</strong>:" in cell
-        assert 'Northwind Foods <span class="text-gray-600 whitespace-nowrap">(asked 9 Sep)</span>' in cell
+        assert 'Northwind Foods <span class="text-gray-700 whitespace-nowrap">(asked 9 Sep)</span>' in cell
         assert re.search(r'data-testid="waiting-detail"[^>]*>1 of 2 replied<', cell)
 
     def test_after_an_award_a_contract_with_the_awardee(self, da, base):
@@ -203,7 +203,7 @@ class TestTheLastChange:
         cell = _cells(_standing_row(_home(home_client), base["tender"]["id"]))[3]
         badge = re.search(r'<span data-ai data-testid="ai-badge" title="([^"]*)"[^>]*>(.*?)</span></span>', cell, re.S)
         # Since batch 8: who told us, beside the AI glyph, and on hover what was recorded.
-        assert _text(re.sub(r"<[^>]+>", "", badge.group(2))) == "ACE (agent)"
+        assert _text(re.sub(r"<[^>]+>", "", badge.group(2))) == "AI assistant"
         assert 'aria-label="AI"' in badge.group(2)
         assert badge.group(1) == "ACE recorded Quote · Northwind Foods from a forwarded email"
 
@@ -394,13 +394,13 @@ class TestTheTimeline:
             ).content.decode()
         )
         # No carrier yet: the shipment says its supplier reported it.
-        assert heading == "Email from Northwind Foods, recorded by ACE (agent) on 20 Aug 2026"
+        assert heading == "Email from Northwind Foods, recorded by the AI assistant on 20 Aug 2026"
 
         Shipment.objects.filter(pk=order["shipment"]["id"]).update(carrier="Harmattan Haulage")
         body = client_in_program.get(
             reverse("supply_chain:order_detail", args=[order["contract"]["id"]])
         ).content.decode()
-        assert _source_heading(body) == "Email from Northwind Foods, recorded by ACE (agent) on 20 Aug 2026"
+        assert _source_heading(body) == "Email from Northwind Foods, recorded by the AI assistant on 20 Aug 2026"
         excerpt = re.search(r'<blockquote data-testid="source-excerpt" class="([^"]*)">(.*?)</blockquote>', body, re.S)
         assert excerpt.group(2) == EMAIL
         classes = excerpt.group(1).split()
@@ -410,7 +410,7 @@ class TestTheTimeline:
         quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _ALL_BUT_PACK)
         _correct_pack(da, quote, ace)
         heading = _source_heading(_tender_page(client_in_program, base["tender"]["id"]))
-        assert heading == "Email from Northwind Foods, recorded by ACE (agent) on 28 Aug 2026"
+        assert heading == "Email from Northwind Foods, recorded by the AI assistant on 28 Aug 2026"
 
 
 # ---- 7. the ranked row stays one line; the correction says where from -------
@@ -498,7 +498,7 @@ class TestABlockedCard:
     def test_three_cards_fit_below_the_header(self, da, base, client_in_program):
         quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, {})
         body = _page(client_in_program, base["tender"]["id"])
-        opening = re.search(rf'<div data-quote-id="{quote["id"]}" class="([^"]*)"', body).group(1).split()
+        opening = re.search(rf'<div data-quote-id="{quote["id"]}"[^>]* class="([^"]*)"', body).group(1).split()
         assert "p-4" not in opening and "mb-4" not in opening
         assert {"py-2.5", "mb-2"} <= set(opening)
 

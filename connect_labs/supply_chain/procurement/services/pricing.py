@@ -165,6 +165,12 @@ def _base_unit_grams(quote: Quote, item: Item | None) -> int | Derived:
     return unconfirmed("unit weight not stated on the quote (grams per base unit)")
 
 
+# Why a quote whose Incoterm makes the import ours has no landed total yet: the
+# round has not said how it imports. questions.py maps it to a round-owned
+# ("internal") action, so it is never asked of the supplier.
+ROUND_DUTY_TERMS_REASON = "import duty is ours to cost and the round's duty terms are not settled"
+
+
 def _duty_terms(quote: Quote, tender=None) -> str:
     """The round's import-duty terms (records.DUTY_TERMS), "" when not settled or unknown."""
     if tender is None:
@@ -263,6 +269,14 @@ def _extras(quote: Quote, tender=None) -> Derived:
         if basis == "included":
             continue
         if basis == "excluded":
+            if amount is None and label == "duties" and implied == "excluded" and terms != "supplier_ddp":
+                # The quote's own Incoterm puts the import on us (EXW, FCA, CPT, DAP ...):
+                # import duty is never the supplier's to state, so its absence is
+                # not a gap in their quote. It is ours to cost, by the round's duty
+                # terms -- and while those are not settled, no landed total can be
+                # given. A round-owned blocker, never a question in their email.
+                reasons.append(ROUND_DUTY_TERMS_REASON)
+                continue
             if amount is None:
                 # Named as read-from-the-term where that is where it came
                 # from, so a reader chasing the gap looks in the right place:

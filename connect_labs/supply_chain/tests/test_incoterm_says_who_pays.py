@@ -175,7 +175,9 @@ class TestAnIncotermFillsAGapNobodyRecorded:
         extras = _extras_for(world, incoterm="DAP Kano")
         assert isinstance(extras, Unconfirmed)
         joined = " ".join(extras.reasons)
-        assert "duties" in joined
+        # Since DDD 003 batch 8: DAP makes the import ours, so the duty waits on the
+        # round's own terms (unsettled here), never on a question to the supplier.
+        assert "round's duty terms are not settled" in joined
         assert "freight" not in joined, "DAP includes freight; it should not be asked about"
 
 
