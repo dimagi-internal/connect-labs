@@ -195,6 +195,9 @@ def workflow_get(
                         # Set when the pipeline is REFERENCED from another scope (e.g. a
                         # synthetic workflow on a real pipeline): edits to it happen there.
                         **({"home_scope": src["home_scope"]} if src.get("home_scope") else {}),
+                        # "on_demand": not streamed to the run page; render code reads
+                        # it with actions.queryPipelineRows. Absent = "eager".
+                        "load": src.get("load") or "eager",
                         "name": pdef.name if pdef else None,
                         "schema_summary": {
                             "field_count": len(pdef.data.get("schema", {}).get("fields", [])) if pdef else 0,
@@ -727,12 +730,19 @@ def workflow_update_definition(
 @register(
     name="workflow_add_pipeline_source",
     description=(
-        "Add (or re-point) a pipeline data source on a workflow definition. "
-        "Stores {pipeline_id, alias}; if the alias already exists it is "
+        "Add (or re-point / update) a pipeline data source on a workflow definition. "
+        "Stores {pipeline_id, alias[, load]}; if the alias already exists it is "
         "re-pointed to the given pipeline_id. The alias is the key the render "
-        "code reads as view.pipelines[alias].rows. Mirrors the web "
-        "add-pipeline-source endpoint (no version check needed — the source "
-        "list is keyed by alias). Returns the full updated pipeline_sources."
+        "code reads as view.pipelines[alias].rows. Set load='on_demand' for a "
+        "pipeline too large to ship to the browser: the run page then does NOT "
+        "stream its rows on load (pipelines[alias] = {rows: [], metadata: "
+        "{on_demand: true}}), and render code fetches filtered, paged rows with "
+        "actions.queryPipelineRows(alias, {filters, search, order_by, limit, offset}) "
+        "-> {rows, total}, answered in SQL from the pipeline's cache. load='eager' "
+        "(the default) streams it as before; omitting load on an existing alias "
+        "keeps its current setting. Mirrors the web add-pipeline-source endpoint "
+        "(no version check needed — the source list is keyed by alias). Returns "
+        "the full updated pipeline_sources."
     ),
     input_schema={
         "type": "object",
@@ -759,6 +769,17 @@ def workflow_update_definition(
                     "readable there before the source is saved."
                 ),
             },
+            "load": {
+                "type": "string",
+                "enum": ["eager", "on_demand"],
+                "description": (
+                    "How the run page loads this source. 'eager' (default): its rows are "
+                    "streamed on page load into pipelines[alias].rows. 'on_demand': nothing "
+                    "is streamed; render code queries it server-side with "
+                    "actions.queryPipelineRows(alias, {filters, search, order_by, limit, offset}). "
+                    "Omit to keep an existing alias's setting."
+                ),
+            },
         },
         "required": ["workflow_id", "pipeline_id", "alias"],
         "additionalProperties": False,
@@ -773,18 +794,21 @@ def workflow_add_pipeline_source(
     opportunity_id: int = None,
     program_id: int = None,
     home_scope: dict = None,
+    load: str = None,
 ):
     if not alias:
         raise MCPToolError("INVALID_SCHEMA", "alias is required and must be non-empty")
     if (opportunity_id is None) == (program_id is None):
         raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
+    if load is not None and load not in ("eager", "on_demand"):
+        raise MCPToolError("INVALID_SCHEMA", "load must be 'eager' or 'on_demand'")
 
     token = require_connect_token(user)
     if home_scope is not None:
         home_scope = _validate_pipeline_home_scope(home_scope, token, int(pipeline_id))
     wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
     try:
-        updated = wda.add_pipeline_source(workflow_id, int(pipeline_id), alias, home_scope=home_scope)
+        updated = wda.add_pipeline_source(workflow_id, int(pipeline_id), alias, home_scope=home_scope, load=load)
         if updated is None:
             raise MCPToolError("NOT_FOUND", f"No workflow with id {workflow_id}")
         return {

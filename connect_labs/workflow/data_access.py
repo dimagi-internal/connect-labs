@@ -136,6 +136,65 @@ REGISTRY_HOME_SCOPE_KEYS = ("organization_id", "program_id", "opportunity_id")
 # 19776 over synthetic opp 10042 returns the same 613 babies as the synthetic copy).
 PIPELINE_HOME_SCOPE_KEYS = ("opportunity_id", "program_id", "organization_id")
 
+# How a workflow loads one of its pipeline sources, stored as the source entry's
+# `load` key. "eager" (the default, and what an absent key means) streams the
+# pipeline's rows to the run page on load as `pipelines[alias].rows`. "on_demand"
+# does not: the page gets `pipelines[alias] = {rows: [], metadata: {on_demand: true}}`
+# and the render code asks the server for the rows it needs, filtered and paged in
+# SQL, with `actions.queryPipelineRows(alias, ...)` (`pipeline_query_api`).
+#
+# For a pipeline too big to ship whole: workflow 23765's answers pipeline was 173k
+# rows of free text -- 27 s and ~435 MB of browser heap on every load to show one
+# question's answers at a time.
+PIPELINE_LOAD_EAGER = "eager"
+PIPELINE_LOAD_ON_DEMAND = "on_demand"
+PIPELINE_LOAD_VALUES = (PIPELINE_LOAD_EAGER, PIPELINE_LOAD_ON_DEMAND)
+
+
+def is_on_demand_source(source: dict) -> bool:
+    """Whether a `pipeline_sources` entry is loaded on demand rather than streamed."""
+    return isinstance(source, dict) and source.get("load") == PIPELINE_LOAD_ON_DEMAND
+
+
+def streamed_and_skipped_aliases(ordered_sources, configs_by_alias) -> tuple[set[str], set[str]]:
+    """Split a workflow's sources into (aliases to execute, on-demand aliases whose rows are withheld).
+
+    An on-demand source is normally not executed at all on page load. The one
+    exception is a JOIN dependency: an eager pipeline that joins an on-demand one
+    reads that pipeline's computed cache, so the dependency still runs (to fill the
+    cache) -- but its rows are withheld from the payload all the same.
+    """
+    on_demand = {s.get("alias") for s in ordered_sources if is_on_demand_source(s)}
+    needed = set()
+    frontier = [s.get("alias") for s in ordered_sources if not is_on_demand_source(s)]
+    seen = set()
+    while frontier:
+        alias = frontier.pop()
+        if alias in seen:
+            continue
+        seen.add(alias)
+        cfg = (configs_by_alias or {}).get(alias)
+        for join in getattr(cfg, "joins", None) or []:
+            if join.from_alias in on_demand:
+                needed.add(join.from_alias)
+            frontier.append(join.from_alias)
+    execute = {s.get("alias") for s in ordered_sources if not is_on_demand_source(s)} | needed
+    return execute, on_demand
+
+
+def on_demand_placeholder(source: dict, opp_ids) -> dict:
+    """What `pipelines[alias]` holds for an on-demand source: no rows, and a flag saying why."""
+    return {
+        "rows": [],
+        "metadata": {
+            "pipeline_id": source.get("pipeline_id"),
+            "on_demand": True,
+            "row_count": 0,
+            "opportunity_ids": list(opp_ids),
+            "per_opp": {},
+        },
+    }
+
 
 def pipeline_homes_for(sources) -> dict[int, dict]:
     """`{pipeline_id: home scope}` for every source that names where its record lives."""
@@ -1379,21 +1438,37 @@ class WorkflowDataAccess(BaseDataAccess):
     # -------------------------------------------------------------------------
 
     def add_pipeline_source(
-        self, definition_id: int, pipeline_id: int, alias: str, home_scope: dict | None = None
+        self,
+        definition_id: int,
+        pipeline_id: int,
+        alias: str,
+        home_scope: dict | None = None,
+        load: str | None = None,
     ) -> WorkflowDefinitionRecord | None:
         """Add a pipeline as a data source for a workflow.
 
         ``home_scope`` names where the pipeline record lives when that is not this
         workflow's scope -- a synthetic workflow referencing a real pipeline, say.
         Re-pointing an alias replaces its home scope too, so a stale one cannot linger.
+
+        ``load`` is ``"eager"`` or ``"on_demand"`` (see PIPELINE_LOAD_ON_DEMAND).
+        None keeps what the alias already had, so re-pointing an on-demand alias at a
+        new pipeline does not silently start streaming it.
         """
+        if load is not None and load not in PIPELINE_LOAD_VALUES:
+            raise ValueError(f"load must be one of {list(PIPELINE_LOAD_VALUES)}; got {load!r}")
         definition = self.get_definition(definition_id)
         if not definition:
             return None
 
+        previous = next((s for s in definition.data.get("pipeline_sources", []) if s.get("alias") == alias), None)
         entry = {"pipeline_id": pipeline_id, "alias": alias}
         if home_scope:
             entry["home_scope"] = dict(home_scope)
+        if load is None:
+            load = PIPELINE_LOAD_ON_DEMAND if previous and is_on_demand_source(previous) else PIPELINE_LOAD_EAGER
+        if load == PIPELINE_LOAD_ON_DEMAND:
+            entry["load"] = PIPELINE_LOAD_ON_DEMAND
         sources = [s for s in definition.data.get("pipeline_sources", []) if s.get("alias") != alias]
         existing = [s.get("alias") for s in definition.data.get("pipeline_sources", [])]
         # Keep the alias where it was, so a re-point does not reorder the sources.
@@ -1415,9 +1490,16 @@ class WorkflowDataAccess(BaseDataAccess):
         updated_data = {**definition.data, "pipeline_sources": sources}
         return self.update_definition(definition_id, updated_data)
 
-    def get_pipeline_data(self, definition_id: int, opportunity_id: int) -> dict[str, dict]:
+    def get_pipeline_data(
+        self, definition_id: int, opportunity_id: int, skip_on_demand: bool = False
+    ) -> dict[str, dict]:
         """
         Fetch data from all pipeline sources defined in a workflow.
+
+        ``skip_on_demand``: withhold the rows of sources marked ``load: "on_demand"``
+        (they come back as `on_demand_placeholder`), as the run page's stream does.
+        Set by the page-load endpoint; server-side jobs that genuinely need every row
+        leave it False.
 
         If the workflow has a non-empty `opportunity_ids` list, each pipeline is
         executed once per opp and rows are concatenated with an `opportunity_id`
@@ -1474,12 +1556,18 @@ class WorkflowDataAccess(BaseDataAccess):
         )
         if configs_by_alias:
             resolve_join_hashes(configs_by_alias)
+        execute, on_demand = streamed_and_skipped_aliases(ordered_sources, configs_by_alias)
+        if not skip_on_demand:
+            execute, on_demand = execute | on_demand, set()
 
         try:
             for source in ordered_sources:
                 pipeline_id = source.get("pipeline_id")
                 alias = source.get("alias")
                 if not pipeline_id or not alias:
+                    continue
+                if alias in on_demand and alias not in execute:
+                    results[alias] = on_demand_placeholder(source, opp_ids)
                     continue
 
                 merged_rows: list[dict] = []
@@ -1492,6 +1580,9 @@ class WorkflowDataAccess(BaseDataAccess):
                         pipeline_result = pipeline_access.execute_pipeline(
                             pipeline_id, opp_id, config=configs_by_alias.get(alias)
                         )
+                        if alias in on_demand:
+                            # Ran only to fill the cache an eager pipeline JOINs.
+                            continue
                         merged_rows.extend(
                             {**row, "opportunity_id": opp_id} for row in pipeline_result.get("rows", [])
                         )
@@ -1500,6 +1591,9 @@ class WorkflowDataAccess(BaseDataAccess):
                         logger.exception("Pipeline %s failed for opp %s", pipeline_id, opp_id)
                         per_opp_meta[str(opp_id)] = {"error": str(e)}
 
+                if alias in on_demand:
+                    results[alias] = on_demand_placeholder(source, opp_ids)
+                    continue
                 results[alias] = {
                     "rows": merged_rows,
                     "metadata": {

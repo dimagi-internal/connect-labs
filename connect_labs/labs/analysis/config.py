@@ -12,6 +12,8 @@ Becomes:
     )
 """
 
+import hashlib
+import json
 import logging
 import re
 from collections.abc import Callable
@@ -185,7 +187,65 @@ USER_VISITS_SOURCE = "connect_csv"
 USER_VISITS_RAW_SLOT = -1
 
 
-def raw_cache_slot(pipeline_id: int | None, source_type: str = USER_VISITS_SOURCE) -> int | None:
+_FIELD_NAME_RE = re.compile(r"[a-z_][a-z0-9_]*")
+
+
+def field_name_problem(name) -> str | None:
+    """Why a pipeline field name cannot be saved, or None when it can.
+
+    Field names become unquoted SQL column aliases (`... as <name>`), which Postgres
+    folds to lower case: a field named `T0` came back keyed `t0`, so reading `T0`
+    gave null on every row with no error anywhere. Refused at save instead.
+    """
+    if not isinstance(name, str) or not name:
+        return "every field needs a name"
+    if not _FIELD_NAME_RE.fullmatch(name):
+        hint = f" (use {name.lower()!r})" if _FIELD_NAME_RE.fullmatch(name.lower()) else ""
+        return (
+            f"field name {name!r} must be lower-case letters, digits and underscores, starting with a "
+            f"letter or underscore{hint}: names are SQL column aliases, and Postgres folds upper case "
+            "away, so the field would read back null"
+        )
+    return None
+
+
+# The DataSourceConfig fields that decide which rows a Google Drive read produces:
+# the target (one file, or a folder plus a name pattern), the cells read as null, and
+# the columns lifted into each row's username / visit_date
+# (gdrive_fetcher.normalize_row_to_visit_dict). Two gdrive sources that agree on all
+# of these store identical raw rows, so they share one raw-cache slot. The
+# `authorization` stamp is deliberately NOT part of the key: it says who may read the
+# rows, not what they are, and it is re-verified per pipeline on every read.
+GDRIVE_RAW_SLOT_FIELDS = ("file_id", "folder_id", "file_pattern", "null_values", "username_column", "date_column")
+
+# Shared gdrive slots live in [-(2**31 - 2), -2]: negative so they cannot meet a
+# pipeline record id, below -1 so they cannot meet USER_VISITS_RAW_SLOT, and inside
+# the signed 32-bit range of `RawVisitCache.pipeline_id`.
+_GDRIVE_SLOT_SPAN = 2**31 - 3
+
+
+def gdrive_raw_slot(data_source) -> int:
+    """The shared raw-cache slot for a Google Drive source's read target.
+
+    A content hash, not Python's per-process salted ``hash``, so every worker and
+    every deploy agrees on it. Rows are also scoped by the cache's own
+    ``opportunity_id`` column, so the slot only has to tell apart the Drive targets
+    read within ONE opportunity.
+    """
+    key = {}
+    for name in GDRIVE_RAW_SLOT_FIELDS:
+        value = getattr(data_source, name, None)
+        if name == "null_values":
+            # The fetcher reads these as a set: order and repeats change nothing.
+            value = sorted({str(v) for v in (value if value is not None else [""])})
+        else:
+            value = value or ""
+        key[name] = value
+    digest = hashlib.blake2b(json.dumps(key, sort_keys=True).encode(), digest_size=8).digest()
+    return -2 - (int.from_bytes(digest, "big") % _GDRIVE_SLOT_SPAN)
+
+
+def raw_cache_slot(pipeline_id: int | None, source_type: str = USER_VISITS_SOURCE, data_source=None) -> int | None:
     """The `RawVisitCache.pipeline_id` a raw read or write for this source lands in.
 
     The raw cache is keyed by (opportunity, pipeline) because of #116: pipelines on
@@ -199,9 +259,21 @@ def raw_cache_slot(pipeline_id: int | None, source_type: str = USER_VISITS_SOURC
     So the user_visits export has one slot per opportunity, and every other source
     keeps its per-pipeline slot. Reads and writes must both resolve through here, or
     an extraction would scope to a slot nothing writes.
+
+    Google Drive is the same story one level down. Several summary pipelines over
+    ONE Drive folder each read and stored the whole folder (workflow 23765: ~115 MB
+    of CSVs, 173k rows, once per pipeline). A gdrive source whose `data_source` is
+    given gets the slot its read target hashes to (`gdrive_raw_slot`), shared by
+    every pipeline on the opportunity with the same target. Sharing the ROWS does
+    not share the permission to read them: every read of a gdrive pipeline passes
+    `check_gdrive_access` with that pipeline's OWN stamp before it touches any slot
+    (`AnalysisPipeline._check_drive_access`). A caller that knows only the source
+    type (no `data_source`) gets the per-pipeline slot, as before.
     """
     if source_type == USER_VISITS_SOURCE:
         return USER_VISITS_RAW_SLOT
+    if source_type == "gdrive" and data_source is not None:
+        return gdrive_raw_slot(data_source)
     return pipeline_id
 
 
@@ -912,7 +984,7 @@ class AnalysisPipelineConfig:
         Use this -- never `pipeline_id` -- to scope a `labs_raw_visit_cache` read.
         `pipeline_id` still keys the computed caches, which really are per pipeline.
         """
-        return raw_cache_slot(self.pipeline_id, self.data_source.type)
+        return raw_cache_slot(self.pipeline_id, self.data_source.type, self.data_source)
 
     def add_field(self, field_comp: FieldComputation) -> None:
         """Add a field computation to the config."""

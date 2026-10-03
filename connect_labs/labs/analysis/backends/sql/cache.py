@@ -170,9 +170,11 @@ class SQLCacheManager:
         # user_visits export shares one slot per opportunity, and only other
         # sources keep a per-pipeline slot (#116). A manager built WITHOUT a
         # config is the raw-fetch path, which only ever walks user_visits.
-        # `pipeline_id` above still keys the computed caches.
+        # `pipeline_id` above still keys the computed caches. A Google Drive
+        # source shares a slot with every pipeline on the same read target; the
+        # pipeline layer gates each read with that pipeline's own stamp.
         source_type = config.data_source.type if config else USER_VISITS_SOURCE
-        self.raw_slot_id = raw_cache_slot(self.pipeline_id, source_type)
+        self.raw_slot_id = raw_cache_slot(self.pipeline_id, source_type, config.data_source if config else None)
         from django.conf import settings
 
         ttl_hours = getattr(settings, "PIPELINE_CACHE_TTL_HOURS", DEFAULT_TTL_HOURS)

@@ -625,6 +625,19 @@ export interface ActionHandlers {
     args: { workers: WorkflowActionWorker[]; [key: string]: unknown },
   ): Promise<WorkflowActionExecution | null>;
 
+  /**
+   * Rows of ONE pipeline alias, filtered, searched, ordered and paged on the
+   * server (in SQL) -- the read path for a `load: "on_demand"` source, which the
+   * run page does not stream. Resolves `{rows, total}`; rejects with an Error
+   * naming what was wrong (an unknown field, no access, a failed build). A cold
+   * cache is filled in the background first; the promise waits for it (calling
+   * `onStatus` with progress text) for up to `timeoutMs` (default 10 minutes).
+   */
+  queryPipelineRows?(
+    alias: string,
+    query?: PipelineRowsQuery,
+  ): Promise<PipelineRowsQueryResult>;
+
   createTask(params: CreateTaskParams): Promise<TaskResult>;
   checkOCSStatus(): Promise<OCSStatusResult>;
   listOCSBots(): Promise<OCSBotsResult>;
@@ -690,6 +703,33 @@ export interface ActionHandlers {
     taskId: number,
     data: Record<string, unknown>,
   ): Promise<Record<string, unknown>>;
+}
+
+export interface PipelineRowsQuery {
+  /** `{field: value}` or `{field: [v1, v2]}` (any of); null matches a missing value. */
+  filters?: Record<
+    string,
+    string | number | boolean | null | Array<string | number | boolean | null>
+  >;
+  /** Case-insensitive substring match over `fields` (default: every declared field). */
+  search?: string | { text: string; fields?: string[] };
+  /** A field, `-field` for descending, or a list of them. */
+  order_by?: string | string[];
+  /** Page size, 1-500 (default 100). */
+  limit?: number;
+  offset?: number;
+  /** Which opportunity of a multi-opp workflow to read. */
+  opportunity_id?: number;
+  onStatus?: (message: string) => void;
+  timeoutMs?: number;
+}
+
+export interface PipelineRowsQueryResult {
+  rows: Record<string, unknown>[];
+  /** Rows matching the filters and search, before paging. */
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export interface CreateTaskParams {
@@ -1079,6 +1119,8 @@ export interface WorkflowDataFromDjango {
     getWorkers: string;
     getPipelineData?: string;
     streamPipelineData?: string;
+    /** POST endpoint behind actions.queryPipelineRows. */
+    queryPipelineRows?: string;
     saveWorkerResult?: string;
     completeRun?: string | null;
     getSnapshot?: string | null;
