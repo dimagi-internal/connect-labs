@@ -21,8 +21,8 @@ from connect_labs.supply_chain.values import money_digits, quantity_phrase, unit
 
 PERSON, AI, CALC = "person", "ai", "calc"
 
-# Chip tones, by meaning: done/primary, on us, on suppliers, neutral.
-BLUE, AMBER, SLATE, GREY = "blue", "amber", "slate", "grey"
+# Chip tones, by meaning (tailwind.css .status-chip--<tone>): done/primary, on us, on suppliers, neutral.
+PRIMARY, OURS, THEIRS, NEUTRAL = "primary", "ours", "theirs", "neutral"
 
 _ROUND_DUTY = "tender duty terms"
 
@@ -140,7 +140,7 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
             quote = theirs_quotes[-1]
             compared_row = rows_by_quote.get(quote.pk)
             late = bool(quote.received_on and deadline and quote.received_on > deadline)
-            row["chip"] = {"label": "Quote, late" if late else "Quote", "tone": BLUE}
+            row["chip"] = {"label": "Quote, late" if late else "Quote", "tone": PRIMARY}
             row["quote"] = _quote_summary(quote, compared_row)
             row["quote_src"] = AI if quote.pk in ai_quotes else PERSON
             gaps = [g for g in (compared_row.gaps if compared_row else []) if g != _ROUND_DUTY]
@@ -153,13 +153,13 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
                     "href": reverse("supply_chain:procurement_quote_detail", args=[quote.pk]),
                 }
         elif questions:
-            row["chip"] = {"label": "Questions for us", "tone": AMBER}
+            row["chip"] = {"label": "Questions for us", "tone": OURS}
             row["missing"] = [f"{_plural(len(questions), 'answer')} from us"]
             reply = f"draft-reply-{sid}"
             row["action"] = {"label": "Reply", "href": f"#{reply}" if reply in draft_anchors else "#owed"}
         elif sid in silent:
             days = (today - asked).days if asked else None
-            row["chip"] = {"label": f"Silent {_plural(days, 'day')}" if days is not None else "Silent", "tone": SLATE}
+            row["chip"] = {"label": f"Silent {_plural(days, 'day')}" if days is not None else "Silent", "tone": THEIRS}
             count = max(((reminder_counts or {}).get(o.pk, 0) for o in mine), default=0)
             if chased:
                 count = max(count, 1)
@@ -173,7 +173,7 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
                 }
         else:
             kind = next((o.response_kind for o in mine if o.responded and o.response_kind), "")
-            row["chip"] = {"label": (kind.replace("_", " ") or "replied").capitalize(), "tone": GREY}
+            row["chip"] = {"label": (kind.replace("_", " ") or "replied").capitalize(), "tone": NEUTRAL}
             row["missing"] = []
         supplier_rows.append(row)
 
@@ -237,7 +237,7 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
             "label": "Moves on us",
             "value": str(len(ours)),
             "sub": f"oldest open {_plural((today - oldest).days, 'day')}" if oldest and oldest <= today else "",
-            "tone": AMBER if ours else "",
+            "tone": OURS if ours else "",
         },
     ]
 
@@ -419,15 +419,15 @@ def comparison_grid(tender, comparison: dict, quotes_by_id: dict, *, ai_quotes=(
         supplier_gaps = [g for g in gaps if g != _ROUND_DUTY]
         # The quote's status, and one action.
         if row["quote_id"] in awarded:
-            chip, action = {"label": "Awarded", "tone": BLUE}, None
+            chip, action = {"label": "Awarded", "tone": PRIMARY}, None
         elif row.get("is_comparable"):
-            chip = {"label": "Comparable", "tone": BLUE}
+            chip = {"label": "Comparable", "tone": PRIMARY}
             action = {"label": "Award", "href": f"#award-{row['quote_id']}", "award": True}
         elif gaps and not supplier_gaps:
-            chip = {"label": "Waiting on our duty terms", "tone": AMBER}
+            chip = {"label": "Waiting on our duty terms", "tone": OURS}
             action = {"label": "Settle duty terms", "href": "#duty-terms"}
         else:
-            chip = {"label": f"Missing {_plural(len(supplier_gaps), 'fact')}", "tone": SLATE}
+            chip = {"label": f"Missing {_plural(len(supplier_gaps), 'fact')}", "tone": THEIRS}
             anchor = f"draft-supplier-{row.get('supplier_id')}"
             action = {
                 "label": f"Ask for {supplier_gaps[0]}" if supplier_gaps else "Open quote",

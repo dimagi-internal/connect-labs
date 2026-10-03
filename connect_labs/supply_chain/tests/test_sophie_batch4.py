@@ -53,7 +53,7 @@ def _ranked(body, quote_id):
 def _actions(body, quote_id):
     """The award, folded under its quote on the comparison."""
     return re.search(
-        rf'<details class="sc-fold" id="award-{quote_id}" data-testid="award-start".*?</details>', body, re.S
+        rf'<details class="fold" id="award-{quote_id}" data-testid="award-start".*?</details>', body, re.S
     ).group(0)
 
 

@@ -52,7 +52,7 @@ class TestTheTenderPage:
     def test_secondary_header_actions_sit_in_one_outlined_menu(self, da, world, client_in_program):
         body = _tender_page(client_in_program, world["tender"]["id"])
         menu = re.search(r'data-testid="decide-menu".*?</details>', body, re.S).group(0)
-        assert 'class="sc-btn-2"' in menu
+        assert "button-md outline-style" in menu
         assert "/edit/" in menu
 
     def test_an_owed_row_does_not_repeat_the_groups_day(self, da, world, client_in_program):

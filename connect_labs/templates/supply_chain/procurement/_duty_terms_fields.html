@@ -1,0 +1,12 @@
+{% comment %}The fields that settle a tender's import duty terms, inside the form that posts them
+(tender page's Terms box and the comparison's duty line).{% endcomment %}
+<label class="flex flex-col gap-1 text-sm"><span class="text-xs text-gray-600">Import duty</span>
+  <select name="duty_terms" data-testid="duty-terms-select" class="base-dropdown text-sm">
+    <option value=""{% if not tender.duty_terms %} selected{% endif %}>Not settled</option>
+    <option value="buyer_waiver"{% if tender.duty_terms == "buyer_waiver" %} selected{% endif %}>We import, under the program's duty waiver</option>
+    <option value="buyer_pays"{% if tender.duty_terms == "buyer_pays" %} selected{% endif %}>We import and pay the duty</option>
+    <option value="supplier_ddp"{% if tender.duty_terms == "supplier_ddp" %} selected{% endif %}>The supplier delivers duty paid</option>
+  </select>
+</label>
+<label class="flex flex-col gap-1 text-sm"><span class="text-xs text-gray-600">Our duty estimate, % of goods (if we pay)</span><input type="number" step="0.01" min="0" name="duty_estimate_percent" class="base-input text-sm" value="{{ tender.duty_estimate_percent|default_if_none:'' }}"></label>
+<button type="submit" class="button button-sm primary-dark self-start" data-testid="duty-terms-save">Save</button>

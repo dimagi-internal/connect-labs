@@ -18,7 +18,7 @@ class TestTheCoveringOrderPage:
     def test_a_bundled_order_says_it_was_paid_inside_the_setup_fee(self, scoped, played):
         text = _visible(_page(scoped, "order_detail", played["cover"]["id"]))
         assert "Not purchased" not in text
-        assert "Bought out of Sahel Community Health Initiative's setup fee" in text
+        assert "bought out of Sahel Community Health Initiative's setup fee" in text
 
     def test_the_cover_field_is_labelled_as_the_reason(self, scoped, played):
         text = _visible(_page(scoped, "order_detail", played["cover"]["id"]))

@@ -189,7 +189,9 @@ class TestThePerBuyerPanelSaysWhatIsKnown:
         panel = body.split("The same order, per buyer", 1)[1][:4000]
         assert "none are payable" not in panel
         assert "costing different amounts" not in panel
-        assert "cannot be said yet" in panel
+        # The status view states each buyer's total and leaves the reading to it: an
+        # unconfirmed one says so, rather than a sentence drawing a conclusion.
+        assert "Unconfirmed" in panel
 
 
 def _registration(da, world):

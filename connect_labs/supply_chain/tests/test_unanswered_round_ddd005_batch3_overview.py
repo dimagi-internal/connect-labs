@@ -91,6 +91,6 @@ class TestOwedNamesItsCounterparty:
     def test_the_order_page_heading_names_the_forwarder(self, da, world, client_in_program):
         contract, _ = _held_on_our_form_m(da, world)
         body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
-        heading = _text(re.search(r'<h3 id="owed" data-testid="owed-heading".*?</h3>', body, re.S).group(0))
+        heading = _text(re.search(r'<h2 id="owed" data-testid="owed-heading".*?</h2>', body, re.S).group(0))
         assert heading.startswith("What we owe — to clear the shipment (via Crescent Rehearsal Freight)")
         assert "What we owe them" not in heading

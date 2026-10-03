@@ -643,8 +643,8 @@ class TestTheThirdTier:
         them = reference["orgs"]["a-distributor-org"]["name"]
 
         body = _order_page(scoped, chain["contract"]["id"])
-        second_hand = _told_by_cells(body, ">Received</h3>")
-        theirs = _told_by_cells(body, ">Shipments</h3>")
+        second_hand = _told_by_cells(body, ">Received</h2>")
+        theirs = _told_by_cells(body, ">Shipments</h2>")
         ours = _visible(body.split("Recorded by", 1)[1].split("</dd>", 1)[0])
 
         assert second_hand == [f"{us}, for {them} (they told us)"]

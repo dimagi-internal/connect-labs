@@ -50,7 +50,7 @@ class TestASilentRound:
         theirs = body.split('data-testid="on-suppliers"', 1)[1].split("</section>", 1)[0]
         assert 'data-rule="no reply"' in theirs
         compare = re.search(r'<a data-testid="compare-quotes"[^>]*class="([^"]*)"', body, re.S).group(1)
-        assert "sc-btn" in compare.split()
+        assert "primary-dark" in compare.split()
 
     def test_once_everyone_has_replied_nothing_is_on_suppliers(self, da, world, client_in_program):
         op(
@@ -230,12 +230,12 @@ class TestTheOrderPage:
         assert hold == "Import permit — the shipment is held until we provide it Mark provided"
         assert "?kind=import_permit" in owed
         assert "Nothing owed" not in owed
-        assert _text(re.search(r'<h3 id="owed".*?</h3>', body, re.S).group(0)) == (
+        assert _text(re.search(r'<h2 id="owed".*?</h2>', body, re.S).group(0)) == (
             # Since DDD 005 batch 3 the section names who the document goes through.
             "What we owe — to clear the shipment (via Crescent Rehearsal Freight) — 1 open"
         )
-        banner = re.search(r'<div data-testid="waiting-on-us" class="([^"]*)"', body).group(1)
-        assert "text-gray-900" in banner.split() and "text-message-warning-text" not in banner.split()
+        ours = body.split('data-testid="on-us"', 1)[1].split("</section>", 1)[0]
+        assert 'data-rule="owed"' in ours and "Provide 1 document to Crescent Rehearsal Freight" in _text(ours)
 
     def test_the_unit_price_against_agreed_has_its_own_row(self, da, world, client_in_program):
         contract = _contract(da, world)
