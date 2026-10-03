@@ -194,13 +194,15 @@ class TestTheComparison:
         body = self._page(client_in_program, world)
         banner = _text(re.search(r'<div data-testid="comparison-banner"[^>]*>(.*?)</div>', body, re.S).group(1))
         assert banner.startswith("1 of 2 quotes can be compared on ")
-        assert "Northgate Rehearsal Commodities has not stated " in banner
+        assert "Northgate Rehearsal Commodities: " in banner
         for word in ("PROVISIONAL", "provisional", "beat"):
             assert word not in banner
         button = _text(
             re.search(r'<summary data-testid="award-open" data-anyway[^>]*>(.*?)</summary>', body, re.S).group(1)
         )
-        assert button.startswith("Award Kanem ") and button.endswith(" now 1 other quote can&#x27;t be compared yet.")
+        assert button.startswith("Award Kanem ") and button.endswith(
+            " anyway (1 quote still incomplete) 1 other quote can&#x27;t be compared yet: see Needs info"
+        )
 
     def test_decided_on_is_empty_until_an_award_is_started(self, da, world, client_in_program):
         op(da, "quote_record", data=_comparable(world))
@@ -245,7 +247,7 @@ class TestTheOrderPage:
         )
         body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
         sub = re.search(r'<tr data-testid="invoice-against-agreed".*?</tr>', body, re.S).group(0)
-        assert "Unit price USD 51.20 billed 49.80 agreed" in _text(sub)
+        assert "Unit price USD 51.20 billed USD 49.80 agreed" in _text(sub)
         assert 'data-testid="above-agreed-tag"' in sub
         amount_cell = re.search(r'data-testid="invoice-above-agreed"[^>]*>(.*?)</div>', body, re.S).group(1)
         assert "unit price" not in amount_cell

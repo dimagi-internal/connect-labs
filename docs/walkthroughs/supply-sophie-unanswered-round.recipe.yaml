@@ -46,9 +46,9 @@ scenes:
     seconds: 1.5
     target: testid:tender-duty-terms
   - kind: hover
-    note: park the cursor on the Draft reminders button the next scene uses, clear of "3 of 6 replied"
+    note: park the cursor on the What this tender buys heading, off the buttons and the Outreach table
     seconds: 0.6
-    target: testid:draft-reminders
+    target: css:h2:has-text('What this tender buys')
   - kind: hold
     seconds: 1.5
   concept_claim: The round's page says it is past its deadline and that its import
@@ -68,13 +68,13 @@ scenes:
   - kind: wait_for
     target: css:#drafts
   - kind: click
-    note: open the round's draft emails from the header's Draft reminders, which opens the panel and scrolls to it
+    note: open Sahel's drafted reminder from Sahel's own row, which opens the draft emails at Sahel's card, its heading just under the top bar
     say: drafts
-    target: testid:draft-reminders
+    target: css:tr:has-text('Sahel Nutrition Industries') [data-testid=row-draft-reminder]
   - kind: wait_for
     target: css:#drafts[open]
-  - kind: scroll_to
-    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] textarea
+  - kind: hold
+    seconds: 0.8
   - kind: hover
     note: the line that says when she asked Sahel and when she last reminded them
     say: reminder
@@ -86,14 +86,14 @@ scenes:
     seconds: 1.8
     target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=chase-date]
   - kind: hover
-    note: park the cursor on Sahel's name, the card's heading, off the message, the why line and the date field
+    note: park the cursor on the To line's blank right, off the message, the facts row and the date field
     seconds: 0.6
-    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] p:first-child span:first-child
+    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] div:has(> [data-testid=copy-to])
   - kind: hold
     note: the drafted reminder, open, with today's date ready to record
     seconds: 2.5
   - kind: snapshot
-    note: the canonical frame is Sahel's open drafted reminder card, with Chased on reading today beside Record chase
+    note: the canonical frame is Sahel's whole drafted reminder card, its facts row, and Chased on reading today beside Record chase -- the only chase control in frame
   - kind: click
     must_succeed: true
     note: record the day she chased Sahel, from the draft itself; the round lands on Sahel's row, which scene 3 opens on
@@ -107,7 +107,8 @@ scenes:
     seconds: 0.6
     target: testid:draft-reminders
   - kind: hold
-    seconds: 1.2
+    note: the chase recorded -- Sahel's Last chased reads today, the 3rd reminder, and when the next falls due
+    seconds: 2.0
   concept_claim: The round drafts a reminder for each silent supplier that says when
     they were asked and last reminded, with a Chased on field holding today's date
     and a Record chase button on the draft itself.
@@ -121,17 +122,20 @@ scenes:
   actions:
   - kind: wait_for
     target: css:#history
-  - kind: click
+  - kind: goto
     must_succeed: true
-    note: 'the page opens on #history; replies only goes on at once, so the emails lead with Sahel''s first'
+    note: 'land on the round''s History, its heading just under the top bar, before the first hold'
+    target: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#history
+  - kind: wait_for
     target: testid:history-replies-only
   - kind: hold
     seconds: 0.8
-  - kind: hover
-    note: the scene's one glimpse of Outreach -- the reply count now includes Sahel
-    say: answers
-    seconds: 1.8
-    target: testid:outreach-replied-count
+  - kind: click
+    must_succeed: true
+    note: replies only goes on at once, so the emails lead with Sahel's first
+    target: testid:history-replies-only
+  - kind: hold
+    seconds: 0.8
   - kind: click
     must_succeed: true
     note: open Sahel's own email, recorded by the AI
@@ -139,32 +143,34 @@ scenes:
     target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=source-toggle]
   - kind: wait_for
     target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=source-excerpt]
-  - kind: scroll_to
-    note: centre Sahel's opened email -- sender line above, the excerpt, and the records below -- so the Quotes table leaves the frame
-    target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=source-excerpt]
   - kind: hold
+    note: the camera stays on History, its heading under the top bar and Sahel's opened email whole below it
     say: wrote
-    seconds: 2.5
+    seconds: 2.0
   - kind: hover
-    note: park the cursor on the History heading's words, off the email, the records and the checkbox
+    note: the history line that says Sahel replied with a quote, and on what day
+    say: answers
+    seconds: 1.8
+    target: text:Replied with a quote on 3 Oct 2026
+  - kind: hover
+    note: park the cursor on the day row's blank middle, off the heading, the filter and Sahel's email
     seconds: 0.6
-    target: css:#history h2
+    target: css:[data-testid=timeline-day]:visible
   - kind: hold
     seconds: 1.2
   - kind: snapshot
     note: the canonical frame is Sahel's email opened -- sender, excerpt and what the AI recorded from it
   before: python3 scripts/walkthroughs/supply-sophie-unanswered-round/seed.py --sahel-replies
   concept_claim: When a silent supplier's forwarded email is recorded, the round's
-    reply count includes them, and its history, turned to replies only, shows that
-    email first with its sender, the excerpt of what they wrote behind an opened
-    Source email toggle, and the quote and reply the AI recorded from it.
+    history, turned to replies only, shows that email first with its sender, the excerpt
+    of what they wrote behind an opened Source email toggle, and the quote and the reply
+    the AI recorded from it, dated the day it came in.
   design_intent: 'A real event between scenes: the record changes because the world
     did, and Sophie drills into the email itself to check it, so the change carries
     its own evidence.'
   show: Sophie lands on the round's history turned to replies only, with Sahel's
-    email first and the Outreach count including Sahel, opens the Source email toggle
-    on Sahel's email, and reads the excerpt and sender beside what the AI recorded
-    from it.
+    email first, opens the Source email toggle on Sahel's email, and reads the excerpt
+    and sender beside what the AI recorded from it, the reply dated 3 Oct 2026.
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#history
 - id: whats-still-missing
   actions:
@@ -174,28 +180,28 @@ scenes:
     say: Harmattan
     seconds: 2.0
     target: text:Harmattan Therapeutics
-  - kind: scroll_to
-    note: down to the Needs info cards, Kanem's pack size and Sahel's three blockers
+  - kind: scroll
+    note: down to the Needs info cards, Kanem's pack size and Sahel's three blockers (a scroll_to here is clamped at the page's foot)
     say: Kanem
-    target: css:[data-testid=needs-info]
+    value: bottom
   - kind: hover
-    note: park the cursor on the Needs info heading's words at the left, off the cards
+    note: park the cursor in the Needs info heading's blank right, off the cards
     seconds: 0.6
-    target: testid:needs-info-title
+    target: css:h2:has([data-testid=needs-info-title])
   - kind: hold
     say: Sahel
     seconds: 2.5
-  - kind: scroll_to
-    note: back up to the round's duty terms note and the summary banner naming every missing fact
-    target: testid:comparison-duty-terms
+  - kind: scroll
+    note: back up to the round's duty terms note and the summary banner naming every missing fact (a scroll_to here cannot move the page, it is already near the top)
+    value: top
   - kind: hover
     say: not settled
     seconds: 2.0
     target: testid:comparison-duty-terms
   - kind: hover
-    note: park the cursor on the page title, off the note and the banner
+    note: park the cursor in the Comparable heading's blank middle, off the title, the duty note and the banner
     seconds: 0.6
-    target: css:h1
+    target: css:h2:has-text('Comparable')
   - kind: hold
     seconds: 2.0
   - kind: snapshot
@@ -242,28 +248,44 @@ scenes:
     note: the importer question, answered into her reply to Northgate
     seconds: 2.0
     target: css:[data-commitment-id='${importer_question_id}']
-  - kind: scroll_to
-    note: up to the round's header, where the duty terms line now reads the waiver, marked new
-    target: testid:tender-duty-terms
+  - kind: goto
+    must_succeed: true
+    note: on to the round's comparison, which now costs quotes by the terms just set
+    target: /supply/procurement/tenders/${round2_tender_id}/compare/?program_id=${program_id}
+  - kind: wait_for
+    must_succeed: true
+    target: testid:comparison-duty-terms
   - kind: hover
-    say: leaves duty out
+    note: the duty terms note now reads the waiver
+    say: comparison
     seconds: 2.0
-    target: testid:tender-duty-terms
+    target: testid:comparison-duty-terms
+  - kind: scroll
+    note: down to Sahel's card, where duty is no longer among what blocks it (the page's foot)
+    value: bottom
   - kind: hover
-    note: park the cursor on the round's title, off the duty terms line
+    note: the card's own Duty line -- waived because we import, the round's terms set from her answer to Northgate
+    say: waived
+    seconds: 2.0
+    target: css:[data-testid=needs-info] [data-quote-id]:has-text('Sahel Nutrition Industries') [data-testid=card-duty]
+  - kind: hover
+    note: park the cursor in the Needs info heading's blank right, off its words and Sahel's card
     seconds: 0.6
-    target: css:h1
+    target: css:h2:has([data-testid=needs-info-title])
   - kind: hold
     seconds: 2.0
+  - kind: snapshot
+    note: the canonical frame is Sahel's Needs info card under the waiver -- its Duty line reading duty waived (our import), set from her answer to Northgate, with only the exchange rate and freight left blocking it
   concept_claim: Answering a supplier's question about who imports can set the round's
-    import duty terms, and the round's header then reads those terms with who set
-    them, the terms any quote that leaves duty out is costed by.
+    import duty terms, and the round's comparison then states those terms and costs
+    a quote that leaves duty out under them, so duty is no longer among what blocks
+    that quote.
   design_intent: A question in an email stalls the round with nobody on the hook;
     as a record it is Sophie's to-do, and one answer to it settles how any quote that
     leaves duty out is costed.
   show: Sophie marks Northgate's importer question answered with her answer, picks
-    the program's duty waiver as the round's import duty terms, and lands on the round's
-    header reading those terms.
+    the program's duty waiver as the round's import duty terms, then opens the round's
+    comparison, which now costs a quote that leaves duty out under the waiver.
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#owed
 - id: held-on-us
   actions:
@@ -286,16 +308,20 @@ scenes:
     note: the forwarder's email, centred and read
     seconds: 2.0
   - kind: scroll_to
-    note: frame the Invoices table through the forwarder's email below it in one shot
-    target: text:Nothing attached
+    note: centre the invoice's Freight line, so the Invoices heading and its column headers sit whole under the top bar, with the history's Waiting on us line and why it is ours (we are the consignee) below
+    target: css:tr:has([data-testid=above-agreed-tag]):has-text('Freight')
   - kind: hover
     say: invoice
     seconds: 1.8
     target: testid:above-agreed-tag
   - kind: hover
-    note: park the cursor on the Quantity billed column header, off the figures and the email
+    note: the Dispute action beside Pay on the invoice billed above agreed
+    seconds: 1.2
+    target: testid:invoice-dispute
+  - kind: hover
+    note: park the cursor in the Total row's empty Issued cell, off the figures, the headers and the email
     seconds: 0.6
-    target: text:Quantity billed
+    target: css:[data-testid=invoice-above-agreed-row] td:nth-child(2)
   - kind: hold
     seconds: 1.5
   concept_claim: The order says it is waiting on us for the import permit, with the
@@ -332,9 +358,9 @@ scenes:
     say: invoice
     seconds: 1.5
   - kind: hover
-    note: park the cursor on the View as of label above the table, off the table
+    note: park the cursor on the table's caption, off the table and the View as of control
     seconds: 0.6
-    target: text:View as of
+    target: text:Where everything stands
   - kind: hold
     seconds: 1.5
   concept_claim: The overview names each supplier who has not replied with the day

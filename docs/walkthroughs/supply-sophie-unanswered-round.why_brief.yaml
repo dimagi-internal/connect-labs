@@ -12,6 +12,11 @@ gaps:
   detail: The walkthrough has no off-camera step in which a silent supplier answers
     between the chase and the next scene; the AI must record that reply over the labs
     MCP with its source, so the record moves on camera without a seeded fake.
+  resolved: 'Shipped: seed.py --sahel-replies records Sahel''s emailed quote with
+    its source (quote_record + outreach_update carrying ref, excerpt and sender),
+    and the round''s history shows it with a Source email toggle and a Replies only
+    filter (connect_labs/templates/supply_chain/_timeline.html; tests in connect_labs/supply_chain/tests/test_unanswered_round_batch2.py
+    and test_unanswered_round_ddd002_batch3.py).'
   claim_ref: S3
   proposed_action: 'seed.py --sahel-replies: the AI records Sahel''s emailed quote
     (quote_record + outreach_update with source ref, excerpt and sender) over the
@@ -30,6 +35,11 @@ gaps:
   detail: A tender had no structured record of how import duties are handled for the
     round, so a duty-excluded quote was blocked on a duty amount even when the program
     imports under a duty waiver.
+  resolved: 'Shipped (PR 2165): Tender.duty_terms, set by commitment_resolve(duty_terms=...)
+    from the owed-answer form or by tender_set_duty_terms (connect_labs/supply_chain/procurement/operations.py),
+    honoured by the comparison (services/comparison.py landed_basis_words) and the
+    overview; tests in connect_labs/supply_chain/tests/test_unanswered_round_v11_duty_terms.py.
+    The comparison names the answer that set the terms (test_unanswered_round_ddd003_batch2.py).'
   claim_ref: S5
   proposed_action: Tender duty terms (not settled / buyer_waiver / buyer_pays / supplier_ddp),
     set from the owed-answer form ([data-testid=answer-duty-terms]) or the tender's
@@ -38,8 +48,8 @@ gaps:
 spine:
 - id: S1
   claim: 'In Sophie''s rounds about half the suppliers asked never answer (Jonathan''s
-    account); this demo''s round 2 reconstructs that: of six asked on 15 Sep, three
-    stayed silent through two reminders (18 Sep, then 23 to 25 Sep), and the three
+    account); this demo''s round 2 reconstructs that: of six asked on 16 Sep, three
+    stayed silent through two reminders (19 Sep, then 24 to 26 Sep), and the three
     who answered sent one complete quote, one missing a fact, and questions instead
     of a price.'
   status: grounded
@@ -73,7 +83,7 @@ spine:
     the email, and the AI records Sahel''s quote from it with the excerpt and the
     sender, so the record moves Sahel from silent to replied; the earlier replies
     stay on record the same way.'
-  status: gap
+  status: grounded
   evidence:
   - ref: EV-008
     kind: implemented
@@ -109,7 +119,7 @@ spine:
     the whole round: Sophie marks it as the round''s import duty terms (we import,
     under the program''s duty waiver), so no quote is held up waiting on a duty figure
     from its supplier.'
-  status: gap
+  status: grounded
   evidence:
   - ref: EV-009
     kind: implemented

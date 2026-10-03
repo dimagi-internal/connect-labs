@@ -102,8 +102,13 @@ def _reply_by(tender: Tender, today: date | None) -> list[str]:
     ]
 
 
-def _about(tender: Tender) -> str:
-    return f" — {tender.label}" if tender.label else ""
+def _about(tender: Tender, commodity: Commodity) -> str:
+    """What the email is about, as the supplier knows it: what we asked for and where.
+
+    Never the tender's own label ("RUTF round 2: ..."): that is our internal
+    numbering, and a supplier read it as such.
+    """
+    return f" — {_quantity_text(commodity, tender)} of {_product(commodity)}, {_where_short(tender)}"
 
 
 def _quantity_text(commodity: Commodity, tender: Tender) -> str:
@@ -209,7 +214,7 @@ def render_initial_request(
     ]
     lines += _reply_by(tender, today)
     lines += _sign_off(sender)
-    subject = f"Quotation request: {quantity_text} of {_product(commodity)}, {_where_short(tender)}{_about(tender)}"
+    subject = f"Quotation request: {quantity_text} of {_product(commodity)}, {_where_short(tender)}"
     return Draft(subject=subject, text="\n".join(lines), to=_address(supplier))
 
 
@@ -259,7 +264,7 @@ def render_followup(
             *_sign_off(sender),
         ]
         return Draft(
-            subject=f"Thank you for your quotation{dated}{_about(tender)}",
+            subject=f"Thank you for your quotation{dated}{_about(tender, commodity)}",
             text="\n".join(lines),
             to=_address(supplier),
         )
@@ -273,7 +278,7 @@ def render_followup(
     lines += _reply_by(tender, today)
     lines += _sign_off(sender)
     return Draft(
-        subject=f"Follow-up on your quotation{dated}{_about(tender)}",
+        subject=f"Follow-up on your quotation{dated}{_about(tender, commodity)}",
         text="\n".join(lines),
         to=_address(supplier),
     )
@@ -316,7 +321,7 @@ def render_reminder(
     ]
     lines += _sign_off(sender)
     return Draft(
-        subject=f"Reminder: quotation request of {asked}{_about(tender)}",
+        subject=f"Reminder: quotation request of {asked}{_about(tender, commodity)}",
         text="\n".join(lines),
         to=_address(supplier),
     )

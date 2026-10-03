@@ -85,7 +85,7 @@ class TestWaitingOnSaysTwoThings:
         # cell with "Us: extend or close the round"; that line is pinned elsewhere.)
         assert any(line.startswith("<strong>No reply</strong>:") for line in lines)
         assert re.findall(r'data-testid="silent-supplier">(.*?)</li>', standing) == [
-            'Plateau Mills <span class="text-gray-600">(asked 10 Aug)</span>'
+            'Plateau Mills <span class="text-gray-600 whitespace-nowrap">(asked 10 Aug)</span>'
         ]
         # One labelled list per owner: "Missing facts" heads its suppliers as "No reply" does.
         assert any(line.startswith("<strong>Missing facts</strong>:") for line in lines)

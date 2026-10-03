@@ -388,15 +388,15 @@ class TestABlockedCard:
         )
         # Since the unanswered round's batch 3: what is missing, by whom, and nothing else.
         assert banner == (
-            "0 of 3 quotes can be compared. Lakeside Foods has not stated sachets per carton. "
-            "Sahel Nutrition has not stated duties amount. Northwind Foods has not stated freight."
+            "0 of 3 quotes can be compared. Not yet stated or recorded: Lakeside Foods: sachets per carton "
+            "Sahel Nutrition: duties amount Northwind Foods: freight"
         )
 
     def test_a_quote_missing_two_facts_is_not_said_to_miss_one(self, da, base, client_in_program):
         _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, {})
         body = _page(client_in_program, base["tender"]["id"])
         sentence = re.search(r'data-testid="not-stated">([^<]*)<', body).group(1)
-        assert sentence.startswith("Northwind Foods has not stated ") and " and " in sentence
+        assert sentence.startswith("Northwind Foods: ") and sentence.count(",") >= 1
 
 
 @pytest.mark.django_db

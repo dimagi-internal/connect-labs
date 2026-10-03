@@ -189,6 +189,13 @@ class ComparisonRow:
     # What the landed figures assume, and whose word it is: "Delivered to
     # Kano · freight included · duties included, per quote".
     landed_basis: str = ""
+    # The same, less the round's own duty terms, for a card that gives those
+    # terms a line of their own (`duty_line`): "Ex works Niamey — delivery to
+    # Kano requested · freight included, per quote".
+    delivery_basis: str = ""
+    # The duty the round's terms make ours, as its own line, with what the quote
+    # itself said beside it: "Duty waived (our import) · the quote also stated zero".
+    duty_line: str = ""
     # The quantity the quote's landed total is for: "2,000 cartons".
     quantity_quoted: str = ""
 
@@ -408,6 +415,8 @@ class Comparison:
                 "supplier_awaiting_review": row.supplier_awaiting_review,
                 "delivery": row.delivery,
                 "landed_basis": row.landed_basis,
+                "delivery_basis": row.delivery_basis,
+                "duty_line": row.duty_line,
                 "gaps": row.gaps,
                 "base_unit": row.base_unit,
                 "pack_unit": row.pack_unit,
@@ -717,7 +726,57 @@ def delivery_words(quote, tender) -> str:
     return f"to {destination_phrase(places)}" if places else ""
 
 
-def landed_basis_words(quote, tender) -> str:
+# An Incoterm under which the goods are handed over at origin: the supplier does
+# not deliver to the tender's place, whatever the tender asked.
+_HANDOVER_AT_ORIGIN = {
+    "EXW": "Ex works",
+    "FCA": "Free carrier",
+    "FAS": "Free alongside ship",
+    "FOB": "Free on board",
+}
+
+
+def _origin_handover_words(quote, where: str) -> str:
+    """ "Ex works Niamey — delivery to Kano requested", or "" when the quote is delivered.
+
+    A quote on an origin term delivered to nobody's door: saying "Delivered to
+    Kano" over a freight blocker read from "EXW Niamey" contradicted itself.
+    A quote that states freight included is taken at its word.
+    """
+    text = str(getattr(quote, "incoterm", "") or "").strip()
+    if not text or getattr(quote, "freight_basis", "") == "included":
+        return ""
+    code, _, place = text.partition(" ")
+    name = _HANDOVER_AT_ORIGIN.get(code.upper().strip(".,"))
+    if not name:
+        return ""
+    handover = f"{name} {place.strip()}".strip()
+    return f"{handover} — delivery {where} requested" if where.startswith("to ") else handover
+
+
+def round_duty_words(quote, tender) -> str:
+    """The duty the round's terms make ours, as its own line: "Duty waived (our import)".
+
+    What the quote itself said of duty follows, so the round's term never hides
+    the supplier's word: "· the quote also stated zero". "" when the round's
+    terms leave duty to each quote.
+    """
+    terms = getattr(tender, "duty_terms", "") or ""
+    if terms == "buyer_waiver":
+        line = "Duty waived (our import)"
+    elif terms == "buyer_pays" and getattr(tender, "duty_estimate_percent", None) is not None:
+        line = f"Duty: our estimate of {tender.duty_estimate_percent.normalize():f}% added (our import)"
+    else:
+        return ""
+    basis, amount = getattr(quote, "duties_basis", ""), getattr(quote, "duties_amount", None)
+    if basis == "excluded" and amount is not None and not amount:
+        line += " · the quote also stated zero"
+    elif basis == "included":
+        line += " · the quote states duty included"
+    return line
+
+
+def landed_basis_words(quote, tender, *, round_duty: bool = True) -> str:
     """What a quote's landed figures rest on: where it is delivered, and how freight and duties were counted.
 
     "Delivered to Kano · freight included · duties included, per quote". Read
@@ -729,7 +788,10 @@ def landed_basis_words(quote, tender) -> str:
     parts, sources = [], []
     pickup = getattr(quote, "delivery_mode", "delivered") == "pickup"
     where = delivery_words(quote, tender)
-    if where.startswith("to "):
+    handover = "" if pickup else _origin_handover_words(quote, where)
+    if handover:
+        parts.append(handover)
+    elif where.startswith("to "):
         parts.append(f"Delivered {where}")
     elif where:
         parts.append(where[:1].upper() + where[1:])
@@ -746,6 +808,10 @@ def landed_basis_words(quote, tender) -> str:
             basis, source = from_term[label], f"Incoterm {quote.incoterm}"
         if basis == "included":
             parts.append(f"{label} included")
+        elif basis == "excluded" and amount is not None and not amount and label == "duties":
+            # A zero said on the quote, said as the quote's word -- not "0.00 added",
+            # which read as a figure we had guessed.
+            parts.append("duty stated as zero on the quote")
         elif basis == "excluded" and amount is not None:
             parts.append(f"{label} {money_digits(amount)} {currency} added")
         else:
@@ -755,8 +821,11 @@ def landed_basis_words(quote, tender) -> str:
     if pickup and getattr(quote, "buyer_transport_amount", None) is not None:
         parts.append(f"our transport {money_digits(quote.buyer_transport_amount)} {currency} added")
     # Duty the round's terms make ours, said as such: the figure is the
-    # tender's, not the supplier's.
-    if terms == "buyer_waiver":
+    # tender's, not the supplier's. A card that gives the terms their own line
+    # (`round_duty_words`) leaves them out here.
+    if not round_duty:
+        pass
+    elif terms == "buyer_waiver":
         parts.append("duty waived (our import)")
     elif terms == "buyer_pays" and getattr(tender, "duty_estimate_percent", None) is not None:
         parts.append(f"our duty estimate {tender.duty_estimate_percent.normalize():f}% added")
@@ -827,6 +896,8 @@ def compare_tender(
         if quote.as_quoted_amount is not None and quote.as_quoted_unit == "per_base_unit" and row.pack_unit:
             row.as_quoted_note = per_pack_note(figures, row.base_unit, row.pack_unit)
         row.landed_basis = landed_basis_words(quote, tender)
+        row.delivery_basis = landed_basis_words(quote, tender, round_duty=False)
+        row.duty_line = round_duty_words(quote, tender)
         if quote.quantity_basis is not None and quote.quantity_basis_unit:
             row.quantity_quoted = quantity_phrase(quote.quantity_basis, quote.quantity_basis_unit)
         if not course_applies:

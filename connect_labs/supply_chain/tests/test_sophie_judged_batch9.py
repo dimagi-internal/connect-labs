@@ -75,7 +75,7 @@ class TestTheAwardPriceStacks:
         widths = {k: int(v) for k, v in re.findall(r'data-col="([a-z-]+)" style="width: (\d+)%"', standing)}
         # Unanswered-round 002: "Waiting on" stacks a line per owner, so it takes
         # room from the title column; stage keeps enough for the award line.
-        assert widths["stage"] == 17 and widths["waiting"] > widths["title"] and sum(widths.values()) == 100
+        assert widths["stage"] == 15 and widths["waiting"] > widths["title"] and sum(widths.values()) == 100
 
 
 # ---- 2. one order on every Needs-info card ----------------------------------

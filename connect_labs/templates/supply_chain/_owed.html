@@ -26,7 +26,7 @@ answered" / "Mark done"), empty_text.
 </div>
 {% if owed_answered %}
 <details data-testid="owed-answered" class="bg-white border border-gray-200 rounded-lg shadow-sm mb-8"{% if owed_answered_expanded %} open{% endif %}>
-  <summary class="px-4 py-2.5 cursor-pointer text-sm font-semibold text-gray-900">Answered — {{ owed_answered|length }}</summary>
+  <summary class="px-4 py-2.5 cursor-pointer text-sm font-semibold text-gray-900">{% if owed_drafted_count %}{% if owed_sent_count %}Answered — {{ owed_sent_count }} · {% endif %}<span data-testid="owed-drafted-heading">Answer drafted — {{ owed_drafted_count }} <span class="font-normal text-gray-600">(not yet sent)</span></span>{% else %}Answered — {{ owed_answered|length }}{% endif %}</summary>
   <div class="divide-y divide-gray-200 border-t border-gray-200">
     {% for group in owed_answered_groups %}
       {% include "supply_chain/_owed_group.html" %}

@@ -142,7 +142,7 @@ class TestWaitingOnNamesWho:
         cell = _cells(_standing_row(_home(home_client), tender_id))[2]
         # The silent supplier stacked under "No reply", with the day we asked it.
         assert "<strong>No reply</strong>:" in cell
-        assert 'Northwind Foods <span class="text-gray-600">(asked 9 Sep)</span>' in cell
+        assert 'Northwind Foods <span class="text-gray-600 whitespace-nowrap">(asked 9 Sep)</span>' in cell
         assert re.search(r'data-testid="waiting-detail"[^>]*>1 of 2 replied<', cell)
 
     def test_after_an_award_a_contract_with_the_awardee(self, da, base):

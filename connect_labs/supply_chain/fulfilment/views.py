@@ -18,6 +18,7 @@ from connect_labs.supply_chain.form_views import OperationFormView
 from connect_labs.supply_chain.fulfilment.forms import (
     ContractForm,
     DocumentForm,
+    InvoiceDisputeForm,
     InvoiceForm,
     PaymentConfirmationForm,
     PaymentForm,
@@ -333,6 +334,76 @@ class PaymentRecordView(OperationFormView):
 
     def redirect_to(self, result):
         return reverse("supply_chain:order_detail", args=[self.invoice().contract_id])
+
+
+class InvoiceDisputeView(OperationFormView):
+    """Dispute an invoice with its supplier: the reason, kept on the invoice, which reads disputed."""
+
+    operation = "invoice_dispute"
+    form_class = InvoiceDisputeForm
+    title = "Dispute an invoice"
+    submit_label = "Record the dispute"
+
+    def invoice(self):
+        return _invoice(self.request, self.kwargs["invoice_id"])
+
+    def get_initial(self):
+        initial = super().get_initial()
+        invoice = self.invoice()
+        # Opening on what the order already found wrong with it, in figures.
+        found = _above_agreed_words(self, invoice)
+        if found:
+            initial.setdefault("reason", found)
+        return initial
+
+    def fixed(self, **kwargs):
+        return {"invoice_id": int(kwargs["invoice_id"])}
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        invoice = self.invoice()
+        name = invoice.reference or f"invoice {invoice.pk}"
+        context["title"] = f"Dispute {name}"
+        context["intro"] = (
+            f"{invoice.currency} {money_digits(invoice.amount)} billed by {invoice.contract.supplier.name} for order "
+            f"{invoice.contract}. The invoice is marked disputed with your reason; send the query from your own "
+            "mailbox."
+            if invoice.amount is not None
+            else f"Billed by {invoice.contract.supplier.name} for order {invoice.contract}."
+        )
+        return context
+
+    def breadcrumb(self, **kwargs):
+        invoice = self.invoice()
+        return [
+            {"label": "Orders", "href": reverse("supply_chain:orders")},
+            {"label": str(invoice.contract), "href": reverse("supply_chain:order_detail", args=[invoice.contract_id])},
+            {"label": self.title},
+        ]
+
+    def cancel_href(self, **kwargs):
+        return reverse("supply_chain:order_detail", args=[self.invoice().contract_id])
+
+    def redirect_to(self, result):
+        return reverse("supply_chain:order_detail", args=[self.invoice().contract_id]) + "#invoices"
+
+
+def _above_agreed_words(view, invoice) -> str:
+    """ "Billed above the agreed contract: unit price USD 51.20 against 49.80 agreed; freight ..." """
+    try:
+        checks = view.op("checks_list", kinds=["invoice_above_contract"])["checks"]
+    except Exception:  # a check that cannot run leaves the reason for the person to write
+        return ""
+    found = next((c for c in checks if c["subject"]["id"] == invoice.contract_id), None)
+    facts = (found or {}).get("facts") or {}
+    parts = []
+    for line in facts.get("above") or []:
+        currency = facts.get("currency") or invoice.currency
+        if line.get("invoice_id") != invoice.pk:
+            continue
+        what = "unit price" if line.get("field") == "unit_price" else "freight"
+        parts.append(f"{what} {currency} {money_digits(line['billed'])} against {money_digits(line['agreed'])} agreed")
+    return ("Billed above the agreed contract: " + "; ".join(parts) + ".") if parts else ""
 
 
 class PaymentConfirmView(OperationFormView):

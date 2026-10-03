@@ -68,12 +68,14 @@ class TestAnAnswerGoesIntoTheReply:
 
 
 @pytest.mark.django_db
-def test_a_restricted_tender_names_who_was_asked(da, world, client_in_program):
+def test_a_restricted_tender_does_not_repeat_who_was_asked(da, world, client_in_program):
     from connect_labs.supply_chain.models import Tender
 
     Tender.objects.filter(pk=world["tender"]["id"]).update(visibility="private")
     body = _tender_page(client_in_program, world["tender"]["id"])
     start = body.index(">Invited suppliers</h2>")
     panel = body[start : body.index("</ul>", start)]
-    assert "only the suppliers below" in panel
-    assert 'data-testid="invited-asked"' in panel and "asked directly" in panel
+    # Said once each: who can see it in the header's Visibility line, who was asked in Outreach
+    # (unanswered round, run 003 batch 1).
+    assert "only the suppliers below" not in panel and 'data-testid="invited-asked"' not in panel
+    assert "Only the suppliers you invite see it" in body

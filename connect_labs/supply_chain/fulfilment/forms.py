@@ -24,6 +24,9 @@ The screen says so where the tickbox is, rather than letting somebody tick it
 and believe the number moved.
 """
 
+from datetime import date
+
+from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Column, Field, Fieldset, Layout, Row
 from django import forms
 from django.db.models import Case, Value, When
@@ -648,3 +651,23 @@ class DocumentForm(ProvenancedForm):
             data["content_type"] = upload.content_type or "application/octet-stream"
             data["content_base64"] = base64.b64encode(upload.read()).decode()
         return data
+
+
+class InvoiceDisputeForm(forms.Form):
+    """Why we dispute an invoice, and the day: kept on the invoice, which is marked queried."""
+
+    reason = forms.CharField(
+        label=_("What we dispute"),
+        widget=forms.Textarea(attrs={"rows": 3, "class": "base-input w-full"}),
+        help_text=_("Say it as you put it to the supplier. Send it from your own mailbox; nothing is sent from here."),
+    )
+    disputed_on = forms.DateField(label=_("On"), initial=date.today, widget=forms.DateInput(attrs=DATE))
+
+    def __init__(self, *args, access=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.disable_csrf = True
+
+    def payload(self) -> dict:
+        return to_payload(self.cleaned_data)
