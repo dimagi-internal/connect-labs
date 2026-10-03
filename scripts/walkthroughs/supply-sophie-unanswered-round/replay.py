@@ -23,7 +23,8 @@ Two hands write, each on its own day:
 
 Every date is anchored to the render day, not the calendar. The story was
 written as of 2 Oct 2026 (`STORY_TODAY`): the ask on 15 Sep, the deadline on
-29 Sep, the reminders on 18 and 23-25 Sep. The pages count ages from
+6 Oct (four days ahead, so chasing the silent suppliers is still worth it),
+the reminders on 18 and 23-25 Sep. The pages count ages from
 `date.today()`, so a fixed calendar would make the round look older on every
 later render ("No reply · 17 days" becoming "· 40 days"). `story_day` moves
 every dated step by the same amount, keeping each offset from the render day
@@ -582,8 +583,8 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
         },
     )
 
-    # ---- Round 2 (asked 17 days back): open, and half of it is silent. ---
-    r2 = _round(w, label="RUTF tender 2: 2,000 cartons to Kano", opened=d("2026-09-15"), deadline=d("2026-09-29"))
+    # ---- Round 2 (asked 17 days back, deadline in 4 days): open, and half of it is silent. ---
+    r2 = _round(w, label="RUTF tender 2: 2,000 cartons to Kano", opened=d("2026-09-15"), deadline=d("2026-10-06"))
     r2_out = _ask_everyone(w, r2, suppliers, d("2026-09-15"))
 
     src = dict(
@@ -782,7 +783,7 @@ STORY_DATES = {
     "first_reminder_date": "2026-09-18",  # the ask + 3; also the day Northgate's questions came
     "northgate_asked_date": "2026-09-18",
     "second_reminder_date": "2026-09-23",  # Sahel's second reminder (Lagoon +1 day, Savanna +2)
-    "deadline_date": "2026-09-29",  # round 2's response deadline: 3 days before the render day
+    "deadline_date": "2026-10-06",  # round 2's response deadline: 4 days after the render day
     "advance_paid_date": "2026-07-28",  # round 1's award, contract and advance
     "invoice_date": "2026-09-21",
 }
