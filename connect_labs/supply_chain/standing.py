@@ -326,15 +326,17 @@ def _missing_facts(tender, quotes) -> list:
     """[(fact, quotes lacking it)]: the gaps the comparison marks, counted per fact across the tender's quotes."""
     if not any(q.is_live for q in quotes):
         return []
-    from connect_labs.supply_chain.procurement.status import _ROUND_DUTY, comparisons
+    from connect_labs.supply_chain.procurement.status import _ROUND_DUTY, comparisons, gap_owner
 
-    counts = {}
+    counts, owners = {}, {}
     for comparison in comparisons(tender, quotes):
         for row in comparison.blocked:
             for gap in row.gaps or []:
-                fact = "our duty terms" if gap == _ROUND_DUTY else gap
+                fact = "duty terms" if gap == _ROUND_DUTY else gap
                 counts[fact] = counts.get(fact, 0) + 1
-    return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+                owners[fact] = gap_owner(gap)
+    # Each fact carries whose it is, the comparison's own owner chip: (fact, quotes, owner).
+    return sorted(((f, n, owners[f]) for f, n in counts.items()), key=lambda t: (-t[1], t[0]))
 
 
 # ---- orders --------------------------------------------------------------

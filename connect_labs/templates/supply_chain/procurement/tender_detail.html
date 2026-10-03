@@ -15,7 +15,7 @@ is folded away, each fold with its count.
     {% include "supply_chain/_src_legend.html" %}
   </div>
 
-  <section class="card_bg border-brand-border-light flex flex-col gap-6 border" aria-labelledby="tender-title">
+  <section class="card_bg border-brand-border-light flex flex-col gap-5 border" aria-labelledby="tender-title">
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div class="flex min-w-0 flex-col gap-1">
         <div class="text-xs uppercase tracking-wide text-gray-600">Tender · {{ tender.label }}</div>
@@ -47,6 +47,32 @@ is folded away, each fold with its count.
         {% endif %}
       </div>
     </div>
+
+    {% comment %}The tender's terms, on the header's fact line: they hold for every quote below.
+    Import duty carries the control that settles it.{% endcomment %}
+    <section class="-mt-1 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-gray-100 pt-3 text-sm" id="duty-terms" data-testid="tender-terms" aria-label="Terms">
+      <span class="flex flex-wrap items-center gap-2">
+        <span class="text-gray-600">Import duty</span>
+        <span data-testid="tender-duty-terms"{% if duty_terms_changed %} data-changed{% endif %}>
+          {% if not tender.duty_terms %}<span class="status-chip status-chip--ours">Not settled</span>{% else %}{% include "supply_chain/_src.html" with src=status.terms.duty_src %}<span class="font-medium text-gray-900">{{ tender.duty_terms|duty_terms_words|capfirst }}</span>{% if tender.duty_terms == "buyer_pays" %}{% if tender.duty_estimate_percent %} · estimate {{ tender.duty_estimate_percent|floatformat:"-2" }}%{% else %} · <span class="text-message-warning-text font-medium">estimate not recorded</span>{% endif %}{% endif %}{% if duty_terms_changed %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% if tender.duty_terms_set_on %}<span class="text-xs text-gray-600"> · set {{ tender.duty_terms_set_on|day }}{% if status.terms.duty_set_by %} · {{ status.terms.duty_set_by }}{% endif %}</span>{% endif %}{% endif %}
+          {% if tender.duty_terms == "buyer_waiver" %}<span data-testid="waiver-evidence" class="text-xs text-gray-600"> · waiver document: {% if waiver_on_file %}on file{% else %}none on file{% endif %}</span>{% endif %}
+        </span>
+        {% if not supply_as_of %}
+        <details class="relative" data-testid="duty-terms-settle">
+          <summary class="button button-sm outline-style list-none [&::-webkit-details-marker]:hidden" role="button" data-testid="duty-terms-open">{% if tender.duty_terms %}Change{% else %}Settle{% endif %} import duty</summary>
+          <form method="post" action="{% url 'supply_chain:procurement_tender_duty_terms' tender.id %}" class="border-brand-border-light absolute left-0 z-20 mt-1.5 flex w-72 flex-col gap-2.5 rounded-lg border bg-white p-3.5 shadow-sm">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.path }}#duty-terms">
+            {% include "supply_chain/procurement/_duty_terms_fields.html" %}
+          </form>
+        </details>
+        {% endif %}
+      </span>
+      <span class="flex items-center gap-2"><span class="text-gray-600">Deadline</span>
+        <span>{% if tender.response_deadline %}<span class="whitespace-nowrap font-medium text-gray-900">{{ tender.response_deadline|day }}</span>{% if deadline_passed %} · <span data-testid="deadline-passed" class="text-message-warning-text whitespace-nowrap font-medium">{{ deadline_passed.days }} day{{ deadline_passed.days|pluralize }} past</span>{% endif %}{% else %}<span class="text-gray-600">not set</span>{% endif %}</span></span>
+      <span class="flex items-center gap-2"><span class="text-gray-600">Asked</span>
+        <span class="font-medium text-gray-900">{% if status.terms.asked %}{{ status.terms.asked|day }}{% else %}<span class="text-gray-600">—</span>{% endif %}</span></span>
+    </section>
 
     <ol class="stage-bar" data-testid="stage-bar" aria-label="Stage">
       {% for s in status.stages %}
@@ -96,32 +122,7 @@ is folded away, each fold with its count.
         </table>
       </div>
     </section>
-      <section class="card_bg border-brand-border-light flex flex-col gap-2.5 border" id="duty-terms" data-testid="tender-terms" aria-labelledby="terms-h">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-        <h2 id="terms-h" class="card_title">Terms</h2>
-        {% if not supply_as_of %}
-        <details class="relative" data-testid="duty-terms-settle">
-          <summary class="button button-sm outline-style list-none [&::-webkit-details-marker]:hidden" role="button" data-testid="duty-terms-open">{% if tender.duty_terms %}Change{% else %}Settle{% endif %} import duty</summary>
-          <form method="post" action="{% url 'supply_chain:procurement_tender_duty_terms' tender.id %}" class="border-brand-border-light absolute right-0 z-20 mt-1.5 flex w-72 flex-col gap-2.5 rounded-lg border bg-white p-3.5 shadow-sm">
-            {% csrf_token %}
-            <input type="hidden" name="next" value="{{ request.path }}#duty-terms">
-            {% include "supply_chain/procurement/_duty_terms_fields.html" %}
-          </form>
-        </details>
-        {% endif %}
-              </div>
-        <div class="grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-3.5 gap-y-2 text-sm sm:grid-cols-[max-content_minmax(0,1.6fr)_max-content_minmax(0,1fr)_max-content_minmax(0,1fr)]">
-          <span class="text-gray-600">Import duty</span>
-          <span data-testid="tender-duty-terms"{% if duty_terms_changed %} data-changed{% endif %}>
-            {% if not tender.duty_terms %}<span class="status-chip status-chip--ours">Not settled</span>{% else %}{% include "supply_chain/_src.html" with src=status.terms.duty_src %}{{ tender.duty_terms|duty_terms_words|capfirst }}{% if tender.duty_terms == "buyer_pays" %}{% if tender.duty_estimate_percent %} · estimate {{ tender.duty_estimate_percent|floatformat:"-2" }}%{% else %} · <span class="text-message-warning-text font-medium">estimate not recorded</span>{% endif %}{% endif %}{% if duty_terms_changed %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% if tender.duty_terms_set_on %}<span class="block text-xs text-gray-600">set {{ tender.duty_terms_set_on|day }}{% if status.terms.duty_set_by %} · {{ status.terms.duty_set_by }}{% endif %}</span>{% endif %}{% endif %}
-            {% if tender.duty_terms == "buyer_waiver" %}<span data-testid="waiver-evidence" class="block text-xs text-gray-600">waiver document: {% if waiver_on_file %}on file{% else %}none on file{% endif %}</span>{% endif %}
-          </span>
-          <span class="text-gray-600">Deadline</span>
-          <span>{% if tender.response_deadline %}<span class="whitespace-nowrap">{{ tender.response_deadline|day }}</span>{% if deadline_passed %} · <span data-testid="deadline-passed" class="text-message-warning-text whitespace-nowrap font-medium">{{ deadline_passed.days }} day{{ deadline_passed.days|pluralize }} past</span>{% endif %}{% else %}<span class="text-gray-600">not set</span>{% endif %}</span>
-          <span class="text-gray-600">Asked</span>
-          <span>{% if status.terms.asked %}{{ status.terms.asked|day }}{% else %}<span class="text-gray-600">—</span>{% endif %}</span>
-        </div>
-</section>
+
     </div>
 
     <aside class="flex min-w-0 flex-[1_1_320px] flex-col gap-4">
@@ -191,7 +192,7 @@ is folded away, each fold with its count.
     <thead class="border-b border-gray-200">
       <tr>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">Supplier</th>
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600" aria-sort="ascending" data-testid="sorted-by">Last chased <span aria-hidden="true">↑</span></th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">Last chased</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">Replied</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">Response kind</th>
           <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">Actions</th>
@@ -221,7 +222,7 @@ is folded away, each fold with its count.
             {% if not supply_as_of %}
             {% comment %}Two fixed slots -- the drafted reminder, then the reply -- so the column
             aligns whether or not a row has a reminder due.{% endcomment %}
-            <div class="inline-grid grid-cols-[6.75rem_6.5rem_1.5rem] gap-x-2 items-start text-left">
+            <div class="grid w-max grid-cols-[6.75rem_6.5rem_1.5rem] gap-x-2 items-start text-left leading-5">
             <span>
             {% comment %}A silent supplier whose reminder is due: its drafted reminder, from its own
             row, opened at its card so no other supplier's draft is in view.{% endcomment %}
