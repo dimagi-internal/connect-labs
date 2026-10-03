@@ -530,7 +530,8 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
 
     src = dict(
         ref="<PFI0611.k.mensah@harmattan-tx.example.invalid>",
-        excerpt="PFI-2026-0611: USD 50.10/CTN x 2,000 (150 x 92 g), DDP Kano, freight, duty and clearance included. "
+        excerpt="PFI-2026-0611: USD 50.10/CTN x 2,000 (150 x 92 g), CPT Kano, freight to Kano included. "
+        "Duty nil under your waiver, as on PFI-0457. "
         "Shelf life 24 months. Lead time 5 weeks. MOQ 500 cartons. Validity 30 days.",
         sender="Kwame Mensah, Harmattan Therapeutics",
     )
@@ -551,12 +552,16 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
             base_per_pack_stated=150,
             base_unit_grams_stated=92,
             freight_basis="included",
-            duties_basis="included",
+            # As round 1 settled it: we import under the program's duty waiver, so duty is
+            # stated nil -- an explicit 0.00 the comparison costs whether or not the round's
+            # own duty terms are settled yet.
+            duties_basis="excluded",
+            duties_amount="0.00",
             shelf_life_months_stated=24,
             lead_time_days=35,
             moq=500,
             moq_unit="carton",
-            incoterm="DDP Kano",
+            incoterm="CPT Kano",
             delivery_point_keys=["kano"],
             validity_until=d("2026-10-17"),
             received_on=d("2026-09-17"),
