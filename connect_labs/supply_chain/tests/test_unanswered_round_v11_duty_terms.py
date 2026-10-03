@@ -109,11 +109,11 @@ class TestSettingTheTerms:
 class TestTheTenderPageLine:
     def test_not_settled_then_the_waiver_marked_new(self, da, world, client_in_program):
         body = _tender_page(client_in_program, world["tender"]["id"])
-        line = re.search(r'data-testid="tender-duty-terms"[^>]*>(.*?)</p>', body, re.S).group(1)
-        assert " ".join(line.split()).startswith("Import duties: not settled")
+        line = re.search(r'data-testid="tender-duty-terms"[^>]*>(.*?)</dd>', body, re.S).group(1)
+        assert " ".join(re.sub(r"<[^>]+>", "", line).split()).startswith("Import duties: not settled")
         _set(da, world, "buyer_waiver")
         body = _tender_page(client_in_program, world["tender"]["id"], "?duty_terms=changed")
-        line = re.search(r'data-testid="tender-duty-terms"[^>]*>(.*?)</p>', body, re.S).group(1)
+        line = re.search(r'data-testid="tender-duty-terms"[^>]*>(.*?)</dd>', body, re.S).group(1)
         text = html.unescape(" ".join(re.sub(r"<[^>]+>", " ", line).split()))
         assert text.startswith("Import duties: we import, under the program's duty waiver")
         assert "· set " in text and 'data-testid="changed-chip"' in line

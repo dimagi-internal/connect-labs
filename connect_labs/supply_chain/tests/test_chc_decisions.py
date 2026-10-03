@@ -11,6 +11,7 @@
    ranks the kits that hold them and refuses the rest, saying why.
 """
 
+import re
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -696,4 +697,4 @@ class TestATenderIsAwardedOnceEveryLineIs:
         page = client_in_programme.get(
             reverse("supply_chain:procurement_tender_detail", args=[chain["tender"]["id"]])
         ).content.decode()
-        assert "Status: Awarded" in page
+        assert re.search(r">Status</dt>\s*<dd[^>]*>\s*Awarded", page)

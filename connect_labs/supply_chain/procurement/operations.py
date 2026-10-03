@@ -411,8 +411,8 @@ def _replies(access, tender, day, sender):
                 "to": address,
                 "why": (
                     f"{len(still_open)} question{'s' if len(still_open) != 1 else ''} from {name} "
-                    f"open since {day_text(asked)}: we owe the answer. Once sent, mark each answered with "
-                    "commitment_resolve."
+                    f"open since {day_text(asked)}: we owe the answer. Once sent, mark each question answered "
+                    "under What we owe them."
                     + (
                         f" {len(questions) - len(still_open)} answered today, already written in."
                         if len(still_open) != len(questions)

@@ -26,7 +26,7 @@ client_in_program = reality.client_in_program
 def test_a_drafted_message_gets_the_rows_it_needs_up_to_a_screen():
     assert _message_rows("Dear Amadou,\n\nWe asked on 15 Sep.") == 3
     assert _message_rows("x" * 230) == 3
-    assert _message_rows("\n".join(["line"] * 40)) == 14
+    assert _message_rows("\n".join(["line"] * 40)) == 28
 
 
 @pytest.mark.django_db
@@ -90,4 +90,4 @@ class TestEveryFlagHasAnOwner:
         row = next(r for r in standing_rows(PROGRAM, datetime.date(2026, 10, 2)) if r.kind == "order")
         assert INVOICE_DISPUTE in row.waiting_on
         ours = row.waiting_lines[0] if row.waiting_lines else row.waiting_on
-        assert ours.heading == "Us" and (INVOICE_DISPUTE, "") in ours.lines
+        assert ours.heading == "Us" and any(item.startswith(INVOICE_DISPUTE) for item, _ in ours.lines)

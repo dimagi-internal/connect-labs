@@ -149,13 +149,14 @@ def _drafts_breakdown(drafts) -> str:
     return " · ".join(parts)
 
 
-def _message_rows(text: str, width: int = 110, most: int = 14) -> int:
+def _message_rows(text: str, width: int = 110, most: int = 28) -> int:
     """Rows for a drafted message's box: its lines, each wrapped at about `width`, up to `most`.
 
     The message is what a draft is for; a fixed two-line box showed the
     greeting and hid the record it quotes (when we asked, when we last wrote,
-    the deadline) behind a scrollbar. Capped so a long draft's opening and its
-    Record chase still sit on one screen; the rest scrolls in the box.
+    the deadline) behind a scrollbar, and a 14-row cap cut a reminder's
+    repeated questions mid-line. Capped only for an unusually long draft; the
+    page also sizes each box to its content once the panel opens.
     """
     lines = text.splitlines() or [""]
     return min(most, sum(max(1, -(-len(line) // width)) for line in lines))
@@ -277,12 +278,25 @@ class TenderDetailView(_Base):
             c["in_draft"] = in_reply.get(c.get("id"))
             # Written into a reply that has not gone yet: drafted, not answered.
             c["answer_drafted"] = bool(c["in_draft"]) and not c.get("open") and not c.get("reply_sent_on")
+        # The answered group's heading says which of its answers have not gone yet:
+        # "Answered — 1" over a line reading "Answer drafted" said both at once.
+        answered = [c for c in context.get("owed") or [] if not c.get("open")]
+        context["owed_drafted_count"] = sum(1 for c in answered if c.get("answer_drafted"))
+        context["owed_sent_count"] = len(answered) - context["owed_drafted_count"]
         # How the round's import duties are handled, and who settled them. The
         # line an answer just set is marked new, like the cell a form changed.
         if tender.get("duty_terms"):
             from connect_labs.supply_chain.history.timeline import duty_terms_set_by
 
             context["duty_terms_set_by"] = duty_terms_set_by(tender_id, program_id=_access(self.request).program_id)
+        # Under the waiver, whether a copy of it is on the tender: the zero duty
+        # every quote is costed at rests on it.
+        if tender.get("duty_terms") == "buyer_waiver":
+            from connect_labs.supply_chain.models import Document
+
+            context["waiver_on_file"] = Document.objects.filter(
+                tender_id=tender_id, program_id=_access(self.request).program_id, kind="duty_exemption"
+            ).exists()
         context["duty_terms_changed"] = self.request.GET.get("duty_terms") == "changed"
         context["drafts_breakdown"] = _drafts_breakdown((context["drafts"] or {}).get("drafts") or [])
         context["quotes"] = self.op("quote_list", tender_id=tender_id)
@@ -307,6 +321,23 @@ class TenderDetailView(_Base):
             }
             for quote in context["quotes"]
         ]
+        # What each price is on: its Incoterm and where it is delivered or collected,
+        # and a per-sachet price put per carton -- "EUR 0.31 per sachet" beside
+        # "USD 50.10 per carton" was not comparable at a glance. Read off the
+        # comparison, so the two pages cannot word a quote differently.
+        compared = {}
+        for slug in dict.fromkeys(q.get("commodity_slug") for q in context["quotes"] if q.get("commodity_slug")):
+            try:
+                result = self.op("tender_compare", tender_id=tender_id, commodity_slug=slug)
+            except Exception:  # noqa: BLE001 -- a comparison it cannot build leaves the column blank
+                continue
+            for row in (result or {}).get("all_rows") or []:
+                compared[row.get("quote_id")] = row
+        for quote in context["quotes"]:
+            row = compared.get(quote.get("id")) or {}
+            delivery = row.get("delivery") or ""
+            quote["price_basis"] = " · ".join(part for part in (quote.get("incoterm") or "", delivery) if part)
+            quote["per_pack_note"] = row.get("as_quoted_note") or ""
         # Rows showed "Supplier #2". An id is not a supplier to anyone
         # reading the page, and the name is one list call away.
         context["supplier_names"] = {s["id"]: s["name"] for s in self.op("supplier_list")}
@@ -560,6 +591,28 @@ def not_stated(row) -> str:
         return f"{name}: {_and_list(ours)}"
     text = f"{name} has not stated {_and_list(theirs)}"
     return f"{text}; {_and_list(ours)}" if ours else text
+
+
+def missing_item(row) -> str:
+    """ "Sahel Nutrition Industries: freight amount, duties amount, exchange rate (EUR)": one banner bullet.
+
+    The same facts as `not_stated`, as a list a reader scans rather than a
+    sentence ("has not stated freight amount and duties amount") that read as
+    stilted. A gap that is ours (the exchange rate) keeps its currency.
+    """
+    blockers = row.get("blockers") or []
+    labels = [label for label in dict.fromkeys(b.get("label") or b.get("fact") or "" for b in blockers) if label]
+    if not labels:
+        return ""
+    words = []
+    for label in labels:
+        if label in _BUYER_RECORDED:
+            fact = next((b.get("fact") or "" for b in blockers if b.get("label") == label), "")
+            currency = _CURRENCY.search(fact)
+            words.append(f"{label} ({currency.group(1)})" if currency else label)
+        else:
+            words.append(label)
+    return f"{row.get('supplier_name') or 'A supplier'}: {', '.join(words)}"
 
 
 def award_anyway(comparison) -> str:
@@ -826,6 +879,9 @@ class ComparisonView(_Base):
         context["compared_on"] = compared_on(comparison, (comparison or {}).get("columns"))
         context["not_stated"] = [
             sentence for sentence in (not_stated(row) for row in (comparison or {}).get("blocked") or []) if sentence
+        ]
+        context["missing_items"] = [
+            item for item in (missing_item(row) for row in (comparison or {}).get("blocked") or []) if item
         ]
         context["ranking_rule"] = RANKING_RULE
         if comparison and context["table_columns"]:

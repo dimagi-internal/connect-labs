@@ -3,36 +3,46 @@
 
 {% block supply_content %}
 {% if tender %}
-<div class="flex items-center justify-between mb-4">
+<div class="flex flex-wrap items-start justify-between gap-3 mb-4">
   <div>
     <h1 class="text-xl font-semibold text-gray-900">{{ tender.label }}</h1>
-    <p class="text-sm text-gray-600">
+    {% comment %}The round's facts as a label/value block, so a state -- past its deadline,
+    duties not settled -- reads as a state, not as one more line of body text. Calm grey
+    chips for the states; each defines itself on hover. No alarm colour: these are facts.{% endcomment %}
+    <dl data-testid="tender-facts" class="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
+      <dt class="text-gray-600">Status</dt>
+      <dd class="text-gray-900">
       {% if deadline_passed %}
         {% comment %}An open tender whose deadline is behind it says so: "response deadline
         29 Sep 2026" on 2 Oct read as a date still to come.{% endcomment %}
-        Status: <span data-testid="deadline-passed">Open — deadline passed {{ deadline_passed.day|day }} ({{ deadline_passed.days }} day{{ deadline_passed.days|pluralize }} ago)</span>
+        <span data-testid="deadline-passed">Open — <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-900 ring-1 ring-inset ring-gray-300" title="The response deadline was {{ deadline_passed.day|day }}; the round is still open, so late replies are still recorded">deadline passed</span> {{ deadline_passed.day|day }} ({{ deadline_passed.days }} day{{ deadline_passed.days|pluralize }} ago)</span>
       {% else %}
-        Status: {{ tender.status|title }} — response deadline {{ tender.response_deadline|day|default:"not set" }}
+        {{ tender.status|title }} — response deadline {{ tender.response_deadline|day|default:"not set" }}
       {% endif %}
-    </p>
-    {% if tender.slug %}
-      <p class="text-sm text-gray-600 mt-1">
-        Its own listing{% if tender.owner_org_id %} for {{ owner_name }}{% endif %}:
-        <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market_tender_listing' tender.slug %}">/supply/market/t/{{ tender.slug }}/</a>
-        · <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market_tender_manage' tender.slug %}">manage the listing and who is invited</a>
-        {% if tender.invited_org_ids %}({{ tender.invited_org_ids|length }} invited){% endif %}
-      </p>
-    {% endif %}
-    {% comment %}How the round's import duties are handled: settled once (often in answer to a
-    supplier's "who imports?"), and every quote is costed by it.{% endcomment %}
-    <p data-testid="tender-duty-terms" class="text-sm text-gray-600 mt-1{% if duty_terms_changed %} font-semibold text-gray-900{% endif %}"{% if duty_terms_changed %} data-changed{% endif %}>
-      Import duties: {{ tender.duty_terms|duty_terms_words }}{% if tender.duty_terms == "buyer_pays" %}{% if tender.duty_estimate_percent %} (our estimate {{ tender.duty_estimate_percent|floatformat:"-2" }}% of the goods){% else %} (no estimate recorded yet){% endif %}{% endif %}{% if tender.duty_terms and tender.duty_terms_set_on %} <span class="font-normal text-gray-600">· set {{ tender.duty_terms_set_on|day }}{% if duty_terms_set_by %} by {{ duty_terms_set_by }}{% endif %}</span>{% endif %}{% if duty_terms_changed %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}
-    </p>
-    <p class="text-sm text-gray-600 mt-1">
-      Where the goods go:
-      {% for p in tender.delivery_points %}{% firstof p.name p.city %}{% if p.name and p.city %}, {{ p.city }}{% endif %}{% if not forloop.last %}; {% endif %}{% empty %}no delivery place{% endfor %}{% if tender.pickup_accepted %} — or we collect from the supplier{% endif %}{% if tender.incoterm_requested %} · asked on {{ tender.incoterm_requested }} terms{% endif %}
-    </p>
-    <p class="text-sm text-gray-600 mt-1">
+      </dd>
+      {% comment %}How the round's import duties are handled: settled once (often in answer to a
+      supplier's "who imports?"), and every quote is costed by it.{% endcomment %}
+      <dt class="text-gray-600">Import duties</dt>
+      <dd data-testid="tender-duty-terms" class="{% if duty_terms_changed %}font-semibold text-gray-900{% else %}text-gray-900{% endif %}"{% if duty_terms_changed %} data-changed{% endif %}>
+        <span class="sr-only">Import duties: </span>{% if not tender.duty_terms %}<span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-900 ring-1 ring-inset ring-gray-300" title="Nobody has yet said who imports and who pays the duty, so a quote that leaves duty out cannot be costed">{{ tender.duty_terms|duty_terms_words }}</span>{% else %}{{ tender.duty_terms|duty_terms_words }}{% endif %}{% if tender.duty_terms == "buyer_pays" %}{% if tender.duty_estimate_percent %} (our estimate {{ tender.duty_estimate_percent|floatformat:"-2" }}% of the goods){% else %} (no estimate recorded yet){% endif %}{% endif %}{% if tender.duty_terms and tender.duty_terms_set_on %} <span class="font-normal text-gray-600">· set {{ tender.duty_terms_set_on|day }}{% if duty_terms_set_by %} by {{ duty_terms_set_by }}{% endif %}</span>{% endif %}{% if duty_terms_changed %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}
+        {% if tender.duty_terms == "buyer_waiver" %}
+          {% comment %}The zero the waiver puts on every quote rests on the waiver itself:
+          whether a copy of it is on file is said beside the terms.{% endcomment %}
+          <span data-testid="waiver-evidence" class="block font-normal text-gray-600">Waiver document: {% if waiver_on_file %}on file{% else %}none on file{% endif %}</span>
+        {% endif %}
+        {% if tender.duty_terms and tender.lines %}
+          {% comment %}What the terms are for, one click away: the comparison costs any quote
+          that leaves duty out by them.{% endcomment %}
+          <a data-testid="duty-terms-consequence" href="{% url 'supply_chain:procurement_comparison' tender.id %}?commodity={{ tender.lines.0.commodity_slug }}"
+             class="block font-normal text-brand-indigo hover:underline">Quotes that leave duty out are costed on these terms — compare</a>
+        {% endif %}
+      </dd>
+      <dt class="text-gray-600">Where the goods go</dt>
+      <dd class="text-gray-900">
+        {% for p in tender.delivery_points %}{% firstof p.name p.city %}{% if p.name and p.city %}, {{ p.city }}{% endif %}{% if not forloop.last %}; {% endif %}{% empty %}no delivery place{% endfor %}{% if tender.pickup_accepted %} — or we collect from the supplier{% endif %}{% if tender.incoterm_requested %} <span class="text-gray-600">· asked on {{ tender.incoterm_requested }} terms</span>{% endif %}
+      </dd>
+      <dt class="text-gray-600">Visibility</dt>
+      <dd class="text-gray-900">
       {% if tender.status == "awarded" or tender.status == "closed" %}
         {% comment %}Who could bid no longer matters once replies are closed: "Open to
         all suppliers" on an awarded tender read as still taking bids.{% endcomment %}
@@ -44,7 +54,17 @@
         <span class="px-2 py-0.5 rounded-full text-xs bg-message-info text-message-info-text border border-message-info-border">Open to all suppliers</span>
         {% if tender.status == "open" %}Listed on the <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market_tender' tender.id %}">supplier marketplace</a>: any registered supplier can bid.{% elif tender.status == "draft" %}Listed on the supplier marketplace while it is open.{% endif %}
       {% endif %}
-    </p>
+      </dd>
+      {% if tender.slug %}
+      <dt class="text-gray-600">Listing</dt>
+      <dd class="text-gray-900">
+        {% if tender.owner_org_id %}For {{ owner_name }}: {% endif %}
+        <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market_tender_listing' tender.slug %}">/supply/market/t/{{ tender.slug }}/</a>
+        · <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market_tender_manage' tender.slug %}">manage the listing and who is invited</a>
+        {% if tender.invited_org_ids %}({{ tender.invited_org_ids|length }} invited){% endif %}
+      </dd>
+      {% endif %}
+    </dl>
   </div>
   <div class="flex flex-wrap items-center gap-2">
     {% comment %}Every secondary action wears one treatment (indigo text, grey outline);
@@ -148,7 +168,7 @@ sits above who is invited and what the tender buys.
         {% comment %}Silence in words, counted from the latest ask -- the invitation or the last
         chase -- muted rather than alarmed; a bare "No" said nothing about how long.{% endcomment %}
         <td class="px-4 py-2 text-sm whitespace-nowrap {% if o.changed and changed_cell == "replied" %}text-gray-900 font-semibold{% else %}text-gray-600{% endif %}" data-testid="replied">{% if o.responded %}{% if o.responded_on %}{{ o.responded_on|day }}{% else %}Yes{% endif %}{% if o.changed and changed_cell == "replied" %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% else %}<span data-testid="no-reply" class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-sm font-medium text-gray-900 ring-1 ring-inset ring-gray-300">No reply{% if o.silent_days is not None %} · {{ o.silent_days }} day{{ o.silent_days|pluralize }}{% endif %}</span>{% if o.changed and changed_cell == "replied" %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% endif %}</td>
-        <td class="px-4 py-2 text-sm text-gray-600" data-testid="response-kind">{{ o.response_kind|humanise|capfirst|default:"—" }}</td>
+        <td class="px-4 py-2 text-sm text-gray-600" data-testid="response-kind">{% if o.responded %}{{ o.response_kind|humanise|capfirst|default:"—" }}{% endif %}</td>
           <td class="px-4 py-2 text-sm text-right whitespace-nowrap">
             {% if not supply_as_of %}
             <a href="{% url 'supply_chain:procurement_outreach_reply' o.id %}"
@@ -175,9 +195,9 @@ sits above who is invited and what the tender buys.
 
 <div class="bg-white border border-brand-border-light rounded-lg p-4 mb-6">
   <h2 class="text-sm font-semibold text-gray-900">Invited suppliers</h2>
-  <p class="text-sm text-gray-600 mt-1">
-    {% if tender_is_over %}Closed to further quotes, so no one else is invited.{% elif tender.visibility == "private" %}This tender is restricted: only the suppliers below can see it and bid.{% else %}This tender is public, so any registered supplier can bid. The list matters once it is made private.{% endif %}
-  </p>
+  {% comment %}Who can see the round is said once, in the header's Visibility line, and who
+  was asked once, in Outreach above: this panel holds only marketplace invitations and the
+  control that adds one.{% endcomment %}
   <ul class="mt-2 text-sm">
     {% for org in invited_orgs %}
       <li class="flex items-center gap-3 py-1">
@@ -191,14 +211,8 @@ sits above who is invited and what the tender buys.
         {% endif %}
       </li>
     {% empty %}
-      {% comment %}Suppliers asked directly are invited too, so "No one invited yet" above
-      an outreach table listing them contradicted it. On a restricted tender the sentence
-      above says "only the suppliers below", so they are named here, on one line; on a
-      public one they are in Outreach and nothing more is said.{% endcomment %}
       {% if not asked_names %}
         <li class="text-gray-600">No one invited yet.</li>
-      {% elif tender.visibility == "private" and not tender_is_over %}
-        <li data-testid="invited-asked" class="py-1 text-gray-900">{{ asked_names|join:", " }} <span class="text-gray-600">· asked directly, in Outreach above</span></li>
       {% endif %}
     {% endfor %}
   </ul>
@@ -270,10 +284,17 @@ next action on anyone (design doc section 22).
           <span class="text-sm text-gray-600">· {% if d.kind == "request" %}Quote request{% elif d.kind == "reminder" %}Reminder{% elif d.kind == "reply" %}Our answers{% else %}Follow-up{% endif %}</span>
         </p>
         <p class="text-sm text-gray-700 mt-1" data-testid="draft-why">{{ d.why }}</p>
-        <p class="text-sm text-gray-700 mt-2">
+        {% comment %}The address gets the same Copy as the subject and the message: all three
+        go into her own mailbox.{% endcomment %}
+        <div class="text-sm text-gray-700 mt-2 flex items-center gap-2">
           <span class="text-gray-600">To:</span>
-          {% if d.to %}{{ d.to }}{% else %}<span class="text-gray-600">no address on file</span>{% endif %}
-        </p>
+          {% if d.to %}<span id="draft-to-{{ forloop.counter }}">{{ d.to }}</span>
+          <button type="button" data-testid="copy-to"
+                  class="px-2 py-0.5 text-xs border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md whitespace-nowrap"
+                  onclick="navigator.clipboard.writeText(document.getElementById('draft-to-{{ forloop.counter }}').textContent); this.textContent='Copied';">
+            <i class="fa-regular fa-copy mr-1"></i> Copy
+          </button>{% else %}<span class="text-gray-600">no address on file</span>{% endif %}
+        </div>
         <label for="draft-subject-{{ forloop.counter }}" class="block text-xs text-gray-600 mt-2 mb-1">Subject</label>
         <div class="flex gap-2">
           <input id="draft-subject-{{ forloop.counter }}" type="text" readonly value="{{ d.subject }}"
@@ -316,9 +337,10 @@ next action on anyone (design doc section 22).
             <input id="chase-date-{{ forloop.counter }}" data-testid="chase-date" type="text" name="last_reminder_on"
                    value="{% now 'j M Y' %}" placeholder="e.g. {% now 'j M Y' %}" required autocomplete="off"
                    class="base-input text-sm w-36">
+            {% comment %}The card's one action, filled: copying is a step towards it.{% endcomment %}
             <button type="submit" data-testid="record-chase"
-                    class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Record chase</button>
-            <span class="text-sm text-gray-600">once it has gone, so the next reminder is counted from it</span>
+                    class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">Record chase</button>
+            <p data-testid="chase-help" class="basis-full text-sm text-gray-600">After you send it, record the chase: the next reminder falls due {{ drafts.reminder_interval_days }} day{{ drafts.reminder_interval_days|pluralize }} after this date.</p>
           </form>
         {% endif %}
       </div>
@@ -331,9 +353,20 @@ next action on anyone (design doc section 22).
   // Arriving by the comparison page's "Draft emails" link opens the panel it points at;
   // by a "Draft email to <supplier>" link, the panel and then that supplier's first draft.
   (function () {
+    // Each drafted message's box is as tall as its message, so nothing it repeats
+    // to the supplier is cut off mid-line inside the box.
+    var panel = document.getElementById("drafts");
+    function fit() {
+      panel.querySelectorAll("textarea[data-testid=draft-text]").forEach(function (box) {
+        box.style.height = "auto";
+        box.style.height = (box.scrollHeight + 2) + "px";
+      });
+    }
+    panel.addEventListener("toggle", function () { if (panel.open) { fit(); } });
     var hash = window.location.hash;
     if (hash === "#drafts" || hash.indexOf("#draft-supplier-") === 0 || hash.indexOf("#draft-reply-") === 0) {
       document.getElementById("drafts").open = true;
+      fit();
       var target = hash === "#drafts" ? null : document.getElementById(hash.slice(1));
       if (target) { target.scrollIntoView(); }
     }
@@ -358,6 +391,7 @@ next action on anyone (design doc section 22).
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Supplier</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Commodity · trade item</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">As quoted</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Terms</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Received</th>
         {% comment %}The header defines itself on demand: hover or focus the "i".{% endcomment %}
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
@@ -387,7 +421,9 @@ next action on anyone (design doc section 22).
         <td class="px-4 py-2 text-sm text-gray-600 tabular-nums">
           {% if q.as_quoted_amount %}{{ q.as_quoted_currency }} {{ q.as_quoted_amount|money }}{% else %}no price{% endif %}
           <div class="text-xs text-gray-600">{{ q.priced_per|default:q.as_quoted_unit|words }}</div>
+          {% if q.per_pack_note %}<div data-testid="per-pack-note" class="text-xs text-gray-600">{{ q.per_pack_note }}</div>{% endif %}
         </td>
+        <td data-testid="price-basis" class="px-4 py-2 text-sm text-gray-600">{{ q.price_basis|default:"not stated" }}</td>
         <td class="px-4 py-2 text-sm text-gray-600">{{ q.received_on|day|default:"—" }}</td>
         <td class="px-4 py-2 text-sm text-gray-600">{{ q.pack_spec_source|humanise|default:"not stated" }}</td>
         <td class="px-4 py-2 text-sm">
@@ -402,7 +438,7 @@ next action on anyone (design doc section 22).
         </td>
       </tr>
       {% empty %}
-      <tr><td colspan="6" class="px-4 py-6 text-center text-gray-600">No quotes recorded yet.</td></tr>
+      <tr><td colspan="7" class="px-4 py-6 text-center text-gray-600">No quotes recorded yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
