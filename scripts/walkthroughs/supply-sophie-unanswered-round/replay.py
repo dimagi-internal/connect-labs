@@ -129,6 +129,47 @@ NORTHGATE_QUESTIONS = (
 )
 IMPORTER_QUESTION = NORTHGATE_QUESTIONS[2]
 
+MAIDUGURI = {
+    "key": "maiduguri",
+    "name": "North-East Nutrition Store, 3 Baga Road",
+    "city": "Maiduguri",
+    "country": "NG",
+    "country_name": "Nigeria",
+}
+# A second, just-asked tender in the same program: RUSF for Maiduguri, asked of three
+# suppliers of its own two days before the render day, none of whom has answered yet. It
+# gives the overview a row whose next move is the suppliers', beside the two that are ours.
+RUSF_LABEL = "RUSF tender: 800 cartons to Maiduguri"
+RUSF_SUPPLIERS = [
+    (
+        "borno",
+        "Borno Agro Nutrition",
+        "NG",
+        "Maiduguri",
+        "manufacturer",
+        "Hauwa Bukar",
+        "hauwa.bukar@borno-agronutrition.example.invalid",
+    ),
+    (
+        "chad-basin",
+        "Chad Basin Foods",
+        "CM",
+        "Garoua",
+        "manufacturer",
+        "Paul Ndjock",
+        "orders@chadbasinfoods.example.invalid",
+    ),
+    (
+        "arewa",
+        "Arewa Relief Supplies",
+        "NG",
+        "Kaduna",
+        "distributor",
+        "Ibrahim Sule",
+        "ibrahim@arewarelief.example.invalid",
+    ),
+]
+
 
 # The day the story is written as of: every date in `seed_world` is a story date, moved by
 # (render day - STORY_TODAY) so its distance from the render day never changes.
@@ -679,6 +720,8 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
     for key, day in zip(SILENT, (d("2026-09-23"), d("2026-09-24"), d("2026-09-25"))):
         w.op("sophie", day, "outreach_update", outreach_id=r2_out[key], data={"last_reminder_on": day})
 
+    rusf_tender = _rusf_tender(w, d)
+
     return {
         **story_dates(today),
         "program_id": program_id,
@@ -688,7 +731,48 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
         "sahel_supplier_id": suppliers["sahel"],
         "sahel_outreach_id": r2_out["sahel"],
         "importer_question_id": questions[IMPORTER_QUESTION],
+        "rusf_tender_id": rusf_tender,
     }
+
+
+def _rusf_tender(w: World, d) -> int:
+    """The just-asked RUSF tender: three suppliers asked two days back, deadline in twelve, no replies."""
+    rusf = next(p for p in reference_catalogue.PRODUCTS if p["slug"] == "rusf")
+    w.op("sophie", d("2026-09-30"), "commodity_upsert", data=dict(rusf))
+    suppliers = {}
+    for key, name, country, city, kind, contact, address in RUSF_SUPPLIERS:
+        suppliers[key] = w.op(
+            "sophie",
+            d("2026-09-30"),
+            "supplier_create",
+            data={
+                "name": name,
+                "country": country,
+                "city": city,
+                "type": kind,
+                "status": "contacted",
+                "contacts": [{"name": contact, "email": address}],
+            },
+        )["id"]
+    tender = w.op(
+        "sophie",
+        d("2026-09-30"),
+        "tender_create",
+        data={
+            "label": RUSF_LABEL,
+            "lines": [{"commodity_slug": "rusf", "quantity": 800, "quantity_unit": "carton"}],
+            "delivery_points": [MAIDUGURI],
+            "incoterm_requested": "CPT Maiduguri",
+            "reminder_interval_days": 7,
+            "response_deadline": d("2026-10-14"),
+            "visibility": "private",
+            "notes_to_supplier": "Please quote per carton of 150 sachets, delivered Maiduguri, "
+            "stating freight and duties.",
+        },
+    )["id"]
+    w.op("sophie", d("2026-09-30"), "tender_open", tender_id=tender)
+    _ask_everyone(w, tender, suppliers, d("2026-09-30"))
+    return tender
 
 
 # The dates the screens print, by the name a recipe or lock can use as ${var}: each is the

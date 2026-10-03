@@ -113,3 +113,31 @@ def test_harmattan_round_2_waits_on_the_round_like_every_buyer_import_quote(repl
     assert basis_gaps(quote) == []
     tender.duty_terms = "buyer_waiver"
     assert _extras(quote, tender) == Money(Decimal("0"))
+
+
+@pytest.mark.django_db
+def test_the_just_asked_rusf_tender_waits_on_its_suppliers(replay):
+    """The overview carries a third row whose move is the suppliers': RUSF, asked 2 days back, nobody answered."""
+    from connect_labs.supply_chain.models import Outreach, Tender
+    from connect_labs.supply_chain.standing import standing_rows
+
+    today = dt.date.today() - dt.timedelta(days=40)
+    replay.ensure_program()
+    out = replay.seed_world(create_buyer=True, today=today)
+
+    tender = Tender.objects.get(id=out["rusf_tender_id"])
+    assert tender.label == replay.RUSF_LABEL
+    assert (tender.response_deadline - today).days == 12
+    asked = Outreach.objects.filter(tender=tender)
+    assert asked.count() == 3
+    assert {(today - o.sent_on).days for o in asked} == {2}
+    assert not asked.filter(responded=True).exists()
+    emails = [c["email"] for o in asked for c in o.supplier.contacts]
+    assert emails and all(e.endswith(".example.invalid") for e in emails)
+
+    rows = {r.tender_id: r for r in standing_rows(out["program_id"], today) if r.kind == "tender"}
+    rusf = rows[out["rusf_tender_id"]]
+    assert "Collecting quotes" in rusf.stage
+    assert rusf.whose == "suppliers"
+    assert not rusf.ours and len(rusf.theirs) == 3
+    assert rows[out["round2_tender_id"]].whose == "us"
