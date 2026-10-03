@@ -68,14 +68,16 @@ scenes:
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
 - id: sophie-chases-sahel
   actions:
-  - kind: goto
-    note: the round's draft emails, open at Sahel's drafted reminder -- the scene's url already lands there; this replays the link so the panel opens even when the page is not reloaded
-    target: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#draft-supplier-${sahel_supplier_id}
+  - kind: click
+    note: Sahel's row's own "Draft reminder" link opens the round's draft emails at Sahel's drafted reminder (a same-url goto is skipped by the recorder, so the panel never opened)
+    target: css:a[href*="#draft-supplier-${sahel_supplier_id}"]
   - kind: hold
     note: a settle before the first wait_for, so the scene's before-frame is the round's draft emails, already open at Sahel's drafted reminder, ahead of the chase it records
     seconds: 0.8
   - kind: wait_for
     target: css:#drafts[open]
+  - kind: wait_for
+    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=record-chase]
   - kind: hold
     say: drafts
     seconds: 1.2
