@@ -48,8 +48,8 @@ gaps:
 spine:
 - id: S1
   claim: 'In Sophie''s tenders about half the suppliers asked never answer (Jonathan''s
-    account); this demo''s tender 2 reconstructs that: of six asked on 17 Sep, three
-    stayed silent through two reminders (the second sent 25 to 27 Sep), and the three
+    account); this demo''s tender 2 reconstructs that: of six asked on 15 Sep, three
+    stayed silent through two reminders (the second sent 23 to 27 Sep), and the three
     who answered sent one complete quote, one missing a fact, and questions instead
     of a price.'
   status: grounded

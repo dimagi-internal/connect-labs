@@ -24,7 +24,7 @@ Two hands write, each on its own day:
 Every date is anchored to the render day, not the calendar. The story was
 written as of 2 Oct 2026 (`STORY_TODAY`): the ask on 15 Sep, the deadline on
 6 Oct (four days ahead, so chasing the silent suppliers is still worth it),
-the reminders on 18 and 23-25 Sep. The pages count ages from
+the reminders on 18 and 23-27 Sep. The pages count ages from
 `date.today()`, so a fixed calendar would make the round look older on every
 later render ("No reply · 17 days" becoming "· 40 days"). `story_day` moves
 every dated step by the same amount, keeping each offset from the render day
@@ -541,10 +541,12 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
             "lines": [{"batch": "HT2608A", "quantity": 2000, "quantity_unit": "carton"}],
         },
     )
+    # The forwarder's hold lands on the expected arrival day, so the days late are ours, not
+    # the supplier's: the trucks reached the border on time and wait on our Form M.
     w.email(
-        d("2026-09-26"),
+        d("2026-09-12"),
         "shipment_update",
-        ref="<cfc-trk-4471-0926@crescent-freight.example.invalid>",
+        ref="<cfc-trk-4471-0912@crescent-freight.example.invalid>",
         excerpt="CARGO: 2000 CTNS RUTF / TRUCKS: 2 / HELD AT SEME BORDER - DOCUMENTATION (FORM M) / "
         f"REVISED ETA KANO: {_slashed(d('2026-10-10'))} ONCE FORM M IS "
         "LODGED / CONSIGNEE TO PROVIDE FORM M / PAAR.",
@@ -728,8 +730,10 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
         data={"responded": True, "response_kind": "quote", "responded_on": d("2026-09-19")},
     )
 
-    # Her second reminder, to the three who have still said nothing, as she got to each.
-    for key, day in zip(SILENT, (d("2026-09-23"), d("2026-09-24"), d("2026-09-25"))):
+    # Her second reminder, to the three who have still said nothing, as she got to each. On a
+    # 7-day cadence Sahel's next reminder is due on the render day and Lagoon's and Savanna's
+    # fall after it, so Sahel is the one to chase.
+    for key, day in zip(SILENT, (d("2026-09-23"), d("2026-09-26"), d("2026-09-27"))):
         w.op("sophie", day, "outreach_update", outreach_id=r2_out[key], data={"last_reminder_on": day})
 
     rusf_tender = _rusf_tender(w, d)
@@ -793,7 +797,7 @@ STORY_DATES = {
     "ask_date": "2026-09-15",  # round 2 asked of all six: 17 days before the render day
     "first_reminder_date": "2026-09-18",  # the ask + 3; also the day Northgate's questions came
     "northgate_asked_date": "2026-09-18",
-    "second_reminder_date": "2026-09-23",  # Sahel's second reminder (Lagoon +1 day, Savanna +2)
+    "second_reminder_date": "2026-09-23",  # Sahel's second reminder (Lagoon +3 days, Savanna +4)
     "deadline_date": "2026-10-06",  # round 2's response deadline: 4 days after the render day
     "advance_paid_date": "2026-07-28",  # round 1's award, contract and advance
     "invoice_date": "2026-09-21",
