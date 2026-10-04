@@ -93,6 +93,10 @@ Only staff in the organisation that **manages the program** can see data from a 
 
 The Drive file is read **once for the whole program**. Before this change, a program dashboard spanning many opportunities would have counted every row in the file once per opportunity — potentially inflating every figure by the number of opportunities. With a program-scoped pipeline the file is processed a single time, so counts and aggregations are correct regardless of how many opportunities the program contains.
 
+**How caching works**
+
+Once a Drive file has been read, Connect Labs keeps the processed data in cache and reuses it until the underlying file in Drive changes — or for up to a week, whichever comes first. Previously, the cache expired every hour regardless of whether the file had changed, so the first person to open the dashboard after an idle hour would wait for a full rebuild. On the interview-classification dashboard that rebuild took around 16 minutes. Now, a cold load only happens when it needs to — when the file genuinely has new content — and subsequent opens are fast for everyone.
+
 **Setting one up**
 
 Program-scoped Drive pipelines are built through the labs MCP. The steps are:
@@ -231,8 +235,4 @@ Cells that contain too few cases to report reliably are suppressed and show a mi
 
 #### Indicator Worker Review
 
-The **Indicator Worker Review** (created automatically alongside the programme report) shows one worker's indicators compared to their peers, their full caseload, and each case's visits. Where the programme's indicator definitions include a reading series (for example, weight), a chart of that series is shown for each case at a readable size. Where visits carry photos, those photos are shown alongside the visit record.
-
-#### Failed Verification Analysis tab
-
-The **Failed Verification Analysis** tab includes a **Mother question fail rate** chart that shows which form questions are most frequently failed during verification checks. Question names on the chart are short, readable labels — for example, **
+The **Indicator Worker Review** (
