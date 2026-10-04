@@ -62,7 +62,7 @@ class TestBackToTheRowJustSaved:
         )
         tender_url = reverse("supply_chain:procurement_tender_detail", args=[world["tender"]["id"]])
         assert response.status_code == 302
-        assert response.url == f"{tender_url}?changed=outreach-{outreach_id}#outreach"
+        assert response.url == f"{tender_url}?changed=outreach-{outreach_id}#outreach-{outreach_id}"
 
         body = _tender_page(web, world["tender"]["id"], f"?changed=outreach-{outreach_id}")
         row = re.search(rf'<tr data-outreach-id="{outreach_id}"[^>]*>', body).group(0)
@@ -170,13 +170,13 @@ class TestTheTenderPage:
         _chase(da, outreach_id, "2026-10-01", datetime.datetime(2026, 10, 1, 10, tzinfo=datetime.UTC))
         _chase(da, outreach_id, "2026-10-02", datetime.datetime(2026, 10, 2, 8, tzinfo=datetime.UTC))
         body = _tender_page(client_in_program, world["tender"]["id"])
-        cell = body.split('data-testid="last-chased"', 1)[1].split("</td>", 1)[0]
-        assert "2 Oct 2026" in cell and "2nd reminder" in cell
+        cell = body.split('data-testid="supplier-chased"', 1)[1].split("</td>", 1)[0]
+        assert "2 Oct" in cell and "2nd reminder" in cell
 
         # Read as of the first chase, it was the first.
         as_of = _tender_page(client_in_program, world["tender"]["id"], "?as_of=2026-10-01")
-        cell = as_of.split('data-testid="last-chased"', 1)[1].split("</td>", 1)[0]
-        assert "1 Oct 2026" in cell and "1st reminder" in cell
+        cell = as_of.split('data-testid="supplier-chased"', 1)[1].split("</td>", 1)[0]
+        assert "1 Oct" in cell and "1st reminder" in cell
 
     def test_outreach_comes_before_the_invited_suppliers_and_delete_is_muted(self, da, world, client_in_program):
         body = _tender_page(client_in_program, world["tender"]["id"])

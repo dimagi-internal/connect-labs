@@ -242,8 +242,8 @@ class TestRealDates:
             reverse("supply_chain:procurement_tender_detail", args=[world["tender"]["id"]])
         ).content.decode()
         assert "Last chased" in body
-        cell = body.split('data-testid="last-chased"', 1)[1].split("</td>", 1)[0]
-        assert "13 Jul 2026" in cell
+        cell = body.split('data-testid="supplier-chased"', 1)[1].split("</td>", 1)[0]
+        assert "13 Jul" in cell
 
 
 # ---- ruling 4: an invoice above the contract is a check, on the order page

@@ -49,7 +49,7 @@ scenes:
     seconds: 1.8
     target: css:[data-testid=supplier-row]:has-text('Harmattan Therapeutics') [data-testid=supplier-quote]
   - kind: hover
-    note: the fact Kanem's quote left out, sachets per carton, in its Missing from quote cell
+    note: the fact Kanem's quote left out, sachets per carton, missing under its quote
     say: carton
     seconds: 1.8
     target: css:[data-testid=supplier-row]:has-text('Kanem Foods Ltd') [data-testid=supplier-missing]
@@ -137,17 +137,17 @@ scenes:
     seconds: 2.5
   - kind: click
     must_succeed: true
-    note: once the reminder has gone, Mark sent stamps the day on Sahel's invitation; the tender lands on its Invitations, Sahel's row marked
+    note: once the reminder has gone, Mark sent stamps the day on Sahel's invitation; the tender lands on its Suppliers table, scrolled to Sahel's row, marked
     target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=mark-sent]
     timeout_ms: 30000
   - kind: wait_for
     must_succeed: true
-    target: css:tr[data-changed]
+    target: css:[data-testid=supplier-row][data-supplier-id='${sahel_supplier_id}'][data-changed]
   - kind: hover
     note: the payoff -- Sahel's Last chased cell reads today, the 3rd reminder, no further reminder before the deadline, tagged Reminder sent, just recorded
     say: recorded
     seconds: 2.0
-    target: css:tr[data-changed] td:has-text('3rd reminder')
+    target: css:[data-testid=supplier-row][data-changed] [data-testid=supplier-chased]:has-text('3rd reminder')
   - kind: hover
     note: park the cursor in the top bar's blank middle, clear of every button and of Sahel's row
     seconds: 0.6
@@ -155,7 +155,7 @@ scenes:
   - kind: hold
     seconds: 1.5
   - kind: snapshot
-    note: the canonical frame is the reminder marked sent -- Sahel's Invitations row marked just changed, its Last chased cell reading Reminder sent today, the 3rd reminder, and no further reminder before the deadline
+    note: the canonical frame is the reminder marked sent -- Sahel's row in the Suppliers table marked just changed, its Last chased cell reading Reminder sent today, the 3rd reminder, and no further reminder before the deadline
   concept_claim: The tender drafts a reminder for each silent supplier that says when
     they were asked and last reminded, with a Sent on field holding today's date and
     a Mark sent button on the draft itself; once marked, the supplier's row reads Reminder
@@ -165,7 +165,7 @@ scenes:
     day it went, and the cadence stops at the deadline.
   show: Sophie reads the reminder drafted for Sahel, its line on when Sahel was asked
     and last reminded, and the Sent on field beside Mark sent; marking it sent returns
-    her to the tender's Invitations, Sahel's row reading Reminder sent today, its 3rd
+    her to the tender's Suppliers table, Sahel's row reading Reminder sent today, its 3rd
     reminder, with no further reminder before the deadline.
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#draft-supplier-${sahel_supplier_id}
 - id: sahel-finally-answers
@@ -197,10 +197,10 @@ scenes:
     say: wrote
     seconds: 2.0
   - kind: hover
-    note: the history line that says Sahel replied with a quote, and on what day
+    note: the history line that says Sahel replied with a quote, under the day heading it came in on
     say: answers
     seconds: 1.8
-    target: text:Replied with a quote on ${today_date}
+    target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=revision-line]:has-text('Replied with a quote')
   - kind: hover
     note: park the cursor in the top bar's blank middle, off the heading, the filter and Sahel's email
     seconds: 0.6
@@ -426,15 +426,16 @@ scenes:
     say: invoice
     seconds: 2.0
     target: css:[data-testid=tile]:has-text('Billed vs agreed')
+  - kind: scroll
+    note: frame the order's breadcrumb (tender 1) and status header down to the On us card, which ends above the fold
+    value: '270'
   - kind: hover
     note: On us -- the documents owed to the forwarder, and the invoice to review
     say: permit
     seconds: 2.2
     target: testid:on-us
-  - kind: scroll_to
-    note: the invoice's lines against agreed, each tagged above agreed
-    target: testid:invoice-variance-table
   - kind: hover
+    note: the invoice's lines against agreed, each tagged above agreed (the hover brings the row into view)
     seconds: 1.8
     target: "css:[data-testid=invoice-variance-table] tr:has-text('Freight') [data-testid=above-agreed-tag]"
   - kind: scroll_to
@@ -457,20 +458,15 @@ scenes:
   - kind: scroll_to
     target: css:[data-testid=revision-line]:has-text('Shipment · DMG-PO-2026-031 ·
       Status dispatched') [data-testid=source-excerpt]
-  - kind: hold
-    note: the forwarder's email, centred and read
-    seconds: 2.0
-  - kind: scroll
-    note: back up to the order's breadcrumb (tender 1) and status header -- held at customs waiting on us, billed against agreed, the days late split by whose, and On us
-    value: '270'
   - kind: hover
     note: park the cursor in the top bar's blank middle, off every heading, figure and action
     seconds: 0.6
     target: css:header.fixed
   - kind: hold
-    seconds: 1.5
+    note: the forwarder's email, centred and read -- the scene's last beat
+    seconds: 2.0
   - kind: snapshot
-    note: the canonical frame is the order's status header -- at customs, held, waiting on us; nothing received, billed above agreed, days late; On us with the documents owed and the invoice to review
+    note: the canonical frame is the forwarder's email in the order's History -- held at the border, the consignee to provide Form M and PAAR -- the last beat of the scene
   concept_claim: The order's status view says it is held at customs waiting on us,
     lists under On us the documents we owe the forwarder and the invoice billed above
     the agreed price, and keeps the forwarder's email in the order's history.

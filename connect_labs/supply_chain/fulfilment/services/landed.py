@@ -162,6 +162,87 @@ def charges(contract):
     return items, (unconfirmed(*reasons) if reasons else Money(total, contract.currency))
 
 
+def _we_import(contract) -> bool:
+    """Whether clearing & forwarding is ours: a buyer of ours imports, by the order's Incoterm.
+
+    The same rule the tender comparison prices quotes by (pricing.clearing_applies),
+    so an order cannot cost the import differently from the quote it came from.
+    An agency imports under its own status, inside its catalogue price.
+    """
+    from connect_labs.supply_chain.procurement.services.pricing import clearing_applies
+
+    if contract.buyer_of_record not in ("programme_org", "partner_org"):
+        return False
+    return clearing_applies(contract)
+
+
+def clearing(contract, charge_items):
+    """Clearing & forwarding on an order we import, and where the figure came from, or None.
+
+    Three sources, in order: what was paid (`clearing` charges -- already in
+    the charges total, so not added again); else the source tender's clearing
+    estimate times the order's quantity; else nothing recorded, said as such
+    rather than as a zero. {"source": "paid" | "estimate" | "not_recorded",
+    "amount": Money | Unconfirmed}.
+    """
+    if not _we_import(contract):
+        return None
+    paid = [c for c in charge_items if c["kind"] == "clearing"]
+    if paid:
+        total = ZERO
+        for c in paid:
+            figure = c.get("restated") or c["amount"]
+            if figure.currency != contract.currency:
+                return {"source": "paid", "amount": unconfirmed("a clearing charge cannot be restated")}
+            total += figure.amount
+        return {"source": "paid", "amount": Money(total, contract.currency)}
+    tender = contract.tender if contract.tender_id else None
+    per_unit = getattr(tender, "clearing_estimate_per_unit", None)
+    if per_unit is None:
+        return {"source": "not_recorded", "amount": unconfirmed("no clearing & forwarding estimate is recorded")}
+    line = tender.quantity_for(contract.commodity.slug) if contract.commodity_id else None
+    unit = line[1] if line else None
+    if contract.quantity is None or (unit and contract.quantity_unit and unit != contract.quantity_unit):
+        return {
+            "source": "estimate",
+            "amount": unconfirmed(f"the clearing estimate is per {unit or 'unit'} and the order is not counted in it"),
+        }
+    return {"source": "estimate", "amount": Money(Decimal(per_unit) * contract.quantity, contract.currency)}
+
+
+def rests_on_relief(contract) -> bool:
+    """Whether a priced order's import duty is nil by a relief rather than by its price.
+
+    Claimed on the order, or entered as excluded at 0 (a waiver). Not duty
+    inside the price, nor an agency's catalogue price, where nil is no relief.
+    """
+    if contract.consideration != "priced" or contract.buyer_of_record == "agency":
+        return False
+    if contract.duties_basis == "included":
+        return False
+    if contract.duty_relief_claimed:
+        return True
+    return contract.duties_basis == "excluded" and contract.duties_amount is not None and contract.duties_amount == 0
+
+
+def relief_on_file(contract) -> bool:
+    """Whether a duty exemption is on file: named on the order, or attached to it or a shipment of it."""
+    from django.db.models import Q
+
+    from connect_labs.supply_chain.models import Document
+
+    if contract.duty_relief_document_id:
+        return True
+    return Document.objects.filter(
+        Q(contract=contract) | Q(shipment__contract=contract), kind="duty_exemption"
+    ).exists()
+
+
+def relief_unevidenced(contract) -> bool:
+    """The order's duty rests on a relief that no document on file shows."""
+    return rests_on_relief(contract) and not relief_on_file(contract)
+
+
 def landed_total(contract):
     """The all-in cost of this contract, or why it cannot be computed.
 
@@ -195,6 +276,7 @@ def landed_total(contract):
             "landed_total": nothing,
             "duty_relief_claimed": contract.duty_relief_claimed,
             "duty_relief_evidenced": contract.duty_relief_evidenced,
+            "clearing": None,
         }
 
     goods = _line_total(contract)
@@ -203,10 +285,21 @@ def landed_total(contract):
     vat = _tax_line(contract, contract.vat_basis, contract.vat_amount, "VAT")
 
     blocked = merge(goods, freight, duty, vat, charges_total)
+    clearing_line = clearing(contract, charge_items)
+    # An estimate is added; a paid clearing charge is already in the charges.
+    # One not recorded (or not countable) adds nothing and is marked beside the
+    # total, as the comparison marks "excl. clearing" -- never a silent zero.
+    estimate = (
+        clearing_line["amount"].amount
+        if clearing_line and clearing_line["source"] == "estimate" and isinstance(clearing_line["amount"], Money)
+        else ZERO
+    )
     total = blocked or Money(
-        goods.amount + freight.amount + duty.amount + vat.amount + charges_total.amount, contract.currency
+        goods.amount + freight.amount + duty.amount + vat.amount + charges_total.amount + estimate,
+        contract.currency,
     )
     return {
+        "clearing": clearing_line,
         "charges": charge_items,
         "charges_total": charges_total,
         "buyer_of_record": contract.buyer_of_record,

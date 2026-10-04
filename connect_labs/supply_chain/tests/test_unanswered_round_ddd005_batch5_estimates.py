@@ -210,7 +210,7 @@ def test_reminder_draft_says_mark_sent_and_row_says_reminder_sent():
     assert 'data-testid="mark-sent"' in source and ">Mark sent</button>" in source
     assert "Record chase</button>" not in source
     # The changed cell keeps every row's "<date> · <nth> reminder" shape; the sent state rides the tag.
-    assert 'data-testid="last-chased">{{ o.last_reminder_on|day' in source
+    assert 'data-testid="supplier-chased">{% for part in r.chased|default:"—"|dot_parts %}' in source
     assert 'label="Reminder sent"' in source
     assert "no further reminder · deadline" in source
 

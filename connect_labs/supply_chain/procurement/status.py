@@ -13,6 +13,7 @@ here). The page draws a small mark per source and a legend once.
 
 from datetime import date
 from decimal import Decimal, InvalidOperation
+from functools import lru_cache
 
 from django.urls import reverse
 
@@ -93,7 +94,23 @@ def _blocked_by_terms(row) -> bool:
 _WAIVER_DOC = "waiver document"
 # Our own estimates, recorded on the tender's Terms box: never a supplier's to give.
 _ESTIMATE_GAPS = ("freight estimate", "clearing estimate")
-_OUR_GAPS = (_ROUND_DUTY, _WAIVER_DOC, "our duty estimate", "estimate unit", *_ESTIMATE_GAPS)
+
+
+@lru_cache(maxsize=1)
+def _our_gap_words() -> frozenset:
+    """The gaps that are ours: every gap whose question is addressed to us (questions.py), plus
+    the two only the tender carries -- the waiver document and our clearing estimate.
+
+    One table decides both whose a gap is and whether a follow-up asks the supplier for it,
+    so the comparison, the tender's Suppliers table and the drafted emails cannot disagree.
+    """
+    from connect_labs.supply_chain.procurement.services.comparison import _GAP_WORDS
+    from connect_labs.supply_chain.procurement.services.questions import _REASON_QUESTIONS, INTERNAL
+
+    internal = {
+        _GAP_WORDS[key] for _, key, _, audience in _REASON_QUESTIONS if audience == INTERNAL and key in _GAP_WORDS
+    }
+    return frozenset({*internal, _ROUND_DUTY, _WAIVER_DOC, *_ESTIMATE_GAPS})
 
 
 def _gap_word(gap: str) -> str:
@@ -103,13 +120,49 @@ def _gap_word(gap: str) -> str:
 
 def gap_owner(gap: str) -> str:
     """Whose a gap is: our tender terms and the rates we record are ours; what a quote states, the supplier's."""
-    return rules.US if gap in _OUR_GAPS or gap.startswith("exchange rate") else rules.SUPPLIERS
+    return rules.US if gap in _our_gap_words() or gap.startswith("exchange rate") else rules.SUPPLIERS
 
 
 def split_gaps(gaps) -> tuple[list, list]:
     """(ours, the supplier's), by gap_owner -- one rule for the tile and the grid."""
     gaps = list(gaps or [])
     return [g for g in gaps if gap_owner(g) == rules.US], [g for g in gaps if gap_owner(g) != rules.US]
+
+
+def _field(row, name, default=None):
+    """A comparison row's field, from the service object or its snapshot dict alike."""
+    return row.get(name, default) if isinstance(row, dict) else getattr(row, name, default)
+
+
+def waiver_on_file(tender) -> bool:
+    """Under the waiver, whether a copy of it is on the tender (True under any other terms)."""
+    if getattr(tender, "duty_terms", "") != "buyer_waiver":
+        return True
+    from connect_labs.supply_chain.models import Document
+
+    return Document.objects.filter(tender_id=tender.pk, program_id=tender.program_id, kind="duty_exemption").exists()
+
+
+def quote_open_facts(tender, row, quote, *, waiver_on_file=True) -> list:
+    """Every fact one quote still lacks, ONE list: the comparison's header chips and next steps,
+    the tender's Suppliers table and comparable-quotes tile, and the overview's Quote gaps all read it.
+
+    The comparison's gaps, our estimates still to record (which do not block the ranking), and,
+    for a quote costed on a duty waiver with no copy of it on file, the waiver document.
+    Split it by `split_gaps` for whose each fact is.
+    """
+    from connect_labs.supply_chain.procurement.services.pricing import buyer_imports
+
+    gaps = list(_field(row, "gaps") or [])
+    waiver_gap = (
+        not waiver_on_file
+        and quote is not None
+        and getattr(tender, "duty_terms", "") == "buyer_waiver"
+        and _ROUND_DUTY not in gaps
+        and quote.delivery_mode != "pickup"
+        and buyer_imports(quote)
+    )
+    return [*gaps, *(_field(row, "open_estimates") or []), *([_WAIVER_DOC] if waiver_gap else [])]
 
 
 # ---- the tender's status ---------------------------------------------------
@@ -142,6 +195,14 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
     )
     compared = comparisons(tender, quotes)
     rows_by_quote = {row.quote_id: row for c in compared for row in (*c.comparable, *c.blocked, *c.not_comparable)}
+    # Each quote's open facts, by the one rule the comparison's headers count with.
+    quote_by_id = {q.pk: q for q in quotes}
+    on_file = waiver_on_file(tender)
+    open_facts = {
+        row.quote_id: quote_open_facts(tender, row, quote_by_id.get(row.quote_id), waiver_on_file=on_file)
+        for c in compared
+        for row in (*c.comparable, *c.blocked)
+    }
     comparable = sum(len(c.comparable) for c in compared)
     quoted = sum(len(c.comparable) + len(c.blocked) for c in compared)
     ai_quotes = ai_entered_quotes([q.pk for q in live], program_id=program_id)
@@ -178,7 +239,7 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
         count = max(((reminder_counts or {}).get(o.pk, 0) for o in mine), default=0)
         if chased:
             count = max(count, 1)
-        row["chased"] = (_day(chased) + (f" · {_ordinal(count)}" if count else "")) if chased else ""
+        row["chased"] = (_day(chased) + (f" · {_ordinal(count)} reminder" if count else "")) if chased else ""
         if theirs_quotes:
             quote = theirs_quotes[-1]
             compared_row = rows_by_quote.get(quote.pk)
@@ -186,9 +247,17 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
             row["chip"] = {"label": "Quote, late" if late else "Quote", "tone": PRIMARY}
             row["quote"] = _quote_summary(quote, compared_row)
             row["quote_src"] = AI if quote.pk in ai_quotes else PERSON
-            gaps = [g for g in (compared_row.gaps if compared_row else []) if g != _ROUND_DUTY]
-            row["missing"] = gaps
-            if gaps and anchor in draft_anchors:
+            # Split as the comparison splits it: the supplier's facts are what is missing from
+            # the quote (and what Ask asks for); ours are a count, linking to the comparison.
+            ours_g, theirs_g = split_gaps(open_facts.get(quote.pk, []))
+            row["missing"] = theirs_g
+            row["on_us"] = _plural(len(ours_g), "fact") + " on us" if ours_g else ""
+            row["on_us_href"] = (
+                reverse("supply_chain:procurement_comparison", args=[tender.pk]) + f"?commodity={quote.commodity.slug}"
+                if ours_g
+                else ""
+            )
+            if theirs_g and anchor in draft_anchors:
                 row["action"] = {"label": "Ask", "href": f"#{anchor}"}
             else:
                 row["action"] = {
@@ -197,13 +266,13 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
                 }
         elif questions:
             row["chip"] = {"label": "Questions for us", "tone": OURS}
-            row["missing"] = []
+            row["missing"], row["on_us"] = [], ""
             reply = f"draft-reply-{sid}"
             row["action"] = {"label": "Reply", "href": f"#{reply}" if reply in draft_anchors else "#owed"}
         elif sid in silent:
             days = (today - asked).days if asked else None
             row["chip"] = {"label": f"Silent {days}d" if days is not None else "Silent", "tone": THEIRS}
-            row["missing"] = []
+            row["missing"], row["on_us"] = [], ""
             if anchor in draft_anchors:
                 # The reminder is already drafted: the link says so, and opens it.
                 row["action"] = {"label": "Open draft", "href": f"#{anchor}"}
@@ -214,8 +283,12 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
                 }
         else:
             kind = next((o.response_kind for o in mine if o.responded and o.response_kind), "")
-            row["chip"] = {"label": (kind.replace("_", " ") or "replied").capitalize(), "tone": NEUTRAL}
-            row["missing"] = []
+            # One word for a reply that was questions, here and in the comparison: questions for us.
+            if kind == "needs_info":
+                row["chip"] = {"label": "Questions for us", "tone": OURS}
+            else:
+                row["chip"] = {"label": (kind.replace("_", " ") or "replied").capitalize(), "tone": NEUTRAL}
+            row["missing"], row["on_us"] = [], ""
         supplier_rows.append(row)
 
     # The rail on this page: in the table's order, named by supplier (the chip carries the silence),
@@ -254,7 +327,7 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
     ]
     chased_silent = sum(1 for rows in silent.values() if any(o.last_reminder_on for o in rows))
     blocked_terms = sum(1 for c in compared for row in c.blocked if _blocked_by_terms(row))
-    split = [split_gaps(row.gaps) for c in compared for row in c.blocked]
+    split = [split_gaps(facts) for facts in open_facts.values()]
     waiting_us = sum(1 for ours_g, _ in split if ours_g)
     supplier_facts = sum(len(theirs_g) for _, theirs_g in split)
     supplier_count = sum(1 for _, theirs_g in split if theirs_g)
@@ -513,14 +586,8 @@ def comparison_grid(
         anchor = f"draft-supplier-{row.get('supplier_id')}"
         # ONE gap list per quote: the header chips, the landed cell and the next steps all read it.
         # A quote costed on the waiver with no copy of it on file owes one more fact: ours.
-        waiver_gap = (
-            not waiver_on_file
-            and tender.duty_terms == "buyer_waiver"
-            and _ROUND_DUTY not in gaps
-            and quote.delivery_mode != "pickup"
-            and buyer_imports(quote)
-        )
-        quote_gaps = [*gaps, *(row.get("open_estimates") or []), *([_WAIVER_DOC] if waiver_gap else [])]
+        quote_gaps = quote_open_facts(tender, row, quote, waiver_on_file=waiver_on_file)
+        waiver_gap = _WAIVER_DOC in quote_gaps
         our_gaps, supplier_gaps = split_gaps(quote_gaps)
         # The quote's status chips (one per party owing facts), and one action per open gap, ours first.
         chips, actions = [], []
