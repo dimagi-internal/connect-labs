@@ -164,12 +164,13 @@ class TestAnIncotermFillsAGapNobodyRecorded:
         """Reading the term is not the same as knowing the number.
 
         EXW says the buyer pays freight and duty. It does not say how much,
-        and this domain does not invent one -- so the figure stays Unconfirmed
-        and the reason says where "excluded" came from.
+        and this domain does not invent one -- so the figure stays Unconfirmed.
+        Main freight under an E term is ours: the reason names our missing
+        freight estimate, never a question for the supplier.
         """
         extras = _extras_for(world, incoterm="EXW Lagos")
         assert isinstance(extras, Unconfirmed)
-        assert any("per Incoterm" in reason for reason in extras.reasons), extras.reasons
+        assert any("no freight estimate" in reason for reason in extras.reasons), extras.reasons
 
     def test_DAP_carries_freight_and_leaves_duty_to_the_buyer(self, world):
         extras = _extras_for(world, incoterm="DAP Kano")

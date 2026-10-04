@@ -944,6 +944,22 @@ def duty_terms_set_by(tender_id, *, program_id) -> str:
     return actor_label(revision.call, Lookup()) if revision is not None else ""
 
 
+def import_estimates_set_by(tender_id, *, program_id) -> str:
+    """Who last recorded a tender's clearing or freight estimate, as the timeline names them; "" when nobody."""
+    from django.db.models import Q
+
+    from connect_labs.supply_chain.models import Tender
+
+    revision = (
+        Revision.objects.filter(_type_q(Tender), object_id=str(tender_id), program_id=program_id)
+        .filter(Q(changes__has_key="clearing_estimate_per_unit") | Q(changes__has_key="freight_estimate_per_unit"))
+        .select_related("call__actor")
+        .order_by("-recorded_at", "-id")
+        .first()
+    )
+    return actor_label(revision.call, Lookup()) if revision is not None else ""
+
+
 def duty_terms_answer(tender_id, *, program_id) -> dict | None:
     """The answered question that last set a tender's import-duty terms, when an answer did.
 

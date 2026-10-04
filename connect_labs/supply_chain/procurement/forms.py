@@ -528,7 +528,7 @@ class OutreachChaseForm(forms.Form):
     # The draft's field shows the day as the page does ("2 Oct 2026"); the form
     # and older links send YYYY-MM-DD. Both are exact shapes, neither a guess.
     last_reminder_on = forms.DateField(
-        label=_("Chased on"),
+        label=_("Sent on"),
         initial=date.today,
         widget=forms.DateInput(attrs=DATE),
         input_formats=["%Y-%m-%d", "%d %b %Y", "%d %B %Y"],
@@ -577,6 +577,15 @@ class TenderDutyTermsForm(forms.Form):
         ],
     )
     duty_estimate_percent = forms.DecimalField(label=_("Our duty estimate, % of goods"), required=False, min_value=0)
+
+
+class TenderImportEstimatesForm(forms.Form):
+    """Our clearing & forwarding and freight estimates, USD per unit of the tender's line."""
+
+    clearing_estimate_per_unit = forms.DecimalField(label=_("Clearing & forwarding"), required=False, min_value=0)
+    freight_estimate_per_unit = forms.DecimalField(
+        label=_("Freight to the delivery point"), required=False, min_value=0
+    )
 
 
 class ApprovalDecisionForm(ScopedForm):

@@ -156,6 +156,13 @@ def tender(obj) -> dict:
         "duty_terms": obj.duty_terms,
         "duty_estimate_percent": str(obj.duty_estimate_percent) if obj.duty_estimate_percent is not None else None,
         "duty_terms_set_on": _date(obj.duty_terms_set_on),
+        "clearing_estimate_per_unit": (
+            str(obj.clearing_estimate_per_unit) if obj.clearing_estimate_per_unit is not None else None
+        ),
+        "freight_estimate_per_unit": (
+            str(obj.freight_estimate_per_unit) if obj.freight_estimate_per_unit is not None else None
+        ),
+        "import_estimates_set_on": _date(obj.import_estimates_set_on),
     }
 
 

@@ -75,9 +75,9 @@ scenes:
   - kind: wait_for
     target: css:#drafts[open]
   - kind: wait_for
-    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=record-chase]
+    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=mark-sent]
   - kind: scroll_to
-    note: centre Sahel's drafted reminder, its asked/last-reminded line and its Chased on field with Record chase all in view
+    note: centre Sahel's drafted reminder, its asked/last-reminded line and its Sent on field with Mark sent all in view
     target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}']
   - kind: hold
     seconds: 0.8
@@ -102,7 +102,7 @@ scenes:
     note: scene 1 ended by opening Sahel's drafted reminder, and this scene's url differs only by its hash, so the recorder stays put and the before-frame is the open draft
     target: css:#drafts[open]
   - kind: wait_for
-    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=record-chase]
+    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=mark-sent]
   - kind: hold
     say: drafts
     seconds: 1.2
@@ -112,7 +112,7 @@ scenes:
     seconds: 2.0
     target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=draft-why]
   - kind: hover
-    note: today's date, ready in Chased on beside Record chase, at the foot of the card after the email
+    note: today's date, ready in Sent on beside Mark sent, at the foot of the card after the email
     say: today
     seconds: 1.8
     target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=chase-date]
@@ -125,8 +125,8 @@ scenes:
     seconds: 2.5
   - kind: click
     must_succeed: true
-    note: record the day she chased Sahel, from the draft itself; the tender lands on its Invitations, Sahel's row marked
-    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=record-chase]
+    note: once the reminder has gone, Mark sent stamps the day on Sahel's invitation; the tender lands on its Invitations, Sahel's row marked
+    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=mark-sent]
     timeout_ms: 30000
   - kind: wait_for
     must_succeed: true
@@ -135,7 +135,7 @@ scenes:
     note: centre Sahel's Invitations row, marked as just changed, with the table's headings above it
     target: css:tr[data-changed]
   - kind: hover
-    note: the payoff of the chase -- Sahel's Last chased cell reads today, the 3rd reminder, and when the next falls due
+    note: the payoff -- Sahel's Last chased cell reads Reminder sent today, the 3rd reminder, and no further reminder before the deadline
     say: recorded
     seconds: 2.0
     target: css:tr[data-changed] td:has-text('3rd reminder')
@@ -146,15 +146,18 @@ scenes:
   - kind: hold
     seconds: 1.5
   - kind: snapshot
-    note: the canonical frame is the recorded chase -- Sahel's Invitations row marked just changed, its Last chased cell today, the 3rd reminder, and when the next falls due
+    note: the canonical frame is the reminder marked sent -- Sahel's Invitations row marked just changed, its Last chased cell reading Reminder sent today, the 3rd reminder, and no further reminder before the deadline
   concept_claim: The tender drafts a reminder for each silent supplier that says when
-    they were asked and last reminded, with a Chased on field holding today's date
-    and a Record chase button on the draft itself.
+    they were asked and last reminded, with a Sent on field holding today's date and
+    a Mark sent button on the draft itself; once marked, the supplier's row reads Reminder
+    sent with that day, and no further reminder is scheduled past the tender's deadline.
   design_intent: Chasing is most of the work in a half-silent tender; the record drafts
-    the reminder and records the chase from the same card, so the day is kept.
+    the reminder and stamps the day only when it is marked sent, so the date is the
+    day it went, and the cadence stops at the deadline.
   show: Sophie reads the reminder drafted for Sahel, its line on when Sahel was asked
-    and last reminded, and the Chased on field beside Record chase; recording the chase
-    returns her to the tender's Invitations, Sahel's row marked with its 3rd reminder.
+    and last reminded, and the Sent on field beside Mark sent; marking it sent returns
+    her to the tender's Invitations, Sahel's row reading Reminder sent today, its 3rd
+    reminder, with no further reminder before the deadline.
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#draft-supplier-${sahel_supplier_id}
 - id: sahel-finally-answers
   full_page: false
@@ -242,6 +245,16 @@ scenes:
     seconds: 2.0
     target: "css:[data-testid=grid-quote]:has-text('Sahel Nutrition Industries') [data-testid=grid-status]"
   - kind: hover
+    note: the Freight row -- Sahel's ex-works quote leaves main freight to us, our freight estimate not recorded, a fact on us
+    say: freight
+    seconds: 2.0
+    target: css:tr[data-fact=freight] th
+  - kind: hover
+    note: the Clearing & forwarding row -- our estimate per carton on every quote we import, the supplier's on Kanem's delivered-duty-paid quote
+    say: clearing
+    seconds: 2.0
+    target: css:tr[data-fact=clearing] th
+  - kind: hover
     note: the exchange rate row -- Sahel's price is in euros and no rate is recorded
     say: euros
     seconds: 2.0
@@ -256,17 +269,21 @@ scenes:
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the canonical frame is the count of comparable quotes, the duty terms (not settled), and the grid with each quote's state, its gaps marked, and the Import duty row waiting on our terms
+    note: the canonical frame is the count of comparable quotes, the duty terms (not settled), and the grid with each quote's state, its gaps marked, Sahel's freight ours, our clearing estimate on the quotes we import, and the Import duty row waiting on our terms
   concept_claim: The comparison states the tender's import duty terms, holds every quote
-    whose Incoterm leaves the import to us until those terms are settled, and marks
-    each fact a quote has not stated, without ranking quotes that cannot be compared.
+    whose Incoterm leaves the import to us until those terms are settled, puts main
+    freight on us for an ex-works quote and our clearing estimate on every quote we
+    import, and marks each fact a quote has not stated, without ranking quotes that
+    cannot be compared.
   design_intent: The comparison earns its place by saying what is missing, not by
     ranking quotes that cannot be ranked; seen before the duty terms are settled, it shows what
     an unsettled duty question costs.
   show: Sophie opens the tender's comparison, side by side; no quote is comparable
     yet, for more than one reason. The import duty terms are not settled, so Harmattan's
     carriage-paid quote waits on them, Kanem has not stated its pack, and Sahel's new
-    quote is in euros with no exchange rate recorded.
+    quote is ex works Niamey, so its freight is ours and our freight estimate is not
+    recorded, and it is in euros with no exchange rate recorded. Our clearing estimate,
+    USD 1.20 per carton, sits on the two quotes we import.
   url: /supply/procurement/tenders/${round2_tender_id}/compare/?program_id=${program_id}
 - id: what-we-owe-northgate
   full_page: false
@@ -342,6 +359,11 @@ scenes:
     say: waived
     seconds: 2.0
     target: css:tr[data-fact=duty] th
+  - kind: hover
+    note: Harmattan's landed per carton, its quoted 50.10 plus our clearing estimate of 1.20
+    say: landed
+    seconds: 2.0
+    target: css:tr[data-fact=landed] th
   - kind: scroll
     note: back to the top -- the count chip (1 of 3 comparable) on the same row as the duty terms line with the waiver, each quote's header chips, Harmattan's landed figure, the moves split ours / the supplier's, and the rows down to Import duty
     value: '215'
@@ -352,7 +374,7 @@ scenes:
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the canonical frame is the comparison under the waiver -- the duty terms line, one of three comparable (Harmattan), and the Import duty row settled for the quotes we import
+    note: the canonical frame is the comparison under the waiver -- the duty terms line, one of three comparable (Harmattan, landed USD 51.30 with our clearing estimate), and the Import duty row settled for the quotes we import
   concept_claim: Settling the tender's import duty terms from its terms line is one choice;
     the tender then lists the reply still owed to Northgate with a drafted email, and
     the comparison costs every quote that leaves the import to us under the terms set.
@@ -362,8 +384,9 @@ scenes:
   show: Sophie settles the tender's import duty on its terms line as the program's duty
     waiver, opens the reply to Northgate drafted from On us -- its three questions, an
     answer to write under each -- then opens the comparison, which now costs the quotes
-    we import under the waiver; Harmattan's is comparable, Kanem's and Sahel's still
-    miss facts of their own.
+    we import under the waiver; Harmattan's is comparable, one of three, landed at USD
+    51.30 per carton with our clearing estimate added; Kanem's and Sahel's still miss
+    facts of their own.
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
 - id: held-on-us
   full_page: false
@@ -474,6 +497,11 @@ scenes:
     seconds: 2.0
     target: "css:[data-testid=overview-row][data-kind=tender][data-tender-id='${round2_tender_id}'] [data-testid=next-move]"
   - kind: hover
+    note: tender 2's comparable chip under its stage -- 1 of 3 comparable, Harmattan -- the comparison's own count while it stays at Collecting quotes
+    say: comparable
+    seconds: 2.0
+    target: "css:[data-testid=overview-row][data-kind=tender][data-tender-id='${round2_tender_id}'] [data-testid=row-comparable]"
+  - kind: hover
     note: the just-asked RUSF tender's row -- collecting quotes, its next move the suppliers'
     say: Maiduguri
     seconds: 2.0
@@ -490,13 +518,15 @@ scenes:
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the canonical frame is the overview -- the counts of moves on her and on suppliers, and each row's stage, next move and whose it is, Us on tender 2 and the order, Suppliers on the RUSF tender
+    note: the canonical frame is the overview -- the counts of moves on her and on suppliers, and each row's stage, next move and whose it is, Us on tender 2 (still Collecting quotes, its chip 1 of 3 comparable · Harmattan) and the order, Suppliers on the RUSF tender
   concept_claim: The overview lists each tender and order in progress with its stage,
-    its next move and whose move it is, and counts the moves on us against those waiting
+    its next move and whose move it is, gives a tender with quotes in a chip saying how
+    many are comparable and whose, and counts the moves on us against those waiting
     on suppliers.
   design_intent: The overview is where Sophie starts her day; it must already say
     where each thing stands and whose move it is.
   show: Sophie returns to the overview and reads the moves counted on her and on suppliers,
-    then each row -- tender 2, the just-asked RUSF tender and the tender 1 order -- with
-    its stage, its next move and whose it is.
+    then each row -- tender 2, still collecting quotes with its chip 1 of 3 comparable,
+    Harmattan; the just-asked RUSF tender; and the tender 1 order -- with its stage,
+    its next move and whose it is.
   url: /supply/?program_id=${program_id}

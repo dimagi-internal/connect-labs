@@ -539,6 +539,16 @@ class Tender(TimestampedModel):
     # of the goods' value. Without it a buyer-pays tender cannot land a total.
     duty_estimate_percent = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
     duty_terms_set_on = models.DateField(null=True, blank=True)
+    # Our own estimates of what the import costs us beyond the duty, in USD per
+    # unit of the tender's line ("USD 1.20 per carton"). Clearing & forwarding
+    # applies to every quote whose Incoterm makes us the importer; freight to
+    # the delivery point applies to E and F terms (EXW, FCA, FAS, FOB), where
+    # main carriage is ours and never the supplier's to state. Without the
+    # freight estimate such a quote has no landed figure; without the clearing
+    # estimate the figure is shown, labelled "excl. clearing".
+    clearing_estimate_per_unit = models.DecimalField(null=True, blank=True, **MONEY)
+    freight_estimate_per_unit = models.DecimalField(null=True, blank=True, **MONEY)
+    import_estimates_set_on = models.DateField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
