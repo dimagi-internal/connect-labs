@@ -111,13 +111,21 @@ def _int(v) -> int | None:
         return None
 
 
-def slice_for_opportunity(payload: dict, opportunity_id: int, *, source: dict | None = None) -> dict:
+def slice_for_opportunity(
+    payload: dict, opportunity_id: int, *, source: dict | None = None, cases: list[dict] | None = None
+) -> dict:
     """The graded payload of a programme run, cut to ONE opportunity.
 
     The result is the same shape a saved run of the opportunity report stores, so
     the page reads it the same way: `programInd` is the opportunity's own row,
     `all` in every series is its own series. `source` is recorded as
     `meta.handed_down_from`.
+
+    THE CASE LIST. A programme run stores none (its builder's `case_index.embed:
+    false`): the opportunity's cases arrive as `cases`, computed for this week from
+    the same extraction the programme graded (`opportunity_cases`). A programme
+    run saved before that change still carries the whole list, and is cut as it
+    always was. Either way the slice holds only its own opportunity's cases.
     """
     opp = int(opportunity_id)
     if _is_legacy(payload):
@@ -130,11 +138,16 @@ def slice_for_opportunity(payload: dict, opportunity_id: int, *, source: dict | 
 
     # The case index, and where each kept case moved to: `byFLW[].rows` are
     # positions into it.
-    cases, positions = [], {}
-    for i, case in enumerate(payload.get("cases") or []):
+    embedded = "cases" in payload
+    source_cases = payload.get("cases") if embedded else cases
+    if source_cases is None:
+        raise HandDownError("the run stores no case list and none was supplied for the opportunity")
+    own, positions = [], {}
+    for i, case in enumerate(source_cases or []):
         if _int((case or {}).get("opportunity_id")) == opp:
-            positions[i] = len(cases)
-            cases.append(case)
+            positions[i] = len(own)
+            own.append(case)
+    cases = own
 
     top = _slice_family(payload, opp, llo, positions)
     series = {
@@ -144,6 +157,18 @@ def slice_for_opportunity(payload: dict, opportunity_id: int, *, source: dict | 
         }
         for name, block in (payload.get("series") or {}).items()
     }
+
+    if not embedded:
+        # The programme stored no positions (it stored no list), so each worker's
+        # cases are found here, in the opportunity's own list. Same rule the builder
+        # uses: (opportunity, username), and the semantic case list names the worker
+        # exactly as the worker scope does.
+        by_worker: dict[str, list[int]] = {}
+        for i, case in enumerate(cases):
+            by_worker.setdefault(str(case.get("username")), []).append(i)
+        for family in [top] + list(series.values()):
+            for f in family.get("byFLW") or []:
+                f["rows"] = by_worker.get(str(f.get("username")), [])
 
     weekly_own = (payload.get("weekly") or {}).get(f"{OPP}{opp}") or []
     weekly = {"all": weekly_own, f"{OPP}{opp}": weekly_own}
@@ -163,6 +188,12 @@ def slice_for_opportunity(payload: dict, opportunity_id: int, *, source: dict | 
     }
 
     meta = dict(payload.get("meta") or {})
+    settles = dict(meta.get("settles") or {})
+    if "latest" in settles:
+        # Each opportunity's latest anchor date is that opportunity's data.
+        own_day = (settles.get("latest") or {}).get(str(opp))
+        settles["latest"] = {str(opp): own_day} if own_day else {}
+        meta["settles"] = settles
     meta.update(
         {
             "cases": len(cases),
@@ -364,6 +395,7 @@ def write_slice(
     source_workflow_id: int,
     state_key: str,
     ledger: Ledger | None = None,
+    cases: list[dict] | Callable[[], list[dict]] | None = None,
 ) -> dict:
     """Write one opportunity's slice of `source_run` as a completed run of `definition`.
 
@@ -385,7 +417,11 @@ def write_slice(
         return {"action": "unchanged", "run_id": None}
 
     opp = int(opportunity_id)
-    sliced = slice_for_opportunity(payload, opp, source=source)
+    if callable(cases):
+        # Resolved only now, past the "already holds this run" check: a walk over
+        # weeks that are all up to date computes no case list at all.
+        cases = cases()
+    sliced = slice_for_opportunity(payload, opp, source=source, cases=cases)
     run = wda.create_run(
         definition_id=definition.id,
         opportunity_id=opp,
@@ -451,11 +487,19 @@ def hand_down_run(
     state_key: str = "snapshot",
     targets: Receivers | None = None,
     ledger: Ledger | None = None,
+    cases: list[dict] | None = None,
+    cases_for: Callable[[Any, list[int]], list[dict]] | None = None,
 ) -> list[dict]:
     """Hand one completed programme run down to every opportunity report that follows it.
 
     `targets` and `ledger` are shared across a history walk so each opportunity's
     reports, and each report's existing hand-downs, are read once, not once a week.
+
+    A programme run stores no case list, so the opportunities' cases come from the
+    caller: `cases` when it still holds the ones the run was graded from (a history
+    rebuild, straight after building the week), else `cases_for(run, opportunity_ids)`,
+    which computes that week's list ONCE for every receiving opportunity. A run saved
+    before that change carries its own list and needs neither.
     """
     if not getattr(source_run, "is_completed", False):
         raise HandDownError(f"run {source_run.id} is not completed")
@@ -468,7 +512,29 @@ def hand_down_run(
     ledger = ledger or Ledger()
     report: list[dict] = []
     try:
-        for opp, pairs in targets.for_opportunities(opps).items():
+        receiving = targets.for_opportunities(opps)
+        week_cases = cases
+        if "cases" not in payload and cases is None and receiving:
+            computed: dict = {}
+
+            def _compute_once():
+                # One list for every receiving opportunity, computed on first use. A
+                # failure is remembered too: every report this week fails for the
+                # same reason, and recomputing per report would multiply the cost.
+                if "result" not in computed:
+                    try:
+                        if cases_for is None:
+                            raise HandDownError("the run stores no case list and no way to compute one was given")
+                        computed["result"] = cases_for(source_run, sorted(receiving))
+                    except Exception as exc:  # noqa: BLE001
+                        computed["result"] = exc
+                if isinstance(computed["result"], Exception):
+                    raise computed["result"]
+                return computed["result"]
+
+            week_cases = _compute_once
+
+        for opp, pairs in receiving.items():
             for wda, definition in pairs:
                 try:
                     out = write_slice(
@@ -480,6 +546,7 @@ def hand_down_run(
                         source_workflow_id=source_workflow_id,
                         state_key=state_key,
                         ledger=ledger,
+                        cases=week_cases,
                     )
                     report.append({"opportunity_id": opp, "workflow_id": definition.id, **out, "error": None})
                 except Exception as exc:  # noqa: BLE001 -- one report must not cost the others
@@ -578,6 +645,24 @@ def run_hand_down(
     def wda_for(opp: int):
         return make(access_token=access_token, opportunity_id=opp)
 
+    memo: dict = {}
+
+    def cases_for(run, opportunity_ids):
+        from connect_labs.workflow.snapshot_builders import opportunity_cases
+
+        return opportunity_cases(
+            opportunity_ids=opportunity_ids,
+            period_end=run.period_end,
+            context={
+                "definition_id": int(workflow_id),
+                "access_token": access_token,
+                "opportunity_id": opportunity_id,
+                "program_id": program_id,
+                # One definition and registry read for the whole walk, not one a week.
+                "memo": memo,
+            },
+        )
+
     report = {"runs": 0, "created": 0, "replaced": 0, "unchanged": 0, "skipped": 0, "failed": 0, "errors": []}
     targets = Receivers(wda_for, int(workflow_id))
     # A history walk reads each report's existing hand-downs once; a single run
@@ -586,7 +671,13 @@ def run_hand_down(
     try:
         for run in runs:
             for row in hand_down_run(
-                wda_for, int(workflow_id), run, state_key=state_key, targets=targets, ledger=ledger
+                wda_for,
+                int(workflow_id),
+                run,
+                state_key=state_key,
+                targets=targets,
+                ledger=ledger,
+                cases_for=cases_for,
             ):
                 report[row["action"] if row["action"] in report else "failed"] += 1
                 if row.get("error"):

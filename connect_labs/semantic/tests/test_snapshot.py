@@ -1009,3 +1009,67 @@ class TestWeeklyActivityIsCutAtAsOf:
         assert weekly["llo:GHI"] == [{"week": "2026-08-31", "visits": 2, "registered": 1}]
         assert weekly["opp:10016"] == [{"week": "2026-09-07", "visits": 1, "registered": 1}]
         assert not any(k.startswith("flw:") for k in weekly), "worker scope would not fit the payload cap"
+
+
+class TestAProgrammeRunStoresNoCaseList:
+    """`embed_cases=False`: graded from every case, storing none, and still able to
+    show each level's activity dates."""
+
+    def _build(self, embed):
+        cases = [
+            {
+                "opportunity_id": 1,
+                "username": "amy",
+                "llo": "A",
+                "first_visit_date": "2026-01-05",
+                "last_visit_date": "2026-03-01",
+            },
+            {
+                "opportunity_id": 1,
+                "username": "amy",
+                "llo": "A",
+                "first_visit_date": "2026-02-01",
+                "last_visit_date": "2026-04-02",
+            },
+            {
+                "opportunity_id": 2,
+                "username": "bea",
+                "llo": "B",
+                "first_visit_date": "2026-01-20",
+                "last_visit_date": "2026-02-10",
+            },
+        ]
+        rows = [
+            {"scope": "programme", "n_cases": 3},
+            {"scope": "opportunity", "opportunity_id": 1, "n_cases": 2},
+            {"scope": "opportunity", "opportunity_id": 2, "n_cases": 1},
+            {"scope": "llo", "llo": "A", "n_cases": 2},
+            {"scope": "llo", "llo": "B", "n_cases": 1},
+            {"scope": "flw", "opportunity_id": 1, "username": "amy", "n_cases": 2},
+            {"scope": "flw", "opportunity_id": 2, "username": "bea", "n_cases": 1},
+        ]
+        return snap.build(
+            spec={},
+            rows=rows,
+            measures=[],
+            deployment={"llo_map": {1: "A", 2: "B"}},
+            cases=cases,
+            embed_cases=embed,
+        )
+
+    def test_the_list_is_left_out_and_workers_hold_no_positions(self):
+        out = self._build(False)
+        assert "cases" not in out
+        assert all(f["rows"] == [] for f in out["byFLW"])
+
+    def test_each_level_still_knows_its_activity_dates(self):
+        out = self._build(False)
+        amy = next(f for f in out["byFLW"] if f["username"] == "amy")
+        assert (amy["firstVisit"], amy["lastVisit"]) == ("2026-01-05", "2026-04-02")
+        assert {o["opp"]: o["lastVisit"] for o in out["byOpp"]} == {1: "2026-04-02", 2: "2026-02-10"}
+        assert {e["llo"]: e["lastVisit"] for e in out["byLLO"]} == {"A": "2026-04-02", "B": "2026-02-10"}
+
+    def test_by_default_the_list_is_stored_as_before(self):
+        out = self._build(True)
+        assert len(out["cases"]) == 3
+        assert sorted(len(f["rows"]) for f in out["byFLW"]) == [1, 2]

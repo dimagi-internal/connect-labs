@@ -541,6 +541,23 @@ class TestALineEndsWhereItsFiguresSettle:
 
 
 class TestTheSettleDate:
+    def test_a_run_that_stores_no_case_list_reads_its_recorded_anchors(self):
+        """A programme run stores no case list; the builder records each
+        opportunity's latest anchor instead, and the answer is the same."""
+        snapshot = {
+            "meta": {
+                "settles": {
+                    "after_days": 42,
+                    "anchor": "first_visit_date",
+                    "latest": {"500": "2026-02-01", "501": "2026-01-05"},
+                }
+            },
+        }
+        assert publish_module.opportunity_ends(snapshot) == {
+            500: dt.date(2026, 3, 15),
+            501: dt.date(2026, 2, 16),
+        }
+
     def test_is_the_latest_anchor_plus_the_window(self):
         snapshot = {
             "meta": {"settles": {"after_days": 42, "anchor": "first_visit_date"}},

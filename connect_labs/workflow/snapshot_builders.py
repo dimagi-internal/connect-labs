@@ -37,27 +37,15 @@ class SnapshotBuilderError(RuntimeError):
     """A declared builder could not produce a snapshot, with a reportable reason."""
 
 
-def semantic_snapshot(
-    *,
-    spec: dict,
-    pipelines: dict,
-    opportunity_id: int,
-    context: dict,
-) -> dict:
-    """Grade a workflow's bound semantic registry into a saved-run payload.
+def _resolve_semantic(spec: dict, opportunity_id: int, context: dict) -> dict:
+    """Everything a semantic evaluation of this workflow needs, read once.
 
-    Every number comes from the same `evaluate()` the live dashboard calls, through
-    the same binding (`semantic/workflow_binding.py`) and the same registry the
-    workflow NAMES — so a saved run and the live view cannot disagree about a value
-    or about the threshold it was graded against.
-
-    The scope set, the case index, the credibility mapping and the series are all
-    spec. Nothing here knows what KMC is.
+    Shared by `semantic_snapshot` (a whole saved run) and `opportunity_cases` (one
+    week's case list for hand-down), so the two always grade the same registry over
+    the same pipelines.
     """
-    from connect_labs.semantic import snapshot as snap
     from connect_labs.semantic.model import resolve_model, series_prefixes
-    from connect_labs.semantic.runtime import evaluate, filter_to_series, measure_catalog
-    from connect_labs.semantic.workflow_binding import build_evaluate_inputs, registry_binding, resolve_registry_for
+    from connect_labs.semantic.workflow_binding import build_evaluate_inputs, resolve_registry_for
     from connect_labs.workflow.data_access import PipelineDataAccess, SemanticRegistryDataAccess, WorkflowDataAccess
 
     definition_id = context.get("definition_id")
@@ -148,6 +136,53 @@ def semantic_snapshot(
     series_list = [str(x).upper() for x in (declared if isinstance(declared, list) else [declared])]
     primary = series_list[0]
 
+    return {
+        "definition_id": definition_id,
+        "opportunity_ids": opportunity_ids,
+        "request": request,
+        "definition": definition,
+        "props_doc": props_doc,
+        "full_registry": full_registry,
+        "llo_map": llo_map,
+        "reg_settings": reg_settings,
+        "deployment": deployment,
+        "pipeline_config": pipeline_config,
+        "extra_fields": extra_fields,
+        "model": model,
+        "spec": spec,
+        "series_list": series_list,
+        "primary": primary,
+    }
+
+
+def semantic_snapshot(
+    *,
+    spec: dict,
+    pipelines: dict,
+    opportunity_id: int,
+    context: dict,
+) -> dict:
+    """Grade a workflow's bound semantic registry into a saved-run payload.
+
+    Every number comes from the same `evaluate()` the live dashboard calls, through
+    the same binding (`semantic/workflow_binding.py`) and the same registry the
+    workflow NAMES — so a saved run and the live view cannot disagree about a value
+    or about the threshold it was graded against.
+
+    The scope set, the case index, the credibility mapping and the series are all
+    spec. Nothing here knows what KMC is.
+    """
+    from connect_labs.semantic import snapshot as snap
+    from connect_labs.semantic.runtime import evaluate, evaluate_with_cases, filter_to_series, measure_catalog
+    from connect_labs.semantic.workflow_binding import registry_binding
+
+    r = _resolve_semantic(spec, opportunity_id, context)
+    definition_id, opportunity_ids, request = r["definition_id"], r["opportunity_ids"], r["request"]
+    definition, props_doc, full_registry = r["definition"], r["props_doc"], r["full_registry"]
+    llo_map, reg_settings, deployment = r["llo_map"], r["reg_settings"], r["deployment"]
+    pipeline_config, extra_fields, model, spec = r["pipeline_config"], r["extra_fields"], r["model"], r["spec"]
+    series_list, primary = r["series_list"], r["primary"]
+
     # AS OF the run's period end. Every maturity gate and, since the compiler
     # change that came with this, the visit set itself are cut at that date -- so
     # a run saved for a past week reports that week, not the day it was saved.
@@ -158,22 +193,34 @@ def semantic_snapshot(
     # precisely because per-scope calls re-run the whole Layer 1 extraction, and
     # evaluating with no series filter returns every family in that one pass.
     scopes = list(spec.get("scopes") or ["programme"])
-    rows = evaluate(
-        pipeline_config,
-        opportunity_ids,
+    evaluate_kwargs = dict(
         extra_fields=extra_fields,
         registry_documents=(props_doc, full_registry),
         series=primary if len(series_list) == 1 else None,
-        scopes=scopes,
-        scope=scopes[0],
         as_of=as_of,
         llo_map=llo_map or None,
         settings=reg_settings or None,
     )
+    case_cfg = spec.get("case_index") or {}
+    llo_by_opp = {int(k): v for k, v in (llo_map or {}).items()}
+    if case_cfg.get("source") == "semantic":
+        # The case list from the SAME extraction as the indicators (see
+        # `semantic_case_rows`): as of the run, and the same cases the scores counted.
+        rows, cases, dropped = evaluate_with_cases(
+            pipeline_config,
+            opportunity_ids,
+            scopes=scopes,
+            case_fields=semantic_case_fields(case_cfg),
+            **evaluate_kwargs,
+        )
+        if dropped:
+            logger.info("workflow %s: case fields the registry does not serve: %s", definition_id, dropped)
+    else:
+        rows = evaluate(pipeline_config, opportunity_ids, scopes=scopes, scope=scopes[0], **evaluate_kwargs)
+        cases = snap.case_rows(pipelines, spec, llo_by_opp)
 
     measures = measure_catalog(filter_to_series(full_registry, primary))
     extra_series = {name: measure_catalog(filter_to_series(full_registry, name)) for name in series_list[1:]}
-    cases = snap.case_rows(pipelines, spec, {int(k): v for k, v in (llo_map or {}).items()})
     visits_alias = spec.get("visits_pipeline")
     visits = ((pipelines or {}).get(visits_alias) or {}).get("rows") or [] if visits_alias else []
     # The pipeline cache is all-time, so the case index and the visit rows must be
@@ -198,7 +245,10 @@ def semantic_snapshot(
         # counts from, and the longest window any indicator waits on. The benchmark
         # publisher ends an opportunity's trend line there (`benchmarks/publish.py::
         # opportunity_ends`), under the rule this run was graded with.
-        "settles": settles_meta(spec, props_doc, full_registry),
+        "settles": {
+            **settles_meta(spec, props_doc, full_registry),
+            "latest": latest_anchor_by_opportunity(cases, spec.get("maturity_anchor")),
+        },
     }
     synthetic = _is_synthetic(opportunity_ids)
     if synthetic is not None:
@@ -222,6 +272,7 @@ def semantic_snapshot(
         full_registry,
         visits_pipeline=spec.get("visits_pipeline"),
     )
+    embed = case_cfg.get("embed", True) is not False
     payload = snap.build(
         display=display,
         spec=spec,
@@ -234,8 +285,40 @@ def semantic_snapshot(
         extra_series=extra_series,
         as_of=as_of_date,
         registry_min_denominator=model.min_denominator,
+        embed_cases=embed,
     )
+    if not embed and context.get("memo") is not None:
+        # The cases this run was graded from, for the caller that hands it down to
+        # the opportunity reports while they are in memory (history_rebuild, which
+        # is the one caller that passes a memo). Never stored on this run: see
+        # `case_index.embed`. Without a memo, hand-down computes the week's list.
+        context["memo"][LAST_CASE_INDEX] = cases
     return wrap_for_runner(payload, spec.get("state_key"))
+
+
+# Reader name -> registry column, for the case-index fields whose names differ
+# between the two. A case index keeps the names its readers have always used; a
+# field that is not listed here is read from the registry column of the same name.
+# Where a memo-carrying build leaves the cases it graded (see semantic_snapshot).
+LAST_CASE_INDEX = ("last_case_index",)
+
+_CASE_FIELD_SOURCES = {
+    "first_visit_date": "first_visit",
+    "last_visit_date": "last_visit",
+    "total_visits": "num_visits",
+}
+
+
+def semantic_case_fields(case_cfg: dict) -> dict[str, str]:
+    """`case_index.fields` as {output name: registry column}.
+
+    A list names output fields, each read from `_CASE_FIELD_SOURCES` or the column
+    of the same name; a mapping states the column for each field outright.
+    """
+    fields = (case_cfg or {}).get("fields") or []
+    if isinstance(fields, dict):
+        return {str(k): str(v) for k, v in fields.items()}
+    return {str(f): _CASE_FIELD_SOURCES.get(str(f), str(f)) for f in fields}
 
 
 _ALL_SCOPES = ["programme", "llo", "opportunity", "flw", "month", "llo_month", "opportunity_month"]
@@ -303,6 +386,40 @@ def resolve_spec_defaults(spec, model, pipeline_config, extra_fields, llo_map, i
     return out
 
 
+def opportunity_cases(*, opportunity_ids: list[int], period_end, context: dict) -> list[dict]:
+    """One week's case list for some of a programme's opportunities, as of `period_end`.
+
+    What hand-down uses when the programme run it is handing down was not built in
+    this process: a programme run stores no case list (`case_index.embed: false`),
+    so each opportunity's list is computed for the run's week from the programme's
+    own registry and pipelines -- the same extraction its indicators were graded
+    from, filtered at the scan to the opportunities asked for. `context` is the
+    programme's builder context (definition_id, access_token, scope).
+    """
+    from connect_labs.semantic.runtime import evaluate_with_cases
+    from connect_labs.workflow.templates import resolve_snapshot_contract
+
+    if not opportunity_ids:
+        return []
+    probe = _resolve_semantic({}, int(context.get("opportunity_id") or opportunity_ids[0]), context)
+    spec = (resolve_snapshot_contract(probe["definition"]).get("snapshot_inputs")) or {}
+    r = _resolve_semantic(spec, int(context.get("opportunity_id") or opportunity_ids[0]), context)
+    as_of_date = as_of_iso(period_end)
+    _rows, cases, _dropped = evaluate_with_cases(
+        r["pipeline_config"],
+        [int(o) for o in opportunity_ids],
+        scopes=["programme"],
+        case_fields=semantic_case_fields(r["spec"].get("case_index") or {}),
+        extra_fields=r["extra_fields"],
+        registry_documents=(r["props_doc"], r["full_registry"]),
+        as_of=f"DATE '{as_of_date}'" if as_of_date else "CURRENT_DATE",
+        llo_map=r["llo_map"] or None,
+        settings=r["reg_settings"] or None,
+        visit_filter={"opportunity_id": int(opportunity_ids[0])} if len(opportunity_ids) == 1 else None,
+    )
+    return cases
+
+
 def settles_meta(spec: dict, props_doc: dict, indicators_doc: dict) -> dict:
     """`{"after_days", "anchor"}` for `meta.settles`. See `semantic/maturity.py`.
 
@@ -315,6 +432,27 @@ def settles_meta(spec: dict, props_doc: dict, indicators_doc: dict) -> dict:
     spec = spec or {}
     anchor = spec.get("maturity_anchor")
     return {"after_days": settle_after_days(props_doc, indicators_doc), "anchor": str(anchor) if anchor else None}
+
+
+def latest_anchor_by_opportunity(cases: list[dict], anchor: str | None) -> dict[str, str]:
+    """Each opportunity's latest maturity-anchor date (ISO), keyed by its id as a string.
+
+    The benchmark publisher ends an opportunity's trend line `after_days` past this
+    date (`benchmarks/publish.py::opportunity_ends`). It used to scan the stored
+    case list for it; recorded here, a run that stores no case list still answers.
+    Falls back to the last visit, as the publisher does, when a case has no anchor.
+    """
+    latest: dict[str, str] = {}
+    for c in cases or []:
+        opp = c.get("opportunity_id")
+        day = c.get(anchor) if anchor else None
+        day = str(day or c.get("last_visit_date") or "")[:10]
+        if opp is None or not _ISO_DATE.match(day):
+            continue
+        key = str(int(opp))
+        if day > latest.get(key, ""):
+            latest[key] = day
+    return latest
 
 
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}")
