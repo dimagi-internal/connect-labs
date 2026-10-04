@@ -205,7 +205,8 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
             row["chip"] = {"label": f"Silent {days}d" if days is not None else "Silent", "tone": THEIRS}
             row["missing"] = []
             if anchor in draft_anchors:
-                row["action"] = {"label": "Remind", "href": f"#{anchor}"}
+                # The reminder is already drafted: the link says so, and opens it.
+                row["action"] = {"label": "Open draft", "href": f"#{anchor}"}
             elif mine:
                 row["action"] = {
                     "label": "Record a reply",
@@ -580,6 +581,8 @@ def comparison_grid(
                 "chip": chips[0],
                 "chips": chips,
                 "actions": actions,
+                "ours_actions": [a for a in actions if a.get("owner") != rules.SUPPLIERS],
+                "theirs_actions": [a for a in actions if a.get("owner") == rules.SUPPLIERS],
                 "action": actions[0] if actions else None,
                 "blocked_by_terms": _ROUND_DUTY in gaps,
                 "href": reverse("supply_chain:procurement_quote_detail", args=[row["quote_id"]]),
@@ -591,7 +594,8 @@ def comparison_grid(
 
         def gap(words="not stated", label=None, owner=rules.SUPPLIERS):
             reason = why.get(label) if label else next((f for k, f in why.items() if k and words and k in words), "")
-            return {"v": words, "gap": True, "src": src, "why": reason or "", "owner": owner}
+            # A gap is a value nobody has recorded, so it carries no mark of where a value came from.
+            return {"v": words, "gap": True, "src": "", "why": reason or "", "owner": owner}
 
         def fact(value, source=src):
             return {"v": value, "gap": False, "src": source}
@@ -631,7 +635,7 @@ def comparison_grid(
             cells["freight"].append(gap("ours: estimate not recorded", label="freight estimate", owner=rules.US))
         elif row.get("freight_ours") == "estimate":
             cells["freight"].append(
-                fact(f"ours · USD {money_digits(tender.freight_estimate_per_unit)}{per_unit} (our estimate)", CALC)
+                fact(f"ours · USD {money_digits(tender.freight_estimate_per_unit)}{per_unit} (our estimate)", PERSON)
             )
         elif freight_label:
             cells["freight"].append(gap(label=freight_label))
@@ -649,7 +653,7 @@ def comparison_grid(
             cells["freight"].append(blank())
         if row.get("clearing") == "estimate":
             cells["clearing"].append(
-                fact(f"USD {money_digits(tender.clearing_estimate_per_unit)}{per_unit} (our estimate)", CALC)
+                fact(f"USD {money_digits(tender.clearing_estimate_per_unit)}{per_unit} (our estimate)", PERSON)
             )
         elif row.get("clearing") == "open":
             cells["clearing"].append(gap("ours: estimate not recorded", label="clearing estimate", owner=rules.US))
@@ -793,7 +797,7 @@ def _duty_cell(tender, quote, gaps, src) -> dict:
 
     terms = tender.duty_terms or ""
     if _ROUND_DUTY in gaps:
-        return {"v": "our terms: not settled", "gap": True, "src": CALC, "owner": rules.US}
+        return {"v": "our terms: not settled", "gap": True, "src": "", "owner": rules.US}
     if not buyer_imports(quote):
         if quote.duties_basis == "included" or (quote.incoterm or "").upper().startswith("DDP"):
             return {"v": "in price (supplier)", "gap": False, "src": src}
@@ -803,16 +807,16 @@ def _duty_cell(tender, quote, gaps, src) -> dict:
                 "gap": False,
                 "src": src,
             }
-        return {"v": "not stated", "gap": True, "src": src, "owner": rules.SUPPLIERS}
+        return {"v": "not stated", "gap": True, "src": "", "owner": rules.SUPPLIERS}
     if terms == "buyer_waiver":
         return {"v": "waived (our import)", "gap": False, "src": CALC}
     if terms == "buyer_pays":
         if tender.duty_estimate_percent is None:
-            return {"v": "our estimate: not recorded", "gap": True, "src": CALC, "owner": rules.US}
+            return {"v": "our estimate: not recorded", "gap": True, "src": "", "owner": rules.US}
         from decimal import Decimal
 
         percent = Decimal(str(tender.duty_estimate_percent)).normalize()
         return {"v": f"our estimate {percent:f}%", "gap": False, "src": CALC}
     if any(g.startswith("duties") for g in gaps):
-        return {"v": "not stated", "gap": True, "src": src, "owner": rules.SUPPLIERS}
+        return {"v": "not stated", "gap": True, "src": "", "owner": rules.SUPPLIERS}
     return {"v": "—", "gap": False, "mute": True, "src": ""}
