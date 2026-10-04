@@ -53,6 +53,15 @@ _NODATA = "nodata"
 FLW_SEP = "::"
 
 
+def _activity(cases: list[dict]) -> dict:
+    """`firstVisit` / `lastVisit`: the earliest first visit and the latest last visit
+    over some cases (ISO dates), or None. The one fact each drill level shows that
+    otherwise needs the whole case list."""
+    firsts = [str(c.get("first_visit_date"))[:10] for c in cases if c.get("first_visit_date")]
+    lasts = [str(c.get("last_visit_date"))[:10] for c in cases if c.get("last_visit_date")]
+    return {"firstVisit": min(firsts) if firsts else None, "lastVisit": max(lasts) if lasts else None}
+
+
 def band_of(direction: str | None, bands: Any, value: Any) -> str:
     """Which band a value falls in, by the measure's own direction and thresholds."""
     if value is None:
@@ -322,6 +331,7 @@ def build(
     as_of: str | None = None,
     registry_min_denominator: int | None = None,
     display: dict | None = None,
+    embed_cases: bool = True,
 ) -> dict:
     """Assemble the saved-run payload from evaluated semantic rows.
 
@@ -332,6 +342,13 @@ def build(
 
     `registry_min_denominator` is the registry's `defaults.min_denominator` (see
     `model.resolve_model`); the spec's `min_denominator_default` still wins over it.
+
+    `embed_cases=False` leaves the case list OUT of the payload. A programme run
+    grades every case but shows none: its cases are stored once, on each
+    opportunity's own runs (hand-down), not again on every programme week. What
+    the programme page reads off the cases -- each worker's and organisation's
+    activity dates, each opportunity's benchmark anchor -- is computed here
+    instead, so nothing it shows depends on the list being stored.
     """
     llo_map = deployment.get("llo_map") or {}
     settings = deployment.get("settings") or {}
@@ -420,6 +437,9 @@ def build(
                 # because the case positions are already in hand -- the alternative
                 # is every consumer re-deriving it from the case index.
                 "startMonth": cohorts.start_month([cases[i] for i in case_idx]),
+                # The span of the worker's own activity, for the audit's date range.
+                # Carried so a run that stores no case list still knows it.
+                **_activity([cases[i] for i in case_idx]),
                 # The red/yellow badges on the worker table. by_llo computed these and
                 # byFLW did not, so the badges simply did not appear on a saved run.
                 "reds": sum(1 for c in ind.values() if c["band"] == "red"),
@@ -671,6 +691,14 @@ def build(
             lambda c, o=oid: _int(c.get("opportunity_id")) == o,
         )
 
+    for o in by_opp:
+        o.update(_activity([c for c in cases if _int(c.get("opportunity_id")) == o["opp"]]))
+    for entry in by_llo:
+        entry.update(_activity([c for c in cases if c.get("llo") == entry["llo"]]))
+    if not embed_cases:
+        for f in by_flw:
+            f["rows"] = []
+
     return {
         # Activity by week per drill scope -- see above.
         "weekly": weekly,
@@ -718,7 +746,7 @@ def build(
         },
         # Flat case index and the ONLY copy of the case records: `byFLW[].rows` holds
         # positions into this list.
-        "cases": cases,
+        **({"cases": cases} if embed_cases else {}),
         "meta": meta or {},
         # How the report reads: nouns, headline, categories, case columns, the
         # reading series (semantic/display.py). Carried so a saved run keeps its

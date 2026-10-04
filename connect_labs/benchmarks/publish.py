@@ -402,6 +402,14 @@ def opportunity_ends(snapshot, settle_after_days: int | None = None) -> dict[int
         if opp not in latest or day > latest[opp]:
             latest[opp] = day
 
+    # The builder records each opportunity's latest anchor (`meta.settles.latest`);
+    # a programme run stores no case list, so that record IS the answer. Older runs
+    # carry the list instead, and are read the way they always were.
+    for opp_key, day in (settles.get("latest") or {}).items():
+        try:
+            offer(int(opp_key), _as_date(day))
+        except (TypeError, ValueError):
+            continue
     for case in (snapshot or {}).get("cases") or []:
         try:
             opp = int((case or {}).get("opportunity_id"))

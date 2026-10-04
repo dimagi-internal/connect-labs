@@ -35,10 +35,6 @@ function WorkflowUI({
   // workflow renders; this page's look IS the library's look.
   var R = window.LabsReport;
 
-  var cases =
-    (pipelines && pipelines.children && pipelines.children.rows) || [];
-  var wrows = (pipelines && pipelines.visits && pipelines.visits.rows) || [];
-
   // A completed run's payload, exactly as stored.
   var snapshot =
     view && view.isCompleted && view.state && view.state.snapshot
@@ -392,204 +388,6 @@ function WorkflowUI({
     );
   }
 
-  // ── Derive the weight series (the one thing SQL cannot express) ───────────
-  var derived = React.useMemo(
-    function () {
-      var DAY = 86400000,
-        ELIG = 28,
-        LO = 21,
-        HI = 35,
-        WMIN = 250,
-        WMAX = 8000,
-        SWING = 0.3;
-      // growth_class is defined as slow/plausible/fast "against the band-specific
-      // range", built from early_g_per_kg_day AND birth_weight_g — i.e. the cut-offs
-      // vary by birth-weight band. That band table is in neither the Case-indicators
-      // tab nor Targets & settings, so it does not exist yet. These flat values are a
-      // PLACEHOLDER so the C10/C11/C12 chain is exercisable; they are not the
-      // workbook's definition and the UI labels them provisional.
-      var PLAUSIBLE_LO = 10,
-        PLAUSIBLE_HI = 20;
-
-      function pd(s) {
-        if (!s) return null;
-        var d = new Date(s);
-        return isNaN(d.getTime()) ? null : d;
-      }
-
-      // Weight series per (opp, baby) from the minimal visits pipeline.
-      // Both pipelines key on the KMC beneficiary case (form.case.@case_id), NOT
-      // on entity_id: Connect's entity_id is per-VISIT here, so grouping on it put
-      // every visit in its own "entity" row and left every registration-form field
-      // — birth weight, DOB, enrolment weight — attached to nothing
-      // (connect-labs#1224). The entity query emits its group expression as
-      // `entity_id`, so the case side is c.entity_id and the visit side is the
-      // baby_case_id column the visit pipeline now carries.
-      var series = {};
-      wrows.forEach(function (r) {
-        var rid = r.baby_case_id || r.entity_id;
-        if (!rid) return;
-        var w =
-          typeof r.weight_g === 'number' ? r.weight_g : parseFloat(r.weight_g);
-        if (!w || w < WMIN || w > WMAX) return;
-        var day = String(r.visit_date || '').slice(0, 10);
-        if (!day) return;
-        var k = r.opportunity_id + '|' + rid;
-        (series[k] = series[k] || {})[day] = (
-          (series[k][day] || []).concat ? series[k][day] || [] : []
-        ).concat([w]);
-      });
-
-      var now = new Date();
-      return cases.map(function (c) {
-        var k = c.opportunity_id + '|' + c.entity_id;
-        var byDay = series[k] || {};
-        var ws = Object.keys(byDay)
-          .sort()
-          .map(function (d) {
-            var a = byDay[d];
-            return {
-              day: d,
-              w:
-                a.reduce(function (x, y) {
-                  return x + y;
-                }, 0) / a.length,
-            };
-          });
-
-        var d = {
-          opp: c.opportunity_id,
-          llo: lloOf(c.opportunity_id),
-          entity_id: c.entity_id,
-          name: c.entity_name,
-          flw: c.username,
-          dob: c.dob,
-          gender: c.gender,
-          num_visits: c.total_visits || 0,
-          reg_date: c.reg_date,
-          first_visit: c.first_visit_date,
-          visit_dates: c.visit_dates || [],
-          last_visit: c.last_visit_date,
-          birth_weight_g: c.birth_weight_g,
-          enrollment_weight_g: c.enrollment_weight_g,
-          weights: c.weights || [],
-          n_weight_readings: c.n_weights || 0,
-          days_discharge_to_reg: c.days_discharge_to_reg,
-          kmc_hours_mean: c.kmc_hours_mean,
-          last_kmc_status: c.last_kmc_status,
-        };
-
-        // Case properties (workbook Layer 2)
-        // REGISTERED = the registration form exists for this baby.
-        // STARTED     = at least one follow-up visit happened after registration.
-        // Defining started as ">=1 visit" made C01/C02/C05 mathematically identical:
-        // every case is in this table BECAUSE it has a visit, so 'started' was
-        // always true and two of the three scale indicators carried no information.
-        // Registration forms only began joining the case row once the entity key was
-        // fixed, so this distinction is newly computable.
-        var formNames = c.form_names || [];
-        var isReg = function (n) {
-          return /regist/i.test(String(n || ''));
-        };
-        d.n_reg_forms = formNames.filter(isReg).length;
-        d.n_followups = formNames.filter(function (n) {
-          return !isReg(n);
-        }).length;
-        // Apps whose export carries no form name at all fall back to the old rule
-        // rather than reporting every baby as unregistered.
-        d.registered = formNames.length
-          ? d.n_reg_forms >= 1
-          : d.num_visits >= 1;
-        d.started = formNames.length ? d.n_followups >= 1 : d.num_visits >= 1;
-        var fv = pd(d.first_visit);
-        d.days_since_first_visit = fv ? Math.floor((now - fv) / DAY) : null;
-        d.eligible = !!(d.started && fv && d.days_since_first_visit >= ELIG); // 28d from FIRST VISIT
-        d.died = (c.death_visits || 0) > 0;
-        // Case-properties tab, verbatim: outcome_known = "Died, or seen at least 28
-        // days after the first visit". FALSE means lost to follow-up. Reading it as
-        // "child_alive was recorded at some point" (as this did first) makes it true
-        // for essentially every case and reports C15 loss-to-follow-up as ~0.
-        var lv = pd(d.last_visit);
-        d.days_first_to_last = fv && lv ? Math.round((lv - fv) / DAY) : null;
-        d.outcome_known =
-          d.died ||
-          (d.days_first_to_last !== null && d.days_first_to_last >= ELIG);
-        // early_exit = "died before its eligibility date". The death visit's own date
-        // is not carried at entity stage, but a death is always recorded AT a visit,
-        // so a died case whose LAST visit precedes day 28 must have died before
-        // eligibility. Deaths in cases seen at/after day 28 are not counted here —
-        // a deliberate under-count rather than a guess at the death date.
-        d.early_exit = !!(
-          d.died &&
-          d.days_first_to_last !== null &&
-          d.days_first_to_last < ELIG
-        );
-
-        // weight triple
-        var span =
-          ws.length >= 2
-            ? (pd(ws[ws.length - 1].day) - pd(ws[0].day)) / DAY
-            : 0;
-        d.n_weights = ws.length;
-        d.weight_computable = ws.length >= 2 && span >= 7;
-        d.weight_consistent = d.weight_computable;
-        for (var i = 1; i < ws.length; i++) {
-          if (Math.abs(ws[i].w - ws[i - 1].w) > SWING * ws[i - 1].w) {
-            d.weight_consistent = false;
-            break;
-          }
-        }
-        d.early_g_per_kg_day = null;
-        if (d.weight_computable && fv) {
-          var w0 = ws[0],
-            w28 = null;
-          ws.forEach(function (p) {
-            var age = (pd(p.day) - fv) / DAY;
-            if (age >= LO && age <= HI) w28 = p;
-          });
-          if (w28 && w28.day !== w0.day) {
-            var dd = (pd(w28.day) - pd(w0.day)) / DAY;
-            if (dd > 0)
-              d.early_g_per_kg_day = (w28.w - w0.w) / (w0.w / 1000) / dd;
-          }
-        }
-        d.weight_gain_data_sufficient =
-          d.early_g_per_kg_day !== null && d.weight_consistent;
-        d.growth_class = d.weight_gain_data_sufficient
-          ? d.early_g_per_kg_day < PLAUSIBLE_LO
-            ? 'slow'
-            : d.early_g_per_kg_day > PLAUSIBLE_HI
-              ? 'fast'
-              : 'plausible'
-          : null;
-        d.first_weight_g = ws.length ? Math.round(ws[0].w) : null;
-        d.last_weight_g = ws.length ? Math.round(ws[ws.length - 1].w) : null;
-
-        // performance / data-quality inputs
-        d.ever_danger_sign = (c.danger_visits || 0) > 0;
-        d.referred = (c.referral_visits || 0) > 0;
-        d.self_referral_count = c.self_referral_visits || 0;
-        d.ebf_visits = c.ebf_visits || 0;
-        d.enrolled_within_3d =
-          typeof d.days_discharge_to_reg === 'number'
-            ? d.days_discharge_to_reg <= 3
-            : null;
-        d.enrollment_is_birth_copy =
-          c.birth_weight_g && c.enrollment_weight_g
-            ? Math.abs(c.birth_weight_g - c.enrollment_weight_g) < 1
-            : null;
-        d.n_weights_round_100 = (c.weights || []).filter(function (w) {
-          return w % 100 === 0;
-        }).length;
-        return d;
-      });
-    },
-    // `payload` because this memo calls `lloOf`, which reads the payload's
-    // llo_map. Without it every case row keeps the llo assigned before the
-    // payload arrived -- "opp 10021" -- permanently, with no error.
-    [cases, wrows, payload],
-  );
-
   // ══ Drill-to-action ═══════════════════════════════════════════════════════
   // The drill ended here: a worker reading red, and nothing to do about it but
   // carry the name by hand into a separate workflow. This opens an audit on that
@@ -681,6 +479,12 @@ function WorkflowUI({
       return {
         start: String(ds[0]).slice(0, 10),
         end: String(ds[ds.length - 1]).slice(0, 10),
+      };
+    // A programme run stores no case list but records each worker's own span.
+    if (f.firstVisit && f.lastVisit)
+      return {
+        start: String(f.firstVisit).slice(0, 10),
+        end: String(f.lastVisit).slice(0, 10),
       };
     // A FROZEN run keeps the indicator results but drops the per-case rows, so a
     // worker has no dated visits HERE -- which is not the same as having none.
@@ -906,7 +710,10 @@ function WorkflowUI({
           });
         })
         .sort(function (a, b) {
-          return (b.rows || []).length - (a.rows || []).length;
+          return (
+            ((b.rows || []).length || b.n || 0) -
+            ((a.rows || []).length || a.n || 0)
+          );
         });
     },
     [payload],
@@ -917,6 +724,11 @@ function WorkflowUI({
   var lastVisitByLLO = React.useMemo(
     function () {
       var out = {};
+      // A programme run stores no case list: each organisation carries its own
+      // latest visit. An older run carries the list instead.
+      (P.byLLO || []).forEach(function (l) {
+        if (l.llo && l.lastVisit) out[l.llo] = String(l.lastVisit).slice(0, 10);
+      });
       (P.cases || []).forEach(function (c) {
         var d = c.last_visit_date;
         if (!c.llo || !d) return;
@@ -931,46 +743,6 @@ function WorkflowUI({
   // Is this cohort synthetic? Decided server-side against the synthetic
   // registry and carried in the payload, so a saved run keeps its disclaimer.
   var runIsSynthetic = !!(P.meta && P.meta.synthetic);
-
-  // ── Case drill ────────────────────────────────────────────────────────────
-  // The payload's case index, filtered to the opportunity (and worker) in hand.
-  // On a live run each record is merged with this browser's per-case enrichment
-  // (weight triple, growth velocity) -- display only, and absent on a saved run.
-  var derivedByKey = React.useMemo(
-    function () {
-      var m = {};
-      derived.forEach(function (d) {
-        m[d.opp + '|' + d.entity_id] = d;
-      });
-      return m;
-    },
-    [derived],
-  );
-
-  function casesForDrill(opp, flwKey) {
-    var flw = flwKey ? String(flwKey).split(FLW_SEP)[1] : null;
-    return (P.cases || [])
-      .filter(function (c) {
-        return (
-          Number(c.opportunity_id) === Number(opp) &&
-          (!flw || c.username === flw)
-        );
-      })
-      .map(function (c) {
-        var d = derivedByKey[c.opportunity_id + '|' + c.entity_id];
-        if (d) return Object.assign({}, c, d);
-        return Object.assign(
-          {
-            flw: c.username,
-            name: c.entity_id,
-            num_visits: c.total_visits || 0,
-            first_visit: c.first_visit_date,
-            last_visit: c.last_visit_date,
-          },
-          c,
-        );
-      });
-  }
 
   // ── UI state ───────────────────────────────────────────────────────────────
   var s1 = React.useState(null);
@@ -3098,14 +2870,9 @@ function WorkflowUI({
     var agent = AGENT_BY_LLO[f.llo];
     var unverified = UNVERIFIED_SCALE.indexOf(f.llo) !== -1;
     var reviewUrl = flwReviewUrl(f);
-    var RECENT = 8;
-    var caseRows = casesForDrill(f.opp, f.key);
-    var recentCases = caseRows
-      .slice()
-      .sort(function (a, b) {
-        return String(b.last_visit || '') < String(a.last_visit || '') ? -1 : 1;
-      })
-      .slice(0, RECENT);
+    // How many cases this worker has. The programme stores no case list -- each
+    // opportunity's report holds its own -- so this is the graded count.
+    var nCases = f.n || (f.rows || []).length;
     return (
       <div className="border-t-2 border-indigo-100">
         <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap bg-indigo-50">
@@ -3191,18 +2958,6 @@ function WorkflowUI({
             <IndicatorChips ind={f.ind} />
           </div>
           <div className="border-t border-gray-100">
-            <div className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              Recent cases
-              <span className="ml-2 font-normal normal-case tracking-normal text-gray-400">
-                {caseRows.length > RECENT
-                  ? 'latest ' + RECENT + ' of ' + caseRows.length
-                  : caseRows.length +
-                    (caseRows.length === 1 ? ' case' : ' cases')}
-              </span>
-            </div>
-            <div className="overflow-x-auto">
-              <CaseTable rows={recentCases} />
-            </div>
             {reviewUrl ? (
               <div className="px-4 py-2 text-xs border-t border-gray-100">
                 <a
@@ -3212,8 +2967,9 @@ function WorkflowUI({
                   rel="noopener"
                 >
                   {'All ' +
-                    caseRows.length +
-                    ' cases, growth charts and the image audit in the worker review →'}
+                    nCases +
+                    (nCases === 1 ? ' case' : ' cases') +
+                    ', growth charts and the image audit in the worker review →'}
                 </a>
               </div>
             ) : null}
@@ -3270,63 +3026,6 @@ function WorkflowUI({
           );
         })}
       </div>
-    );
-  }
-
-  function CaseTable(props) {
-    var rows = props.rows || [];
-    return (
-      <table className="min-w-full text-xs">
-        <thead className="bg-gray-50 text-gray-500">
-          <tr>
-            <th className="px-3 py-2 text-left">Baby</th>
-            <th className="px-2 py-2 text-right">Visits</th>
-            <th className="px-2 py-2 text-left">First visit</th>
-            <th className="px-2 py-2 text-left">Last visit</th>
-            <th className="px-2 py-2 text-right">Birth wt</th>
-            <th className="px-2 py-2 text-right">Weight, first → last</th>
-            <th className="px-2 py-2 text-left">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(function (r) {
-            var fw = r.first_weight_g,
-              lw = r.last_weight_g;
-            return (
-              <tr key={r.entity_id} className="border-t border-gray-100">
-                <td className="px-3 py-1.5 font-mono text-gray-600 whitespace-nowrap">
-                  {String(r.name || r.entity_id || '').slice(0, 8)}
-                </td>
-                <td className="px-2 py-1.5 text-right tabular-nums">
-                  {r.num_visits}
-                </td>
-                <td className="px-2 py-1.5 whitespace-nowrap">
-                  {r.first_visit ? dateLbl(r.first_visit) : '—'}
-                </td>
-                <td className="px-2 py-1.5 whitespace-nowrap">
-                  {r.last_visit ? dateLbl(r.last_visit) : '—'}
-                </td>
-                <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">
-                  {r.birth_weight_g ? nCount(r.birth_weight_g) + ' g' : '—'}
-                </td>
-                <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">
-                  {fw && lw ? nCount(fw) + ' → ' + nCount(lw) + ' g' : '—'}
-                </td>
-                <td className="px-2 py-1.5 text-gray-500 whitespace-nowrap">
-                  {String(r.last_kmc_status || '—').replace(/_/g, ' ')}
-                </td>
-              </tr>
-            );
-          })}
-          {!rows.length ? (
-            <tr>
-              <td className="px-3 py-4 text-center text-gray-400" colSpan={7}>
-                No cases for this worker in the report.
-              </td>
-            </tr>
-          ) : null}
-        </tbody>
-      </table>
     );
   }
 

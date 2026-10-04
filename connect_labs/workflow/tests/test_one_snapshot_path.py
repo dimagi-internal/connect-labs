@@ -287,3 +287,26 @@ class TestSharedMemo:
         build_snapshot_for_run(dao, _Run())
         build_snapshot_for_run(dao, _Run())
         assert reads["definition"] == 2
+
+
+class TestCaseIndexHelpers:
+    def test_case_fields_keep_reader_names_over_registry_columns(self):
+        from connect_labs.workflow.snapshot_builders import semantic_case_fields
+
+        assert semantic_case_fields({"fields": ["reg_date", "first_visit_date", "total_visits"]}) == {
+            "reg_date": "reg_date",
+            "first_visit_date": "first_visit",
+            "total_visits": "num_visits",
+        }
+        assert semantic_case_fields({"fields": {"last_kmc_status": "kmc_status"}}) == {"last_kmc_status": "kmc_status"}
+
+    def test_each_opportunitys_latest_anchor_falls_back_to_its_last_visit(self):
+        from connect_labs.workflow.snapshot_builders import latest_anchor_by_opportunity
+
+        cases = [
+            {"opportunity_id": 1, "first_visit_date": "2026-01-05", "last_visit_date": "2026-03-01"},
+            {"opportunity_id": 1, "first_visit_date": "2026-02-01"},
+            {"opportunity_id": 2, "last_visit_date": "2026-02-10"},
+            {"opportunity_id": None, "first_visit_date": "2026-09-09"},
+        ]
+        assert latest_anchor_by_opportunity(cases, "first_visit_date") == {"1": "2026-02-01", "2": "2026-02-10"}
