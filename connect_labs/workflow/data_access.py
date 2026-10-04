@@ -196,6 +196,43 @@ def on_demand_placeholder(source: dict, opp_ids) -> dict:
     }
 
 
+def program_drive_scope(config) -> int | None:
+    """The program a pipeline config reads a PROGRAM-scoped Google Drive source for, else None.
+
+    Such a source covers the whole program, so it is read and aggregated ONCE, not
+    once per opportunity of the workflow (that would multiply every count by the
+    number of opportunities). See `pipeline_read_targets`.
+    """
+    data_source = getattr(config, "data_source", None)
+    if data_source is None or getattr(data_source, "type", None) != "gdrive":
+        return None
+    from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import gdrive_program_id
+
+    return gdrive_program_id(data_source)
+
+
+def pipeline_read_targets(config, opp_ids) -> list[tuple[str, int | None, int | None]]:
+    """What a workflow fan-out reads for one pipeline: ``[(per_opp key, opportunity_id
+    to read, opportunity_id to tag each row with)]``.
+
+    One entry per opportunity, except for a program-scoped Drive source: then ONE
+    entry, keyed ``"program:<id>"``, read with no opportunity (the pipeline resolves
+    the program's own cache scope) and tagging its rows ``opportunity_id: None`` --
+    the rows belong to the program, not to any one of its opportunities.
+    """
+    program_id = program_drive_scope(config)
+    if program_id is not None:
+        return [(f"program:{program_id}", None, None)]
+    return [(str(opp_id), opp_id, opp_id) for opp_id in opp_ids]
+
+
+def _program_scope_meta(config) -> dict:
+    """Alias-level metadata naming a program-scoped read, so render code can tell why
+    its rows carry ``opportunity_id: null``."""
+    program_id = program_drive_scope(config)
+    return {"program_id": program_id, "read_once_for_program": True} if program_id is not None else {}
+
+
 def pipeline_homes_for(sources) -> dict[int, dict]:
     """`{pipeline_id: home scope}` for every source that names where its record lives."""
     homes: dict[int, dict] = {}
@@ -1527,7 +1564,9 @@ class WorkflowDataAccess(BaseDataAccess):
         if not sources:
             return {}
 
-        opp_ids = definition.opportunity_ids or [opportunity_id]
+        # A program-owned workflow may span no opportunities at all when everything it
+        # reads is program-scoped (a program Drive source is read once for the program).
+        opp_ids = definition.opportunity_ids or ([opportunity_id] if opportunity_id else [])
 
         results = {}
         # Pipeline records are opportunity-owned regardless of who owns this
@@ -1575,21 +1614,19 @@ class WorkflowDataAccess(BaseDataAccess):
                 # keys to strings. Using str keys here matches what JS clients
                 # see, so `metadata.per_opp[String(oppId)]` works end-to-end.
                 per_opp_meta: dict[str, dict] = {}
-                for opp_id in opp_ids:
+                # One read per opportunity -- or ONE for a program-scoped Drive source.
+                config = configs_by_alias.get(alias)
+                for key, opp_id, tag in pipeline_read_targets(config, opp_ids):
                     try:
-                        pipeline_result = pipeline_access.execute_pipeline(
-                            pipeline_id, opp_id, config=configs_by_alias.get(alias)
-                        )
+                        pipeline_result = pipeline_access.execute_pipeline(pipeline_id, opp_id, config=config)
                         if alias in on_demand:
                             # Ran only to fill the cache an eager pipeline JOINs.
                             continue
-                        merged_rows.extend(
-                            {**row, "opportunity_id": opp_id} for row in pipeline_result.get("rows", [])
-                        )
-                        per_opp_meta[str(opp_id)] = pipeline_result.get("metadata", {})
+                        merged_rows.extend({**row, "opportunity_id": tag} for row in pipeline_result.get("rows", []))
+                        per_opp_meta[key] = pipeline_result.get("metadata", {})
                     except Exception as e:
-                        logger.exception("Pipeline %s failed for opp %s", pipeline_id, opp_id)
-                        per_opp_meta[str(opp_id)] = {"error": str(e)}
+                        logger.exception("Pipeline %s failed for %s", pipeline_id, key)
+                        per_opp_meta[key] = {"error": str(e)}
 
                 if alias in on_demand:
                     results[alias] = on_demand_placeholder(source, opp_ids)
@@ -1606,6 +1643,7 @@ class WorkflowDataAccess(BaseDataAccess):
                         "opportunity_ids": list(opp_ids),
                         "per_opp": per_opp_meta,
                         "row_count": len(merged_rows),
+                        **_program_scope_meta(config),
                     },
                 }
         finally:
@@ -1651,7 +1689,9 @@ class WorkflowDataAccess(BaseDataAccess):
         if not sources or (wanted is not None and not any(s.get("alias") in wanted for s in sources)):
             return {}
 
-        opp_ids = definition.opportunity_ids or [opportunity_id]
+        # A program-owned workflow may span no opportunities at all when everything it
+        # reads is program-scoped (a program Drive source is read once for the program).
+        opp_ids = definition.opportunity_ids or ([opportunity_id] if opportunity_id else [])
 
         # See get_pipeline_data: pipeline records are opportunity-owned
         # regardless of who owns this workflow — don't forward
@@ -1704,23 +1744,24 @@ class WorkflowDataAccess(BaseDataAccess):
 
                 merged_rows: list[dict] = []
                 per_opp_meta: dict[str, dict] = {}
-                for opp_id in opp_ids:
+                config = configs_by_alias.get(alias)
+                # Once per opportunity -- or once for a program-scoped Drive source,
+                # exactly as the live page read it (get_pipeline_data).
+                for key, opp_id, tag in pipeline_read_targets(config, opp_ids):
                     if period_scoped:
                         cached = pipeline_access.get_period_scoped_pipeline_result(
                             pipeline_id,
                             opp_id,
                             period_start,
                             period_end,
-                            config=configs_by_alias.get(alias),
+                            config=config,
                         )
                     else:
-                        cached = pipeline_access.get_cached_pipeline_result(
-                            pipeline_id, opp_id, config=configs_by_alias.get(alias)
-                        )
+                        cached = pipeline_access.get_cached_pipeline_result(pipeline_id, opp_id, config=config)
                     if cached is None:
-                        raise PipelineCacheMiss(alias, opp_id, source.get("name", ""))
-                    merged_rows.extend({**row, "opportunity_id": opp_id} for row in cached.get("rows", []))
-                    per_opp_meta[str(opp_id)] = cached.get("metadata", {})
+                        raise PipelineCacheMiss(alias, opp_id if opp_id is not None else key, source.get("name", ""))
+                    merged_rows.extend({**row, "opportunity_id": tag} for row in cached.get("rows", []))
+                    per_opp_meta[key] = cached.get("metadata", {})
 
                 results[alias] = {
                     "rows": merged_rows,
@@ -1729,6 +1770,7 @@ class WorkflowDataAccess(BaseDataAccess):
                         "opportunity_ids": list(opp_ids),
                         "per_opp": per_opp_meta,
                         "row_count": len(merged_rows),
+                        **_program_scope_meta(config),
                     },
                 }
         finally:
