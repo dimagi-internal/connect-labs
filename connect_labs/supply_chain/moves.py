@@ -7,7 +7,8 @@ short rule label saying why it is listed. The rules, and only these:
   ON US
   (a) owed          an open Commitment (a counterparty's question to us, or a
                     promise of ours), or a document a shipment requires from
-                    us that is not on file. Grouped per counterparty: "Reply to
+                    us that is not on file (the duty exemption a nil duty
+                    rests on among them). Grouped per counterparty: "Reply to
                     Northgate Commodities (3 questions)", "Provide 2 documents
                     to Crescent Freight & Clearing". A shipment held waiting on
                     us is exactly these documents and promises (holds.py), so

@@ -11,6 +11,8 @@ fact the records hold, so it is read here once and every screen uses it
     our side of the order -- the buyer's organisation when we are the buyer
     of record or an agency buys for us (a partner buyer is the partner's to
     answer, and stays theirs);
+  - the duty exemption a priced order's nil import duty rests on, when none
+    is on file and a shipment is still to arrive (`_add_relief_holds`);
   - an open promise of ours on the order (`Commitment`, kind "promise").
 
 A hold names what is owed, to whom it is owed when known, and since when.
@@ -113,6 +115,7 @@ def holds_for(contracts) -> dict[int, list[Hold]]:
                         kind=str(entry.get("kind") or ""),
                     )
                 )
+    _add_relief_holds(by_id, holds, received)
     for promise in Commitment.objects.filter(contract_id__in=by_id, resolved_on__isnull=True).select_related(
         "owed_to_org"
     ):
@@ -125,6 +128,46 @@ def holds_for(contracts) -> dict[int, list[Hold]]:
             )
         )
     return {cid: sorted(found, key=lambda h: (h.since or date.max, h.what)) for cid, found in holds.items()}
+
+
+def _add_relief_holds(by_id, holds, received) -> None:
+    """The duty exemption a priced order's nil duty rests on, owed while its goods are still to arrive.
+
+    The order is costed at no duty on a relief (claimed, or a waiver entered as
+    excluded at 0); customs will want the exemption at entry, and until it is
+    on file the relief is only asserted (landed.relief_unevidenced). Owed by
+    our side, as any document is, on the first shipment not yet received --
+    unless that shipment already requires it, which the loop above has held.
+    """
+    from connect_labs.supply_chain.fulfilment.services.landed import relief_unevidenced, rests_on_relief
+    from connect_labs.supply_chain.models import Shipment
+
+    relying = {cid: c for cid, c in by_id.items() if our_org_ids(c) and rests_on_relief(c)}
+    if not relying:
+        return
+    pending = {}
+    for shipment in (
+        Shipment.objects.filter(contract_id__in=relying)
+        .exclude(status__in=("delivered", "lost"))
+        .exclude(pk__in=received)
+        .order_by("pk")
+    ):
+        pending.setdefault(shipment.contract_id, shipment)
+    asked_by = _documents_asked_by(list(pending.values()))
+    for cid, shipment in pending.items():
+        if any(h.kind == "duty_exemption" for h in holds.get(cid, [])):
+            continue
+        if not relief_unevidenced(relying[cid]):
+            continue
+        holds.setdefault(cid, []).append(
+            Hold(
+                what="duty exemption",
+                since=None,
+                asked_by=asked_by.get(shipment.pk) or (shipment.carrier or "").strip(),
+                shipment_id=shipment.pk,
+                kind="duty_exemption",
+            )
+        )
 
 
 def _documents_asked_by(shipments) -> dict[int, str]:

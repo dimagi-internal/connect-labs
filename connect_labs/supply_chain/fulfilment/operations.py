@@ -594,7 +594,11 @@ def document_attach(access, data):
         "The all-in cost of a contract and the buyer it assumed. The buyer of record is an input, "
         "never a default: duty and VAT fall on the importer. A duty relief with no exemption document "
         "comes back unconfirmed, not zero. Charges paid to land its shipments (customs, clearing, inland "
-        "freight) are itemised and added. A contract whose consideration is in_kind or bundled has no "
+        "freight) are itemised and added. On an order we import (by its Incoterm), clearing gives clearing & "
+        "forwarding as {source: paid | estimate | not_recorded, amount}: an estimate (the tender's per-unit "
+        "estimate times the quantity) is added to the total, a not-recorded one is not. "
+        "duty_relief_unevidenced is true when the duty is nil on a relief no document on file shows. "
+        "A contract whose consideration is in_kind or bundled has no "
         "goods cost and says why as {not_costed: reason} instead, with its charges still itemised. Set "
         "compare_buyers to cost it under all three."
     ),
@@ -613,6 +617,15 @@ def contract_landed_cost(access, contract_id, compare_buyers=False):
         "duty_relief_claimed": costed["duty_relief_claimed"],
         "duty_relief_evidenced": costed["duty_relief_evidenced"],
         **{key: figure(costed[key]) for key in ("goods", "freight", "duty", "vat", "charges_total", "landed_total")},
+        # Clearing & forwarding on an order we import: paid, our tender's
+        # estimate (calculated), or not recorded. None when it is not ours.
+        "clearing": (
+            {"source": costed["clearing"]["source"], "amount": figure(costed["clearing"]["amount"])}
+            if costed.get("clearing")
+            else None
+        ),
+        # The duty is nil on a relief no document on file shows, so the total rests on it.
+        "duty_relief_unevidenced": landed.relief_unevidenced(contract),
         # Paid to somebody other than the supplier to land the goods, one line
         # each, in the currency each was paid in.
         "charges": [
