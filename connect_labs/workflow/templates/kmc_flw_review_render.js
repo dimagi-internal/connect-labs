@@ -1731,7 +1731,7 @@ function WorkflowUI({
       id: 'started_cases',
       label: 'Started',
       caseLabel: 'Started',
-      title: 'Started — two or more follow-up visits',
+      title: 'Started — one or more follow-up visits',
     },
     {
       id: 'median_gestational_age',
@@ -1758,36 +1758,36 @@ function WorkflowUI({
       title: '% first visit within 3 days of discharge',
     },
     {
-      id: 'pct_slow_growth',
-      label: 'Qual N',
-      caseLabel: 'Qual',
+      id: 'pct_growth_sufficient',
+      label: 'Elig N',
+      caseLabel: 'Elig',
       title:
-        'Qualifying SVNs — the shared denominator of the four growth-quality columns',
+        'Babies in the growth funnel \u2014 started, first visit 28+ days ago, not an early death',
       denOnly: true,
     },
     {
-      id: 'pct_slow_growth',
-      label: '%slow',
-      caseLabel: 'Slow',
-      title: '% slow growth, of qualifying SVNs',
+      id: 'pct_growth_sufficient',
+      label: '%good data',
+      caseLabel: 'Good data',
+      title: '% with good weight data (computable and consistent), of Elig N',
     },
     {
       id: 'pct_healthy_growth',
       label: '%healthy',
       caseLabel: 'Healthy',
-      title: '% healthy growth, of qualifying SVNs',
+      title: '% healthy growth, of babies with good weight data',
+    },
+    {
+      id: 'pct_slow_growth',
+      label: '%slow',
+      caseLabel: 'Slow',
+      title: '% slow growth, of babies with good weight data',
     },
     {
       id: 'pct_fast_growth',
       label: '%fast',
       caseLabel: 'Fast',
-      title: '% fast growth, of qualifying SVNs',
-    },
-    {
-      id: 'pct_incomplete_growth_data',
-      label: '%incompl',
-      caseLabel: 'Incompl',
-      title: '% incomplete growth data, of qualifying SVNs',
+      title: '% fast growth, of babies with good weight data',
     },
     {
       id: 'mortality',
@@ -1812,7 +1812,7 @@ function WorkflowUI({
     { label: 'Scale', span: 3 },
     { label: 'Cohort', span: 2 },
     { label: 'Enrolment & visits', span: 3 },
-    { label: 'Growth quality (of Qual N)', span: 4 },
+    { label: 'Growth (of good weight data)', span: 4 },
     { label: 'Outcome', span: 1 },
     { label: 'Data quality', span: 2 },
   ];
@@ -2116,7 +2116,7 @@ function WorkflowUI({
       ) : (
         <span
           className="text-gray-400"
-          title="not yet 42 days since the first visit"
+          title="not yet 28 days since the first visit"
         >
           {rec.total_visits || '—'}
         </span>
@@ -2125,7 +2125,8 @@ function WorkflowUI({
       c.id === 'pct_slow_growth' ||
       c.id === 'pct_healthy_growth' ||
       c.id === 'pct_fast_growth' ||
-      c.id === 'pct_incomplete_growth_data'
+      c.id === 'pct_incomplete_growth_data' ||
+      c.id === 'pct_growth_sufficient'
     )
       return has ? (pos ? DOT : DASH) : '';
     if (c.id === 'mortality')

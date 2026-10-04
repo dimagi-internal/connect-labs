@@ -885,14 +885,14 @@ function WorkflowUI({
       id: 'started_cases',
       label: 'Started cases',
       count: true,
-      sub: 'two or more visits',
+      sub: 'one or more visits',
     },
     {
       id: 'pct_healthy_growth',
       label: 'Healthy growth',
       pct: true,
       target: 0.7,
-      sub: 'target 70% · of qualifying babies',
+      sub: 'target 70% · of babies with good weight data',
     },
     {
       id: 'mean_early_growth_rate',
