@@ -43,6 +43,8 @@ from connect_labs.supply_chain.procurement.services.pricing import (
     compute_figures,
     figure_nouns,
     freight_is_ours,
+    quote_rests_on_relief,
+    relief_unevidenced,
     round_duty_applies,
 )
 from connect_labs.supply_chain.procurement.services.questions import (
@@ -198,6 +200,10 @@ class ComparisonRow:
     # pack is the missing fact, "(per carton once sachets per carton is
     # known)". "" otherwise.
     as_quoted_note: str = ""
+    # Costed at nil duty on the program's waiver with no copy of it on file
+    # (pricing.relief_unevidenced, the order's own rule): still ranked, but
+    # the landed figure is unconfirmed and the ranking provisional.
+    relief_unevidenced: bool = False
     # What the specification requires of the pack figure: "150 sachets per
     # carton", and the figure alone ("150", "at least 150"), for the line
     # under a pack blocker: "Sachets per carton: not stated (tender requires 150)".
@@ -485,6 +491,7 @@ class Comparison:
                 "as_quoted": row.as_quoted,
                 "as_quoted_note": row.as_quoted_note,
                 "received_on": row.received_on,
+                "relief_unevidenced": row.relief_unevidenced,
             }
 
         return {
@@ -1036,6 +1043,8 @@ def compare_tender(
     figure_fields = [key for key in FIGURE_FIELDS if course_applies or key not in COURSE_FIGURES]
     pack_requirement = pack_requirement_words(commodity)
     pack_figure = pack_requirement_figure(commodity)
+    # Whether the waiver every buyer-import quote is costed on has no copy on file: asked once.
+    waiver_missing = None
 
     for quote in quotes:
         if not _is_live(quote):
@@ -1081,6 +1090,10 @@ def compare_tender(
         if freight_is_ours(quote):
             row.freight_ours = "open" if getattr(tender, "freight_estimate_per_unit", None) is None else "estimate"
         row.duty_line = round_duty_words(quote, tender)
+        if quote_rests_on_relief(quote, tender):
+            if waiver_missing is None:
+                waiver_missing = relief_unevidenced(True, tender=tender)
+            row.relief_unevidenced = waiver_missing
         row.duty_consequence = round_duty_consequence(quote, tender)
         if needs_duty_restated(quote, tender):
             row.duty_restate = True
@@ -1144,8 +1157,9 @@ def compare_tender(
         generated_at=datetime.now(UTC).isoformat(),
         ranked_by=ranked_by,
         # Only what could still be compared makes a ranking provisional: an
-        # offer with other contents can never beat it.
-        provisional=bool(blocked),
+        # offer with other contents can never beat it. A ranked figure resting
+        # on an unevidenced relief does too: the order would read it unconfirmed.
+        provisional=bool(blocked) or any(row.relief_unevidenced for row in comparable),
         unavailable=unavailable,
         commodity_name=commodity.name,
         not_comparable=not_comparable,

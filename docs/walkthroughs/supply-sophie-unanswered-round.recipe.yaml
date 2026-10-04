@@ -59,7 +59,7 @@ scenes:
     seconds: 1.8
     target: css:[data-testid=supplier-row][data-supplier-id='${sahel_supplier_id}'] [data-testid=supplier-state]
   - kind: hover
-    note: Sahel's Last chased cell, the day of its 2nd reminder, and its Draft reminder link to the reminder already drafted
+    note: Sahel's Last chased cell, the day of its 2nd reminder, and its Remind link to the reminder already drafted
     say: chased
     seconds: 1.8
     target: css:[data-testid=supplier-row][data-supplier-id='${sahel_supplier_id}'] [data-testid=supplier-chased]
@@ -78,7 +78,7 @@ scenes:
   - kind: hold
     seconds: 1.5
   - kind: snapshot
-    note: the canonical frame is the tender's title, its terms line (import duty not settled, our estimates, the deadline ahead), the stage bar and the Answered / Silent tiles, and the whole Suppliers table -- each quote with its AI source mark, the fact Kanem's quote left out, each silent supplier's last chase and its Draft reminder link -- with On us beside
+    note: the canonical frame is the tender's title, its terms line (import duty not settled, our estimates, the deadline ahead), the stage bar and the Answered / Silent tiles, and the whole Suppliers table -- each quote with its AI source mark, the fact Kanem's quote left out, each silent supplier's last chase and its Remind link -- with On us beside
   - kind: click
     note: Sahel's row's own Remind link opens the tender's draft emails at Sahel's drafted reminder, so scene 2 starts (and its before-frame is taken) on the open draft
     target: css:[data-testid=supplier-row][data-supplier-id='${sahel_supplier_id}'] [data-testid=supplier-action]
@@ -369,7 +369,7 @@ scenes:
     seconds: 2.0
     target: css:tr[data-fact=duty] th
   - kind: hover
-    note: Harmattan's landed per carton, its quoted 50.10 plus our clearing estimate of 1.20
+    note: Harmattan's landed per carton, its quoted 50.10 plus our clearing estimate of 1.20, chipped unconfirmed while no copy of the waiver is on file
     say: landed
     seconds: 2.0
     target: css:tr[data-fact=landed] th
@@ -383,7 +383,7 @@ scenes:
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the canonical frame is the comparison under the waiver -- the duty terms line, one of three comparable (Harmattan, landed USD 51.30 with our clearing estimate), and the Import duty row settled for the quotes we import
+    note: the canonical frame is the comparison under the waiver -- the duty terms line, one of three comparable (Harmattan, landed USD 51.30 with our clearing estimate, unconfirmed until the waiver document is on file), and the Import duty row settled for the quotes we import
   concept_claim: Settling the tender's import duty terms from its terms line is one choice;
     the tender then lists the reply still owed to Northgate with a drafted email, and
     the comparison costs every quote that leaves the import to us under the terms set.

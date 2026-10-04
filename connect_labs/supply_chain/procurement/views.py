@@ -372,11 +372,12 @@ class TenderDetailView(_Base):
         # Under the waiver, whether a copy of it is on the tender: the zero duty
         # every quote is costed at rests on it.
         if tender.get("duty_terms") == "buyer_waiver":
-            from connect_labs.supply_chain.models import Document
+            from connect_labs.supply_chain.procurement.services.pricing import duty_exemption_on_file
 
-            context["waiver_on_file"] = Document.objects.filter(
-                tender_id=tender_id, program_id=_access(self.request).program_id, kind="duty_exemption"
-            ).exists()
+            # The zero duty every quote is costed at rests on the waiver: say whether a copy is on file.
+            context["waiver_on_file"] = duty_exemption_on_file(
+                tender=SimpleNamespace(pk=tender_id, program_id=_access(self.request).program_id)
+            )
         context["duty_terms_changed"] = self.request.GET.get("duty_terms") == "changed"
         # Our clearing and freight estimates, per unit of the tender's line, and who recorded them.
         context["estimates_changed"] = self.request.GET.get("estimates") == "changed"
@@ -1074,12 +1075,12 @@ class ComparisonView(_Base):
 
             context["duty_terms_answer"] = duty_terms_answer(tender_id, program_id=_access(self.request).program_id)
         if tender.get("duty_terms") == "buyer_waiver":
-            from connect_labs.supply_chain.models import Document
+            from connect_labs.supply_chain.procurement.services.pricing import duty_exemption_on_file
 
             # The zero duty every quote is costed at rests on the waiver: say whether a copy is on file.
-            context["waiver_on_file"] = Document.objects.filter(
-                tender_id=tender_id, program_id=_access(self.request).program_id, kind="duty_exemption"
-            ).exists()
+            context["waiver_on_file"] = duty_exemption_on_file(
+                tender=SimpleNamespace(pk=tender_id, program_id=_access(self.request).program_id)
+            )
         # Arriving by a link to the award step (?step=award) opens the folded award fields:
         # the link already said "award", so a second click to reveal them is friction.
         context["award_step"] = self.request.GET.get("step") == "award"

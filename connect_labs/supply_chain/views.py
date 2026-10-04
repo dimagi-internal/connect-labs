@@ -627,31 +627,6 @@ def owed_groups(rows) -> list[dict]:
     return sorted(out, key=lambda g: min(str(c.get("raised_on") or "") for c in g["items"]))
 
 
-def duty_relief_unevidenced(contract, landed, documents) -> bool:
-    """Whether the order's import duty reads 0 on a relief no document on file shows.
-
-    The duty line is 0 when it is relieved -- claimed on the order, or entered
-    as excluded at 0 under a waiver -- and a flat "USD 0.00" said the relief was
-    settled when nothing on file says so. Not for duty inside the price, or an
-    agency's catalogue price, where 0 is not a relief.
-    """
-    duty = (landed or {}).get("duty") or {}
-    if not isinstance(duty, dict) or duty.get("amount") in (None, ""):
-        return False
-    try:
-        if float(duty["amount"]) != 0:
-            return False
-    except (TypeError, ValueError):
-        return False
-    if contract.get("duties_basis") == "included" or contract.get("buyer_of_record") == "agency":
-        return False
-    relieved = contract.get("duty_relief_claimed") or contract.get("duties_basis") == "excluded"
-    on_file = contract.get("duty_relief_document_id") or any(
-        d.get("kind") == "duty_exemption" for d in documents or []
-    )
-    return bool(relieved and not on_file)
-
-
 def mark_changed(rows, kind, changed):
     """Flag the row `?changed=<kind>-<id>` names, the one a form just saved, as `changed`."""
     for row in rows:
@@ -917,7 +892,8 @@ class OrderDetailView(OperationBase):
                     seen.add(document["id"])
                     documents.append({**document, "shipment_reference": shipment.get("reference")})
         context["documents"] = documents
-        context["duty_relief_unevidenced"] = duty_relief_unevidenced(contract, context["landed"], documents)
+        # One predicate with the comparison's landed figure (pricing.relief_unevidenced), read off the costing.
+        context["duty_relief_unevidenced"] = bool((context["landed"] or {}).get("duty_relief_unevidenced"))
         context["orgs"] = {o["id"]: o for o in self.op("org_list")}
         context["suppliers"] = {s["id"]: s for s in self.op("supplier_list")}
         context["tellers"] = _tellers(contract, points, context["orgs"], context["suppliers"])
