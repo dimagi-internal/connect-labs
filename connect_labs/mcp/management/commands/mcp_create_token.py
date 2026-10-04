@@ -30,7 +30,10 @@ class Command(BaseCommand):
             "--scope",
             choices=[value for value, _ in token_scopes.SCOPE_CHOICES],
             default=token_scopes.FULL,
-            help="full (default) or no-uservisit-data: definitions only, no visit data, no writes.",
+            help=(
+                "full (default) or no-uservisit-data: never sees user visit data; can edit "
+                "workflow and indicator definitions and trigger saved-run generation."
+            ),
         )
 
     def handle(self, *args, **opts):
