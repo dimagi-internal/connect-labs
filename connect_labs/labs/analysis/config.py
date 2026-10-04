@@ -230,7 +230,8 @@ def gdrive_raw_slot(data_source) -> int:
     A content hash, not Python's per-process salted ``hash``, so every worker and
     every deploy agrees on it. Rows are also scoped by the cache's own
     ``opportunity_id`` column, so the slot only has to tell apart the Drive targets
-    read within ONE opportunity.
+    read within ONE opportunity -- or, for a program-scoped source, within one
+    program, whose rows live under ``gdrive_fetcher.program_cache_scope``.
     """
     key = {}
     for name in GDRIVE_RAW_SLOT_FIELDS:
