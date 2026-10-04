@@ -989,7 +989,9 @@ class WorkflowDataAccess(BaseDataAccess):
             definition_id=definition.id,
             opportunity_id=getattr(definition, "opportunity_id", None) or self.opportunity_id or 0,
             name=definition.name,
-            template_type=definition.template_type,
+            # A workflow built from scratch or cloned off a template has none; the
+            # column is NOT NULL, and a failed backup aborts the delete.
+            template_type=definition.template_type or "",
             definition_data=definition.data,
             render_code=(render_code.component_code if render_code else ""),
             deleted_by=(self.user.username if getattr(self, "user", None) else ""),
