@@ -74,7 +74,11 @@ def test_seeded_round_reads_the_same_age_whatever_the_day(replay):
     assert _days_since_ask({"sent_on": sahel.sent_on.isoformat()}, today) == 17
     assert (sahel.last_reminder_on - sahel.sent_on).days == 8
     silent = Outreach.objects.filter(tender_id=tender.id, responded=False).order_by("last_reminder_on")
-    assert [(o.last_reminder_on - o.sent_on).days for o in silent] == [8, 9, 10]
+    assert [(o.last_reminder_on - o.sent_on).days for o in silent] == [
+        8,
+        11,
+        12,
+    ]  # Sahel due today; Lagoon, Savanna later
 
     advance = Payment.objects.get(contract_id=out["contract_id"])
     assert (today - advance.paid_on).days == 66
