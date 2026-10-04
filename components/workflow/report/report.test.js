@@ -508,3 +508,120 @@ describe('the registry display contract (VERSION 3)', () => {
     expect(out).not.toContain('target ');
   });
 });
+
+describe('scenario building blocks (VERSION 4)', () => {
+  test('the scenario names are published and VERSION says so', () => {
+    for (const n of [
+      'StatTiles',
+      'NumberField',
+      'RangeField',
+      'Field',
+      'Segmented',
+      'RangeStrip',
+      'rangeText',
+      'stripPos',
+    ]) {
+      expect(R[n], n).toBeDefined();
+    }
+    expect(R.VERSION).toBeGreaterThanOrEqual(4);
+  });
+
+  test('rangeText collapses a range whose ends format the same', () => {
+    const f = (v) => '$' + Math.round(v);
+    expect(R.rangeText(1886.2, 2305, f)).toBe('$1886 – $2305');
+    expect(R.rangeText(10.1, 9.9, f)).toBe('$10');
+  });
+
+  test('StatTiles draws a pre-formatted value, its sub line and a toned word', () => {
+    const out = html(
+      h(R.StatTiles, {
+        tiles: [
+          {
+            id: 'x',
+            label: 'Multiple of benchmark',
+            value: '16.3x – 20.0x',
+            sub: 'GiveWell bar 6x',
+            tone: 'good',
+            toneLabel: 'Clears the bar',
+          },
+        ],
+      }),
+    );
+    expect(out).toContain('16.3x – 20.0x');
+    expect(out).toContain('GiveWell bar 6x');
+    expect(out).toContain('Clears the bar');
+    expect(out).toContain('text-green-700');
+  });
+
+  test('NumberField keeps the raw string and marks an edited value', () => {
+    const out = html(
+      h(R.NumberField, {
+        value: '0.',
+        onChange: () => {},
+        prefix: '$',
+        edited: true,
+      }),
+    );
+    expect(out).toContain('value="0."');
+    expect(out).toContain('$');
+    expect(out).toContain('bg-indigo-50');
+  });
+
+  test('RangeField reports both ends when one changes', () => {
+    const calls = [];
+    const el = R.RangeField({
+      low: '10',
+      high: '12',
+      onChange: (a, b) => calls.push([a, b]),
+    });
+    const kids = React.Children.toArray(el.props.children);
+    kids[0].props.onChange('8');
+    kids[2].props.onChange('14');
+    expect(calls).toEqual([
+      ['8', '12'],
+      ['10', '14'],
+    ]);
+  });
+
+  test('Segmented marks exactly the selected option', () => {
+    const out = html(
+      h(R.Segmented, {
+        options: [
+          { id: 'a', label: 'Alpha' },
+          { id: 'b', label: 'Beta' },
+        ],
+        value: 'b',
+        onChange: () => {},
+      }),
+    );
+    expect((out.match(/aria-checked="true"/g) || []).length).toBe(1);
+    expect(out).toMatch(/aria-checked="true"[^>]*>Beta/);
+  });
+
+  test('stripPos is linear or log, and clamps to the axis', () => {
+    expect(R.stripPos(50, 0, 100)).toBe(50);
+    expect(R.stripPos(1000, 100, 10000, true)).toBeCloseTo(50);
+    expect(R.stripPos(-5, 0, 100)).toBe(0);
+    expect(R.stripPos(1e9, 100, 10000, true)).toBe(100);
+  });
+
+  test('RangeStrip draws the range and one line per marker', () => {
+    const out = html(
+      h(R.RangeStrip, {
+        lo: 2000,
+        hi: 1000,
+        min: 100,
+        max: 10000,
+        log: true,
+        tone: 'good',
+        markers: [
+          { value: 6278, label: 'GiveWell 6x' },
+          { value: 5000, label: 'target', dashed: true },
+        ],
+      }),
+    );
+    expect(out).toContain('#16a34a');
+    expect(out).toContain('title="GiveWell 6x"');
+    expect(out).toContain('dashed');
+  });
+});
