@@ -113,6 +113,10 @@ def get_config_hash(config) -> str:
             f"{ds.file_id}:{ds.folder_id}:{ds.file_pattern}:{ds.username_column}:"
             f"{ds.date_column}:{','.join(map(str, ds.null_values))}"
         )
+        # Which cells a row keeps is part of what the rows ARE. Appended only when
+        # set, so a source without `columns` keeps the hash its caches were written under.
+        if ds.columns is not None:
+            identity += f":columns={json.dumps(sorted(set(ds.columns)))}"
         parts.append(f"gdrive:{hashlib.sha256(identity.encode()).hexdigest()}")
 
     # Generate hash

@@ -4650,6 +4650,11 @@ def update_pipeline_schema_api(request, definition_id):
             grouping_problems = schema_grouping_problems(schema)
             if grouping_problems:
                 return JsonResponse({"error": "; ".join(grouping_problems)}, status=400)
+            from connect_labs.labs.analysis.config import schema_gdrive_column_problems
+
+            column_problems = schema_gdrive_column_problems(schema)
+            if column_problems:
+                return JsonResponse({"error": "; ".join(column_problems)}, status=400)
 
         data_access = PipelineDataAccess(request=request)
 
