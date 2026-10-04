@@ -96,9 +96,9 @@ class Entry:
     # On the line that made a shipment wait on a document we owe, while it
     # still does: "Waiting on us: import permit" (fulfilment/services/holds.py).
     hold: str = ""
-    # Why that document is ours, in plain words, for a reader the email's trade
-    # shorthand ("CONSIGNEE TO PROVIDE FORM M") does not reach: "we are the
-    # consignee: the program imports these goods". Import documents only.
+    # Why that document is ours, as a fact the page sets as a chip: "consignee:
+    # us" (the program imports these goods), for a reader the email's trade
+    # shorthand ("CONSIGNEE TO PROVIDE FORM M") does not reach. Import documents only.
     hold_reason: str = ""
     # Why an AI-entered quote's line offers no Correct or Void: "voided" or
     # "corrected", so every such line says something in that place.
@@ -741,7 +741,7 @@ def _mark_holds(built):
         if owed:
             entry.hold = "Waiting on us: " + " and ".join(owed)
             if imported:
-                entry.hold_reason = "we are the consignee: the program imports these goods"
+                entry.hold_reason = "consignee: us"
 
 
 @dataclass
@@ -767,11 +767,13 @@ def _is_reply(entry) -> bool:
 
 
 def email_events(entries) -> list:
-    """`entries` with every set of two or more recorded from the same email folded into an EmailEvent.
+    """`entries` with every email, and every other source behind two or more lines, as an EmailEvent.
 
     The same email is the same source reference with an excerpt -- an email's
     Message-ID -- on whatever call recorded each line. The event stands where
-    its newest line stood; a line with a source of its own stays a line.
+    its newest line stood. An email behind a single line is an event of one, so
+    a history never shows an email in two shapes; a document behind one line
+    stays a line.
     """
     by_ref = {}
     for entry in entries:
@@ -780,7 +782,11 @@ def email_events(entries) -> list:
     out, placed = [], set()
     for entry in entries:
         group = by_ref.get(entry.source_ref) if entry.source_ref and entry.excerpt else None
-        if not group or len(group) < 2:
+        # An email stands as an event even when one record came of it, so every
+        # email in a history reads in one shape (sender, who recorded it, its
+        # Source toggle, the records under it); any other source folds only
+        # when it produced two or more lines.
+        if not group or (len(group) < 2 and group[0].source_kind != "Email"):
             out.append(entry)
             continue
         if entry.source_ref in placed:

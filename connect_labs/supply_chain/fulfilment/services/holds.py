@@ -15,7 +15,11 @@ fact the records hold, so it is read here once and every screen uses it
     is on file and a shipment is still to arrive (`_add_relief_holds`);
   - an open promise of ours on the order (`Commitment`, kind "promise").
 
-A hold names what is owed, to whom it is owed when known, and since when.
+A hold names what is owed, to whom it is owed when known, and since when --
+and on what it rests (`basis`): a document a recorded requirement holds the
+shipment on is "held", and the screen shows the message that set it; the duty
+exemption is owed under the tender's duty terms ("duty_terms") and no message
+said the shipment is held on it, so it never reads as holding the shipment.
 """
 
 from dataclasses import dataclass
@@ -39,6 +43,16 @@ class Hold:
     # set the requirement (a forwarder clearing the goods), else the carrier.
     # Kept apart from `owed_to`: the document goes to customs, through them.
     asked_by: str = ""
+    # What the hold rests on: "held" (a shipment's recorded requirement -- the
+    # shipment is held on it), "duty_terms" (owed because the order's nil duty
+    # rests on a relief), "" for a promise.
+    basis: str = ""
+    # For a held document: the message that set the requirement, as recorded
+    # (the excerpt, the kind its reference implies, and the day it was recorded).
+    # Blank when the requirement was entered with no source.
+    source_excerpt: str = ""
+    source_kind: str = ""
+    source_on: date | None = None
 
     def as_dict(self) -> dict:
         return {
@@ -50,6 +64,10 @@ class Hold:
             "commitment_id": self.commitment_id,
             "kind": self.kind,
             "asked_by": self.asked_by,
+            "basis": self.basis,
+            "source_excerpt": self.source_excerpt,
+            "source_kind": self.source_kind,
+            "source_on": self.source_on.isoformat() if self.source_on else None,
         }
 
     @property
@@ -93,12 +111,13 @@ def holds_for(contracts) -> dict[int, list[Hold]]:
         .exclude(required_documents=[])
         .prefetch_related("documents")
     )
-    asked_by = _documents_asked_by(shipments)
+    sources = _requirement_sources(shipments)
     for shipment in shipments:
         ours = our_org_ids(by_id[shipment.contract_id])
         if not ours or shipment.pk in received:
             continue
         on_file = {d.kind for d in shipment.documents.all()}
+        source = sources.get(shipment.pk) or _Source()
         for entry in shipment.required_documents or []:
             if entry.get("owed_by_org_id") in ours and entry.get("kind") not in on_file:
                 holds.setdefault(shipment.contract_id, []).append(
@@ -109,10 +128,14 @@ def holds_for(contracts) -> dict[int, list[Hold]]:
                         since=None,
                         # Who asked for it: the sender of the email that set
                         # the requirement (a forwarder), else the carrier.
-                        asked_by=asked_by.get(shipment.pk) or (shipment.carrier or "").strip(),
+                        asked_by=source.sender or (shipment.carrier or "").strip(),
                         shipment_id=shipment.pk,
                         name=str(entry.get("name") or "").strip(),
                         kind=str(entry.get("kind") or ""),
+                        basis="held",
+                        source_excerpt=source.excerpt,
+                        source_kind=source.kind,
+                        source_on=source.on,
                     )
                 )
     _add_relief_holds(by_id, holds, received)
@@ -153,7 +176,7 @@ def _add_relief_holds(by_id, holds, received) -> None:
         .order_by("pk")
     ):
         pending.setdefault(shipment.contract_id, shipment)
-    asked_by = _documents_asked_by(list(pending.values()))
+    sources = _requirement_sources(list(pending.values()))
     for cid, shipment in pending.items():
         if any(h.kind == "duty_exemption" for h in holds.get(cid, [])):
             continue
@@ -163,29 +186,42 @@ def _add_relief_holds(by_id, holds, received) -> None:
             Hold(
                 what="duty exemption",
                 since=None,
-                asked_by=asked_by.get(shipment.pk) or (shipment.carrier or "").strip(),
+                asked_by=(sources.get(shipment.pk) or _Source()).sender or (shipment.carrier or "").strip(),
                 shipment_id=shipment.pk,
                 kind="duty_exemption",
+                # No message asked for it: it is owed under the tender's duty terms.
+                basis="duty_terms",
             )
         )
 
 
-def _documents_asked_by(shipments) -> dict[int, str]:
-    """Shipment id -> who asked for its required documents, from the history.
+@dataclass(frozen=True)
+class _Source:
+    sender: str = ""
+    excerpt: str = ""
+    kind: str = ""
+    on: date | None = None
 
-    The sender named on the newest recorded change to a shipment's required
-    documents (`OperationCall.source_sender`, e.g. the forwarder whose email
-    said the trucks are held). Absent when no change carried a sender.
+
+def _requirement_sources(shipments) -> dict[int, _Source]:
+    """Shipment id -> the recorded message that set its required documents, from the history.
+
+    The newest recorded change to a shipment's required documents that carried
+    a source: who sent it (`OperationCall.source_sender`, e.g. the forwarder
+    whose email said the trucks are held), its words and the day it was
+    recorded. Absent when no change carried one.
     """
     from django.contrib.contenttypes.models import ContentType
+    from django.utils import timezone
 
     from connect_labs.supply_chain.history.models import Revision
+    from connect_labs.supply_chain.history.timeline import source_kind
     from connect_labs.supply_chain.models import Shipment
 
     ids = [str(s.pk) for s in shipments]
     if not ids:
         return {}
-    found: dict[int, str] = {}
+    found: dict[int, _Source] = {}
     revisions = (
         Revision.objects.filter(
             content_type=ContentType.objects.get_for_model(Shipment),
@@ -196,7 +232,21 @@ def _documents_asked_by(shipments) -> dict[int, str]:
         .order_by("recorded_at")
     )
     for revision in revisions:
-        sender = (getattr(revision.call, "source_sender", "") or "").strip()
-        if sender:
-            found[int(revision.object_id)] = sender
+        call = revision.call
+        sender = (getattr(call, "source_sender", "") or "").strip()
+        excerpt = (getattr(call, "source_excerpt", "") or "").strip()
+        change = revision.changes.get("required_documents")
+        asks = change[1] if isinstance(change, (list, tuple)) and len(change) == 2 else change
+        if not (sender or excerpt) or not asks:
+            continue  # nothing said, or a change that asked for nothing
+        shipment_id = int(revision.object_id)
+        earlier = found.get(shipment_id) or _Source()
+        when = getattr(call, "recorded_at", None) or revision.recorded_at
+        found[shipment_id] = _Source(
+            # A newer message that names nobody keeps the sender already known.
+            sender=sender or earlier.sender,
+            excerpt=excerpt,
+            kind=source_kind(getattr(call, "source_ref", "") or ""),
+            on=timezone.localdate(when) if timezone.is_aware(when) else when.date(),
+        )
     return found

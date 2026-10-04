@@ -236,6 +236,50 @@ def round_duty_applies(quote, tender) -> bool:
     return _duty_terms(quote, tender) in ("buyer_waiver", "buyer_pays") and buyer_imports(quote)
 
 
+def quote_rests_on_relief(quote, tender=None) -> bool:
+    """Whether a quote's import duty is nil by the program's waiver rather than by its price.
+
+    The tender's terms are the waiver and the quote leaves the import to us. A
+    collected bid is not costed on the waiver, and a delivered-duty-paid quote
+    keeps its supplier's own duty figure.
+    """
+    return (
+        _duty_terms(quote, _tender_of(quote, tender)) == "buyer_waiver"
+        and getattr(quote, "delivery_mode", "delivered") != "pickup"
+        and buyer_imports(quote)
+    )
+
+
+def duty_exemption_on_file(*, tender=None, contract=None) -> bool:
+    """Whether a duty exemption is on file for the import it would relieve.
+
+    For an order: named on it, or attached to it or to a shipment of it. For a
+    tender: attached to the tender (the program's waiver it is costed on).
+    """
+    from django.db.models import Q
+
+    from connect_labs.supply_chain.models import Document
+
+    where = Q(pk__in=[])
+    if contract is not None:
+        if getattr(contract, "duty_relief_document_id", None):
+            return True
+        where |= Q(contract_id=contract.pk) | Q(shipment__contract_id=contract.pk)
+    if tender is not None:
+        where |= Q(tender_id=tender.pk, program_id=tender.program_id)
+    return Document.objects.filter(where, kind="duty_exemption").exists()
+
+
+def relief_unevidenced(rests_on_relief: bool, *, tender=None, contract=None) -> bool:
+    """Nil duty that rests on a relief (a claim, a waiver) no document on file shows.
+
+    ONE predicate for the comparison's landed figure and the order's landed
+    total: both read "unconfirmed" while it holds. The comparison still ranks
+    such a quote, provisionally; the order still adds up, marked.
+    """
+    return bool(rests_on_relief) and not duty_exemption_on_file(tender=tender, contract=contract)
+
+
 def _extras(quote: Quote, tender=None) -> Derived:
     """Freight plus duties to add to a lot total, or why that is unknowable.
 

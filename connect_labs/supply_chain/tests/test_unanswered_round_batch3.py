@@ -165,7 +165,9 @@ class TestOneEmailOneEvent:
         outside = timeline.replace(event, "")
         assert "Replied with a quote" not in outside
 
-    def test_a_lone_line_with_a_source_stays_a_line(self, da, world, client_in_program):
+    def test_a_lone_email_is_an_event_of_one(self, da, world, client_in_program):
+        # Since unanswered round 1004 b3 every email reads in the one event shape, even when
+        # one record came of it; the toggle is the event's.
         op(
             da,
             "quote_record",
@@ -173,8 +175,9 @@ class TestOneEmailOneEvent:
             data=_kanem_quote(world),
         )
         timeline = _tender_page(client_in_program, world["tender"]["id"]).split('data-testid="timeline"', 1)[1]
-        assert 'data-testid="email-event"' not in timeline
-        assert 'data-testid="source-toggle"' in timeline
+        assert timeline.count('data-testid="email-event"') == 1
+        event = timeline.split('data-testid="email-event"', 1)[1]
+        assert 'data-testid="source-toggle"' in event
 
 
 # ---- 4. the comparison
@@ -228,7 +231,8 @@ class TestTheOrderPage:
         owed = re.search(r'data-testid="owed">(.*?)</div>\s*(?:<details|<div class="mb)', body, re.S).group(1)
         hold = _text(re.search(r'data-testid="owed-hold"[^>]*>(.*?)</div>', owed, re.S).group(1))
         # Since DDD 003 batch 8 the hold carries the action that clears it.
-        assert hold == "Import permit — the shipment is held until we provide it Mark provided"
+        # Since unanswered round 1004 b3 what it rests on is a chip: a recorded requirement holds the shipment.
+        assert hold == "Import permit shipment held Mark provided"
         assert "?kind=import_permit" in owed
         assert "Nothing owed" not in owed
         assert _text(re.search(r'<h2 id="owed".*?</h2>', body, re.S).group(0)) == (

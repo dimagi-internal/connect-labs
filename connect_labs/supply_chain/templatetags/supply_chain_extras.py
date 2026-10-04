@@ -29,6 +29,14 @@ def possessive_filter(value):
 
 
 @register.filter
+def supplies(owner):
+    """Who supplies a quote's missing fact, as its tag: "we supply" or "supplier supplies" (moves.SUPPLIES)."""
+    from connect_labs.supply_chain.moves import SUPPLIERS, SUPPLIES
+
+    return SUPPLIES.get(owner) or SUPPLIES[SUPPLIERS]
+
+
+@register.filter
 def dictkey(mapping, key):
     return (mapping or {}).get(key)
 
@@ -351,6 +359,18 @@ def incoterm_words(incoterm):
         return text
     name, meaning = INCOTERMS[code]
     return f"{text} — {name}: {meaning}"
+
+
+@register.filter
+def incoterm_name(incoterm):
+    """The Incoterm's name alone -- "carriage paid to" for "CPT Kano" -- or "" for a term not of the eleven.
+
+    Set beside the term's chip, whose hover carries what it means (`incoterm_words`):
+    the meaning written out after a dash read as a sentence on a page of facts.
+    """
+    text = str(incoterm or "").strip()
+    code = text.split()[0].upper().strip(".,") if text else ""
+    return INCOTERMS[code][0] if code in INCOTERMS else ""
 
 
 @register.filter

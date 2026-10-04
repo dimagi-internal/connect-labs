@@ -121,8 +121,11 @@ class TestAnEtaMoveReadsInline:
 
     def test_a_supplier_reported_shipment_names_its_supplier_as_sender(self, da, base, order, client_in_program):
         body = batch6._order_page(client_in_program, order["contract"]["id"])
-        heading = batch6._text(re.search(r'data-testid="source-heading"[^>]*>(.*?)</p>', body, re.S).group(1))
-        assert heading.startswith("Email from Northwind Foods, recorded by")
+        # The email event's head names its sender (unanswered round 1004 b3).
+        head = re.search(
+            r'data-testid="email-event-head"[^>]*>(.*?)</span>\s*<span data-testid="actor-badge"', body, re.S
+        )
+        assert batch6._text(re.sub(r"<[^>]+>", " ", head.group(1))) == "Northwind Foods"
 
 
 # ---- 9. the banner names the program and its buyer of record ---------------
