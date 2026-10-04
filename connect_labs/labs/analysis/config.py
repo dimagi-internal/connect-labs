@@ -217,6 +217,9 @@ def field_name_problem(name) -> str | None:
 # `authorization` stamp is deliberately NOT part of the key: it says who may read the
 # rows, not what they are, and it is re-verified per pipeline on every read.
 GDRIVE_RAW_SLOT_FIELDS = ("file_id", "folder_id", "file_pattern", "null_values", "username_column", "date_column")
+# `columns` (which cells each row keeps) decides the raw rows too, but it joins the
+# key only when it is SET, so every source without it keeps the slot its rows were
+# stored under. Order-insensitive: the same set of columns stores the same rows.
 
 # Shared gdrive slots live in [-(2**31 - 2), -2]: negative so they cannot meet a
 # pipeline record id, below -1 so they cannot meet USER_VISITS_RAW_SLOT, and inside
@@ -242,8 +245,155 @@ def gdrive_raw_slot(data_source) -> int:
         else:
             value = value or ""
         key[name] = value
+    columns = gdrive_columns(data_source)
+    if columns is not None:
+        key["columns"] = sorted(columns)
     digest = hashlib.blake2b(json.dumps(key, sort_keys=True).encode(), digest_size=8).digest()
     return -2 - (int.from_bytes(digest, "big") % _GDRIVE_SLOT_SPAN)
+
+
+def gdrive_columns(data_source) -> list[str] | None:
+    """The columns a Drive source keeps in each row, de-duplicated in the order
+    given; None when it keeps every column (``columns`` omitted)."""
+    columns = getattr(data_source, "columns", None)
+    if columns is None:
+        return None
+    return list(dict.fromkeys(columns))
+
+
+_COLUMNS_SHAPE = (
+    'data_source.columns must be a non-empty list of column names, e.g. ["session_id", "state"]; '
+    "omit it to keep every column"
+)
+_COLUMNS_NOT_GDRIVE = "data_source.columns is only valid for type='gdrive'"
+
+ROW_PATH_PREFIX = "row."
+
+
+def _row_column(path) -> str | None:
+    """The Drive column a path reads (``row.<col>[.<nested>]`` -> ``<col>``), else None."""
+    if isinstance(path, str) and path.startswith(ROW_PATH_PREFIX) and len(path) > len(ROW_PATH_PREFIX):
+        return path[len(ROW_PATH_PREFIX) :].split(".", 1)[0]
+    return None
+
+
+def _get(obj, name):
+    return obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
+
+
+def _strings(value):
+    """Every string in a nested structure of dicts (keys too), lists and dataclasses."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for k, v in value.items():
+            yield from _strings(k)
+            yield from _strings(v)
+    elif isinstance(value, (list, tuple, set)):
+        for v in value:
+            yield from _strings(v)
+    elif hasattr(value, "__dataclass_fields__"):
+        yield from _strings({k: getattr(value, k) for k in value.__dataclass_fields__})
+
+
+def _computation_paths(where: str, item):
+    """(where, path) for every path one field or histogram reads -- schema dict or object."""
+    for key in ("path", "filter_path", "pre_aggregate_by"):
+        yield f"{where}.{key}", _get(item, key)
+    for key in ("paths", "filter_paths"):
+        for path in _get(item, key) or []:
+            yield f"{where}.{key}", path
+    for i, entry in enumerate(_get(item, "conditional_paths") or []):
+        if isinstance(entry, dict):
+            yield f"{where}.conditional_paths[{i}].when_path", entry.get("when_path")
+            for path in entry.get("paths") or []:
+                yield f"{where}.conditional_paths[{i}].paths", path
+
+
+def _schema_paths(fields, histograms, linking_field, group_by, groupings, filters, extracted_filters):
+    """(where, path) for every path a pipeline reads: its fields and histograms, its
+    linking_field, and any path-shaped string in its group_by / groupings / filters."""
+    for i, f in enumerate(fields or []):
+        yield from _computation_paths(f"fields[{i}]", f)
+    for i, h in enumerate(histograms or []):
+        yield from _computation_paths(f"histograms[{i}]", h)
+    yield "linking_field", linking_field
+    for where, value in (
+        ("group_by", group_by),
+        ("groupings", groupings),
+        ("filters", filters),
+        ("extracted_filters", extracted_filters),
+    ):
+        for text in _strings(value):
+            yield where, text
+
+
+def gdrive_column_problems(data_source, paths) -> list[str]:
+    """Why a Drive source's ``columns`` cannot serve the schema reading it: every
+    ``row.<col>`` path the schema reads, and its username_column / date_column, must
+    name a listed column, or that path would read null on every row. [] when
+    ``columns`` is omitted (every column is kept)."""
+    columns = gdrive_columns(data_source)
+    if columns is None:
+        return []
+    listed = set(columns)
+    missing: dict[str, list[str]] = {}
+    for where, path in paths:
+        column = _row_column(path)
+        if column is not None and column not in listed:
+            missing.setdefault(column, []).append(f"{where} {path!r}")
+    for name in ("username_column", "date_column"):
+        column = getattr(data_source, name, "") or ""
+        if column and column not in listed:
+            missing.setdefault(column, []).append(f"data_source.{name}")
+    if not missing:
+        return []
+    detail = "; ".join(f"{col!r} (read by {', '.join(sorted(set(uses)))})" for col, uses in sorted(missing.items()))
+    return [
+        f"data_source.columns does not list {len(missing)} column(s) the schema reads: {detail}. "
+        "Add them to columns, or omit columns to keep every column -- an unlisted column would "
+        "read null on every row"
+    ]
+
+
+def schema_gdrive_column_problems(schema) -> list[str]:
+    """``gdrive_column_problems`` for a pipeline schema dict, checked at save time.
+
+    Also reports a malformed ``columns``, or one on a non-gdrive source, so the
+    save is refused with it. Any other malformation of the source is left to the
+    validators that own it."""
+    if not isinstance(schema, dict):
+        return []
+    source = schema.get("data_source") or {}
+    if not isinstance(source, dict) or source.get("columns") is None:
+        return []
+    if source.get("type") != "gdrive":
+        return [_COLUMNS_NOT_GDRIVE]
+    columns = source["columns"]
+    if not isinstance(columns, list) or not columns or not all(isinstance(c, str) and c for c in columns):
+        return [_COLUMNS_SHAPE]
+    try:
+        data_source = DataSourceConfig(
+            **{k: v for k, v in source.items() if k in DataSourceConfig.__dataclass_fields__ and k != "authorization"}
+        )
+    except (TypeError, ValueError):
+        return []  # not a columns problem; refused with its own message elsewhere
+    try:
+        group_by, groupings = groupings_from_schema(schema)
+    except ValueError:
+        group_by, groupings = [], []  # reported by schema_grouping_problems
+    return gdrive_column_problems(
+        data_source,
+        _schema_paths(
+            schema.get("fields"),
+            schema.get("histograms"),
+            schema.get("linking_field"),
+            group_by,
+            groupings,
+            schema.get("filters"),
+            schema.get("extracted_filters"),
+        ),
+    )
 
 
 def raw_cache_slot(pipeline_id: int | None, source_type: str = USER_VISITS_SOURCE, data_source=None) -> int | None:
@@ -335,6 +485,13 @@ class DataSourceConfig:
             username, so grouping_key "username" works. Optional.
         date_column: (gdrive only) Column whose value becomes visit_date. Optional.
         null_values: (gdrive only) Cell values read as null. Defaults to [""].
+        columns: (gdrive only) The columns kept in each row's ``form_json.row``;
+            every other cell is dropped as the file is read (``file`` metadata
+            stays). None (omitted) keeps every column. Every ``row.<col>`` path
+            the schema reads, and username_column / date_column, must be listed
+            (``gdrive_column_problems``). A listed column a file lacks reads null.
+            Not part of the authorization stamp: it only narrows what is kept from
+            the stamped target, never what is read.
         authorization: (gdrive only) Stamped by the server when a Dimagi staff
             member saves the source; the fetcher refuses a source without a
             valid one. Never written by hand.
@@ -357,6 +514,7 @@ class DataSourceConfig:
     username_column: str = ""
     date_column: str = ""
     null_values: list = field(default_factory=lambda: [""])
+    columns: list | None = None
     authorization: dict = field(default_factory=dict)
     # (ocs_sessions only) A specific person's OCS OAuth access token, read as a
     # Bearer instead of a team key: set for an MCP caller (ocs_tokens.current_mcp_caller)
@@ -386,8 +544,16 @@ class DataSourceConfig:
                 raise ValueError('data_source.null_values must be a list of strings, e.g. ["", "NA"]')
             if not isinstance(self.authorization, dict):
                 raise ValueError("data_source.authorization is stamped by the server; do not set it by hand")
+            if self.columns is not None and (
+                not isinstance(self.columns, list)
+                or not self.columns
+                or not all(isinstance(c, str) and c for c in self.columns)
+            ):
+                raise ValueError(_COLUMNS_SHAPE)
         elif self.file_id or self.folder_id:
             raise ValueError("data_source.file_id / folder_id are only valid for type='gdrive'")
+        elif self.columns is not None:
+            raise ValueError(_COLUMNS_NOT_GDRIVE)
         if self.domain and self.type not in ("cchq_forms", "cchq_cases"):
             raise ValueError("data_source.domain is only valid for type='cchq_forms' or 'cchq_cases'")
         if self.domain and self.type == "cchq_forms" and not self.app_id:
@@ -1195,6 +1361,25 @@ class AnalysisPipelineConfig:
                         f"WindowFieldComputation {wf.name!r} references "
                         f"{ref_name}={ref_value!r}, but no extracted field or base column has that name."
                     )
+
+        # A Drive source that keeps only some columns must keep every column this
+        # pipeline reads: refused here (every read builds a config) rather than
+        # serving nulls. Saves check the schema dict the same way first.
+        if getattr(self.data_source, "type", None) == "gdrive":
+            problems = gdrive_column_problems(
+                self.data_source,
+                _schema_paths(
+                    self.fields,
+                    self.histograms,
+                    self.linking_field,
+                    self.group_by,
+                    self.groupings,
+                    self.filters,
+                    self.extracted_filters,
+                ),
+            )
+            if problems:
+                raise ValueError("; ".join(problems))
 
     @property
     def raw_slot_id(self) -> int | None:

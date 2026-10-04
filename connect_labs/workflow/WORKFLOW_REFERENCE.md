@@ -271,6 +271,7 @@ Each row becomes one visit-shaped row; its cells are under `row.*` and the file 
     "username_column": "participant_id",                 # optional: becomes `username` (grouping_key)
     "date_column": "session_date",                       # optional: becomes `visit_date`
     "null_values": ["", "NA"],                           # optional: cells read as null (default [""])
+    "columns": ["participant_id", "session_date", "quality_score"],  # optional: keep only these cells
 }
 ```
 
@@ -278,6 +279,19 @@ Each row becomes one visit-shaped row; its cells are under `row.*` and the file 
   or an object holding one under `rows`/`data`). A folder's matching files are concatenated in name
   order; ≤ 100 files, ≤ 50 MB per file, ≤ 500,000 rows. CSV cells arrive as strings — use a
   `transform` (`int`, `float`) for numbers.
+- **Keeping only some columns (`columns`):** a wide export where the pipelines read a handful of
+  columns can list them; each row's `row.*` then holds exactly those cells (in that order) and
+  every other cell is dropped as the file is read, so the cached copy is a fraction of the size.
+  `file.*` is kept regardless. Omit `columns` to keep every column (the default, unchanged).
+  Every `row.<col>` path the schema reads — field `path`/`paths`, `filter_path`/`filter_paths`,
+  `conditional_paths`, `pre_aggregate_by`, histogram paths, `linking_field`, and path-shaped keys in
+  `group_by`/`groupings`/`filters` — plus `username_column` and `date_column` must be listed, or
+  the save (and any read) is refused with an error naming each missing column and what reads it,
+  e.g. `data_source.columns does not list 1 column(s) the schema reads: 'qid' (read by fields[2].path 'row.qid')`.
+  A listed column a file does not have reads null on that file's rows (and is logged), so one
+  list can cover files with slightly different headers. `columns` is not part of the
+  authorization stamp — it only narrows what is kept from the stamped target — so
+  narrowing an authorized source needs no re-stamp.
 - **Where the data must live:** only files and folders under a workflow-data root
   (`LABS_WORKFLOW_GDRIVE_ROOT_IDS`) can be read. Copy data a workflow should see into that tree;
   a source pointing anywhere else is refused when it is saved and again on every read (it is
@@ -303,10 +317,12 @@ Each row becomes one visit-shaped row; its cells are under `row.*` and the file 
   program, stamp the source for the program instead (next section).
 - **Freshness:** rows are cached for the pipeline's TTL (1 hour); a forced refresh re-reads Drive.
 - **Several pipelines, one read:** pipelines on the same opportunity whose sources agree on
-  `file_id`/`folder_id`, `file_pattern`, `null_values`, `username_column` and `date_column`
-  share ONE raw copy of the rows. The first to build reads Drive; the others build from that copy
-  without touching Drive. So split a big folder into several small summary pipelines (an entity
-  pipeline per question, per state, ...) rather than one pipeline that ships every row. Sharing the
+  `file_id`/`folder_id`, `file_pattern`, `null_values`, `username_column`, `date_column` and
+  `columns` (as a set: order does not matter; omitted is its own value) share ONE raw copy of the
+  rows; pipelines that list different columns each keep their own copy. The first to build reads
+  Drive; the others build from that copy without touching Drive. So split a big folder into
+  several small summary pipelines (an entity pipeline per question, per state, ...) rather than
+  one pipeline that ships every row. Sharing the
   rows does not share the right to read them: each pipeline's own stamp and the caller's
   membership are checked on every read, before the shared copy is touched. A forced refresh on
   any of them re-reads Drive into the shared copy (once per page load, not once per pipeline).
