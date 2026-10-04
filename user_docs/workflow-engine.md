@@ -77,6 +77,36 @@ This means each workflow appears in exactly one place. If you cannot find a work
 
 ---
 
+## Pipeline Data Sources
+
+Pipelines can pull data from CommCare form submissions or from external files such as Google Drive exports. The two source types work differently and have different access rules.
+
+### Google Drive pipelines scoped to a whole program
+
+A pipeline can be configured to read a Google Drive file that covers an **entire program** rather than one opportunity. The Connect Interviews dashboard — whose interview exports span every cohort — is the first dashboard to use this.
+
+**How access works**
+
+Only staff in the organisation that **manages the program** can see data from a program-scoped Drive pipeline. Staff whose organisation runs one of the program's opportunities (partner network organisations) cannot. This means one cohort's partner never sees another cohort's raw interview answers, even though the underlying file contains data for all cohorts.
+
+**How data is read**
+
+The Drive file is read **once for the whole program**. Before this change, a program dashboard spanning many opportunities would have counted every row in the file once per opportunity — potentially inflating every figure by the number of opportunities. With a program-scoped pipeline the file is processed a single time, so counts and aggregations are correct regardless of how many opportunities the program contains.
+
+**Setting one up**
+
+Program-scoped Drive pipelines are built through the labs MCP. The steps are:
+
+1. Create the pipeline at the **program** level (not under an individual opportunity).
+2. Preview the pipeline to confirm the data looks correct.
+3. Create a program-owned dashboard and attach the pipeline.
+4. Enable **load on demand** if you want the data to refresh only when a user opens the dashboard, rather than on a fixed schedule.
+
+!!! note "Program-scoped Drive pipelines are separate from opportunity-level Drive pipelines"
+    If your program already has Drive pipelines attached to individual opportunities, those are unaffected. A program-scoped pipeline is a distinct configuration that sits at the program level and is subject to the managing-organisation access restriction described above.
+
+---
+
 ## Taking Actions from a Report
 
 Some reports can offer **action buttons** — for example, **"Initiate AI coach"** or **"Create follow-up task"** — that let you act on the data you are looking at without leaving the page. The same actions can also be run by an AI assistant. Both features are off by default and must be switched on for each report individually; at present they are enabled for the **Spark facilitator program report** only.
@@ -205,23 +235,4 @@ The **Indicator Worker Review** (created automatically alongside the programme r
 
 #### Failed Verification Analysis tab
 
-The **Failed Verification Analysis** tab includes a **Mother question fail rate** chart that shows which form questions are most frequently failed during verification checks. Question names on the chart are short, readable labels — for example, **"Baby's father's name"** — chosen for readability rather than taken directly from the form.
-
-To see the exact wording of a question as it appears on the field worker's form, hover over the question name on the left-hand axis of the chart. A tooltip appears showing the full question text from the form. This is useful when the short label is ambiguous or when you need to locate the question in the form for follow-up.
-
-#### Indicator Opportunity Report
-
-The **Indicator Opportunity Report** template creates a standalone report for a single opportunity, intended for use by that opportunity's network manager. It includes the same indicator view as the programme report but scoped to one opportunity, and the opportunity's real name appears in the report title and in facilitator rows rather than its ID number or a plain partner label. For example, you will see **"[Synthetic] Spark facilitator - Partner A"** instead of **"Partner A · opportunity 10082"**. This applies to all weeks shown in the report, including weeks that were saved before this change was made.
-
-Where a facilitator row would otherwise repeat the partner name because the opportunity's name already contains it — for example, showing "… Partner A · Partner A" — the duplicate is suppressed so the name appears only once.
-
-The report also includes a **Benchmarks tab** that shows how that opportunity compares to others. Each time the programme report saves a weekly run, the opportunity report receives the same data automatically — no separate run is needed.
-
-Create it from **Workflows → Create Workflow → "Indicator Opportunity Report"** (listed under *Opportunity reports*).
-
-!!! note "The KMC reports are unchanged"
-    The Indicator report templates are a new set of templates for programmes that do not already have a custom report cascade. The existing KMC Programme Metrics, KMC Worker Review, and related reports are unaffected and continue to work exactly as before.
-
-#### What indicator registries can now measure
-
-Indicator definitions (the semantic
+The **Failed Verification Analysis** tab includes a **Mother question fail rate** chart that shows which form questions are most frequently failed during verification checks. Question names on the chart are short, readable labels — for example, **
