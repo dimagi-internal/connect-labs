@@ -33,7 +33,7 @@ from connect_labs.labs.analysis.backends.sql.backend import (
     visit_row_from_cache,
 )
 from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
-from connect_labs.labs.analysis.config import AnalysisPipelineConfig, CacheStage
+from connect_labs.labs.analysis.config import GROUPING_COLUMN, AnalysisPipelineConfig, CacheStage
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +110,14 @@ def declared_fields(config: AnalysisPipelineConfig) -> list[str]:
     besides the stage's base columns."""
     names = [f.name for f in config.fields]
     names += [w.name for w in getattr(config, "window_fields", None) or [] if getattr(w, "name", None)]
+    # A grouped entity pipeline's rows also carry `grouping` (named groupings) and
+    # each group key -- a base column key (e.g. `status`) is not a declared field
+    # but is a column of the row, so it can be filtered and ordered on too.
+    groupings = config.effective_groupings() if hasattr(config, "effective_groupings") else []
+    if groupings:
+        if any(g.name for g in groupings):
+            names.append(GROUPING_COLUMN)
+        names += [k for g in groupings for k in g.group_by if k not in ("entity_id", "entity_name", "username")]
     return list(dict.fromkeys(names))
 
 
