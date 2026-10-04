@@ -1203,6 +1203,36 @@ def tender_set_duty_terms(access, tender_id, duty_terms, duty_estimate_percent=N
 
 
 @register_operation(
+    name="tender_set_import_estimates",
+    summary=(
+        "Record our own estimates of what importing costs beyond the duty, in USD per unit of the "
+        "tender's line (e.g. per carton): clearing_estimate_per_unit (clearing & forwarding, added to "
+        "every quote whose Incoterm makes us the importer) and freight_estimate_per_unit (freight to the "
+        "delivery point, added to E and F terms -- EXW, FCA, FAS, FOB -- where main carriage is ours and "
+        "never asked of the supplier). Omit a value to keep it, pass '' to clear it. Without the freight "
+        "estimate such a quote has no landed total; without the clearing estimate its landed figure is "
+        "shown excluding clearing. Idempotent."
+    ),
+    input_schema=obj(
+        {
+            "tender_id": ID,
+            "clearing_estimate_per_unit": {"type": ["number", "string", "null"]},
+            "freight_estimate_per_unit": {"type": ["number", "string", "null"]},
+            "set_on": _DATE,
+        },
+        required=("tender_id",),
+    ),
+    is_write=True,
+)
+def tender_set_import_estimates(
+    access, tender_id, clearing_estimate_per_unit=None, freight_estimate_per_unit=None, set_on=None
+):
+    return record(
+        access.set_tender_import_estimates(tender_id, clearing_estimate_per_unit, freight_estimate_per_unit, on=set_on)
+    )
+
+
+@register_operation(
     name="commitment_reply_sent",
     summary=(
         "Record that the reply carrying these answered questions went out (sent_on, today if omitted). "

@@ -183,6 +183,53 @@ class ProcurementRepositoryMixin:
         found.save(update_fields=["duty_terms", "duty_estimate_percent", "duty_terms_set_on", "updated_at"])
         return _fresh(found)
 
+    def set_tender_import_estimates(
+        self, tender_id, clearing_estimate_per_unit=None, freight_estimate_per_unit=None, on=None
+    ):
+        """Our clearing & forwarding and freight estimates, USD per unit of the tender's line. Idempotent.
+
+        A value left out (None) keeps what is recorded; "" clears it. The day
+        they were recorded is kept, who from the revision.
+        """
+        from decimal import Decimal, InvalidOperation
+
+        from connect_labs.supply_chain.data_access import _fresh
+
+        found = self.get_tender(tender_id)
+        if found is None:
+            raise ValueError(f"tender {tender_id} not found")
+
+        def parsed(name, given, current):
+            if given is None:
+                return current
+            if given == "":
+                return None
+            try:
+                value = Decimal(str(given))
+            except InvalidOperation as exc:
+                raise ValueError(f"{name} {given!r} is not a number") from exc
+            if value < 0:
+                raise ValueError(f"{name} cannot be negative")
+            return value
+
+        clearing = parsed("clearing_estimate_per_unit", clearing_estimate_per_unit, found.clearing_estimate_per_unit)
+        freight = parsed("freight_estimate_per_unit", freight_estimate_per_unit, found.freight_estimate_per_unit)
+        if found.clearing_estimate_per_unit == clearing and found.freight_estimate_per_unit == freight:
+            return _fresh(found)
+        day = date.fromisoformat(on) if isinstance(on, str) else (on or timezone.localdate())
+        found.clearing_estimate_per_unit = clearing
+        found.freight_estimate_per_unit = freight
+        found.import_estimates_set_on = day if (clearing is not None or freight is not None) else None
+        found.save(
+            update_fields=[
+                "clearing_estimate_per_unit",
+                "freight_estimate_per_unit",
+                "import_estimates_set_on",
+                "updated_at",
+            ]
+        )
+        return _fresh(found)
+
     def open_tender(self, tender_id):
         """A tender cannot open until suppliers know where the goods go.
 
