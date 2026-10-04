@@ -186,6 +186,18 @@ Workflows that read data from Google Drive have received several improvements to
 
 If a workflow page has several pipelines that all point at the same Drive source (same folder or file, file pattern, null markers, username column, and date column), Labs now reads that source **once** and shares the result between them. Previously each pipeline fetched its own copy, which multiplied load time and browser memory for every extra pipeline on the page.
 
+### Column filtering
+
+A Drive pipeline's data source can now declare a **`columns` list** — the specific columns it actually uses. When a columns list is present, Labs keeps only those cells for each row and discards the rest. For a wide export where the dashboard reads only a handful of columns, this can reduce load time and memory use to a small fraction of what the full file would require.
+
+Leaving `columns` out keeps every column, exactly as before.
+
+!!! note "Missing columns are caught at save time"
+    If a pipeline reads a column that is not in its `columns` list, Labs refuses to save it and tells you exactly which columns are missing and which fields reference them. This means the problem is caught immediately — before the dashboard ever runs — rather than the dashboard silently showing empty values.
+
+!!! tip "When to use a columns list"
+    Add a `columns` list whenever your pipeline reads from a wide export but only uses a small number of those columns. Leave it out only if the pipeline genuinely needs every column in the file.
+
 ### Program-scoped pipeline sources
 
 A pipeline source can cover an **entire program** rather than a single opportunity. This is useful when your Drive exports span every cohort in a program — for example, an interview export that covers all cohorts at once rather than one file per cohort.
@@ -229,19 +241,4 @@ A grouping can also group by **several fields at the same time** — for example
 Every row in the result includes a `row.grouping` field that says which named grouping it belongs to, so a dashboard can easily tell them apart and display each breakdown in the right place.
 
 !!! tip "When this helps"
-    Use multiple groupings when your dashboard needs several different cuts of the same underlying data. A single pipeline with named groupings is faster and easier to maintain than a long list of nearly-identical pipelines.
-
-!!! note "Existing pipelines are unchanged"
-    Pipelines that do not use named groupings continue to work exactly as before. This is an additive feature — you only use it when you need it.
-
----
-
-## High-Fidelity Synthetic Data (Case Timelines)
-
-When you profile an opportunity and generate synthetic data, you can request **case timelines** (`case_timelines=true`). This is the high-fidelity mode: it produces realistic, fully generated data rather than near-copies of real records.
-
-### How it works
-
-Profiling with case timelines uses real cases only to **fit statistical models**. The profile then saves **new cases sampled from those models** — no real case is ever stored or shipped. When synthetic data is generated from that profile:
-
-- **Every worker keeps its caseload.** Each worker gets
+    Use multiple groupings when
