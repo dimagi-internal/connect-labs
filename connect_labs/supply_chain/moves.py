@@ -155,7 +155,8 @@ def owed_moves(commitments, holds=(), *, tender_id=None, contract_id=None, suppl
                 RULE_OWED,
                 f"Provide {_plural(len(items), 'document')} to {asked_by}",
                 detail="shipment held: " + ", ".join(h.name or h.what for h in items),
-                cta="Provide",
+                # The same control as the owed list's own: each item there is marked provided.
+                cta="Mark provided",
                 href=f"{base}#owed",
                 since=min((h.since for h in items if h.since), default=None),
                 contract_id=contract_id,
@@ -221,8 +222,9 @@ def invoice_moves(contract, today) -> list[Move]:
             RULE_INVOICE,
             f"Review invoice {ref}",
             detail=detail,
-            cta="Review",
-            href=f"{_order_url(contract.pk)}#match",
+            # The invoice row's own controls, Pay and Dispute, are where this lands.
+            cta="Pay or dispute",
+            href=f"{_order_url(contract.pk)}#invoices",
             since=since if isinstance(since, date) else None,
             contract_id=contract.pk,
         )
