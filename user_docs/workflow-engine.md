@@ -111,6 +111,15 @@ The Drive file is read **once for the whole program**. Before this change, a pro
 
 Once a Drive file has been read, Connect Labs keeps the processed data in cache and reuses it until the underlying file in Drive changes — or for up to a week, whichever comes first. Previously, the cache expired every hour regardless of whether the file had changed, so the first person to open the dashboard after an idle hour would wait for a full rebuild. On the interview-classification dashboard that rebuild took around 16 minutes. Now, a cold load only happens when it needs to — when the file genuinely has new content — and subsequent opens are fast for everyone.
 
+**Limiting which columns are read**
+
+A Google Drive pipeline can now declare a list of the specific columns it actually uses. When a column list is present, Connect Labs keeps only those cells from each row and discards the rest before caching. This means a wide export file where the dashboard only reads a handful of columns loads and caches a fraction of the data compared to reading the whole file.
+
+- **If you omit the column list**, every column in the file is kept — exactly as before. Existing pipelines are unaffected.
+- **If a column list is present but a field in the pipeline tries to read a column that is not on the list**, the pipeline cannot be saved. The error message names every missing column and the field that tries to read it, so you know exactly what to add to the list (or correct in the pipeline). This prevents dashboards from silently showing empty values because a column was accidentally left off the list.
+
+If you are setting up or editing a Google Drive pipeline and you want to use this feature, ask your program administrator or the person who configured the pipeline to add the relevant column names to the pipeline's data source settings.
+
 **Setting one up**
 
 Program-scoped Drive pipelines are built through the labs MCP. The steps are:
@@ -218,19 +227,4 @@ The report is built from your programme's indicator definitions (its semantic re
 
 The programme report includes:
 
-- **Headline figures** with their targets and the change since the last saved week.
-- **Scorecard by organisation**, grouped by indicator category.
-- **Workers table**, with two peer-group filters — "started the same month" and "similar caseload" — so you can compare workers fairly.
-- **Activity by week** — a breakdown of activity over time.
-- **Trends across saved reports** — how figures have moved across the weeks for which a report has been saved.
-- **Definitions tab** — a plain-English explanation of every number on the report.
-
-#### Opportunity names in the report
-
-Opportunities in the programme report — including the opportunity table, the breadcrumb and title when you drill into a partner, and facilitator rows — display their real names rather than their internal ID numbers. For example, you will see **"[Synthetic] Spark facilitator - Partner A"** instead of **"Opportunity 10082"**.
-
-If your programme uses custom labels for its opportunities, those labels appear automatically throughout the report wherever an opportunity name is shown.
-
-#### Drilling down
-
-The report supports a full drill-down
+-
