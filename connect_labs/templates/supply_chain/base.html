@@ -17,7 +17,8 @@ slot into it.
 order's #fulfilment / #cost / #match / #where-now, a draft's anchor), clear the
 fixed 4rem top bar when a link or a recorder scrolls to them; without it the bar
 covered a page's title and the banner under it, and a section's first line.{% endcomment %}
-<style>.supply-page h1, .supply-page h2, .supply-page h3, .supply-page [id] { scroll-margin-top: 5rem; }</style>
+{% comment %}A table row a link lands on (#outreach-N) clears the bar and its table's header row too, so the row arrives under the column names that say what it holds.{% endcomment %}
+<style>.supply-page h1, .supply-page h2, .supply-page h3, .supply-page [id] { scroll-margin-top: 5rem; } .supply-page tr[id] { scroll-margin-top: 7.5rem; }</style>
 <div class="supply-page max-w-7xl mx-auto px-4 py-6">
   {% comment %}`compact_banner`: a record's own page (a tender) lets its title and first
   section lead -- the banner shrinks to a strip and drops its tagline.{% endcomment %}

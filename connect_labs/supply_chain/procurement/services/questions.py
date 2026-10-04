@@ -150,11 +150,14 @@ _REASON_QUESTIONS: tuple[tuple[str, str, str, str], ...] = (
         "the quote -- its delivered cost cannot be compared until then.",
         INTERNAL,
     ),
+    # The rate a foreign-currency price is put into USD at is one we record (the comparison's
+    # "Exchange rate -- recorded by us"), so it is never a follow-up to the supplier.
     (
         "exchange rate",
         "fx_rate",
-        "Can you confirm the price in USD, or the exchange rate the quote assumes?",
-        SUPPLIER,
+        "Record the exchange rate to USD for this quote's currency on the quote -- "
+        "its USD figures cannot be computed until then. The supplier is not asked.",
+        INTERNAL,
     ),
     (
         "course definition",

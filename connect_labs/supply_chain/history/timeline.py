@@ -20,11 +20,14 @@ rewind restored included). A supplier renamed since reads by its new name.
 """
 
 import datetime
+import re
 from dataclasses import dataclass
 
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Q
 from django.urls import reverse
+from django.utils import timezone
+from django.utils.formats import date_format
 
 from connect_labs.supply_chain.history.as_of import end_of_day
 from connect_labs.supply_chain.history.labels import (
@@ -670,7 +673,25 @@ def _timeline(revisions, until) -> list[Entry]:
         built.append((entry, revision))
     if until is None:
         _mark_holds(built)
+    for entry in entries:
+        _drop_own_day(entry)
     return [e for e in entries if e.sentence]
+
+
+def _drop_own_day(entry):
+    """Leave out " on 4 Oct 2026" when it is the day the line is filed under.
+
+    The history heads each day once ("4 OCT 2026"); a reply recorded the day it
+    came in said that day a second time inside its own line. A reply recorded on
+    a later day keeps the day it came in, which the heading does not say.
+    """
+    if not entry.when:
+        return
+    when = timezone.localtime(entry.when) if timezone.is_aware(entry.when) else entry.when
+    own = re.compile(rf" on {re.escape(date_format(when, 'j M Y'))}(?=$| — |;)")
+    entry.sentence = own.sub("", entry.sentence, count=1)
+    if entry.what:
+        entry.what = own.sub("", entry.what, count=1)
 
 
 def _mark_holds(built):

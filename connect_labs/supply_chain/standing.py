@@ -89,6 +89,11 @@ class Row:
         return [m.text.split(": reply")[0] for m in self.theirs if m.rule == rules.RULE_NO_REPLY]
 
     @property
+    def silent_chips(self) -> list[tuple[str, str]]:
+        """[(name, "Silent 17d")]: each silent supplier with the chip the tender page gives it."""
+        return [(m.text.split(": reply")[0], m.chip or "Silent") for m in self.theirs if m.rule == rules.RULE_NO_REPLY]
+
+    @property
     def move_lines(self) -> list:
         """One line per counted move, ours first: every move but the no-reply ones, which share one line."""
         return list(self.ours) + [m for m in self.theirs if m.rule != rules.RULE_NO_REPLY]
@@ -340,15 +345,24 @@ def _comparable(tender, quotes) -> dict:
 
 
 def _missing_facts(tender, quotes) -> list:
-    """[(fact, quotes lacking it)]: the gaps the comparison marks, counted per fact across the tender's quotes."""
+    """[(fact, quotes lacking it)]: each quote's open facts -- the list the comparison's headers
+    count -- counted per fact across the tender's quotes, comparable or not."""
     if not any(q.is_live for q in quotes):
         return []
-    from connect_labs.supply_chain.procurement.status import _ROUND_DUTY, comparisons, gap_owner
+    from connect_labs.supply_chain.procurement.status import (
+        _ROUND_DUTY,
+        comparisons,
+        gap_owner,
+        quote_open_facts,
+        waiver_on_file,
+    )
 
     counts, owners = {}, {}
+    by_id = {q.pk: q for q in quotes}
+    on_file = waiver_on_file(tender)
     for comparison in comparisons(tender, quotes):
-        for row in comparison.blocked:
-            for gap in row.gaps or []:
+        for row in (*comparison.comparable, *comparison.blocked):
+            for gap in quote_open_facts(tender, row, by_id.get(row.quote_id), waiver_on_file=on_file):
                 fact = "duty terms" if gap == _ROUND_DUTY else gap
                 counts[fact] = counts.get(fact, 0) + 1
                 owners[fact] = gap_owner(gap)

@@ -206,7 +206,8 @@ class TestTheTenderPage:
         assert "Asked directly" not in panel and "Northwind Foods" not in panel
 
     def test_nobody_asked_still_says_so(self, da, base, client_in_program):
-        assert "No one invited yet" in _invited_panel(_tender_page(client_in_program, base["tender"]["id"]))
+        # Said once, in the Suppliers table, which lists invitations and marketplace bids alike.
+        assert "Nobody asked yet." in _tender_page(client_in_program, base["tender"]["id"])
 
     def test_an_awarded_tender_offers_no_invitation(self, da, base, client_in_program, invitable):
         open_body = _tender_page(client_in_program, base["tender"]["id"])

@@ -517,8 +517,8 @@ class TestHomePage:
         assert reverse("supply_chain:procurement_tender_detail", args=[tender["id"]]) in table
         assert reverse("supply_chain:order_detail", args=[contract["id"]]) in table
         assert "0 of 1 answered" in table
-        # Silent suppliers share one "no reply" line, their names as plain text.
-        assert "no reply · 1" in table and "Northwind Foods" in table
+        # Silent suppliers are named with the tender page's own chip: "Silent Nd".
+        assert 'data-testid="silent-chip">Silent ' in table and "Northwind Foods" in table
         assert "In transit" in table
         assert "Kano Health Partners" in table
         assert "data-ai" in table and "AI assistant" in table
