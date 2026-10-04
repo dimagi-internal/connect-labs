@@ -270,7 +270,10 @@ class TestAShipmentWithNoLinesIsStillOnTheRoad:
 
 
 def _source_heading(body):
-    return " ".join(re.search(r'data-testid="source-heading"[^>]*>(.*?)</p>', body, re.S).group(1).split())
+    """Who the first email event is from, as its head reads (unanswered round 1004 b3: every
+    email in a history is one event, headed by its sender, with no "Email from ..." line)."""
+    head = re.search(r'data-testid="email-event-head"[^>]*>(.*?)</span>\s*<span data-testid="actor-badge"', body, re.S)
+    return " ".join(re.sub(r"<[^>]+>", " ", head.group(1)).split())
 
 
 def _tender_page(client, tender_id):
@@ -316,13 +319,13 @@ class TestTheTimeline:
             ).content.decode()
         )
         # No carrier yet: the shipment says its supplier reported it.
-        assert heading == "Email from Northwind Foods, recorded by the AI assistant on 20 Aug 2026"
+        assert heading == "Northwind Foods"
 
         Shipment.objects.filter(pk=order["shipment"]["id"]).update(carrier="Harmattan Haulage")
         body = client_in_program.get(
             reverse("supply_chain:order_detail", args=[order["contract"]["id"]])
         ).content.decode()
-        assert _source_heading(body) == "Email from Northwind Foods, recorded by the AI assistant on 20 Aug 2026"
+        assert _source_heading(body) == "Northwind Foods"
         excerpt = re.search(r'<blockquote data-testid="source-excerpt" class="([^"]*)">(.*?)</blockquote>', body, re.S)
         assert excerpt.group(2) == EMAIL
         classes = excerpt.group(1).split()
@@ -332,7 +335,7 @@ class TestTheTimeline:
         quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _ALL_BUT_PACK)
         _correct_pack(da, quote, ace)
         heading = _source_heading(_tender_page(client_in_program, base["tender"]["id"]))
-        assert heading == "Email from Northwind Foods, recorded by the AI assistant on 28 Aug 2026"
+        assert heading == "Northwind Foods"
 
 
 # ---- 7. the ranked row stays one line; the correction says where from -------

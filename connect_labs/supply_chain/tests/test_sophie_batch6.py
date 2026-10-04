@@ -151,7 +151,8 @@ class TestTheTimelineReads:
         history = body[body.index('id="history"') :]
         for classes in re.findall(r'<time class="([^"]*)"', history):
             assert "text-gray-900" in classes.split() and "text-gray-500" not in classes.split()
-        heading = re.search(r'<p data-testid="source-heading" class="([^"]*)"', history).group(1).split()
+        # Provenance is the email event's head now (unanswered round 1004 b3), at body contrast.
+        heading = re.search(r'<span data-testid="email-event-head" class="([^"]*)"', history).group(1).split()
         assert "text-gray-900" in heading and "text-gray-600" not in heading
 
     def test_sections_clear_the_fixed_header(self, da, base, client_in_program):

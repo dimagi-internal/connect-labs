@@ -735,14 +735,13 @@ class TestPages:
 
         assert 'data-testid="timeline"' in body
         assert re.search(r'data-testid="revision-line" data-fields="expected_on"', body)
-        # The agent's shipment line: its badge is a label, and its own "Source email"
-        # toggle beside it opens the excerpt (unanswered round, batch 2).
+        # The agent's shipment email: one email event (unanswered round 1004 b3), its badge a
+        # label in the event's head, its own "Source email" toggle opening the excerpt.
         timeline = body.split('data-testid="timeline"', 1)[1]
-        line = next(
-            li for li in re.findall(r'<li data-testid="revision-line".*?</li>', timeline, re.S) if "<details" in li
-        )
-        assert re.search(r'<span data-testid="actor-badge" data-ai ', line) and "ACE (agent)" in line
-        details = re.search(r"<details.*?</details>", line, re.S).group(0)
+        event = re.findall(r'<li data-testid="email-event".*?</ol>\s*</li>', timeline, re.S)[0]
+        assert 'data-testid="revision-line"' in event
+        assert re.search(r'<span data-testid="actor-badge" data-ai ', event) and "ACE" in event
+        details = re.search(r"<details.*?</details>", event, re.S).group(0)
         assert re.search(r'<summary data-testid="source-toggle"', details)
         assert re.search(r'<blockquote data-testid="source-excerpt"[^>]*>' + re.escape(EMAIL), details)
         assert "actor-badge" not in details
@@ -779,7 +778,10 @@ class TestPages:
         assert re.findall(r'data-src="(\w+)"', price) == ["ai"]
 
     def test_the_order_page_as_of_leaves_out_the_later_change(self, client_in_program, order):
+        import re
+
         url = reverse("supply_chain:order_detail", args=[order["contract"]["id"]])
         body = client_in_program.get(url, {"as_of": "2026-08-25"}).content.decode()
         assert "ETA 5 Sep → 19 Sep" not in body
-        assert "Shipment · SH-1 · recorded" in body
+        # Under its email event the record's kind is set apart: "<b>Shipment</b> · SH-1 · recorded".
+        assert "Shipment · SH-1 · recorded" in " ".join(re.sub(r"<[^>]+>", " ", body).split())

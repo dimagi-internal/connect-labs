@@ -138,9 +138,9 @@ def waiver_on_file(tender) -> bool:
     """Under the waiver, whether a copy of it is on the tender (True under any other terms)."""
     if getattr(tender, "duty_terms", "") != "buyer_waiver":
         return True
-    from connect_labs.supply_chain.models import Document
+    from connect_labs.supply_chain.procurement.services.pricing import duty_exemption_on_file
 
-    return Document.objects.filter(tender_id=tender.pk, program_id=tender.program_id, kind="duty_exemption").exists()
+    return duty_exemption_on_file(tender=tender)
 
 
 def quote_open_facts(tender, row, quote, *, waiver_on_file=True) -> list:
@@ -151,16 +151,11 @@ def quote_open_facts(tender, row, quote, *, waiver_on_file=True) -> list:
     for a quote costed on a duty waiver with no copy of it on file, the waiver document.
     Split it by `split_gaps` for whose each fact is.
     """
-    from connect_labs.supply_chain.procurement.services.pricing import buyer_imports
+    from connect_labs.supply_chain.procurement.services.pricing import quote_rests_on_relief
 
     gaps = list(_field(row, "gaps") or [])
     waiver_gap = (
-        not waiver_on_file
-        and quote is not None
-        and getattr(tender, "duty_terms", "") == "buyer_waiver"
-        and _ROUND_DUTY not in gaps
-        and quote.delivery_mode != "pickup"
-        and buyer_imports(quote)
+        not waiver_on_file and quote is not None and _ROUND_DUTY not in gaps and quote_rests_on_relief(quote, tender)
     )
     return [*gaps, *(_field(row, "open_estimates") or []), *([_WAIVER_DOC] if waiver_gap else [])]
 
@@ -233,7 +228,6 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
         questions = owed_by_org.get(getattr(supplier, "org_id", None), [])
         asked = max((o.sent_on for o in mine if o.sent_on), default=None)
         chased = max((o.last_reminder_on for o in mine if o.last_reminder_on), default=None)
-        anchor = f"draft-supplier-{sid}"
         row = {"name": supplier.name, "supplier_id": sid, "href": reverse("supply_chain:supplier_detail", args=[sid])}
         # Last chased reads the same chase record as Invitations, replied or not.
         count = max(((reminder_counts or {}).get(o.pk, 0) for o in mine), default=0)
@@ -257,8 +251,9 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
                 if ours_g
                 else ""
             )
-            if theirs_g and anchor in draft_anchors:
-                row["action"] = {"label": "Ask", "href": f"#{anchor}"}
+            ask = rules.supplier_action(rules.ACTION_ASK, sid)
+            if theirs_g and ask["anchor"] in draft_anchors:
+                row["action"] = {"label": ask["label"], "href": f"#{ask['anchor']}"}
             else:
                 row["action"] = {
                     "label": "Open quote",
@@ -267,18 +262,22 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
         elif questions:
             row["chip"] = {"label": "Questions for us", "tone": OURS}
             row["missing"], row["on_us"] = [], ""
-            reply = f"draft-reply-{sid}"
-            row["action"] = {"label": "Reply", "href": f"#{reply}" if reply in draft_anchors else "#owed"}
+            reply = rules.supplier_action(rules.ACTION_REPLY, sid)
+            row["action"] = {
+                "label": reply["label"],
+                "href": f"#{reply['anchor']}" if reply["anchor"] in draft_anchors else "#owed",
+            }
         elif sid in silent:
             days = (today - asked).days if asked else None
             row["chip"] = {"label": f"Silent {days}d" if days is not None else "Silent", "tone": THEIRS}
             row["missing"], row["on_us"] = [], ""
-            if anchor in draft_anchors:
-                # The reminder is already drafted: the link says so, and opens it.
-                row["action"] = {"label": "Open draft", "href": f"#{anchor}"}
+            remind = rules.supplier_action(rules.ACTION_REMIND, sid)
+            if remind["anchor"] in draft_anchors:
+                # The reminder is already drafted: Remind opens it, as the On suppliers rail does.
+                row["action"] = {"label": remind["label"], "href": f"#{remind['anchor']}"}
             elif mine:
                 row["action"] = {
-                    "label": "Record a reply",
+                    "label": rules.supplier_action(rules.ACTION_RECORD_REPLY)["label"],
                     "href": reverse("supply_chain:procurement_outreach_reply", args=[mine[0].pk]),
                 }
         else:
@@ -307,7 +306,7 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
         chased = max((o.last_reminder_on for o in rows_for if o.last_reminder_on), default=None)
         m.text = name
         m.chip = f"Silent {(today - asked).days}d" if asked else "Silent"
-        if f"draft-supplier-{m.supplier_id}" not in draft_anchors and chased:
+        if rules.supplier_action(rules.ACTION_REMIND, m.supplier_id)["anchor"] not in draft_anchors and chased:
             due = chased + timedelta(days=interval)
             # Never a reminder after the response deadline: the deadline is the last word.
             if deadline and due > deadline:
@@ -627,17 +626,8 @@ def comparison_grid(
                         "owner": rules.SUPPLIERS,
                     }
                 )
-            if row.get("is_comparable"):
-                # Award stays offered, but is the filled button only once no gap is open on the quote.
-                actions.append(
-                    {
-                        "label": "Award",
-                        "href": f"#award-{row['quote_id']}",
-                        "award": True,
-                        "filled": not quote_gaps,
-                        "owner": "",
-                    }
-                )
+            # No Award here: the next steps are open facts only. The award is the
+            # fold under the grid, one per comparable quote -- the single place it is offered.
         if not chips:
             chips.append({"label": "Not comparable", "tone": NEUTRAL})
         columns.append(
@@ -757,6 +747,9 @@ def comparison_grid(
             figure = fact(f"{landed.get('currency') or 'USD'} {money_digits(landed['amount'])}", CALC)
             if row.get("clearing") == "open":
                 figure["qualifier"] = "excl. clearing"
+            # Nil duty on a waiver no document on file shows: the order's own mark, pricing.relief_unevidenced.
+            if row.get("relief_unevidenced"):
+                figure["unconfirmed"] = True
             figure["open"] = [{"label": _gap_word(g), "owner": gap_owner(g)} for g in quote_gaps]
             cells["landed"].append(figure)
         else:

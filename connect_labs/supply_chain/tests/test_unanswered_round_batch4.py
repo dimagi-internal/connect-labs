@@ -17,7 +17,6 @@ from connect_labs.supply_chain.tests import test_tracking_reality as reality
 from connect_labs.supply_chain.tests.test_tracking_reality import _contract, _kanem_quote, op
 from connect_labs.supply_chain.tests.test_unanswered_round_batch1 import _tender_page
 from connect_labs.supply_chain.tests.test_unanswered_round_batch2 import _comparable
-from connect_labs.supply_chain.views import duty_relief_unevidenced
 
 # That module's fixtures, shared rather than copied.
 da = reality.da
@@ -51,13 +50,13 @@ class TestTheOutreachTable:
         count = re.search(
             r'data-testid="outreach-replied-count"[^>]*>([^<]*)<', _tender_page(client_in_program, tender_id)
         )
-        assert count.group(1) == "0 of 2 replied"
+        assert count.group(1) == "0 of 2 answered"
         # A quote is a reply, though nobody ticked "replied".
         op(da, "quote_record", data=_kanem_quote(world))
         count = re.search(
             r'data-testid="outreach-replied-count"[^>]*>([^<]*)<', _tender_page(client_in_program, tender_id)
         )
-        assert count.group(1) == "1 of 2 replied"
+        assert count.group(1) == "1 of 2 answered"
 
     def test_silence_reads_as_muted_words_and_reply_kinds_read_as_words(self, da, world, client_in_program):
         outreach_id = world["outreach"]["id"]
@@ -240,14 +239,15 @@ class TestDutyRelief:
         assert line is not None
         assert _text(line.group(1)) == "USD 0.00 if duty relief is documented (no document on file)"
 
-    def test_the_rule(self):
-        landed = {"duty": {"amount": "0", "currency": "USD"}}
-        waived = {"duties_basis": "excluded", "buyer_of_record": "programme_org"}
-        assert duty_relief_unevidenced(waived, landed, [])
-        assert not duty_relief_unevidenced(waived, landed, [{"kind": "duty_exemption"}])
-        assert not duty_relief_unevidenced({**waived, "duty_relief_document_id": 4}, landed, [])
-        assert not duty_relief_unevidenced({**waived, "duties_basis": "included"}, landed, [])
-        assert not duty_relief_unevidenced(waived, {"duty": {"amount": "120", "currency": "USD"}}, [])
+    def test_the_rule_is_the_costing_s_own(self, da, world):
+        """The order reads the one predicate (pricing.relief_unevidenced) off contract_landed_cost."""
+        from connect_labs.supply_chain.fulfilment.services import landed
+        from connect_labs.supply_chain.models import Contract
+
+        contract = _contract(da, world, duties_basis="excluded", duties_amount="0.00")
+        assert landed.relief_unevidenced(Contract.objects.get(pk=contract["id"]))
+        included = _contract(da, world, duties_basis="included")
+        assert not landed.relief_unevidenced(Contract.objects.get(pk=included["id"]))
 
 
 # ---- 10. part paid is not unpaid

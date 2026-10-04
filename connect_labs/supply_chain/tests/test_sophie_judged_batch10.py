@@ -83,9 +83,10 @@ class TestTheTimelineChipsReadAtBodySize:
         pills = re.findall(r'data-testid="actor-(?:pill|badge)"[^>]*class="([^"]*inline-flex[^"]*)"', history)
         pills = [set(p.split()) for p in pills if "rounded-full" in p.split()]
         assert pills and all("text-sm" in p and "text-xs" not in p for p in pills)
-        # The AI pill keeps its indigo, the person's its near-black.
-        assert any({"bg-indigo-50", "text-indigo-800"} <= p for p in pills)
+        # The person's pill keeps its near-black. The AI-recorded email reads as one email
+        # event (unanswered round 1004 b3), its AI label in the event's head.
         assert any({"bg-gray-100", "text-gray-900"} <= p for p in pills)
+        assert re.search(r'data-testid="email-event".*?data-testid="actor-badge" data-ai ', history, re.S)
 
 
 # ---- 6. the overview's flags, by importance ----------------------------------
