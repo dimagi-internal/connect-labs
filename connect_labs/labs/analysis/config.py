@@ -932,6 +932,13 @@ class AnalysisPipelineConfig:
     # the same opp.
     pipeline_id: int | None = None
 
+    # Set by `utils.resolve_join_hashes` on a pipeline another pipeline JOINs.
+    # A JOIN reads its target's per-visit rows (labs_computed_visit_cache), so an
+    # ENTITY-stage target must still materialise them; every other entity pipeline
+    # aggregates straight from the raw slot and skips that copy (see
+    # SQLBackend._process_entity_level). Runtime-only: not part of the config hash.
+    feeds_joins: bool = False
+
     def __post_init__(self):
         """Validate configuration."""
         if not self.grouping_key:

@@ -179,6 +179,13 @@ class SQLCacheManager:
 
         ttl_hours = getattr(settings, "PIPELINE_CACHE_TTL_HOURS", DEFAULT_TTL_HOURS)
         self.ttl = timedelta(hours=ttl_hours)
+        if source_type == "gdrive":
+            # A Drive cache is invalidated by its files changing, checked on every
+            # read (gdrive_freshness); the expiry is only the upper bound on trusting
+            # it without a re-read.
+            from connect_labs.labs.analysis.backends.sql.gdrive_freshness import max_age
+
+            self.ttl = max(self.ttl, max_age())
 
     def _raw_filter(self):
         """Base filter for this manager's slot of RawVisitCache.
