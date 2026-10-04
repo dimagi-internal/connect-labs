@@ -771,9 +771,10 @@ function WorkflowUI({
   };
 
   // ── The scorecard ─────────────────────────────────────────────────────────
-  // The compute spec's §5 table, column for column. `Qual N` is the shared
-  // denominator of the four growth-quality columns, which the spec prints as its
-  // own column. It reads the same cells as everything else on the page: there is
+  // The scorecard, following Neal's metrics workbook (2026-10-03). `Elig N` is
+  // the growth funnel's denominator (eligible, not an early death), printed as
+  // its own column; healthy / slow / fast are shares of the babies with good
+  // weight data (C09). It reads the same cells as everything else on the page: there is
   // one indicator set.
   var SC = {
     measures: P.cMeasures || [],
@@ -788,7 +789,7 @@ function WorkflowUI({
     {
       id: 'started_cases',
       label: 'Started',
-      title: 'Started \u2014 two or more follow-up visits',
+      title: 'Started \u2014 one or more follow-up visits',
     },
     {
       id: 'median_gestational_age',
@@ -811,31 +812,31 @@ function WorkflowUI({
       title: '% first visit within 3 days of discharge',
     },
     {
-      id: 'pct_slow_growth',
-      label: 'Qual N',
+      id: 'pct_growth_sufficient',
+      label: 'Elig N',
       title:
-        'Qualifying SVNs \u2014 the shared denominator of the four growth-quality columns',
+        'Babies in the growth funnel \u2014 started, first visit 28+ days ago, not an early death',
       denOnly: true,
     },
     {
-      id: 'pct_slow_growth',
-      label: '%slow',
-      title: '% slow growth, of qualifying SVNs',
+      id: 'pct_growth_sufficient',
+      label: '%good data',
+      title: '% with good weight data (computable and consistent), of Elig N',
     },
     {
       id: 'pct_healthy_growth',
       label: '%healthy',
-      title: '% healthy growth, of qualifying SVNs',
+      title: '% healthy growth, of babies with good weight data',
+    },
+    {
+      id: 'pct_slow_growth',
+      label: '%slow',
+      title: '% slow growth, of babies with good weight data',
     },
     {
       id: 'pct_fast_growth',
       label: '%fast',
-      title: '% fast growth, of qualifying SVNs',
-    },
-    {
-      id: 'pct_incomplete_growth_data',
-      label: '%incompl',
-      title: '% incomplete growth data, of qualifying SVNs',
+      title: '% fast growth, of babies with good weight data',
     },
     {
       id: 'mortality',
@@ -2156,14 +2157,14 @@ function WorkflowUI({
       id: 'started_cases',
       label: 'Started cases',
       count: true,
-      sub: 'two or more visits',
+      sub: 'one or more visits',
     },
     {
       id: 'pct_healthy_growth',
       label: 'Healthy growth',
       pct: true,
       target: 0.7,
-      sub: 'target 70% · of qualifying babies',
+      sub: 'target 70% · of babies with good weight data',
     },
     {
       id: 'mean_early_growth_rate',
@@ -2312,7 +2313,7 @@ function WorkflowUI({
     { label: 'Scale', span: 3 },
     { label: 'Cohort', span: 2 },
     { label: 'Enrolment & visits', span: 3 },
-    { label: 'Growth quality (of Qual N)', span: 4 },
+    { label: 'Growth (of good weight data)', span: 4 },
     { label: 'Outcome', span: 1 },
     { label: 'Data quality', span: 2 },
   ];
