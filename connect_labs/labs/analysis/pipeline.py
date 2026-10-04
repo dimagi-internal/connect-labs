@@ -440,6 +440,41 @@ class AnalysisPipeline:
                 pipeline_id=config.pipeline_id,
             )
 
+    def _cached_result_still_serves(self, config: AnalysisPipelineConfig, opp_id: int) -> bool:
+        """Whether a cached terminal-stage result found for ``config`` may be served.
+
+        - A Google Drive result must have been built from the files as they are NOW
+          (``gdrive_freshness``): its cache outlives the clock, so the files decide.
+        - An entity-stage pipeline another pipeline JOINs must also still have its
+          per-visit rows, which the JOIN reads (``_process_entity_level`` writes them
+          only for such pipelines, so one cached before it became a JOIN target has none).
+        """
+        from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
+        from connect_labs.labs.analysis.backends.sql.gdrive_freshness import computed_cache_is_current
+
+        if config.data_source.type == "gdrive" and not computed_cache_is_current(opp_id, config):
+            logger.info(
+                f"[Pipeline/{self.backend_name}] Drive files changed since pipeline {config.pipeline_id}'s "
+                f"cached result for {opp_id} was built -- rebuilding"
+            )
+            return False
+        if (
+            config.terminal_stage == CacheStage.ENTITY
+            and config.feeds_joins
+            and not SQLCacheManager(opp_id, config).has_valid_computed_visit_cache(0)
+        ):
+            return False
+        return True
+
+    def _record_gdrive_result(self, config: AnalysisPipelineConfig, opp_id: int) -> None:
+        """Record which Drive files ``config``'s just-built result came from (no-op for
+        every other source). See ``gdrive_freshness``."""
+        if config.data_source.type != "gdrive":
+            return
+        from connect_labs.labs.analysis.backends.sql.gdrive_freshness import record_computed_fingerprint
+
+        record_computed_fingerprint(opp_id, config, getattr(self, "_gdrive_raw_fp", None))
+
     def _fill_gdrive_raw(self, config: AnalysisPipelineConfig, opp_id: int, force_refresh: bool):
         """Make the gdrive source's SHARED raw slot hold its rows; yield progress events.
 
@@ -447,9 +482,12 @@ class AnalysisPipeline:
         (``analysis.config.raw_cache_slot``), so a pipeline whose processed cache is cold
         first looks for rows a sibling already read, and only reads Drive when there
         are none. Afterwards ``self._gdrive_raw_count`` holds the number of rows in
-        the slot, and the caller processes with ``skip_raw_store=True``.
+        the slot, ``self._gdrive_raw_fp`` the fingerprint of the files they came from,
+        and the caller processes with ``skip_raw_store=True``.
 
-        - Not forced: any live copy in the slot is reused.
+        - Not forced: a live copy in the slot is reused while the files it was read
+          from are still the files in Drive (``gdrive_freshness``: one listing, not a
+          clock). Changed files -- or a copy with no recorded fingerprint -- re-read.
         - Forced (?refresh=1): Drive is read again, unless the slot was already
           refilled since this request first forced a read -- the same floor the
           visits export uses (#1926), so one forced page load over N summary
@@ -461,37 +499,54 @@ class AnalysisPipeline:
         Callers MUST have run ``_check_drive_access`` for THIS pipeline first: a
         slot another pipeline filled is no permission to read it.
         """
+        from connect_labs.labs.analysis.backends.sql import gdrive_freshness as freshness
         from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
-        from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import fetch_gdrive_rows_as_visit_dicts
+        from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import fetch_gdrive_rows_with_fingerprint
         from connect_labs.labs.analysis.backends.sql.single_flight import claim_raw_rebuild
 
         cache_manager = SQLCacheManager(opp_id, config)
+        slot = cache_manager.raw_slot_id
 
         def _reusable() -> int:
             if force_refresh:
                 if not cache_manager.slot_fetched_since(self.force_refresh_since()):
                     return 0
-            return cache_manager.get_raw_visit_count()
+                return cache_manager.get_raw_visit_count()
+            count = cache_manager.get_raw_visit_count()
+            if not count:
+                return 0
+            live = freshness.live_fingerprint(config.data_source)
+            if live is not None and freshness.recorded_raw_fingerprint(opp_id, slot) != live:
+                logger.info(f"[Pipeline/{self.backend_name}] Drive files changed since slot {slot} was read")
+                return 0
+            return count
 
         count = _reusable()
         if count:
             yield (EVENT_STATUS, {"message": f"Reusing {count:,} rows already read from Google Drive..."})
             self._gdrive_raw_count = count
+            self._gdrive_raw_fp = freshness.recorded_raw_fingerprint(opp_id, slot)
             return
 
-        with claim_raw_rebuild(opp_id, cache_manager.raw_slot_id) as is_leader:
+        with claim_raw_rebuild(opp_id, slot) as is_leader:
             if not is_leader:
                 count = cache_manager.get_raw_visit_count()
                 if count:
                     yield (EVENT_STATUS, {"message": f"Reusing {count:,} rows another reader just loaded..."})
                     self._gdrive_raw_count = count
+                    # Labelled with what the slot really holds, so a result built
+                    # from a stale copy is rebuilt on the next read.
+                    self._gdrive_raw_fp = freshness.recorded_raw_fingerprint(opp_id, slot)
                     return
             yield (EVENT_STATUS, {"message": "Reading files from Google Drive..."})
-            visit_dicts = fetch_gdrive_rows_as_visit_dicts(
+            visit_dicts, fingerprint = fetch_gdrive_rows_with_fingerprint(
                 config.data_source, opp_id, self.request, self.access_token, config.pipeline_id
             )
             cache_manager.store_raw_visits(visit_dicts, len(visit_dicts))
+            freshness.record_raw_fingerprint(opp_id, slot, fingerprint)
+            freshness.remember_live_fingerprint(config.data_source, fingerprint)
             self._gdrive_raw_count = len(visit_dicts)
+            self._gdrive_raw_fp = fingerprint
             del visit_dicts
 
     def get_cached_result_only(
@@ -726,6 +781,9 @@ class AnalysisPipeline:
                 force_refresh = True
             if not force_refresh:
                 cached_result = _get_cached_for_stage(expected_count)
+                if cached_result and not self._cached_result_still_serves(config, opp_id):
+                    yield (EVENT_STATUS, {"message": "Source changed since this was cached; rebuilding..."})
+                    cached_result = None
 
                 if cached_result:
                     yield (EVENT_STATUS, {"message": f"{stage_name.capitalize()}-level cache HIT!"})
@@ -869,6 +927,7 @@ class AnalysisPipeline:
                             visit_count=visit_count,
                         )
                         del visit_dicts
+                        self._record_gdrive_result(unfiltered_config, opp_id)
 
                         # Now read from cache with ORIGINAL FILTERED config
                         logger.info(f"[Pipeline/{self.backend_name}] Reading cached data with filters applied")
@@ -1011,6 +1070,7 @@ class AnalysisPipeline:
                         visit_count=visit_count,
                     )
                     del visit_dicts
+                    self._record_gdrive_result(unfiltered_config, opp_id)
 
                     # Read back with filters
                     logger.info(f"[Pipeline/{self.backend_name}] Reading cached data with filters applied")
@@ -1148,6 +1208,7 @@ class AnalysisPipeline:
                     visit_count=n_rows,
                     skip_raw_store=True,
                 )
+                self._record_gdrive_result(config, opp_id)
                 yield (EVENT_STATUS, {"message": "Complete!"})
                 yield (EVENT_RESULT, result)
                 return

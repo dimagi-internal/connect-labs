@@ -1572,26 +1572,35 @@ class SQLBackend:
         cache_manager: SQLCacheManager,
     ) -> EntityAnalysisResult:
         """
-        Process and cache entity-level aggregation.
+        Process and cache entity-level aggregation: ONE SQL pass from the raw slot.
 
-        Like FLW-level, we extract and cache visit-level data first so the
-        visit cache can be reused. Then run the entity-stage GROUP BY query
-        on top of raw visits and cache the per-entity rows.
+        The entity GROUP BY (``build_entity_aggregation_query``) reads
+        ``labs_raw_visit_cache`` directly -- field values via ``_field_value_sql`` over
+        form_json, ``filters`` via ``_entity_stage_filters_where`` -- so it never needed
+        the per-visit copy this used to write first "for cache sharing". Nothing reads
+        an entity pipeline's computed visits except a JOIN that targets it, so the copy
+        is now written only for those (``config.feeds_joins``). Measured on program
+        workflow 23891: six entity pipelines over one 173,488-row Drive folder each
+        spent 1m15s-2m29s storing that copy, against 17-33s for the aggregation itself.
+        FLW- and visit-level pipelines are unchanged: their computed visits are read
+        (coverage, MBW, the visit-level result cache).
         """
-        # Step 1: Extract and cache visit-level data first (for cache sharing)
-        logger.info("[SQL] Step 1 (entity): Extracting visit-level data for cache")
-        visit_data, computed_field_names = execute_visit_extraction(config, opportunity_id)
-
-        computed_cache_data = [
-            {
-                "visit_id": v.get("visit_id", 0),
-                "username": v.get("username", ""),
-                "computed_fields": _with_passthrough_columns(v, {name: v.get(name) for name in computed_field_names}),
-            }
-            for v in visit_data
-        ]
-        cache_manager.store_computed_visits(computed_cache_data, visit_count)
-        logger.info(f"[SQL] Cached {len(computed_cache_data)} visit-level rows")
+        if config.feeds_joins:
+            logger.info("[SQL] Step 1 (entity): Extracting visit-level data for a JOIN that reads it")
+            visit_data, computed_field_names = execute_visit_extraction(config, opportunity_id)
+            computed_cache_data = [
+                {
+                    "visit_id": v.get("visit_id", 0),
+                    "username": v.get("username", ""),
+                    "computed_fields": _with_passthrough_columns(
+                        v, {name: v.get(name) for name in computed_field_names}
+                    ),
+                }
+                for v in visit_data
+            ]
+            cache_manager.store_computed_visits(computed_cache_data, visit_count)
+            logger.info(f"[SQL] Cached {len(computed_cache_data)} visit-level rows")
+            del visit_data, computed_cache_data
 
         # Step 2: Execute entity aggregation query
         logger.info("[SQL] Step 2 (entity): Executing entity aggregation query")
