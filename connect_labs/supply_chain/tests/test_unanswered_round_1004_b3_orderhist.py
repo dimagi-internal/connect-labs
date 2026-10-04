@@ -182,3 +182,31 @@ class TestTheDeliveryTermIsAChip:
         assert incoterm_name("DAP Kano") == "delivered at place"
         assert incoterm_name("XYZ") == ""
         assert incoterm_name("") == ""
+
+
+def test_the_on_us_item_splits_held_documents_from_those_owed_under_duty_terms():
+    import datetime as dt
+
+    from connect_labs.supply_chain.fulfilment.services.holds import Hold
+    from connect_labs.supply_chain.moves import owed_moves
+
+    day = dt.date(2026, 9, 12)
+    holds = [
+        Hold("customs declaration", day, shipment_id=1, name="PAAR", asked_by="Forwarder", basis="held"),
+        Hold("duty exemption", day, shipment_id=1, asked_by="Forwarder", basis="duty_terms"),
+        Hold("import permit", day, shipment_id=1, name="Form M", asked_by="Forwarder", basis="held"),
+    ]
+    (move,) = owed_moves([], holds, contract_id=7)
+    assert move.text == "Provide 3 documents to Forwarder"
+    assert move.detail == "shipment held: PAAR, Form M · owed under duty terms: duty exemption"
+
+
+def test_an_item_with_only_held_documents_names_no_duty_terms():
+    import datetime as dt
+
+    from connect_labs.supply_chain.fulfilment.services.holds import Hold
+    from connect_labs.supply_chain.moves import owed_moves
+
+    holds = [Hold("import permit", dt.date(2026, 9, 12), shipment_id=1, name="Form M", asked_by="F", basis="held")]
+    (move,) = owed_moves([], holds, contract_id=7)
+    assert move.detail == "shipment held: Form M"
