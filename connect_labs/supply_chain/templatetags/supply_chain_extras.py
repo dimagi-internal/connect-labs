@@ -29,6 +29,14 @@ def possessive_filter(value):
 
 
 @register.filter
+def supplies(owner):
+    """Who supplies a quote's missing fact, as its tag: "we supply" or "supplier supplies" (moves.SUPPLIES)."""
+    from connect_labs.supply_chain.moves import SUPPLIERS, SUPPLIES
+
+    return SUPPLIES.get(owner) or SUPPLIES[SUPPLIERS]
+
+
+@register.filter
 def dictkey(mapping, key):
     return (mapping or {}).get(key)
 

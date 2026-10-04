@@ -227,20 +227,16 @@ def rests_on_relief(contract) -> bool:
 
 def relief_on_file(contract) -> bool:
     """Whether a duty exemption is on file: named on the order, or attached to it or a shipment of it."""
-    from django.db.models import Q
+    from connect_labs.supply_chain.procurement.services.pricing import duty_exemption_on_file
 
-    from connect_labs.supply_chain.models import Document
-
-    if contract.duty_relief_document_id:
-        return True
-    return Document.objects.filter(
-        Q(contract=contract) | Q(shipment__contract=contract), kind="duty_exemption"
-    ).exists()
+    return duty_exemption_on_file(contract=contract)
 
 
 def relief_unevidenced(contract) -> bool:
-    """The order's duty rests on a relief that no document on file shows."""
-    return rests_on_relief(contract) and not relief_on_file(contract)
+    """The order's duty rests on a relief that no document on file shows (pricing.relief_unevidenced)."""
+    from connect_labs.supply_chain.procurement.services import pricing
+
+    return pricing.relief_unevidenced(rests_on_relief(contract), contract=contract)
 
 
 def landed_total(contract):

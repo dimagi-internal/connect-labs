@@ -36,6 +36,11 @@ from django.urls import reverse
 US = "us"
 SUPPLIERS = "suppliers"
 
+# Who supplies a fact a quote lacks, as a tag. Not a move: a fact we supply is
+# not "on us" under the six rules above, so its tag names the supplier of the
+# fact and never reads as a task. One wording for every surface that tags one.
+SUPPLIES = {US: "we supply", SUPPLIERS: "supplier supplies"}
+
 RULE_OWED = "owed"
 RULE_DEADLINE = "deadline"
 RULE_INVOICE = "invoice check"
@@ -82,6 +87,35 @@ class Move:
         return self.whose == US
 
 
+# ---- one verb per move -----------------------------------------------------
+#
+# A supplier's next move reads the same wherever it is offered -- the tender's
+# Suppliers table and the On us / On suppliers rails: its verb, and the anchor on
+# the tender page it opens, come from `supplier_action` and nowhere else.
+
+ACTION_REMIND = "remind"  # a silent supplier: open the reminder drafted to them
+ACTION_REPLY = "reply"  # their questions to us: open the reply drafted to them
+ACTION_RECORD_REPLY = "record_reply"  # their email came in: log it against the invitation
+ACTION_ASK = "ask"  # facts their quote left out: open the email asking for them
+
+_VERBS = {
+    ACTION_REMIND: "Remind",
+    ACTION_REPLY: "Reply",
+    ACTION_RECORD_REPLY: "Record a reply",
+    ACTION_ASK: "Ask",
+}
+
+
+def supplier_action(kind: str, supplier_id=None) -> dict:
+    """{"label": verb, "anchor": the tender page's drafted email it opens, "" when it opens elsewhere}."""
+    anchors = {
+        ACTION_REMIND: f"draft-supplier-{supplier_id}",
+        ACTION_ASK: f"draft-supplier-{supplier_id}",
+        ACTION_REPLY: f"draft-reply-{supplier_id}",
+    }
+    return {"label": _VERBS[kind], "anchor": anchors.get(kind, "") if supplier_id else ""}
+
+
 def _day(d) -> str:
     return f"{d.day} {d.strftime('%b')}" if d else ""
 
@@ -123,9 +157,10 @@ def owed_moves(commitments, holds=(), *, tender_id=None, contract_id=None, suppl
         supplier_id = supplier_of_org.get(org_id)
         if kind == "question":
             text = f"Reply to {name} ({_plural(len(items), 'question')})"
-            cta = "Reply"
+            action = supplier_action(ACTION_REPLY, supplier_id)
+            cta = action["label"]
             # The drafted reply when the page drafts one (a supplier on a tender), else the list.
-            href = f"{base}#draft-reply-{supplier_id}" if tender_id and supplier_id else f"{base}#owed"
+            href = f"{base}#{action['anchor']}" if tender_id and action["anchor"] else f"{base}#owed"
         else:
             text = f"Keep {_plural(len(items), 'promise')} to {name}"
             cta = "Open"
@@ -272,8 +307,8 @@ def no_reply_moves(tender, outreach, quotes, today, *, provisional=False, contra
                 RULE_NO_REPLY,
                 f"{name}: reply" + (f" (silent {_plural(days, 'day')})" if days is not None else ""),
                 detail=" · ".join(p for p in parts if p),
-                cta="Remind",
-                href=f"{_tender_url(tender.pk)}#draft-supplier-{supplier_id}",
+                cta=supplier_action(ACTION_REMIND, supplier_id)["label"],
+                href=f"{_tender_url(tender.pk)}#{supplier_action(ACTION_REMIND, supplier_id)['anchor']}",
                 since=asked,
                 tender_id=tender.pk,
                 supplier_id=supplier_id,
