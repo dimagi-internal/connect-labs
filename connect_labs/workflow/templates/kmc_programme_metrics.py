@@ -645,14 +645,6 @@ DEFINITION = {
         "showFilters": False,
         "showSummaryCards": True,
         "templateType": "kmc_programme_metrics",
-        # Every figure on this page is graded server-side (the snapshot builder,
-        # also behind the live preview), and the page reads no pipeline row since
-        # it stopped showing a case list. So the framework must not stream the
-        # pipelines to the browser -- ~21 MB of rows on a live open, read by
-        # nothing -- and the live preview fills the visit cache itself instead.
-        "renderWhileLoading": True,
-        "noPipelineStream": True,
-        "warm_cache_on_read": True,
         # --- drill-to-action -------------------------------------------------
         # The dashboard already drills programme -> LLO -> opportunity -> FLW ->
         # case. What it could not do was ACT on what the drill found: a worker
