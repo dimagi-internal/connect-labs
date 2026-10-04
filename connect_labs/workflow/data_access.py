@@ -3248,6 +3248,7 @@ class PipelineDataAccess(BaseDataAccess):
             username_column=data_source_dict.get("username_column", ""),
             date_column=data_source_dict.get("date_column", ""),
             null_values=data_source_dict.get("null_values") or [""],
+            columns=data_source_dict.get("columns"),
             authorization=data_source_dict.get("authorization") or {},
         )
 

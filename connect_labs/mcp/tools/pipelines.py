@@ -14,7 +14,12 @@ import logging
 import re
 
 from connect_labs.labs.analysis.backends.sql.query_builder import generate_sql_preview
-from connect_labs.labs.analysis.config import VALID_AGGREGATIONS, field_name_problem, schema_grouping_problems
+from connect_labs.labs.analysis.config import (
+    VALID_AGGREGATIONS,
+    field_name_problem,
+    schema_gdrive_column_problems,
+    schema_grouping_problems,
+)
 from connect_labs.workflow.data_access import PipelineDataAccess, serialize_pipeline_row
 
 from ..connect_token import require_connect_token
@@ -306,6 +311,10 @@ def _validate_pipeline_schema(schema: dict) -> None:
     grouping_problems = schema_grouping_problems(schema)
     if grouping_problems:
         raise MCPToolError("INVALID_SCHEMA", "; ".join(grouping_problems))
+    # A gdrive data_source.columns must keep every column the schema reads.
+    column_problems = schema_gdrive_column_problems(schema)
+    if column_problems:
+        raise MCPToolError("INVALID_SCHEMA", "; ".join(column_problems))
 
 
 def _authorize_drive_source(
