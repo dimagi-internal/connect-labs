@@ -31,10 +31,14 @@ restricted caller until someone adds it here on purpose:
 * ``NO_USERVISIT_DATA_TOOLS`` -- reachable outright: definitions, directories,
   targeting, and the synthetic profile-and-generate flow.
 * ``GENERATED_ONLY_TOOLS`` -- tools that read visit data, reachable only when every
-  opportunity the call reads holds GENERATED data (``connect_labs.mcp.visit_access``,
+  opportunity the call reads holds GENERATED data. Render code edits
+  (``workflow_update_render_code``, ``workflow_patch_render_code``) are here too,
+  although they return nothing: render code executes over real data in a
+  full-access viewer's browser, so a restricted caller may edit it only on a
+  workflow whose every opportunity is generated (``connect_labs.mcp.visit_access``,
   on ``connect_labs.labs.synthetic.provenance``).
 * ``DEFINITION_WRITE_TOOLS`` -- writes reachable outright: tools that change a
-  definition (a workflow, its render code, its opportunity list, a semantic registry)
+  definition (a workflow, its opportunity list, a semantic registry)
   or start server-side computation, and whose response is ids, versions, statuses,
   dates and opportunity-level counts only. A tool whose response carries a snapshot
   payload, indicator values, rows, or per-worker or per-case data never belongs here
@@ -44,7 +48,7 @@ restricted caller until someone adds it here on purpose:
 * ``USERVISIT_DATA_TOOLS`` -- read tools that return visit data. None of them may be
   reachable outright; a test pins it, and that the write set is disjoint from it.
 
-Two residual risks the response line does not cover, recorded so nobody mistakes the
+A residual risk the response line does not cover, recorded so nobody mistakes the
 write set for "cannot learn anything about visits in any way":
 
 * Error text. ``workflow_ensure_visit_cache`` and ``workflow_rebuild_history`` report a
@@ -52,11 +56,6 @@ write set for "cannot learn anything about visits in any way":
   ``workflow_hand_down`` its per-opportunity errors. Those are configuration and
   infrastructure messages, but a pipeline's error (a failed cast, say) could quote a
   value it choked on.
-* Render code runs later, in a full-access viewer's browser, over real data.
-  ``workflow_update_render_code`` / ``workflow_patch_render_code`` (and a ``config``
-  the render reads) can therefore shape what that viewer's page computes and saves --
-  including into fields a restricted caller can read back (``workflow_get`` returns a
-  definition's config). A restricted caller is trusted to edit the report itself.
 """
 
 from __future__ import annotations
@@ -167,7 +166,8 @@ SYNTHETIC_TOOLS: frozenset[str] = frozenset(
     }
 )
 
-#: Tools that read visit data, or change an opp's registry row, reachable only when
+#: Tools that read visit data, change an opp's registry row, or write render code that
+#: will run over visit data, reachable only when
 #: every opportunity the call reads holds generated data. Each has a resolver in
 #: ``connect_labs.mcp.visit_access.RESOLVERS``; a test pins that they match.
 GENERATED_ONLY_TOOLS: frozenset[str] = frozenset(
@@ -186,6 +186,11 @@ GENERATED_ONLY_TOOLS: frozenset[str] = frozenset(
         "workflow_preview_snapshot",
         "workflow_history_runs",
         "workflow_preview_as_of",
+        # WRITES, gated like the readers: render code executes over real data in a
+        # full-access viewer's browser, so planting it is reading visits by proxy.
+        # Not in USERVISIT_DATA_TOOLS -- they return no data.
+        "workflow_update_render_code",
+        "workflow_patch_render_code",
     }
 )
 
@@ -218,15 +223,13 @@ DEFINITION_WRITE_TOOLS: frozenset[str] = frozenset(
         "semantic_registry_create",
         "semantic_registry_update",
         "semantic_registry_set_indicator_meta",
-        # Workflow definitions, opportunity list and render code (returns versions;
+        # Workflow definitions and opportunity list (returns versions;
         # update_opportunity_ids also the ids it set, each checked against the
         # caller's own opportunities). The generated-only resolvers read the
         # definition's opportunity_ids live, so pointing a workflow at a real
         # opportunity makes its visit readers refuse, not leak.
         "workflow_update_definition",
         "workflow_update_opportunity_ids",
-        "workflow_update_render_code",
-        "workflow_patch_render_code",
         # Runs and snapshots, computed and stored server-side. create_run returns the
         # run's id and period; save_snapshot the run id, name, captured_at and
         # opportunity ids -- the snapshot itself is never returned
