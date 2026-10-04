@@ -17,10 +17,9 @@
 # - Every expression is portable Postgres over NAMED COLUMNS — no JSONB, no paths.
 #   Layer 1 (paths -> columns) stays in the pipeline schema, per Scout's precedent.
 #
-# DEFINITIONS: Neal Lesh's metrics framework workbook (kmc_metrics_framework.xlsx,
-# as revised 2026-10-03: Case properties + Case indicators tabs). It supersedes the
-# v3 compute spec where they differ -- see indicators.yml for the list. They are
-# working definitions and are expected to change.
+# DEFINITIONS: one set, Neal Lesh's KMC compute spec (v3, 2026-09) where it rules
+# and the workbook's rules re-based onto it where the spec has no counterpart. They
+# are working definitions and are expected to change -- see indicators.yml.
 
 version: 1
 
@@ -66,18 +65,13 @@ pipelines:
     weight_g: visits
 
 constants:
-  # Maturity, measured from the first VISIT. The workbook (2026-10-03) has ONE
-  # gate: `eligible` = started AND 28 days since the first visit, for outcomes,
-  # growth and visits alike. The 42-day growth gate of the v3 spec is retired;
-  # MATURITY_GROWTH_DAYS stays only so eligible_42d keeps compiling for saved
-  # runs that name it -- no indicator reads it. Completion waits on its own gate.
+  # Maturity, measured from the first VISIT (spec section 2): a baby counts toward
+  # an outcome once 28 days have passed, toward growth and visits once 42 have,
+  # and toward completion once 90 have.
   MATURITY_OUTCOME_DAYS: 28
   MATURITY_GROWTH_DAYS: 42
   MATURITY_COMPLETION_DAYS: 90
-  STARTED_MIN_VISITS: 1 # started = 1 or more follow-up visits (workbook 2026-10-03; was 2)
-  REFERRAL_WINDOW_DAYS: 28 # referred_within_28d: first referral within 28 days of registration
-  DIP_MIN_RATIO: 0.85 # expected dip: enrolment weight 1-15% below birth weight
-  DIP_MAX_RATIO: 0.99
+  STARTED_MIN_VISITS: 2 # started = 2 or more follow-up visits (spec 2b)
   GA_MIN: 20 # gestational age plausible range, weeks (spec section 2)
   GA_MAX: 45
   WMIN: 250 # implausible weight floor (g). 250, not 400: these are preterm
@@ -148,11 +142,6 @@ aggregates:
     label: 'Visits recording death'
     means: 'Visits that recorded the baby as not alive.'
     sql: 'COUNT(*) FILTER (WHERE child_alive_no)'
-
-  - name: death_date
-    label: 'Date death recorded'
-    means: 'Date of the first visit that recorded the baby as not alive.'
-    sql: 'MIN(visit_date) FILTER (WHERE child_alive_no)'
   - name: danger_visits
     label: 'Visits with a danger sign'
     means: 'Visits that recorded a danger sign.'
@@ -161,11 +150,6 @@ aggregates:
     label: 'Visits with a referral'
     means: 'Visits that recorded a referral.'
     sql: 'COUNT(*) FILTER (WHERE referred_yes)'
-
-  - name: first_referral_date
-    label: 'First referral date'
-    means: 'Date of the first visit that recorded a referral.'
-    sql: 'MIN(visit_date) FILTER (WHERE referred_yes)'
   - name: self_referral_visits
     label: 'Visits with a self-referral'
     means: 'Visits that recorded a self-referral.'
@@ -285,14 +269,15 @@ properties:
 
   - name: started
     label: 'Started'
-    means: 'The baby has at least 1 follow-up visit -- a delivered case, as opposed to a registration that was never visited.'
+    means: 'The baby has at least 2 follow-up visits.'
     type: bool
     sql: 'followup_visits >= :STARTED_MIN_VISITS'
     notes: >-
-      Workbook 2026-10-03: changed from 2 visits, which hid one-and-done cases
-      from every denominator. A one-visit baby now fails
-      weight_gain_data_computable instead of vanishing (on prod run 21114 the
-      2-visit rule had dropped 388 babies, 69 of whom died, from mortality).
+      Spec 2b. The workbook counted a single follow-up. A baby seen once is
+      therefore outside every indicator gated on started -- including mortality,
+      where it matters: on prod run 21114 (2026-09-20) the rule drops 388 babies
+      from the mortality denominator, 69 of whom died. Chosen deliberately
+      (#2004); revisit with the spec.
 
   - name: days_since_first_visit
     label: 'Days since first visit'
@@ -307,18 +292,17 @@ properties:
     sql: 'ROUND(EXTRACT(EPOCH FROM (last_visit::timestamp - first_visit::timestamp)) / 86400)::int'
 
   - name: eligible_28d
-    label: 'Eligible (followed 28+ days)'
+    label: 'Followed 28+ days'
     means: 'Started, and the first visit was at least 28 days before the report date.'
     type: bool
     sql: 'started AND first_visit IS NOT NULL AND days_since_first_visit >= :MATURITY_OUTCOME_DAYS'
-    notes: "The workbook's `eligible`, THE default gate for outcomes, growth and visits. Maturity anchors on the first VISIT, not reg_date: a baby registered 40 days ago but first visited 20 days ago is not eligible."
+    notes: 'Maturity anchors on the first VISIT, not reg_date: a baby registered 40 days ago but first visited 20 days ago is not eligible.'
 
   - name: eligible_42d
     label: 'Followed 42+ days'
     means: 'Started, and the first visit was at least 42 days before the report date.'
     type: bool
     sql: 'started AND first_visit IS NOT NULL AND days_since_first_visit >= :MATURITY_GROWTH_DAYS'
-    notes: 'Retired as a gate (workbook 2026-10-03: growth is gated on `eligible`, 28 days). Kept so a saved run that names it still compiles; no indicator reads it.'
 
   - name: eligible_90d
     label: 'Followed 90+ days'
@@ -339,20 +323,6 @@ properties:
     type: bool
     sql: 'died OR (days_first_to_last IS NOT NULL AND days_first_to_last >= :MATURITY_OUTCOME_DAYS)'
     notes: "Died, or seen at least 28 days after the first visit. FALSE means lost to follow-up. Reading it as 'child_alive was ever recorded' makes it true for nearly every case."
-
-  - name: early_exit
-    label: 'Died before eligibility'
-    means: 'The baby died before its eligibility date (28 days after the first visit).'
-    type: bool
-    sql: >-
-      died AND death_date IS NOT NULL AND first_visit IS NOT NULL
-      AND FLOOR(EXTRACT(EPOCH FROM (death_date::timestamp - first_visit::timestamp)) / 86400) < :MATURITY_OUTCOME_DAYS
-    notes: >-
-      Workbook: a modifier, not part of eligible. Applied only where the baby had
-      to survive to produce what is measured -- the weight funnel. Not mortality,
-      where death IS the event, and not loss to follow-up. Graduation is
-      logically the same but not counted: recording is unreliable, so counting
-      it would let an LLO shrink its own denominator.
 
   - name: n_weights
     label: 'Days weighed'
@@ -468,33 +438,11 @@ properties:
     type: bool
     sql: 'COALESCE(any_impossible_step, FALSE)'
 
-  - name: weight_gain_data_computable
-    label: 'Growth computable'
-    means: 'A growth number can be produced: birthweight band known, plus 2+ visit weighings spanning 5+ days in the first 21 days.'
-    type: bool
-    sql: 'birthweight_band IS NOT NULL AND velocity_computable'
-    notes: "Workbook name (was 'classified')."
-
-  - name: weight_gain_data_consistent
-    label: 'Readings hold up'
-    means: 'The weight readings are not thin (3+ weighing days), not inconsistent (first weight at least 60 percent of birthweight) and contain no impossible step.'
-    type: bool
-    sql: 'NOT flag_thin AND NOT flag_inconsistent AND NOT flag_impossible'
-    notes: "Workbook name (was 'verifiable')."
-
-  - name: weight_gain_data_sufficient
-    label: 'Good weight data'
-    means: 'Both computable and consistent: this baby counts toward the weight-gain trajectory.'
-    type: bool
-    sql: 'weight_gain_data_computable AND weight_gain_data_consistent'
-    notes: 'THE one field every growth indicator filters on (workbook).'
-
   - name: growth_data_sufficient
-    label: 'Good weight data (velocity)'
+    label: 'Good weight data'
     means: 'Weight gain computable, with at least 3 weighing days and no inconsistent or impossible readings.'
     type: bool
     sql: 'velocity_computable AND NOT flag_thin AND NOT flag_inconsistent AND NOT flag_impossible'
-    notes: 'The velocity-only half of weight_gain_data_sufficient, kept because growth_class reads it. Indicators filter on weight_gain_data_sufficient.'
 
   - name: growth_class
     label: 'Growth class'
@@ -507,18 +455,12 @@ properties:
            WHEN early_velocity > growth_plausible_hi THEN 'fast'
            ELSE 'plausible' END
 
-  - name: growth_eligible
-    label: 'In the growth funnel'
-    means: 'Eligible (started, first visit 28+ days ago) and did not die before the eligibility date.'
+  - name: growth_qualifying
+    label: 'Qualifies for growth review'
+    means: 'Followed 42+ days with 2+ visits, birthweight band known, and early weight gain computable. The shared base for the four growth shares, which add up to 100 percent.'
     type: bool
-    sql: 'eligible_28d AND NOT early_exit'
-    notes: >-
-      Workbook growth funnel: eligible AND NOT early_exit -> % computable ->
-      % consistent -> % sufficient -> % plausible / slow / fast, each
-      denominator the previous numerator, which separates a coverage failure
-      from a quality failure. Lost to follow-up STAYS in -- only death (and,
-      later, graduation) is a legitimate exit. Replaces growth_qualifying
-      (42+ days, band known, computable), whose four shares summed to 100.
+    sql: 'eligible_42d AND birthweight_band IS NOT NULL AND velocity_computable'
+    notes: 'Spec v3 section 3. Babies with no computable velocity are DISCARDED before the growth question is asked, not counted as incomplete; pct_growth_computable reports how many that is. (v1 omitted the computable gate, which counted no-data babies against healthy growth: PIPN read 59 percent instead of 72.)'
 
   - name: ever_danger_sign
     label: 'Danger sign recorded'
@@ -531,15 +473,6 @@ properties:
     means: 'At least one visit recorded a referral.'
     type: bool
     sql: 'referral_visits > 0'
-
-  - name: referred_within_28d
-    label: 'Referred within 28 days'
-    means: 'The first referral was recorded within 28 days of registration.'
-    type: bool
-    sql: >-
-      first_referral_date IS NOT NULL
-      AND FLOOR(EXTRACT(EPOCH FROM (first_referral_date::timestamp - COALESCE(reg_date, first_visit)::timestamp)) / 86400) <= :REFERRAL_WINDOW_DAYS
-    notes: 'Workbook C19. Registration falls back to the first visit where the app recorded no registration date.'
 
   - name: self_referral_count
     label: 'Self-referrals'
@@ -555,21 +488,3 @@ properties:
       CASE WHEN birth_weight_g IS NOT NULL AND enrollment_weight_g IS NOT NULL
            THEN ABS(birth_weight_g - enrollment_weight_g) < 1
            ELSE NULL END
-
-  - name: enrollment_weight_credible
-    label: 'Enrolment weight credible'
-    means: 'Birthweight and enrolment weight are both plausible (250-8000 g) and the enrolment weight is not a copy of the birthweight.'
-    type: bool
-    sql: >-
-      birth_weight_g BETWEEN :WMIN AND :WMAX
-      AND enrollment_weight_g BETWEEN :WMIN AND :WMAX
-      AND ABS(birth_weight_g - enrollment_weight_g) >= 1
-    notes: "Workbook name (was 'assessable', which promised far more than it checked)."
-
-  - name: expected_dip
-    label: 'Expected dip'
-    means: 'The enrolment weight sits 1 to 15 percent below the birthweight -- the normal early weight loss.'
-    type: bool
-    sql: >-
-      enrollment_weight_credible
-      AND enrollment_weight_g BETWEEN :DIP_MIN_RATIO * birth_weight_g AND :DIP_MAX_RATIO * birth_weight_g

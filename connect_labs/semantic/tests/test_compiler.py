@@ -42,9 +42,13 @@ def test_every_measure_type_is_real_cube(registry):
         assert m["type"] in CUBE_MEASURE_TYPES, f"{m['name']} uses {m['type']}"
 
 
-# The one KMC indicator set (#2004), pinned. There used to be two -- the workbook's
-# C-series and Neal Lesh's compute spec's N-series, each pinned by its own test so
-# neither could absorb the other. They are one set now, with plain names for ids.
+# The one KMC indicator set, pinned: #2004's 24 plus the six Neal Lesh's metrics
+# workbook (revised 2026-10-03) added -- the chained growth funnel's % consistent
+# (C08) and % sufficient (C09), and the data-quality rows % thin (C25),
+# % inconsistent (C26), % credible enrolment weight (C29) and % expected dip (C30).
+# There used to be two sets -- the workbook's C-series and the compute spec's
+# N-series, each pinned by its own test so neither could absorb the other. They are
+# one set now, with plain names for ids.
 KMC_INDICATORS = {
     "total_cases",
     "registered_cases",
@@ -70,11 +74,18 @@ KMC_INDICATORS = {
     "weight_rounding_rate",
     "pct_impossible_weight_changes",
     "birth_copy_rate",
+    # workbook 2026-10-03
+    "pct_growth_consistent",
+    "pct_growth_sufficient",
+    "pct_thin",
+    "pct_inconsistent",
+    "pct_enrollment_weight_credible",
+    "pct_expected_dip",
 }
 
 
 def test_the_kmc_indicator_set_is_exactly_the_agreed_one(registry):
-    """All 24, and nothing else. Adding an indicator means adding it here too."""
+    """All 30, and nothing else. Adding an indicator means adding it here too."""
     ids = {m["meta"]["indicator"] for m in registry["measures"] if m.get("meta")}
     assert ids == KMC_INDICATORS
 
@@ -189,60 +200,137 @@ def test_unknown_scope_is_loud(props_doc, registry):
         compile_indicator_sql(props_doc, registry, "SELECT 1", scope="galaxy")
 
 
-def test_the_growth_quality_shares_share_one_denominator(registry):
-    """The four growth shares are shares OF QUALIFYING SVNs and sum to 100% over that
-    set. If any one of them drifted onto its own denominator they would stop summing
-    and nobody reading the dashboard would be able to tell."""
+def _filter_terms(measure):
+    """The AND-ed terms of a measure's filters, as a set."""
+    return {t.strip() for f in measure.get("filters") or [] for t in f["sql"].split(" AND ")}
+
+
+def _props():
+    return {p["name"]: p for p in yaml.safe_load((REGISTRY / "properties.yml").read_text())["properties"]}
+
+
+def test_the_growth_funnel_is_chained_each_base_the_previous_numerator(registry):
+    """Neal Lesh's metrics workbook (2026-10-03), C07-C13: growth is a CHAINED
+    funnel, not one shared base.
+
+        growth_eligible -> % computable (C07) -> % consistent (C08)
+                        -> % sufficient (C09) -> % healthy / slow / fast (C10-C12)
+
+    % computable and % sufficient are over growth_eligible; % consistent is over the
+    computable; healthy / slow / fast -- and the mean early growth rate (C13) -- are
+    all over the SAME set, eligible babies with sufficient weight data, so the three
+    classes partition it and sum to 100. Separating the stages is the point: a
+    coverage failure (too few weighings) and a quality failure (bad readings) no
+    longer land in one "incomplete" bucket. If any stage drifted onto its own base
+    the classes would stop summing and the funnel would stop reading top to bottom,
+    and nobody reading the dashboard would be able to tell.
+    """
     by_name = {m["name"]: m for m in registry["measures"]}
-    shares = ("pct_slow_growth", "pct_healthy_growth", "pct_fast_growth", "pct_incomplete_growth_data")
-    dens = {by_name[f"{s}_denominator"]["filters"][0]["sql"] for s in shares}
-    assert dens == {"{CUBE}.growth_qualifying"}, f"growth-quality shares disagree on their denominator: {dens}"
+
+    def den(name):
+        return _filter_terms(by_name[f"{name}_denominator"])
+
+    eligible = {"{CUBE}.growth_eligible"}
+    computable = eligible | {"{CUBE}.weight_gain_data_computable"}
+    sufficient = eligible | {"{CUBE}.weight_gain_data_sufficient"}
+    assert den("pct_growth_computable") == eligible
+    assert den("pct_growth_sufficient") == eligible
+    assert den("pct_growth_consistent") == computable
+    for share in ("pct_healthy_growth", "pct_slow_growth", "pct_fast_growth", "mean_early_growth_rate"):
+        assert den(share) == sufficient, f"{share} has left the classes' shared base: {den(share)}"
+    # the mean is averaged over that same set, not merely counted against it
+    assert _filter_terms(by_name["mean_early_growth_rate_numerator"]) == sufficient
+
+    # each stage's event is the next stage's base
+    def event(name):
+        return _filter_terms(by_name[f"{name}_numerator"]) - den(name)
+
+    assert event("pct_growth_computable") == {"{CUBE}.weight_gain_data_computable"}
+    assert event("pct_growth_sufficient") == {"{CUBE}.weight_gain_data_sufficient"}
+    assert event("pct_growth_consistent") == {"{CUBE}.weight_gain_data_consistent"}
+    classes = {event(s).pop() for s in ("pct_healthy_growth", "pct_slow_growth", "pct_fast_growth")}
+    assert classes == {
+        "{CUBE}.growth_class = 'plausible'",
+        "{CUBE}.growth_class = 'slow'",
+        "{CUBE}.growth_class = 'fast'",
+    }
 
 
-def test_a_qualifying_svn_must_have_a_computable_velocity():
-    """Neal's compute spec v3, section 3: qualifying = eligible_42d AND banded AND
-    weight_gain_data_computable.
+def test_the_growth_funnel_starts_at_eligible_less_the_early_deaths(registry):
+    """Workbook 2026-10-03: ONE maturity gate. growth_eligible = eligible (started,
+    first visit 28+ days ago) AND NOT early_exit (died before that date). The v3
+    spec's 42-day growth gate is retired, so no indicator may read eligible_42d --
+    and growth_qualifying, the v3 base, is gone.
 
-    v1 of the spec -- and this registry until 2026-09-10 -- left out the third
-    term. That kept every baby with no usable weight series in the growth-share
-    denominator and counted it as "incomplete", so it read as poor growth: PIPN's
-    healthy-growth share came out at 59 percent against v3's 72, and GHI's at 26
-    against 39. Nothing caught it, because nothing pinned the shares to the spec;
-    this does.
+    Early deaths leave the growth funnel ONLY: a baby had to survive to produce a
+    weight trajectory, but death is the event mortality counts, so mortality must
+    not drop them. Lost to follow-up stays in, so an LLO cannot shrink its own
+    denominator by losing babies.
+    """
+    props = _props()
+    assert props["growth_eligible"]["sql"] == "eligible_28d AND NOT early_exit"
+    assert ":MATURITY_OUTCOME_DAYS" in props["eligible_28d"]["sql"]
+    exit_sql = " ".join(props["early_exit"]["sql"].split())
+    for term in ("died", "death_date", "first_visit", "< :MATURITY_OUTCOME_DAYS"):
+        assert term in exit_sql, f"early_exit is missing {term!r}: {exit_sql}"
+    assert "growth_qualifying" not in props, "the v3 growth base is back"
+
+    used = " ".join(f["sql"] for m in registry["measures"] for f in m.get("filters") or [])
+    used += " ".join(m.get("sql") or "" for m in registry["measures"])
+    assert "eligible_42d" not in used, "an indicator reads the retired 42-day gate"
+    assert "growth_qualifying" not in used
+    by_name = {m["name"]: m for m in registry["measures"]}
+    assert "early_exit" not in " ".join(f["sql"] for f in by_name["mortality_denominator"]["filters"])
+    assert "early_exit" not in " ".join(f["sql"] for f in by_name["lost_by_day_28_denominator"]["filters"])
+
+
+def test_computable_growth_needs_a_band_and_a_velocity():
+    """Workbook 2026-10-03: weight_gain_data_computable = birthweight band known AND
+    a computable velocity (2+ visit weighings spanning 5+ days in the first 21).
+
+    The v3 lesson carries over to the new name. Leaving out the velocity term kept
+    every baby with no usable weight series inside the growth classes' base and
+    counted it as poor growth: PIPN's healthy-growth share came out at 59 percent
+    against 72, GHI's at 26 against 39 (registry before 2026-09-10). And
+    sufficient = computable AND consistent, consistent = none of the three reading
+    failures, so the classes are judged only on data that holds up.
 
     Pinned against properties.yml, which seeds the live registry record -- so a
     reseed from disk cannot quietly put the error back.
     """
-    import yaml as _yaml
+    props = _props()
+    sql = props["weight_gain_data_computable"]["sql"]
+    for term in ("birthweight_band IS NOT NULL", "velocity_computable"):
+        assert term in sql, f"weight_gain_data_computable is missing {term!r}: {sql}"
+    consistent = props["weight_gain_data_consistent"]["sql"]
+    for term in ("NOT flag_thin", "NOT flag_inconsistent", "NOT flag_impossible"):
+        assert term in consistent, f"weight_gain_data_consistent is missing {term!r}: {consistent}"
+    assert props["weight_gain_data_sufficient"]["sql"] == "weight_gain_data_computable AND weight_gain_data_consistent"
 
-    props = {p["name"]: p for p in _yaml.safe_load((REGISTRY / "properties.yml").read_text())["properties"]}
-    sql = props["growth_qualifying"]["sql"]
-    for term in ("eligible_42d", "birthweight_band IS NOT NULL", "velocity_computable"):
-        assert term in sql, f"growth_qualifying is missing {term!r}: {sql}"
 
+def test_incomplete_growth_data_is_the_complement_of_consistent(registry):
+    """pct_incomplete_growth_data keeps its id so saved reports resolve, but the
+    workbook reads it as 100 minus % consistent (C08): computable AND NOT consistent,
+    over the same base as C08. Pinned as a pair -- move either alone and the two
+    stop summing to 100.
 
-def test_incomplete_growth_data_is_only_the_unreliable_qualifying_cases(registry):
-    """v3 item 12: incomplete = computable AND NOT sufficient, over qualifying.
-
-    The numerator is written as `qualifying AND growth_class IS NULL`. That equals
-    v3's definition ONLY because qualifying now requires a computable velocity and
-    a birthweight band: growth_class is null exactly when a case is not sufficient
-    or has no band, and qualifying has already excluded no-band. Without the
-    computable term the same expression swept the discarded no-data babies back
-    into "incomplete". So the numerator and the denominator's definition are pinned
-    together -- change either alone and the four shares stop partitioning the right set.
+    growth_class must still be null exactly when the readings fail or the band is
+    unknown, so the three classes cover the sufficient set and nothing else.
     """
-    import yaml as _yaml
-
     by_name = {m["name"]: m for m in registry["measures"]}
-    num = by_name["pct_incomplete_growth_data_numerator"]["filters"][0]["sql"]
-    assert "growth_qualifying" in num and "growth_class IS NULL" in num
+    inc_num = _filter_terms(by_name["pct_incomplete_growth_data_numerator"])
+    inc_den = _filter_terms(by_name["pct_incomplete_growth_data_denominator"])
+    assert inc_den == _filter_terms(by_name["pct_growth_consistent_denominator"])
+    assert inc_num - inc_den == {"NOT {CUBE}.weight_gain_data_consistent"}
+    assert _filter_terms(by_name["pct_growth_consistent_numerator"]) - inc_den == {
+        "{CUBE}.weight_gain_data_consistent"
+    }
 
-    props = {p["name"]: p for p in _yaml.safe_load((REGISTRY / "properties.yml").read_text())["properties"]}
+    props = _props()
     growth = props["growth_class"]["sql"]
     assert "NOT growth_data_sufficient THEN NULL" in growth
     assert "birthweight_band IS NULL THEN NULL" in growth
-    assert "velocity_computable" in props["growth_qualifying"]["sql"]
+    assert "velocity_computable" in props["growth_data_sufficient"]["sql"]
 
 
 def test_the_banded_growth_table_is_neals_not_a_flat_guess(registry):
@@ -396,7 +484,12 @@ def test_explain_returns_the_whole_chain_behind_an_indicator(props_doc, registry
     # constants are substituted in the SQL a reader sees
     assert ":IMPOSSIBLE_LO" not in "".join(d["sql"] for d in out["weight_series"]["derived"])
     assert "NOT BETWEEN -20 AND 45" in "".join(d["sql"] for d in out["weight_series"]["derived"])
-    assert "FILTER (WHERE (props.flag_impossible AND props.velocity_computable))" in out["expression"]["compiled"]
+    # workbook 2026-10-03: over weight_gain_data_computable (band + velocity), not bare velocity
+    assert "weight_gain_data_computable" in names
+    assert (
+        "FILTER (WHERE (props.flag_impossible) AND (props.weight_gain_data_computable))"
+        in out["expression"]["compiled"]
+    )
     assert "pipeline_visit_rows" in out["compiled_sql"] and "any_impossible_step" in out["compiled_sql"]
     # ids resolve case-insensitively
     assert explain(props_doc, registry, "MORTALITY")["indicator"] == "mortality"
@@ -449,10 +542,10 @@ def test_every_indicator_has_english_rendered_from_its_sql(props_doc, registry):
         assert en["definition"] and en["definition"][0].isupper(), m["name"]
         assert en["plain"], f"{m['meta']['indicator']} has no authored plain-English definition"
     imp = english(registry, props_doc, "pct_impossible_weight_changes")
-    assert "as a percentage of" in imp["definition"] and "velocity computable" in imp["definition"]
+    assert "as a percentage of" in imp["definition"] and "weight gain data computable" in imp["definition"]
     assert any(r["name"] == "flag_impossible" for r in imp["reads"])
     vpc = english(registry, props_doc, "visits_per_case")
-    assert vpc["definition"].startswith("The sum of followup visits over babies where eligible 42d, divided by")
+    assert vpc["definition"].startswith("The sum of followup visits over babies where eligible 28d, divided by")
 
     exps = [explain(props_doc, registry, i) for i in ("pct_impossible_weight_changes", "mortality")]
     md = to_markdown(exps, registry_label="test")
@@ -468,7 +561,7 @@ def test_every_count_share_counts_only_rows_inside_its_denominator(registry):
 
     Four numerators once were not: slow/healthy/fast growth counted every case with a growth
     class and N13 every death, each over a narrower denominator. So babies whose
-    first visit was under 42 days ago were counted as slow / healthy / fast
+    first visit was under 42 days ago (the v3 growth gate) were counted as slow / healthy / fast
     without being in the qualifying set, and deaths among unstarted or immature
     cases were counted without being in the mortality denominator. The four
     growth shares summed to up to 118 percent instead of partitioning the
@@ -479,7 +572,7 @@ def test_every_count_share_counts_only_rows_inside_its_denominator(registry):
     The convention this enforces is the one the rest of the registry already
     follows: write a count numerator as `<every denominator term> AND <event>`.
     It checks count-over-count shares only -- medians, means and sums carry their
-    filter inside the aggregate (e.g. `CASE WHEN eligible_42d THEN ...`).
+    filter inside the aggregate (e.g. `CASE WHEN eligible_28d THEN ...`).
     """
     by_name = {m["name"]: m for m in registry["measures"]}
     leaks = []

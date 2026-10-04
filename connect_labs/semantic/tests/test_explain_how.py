@@ -24,11 +24,13 @@ def _indicators(reg):
 def test_a_growth_share_reads_as_out_of_and_counts(registry):
     props, reg = registry
     how = english(reg, props, "pct_fast_growth")["how"]
+    # workbook 2026-10-03: the classes are shares of the growth funnel's babies with
+    # good weight data, and the floor is 25 cases
     assert how == {
         "kind": "percent",
-        "base": {"what": "babies", "where": ["Qualifies for growth review"]},
+        "base": {"what": "babies", "where": ["In the growth funnel", "Good weight data"]},
         "counts": {"what": "babies", "where": ["Growth class: fast"]},
-        "shown_when": "at least 20 in the base",
+        "shown_when": "at least 25 in the base",
     }
 
 
@@ -64,7 +66,9 @@ def test_no_plain_definition_names_a_partner_or_carries_history(registry):
 def test_reads_never_surface_the_developer_notes(registry):
     props, reg = registry
     reads = {r["name"]: r for r in english(reg, props, "pct_fast_growth")["reads"]}
-    notes = next(p["notes"] for p in props["properties"] if p["name"] == "growth_qualifying")
-    assert "PIPN" in notes, "fixture assumption: the notes do carry the history"
-    assert reads["growth_qualifying"]["means"] != notes
-    assert "PIPN" not in reads["growth_qualifying"]["means"]
+    notes = next(p["notes"] for p in props["properties"] if p["name"] == "growth_eligible")
+    assert "growth_qualifying" in notes, "fixture assumption: the notes do carry the history"
+    assert reads["growth_eligible"]["means"] != notes
+    assert "growth_qualifying" not in reads["growth_eligible"]["means"]
+    all_notes = {p["name"]: p.get("notes") for p in props["properties"]}
+    assert all(r["means"] != all_notes.get(r["name"]) for r in reads.values())

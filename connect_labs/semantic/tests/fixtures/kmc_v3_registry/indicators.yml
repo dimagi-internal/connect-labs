@@ -1,26 +1,17 @@
 # KMC Layer 3 — the indicator registry, in Cube measure syntax.
 #
-# ONE indicator set, following Neal Lesh's metrics framework workbook as revised
-# 2026-10-03 (kmc_metrics_framework.xlsx, Case indicators C01-C33). It supersedes
-# the v3 compute spec that #2004 adopted wherever the two differ:
-#   started      1+ follow-up visit (v3 said 2+, which hid one-and-done cases)
-#   maturity     ONE gate, eligible = started + 28 days since the first visit, for
-#                outcomes, growth and visits (v3 waited 42 for growth and visits)
-#   growth       a chained funnel: eligible AND NOT early_exit -> % computable
-#                (C07) -> % consistent (C08) -> % sufficient (C09) -> % plausible
-#                / slow / fast among the sufficient (C10-C12). v3 used one shared
-#                base whose four shares summed to 100.
-#   early_exit   death before the eligibility date leaves the growth funnel only
-#   floor        a minimum denominator of 25 (v3 said 20); 100 for reading rates
-#   bands        the workbook's; TBD rows are unbanded rather than guessed
-#   FLW flags    flw_applicable marks the workbook's nine "FLW indicator: Yes"
-#                rows that can turn a worker red
-# Kept from v3: velocity and birthweight-band classes, true medians.
-# NOT yet built (no data, or the workbook leaves the rule TBD): C18 completion and
-# C22 EBF at completion (completion gate unsettled), C32 GPS mismatch (no GPS in
-# the pipeline; threshold unset), C33 repeat vitals (vitals not enumerated), C04
-# visits per month and C06 cases per FLW per month (activity views, not
-# per-baby measures).
+# ONE indicator set. There used to be two -- the workbook's C-series and Neal
+# Lesh's demo compute spec's N-series -- and a caller picked one by prefix. Neal
+# wrote both; the spec (v3, 2026-09) is his later attempt to make them make sense,
+# so it wins wherever they differed (#2004):
+#   started      2+ follow-up visits (the workbook said 1+)
+#   maturity     28 days for outcomes, 42 for growth and visits, 90 for completion
+#   growth       the spec's velocity and sufficiency rules, and birthweight-band
+#                classes (the workbook's flat 10-20 g/kg/day is gone)
+#   floor        a minimum denominator of 20 (the workbook said 25)
+#   medians      true medians (PERCENTILE_CONT)
+# The workbook indicators the spec never covered are kept and re-based onto the
+# same rules, and say so in their `note`.
 #
 # THESE ARE WORKING DEFINITIONS. They will keep changing as the programme learns;
 # each carries its own caveats. Ids are plain names and carry no provenance -- add
@@ -49,7 +40,7 @@ description: >-
 # The floor a measure is graded against when it declares no min_denominator of its
 # own: below it a cell reads "insufficient volume" rather than a number (spec 0).
 defaults:
-  min_denominator: 25 # workbook: 25 cases; reading-based rates set 100 on the measure
+  min_denominator: 20
 
 # One family. Declared, because ids are names rather than codes and a name's
 # letters say nothing about which family it is in.
@@ -123,7 +114,7 @@ measures:
         indicator: started_cases,
         headline: 1,
         label: 'Started cases',
-        plain: 'Babies with at least one follow-up visit (registration excluded): delivered cases.',
+        plain: 'Babies with two or more follow-up visits (registration excluded).',
         category: Scale,
         prominence: Top,
         unit: n,
@@ -203,20 +194,21 @@ measures:
     meta:
       {
         indicator: visits_per_case,
-        plain: 'Mean number of follow-up visits per eligible baby (started, first visit at least 28 days ago).',
+        plain: 'Mean number of follow-up visits per baby, over babies whose first visit was at least 42 days ago.',
         category: Follow-up,
         prominence: Top,
         unit: n,
         direction: higher,
+        bands: [4, 3],
+        bands_source: 'derived from the spec section 5 table (observed 3.1-4.3 visits/case) - PROVISIONAL',
         flw_applicable: true,
-        note: 'Workbook C24: dosage per case, over eligible babies. Bands TBD in the workbook, so unbanded.',
       }
   - name: visits_per_case_numerator
     type: sum
-    sql: 'CASE WHEN {CUBE}.eligible_28d THEN {CUBE}.followup_visits ELSE 0 END'
+    sql: 'CASE WHEN {CUBE}.eligible_42d THEN {CUBE}.followup_visits ELSE 0 END'
   - name: visits_per_case_denominator
     type: count
-    filters: [{ sql: '{CUBE}.eligible_28d' }]
+    filters: [{ sql: '{CUBE}.eligible_42d' }]
 
   - name: pct_enrolled_within_3d
     title: '% first visit within 3 days of discharge'
@@ -235,8 +227,7 @@ measures:
         direction: higher,
         bands: [50, 30],
         bands_source: 'the workbook thresholds (0.5/0.3), rescaled fraction to percent',
-        flw_applicable: false,
-        note: 'Workbook C16. Not an FLW indicator: enrolment timing depends on other people. Gated on started, not eligible, so it reports a month earlier than the eligible rows.',
+        flw_applicable: true,
       }
   - name: pct_enrolled_within_3d_numerator
     type: count
@@ -263,7 +254,7 @@ measures:
         unit: d,
         direction: lower,
         bands: [3, 7],
-        note: 'Workbook C17, as a true median (PERCENTILE_CONT).',
+        note: 'A workbook indicator re-based on the spec rules: started is 2+ visits, and it is a true median (the workbook took the upper of the two middle values).',
       }
   - name: median_days_to_enrolment_numerator
     type: number
@@ -291,7 +282,7 @@ measures:
         direction: lower,
         bands: [10, 25],
         flw_applicable: true,
-        note: 'Workbook C15. Lost to follow-up STAYS in the growth funnel too: only death is a legitimate exit.',
+        note: 'A workbook indicator re-based on the spec rules. Started is 2+ visits, so a baby lost after a single follow-up is outside the denominator; on prod that reads about 4 points lower than the workbook rule.',
       }
   - name: lost_by_day_28_numerator
     type: count
@@ -302,11 +293,8 @@ measures:
     filters: [{ sql: '{CUBE}.eligible_28d' }]
 
   # ── Growth quality ───────────────────────────────────────────────────────
-  # The workbook's growth funnel. Each denominator is the previous numerator:
-  #   growth_eligible (eligible AND NOT early_exit)
-  #     -> computable (C07) -> consistent (C08, of computable) -> sufficient (C09)
-  #     -> plausible / slow / fast (C10-C12, of sufficient)
-  # so a coverage failure (C07) reads apart from a quality failure (C08).
+  # The four shares below have ONE denominator, the qualifying babies (42+ days,
+  # birthweight band known, velocity computable), and sum to 100.
   - name: pct_slow_growth
     title: '% slow growth'
     type: number
@@ -314,28 +302,23 @@ measures:
     meta:
       {
         indicator: pct_slow_growth,
-        bands_source: 'workbook C11',
-        plain: 'Share of babies with good weight data (eligible, not an early death, growth computable and consistent) whose early velocity is below the plausible range for their birthweight band.',
+        plain: 'Share of qualifying babies (first visit at least 42 days ago, birthweight band known, early growth velocity computable) whose velocity is below the plausible range for their birthweight band.',
         inputs: [weights],
         category: Growth quality,
         prominence: Top,
         unit: '%',
         direction: lower,
         bands: [15, 30],
+        bands_source: 'the workbook thresholds (0.15/0.3), rescaled - PROVISIONAL',
       }
   - name: pct_slow_growth_numerator
     type: count
     filters:
-      [
-        { sql: "{CUBE}.growth_class = 'slow'" },
-        {
-          sql: '{CUBE}.growth_eligible AND {CUBE}.weight_gain_data_sufficient',
-        },
-      ]
+      [{ sql: "{CUBE}.growth_qualifying AND {CUBE}.growth_class = 'slow'" }]
   - name: pct_slow_growth_denominator
     type: count
-    filters:
-      [{ sql: '{CUBE}.growth_eligible AND {CUBE}.weight_gain_data_sufficient' }]
+    filters: [{ sql: '{CUBE}.growth_qualifying' }]
+
   - name: pct_healthy_growth
     title: '% healthy growth'
     type: number
@@ -346,28 +329,27 @@ measures:
         headline: 2,
         label: 'Healthy growth',
         target: 70,
-        bands_source: 'workbook C10, the central quality signal',
-        plain: 'Share of babies with good weight data (eligible, not an early death, growth computable and consistent) whose early velocity is within the plausible range for their birthweight band.',
+        plain: 'Share of qualifying babies whose early velocity is within the plausible range for their birthweight band.',
         inputs: [weights],
         category: Growth quality,
         prominence: Top,
         unit: '%',
         direction: higher,
         bands: [70, 50],
+        bands_source: 'the workbook thresholds (0.7/0.5), rescaled - PROVISIONAL',
       }
   - name: pct_healthy_growth_numerator
     type: count
     filters:
       [
-        { sql: "{CUBE}.growth_class = 'plausible'" },
         {
-          sql: '{CUBE}.growth_eligible AND {CUBE}.weight_gain_data_sufficient',
+          sql: "{CUBE}.growth_qualifying AND {CUBE}.growth_class = 'plausible'",
         },
       ]
   - name: pct_healthy_growth_denominator
     type: count
-    filters:
-      [{ sql: '{CUBE}.growth_eligible AND {CUBE}.weight_gain_data_sufficient' }]
+    filters: [{ sql: '{CUBE}.growth_qualifying' }]
+
   - name: pct_fast_growth
     title: '% fast growth'
     type: number
@@ -375,60 +357,47 @@ measures:
     meta:
       {
         indicator: pct_fast_growth,
-        bands_source: 'workbook C12 (mid-range best; high reads as measurement error)',
-        plain: 'Share of babies with good weight data whose early velocity is above the plausible range for their birthweight band. High fast rates usually mean measurement error.',
+        plain: 'Share of qualifying babies whose early velocity is above the plausible range for their birthweight band.',
         inputs: [weights],
         category: Growth quality,
-        prominence: Lower,
+        prominence: Top,
         unit: '%',
         direction: lower,
         bands: [15, 30],
+        bands_source: 'the workbook thresholds (0.15/0.3), rescaled - PROVISIONAL',
       }
   - name: pct_fast_growth_numerator
     type: count
     filters:
-      [
-        { sql: "{CUBE}.growth_class = 'fast'" },
-        {
-          sql: '{CUBE}.growth_eligible AND {CUBE}.weight_gain_data_sufficient',
-        },
-      ]
+      [{ sql: "{CUBE}.growth_qualifying AND {CUBE}.growth_class = 'fast'" }]
   - name: pct_fast_growth_denominator
     type: count
-    filters:
-      [{ sql: '{CUBE}.growth_eligible AND {CUBE}.weight_gain_data_sufficient' }]
+    filters: [{ sql: '{CUBE}.growth_qualifying' }]
+
   - name: pct_incomplete_growth_data
-    title: '% readings that do not hold up'
+    title: '% incomplete growth data'
     type: number
     sql: '100.0 * {pct_incomplete_growth_data_numerator} / NULLIF({pct_incomplete_growth_data_denominator}, 0)'
     meta:
       {
         indicator: pct_incomplete_growth_data,
-        bands_source: 'the complement of workbook C08 (80/60)',
-        note: 'Kept under its old id so reports that name it keep working; the workbook reads it as 100 minus C08.',
-        plain: 'Share of babies with computable growth whose readings fail a check -- thin (under 3 weigh-days), inconsistent (first weight under 60 percent of birthweight) or an impossible step. The complement of % consistent (C08).',
+        plain: 'Share of qualifying babies whose weight series is present but unreliable -- thin (under 3 weigh-days), inconsistent (first visit weight under 60 percent of birthweight) or containing an impossible step -- so no growth class is assigned.',
         inputs: [weights],
         category: Growth quality,
-        prominence: Lower,
+        prominence: Top,
         unit: '%',
         direction: lower,
-        bands: [20, 40],
+        bands: [25, 45],
+        bands_source: 'derived from the spec section 5 table (observed 10-50 percent) - PROVISIONAL',
       }
   - name: pct_incomplete_growth_data_numerator
     type: count
     filters:
-      [
-        {
-          sql: '{CUBE}.weight_gain_data_computable AND NOT {CUBE}.weight_gain_data_consistent',
-        },
-        {
-          sql: '{CUBE}.growth_eligible AND {CUBE}.weight_gain_data_computable',
-        },
-      ]
+      [{ sql: '{CUBE}.growth_qualifying AND {CUBE}.growth_class IS NULL' }]
   - name: pct_incomplete_growth_data_denominator
     type: count
-    filters:
-      [{ sql: '{CUBE}.growth_eligible AND {CUBE}.weight_gain_data_computable' }]
+    filters: [{ sql: '{CUBE}.growth_qualifying' }]
+
   - name: mean_early_growth_rate
     title: Mean early growth rate
     type: number
@@ -442,25 +411,25 @@ measures:
         # is publishable as an anonymised peer figure. Declared rather than
         # inferred from the unit, which cannot tell a mean from a count.
         benchmarkable: true,
-        plain: 'Mean early growth velocity in g per kg per day over the babies with good weight data: the first 21 days of the weight series, per kg of the mean weight.',
+        plain: 'Mean early growth velocity in g per kg per day over the qualifying babies with good weight data: the first 21 days of the weight series, per kg of the mean weight.',
         inputs: [weights],
         category: Growth quality,
         prominence: Top,
         unit: g/kg/d,
         direction: higher,
         bands: [15, 13],
-        bands_source: 'workbook C13: WHO catch-up target 15 g/kg/day',
-        note: 'Over the same babies the growth classes judge (C10-C12).',
+        bands_source: 'the workbook targets, set for its own velocity (first weighing to day 21-35, per kg of the first weight) - PROVISIONAL on this one',
+        note: 'A workbook indicator re-based on the spec velocity, over the same babies the growth classes judge.',
       }
   - name: mean_early_growth_rate_numerator
     type: avg
     sql: '{CUBE}.early_velocity'
     filters:
-      [{ sql: '{CUBE}.growth_eligible AND {CUBE}.weight_gain_data_sufficient' }]
+      [{ sql: '{CUBE}.growth_qualifying AND {CUBE}.growth_data_sufficient' }]
   - name: mean_early_growth_rate_denominator
     type: count
     filters:
-      [{ sql: '{CUBE}.growth_eligible AND {CUBE}.weight_gain_data_sufficient' }]
+      [{ sql: '{CUBE}.growth_qualifying AND {CUBE}.growth_data_sufficient' }]
 
   - name: pct_growth_computable
     title: '% with computable growth'
@@ -469,84 +438,29 @@ measures:
     meta:
       {
         indicator: pct_growth_computable,
-        bands_source: 'workbook C07 (PROPOSED)',
-        plain: 'Share of eligible babies who did not die before eligibility for whom a growth number can be produced: birthweight band known and 2+ visit weighings spanning 5+ days. Low means visits too few or too bunched.',
+        plain: 'Share of babies followed 42+ days with a known birthweight band whose early growth velocity can be computed at all -- the babies the growth shares are about. The rest are discarded before growth is judged.',
         inputs: [weights],
         category: Growth quality,
         prominence: Lower,
         unit: '%',
         direction: higher,
         bands: [75, 55],
+        note: 'A workbook indicator re-based on the spec rules. It is what the growth shares leave out, so a high healthy-growth share over few computable babies is visible for what it is.',
       }
   - name: pct_growth_computable_numerator
     type: count
+    # growth_qualifying already implies both denominator terms; they are written out
+    # anyway, per the registry's rule that a numerator names its whole denominator.
     filters:
       [
-        { sql: '{CUBE}.weight_gain_data_computable' },
-        { sql: '{CUBE}.growth_eligible' },
+        { sql: '{CUBE}.growth_qualifying' },
+        { sql: '{CUBE}.eligible_42d AND {CUBE}.birthweight_band IS NOT NULL' },
       ]
   - name: pct_growth_computable_denominator
     type: count
-    filters: [{ sql: '{CUBE}.growth_eligible' }]
+    filters:
+      [{ sql: '{CUBE}.eligible_42d AND {CUBE}.birthweight_band IS NOT NULL' }]
 
-  - name: pct_growth_consistent
-    title: '% with consistent readings'
-    type: number
-    sql: '100.0 * {pct_growth_consistent_numerator} / NULLIF({pct_growth_consistent_denominator}, 0)'
-    meta:
-      {
-        indicator: pct_growth_consistent,
-        bands_source: 'workbook C08 (PROPOSED)',
-        plain: 'Share of babies with computable growth whose readings hold up: not thin, not inconsistent, no impossible step. Low means the readings themselves are bad.',
-        inputs: [weights],
-        category: Growth quality,
-        prominence: Lower,
-        unit: '%',
-        direction: higher,
-        bands: [80, 60],
-      }
-  - name: pct_growth_consistent_numerator
-    type: count
-    filters:
-      [
-        { sql: '{CUBE}.weight_gain_data_consistent' },
-        {
-          sql: '{CUBE}.growth_eligible AND {CUBE}.weight_gain_data_computable',
-        },
-      ]
-  - name: pct_growth_consistent_denominator
-    type: count
-    filters:
-      [{ sql: '{CUBE}.growth_eligible AND {CUBE}.weight_gain_data_computable' }]
-
-  - name: pct_growth_sufficient
-    title: '% with good weight data'
-    type: number
-    sql: '100.0 * {pct_growth_sufficient_numerator} / NULLIF({pct_growth_sufficient_denominator}, 0)'
-    meta:
-      {
-        indicator: pct_growth_sufficient,
-        label: 'Good weight data',
-        bands_source: 'workbook C09 (PROPOSED)',
-        note: 'Excludes babies still inside their 28-day window and early deaths, so a recent scale-up does not read as a data collapse. Show n beside it.',
-        plain: 'Share of eligible babies who did not die before eligibility whose weight data is sufficient to judge growth (computable and consistent). The top of the growth funnel: how much of the programme we can see.',
-        inputs: [weights],
-        category: Growth quality,
-        prominence: Top,
-        unit: '%',
-        direction: higher,
-        bands: [60, 40],
-      }
-  - name: pct_growth_sufficient_numerator
-    type: count
-    filters:
-      [
-        { sql: '{CUBE}.weight_gain_data_sufficient' },
-        { sql: '{CUBE}.growth_eligible' },
-      ]
-  - name: pct_growth_sufficient_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.growth_eligible' }]
   # ── Outcome ──────────────────────────────────────────────────────────────
   - name: mortality
     title: Mortality
@@ -565,7 +479,7 @@ measures:
         unit: '%',
         direction: mid2,
         bands: [[4, 12], [2, 16]],
-        note: 'Workbook C14: died over eligible babies whose outcome is known. Since started became 1+ visit (2026-10-03), a baby who died after a single follow-up is back in the denominator. Not comparable across LLOs on current recording.',
+        note: 'Started is 2+ visits, so a baby who died before a second visit is outside the denominator. On prod run 21114 that is 388 babies, 69 of whom died: 5.8 percent here against 6.5 percent on the 1+ rule. Chosen deliberately (#2004).',
       }
   - name: mortality_numerator
     type: count
@@ -583,14 +497,14 @@ measures:
     meta:
       {
         indicator: danger_sign_incidence,
-        plain: 'Share of eligible babies (started, first visit 28+ days ago) with at least one visit recording a danger sign.',
+        plain: 'Share of started babies followed 28+ days with at least one visit recording a danger sign.',
         inputs: [ever_danger_sign],
         category: Care,
         prominence: Lower,
         unit: '%',
         direction: mid,
         bands: null,
-        note: 'Workbook C20, over eligible babies. Read with the referral rate. Bands TBD.',
+        note: 'A workbook indicator re-based on the spec rules (started is 2+ visits).',
       }
   - name: danger_sign_incidence_numerator
     type: count
@@ -601,28 +515,32 @@ measures:
     filters: [{ sql: '{CUBE}.eligible_28d' }]
 
   - name: pct_danger_signs_referred
-    title: '% referred for danger signs'
+    title: '% of danger-sign cases referred'
     type: number
     sql: '100.0 * {pct_danger_signs_referred_numerator} / NULLIF({pct_danger_signs_referred_denominator}, 0)'
     meta:
       {
         indicator: pct_danger_signs_referred,
-        plain: 'Share of eligible babies (started, first visit 28+ days ago) whose first FLW-initiated referral came within 28 days of registration.',
+        plain: 'Share of started babies followed 28+ days with a danger sign who were referred.',
         inputs: [referred],
         category: Care,
         prominence: Top,
         unit: '%',
         direction: mid,
         bands: null,
-        note: 'Workbook C19: referred_within_28d over eligible babies (it was referrals among danger-sign babies). Both directions are ambiguous -- an investigation trigger, not a target. Bands TBD.',
+        note: 'A workbook indicator re-based on the spec rules (started is 2+ visits).',
       }
   - name: pct_danger_signs_referred_numerator
     type: count
     filters:
-      [{ sql: '{CUBE}.referred_within_28d' }, { sql: '{CUBE}.eligible_28d' }]
+      [
+        { sql: '{CUBE}.referred' },
+        { sql: '{CUBE}.eligible_28d AND {CUBE}.ever_danger_sign' },
+      ]
   - name: pct_danger_signs_referred_denominator
     type: count
-    filters: [{ sql: '{CUBE}.eligible_28d' }]
+    filters: [{ sql: '{CUBE}.eligible_28d AND {CUBE}.ever_danger_sign' }]
+
   - name: self_referrals_per_100
     title: Self-referrals per 100 cases
     type: number
@@ -630,14 +548,14 @@ measures:
     meta:
       {
         indicator: self_referrals_per_100,
-        plain: 'Visits recording a self-referral per 100 eligible babies (started, first visit 28+ days ago).',
+        plain: 'Visits recording a self-referral per 100 started babies followed 28+ days.',
         inputs: [self_referral_count],
         category: Care,
         prominence: Lower,
         unit: '/100',
         direction: higher,
         bands: null,
-        note: 'Workbook C21, over eligible babies. A proxy for caregiver empowerment. Bands TBD.',
+        note: 'A workbook indicator re-based on the spec rules (started is 2+ visits).',
       }
   - name: self_referrals_per_100_numerator
     type: avg
@@ -654,14 +572,14 @@ measures:
     meta:
       {
         indicator: mean_kmc_hours,
-        plain: 'Mean daily hours of skin-to-skin care reported, over eligible babies (started, first visit 28+ days ago).',
+        plain: 'Mean daily hours of skin-to-skin care reported, over started babies followed 28+ days.',
         inputs: [kmc_hours_mean],
         category: Care,
         prominence: Lower,
         unit: h,
         direction: higher,
         bands: null,
-        note: 'Workbook C23, over eligible babies. Self-reported; both clients and FLWs tend to overstate. Bands TBD.',
+        note: 'A workbook indicator re-based on the spec rules (started is 2+ visits).',
       }
   - name: mean_kmc_hours_numerator
     type: avg
@@ -686,9 +604,11 @@ measures:
         prominence: Top,
         unit: '%',
         direction: lower,
+        bands: [25, 50],
+        bands_source: 'derived from the spec section 5 table (observed 14-99 percent) - PROVISIONAL',
         min_denominator: 100,
         flw_applicable: true,
-        note: 'Workbook C31. Sum-over-sum over weight READINGS, not babies, so the floor is 100 readings. Unbanded: the workbook blocks the bands on the weight-precision setting (grams or 10 g steps).',
+        note: 'Sum-over-sum over weight READINGS, not babies, so the floor is 100 readings.',
       }
   - name: weight_rounding_rate_numerator
     type: sum
@@ -704,26 +624,23 @@ measures:
     meta:
       {
         indicator: pct_impossible_weight_changes,
-        plain: 'Babies with at least one impossible weight step (a visit-to-visit change outside minus 20 to plus 45 g per kg per day, between weighings 1 to 90 days apart, inside the first 21 days of the series), as a share of babies with computable growth.',
+        plain: 'Babies with at least one impossible weight step (a visit-to-visit change outside minus 20 to plus 45 g per kg per day, between weighings 1 to 90 days apart, inside the first 21 days of the series), as a share of babies whose velocity is computable.',
         inputs: [weights],
         category: Data quality,
         prominence: Top,
         unit: '%',
         direction: lower,
         bands: [5, 15],
-        bands_source: 'workbook C27 (PROPOSED)',
+        bands_source: 'derived from the spec section 5 table (observed 3.2-42.5 percent) - PROVISIONAL',
         flw_applicable: true,
       }
   - name: pct_impossible_weight_changes_numerator
     type: count
-    filters:
-      [
-        { sql: '{CUBE}.flag_impossible' },
-        { sql: '{CUBE}.weight_gain_data_computable' },
-      ]
+    filters: [{ sql: '{CUBE}.flag_impossible AND {CUBE}.velocity_computable' }]
   - name: pct_impossible_weight_changes_denominator
     type: count
-    filters: [{ sql: '{CUBE}.weight_gain_data_computable' }]
+    filters: [{ sql: '{CUBE}.velocity_computable' }]
+
   - name: birth_copy_rate
     title: Birth-copy rate
     type: number
@@ -738,7 +655,6 @@ measures:
         unit: '%',
         direction: lower,
         bands: [10, 20],
-        bands_source: 'workbook C28: the existing 20% marker',
         flw_applicable: true,
       }
   - name: birth_copy_rate_numerator
@@ -751,118 +667,6 @@ measures:
   - name: birth_copy_rate_denominator
     type: count
     filters: [{ sql: '{CUBE}.enrollment_is_birth_copy IS NOT NULL' }]
-
-  - name: pct_thin
-    title: '% thin weight series'
-    type: number
-    sql: '100.0 * {pct_thin_numerator} / NULLIF({pct_thin_denominator}, 0)'
-    meta:
-      {
-        indicator: pct_thin,
-        plain: 'Share of babies with computable growth whose weight series has fewer than 3 weighing days (enrolment included).',
-        inputs: [weights],
-        category: Data quality,
-        prominence: Lower,
-        unit: '%',
-        direction: lower,
-        bands: [10, 25],
-        bands_source: 'workbook C25 (PROPOSED)',
-        flw_applicable: true,
-      }
-  - name: pct_thin_numerator
-    type: count
-    filters:
-      [
-        { sql: '{CUBE}.flag_thin' },
-        { sql: '{CUBE}.weight_gain_data_computable' },
-      ]
-  - name: pct_thin_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.weight_gain_data_computable' }]
-
-  - name: pct_inconsistent
-    title: '% inconsistent first weight'
-    type: number
-    sql: '100.0 * {pct_inconsistent_numerator} / NULLIF({pct_inconsistent_denominator}, 0)'
-    meta:
-      {
-        indicator: pct_inconsistent,
-        plain: 'Share of babies with computable growth whose first visit weight is under 60 percent of their birthweight.',
-        inputs: [weights],
-        category: Data quality,
-        prominence: Lower,
-        unit: '%',
-        direction: lower,
-        bands: [5, 15],
-        bands_source: 'workbook C26 (PROPOSED)',
-        flw_applicable: true,
-      }
-  - name: pct_inconsistent_numerator
-    type: count
-    filters:
-      [
-        { sql: '{CUBE}.flag_inconsistent' },
-        { sql: '{CUBE}.weight_gain_data_computable' },
-      ]
-  - name: pct_inconsistent_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.weight_gain_data_computable' }]
-
-  - name: pct_enrollment_weight_credible
-    title: '% credible enrolment weight'
-    type: number
-    sql: '100.0 * {pct_enrollment_weight_credible_numerator} / NULLIF({pct_enrollment_weight_credible_denominator}, 0)'
-    meta:
-      {
-        indicator: pct_enrollment_weight_credible,
-        plain: 'Share of babies with computable growth whose birthweight and enrolment weight are both plausible and the enrolment weight is not a copy of the birthweight.',
-        inputs: [birth_weight_g, enrollment_weight_g],
-        category: Data quality,
-        prominence: Lower,
-        unit: '%',
-        direction: higher,
-        bands: null,
-        bands_source: 'workbook C29: TBD',
-        flw_applicable: false,
-      }
-  - name: pct_enrollment_weight_credible_numerator
-    type: count
-    filters:
-      [
-        { sql: '{CUBE}.enrollment_weight_credible' },
-        { sql: '{CUBE}.weight_gain_data_computable' },
-      ]
-  - name: pct_enrollment_weight_credible_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.weight_gain_data_computable' }]
-
-  - name: pct_expected_dip
-    title: '% expected dip'
-    type: number
-    sql: '100.0 * {pct_expected_dip_numerator} / NULLIF({pct_expected_dip_denominator}, 0)'
-    meta:
-      {
-        indicator: pct_expected_dip,
-        plain: 'Share of babies with a credible enrolment weight whose enrolment weight sits 1 to 15 percent below birthweight -- the normal early loss.',
-        inputs: [birth_weight_g, enrollment_weight_g],
-        category: Data quality,
-        prominence: Lower,
-        unit: '%',
-        direction: higher,
-        bands: null,
-        bands_source: 'workbook C30: TBD',
-        flw_applicable: false,
-      }
-  - name: pct_expected_dip_numerator
-    type: count
-    filters:
-      [
-        { sql: '{CUBE}.expected_dip' },
-        { sql: '{CUBE}.enrollment_weight_credible' },
-      ]
-  - name: pct_expected_dip_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.enrollment_weight_credible' }]
 
   # ── Input-availability gates ─────────────────────────────────────────────
   # Not indicators (no `meta`), so they are emitted as columns but never treated

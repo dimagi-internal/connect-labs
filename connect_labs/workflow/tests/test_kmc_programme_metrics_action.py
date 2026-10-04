@@ -130,9 +130,12 @@ def test_the_scorecard_reads_the_payload_and_fetches_nothing_itself():
 
 
 def test_the_scorecard_is_neals_table_column_for_column():
-    """His compute spec's section 5: fifteen columns in this order, with the
-    qualifying-SVN denominator printed as its own column between the first-visit
-    share and the growth-quality shares."""
+    """Fifteen columns in this order, following Neal's metrics workbook
+    (2026-10-03): the growth funnel's base (Elig N -- eligible, not an early
+    death) printed as its own column between the first-visit share and the growth
+    block, then % good weight data (C09) and the three classes, which are shares of
+    the babies with good weight data and sum to 100. Elig N is pct_growth_sufficient's
+    denominator, so the first growth column reads as "of Elig N"."""
     src = RENDER.read_text()
     block = src[src.index("var SCORECARD = [") : src.index("];", src.index("var SCORECARD = ["))]
     ids = re.findall(r"id: '([a-z0-9_]+)'", block)
@@ -144,16 +147,17 @@ def test_the_scorecard_is_neals_table_column_for_column():
         "median_birthweight",
         "visits_per_case",
         "pct_enrolled_within_3d",
-        "pct_slow_growth",
-        "pct_slow_growth",
+        "pct_growth_sufficient",
+        "pct_growth_sufficient",
         "pct_healthy_growth",
+        "pct_slow_growth",
         "pct_fast_growth",
-        "pct_incomplete_growth_data",
         "mortality",
         "weight_rounding_rate",
         "pct_impossible_weight_changes",
     ]
-    assert "denOnly: true" in block, "Qual N is the shared denominator, shown as a count"
+    assert "denOnly: true" in block, "Elig N is the growth funnel's base, shown as a count"
+    assert block.count("denOnly: true") == 1
 
 
 def test_the_render_does_not_keep_its_own_copy_of_the_registry():
