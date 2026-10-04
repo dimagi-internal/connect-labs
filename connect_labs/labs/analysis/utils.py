@@ -141,6 +141,8 @@ def resolve_join_hashes(configs_by_alias: dict) -> None:
                     f"Known aliases: {sorted(hashes_by_alias)}"
                 )
             j.resolved_config_hash = hashes_by_alias[j.from_alias]
+            # The target's per-visit rows are what this JOIN reads: keep them.
+            configs_by_alias[j.from_alias].feeds_joins = True
 
 
 # =============================================================================
