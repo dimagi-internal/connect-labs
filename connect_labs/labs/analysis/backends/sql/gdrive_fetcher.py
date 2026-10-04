@@ -55,6 +55,19 @@ Connect org tree (``/export/opp_org_program_list/``), whose ``programs`` lists o
 programs whose owning organization the caller belongs to, each naming that
 organization's slug; an unresolvable tree fails closed.
 
+Columns
+-------
+``columns`` (optional) narrows each row to the listed cells as the file is read;
+the ``file`` metadata is kept whatever it says. It is deliberately NOT one of the
+``_SIGNED_FIELDS``: it cannot widen a read -- the target that is stamped,
+contained and gated is read exactly as before, and ``columns`` only picks which of
+that target's own cells are KEPT (a projection over the row's keys, never a Drive
+id or a path into anything else). So narrowing an authorized source needs no
+re-stamp, and anyone who may edit the pipeline may narrow it, just as they may
+edit its fields. It does change what the raw rows contain, so it is part of the
+shared raw-slot key and of the cache identity (``analysis.config.gdrive_raw_slot``,
+``analysis.utils.get_config_hash``) whenever it is set.
+
 A program-scoped source is read ONCE for the program, not once per opportunity:
 its rows are cached under ``program_cache_scope(program_id)`` (a negative
 pseudo-opportunity id that no real or labs-only opportunity can take), so a
@@ -74,7 +87,7 @@ from datetime import datetime
 
 from django.conf import settings
 
-from connect_labs.labs.analysis.config import DataSourceConfig
+from connect_labs.labs.analysis.config import DataSourceConfig, gdrive_columns
 
 logger = logging.getLogger(__name__)
 
@@ -261,6 +274,12 @@ def authorize_schema_drive_source(
         return schema
     # Shape first (raises ValueError): a malformed source is rejected, never stamped.
     DataSourceConfig(**{k: v for k, v in source.items() if k in DataSourceConfig.__dataclass_fields__})
+    # `columns` must keep every column the schema reads; refused before any stamp.
+    from connect_labs.labs.analysis.config import schema_gdrive_column_problems
+
+    column_problems = schema_gdrive_column_problems(schema)
+    if column_problems:
+        raise ValueError("; ".join(column_problems))
     _scope(opportunity_id, program_id)  # exactly one scope, before anything is kept or stamped
     if _stamp_is_valid(source, opportunity_id, pipeline_id, program_id):
         return schema
@@ -511,19 +530,34 @@ def _cell(v, null_values: set):
     return v
 
 
-def _parse(name: str, kind: str, raw: bytes, null_values: set, budget: int) -> list[dict]:
+def _parse(
+    name: str, kind: str, raw: bytes, null_values: set, budget: int, columns: list[str] | None = None
+) -> list[dict]:
     """Rows of one file, refusing more than ``budget`` rows as they are read. Any
     decode/parse failure (bad JSON, non-UTF-8 CSV, oversized cell) is reported as a
-    GDriveSourceError naming the file."""
+    GDriveSourceError naming the file.
+
+    With ``columns``, each row keeps exactly those cells, in that order (a column
+    the file lacks reads null, and is logged); without, every cell."""
     try:
-        return _parse_rows(name, kind, raw, null_values, budget)
+        rows, present = _parse_rows(name, kind, raw, null_values, budget, columns)
     except GDriveSourceError:
         raise
     except (ValueError, csv.Error) as e:  # JSONDecodeError and UnicodeDecodeError are ValueErrors
         raise GDriveSourceError(f"{name} could not be read as {kind.upper()}: {e}") from e
+    if columns is not None and present is not None:
+        absent = [c for c in columns if c not in present]
+        if absent:
+            logger.warning("[GDrive Fetcher] %s has no column(s) %s; they read null on its rows", name, absent)
+    return rows
 
 
-def _parse_rows(name: str, kind: str, raw: bytes, null_values: set, budget: int) -> list[dict]:
+def _parse_rows(
+    name: str, kind: str, raw: bytes, null_values: set, budget: int, columns: list[str] | None = None
+) -> tuple[list[dict], set | None]:
+    """``(rows, the column names the file has)``; the names are None when the file
+    says nothing about them (a JSON file with no rows)."""
+    present: set | None = None
 
     def capped(rows):
         out = []
@@ -533,20 +567,30 @@ def _parse_rows(name: str, kind: str, raw: bytes, null_values: set, budget: int)
             out.append(row)
         return out
 
+    def project(row: dict) -> dict:
+        # Narrowed while reading, so a dropped cell is never held for the whole file.
+        if columns is None:
+            return {k: _cell(v, null_values) for k, v in row.items() if k is not None}
+        return {c: _cell(row.get(c), null_values) for c in columns}
+
     if kind == "json":
         data = json.loads(raw.decode("utf-8-sig"))
         if isinstance(data, dict):
             data = data.get("rows", data.get("data"))
         if not isinstance(data, list) or not all(isinstance(r, dict) for r in data):
             raise GDriveSourceError(f"{name}: JSON must be an array of objects (or hold one under 'rows'/'data')")
-        return capped({k: _cell(v, null_values) for k, v in r.items()} for r in data)
+        if columns is not None and data:
+            present = set().union(*(r.keys() for r in data))
+        return capped(project(r) for r in data), present
     reader = csv.DictReader(
         io.StringIO(raw.decode("utf-8-sig"), newline=""), dialect="excel-tab" if kind == "tsv" else "excel"
     )
-    return capped({k: _cell(v, null_values) for k, v in row.items() if k is not None} for row in reader)
+    if columns is not None:
+        present = set(reader.fieldnames or [])
+    return capped(project(row) for row in reader), present
 
 
-def _read_file(drive, meta: dict, null_values: set, budget: int) -> list[dict]:
+def _read_file(drive, meta: dict, null_values: set, budget: int, columns: list[str] | None = None) -> list[dict]:
     name, kind = meta.get("name", meta.get("id")), _kind(meta)
     if kind is None:
         raise GDriveSourceError(f"{name}: unsupported file type {meta.get('mimeType')!r} (use CSV, a Sheet, or JSON)")
@@ -557,7 +601,7 @@ def _read_file(drive, meta: dict, null_values: set, budget: int) -> list[dict]:
         if size > MAX_FILE_BYTES:
             raise GDriveSourceError(f"{name} is {size:,} bytes; the limit is {MAX_FILE_BYTES:,}")
         raw = drive.download_file(meta["id"])
-    return _parse(name, kind, raw, null_values, budget)
+    return _parse(name, kind, raw, null_values, budget, columns)
 
 
 def _visit_date(value) -> str | None:
@@ -720,12 +764,13 @@ def fetch_gdrive_rows_with_fingerprint(
     )
     drive = _drive()
     null_values = set(data_source.null_values or [""])
+    columns = gdrive_columns(data_source)
     try:
         assert_under_allowed_root(drive, data_source.file_id or data_source.folder_id)
         metas = _source_metas(drive, data_source)
         visits: list[dict] = []
         for meta in metas:
-            rows = _read_file(drive, meta, null_values, MAX_ROWS - len(visits))
+            rows = _read_file(drive, meta, null_values, MAX_ROWS - len(visits), columns)
             visits.extend(normalize_row_to_visit_dict(r, meta, i, data_source) for i, r in enumerate(rows))
     except DriveAPIError as e:
         target = data_source.file_id or data_source.folder_id
