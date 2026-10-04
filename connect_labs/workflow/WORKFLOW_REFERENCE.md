@@ -515,7 +515,8 @@ On-demand sources read the same rows with `actions.queryPipelineRows(alias, {fil
 
 **One pass.** The JSON fields every grouping needs are extracted ONCE into a temporary table
 (keys, values, each field's filter and each grouping's filter as typed columns); each
-grouping is then a plain `GROUP BY` over it. `pipeline_sql` returns the whole script as
+grouping is then a plain `GROUP BY` over it. `pipeline_preview` reports `metadata.rows_per_grouping`
+(the sample is cut across groupings); `pipeline_sql` returns the whole script as
 `sql.grouped_aggregation_sql`. Results are cached like any entity result (Drive caches follow
 the files' fingerprints; a program-scoped Drive source is read once for the program).
 

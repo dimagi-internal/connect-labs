@@ -731,6 +731,13 @@ def pipeline_preview(
         if isinstance(pname, str):
             top_meta["pipeline_name"] = pname
         top_meta["opps_with_errors"] = [oid for oid, m in per_opp_metadata.items() if m.get("error")]
+        # A pipeline with named groupings returns every grouping's rows in one list,
+        # which the sample cuts; report how many rows each grouping produced in full.
+        if any("grouping" in r for r in merged_rows):
+            per_grouping: dict = {}
+            for r in merged_rows:
+                per_grouping[r.get("grouping")] = per_grouping.get(r.get("grouping"), 0) + 1
+            top_meta["rows_per_grouping"] = per_grouping
 
         # Flag custom fields that extracted null for every row — almost always
         # a wrong field.path. Use the executed schema (override when set, the
