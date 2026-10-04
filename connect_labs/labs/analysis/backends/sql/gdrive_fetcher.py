@@ -606,6 +606,68 @@ def normalize_row_to_visit_dict(row: dict, meta: dict, index: int, data_source: 
     }
 
 
+def _source_metas(drive, data_source: DataSourceConfig) -> list[dict]:
+    """The Drive metadata of every file this source reads, in read order.
+
+    One listing call for a folder source (one metadata call for a file source), and
+    no content: this is both what a fetch reads and what ``source_fingerprint`` hashes,
+    so the two can never disagree about WHICH files make up the source.
+    """
+    if data_source.file_id:
+        metas = [drive.get_metadata(data_source.file_id)]
+        if metas[0].get("mimeType") == GOOGLE_FOLDER:
+            raise GDriveSourceError(f"{data_source.file_id} is a folder; set folder_id instead of file_id")
+        return metas
+    pattern = data_source.file_pattern or "*"
+    metas = sorted(
+        (
+            m
+            for m in drive.list_folder_files(data_source.folder_id)
+            if fnmatch.fnmatch(m["name"], pattern) and _kind(m) is not None
+        ),
+        key=lambda m: m["name"],
+    )
+    if not metas:
+        raise GDriveSourceError(
+            f"no CSV / Sheet / JSON files matching {pattern!r} in Drive folder {data_source.folder_id}"
+        )
+    if len(metas) > MAX_FILES:
+        raise GDriveSourceError(f"{len(metas)} files match {pattern!r}; the limit is {MAX_FILES}")
+    return metas
+
+
+def fingerprint_metas(metas: list[dict]) -> str:
+    """A digest of WHAT the source's files are: each file's id, name, size, content
+    checksum and modification time. Any edit, upload, rename, removal or addition of
+    a matching file changes it; nothing else does."""
+    entries = sorted(
+        (
+            str(m.get("id") or ""),
+            str(m.get("name") or ""),
+            str(m.get("size") or ""),
+            str(m.get("md5Checksum") or ""),
+            str(m.get("modifiedTime") or ""),
+        )
+        for m in metas
+    )
+    return hashlib.sha256(json.dumps(entries).encode()).hexdigest()
+
+
+def source_fingerprint(data_source: DataSourceConfig) -> str:
+    """The current fingerprint of the source's files, from one Drive listing.
+
+    Reads metadata only -- never file content, and never on a caller's behalf: it
+    says nothing about who may read the rows, so callers still gate every read with
+    ``check_gdrive_access``. Raises GDriveSourceError when Drive cannot be listed.
+    """
+    from connect_labs.labs.synthetic.gdrive import DriveAPIError, DriveAuthError
+
+    try:
+        return fingerprint_metas(_source_metas(_drive(), data_source))
+    except (DriveAPIError, DriveAuthError) as e:
+        raise GDriveSourceError(f"could not list {data_source.file_id or data_source.folder_id}: {e}") from e
+
+
 def fetch_gdrive_rows_as_visit_dicts(
     data_source: DataSourceConfig,
     opportunity_id: int | None,
@@ -614,6 +676,27 @@ def fetch_gdrive_rows_as_visit_dicts(
     pipeline_id: int | None = None,
 ) -> list[dict]:
     """Read the source's file(s) from Drive and return visit-shaped dicts.
+
+    See ``fetch_gdrive_rows_with_fingerprint``, which this wraps.
+    """
+    visits, _fingerprint = fetch_gdrive_rows_with_fingerprint(
+        data_source, opportunity_id, request=request, access_token=access_token, pipeline_id=pipeline_id
+    )
+    return visits
+
+
+def fetch_gdrive_rows_with_fingerprint(
+    data_source: DataSourceConfig,
+    opportunity_id: int | None,
+    request=None,
+    access_token: str | None = None,
+    pipeline_id: int | None = None,
+) -> tuple[list[dict], str]:
+    """Read the source's file(s) from Drive; return (visit-shaped dicts, fingerprint).
+
+    The fingerprint (``fingerprint_metas``) is of the exact files that were read, so a
+    cache filled from these rows can later be checked against the folder with one
+    listing call (``source_fingerprint``) instead of being thrown away on a clock.
 
     Raises GDriveSourceError when the source is unauthorized, the caller may not
     read it (``check_gdrive_access``), or the files are unshared, absent, too
@@ -628,26 +711,7 @@ def fetch_gdrive_rows_as_visit_dicts(
     null_values = set(data_source.null_values or [""])
     try:
         assert_under_allowed_root(drive, data_source.file_id or data_source.folder_id)
-        if data_source.file_id:
-            metas = [drive.get_metadata(data_source.file_id)]
-            if metas[0].get("mimeType") == GOOGLE_FOLDER:
-                raise GDriveSourceError(f"{data_source.file_id} is a folder; set folder_id instead of file_id")
-        else:
-            pattern = data_source.file_pattern or "*"
-            metas = sorted(
-                (
-                    m
-                    for m in drive.list_folder_files(data_source.folder_id)
-                    if fnmatch.fnmatch(m["name"], pattern) and _kind(m) is not None
-                ),
-                key=lambda m: m["name"],
-            )
-            if not metas:
-                raise GDriveSourceError(
-                    f"no CSV / Sheet / JSON files matching {pattern!r} in Drive folder {data_source.folder_id}"
-                )
-            if len(metas) > MAX_FILES:
-                raise GDriveSourceError(f"{len(metas)} files match {pattern!r}; the limit is {MAX_FILES}")
+        metas = _source_metas(drive, data_source)
         visits: list[dict] = []
         for meta in metas:
             rows = _read_file(drive, meta, null_values, MAX_ROWS - len(visits))
@@ -660,4 +724,4 @@ def fetch_gdrive_rows_as_visit_dicts(
     program_id = gdrive_program_id(data_source)
     scope = f"program {program_id}" if program_id is not None else f"opp {opportunity_id}"
     logger.info("[GDrive Fetcher] %d rows from %d file(s) for %s", len(visits), len(metas), scope)
-    return visits
+    return visits, fingerprint_metas(metas)

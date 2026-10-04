@@ -146,13 +146,13 @@ class DriveClient:
         return resp.content
 
     def list_folder_files(self, folder_id: str) -> list[dict]:
-        """Return metadata dicts (id, name, mimeType, size, modifiedTime) for the
+        """Return metadata dicts (id, name, mimeType, size, modifiedTime, md5Checksum) for the
         immediate, non-folder children of `folder_id`, following pagination."""
         if not re.fullmatch(r"[A-Za-z0-9_-]+", folder_id or ""):
             raise DriveAPIError(f"list_folder_files: invalid folder_id {folder_id!r}")
         params = {
             "q": f"'{folder_id}' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'",
-            "fields": "nextPageToken,files(id,name,mimeType,size,modifiedTime)",
+            "fields": "nextPageToken,files(id,name,mimeType,size,modifiedTime,md5Checksum)",
             "pageSize": 1000,
             "includeItemsFromAllDrives": "true",
             "corpora": "allDrives",
@@ -175,14 +175,14 @@ class DriveClient:
             params = {**params, "pageToken": token}
 
     def get_metadata(self, file_id: str) -> dict:
-        """Return id, name, mimeType, size and modifiedTime for one file."""
+        """Return id, name, mimeType, size, modifiedTime and md5Checksum (binary files only) for one file."""
         if not re.fullmatch(r"[A-Za-z0-9_-]+", file_id or ""):
             raise DriveAPIError(f"get_metadata: invalid file_id {file_id!r}")
         try:
             resp = self._timed_get(
                 f"{DRIVE_API}/files/{file_id}",
                 headers=self._headers(),
-                params={"fields": "id,name,mimeType,size,modifiedTime", **_SHARED_DRIVES},
+                params={"fields": "id,name,mimeType,size,modifiedTime,md5Checksum", **_SHARED_DRIVES},
                 timeout=self._timeout,
             )
             resp.raise_for_status()

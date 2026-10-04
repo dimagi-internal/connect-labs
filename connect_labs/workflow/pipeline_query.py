@@ -188,7 +188,15 @@ def _stage(config: AnalysisPipelineConfig) -> CacheStage:
 
 
 def cached_queryset(config: AnalysisPipelineConfig, opportunity_id: int):
-    """The live terminal-stage cache rows for (opportunity, pipeline config), or None when cold."""
+    """The live terminal-stage cache rows for (opportunity, pipeline config), or None when cold.
+
+    A Google Drive pipeline's rows built from files that have since changed count as
+    cold (``gdrive_freshness``), so the caller warms them like any other miss.
+    """
+    from connect_labs.labs.analysis.backends.sql.gdrive_freshness import computed_cache_is_current
+
+    if not computed_cache_is_current(opportunity_id, config):
+        return None
     manager = SQLCacheManager(opportunity_id, config)
     stage = _stage(config)
     if stage == CacheStage.VISIT_LEVEL:
