@@ -228,6 +228,12 @@ was ordered. Before, the page showed this order's half and a link to the other.
             <td class="px-4 py-2 text-right tabular-nums">{% if contract.duties_basis == "included" %}<span class="text-gray-600">included in the price</span>{% elif duty_relief_unevidenced %}{% comment %}0 by a relief nothing on file shows: said as the condition it is.{% endcomment %}<span data-testid="duty-relief-unevidenced">{{ landed.duty|figure_text }} if duty relief is documented <span class="text-gray-700">(no document on file)</span></span>{% else %}{{ landed.duty|figure_text }}{% endif %}</td></tr>
         <tr><td class="px-4 py-2 text-gray-600">VAT</td>
             <td class="px-4 py-2 text-right tabular-nums">{{ landed.vat|figure_text }}</td></tr>
+        {% if landed.clearing %}
+        {% comment %}Ours whenever we import, as the comparison costs it: what was paid, else the
+        tender's estimate times the quantity (calculated), else not recorded -- never a silent zero.{% endcomment %}
+        <tr data-testid="landed-clearing" data-source="{{ landed.clearing.source }}"><td class="px-4 py-2 text-gray-600">Clearing &amp; forwarding</td>
+            <td class="px-4 py-2 text-right tabular-nums">{% if landed.clearing.source == "not_recorded" %}<span class="status-chip status-chip--ours">Not recorded</span>{% elif landed.clearing.source == "estimate" %}{% include "supply_chain/_src.html" with src="calc" %} {{ landed.clearing.amount|figure_text }}{% else %}{{ landed.clearing.amount|figure_text }} <span class="status-chip status-chip--fact">paid</span>{% endif %}</td></tr>
+        {% endif %}
         {% else %}
         {% comment %}
         One line, not five. Goods nobody priced have no freight, duty or VAT
@@ -238,6 +244,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
             <td class="px-4 py-2 text-right tabular-nums">{{ landed.goods|figure_text }}</td></tr>
         {% endif %}
         {% for charge in landed.charges %}
+          {% if charge.kind == "clearing" and landed.clearing.source == "paid" %}{% else %}
           {% comment %}
           Paid to land the goods, to somebody who is not the supplier. One line
           each, so a reader can see who was paid what rather than a lump.
@@ -254,6 +261,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
               {% endif %}
             </td>
           </tr>
+          {% endif %}
         {% endfor %}
         {% if landed.charges and contract.consideration == "priced" %}
           <tr><td class="px-4 py-2 text-gray-600">Charges to land it</td>
@@ -271,6 +279,10 @@ was ordered. Before, the page showed this order's half and a link to the other.
               <div class="text-xs font-normal text-gray-600">charges only — goods {% if contract.consideration == "in_kind" %}donated{% else %}bundled{% endif %}, not purchased</div>
             {% else %}
               {{ landed.landed_total|figure_text }}
+              {% comment %}A total resting on a relief nobody has evidenced, or leaving out a clearing
+              cost not yet recorded, is marked as such: a chip, not a sentence.{% endcomment %}
+              {% if duty_relief_unevidenced %}<span data-testid="landed-unconfirmed" class="status-chip status-chip--ours ml-1 font-medium">unconfirmed</span>{% endif %}
+              {% if landed.clearing.source == "not_recorded" %}<span data-testid="landed-excl-clearing" class="status-chip status-chip--ours ml-1 font-medium">excl. clearing</span>{% endif %}
             {% endif %}
           </td>
         </tr>

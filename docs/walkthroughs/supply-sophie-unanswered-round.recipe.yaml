@@ -426,15 +426,16 @@ scenes:
     say: invoice
     seconds: 2.0
     target: css:[data-testid=tile]:has-text('Billed vs agreed')
+  - kind: scroll
+    note: frame the order's breadcrumb (tender 1) and status header down to the On us card, which ends above the fold
+    value: '270'
   - kind: hover
     note: On us -- the documents owed to the forwarder, and the invoice to review
     say: permit
     seconds: 2.2
     target: testid:on-us
-  - kind: scroll_to
-    note: the invoice's lines against agreed, each tagged above agreed
-    target: testid:invoice-variance-table
   - kind: hover
+    note: the invoice's lines against agreed, each tagged above agreed (the hover brings the row into view)
     seconds: 1.8
     target: "css:[data-testid=invoice-variance-table] tr:has-text('Freight') [data-testid=above-agreed-tag]"
   - kind: scroll_to
@@ -457,20 +458,15 @@ scenes:
   - kind: scroll_to
     target: css:[data-testid=revision-line]:has-text('Shipment · DMG-PO-2026-031 ·
       Status dispatched') [data-testid=source-excerpt]
-  - kind: hold
-    note: the forwarder's email, centred and read
-    seconds: 2.0
-  - kind: scroll
-    note: back up to the order's breadcrumb (tender 1) and status header -- held at customs waiting on us, billed against agreed, the days late split by whose, and On us
-    value: '270'
   - kind: hover
     note: park the cursor in the top bar's blank middle, off every heading, figure and action
     seconds: 0.6
     target: css:header.fixed
   - kind: hold
-    seconds: 1.5
+    note: the forwarder's email, centred and read -- the scene's last beat
+    seconds: 2.0
   - kind: snapshot
-    note: the canonical frame is the order's status header -- at customs, held, waiting on us; nothing received, billed above agreed, days late; On us with the documents owed and the invoice to review
+    note: the canonical frame is the forwarder's email in the order's History -- held at the border, the consignee to provide Form M and PAAR -- the last beat of the scene
   concept_claim: The order's status view says it is held at customs waiting on us,
     lists under On us the documents we owe the forwarder and the invoice billed above
     the agreed price, and keeps the forwarder's email in the order's history.
