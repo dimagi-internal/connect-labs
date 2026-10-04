@@ -651,7 +651,13 @@ def evaluate_with_cases(
                     cursor.execute(cases_sql)
                     cases = [{k: _plain(v) for k, v in r.items()} for r in _rows_from_cursor(cursor)]
             finally:
-                cursor.execute(f"DROP TABLE IF EXISTS {table}")
+                # Never let the cleanup mask the real failure: inside an aborted
+                # transaction this DROP fails too, and the temp table dies with the
+                # session regardless.
+                try:
+                    cursor.execute(f"DROP TABLE IF EXISTS {table}")
+                except Exception:  # noqa: BLE001
+                    logger.debug("[semantic] could not drop %s", table, exc_info=True)
     except Exception as exc:
         logger.debug("[semantic] failing SQL:\n%s\n%s\n%s", props_sql, rollup_sql, cases_sql)
         raise SemanticRuntimeError(f"semantic query failed: {exc}") from exc
