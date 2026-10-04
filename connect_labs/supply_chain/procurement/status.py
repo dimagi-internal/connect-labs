@@ -12,6 +12,7 @@ here). The page draws a small mark per source and a legend once.
 """
 
 from datetime import date
+from decimal import Decimal, InvalidOperation
 
 from django.urls import reverse
 
@@ -70,11 +71,29 @@ def comparisons(tender, quotes) -> list:
     return out
 
 
+def comparable_chip(compared) -> str:
+    """ "1 of 3 comparable · Harmattan": the comparison's own count, and who is comparable, by first name.
+
+    Read off the same rows (and so the same gap list) the comparison draws,
+    so the overview, the tender's header and the comparison cannot disagree.
+    "" when no quote has come in.
+    """
+    comparable = [row for c in compared for row in c.comparable]
+    quoted = len(comparable) + sum(len(c.blocked) for c in compared)
+    if not quoted:
+        return ""
+    names = list(dict.fromkeys((row.supplier_name or "").split(" ")[0] for row in comparable if row.supplier_name))
+    return f"{len(comparable)} of {quoted} comparable" + (f" · {', '.join(names)}" if names else "")
+
+
 def _blocked_by_terms(row) -> bool:
     return _ROUND_DUTY in (row.gaps or [])
 
 
 _WAIVER_DOC = "waiver document"
+# Our own estimates, recorded on the tender's Terms box: never a supplier's to give.
+_ESTIMATE_GAPS = ("freight estimate", "clearing estimate")
+_OUR_GAPS = (_ROUND_DUTY, _WAIVER_DOC, "our duty estimate", "estimate unit", *_ESTIMATE_GAPS)
 
 
 def _gap_word(gap: str) -> str:
@@ -84,7 +103,7 @@ def _gap_word(gap: str) -> str:
 
 def gap_owner(gap: str) -> str:
     """Whose a gap is: our tender terms and the rates we record are ours; what a quote states, the supplier's."""
-    return rules.US if gap in (_ROUND_DUTY, _WAIVER_DOC) or gap.startswith("exchange rate") else rules.SUPPLIERS
+    return rules.US if gap in _OUR_GAPS or gap.startswith("exchange rate") else rules.SUPPLIERS
 
 
 def split_gaps(gaps) -> tuple[list, list]:
@@ -215,7 +234,12 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
         m.text = name
         m.chip = f"Silent {(today - asked).days}d" if asked else "Silent"
         if f"draft-supplier-{m.supplier_id}" not in draft_anchors and chased:
-            m.due = f"next due {_day(chased + timedelta(days=interval))}"
+            due = chased + timedelta(days=interval)
+            # Never a reminder after the response deadline: the deadline is the last word.
+            if deadline and due > deadline:
+                m.due = f"deadline {_day(deadline)}"
+            else:
+                m.due = f"next due {_day(due)}"
     for m in ours:
         if m.rule == rules.RULE_DEADLINE:
             m.text = "Decide: extend, close or award"
@@ -353,6 +377,7 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
         "related_order": related_order(tender, today, own_org_id=own_org_id),
         "comparable": comparable,
         "quoted": quoted,
+        "comparable_chip": comparable_chip(compared),
         "primary": _primary_action(tender, ours, comparable),
     }
 
@@ -472,8 +497,10 @@ def comparison_grid(
         key=lambda r: ((r.get("supplier_name") or "").lower(), r.get("quote_id") or 0),
     )
     columns, cells = [], {
-        k: [] for k in ("price", "pack", "term", "imports", "freight", "duty", "fx", "spec", "landed")
+        k: [] for k in ("price", "pack", "term", "imports", "freight", "clearing", "duty", "fx", "spec", "landed")
     }
+    line_qty, line_unit = _tender_line(tender)
+    per_unit = f" / {unit_noun(line_unit)}" if line_unit else ""
     tender_url = reverse("supply_chain:procurement_tender_detail", args=[tender.pk])
     for row in rows:
         quote = quotes_by_id.get(row.get("quote_id")) or _quote_from_row(row)
@@ -492,7 +519,7 @@ def comparison_grid(
             and quote.delivery_mode != "pickup"
             and buyer_imports(quote)
         )
-        quote_gaps = [*gaps, *([_WAIVER_DOC] if waiver_gap else [])]
+        quote_gaps = [*gaps, *(row.get("open_estimates") or []), *([_WAIVER_DOC] if waiver_gap else [])]
         our_gaps, supplier_gaps = split_gaps(quote_gaps)
         # The quote's status chips (one per party owing facts), and one action per open gap, ours first.
         chips, actions = [], []
@@ -509,6 +536,10 @@ def comparison_grid(
                 if g == _ROUND_DUTY:
                     actions.append(
                         {"label": "Settle duty terms", "href": "#duty-terms", "owner": rules.US, "terms": True}
+                    )
+                elif g in _ESTIMATE_GAPS:
+                    actions.append(
+                        {"label": f"Record {g}", "href": f"{tender_url}#import-estimates", "owner": rules.US}
                     )
                 elif g == _WAIVER_DOC:
                     actions.append(
@@ -596,7 +627,13 @@ def comparison_grid(
             freight_basis = freight_and_duties_for_incoterm(quote.incoterm)[0]
             source = CALC
         freight_label = next((g for g in gaps if g.startswith("freight")), None)
-        if freight_label:
+        if row.get("freight_ours") == "open":
+            cells["freight"].append(gap("ours: estimate not recorded", label="freight estimate", owner=rules.US))
+        elif row.get("freight_ours") == "estimate":
+            cells["freight"].append(
+                fact(f"ours · USD {money_digits(tender.freight_estimate_per_unit)}{per_unit} (our estimate)", CALC)
+            )
+        elif freight_label:
             cells["freight"].append(gap(label=freight_label))
         elif quote.delivery_mode == "pickup":
             cells["freight"].append(
@@ -610,6 +647,14 @@ def comparison_grid(
             cells["freight"].append(fact(f"{quote.as_quoted_currency} {money_digits(quote.freight_amount)} added"))
         else:
             cells["freight"].append(blank())
+        if row.get("clearing") == "estimate":
+            cells["clearing"].append(
+                fact(f"USD {money_digits(tender.clearing_estimate_per_unit)}{per_unit} (our estimate)", CALC)
+            )
+        elif row.get("clearing") == "open":
+            cells["clearing"].append(gap("ours: estimate not recorded", label="clearing estimate", owner=rules.US))
+        else:
+            cells["clearing"].append(blank("supplier's (it imports)" if quote.delivery_mode != "pickup" else "—"))
         duty = _duty_cell(tender, quote, gaps, src)
         if waiver_gap:
             duty["pending"] = "document not on file"
@@ -623,7 +668,9 @@ def comparison_grid(
             )
         else:
             cells["fx"].append(gap("not recorded", label="exchange rate", owner=rules.US))
-        landed = (row.get("figures") or {}).get("usd_per_pack_normalized") or {}
+        landed = _landed_per_unit(row, line_qty) if line_qty else {}
+        if not landed:
+            landed = (row.get("figures") or {}).get("usd_per_pack_normalized") or {}
         if not row.get("is_comparable") and row["quote_id"] not in awarded:
             # Not comparable: no figure, only what blocks it, each with whose it is.
             cells["landed"].append(
@@ -637,6 +684,8 @@ def comparison_grid(
             )
         elif isinstance(landed, dict) and landed.get("amount") not in (None, "") and not landed.get("unconfirmed"):
             figure = fact(f"{landed.get('currency') or 'USD'} {money_digits(landed['amount'])}", CALC)
+            if row.get("clearing") == "open":
+                figure["qualifier"] = "excl. clearing"
             figure["open"] = [{"label": _gap_word(g), "owner": gap_owner(g)} for g in quote_gaps]
             cells["landed"].append(figure)
         else:
@@ -663,7 +712,9 @@ def comparison_grid(
                     "owner": rules.SUPPLIERS,
                 }
             )
-    pack_label = f"{unit_noun(rows[0].get('pack_unit') or 'pack')}" if rows else "pack"
+    pack_label = (
+        unit_noun(line_unit) if line_qty else f"{unit_noun(rows[0].get('pack_unit') or 'pack')}" if rows else "pack"
+    )
     facts = [
         ("landed", f"Landed per {pack_label}", "calculated"),
         ("price", "Quoted price", "as quoted"),
@@ -671,6 +722,7 @@ def comparison_grid(
         ("term", "Delivery term", "as quoted"),
         ("imports", "Who imports", "from the term"),
         ("freight", "Freight", "quote or term"),
+        ("clearing", "Clearing & forwarding", "our estimate"),
         ("duty", "Import duty", "tender terms"),
         ("fx", "Exchange rate", "recorded by us"),
         ("spec", "Specification", "checked"),
@@ -679,13 +731,40 @@ def comparison_grid(
     for key, *_ in facts:
         for column, cell in zip(columns, cells[key]):
             cell["quote_id"] = column["quote_id"]
+    # Quotes we import are shown without clearing beside quotes the supplier imports:
+    # their totals are not like for like until the clearing estimate is recorded.
     return {
+        "like_for_like": comparison.get("like_for_like", True),
         "quotes": columns,
         "rows": [
             {"key": key, "label": label, "src_label": note, "cells": cells[key], "total": key == "landed"}
             for key, label, note in facts
         ],
     }
+
+
+def _tender_line(tender) -> tuple:
+    """(quantity, unit) of the tender's line when it buys one product, else (None, None)."""
+    lines = [line for line in getattr(tender, "lines", None) or [] if isinstance(line, dict)]
+    if len(lines) != 1:
+        return None, None
+    try:
+        quantity = Decimal(str(lines[0].get("quantity")))
+    except (InvalidOperation, TypeError, ValueError):
+        return None, None
+    return (quantity, lines[0].get("quantity_unit") or "") if quantity > 0 else (None, None)
+
+
+def _landed_per_unit(row, quantity) -> dict:
+    """The landed total for the tender's quantity, per unit of its line: what "Landed per carton" reads."""
+    total = (row.get("figures") or {}).get("landed_total_for_tender_quantity") or {}
+    if not isinstance(total, dict) or total.get("unconfirmed") or total.get("amount") in (None, ""):
+        return {}
+    try:
+        amount = Decimal(str(total["amount"])) / quantity
+    except (InvalidOperation, TypeError, ValueError):
+        return {}
+    return {"amount": str(amount.quantize(Decimal("0.01"))), "currency": total.get("currency") or "USD"}
 
 
 def _quote_from_row(row):

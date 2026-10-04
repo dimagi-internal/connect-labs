@@ -60,6 +60,9 @@ class Row:
     step_label: str = ""
     # Quote facts still absent on a tender: [(fact, number of quotes)], from the comparison's gaps.
     missing: list = field(default_factory=list)
+    # How many quotes the comparison can rank, and whose: "1 of 3 comparable · Harmattan".
+    comparable_chip: str = ""
+    comparable_count: int = 0
 
     @property
     def bars(self) -> list[str]:
@@ -316,10 +319,24 @@ def _tender_rows(program_id, today, until):
                 ours=ours,
                 theirs=theirs,
                 missing=_missing_facts(tender, quotes.get(tender.pk, [])),
+                **_comparable(tender, quotes.get(tender.pk, [])),
                 **_last_change(tender_scope_revisions(tender.pk, program_id=program_id, until=until, orders=False)),
             )
         )
     return rows
+
+
+def _comparable(tender, quotes) -> dict:
+    """The tender's comparable-count chip, from the comparison itself; empty before any quote."""
+    if not any(q.is_live for q in quotes):
+        return {}
+    from connect_labs.supply_chain.procurement.status import comparable_chip, comparisons
+
+    compared = comparisons(tender, quotes)
+    return {
+        "comparable_chip": comparable_chip(compared),
+        "comparable_count": sum(len(c.comparable) for c in compared),
+    }
 
 
 def _missing_facts(tender, quotes) -> list:

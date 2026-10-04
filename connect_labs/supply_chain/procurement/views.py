@@ -59,6 +59,7 @@ from connect_labs.supply_chain.procurement.forms import (
     ReasonForm,
     TenderDutyTermsForm,
     TenderForm,
+    TenderImportEstimatesForm,
     TenderLineFormSet,
     TenderPlaceFormSet,
 )
@@ -72,6 +73,14 @@ def _ordinal(n: int) -> str:
     """1st, 2nd, 3rd, 4th ... 11th, 12th, 13th ... 21st."""
     suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
     return f"{n}{suffix}"
+
+
+def next_reminder_due(last, interval_days, deadline):
+    """The day the next reminder falls due after `last`, or None when that would be after the deadline."""
+    if last is None:
+        return None
+    due = last + timedelta(days=interval_days or DEFAULT_REMINDER_INTERVAL_DAYS)
+    return None if deadline is not None and due > deadline else due
 
 
 def _parse_day(value):
@@ -277,11 +286,16 @@ class TenderDetailView(_Base):
                 count = max(count, 1)
             o["reminder_count"] = count
             o["reminder_text"] = f"{_ordinal(count)} reminder" if count else ""
-            # When the next reminder falls due, said beside a chase just recorded.
+            # When the next reminder falls due, said beside a reminder just sent --
+            # never after the response deadline: past it there is no further reminder.
             if o.get("last_reminder_on"):
-                o["next_due"] = _parse_day(o["last_reminder_on"]) + timedelta(
-                    days=tender.get("reminder_interval_days") or DEFAULT_REMINDER_INTERVAL_DAYS
+                o["next_due"] = next_reminder_due(
+                    _parse_day(o["last_reminder_on"]),
+                    tender.get("reminder_interval_days"),
+                    _parse_day(tender["response_deadline"]) if tender.get("response_deadline") else None,
                 )
+                if o["next_due"] is None and tender.get("response_deadline"):
+                    o["reminder_deadline"] = _parse_day(tender["response_deadline"])
             # Silent since the latest ask -- the invitation or the last chase --
             # not since the invitation: a chase restarts the wait.
             o["silent_days"] = None if o.get("responded") else _days_since_ask(o, as_of)
@@ -364,6 +378,16 @@ class TenderDetailView(_Base):
                 tender_id=tender_id, program_id=_access(self.request).program_id, kind="duty_exemption"
             ).exists()
         context["duty_terms_changed"] = self.request.GET.get("duty_terms") == "changed"
+        # Our clearing and freight estimates, per unit of the tender's line, and who recorded them.
+        context["estimates_changed"] = self.request.GET.get("estimates") == "changed"
+        lines = [line for line in tender.get("lines") or [] if isinstance(line, dict)]
+        context["estimate_unit"] = unit_noun(lines[0].get("quantity_unit")) if len(lines) == 1 else "unit"
+        if tender.get("import_estimates_set_on"):
+            from connect_labs.supply_chain.history.timeline import import_estimates_set_by
+
+            context["import_estimates_set_by"] = import_estimates_set_by(
+                tender_id, program_id=_access(self.request).program_id
+            )
         context["drafts_breakdown"] = _drafts_breakdown((context["drafts"] or {}).get("drafts") or [])
         context["quotes"] = self.op("quote_list", tender_id=tender_id)
         # Each quote's trade item, by name and -- for a kit -- contents. Three
@@ -1490,6 +1514,40 @@ class TenderDutyTermsView(SupplyWriteMixin, View):
         return redirect(f"{path}{joiner}duty_terms=changed" + (f"#{anchor}" if anchor else ""))
 
 
+@method_decorator(login_required, name="dispatch")
+class TenderImportEstimatesView(SupplyWriteMixin, View):
+    """Record our clearing and freight estimates, from the tender's Terms box (tender_set_import_estimates).
+
+    A field left empty clears that estimate: the box shows both, so what is
+    posted is the whole of what we estimate.
+    """
+
+    operation = "tender_set_import_estimates"
+
+    def post(self, request, tender_id, *args, **kwargs):
+        from django.contrib import messages
+
+        form = TenderImportEstimatesForm(request.POST)
+        back = request.POST.get("next") or ""
+        if not back.startswith("/supply/"):
+            back = reverse("supply_chain:procurement_tender_detail", args=[tender_id]) + "#import-estimates"
+        if not form.is_valid():
+            messages.error(request, "Estimates are amounts in USD, zero or more.")
+            return redirect(back)
+        values = {
+            key: ("" if form.cleaned_data.get(key) is None else str(form.cleaned_data[key]))
+            for key in ("clearing_estimate_per_unit", "freight_estimate_per_unit")
+        }
+        try:
+            self.op("tender_set_import_estimates", tender_id=int(tender_id), **values)
+        except (jsonschema.ValidationError, ValueError, TypeError) as exc:
+            messages.error(request, getattr(exc, "message", str(exc)))
+            return redirect(back)
+        path, _, anchor = back.partition("#")
+        joiner = "&" if "?" in path else "?"
+        return redirect(f"{path}{joiner}estimates=changed" + (f"#{anchor}" if anchor else ""))
+
+
 class OutreachLogView(OperationFormView):
     operation = "outreach_log"
     form_class = OutreachForm
@@ -1564,9 +1622,9 @@ class OutreachChaseView(OutreachReplyView):
     """
 
     form_class = OutreachChaseForm
-    title = "Record a chase"
+    title = "Mark the reminder sent"
     intro = "The day the reminder went, so the next one is counted from it."
-    submit_label = "Record chase"
+    submit_label = "Mark sent"
 
     def get_form_kwargs(self):
         kwargs = super(OutreachReplyView, self).get_form_kwargs()

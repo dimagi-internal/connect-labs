@@ -108,7 +108,7 @@ class TestChaseFromTheDraft:
         assert f'action="{url}"' in form
         today = f"{datetime.date.today():%-d %b %Y}"
         assert re.search(rf'data-testid="chase-date" type="text" name="last_reminder_on"\s+value="{today}"', form)
-        assert 'data-testid="record-chase"' in form
+        assert 'data-testid="mark-sent"' in form and ">Mark sent</button>" in form
 
     def test_recording_a_chase_sets_only_the_day_and_returns_to_the_row(self, da, world, web):
         outreach_id = world["outreach"]["id"]

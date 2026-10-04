@@ -193,6 +193,44 @@ def buyer_imports(quote) -> bool:
     return getattr(quote, "duties_basis", "") == "excluded"
 
 
+# Why a quote on an E or F term (EXW, FCA, FAS, FOB) has no landed total yet:
+# main carriage is ours, and we have not recorded what it costs to the
+# delivery point. Ours to close (questions.py: internal), never the supplier's.
+FREIGHT_ESTIMATE_REASON = "freight is ours under its Incoterm and no freight estimate is recorded on the tender"
+
+
+def _tender_of(quote, tender=None):
+    if tender is not None:
+        return tender
+    return getattr(quote, "tender", None) if getattr(quote, "tender_id", None) else None
+
+
+def freight_is_ours(quote) -> bool:
+    """Whether main freight is the buyer's under the quote's Incoterm, and the supplier gave no figure.
+
+    E and F terms (EXW, FCA, FAS, FOB) hand the goods over at origin: carriage
+    to the delivery point is ours to cost, so the supplier is never asked for
+    it. A quote that nonetheless says freight is included, or states a freight
+    amount, is taken at its word. A collected bid has its own transport line.
+    """
+    if getattr(quote, "delivery_mode", "delivered") == "pickup":
+        return False
+    if records.freight_and_duties_for_incoterm(getattr(quote, "incoterm", ""))[0] != "excluded":
+        return False
+    return getattr(quote, "freight_basis", "") != "included" and getattr(quote, "freight_amount", None) is None
+
+
+def clearing_applies(quote) -> bool:
+    """Whether clearing & forwarding is ours on this quote: its Incoterm makes us the importer."""
+    return buyer_imports(quote)
+
+
+def clearing_open(quote, tender=None) -> bool:
+    """A quote we import whose landed figure is shown excluding clearing: no estimate recorded."""
+    tender = _tender_of(quote, tender)
+    return clearing_applies(quote) and getattr(tender, "clearing_estimate_per_unit", None) is None
+
+
 def round_duty_applies(quote, tender) -> bool:
     """Whether the tender's buyer-import duty terms (waiver, or our own estimate) cost this quote's duty."""
     return _duty_terms(quote, tender) in ("buyer_waiver", "buyer_pays") and buyer_imports(quote)
@@ -268,6 +306,11 @@ def _extras(quote: Quote, tender=None) -> Derived:
             reasons.append("collected from the supplier; our own transport cost not entered")
         else:
             total += transport
+    elif freight_is_ours(quote):
+        # Main carriage is ours under the term: our estimate is added in
+        # compute_figures, and until it is recorded no landed total is given.
+        if getattr(_tender_of(quote, tender), "freight_estimate_per_unit", None) is None:
+            reasons.append(FREIGHT_ESTIMATE_REASON)
     else:
         legs.insert(0, ("freight", quote.freight_basis, quote.freight_amount))
 
@@ -342,6 +385,35 @@ def _our_duty(quote: Quote, tender, subtotal: Decimal) -> Decimal:
     return subtotal * Decimal(rate) / Decimal("100") if rate is not None else Decimal("0")
 
 
+def _our_estimates(quote, commodity, tender, pack_spec, item, units_quoted) -> Decimal | Derived:
+    """Our freight and clearing estimates for the quote's own quantity, in USD. Zero when none apply.
+
+    The estimates are per unit of the tender's line ("per carton"), so the
+    quote's quantity is counted in that unit -- exactly when it is quoted in
+    it, else through the quote's own pack (the conversion the landed total
+    already uses). An estimate not recorded adds nothing here: a missing
+    freight estimate already blocks in `_extras`, and a missing clearing
+    estimate is shown beside the figure ("excl. clearing") rather than hiding it.
+    """
+    per_unit = Decimal("0")
+    if freight_is_ours(quote) and getattr(tender, "freight_estimate_per_unit", None) is not None:
+        per_unit += Decimal(tender.freight_estimate_per_unit)
+    if clearing_applies(quote) and getattr(tender, "clearing_estimate_per_unit", None) is not None:
+        per_unit += Decimal(tender.clearing_estimate_per_unit)
+    if not per_unit:
+        return Decimal("0")
+    line = tender.quantity_for(commodity.slug) if hasattr(tender, "quantity_for") else None
+    unit = line[1] if line else None
+    if not unit or quote.quantity_basis_unit == unit:
+        return per_unit * Decimal(quote.quantity_basis or 0)
+    per_tender_unit = _base_units_quoted(_Quantity(quote, Decimal("1"), unit), commodity, pack_spec, item)
+    if not isinstance(per_tender_unit, (Decimal, int)) or not per_tender_unit:
+        return unconfirmed(
+            f"our import estimates are per {unit} and the quote's quantity cannot be counted in {unit}s"
+        )
+    return per_unit * Decimal(units_quoted) / Decimal(per_tender_unit)
+
+
 def basis_gaps(quote: Quote) -> list[str]:
     """What keeps this quote's freight and duties from being costed, one leg each.
 
@@ -355,6 +427,8 @@ def basis_gaps(quote: Quote) -> list[str]:
         return []
     gaps = []
     for reason in extras.reasons:
+        if reason == FREIGHT_ESTIMATE_REASON:
+            continue
         for leg in ("freight", "duties"):
             if not reason.startswith(f"{leg} ") and f"says {leg} " not in reason:
                 continue
@@ -559,11 +633,14 @@ def compute_figures(
     # --- landed totals ---------------------------------------------------
     units_quoted = _base_units_quoted(quote, commodity, pack_spec, item)
     landed_blocked = merge(per_base_unit, extras, confirmed(units_quoted))
+    estimates = None if landed_blocked else _our_estimates(quote, commodity, tender, pack_spec, item, units_quoted)
+    if not landed_blocked and isinstance(estimates, Unconfirmed):
+        landed_blocked = estimates
     if landed_blocked:
         landed_as_quoted: Derived = landed_blocked
     else:
         subtotal = _lot_subtotal(quote, commodity, usd, per_base_unit, units_quoted)
-        landed_as_quoted = Money(subtotal + extras.amount + _our_duty(quote, tender, subtotal))
+        landed_as_quoted = Money(subtotal + extras.amount + _our_duty(quote, tender, subtotal) + estimates)
 
     landed_for_tender: Derived
     tender_quantity = tender.quantity_for(commodity.slug)

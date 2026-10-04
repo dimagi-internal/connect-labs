@@ -38,8 +38,11 @@ from connect_labs.supply_chain.procurement.services.pricing import (
     FIGURE_LABELS,
     _pack_spec,
     buyer_imports,
+    clearing_applies,
+    clearing_open,
     compute_figures,
     figure_nouns,
+    freight_is_ours,
     round_duty_applies,
 )
 from connect_labs.supply_chain.procurement.services.questions import (
@@ -98,6 +101,10 @@ def plain_reason(reason: str, base_unit="", pack_unit="") -> str:
     return text
 
 
+# A quote we import whose landed figure is shown without clearing & forwarding.
+CLEARING_GAP = "clearing estimate"
+
+
 # The short name of each gap, by the question key that answers it -- the
 # words the overview's flag uses: "Northwind Foods (freight)".
 _GAP_WORDS = {
@@ -111,6 +118,8 @@ _GAP_WORDS = {
     "as_quoted_unit": "price unit",
     "duty_estimate": "our duty estimate",
     "duty_terms": "tender duty terms",
+    "freight_estimate": "freight estimate",
+    "import_estimate_unit": "estimate unit",
 }
 
 
@@ -213,6 +222,19 @@ class ComparisonRow:
     # its price may carry a duty we will not pay, so it is held out of the
     # ranking until the supplier restates it -- a blocker like any other.
     duty_restate: bool = False
+    # We import under the quote's Incoterm, so clearing & forwarding is ours;
+    # "open" while the tender records no clearing estimate, when the landed
+    # figure is shown labelled "excl. clearing" -- a gap on us that does not
+    # block the ranking, but buyer- and supplier-import totals are then not
+    # like for like.
+    clearing: str = ""  # "" (not ours) | "estimate" | "open"
+    # Main freight is ours under an E or F term ("estimate" or "open").
+    freight_ours: str = ""
+
+    @property
+    def open_estimates(self) -> list[str]:
+        """Our estimates still to record that do NOT block the ranking: "clearing estimate"."""
+        return [CLEARING_GAP] if self.clearing == "open" else []
 
     @property
     def gaps(self) -> list[str]:
@@ -401,6 +423,12 @@ class Comparison:
         return [*self.comparable, *self.blocked, *self.not_comparable]
 
     @property
+    def like_for_like(self) -> bool:
+        """False while quotes we import (shown excl. clearing) sit beside quotes the supplier imports."""
+        rows = [*self.comparable, *self.blocked]
+        return not (any(r.clearing == "open" for r in rows) and any(r.clearing == "" for r in rows))
+
+    @property
     def comparable_count(self) -> int:
         return len(self.comparable)
 
@@ -449,6 +477,9 @@ class Comparison:
                 "duty_line": row.duty_line,
                 "duty_consequence": row.duty_consequence,
                 "gaps": row.gaps,
+                "open_estimates": row.open_estimates,
+                "clearing": row.clearing,
+                "freight_ours": row.freight_ours,
                 "base_unit": row.base_unit,
                 "pack_unit": row.pack_unit,
                 "as_quoted": row.as_quoted,
@@ -478,6 +509,7 @@ class Comparison:
             "blocked": [row_dict(row) for row in self.blocked],
             "not_comparable": [row_dict(row) for row in self.not_comparable],
             "tender_contents": self.tender_contents,
+            "like_for_like": self.like_for_like,
             # Flat view for consumers that legitimately need every supplier's
             # row regardless of state (e.g. Task 10's tender_outstanding_questions).
             # Named all_rows, not rows: see Comparison.all_rows's docstring.
@@ -895,7 +927,7 @@ def landed_basis_words(quote, tender, *, round_duty: bool = True) -> str:
     # a DDP quote keeps its own duty figure under any of them.
     duty_is_ours = round_duty_applies(quote, tender)
     legs = [] if duty_is_ours else [("duties", quote.duties_basis, quote.duties_amount)]
-    if not pickup:
+    if not pickup and not freight_is_ours(quote):
         legs.insert(0, ("freight", quote.freight_basis, quote.freight_amount))
     for label, basis, amount in legs:
         source = "quote"
@@ -920,6 +952,13 @@ def landed_basis_words(quote, tender, *, round_duty: bool = True) -> str:
             sources.append(source)
     if pickup and getattr(quote, "buyer_transport_amount", None) is not None:
         parts.append(f"our transport {money_digits(quote.buyer_transport_amount)} {currency} added")
+    # Our own estimates, said as ours: freight under an E or F term, clearing
+    # wherever we import.
+    unit = _estimate_unit(tender, quote)
+    if freight_is_ours(quote) and getattr(tender, "freight_estimate_per_unit", None) is not None:
+        parts.append(f"our freight estimate USD {money_digits(tender.freight_estimate_per_unit)}{unit} added")
+    if clearing_applies(quote) and getattr(tender, "clearing_estimate_per_unit", None) is not None:
+        parts.append(f"our clearing estimate USD {money_digits(tender.clearing_estimate_per_unit)}{unit} added")
     # Duty the tender's terms make ours, said as such: the figure is the
     # tender's, not the supplier's. A card that gives the terms their own line
     # (`round_duty_words`) leaves them out here.
@@ -931,6 +970,13 @@ def landed_basis_words(quote, tender, *, round_duty: bool = True) -> str:
         parts.append(f"our duty estimate {tender.duty_estimate_percent.normalize():f}% added")
     text = " · ".join(parts)
     return f"{text}, per {' and '.join(sources)}" if text and sources else text
+
+
+def _estimate_unit(tender, quote) -> str:
+    """ " per carton": the unit of the tender's line our estimates are per, "" when unknown."""
+    commodity = getattr(quote, "commodity", None)
+    line = tender.quantity_for(commodity.slug) if commodity is not None and hasattr(tender, "quantity_for") else None
+    return f" per {unit_noun(line[1])}" if line and line[1] else ""
 
 
 def _with_incoterm(text: str, quote) -> str:
@@ -1030,6 +1076,10 @@ def compare_tender(
         row.delivery_basis = _with_incoterm(
             _short_destination(landed_basis_words(quote, tender, round_duty=False), tender), quote
         )
+        if clearing_applies(quote):
+            row.clearing = "open" if clearing_open(quote, tender) else "estimate"
+        if freight_is_ours(quote):
+            row.freight_ours = "open" if getattr(tender, "freight_estimate_per_unit", None) is None else "estimate"
         row.duty_line = round_duty_words(quote, tender)
         row.duty_consequence = round_duty_consequence(quote, tender)
         if needs_duty_restated(quote, tender):
