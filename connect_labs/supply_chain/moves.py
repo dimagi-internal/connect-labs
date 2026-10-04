@@ -187,12 +187,24 @@ def owed_moves(commitments, holds=(), *, tender_id=None, contract_id=None, suppl
             continue  # a promise: already counted from the commitment itself
         documents.setdefault(hold.asked_by or "customs", []).append(hold)
     for asked_by, items in documents.items():
+        # Held vs owed follows each hold's basis: only a document a recorded requirement
+        # cites holds the shipment; the rest are owed under the tender's duty terms.
+        held = [h.name or h.what for h in items if h.basis != "duty_terms"]
+        owed = [h.name or h.what for h in items if h.basis == "duty_terms"]
+        detail = " · ".join(
+            part
+            for part in (
+                "shipment held: " + ", ".join(held) if held else "",
+                "owed under duty terms: " + ", ".join(owed) if owed else "",
+            )
+            if part
+        )
         moves.append(
             Move(
                 US,
                 RULE_OWED,
                 f"Provide {_plural(len(items), 'document')} to {asked_by}",
-                detail="shipment held: " + ", ".join(h.name or h.what for h in items),
+                detail=detail,
                 # The same control as the owed list's own: each item there is marked provided.
                 cta="Mark provided",
                 href=f"{base}#owed",
