@@ -26,11 +26,15 @@ def _measure(sql):
 
 
 class TestTheKmcRegistry:
-    def test_settles_42_days_after_the_anchor(self):
-        # eligible_42d (growth, visits per baby) is the longest gate an indicator
-        # reads. eligible_90d exists but nothing reads it yet.
+    def test_settles_28_days_after_the_anchor(self):
+        # Workbook 2026-10-03: ONE gate, eligible_28d, for outcomes, growth and
+        # visits per baby. eligible_42d (the retired v3 growth gate) and
+        # eligible_90d (completion) still exist as properties but no indicator
+        # reads them -- so the window is derived from what is READ, not declared.
         props, inds = load_registry("kmc")
-        assert settle_after_days(props, inds) == 42
+        assert settle_after_days(props, inds) == 28
+        declared = {p["name"] for p in props["properties"]}
+        assert {"eligible_42d", "eligible_90d"} <= declared, "the unread longer gates are what makes this a derivation"
 
     def test_has_no_date_dependence_the_window_cannot_read(self):
         props, inds = load_registry("kmc")
@@ -96,10 +100,10 @@ class TestWhatASnapshotRecords:
         from connect_labs.workflow.templates.kmc_programme_metrics import SNAPSHOT_INPUTS
 
         props, inds = load_registry("kmc")
-        assert settles_meta(SNAPSHOT_INPUTS, props, inds) == {"after_days": 42, "anchor": "first_visit_date"}
+        assert settles_meta(SNAPSHOT_INPUTS, props, inds) == {"after_days": 28, "anchor": "first_visit_date"}
 
     def test_a_spec_with_no_anchor_records_none(self):
         from connect_labs.workflow.snapshot_builders import settles_meta
 
         props, inds = load_registry("kmc")
-        assert settles_meta({}, props, inds) == {"after_days": 42, "anchor": None}
+        assert settles_meta({}, props, inds) == {"after_days": 28, "anchor": None}

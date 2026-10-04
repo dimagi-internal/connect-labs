@@ -3,19 +3,24 @@
 The claim the semantic layer rests on: the numbers a report shows are the numbers
 its definitions say. So the same fixture babies go through two paths -- the
 compiled SQL against real Postgres, and a hand-written Python port of the rules
-below -- and every one of the 24 KMC indicators must agree.
+below -- and every one of the 30 KMC indicators must agree.
 
 The reference is written from the RULES, not from the registry's SQL: Neal Lesh's
-KMC compute spec (v3) where it rules, and the workbook indicators re-based onto it
-(#2004). Deriving it from the YAML would prove only that the YAML agrees with
-itself. It used to port the browser dashboard's JavaScript; that engine is gone,
-and so is the workbook-vs-spec split that made two sets of rules necessary.
+KMC metrics workbook as revised 2026-10-03 (Case properties + Case indicators),
+which superseded the v3 compute spec #2004 had adopted, keeping v3's weight-series
+rules (velocity window, thin / inconsistent / impossible, birthweight bands).
+Deriving it from the YAML would prove only that the YAML agrees with itself. It
+used to port the browser dashboard's JavaScript; that engine is gone, and so is
+the workbook-vs-spec split that made two sets of rules necessary.
 
 Every fixture baby exists to put one rule on a boundary, so that moving the rule
-moves a number: a baby with exactly one follow-up (the started threshold), one
-first seen 35 days before the report (the 42-day growth gate), one whose only
-third weigh-day is the enrolment reading (thin), one whose weight step is legal
-per kg of the pair mean and impossible per kg of the earlier reading.
+moves a number: a baby with exactly one follow-up and one with none (the started
+threshold), one first seen 20 days before the report (the 28-day eligibility
+gate) and one first seen 35 days before (the retired 42-day growth gate), early
+deaths whose weighings are computable and a death ON day 28 (early_exit), a
+referral on day 28 and one on day 29 (the referral window), one whose only third
+weigh-day is the enrolment reading (thin), one whose weight step is legal per kg
+of the pair mean and impossible per kg of the earlier reading.
 
 Skipped when no Postgres is reachable; the structural tests in test_compiler.py
 still run everywhere.
@@ -36,11 +41,14 @@ psycopg2 = pytest.importorskip("psycopg2")
 
 REGISTRY = Path(__file__).resolve().parents[1] / "registry" / "kmc"
 
-# The rules, restated for the reference (spec sections 2, 2b and 3).
+# The rules, restated for the reference (workbook 2026-10-03; the weight-series
+# rules are v3 spec sections 2, 2b and 3, which the workbook keeps).
 AS_OF = 200  # report date, days after 2026-01-01
 AS_OF_SQL = f"(DATE '2026-01-01' + {AS_OF})"
-STARTED_MIN = 2  # follow-up visits, registration excluded
-MATURITY_OUTCOME, MATURITY_GROWTH = 28, 42  # days from the FIRST VISIT
+STARTED_MIN = 1  # follow-up visits, registration excluded (v3 said 2)
+ELIGIBLE_DAYS = 28  # THE one maturity gate, days from the FIRST VISIT (v3 waited 42 for growth)
+REFERRAL_WINDOW = 28  # first referral within this many days of registration, inclusive
+DIP_RANGE = (0.85, 0.99)  # expected dip: enrolment weight 1-15% below birthweight, inclusive
 WMIN, WMAX = 250, 8000
 WINDOW = 21  # days from the first MEASURED weighing
 VELOCITY_MIN_SPAN = 5
@@ -118,16 +126,20 @@ VISITS = [
     ("n1", 0, 1500, "yes", "no", "no", R, None, 1500.0, 1600.0),
     ("n1", 3, 1510, "yes", "no", "no", F, None, None, None),
     ("n1", 30, 1700, "yes", "no", "no", F, None, None, None),
-    # m1 -- first seen 35 days before the report: eligible at 28 days, not at 42.
+    # m1 -- first seen 35 days before the report: eligible under the one 28-day
+    # gate, so in the growth funnel; the retired 42-day growth gate would drop it.
     ("m1", 165, 1500, "yes", "no", "no", R, 0.0, 1500.0, 1600.0),
     ("m1", 172, 1600, "yes", "no", "no", F, None, None, None),
     ("m1", 180, 1700, "yes", "no", "no", F, None, None, None),
     ("m1", 190, 1800, "yes", "no", "no", F, None, None, None),
-    # d1 -- died after ONE follow-up: not started, so outside mortality. The 2+ rule
-    # is chosen deliberately (#2004); this baby is what moves if it changes.
+    # d1 -- died after ONE follow-up: started under the workbook's 1+ rule (v3's 2+
+    # left it out of mortality); u1, registration only, is the other side of that
+    # boundary. Died on day 9, an early exit: its two weighings are computable, so
+    # it leaves the growth funnel only because of early_exit.
     ("d1", 0, 1200, "yes", "no", "no", R, None, 1200.0, 1210.0),
     ("d1", 9, 1150, "no", "no", "no", F, None, None, None),
-    # d2 -- died after two follow-ups: in mortality's numerator. Danger sign, referred.
+    # d2 -- died on day 20 after two follow-ups: in mortality's numerator, and an
+    # early exit with sufficient (slow) weight data. Danger sign, referred on day 10.
     ("d2", 0, 1300, "yes", "no", "no", R, None, 1300.0, 1310.0),
     ("d2", 10, 1350, "yes", "yes", "yes", F, None, None, None),
     ("d2", 20, 1300, "no", "no", "no", F, None, None, None),
@@ -144,6 +156,35 @@ VISITS = [
     # u1 -- registration only, never started.
     ("u1", 0, None, "yes", "no", "no", R, None, None, None),
 ]
+
+# Babies the workbook's rules (2026-10-03) need on a boundary, appended for this
+# test only: parity_fixture.py builds the engine-parity golden from VISITS, and that
+# frozen comparison must not move when the definitions do.
+WORKBOOK_VISITS = [
+    # y1 -- started, but first seen 20 days before the report: NOT eligible, so in
+    # no eligible base. Its growth is computable, so it does count toward the
+    # data-quality rows over computable babies, which are not maturity-gated.
+    ("y1", 180, 1500, "yes", "no", "no", R, None, 1500.0, 1550.0),
+    ("y1", 186, 1600, "yes", "no", "no", F, None, None, None),
+    ("y1", 193, 1700, "yes", "no", "no", F, None, None, None),
+    # z1 -- died ON day 28 after the first visit: early_exit is strictly under 28,
+    # so it stays in the growth funnel (healthy, 8.4 g/kg/d) and in mortality.
+    # Referred on that same day 28: inside the inclusive referral window. Its
+    # enrolment weight (1400 against 1600, 12.5% down) is an expected dip only
+    # because the dip reaches 15%.
+    ("z1", 0, 1600, "yes", "no", "no", R, None, 1600.0, 1400.0),
+    ("z1", 7, 1700, "yes", "no", "no", F, None, None, None),
+    ("z1", 14, 1800, "yes", "no", "no", F, None, None, None),
+    ("z1", 28, None, "no", "yes", "yes", F, None, None, None),
+    # r1 -- a danger sign and a referral on day 29 after registration: one day
+    # outside the referral window, so not counted by C19. Enrolment weight 0.5%
+    # under birthweight: credible (not a copy) but too small a loss to be a dip.
+    ("r1", 0, 2100, "yes", "no", "no", R, None, 2100.0, 2090.0),
+    ("r1", 10, 2250, "yes", "no", "no", F, None, None, None),
+    ("r1", 20, 2400, "yes", "no", "no", F, None, None, None),
+    ("r1", 29, 2500, "yes", "yes", "yes", F, None, None, None),
+]
+PARITY_VISITS = VISITS + WORKBOOK_VISITS
 
 # Days from hospital discharge to registration, where a discharge DATE is recorded.
 # The dates beat the app's own field: h1's app says 2 but the dates say 6.
@@ -169,14 +210,14 @@ CREATE TEMP TABLE fixture_visits (
 
 
 def _reg_day(baby):
-    return min(off for b, off, *_ in VISITS if b == baby)
+    return min(off for b, off, *_ in PARITY_VISITS if b == baby)
 
 
 def _load(conn):
     conn.rollback()
     cur = conn.cursor()
     cur.execute(DDL)
-    for baby, off, w, alive, danger, ref, form, d2r, bw, ew in VISITS:
+    for baby, off, w, alive, danger, ref, form, d2r, bw, ew in PARITY_VISITS:
         reg = _reg_day(baby)
         cur.execute(
             "INSERT INTO fixture_visits VALUES (%s, DATE '2026-01-01' + %s, %s, %s, %s, %s,"
@@ -225,7 +266,7 @@ def _median(values):
 
 def _babies():
     out: dict[str, dict] = {}
-    for baby, off, w, alive, danger, ref, form, d2r, bw, ew in VISITS:
+    for baby, off, w, alive, danger, ref, form, d2r, bw, ew in PARITY_VISITS:
         b = out.setdefault(baby, {"rows": [], "d2r": None, "bw": None, "ew": None})
         b["rows"].append((off, w, alive, danger, ref, form))
         b["d2r"] = d2r if d2r is not None else b["d2r"]
@@ -261,10 +302,13 @@ def _properties(as_of=AS_OF):
         p = {"registered": any("regist" in r[5].lower() for r in rows), "followup_visits": followups}
         p["started"] = followups >= STARTED_MIN
         since = as_of - first
-        p["eligible_28d"] = p["started"] and since >= MATURITY_OUTCOME
-        p["eligible_42d"] = p["started"] and since >= MATURITY_GROWTH
-        p["died"] = any(r[2] == "no" for r in rows)
-        p["outcome_known"] = p["died"] or (last - first) >= MATURITY_OUTCOME
+        p["eligible_28d"] = p["started"] and since >= ELIGIBLE_DAYS
+        death_days = [r[0] for r in rows if r[2] == "no"]
+        p["died"] = bool(death_days)
+        p["outcome_known"] = p["died"] or (last - first) >= ELIGIBLE_DAYS
+        # a modifier on the growth funnel only: died BEFORE the eligibility date
+        p["early_exit"] = p["died"] and min(death_days) - first < ELIGIBLE_DAYS
+        p["growth_eligible"] = p["eligible_28d"] and not p["early_exit"]
 
         measured, seed = _weight_series(rows, bw, b["ew"], _reg_day(name))
         p["n_measured_days"] = len(measured) + (1 if seed else 0)
@@ -283,22 +327,24 @@ def _properties(as_of=AS_OF):
                     if not IMPOSSIBLE[0] <= rate <= IMPOSSIBLE[1]:
                         impossible = True
         first_w = round(measured[0][1]) if measured else None
+        band = _band(bw)
         p["velocity"] = velocity
-        p["computable"] = velocity is not None
         p["impossible"] = impossible
         p["thin"] = p["n_measured_days"] < THIN_MIN_DAYS
         p["inconsistent"] = bw is not None and first_w is not None and first_w < INCONSISTENT_RATIO * bw
-        p["sufficient"] = p["computable"] and not (p["thin"] or p["inconsistent"] or impossible)
-        band = _band(bw)
-        p["banded"] = band is not None
+        # the workbook's three growth-data stages
+        p["computable"] = band is not None and velocity is not None
+        p["consistent"] = not (p["thin"] or p["inconsistent"] or impossible)
+        p["sufficient"] = p["computable"] and p["consistent"]
         p["growth_class"] = None
-        if p["sufficient"] and band:
+        if p["sufficient"]:
             _, lo, hi = band
             p["growth_class"] = "slow" if velocity < lo else ("fast" if velocity > hi else "plausible")
-        p["qualifying"] = p["eligible_42d"] and p["banded"] and p["computable"]
 
         p["danger"] = any(r[3] == "yes" for r in rows)
         p["referred"] = any(r[4] == "yes" for r in rows)
+        referral_days = [r[0] for r in rows if r[4] == "yes"]
+        p["referred_within_28d"] = bool(referral_days) and min(referral_days) - _reg_day(name) <= REFERRAL_WINDOW
         p["self_referrals"] = sum(1 for r in rows if (name, r[0]) in SELF_REFERRAL_VISITS)
         p["kmc_hours"] = KMC_HOURS.get(name)
         ga = GESTATIONAL_AGE.get(name)
@@ -309,7 +355,12 @@ def _properties(as_of=AS_OF):
         p["days_to_enrolment"] = dte
         p["has_discharge"] = dte is not None
         p["within_3d"] = dte is not None and 0 <= dte <= 3
-        p["birth_copy"] = None if bw is None or b["ew"] is None else abs(bw - b["ew"]) < 1
+        ew = b["ew"]
+        p["birth_copy"] = None if bw is None or ew is None else abs(bw - ew) < 1
+        p["enrollment_credible"] = (
+            bw is not None and ew is not None and WMIN <= bw <= WMAX and WMIN <= ew <= WMAX and abs(bw - ew) >= 1
+        )
+        p["expected_dip"] = p["enrollment_credible"] and DIP_RANGE[0] * bw <= ew <= DIP_RANGE[1] * bw
         raw = [r[1] for r in rows if r[1] is not None]
         p["readings"], p["round_readings"] = len(raw), sum(1 for w in raw if w % 100 == 0)
         out[name] = p
@@ -330,10 +381,16 @@ def _indicators(props):
         vals = [val(r) for r in rows if den(r) and val(r) is not None]
         return sum(vals) / len(vals) if vals else None
 
-    def qual(r):
-        return r["qualifying"]
+    def funnel(r):
+        return r["growth_eligible"]
 
-    matured = [r for r in rows if r["eligible_42d"]]
+    def judged(r):  # the base the three growth classes and the mean share
+        return r["growth_eligible"] and r["sufficient"]
+
+    def computable(r):
+        return r["computable"]
+
+    eligible = [r for r in rows if r["eligible_28d"]]
     return {
         "total_cases": float(len(rows)),
         "registered_cases": count(lambda r: r["registered"]),
@@ -341,25 +398,34 @@ def _indicators(props):
         "cumulative_svns_reached": count(lambda r: r["started"]),
         "median_gestational_age": _median([r["ga"] for r in rows if r["ga"] is not None]),
         "median_birthweight": _median([r["bw"] for r in rows if r["bw"] is not None]),
-        "visits_per_case": sum(r["followup_visits"] for r in matured) / len(matured) if matured else None,
+        "visits_per_case": sum(r["followup_visits"] for r in eligible) / len(eligible) if eligible else None,
         "pct_enrolled_within_3d": pct(lambda r: r["within_3d"], lambda r: r["started"] and r["has_discharge"]),
         "median_days_to_enrolment": _median(
             [r["days_to_enrolment"] for r in rows if r["started"] and r["has_discharge"]]
         ),
         "lost_by_day_28": pct(lambda r: not r["outcome_known"], lambda r: r["eligible_28d"]),
-        "pct_slow_growth": pct(lambda r: r["growth_class"] == "slow", qual),
-        "pct_healthy_growth": pct(lambda r: r["growth_class"] == "plausible", qual),
-        "pct_fast_growth": pct(lambda r: r["growth_class"] == "fast", qual),
-        "pct_incomplete_growth_data": pct(lambda r: r["growth_class"] is None, qual),
-        "mean_early_growth_rate": mean(lambda r: r["velocity"], lambda r: r["qualifying"] and r["sufficient"]),
-        "pct_growth_computable": pct(qual, lambda r: r["eligible_42d"] and r["banded"]),
+        # the chained growth funnel: each base is the previous stage's numerator
+        "pct_growth_computable": pct(computable, funnel),
+        "pct_growth_consistent": pct(lambda r: r["consistent"], lambda r: funnel(r) and r["computable"]),
+        "pct_incomplete_growth_data": pct(lambda r: not r["consistent"], lambda r: funnel(r) and r["computable"]),
+        "pct_growth_sufficient": pct(lambda r: r["sufficient"], funnel),
+        "pct_healthy_growth": pct(lambda r: r["growth_class"] == "plausible", judged),
+        "pct_slow_growth": pct(lambda r: r["growth_class"] == "slow", judged),
+        "pct_fast_growth": pct(lambda r: r["growth_class"] == "fast", judged),
+        "mean_early_growth_rate": mean(lambda r: r["velocity"], judged),
+        # outcomes and care: eligible babies; death IS mortality's event, so no early_exit here
         "mortality": pct(lambda r: r["died"], lambda r: r["eligible_28d"] and r["outcome_known"]),
         "danger_sign_incidence": pct(lambda r: r["danger"], lambda r: r["eligible_28d"]),
-        "pct_danger_signs_referred": pct(lambda r: r["referred"], lambda r: r["eligible_28d"] and r["danger"]),
+        "pct_danger_signs_referred": pct(lambda r: r["referred_within_28d"], lambda r: r["eligible_28d"]),
         "self_referrals_per_100": mean(lambda r: r["self_referrals"] * 100, lambda r: r["eligible_28d"]),
         "mean_kmc_hours": mean(lambda r: r["kmc_hours"], lambda r: r["eligible_28d"]),
+        # data quality: not maturity-gated
         "weight_rounding_rate": 100.0 * sum(r["round_readings"] for r in rows) / sum(r["readings"] for r in rows),
-        "pct_impossible_weight_changes": pct(lambda r: r["impossible"], lambda r: r["computable"]),
+        "pct_impossible_weight_changes": pct(lambda r: r["impossible"], computable),
+        "pct_thin": pct(lambda r: r["thin"], computable),
+        "pct_inconsistent": pct(lambda r: r["inconsistent"], computable),
+        "pct_enrollment_weight_credible": pct(lambda r: r["enrollment_credible"], computable),
+        "pct_expected_dip": pct(lambda r: r["expected_dip"], lambda r: r["enrollment_credible"]),
         "birth_copy_rate": pct(lambda r: r["birth_copy"], lambda r: r["birth_copy"] is not None),
     }
 
@@ -379,18 +445,61 @@ def _programme_row(conn):
 
 def test_the_reference_covers_every_indicator_and_every_growth_branch():
     """A parity check over a fixture that leaves an indicator empty proves nothing
-    about it, and a growth share that is always 0 cannot catch a moved boundary."""
+    about it, and a share that is always 0 or 100 cannot catch a moved boundary.
+    So every indicator must have a value, every stage of the growth funnel must
+    split its base, and every rule the workbook added must change at least one
+    baby's membership somewhere."""
     props = _properties()
     ind = _indicators(props)
     registry = yaml.safe_load((REGISTRY / "indicators.yml").read_text())
     assert set(ind) == {m["meta"]["indicator"] for m in registry["measures"] if m.get("meta")}
     assert all(v is not None for v in ind.values()), {k for k, v in ind.items() if v is None}
-    classes = {p["growth_class"] for p in props.values() if p["qualifying"]}
+
+    # the funnel: computable babies in it whose readings fail (None) and all three classes
+    classes = {p["growth_class"] for p in props.values() if p["growth_eligible"] and p["computable"]}
     assert classes == {"slow", "plausible", "fast", None}, classes
-    for share in ("pct_slow_growth", "pct_healthy_growth", "pct_fast_growth", "pct_incomplete_growth_data"):
+    for share in (
+        "pct_growth_computable",
+        "pct_growth_consistent",
+        "pct_incomplete_growth_data",
+        "pct_growth_sufficient",
+        "pct_slow_growth",
+        "pct_healthy_growth",
+        "pct_fast_growth",
+    ):
         assert 0 < ind[share] < 100, share
-    for rate in ("mortality", "lost_by_day_28", "pct_impossible_weight_changes", "pct_growth_computable"):
+    assert math.isclose(ind["pct_healthy_growth"] + ind["pct_slow_growth"] + ind["pct_fast_growth"], 100.0)
+    assert math.isclose(ind["pct_growth_consistent"] + ind["pct_incomplete_growth_data"], 100.0)
+
+    for rate in (
+        "mortality",
+        "lost_by_day_28",
+        "pct_danger_signs_referred",
+        "pct_impossible_weight_changes",
+        "pct_thin",
+        "pct_inconsistent",
+        "pct_enrollment_weight_credible",
+        "pct_expected_dip",
+    ):
         assert 0 < ind[rate] < 100, rate
+
+    by = props
+    # started is 1+ follow-ups: d1 (exactly one) in, u1 (none) out
+    assert by["d1"]["started"] and by["d1"]["followup_visits"] == 1 and not by["u1"]["started"]
+    # the one 28-day gate: y1 started but not yet eligible; m1 eligible and in the funnel at 35 days
+    assert by["y1"]["started"] and not by["y1"]["eligible_28d"] and by["y1"]["computable"]
+    assert by["m1"]["growth_eligible"]
+    # early_exit: early deaths with computable weight data leave the funnel, a death on day 28 does not
+    assert by["d1"]["early_exit"] and by["d1"]["computable"] and not by["d1"]["growth_eligible"]
+    assert by["d2"]["early_exit"] and by["d2"]["sufficient"] and not by["d2"]["growth_eligible"]
+    assert by["z1"]["died"] and not by["z1"]["early_exit"] and by["z1"]["growth_eligible"]
+    # ... and stay in mortality, where death is the event
+    assert by["d2"]["eligible_28d"] and by["d2"]["outcome_known"]
+    # the referral window: day 28 is in, day 29 is out
+    assert by["z1"]["referred_within_28d"] and by["r1"]["referred"] and not by["r1"]["referred_within_28d"]
+    # the dip: 12.5% down is one, 0.5% down is credible but not one, a copy is not credible
+    assert by["z1"]["expected_dip"] and by["r1"]["enrollment_credible"] and not by["r1"]["expected_dip"]
+    assert by["h1"]["birth_copy"] and not by["h1"]["enrollment_credible"]
 
 
 def test_sql_matches_the_reference_implementation(conn):

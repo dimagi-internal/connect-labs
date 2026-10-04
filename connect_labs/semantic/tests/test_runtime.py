@@ -44,7 +44,7 @@ def test_selecting_a_series_keeps_the_parts_its_indicators_are_built_from():
     names = {m["name"] for m in kmc["measures"]}
 
     ids = {m["meta"]["indicator"] for m in kmc["measures"] if m.get("meta")}
-    assert len(ids) == 24
+    assert len(ids) == 30
     # the pieces survive
     assert "pct_slow_growth_numerator" in names and "pct_slow_growth_denominator" in names
     assert "anyrec_weights" in names
@@ -210,11 +210,14 @@ def test_the_measure_catalog_carries_what_a_renderer_needs_to_band_a_value():
 
     _, inds = load_registry("kmc")
     cat = {c["indicator"]: c for c in measure_catalog(filter_to_series(inds, "KMC"))}
-    assert len(cat) == 24
+    assert len(cat) == 30
 
     banded = [c for c in cat.values() if c["bands"]]
     unbanded = {c["indicator"] for c in cat.values() if not c["bands"]}
-    # the counts, the case-mix medians and the care indicators have no threshold yet
+    # the counts, the case-mix medians and the care indicators have no threshold yet;
+    # nor do the rows Neal's workbook (2026-10-03) leaves TBD -- visits per case (C24),
+    # the rounding rate (C31, blocked on the scale-precision setting), credible
+    # enrolment weight (C29) and expected dip (C30). Unbanded beats a guessed band.
     assert unbanded == {
         "total_cases",
         "registered_cases",
@@ -226,6 +229,10 @@ def test_the_measure_catalog_carries_what_a_renderer_needs_to_band_a_value():
         "pct_danger_signs_referred",
         "self_referrals_per_100",
         "mean_kmc_hours",
+        "visits_per_case",
+        "weight_rounding_rate",
+        "pct_enrollment_weight_credible",
+        "pct_expected_dip",
     }
     for c in banded:
         assert c["direction"] in {"higher", "lower", "mid2"}, c["indicator"]
