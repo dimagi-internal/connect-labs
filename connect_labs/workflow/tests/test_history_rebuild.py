@@ -232,6 +232,8 @@ def _stub_ensure(monkeypatch, failed=()):
         return {"failed": list(failed), "hold_until": "2026-09-11T03:00:00+00:00"}
 
     monkeypatch.setattr(hr, "ensure_visit_cache", fake)
+    # Not held: every existing test exercises the sync path, as before.
+    monkeypatch.setattr(hr, "extend_if_held", lambda dao, definition_id, **kw: None)
 
 
 # ---------------------------------------------------------------------------
@@ -962,3 +964,60 @@ class TestARebuildRepublishesFollowingCohorts:
             dao, 1, cadence="weekly", start=date(2026, 8, 3), end=date(2026, 9, 6), opportunity_id=10, dry_run=True
         )
         assert calls == []
+
+
+class TestOneLoadPerRun:
+    """A rebuild reads its data ONCE: one visit sync per run, one load per batch."""
+
+    def test_a_held_cache_is_not_synced_again(self, monkeypatch):
+        _stub_build(monkeypatch)
+        held = {"held": True, "slots": 24, "hold_until": "2026-10-04T18:00:00+00:00", "failed": []}
+        monkeypatch.setattr(hr, "extend_if_held", lambda dao, definition_id, **kw: held)
+        report = hr.rebuild_history(
+            _DAO(_Definition()),
+            1,
+            opportunity_id=10,
+            start=date(2026, 8, 3),
+            end=date(2026, 8, 30),
+            today=date(2026, 9, 1),
+        )
+        assert ENSURED == [], "a batch over a held cache must not sync"
+        assert report["visit_cache"] == held["hold_until"]
+
+    def test_a_lapsed_cache_is_synced(self, monkeypatch):
+        _stub_build(monkeypatch)
+        hr.rebuild_history(
+            _DAO(_Definition()),
+            1,
+            opportunity_id=10,
+            start=date(2026, 8, 3),
+            end=date(2026, 8, 30),
+            today=date(2026, 9, 1),
+        )
+        assert len(ENSURED) == 1
+
+    def test_every_period_of_a_batch_shares_one_memo(self, monkeypatch):
+        _stub_ensure(monkeypatch)
+        memos = []
+
+        def fake(dao, run, **kw):
+            memos.append(kw.get("memo"))
+            return {
+                "payload": {"state": {"snapshot": {"meta": {"as_of": run.period_end}}}},
+                "contract": {"source": "definition"},
+                "definition": dao.get_definition(1),
+                "opportunity_id": 10,
+                "opportunity_ids": [10],
+            }
+
+        monkeypatch.setattr(hr, "build_snapshot_for_run", fake)
+        hr.rebuild_history(
+            _DAO(_Definition()),
+            1,
+            opportunity_id=10,
+            start=date(2026, 8, 3),
+            end=date(2026, 8, 30),
+            today=date(2026, 9, 1),
+        )
+        assert len(memos) == 4
+        assert all(m is memos[0] for m in memos) and isinstance(memos[0], dict)

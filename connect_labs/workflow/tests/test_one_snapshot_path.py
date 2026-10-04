@@ -60,7 +60,7 @@ class _DAO:
         return self._definition
 
     def get_cached_pipeline_data(
-        self, definition_id, opportunity_id, aliases=None, period_start=None, period_end=None
+        self, definition_id, opportunity_id, aliases=None, period_start=None, period_end=None, memo=None
     ):
         self.calls.append(("cached", aliases))
         if self._miss:
@@ -250,3 +250,40 @@ class TestTheCaseIndexIsAsOfToo:
 
         rows = [{"reg_date": "2999-01-01"}]
         assert cut_as_of(rows, ("reg_date",), None) == rows
+
+
+class TestSharedMemo:
+    """A history rebuild passes one memo per batch: invariant reads happen once, not per period."""
+
+    def test_definition_and_workers_are_read_once_across_periods(self, declarative_definition):
+        dao = _DAO(declarative_definition)
+        reads = {"definition": 0, "workers": 0}
+        get_definition, get_workers = dao.get_definition, dao.get_workers
+
+        def counting_definition(definition_id):
+            reads["definition"] += 1
+            return get_definition(definition_id)
+
+        def counting_workers(oid):
+            reads["workers"] += 1
+            return get_workers(oid)
+
+        dao.get_definition, dao.get_workers = counting_definition, counting_workers
+        memo: dict = {}
+        build_snapshot_for_run(dao, _Run(), memo=memo)
+        build_snapshot_for_run(dao, _Run(), memo=memo)
+        assert reads == {"definition": 1, "workers": 1}
+
+    def test_without_a_memo_every_call_reads_fresh(self, declarative_definition):
+        dao = _DAO(declarative_definition)
+        reads = {"definition": 0}
+        get_definition = dao.get_definition
+
+        def counting_definition(definition_id):
+            reads["definition"] += 1
+            return get_definition(definition_id)
+
+        dao.get_definition = counting_definition
+        build_snapshot_for_run(dao, _Run())
+        build_snapshot_for_run(dao, _Run())
+        assert reads["definition"] == 2

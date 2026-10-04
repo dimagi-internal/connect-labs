@@ -202,3 +202,41 @@ class TestComputedHold:
         assert live.expires_at > now + timedelta(minutes=80), "a live row is held"
         assert dead.expires_at < now, "an expired row is not resurrected"
         assert long_lived.expires_at > now + timedelta(hours=4), "a longer-lived row is never shortened"
+
+
+class TestExtendIfHeld:
+    """One sync per RUN: a later batch of a history rebuild only extends the holds.
+
+    `ensure_visit_cache` syncs every (opportunity, pipeline) slot and re-runs its
+    pipeline. A rebuild calls it per batch, so a 71-week rebuild in 6-week batches
+    synced the whole cohort twelve times and every period of the run read a slightly
+    different cache. `extend_if_held` is the later batches' path: a database count,
+    no fetch, no pipeline run.
+    """
+
+    def _all_held(self):
+        return _Slots(raw_before={(o, p): 500 for o in (523, 524, 874) for p in (19776, 19777)})
+
+    def test_every_slot_held_extends_the_holds_and_syncs_nothing(self):
+        slots = self._all_held()
+        report = vc.extend_if_held(_DAO(_Definition()), 1, opportunity_id=523, slot_factory=slots.factory)
+        assert report is not None and report["held"] is True and report["slots"] == 6
+        kinds = [c[0] for c in slots.calls]
+        assert "fetch" not in kinds and "run" not in kinds
+        assert kinds.count("hold_raw") == 6 and kinds.count("hold_computed") == 6
+
+    def test_one_lapsed_slot_means_sync_and_extends_nothing(self):
+        slots = self._all_held()
+        slots.raw[(874, 19777)] = 0
+        assert vc.extend_if_held(_DAO(_Definition()), 1, opportunity_id=523, slot_factory=slots.factory) is None
+        assert slots.calls == []
+
+    def test_a_failing_check_falls_back_to_a_sync(self):
+        def broken(access_token, owner_scope, sources=None):
+            class _Mgr:
+                def __init__(self, opp, pid):
+                    raise RuntimeError("database unavailable")
+
+            return _Mgr, None, None
+
+        assert vc.extend_if_held(_DAO(_Definition()), 1, opportunity_id=523, slot_factory=broken) is None
