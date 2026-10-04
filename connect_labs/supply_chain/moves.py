@@ -64,6 +64,8 @@ class Move:
     org_id: int | None = None
     supplier_id: int | None = None
     commitment_ids: list = field(default_factory=list)
+    # A supplier's state as a chip, in the tender page's own words ("Silent 17d").
+    chip: str = ""
 
     @property
     def rule_title(self) -> str:
@@ -274,6 +276,7 @@ def no_reply_moves(tender, outreach, quotes, today, *, provisional=False, contra
                 since=asked,
                 tender_id=tender.pk,
                 supplier_id=supplier_id,
+                chip=f"Silent {days}d" if days is not None else "Silent",
             )
         )
     moves.sort(key=lambda m: (m.since or date.max, m.text))

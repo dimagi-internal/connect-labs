@@ -94,6 +94,9 @@ def test_a_record_line_under_an_email_sets_its_kind_apart():
 
 @pytest.mark.django_db
 def test_a_silent_row_says_dash_for_its_response_kind(da, world, client_in_program):
+    # The reply's kind is the row's State chip since 2026-10-04; a silent row's Replied cell is a dash.
     body = _tender_page(client_in_program, world["tender"]["id"])
-    kinds = re.findall(r'data-testid="response-kind">([^<]*)<', body)
-    assert kinds and all(kind.strip() for kind in kinds)
+    states = re.findall(r'data-testid="supplier-state">([^<]*)<', body)
+    assert states and all(state.strip() for state in states)
+    replied = re.findall(r'data-testid="replied">\s*([^<]*?)\s*<', body)
+    assert replied and all(cell for cell in replied)

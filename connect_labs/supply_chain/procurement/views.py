@@ -219,7 +219,7 @@ def _message_rows(text: str, width: int = 110, most: int = 28) -> int:
 
 
 def _changed(url, key, anchor, cell=None):
-    """`url` arriving back at the row a form just saved: "?changed=outreach-12#outreach".
+    """`url` arriving back at the row a form just saved: "?changed=outreach-12#outreach-12".
 
     `cell` names the cell of that row the save changed ("last_chased"), so the
     page can mark the value that moved rather than the row's name.
@@ -512,6 +512,14 @@ class TenderDetailView(_Base):
                 draft_anchors=draft_anchors((context["drafts"] or {}).get("drafts") or []),
                 reminder_counts=reminders,
             )
+            # One table of suppliers: each row carries its invitation -- the row a form just
+            # saved is marked, its Replied day, and the reply/edit/delete menu.
+            by_supplier = {}
+            for o in context["outreach"]:
+                by_supplier.setdefault(o.get("supplier_id"), []).append(o)
+            for row in context["status"]["suppliers"]:
+                mine = by_supplier.get(row["supplier_id"]) or []
+                row["outreach"] = next((o for o in mine if o.get("changed")), mine[0] if mine else None)
         context["counts"] = {
             "quotes": len([q for q in context["quotes"] if not q.get("voided")]),
             "history": len(context["timeline"] or []) if isinstance(context["timeline"], list) else None,
@@ -1609,7 +1617,7 @@ class OutreachReplyView(OperationFormView):
         return _changed(
             reverse("supply_chain:procurement_tender_detail", args=[result["tender_id"]]),
             f"outreach-{result['id']}",
-            "outreach",
+            f"outreach-{result['id']}",
         )
 
 
@@ -1636,7 +1644,7 @@ class OutreachChaseView(OutreachReplyView):
         return _changed(
             reverse("supply_chain:procurement_tender_detail", args=[result["tender_id"]]),
             f"outreach-{result['id']}",
-            "outreach",
+            f"outreach-{result['id']}",
             cell="last_chased",
         )
 

@@ -121,62 +121,14 @@ is folded away, each fold with its count.
 
   <div class="flex flex-wrap items-start gap-5">
     <div class="flex min-w-0 flex-[999_1_560px] flex-col gap-5">
-    <section class="card_bg border-brand-border-light flex min-w-0 flex-col gap-3 border" aria-labelledby="suppliers-h">
+    <section class="card_bg border-brand-border-light flex min-w-0 flex-col gap-3 border scroll-mt-20" id="outreach" aria-labelledby="suppliers-h">
       <div class="flex flex-wrap items-baseline justify-between gap-3">
         <h2 id="suppliers-h" class="card_title">Suppliers</h2>
+        <div class="flex flex-wrap items-baseline gap-4">
         <span class="text-sm text-gray-600" data-testid="outreach-replied-count">{{ outreach_replied }} of {{ outreach_asked }} replied</span>
-      </div>
-      <div class="max-w-full overflow-x-auto" tabindex="0" role="region" aria-label="Suppliers, scrolls sideways">
-        <table class="w-full min-w-[620px] text-sm" data-testid="supplier-table">
-          <thead class="border-b border-gray-200 text-left text-xs text-gray-600"><tr><th scope="col" class="py-2 pr-3 font-medium">Supplier</th><th scope="col" class="px-3 py-2 font-medium">State</th><th scope="col" class="px-3 py-2 font-medium">Quote</th><th scope="col" class="px-3 py-2 font-medium">Missing from quote</th><th scope="col" class="px-3 py-2 font-medium">Last chased</th><th scope="col" class="py-2 pl-3"><span class="sr-only">Action</span></th></tr></thead>
-          <tbody class="divide-y divide-gray-100">
-            {% for r in status.suppliers %}
-            <tr data-testid="supplier-row" data-supplier-id="{{ r.supplier_id }}" class="align-top">
-              <td class="whitespace-nowrap py-3 pr-3 font-medium"><a class="text-gray-900 hover:underline" href="{{ r.href }}">{{ r.name }}</a></td>
-              <td class="px-3 py-3"><span class="status-chip status-chip--{{ r.chip.tone }}" data-testid="supplier-state">{{ r.chip.label }}</span></td>
-              <td class="px-3 py-3" data-testid="supplier-quote">{% if r.quote %}{% for part in r.quote|dot_parts %}<span class="block whitespace-nowrap">{% if forloop.first %}{% include "supply_chain/_src.html" with src=r.quote_src %}{% endif %}{{ part }}{% if forloop.last and r.quote_src == "ai" %}<span class="src-ai-tag">AI</span>{% endif %}</span>{% endfor %}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
-              <td class="px-3 py-3 text-gray-600" data-testid="supplier-missing">{% for m in r.missing %}<span class="text-message-warning-text font-medium">{{ m }}</span>{% if not forloop.last %} · {% endif %}{% empty %}<span class="text-gray-600">—</span>{% endfor %}</td>
-              <td class="whitespace-nowrap px-3 py-3 text-gray-600 tabular-nums" data-testid="supplier-chased">{{ r.chased|default:"—" }}</td>
-              <td class="whitespace-nowrap py-3 pl-3 text-right">{% if r.action and not supply_as_of %}<a class="text-brand-indigo font-medium hover:underline" data-testid="supplier-action" href="{{ r.action.href }}"{% if r.action.href|slice:":7" == "#draft-" %} onclick="return window.openDraft &amp;&amp; window.openDraft('{{ r.action.href|slice:"1:" }}');"{% endif %}>{{ r.action.label }}</a>{% endif %}</td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="6" class="py-3 text-gray-600">Nobody asked yet.</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    </div>
-
-    <aside class="flex min-w-0 flex-[1_1_320px] flex-col gap-4">
-      {% include "supply_chain/_moves.html" with moves=status.ours whose="ours" heading="On us" testid="on-us" count_testid="on-us-count" %}
-      {% include "supply_chain/_moves.html" with moves=status.theirs whose="theirs" heading="On suppliers" testid="on-suppliers" %}
-    </aside>
-  </div>
-
-  {% if status.related_order %}
-  {% with o=status.related_order %}
-  <section class="border-brand-border-light flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white px-6 py-4" data-testid="related-order">
-    <div class="flex min-w-0 flex-col gap-1">
-      <div class="text-sm text-gray-600">Earlier: <a class="text-brand-indigo hover:underline" href="{{ o.tender_url }}">{{ o.tender_label }}</a> → order {{ o.reference }} · {{ o.supplier }}</div>
-      <div class="flex flex-wrap items-center gap-1.5 text-sm" data-testid="related-order-chips">{% for part in o.stage_parts %}<span class="status-chip status-chip--neutral">{{ part }}</span>{% endfor %}{% if o.ours %}<span class="status-chip status-chip--ours" title="{% for m in o.ours %}{{ m.text }}{% if not forloop.last %}; {% endif %}{% endfor %}">on us · {{ o.ours|length }}</span>{% endif %}</div>
-    </div>
-    <a href="{{ o.url }}" class="button button-sm outline-style" data-testid="related-order-open">Open order</a>
-  </section>
-  {% endwith %}
-  {% endif %}
-
-  {% comment %}The detail, folded: each section opens on its own, and a link to one of its anchors opens it.{% endcomment %}
-
-  <details class="fold scroll-mt-20" id="outreach-fold" data-testid="fold-invitations">
-    <summary id="outreach" class="scroll-mt-20">Invitations <span class="text-sm font-normal tabular-nums text-gray-600" data-testid="invited-count">{{ outreach_asked }} invited{% if status.terms.asked %} {{ status.terms.asked|day }}{% endif %}</span> <span class="text-sm font-normal text-gray-600">· {{ outreach_replied }} replied</span></summary>
-    <div class="fold-body">
-      <div class="flex items-center justify-end">
   {% if not supply_as_of %}
   {% comment %}One way in for asking a supplier: an invitation sent by email (recorded here)
-  or, while the tender takes bids, one sent through the supplier marketplace. A separate
-  "Invited suppliers" card with its own invite control was a second path.{% endcomment %}
+  or, while the tender takes bids, one sent through the supplier marketplace.{% endcomment %}
   {% if invitable_orgs and not tender_is_over %}
   <details data-testid="invite-menu" class="relative text-sm">
     <summary class="cursor-pointer list-none [&::-webkit-details-marker]:hidden text-brand-indigo hover:underline">+ Record an invitation</summary>
@@ -201,111 +153,91 @@ is folded away, each fold with its count.
      class="text-sm text-brand-indigo hover:underline">+ Record an invitation</a>
   {% endif %}
   {% endif %}
+        </div>
       </div>
-<div class="bg-white rounded-lg overflow-hidden">
-  {% comment %}
-  A scroll container is not focusable by default, so a keyboard-only user
-  cannot reach the columns it hides -- which re-creates the
-  unreachable-column bug for the people least able to work around it.
-  tabindex makes it a tab stop; the labelled region tells a screen reader
-  what it is once focused.
-  {% endcomment %}
-  <div class="overflow-x-auto" tabindex="0" role="region"
-       aria-label="Table, scrolls sideways">
-  <table class="min-w-[44rem] w-full divide-y divide-gray-200">
-    <thead class="border-b border-gray-200">
-      <tr>
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">Supplier</th>
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">Last chased</th>
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">Replied</th>
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">Response kind</th>
-          <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">Actions</th>
-      </tr>
-    </thead>
-    <tbody class="divide-y divide-gray-200">
-      {% for o in outreach %}
-      <tr data-outreach-id="{{ o.id }}" class="align-top{% if o.changed %} bg-yellow-50{% endif %}"{% if o.changed %} data-changed{% endif %}>
-        {% comment %}The row just saved: an accent bar down its left edge, and the value that
-        moved set bold with a "new" tag in its own cell (`changed_cell`) -- a pale fill alone
-        vanished on a projector, and a pill by the name did not say what changed.{% endcomment %}
-        <td class="px-4 py-2 text-sm{% if o.changed %} border-l-4 border-brand-indigo{% endif %}">
-          <a href="{% url 'supply_chain:supplier_detail' o.supplier_id %}"
-             class="text-brand-indigo hover:underline">{{ supplier_names|dictkey:o.supplier_id|default:"Supplier" }}</a>
-          {% comment %}A reply that was questions leaves the move with us: said on the
-          supplier's own row, so the tender reads whose turn it is.{% endcomment %}
-          {% if o.waiting_on_us %}<div data-testid="waiting-on-us-row" class="text-sm font-medium whitespace-nowrap text-amber-800">{{ o.waiting_on_us }}</div>{% endif %}
-        </td>
-        {% if o.changed and changed_cell == "last_chased" %}<td class="px-4 py-2 text-sm text-gray-900 font-semibold whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count">· {{ o.reminder_text }}</span>{% endif %}{% if o.next_due %}<span data-testid="next-due" class="block font-normal text-gray-600">next due {{ o.next_due|day }}</span>{% elif o.reminder_deadline %}<span data-testid="next-due" class="block font-normal text-gray-600">no further reminder · deadline {{ o.reminder_deadline|day }}</span>{% endif %}<span class="block">{% include "supply_chain/procurement/_new_tag.html" with stacked=1 label="Reminder sent" %}</span></td>{% else %}<td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count" class="text-gray-600">· {{ o.reminder_text }}</span>{% endif %}</td>{% endif %}
-        {% comment %}Silence in words, counted from the latest ask -- the invitation or the last
-        chase -- muted rather than alarmed; a bare "No" said nothing about how long.{% endcomment %}
-        <td class="px-4 py-2 text-sm whitespace-nowrap {% if o.changed and changed_cell == "replied" %}text-gray-900 font-semibold{% else %}text-gray-600{% endif %}" data-testid="replied">{% if o.responded %}{% if o.responded_on %}{{ o.responded_on|day }}{% else %}Yes{% endif %}{% if o.changed and changed_cell == "replied" %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% else %}<span data-testid="no-reply" class="text-gray-600">No reply{% if o.silent_days is not None %} · {{ o.silent_days }} day{{ o.silent_days|pluralize }}{% endif %}</span>{% if o.changed and changed_cell == "replied" %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% endif %}</td>
-        <td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap" data-testid="response-kind">{% if o.responded %}{% if o.response_kind == "needs_info" %}Questions for us{% else %}{{ o.response_kind|humanise|capfirst|default:"—" }}{% endif %}{% else %}—{% endif %}</td>
-          {% comment %}The actions sit at the start of their cell, under the Actions heading: right-aligned,
-          the heading stood over the menu alone and the links floated under no heading.{% endcomment %}
-          <td class="py-2 pl-4 pr-4 align-top text-sm whitespace-nowrap text-left">
-            {% if not supply_as_of %}
-            {% comment %}Two fixed slots -- the drafted reminder, then the reply -- so the column
-            aligns whether or not a row has a reminder due.{% endcomment %}
-            <div class="grid w-max grid-cols-[6.75rem_6.5rem_1.5rem] gap-x-2 items-start text-left leading-5">
-            <span>
-            {% comment %}A silent supplier whose reminder is due: its drafted reminder, from its own
-            row, opened at its card so no other supplier's draft is in view.{% endcomment %}
-            {% if o.draft_anchor %}<a data-testid="row-draft-reminder" href="#{{ o.draft_anchor }}"
-               onclick="return window.openDraft && window.openDraft('{{ o.draft_anchor }}');"
-               class="text-brand-indigo hover:underline">Draft reminder</a>{% endif %}</span>
-            <a href="{% url 'supply_chain:procurement_outreach_reply' o.id %}"
-               class="text-brand-indigo hover:underline">Record a reply</a>
-            {% comment %}Delete is for an invitation recorded in error -- rare, and not the row's
-            business: tucked in a small menu so the reply is the one visible action.{% endcomment %}
-            <details data-testid="row-more" class="inline-flex items-center text-left">
-              <summary class="cursor-pointer list-none [&::-webkit-details-marker]:hidden px-1.5 rounded text-gray-700 hover:bg-gray-100" title="More" aria-label="More actions">⋯</summary>
-              <div class="inline-block ml-1 rounded-md border border-gray-200 bg-white shadow-sm">
-                <a href="{% url 'supply_chain:procurement_outreach_delete' o.id %}"
-                   class="inline-block px-2 py-0.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-red-700">Delete</a>
-              </div>
-            </details>
-            </div>
-            {% endif %}
-          </td>
-      </tr>
-      {% empty %}
-      <tr><td colspan="5" class="px-4 py-6 text-center text-gray-600">No outreach recorded yet.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  </div>
-</div>
-
-{% if invited_orgs or not asked_names %}
-<h3 class="text-sm font-semibold text-gray-900">Invited on the marketplace</h3>
-<div data-testid="invited-suppliers" class="text-sm">
-  {% comment %}Who can see the tender is said once, in the header's Visibility line, and who
-  was asked once, in Outreach above: this panel holds only marketplace invitations and the
-  control that adds one.{% endcomment %}
-  <ul class="mt-2 text-sm">
-    {% for org in invited_orgs %}
-      <li class="flex items-center gap-3 py-1">
-        <span>{{ org.name }}</span>
-        {% if not supply_as_of %}
-        <form method="post" action="{% url 'supply_chain:procurement_tender_uninvite_org' tender.id %}" class="inline">
-          {% csrf_token %}
-          <input type="hidden" name="org" value="{{ org.pk }}">
-          <button type="submit" class="text-xs text-gray-600 hover:text-red-700 underline">Remove</button>
-        </form>
-        {% endif %}
-      </li>
-    {% empty %}
-      {% if not asked_names %}
-        <li class="text-gray-600">No one invited yet.</li>
+      {% comment %}One table of suppliers: who was asked, their state, their quote and what it
+      lacks, when they were chased and when they replied. The row a form just saved
+      (?changed=outreach-N) is marked, and the value that moved is set bold with a tag.{% endcomment %}
+      <div class="max-w-full overflow-x-auto" tabindex="0" role="region" aria-label="Suppliers, scrolls sideways">
+        <table class="w-full min-w-[720px] text-sm" data-testid="supplier-table">
+          <thead class="border-b border-gray-200 text-left text-xs text-gray-600"><tr><th scope="col" class="py-2 pr-3 font-medium">Supplier</th><th scope="col" class="px-3 py-2 font-medium">State</th><th scope="col" class="px-3 py-2 font-medium">Quote</th><th scope="col" class="px-3 py-2 font-medium">Missing from quote</th><th scope="col" class="px-3 py-2 font-medium">Last chased</th><th scope="col" class="px-3 py-2 font-medium">Replied</th><th scope="col" class="py-2 pl-3"><span class="sr-only">Actions</span></th></tr></thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for r in status.suppliers %}
+            {% with o=r.outreach %}
+            <tr{% if o %} data-outreach-id="{{ o.id }}" id="outreach-{{ o.id }}"{% endif %} data-testid="supplier-row" data-supplier-id="{{ r.supplier_id }}" class="scroll-mt-20 align-top{% if o.changed %} bg-yellow-50{% endif %}"{% if o.changed %} data-changed{% endif %}>
+              <td class="whitespace-nowrap py-3 pr-3 font-medium{% if o.changed %} border-l-4 border-brand-indigo pl-2{% endif %}"><a class="text-gray-900 hover:underline" href="{{ r.href }}">{{ r.name }}</a></td>
+              <td class="px-3 py-3"><span class="status-chip status-chip--{{ r.chip.tone }}" data-testid="supplier-state">{{ r.chip.label }}</span>{% if o.waiting_on_us %}<div data-testid="waiting-on-us-row" class="mt-1 whitespace-nowrap text-xs text-gray-600">{{ o.waiting_on_us }}</div>{% endif %}</td>
+              <td class="px-3 py-3" data-testid="supplier-quote">{% if r.quote %}{% for part in r.quote|dot_parts %}<span class="block whitespace-nowrap">{% if forloop.first %}{% include "supply_chain/_src.html" with src=r.quote_src %}{% endif %}{{ part }}{% if forloop.last and r.quote_src == "ai" %}<span class="src-ai-tag">AI</span>{% endif %}</span>{% endfor %}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
+              <td class="px-3 py-3 text-gray-600" data-testid="supplier-missing">{% for m in r.missing %}<span class="text-message-warning-text font-medium">{{ m }}</span>{% if not forloop.last %} · {% endif %}{% empty %}{% if not r.on_us %}<span class="text-gray-600">—</span>{% endif %}{% endfor %}{% if r.on_us %}<a class="status-chip status-chip--ours{% if r.missing %} ml-1{% endif %}" data-testid="supplier-on-us" href="{{ r.on_us_href }}">{{ r.on_us }}</a>{% endif %}</td>
+              {% if o.changed and changed_cell == "last_chased" %}
+              <td class="whitespace-nowrap px-3 py-3 font-semibold text-gray-900 tabular-nums" data-testid="supplier-chased">{{ r.chased|default:"—" }}{% if o.next_due %}<span data-testid="next-due" class="block font-normal text-gray-600">next due {{ o.next_due|day }}</span>{% elif o.reminder_deadline %}<span data-testid="next-due" class="block font-normal text-gray-600">no further reminder · deadline {{ o.reminder_deadline|day }}</span>{% endif %}<span class="block">{% include "supply_chain/procurement/_new_tag.html" with stacked=1 label="Reminder sent" %}</span></td>
+              {% else %}
+              <td class="whitespace-nowrap px-3 py-3 text-gray-600 tabular-nums" data-testid="supplier-chased">{{ r.chased|default:"—" }}</td>
+              {% endif %}
+              <td class="whitespace-nowrap px-3 py-3 tabular-nums {% if o.changed and changed_cell == "replied" %}font-semibold text-gray-900{% else %}text-gray-600{% endif %}" data-testid="replied">{% if o.responded %}{% if o.responded_on %}{{ o.responded_on|day|slice:":-5" }}{% else %}Yes{% endif %}{% else %}—{% endif %}{% if o.changed and changed_cell == "replied" %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}</td>
+              <td class="whitespace-nowrap py-3 pl-3 text-right">{% if not supply_as_of %}<span class="inline-flex items-center gap-2">{% if r.action %}<a class="text-brand-indigo font-medium hover:underline" data-testid="supplier-action" href="{{ r.action.href }}"{% if r.action.href|slice:":7" == "#draft-" %} onclick="return window.openDraft &amp;&amp; window.openDraft('{{ r.action.href|slice:"1:" }}');"{% endif %}>{{ r.action.label }}</a>{% endif %}
+                {% if o %}
+                {% comment %}The rest of the row's record, in a small menu: record a reply where none is
+                recorded, edit what was recorded, or delete an invitation recorded in error.{% endcomment %}
+                <details data-testid="row-more" class="relative inline-block text-left">
+                  <summary class="cursor-pointer list-none [&::-webkit-details-marker]:hidden px-1.5 rounded text-gray-700 hover:bg-gray-100" title="More" aria-label="More actions">⋯</summary>
+                  <div class="absolute right-0 z-10 mt-1 flex w-40 flex-col rounded-md border border-gray-200 bg-white py-1 text-left shadow-sm">
+                    {% if not o.responded and r.action.label != "Record a reply" %}<a data-testid="row-record-reply" href="{% url 'supply_chain:procurement_outreach_reply' o.id %}" class="px-3 py-1 text-sm text-gray-700 hover:bg-gray-50">Record a reply</a>{% endif %}
+                    {% if o.responded %}<a data-testid="row-edit" href="{% url 'supply_chain:procurement_outreach_reply' o.id %}" class="px-3 py-1 text-sm text-gray-700 hover:bg-gray-50">Edit</a>{% endif %}
+                    <a href="{% url 'supply_chain:procurement_outreach_delete' o.id %}" class="px-3 py-1 text-sm text-gray-700 hover:bg-gray-50 hover:text-red-700">Delete</a>
+                  </div>
+                </details>
+                {% endif %}</span>{% endif %}</td>
+            </tr>
+            {% endwith %}
+            {% empty %}
+            <tr><td colspan="7" class="py-3 text-gray-600">Nobody asked yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if invited_orgs %}
+      <div data-testid="invited-suppliers" class="text-sm">
+        <h3 class="text-sm font-semibold text-gray-900">Invited on the marketplace</h3>
+        <ul class="mt-2 text-sm">
+          {% for org in invited_orgs %}
+            <li class="flex items-center gap-3 py-1">
+              <span>{{ org.name }}</span>
+              {% if not supply_as_of %}
+              <form method="post" action="{% url 'supply_chain:procurement_tender_uninvite_org' tender.id %}" class="inline">
+                {% csrf_token %}
+                <input type="hidden" name="org" value="{{ org.pk }}">
+                <button type="submit" class="text-xs text-gray-600 hover:text-red-700 underline">Remove</button>
+              </form>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
       {% endif %}
-    {% endfor %}
-  </ul>
-</div>
-{% endif %}
-
+    </section>
 
     </div>
-  </details>
+
+    <aside class="flex min-w-0 flex-[1_1_320px] flex-col gap-4">
+      {% include "supply_chain/_moves.html" with moves=status.ours whose="ours" heading="On us" testid="on-us" count_testid="on-us-count" %}
+      {% include "supply_chain/_moves.html" with moves=status.theirs whose="theirs" heading="On suppliers" testid="on-suppliers" %}
+    </aside>
+  </div>
+
+  {% if status.related_order %}
+  {% with o=status.related_order %}
+  <section class="border-brand-border-light flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white px-6 py-4" data-testid="related-order">
+    <div class="flex min-w-0 flex-col gap-1">
+      <div class="text-sm text-gray-600">Earlier: <a class="text-brand-indigo hover:underline" href="{{ o.tender_url }}">{{ o.tender_label }}</a> → order {{ o.reference }} · {{ o.supplier }}</div>
+      <div class="flex flex-wrap items-center gap-1.5 text-sm" data-testid="related-order-chips">{% for part in o.stage_parts %}<span class="status-chip status-chip--neutral">{{ part }}</span>{% endfor %}{% if o.ours %}<span class="status-chip status-chip--ours" title="{% for m in o.ours %}{{ m.text }}{% if not forloop.last %}; {% endif %}{% endfor %}">on us · {{ o.ours|length }}</span>{% endif %}</div>
+    </div>
+    <a href="{{ o.url }}" class="button button-sm outline-style" data-testid="related-order-open">Open order</a>
+  </section>
+  {% endwith %}
+  {% endif %}
+
+  {% comment %}The detail, folded: each section opens on its own, and a link to one of its anchors opens it.{% endcomment %}
 
   <details class="fold scroll-mt-20" id="owed-fold" data-testid="fold-owed"{% if owed_answered_expanded or request.GET.changed|slice:":11" == "commitment-" %} open{% endif %}>
     <summary id="owed">What we owe <span class="text-sm font-normal tabular-nums text-gray-600" data-testid="owed-open-count">{{ owed_open_count|default:0 }}</span> <span class="text-sm font-normal text-gray-600">open</span></summary>
@@ -573,7 +505,7 @@ next action on anyone (design doc section 22).
   </details>
 </div>
 <script>
-  // A link to anything inside a fold (#history, #owed, #outreach, #quotes ...) opens the fold first.
+  // A link to anything inside a fold (#history, #owed, #quotes ...) opens the fold first.
   (function () {
     function openTo() {
       var hash = window.location.hash;

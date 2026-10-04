@@ -62,9 +62,10 @@ class TestTheOutreachTable:
     def test_silence_reads_as_muted_words_and_reply_kinds_read_as_words(self, da, world, client_in_program):
         outreach_id = world["outreach"]["id"]
         silent = _row(_tender_page(client_in_program, world["tender"]["id"]), outreach_id)
-        chip = re.search(r'<span data-testid="no-reply" class="([^"]*)">No reply · \d+ days</span>', silent)
-        # Since DDD 004: muted words like the replied dates beside it, not a pill.
-        assert chip is not None and "rounded-full" not in chip.group(1)
+        # Since 2026-10-04 one word for silence on the page: the State chip, "Silent Nd";
+        # the Replied cell beside it is a dash, not a second "No reply · N days".
+        assert re.search(r'data-testid="supplier-state">Silent \d+d<', silent)
+        assert "No reply" not in silent
         op(
             da,
             "outreach_update",
@@ -74,14 +75,16 @@ class TestTheOutreachTable:
         replied = _row(_tender_page(client_in_program, world["tender"]["id"]), outreach_id)
         # One whose-move vocabulary on the row: a reply that was questions reads as questions
         # for us, not "Needs info" -- the comparison's word for a quote missing facts (DDD 003 b4).
-        assert re.search(r'data-testid="response-kind">Questions for us<', replied)
+        assert re.search(r'data-testid="supplier-state">Questions for us<', replied)
 
     def test_delete_is_in_the_row_menu_and_the_reply_is_the_visible_action(self, da, world, client_in_program):
         row = _row(_tender_page(client_in_program, world["tender"]["id"]), world["outreach"]["id"])
         menu = re.search(r'<details data-testid="row-more".*?</details>', row, re.S).group(0)
         assert ">Delete</a>" in menu
         assert row.replace(menu, "").count(">Delete</a>") == 0
-        assert "Record a reply" in row.replace(menu, "")
+        # No reply recorded: recording one is offered -- as the visible action, or in the menu
+        # when the visible action is the drafted reminder.
+        assert 'data-testid="supplier-action"' in row and "Record a reply" in row
 
 
 # ---- 4. the history: replies only, and an email event set apart

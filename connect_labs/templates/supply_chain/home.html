@@ -70,7 +70,7 @@ tenders and orders sit folded below.
                   <div class="text-xs text-gray-600"><span class="move-rule{% if mv.is_ours %} text-message-warning-text{% endif %}" title="{{ mv.rule_title }}">{{ mv.rule }}</span>{{ mv.detail }}</div>
                 </div>
                 {% endfor %}
-                {% if row.silent_names %}<div data-testid="silent-names"><span class="font-medium text-gray-900">{{ row.silent_names|join:", " }}</span><div class="text-xs text-gray-600"><span class="move-rule">no reply · {{ row.silent_names|length }}</span></div></div>{% endif %}
+                {% if row.silent_names %}<div data-testid="silent-names" class="flex flex-wrap items-center gap-x-3 gap-y-1">{% for name, chip in row.silent_chips %}<span class="whitespace-nowrap"><span class="font-medium text-gray-900">{{ name }}</span> <span class="status-chip status-chip--theirs" data-testid="silent-chip">{{ chip }}</span></span>{% endfor %}</div>{% endif %}
                 {% comment %}What the quotes are missing: facts, not moves, so outlined and kept out of the Us / Suppliers counts.{% endcomment %}
                 {% if row.missing %}<div class="flex flex-wrap items-center gap-1" data-testid="row-missing"><span class="mr-0.5 text-xs text-gray-600">Quote gaps</span>{% for fact, n, owner in row.missing %}<span class="status-chip status-chip--fact" data-fact="{{ fact }}" data-owner="{{ owner }}">{{ fact }} · {% if owner == 'us' %}ours{% else %}supplier's{% endif %}{% if n > 1 %} · {{ n }} quotes{% endif %}</span>{% endfor %}</div>{% endif %}
                 </div>
