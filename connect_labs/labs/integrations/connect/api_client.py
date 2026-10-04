@@ -22,6 +22,7 @@ from connect_labs.audit_trail.models import Outcome as _AuditOutcome
 from connect_labs.labs.models import LocalLabsRecord
 from connect_labs.labs.synthetic import local_records_backend as _local_backend
 from connect_labs.utils import request_telemetry
+from connect_labs.workflow.run_codec import encode_record_data
 
 logger = logging.getLogger(__name__)
 
@@ -512,6 +513,8 @@ class LabsRecordAPIClient:
         Raises:
             LabsAPIError: If API request fails
         """
+        # Storage format for a workflow run's snapshot (no-op for other types).
+        data = encode_record_data(type, data)
         if self._is_labs_only():
             return _local_backend.create_record(
                 opportunity_id=self.opportunity_id,
@@ -596,6 +599,8 @@ class LabsRecordAPIClient:
         Raises:
             LabsAPIError: If API request fails
         """
+        # Storage format for a workflow run's snapshot (no-op for other types).
+        data = encode_record_data(type, data)
         if self._is_labs_only():
             return _local_backend.update_record(
                 record_id=record_id,
