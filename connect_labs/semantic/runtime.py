@@ -34,12 +34,20 @@ from __future__ import annotations
 
 import logging
 import re
+import uuid
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from connect_labs.semantic.compiler import compile_indicator_sql, compile_rollup_sql
+from connect_labs.semantic.compiler import (
+    _check_scopes,
+    _rollup_select,
+    case_rows_select,
+    compile_indicator_sql,
+    compile_props_sql,
+    compile_rollup_sql,
+)
 from connect_labs.semantic.layer1 import build_visit_sql
 from connect_labs.semantic.legacy import DEFAULT_REGISTRY_NAME
 from connect_labs.semantic.model import indicator_series, series_prefixes
@@ -375,41 +383,21 @@ def _rows_from_cursor(cursor) -> list[dict[str, Any]]:
     return [dict(zip(columns, row)) for row in cursor.fetchall()]
 
 
-def evaluate(
-    pipeline_schema: dict[str, Any] | None,
-    opportunity_ids: list[int],
+def _registry_and_visit_sql(
+    pipeline_schema,
+    opportunity_ids,
     *,
-    visit_sql: str | None = None,
-    extra_fields: dict[str, Any] | None = None,
-    registry_name: str | None = None,
-    registry_documents: tuple[dict[str, Any], dict[str, Any]] | None = None,
-    series: str | None = None,
-    scope: str = "programme",
-    scopes: list[str] | None = None,
-    as_of: str = "CURRENT_DATE",
-    llo_map: dict[Any, str] | None = None,
-    settings: dict[str, dict[Any, bool]] | None = None,
-    visit_filter: dict[str, Any] | None = None,
-    connection=None,
-) -> list[dict[str, Any]]:
-    """Compile the registry and RUN it, returning one dict per result row.
+    visit_sql,
+    extra_fields,
+    registry_name,
+    registry_documents,
+    series,
+    visit_filter,
+):
+    """The registry to compile and the Layer 1 visit SQL to compile it over.
 
-    Pass ``scopes`` for several scopes in one pass — that routes to
-    ``compile_rollup_sql``, whose GROUPING SETS collapse exists precisely because
-    calling the single-scope form per scope re-runs the whole Layer 1 extraction
-    each time (28.2s + 31.2s + 27.3s for three scopes, measured on opp 10042).
-    Asking for scopes one at a time is the slow path; it is available, not default.
-
-    ``series`` restricts the result to one indicator family. Omit it and you get
-    the registry as written, which is both.
-
-    ``extra_fields`` adds per-visit columns drawn from ANOTHER pipeline, keyed by the
-    column name -- the registry's `pipelines.extra_fields` (see
-    `workflow_binding.build_evaluate_inputs`). KMC needs it: its per-visit weight
-    lives in a separate weight-series pipeline.
-
-    The registry is ``registry_documents`` (a record's two documents) or the on-disk
-    ``registry_name``; one of them is required -- there is no default registry here.
+    Shared by `evaluate` and `evaluate_with_cases`, which differ only in what they
+    read off the compiled chain.
     """
     if visit_sql is None and not opportunity_ids:
         raise SemanticRuntimeError("evaluate() needs at least one opportunity id")
@@ -464,6 +452,56 @@ def evaluate(
         except Exception as exc:
             raise SemanticRuntimeError(f"layer 1 generation failed ({type(exc).__name__}): {exc}") from exc
 
+    return props_doc, registry, visit_sql
+
+
+def evaluate(
+    pipeline_schema: dict[str, Any] | None,
+    opportunity_ids: list[int],
+    *,
+    visit_sql: str | None = None,
+    extra_fields: dict[str, Any] | None = None,
+    registry_name: str | None = None,
+    registry_documents: tuple[dict[str, Any], dict[str, Any]] | None = None,
+    series: str | None = None,
+    scope: str = "programme",
+    scopes: list[str] | None = None,
+    as_of: str = "CURRENT_DATE",
+    llo_map: dict[Any, str] | None = None,
+    settings: dict[str, dict[Any, bool]] | None = None,
+    visit_filter: dict[str, Any] | None = None,
+    connection=None,
+) -> list[dict[str, Any]]:
+    """Compile the registry and RUN it, returning one dict per result row.
+
+    Pass ``scopes`` for several scopes in one pass — that routes to
+    ``compile_rollup_sql``, whose GROUPING SETS collapse exists precisely because
+    calling the single-scope form per scope re-runs the whole Layer 1 extraction
+    each time (28.2s + 31.2s + 27.3s for three scopes, measured on opp 10042).
+    Asking for scopes one at a time is the slow path; it is available, not default.
+
+    ``series`` restricts the result to one indicator family. Omit it and you get
+    the registry as written, which is both.
+
+    ``extra_fields`` adds per-visit columns drawn from ANOTHER pipeline, keyed by the
+    column name -- the registry's `pipelines.extra_fields` (see
+    `workflow_binding.build_evaluate_inputs`). KMC needs it: its per-visit weight
+    lives in a separate weight-series pipeline.
+
+    The registry is ``registry_documents`` (a record's two documents) or the on-disk
+    ``registry_name``; one of them is required -- there is no default registry here.
+    """
+    props_doc, registry, visit_sql = _registry_and_visit_sql(
+        pipeline_schema,
+        opportunity_ids,
+        visit_sql=visit_sql,
+        extra_fields=extra_fields,
+        registry_name=registry_name,
+        registry_documents=registry_documents,
+        series=series,
+        visit_filter=visit_filter,
+    )
+
     # Compilation is the second stage that can fail on its own terms — an unknown
     # scope, a measure referencing a column the properties do not define.
     try:
@@ -516,3 +554,111 @@ def evaluate(
         # keep the message short enough to read.
         logger.debug("[semantic] failing SQL:\n%s", sql)
         raise SemanticRuntimeError(f"semantic query failed: {exc}") from exc
+
+
+def _plain(value: Any) -> Any:
+    """A database value as the JSON a saved run stores: ISO dates, plain numbers."""
+    import datetime as _dt
+    from decimal import Decimal
+
+    if isinstance(value, _dt.datetime):
+        return value.date().isoformat()
+    if isinstance(value, _dt.date):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else float(value)
+    return value
+
+
+def evaluate_with_cases(
+    pipeline_schema: dict[str, Any] | None,
+    opportunity_ids: list[int],
+    *,
+    scopes: list[str],
+    case_fields: dict[str, str],
+    case_opportunity_ids: list[int] | None = None,
+    visit_sql: str | None = None,
+    extra_fields: dict[str, Any] | None = None,
+    registry_name: str | None = None,
+    registry_documents: tuple[dict[str, Any], dict[str, Any]] | None = None,
+    series: str | None = None,
+    as_of: str = "CURRENT_DATE",
+    llo_map: dict[Any, str] | None = None,
+    settings: dict[str, dict[Any, bool]] | None = None,
+    visit_filter: dict[str, Any] | None = None,
+    connection=None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    """Every scope's indicator rows AND the case list, from ONE extraction.
+
+    Returns `(rows, cases, dropped_case_fields)`. `rows` is exactly what
+    `evaluate(scopes=...)` returns. `cases` is one dict per case -- identity
+    (`opportunity_id`, `username`, `entity_id`, `llo` when there is an llo_map) plus
+    `case_fields` (output name -> props column) -- AS OF the same date, from the same
+    `props` rows the indicators were graded from. So a worker's list is exactly the
+    cases their score counted, and a past week's list shows each case as it stood
+    that week rather than as it stands today.
+
+    `case_opportunity_ids` limits the LIST (not the indicators) to some
+    opportunities; None lists every case, [] lists none. The Layer 1 -> Layer 2
+    chain is materialised into a temporary table once and both answers read it, so
+    the case list costs a scan of a few thousand rows, not a second extraction.
+    """
+    props_doc, registry, visit_sql = _registry_and_visit_sql(
+        pipeline_schema,
+        opportunity_ids,
+        visit_sql=visit_sql,
+        extra_fields=extra_fields,
+        registry_name=registry_name,
+        registry_documents=registry_documents,
+        series=series,
+        visit_filter=visit_filter,
+    )
+    try:
+        _check_scopes(scopes, llo_map)
+        props_sql, compiled = compile_props_sql(
+            props_doc, registry, visit_sql, as_of=as_of, llo_map=llo_map, visit_filter=visit_filter
+        )
+        table = f"semantic_props_{uuid.uuid4().hex[:12]}"
+        rollup_sql = _rollup_select(registry, compiled, scopes, settings, llo_map, source=table)
+        cases_sql, dropped = case_rows_select(props_doc, case_fields or {}, source=table, llo=bool(llo_map))
+        if case_opportunity_ids is not None:
+            opps = ", ".join(str(int(o)) for o in case_opportunity_ids) or "NULL"
+            cases_sql = cases_sql.replace("\nORDER BY", f"\nWHERE props.opportunity_id IN ({opps})\nORDER BY", 1)
+    except SemanticRuntimeError:
+        raise
+    except Exception as exc:
+        raise SemanticRuntimeError(f"compilation failed ({type(exc).__name__}): {exc}") from exc
+
+    if connection is None:
+        from django.db import connection as django_connection
+
+        connection = django_connection
+
+    logger.info(
+        "[semantic] evaluating with cases registry=%s scopes=%s opps=%d",
+        registry_name or "(documents)",
+        scopes,
+        len(opportunity_ids),
+    )
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(f"CREATE TEMPORARY TABLE {table} AS\n{props_sql}")
+            try:
+                cursor.execute(rollup_sql)
+                rows = _rows_from_cursor(cursor)
+                cases: list[dict[str, Any]] = []
+                if case_opportunity_ids != []:
+                    cursor.execute(cases_sql)
+                    cases = [{k: _plain(v) for k, v in r.items()} for r in _rows_from_cursor(cursor)]
+            finally:
+                # Never let the cleanup mask the real failure: inside an aborted
+                # transaction this DROP fails too, and the temp table dies with the
+                # session regardless.
+                try:
+                    cursor.execute(f"DROP TABLE IF EXISTS {table}")
+                except Exception:  # noqa: BLE001
+                    logger.debug("[semantic] could not drop %s", table, exc_info=True)
+    except Exception as exc:
+        logger.debug("[semantic] failing SQL:\n%s\n%s\n%s", props_sql, rollup_sql, cases_sql)
+        raise SemanticRuntimeError(f"semantic query failed: {exc}") from exc
+    return rows, cases, dropped

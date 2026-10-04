@@ -440,27 +440,32 @@ SNAPSHOT_INPUTS = {
     # Which cached pipelines completion must load. Read by workflow_save_snapshot
     # before the builder runs, so a missing warm is refused by name.
     "pipelines": ["children", "visits"],
-    # The per-case index the FLW drill and the longitudinal hand-off read.
-    # Deliberately SLIM: the per-visit weight SERIES is absent because a snapshot
-    # has a 5 MB hard cap and ~9,000 cases only fit at this width — the
-    # longitudinal workflow fetches the series live for the one case a user opens.
+    # The case list. Read from the SAME semantic extraction the indicators are
+    # graded from (`source: semantic`), so it is as of the run -- a past week shows
+    # each case as it stood that week -- and a worker's list is exactly the cases
+    # their score counted. Fields are reader name -> registry column; a column the
+    # bound registry does not define yet is left out of the list, not refused.
+    #
+    # `embed: false`: a programme run grades every case but STORES none. Its page
+    # shows no case list (the worker panel links to the worker review), and each
+    # opportunity's cases are stored once, on that opportunity's report, by
+    # hand-down. Storing the whole cohort on every programme week is what pushed
+    # this snapshot to the 5 MB cap.
     "case_index": {
-        "pipeline": "children",
-        "fields": [
-            "entity_id",
-            "username",
-            "opportunity_id",
-            "reg_date",
-            "dob",
-            "gender",
-            "birth_weight_g",
-            "first_weight_g",
-            "last_weight_g",
-            "total_visits",
-            "first_visit_date",
-            "last_visit_date",
-            "last_kmc_status",
-        ],
+        "source": "semantic",
+        "embed": False,
+        "fields": {
+            "reg_date": "reg_date",
+            "dob": "date_of_birth",
+            "gender": "child_gender",
+            "birth_weight_g": "birth_weight_g",
+            "first_weight_g": "first_weight_g",
+            "last_weight_g": "last_weight_g",
+            "total_visits": "num_visits",
+            "first_visit_date": "first_visit",
+            "last_visit_date": "last_visit",
+            "last_kmc_status": "kmc_status",
+        },
     },
     "visits_pipeline": "visits",
     # The case-index date every maturity window counts from (`days_since_first_visit`

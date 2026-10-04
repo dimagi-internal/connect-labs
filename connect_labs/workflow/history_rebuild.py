@@ -34,7 +34,7 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timedelta
 
-from connect_labs.workflow.snapshot_builders import PERIODIC_BUILDERS
+from connect_labs.workflow.snapshot_builders import LAST_CASE_INDEX, PERIODIC_BUILDERS
 from connect_labs.workflow.snapshot_runtime import SnapshotBuildError, build_snapshot_for_run, cache_state
 from connect_labs.workflow.templates import resolve_snapshot_contract
 from connect_labs.workflow.visit_cache import DEFAULT_HOLD_MINUTES, ensure_visit_cache, extend_if_held
@@ -361,6 +361,11 @@ def rebuild_history(
     # of that from Connect: ~62s a week on the production KMC report against ~10s
     # on its synthetic twin, whose reads are local (2026-10-04).
     memo: dict = {}
+    # Hand each week down to the opportunity reports AS IT IS BUILT, while the cases
+    # it was graded from are still in memory: a programme run stores no case list, so
+    # handing down later means computing every week's list a second time. One set
+    # of receivers and one ledger for the batch.
+    inline = _InlineHandDown.for_rebuild(data_access, definition, definition_id) if not dry_run else None
 
     existing: dict[str, list] = {}
     for run in data_access.list_runs(definition_id) or []:
@@ -421,7 +426,7 @@ def rebuild_history(
                 program_id=program_id,
                 memo=memo,
             )
-            data_access.complete_run(run.id, built["payload"], run=run)
+            completed = data_access.complete_run(run.id, built["payload"], run=run)
         except SnapshotBuildError as e:
             # Leave no half-built run behind, then decide whether to carry on.
             _discard(data_access, run.id)
@@ -443,6 +448,8 @@ def rebuild_history(
 
         for old in mine:
             _discard(data_access, old.id)
+        if inline is not None and completed is not None:
+            inline.hand_down(completed, memo.pop(LAST_CASE_INDEX, None), report)
 
         report["replaced" if mine else "created"] += 1
         report["runs"].append(
@@ -462,13 +469,70 @@ def rebuild_history(
         from connect_labs.benchmarks.tasks import queue_auto_publish
 
         report["auto_publish_queued"] = queue_auto_publish(data_access, workflow_id=definition_id)
-        from connect_labs.workflow.hand_down import queue_hand_down
+        if inline is None:
+            from connect_labs.workflow.hand_down import queue_hand_down
 
-        report["hand_down_queued"] = queue_hand_down(
-            data_access, workflow_id=definition_id, template_type=getattr(definition, "template_type", None)
-        )
+            report["hand_down_queued"] = queue_hand_down(
+                data_access, workflow_id=definition_id, template_type=getattr(definition, "template_type", None)
+            )
+    if inline is not None:
+        inline.close()
 
     return report
+
+
+class _InlineHandDown:
+    """A rebuild's hand-down, done week by week with the cases already in hand.
+
+    Only for a template that hands down AND a build that left its cases in the memo
+    (a programme run storing no case list); anything else keeps the queued walk.
+    Failures are counted in the report, never raised: the week's programme run is
+    already saved, and a report that could not take its slice is a hand-down
+    problem, retried by `workflow_hand_down`, not a rebuild failure.
+    """
+
+    def __init__(self, wda_for, definition_id: int):
+        from connect_labs.workflow.hand_down import Ledger, Receivers
+
+        self.definition_id = int(definition_id)
+        self.wda_for = wda_for
+        self.targets = Receivers(wda_for, self.definition_id)
+        self.ledger = Ledger()
+
+    @classmethod
+    def for_rebuild(cls, data_access, definition, definition_id: int) -> _InlineHandDown | None:
+        from connect_labs.workflow.hand_down import hands_down
+
+        if not hands_down(getattr(definition, "template_type", None)):
+            return None
+        token = getattr(data_access, "access_token", None)
+        if not token:
+            return None
+        from connect_labs.workflow.data_access import WorkflowDataAccess
+
+        return cls(lambda opp: WorkflowDataAccess(access_token=token, opportunity_id=opp), definition_id)
+
+    def hand_down(self, run, cases, report: dict) -> None:
+        from connect_labs.workflow.hand_down import hand_down_run
+
+        summary = report.setdefault("hand_down", {"created": 0, "replaced": 0, "unchanged": 0, "failed": 0})
+        try:
+            rows = hand_down_run(
+                self.wda_for, self.definition_id, run, targets=self.targets, ledger=self.ledger, cases=cases
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("inline hand-down of run %s failed", getattr(run, "id", None), exc_info=True)
+            summary["failed"] += 1
+            summary.setdefault("errors", []).append(str(exc)[:300])
+            return
+        for row in rows:
+            action = row.get("action")
+            summary[action if action in summary else "failed"] += 1
+            if row.get("error"):
+                summary.setdefault("errors", []).append(str(row["error"])[:300])
+
+    def close(self) -> None:
+        self.targets.close()
 
 
 def _tick(progress, done: int, total: int, period_end: date) -> None:

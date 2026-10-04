@@ -1021,3 +1021,82 @@ class TestOneLoadPerRun:
         )
         assert len(memos) == 4
         assert all(m is memos[0] for m in memos) and isinstance(memos[0], dict)
+
+
+class TestEachWeekIsHandedDownAsItIsBuilt:
+    """A programme run stores no case list, so the rebuild hands each week down while
+    the cases it was graded from are still in memory -- not in a second walk later."""
+
+    def _stub(self, monkeypatch, handed):
+        from connect_labs.workflow import hand_down as hd
+        from connect_labs.workflow.snapshot_builders import LAST_CASE_INDEX
+
+        def fake(dao, run, **kw):
+            kw["memo"][LAST_CASE_INDEX] = [{"opportunity_id": 10, "username": "amy", "week": run.period_end}]
+            return {
+                "payload": {"state": {"snapshot": {"meta": {"as_of": run.period_end}}}},
+                "contract": {"source": "definition"},
+                "definition": dao.get_definition(1),
+                "opportunity_id": 10,
+                "opportunity_ids": [10],
+            }
+
+        def fake_hand_down(wda_for, definition_id, run, *, targets, ledger, cases):
+            handed.append((run.period_end, cases))
+            return [{"opportunity_id": 10, "workflow_id": 50, "action": "created", "run_id": 1, "error": None}]
+
+        monkeypatch.setattr(hr, "build_snapshot_for_run", fake)
+        monkeypatch.setattr(hd, "hand_down_run", fake_hand_down)
+        monkeypatch.setattr(hd, "hands_down", lambda template_type: True)
+        _stub_ensure(monkeypatch)
+
+    def test_every_week_goes_down_with_the_cases_it_was_built_from(self, monkeypatch):
+        handed = []
+        self._stub(monkeypatch, handed)
+        report = hr.rebuild_history(
+            _DAO(_Definition()),
+            1,
+            opportunity_id=10,
+            start=date(2026, 8, 3),
+            end=date(2026, 8, 16),
+            today=date(2026, 9, 1),
+        )
+        assert [end for end, _ in handed] == ["2026-08-09", "2026-08-16"]
+        assert all(cases[0]["week"] == end for end, cases in handed)
+        assert report["hand_down"]["created"] == 2
+
+    def test_no_second_walk_is_queued(self, monkeypatch):
+        from connect_labs.workflow import hand_down as hd
+
+        queued = []
+        monkeypatch.setattr(hd, "queue_hand_down", lambda *a, **k: queued.append(k) or True)
+        self._stub(monkeypatch, [])
+        report = hr.rebuild_history(
+            _DAO(_Definition()),
+            1,
+            opportunity_id=10,
+            start=date(2026, 8, 3),
+            end=date(2026, 8, 16),
+            today=date(2026, 9, 1),
+        )
+        assert queued == [] and "hand_down_queued" not in report
+
+    def test_a_hand_down_failure_is_counted_not_raised(self, monkeypatch):
+        from connect_labs.workflow import hand_down as hd
+
+        self._stub(monkeypatch, [])
+
+        def boom(*a, **k):
+            raise RuntimeError("connect unavailable")
+
+        monkeypatch.setattr(hd, "hand_down_run", boom)
+        report = hr.rebuild_history(
+            _DAO(_Definition()),
+            1,
+            opportunity_id=10,
+            start=date(2026, 8, 3),
+            end=date(2026, 8, 9),
+            today=date(2026, 9, 1),
+        )
+        assert report["created"] == 1
+        assert report["hand_down"]["failed"] == 1 and "connect unavailable" in report["hand_down"]["errors"][0]
