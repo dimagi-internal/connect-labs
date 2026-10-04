@@ -140,8 +140,10 @@ class TestTheChangedRow:
         assert "border-l-4" in row and 'data-testid="changed-chip"' in row
         # The marker sits in the cell that changed (DDD 002 batch 1): a reply moves "Replied",
         # not beside the supplier's name.
-        replied = re.search(r'<td [^>]*data-testid="replied">.*?</td>', row, re.S).group(0)
-        assert 'data-testid="changed-chip"' in replied and "font-semibold" in replied
+        # The day a reply came in rides the State cell since 2026-10-04 (b2): the marker goes there.
+        state = r'<td [^>]*><span class="status-chip[^"]*" data-testid="supplier-state">.*?</td>'
+        replied = re.search(state, row, re.S).group(0)
+        assert 'data-testid="changed-chip"' in replied
         chased = _tender_page(
             client_in_program, world["tender"]["id"], f"?changed=outreach-{outreach_id}&cell=last_chased"
         )

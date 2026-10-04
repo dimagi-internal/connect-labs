@@ -49,7 +49,7 @@ scenes:
     seconds: 1.8
     target: css:[data-testid=supplier-row]:has-text('Harmattan Therapeutics') [data-testid=supplier-quote]
   - kind: hover
-    note: the fact Kanem's quote left out, sachets per carton, in its Missing from quote cell
+    note: the fact Kanem's quote left out, sachets per carton, missing under its quote
     say: carton
     seconds: 1.8
     target: css:[data-testid=supplier-row]:has-text('Kanem Foods Ltd') [data-testid=supplier-missing]
@@ -197,10 +197,10 @@ scenes:
     say: wrote
     seconds: 2.0
   - kind: hover
-    note: the history line that says Sahel replied with a quote, and on what day
+    note: the history line that says Sahel replied with a quote, under the day heading it came in on
     say: answers
     seconds: 1.8
-    target: text:Replied with a quote on ${today_date}
+    target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=revision-line]:has-text('Replied with a quote')
   - kind: hover
     note: park the cursor in the top bar's blank middle, off the heading, the filter and Sahel's email
     seconds: 0.6
