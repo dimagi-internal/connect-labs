@@ -72,6 +72,7 @@ def build_snapshot_for_run(
     requested_opportunity_id: int | None = None,
     request=None,
     program_id: int | None = None,
+    memo: dict | None = None,
 ) -> dict[str, Any]:
     """Build -- and do NOT persist -- the snapshot that completing `run` would store.
 
@@ -97,7 +98,17 @@ def build_snapshot_for_run(
     if not definition_id:
         raise SnapshotBuildError("no_definition_id", f"run {run.id} has no definition_id")
 
-    definition = data_access.get_definition(definition_id)
+    # `memo` is one batch's shared reads (history_rebuild): everything here that does
+    # not depend on the run's period is loaded once per batch instead of once per
+    # period. None -- every other caller -- reads fresh, exactly as before.
+    def _once(key, load):
+        if memo is None:
+            return load()
+        if key not in memo:
+            memo[key] = load()
+        return memo[key]
+
+    definition = _once(("definition", definition_id), lambda: data_access.get_definition(definition_id))
     if definition is None:
         raise SnapshotBuildError("definition_not_found", f"workflow definition {definition_id} not found")
 
@@ -124,15 +135,16 @@ def build_snapshot_for_run(
         pipelines: dict = {}
     else:
         try:
-            pipelines = data_access.get_cached_pipeline_data(
-                definition_id,
-                opportunity_id,
+            pipeline_kwargs = dict(
                 aliases=aliases,
                 # Period-scope opted-in pipelines to the run's window so each saved
                 # run freezes its own period, not the all-time aggregate (ace#764).
                 period_start=run.period_start,
                 period_end=run.period_end,
             )
+            if memo is not None:
+                pipeline_kwargs["memo"] = memo
+            pipelines = data_access.get_cached_pipeline_data(definition_id, opportunity_id, **pipeline_kwargs)
         except PipelineCacheMiss as e:
             raise SnapshotBuildError(
                 "cache_miss",
@@ -145,7 +157,7 @@ def build_snapshot_for_run(
     workers: list[dict] = []
     for oid in effective_opp_ids:
         try:
-            for w in data_access.get_workers(oid):
+            for w in _once(("workers", oid), lambda oid=oid: list(data_access.get_workers(oid) or [])):
                 workers.append({**w, "opportunity_id": oid})
         except Exception:  # noqa: BLE001 -- an opp the user cannot enumerate must not block the rest
             logger.exception("Failed to load workers for opp %s", oid)
@@ -173,6 +185,9 @@ def build_snapshot_for_run(
             # "as of Tuesday" and called it last week's figures.
             period_start=run.period_start,
             period_end=run.period_end,
+            # A batch's shared reads (semantic_snapshot reuses the registry and the
+            # evaluation inputs). Builders that take no memo absorb it via **_.
+            **({"memo": memo} if memo is not None else {}),
         )
     except SnapshotStateNotStagedError as e:
         # The run stays in_progress, which is the whole point: an empty snapshot

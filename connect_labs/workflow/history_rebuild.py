@@ -37,7 +37,7 @@ from datetime import date, datetime, timedelta
 from connect_labs.workflow.snapshot_builders import PERIODIC_BUILDERS
 from connect_labs.workflow.snapshot_runtime import SnapshotBuildError, build_snapshot_for_run, cache_state
 from connect_labs.workflow.templates import resolve_snapshot_contract
-from connect_labs.workflow.visit_cache import DEFAULT_HOLD_MINUTES, ensure_visit_cache
+from connect_labs.workflow.visit_cache import DEFAULT_HOLD_MINUTES, ensure_visit_cache, extend_if_held
 
 logger = logging.getLogger(__name__)
 
@@ -200,6 +200,19 @@ def _ensure_cache(data_access, definition_id, *, opportunity_id, program_id, pro
     with nothing failing. A slot that still cannot be cached stops the build, naming
     the opportunities, rather than letting a partial cohort through.
     """
+    # One sync per RUN, not per batch: a batch whose every slot is still held only
+    # extends the holds (visit_cache.extend_if_held), so every period of the run is
+    # graded from the cache the first batch synced. A lapsed slot falls through to a
+    # full ensure, which is also what the first batch of a run does.
+    held = extend_if_held(
+        data_access,
+        definition_id,
+        opportunity_id=opportunity_id,
+        program_id=program_id,
+        hold_minutes=hold_minutes,
+    )
+    if held is not None:
+        return held
     report = ensure_visit_cache(
         data_access,
         definition_id,
@@ -340,6 +353,15 @@ def rebuild_history(
             hold_minutes=DEFAULT_HOLD_MINUTES,
         )["hold_until"]
 
+    # ONE load per batch. Every period in this batch is graded from the same held
+    # cache, so what does not depend on the period -- the definition, its pipeline
+    # sources and configs, the non-period-scoped pipeline rows, the workers, the
+    # bound registry -- is read once and reused; only the dated evaluation (and any
+    # `period_scoped` pipeline) runs per period. Without it each week re-fetched all
+    # of that from Connect: ~62s a week on the production KMC report against ~10s
+    # on its synthetic twin, whose reads are local (2026-10-04).
+    memo: dict = {}
+
     existing: dict[str, list] = {}
     for run in data_access.list_runs(definition_id) or []:
         existing.setdefault(_period_key(run.period_end), []).append(run)
@@ -397,6 +419,7 @@ def rebuild_history(
                 requested_opportunity_id=opportunity_id,
                 request=request,
                 program_id=program_id,
+                memo=memo,
             )
             data_access.complete_run(run.id, built["payload"], run=run)
         except SnapshotBuildError as e:
