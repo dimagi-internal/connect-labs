@@ -298,8 +298,9 @@ Each row becomes one visit-shaped row; its cells are under `row.*` and the file 
   caller (the Connect token the pipeline runs with) who is a member of that opportunity. Members
   can read every column of every matching file, including files added to the folder later, so
   point the source at a folder that holds only what that opportunity may see.
-- **Scope limits:** a source is authorized per opportunity, so a multi-opp fan-out reads Drive only
-  for the opportunity it was authorized for, and a program-scoped pipeline cannot use Drive.
+- **Scope limits:** an opportunity-stamped source is authorized per opportunity, so a multi-opp
+  fan-out reads Drive only for the opportunity it was authorized for. For data that covers a whole
+  program, stamp the source for the program instead (next section).
 - **Freshness:** rows are cached for the pipeline's TTL (1 hour); a forced refresh re-reads Drive.
 - **Several pipelines, one read:** pipelines on the same opportunity whose sources agree on
   `file_id`/`folder_id`, `file_pattern`, `null_values`, `username_column` and `date_column`
@@ -309,6 +310,48 @@ Each row becomes one visit-shaped row; its cells are under `row.*` and the file 
   rows does not share the right to read them: each pipeline's own stamp and the caller's
   membership are checked on every read, before the shared copy is touched. A forced refresh on
   any of them re-reads Drive into the shared copy (once per page load, not once per pipeline).
+
+##### Program-scoped Drive sources
+
+For Drive files that cover a whole program — one interview export across every cohort, say — own
+the pipeline **in the program** instead of in one of its opportunities. Its source is then stamped
+for the program (`data_source.authorization.program_id`, signed; an opportunity stamp can never
+pass for a program one or the reverse), and three things change:
+
+- **Who can read it: the program's managing organization, only.** Every read — fresh, cached,
+  shared raw copy, on-demand query, snapshot — needs a valid program stamp AND a caller who is a
+  member of the organization that OWNS the program. Membership in one of the program's
+  opportunities does **not** count: those are partner network organizations, and they must not see
+  other cohorts' raw rows. Labs learns the owner from the caller's own Connect org tree
+  (`/export/opp_org_program_list/`): its `programs` list holds only programs whose owning
+  organization the caller belongs to, each naming that organization's slug, and both are checked.
+  When the tree cannot be read the source is not read (fail closed).
+- **Read once, not per opportunity.** In a program workflow that spans N opportunities, a program
+  Drive pipeline is fetched and aggregated ONCE for the program, not once per opportunity — so an
+  entity-stage `GROUP BY linking_field` or a visit-level pipeline is not multiplied N times. Its
+  raw rows and computed caches live under the program's own cache key (a negative
+  pseudo-opportunity id, `-program_id`), shared by every pipeline on the same Drive target, as
+  above. This holds on page load (the stream), in `get_pipeline_data`, in run-completion snapshots
+  and in `queryPipelineRows`.
+- **Rows carry `opportunity_id: null`.** They belong to the program, not to one of its
+  opportunities. `pipelines[alias].metadata` adds `program_id` and `read_once_for_program: true`,
+  and `per_opp` has one entry keyed `"program:<id>"`. Split rows by cohort with a column of the
+  file itself, not with `opportunity_id`.
+
+How to build one through the labs MCP (Dimagi staff, the target under the workflow-data root):
+
+```text
+pipeline_create(program_id=121, name="Interview answers", schema={... "data_source": {"type": "gdrive", ...}})
+pipeline_preview(program_id=121, pipeline_id=<id>)                 # read once for the program
+pipeline_update_schema(program_id=121, pipeline_id=<id>, schema=..., expected_version=N)
+workflow_create(program_id=121, name="Interviews dashboard")       # program-owned; opportunity_ids may stay []
+workflow_add_pipeline_source(program_id=121, workflow_id=<wf>, pipeline_id=<id>, alias="answers",
+                             load="on_demand")                     # home_scope {program_id: 121} is set for you
+```
+
+Render code then reads an on-demand program source with `actions.queryPipelineRows('answers', {...})`
+and **no** `opportunity_id` — the page's program scope is enough. A program Drive pipeline may only
+JOIN other program-scoped pipelines (their caches share the program's key).
 
 #### `grouping_key`
 
@@ -856,7 +899,9 @@ var res = await actions.queryPipelineRows('answers', {
 - **Works on any terminal stage** (visit, entity, aggregated) — it reads that stage's cache.
 - **Access:** the same gates as the page stream: signed in, the workflow readable in your scope and
   spanning the opportunity, the alias one of its sources, and for a Drive pipeline its own stamp
-  plus your membership.
+  plus your membership (for a program-scoped Drive pipeline: membership of the program's managing
+  organization, and no `opportunity_id` is needed — see
+  [Program-scoped Drive sources](#program-scoped-drive-sources)).
 - **A cold cache** is filled the normal way (the pipeline runs as it would on page load), but in
   a background task so it cannot hit the 60 s request timeout. The endpoint answers 202
   `warming`, and the action polls until the rows are ready (up to `timeoutMs`, default 10 min),

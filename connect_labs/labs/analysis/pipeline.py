@@ -407,11 +407,27 @@ class AnalysisPipeline:
 
         raise RuntimeError("Analysis pipeline completed without returning a result")
 
-    def _check_drive_access(self, config: AnalysisPipelineConfig, opp_id: int) -> None:
+    @staticmethod
+    def data_scope(config: AnalysisPipelineConfig, opp_id: int | None) -> int | None:
+        """The cache `opportunity_id` this config's rows live under.
+
+        ``opp_id`` for every source except a PROGRAM-scoped Google Drive source,
+        whose rows belong to the program and are read once for it, under
+        ``gdrive_fetcher.program_cache_scope`` -- whichever opportunity (if any) the
+        caller asked for. Idempotent, so a caller that already mapped is safe.
+        """
+        if config.data_source.type != "gdrive":
+            return opp_id
+        from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import drive_cache_scope
+
+        return drive_cache_scope(config.data_source, opp_id)
+
+    def _check_drive_access(self, config: AnalysisPipelineConfig, opp_id: int | None) -> None:
         """Gate EVERY read of a gdrive pipeline, cached or fresh (see gdrive_fetcher).
 
         Drive never checks who is asking, so a cache hit must be gated exactly like
-        a fetch: a valid stamp for this opportunity and a caller who belongs to it.
+        a fetch: a valid stamp for this opportunity and a caller who belongs to it --
+        or, for a program-scoped source, a caller in the program's owning organization.
         """
         if config.data_source.type == "gdrive":
             from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import check_gdrive_access
@@ -495,7 +511,7 @@ class AnalysisPipeline:
         Returns the cached result for the config's terminal stage, or None
         when nothing usable is cached.
         """
-        opp_id = opportunity_id or self.opportunity_id
+        opp_id = self.data_scope(config, opportunity_id or self.opportunity_id)
         if not opp_id:
             return None
         self._check_drive_access(config, opp_id)
@@ -519,7 +535,7 @@ class AnalysisPipeline:
         (FLW) terminal stage is supported; other stages return None (the caller
         falls back to the all-time cache read). Returns None on a cache miss.
         """
-        opp_id = opportunity_id or self.opportunity_id
+        opp_id = self.data_scope(config, opportunity_id or self.opportunity_id)
         if not opp_id:
             return None
         if config.terminal_stage != CacheStage.AGGREGATED:
@@ -640,7 +656,9 @@ class AnalysisPipeline:
         public contract. Split out only so the wrapper above can attach
         `_raw_fetch_anomaly` to every result path in one place.
         """
-        opp_id = opportunity_id or self.opportunity_id
+        # A program-scoped Drive source reads (and caches) once for its program,
+        # whatever opportunity it was asked for -- see `data_scope`.
+        opp_id = self.data_scope(config, opportunity_id or self.opportunity_id)
         if not opp_id:
             yield (EVENT_ERROR, {"message": "No opportunity_id provided"})
             return

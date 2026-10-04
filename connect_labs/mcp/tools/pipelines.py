@@ -218,6 +218,21 @@ def pipeline_list(user, opportunity_id=None, program_id=None, organization_id=No
     }
 
 
+_PROGRAM_SCOPE_DOC = (
+    "Scope the pipeline record by its owning program instead of an opportunity. "
+    "Provide this OR opportunity_id. A program-owned pipeline with a gdrive data_source is "
+    "stamped for the PROGRAM: it is read once for the whole program (not per opportunity) "
+    "and only members of the program's managing organization may read it."
+)
+
+
+def _record_scope(opportunity_id, program_id) -> dict:
+    """Exactly one of opportunity_id / program_id, as PipelineDataAccess kwargs."""
+    if (opportunity_id is None) == (program_id is None):
+        raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
+    return {"program_id": program_id} if program_id is not None else {"opportunity_id": opportunity_id}
+
+
 @register(
     name="pipeline_get",
     description=(
@@ -228,15 +243,17 @@ def pipeline_list(user, opportunity_id=None, program_id=None, organization_id=No
         "type": "object",
         "properties": {
             "pipeline_id": {"type": "integer"},
-            "opportunity_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer", "description": "Owning opportunity. Provide this OR program_id."},
+            "program_id": {"type": "integer", "description": _PROGRAM_SCOPE_DOC},
         },
-        "required": ["pipeline_id", "opportunity_id"],
+        "required": ["pipeline_id"],
         "additionalProperties": False,
     },
 )
-def pipeline_get(user, pipeline_id: int, opportunity_id: int):
+def pipeline_get(user, pipeline_id: int, opportunity_id: int = None, program_id: int = None):
+    scope = _record_scope(opportunity_id, program_id)
     token = require_connect_token(user)
-    pda = PipelineDataAccess(access_token=token, opportunity_id=opportunity_id)
+    pda = PipelineDataAccess(access_token=token, **scope)
     try:
         definition = pda.get_definition(pipeline_id)
         if definition is None:
@@ -287,9 +304,19 @@ def _validate_pipeline_schema(schema: dict) -> None:
 
 
 def _authorize_drive_source(
-    schema: dict, opportunity_id: int, user, previous_schema=None, force=False, *, pipeline_id=None
+    schema: dict,
+    opportunity_id: int | None,
+    user,
+    previous_schema=None,
+    force=False,
+    *,
+    pipeline_id=None,
+    program_id: int | None = None,
 ) -> dict:
-    """Settle a gdrive data_source's authorization before save/preview; see gdrive_fetcher."""
+    """Settle a gdrive data_source's authorization before save/preview; see gdrive_fetcher.
+
+    The stamp's scope follows the pipeline's: its opportunity, or (opportunity_id
+    None) its program."""
     from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import (
         GDriveSourceError,
         authorize_schema_drive_source,
@@ -297,7 +324,7 @@ def _authorize_drive_source(
 
     try:
         return authorize_schema_drive_source(
-            schema, opportunity_id, user, previous_schema, force, pipeline_id=pipeline_id
+            schema, opportunity_id, user, previous_schema, force, pipeline_id=pipeline_id, program_id=program_id
         )
     except GDriveSourceError as e:
         raise MCPToolError("PERMISSION_DENIED", str(e))
@@ -320,7 +347,9 @@ def _authorize_drive_source(
         "which also reports them in `fields_all_null`.\n\n"
         "A `gdrive` data_source (see WORKFLOW_REFERENCE.md, Google Drive sources) is "
         "authorized here: setting or changing its file_id/folder_id/file_pattern needs "
-        "Dimagi staff and stamps it for this opportunity. Re-saving an unchanged target "
+        "Dimagi staff and stamps it for this pipeline's scope -- its opportunity, or with "
+        "program_id its PROGRAM (then read once for the whole program, and only by members "
+        "of the program's managing organization). Re-saving an unchanged target "
         "keeps its stamp; pass authorize_drive_source=true to authorize an unchanged, "
         "unstamped target deliberately."
     ),
@@ -328,14 +357,15 @@ def _authorize_drive_source(
         "type": "object",
         "properties": {
             "pipeline_id": {"type": "integer"},
-            "opportunity_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer", "description": "Owning opportunity. Provide this OR program_id."},
+            "program_id": {"type": "integer", "description": _PROGRAM_SCOPE_DOC},
             "schema": {"type": "object"},
             "expected_version": {"type": "integer"},
             "name": {"type": "string"},
             "description": {"type": "string"},
             "authorize_drive_source": {"type": "boolean", "default": False},
         },
-        "required": ["pipeline_id", "opportunity_id", "schema", "expected_version"],
+        "required": ["pipeline_id", "schema", "expected_version"],
         "additionalProperties": False,
     },
     is_write=True,
@@ -343,17 +373,19 @@ def _authorize_drive_source(
 def pipeline_update_schema(
     user,
     pipeline_id: int,
-    opportunity_id: int,
     schema: dict,
     expected_version: int,
+    opportunity_id: int = None,
+    program_id: int = None,
     name: str = None,
     description: str = None,
     authorize_drive_source: bool = False,
 ):
+    scope = _record_scope(opportunity_id, program_id)
     _validate_pipeline_schema(schema)
 
     token = require_connect_token(user)
-    pda = PipelineDataAccess(access_token=token, opportunity_id=opportunity_id)
+    pda = PipelineDataAccess(access_token=token, **scope)
     try:
         current = pda.get_definition(pipeline_id)
         if current is None:
@@ -375,6 +407,7 @@ def pipeline_update_schema(
             previous_schema=current.schema,
             force=authorize_drive_source,
             pipeline_id=pipeline_id,
+            program_id=program_id,
         )
         updated = pda.update_definition(
             definition_id=pipeline_id,
@@ -397,41 +430,50 @@ def pipeline_update_schema(
 @register(
     name="pipeline_create",
     description=(
-        "Create a pipeline definition in an opportunity from a schema, returning its id. Attach it "
-        "to a workflow with workflow_add_pipeline_source. A `gdrive` data_source (see "
-        "WORKFLOW_REFERENCE.md, Google Drive sources) needs Dimagi staff and a target inside the "
-        "workflow-data folder; it is authorized for the new pipeline as part of the create."
+        "Create a pipeline definition in an opportunity -- or, with program_id, in a program -- "
+        "from a schema, returning its id. Attach it to a workflow with "
+        "workflow_add_pipeline_source. A `gdrive` data_source (see WORKFLOW_REFERENCE.md, Google "
+        "Drive sources) needs Dimagi staff and a target inside the workflow-data folder; it is "
+        "authorized for the new pipeline as part of the create, in the pipeline's scope. A "
+        "program-scoped Drive pipeline is read ONCE for the whole program (rows tagged "
+        "opportunity_id null), and only members of the program's managing organization can read it."
     ),
     input_schema={
         "type": "object",
         "properties": {
-            "opportunity_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer", "description": "Owning opportunity. Provide this OR program_id."},
+            "program_id": {"type": "integer", "description": _PROGRAM_SCOPE_DOC},
             "name": {"type": "string"},
             "description": {"type": "string"},
             "schema": {"type": "object"},
         },
-        "required": ["opportunity_id", "name", "schema"],
+        "required": ["name", "schema"],
         "additionalProperties": False,
     },
     is_write=True,
 )
-def pipeline_create(user, opportunity_id: int, name: str, schema: dict, description: str = ""):
+def pipeline_create(
+    user, name: str, schema: dict, description: str = "", opportunity_id: int = None, program_id: int = None
+):
+    scope = _record_scope(opportunity_id, program_id)
     _validate_pipeline_schema(schema)
     is_drive = (schema.get("data_source") or {}).get("type") == "gdrive"
     if is_drive:
         # Refuse BEFORE writing anything: staff, shape and containment are all checked
         # by authorizing once against a placeholder id; the real stamp needs the new id.
-        _authorize_drive_source(schema, opportunity_id, user, pipeline_id=0)
+        _authorize_drive_source(schema, opportunity_id, user, pipeline_id=0, program_id=program_id)
         source = {k: v for k, v in schema["data_source"].items() if k != "authorization"}
         schema = {**schema, "data_source": source}
 
     token = require_connect_token(user)
-    pda = PipelineDataAccess(access_token=token, opportunity_id=opportunity_id)
+    pda = PipelineDataAccess(access_token=token, **scope)
     try:
         created = pda.create_definition(name=name, description=description, schema=schema)
         version = created.version
         if is_drive:
-            stamped = _authorize_drive_source(schema, opportunity_id, user, pipeline_id=created.id)
+            stamped = _authorize_drive_source(
+                schema, opportunity_id, user, pipeline_id=created.id, program_id=program_id
+            )
             version = pda.update_definition(definition_id=created.id, schema=stamped).version
         return {"pipeline_id": created.id, "version": version}
     finally:
@@ -460,13 +502,17 @@ _PIPELINE_PREVIEW_MAX_ROWS = 200
         "extracted the WRONG value rather than none: a count equal to the row "
         "count, or a filter that matched nothing on any row. Neither is an "
         "error — both are numbers to re-derive before publishing. "
-        "This is the iteration hot path: read → tweak → preview → save."
+        "This is the iteration hot path: read → tweak → preview → save. "
+        "A program-owned pipeline previews with program_id in place of opportunity_id; that "
+        "works for a program-scoped Google Drive pipeline (read once for the program, rows "
+        "tagged opportunity_id null, caller must be in the program's managing organization)."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "pipeline_id": {"type": "integer"},
-            "opportunity_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer", "description": "Provide this OR program_id."},
+            "program_id": {"type": "integer", "description": _PROGRAM_SCOPE_DOC},
             "sample_size": {"type": "integer", "default": 50, "minimum": 1, "maximum": _PIPELINE_PREVIEW_MAX_ROWS},
             "schema_override": {"type": "object"},
             "opportunity_ids": {
@@ -479,18 +525,20 @@ _PIPELINE_PREVIEW_MAX_ROWS = 200
                 ),
             },
         },
-        "required": ["pipeline_id", "opportunity_id"],
+        "required": ["pipeline_id"],
         "additionalProperties": False,
     },
 )
 def pipeline_preview(
     user,
     pipeline_id: int,
-    opportunity_id: int,
+    opportunity_id: int = None,
     sample_size: int = 50,
     schema_override: dict = None,
     opportunity_ids: list[int] = None,
+    program_id: int = None,
 ):
+    scope = _record_scope(opportunity_id, program_id)
     if not 1 <= sample_size <= _PIPELINE_PREVIEW_MAX_ROWS:
         raise MCPToolError(
             "INVALID_SCHEMA",
@@ -500,19 +548,20 @@ def pipeline_preview(
         _validate_pipeline_schema(schema_override)
 
     token = require_connect_token(user)
-    pda = PipelineDataAccess(access_token=token, opportunity_id=opportunity_id)
+    pda = PipelineDataAccess(access_token=token, **scope)
 
     # Decide which opps to fan out across. Caller-supplied opportunity_ids
-    # always includes the primary opp implicitly.
-    target_opps: list[int] = []
-    seen: set[int] = set()
+    # always includes the primary opp implicitly. A program-scoped preview has no
+    # opportunity: it reads once, as None (see the program check below).
+    target_opps: list = []
+    seen: set = set()
     for oid in [opportunity_id] + list(opportunity_ids or []):
-        if oid in seen:
+        if oid in seen or (oid is None and program_id is None):
             continue
         seen.add(oid)
         target_opps.append(oid)
 
-    def _single_opp_preview(opp_id: int) -> dict:
+    def _single_opp_preview(opp_id: int | None) -> dict:
         """Run the preview against one opp. Returns {"rows": [...], "metadata": {...}}.
         Never raises on execution error — failures come back as metadata.error,
         same contract as execute_pipeline."""
@@ -565,11 +614,30 @@ def pipeline_preview(
                 user,
                 previous_schema=(definition.data or {}).get("schema"),
                 pipeline_id=pipeline_id,
+                program_id=program_id,
             )
 
         # Execution schema used for error-hint generation (override wins when
         # provided; otherwise the saved schema).
         error_hint_schema = schema_override if schema_override is not None else (definition.data or {}).get("schema")
+
+        # A program-scoped Drive source belongs to the program: read ONCE, with no
+        # opportunity, whatever opportunity_ids were passed. Nothing else can be read
+        # in a program scope, which has no opportunity's data to read.
+        from connect_labs.workflow.data_access import program_drive_scope
+
+        try:
+            program_read = program_drive_scope(pda._schema_to_config(error_hint_schema or {}, pipeline_id))
+        except Exception:  # noqa: BLE001 -- a malformed schema is reported by the run below
+            program_read = None
+        if program_read is not None:
+            target_opps = [None]
+        elif program_id is not None:
+            raise MCPToolError(
+                "INVALID_SCHEMA",
+                f"pipeline {pipeline_id} is not a program-scoped Google Drive pipeline, so it has no "
+                "program-level data to preview; pass opportunity_id (and opportunity_ids) instead.",
+            )
 
         # Without access to user visit data, only the opportunity's own visits may be
         # read -- generated ones, which visit_access has already checked. Every other
@@ -595,7 +663,7 @@ def pipeline_preview(
         for oid in target_opps:
             res = _single_opp_preview(oid)
             md = res.get("metadata") or {}
-            per_opp_metadata[str(oid)] = md
+            per_opp_metadata[f"program:{program_read}" if oid is None else str(oid)] = md
             if md.get("error"):
                 # Record the first error but continue fanning out; callers often
                 # want to see partial results across the other opps. The first
@@ -621,7 +689,10 @@ def pipeline_preview(
             if "Google Drive source: " in first_error:
                 # The user's to fix (authorize, share, membership, file shape) -- not an
                 # upstream failure, and no SQL hint applies.
-                denied = any(m in first_error for m in ("authorized", "not a member", "who is reading"))
+                denied = any(
+                    m in first_error
+                    for m in ("authorized", "not a member", "who is reading", "manages program", "no opportunity")
+                )
                 raise MCPToolError("PERMISSION_DENIED" if denied else "BAD_REQUEST", first_error)
             if "headless context" in first_error or "cchq_forms" in first_error.lower():
                 raise MCPToolError(
@@ -669,6 +740,7 @@ def pipeline_preview(
             "pipeline_id": pipeline_id,
             "opportunity_id": opportunity_id,
             "opportunity_ids": target_opps if len(target_opps) > 1 else None,
+            **({"program_id": program_read, "read_once_for_program": True} if program_read is not None else {}),
             "rows": merged_rows[:sample_size],
             "row_count_before_sample": len(merged_rows),
             "used_schema_override": schema_override is not None,
@@ -713,16 +785,18 @@ def pipeline_preview(
         "type": "object",
         "properties": {
             "pipeline_id": {"type": "integer"},
-            "opportunity_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer", "description": "Owning opportunity. Provide this OR program_id."},
+            "program_id": {"type": "integer", "description": "Owning program, for a program-owned pipeline."},
         },
-        "required": ["pipeline_id", "opportunity_id"],
+        "required": ["pipeline_id"],
         "additionalProperties": False,
     },
     is_write=True,
 )
-def pipeline_delete(user, pipeline_id: int, opportunity_id: int):
+def pipeline_delete(user, pipeline_id: int, opportunity_id: int = None, program_id: int = None):
+    scope = _record_scope(opportunity_id, program_id)
     token = require_connect_token(user)
-    pda = PipelineDataAccess(access_token=token, opportunity_id=opportunity_id)
+    pda = PipelineDataAccess(access_token=token, **scope)
     try:
         existing = pda.get_definition(pipeline_id)
         if existing is None:

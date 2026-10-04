@@ -36,6 +36,8 @@ from connect_labs.workflow.data_access import (
     PipelineDataAccess,
     WorkflowDataAccess,
     on_demand_placeholder,
+    pipeline_read_targets,
+    program_drive_scope,
     serialize_pipeline_row,
     streamed_and_skipped_aliases,
 )
@@ -2363,7 +2365,10 @@ def _resolve_pipeline_rows_pipeline(request, definition_id: int, params: dict, w
     if not definition:
         raise PipelineRowsError("Workflow not found", status=404)
     spanned = [int(o) for o in (definition.opportunity_ids or [])] or [opportunity_id]
-    if opportunity_id not in spanned:
+    # No rows opportunity: only a program-scoped Drive pipeline can be read that way
+    # (it belongs to the program, not to one opportunity) -- the caller checks that
+    # once the config is known.
+    if opportunity_id is not None and opportunity_id not in spanned:
         # The workflow's own opportunities are the only ones it may read.
         raise PipelineRowsError(f"workflow {definition_id} does not span opportunity {opportunity_id}", status=403)
     source = next((s for s in (definition.pipeline_sources or []) if s.get("alias") == alias), None)
@@ -2379,10 +2384,15 @@ def _resolve_pipeline_rows_pipeline(request, definition_id: int, params: dict, w
     # argument below. Building the client from the rows opp sent the record read
     # into an opportunity that does not own it -- "pipeline 19776 not found",
     # from a request that had already found the workflow.
+    record_scope = (
+        {"opportunity_id": params["scope_opportunity_id"]}
+        if params.get("scope_opportunity_id")
+        else {"program_id": params.get("scope_program_id") or getattr(definition, "program_id", None)}
+    )
     pipeline_access = PipelineDataAccess(
         request=request,
         access_token=(request.session.get("labs_oauth", {}) or {}).get("access_token"),
-        opportunity_id=params["scope_opportunity_id"],
+        **record_scope,
     )
     pipeline_access_box.append(pipeline_access)
     # A referenced pipeline is read where it lives (its source's home_scope).
@@ -2652,16 +2662,25 @@ def pipeline_query_api(request, definition_id):
         rows_opp = _coerce_int(body.get("opportunity_id")) or scope_opp
 
         wf_access = WorkflowDataAccess(request=request)
+        several_opps = False
         if not rows_opp:
             definition = wf_access.get_definition(definition_id)
             if not definition:
                 return error("Workflow not found", 404)
             spanned = [int(o) for o in (definition.opportunity_ids or [])]
-            if len(spanned) != 1:
-                return error("opportunity_id is required: this workflow spans several opportunities", 400)
-            rows_opp = spanned[0]
+            if len(spanned) == 1:
+                rows_opp = spanned[0]
+            else:
+                # Fine for a program-scoped Drive pipeline (read once for the program,
+                # no opportunity involved); refused below for anything else.
+                several_opps = bool(spanned)
 
-        params = {"alias": alias.strip(), "opportunity_id": rows_opp, "scope_opportunity_id": scope_opp or rows_opp}
+        params = {
+            "alias": alias.strip(),
+            "opportunity_id": rows_opp,
+            "scope_opportunity_id": scope_opp or rows_opp,
+            "scope_program_id": scope_program,
+        }
         try:
             pipeline_id, config = _resolve_pipeline_rows_pipeline(
                 request, definition_id, params, wf_access, pipeline_access_box
@@ -2669,28 +2688,39 @@ def pipeline_query_api(request, definition_id):
         except PipelineRowsError as exc:
             return error(exc.message, exc.status)
 
+        program_scope = program_drive_scope(config)
+        if program_scope is None and not rows_opp:
+            if several_opps:
+                return error("opportunity_id is required: this workflow spans several opportunities", 400)
+            return error("opportunity_id is required", 400)
+
         try:
             AnalysisPipeline(request)._check_drive_access(config, rows_opp)
         except GDriveSourceError as exc:
             return error(str(exc), 403)
 
-        qs = cached_queryset(config, rows_opp)
+        # The cache key the rows live under: the opportunity, or the program's own
+        # key for a program-scoped Drive source (see AnalysisPipeline.data_scope).
+        cache_scope = AnalysisPipeline.data_scope(config, rows_opp)
+        qs = cached_queryset(config, cache_scope)
         if qs is None:
             from connect_labs.workflow.tasks import warm_pipeline_query_cache
 
-            lock_key = warm_cache_key(rows_opp, config)
+            lock_key = warm_cache_key(cache_scope, config)
             failure = cache.get(lock_key + ":error")
             if failure:
                 cache.delete(lock_key + ":error")  # report once; the next call tries again
                 return error(f"Filling the {params['alias']} pipeline failed: {failure}", 502)
             if cache.add(lock_key, "warming", WARM_LOCK_SECONDS):
                 scope = {"program_id": scope_program} if (scope_program and not scope_opp) else {}
+                if not scope and not scope_opp and program_scope is not None:
+                    scope = {"program_id": program_scope}
                 scope = scope or {"opportunity_id": scope_opp or rows_opp}
                 warm_pipeline_query_cache.delay(
                     (request.session.get("labs_oauth", {}) or {}).get("access_token"),
                     definition_id=int(definition_id),
                     alias=params["alias"],
-                    opportunity_id=rows_opp,
+                    opportunity_id=cache_scope,
                     scope=scope,
                     lock_key=lock_key,
                 )
@@ -2703,13 +2733,16 @@ def pipeline_query_api(request, definition_id):
                 status=202,
             )
 
-        result = run_query(config, rows_opp, query, qs)
+        # A program-scoped source's rows belong to the program: tagged opportunity_id null.
+        row_opp = None if program_scope is not None else rows_opp
+        result = run_query(config, row_opp, query, qs)
         return JsonResponse(
             {
                 "status": "ready",
                 "alias": params["alias"],
                 "pipeline_id": pipeline_id,
-                "opportunity_id": rows_opp,
+                "opportunity_id": row_opp,
+                **({"program_id": program_scope} if program_scope is not None else {}),
                 "rows": result["rows"],
                 "total": result["total"],
                 "limit": query["limit"],
@@ -4621,20 +4654,27 @@ def update_pipeline_schema_api(request, definition_id):
                 authorize_schema_drive_source,
             )
 
-            opportunity_id = getattr(request, "labs_context", {}).get("opportunity_id")
-            if not opportunity_id:
+            labs_context = getattr(request, "labs_context", {}) or {}
+            opportunity_id = labs_context.get("opportunity_id")
+            # A program-scoped pipeline (program context, no opportunity) is stamped
+            # for the program: readable by the program's owning organization only.
+            program_id = None if opportunity_id else labs_context.get("program_id")
+            if not opportunity_id and not program_id:
                 data_access.close()
-                return JsonResponse({"error": "A Google Drive source needs an opportunity context"}, status=400)
+                return JsonResponse(
+                    {"error": "A Google Drive source needs an opportunity or program context"}, status=400
+                )
             stored = data_access.get_definition(definition_id)
             try:
                 # Against the stored schema, so a re-save keeps an unchanged target's
                 # stamp and only a new/changed target needs (and gets) a staff stamp.
                 schema = authorize_schema_drive_source(
                     schema,
-                    opportunity_id,
+                    opportunity_id or None,
                     request.user,
                     previous_schema=stored.schema if stored else None,
                     pipeline_id=int(definition_id),
+                    program_id=program_id,
                 )
             except GDriveSourceError:
                 # Fixed messages: exception text is not echoed to the browser.
@@ -4706,12 +4746,15 @@ def execute_pipeline_preview_api(request, definition_id):
     # bundles; a real numeric opp is still required to run the preview.
     opportunity_id = _coerce_int(labs_context.get("opportunity_id") or request.GET.get("opportunity_id"))
 
-    if not opportunity_id:
+    # In a program context a program-scoped Drive pipeline previews with no
+    # opportunity (it is read once for the program); anything else still needs one,
+    # and execute_pipeline reports that as the result's error.
+    if not opportunity_id and not labs_context.get("program_id"):
         return JsonResponse({"error": "opportunity_id required"}, status=400)
 
     try:
         data_access = PipelineDataAccess(request=request)
-        result = data_access.execute_pipeline(definition_id, int(opportunity_id))
+        result = data_access.execute_pipeline(definition_id, int(opportunity_id) if opportunity_id else None)
         data_access.close()
 
         # Limit to 100 rows for preview
@@ -6226,32 +6269,41 @@ class PipelineDataStreamView(BaseSSEStreamView):
             # auth calls (the pipeline records themselves are opportunity-owned
             # regardless of who owns the workflow); the actual data pull below
             # already iterates every id in opp_ids, not just this one.
+            # A program-owned workflow that spans NO opportunities is still runnable
+            # when what it reads is program-scoped (a program Drive source is read
+            # once for the program); its records are then read in the program scope.
+            owning_program_id = getattr(definition, "program_id", None)
             if not opportunity_id:
                 fallback_ids = definition.opportunity_ids or []
-                if not fallback_ids:
+                if not fallback_ids and not owning_program_id:
                     yield send_sse_event("Error", error="No opportunity selected")
                     return
-                opportunity_id = fallback_ids[0]
+                opportunity_id = fallback_ids[0] if fallback_ids else None
 
             # Early CCHQ access probe — fail fast (1-2s) instead of letting
             # the user wait through a 60s ALB timeout, before discovering
             # CCHQ is unreachable mid-pipeline. Only fires if any pipeline
             # source declares a cchq_forms data source.
-            yield from self._maybe_probe_cchq_access(
-                request, definition, int(opportunity_id), labs_oauth.get("access_token")
-            )
+            if opportunity_id:
+                yield from self._maybe_probe_cchq_access(
+                    request, definition, int(opportunity_id), labs_oauth.get("access_token")
+                )
 
             yield send_sse_event("Loading pipeline configurations...")
 
             # Determine which opps to pull data from
-            opp_ids = definition.opportunity_ids or [int(opportunity_id)]
+            opp_ids = definition.opportunity_ids or ([int(opportunity_id)] if opportunity_id else [])
 
             # Execute each pipeline source with streaming.
             pipeline_data = {}
             pipeline_access = PipelineDataAccess(
                 request=request,
                 access_token=labs_oauth.get("access_token"),
-                opportunity_id=int(opportunity_id),
+                **(
+                    {"opportunity_id": int(opportunity_id)}
+                    if opportunity_id
+                    else {"program_id": int(owning_program_id)}
+                ),
             )
             pipeline_access.use_sources(definition.pipeline_sources)
 
@@ -6313,17 +6365,26 @@ class PipelineDataStreamView(BaseSSEStreamView):
                     merged_rows: list[dict] = []
                     per_opp_meta: dict[str, dict] = {}
 
-                    for i, opp_id in enumerate(opp_ids):
+                    # Use the JOIN-resolved config we built above so the visits
+                    # pipeline sees its registrations config_hash. Falling back to a
+                    # fresh parse would lose the resolved_config_hash patch.
+                    try:
+                        alias_config = configs_by_alias.get(alias) or pipeline_access._schema_to_config(
+                            pipeline_def.schema, pipeline_id
+                        )
+                    except Exception:
+                        alias_config = None
+                    # One read per opportunity -- or ONE for a program-scoped Drive
+                    # source, whose rows are the program's (tagged opportunity_id null).
+                    targets = pipeline_read_targets(alias_config, opp_ids)
+
+                    for i, (target_key, opp_id, row_tag) in enumerate(targets):
                         mixin = AnalysisPipelineSSEMixin()
-                        suffix = f" (opp {i + 1}/{len(opp_ids)})" if len(opp_ids) > 1 else ""
+                        suffix = f" (opp {i + 1}/{len(targets)})" if len(targets) > 1 else ""
                         yield send_sse_event(f"Executing pipeline: {pipeline_def.name}{suffix}...")
 
                         try:
-                            # Use the JOIN-resolved config we built above so
-                            # the visits pipeline sees its registrations
-                            # config_hash. Falling back to a fresh parse would
-                            # lose the resolved_config_hash patch.
-                            config = configs_by_alias.get(alias) or pipeline_access._schema_to_config(
+                            config = alias_config or pipeline_access._schema_to_config(
                                 pipeline_def.schema, pipeline_id
                             )
                             pipeline = AnalysisPipeline(request)
@@ -6339,7 +6400,7 @@ class PipelineDataStreamView(BaseSSEStreamView):
                             from_cache = mixin._pipeline_from_cache
 
                             row_count = len(result.rows) if result else 0
-                            per_opp_meta[str(opp_id)] = {
+                            per_opp_meta[target_key] = {
                                 "row_count": row_count,
                                 "from_cache": from_cache,
                             }
@@ -6358,17 +6419,17 @@ class PipelineDataStreamView(BaseSSEStreamView):
                                 result_metadata.get("raw_fetch_anomaly") if isinstance(result_metadata, dict) else None
                             )
                             if raw_fetch_anomaly:
-                                per_opp_meta[str(opp_id)]["raw_fetch_anomaly"] = raw_fetch_anomaly
+                                per_opp_meta[target_key]["raw_fetch_anomaly"] = raw_fetch_anomaly
 
                             if result:
-                                yield send_sse_event(f"Processing {alias} data (opp {opp_id})...")
+                                yield send_sse_event(f"Processing {alias} data ({target_key})...")
                                 # One shared serializer with the cached/snapshot
                                 # path, so the live and snapshot payloads cannot
                                 # drift apart again (ace#1657: this block used to
                                 # hand-roll its own dict and silently dropped
                                 # `status` and `flagged`).
                                 merged_rows.extend(
-                                    serialize_pipeline_row(row, extra={"opportunity_id": opp_id})
+                                    serialize_pipeline_row(row, extra={"opportunity_id": row_tag})
                                     for row in result.rows
                                 )
                         except Exception as e:
@@ -6403,7 +6464,7 @@ class PipelineDataStreamView(BaseSSEStreamView):
                                 per_opp_entry["cache_table"] = e.table
                                 yield send_sse_event(
                                     f"Pipeline '{pipeline_def.name}' aborted: another run "
-                                    f"for opp {opp_id} is already in flight (collided on "
+                                    f"for {target_key} is already in flight (collided on "
                                     f"{e.table}). Wait a moment and retry — a cache hit "
                                     f"is likely.",
                                     error=str(e),
@@ -6418,7 +6479,7 @@ class PipelineDataStreamView(BaseSSEStreamView):
                                 # Stop the entire pipeline stream — don't proceed
                                 # to the next pipeline source. Any subsequent
                                 # writer would just collide too.
-                                per_opp_meta[str(opp_id)] = per_opp_entry
+                                per_opp_meta[target_key] = per_opp_entry
                                 pipeline_data[alias] = {
                                     "rows": [],
                                     "metadata": {
@@ -6432,12 +6493,12 @@ class PipelineDataStreamView(BaseSSEStreamView):
                                     },
                                 }
                                 return
-                            per_opp_meta[str(opp_id)] = per_opp_entry
+                            per_opp_meta[target_key] = per_opp_entry
                             # Surface per-pipeline failure to the FE with the
                             # pipeline name so users see which one broke
                             # rather than a generic "connection lost".
                             yield send_sse_event(
-                                f"Pipeline '{pipeline_def.name}' failed for opp {opp_id}: {str(e)[:200]}",
+                                f"Pipeline '{pipeline_def.name}' failed for {target_key}: {str(e)[:200]}",
                                 data={
                                     "pipeline_alias": alias,
                                     "pipeline_name": pipeline_def.name,
@@ -6459,6 +6520,10 @@ class PipelineDataStreamView(BaseSSEStreamView):
                         "opportunity_ids": list(opp_ids),
                         "per_opp": per_opp_meta,
                     }
+                    if program_drive_scope(alias_config) is not None:
+                        # Read once for the program; its rows carry opportunity_id null.
+                        alias_metadata["program_id"] = program_drive_scope(alias_config)
+                        alias_metadata["read_once_for_program"] = True
                     auth_failed_opps = [oid for oid, m in per_opp_meta.items() if m.get("auth_error") == "commcare_hq"]
                     if auth_failed_opps:
                         alias_metadata["auth_error"] = "commcare_hq"

@@ -344,7 +344,7 @@ def warm_pipeline_cache(
 
     from connect_labs.labs.analysis.pipeline import AnalysisPipeline
     from connect_labs.labs.analysis.utils import resolve_join_hashes
-    from connect_labs.workflow.data_access import PipelineDataAccess, WorkflowDataAccess
+    from connect_labs.workflow.data_access import PipelineDataAccess, WorkflowDataAccess, program_drive_scope
     from connect_labs.workflow.tasks import _create_mock_request
     from connect_labs.workflow.views import _resolve_pipeline_sources_for_run
 
@@ -359,11 +359,18 @@ def warm_pipeline_cache(
         if definition is None:
             raise PipelineQueryError(f"workflow {definition_id} not found", status=404)
         sources = definition.pipeline_sources or []
-        opp_ids = [int(o) for o in (definition.opportunity_ids or [])] or [int(opportunity_id)]
+        # `opportunity_id` is the cache scope: negative for a program-scoped Drive
+        # source (gdrive_fetcher.program_cache_scope), which no record lives in -- the
+        # records are then read in the workflow's program scope instead.
+        is_program_key = int(opportunity_id) < 0
+        opp_ids = [int(o) for o in (definition.opportunity_ids or [])] or (
+            [] if is_program_key else [int(opportunity_id)]
+        )
+        record_opp = scope.get("opportunity_id") or (None if is_program_key else int(opportunity_id))
         pipeline_access = PipelineDataAccess(
             request=request,
             access_token=access_token,
-            opportunity_id=scope.get("opportunity_id") or int(opportunity_id),
+            **({"opportunity_id": record_opp} if record_opp else {"program_id": scope.get("program_id")}),
         )
         pipeline_access.use_sources(sources)
         ordered, configs = _resolve_pipeline_sources_for_run(
@@ -387,6 +394,12 @@ def warm_pipeline_cache(
             name = source.get("alias")
             if name not in needed or name not in configs:
                 continue
+            if is_program_key and program_drive_scope(configs[name]) is None:
+                raise PipelineQueryError(
+                    f"{alias!r} is read once for its program, but it joins {name!r}, which is per-opportunity; "
+                    "a program-scoped pipeline can only join other program-scoped pipelines.",
+                    status=400,
+                )
             if name != alias and cached_queryset(configs[name], opportunity_id) is not None:
                 continue  # a warm dependency needs nothing
             AnalysisPipeline(request, access_token=access_token).stream_analysis_ignore_events(
