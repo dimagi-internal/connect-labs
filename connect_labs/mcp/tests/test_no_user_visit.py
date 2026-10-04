@@ -144,6 +144,41 @@ def test_an_oauth_sign_in_with_the_restricted_scope_is_restricted_on_the_full_en
 
 
 @pytest.mark.django_db(transaction=True)
+def test_the_restricted_endpoint_and_the_restricted_token_grant_the_same_tools():
+    """The /mcp/no_user_visit/ address and a no-uservisit-data PAT are two ways to ask
+    for the same permissions -- definition writes included -- and must never drift."""
+    user = _user("same-reach")
+    _, full = MCPAccessToken.create_token(user, name="laptop")
+    _, restricted = MCPAccessToken.create_token(user, name="agent", scope=token_scopes.NO_USERVISIT_DATA)
+
+    async def work(mcp_client):
+        return await mcp_client.list_tools()
+
+    by_endpoint = {tool.name for tool in _call(SAFE_URL, full, work)}
+    by_token = {tool.name for tool in _call(FULL_URL, restricted, work)}
+
+    assert by_endpoint == by_token == token_scopes.RESTRICTED_TOOLS
+    assert token_scopes.DEFINITION_WRITE_TOOLS <= by_endpoint
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_definition_write_on_the_restricted_endpoint_passes_the_scope_gate():
+    user = _user("endpoint-write")
+    _, full = MCPAccessToken.create_token(user, name="laptop")
+
+    async def work(mcp_client):
+        return await mcp_client.call_tool(
+            "semantic_registry_update", {"registry_id": 999999, "name": "x"}, raise_on_error=False
+        )
+
+    result = _call(SAFE_URL, full, work)
+
+    # No such registry: the handler answers, not the scope gate.
+    assert "scope does not include" not in result.content[0].text
+    assert MCPAuditLog.objects.filter(user=user, tool_name="semantic_registry_update").exists()
+
+
+@pytest.mark.django_db(transaction=True)
 def test_a_token_holding_both_scopes_is_restricted():
     user = _user("both-scopes")
     raw = _access_token(user, _mcp_application(), scope=f"{oauth.MCP_SCOPE} {oauth.MCP_NO_USERVISIT_SCOPE}")
@@ -228,6 +263,50 @@ def test_a_workflow_run_is_refused_if_its_definition_reads_a_real_opp(monkeypatc
 
     _Definition.opportunity_ids = [10806]
     assert visit_access.denied_reason(user, "workflow_run_context", {"run_id": 1, "opportunity_id": 10806}) is None
+
+
+@pytest.mark.parametrize("tool", ["workflow_update_render_code", "workflow_patch_render_code"])
+@pytest.mark.django_db
+def test_render_code_edits_are_generated_only(monkeypatch, tool):
+    """Render code runs over real data in a full-access viewer's browser, so a restricted
+    caller may edit it only on a workflow whose every opportunity is generated."""
+    user = _user(f"render-{tool}")
+    _synthetic_opp(10807, user=user, generated=True)
+    seen = {}
+
+    class _Definition:
+        opportunity_id = 10807
+        opportunity_ids = [10807]
+
+    def _read(user, key, arguments, opportunity_id, program_id):
+        seen["workflow_id"] = arguments.get(key)
+        return _Definition()
+
+    monkeypatch.setattr(visit_access, "_read_definition", _read)
+    args = {"workflow_id": 7, "opportunity_id": 10807}
+
+    assert visit_access.denied_reason(user, tool, args) is None
+    assert seen["workflow_id"] == 7
+
+    # The workflow also covers a real opportunity: refused, naming the tool.
+    _Definition.opportunity_ids = [10807, 501]
+    reason = visit_access.denied_reason(user, tool, args)
+    assert reason and tool in reason
+    assert "render code" in reason
+
+    # Opened in a real opportunity's scope: refused before the definition is read.
+    seen.clear()
+    assert visit_access.denied_reason(user, tool, {"workflow_id": 7, "opportunity_id": 501})
+    assert seen == {}
+
+
+def test_render_code_edits_are_gated_writes_not_readers():
+    # Generated-only, but not visit readers: they return nothing. They are gated because
+    # the CODE they write later runs over real data.
+    for tool in ("workflow_update_render_code", "workflow_patch_render_code"):
+        assert tool in token_scopes.GENERATED_ONLY_TOOLS
+        assert tool not in token_scopes.USERVISIT_DATA_TOOLS
+        assert tool not in token_scopes.DEFINITION_WRITE_TOOLS
 
 
 @pytest.mark.django_db

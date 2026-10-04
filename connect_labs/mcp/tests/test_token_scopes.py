@@ -1,4 +1,10 @@
-"""A no-uservisit-data PAT reads definitions and never visit data, and writes nothing."""
+"""A no-uservisit-data PAT never sees user visit data, and can edit definitions.
+
+It reads definitions (``NO_USERVISIT_DATA_TOOLS``, which stay read-only), edits
+workflow and indicator definitions and triggers server-side computation
+(``DEFINITION_WRITE_TOOLS``, whose responses carry no visit-derived values), and reads
+visits only on generated synthetic opportunities (``GENERATED_ONLY_TOOLS``).
+"""
 
 import pytest
 from django.core.management import call_command
@@ -18,7 +24,46 @@ def test_every_no_uservisit_data_tool_exists_and_reads():
     for name in token_scopes.NO_USERVISIT_DATA_TOOLS:
         spec = get_tool(name)
         assert spec is not None, f"NO_USERVISIT_DATA_TOOLS names a tool that does not exist: {name}"
-        assert not spec.is_write, f"{name} writes, so a no-uservisit-data token must not reach it"
+        assert (
+            not spec.is_write
+        ), f"{name} writes; a write belongs in DEFINITION_WRITE_TOOLS, if its response carries no visit data"
+
+
+# Tools whose response carries visit-derived values: a snapshot payload, indicator
+# values, rows, or per-worker / per-case data. None of them may be a definition write.
+_VISIT_VALUE_READERS = {
+    "workflow_preview_snapshot",
+    "workflow_preview_as_of",
+    "workflow_history_runs",
+    "workflow_run_context",
+    "workflow_run_indicators",
+    "workflow_indicator_explain",
+    "pipeline_preview",
+    "custom_analysis_run",
+    "get_sample_ids",
+}
+
+
+def test_every_definition_write_tool_exists_and_writes():
+    from connect_labs.mcp import tools  # noqa: F401
+
+    for name in token_scopes.DEFINITION_WRITE_TOOLS:
+        spec = get_tool(name)
+        assert spec is not None, f"DEFINITION_WRITE_TOOLS names a tool that does not exist: {name}"
+        assert spec.is_write, f"{name} does not write, so it belongs in NO_USERVISIT_DATA_TOOLS"
+
+
+def test_no_definition_write_tool_returns_visit_data():
+    writes = token_scopes.DEFINITION_WRITE_TOOLS
+    assert writes.isdisjoint(token_scopes.USERVISIT_DATA_TOOLS)
+    assert writes.isdisjoint(token_scopes.GENERATED_ONLY_TOOLS)
+    assert writes.isdisjoint(_VISIT_VALUE_READERS)
+    assert writes <= token_scopes.RESTRICTED_TOOLS
+
+
+def test_deletes_that_are_not_definition_edits_stay_out_of_reach():
+    for name in ("workflow_delete", "pipeline_delete", "pipeline_update_schema", "benchmarks_cohort_delete"):
+        assert name not in token_scopes.RESTRICTED_TOOLS, name
 
 
 def test_no_visit_data_tool_is_no_uservisit_data():
@@ -77,19 +122,44 @@ def test_a_no_uservisit_data_pat_sees_and_calls_only_its_tools():
         visit_data = await mcp_client.call_tool(
             "pipeline_preview", {"pipeline_id": 1, "opportunity_id": 1}, raise_on_error=False
         )
-        write = await mcp_client.call_tool("workflow_delete", {"workflow_id": 1}, raise_on_error=False)
-        return tools, called, visit_data, write
+        snapshot = await mcp_client.call_tool(
+            "workflow_preview_snapshot", {"run_id": 1, "opportunity_id": 1}, raise_on_error=False
+        )
+        definition_write = await mcp_client.call_tool(
+            "workflow_update_definition",
+            {"workflow_id": 999999, "opportunity_id": 1, "patch": {"name": "x"}, "expected_version": 1},
+            raise_on_error=False,
+        )
+        delete = await mcp_client.call_tool("workflow_delete", {"workflow_id": 1}, raise_on_error=False)
+        return tools, called, visit_data, snapshot, definition_write, delete
 
-    tools, called, visit_data, write = _run_mcp(build_application(), {"Authorization": f"Bearer {raw}"}, None, work)
+    tools, called, visit_data, snapshot, definition_write, delete = _run_mcp(
+        build_application(), {"Authorization": f"Bearer {raw}"}, None, work
+    )
 
-    assert {tool.name for tool in tools} == token_scopes.RESTRICTED_TOOLS
+    names = {tool.name for tool in tools}
+    assert names == token_scopes.RESTRICTED_TOOLS
+    assert token_scopes.DEFINITION_WRITE_TOOLS <= names
     assert called.structured_content is not None
+    # Visit readers on a real opportunity: refused.
     assert visit_data.is_error
     assert "pipeline_preview" in visit_data.content[0].text
-    assert write.is_error
+    assert snapshot.is_error
+    assert "workflow_preview_snapshot" in snapshot.content[0].text
+    # A definition write gets past the scope gate. This user has no Connect token, so
+    # the handler itself fails -- but not with the scope refusal.
+    assert definition_write.is_error
+    assert "scope does not include" not in definition_write.content[0].text
+    assert "user visit data" not in definition_write.content[0].text
+    assert MCPAuditLog.objects.filter(user=user, tool_name="workflow_update_definition").exists()
+    # A delete is not a definition edit: refused by the scope gate.
+    assert delete.is_error
+    assert "scope does not include workflow_delete" in delete.content[0].text
     assert MCPAuditLog.objects.filter(user=user, tool_name="list_templates", success=True).exists()
     assert not MCPAuditLog.objects.filter(
-        user=user, tool_name__in=["pipeline_preview", "workflow_delete"], success=True
+        user=user,
+        tool_name__in=["pipeline_preview", "workflow_preview_snapshot", "workflow_delete"],
+        success=True,
     ).exists()
 
 

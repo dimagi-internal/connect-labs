@@ -18,14 +18,19 @@ The second is the same server behind a different URL, and it can only narrow
 what you reach, never widen it: whatever credential you connect with, a request
 on it gets the restricted tools. It can read how things are built (workflow,
 pipeline and indicator definitions, app structure, solicitations, the org
-directory, targeting), profile a real opportunity server-side and generate a
+directory, targeting), edit workflow and indicator definitions and trigger
+saved-run generation (snapshots, history rebuilds, cache warms, benchmark
+publication -- the server computes over visits, the caller gets back only ids,
+versions, dates and counts), profile a real opportunity server-side and generate a
 synthetic set from the profile. Tools that read visits (pipeline previews,
 workflow runs, record dumps) run there only on synthetic opportunities whose
 data was **generated** (`connect_labs/labs/synthetic/provenance.py`). The
 profile is aggregate statistics; the visits themselves never reach the AI.
 
 Signing in through it asks for the `mcp:no-uservisit-data` scope, so that
-token is restricted even if it is later used against `/mcp/`. The lists are in
+token is restricted even if it is later used against `/mcp/`. A
+`no-uservisit-data` Personal Access Token is the same thing: the address and the
+token resolve to exactly the same tools. The lists are in
 `connect_labs/mcp/token_scopes.py`, deny-by-default: a new tool reaches neither
 until someone adds it on purpose.
 

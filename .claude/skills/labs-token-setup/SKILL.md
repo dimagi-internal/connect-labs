@@ -21,10 +21,13 @@ Seamless flow for creating an MCP Personal Access Token and wiring it into Claud
 
    python .claude/skills/labs-token-setup/setup_labs_token.py <labs_base_url> [--no-uservisit-data]
 
-   Pass `--no-uservisit-data` when the user wants a token that can read definitions
-   (workflows, pipelines, indicator registries, app structure, solicitations,
-   the org directory, targeting) but never visit data and never writes. The
-   consent page names the access level. The tool list is
+   Pass `--no-uservisit-data` when the user wants a token that never sees user
+   visit data: it reads definitions (workflows, pipelines, indicator registries,
+   app structure, solicitations, the org directory, targeting), and can edit
+   workflow and indicator definitions and trigger saved-run generation, but
+   never reads visit rows or visit-derived values (except on generated synthetic
+   opportunities). It reaches exactly what the `/mcp/no_user_visit/` address
+   does. The consent page names the access level. The tool list is
    `connect_labs/mcp/token_scopes.py`.
 
    The script will:
