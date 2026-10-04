@@ -1660,6 +1660,7 @@ class WorkflowDataAccess(BaseDataAccess):
         aliases: list[str] | None = None,
         period_start: str | None = None,
         period_end: str | None = None,
+        memo: dict | None = None,
     ) -> dict[str, dict]:
         """Cache-only counterpart of `get_pipeline_data`, scoped to a manifest.
 
@@ -1681,8 +1682,22 @@ class WorkflowDataAccess(BaseDataAccess):
         Raises PipelineCacheMiss if any required pipeline has no usable cache
         for any of the workflow's opportunities — completion should fail fast
         with "reload the dashboard" rather than snapshot partial data.
+
+        `memo` (a history rebuild's per-batch dict) reuses what does not depend on
+        the period across the batch's periods: the definition, the resolved sources
+        and configs, each pipeline's `period_scoped` flag, and the rows of every
+        source that is NOT period-scoped. A period-scoped source is still re-read
+        for each period. None means read everything fresh, as before.
         """
-        definition = self.get_definition(definition_id)
+
+        def _once(key, load):
+            if memo is None:
+                return load()
+            if key not in memo:
+                memo[key] = load()
+            return memo[key]
+
+        definition = _once(("definition", definition_id), lambda: self.get_definition(definition_id))
         if not definition:
             return {}
 
@@ -1713,11 +1728,17 @@ class WorkflowDataAccess(BaseDataAccess):
         from connect_labs.labs.analysis.utils import resolve_join_hashes
         from connect_labs.workflow.views import _resolve_pipeline_definition, _resolve_pipeline_sources_for_run
 
-        ordered_sources, configs_by_alias = _resolve_pipeline_sources_for_run(
-            pipeline_access, sources, opp_ids=opp_ids, request=self.request, access_token=self.access_token
+        def _resolve_sources():
+            ordered, configs = _resolve_pipeline_sources_for_run(
+                pipeline_access, sources, opp_ids=opp_ids, request=self.request, access_token=self.access_token
+            )
+            if configs:
+                resolve_join_hashes(configs)
+            return ordered, configs
+
+        ordered_sources, configs_by_alias = _once(
+            ("pipeline_sources", definition_id, tuple(opp_ids)), _resolve_sources
         )
-        if configs_by_alias:
-            resolve_join_hashes(configs_by_alias)
 
         want_period = bool(period_start and period_end)
 
@@ -1735,14 +1756,25 @@ class WorkflowDataAccess(BaseDataAccess):
                 # AND the pipeline's own schema opts in via `period_scoped`.
                 period_scoped = False
                 if want_period:
-                    pdef = _resolve_pipeline_definition(
-                        pipeline_access,
-                        pipeline_id,
-                        opp_ids=opp_ids,
-                        request=self.request,
-                        access_token=self.access_token,
-                    )
-                    period_scoped = bool(pdef and (pdef.schema or {}).get("period_scoped"))
+
+                    def _is_period_scoped(pipeline_id=pipeline_id):
+                        pdef = _resolve_pipeline_definition(
+                            pipeline_access,
+                            pipeline_id,
+                            opp_ids=opp_ids,
+                            request=self.request,
+                            access_token=self.access_token,
+                        )
+                        return bool(pdef and (pdef.schema or {}).get("period_scoped"))
+
+                    period_scoped = _once(("period_scoped", pipeline_id), _is_period_scoped)
+
+                # The all-time rows of a source that is not period-scoped are the same
+                # for every period of a batch: read once, reused.
+                rows_key = ("pipeline_rows", definition_id, alias, tuple(opp_ids))
+                if not period_scoped and memo is not None and rows_key in memo:
+                    results[alias] = memo[rows_key]
+                    continue
 
                 merged_rows: list[dict] = []
                 per_opp_meta: dict[str, dict] = {}
@@ -1775,6 +1807,8 @@ class WorkflowDataAccess(BaseDataAccess):
                         **_program_scope_meta(config),
                     },
                 }
+                if not period_scoped and memo is not None:
+                    memo[rows_key] = results[alias]
         finally:
             pipeline_access.close()
 
