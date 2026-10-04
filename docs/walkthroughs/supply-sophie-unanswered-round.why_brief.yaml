@@ -47,9 +47,9 @@ gaps:
     by the comparison and the overview.
 spine:
 - id: S1
-  claim: 'In Sophie''s rounds about half the suppliers asked never answer (Jonathan''s
-    account); this demo''s round 2 reconstructs that: of six asked on 16 Sep, three
-    stayed silent through two reminders (19 Sep, then 24 to 26 Sep), and the three
+  claim: 'In Sophie''s tenders about half the suppliers asked never answer (Jonathan''s
+    account); this demo''s tender 2 reconstructs that: of six asked on 17 Sep, three
+    stayed silent through two reminders (the second sent 25 to 27 Sep), and the three
     who answered sent one complete quote, one missing a fact, and questions instead
     of a price.'
   status: grounded

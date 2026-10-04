@@ -41,26 +41,36 @@ scenes:
     seconds: 1.8
     target: css:[data-testid=tile]:has-text('Silent')
   - kind: scroll
-    note: frame from the tender's header card -- its title, terms line, the stage bar and tiles, then the whole Suppliers table, On us and On suppliers beside
-    value: '280'
+    note: frame from the tender's title -- its terms line, the stage bar and tiles, then the whole Suppliers table with On us beside
+    value: '262'
   - kind: hover
-    note: the tender's terms line in its header, import duty not settled -- the line scene 5 changes
-    say: duty
+    note: Harmattan's quote, recorded from its own email by the AI, its source mark and AI tag beside the price
+    say: email
     seconds: 1.8
-    target: testid:tender-duty-terms
+    target: css:[data-testid=supplier-row]:has-text('Harmattan Therapeutics') [data-testid=supplier-quote]
+  - kind: hover
+    note: the fact Kanem's quote left out, sachets per carton, in its Missing from quote cell
+    say: carton
+    seconds: 1.8
+    target: css:[data-testid=supplier-row]:has-text('Kanem Foods Ltd') [data-testid=supplier-missing]
   - kind: hover
     note: Sahel's row, its state chip counting the days it has been silent
     say: Sahel
     seconds: 1.8
     target: css:[data-testid=supplier-row][data-supplier-id='${sahel_supplier_id}'] [data-testid=supplier-state]
   - kind: hover
-    note: the suppliers still to reply, listed On suppliers, each with when it was asked and last chased
+    note: Sahel's Last chased cell, the day of its 2nd reminder, and its Draft reminder link to the reminder already drafted
     say: chased
     seconds: 1.8
-    target: testid:on-suppliers
+    target: css:[data-testid=supplier-row][data-supplier-id='${sahel_supplier_id}'] [data-testid=supplier-chased]
+  - kind: hover
+    note: the tender's terms line in its header, import duty not settled -- the line scene 5 changes
+    say: duty
+    seconds: 1.8
+    target: testid:tender-duty-terms
   - kind: scroll
-    note: settle on the same frame -- the tender's title, terms line, stage bar, tiles and the whole Suppliers table, On us and On suppliers beside
-    value: '420'
+    note: settle on the same frame -- the tender's title, terms line, stage bar, tiles and the whole Suppliers table with On us beside
+    value: '262'
   - kind: hover
     note: park the cursor in the top bar's blank middle, off the page content; the bar is fixed, so hovering cannot scroll the page
     seconds: 0.6
@@ -68,7 +78,7 @@ scenes:
   - kind: hold
     seconds: 1.5
   - kind: snapshot
-    note: the canonical frame is the header's terms line (import duty not settled, the deadline ahead), the stage bar and the Answered / Silent tiles, the Suppliers table with each supplier's state and last chase, and On us and On suppliers beside
+    note: the canonical frame is the tender's title, its terms line (import duty not settled, our estimates, the deadline ahead), the stage bar and the Answered / Silent tiles, and the whole Suppliers table -- each quote with its AI source mark, the fact Kanem's quote left out, each silent supplier's last chase and its Draft reminder link -- with On us beside
   - kind: click
     note: Sahel's row's own Remind link opens the tender's draft emails at Sahel's drafted reminder, so scene 2 starts (and its before-frame is taken) on the open draft
     target: css:[data-testid=supplier-row][data-supplier-id='${sahel_supplier_id}'] [data-testid=supplier-action]
@@ -82,18 +92,20 @@ scenes:
   - kind: hold
     seconds: 0.8
   full_page: false
-  concept_claim: The tender's status view shows the step it is on with its deadline
-    in days, how many of the suppliers asked have answered and how many are silent,
-    each supplier's state, the suppliers it waits on with when each was last chased,
-    and that its import duty terms are not settled.
+  concept_claim: The tender's status view records each quote from the supplier's own
+    email with a mark saying the AI recorded it, names the fact each quote left out,
+    shows when each silent supplier was last chased with a link to the reminder already
+    drafted for it, and gives the step the tender is on with its deadline in days, the
+    answered and silent counts, and that its import duty terms are not settled.
   design_intent: 'Bet: framing the demo around silence, the normal case, makes every
     later scene answer a question Sophie actually has; one opening scene carries the
     stage, the counts, the supplier table and the unsettled duty terms that scene 5 settles.'
   pace: teach
   role: overview
   show: 'Sophie opens tender 2, its deadline four days off, and reads its stage bar, the Answered
-    and Silent tiles, the Suppliers table with Sahel silent, the suppliers listed On
-    suppliers with when each was chased, and the terms line saying import duty is not settled.'
+    and Silent tiles, and the Suppliers table: each quote recorded from its email by
+    the AI, the sachets per carton Kanem left out, Sahel silent with its last chase and
+    a reminder drafted, and the terms line saying import duty is not settled.'
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
 - id: sophie-chases-sahel
   full_page: false
@@ -131,11 +143,8 @@ scenes:
   - kind: wait_for
     must_succeed: true
     target: css:tr[data-changed]
-  - kind: scroll_to
-    note: centre Sahel's Invitations row, marked as just changed, with the table's headings above it
-    target: css:tr[data-changed]
   - kind: hover
-    note: the payoff -- Sahel's Last chased cell reads Reminder sent today, the 3rd reminder, and no further reminder before the deadline
+    note: the payoff -- Sahel's Last chased cell reads today, the 3rd reminder, no further reminder before the deadline, tagged Reminder sent, just recorded
     say: recorded
     seconds: 2.0
     target: css:tr[data-changed] td:has-text('3rd reminder')
@@ -452,8 +461,8 @@ scenes:
     note: the forwarder's email, centred and read
     seconds: 2.0
   - kind: scroll
-    note: back up to the order's status header -- held at customs waiting on us, billed against agreed, the days late, and On us
-    value: '310'
+    note: back up to the order's breadcrumb (tender 1) and status header -- held at customs waiting on us, billed against agreed, the days late split by whose, and On us
+    value: '270'
   - kind: hover
     note: park the cursor in the top bar's blank middle, off every heading, figure and action
     seconds: 0.6
@@ -481,26 +490,34 @@ scenes:
     target: testid:standing-table
   - kind: hold
     seconds: 1.0
+  - kind: scroll
+    note: frame the Procurements heading and its counts, then the table with tender 2's row first and whole, the RUSF tender and the order below
+    value: '255'
+  - kind: hover
+    note: tender 2's comparable chip leading its stage -- 1 of 3 comparable, Harmattan -- where scene 1 read none comparable
+    say: comparable
+    seconds: 2.2
+    target: "css:[data-testid=overview-row][data-kind=tender][data-tender-id='${round2_tender_id}'] [data-testid=row-comparable]"
+  - kind: hover
+    note: the quote gaps under tender 2's next move, outlined facts, apart from the moves
+    say: facts
+    seconds: 2.0
+    target: "css:[data-testid=overview-row][data-kind=tender][data-tender-id='${round2_tender_id}'] [data-testid=row-missing]"
+  - kind: hover
+    note: tender 2's next move, hers -- the reply to Northgate's three questions
+    say: Northgate's
+    seconds: 2.0
+    target: "css:[data-testid=overview-row][data-kind=tender][data-tender-id='${round2_tender_id}'] [data-testid=move-line]"
   - kind: hover
     note: the moves on her, counted at the top
-    say: yours
+    say: counted
     seconds: 1.8
     target: testid:standing-our-moves
   - kind: hover
     note: the moves waiting on suppliers
-    say: suppliers
+    say: waiting
     seconds: 1.8
     target: testid:standing-their-moves
-  - kind: hover
-    note: the tender's row -- its stage, its next move and whose it is
-    say: tender
-    seconds: 2.0
-    target: "css:[data-testid=overview-row][data-kind=tender][data-tender-id='${round2_tender_id}'] [data-testid=next-move]"
-  - kind: hover
-    note: tender 2's comparable chip under its stage -- 1 of 3 comparable, Harmattan -- the comparison's own count while it stays at Collecting quotes
-    say: comparable
-    seconds: 2.0
-    target: "css:[data-testid=overview-row][data-kind=tender][data-tender-id='${round2_tender_id}'] [data-testid=row-comparable]"
   - kind: hover
     note: the just-asked RUSF tender's row -- collecting quotes, its next move the suppliers'
     say: Maiduguri
@@ -518,15 +535,17 @@ scenes:
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the canonical frame is the overview -- the counts of moves on her and on suppliers, and each row's stage, next move and whose it is, Us on tender 2 (still Collecting quotes, its chip 1 of 3 comparable · Harmattan) and the order, Suppliers on the RUSF tender
-  concept_claim: The overview lists each tender and order in progress with its stage,
-    its next move and whose move it is, gives a tender with quotes in a chip saying how
-    many are comparable and whose, and counts the moves on us against those waiting
-    on suppliers.
+    note: the canonical frame is tender 2's row -- its stage led by the chip 1 of 3 comparable, Harmattan, its next move the reply to Northgate with the quote gaps outlined beneath, Us 1 and Suppliers 2 -- under the counts of moves on her and on suppliers, the RUSF tender and the order below
+  concept_claim: The overview leads tender 2's row with a chip saying 1 of 3 quotes
+    comparable and whose, names its next move and whose it is, lists what the quotes
+    still miss as facts apart from the moves, and counts the moves on us against those
+    waiting on suppliers, row by row.
   design_intent: The overview is where Sophie starts her day; it must already say
-    where each thing stands and whose move it is.
-  show: Sophie returns to the overview and reads the moves counted on her and on suppliers,
-    then each row -- tender 2, still collecting quotes with its chip 1 of 3 comparable,
-    Harmattan; the just-asked RUSF tender; and the tender 1 order -- with its stage,
-    its next move and whose it is.
+    where each thing stands and whose move it is, and tender 2's row must show how far
+    it has come since she opened it.
+  show: Sophie returns to the overview; tender 2's row now leads with 1 of 3 comparable,
+    Harmattan, where it read none comparable when she opened it, its next move hers --
+    the reply to Northgate -- with the quote gaps outlined beneath; then the moves counted
+    on her and on suppliers, the RUSF tender waiting on its suppliers, and the tender 1
+    order.
   url: /supply/?program_id=${program_id}

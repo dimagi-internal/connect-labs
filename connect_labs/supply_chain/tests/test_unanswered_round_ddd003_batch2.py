@@ -165,7 +165,8 @@ class TestTheComparison:
         if 'data-testid="waiver-pending"' not in body:
             pytest.skip("this world's quote does not leave the import to us")
         assert "document not on file · us" in body
-        assert "fact on us<" in body
+        # The quote's header chip counts it ("1 fact on us" / "2 facts on us").
+        assert re.search(r'data-testid="grid-status">\d+ facts? on us<', body)
         assert ">Attach waiver document<" in body
         # Award may still be offered, but never as the filled button while the fact is open.
         assert 'primary-dark" data-testid="grid-action"' not in body

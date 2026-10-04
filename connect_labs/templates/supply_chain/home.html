@@ -30,7 +30,7 @@ tenders and orders sit folded below.
       {% endif %}
     </div>
   </div>
-  {% include "supply_chain/_src_legend.html" %}
+  {% include "supply_chain/_src_legend.html" with no_calc=1 %}
 
   <section id="supply-standing" class="border-brand-border-light overflow-hidden rounded-lg border bg-white" aria-label="All procurements">
     <div class="max-w-full overflow-x-auto" tabindex="0" role="region" aria-label="All procurements, scrolls sideways">
@@ -58,8 +58,7 @@ tenders and orders sit folded below.
               <div class="flex flex-col gap-1.5">
                 <div class="stage-minibar" aria-hidden="true">{% for b in row.bars %}<div class="stage-seg stage-seg--{{ b }}"></div>{% endfor %}</div>
                 <span class="flex flex-col text-xs" data-testid="row-stage"><span class="font-semibold text-gray-900" data-testid="row-stage-name">{{ row.stage_name }}</span>{% if row.stage_detail %}<span class="text-gray-600">{{ row.stage_detail }}</span>{% endif %}</span>
-                {% if row.comparable_chip %}<span class="status-chip status-chip--{% if row.comparable_count %}primary{% else %}neutral{% endif %} self-start" data-testid="row-comparable">{{ row.comparable_chip }}</span>{% endif %}
-                {% if row.missing %}<span class="flex flex-wrap gap-1" data-testid="row-missing">{% for fact, n, owner in row.missing %}<span class="status-chip status-chip--{% if owner == 'us' %}ours{% else %}theirs{% endif %}" data-fact="{{ fact }}" data-owner="{{ owner }}">{{ fact }} · {% if owner == 'us' %}us{% else %}supplier{% endif %}{% if n > 1 %} · {{ n }} quotes{% endif %}</span>{% endfor %}</span>{% endif %}
+                {% if row.comparable_chip %}<span class="status-chip status-chip--{% if row.comparable_count %}lead{% else %}neutral{% endif %} self-start" data-testid="row-comparable">{{ row.comparable_chip }}</span>{% endif %}
               </div>
             </td>
             <td class="px-3 py-4" data-testid="next-move">
@@ -71,7 +70,9 @@ tenders and orders sit folded below.
                   <div class="text-xs text-gray-600"><span class="move-rule{% if mv.is_ours %} text-message-warning-text{% endif %}" title="{{ mv.rule_title }}">{{ mv.rule }}</span>{{ mv.detail }}</div>
                 </div>
                 {% endfor %}
-                {% if row.silent_names %}<div class="text-xs" data-testid="silent-names"><span class="move-rule">no reply · {{ row.silent_names|length }}</span><span class="text-gray-900">{{ row.silent_names|join:", " }}</span></div>{% endif %}
+                {% if row.silent_names %}<div data-testid="silent-names"><span class="font-medium text-gray-900">{{ row.silent_names|join:", " }}</span><div class="text-xs text-gray-600"><span class="move-rule">no reply · {{ row.silent_names|length }}</span></div></div>{% endif %}
+                {% comment %}What the quotes are missing: facts, not moves, so outlined and kept out of the Us / Suppliers counts.{% endcomment %}
+                {% if row.missing %}<div class="flex flex-wrap items-center gap-1" data-testid="row-missing"><span class="mr-0.5 text-xs text-gray-600">Quote gaps</span>{% for fact, n, owner in row.missing %}<span class="status-chip status-chip--fact" data-fact="{{ fact }}" data-owner="{{ owner }}">{{ fact }} · {% if owner == 'us' %}ours{% else %}supplier's{% endif %}{% if n > 1 %} · {{ n }} quotes{% endif %}</span>{% endfor %}</div>{% endif %}
                 </div>
               {% else %}<span class="text-gray-600">—</span>{% endif %}{% endwith %}
             </td>

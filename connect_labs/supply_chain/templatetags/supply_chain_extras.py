@@ -1099,6 +1099,10 @@ _QUOTE_TERM_LABELS = (
 )
 
 
+# The fixed order of a quote card's terms, two to a row.
+_QUOTE_TERM_ORDER = ("Incoterm", "Pack", "Valid to", "Lead time", "Minimum order", "Shelf life")
+
+
 def _quote_term_chips(text):
     """A recorded quote's terms as labelled chips: Price · Incoterm · Pack · Valid to · ...
 
@@ -1124,14 +1128,34 @@ def _quote_term_chips(text):
             chips.append(("Pack" if " per " in piece else "", piece))
     # The price first, at a weight of its own, then the other terms as a two-column
     # list of label and value: a run of equal-weight chips gave the price no lead.
+    # Every card lays its terms out in one fixed order, a term the supplier did not
+    # give marked "not stated", so the cells line up from one card to the next.
     (_, price), rest = chips[0], chips[1:]
     head = f'<span data-testid="quote-price" class="text-base font-semibold text-gray-900">{escape(price)}</span>'
-    rendered = []
+    if not rest:
+        return head
+    given = {}
+    extra = []
     for label, value in rest:
+        if label in _QUOTE_TERM_ORDER and label not in given:
+            given[label] = value
+        else:
+            extra.append((label, value))
+    rendered = []
+    for label in _QUOTE_TERM_ORDER:
+        value = given.get(label)
+        shown = (
+            f"<span>{escape(value)}</span>"
+            if value
+            else '<span class="text-gray-600" data-testid="quote-term-missing">not stated</span>'
+        )
+        rendered.append(
+            f'<span data-testid="quote-term" data-term="{escape(label)}" class="block">'
+            f'<span class="text-gray-600">{escape(label)}</span> {shown}</span>'
+        )
+    for label, value in extra:
         name = f'<span class="text-gray-600">{escape(label)}</span> ' if label else ""
         rendered.append(f'<span data-testid="quote-term" class="block">{name}<span>{escape(value)}</span></span>')
-    if not rendered:
-        return head
     return head + '<span class="mt-0.5 grid grid-cols-2 gap-x-6 gap-y-0.5">' + "".join(rendered) + "</span>"
 
 
@@ -1630,3 +1654,9 @@ def waits_only_on_round(rows):
 def owes_supplier_facts(rows):
     """The blocked rows with at least one fact still owed by the supplier -- what "Needs info" counts."""
     return [row for row in rows or [] if not _round_only(row)]
+
+
+@register.filter
+def dot_parts(value):
+    """ "USD 50.10 / carton · CPT Kano" -> its " · " parts, so a template can keep each part whole on a line."""
+    return [p for p in str(value or "").split(" · ") if p]

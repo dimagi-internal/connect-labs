@@ -76,9 +76,14 @@ out on every render and never stored.
       {% for t in status.tiles %}
       <div class="stat-tile{% if t.tone == 'ours' %} stat-tile--ours{% endif %}" data-testid="tile">
         <div class="stat-tile-label">{{ t.label }}</div>
+        {% if t.lines %}
+        {% comment %}Late time split by whose it is: each party's days are the figures, the sum only a footnote.{% endcomment %}
+        <dl class="m-0 grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-2.5 gap-y-1" data-testid="tile-lines">{% for l in t.lines %}<dt class="stat-tile-value text-xl{% if l.tone == 'ours' %} text-message-warning-text{% endif %}" data-testid="tile-line-days">{{ l.days }} d</dt><dd class="m-0 flex min-w-0 flex-col items-start gap-0.5 text-xs"><span class="status-chip status-chip--{{ l.tone }}">{{ l.label }}</span><span class="whitespace-nowrap text-gray-600">{{ l.words }}</span></dd>{% endfor %}</dl>
+        <div class="text-xs text-gray-600" data-testid="tile-total">{{ t.value }} days in all</div>
+        {% else %}
         <div class="stat-tile-value">{{ t.value }}</div>
-        {% if t.sub or not t.lines %}<div class="text-xs text-gray-600">{{ t.sub|default:"&nbsp;" }}</div>{% endif %}
-        {% if t.lines %}<dl class="mt-1 grid grid-cols-[max-content_minmax(0,1fr)_max-content] items-baseline gap-x-2 gap-y-1 text-xs" data-testid="tile-lines">{% for l in t.lines %}<dt><span class="status-chip status-chip--{{ l.tone }}">{{ l.label }}</span></dt><dd class="text-gray-600">{{ l.words }}</dd><dd class="font-semibold tabular-nums text-gray-900" data-testid="tile-line-days">{{ l.days }} d</dd>{% endfor %}</dl>{% endif %}
+        <div class="text-xs text-gray-600">{% for part in t.sub|dot_parts %}<span class="inline-block whitespace-nowrap">{{ part }}{% if not forloop.last %}&nbsp;·{% endif %}</span>{% if not forloop.last %} {% endif %}{% empty %}&nbsp;{% endfor %}</div>
+        {% endif %}
         {% if t.chips %}<div class="mt-1 flex flex-wrap gap-1" data-testid="tile-chips">{% for c in t.chips %}<span class="status-chip status-chip--{{ c.tone }}">{{ c.label }}</span>{% endfor %}</div>{% endif %}
       </div>
       {% endfor %}
@@ -469,7 +474,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
   {% endfor %}
 </div>
 {% endif %}
-<div class="overflow-hidden rounded-lg border border-gray-100">
+<div id="invoices" class="scroll-mt-20 overflow-hidden rounded-lg border border-gray-100">
   <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
   <table class="min-w-[44rem] w-full text-sm">
     <thead class="border-b border-gray-200 text-xs text-gray-600">
