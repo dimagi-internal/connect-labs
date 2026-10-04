@@ -653,6 +653,20 @@ def sentence(model, action, changes, lookup) -> str:
         new = changes.pop("duty_terms")[1] or ""
         changes.pop("duty_terms_set_on", None)
         lead.append(f"Set the tender's import duties: {DUTY_TERMS_LABELS.get(new, DUTY_TERMS_LABELS[''])}")
+    if model.__name__ == "Tender" and (
+        "clearing_estimate_per_unit" in changes or "freight_estimate_per_unit" in changes
+    ):
+        # "Recorded our import estimates: clearing & forwarding USD 1.20 per unit".
+        changes.pop("import_estimates_set_on", None)
+        parts = []
+        for attname, name in (
+            ("clearing_estimate_per_unit", "clearing & forwarding"),
+            ("freight_estimate_per_unit", "freight"),
+        ):
+            if attname in changes:
+                value = changes.pop(attname)[1]
+                parts.append(f"{name} {'USD ' + str(value) + ' per unit' if value not in (None, '') else 'cleared'}")
+        lead.append("Recorded our import estimates: " + ", ".join(parts))
     clauses = lead + [_clause(model, attname, old, new, lookup) for attname, (old, new) in changes.items()]
     return "; ".join(c for c in clauses if c)
 

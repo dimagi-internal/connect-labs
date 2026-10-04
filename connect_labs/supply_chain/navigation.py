@@ -78,6 +78,7 @@ TAB_FOR_VIEW = {
     "supply_chain:procurement_tender_close": "supply_chain:procurement_tender_board",
     "supply_chain:procurement_reply_sent": "supply_chain:procurement_tender_board",
     "supply_chain:procurement_tender_duty_terms": "supply_chain:procurement_tender_board",
+    "supply_chain:procurement_tender_import_estimates": "supply_chain:procurement_tender_board",
     "supply_chain:procurement_tender_invite_org": "supply_chain:procurement_tender_board",
     "supply_chain:procurement_tender_uninvite_org": "supply_chain:procurement_tender_board",
     "supply_chain:procurement_outreach_log": "supply_chain:procurement_tender_board",

@@ -23,6 +23,7 @@ is folded away, each fold with its count.
         <div class="text-gray-600" data-testid="tender-summary">
           {% if status.header.where %}{{ status.header.where }} · {% endif %}{% if status.header.incoterm %}{{ status.header.incoterm }} · {% endif %}{{ status.header.visibility }}
           <span class="status-chip status-chip--{% if tender.status == 'open' %}primary{% else %}neutral{% endif %} ml-1.5" data-testid="tender-state-pill">{{ tender.status|capfirst }}</span>
+          {% if status.comparable_chip %}<span class="status-chip status-chip--{% if status.comparable %}primary{% else %}neutral{% endif %} ml-1" data-testid="comparable-chip">{{ status.comparable_chip }}</span>{% endif %}
         </div>
       </div>
       <div class="flex flex-wrap items-center gap-2.5">
@@ -64,6 +65,28 @@ is folded away, each fold with its count.
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ request.path }}#duty-terms">
             {% include "supply_chain/procurement/_duty_terms_fields.html" %}
+          </form>
+        </details>
+        {% endif %}
+      </span>
+      {% comment %}Our own import estimates beside the duty: clearing & forwarding on every quote we
+      import, freight to the delivery point on E and F terms. Per unit of the tender's line.{% endcomment %}
+      <span class="flex flex-wrap items-center gap-2" id="import-estimates" data-testid="import-estimates"{% if estimates_changed %} data-changed{% endif %}>
+        <span class="text-gray-600">Clearing</span>
+        <span data-testid="clearing-estimate">{% if tender.clearing_estimate_per_unit is not None %}<span class="font-medium text-gray-900">USD {{ tender.clearing_estimate_per_unit|floatformat:2 }} / {{ estimate_unit }}</span>{% else %}<span class="status-chip status-chip--ours">Not recorded</span>{% endif %}</span>
+        <span class="text-gray-600">Freight</span>
+        <span data-testid="freight-estimate">{% if tender.freight_estimate_per_unit is not None %}<span class="font-medium text-gray-900">USD {{ tender.freight_estimate_per_unit|floatformat:2 }} / {{ estimate_unit }}</span>{% else %}<span class="text-gray-600">not recorded</span>{% endif %}</span>
+        {% if tender.import_estimates_set_on %}<span class="text-xs text-gray-600">our estimates · {{ tender.import_estimates_set_on|day }}{% if import_estimates_set_by %} · {{ import_estimates_set_by }}{% endif %}</span>{% endif %}
+        {% if estimates_changed %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}
+        {% if not supply_as_of %}
+        <details class="relative" data-testid="import-estimates-settle">
+          <summary class="text-brand-indigo cursor-pointer list-none font-semibold hover:underline [&::-webkit-details-marker]:hidden" role="button" data-testid="import-estimates-open">Change</summary>
+          <form method="post" action="{% url 'supply_chain:procurement_tender_import_estimates' tender.id %}" class="border-brand-border-light absolute left-0 z-20 mt-1.5 flex w-72 flex-col gap-2.5 rounded-lg border bg-white p-3.5 shadow-sm">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.path }}#import-estimates">
+            <label class="flex flex-col gap-1 text-sm"><span class="text-xs text-gray-600">Clearing &amp; forwarding, USD per {{ estimate_unit }} (quotes we import)</span><input type="number" step="0.01" min="0" name="clearing_estimate_per_unit" data-testid="clearing-estimate-input" class="base-input text-sm" value="{{ tender.clearing_estimate_per_unit|default_if_none:'' }}"></label>
+            <label class="flex flex-col gap-1 text-sm"><span class="text-xs text-gray-600">Freight to the delivery point, USD per {{ estimate_unit }} (EXW, FCA, FAS, FOB)</span><input type="number" step="0.01" min="0" name="freight_estimate_per_unit" data-testid="freight-estimate-input" class="base-input text-sm" value="{{ tender.freight_estimate_per_unit|default_if_none:'' }}"></label>
+            <button type="submit" class="button button-sm primary-dark self-start" data-testid="import-estimates-save">Save</button>
           </form>
         </details>
         {% endif %}
@@ -211,7 +234,7 @@ is folded away, each fold with its count.
           supplier's own row, so the tender reads whose turn it is.{% endcomment %}
           {% if o.waiting_on_us %}<div data-testid="waiting-on-us-row" class="text-sm font-medium whitespace-nowrap text-amber-800">{{ o.waiting_on_us }}</div>{% endif %}
         </td>
-        {% if o.changed and changed_cell == "last_chased" %}<td class="px-4 py-2 text-sm text-gray-900 font-semibold whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count">· {{ o.reminder_text }}</span>{% endif %}{% if o.next_due %}<span data-testid="next-due" class="block font-normal text-gray-600">next due {{ o.next_due|day }}</span>{% endif %}<span class="block">{% include "supply_chain/procurement/_new_tag.html" with stacked=1 %}</span></td>{% else %}<td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count" class="text-gray-600">· {{ o.reminder_text }}</span>{% endif %}</td>{% endif %}
+        {% if o.changed and changed_cell == "last_chased" %}<td class="px-4 py-2 text-sm text-gray-900 font-semibold whitespace-nowrap" data-testid="last-chased">Reminder sent {{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count">· {{ o.reminder_text }}</span>{% endif %}{% if o.next_due %}<span data-testid="next-due" class="block font-normal text-gray-600">next due {{ o.next_due|day }}</span>{% elif o.reminder_deadline %}<span data-testid="next-due" class="block font-normal text-gray-600">no further reminder · deadline {{ o.reminder_deadline|day }}</span>{% endif %}<span class="block">{% include "supply_chain/procurement/_new_tag.html" with stacked=1 %}</span></td>{% else %}<td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count" class="text-gray-600">· {{ o.reminder_text }}</span>{% endif %}</td>{% endif %}
         {% comment %}Silence in words, counted from the latest ask -- the invitation or the last
         chase -- muted rather than alarmed; a bare "No" said nothing about how long.{% endcomment %}
         <td class="px-4 py-2 text-sm whitespace-nowrap {% if o.changed and changed_cell == "replied" %}text-gray-900 font-semibold{% else %}text-gray-600{% endif %}" data-testid="replied">{% if o.responded %}{% if o.responded_on %}{{ o.responded_on|day }}{% else %}Yes{% endif %}{% if o.changed and changed_cell == "replied" %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% else %}<span data-testid="no-reply" class="text-gray-600">No reply{% if o.silent_days is not None %} · {{ o.silent_days }} day{{ o.silent_days|pluralize }}{% endif %}</span>{% if o.changed and changed_cell == "replied" %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% endif %}</td>
@@ -303,7 +326,7 @@ next action on anyone (design doc section 22).
   <div class="fold-body">
     {% for d in drafts.drafts %}
       {% comment %}Each draft is its own card headed by who it goes to, so one draft's
-      Copy and Record chase cannot be read as a neighbour's.{% endcomment %}
+      Copy and Mark sent cannot be read as a neighbour's.{% endcomment %}
       <div data-testid="draft"{% if d.anchor %} id="{{ d.anchor }}"{% endif %} data-supplier-id="{{ d.supplier_id }}" class="border border-gray-200 rounded-lg p-4 mt-3 scroll-mt-20">
         <p class="text-lg">
           <span class="font-semibold text-gray-900">{{ d.supplier_name }}</span>
@@ -364,12 +387,12 @@ next action on anyone (design doc section 22).
           <form method="post" action="{% url 'supply_chain:procurement_outreach_chase' d.outreach_id %}"
                 class="mt-3 pt-3 border-t border-gray-200 flex flex-wrap items-center gap-2" data-testid="chase-form">
             {% csrf_token %}
-            <label for="chase-date-{{ forloop.counter }}" class="text-sm text-gray-700">Chased on</label>
+            <label for="chase-date-{{ forloop.counter }}" class="text-sm text-gray-700">Sent on</label>
             <input id="chase-date-{{ forloop.counter }}" data-testid="chase-date" type="text" name="last_reminder_on"
                    value="{% now 'j M Y' %}" placeholder="e.g. {% now 'j M Y' %}" required autocomplete="off"
                    class="base-input text-sm w-36">
-            <button type="submit" data-testid="record-chase"
-                    class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">Record chase</button>
+            <button type="submit" data-testid="mark-sent"
+                    class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">Mark sent</button>
           </form>
         {% endif %}
         {% if d.kind == "reply" and d.commitment_ids %}

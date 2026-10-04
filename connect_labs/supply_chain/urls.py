@@ -154,6 +154,11 @@ urlpatterns = [
         name="procurement_tender_duty_terms",
     ),
     path(
+        "procurement/tenders/<int:tender_id>/import-estimates/",
+        procurement_views.TenderImportEstimatesView.as_view(),
+        name="procurement_tender_import_estimates",
+    ),
+    path(
         "procurement/tenders/<int:tender_id>/reply-sent/",
         procurement_views.ReplySentView.as_view(),
         name="procurement_reply_sent",

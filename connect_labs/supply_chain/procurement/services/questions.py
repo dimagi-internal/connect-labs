@@ -103,6 +103,22 @@ _REASON_QUESTIONS: tuple[tuple[str, str, str, str], ...] = (
         "Import is ours under this quote's Incoterm, so the supplier is not asked.",
         INTERNAL,
     ),
+    # Before "freight": under an E or F Incoterm main carriage is ours to cost.
+    (
+        "no freight estimate",
+        "freight_estimate",
+        "Freight to the delivery point is ours under this quote's Incoterm: record our freight estimate "
+        "(USD per unit of the tender's line) on the tender -- a landed total cannot be computed until then. "
+        "The supplier is not asked.",
+        INTERNAL,
+    ),
+    (
+        "our import estimates are per",
+        "import_estimate_unit",
+        "Our import estimates are per unit of the tender's line, and this quote's quantity cannot be "
+        "counted in that unit -- correct the quote's quantity or pack.",
+        INTERNAL,
+    ),
     (
         "pack spec",
         "pack_spec",

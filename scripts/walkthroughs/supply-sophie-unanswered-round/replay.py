@@ -586,6 +586,17 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
     # ---- Round 2 (asked 17 days back, deadline in 4 days): open, and half of it is silent. ---
     r2 = _round(w, label="RUTF tender 2: 2,000 cartons to Kano", opened=d("2026-09-15"), deadline=d("2026-10-06"))
     r2_out = _ask_everyone(w, r2, suppliers, d("2026-09-15"))
+    # Sophie's clearing & forwarding estimate for Kano, from the clearing agent's last bill on
+    # round 1: every quote we import carries it, so Harmattan lands above its quoted price. No
+    # freight estimate: a quote handed over at origin (EXW, FCA ...) waits on one.
+    w.op(
+        "sophie",
+        d("2026-09-16"),
+        "tender_set_import_estimates",
+        tender_id=r2,
+        clearing_estimate_per_unit="1.20",
+        set_on=d("2026-09-16"),
+    )
 
     src = dict(
         ref="<PFI0611.k.mensah@harmattan-tx.example.invalid>",

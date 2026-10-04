@@ -8,9 +8,9 @@
     "held-on-us",
     "whose-move"
   ],
-  "fetched_at": "2026-10-03T23:18:49.039555+00:00",
+  "fetched_at": "2026-10-04T04:34:15.700447+00:00",
   "name": "supply-sophie-unanswered-round",
-  "narrative": "Sophie runs RUTF procurement for the Connect-RUTF program. 17 days ago she asked six suppliers to quote tender 2: half have never answered, despite two reminders, and the deadline is four days off, so chasing them is still worth it; and she forwards whatever does arrive to an AI that records it. Sophie opens tender 2 and reads where it stands: collecting quotes with its deadline in 4 days, three of six answered and three silent, each supplier's state, the suppliers it waits on with when she last chased each, and that the tender has not settled how import duties are handled. She opens the reminder drafted for Sahel, which says when Sahel was asked and last reminded, and records today's chase from the draft itself. Sahel answers with a quote; Sophie forwards it, and in the tender's history, turned to replies only, Sahel's email comes first: she opens it beside what the AI recorded from it, the reply dated the day it came in. On the comparison, side by side, no quote can be compared yet: the tender's import duty terms are not settled, so Harmattan's carriage-paid quote, which leaves the import to us, waits on them; Kanem has not stated its pack, and Sahel's quote is in euros with no exchange rate recorded. Back on the tender she settles import duty on its terms line: we import, under the program's duty waiver. Northgate's three questions are still on her, and Reply opens an email drafted with the three questions, an answer to write under each. The comparison then costs the quotes we import under the waiver: Harmattan's becomes comparable, on a landed figure that assumes the waiver holds and leaves out clearing charges, while Kanem's pack and Sahel's freight and exchange rate are still missing. Importing makes the paperwork hers, and tender 1 shows what that means: its order with Harmattan is at customs, held, waiting on us. Its status view shows nothing received yet, the invoice billed above the agreed price and the days it is late, and On us lists the documents owed to the forwarder and the invoice to review; the forwarder's email in the order's history says the trucks are held at the border on our import permit. Back on her overview, every tender and order reads its stage, its next move and whose move it is: tender 2 and the order are hers, and a RUSF tender she asked two days ago waits on its suppliers, with the moves on her counted against those waiting on suppliers.",
+  "narrative": "Sophie runs RUTF procurement for the Connect-RUTF program. 17 days ago she asked six suppliers to quote tender 2: half have never answered, despite two reminders, and the deadline is four days off, so chasing them is still worth it; and she forwards whatever does arrive to an AI that records it. Sophie opens tender 2 and reads where it stands: collecting quotes with its deadline in 4 days, three of six answered and three silent, each supplier's state, the suppliers it waits on with when she last chased each, and that the tender has not settled how import duties are handled. She opens the reminder drafted for Sahel, which says when Sahel was asked and last reminded, sends it, and marks it sent from the draft itself; no further reminder falls before the deadline. Sahel answers with a quote; Sophie forwards it, and in the tender's history, turned to replies only, Sahel's email comes first: she opens it beside what the AI recorded from it, the reply dated the day it came in. On the comparison, side by side, no quote can be compared yet: the tender's import duty terms are not settled, so Harmattan's carriage-paid quote, which leaves the import to us, waits on them; Kanem has not stated its pack, and Sahel's quote is ex works, so its freight is ours with no freight estimate recorded, and in euros with no exchange rate recorded; our clearing estimate sits on the quotes we import. Back on the tender she settles import duty on its terms line: we import, under the program's duty waiver. Northgate's three questions are still on her, and Reply opens an email drafted with the three questions, an answer to write under each. The comparison then costs the quotes we import under the waiver: Harmattan's becomes comparable, one of three, landed at its quoted price plus our clearing estimate, while Kanem's pack, our freight estimate for Sahel and Sahel's exchange rate are still missing. Importing makes the paperwork hers, and tender 1 shows what that means: its order with Harmattan is at customs, held, waiting on us. Its status view shows nothing received yet, the invoice billed above the agreed price and the days it is late, and On us lists the documents owed to the forwarder and the invoice to review; the forwarder's email in the order's history says the trucks are held at the border on our import permit. Back on her overview, every tender and order reads its stage, its next move and whose move it is: tender 2, still collecting quotes with a chip saying 1 of 3 comparable, Harmattan, and the order are hers, and a RUSF tender she asked two days ago waits on its suppliers, with the moves on her counted against those waiting on suppliers.",
   "personas": {
     "sophie": {
       "color": "#0F766E",
@@ -63,13 +63,13 @@
           "verify": "Playwright: Sahel's draft [data-testid=draft-why] contains 'Asked', 'Last reminded' and '2nd reminder'"
         },
         {
-          "description": "A reminder draft carries a Chased on date, defaulting to today, and a Record chase button that saves last_reminder_on and returns to the tender's Invitations with Sahel's row marked, its Last chased cell reading the 3rd reminder.",
+          "description": "A reminder draft carries a Sent on date, defaulting to today, and a Mark sent button that saves last_reminder_on and returns to the tender's Invitations with Sahel's row marked, its Last chased cell reading Reminder sent and the 3rd reminder; the next reminder is never scheduled after the tender's response deadline.",
           "id": "record-chase-on-draft",
-          "verify": "Playwright: Sahel's draft shows [data-testid=chase-date] and a 'Record chase' button; after clicking it, tr[data-changed] is Sahel Nutrition Industries' row and contains '3rd reminder'"
+          "verify": "Playwright: Sahel's draft shows [data-testid=chase-date] and a 'Mark sent' button; after clicking it, tr[data-changed] is Sahel Nutrition Industries' row and contains 'Reminder sent', '3rd reminder' and 'no further reminder · deadline'"
         }
       ],
       "id": "sophie-chases-sahel",
-      "narrative": "With the deadline four days off, Sophie opens the tender's draft emails at the reminder drafted for Sahel: it says when Sahel was asked and when she last reminded them, and under the message the Chased on field already holds today's date beside Record chase, so the chase she sends is recorded from the draft itself. Back on the tender's Invitations, Sahel's row is marked: last chased today, the third reminder.",
+      "narrative": "With the deadline four days off, Sophie opens the tender's draft emails at the reminder drafted for Sahel: it says when Sahel was asked and when she last reminded them, and under the message the Sent on field already holds today's date beside Mark sent. Once the reminder has gone she marks it sent, and back on the tender's Invitations Sahel's row is marked: reminder sent today, the third reminder, and no further reminder before the deadline.",
       "persona": "sophie",
       "provenance": "S2",
       "title": "She chases Sahel from a drafted reminder"
@@ -101,9 +101,9 @@
     {
       "features": [
         {
-          "description": "The comparison sets every quote side by side, one row per fact, and marks each fact a quote has not stated, without ranking quotes that cannot be compared; a quote missing a fact stays out of the count whatever the duty terms.",
+          "description": "The comparison sets every quote side by side, one row per fact, puts main freight on us for an ex-works quote and our clearing estimate on every quote we import, and marks each fact a quote has not stated, without ranking quotes that cannot be compared; a quote missing a fact stays out of the count whatever the duty terms.",
           "id": "comparison-missing-per-supplier",
-          "verify": "Playwright: /compare/ [data-testid=comparable-count] reads '0 of 3 comparable'; Kanem Foods Ltd's pack cell reads 'not stated'; Sahel Nutrition Industries' column shows its price in EUR and its exchange rate missing"
+          "verify": "Playwright: /compare/ [data-testid=comparable-count] reads '0 of 3 comparable'; Kanem Foods Ltd's pack cell reads 'not stated'; Sahel Nutrition Industries' column shows its price in EUR, its exchange rate missing and its freight 'ours: estimate not recorded'; tr[data-fact=clearing] reads 'USD 1.20 / carton (our estimate)' for Harmattan Therapeutics"
         },
         {
           "description": "A line at the top of the comparison states the tender's import duty terms; while they are not settled, every quote whose Incoterm leaves the import to us waits on them.",
@@ -112,7 +112,7 @@
         }
       ],
       "id": "whats-still-missing",
-      "narrative": "Sophie opens the comparison, every quote side by side, and none can be compared yet, for more than one reason. The tender's import duty terms are not settled, and Harmattan quotes carriage paid to Kano, which leaves the import to us, so its duty is ours to cost and its column waits on our terms. Each quote's other gaps are marked where they fall: Kanem has not stated its pack, and Sahel's new quote is in euros, with no exchange rate recorded yet. Settling the terms would free only the quotes that leave the import to us; Kanem's pack and Sahel's rate are still owed. A quote that cannot be compared shows no landed figure: its header counts the facts owed by us and by the supplier, and the same gaps appear in its landed cell and as its next steps.",
+      "narrative": "Sophie opens the comparison, every quote side by side, and none can be compared yet, for more than one reason. The tender's import duty terms are not settled, and Harmattan quotes carriage paid to Kano, which leaves the import to us, so its duty is ours to cost and its column waits on our terms. Each quote's other gaps are marked where they fall: Kanem has not stated its pack, and Sahel's new quote is ex works Niamey, so main freight is ours and our freight estimate is not recorded, and it is in euros, with no exchange rate recorded yet. Our clearing and forwarding estimate, USD 1.20 per carton, sits on both quotes we import; Kanem's delivered-duty-paid quote clears its own. Settling the terms would free only the quotes that leave the import to us; Kanem's pack and Sahel's rate are still owed. A quote that cannot be compared shows no landed figure: its header counts the facts owed by us and by the supplier, and the same gaps appear in its landed cell and as its next steps.",
       "persona": "sophie",
       "provenance": "S4",
       "title": "No quote can be compared yet: duty terms unsettled, facts missing"
@@ -132,11 +132,11 @@
         {
           "description": "After the tender's duty terms are set, the comparison's duty line reads the waiver, the Import duty row is settled for every quote whose Incoterm leaves the import to us, and only the quotes missing no other fact become comparable.",
           "id": "comparison-costs-under-waiver",
-          "verify": "Playwright: [data-testid=comparison-duty-terms] contains 'under the program's duty waiver'; no [data-testid=grid-action] reads 'Settle duty terms'; [data-testid=comparable-count] reads '1 of 3 comparable'"
+          "verify": "Playwright: [data-testid=comparison-duty-terms] contains 'under the program's duty waiver'; no [data-testid=grid-action] reads 'Settle duty terms'; [data-testid=comparable-count] reads '1 of 3 comparable'; Harmattan Therapeutics' tr[data-fact=landed] cell reads 'USD 51.30'"
         }
       ],
       "id": "what-we-owe-northgate",
-      "narrative": "Back on the tender, Sophie settles import duty on the tender's terms line: we import, under the program's duty waiver, and the line reads the waiver, just recorded. Northgate's three questions are still on her under On us, and Reply opens an email drafted with the three questions, an answer to write under each. She opens the comparison again: the duty line reads the waiver, the Import duty row is settled for the quotes we import, and Harmattan's quote is now comparable, one of three: its landed figure assumes the waiver holds and leaves out clearing, port and forwarder charges, which are ours under CPT, and its column marks the waiver document not on file as a fact on us, so Award is offered but not yet the filled button; Kanem's and Sahel's still wait on their missing facts.",
+      "narrative": "Back on the tender, Sophie settles import duty on the tender's terms line: we import, under the program's duty waiver, and the line reads the waiver, just recorded. Northgate's three questions are still on her under On us, and Reply opens an email drafted with the three questions, an answer to write under each. She opens the comparison again: the duty line reads the waiver, the Import duty row is settled for the quotes we import, and Harmattan's quote is now comparable, one of three: its landed figure, USD 51.30 per carton, is its quoted price plus our clearing estimate, and its column marks the waiver document not on file as a fact on us, so Award is offered but not yet the filled button; Kanem's and Sahel's still wait on their missing facts.",
       "persona": "sophie",
       "provenance": "S5",
       "title": "She settles the tender's duty terms and replies to Northgate"
@@ -178,18 +178,18 @@
           "verify": "Playwright: the order's [data-testid=next-move] contains 'Provide 2 documents to Crescent Freight & Clearing' and its [data-testid=whose] contains 'Us'"
         },
         {
-          "description": "Each tender's row reads its stage on the six steps, its next move and whose it is: tender 2's move is ours, and the just-asked RUSF tender's, with no replies yet, is the suppliers'.",
+          "description": "Each tender's row reads its stage on the six steps, its next move and whose it is: tender 2's move is ours and its chip counts the quotes the comparison can rank (1 of 3 comparable · Harmattan), and the just-asked RUSF tender's, with no replies yet, is the suppliers'.",
           "id": "overview-missing-facts-waiver",
-          "verify": "Playwright: tender 2's [data-testid=row-stage] contains 'Collecting quotes' and its [data-testid=whose] contains 'Us'; the RUSF tender's [data-testid=row-stage] contains 'Collecting quotes' and its [data-testid=whose] contains 'Suppliers'"
+          "verify": "Playwright: tender 2's [data-testid=row-stage] contains 'Collecting quotes', its [data-testid=row-comparable] reads '1 of 3 comparable · Harmattan', and its [data-testid=whose] contains 'Us'; the RUSF tender's [data-testid=row-stage] contains 'Collecting quotes' and its [data-testid=whose] contains 'Suppliers'"
         }
       ],
       "id": "whose-move",
-      "narrative": "Back on her overview, Sophie reads the moves counted on us against those waiting on suppliers, each row carrying its own count of each, so the totals add up: tender 2 still collecting quotes with its deadline ahead, its next move hers; a RUSF tender for Maiduguri she asked three suppliers about two days ago, still collecting quotes, its next move theirs; and the tender 1 order at customs, its next move hers.",
+      "narrative": "Back on her overview, Sophie reads the moves counted on us against those waiting on suppliers, each row carrying its own count of each, so the totals add up: tender 2 still collecting quotes with its deadline ahead, its chip reading 1 of 3 comparable, Harmattan, its next move hers; a RUSF tender for Maiduguri she asked three suppliers about two days ago, still collecting quotes, its next move theirs; and the tender 1 order at customs, its next move hers.",
       "persona": "sophie",
       "provenance": "S7",
       "title": "Whose move each procurement is, ours or the suppliers'"
     }
   ],
   "slug": "supply-sophie-unanswered-round",
-  "version": 32
+  "version": 33
 }
