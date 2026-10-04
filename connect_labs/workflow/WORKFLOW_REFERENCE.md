@@ -596,6 +596,7 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
 - No imports -- only `React` is available as a global
 - CDN libraries available via `window`: Chart.js 4.4.0 (`window.Chart`), chartjs-adapter-date-fns 3.0.0, Leaflet 1.9.4 (`window.L`), Mapbox GL 3.13.0 (`window.mapboxgl`)
 - **Shared map components** for drawing CommCare / microplan data on a Mapbox map: `window.ConnectMap` (boundaries, points, survey pins), `window.PlanLayers` (the canonical microplan plan layers — work areas, PSU hulls, sample pins, footprints), and `window.MicroplansMapPanel` (the docked Layers toggle panel). **Use these instead of hand-rolling layer paint or toggles** — they are the same definitions the plan editor uses, so a render draws a plan identically. See [§4a Shared map components](#4a-shared-map-components-connectmap--planlayers).
+- **Shared report library — style every report with it.** `window.LabsReport` is the house look of the indicator reports (white `rounded-xl` cards, indigo accents, tabular numbers): page chrome, headline tiles, scorecards, charts, benchmarks, and scenario inputs. **Start a new render from these components, not from hand-written Tailwind** — a report built from them looks like every other report and picks up improvements on deploy. See [§4c Shared report library](#4c-shared-report-library-windowlabsreport).
 - **Shared runner UI primitives** for panels reused across templates: `window.LabsAudit` (the per-FLW "Audit results by field worker" breakdown). **Call these instead of re-inlining the markup** — they're static, tested components editable in the repo (`connect_labs/static/js/`), so every consumer stays identical. See [§4b Shared runner UI primitives](#4b-shared-runner-ui-primitives-windowlabsaudit).
 - Tailwind CSS classes are available for styling
 - All React hooks are accessed via `React.useState`, `React.useEffect`, `React.useMemo`, `React.useRef`, `React.useCallback`
@@ -743,6 +744,42 @@ window.LabsAudit.renderFlwBreakdown(React, {
 // Lazy-fetch a run's sessions across one or more opps (merged, de-duped):
 window.LabsAudit.fetchSessions(workflowRunId, [oppId1, oppId2]).then(function (sessions) { ... });
 ```
+
+### 4c. Shared report library (window.LabsReport)
+
+The component library behind the KMC and generic indicator reports, published on
+`window.LabsReport` by the runner (source: `components/workflow/report/`, contract
+tests: `report.test.js`). Any render — template-following, forked, or written live
+through MCP — can call it. Same rules as §4b: components take plain data and
+callbacks and never fetch; a shipped prop is never renamed (a breaking change is a
+new name); `VERSION` rises with every addition, so a render can check
+`R.VERSION >= n` before using something newer than the deployed bundle.
+
+**If your render needs a look the library lacks, add it to the library** (with a
+test) rather than styling it inline — that is how the styles stay reusable.
+
+```javascript
+var R = window.LabsReport;
+```
+
+| Need                                                                | Use                                                                                                   |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Page top: title, "as of", badges, actions                           | `R.ReportHeader`, `R.Pill`, `R.Button`                                                                |
+| Sections                                                            | `R.Card` (`padded={false}` for tables), `R.SectionTitle`, `R.Tabs`                                    |
+| Status / empty / error / loading                                    | `R.Notice` (`tone`: info, warn, error, muted; `onRetry`), `R.Loading`                                 |
+| Headline indicator tiles (banded cells)                             | `R.HeadlineTiles`                                                                                     |
+| Headline tiles for formatted or modelled figures (ranges, currency) | `R.StatTiles` (VERSION 4)                                                                             |
+| Banded table cells, legend, sorting                                 | `R.ScoreCell`, `R.ScorecardLegend`, `R.useTableSort`                                                  |
+| Trends and activity                                                 | `R.TrendCard`, `R.WeeklyActivityCard`                                                                 |
+| Peer / organisation comparison                                      | `R.PeerCard`, `R.RankedBars`, `R.MiniRankBars`                                                        |
+| Formatting and bands                                                | `R.fmtValue`, `R.nCount`, `R.dateLbl`, `R.BAND_CLS`, `R.BAND_TEXT`, `R.bandColour`                    |
+| Assumption inputs the reader changes                                | `R.Field` (label + control + source hint), `R.NumberField`, `R.RangeField`, `R.Segmented` (VERSION 4) |
+| A modelled low–high range against threshold lines                   | `R.RangeStrip`, `R.stripPos`, `R.rangeText` (VERSION 4)                                               |
+
+`NumberField` / `RangeField` hand back the raw string typed, so a half-typed value
+survives a render; parse it in the page. Pass `edited` to mark a value that differs
+from its sourced default. Worked example of the scenario pieces: the KMC
+cost-effectiveness explorer (workflow 6627 on the synthetic KMC set).
 
 ### Pipeline Data Access
 
