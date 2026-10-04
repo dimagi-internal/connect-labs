@@ -133,7 +133,8 @@ class TestTheTimelineBadge:
 
     def test_the_excerpt_runs_the_line_s_width(self, da, base, order, client_in_program):
         body = batch6._order_page(client_in_program, order["contract"]["id"])
-        assert re.search(r'<details class="group text-xs open:w-full">\s*<summary data-testid="source-toggle"', body)
+        # An AI-recorded email is an email event (unanswered round 1004 b3): its source spans the event.
+        assert re.search(r'<details class="group mt-1 w-full text-xs">\s*<summary data-testid="source-toggle"', body)
         quote = re.search(r'<blockquote data-testid="source-excerpt" class="([^"]*)"', body).group(1).split()
         assert "w-full" in quote and "max-w-2xl" not in quote
 

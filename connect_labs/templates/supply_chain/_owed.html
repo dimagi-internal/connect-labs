@@ -8,13 +8,31 @@ Takes: owed_open, owed_answered, owed_answered_expanded, resolve_label ("Mark
 answered" / "Mark done"), empty_text.
 {% endcomment %}
 <div class="bg-white border border-gray-200 rounded-lg shadow-sm divide-y divide-gray-200 mb-2" data-testid="owed">
-  {% comment %}A document a shipment is held on that only we can supply (holds.py), first:
-  it is what stops the goods.{% endcomment %}
+  {% comment %}A document only we can supply (holds.py), first: it is what stops the goods.
+  What each rests on is a chip, not a sentence: "shipment held" only where a recorded
+  requirement holds the shipment on it -- the message that set it opens from its own
+  Source toggle, with its sender and day -- and "owed · duty terms" for the duty
+  exemption the order's nil duty rests on, which no message said the shipment is held on.{% endcomment %}
   {% for hold in owed_holds %}
-    <div data-testid="owed-hold" class="px-4 py-2 text-sm">
-      <span class="font-medium text-gray-900">{{ hold.what|capfirst }}{% if hold.name %} ({{ hold.name }}){% endif %}</span>
-      <span class="text-gray-700">— the shipment is held until we provide it</span>
-      {% if hold.shipment_id and hold.kind and not supply_as_of %}{% comment %}Providing it is attaching it: the document on file clears the hold (holds.py).{% endcomment %}<a data-testid="owed-hold-provide" class="ml-2 text-brand-indigo hover:underline" href="{% url 'supply_chain:shipment_document_attach' hold.shipment_id %}?kind={{ hold.kind }}">Mark provided</a>{% endif %}
+    <div data-testid="owed-hold" data-basis="{{ hold.basis }}" class="px-4 py-2 text-sm">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="font-medium text-gray-900">{{ hold.what|capfirst }}{% if hold.name %} ({{ hold.name }}){% endif %}</span>
+        {% if hold.basis == "duty_terms" %}
+          <span data-testid="owed-hold-basis" class="status-chip status-chip--neutral" title="The order is costed at no import duty on a relief under the tender's duty terms; customs will want the exemption at entry">owed · duty terms</span>
+        {% else %}
+          <span data-testid="owed-hold-basis" class="status-chip status-chip--ours">shipment held</span>
+        {% endif %}
+        {% if hold.shipment_id and hold.kind and not supply_as_of %}{% comment %}Providing it is attaching it: the document on file clears the hold (holds.py).{% endcomment %}<a data-testid="owed-hold-provide" class="ml-2 text-brand-indigo hover:underline" href="{% url 'supply_chain:shipment_document_attach' hold.shipment_id %}?kind={{ hold.kind }}">Mark provided</a>{% endif %}
+      </div>
+      {% if hold.basis == "held" and hold.source_excerpt %}
+        {% comment %}The message that holds the shipment on it, in the History's own shape: the
+        same "Source email" toggle, with its sender and day beside it.{% endcomment %}
+        <details class="group mt-1 text-xs" data-testid="owed-hold-source">
+          <summary data-testid="source-toggle" title="{% if hold.source_kind == 'Email' %}Show the email{% else %}Show the source{% endif %}"
+                   class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex flex-wrap items-center gap-2"><span data-testid="source-link" class="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs font-medium text-brand-indigo hover:bg-gray-50">{% if hold.source_kind == "Email" %}<i class="fa-regular fa-envelope" aria-hidden="true"></i><span>Source email</span>{% else %}<span>Source</span>{% endif %}<i data-testid="source-caret" class="fa-solid fa-chevron-right text-xs transition-transform group-open:rotate-90" aria-hidden="true"></i></span>{% if hold.asked_by %}<span data-testid="owed-hold-sender" class="text-sm text-gray-700">{{ hold.asked_by }}</span>{% endif %}{% if hold.source_on %}<time class="text-sm text-gray-600 tabular-nums" datetime="{{ hold.source_on }}">{{ hold.source_on|day }}</time>{% endif %}</summary>
+          <blockquote data-testid="source-excerpt" class="mt-1 w-full rounded-r border-l-4 border-gray-300 bg-gray-50 py-2 px-3 text-sm leading-relaxed text-gray-900 whitespace-pre-line">{{ hold.source_excerpt }}</blockquote>
+        </details>
+      {% endif %}
     </div>
   {% endfor %}
   {% for group in owed_open_groups %}
