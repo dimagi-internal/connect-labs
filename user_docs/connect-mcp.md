@@ -218,6 +218,22 @@ Three correctness issues in entity-level summary pipelines have been fixed:
 
 If you have an existing summary pipeline that uses filters or `first`/`last` with a filter, check its output — results may change now that the filters are actually applied.
 
+### Multiple named groupings in one pipeline
+
+A summary pipeline can now produce **several breakdowns at once** rather than one breakdown per pipeline.
+
+Previously, if you wanted totals by questionnaire, by question, by state, and by worker type — plus answer types broken down by question and state — you needed a separate pipeline for each. Now you declare all of them as named **groupings** inside a single pipeline, and Labs computes them all in one pass through the data.
+
+A grouping can also group by **several fields at the same time** — for example, question × answer type × state — instead of requiring one pipeline per state.
+
+Every row in the result includes a `row.grouping` field that says which named grouping it belongs to, so a dashboard can easily tell them apart and display each breakdown in the right place.
+
+!!! tip "When this helps"
+    Use multiple groupings when your dashboard needs several different cuts of the same underlying data. A single pipeline with named groupings is faster and easier to maintain than a long list of nearly-identical pipelines.
+
+!!! note "Existing pipelines are unchanged"
+    Pipelines that do not use named groupings continue to work exactly as before. This is an additive feature — you only use it when you need it.
+
 ---
 
 ## High-Fidelity Synthetic Data (Case Timelines)
@@ -228,26 +244,4 @@ When you profile an opportunity and generate synthetic data, you can request **c
 
 Profiling with case timelines uses real cases only to **fit statistical models**. The profile then saves **new cases sampled from those models** — no real case is ever stored or shipped. When synthetic data is generated from that profile:
 
-- **Every worker keeps its caseload.** Each worker gets the same number of cases, with the same case lengths, as its real counterpart.
-- **Each case's timeline is modelled.** Growth, visit spacing, per-case constants (such as birth weight and date of birth), and the links between them are drawn together, so patterns like heavier babies growing faster are preserved.
-- **Outcomes are tied to growth.** A slow grower ends as often as in the source data, and a case closes when its baby's outcome is reached.
-- **App-computed fields keep their meaning.** Visit counters and ages are rebuilt from each case's timing rather than copied.
-
-### Safety guarantees
-
-- Any categorical answer seen in fewer than 5 real cases is never modelled. Any field recorded in fewer than 5 cases is excluded entirely.
-- Start dates are smoothed so no individual worker's start date is identifiable.
-- A sampled case that lands too close to a real one is redrawn (a distance-to-closest-record check).
-
-Because no real case values are stored or replicated, data generated this way counts as **generated** and is allowed on the restricted MCP address.
-
-!!! warning "Old mirror-mode profiles are not the same"
-    The previous high-fidelity mode (mirror mode, `mirror=true`) stored real cases with small perturbations — a near-copy of real data. Those profiles are still supported as an alias (`mirror=true` maps to `case_timelines=true` going forward) but **profiles saved in the old mirror mode before case timelines were introduced are not re-usable as generated data**. Re-profile any such opportunity to get a safe, fully generated profile.
-
----
-
-## Cloning Opportunities with Synthetic Data
-
-The easiest way to create a synthetic copy of a real opportunity is `synthetic_clone_opp`. It handles the entire process in one background job — no need to run separate profiling, generation, and visibility steps yourself.
-
-### What it does
+- **Every worker keeps its caseload.** Each worker gets

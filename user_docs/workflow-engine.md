@@ -81,6 +81,20 @@ This means each workflow appears in exactly one place. If you cannot find a work
 
 Pipelines can pull data from CommCare form submissions or from external files such as Google Drive exports. The two source types work differently and have different access rules.
 
+### Multiple summaries from a single pipeline
+
+A summary pipeline can now produce several different breakdowns in one pass rather than requiring a separate pipeline for each breakdown. For example, instead of one pipeline for totals by questionnaire, another for totals by question, another for totals by state, and so on, a single pipeline can declare all of those as named **groupings** and compute them all together from one read of the data.
+
+Each grouping can also break down by several fields at once — for example, question × answer type × state — without needing a separate pipeline per combination.
+
+When a dashboard reads a pipeline that uses this feature, it receives all the summaries together as a single list of rows. Each row identifies which grouping it belongs to, so the dashboard can separate them and display each breakdown in the right place.
+
+**What this means in practice:**
+
+- Dashboards that previously required many pipelines to cover different breakdowns can now be powered by far fewer.
+- Figures are computed consistently because all breakdowns come from the same single read of the underlying data.
+- Existing pipelines are unaffected — this is an optional capability available to new and updated pipeline configurations.
+
 ### Google Drive pipelines scoped to a whole program
 
 A pipeline can be configured to read a Google Drive file that covers an **entire program** rather than one opportunity. The Connect Interviews dashboard — whose interview exports span every cohort — is the first dashboard to use this.
@@ -219,20 +233,4 @@ If your programme uses custom labels for its opportunities, those labels appear 
 
 #### Drilling down
 
-The report supports a full drill-down cascade:
-
-1. Click an **organisation** to narrow to that organisation's workers and data. The header count updates to reflect only that organisation's cases, visits, communities, facilitators, and opportunity count — not the whole programme's totals.
-2. Click an **opportunity** to narrow further to that opportunity. The header updates again to reflect only that opportunity's data.
-3. Click a **worker** to open the **Indicator Worker Review** for that individual.
-
-#### Saving a weekly run
-
-When you save a week on the Indicator Programme Report, the report uses your programme's own indicator definitions to record the snapshot. If you see an error when trying to save, check that your programme has its indicator definitions set up — a report that has not yet been linked to any indicator definitions cannot save a weekly snapshot.
-
-#### Small-cell suppression
-
-Cells that contain too few cases to report reliably are suppressed and show a minimum-cases label — for example, **n<20** — rather than a number. The threshold shown always reflects your programme's own minimum, not a default or an unrelated programme's setting.
-
-#### Indicator Worker Review
-
-The **Indicator Worker Review** (
+The report supports a full drill-down
