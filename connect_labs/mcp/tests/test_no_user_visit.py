@@ -265,6 +265,50 @@ def test_a_workflow_run_is_refused_if_its_definition_reads_a_real_opp(monkeypatc
     assert visit_access.denied_reason(user, "workflow_run_context", {"run_id": 1, "opportunity_id": 10806}) is None
 
 
+@pytest.mark.parametrize("tool", ["workflow_update_render_code", "workflow_patch_render_code"])
+@pytest.mark.django_db
+def test_render_code_edits_are_generated_only(monkeypatch, tool):
+    """Render code runs over real data in a full-access viewer's browser, so a restricted
+    caller may edit it only on a workflow whose every opportunity is generated."""
+    user = _user(f"render-{tool}")
+    _synthetic_opp(10807, user=user, generated=True)
+    seen = {}
+
+    class _Definition:
+        opportunity_id = 10807
+        opportunity_ids = [10807]
+
+    def _read(user, key, arguments, opportunity_id, program_id):
+        seen["workflow_id"] = arguments.get(key)
+        return _Definition()
+
+    monkeypatch.setattr(visit_access, "_read_definition", _read)
+    args = {"workflow_id": 7, "opportunity_id": 10807}
+
+    assert visit_access.denied_reason(user, tool, args) is None
+    assert seen["workflow_id"] == 7
+
+    # The workflow also covers a real opportunity: refused, naming the tool.
+    _Definition.opportunity_ids = [10807, 501]
+    reason = visit_access.denied_reason(user, tool, args)
+    assert reason and tool in reason
+    assert "render code" in reason
+
+    # Opened in a real opportunity's scope: refused before the definition is read.
+    seen.clear()
+    assert visit_access.denied_reason(user, tool, {"workflow_id": 7, "opportunity_id": 501})
+    assert seen == {}
+
+
+def test_render_code_edits_are_gated_writes_not_readers():
+    # Generated-only, but not visit readers: they return nothing. They are gated because
+    # the CODE they write later runs over real data.
+    for tool in ("workflow_update_render_code", "workflow_patch_render_code"):
+        assert tool in token_scopes.GENERATED_ONLY_TOOLS
+        assert tool not in token_scopes.USERVISIT_DATA_TOOLS
+        assert tool not in token_scopes.DEFINITION_WRITE_TOOLS
+
+
 @pytest.mark.django_db
 def test_a_workflow_scope_that_is_not_generated_is_refused_before_anything_is_read(monkeypatch):
     user = _user("workflow-scope")

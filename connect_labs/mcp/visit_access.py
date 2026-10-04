@@ -7,6 +7,12 @@ that names every opportunity the call would read -- not only the argument named
 ``opportunity_id``: a pipeline preview fans out over ``opportunity_ids``, and a workflow
 run reads its definition's ``opportunity_ids`` whatever scope it was opened in.
 
+Two of them read nothing: ``workflow_update_render_code`` and
+``workflow_patch_render_code`` WRITE render code, and render code later executes in a
+full-access viewer's browser over the workflow's real visits -- so planting it is
+reading those visits by proxy. They are gated on the same opportunities a run of that
+workflow reads.
+
 A resolver returns the ids, or ``None`` when it cannot tell, and ``None`` refuses the
 call. Resolvers check the scope before reading anything, so a restricted caller never
 makes the tool's own reads against a real opportunity just to be told no.
@@ -102,7 +108,7 @@ def _read_definition(user, key: str, arguments: dict, opportunity_id, program_id
                 return None
             definition_id = (run.data or {}).get("definition_id")
         else:
-            definition_id = arguments.get("definition_id")
+            definition_id = arguments.get(key)
         return wda.get_definition(definition_id) if definition_id else None
     except Exception:  # noqa: BLE001 -- anything unreadable is refused, not raised
         return None
@@ -125,6 +131,15 @@ RESOLVERS: dict[str, Resolver] = {
     "workflow_preview_snapshot": _workflow("run_id"),
     "workflow_history_runs": _workflow("definition_id"),
     "workflow_preview_as_of": _workflow("definition_id"),
+    # Writes, not reads: the code they write runs over the workflow's visits.
+    "workflow_update_render_code": _workflow("workflow_id"),
+    "workflow_patch_render_code": _workflow("workflow_id"),
+}
+
+#: Why a generated-only call is refused, for the tools whose reason is not "it reads".
+_REFUSAL_VERB = {
+    "workflow_update_render_code": "writes render code that runs over the workflow's visit data",
+    "workflow_patch_render_code": "writes render code that runs over the workflow's visit data",
 }
 
 
@@ -222,8 +237,9 @@ def denied_reason(user, tool_name: str, arguments: dict) -> str | None:
         return f"{tool_name} is not available without access to user visit data."
     opportunity_ids = resolver(user, arguments)
     if not opportunity_ids or not all_generated(opportunity_ids):
+        verb = _REFUSAL_VERB.get(tool_name, "reads visit data")
         return (
-            f"{tool_name} reads visit data, so without access to user visit data it runs only on "
+            f"{tool_name} {verb}, so without access to user visit data it runs only on "
             "synthetic opportunities whose data was generated. At least one opportunity this call "
             "reads is not one of those."
         )
