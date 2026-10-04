@@ -254,3 +254,65 @@ def ensure_visit_cache(
 
     report["failed"] = [e["opportunity_id"] for e in report["opportunities"] if not e["ok"]]
     return report
+
+
+def extend_if_held(
+    data_access,
+    definition_id: int,
+    *,
+    opportunity_id: int | None = None,
+    program_id: int | None = None,
+    hold_minutes: int = DEFAULT_HOLD_MINUTES,
+    slot_factory: Callable | None = None,
+) -> dict | None:
+    """Extend every slot's hold WITHOUT syncing, when every slot is still held.
+
+    A history rebuild walks dozens of periods in batches, and every batch must read
+    the SAME cache: one sync per run, not one per batch. `ensure_visit_cache` syncs
+    each (opportunity, pipeline) slot through the backend and re-runs its pipeline --
+    right for the first batch, pure waste (and a moving target) for every later one.
+    This is the later batches' check: count each slot's unexpired raw rows (a database
+    read, no fetch, no Connect call) and, if every slot still has them, extend the raw
+    and computed holds and return a report. Any slot that has lapsed returns None, and
+    the caller syncs exactly as before -- so a hold that expires mid-run can never let
+    a batch grade a partial cohort.
+    """
+    from django.utils import timezone
+
+    if (opportunity_id is None) == (program_id is None):
+        return None
+    definition = data_access.get_definition(definition_id)
+    if definition is None:
+        return None
+    pipeline_ids = workflow_pipeline_ids(definition)
+    opps = workflow_opportunity_ids(definition, opportunity_id)
+    if not pipeline_ids or not opps:
+        return None
+    owner_scope = {"program_id": program_id} if program_id is not None else {"opportunity_id": opportunity_id}
+    manager, _fetch_raw, _run_pipeline = (slot_factory or _default_slot)(
+        getattr(data_access, "access_token", None),
+        owner_scope,
+        getattr(definition, "pipeline_sources", None) or (definition.data or {}).get("pipeline_sources"),
+    )
+    try:
+        managers = []
+        for opp in opps:
+            for pid in pipeline_ids:
+                mgr = manager(opp, pid)
+                if not mgr.get_raw_visit_count():
+                    return None
+                managers.append(mgr)
+        for mgr in managers:
+            mgr.extend_raw_cache_ttl(int(hold_minutes))
+            mgr.hold_computed_caches(int(hold_minutes))
+    except Exception:  # noqa: BLE001 -- this only ever SKIPS work; any doubt means sync as before
+        logger.warning("held-cache check for workflow %s failed; syncing instead", definition_id, exc_info=True)
+        return None
+    return {
+        "definition_id": definition_id,
+        "held": True,
+        "slots": len(managers),
+        "hold_minutes": int(hold_minutes),
+        "hold_until": (timezone.now() + timedelta(minutes=int(hold_minutes))).isoformat(),
+        "failed": [],
+    }
