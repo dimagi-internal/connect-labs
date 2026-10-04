@@ -436,6 +436,95 @@ Output rows shape:
 
 **`first` / `last` semantics at entity stage.** For each entity group, pick the value from the visit with the earliest (`first`) or latest (`last`) `visit_date`. Ties on `visit_date` are broken by `visit_id` (ASC for `first`, DESC for `last`) — so demographics from the registration visit and current values from the most recent visit are deterministic.
 
+#### `group_by` and `groupings` — composite keys and several summaries in one pipeline
+
+`linking_field` groups by ONE value, and a pipeline produces ONE grouping. A summary
+dashboard usually needs more: totals by questionnaire, by question, by state, by worker
+type, and answer types by question × state. Before these keys existed that took one
+pipeline per summary (and one per state, for the per-state breakdown), each a separate
+pass over the same rows. Two entity-stage keys replace them:
+
+- **`group_by: [...]`** — a composite key: one row per distinct combination of the listed
+  fields. `group_by: ["state"]` is exactly `linking_field: "state"`.
+- **`groupings: {name: {...}}`** — several named groupings computed from the same rows in
+  ONE request. Each takes:
+  - `group_by` (required): its key fields;
+  - `filters` (optional): restricts the rows THIS grouping aggregates — same keys as the
+    pipeline's entity-stage `filters` (a declared field, or `status` / `flagged` /
+    `date_from` / `date_to`), applied on top of the pipeline's own `filters`;
+  - `fields` (optional): which of the pipeline's `fields` / `histograms` it computes
+    (default: all). The pipeline's `fields` are the shared aggregation vocabulary.
+
+Declare one or the other, not both. `terminal_stage` may be omitted (these keys imply
+`"entity"`); any other stage is refused. A key is a declared field (resolved like
+`linking_field`, from its `path` / `paths` / `conditional_paths`, before any transform) or a
+base column such as `username` or `status`.
+
+```python
+"schema": {
+    "data_source": {"type": "gdrive", "folder_id": "...", "file_pattern": "typology_classifications_*.csv"},
+    "fields": [
+        {"name": "topic", "path": "row.topic", "aggregation": "first"},
+        {"name": "qid", "path": "row.qid", "aggregation": "first"},
+        {"name": "state", "path": "row.state", "aggregation": "first"},
+        {"name": "flw_type", "path": "row.flw_type", "aggregation": "first"},
+        {"name": "typology_id", "path": "row.typology_id", "aggregation": "first"},
+        {"name": "typology_name", "path": "row.typology_name", "aggregation": "first"},
+        {"name": "basis", "path": "row.classification_basis", "aggregation": "first"},
+        {"name": "n", "path": "row.qid", "aggregation": "count"},
+        {"name": "clean", "path": "row.qid", "aggregation": "count",
+         "filter_path": "row.classification_basis", "filter_value": "answered_clean"},
+        {"name": "interviews", "path": "row.session_id", "aggregation": "count_distinct"},
+    ],
+    "groupings": {
+        "by_topic":    {"group_by": ["topic"]},
+        "by_question": {"group_by": ["qid"]},
+        "by_state":    {"group_by": ["state"]},
+        "by_flw_type": {"group_by": ["flw_type"]},
+        "types":       {"group_by": ["qid", "typology_id", "state"],
+                        "filters": {"basis": ["answered_clean"]},
+                        "fields": ["n", "typology_name"]},
+    },
+}
+```
+
+**Output rows.** Every grouping's rows arrive in ONE list, `props.pipelines[alias].rows`,
+in declaration order, each tagged with the grouping it belongs to:
+
+```json
+{"grouping": "by_state", "entity_id": "by_state:Kebbi", "state": "Kebbi",
+ "total_visits": 51234, "username": "...", "first_visit_date": "...", "last_visit_date": "...",
+ "n": 51234, "clean": 40012, "interviews": 812, "topic": "...", "qid": "...", ...}
+{"grouping": "types", "entity_id": "types:4.12|T1|Kebbi",
+ "qid": "4.12", "typology_id": "T1", "state": "Kebbi", "total_visits": 37, "n": 37, "typology_name": "Workload"}
+```
+
+- `grouping` — the grouping's name; split with
+  `rows.filter(r => r.grouping === "by_state")`. A field may not be named `grouping`.
+- each key field is its own column holding the group's value (not that field's
+  aggregate), so `r.state` is the state the row is about. A missing value groups as `null`.
+- `entity_id` — a stable row key: `<grouping>:<key values joined by |>` (null reads as
+  empty). A top-level composite `group_by` has no `grouping` column and an `entity_id`
+  without the prefix (`4.12|T1|Kebbi`); a single key gives exactly the `linking_field` id.
+- the standard entity columns (`total_visits`, a representative `username`, `entity_name`,
+  `first_visit_date` / `last_visit_date`) as on any entity row, plus the grouping's fields.
+  A grouping restricted by `fields` carries only those.
+
+On-demand sources read the same rows with `actions.queryPipelineRows(alias, {filters:
+{grouping: "types", state: "Kebbi"}})` — `grouping` and every key are queryable.
+
+**One pass.** The JSON fields every grouping needs are extracted ONCE into a temporary table
+(keys, values, each field's filter and each grouping's filter as typed columns); each
+grouping is then a plain `GROUP BY` over it. `pipeline_preview` reports `metadata.rows_per_grouping`
+(the sample is cut across groupings); `pipeline_sql` returns the whole script as
+`sql.grouped_aggregation_sql`. Results are cached like any entity result (Drive caches follow
+the files' fingerprints; a program-scoped Drive source is read once for the program).
+
+**Not supported in a grouping:** `mode_share` / `dup_share` (they are per-FLW) and
+`pre_aggregate_by` — leave such fields out of the grouping's `fields`. Saving a schema whose
+keys, fields or filter keys name nothing declared is refused, as are grouping names that are
+not lower case.
+
 ### Field Definition Reference
 
 ```python

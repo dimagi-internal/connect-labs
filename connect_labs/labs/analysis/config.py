@@ -811,6 +811,189 @@ class JoinConfig:
                 )
 
 
+# Keys a grouping's (or a pipeline's) entity-stage `filters` may name besides a
+# declared field: the base columns `_entity_stage_filters_where` handles.
+GROUPING_BASE_FILTER_KEYS = frozenset({"status", "flagged", "date_from", "date_to"})
+
+# Aggregations an entity-stage grouping cannot run: both are correlated subqueries
+# scoped to one FLW (`username`), which a grouping's rows are not.
+GROUPING_UNSUPPORTED_AGGREGATIONS = frozenset({"mode_share", "dup_share"})
+
+# Output columns every grouped row already carries; a group key of one of these
+# names would collide with it.
+_GROUPED_ROW_RESERVED_NAMES = frozenset(
+    {"grouping", "total_visits", "first_visit_date", "last_visit_date", "date_range_days", "opportunity_id"}
+)
+
+# Every grouped row carries this column naming its grouping (named groupings only).
+GROUPING_COLUMN = "grouping"
+
+
+@dataclass
+class GroupingSpec:
+    """One summary an entity-stage pipeline produces: rows grouped by `group_by`.
+
+    `name` tags each output row (`row.grouping`); it is "" for the single unnamed
+    grouping a top-level `group_by` declares, whose rows carry no tag. `filters`
+    restricts the rows THIS grouping aggregates (same keys as the pipeline's own
+    entity-stage `filters`, applied on top of them). `fields` restricts which of the
+    pipeline's fields / histograms it computes; None means all of them.
+    """
+
+    name: str
+    group_by: list[str]
+    filters: dict[str, Any] = field(default_factory=dict)
+    fields: list[str] | None = None
+
+
+def _grouping_spec_from_dict(name: str, raw, where: str) -> GroupingSpec:
+    if not isinstance(raw, dict):
+        raise ValueError(f"{where} must be an object like {{'group_by': ['field']}}")
+    unknown = set(raw) - {"group_by", "filters", "fields"}
+    if unknown:
+        raise ValueError(f"{where}: unknown keys {sorted(unknown)} (allowed: group_by, filters, fields)")
+    group_by = raw.get("group_by")
+    if isinstance(group_by, str):
+        group_by = [group_by]
+    filters = raw.get("filters") or {}
+    if not isinstance(filters, dict):
+        raise ValueError(f"{where}.filters must be an object of {{field: value | [values]}}")
+    fields = raw.get("fields")
+    if fields is not None and (not isinstance(fields, list) or not all(isinstance(f, str) for f in fields)):
+        raise ValueError(f"{where}.fields must be a list of field names")
+    return GroupingSpec(name=name, group_by=list(group_by or []), filters=dict(filters), fields=fields)
+
+
+def groupings_from_schema(schema: dict) -> tuple[list[str], list[GroupingSpec]]:
+    """`(group_by, groupings)` as a pipeline schema declares them; both empty when it
+    declares neither. Raises ValueError on a malformed shape -- references to fields
+    are checked separately (`grouping_problems`), against the declared fields."""
+    group_by = schema.get("group_by")
+    raw_groupings = schema.get("groupings")
+    if group_by is None and raw_groupings is None:
+        return [], []
+    if group_by is not None and raw_groupings is not None:
+        raise ValueError(
+            "declare either group_by (one grouping) or groupings (several named ones), not both; "
+            "give each named grouping its own group_by"
+        )
+    if group_by is not None:
+        if isinstance(group_by, str):
+            group_by = [group_by]
+        if not isinstance(group_by, list) or not group_by or not all(isinstance(k, str) for k in group_by):
+            raise ValueError("group_by must be a non-empty list of field names")
+        return list(group_by), []
+    if not isinstance(raw_groupings, dict) or not raw_groupings:
+        raise ValueError("groupings must be a non-empty object of {name: {group_by: [...], filters?, fields?}}")
+    specs = [_grouping_spec_from_dict(name, raw, f"groupings.{name}") for name, raw in raw_groupings.items()]
+    return [], specs
+
+
+def grouping_problems(
+    group_by: list[str],
+    groupings: list[GroupingSpec],
+    fields: dict[str, dict],
+    histogram_names: set[str] | frozenset = frozenset(),
+) -> list[str]:
+    """Why these groupings cannot run, or [] when they can.
+
+    `fields` maps each declared field name to ``{"aggregation", "has_paths",
+    "pre_aggregate_by"}`` -- built from FieldComputations by the config, and from the
+    raw schema dicts by the MCP save-time check, so both refuse the same things.
+    """
+    specs = list(groupings) or ([GroupingSpec(name="", group_by=list(group_by))] if group_by else [])
+    problems: list[str] = []
+    seen_names: set[str] = set()
+    if groupings and GROUPING_COLUMN in fields:
+        problems.append(
+            f"a field named {GROUPING_COLUMN!r} collides with the column every named grouping's rows carry; "
+            "rename the field"
+        )
+    for spec in specs:
+        where = f"groupings.{spec.name}" if spec.name else "group_by"
+        if spec.name:
+            problem = field_name_problem(spec.name)
+            if problem:
+                problems.append(f"{where}: grouping {problem.replace('field name', 'name', 1)}")
+            if spec.name in seen_names:
+                problems.append(f"{where}: duplicate grouping name")
+            seen_names.add(spec.name)
+        keys = spec.group_by
+        if not keys:
+            problems.append(f"{where}: group_by needs at least one field")
+        if len(set(keys)) != len(keys):
+            problems.append(f"{where}: group_by repeats a field")
+        for key in keys:
+            if key in RAW_VISIT_BASE_COLUMNS:
+                if key in RAW_VISIT_JSONB_BASE_COLUMNS:
+                    problems.append(f"{where}: cannot group by the JSON column {key!r}")
+                elif key == "entity_id" and (spec.name or len(keys) > 1):
+                    problems.append(
+                        f"{where}: 'entity_id' is the row key of a grouped row, so it can only be the sole key "
+                        "of an unnamed group_by; declare a field reading it (e.g. "
+                        "{'name': 'case_id', 'path': 'entity_id'}) and group by that"
+                    )
+                continue
+            info = fields.get(key)
+            if info is None:
+                problems.append(
+                    f"{where}: unknown group_by field {key!r}; declare it in fields or use a base column "
+                    f"({sorted(RAW_VISIT_BASE_COLUMNS - RAW_VISIT_JSONB_BASE_COLUMNS)})"
+                )
+            elif not info.get("has_paths"):
+                problems.append(f"{where}: group_by field {key!r} has no path or paths to group by")
+            if key in _GROUPED_ROW_RESERVED_NAMES:
+                problems.append(f"{where}: {key!r} is a column every grouped row already has; rename the field")
+        computed = spec.fields if spec.fields is not None else list(fields) + sorted(histogram_names)
+        for name in spec.fields or []:
+            if name not in fields and name not in histogram_names:
+                problems.append(f"{where}.fields: unknown field {name!r}")
+        for name in computed:
+            info = fields.get(name)
+            if info is None or name in keys:
+                continue
+            if info.get("aggregation") in GROUPING_UNSUPPORTED_AGGREGATIONS:
+                problems.append(
+                    f"{where}: field {name!r} uses {info['aggregation']!r}, which only works per FLW; "
+                    "leave it out of this grouping's fields"
+                )
+            if info.get("pre_aggregate_by"):
+                problems.append(
+                    f"{where}: field {name!r} uses pre_aggregate_by, which is not supported at entity stage; "
+                    "leave it out of this grouping's fields"
+                )
+        for key in spec.filters:
+            if key not in GROUPING_BASE_FILTER_KEYS and key not in fields:
+                problems.append(
+                    f"{where}.filters: unknown key {key!r}; use a declared field or one of "
+                    f"{sorted(GROUPING_BASE_FILTER_KEYS)}"
+                )
+    return problems
+
+
+def schema_grouping_problems(schema: dict) -> list[str]:
+    """`grouping_problems` for a raw pipeline schema dict (the MCP / UI save check)."""
+    try:
+        group_by, groupings = groupings_from_schema(schema)
+    except ValueError as e:
+        return [str(e)]
+    if not group_by and not groupings:
+        return []
+    stage = schema.get("terminal_stage")
+    if stage not in (None, "entity"):
+        return [f"group_by / groupings need terminal_stage 'entity' (got {stage!r})"]
+    fields = {}
+    for f in schema.get("fields") or []:
+        if isinstance(f, dict) and isinstance(f.get("name"), str):
+            fields[f["name"]] = {
+                "aggregation": f.get("aggregation", "first"),
+                "has_paths": bool(f.get("path") or f.get("paths") or f.get("conditional_paths")),
+                "pre_aggregate_by": f.get("pre_aggregate_by", ""),
+            }
+    hist_names = {h.get("name") for h in schema.get("histograms") or [] if isinstance(h, dict)}
+    return grouping_problems(group_by, groupings, fields, hist_names)
+
+
 @dataclass
 class AnalysisPipelineConfig:
     """
@@ -939,12 +1122,40 @@ class AnalysisPipelineConfig:
     # SQLBackend._process_entity_level). Runtime-only: not part of the config hash.
     feeds_joins: bool = False
 
+    # Entity stage only. `group_by` groups by several keys at once (a composite
+    # key; `linking_field` is the one-key case and is used when this is empty).
+    # `groupings` computes several named groupings from the same rows in one
+    # extraction pass, each row tagged with its grouping's name. At most one of the
+    # two is set. Both empty (the default) = the linking_field aggregation, unchanged.
+    group_by: list[str] = field(default_factory=list)
+    groupings: list[GroupingSpec] = field(default_factory=list)
+
     def __post_init__(self):
         """Validate configuration."""
         if not self.grouping_key:
             raise ValueError("Grouping key is required")
         if self.terminal_stage == CacheStage.ENTITY and not self.linking_field:
             raise ValueError("linking_field is required when terminal_stage is ENTITY")
+        if self.group_by or self.groupings:
+            if self.terminal_stage != CacheStage.ENTITY:
+                raise ValueError("group_by / groupings need terminal_stage 'entity'")
+            if self.group_by and self.groupings:
+                raise ValueError("declare either group_by or groupings, not both")
+            problems = grouping_problems(
+                self.group_by,
+                self.groupings,
+                {
+                    f.name: {
+                        "aggregation": f.aggregation,
+                        "has_paths": bool(f.get_paths() or f.conditional_paths),
+                        "pre_aggregate_by": f.pre_aggregate_by,
+                    }
+                    for f in self.fields
+                },
+                {h.name for h in self.histograms},
+            )
+            if problems:
+                raise ValueError("; ".join(problems))
 
         # Warn on FieldComputation names that collide with raw_visit_cache base columns.
         # See RAW_VISIT_BASE_COLUMNS for why this matters — silent shadowing causes
@@ -993,6 +1204,16 @@ class AnalysisPipelineConfig:
         `pipeline_id` still keys the computed caches, which really are per pipeline.
         """
         return raw_cache_slot(self.pipeline_id, self.data_source.type, self.data_source)
+
+    def effective_groupings(self) -> list[GroupingSpec]:
+        """The groupings this pipeline's entity stage computes in one pass: its named
+        `groupings`, else one unnamed grouping for a composite `group_by`, else []
+        (the plain `linking_field` aggregation)."""
+        if self.groupings:
+            return list(self.groupings)
+        if self.group_by:
+            return [GroupingSpec(name="", group_by=list(self.group_by))]
+        return []
 
     def add_field(self, field_comp: FieldComputation) -> None:
         """Add a field computation to the config."""
