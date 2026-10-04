@@ -4645,6 +4645,11 @@ def update_pipeline_schema_api(request, definition_id):
                 problem = field_name_problem(f.get("name") if isinstance(f, dict) else None)
                 if problem:
                     return JsonResponse({"error": problem}, status=400)
+            from connect_labs.labs.analysis.config import schema_grouping_problems
+
+            grouping_problems = schema_grouping_problems(schema)
+            if grouping_problems:
+                return JsonResponse({"error": "; ".join(grouping_problems)}, status=400)
 
         data_access = PipelineDataAccess(request=request)
 

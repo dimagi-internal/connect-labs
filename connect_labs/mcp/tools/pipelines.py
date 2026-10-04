@@ -14,7 +14,7 @@ import logging
 import re
 
 from connect_labs.labs.analysis.backends.sql.query_builder import generate_sql_preview
-from connect_labs.labs.analysis.config import VALID_AGGREGATIONS, field_name_problem
+from connect_labs.labs.analysis.config import VALID_AGGREGATIONS, field_name_problem, schema_grouping_problems
 from connect_labs.workflow.data_access import PipelineDataAccess, serialize_pipeline_row
 
 from ..connect_token import require_connect_token
@@ -301,6 +301,11 @@ def _validate_pipeline_schema(schema: dict) -> None:
                 f"Unknown aggregation {agg!r} on field {f.get('name', '<unnamed>')!r}. "
                 f"Valid: {sorted(VALID_AGGREGATIONS)}",
             )
+    # group_by / groupings (entity stage): every key, field and filter must name a
+    # declared field (or a base column) -- refused here rather than as a SQL error.
+    grouping_problems = schema_grouping_problems(schema)
+    if grouping_problems:
+        raise MCPToolError("INVALID_SCHEMA", "; ".join(grouping_problems))
 
 
 def _authorize_drive_source(
@@ -726,6 +731,13 @@ def pipeline_preview(
         if isinstance(pname, str):
             top_meta["pipeline_name"] = pname
         top_meta["opps_with_errors"] = [oid for oid, m in per_opp_metadata.items() if m.get("error")]
+        # A pipeline with named groupings returns every grouping's rows in one list,
+        # which the sample cuts; report how many rows each grouping produced in full.
+        if any("grouping" in r for r in merged_rows):
+            per_grouping: dict = {}
+            for r in merged_rows:
+                per_grouping[r.get("grouping")] = per_grouping.get(r.get("grouping"), 0) + 1
+            top_meta["rows_per_grouping"] = per_grouping
 
         # Flag custom fields that extracted null for every row — almost always
         # a wrong field.path. Use the executed schema (override when set, the
@@ -849,42 +861,59 @@ def pipeline_set_shared(user, pipeline_id: int, opportunity_id: int, shared: boo
     name="pipeline_sql",
     description=(
         "Return the SQL the pipeline would execute, without running it. "
-        "Useful for debugging. schema_override previews unsaved changes."
+        "Useful for debugging. schema_override previews unsaved changes. "
+        "A pipeline with group_by / groupings also gets `sql.grouped_aggregation_sql`: the "
+        "one extraction pass and each grouping's GROUP BY. A program-owned pipeline takes "
+        "program_id in place of opportunity_id."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "pipeline_id": {"type": "integer"},
-            "opportunity_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer", "description": "Provide this OR program_id."},
+            "program_id": {"type": "integer", "description": _PROGRAM_SCOPE_DOC},
             "schema_override": {"type": "object"},
         },
-        "required": ["pipeline_id", "opportunity_id"],
+        "required": ["pipeline_id"],
         "additionalProperties": False,
     },
 )
 def pipeline_sql(
     user,
     pipeline_id: int,
-    opportunity_id: int,
+    opportunity_id: int = None,
     schema_override: dict = None,
+    program_id: int = None,
 ):
+    scope = _record_scope(opportunity_id, program_id)
     if schema_override is not None:
         _validate_pipeline_schema(schema_override)
 
     token = require_connect_token(user)
-    pda = PipelineDataAccess(access_token=token, opportunity_id=opportunity_id)
+    pda = PipelineDataAccess(access_token=token, **scope)
     try:
         definition = pda.get_definition(pipeline_id)
         if definition is None:
             raise MCPToolError("NOT_FOUND", f"No pipeline with id {pipeline_id}")
 
         schema = schema_override if schema_override is not None else definition.schema
-        config = pda._schema_to_config(schema, pipeline_id)
+        try:
+            config = pda._schema_to_config(schema, pipeline_id)
+        except ValueError as e:
+            raise MCPToolError("INVALID_SCHEMA", str(e))
 
-        sql_info = generate_sql_preview(config, opportunity_id)
+        # The SQL's opportunity scope is the one the rows are cached under: a
+        # program-scoped Drive source's program key, else the opportunity.
+        from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import drive_cache_scope, program_cache_scope
+
+        cache_scope = drive_cache_scope(config.data_source, opportunity_id)
+        if cache_scope is None:
+            cache_scope = program_cache_scope(program_id)
+        sql_info = generate_sql_preview(config, cache_scope)
         return {
             "pipeline_id": pipeline_id,
             "opportunity_id": opportunity_id,
+            **({"program_id": program_id} if program_id is not None else {}),
             "sql": sql_info,
             "used_schema_override": schema_override is not None,
         }
