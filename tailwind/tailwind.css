@@ -435,6 +435,18 @@
     @apply bg-message-error text-message-error-text;
   }
 
+  /* The one status a row leads with (e.g. "1 of 3 comparable"): solid brand indigo,
+     stronger than any count or fact beside it. */
+  .status-chip--lead {
+    @apply bg-brand-indigo font-semibold text-white;
+  }
+
+  /* A fact, not a move: what a quote is missing and whose it is to supply. A muted
+     outline, so it never reads as the filled move counts ("Us 1"). */
+  .status-chip--fact {
+    @apply bg-white font-normal text-gray-700 ring-1 ring-inset ring-gray-300;
+  }
+
   /* An ordered list of steps; each li holds a .stage-seg, a .stage-name and a .stage-note. */
   .stage-bar {
     @apply m-0 grid list-none grid-cols-2 gap-y-4 p-0 sm:grid-cols-3 lg:grid-cols-6;
@@ -452,8 +464,9 @@
     @apply bg-brand-indigo;
   }
 
+  /* The current step: a lighter indigo, so amber stays the colour of a move on us. */
   .stage-seg--now {
-    @apply bg-brand-marigold;
+    @apply bg-brand-indigo/40;
   }
 
   .stage-name {
@@ -502,8 +515,10 @@
     @apply grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 rounded-lg px-3 py-2.5 text-sm;
   }
 
+  /* A move on us: a white row with a warning-coloured edge, so a list of them stays calm
+     and the amber fill is kept for the one status chip that says the record waits on us. */
   .move-item--ours {
-    @apply bg-message-warning;
+    @apply border-message-warning-border border-l-[3px] bg-white ring-1 ring-inset ring-brand-border-light;
   }
 
   .move-item--theirs {
@@ -520,7 +535,7 @@
 
   /* Where a fact came from: recorded by a person, from an email by AI, or worked out here. */
   .src-mark {
-    @apply mr-1.5 inline-block size-2.5 shrink-0 rounded-xs align-[0px];
+    @apply mr-1.5 inline-block size-3 shrink-0 rounded-xs align-[-1px];
   }
 
   /* Three marks told apart by shape and fill, not by two near shades of blue:
@@ -530,11 +545,12 @@
   }
 
   .src-mark--ai {
-    @apply border-brand-cornflower-blue rounded-full border-[2.5px] bg-white;
+    @apply border-brand-cornflower-blue rounded-full border-[3px] bg-white;
   }
 
+  /* An outlined diamond: a third shape, not a third ring. */
   .src-mark--calc {
-    @apply rounded-full border-[1.5px] border-dashed border-gray-500;
+    @apply size-2.5 rotate-45 rounded-none border-[1.5px] border-gray-500 bg-white;
   }
 
   .src-ai-tag {

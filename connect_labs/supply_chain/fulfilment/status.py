@@ -147,7 +147,10 @@ def order_status(
         billed_tile = {
             "label": "Billed vs agreed",
             "value": f"{currency} {money_digits(total['billed'])}".strip(),
-            "sub": f"+{currency} {money_digits(total['difference'])} above {money_digits(total['agreed'])} agreed",
+            "sub": (
+                f"+{currency} {money_digits(total['difference'])} above"
+                f" · {currency} {money_digits(total['agreed'])} agreed"
+            ),
             # Neutral ground: whose move it is rides on the chip, so the tile does not read as an On us item.
             "tone": "",
             "chips": [{"label": "invoice check", "tone": OURS}],
