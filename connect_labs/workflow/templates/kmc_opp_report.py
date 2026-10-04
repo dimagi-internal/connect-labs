@@ -52,6 +52,10 @@ _RENDER = (Path(__file__).parent / "kmc_opp_report_render.js").read_text()
 # builder, the same scopes and case index, so a handed-down slice and a run saved
 # here are the same shape and the page reads both the same way.
 SNAPSHOT_INPUTS = copy.deepcopy(PROGRAMME_SNAPSHOT_INPUTS)
+# The opportunity report is where a case list LIVES: its own saved runs store it
+# (one opportunity's cases), and hand-down writes the programme's week into it the
+# same way. The programme report grades the same cases but stores none.
+SNAPSHOT_INPUTS["case_index"]["embed"] = True
 
 DEFINITION = {
     "name": "KMC Opportunity Report",

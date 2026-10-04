@@ -305,3 +305,71 @@ def test_the_case_scope_returns_one_row_per_baby_and_a_worker_filter_narrows_it(
         visit_filter={"username": "asha", "opportunity_id": 10042},
     )
     assert [r["username"] for r in one] == ["asha"]
+
+
+_CASE_FIELDS = {
+    "reg_date": "reg_date",
+    "first_visit_date": "first_visit",
+    "last_visit_date": "last_visit",
+    "total_visits": "num_visits",
+    "birth_weight_g": "birth_weight_g",
+    "last_weight_g": "last_weight_g",
+    "not_a_column": "no_such_column",
+}
+
+
+def test_one_extraction_gives_the_scores_and_the_case_list(fixture_visits):
+    """The indicators are exactly `evaluate`'s, and the case list comes from the SAME
+    props rows: identity, the declared fields under the reader's names, and any field
+    the registry cannot serve reported rather than refused."""
+    from connect_labs.semantic.runtime import evaluate_with_cases
+
+    kwargs = dict(visit_sql=fixture_visits, registry_name="kmc", series="KMC", as_of="'2026-04-01'")
+    plain = evaluate(None, [10042], scopes=["programme", "flw"], **kwargs)
+    rows, cases, dropped = evaluate_with_cases(
+        None, [10042], scopes=["programme", "flw"], case_fields=_CASE_FIELDS, **kwargs
+    )
+    assert rows == plain
+    assert dropped == ["not_a_column"]
+    by_id = {c["entity_id"]: c for c in cases}
+    assert set(by_id) == {"b1", "b2"}
+    assert by_id["b1"]["username"] == "asha" and by_id["b2"]["username"] == "ravi"
+    assert by_id["b1"]["opportunity_id"] == 10042
+    assert by_id["b1"]["total_visits"] == 4
+    assert by_id["b1"]["first_visit_date"] == "2026-01-01" and by_id["b1"]["last_visit_date"] == "2026-02-14"
+    assert by_id["b1"]["last_weight_g"] == 2100
+
+
+def test_the_case_list_is_as_of_the_run_not_as_of_today(fixture_visits):
+    """A past week's list shows each case as it stood that week: later visits do not
+    exist yet, so they neither count nor move the last-visit date or latest weight."""
+    from connect_labs.semantic.runtime import evaluate_with_cases
+
+    _rows, cases, _ = evaluate_with_cases(
+        None,
+        [10042],
+        visit_sql=fixture_visits,
+        registry_name="kmc",
+        series="KMC",
+        scopes=["programme"],
+        case_fields=_CASE_FIELDS,
+        as_of="DATE '2026-01-15'",
+    )
+    b1 = next(c for c in cases if c["entity_id"] == "b1")
+    assert b1["total_visits"] == 2
+    assert b1["last_visit_date"] == "2026-01-11"
+    assert b1["last_weight_g"] == 1650
+
+
+def test_the_case_list_can_be_limited_to_some_opportunities(fixture_visits):
+    from connect_labs.semantic.runtime import evaluate_with_cases
+
+    kwargs = dict(
+        visit_sql=fixture_visits, registry_name="kmc", series="KMC", scopes=["programme"], case_fields=_CASE_FIELDS
+    )
+    rows, none, _ = evaluate_with_cases(None, [10042], case_opportunity_ids=[], **kwargs)
+    assert rows and none == []
+    _rows, other, _ = evaluate_with_cases(None, [10042], case_opportunity_ids=[999], **kwargs)
+    assert other == []
+    _rows, own, _ = evaluate_with_cases(None, [10042], case_opportunity_ids=[10042], **kwargs)
+    assert len(own) == 2

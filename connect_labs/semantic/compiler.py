@@ -1546,8 +1546,20 @@ def compile_rollup_sql(
     """
     scopes = scopes or ["programme", "opportunity", "flw", "month"]
     _check_scopes(scopes, llo_map)
-
     ctes, compiled = _build_ctes(props_doc, registry, visit_sql, as_of, llo_map=llo_map, visit_filter=visit_filter)
+    return f"{ctes}\n{_rollup_select(registry, compiled, scopes, settings, llo_map, source='props')}"
+
+
+def _rollup_select(
+    registry: dict[str, Any],
+    compiled: dict[str, str],
+    scopes: list[str],
+    settings: dict[str, dict[Any, bool]] | None,
+    llo_map: dict[Any, str] | None,
+    *,
+    source: str,
+) -> str:
+    """The GROUPING SETS select over a `props` relation: the CTE, or a table holding it."""
     supp = _suppression_columns(registry, settings, llo_map)
 
     all_cols: list[str] = []
@@ -1568,15 +1580,96 @@ def compile_rollup_sql(
         for sc in scopes
     )
     col_select = "".join(f"props.{c},\n    " for c in all_cols)
+    alias = "" if source == "props" else " AS props"
 
-    return f"""{ctes}
-SELECT
+    return f"""SELECT
     CASE
         {label_cases}
         ELSE 'other'
     END AS scope,
     {col_select}COUNT(*) AS n_cases,
     {supp}{_measure_cols(registry, compiled)}
-FROM props
+FROM {source}{alias}
 GROUP BY GROUPING SETS ({sets})
 """.strip()
+
+
+# The identity every case row carries, whatever the registry. `entity_id` is the
+# registry's own key: `case_id` is "<opportunity>|<key>" (see _build_ctes), so the
+# key is everything after the first bar -- an opportunity id never contains one.
+_CASE_IDENTITY = (
+    "props.opportunity_id",
+    "props.username",
+    "SUBSTRING(props.case_id FROM POSITION('|' IN props.case_id) + 1) AS entity_id",
+)
+
+
+def case_row_columns(props_doc: dict[str, Any]) -> frozenset[str]:
+    """Every per-case column `props` carries: the aggregates, the weight-series
+    derivations, the properties and base_m's own keys. What a case row may select."""
+    model = resolve_model(props_doc)
+    ws = props_doc.get("weight_series") or {}
+    derived = {d["name"] for d in (ws.get("derived") or []) if isinstance(ws, dict) and d.get("name")}
+    return frozenset(
+        _base_columns(model)
+        | {a["name"] for a in props_doc.get("aggregates") or []}
+        | derived
+        | {p["name"] for p in props_doc.get("properties") or []}
+    )
+
+
+def compile_props_sql(
+    props_doc: dict[str, Any],
+    registry: dict[str, Any],
+    visit_sql: str,
+    as_of: str = "CURRENT_DATE",
+    llo_map: dict[Any, str] | None = None,
+    visit_filter: dict[str, Any] | None = None,
+) -> tuple[str, dict[str, str]]:
+    """The whole Layer 1 -> Layer 2 chain as ONE statement returning `props`.
+
+    For a caller that needs more than one answer from the same cases -- a saved
+    run wants every scope's indicators AND the case list -- the expensive part is
+    this chain, not either answer. Materialise it once (`runtime.evaluate_with_cases`
+    puts it in a temporary table) and read both off the result: one extraction, and
+    one definition of a case behind both the scores and the list.
+    """
+    ctes, compiled = _build_ctes(props_doc, registry, visit_sql, as_of, llo_map=llo_map, visit_filter=visit_filter)
+    # An explicit list, not `*`: `props` carries the row key TWICE when there is a
+    # weight series (base_m selects v.* and w.*, and both carry it), which a query
+    # tolerates but a table refuses ("column specified more than once"). Every
+    # column a property or measure may read is here -- the validator's own visible
+    # set -- and the key is restored once, from case_id, which holds the same value.
+    rid = resolve_model(props_doc).row_id
+    cols = sorted(case_row_columns(props_doc) - {rid}) + (["llo"] if llo_map else [])
+    select = ", ".join([f"props.case_id AS {rid}"] + [f"props.{c}" for c in cols])
+    return f"{ctes}\nSELECT {select} FROM props", compiled
+
+
+def case_rows_select(
+    props_doc: dict[str, Any], fields: dict[str, str], *, source: str, llo: bool = False
+) -> tuple[str, list[str]]:
+    """One row per case from a `props` relation, plus the output names it dropped.
+
+    `fields` maps OUTPUT name -> props column, so a case index keeps the names its
+    readers already use (`first_visit_date`) while the registry keeps its own
+    (`first_visit`). A column the registry does not define is dropped and reported
+    rather than refused: a template can declare a field before the registry that
+    serves it is updated, and the list still saves.
+    """
+    available = case_row_columns(props_doc)
+    cols = list(_CASE_IDENTITY) + (["props.llo"] if llo else [])
+    dropped = []
+    for out, col in fields.items():
+        if out in ("opportunity_id", "username", "entity_id", "llo"):
+            continue
+        if not (_IDENTIFIER.match(str(out)) and _IDENTIFIER.match(str(col))) or col not in available:
+            dropped.append(out)
+            continue
+        cols.append(f"props.{col} AS {out}")
+    alias = "" if source == "props" else " AS props"
+    select = ",\n    ".join(cols)
+    return (
+        f"SELECT {select}\nFROM {source}{alias}\nORDER BY props.opportunity_id, props.username, props.case_id",
+        dropped,
+    )

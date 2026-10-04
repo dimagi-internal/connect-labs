@@ -422,3 +422,90 @@ def test_only_a_template_that_hands_down_queues_a_hand_down(monkeypatch):
     assert not hd.queue_hand_down(wda, workflow_id=5, template_type="kmc_opp_report")
     assert hd.queue_hand_down(wda, workflow_id=5, template_type="kmc_programme_metrics", run_id=9)
     assert sent == [{"workflow_id": 5, "run_id": 9, "opportunity_id": 1, "program_id": None}]
+
+
+def programme_payload():
+    """The same run as a programme run now stores it: graded from every case, storing
+    none (`case_index.embed: false`), with each opportunity's anchor in meta."""
+    out = payload()
+    cases = out.pop("cases")
+    for f in out["byFLW"]:
+        f["rows"] = []
+    out["meta"]["settles"] = {"after_days": 90, "anchor": "first_visit_date", "latest": {str(MINE): "2026-09-10"}}
+    out["meta"]["settles"]["latest"][str(OTHER)] = "2026-09-12"
+    return out, cases
+
+
+class TestAProgrammeRunThatStoresNoCases:
+    """The opportunity's cases are supplied for the week, not cut from the run."""
+
+    def test_the_slice_holds_its_own_cases_and_workers_point_at_them(self):
+        stored, cases = programme_payload()
+        out = hd.slice_for_opportunity(stored, MINE, cases=cases)
+        assert [c["entity_id"] for c in out["cases"]] == ["c-mine-1", "c-mine-2", "c-mine-3"]
+        by_worker = {f["username"]: [out["cases"][i]["entity_id"] for i in f["rows"]] for f in out["byFLW"]}
+        assert by_worker == {"amy": ["c-mine-1", "c-mine-2"], "bea": ["c-mine-3"]}
+        assert out["meta"]["cases"] == 3
+
+    def test_nothing_of_the_other_opportunity_survives(self):
+        stored, cases = programme_payload()
+        text = json.dumps(hd.slice_for_opportunity(stored, MINE, cases=cases))
+        for leak in (str(OTHER), "Other LLO", "zed", "c-other-1", "2026-09-12"):
+            assert leak not in text, f"{leak!r} reached another opportunity's report"
+
+    def test_its_own_anchor_survives_for_its_benchmark_line(self):
+        stored, cases = programme_payload()
+        out = hd.slice_for_opportunity(stored, MINE, cases=cases)
+        assert out["meta"]["settles"]["latest"] == {str(MINE): "2026-09-10"}
+
+    def test_with_no_list_and_none_supplied_it_refuses(self):
+        stored, _cases = programme_payload()
+        with pytest.raises(hd.HandDownError):
+            hd.slice_for_opportunity(stored, MINE)
+
+    def _run(self, stored):
+        run = _source_run()
+        run.snapshot = wrap_for_runner(stored)
+        return run
+
+    def test_a_week_computes_its_case_list_once_for_every_receiving_opportunity(self):
+        stored, cases = programme_payload()
+        calls = []
+
+        def cases_for(run, opps):
+            calls.append((run.id, opps))
+            return cases
+
+        mine = FakeWDA(definitions=[_receiver()])
+        report = hd.hand_down_run(
+            lambda opp: mine if opp == MINE else FakeWDA(), 19778, self._run(stored), cases_for=cases_for
+        )
+        assert [r["action"] for r in report] == ["created"]
+        assert calls == [(9, [MINE])]
+        slice_ = mine.runs[0].snapshot["state"]["snapshot"]
+        assert [c["entity_id"] for c in slice_["cases"]] == ["c-mine-1", "c-mine-2", "c-mine-3"]
+
+    def test_a_week_already_handed_down_computes_nothing(self):
+        stored, _cases = programme_payload()
+        mine = FakeWDA(definitions=[_receiver()])
+        run = self._run(stored)
+        hd.hand_down_run(lambda opp: mine if opp == MINE else FakeWDA(), 19778, run, cases=_cases)
+
+        def cases_for(run, opps):
+            raise AssertionError("an up-to-date week must not compute a case list")
+
+        report = hd.hand_down_run(lambda opp: mine if opp == MINE else FakeWDA(), 19778, run, cases_for=cases_for)
+        assert [r["action"] for r in report] == ["unchanged"]
+
+    def test_a_case_list_that_cannot_be_computed_fails_the_week_not_the_walk(self):
+        stored, _cases = programme_payload()
+
+        def cases_for(run, opps):
+            raise RuntimeError("visit cache expired")
+
+        mine = FakeWDA(definitions=[_receiver()])
+        report = hd.hand_down_run(
+            lambda opp: mine if opp == MINE else FakeWDA(), 19778, self._run(stored), cases_for=cases_for
+        )
+        assert report[0]["action"] == "failed" and "visit cache expired" in report[0]["error"]
+        assert mine.runs == []
