@@ -259,8 +259,18 @@ def _order_with_emailed_shipment(da, base, ace, when=AUG_20):
     return contract, shipment, source
 
 
-def _source_heading(body):
-    return " ".join(re.search(r'data-testid="source-heading"[^>]*>(.*?)</p>', body, re.S).group(1).split())
+def _event_head(body):
+    """The email event's head, as read: the sender, then who recorded it (unanswered round 1004 b3)."""
+    head = re.search(r'<li data-testid="email-event".*?</details>', body, re.S).group(0)
+    sender = re.search(
+        r'data-testid="email-event-head"[^>]*>(.*?)</span>\s*<span data-testid="actor-badge"', head, re.S
+    )
+    return " ".join(re.sub(r"<[^>]+>", " ", sender.group(1)).split()), head
+
+
+def _replayed(head):
+    found = re.search(r'data-testid="source-replayed"[^>]*>(.*?)</p>', head, re.S)
+    return " ".join(found.group(1).split()) if found else ""
 
 
 @pytest.mark.django_db
@@ -268,8 +278,12 @@ class TestTheSourceSaysWhereItCameFrom:
     def test_the_excerpt_is_headed_by_its_kind_who_recorded_it_and_when(self, da, base, ace, client_in_program):
         contract, _shipment, _source = _order_with_emailed_shipment(da, base, ace)
         body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
-        # The shipment says its supplier reported it, so the email is the supplier's.
-        assert _source_heading(body) == "Email from Northwind Foods, recorded by the AI assistant on 20 Aug 2026"
+        # The shipment says its supplier reported it, so the email is the supplier's: one
+        # email event headed by its sender and the AI pill, its day the day heading.
+        sender, head = _event_head(body)
+        assert sender == "Northwind Foods"
+        assert "data-ai" in head and "AI assistant" in head
+        assert 'datetime="2026-08-20"' in body
 
     def test_the_same_email_again_is_answered_once_and_says_so(self, da, base, ace, client_in_program):
         contract, shipment, source = _order_with_emailed_shipment(da, base, ace)
@@ -280,14 +294,10 @@ class TestTheSourceSaysWhereItCameFrom:
         assert call.replay_count == 1 and call.last_replayed_at == AUG_28
         url = reverse("supply_chain:order_detail", args=[contract["id"]])
         live = client_in_program.get(url).content.decode()
-        assert (
-            _source_heading(live)
-            == "Email from Northwind Foods, recorded by the AI assistant on 20 Aug 2026 · forwarded again 28 Aug 2026 "
-            "— recorded once"
-        )
+        assert _replayed(_event_head(live)[1]) == "Forwarded again 28 Aug 2026 — recorded once"
         # Before it arrived again, it had not.
         past = client_in_program.get(url, {"as_of": "2026-08-25"}).content.decode()
-        assert _source_heading(past) == "Email from Northwind Foods, recorded by the AI assistant on 20 Aug 2026"
+        assert _replayed(_event_head(past)[1]) == ""
 
 
 # ---- 5 and 6. the overview ------------------------------------------------

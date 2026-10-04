@@ -130,7 +130,9 @@ class TestACorrectionSaysItsUnitsAndOpensOnItsSource:
         body = client_in_program.get(
             reverse("supply_chain:procurement_tender_detail", args=[base["tender"]["id"]])
         ).content.decode()
-        assert "Quote · Northwind Foods · corrected: sachets per carton 150 (was not stated)" in body
+        # Under its email event (unanswered round 1004 b3): the kind set apart, the
+        # supplier named once in the event's head rather than again on the line.
+        assert "Quote</span> · corrected: sachets per carton 150 (was not stated)" in body
         assert "units per pack" not in body
 
     def test_a_commodity_without_units_keeps_the_generic_words(self):

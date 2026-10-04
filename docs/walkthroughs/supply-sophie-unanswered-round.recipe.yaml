@@ -451,13 +451,13 @@ scenes:
     target: css:[data-testid=fold-history] > summary
   - kind: click
     must_succeed: true
-    note: 'the forwarder''s message: held at the border on our import permit'
+    note: 'the forwarder''s message, one email event like every other email in the History: held at the border on our import permit'
     say: forwarder
-    target: css:[data-testid=revision-line]:has-text('Shipment · DMG-PO-2026-031 ·
-      Status dispatched') [data-testid=source-toggle]
+    target: css:[data-testid=email-event]:has([data-testid=revision-line]:has-text('Status
+      dispatched')) [data-testid=source-toggle]
   - kind: scroll_to
-    target: css:[data-testid=revision-line]:has-text('Shipment · DMG-PO-2026-031 ·
-      Status dispatched') [data-testid=source-excerpt]
+    target: css:[data-testid=email-event]:has([data-testid=revision-line]:has-text('Status
+      dispatched')) [data-testid=source-excerpt]
   - kind: hover
     note: park the cursor in the top bar's blank middle, off every heading, figure and action
     seconds: 0.6

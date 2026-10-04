@@ -283,13 +283,14 @@ class TestTheHistoryLine:
             data=_kanem_quote(world),
         )
         timeline = _tender_page(client_in_program, world["tender"]["id"]).split('data-testid="timeline"', 1)[1]
-        line = next(
-            li for li in re.findall(r'<li data-testid="revision-line".*?</li>', timeline, re.S) if "Quote" in li
-        )
-        assert re.search(r'<span data-testid="actor-badge" data-ai ', line)
-        toggle = re.search(r'<summary data-testid="source-toggle".*?</summary>', line, re.S).group(0)
+        # Since unanswered round 1004 b3 an AI-recorded email is always an email event: the
+        # badge in its head, the toggle its own, the quote a record under it.
+        event = timeline.split('data-testid="email-event"', 1)[1]
+        assert "Quote" in event and 'data-testid="revision-line"' in event
+        assert re.search(r'<span data-testid="actor-badge" data-ai ', event)
+        toggle = re.search(r'<summary data-testid="source-toggle".*?</summary>', event, re.S).group(0)
         assert "Source email" in toggle and "actor-badge" not in toggle
-        assert 'data-testid="source-excerpt"' in line and 'data-testid="source-heading"' in line
+        assert 'data-testid="source-excerpt"' in event and 'data-testid="source-heading"' not in event
 
     def test_an_invitation_sent_and_a_chase_are_set_back(self, da, world, client_in_program):
         with seed_overrides(PROGRAM, recorded_at=datetime.datetime(2026, 10, 1, 10, tzinfo=datetime.UTC)):

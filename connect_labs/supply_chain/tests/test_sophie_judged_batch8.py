@@ -102,7 +102,8 @@ class TestTheAgentBadge:
 class TestTheTimeline:
     def test_the_source_toggle_keeps_one_label_and_turns_a_caret(self, da, base, order, client_in_program):
         body = batch6._order_page(client_in_program, order["contract"]["id"])
-        assert re.search(r'<details class="group text-xs open:w-full">', body)
+        # An AI-recorded email is an email event (unanswered round 1004 b3), the toggle its own.
+        assert re.search(r'<details class="group mt-1 w-full text-xs">', body)
         button = re.search(r'<span data-testid="source-link"[^>]*>(.*?)</summary>', body, re.S).group(1)
         assert "<span>Source email</span>" in button
         assert "Hide email" not in button
