@@ -30,6 +30,7 @@ Uses PostgreSQL table caching with SQL computation (SQLBackend).
 """
 
 import logging
+import time
 from collections.abc import Generator
 from datetime import datetime
 from typing import Any
@@ -49,6 +50,13 @@ EVENT_STATUS = "status"
 EVENT_DOWNLOAD = "download"
 EVENT_RESULT = "result"
 EVENT_ERROR = "error"
+
+# A reader that loses the race to fill a gdrive raw slot waits this long for the
+# winner's rows before reading Drive itself (bounded, failing open into a read, like
+# backend.FORCED_REFRESH_PEER_WAIT_SECONDS). The measured worst case is ~4 minutes:
+# a 173k-row folder's 2m08s fetch plus 1m45s store.
+GDRIVE_PEER_WAIT_SECONDS = 360
+GDRIVE_PEER_POLL_SECONDS = 2
 
 
 def get_backend():
@@ -528,26 +536,42 @@ class AnalysisPipeline:
             self._gdrive_raw_fp = freshness.recorded_raw_fingerprint(opp_id, slot)
             return
 
-        with claim_raw_rebuild(opp_id, slot) as is_leader:
-            if not is_leader:
-                count = cache_manager.get_raw_visit_count()
-                if count:
-                    yield (EVENT_STATUS, {"message": f"Reusing {count:,} rows another reader just loaded..."})
-                    self._gdrive_raw_count = count
-                    # Labelled with what the slot really holds, so a result built
-                    # from a stale copy is rebuilt on the next read.
-                    self._gdrive_raw_fp = freshness.recorded_raw_fingerprint(opp_id, slot)
+        started = time.monotonic()
+        while True:
+            waited = time.monotonic() - started
+            with claim_raw_rebuild(opp_id, slot) as is_leader:
+                if not is_leader and waited < GDRIVE_PEER_WAIT_SECONDS:
+                    # Another reader is filling this slot. Its rows are reused only
+                    # once they pass the same test as any other copy -- a stale slot
+                    # it is about to replace is never served.
+                    count = _reusable()
+                    if count:
+                        yield (EVENT_STATUS, {"message": f"Reusing {count:,} rows another reader just loaded..."})
+                        self._gdrive_raw_count = count
+                        self._gdrive_raw_fp = freshness.recorded_raw_fingerprint(opp_id, slot)
+                        return
+                else:
+                    if not is_leader:
+                        logger.warning(
+                            f"[Pipeline/{self.backend_name}] waited {waited:.0f}s for a peer's Drive read of "
+                            f"slot {slot} that never landed -- reading it here"
+                        )
+                    yield (EVENT_STATUS, {"message": "Reading files from Google Drive..."})
+                    visit_dicts, fingerprint = fetch_gdrive_rows_with_fingerprint(
+                        config.data_source, opp_id, self.request, self.access_token, config.pipeline_id
+                    )
+                    cache_manager.store_raw_visits(visit_dicts, len(visit_dicts))
+                    freshness.record_raw_fingerprint(opp_id, slot, fingerprint)
+                    freshness.remember_live_fingerprint(config.data_source, fingerprint)
+                    self._gdrive_raw_count = len(visit_dicts)
+                    self._gdrive_raw_fp = fingerprint
+                    del visit_dicts
                     return
-            yield (EVENT_STATUS, {"message": "Reading files from Google Drive..."})
-            visit_dicts, fingerprint = fetch_gdrive_rows_with_fingerprint(
-                config.data_source, opp_id, self.request, self.access_token, config.pipeline_id
+            yield (
+                EVENT_STATUS,
+                {"message": f"Another reader is loading these Drive files -- waiting ({int(waited)}s)..."},
             )
-            cache_manager.store_raw_visits(visit_dicts, len(visit_dicts))
-            freshness.record_raw_fingerprint(opp_id, slot, fingerprint)
-            freshness.remember_live_fingerprint(config.data_source, fingerprint)
-            self._gdrive_raw_count = len(visit_dicts)
-            self._gdrive_raw_fp = fingerprint
-            del visit_dicts
+            time.sleep(GDRIVE_PEER_POLL_SECONDS)
 
     def get_cached_result_only(
         self,

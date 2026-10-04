@@ -214,6 +214,10 @@ def cached_queryset(config: AnalysisPipelineConfig, opportunity_id: int):
                 qs = qs.filter(computed_fields__contains={key: value})
         return qs
     if stage == CacheStage.ENTITY:
+        if config.feeds_joins and not manager.has_valid_computed_visit_cache(0):
+            # Cached before it became a JOIN target: the JOIN's per-visit input is
+            # missing, so warm it (see AnalysisPipeline._cached_result_still_serves).
+            return None
         return manager.get_entity_results_queryset() if manager.has_valid_entity_cache(0) else None
     return manager.get_flw_results_queryset() if manager.has_valid_flw_cache(0) else None
 

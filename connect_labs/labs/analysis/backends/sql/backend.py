@@ -1601,6 +1601,10 @@ class SQLBackend:
             cache_manager.store_computed_visits(computed_cache_data, visit_count)
             logger.info(f"[SQL] Cached {len(computed_cache_data)} visit-level rows")
             del visit_data, computed_cache_data
+        else:
+            # A copy written while this config DID feed a JOIN would otherwise
+            # outlive the data it was built from and pass for current later.
+            cache_manager.delete_computed_visits()
 
         # Step 2: Execute entity aggregation query
         logger.info("[SQL] Step 2 (entity): Executing entity aggregation query")

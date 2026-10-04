@@ -343,3 +343,82 @@ def test_fingerprint_follows_content_not_order():
     for change in ({"md5Checksum": "z"}, {"modifiedTime": "t2"}, {"size": "11"}, {"name": "c.csv"}):
         assert gf.fingerprint_metas([{**a, **change}, b]) != base
     assert gf.fingerprint_metas([a]) != base  # a file removed
+
+
+# --------------------------------------------------------------------------- review follow-ups (#2187)
+
+
+@pytest.mark.django_db
+def test_a_folder_with_no_matching_files_left_is_a_change_not_an_outage(answers):
+    config = _config(420)
+    _run(config)
+    del answers.files["typ1"]  # the listing succeeds, and selects nothing
+    _next_page_load(config)
+    events = list(AnalysisPipeline(access_token="tok").stream_analysis(config, OPP))
+    assert events[-1][0] == "error" and "no CSV / Sheet / JSON files" in events[-1][1]["message"]
+
+
+@pytest.mark.django_db
+def test_a_reader_that_loses_the_race_never_serves_the_stale_slot(answers, monkeypatch):
+    import contextlib
+
+    from connect_labs.labs.analysis import pipeline as pipeline_module
+    from connect_labs.labs.analysis.backends.sql import single_flight
+
+    config = _config(421)
+    _run(config)
+    answers.files["typ1"]["content"] = ANSWERS + b"8.01,Kano,answered_clean,T2,System & Resource Gaps,2\n"
+    _next_page_load(config)
+
+    # The first two claims lose to a peer that is mid-read; the third wins.
+    claims = []
+
+    @contextlib.contextmanager
+    def claim(opp, slot):
+        claims.append(slot)
+        yield len(claims) > 2
+
+    monkeypatch.setattr(single_flight, "claim_raw_rebuild", claim)
+    monkeypatch.setattr(pipeline_module, "GDRIVE_PEER_WAIT_SECONDS", 30)
+    clock = iter(range(0, 1000, 1))
+    monkeypatch.setattr(pipeline_module.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(pipeline_module.time, "sleep", lambda s: None)
+
+    events = _run(config)
+    assert not any("another reader just loaded" in (e[1].get("message") or "") for e in events if e[0] == "status")
+    assert any("waiting" in (e[1].get("message") or "") for e in events if e[0] == "status")
+    assert len(claims) == 3
+    assert "8.01" in {r.entity_id for r in events[-1][1].rows}
+
+
+@pytest.mark.django_db
+def test_a_former_join_target_drops_its_per_visit_copy(answers):
+    joined = _config(422)
+    joined.feeds_joins = True
+    _run(joined)
+    assert ComputedVisitCache.objects.filter(pipeline_id=422).exists()
+
+    plain = _config(422)
+    _run(plain, force_refresh=True)
+    assert not ComputedVisitCache.objects.filter(pipeline_id=422).exists()
+
+
+@pytest.mark.django_db
+def test_query_rows_warms_a_join_target_missing_its_per_visit_rows(answers):
+    from connect_labs.workflow.pipeline_query import cached_queryset
+
+    config = _config(423)
+    _run(config)
+    assert cached_queryset(config, OPP) is not None
+    config.feeds_joins = True
+    assert cached_queryset(config, OPP) is None
+
+
+@pytest.mark.django_db
+def test_the_drive_max_age_bounds_the_expiry_even_under_a_longer_ttl(answers, settings):
+    settings.PIPELINE_CACHE_TTL_HOURS = 24 * 365
+    settings.PIPELINE_GDRIVE_CACHE_MAX_AGE_HOURS = 2
+    _run(_config(424))
+    bound = timezone.now() + timezone.timedelta(hours=2, minutes=1)
+    assert not RawVisitCache.objects.filter(opportunity_id=OPP, expires_at__gt=bound).exists()
+    assert not ComputedEntityCache.objects.filter(pipeline_id=424, expires_at__gt=bound).exists()
