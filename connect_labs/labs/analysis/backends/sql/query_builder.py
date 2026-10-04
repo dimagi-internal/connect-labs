@@ -10,6 +10,7 @@ Translates field computations to PostgreSQL queries that:
 
 import logging
 import re
+from dataclasses import dataclass
 
 from django.db import connection
 
@@ -19,6 +20,7 @@ from connect_labs.labs.analysis.config import (
     VISIT_SELECT_COLUMNS,
     AnalysisPipelineConfig,
     FieldComputation,
+    GroupingSpec,
     HistogramComputation,
     JoinConfig,
 )
@@ -423,7 +425,7 @@ def _paths_to_coalesce_sql(paths: list[str], column: str = "form_json") -> str:
 _BASE_FILTER_KEYS = frozenset({"entity_id", "status", "flagged", "date_from", "date_to"})
 
 
-def _field_filter_predicates(config: AnalysisPipelineConfig) -> list[str]:
+def _field_filter_predicates(config: AnalysisPipelineConfig, filters: dict | None = None) -> list[str]:
     """WHERE predicates for `config.filters` keys that name a declared field
     rather than one of the base-column keys handled directly by
     `_visit_filter_predicates`/`_entity_stage_filters_where`.
@@ -444,7 +446,7 @@ def _field_filter_predicates(config: AnalysisPipelineConfig) -> list[str]:
     real field and its filter was being silently no-op'd.
     """
     predicates: list[str] = []
-    for key, value in config.filters.items():
+    for key, value in (config.filters if filters is None else filters).items():
         if key in _BASE_FILTER_KEYS:
             continue
         field_comp = config.get_field(key)
@@ -695,8 +697,14 @@ def _aggregation_to_sql(
     inner_source: str = "labs_raw_visit_cache",
     group_column_outer_expr: str = "labs_raw_visit_cache.username",
     pipeline_id: int | None = None,
+    predicate_sql: str | None = None,
 ) -> str:
     """Convert aggregation type to SQL aggregate function.
+
+    `predicate_sql`, when given, IS the per-field FILTER predicate, in place of the
+    one built from filter_path / filter_value -- the grouped aggregation evaluates
+    each field's predicate once per row in its extraction pass and hands the column
+    name in here.
 
     Args:
         agg: Aggregation type (count, sum, avg, first, last, list, count_distinct, etc.)
@@ -734,7 +742,10 @@ def _aggregation_to_sql(
     # When that happens, build the sub-pipe scope here:
     #   sub_pipe = "AND sub.pipeline_id IS NULL" if pipeline_id is None
     #              else f"AND sub.pipeline_id = {pipeline_id}"
-    predicate = _per_field_filter_predicate(field_name, filter_path, filter_paths, filter_value, filter_op)
+    if predicate_sql is not None:
+        predicate = predicate_sql
+    else:
+        predicate = _per_field_filter_predicate(field_name, filter_path, filter_paths, filter_value, filter_op)
     # first / last / list carry their own FILTER (the non-null guard), so the
     # per-field predicate is folded INTO it rather than appended below -- Postgres
     # allows one FILTER per aggregate. These three used to return before the
@@ -895,7 +906,11 @@ def _build_histogram_fields(hist: HistogramComputation, opportunity_id: int) -> 
 
     # Apply transform to get float value
     float_expr = _transform_to_sql(hist, value_expr)
+    return _histogram_fields_from_expr(hist, float_expr)
 
+
+def _histogram_fields_from_expr(hist: HistogramComputation, float_expr: str) -> list[tuple[str, str]]:
+    """`_build_histogram_fields` over an already-built value expression."""
     # Calculate bin width
     bin_width = (hist.upper_bound - hist.lower_bound) / hist.num_bins
 
@@ -1603,27 +1618,33 @@ def _entity_stage_filters_where(config: AnalysisPipelineConfig) -> list[str]:
     every entity-stage template as of this change leaves `filters={}`, so the
     emitted query is byte-identical to before for all of them.
     """
+    return _entity_filter_predicates(config, config.filters)
+
+
+def _entity_filter_predicates(config: AnalysisPipelineConfig, filters: dict) -> list[str]:
+    """`_entity_stage_filters_where` for an arbitrary `filters` dict -- a grouping's own
+    filters, resolved against the pipeline's declared fields."""
     predicates: list[str] = []
 
-    if "status" in config.filters:
-        statuses = config.filters["status"]
+    if "status" in filters:
+        statuses = filters["status"]
         if not isinstance(statuses, list):
             statuses = [statuses]
         status_list = ", ".join(f"'{_sql_str(s)}'" for s in statuses)
         predicates.append(f"status IN ({status_list})")
 
-    if "flagged" in config.filters:
-        flagged = config.filters["flagged"]
+    if "flagged" in filters:
+        flagged = filters["flagged"]
         flagged_sql = "true" if flagged in (True, 1, "true", "True", "1") else "false"
         predicates.append(f"flagged = {flagged_sql}")
 
-    if "date_from" in config.filters:
-        predicates.append(f"visit_date >= '{_sql_str(config.filters['date_from'])}'")
+    if "date_from" in filters:
+        predicates.append(f"visit_date >= '{_sql_str(filters['date_from'])}'")
 
-    if "date_to" in config.filters:
-        predicates.append(f"visit_date <= '{_sql_str(config.filters['date_to'])}'")
+    if "date_to" in filters:
+        predicates.append(f"visit_date <= '{_sql_str(filters['date_to'])}'")
 
-    predicates.extend(_field_filter_predicates(config))
+    predicates.extend(_field_filter_predicates(config, filters))
 
     return predicates
 
@@ -1768,6 +1789,204 @@ def execute_entity_aggregation(
 
     logger.info(f"[SQL] Aggregated {len(results)} entities")
     return results
+
+
+# -----------------------------------------------------------------------------
+# Grouped entity aggregation: composite keys and several named groupings
+# -----------------------------------------------------------------------------
+#
+# One pipeline, several summaries of the same rows (`AnalysisPipelineConfig.groupings`,
+# or one composite `group_by`). The expensive part of an entity aggregation is not the
+# GROUP BY but the per-row JSON extraction feeding it: every field's value, every
+# per-field filter and every filter key is a `form_json -> ... ->> ...` walk. Run as
+# separate pipelines (workflow 23891: nine over one 173,488-row Drive source), that
+# walk is repeated per pipeline. Here it runs ONCE: the extraction pass writes every
+# key, value and predicate any grouping needs into a temp table, and each grouping is
+# then a plain GROUP BY over those typed columns.
+#
+# Why a temp table and not one UNION ALL: groupings have different keys and fields,
+# so a UNION would need NULL placeholders typed to match each aggregate, and an
+# untyped NULL branch resolves to text and then fails against a numeric one. Separate
+# SELECTs over one table return each grouping with exactly the column types the
+# single-grouping entity query returns -- which is what lets a grouping's rows equal
+# the same grouping run as its own pipeline.
+
+GROUPED_ROWS_TABLE = "_labs_grouped_rows"
+
+
+@dataclass
+class GroupedQuery:
+    spec: GroupingSpec
+    fields: list
+    histograms: list
+    sql: str
+
+
+@dataclass
+class GroupedAggregationPlan:
+    """The statements of one grouped aggregation: extract once, group N times, drop."""
+
+    table: str
+    extract_sql: str
+    queries: list[GroupedQuery]
+    drop_sql: str
+
+    def script(self) -> str:
+        """The whole plan as one readable SQL script (for pipeline_sql)."""
+        parts = [_format_sql(self.extract_sql) + ";"]
+        for q in self.queries:
+            label = q.spec.name or "group_by"
+            parts.append(f"-- grouping: {label} ({', '.join(q.spec.group_by)})\n" + _format_sql(q.sql) + ";")
+        parts.append(self.drop_sql + ";")
+        return "\n\n".join(parts)
+
+
+def _group_key_expr(config: AnalysisPipelineConfig, name: str) -> str:
+    """A group key's per-row value -- resolved exactly as `linking_field` is
+    (`_resolve_linking_field_outer_expr`), so `group_by: [x]` groups like
+    `linking_field: x`: a base column is used bare, a field through `_field_value_sql`."""
+    if name in RAW_VISIT_BASE_COLUMNS:
+        return name
+    field_comp = config.get_field(name)
+    if field_comp is None:
+        raise ValueError(f"group_by field {name!r} is neither a base column nor a declared field")
+    return _field_value_sql(field_comp)
+
+
+def grouping_members(config: AnalysisPipelineConfig, spec: GroupingSpec) -> tuple[list, list]:
+    """The (fields, histograms) a grouping aggregates: its `fields` restriction (all
+    when None), minus its own keys, whose column is the key value itself."""
+    wanted = None if spec.fields is None else set(spec.fields)
+    fields = [f for f in config.fields if f.name not in spec.group_by and (wanted is None or f.name in wanted)]
+    hists = [h for h in config.histograms if wanted is None or h.name in wanted]
+    return fields, hists
+
+
+def build_grouped_aggregation_plan(
+    config: AnalysisPipelineConfig,
+    opportunity_id: int,
+    table: str = GROUPED_ROWS_TABLE,
+) -> GroupedAggregationPlan:
+    """The statements that compute every grouping of `config` in one extraction pass.
+
+    The pipeline's own entity-stage `filters` scope the extraction (as they scope
+    `build_entity_aggregation_query`); a grouping's `filters` become one boolean
+    column, applied by that grouping's GROUP BY only.
+    """
+    groupings = config.effective_groupings()
+    if not groupings:
+        raise ValueError("config declares no group_by / groupings")
+    table = _sql_ident(table)
+    pipeline_id = config.raw_slot_id
+
+    members = [(spec, *grouping_members(config, spec)) for spec in groupings]
+    key_names = list(dict.fromkeys(k for spec in groupings for k in spec.group_by))
+    value_fields = list({f.name: f for _, fields, _ in members for f in fields}.values())
+    hists = list({h.name: h for _, _, hs in members for h in hs}.values())
+
+    for f in value_fields:
+        if f.pre_aggregate_by:
+            raise ValueError(f"pre_aggregate_by isn't supported at entity stage (field {f.name!r})")
+        if f.aggregation in ("mode_share", "dup_share"):
+            raise ValueError(f"{f.aggregation} isn't supported in a grouping (field {f.name!r})")
+
+    select = ["visit_id", "visit_date", "username", "entity_name"]
+    for key in key_names:
+        select.append(f"({_group_key_expr(config, key)}) AS {_sql_ident('_k_' + key)}")
+    for f in value_fields:
+        select.append(f"{_transform_to_sql(f, _field_value_sql(f))} AS {_sql_ident('_v_' + f.name)}")
+        predicate = _per_field_filter_predicate(f.name, f.filter_path, f.filter_paths, f.filter_value, f.filter_op)
+        if predicate:
+            select.append(f"({predicate}) AS {_sql_ident('_p_' + f.name)}")
+    for h in hists:
+        paths = h.paths if h.paths else [h.path]
+        select.append(f"{_transform_to_sql(h, _paths_to_coalesce_sql(paths))} AS {_sql_ident('_h_' + h.name)}")
+    for i, spec in enumerate(groupings):
+        predicates = _entity_filter_predicates(config, spec.filters)
+        if predicates:
+            joined = " AND ".join(f"({p})" for p in predicates)
+            select.append(f"COALESCE({joined}, false) AS _f_{i}")
+
+    where_clause = " AND ".join(
+        [_pipeline_scope_where(opportunity_id, pipeline_id)] + _entity_stage_filters_where(config)
+    )
+    visit_source = _visit_source_sql(config, opportunity_id)
+    with_clause = _build_cte_prologue(config, opportunity_id, include_owners=False)
+    select_clause = ",\n    ".join(select)
+    extract_sql = f"""
+        CREATE TEMP TABLE {table} ON COMMIT DROP AS
+        {with_clause}SELECT
+            {select_clause}
+        FROM {visit_source} AS labs_raw_visit_cache
+        WHERE {where_clause}
+    """
+
+    queries = []
+    for i, (spec, fields, spec_hists) in enumerate(members):
+        keys = [_sql_ident("_k_" + k) for k in spec.group_by]
+        parts = list(keys) + [
+            f"{_aggregation_to_sql('first', 'username', 'username')} as username",
+            f"{_aggregation_to_sql('first', 'entity_name', 'entity_name')} as entity_name",
+            "COUNT(*) as total_visits",
+            "MIN(visit_date) as _base_first_visit_date",
+            "MAX(visit_date) as _base_last_visit_date",
+        ]
+        for f in fields:
+            has_predicate = bool(
+                _per_field_filter_predicate(f.name, f.filter_path, f.filter_paths, f.filter_value, f.filter_op)
+            )
+            agg = _aggregation_to_sql(
+                f.aggregation,
+                _sql_ident("_v_" + f.name),
+                f.name,
+                predicate_sql=_sql_ident("_p_" + f.name) if has_predicate else "",
+            )
+            parts.append(f"{agg} as {_sql_ident(f.name)}")
+        for h in spec_hists:
+            for name, sql in _histogram_fields_from_expr(h, _sql_ident("_h_" + h.name)):
+                parts.append(f"{sql} as {_sql_ident(name)}")
+        where = f"\n        WHERE _f_{i}" if _entity_filter_predicates(config, spec.filters) else ""
+        group = ", ".join(keys)
+        select_list = ",\n    ".join(parts)
+        sql = f"""
+        SELECT
+            {select_list}
+        FROM {table}{where}
+        GROUP BY {group}
+        ORDER BY {group}
+    """
+        queries.append(GroupedQuery(spec=spec, fields=fields, histograms=spec_hists, sql=sql))
+
+    return GroupedAggregationPlan(
+        table=table, extract_sql=extract_sql, queries=queries, drop_sql=f"DROP TABLE IF EXISTS {table}"
+    )
+
+
+def execute_grouped_aggregation(
+    config: AnalysisPipelineConfig,
+    opportunity_id: int,
+) -> list[tuple[GroupedQuery, list[dict]]]:
+    """Run every grouping of `config` (one extraction pass); `[(query, rows)]` in
+    declaration order. Rows are dicts keyed like the SELECT (`_k_<key>` for keys)."""
+    import uuid
+
+    from django.db import transaction
+
+    plan = build_grouped_aggregation_plan(
+        config, opportunity_id, table=f"{GROUPED_ROWS_TABLE}_{uuid.uuid4().hex[:12]}"
+    )
+    out = []
+    logger.info(f"[SQL] Grouped aggregation for opp {opportunity_id}: {len(plan.queries)} grouping(s), one extraction")
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(plan.extract_sql)
+        try:
+            for q in plan.queries:
+                cursor.execute(q.sql)
+                columns = [col[0] for col in cursor.description]
+                out.append((q, [dict(zip(columns, row)) for row in cursor.fetchall()]))
+        finally:
+            cursor.execute(plan.drop_sql)
+    return out
 
 
 def execute_flw_aggregation(
@@ -2208,6 +2427,22 @@ def generate_sql_preview(
         result["flw_aggregation_sql"] = _format_sql(flw_query)
     else:
         result["flw_aggregation_sql"] = None
+
+    # Composite / multiple groupings: the extraction pass and each grouping's
+    # GROUP BY, as one script. Only present when the pipeline declares them, so
+    # every other pipeline's preview keeps its keys.
+    if config.effective_groupings():
+        plan = build_grouped_aggregation_plan(config, opportunity_id)
+        result["grouped_aggregation_sql"] = plan.script()
+        result["groupings"] = [
+            {
+                "name": q.spec.name,
+                "group_by": q.spec.group_by,
+                "filters": q.spec.filters,
+                "fields": [f.name for f in q.fields],
+            }
+            for q in plan.queries
+        ]
 
     return result
 

@@ -24,10 +24,16 @@ from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
 from connect_labs.labs.analysis.backends.sql.query_builder import (
     execute_entity_aggregation,
     execute_flw_aggregation,
+    execute_grouped_aggregation,
     execute_visit_extraction,
 )
 from connect_labs.labs.analysis.backends.sql.single_flight import claim_raw_rebuild
-from connect_labs.labs.analysis.config import VISIT_PASSTHROUGH_COLUMNS, AnalysisPipelineConfig, CacheStage
+from connect_labs.labs.analysis.config import (
+    GROUPING_COLUMN,
+    VISIT_PASSTHROUGH_COLUMNS,
+    AnalysisPipelineConfig,
+    CacheStage,
+)
 from connect_labs.labs.analysis.models import (
     EntityAnalysisResult,
     EntityRow,
@@ -320,6 +326,85 @@ def entity_row_from_cache(row) -> EntityRow:
     )
     entity_row.custom_fields = row.aggregated_fields
     return entity_row
+
+
+def _add_histogram_columns(custom: dict, hist, row: dict) -> None:
+    """Copy one histogram's bin counts, mean and count from an aggregation row."""
+    bin_width = (hist.upper_bound - hist.lower_bound) / hist.num_bins
+    for i in range(hist.num_bins):
+        bin_lower = hist.lower_bound + (i * bin_width)
+        bin_upper = bin_lower + bin_width
+        lower_str = str(bin_lower).replace(".", "_")
+        upper_str = str(bin_upper).replace(".", "_")
+        bin_name = f"{hist.bin_name_prefix}_{lower_str}_{upper_str}_visits"
+        if bin_name in row:
+            custom[bin_name] = row[bin_name] or 0
+
+    if f"{hist.name}_mean" in row:
+        mean_val = row[f"{hist.name}_mean"]
+        if isinstance(mean_val, Decimal):
+            mean_val = float(mean_val)
+        custom[f"{hist.name}_mean"] = mean_val
+    if f"{hist.name}_count" in row:
+        custom[f"{hist.name}_count"] = row[f"{hist.name}_count"]
+
+
+# `ComputedEntityCache.entity_id` is a varchar(255); a composite key built from long
+# values is shortened to a prefix plus a digest, so it stays unique and stable.
+_ENTITY_ID_MAX = 255
+
+# Keys whose value the EntityRow already carries in a slot of its own (and equals:
+# first(username) over rows grouped BY username is that username).
+_ENTITY_SLOT_KEYS = ("entity_id", "entity_name", "username")
+
+
+def grouped_entity_id(grouping: str, key_values: list) -> str:
+    """The row key of one grouped row: its key values joined with ``|`` (NULL reads
+    as empty), prefixed ``<grouping>:`` for a named grouping. One unnamed key gives
+    exactly the entity_id ``linking_field`` would."""
+    joined = "|".join("" if v is None else str(v) for v in key_values)
+    entity_id = f"{grouping}:{joined}" if grouping else joined
+    if len(entity_id) > _ENTITY_ID_MAX:
+        import hashlib
+
+        entity_id = entity_id[:200] + "#" + hashlib.sha256(entity_id.encode()).hexdigest()[:32]
+    return entity_id
+
+
+def grouped_entity_rows(results) -> list[EntityRow]:
+    """EntityRows from `execute_grouped_aggregation` output, grouping by grouping.
+
+    Each row carries its key values as columns (named as in ``group_by``), the
+    grouping's fields, and -- for a named grouping -- ``grouping``: the name render
+    code and ``queryPipelineRows`` filter on.
+    """
+    rows: list[EntityRow] = []
+    for query, data in results:
+        spec = query.spec
+        for row in data:
+            key_values = [row.get(f"_k_{k}") for k in spec.group_by]
+            entity_row = EntityRow(
+                entity_id=grouped_entity_id(spec.name, key_values),
+                entity_name=row.get("entity_name") or "",
+                username=row.get("username") or "",
+                total_visits=row.get("total_visits", 0),
+                first_visit_date=row.get("_base_first_visit_date"),
+                last_visit_date=row.get("_base_last_visit_date"),
+            )
+            custom: dict = {}
+            if spec.name:
+                custom[GROUPING_COLUMN] = spec.name
+            for key, value in zip(spec.group_by, key_values):
+                if key not in _ENTITY_SLOT_KEYS:
+                    custom[key] = value
+            for f in query.fields:
+                if f.name in row:
+                    custom[f.name] = row[f.name]
+            for hist in query.histograms:
+                _add_histogram_columns(custom, hist, row)
+            entity_row.custom_fields = custom
+            rows.append(entity_row)
+    return rows
 
 
 def flw_row_from_cache(row) -> FLWRow:
@@ -1606,6 +1691,9 @@ class SQLBackend:
             # outlive the data it was built from and pass for current later.
             cache_manager.delete_computed_visits()
 
+        if config.effective_groupings():
+            return self._process_grouped_entity_level(config, opportunity_id, visit_count, cache_manager)
+
         # Step 2: Execute entity aggregation query
         logger.info("[SQL] Step 2 (entity): Executing entity aggregation query")
         entity_data = execute_entity_aggregation(config, opportunity_id)
@@ -1643,23 +1731,7 @@ class SQLBackend:
 
             # Add histogram fields
             for hist in config.histograms:
-                bin_width = (hist.upper_bound - hist.lower_bound) / hist.num_bins
-                for i in range(hist.num_bins):
-                    bin_lower = hist.lower_bound + (i * bin_width)
-                    bin_upper = bin_lower + bin_width
-                    lower_str = str(bin_lower).replace(".", "_")
-                    upper_str = str(bin_upper).replace(".", "_")
-                    bin_name = f"{hist.bin_name_prefix}_{lower_str}_{upper_str}_visits"
-                    if bin_name in row:
-                        custom[bin_name] = row[bin_name] or 0
-
-                if f"{hist.name}_mean" in row:
-                    mean_val = row[f"{hist.name}_mean"]
-                    if isinstance(mean_val, Decimal):
-                        mean_val = float(mean_val)
-                    custom[f"{hist.name}_mean"] = mean_val
-                if f"{hist.name}_count" in row:
-                    custom[f"{hist.name}_count"] = row[f"{hist.name}_count"]
+                _add_histogram_columns(custom, hist, row)
 
             entity_row.custom_fields = custom
 
@@ -1692,6 +1764,54 @@ class SQLBackend:
         cache_manager.store_entity_results(entity_cache_data, total_visits)
 
         logger.info(f"[SQL] Processed {len(entity_rows)} entities, {total_visits} visits (via SQL)")
+        return entity_result
+
+    def _process_grouped_entity_level(
+        self,
+        config: AnalysisPipelineConfig,
+        opportunity_id: int,
+        visit_count: int,
+        cache_manager: SQLCacheManager,
+    ) -> EntityAnalysisResult:
+        """Entity stage with a composite `group_by` or several named `groupings`.
+
+        Every grouping comes from ONE extraction pass (`execute_grouped_aggregation`)
+        and its rows are ordinary EntityRows, so the entity cache, the stream, the
+        snapshot and `queryPipelineRows` carry them unchanged. Each row has its key
+        values as columns, and -- for named groupings -- `grouping` naming the one it
+        belongs to (see `grouped_entity_rows`).
+        """
+        logger.info("[SQL] Step 2 (entity): Executing grouped entity aggregation")
+        entity_rows = grouped_entity_rows(execute_grouped_aggregation(config, opportunity_id))
+
+        # The rows of different groupings re-count the same visits, so their sum is
+        # not a visit count; the cache's validity stamp is the raw count read.
+        entity_result = EntityAnalysisResult(
+            opportunity_id=opportunity_id,
+            rows=entity_rows,
+            metadata={
+                "total_visits": visit_count,
+                "total_entities": len(entity_rows),
+                "groupings": [g.name for g in config.effective_groupings()],
+                "computed_via": "sql",
+            },
+        )
+        cache_manager.store_entity_results(
+            [
+                {
+                    "entity_id": row.entity_id,
+                    "entity_name": row.entity_name,
+                    "username": row.username,
+                    "aggregated_fields": row.custom_fields,
+                    "total_visits": row.total_visits,
+                    "first_visit_date": row.first_visit_date,
+                    "last_visit_date": row.last_visit_date,
+                }
+                for row in entity_rows
+            ],
+            visit_count,
+        )
+        logger.info(f"[SQL] Processed {len(entity_rows)} grouped rows over {visit_count} visits (via SQL)")
         return entity_result
 
     # -------------------------------------------------------------------------

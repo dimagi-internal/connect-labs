@@ -85,6 +85,14 @@ def get_config_hash(config) -> str:
     # keep serving the pre-edit grouping.
     parts.append(f"linking_field:{getattr(config, 'linking_field', '')}")
 
+    # Composite / multiple groupings decide the cached rows exactly as linking_field
+    # does. Appended only when declared, so every pipeline without them keeps the
+    # hash its caches were written under.
+    groupings = config.effective_groupings() if hasattr(config, "effective_groupings") else []
+    if groupings:
+        spec = [{"name": g.name, "group_by": g.group_by, "filters": g.filters, "fields": g.fields} for g in groupings]
+        parts.append(f"groupings:{json.dumps(spec, sort_keys=True, default=str)}")
+
     # Joins: changing the join graph or the joined fields must invalidate cache
     # because join inputs feed into per-row aggregations. We do NOT include
     # resolved_config_hash here — the joined pipeline's hash is structural

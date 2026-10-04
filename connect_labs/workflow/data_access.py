@@ -3189,6 +3189,14 @@ class PipelineDataAccess(BaseDataAccess):
         elif schema.get("terminal_stage") == "entity":
             terminal_stage = CacheStage.ENTITY
 
+        # Composite / multiple groupings (entity stage). A schema declaring them
+        # without a terminal_stage means the entity stage -- they mean nothing else.
+        from connect_labs.labs.analysis.config import groupings_from_schema
+
+        group_by, groupings = groupings_from_schema(schema)
+        if (group_by or groupings) and not schema.get("terminal_stage"):
+            terminal_stage = CacheStage.ENTITY
+
         # Parse data source config
         data_source_dict = schema.get("data_source") or {}
         from connect_labs.labs.integrations.ocs.ocs_tokens import (
@@ -3291,6 +3299,8 @@ class PipelineDataAccess(BaseDataAccess):
             window_fields=window_fields,
             extracted_filters=schema.get("extracted_filters", []),
             joins=joins,
+            group_by=group_by,
+            groupings=groupings,
             # Discriminate the raw-visit cache by pipeline id so multiple
             # pipelines for the same opp don't clobber each other (#116).
             pipeline_id=definition_id,
