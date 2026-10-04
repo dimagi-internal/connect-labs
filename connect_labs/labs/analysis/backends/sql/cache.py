@@ -185,7 +185,7 @@ class SQLCacheManager:
             # it without a re-read.
             from connect_labs.labs.analysis.backends.sql.gdrive_freshness import max_age
 
-            self.ttl = max(self.ttl, max_age())
+            self.ttl = max_age()
 
     def _raw_filter(self):
         """Base filter for this manager's slot of RawVisitCache.
@@ -783,6 +783,17 @@ class SQLCacheManager:
             ) from e
 
         logger.info(f"[SQLCache] Stored {len(rows)} computed visits for opp {self.opportunity_id}")
+
+    def delete_computed_visits(self) -> int:
+        """Drop this config's per-visit rows (an entity pipeline that no longer writes them)."""
+        if not self.config_hash:
+            return 0
+        deleted, _ = ComputedVisitCache.objects.filter(
+            opportunity_id=self.opportunity_id,
+            pipeline_id=self.pipeline_id,
+            config_hash=self.config_hash,
+        ).delete()
+        return deleted
 
     def get_computed_visits_queryset(self):
         """Get queryset of computed visits for this config."""

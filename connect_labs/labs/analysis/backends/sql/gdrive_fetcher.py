@@ -658,12 +658,23 @@ def source_fingerprint(data_source: DataSourceConfig) -> str:
 
     Reads metadata only -- never file content, and never on a caller's behalf: it
     says nothing about who may read the rows, so callers still gate every read with
-    ``check_gdrive_access``. Raises GDriveSourceError when Drive cannot be listed.
+    ``check_gdrive_access``. Raises GDriveSourceError only when Drive cannot be
+    listed at all.
+
+    A listing that SUCCEEDS but selects nothing readable (the last matching file
+    removed, too many files, a file_id that became a folder) is a change of source,
+    not an outage: it returns an ``invalid:`` fingerprint no cache was built from, so
+    the next read rebuilds and reports the problem instead of serving the old rows.
     """
     from connect_labs.labs.synthetic.gdrive import DriveAPIError, DriveAuthError
 
     try:
-        return fingerprint_metas(_source_metas(_drive(), data_source))
+        drive = _drive()
+        try:
+            metas = _source_metas(drive, data_source)
+        except GDriveSourceError as e:
+            return "invalid:" + hashlib.sha256(str(e).encode()).hexdigest()
+        return fingerprint_metas(metas)
     except (DriveAPIError, DriveAuthError) as e:
         raise GDriveSourceError(f"could not list {data_source.file_id or data_source.folder_id}: {e}") from e
 
