@@ -441,8 +441,8 @@ def list_templates() -> list[dict]:
     ]
 
 
-# Size guards on snapshot blobs. JSON-serialized size is a reasonable
-# proxy for what ends up in LabsRecord.data. Warn at 1 MB; reject at 5 MB.
+# Size guards on snapshot blobs, measured as the snapshot is STORED (JSON of
+# its columnar encoding -- see workflow/run_codec.py). Warn at 1 MB; reject at 5 MB.
 # The hard cap really rejects (SnapshotTooLargeError): a 112 MB snapshot
 # built from a 102k-visit opp's verbatim pipeline capture OOM-killed a web
 # worker before the log-only version of this guard could help anyone.
@@ -486,7 +486,7 @@ class SnapshotTooLargeError(Exception):
         self.template_key = template_key
         self.size_bytes = size_bytes
         super().__init__(
-            f"Snapshot for {template_key!r} is {size_bytes / 1024 / 1024:.1f} MB "
+            f"Snapshot for {template_key!r} is {size_bytes / 1024 / 1024:.1f} MB as stored "
             f"(cap {_SNAPSHOT_SIZE_HARD_BYTES / 1024 / 1024:.0f} MB). Trim the workflow's "
             "snapshot_inputs manifest — capture derived aggregates in state keys instead "
             "of raw pipeline rows."
@@ -588,11 +588,19 @@ def _default_snapshot_from_inputs(
 
 
 def _check_snapshot_size(template_key: str, snapshot: dict) -> None:
-    """Warn above the soft cap; raise SnapshotTooLargeError at the hard cap."""
+    """Warn above the soft cap; raise SnapshotTooLargeError at the hard cap.
+
+    Measures the snapshot as it will be STORED -- columnar-encoded, see
+    `workflow/run_codec.py` -- because storage and transfer are what the cap
+    protects. A snapshot whose plain JSON is over the cap but whose stored form is
+    not is exactly the case the encoding exists to let through.
+    """
     import json as _json
 
+    from connect_labs.workflow.run_codec import encode_snapshot
+
     try:
-        size = len(_json.dumps(snapshot, default=str).encode("utf-8"))
+        size = len(_json.dumps(encode_snapshot(snapshot), default=str).encode("utf-8"))
     except Exception:
         logger.exception("Could not measure snapshot size for %s", template_key)
         return

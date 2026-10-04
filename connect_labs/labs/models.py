@@ -11,6 +11,8 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from connect_labs.workflow.run_codec import decode_record_data
+
 
 class LocalLabsRecord:
     """Transient object for Labs API responses. Never saved to database.
@@ -29,7 +31,10 @@ class LocalLabsRecord:
         self.id: int = api_data["id"]
         self.experiment: str = api_data["experiment"]
         self.type: str = api_data["type"]
-        self.data: dict = api_data["data"]
+        # A workflow run's snapshot is stored columnar (see workflow/run_codec.py);
+        # decoding here, the one place every record is built, means no reader ever
+        # sees the storage format. A no-op for every other record type.
+        self.data: dict = decode_record_data(self.type, api_data["data"])
         self.username: str | None = api_data.get("username")  # Primary user identifier (not user_id)
         self.opportunity_id: int = api_data["opportunity_id"]
         self.organization_id: str | None = api_data.get("organization_id")
