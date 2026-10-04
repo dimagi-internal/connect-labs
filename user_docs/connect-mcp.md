@@ -186,6 +186,17 @@ Workflows that read data from Google Drive have received several improvements to
 
 If a workflow page has several pipelines that all point at the same Drive source (same folder or file, file pattern, null markers, username column, and date column), Labs now reads that source **once** and shares the result between them. Previously each pipeline fetched its own copy, which multiplied load time and browser memory for every extra pipeline on the page.
 
+### Program-scoped pipeline sources
+
+A pipeline source can cover an **entire program** rather than a single opportunity. This is useful when your Drive exports span every cohort in a program — for example, an interview export that covers all cohorts at once rather than one file per cohort.
+
+When a program-scoped source is used:
+
+- **Access is limited to the managing organisation.** Only people whose organisation manages the program can see that data. People whose organisation runs one of the program's opportunities (partner network organisations) cannot — so one cohort's partner never sees another cohort's raw data.
+- **The Drive data is read once for the whole program.** Before, a program dashboard that spanned many opportunities would have read the same rows once per opportunity. Now the data is fetched a single time regardless of how many opportunities the program contains.
+
+You can build a program-scoped pipeline through MCP: create the pipeline in the program, preview it, create a program-owned dashboard, and attach the pipeline (including "load on demand" if the dataset is large).
+
 ### On-demand pipelines
 
 A pipeline source can be marked **on demand** using `workflow_add_pipeline_source(..., load="on_demand")`. When the run page opens, an on-demand pipeline does **not** download all of its rows to the browser. Instead, the report asks the server for only the rows it needs — filtered, searched, and paged on the server — so the browser receives a small result set rather than the full dataset.
@@ -240,23 +251,3 @@ Because no real case values are stored or replicated, data generated this way co
 The easiest way to create a synthetic copy of a real opportunity is `synthetic_clone_opp`. It handles the entire process in one background job — no need to run separate profiling, generation, and visibility steps yourself.
 
 ### What it does
-
-```
-synthetic_clone_opp(source_opportunity_ids=[...])
-```
-
-For each opportunity you list, it:
-
-1. Profiles the real opportunity (using case timelines, so no real case values are stored).
-2. Generates a fully synthetic clone from that profile.
-3. Files the clone under a new program.
-4. Makes the clone visible in your Labs lists.
-
-The tool returns a `task_id` straight away. Use `synthetic_job_status(task_id)` to follow progress in plain words ("Step 1 of 2: measuring the real opportunities") and to retrieve the new opportunity IDs when the job finishes.
-
-### Background processing
-
-Generating, cloning, and fidelity scoring over MCP now run as **background jobs on the worker**, not inside the web request. This means one person's clone no longer slows Labs down for everyone else.
-
-- Each tool still returns its usual result: it waits for the job, up to **8 minutes**.
-- Pass `wait=false
