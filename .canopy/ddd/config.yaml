@@ -8,7 +8,14 @@ workspace: connect
 # pass. The deploy gate refuses to judge until labs /health/ reports the fix
 # PR's merge SHA on every sample (record it: python -m scripts.ddd.judge_gate
 # set-fix-sha <run_id> <sha>).
+#
+# Objective (canopy >= 0.2.559): labs products are v1 — the demo is a PROBE and
+# the product getting better is the goal. Blocking = product findings at
+# medium/high severity (incl. the product lens + product lint); polish, arc and
+# framing findings are deferred to ONE final polish pass. Switch a narrative to
+# `demo` only when the walkthrough itself is the deliverable.
 loop:
+  objective: product
   mode: auto
   backlog_min_findings: 8
   full_rejudge_every: 3
@@ -32,6 +39,16 @@ inner_loop:
   setup: make serve-demo DEMO_PORT=8000 NARRATIVE=supply-sophie-unanswered-round
   health_url: http://localhost:8000/health/
   ready_timeout_seconds: 300
+# Product objective (canopy >= 0.2.559). The lint runs on every render; the
+# glossary and fonts are the two drifts the 2026-10-03 human review caught that
+# no judge had: "round" put back after #2037 renamed it "tender", and supply
+# screens off the labs typeface (tailwind/tailwind.css --font-sans).
+product:
+  floor: 3
+  block_severities: [high, medium]
+  lint:
+    glossary: { round: tender }
+    fonts: [Work Sans]
 # Sub-step watchdog (canopy >= 0.2.533): a render, seed or fixer that runs past
 # its budget, or a fixer that stops touching its heartbeat file, ends as
 # timed_out instead of stalling the loop (run 1's batch 3 sat 4 h on a shared
