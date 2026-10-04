@@ -165,7 +165,7 @@ scenes:
     day it went, and the cadence stops at the deadline.
   show: Sophie reads the reminder drafted for Sahel, its line on when Sahel was asked
     and last reminded, and the Sent on field beside Mark sent; marking it sent returns
-    her to the tender's Invitations, Sahel's row reading Reminder sent today, its 3rd
+    her to the tender's Suppliers table, Sahel's row reading Reminder sent today, its 3rd
     reminder, with no further reminder before the deadline.
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#draft-supplier-${sahel_supplier_id}
 - id: sahel-finally-answers
