@@ -386,7 +386,11 @@ user, audit rows attribute to them):
   a second time (`config/asgi.py` marks each request; `server.endpoint_restricted`
   reads the mark). A request there, a no-uservisit-data PAT, or an OAuth token
   with the `mcp:no-uservisit-data` scope (which that endpoint's challenge asks
-  for) is a restricted call: it reaches only `mcp/token_scopes.py:RESTRICTED_TOOLS`,
+  for) is a restricted call -- all three resolve to the SAME tool set (pinned by
+  `test_the_restricted_endpoint_and_the_restricted_token_grant_the_same_tools`).
+  It never sees visit data but CAN edit definitions and trigger server-side
+  computation (`DEFINITION_WRITE_TOOLS`: responses carry ids/versions/dates/counts
+  only). It reaches only `mcp/token_scopes.py:RESTRICTED_TOOLS`,
   and the visit-reading ones among them (`GENERATED_ONLY_TOOLS`) run only when
   every opportunity the call reads is generated synthetic data
   (`mcp/visit_access.py` resolves the opps; `labs/synthetic/provenance.py` decides
