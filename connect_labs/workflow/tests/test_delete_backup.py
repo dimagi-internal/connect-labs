@@ -82,6 +82,29 @@ def test_backup_stores_empty_render_when_no_render_code():
 
 
 @pytest.mark.django_db
+def test_a_workflow_with_no_template_can_be_deleted():
+    """A workflow built from scratch, or cloned with its template cleared, has
+    template_type None. The backup column is NOT NULL and the backup is fail-closed,
+    so before this every such workflow was undeletable (IntegrityError on
+    labs_deleted_workflow_backup.template_type)."""
+    wda = _wda()
+    definition = _definition(template_type=None)
+
+    with (
+        mock.patch.object(wda, "get_definition", return_value=definition),
+        mock.patch.object(wda, "get_render_code", return_value=_render()),
+        mock.patch.object(wda, "get_chat_history", return_value=None),
+        mock.patch.object(wda, "labs_api") as labs_api,
+    ):
+        wda.delete_definition(4644)
+
+    backup = DeletedWorkflowBackup.objects.get(definition_id=4644)
+    assert backup.template_type == ""
+    assert backup.definition_data == definition.data
+    assert 4644 in labs_api.delete_records.call_args[0][0]
+
+
+@pytest.mark.django_db
 def test_fail_closed_aborts_delete_when_backup_write_fails():
     wda = _wda()
     definition = _definition()
