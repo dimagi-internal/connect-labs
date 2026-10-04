@@ -1,0 +1,369 @@
+# KMC deployment facts — the inputs the registry needs but cannot derive.
+#
+# Two things the compiler asks for and the SQL cannot produce on its own:
+#
+#   llo_map   There is no LLO on a visit row. `llo` is materialised by a CASE over
+#             opportunity_id, so the `llo` scope and every llo-scoped suppression
+#             rule need this map or they cannot be compiled at all.
+#
+#   settings  The workbook's "Targets & settings" tab — typed human judgements about
+#             whether an LLO records a thing credibly. These are GATES, not
+#             decoration: mortality must not publish a figure for an LLO the
+#             workbook says does not record deaths credibly, which would read as a
+#             real red band rather than an absent measurement.
+#
+# Both lived only inside kmc_programme_metrics_render.js (`LLO_OF`,
+# `MORTALITY_CREDIBLE`, `COMPLETION_CREDIBLE`). The endpoint never had them, so
+# the endpoint could not serve the `llo` scope and — worse, silently — emitted no
+# suppression columns at all. Held here as data so both engines read one copy.
+
+version: 1
+
+# opportunity_id -> LLO. The 5xx/1xxx ids are the original opportunities; the
+# 10xxx ids are their synthetic clones, which carry the same LLO.
+llo_map:
+  524: PIPN
+  874: PIPN
+  1487: PIPN
+  2166: PIPN
+  523: NAMA
+  938: NAMA
+  1488: NAMA
+  675: GHI
+  1234: GHI
+  1236: EHA
+  1739: Kikapu
+  1790: BERI
+  10021: PIPN
+  10019: PIPN
+  10015: PIPN
+  10022: NAMA
+  10018: NAMA
+  10014: NAMA
+  10020: GHI
+  10017: GHI
+  10016: EHA
+  10013: Kikapu
+  10042: BERI
+  # PIPN Aug-26: the labs clone of 2166, added to the synthetic cohort 2026-09-11.
+  10062: PIPN
+
+# Keyed by the `setting` name each suppression rule in indicators.yml names.
+#
+# ALLOW-LISTS, and deliberately so. The compiler suppresses any LLO not listed
+# true (`credible = [k for k, v in table.items() if v]`, then
+# `llo NOT IN (credible)`), so an absent LLO is suppressed rather than published.
+#
+# The render's tables did NOT share that convention and the difference is not
+# cosmetic. `MORTALITY_CREDIBLE = {PIPN: true, EHA: true}` is already an
+# allow-list and ports as-is. `COMPLETION_CREDIBLE = {GHI: false}` is a DENY-list
+# -- the render reads it as `COMPLETION_CREDIBLE[llo] !== false`, so everyone
+# except GHI is credible. Copied verbatim it would have compiled to an empty
+# credible set and `TRUE AS <completion>_suppressed`: completion withheld from all six LLOs
+# instead of one, with nothing on screen to say so. Written out in full here so
+# the convention is the compiler's, not the render's.
+settings:
+  # "only PIPN and EHA record deaths credibly" (source doc). GHI 675 records zero
+  # discharges at all.
+  mortality_recording_credible:
+    PIPN: true
+    EHA: true
+    NAMA: false
+    GHI: false
+    Kikapu: false
+    BERI: false
+  # Every LLO except GHI, spelled out rather than inferred from an absence.
+  completion_recording_credible:
+    PIPN: true
+    NAMA: true
+    EHA: true
+    Kikapu: true
+    BERI: true
+    GHI: false
+
+# Which opportunities' apps ASK for each field, and the pipeline column each
+# derived property is keyed on. These were static dicts in semantic/gates.py, so a
+# workflow bound to a registry RECORD still read them from the repo -- the same
+# split-brain that `settings` above was unified to end. They live here because they
+# are deployment facts about a cohort of apps, not indicator definitions, and here
+# they travel with the record and are editable without a deploy.
+#
+# Values are measured, not inferred -- see the provenance note that accompanied
+# APP_ASKS in gates.py: per-opportunity within-3-days denominators read live on 2026-09-08
+# against a warm cache, agreeing across workflows 5476 and 5456, with
+# 10020/10021/10022 corroborated from their source bundles' app_structure.json.
+# 14 of the 22 opportunities have at least one field their app does not ask, so a
+# flattening of this map to all-true is a real regression, not a simplification.
+asks_as:
+  ever_danger_sign: danger_visits
+  referred: referral_visits
+  self_referral_count: self_referral_visits
+app_asks:
+  523:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: false
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: false
+    weights: true
+  524:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: false
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: false
+    weights: true
+  675:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: false
+    discharge_visits: true
+    enrollment_weight_g: false
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: false
+    weights: true
+  874:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: false
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  938:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: false
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  1234:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: false
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  1236:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: false
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  1487:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  1488:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  1739:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  1790:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  # PIPN Aug-26. Added to the live record (19784) by hand and never to this file,
+  # so re-seeding from here would have dropped it; copied from the record on
+  # 2026-09-24 when #2004 re-seeded it.
+  2166:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  10013:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  10014:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  10015:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  10016:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  10017:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  10018:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  10019:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  10020:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: false
+    discharge_visits: true
+    enrollment_weight_g: false
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: false
+    weights: true
+  10021:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: false
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: false
+    weights: true
+  10022:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: false
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: false
+    weights: true
+  10042:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  # As recorded on the live synthetic registry (5500) for the 2166 clone.
+  10062:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true

@@ -282,7 +282,7 @@ def test_the_catalog_distinguishes_counts_from_means():
 
 
 def test_the_catalog_carries_prominence():
-    """The render groups headline indicators from this; without it all 24 read equal."""
+    """The render groups headline indicators from this; without it all 30 read equal."""
     from connect_labs.semantic.runtime import load_registry, measure_catalog
 
     _, reg = load_registry("kmc")
@@ -308,7 +308,7 @@ def test_filtering_to_a_series_keeps_the_availability_gates():
     all_gates = {m["name"] for m in reg["measures"] if m.get("gate")}
     assert all_gates, "the registry must mark its gates explicitly, not by name prefix"
 
-    for series, expected_indicators in (("KMC", 24),):
+    for series, expected_indicators in (("KMC", 30),):
         kept = filter_to_series(reg, series)
         names = {m["name"] for m in kept["measures"]}
         assert all_gates <= names, f"series={series} dropped gates: {sorted(all_gates - names)}"
