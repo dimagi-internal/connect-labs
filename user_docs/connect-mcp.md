@@ -45,7 +45,7 @@ Connect Labs provides two MCP addresses. Choose the one that matches how much da
 | Address | What it can access |
 | --- | --- |
 | `https://labs.connect.dimagi.com/mcp/` | Full access matching your Connect permissions, including real visit data. |
-| `https://labs.connect.dimagi.com/mcp/no_user_visit/` | Never shows real user visit data. Can read programme structure (workflows, pipelines, indicator registries, app structure, solicitations, org directory, targeting) and can profile real opportunities and generate synthetic data. Tools that read visits work only on synthetic opportunities whose data was generated. |
+| `https://labs.connect.dimagi.com/mcp/no_user_visit/` | Never shows real user visit data. Can read programme structure (workflows, pipelines, indicator registries, app structure, solicitations, org directory, targeting), can edit workflow and indicator definitions and trigger saved-run generation, and can profile real opportunities and generate synthetic data. Tools that read visits work only on synthetic opportunities whose data was generated. |
 
 !!! tip "Using the restricted address for a whole team"
     `mcp/no_user_visit/` is designed as a safe default for a shared or team setup. Signing in through this address gives a restricted token that stays restricted even if it is later used on the main `/mcp/` address.
@@ -111,14 +111,14 @@ When you create a token you choose an **Access** level:
 | Access level | What it can do |
 | --- | --- |
 | **Standard** | Full access matching your Connect permissions, including reading visit data and making workflow edits. |
-| **No user visit data** | Read-only access to workflow definitions, CommCare app structure, pipeline and indicator definitions, solicitations, funds, the organisation directory, targeting data, and microplan sampling. Can also profile real opportunities on the server and generate synthetic data from those profiles. Cannot access individual visit rows or per-visit values — including through the export API and data reseed endpoints — except on synthetic opportunities whose data was generated. Opportunity-level counts and dates, and contact details of people who submitted as an organisation, are allowed. |
+| **No user visit data** | Never sees user visit data. Reads workflow definitions, CommCare app structure, pipeline and indicator definitions, solicitations, funds, the organisation directory, targeting data, and microplan sampling. Can edit workflow and indicator definitions (including render code and a workflow's opportunity list) and trigger saved-run generation — snapshots, history rebuilds, cache warms, hand-downs and benchmark publication — where the server computes over visits and the token gets back only ids, versions, dates and counts. Cannot delete workflows or pipelines. Can also profile real opportunities on the server and generate synthetic data from those profiles. Same permissions as the `mcp/no_user_visit/` address. Cannot access individual visit rows or per-visit values — including through the export API and data reseed endpoints — except on synthetic opportunities whose data was generated. Opportunity-level counts and dates, and contact details of people who submitted as an organisation, are allowed. |
 
 Tools the token is not allowed to use do not appear to the agent at all, so the agent cannot accidentally attempt a blocked action.
 
 The token list on the tokens page shows the access level of each token. When you rotate a token, its access level stays the same.
 
 !!! tip "When to use 'No user visit data'"
-    Choose this level when you want an AI assistant to help you navigate programme structure, explore indicator definitions, or query the organisation directory — but you do not want it to have access to any beneficiary visit data. It is a good default for any automated or shared setup where full data access is not needed. Tokens at this level can still profile real opportunities and generate synthetic data.
+    Choose this level when you want an AI assistant to help you navigate programme structure, explore or edit indicator and workflow definitions, regenerate saved runs, or query the organisation directory — but you do not want it to have access to any beneficiary visit data. Because it can edit a report's definition and render code, give it to an assistant you would let edit the report itself. It is a good default for any automated or shared setup where full data access is not needed. Tokens at this level can still profile real opportunities and generate synthetic data.
 
 !!! note "Account-level lock overrides token access level"
     If an administrator has locked your account to "no user visit data" (see [MCP Addresses](#mcp-addresses) above), that restriction applies regardless of which token you use or which address you connect through. A Standard token issued to a locked account behaves as a No user visit data token.

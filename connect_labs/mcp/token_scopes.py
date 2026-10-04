@@ -12,7 +12,20 @@ submitted as an organisation, are on the allowed side of that line. It may profi
 real opportunities server-side (a profile is aggregate statistics) and generate
 synthetic data from a profile, because generated data is never real.
 
-Three sets, all deny-by-default -- a tool added to the catalogue reaches no
+"No user visit data" is about what a caller SEES, not whether it may change things.
+A restricted caller may edit workflow and indicator definitions and trigger
+server-side computation over visits (saved runs, snapshots, history rebuilds, cache
+warms, hand-downs, benchmark publications), provided the tool's RESPONSE carries no
+visit-derived values. The visits are read on the server; what they compute stays
+there. Each tool's own permission checks (membership, home scope, organisation
+access) still apply -- the scope only decides what is reachable.
+
+The endpoint and the credential are two ways to ask for the SAME thing and resolve to
+the same tool set: ``server.restricted_call`` is true for either, and
+``server.allowed_tools`` then answers ``RESTRICTED_TOOLS`` whichever made it true. A
+test pins that the two list identical tools.
+
+Four sets, all deny-by-default -- a tool added to the catalogue reaches no
 restricted caller until someone adds it here on purpose:
 
 * ``NO_USERVISIT_DATA_TOOLS`` -- reachable outright: definitions, directories,
@@ -20,8 +33,30 @@ restricted caller until someone adds it here on purpose:
 * ``GENERATED_ONLY_TOOLS`` -- tools that read visit data, reachable only when every
   opportunity the call reads holds GENERATED data (``connect_labs.mcp.visit_access``,
   on ``connect_labs.labs.synthetic.provenance``).
+* ``DEFINITION_WRITE_TOOLS`` -- writes reachable outright: tools that change a
+  definition (a workflow, its render code, its opportunity list, a semantic registry)
+  or start server-side computation, and whose response is ids, versions, statuses,
+  dates and opportunity-level counts only. A tool whose response carries a snapshot
+  payload, indicator values, rows, or per-worker or per-case data never belongs here
+  (``workflow_preview_snapshot``, ``workflow_preview_as_of`` and
+  ``workflow_history_runs`` stay generated-only). Destructive tools that are not
+  definition edits (``workflow_delete``, ``pipeline_delete`` ...) are not in it.
 * ``USERVISIT_DATA_TOOLS`` -- read tools that return visit data. None of them may be
-  reachable outright; a test pins it.
+  reachable outright; a test pins it, and that the write set is disjoint from it.
+
+Two residual risks the response line does not cover, recorded so nobody mistakes the
+write set for "cannot learn anything about visits in any way":
+
+* Error text. ``workflow_ensure_visit_cache`` and ``workflow_rebuild_history`` report a
+  failing pipeline or snapshot build by its exception message, and
+  ``workflow_hand_down`` its per-opportunity errors. Those are configuration and
+  infrastructure messages, but a pipeline's error (a failed cast, say) could quote a
+  value it choked on.
+* Render code runs later, in a full-access viewer's browser, over real data.
+  ``workflow_update_render_code`` / ``workflow_patch_render_code`` (and a ``config``
+  the render reads) can therefore shape what that viewer's page computes and saves --
+  including into fields a restricted caller can read back (``workflow_get`` returns a
+  definition's config). A restricted caller is trusted to edit the report itself.
 """
 
 from __future__ import annotations
@@ -174,9 +209,49 @@ USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
     }
 )
 
+#: Writes a restricted caller reaches outright. Every response here is ids, versions,
+#: statuses, dates and opportunity-level counts; see the module docstring for the rule
+#: and its residuals. Each entry's return value was read before it was added.
+DEFINITION_WRITE_TOOLS: frozenset[str] = frozenset(
+    {
+        # Indicator registries: the definitions (returns id/name/version/counts).
+        "semantic_registry_create",
+        "semantic_registry_update",
+        "semantic_registry_set_indicator_meta",
+        # Workflow definitions, opportunity list and render code (returns versions;
+        # update_opportunity_ids also the ids it set, each checked against the
+        # caller's own opportunities). The generated-only resolvers read the
+        # definition's opportunity_ids live, so pointing a workflow at a real
+        # opportunity makes its visit readers refuse, not leak.
+        "workflow_update_definition",
+        "workflow_update_opportunity_ids",
+        "workflow_update_render_code",
+        "workflow_patch_render_code",
+        # Runs and snapshots, computed and stored server-side. create_run returns the
+        # run's id and period; save_snapshot the run id, name, captured_at and
+        # opportunity ids -- the snapshot itself is never returned
+        # (workflow_preview_snapshot is the reader, and stays generated-only).
+        "workflow_create_run",
+        "workflow_save_snapshot",
+        # Per opportunity and pipeline: raw visit COUNT, computed row COUNT, held or
+        # refreshed, hold-until, error.
+        "workflow_ensure_visit_cache",
+        # Per period: run id, action, error. dry_run writes nothing.
+        "workflow_rebuild_history",
+        # Run ids, periods, statuses of the runs it deleted (or would delete).
+        "workflow_prune_history",
+        # Created / replaced / unchanged / failed counts, and per-report errors.
+        "workflow_hand_down",
+        # Publication id, cohort id, as-of date, value count, withheld indicator ids.
+        "benchmarks_publish",
+    }
+)
+
 #: Everything a restricted caller can list. The generated-only tools are listed and
 #: then checked per call, on the opportunities that call reads.
-RESTRICTED_TOOLS: frozenset[str] = NO_USERVISIT_DATA_TOOLS | SYNTHETIC_TOOLS | GENERATED_ONLY_TOOLS
+RESTRICTED_TOOLS: frozenset[str] = (
+    NO_USERVISIT_DATA_TOOLS | SYNTHETIC_TOOLS | GENERATED_ONLY_TOOLS | DEFINITION_WRITE_TOOLS
+)
 
 
 def is_restricted(scopes) -> bool:

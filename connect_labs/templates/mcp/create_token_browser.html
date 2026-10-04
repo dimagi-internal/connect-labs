@@ -18,9 +18,11 @@
     </p>
     {% if is_no_uservisit_data %}
     <p class="text-sm text-emerald-900 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 mb-2">
-      <strong>{{ scope_label }}.</strong> This token can read workflow definitions, pipeline and indicator
-      definitions, app structure, solicitations, the org directory and targeting, and it can profile real
-      opportunities and generate synthetic data. It cannot read real visit data.
+      <strong>{{ scope_label }}.</strong> This token never sees real user visit data. It can read workflow
+      definitions, pipeline and indicator definitions, app structure, solicitations, the org directory and
+      targeting; edit workflow and indicator definitions and trigger saved-run generation (the server computes
+      over visits, the token sees only ids, dates and counts); and profile real opportunities and generate
+      synthetic data.
     </p>
     {% else %}
     <p class="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
