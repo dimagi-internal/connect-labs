@@ -413,6 +413,24 @@ def _validate_pipeline_home_scope(home_scope, token: str, pipeline_id: int) -> d
     return {key: value}
 
 
+def _pipeline_lives_in_program(token: str, pipeline_id: int, program_id: int) -> bool:
+    """Whether ``pipeline_id`` is a PROGRAM-owned record of ``program_id``.
+
+    Record reads are an exact scope match, so an opportunity-owned pipeline (the
+    usual source of a program workflow) is not found here and keeps its old
+    behaviour; any failure reads as "no" for the same reason.
+    """
+    from connect_labs.workflow.data_access import PipelineDataAccess
+
+    pda = PipelineDataAccess(access_token=token, program_id=program_id)
+    try:
+        return pda.get_definition(pipeline_id) is not None
+    except Exception:  # noqa: BLE001 -- an unreadable record simply is not program-owned here
+        return False
+    finally:
+        pda.close()
+
+
 def _is_semantic_workflow(data: dict) -> bool:
     """Whether a workflow's template computes semantic indicators (declares a registry)."""
     from connect_labs.workflow.templates import get_template
@@ -741,7 +759,10 @@ def workflow_update_definition(
         "-> {rows, total}, answered in SQL from the pipeline's cache. load='eager' "
         "(the default) streams it as before; omitting load on an existing alias "
         "keeps its current setting. Mirrors the web add-pipeline-source endpoint "
-        "(no version check needed — the source list is keyed by alias). Returns "
+        "(no version check needed — the source list is keyed by alias). With "
+        "program_id and no home_scope, a pipeline owned by that program (e.g. a "
+        "program-scoped Google Drive pipeline from pipeline_create(program_id=...)) "
+        "gets home_scope {program_id} automatically. Returns "
         "the full updated pipeline_sources."
     ),
     input_schema={
@@ -806,6 +827,11 @@ def workflow_add_pipeline_source(
     token = require_connect_token(user)
     if home_scope is not None:
         home_scope = _validate_pipeline_home_scope(home_scope, token, int(pipeline_id))
+    elif program_id is not None and _pipeline_lives_in_program(token, int(pipeline_id), int(program_id)):
+        # A program-owned pipeline (e.g. a program-scoped Drive source) under a program
+        # workflow: name its home, so it is read in the program scope even when the
+        # workflow also spans opportunities (whose scope the run page reads records in).
+        home_scope = {"program_id": int(program_id)}
     wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
     try:
         updated = wda.add_pipeline_source(workflow_id, int(pipeline_id), alias, home_scope=home_scope, load=load)
@@ -1237,14 +1263,26 @@ def workflow_create_from_template(
         "is editable via the existing workflow_update_definition / "
         "workflow_update_render_code tools. Before authoring render_code, fetch "
         "workflow_authoring_guide for the current best practices. Returns "
-        "{workflow_id, render_code_version}."
+        "{workflow_id, render_code_version}. Pass program_id instead of opportunity_id "
+        "for a PROGRAM-owned workflow (no owning opportunity) -- e.g. a dashboard over "
+        "program-scoped Google Drive pipelines, which are read once for the program and "
+        "need no opportunity_ids at all."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "opportunity_id": {
                 "type": "integer",
-                "description": "The primary/owning opportunity for the new workflow record.",
+                "description": (
+                    "The primary/owning opportunity for the new workflow record. Provide this OR program_id."
+                ),
+            },
+            "program_id": {
+                "type": "integer",
+                "description": (
+                    "Own the new workflow at the program level (no owning opportunity). Provide this "
+                    "OR opportunity_id."
+                ),
             },
             "name": {"type": "string"},
             "description": {"type": "string"},
@@ -1288,15 +1326,15 @@ def workflow_create_from_template(
                 ),
             },
         },
-        "required": ["opportunity_id", "name"],
+        "required": ["name"],
         "additionalProperties": False,
     },
     is_write=True,
 )
 def workflow_create(
     user,
-    opportunity_id: int,
     name: str,
+    opportunity_id: int = None,
     description: str = "",
     statuses: list = None,
     config: dict = None,
@@ -1304,7 +1342,10 @@ def workflow_create(
     opportunity_ids: list = None,
     render_code: str = None,
     snapshot_inputs: dict = None,
+    program_id: int = None,
 ):
+    if (opportunity_id is None) == (program_id is None):
+        raise MCPToolError("INVALID_SCHEMA", "workflow_create requires exactly one of opportunity_id / program_id.")
     token = require_connect_token(user)
 
     # Validate render_code up-front so we don't create a definition we can't
@@ -1344,7 +1385,7 @@ def workflow_create(
                 details={"invalid_opportunity_ids": sorted(invalid)},
             )
 
-    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
     try:
         # create_definition supplies sane defaults for any kwarg we don't pass,
         # so the minimal call (name + opportunity_id) yields a valid blank
@@ -1381,6 +1422,7 @@ def workflow_create(
             "workflow_id": definition.id,
             "render_code_version": render_code_version,
             "opportunity_ids": list(cleaned_opp_ids),
+            **({"program_id": program_id} if program_id is not None else {}),
             "_version_before": None,
             "_version_after": 1,
         }
