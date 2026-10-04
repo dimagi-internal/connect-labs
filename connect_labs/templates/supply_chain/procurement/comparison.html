@@ -92,13 +92,13 @@
           {% comment %}The next steps, split by whose they are: ours (and the award), then the supplier's.
           The tender-wide duty terms are settled in the line above the grid; a column points there.{% endcomment %}
           <tr data-testid="grid-actions" data-whose="us">
-            <th scope="row" class="px-5 py-1.5 text-left align-top text-sm font-normal text-gray-600">Our move</th>
+            <th scope="row" class="px-5 py-1.5 text-left align-top text-sm font-normal text-gray-600">Facts on us</th>
             {% for q in grid.quotes %}
             <td class="border-l border-gray-100 px-4 py-1.5 align-top"><div class="flex flex-wrap items-start gap-1.5">{% for a in q.ours_actions %}{% if a.terms %}<a class="button button-sm outline-style" data-testid="grid-action" data-owner="{{ a.owner }}" href="{{ a.href }}">↑ {{ a.label }}</a>{% else %}<a class="button button-sm {% if a.award and a.filled %}primary-dark{% else %}outline-style{% endif %}" data-testid="grid-action" data-owner="{{ a.owner }}" href="{{ a.href }}"{% if a.award %} onclick="var d=document.getElementById('award-{{ q.quote_id }}'); if (d) { d.open = true; d.scrollIntoView({block: 'center'}); return false; }"{% endif %}>{{ a.label }}</a>{% endif %}{% empty %}<span class="text-gray-600" data-testid="grid-no-move">none</span>{% endfor %}</div></td>
             {% endfor %}
           </tr>
           <tr data-testid="grid-actions-theirs" data-whose="suppliers">
-            <th scope="row" class="px-5 py-1.5 text-left align-top text-sm font-normal text-gray-600">Supplier's move</th>
+            <th scope="row" class="px-5 py-1.5 text-left align-top text-sm font-normal text-gray-600">Facts on supplier</th>
             {% for q in grid.quotes %}
             <td class="border-l border-gray-100 px-4 py-1.5 align-top"><div class="flex flex-wrap items-start gap-1.5">{% for a in q.theirs_actions %}<a class="button button-sm outline-style" data-testid="grid-action" data-owner="{{ a.owner }}" href="{{ a.href }}">{{ a.label }}</a>{% empty %}<span class="text-gray-600" data-testid="grid-no-move">none</span>{% endfor %}</div></td>
             {% endfor %}

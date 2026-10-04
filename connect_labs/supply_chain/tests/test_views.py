@@ -924,7 +924,11 @@ def test_the_tender_detail_page_links_each_supplier_it_names(client, sophie):
         response = client.get(reverse("supply_chain:procurement_tender_detail", args=[5]))
     body = response.content.decode()
     assert response.status_code == 200
-    assert reverse("supply_chain:supplier_detail", args=[1]) in body
+    # The quotes table names each quote's supplier as a link to the quote. The Suppliers
+    # table is built from the tender record itself (procurement/status.py), which this
+    # mocked page has none of: its supplier links are pinned on a real tender in
+    # test_unanswered_round_1004_batch1_pages.py.
+    assert reverse("supply_chain:procurement_quote_detail", args=[10]) in body
 
 
 def test_an_order_links_out_to_the_supplier_it_is_with(client, sophie, monkeypatch):

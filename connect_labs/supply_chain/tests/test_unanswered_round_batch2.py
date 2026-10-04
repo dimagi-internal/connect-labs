@@ -122,7 +122,7 @@ class TestChaseFromTheDraft:
             reverse("supply_chain:procurement_outreach_chase", args=[outreach_id]), {"last_reminder_on": "2026-07-14"}
         )
         tender_url = reverse("supply_chain:procurement_tender_detail", args=[world["tender"]["id"]])
-        assert response.url == f"{tender_url}?changed=outreach-{outreach_id}&cell=last_chased#outreach"
+        assert response.url == f"{tender_url}?changed=outreach-{outreach_id}&cell=last_chased#outreach-{outreach_id}"
         row = Outreach.objects.get(pk=outreach_id)
         assert row.last_reminder_on == datetime.date(2026, 7, 14)
         # The reply it held is untouched: the chase form posts the date alone.
@@ -146,7 +146,7 @@ class TestTheChangedRow:
             client_in_program, world["tender"]["id"], f"?changed=outreach-{outreach_id}&cell=last_chased"
         )
         row = re.search(rf'<tr data-outreach-id="{outreach_id}".*?</tr>', chased, re.S).group(0)
-        cell = re.search(r'<td [^>]*data-testid="last-chased">.*?</td>', row, re.S).group(0)
+        cell = re.search(r'<td [^>]*data-testid="supplier-chased">.*?</td>', row, re.S).group(0)
         assert 'data-testid="changed-chip"' in cell and "font-semibold" in cell
         assert row.count('data-testid="changed-chip"') == 1
         plain = _tender_page(client_in_program, world["tender"]["id"])

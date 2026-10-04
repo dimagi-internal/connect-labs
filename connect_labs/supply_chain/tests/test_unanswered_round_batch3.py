@@ -68,10 +68,11 @@ class TestASilentRound:
         body = _tender_page(client_in_program, world["tender"]["id"])
         silent = _row(body, outreach_id)
         days = (datetime.date.today() - datetime.date(2026, 7, 6)).days
-        assert re.search(rf'data-testid="no-reply"[^>]*>No reply · {days} days<', silent)
-        assert ">No<" not in silent and "Record a reply" in silent
+        # One word for silence on the tender page (2026-10-04): the State chip.
+        assert re.search(rf'data-testid="supplier-state">Silent {days}d<', silent)
+        assert ">No<" not in silent and "No reply" not in silent and "Record a reply" in silent
         assert "Days waiting" not in body
-        for cell in ("replied", "last-chased"):
+        for cell in ("replied", "supplier-chased"):
             assert "whitespace-nowrap" in re.search(rf'<td class="([^"]*)" data-testid="{cell}"', silent).group(1)
 
         op(
@@ -81,11 +82,9 @@ class TestASilentRound:
             data={"responded": True, "response_kind": "needs_info", "responded_on": "2026-07-09"},
         )
         replied = _row(_tender_page(client_in_program, world["tender"]["id"]), outreach_id)
-        assert (
-            "Record a reply" in replied
-            and "Record another reply" not in replied
-            and 'data-testid="no-reply"' not in replied
-        )
+        # A reply is recorded: the menu edits it rather than offering to record one.
+        assert "Record a reply" not in replied and 'data-testid="row-edit"' in replied
+        assert "Silent" not in replied
 
     def test_a_chase_does_not_restart_the_silence(self, da, world, client_in_program):
         # A reminder chases the same request; the silence still counts from the ask, as the overview does.
@@ -93,8 +92,8 @@ class TestASilentRound:
         op(da, "outreach_update", outreach_id=world["outreach"]["id"], data={"last_reminder_on": three_days_ago})
         row = _row(_tender_page(client_in_program, world["tender"]["id"]), world["outreach"]["id"])
         days = (datetime.date.today() - datetime.date(2026, 7, 6)).days
-        assert re.search(rf'data-testid="no-reply"[^>]*>No reply · {days} days<', row)
-        assert "No reply · 3 days" not in row
+        assert re.search(rf'data-testid="supplier-state">Silent {days}d<', row)
+        assert "Silent 3d" not in row
 
     def test_the_supply_banner_steps_back_on_the_tender(self, da, world, client_in_program):
         body = _tender_page(client_in_program, world["tender"]["id"])
