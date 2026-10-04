@@ -63,7 +63,8 @@ class TestOneSuppliersTable:
         body = _page(client_in_program, asked["tender_id"])
         assert 'data-testid="fold-invitations"' not in body
         assert body.count('data-testid="supplier-table"') == 1
-        assert re.search(r'<th scope="col"[^>]*>Replied</th>', body)
+        # The day a supplier replied rides its State cell, not a column of its own (2026-10-04 b2).
+        assert not re.search(r'<th scope="col"[^>]*>Replied</th>', body)
         assert "+ Record an invitation" in body
         rows = _rows(body)
         assert len(rows) == 2
