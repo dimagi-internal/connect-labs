@@ -1097,11 +1097,7 @@ class WorkflowDataAccess(BaseDataAccess):
         the 2 runs created directly from that page (which really are
         program-scoped).
         """
-        records = self.labs_api.get_records(
-            experiment=self.EXPERIMENT,
-            type="workflow_run",
-            model_class=WorkflowRunRecord,
-        )
+        records = self._get_run_records(definition_id)
         if definition_id:
             records = [r for r in records if r.data.get("definition_id") == definition_id]
 
@@ -1125,6 +1121,29 @@ class WorkflowDataAccess(BaseDataAccess):
             records = list(by_id.values())
 
         return records
+
+    def _get_run_records(self, definition_id: int | None) -> list[WorkflowRunRecord]:
+        """Every run in scope -- or, with `definition_id`, only that workflow's runs,
+        filtered by the SERVER.
+
+        The labs-record API hands every query parameter to the Django ORM, so a JSON
+        text lookup works: `data__definition_id__iexact=21115` compares the stored
+        number as text (`->>`) and matches it, where the plain `data__definition_id=`
+        compares against the JSON STRING "21115" and matches nothing (see
+        hand_down.hand_down_key). Filtering here rather than after the download is
+        the difference between fetching one workflow's runs and fetching every run
+        of every workflow in the opportunity, snapshots included.
+
+        If the server ever refuses the lookup, the unfiltered list is fetched and the
+        caller's own filter still applies: slower, never wrong.
+        """
+        kwargs = {"experiment": self.EXPERIMENT, "type": "workflow_run", "model_class": WorkflowRunRecord}
+        if definition_id:
+            try:
+                return self.labs_api.get_records(**kwargs, definition_id__iexact=str(int(definition_id)))
+            except Exception:  # noqa: BLE001 -- fall back to the full list, filtered locally
+                logger.warning("server-side run filter refused for workflow %s; listing all runs", definition_id)
+        return self.labs_api.get_records(**kwargs)
 
     def _get_run_direct(self, run_id: int) -> WorkflowRunRecord | None:
         """One by-id lookup at THIS DAO's scope, with no fallback of any kind."""
