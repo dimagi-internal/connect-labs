@@ -237,7 +237,7 @@ class TestDutyRelief:
         body = _order(client_in_program, contract["id"])
         line = re.search(r'data-testid="duty-relief-unevidenced"[^>]*>(.*?)</span>\s*</td>', body, re.S)
         assert line is not None
-        assert _text(line.group(1)) == "USD 0.00 if duty relief is documented (no document on file)"
+        assert _text(line.group(1)) == "USD 0.00 duty exemption not on file · us"
 
     def test_the_rule_is_the_costing_s_own(self, da, world):
         """The order reads the one predicate (pricing.relief_unevidenced) off contract_landed_cost."""

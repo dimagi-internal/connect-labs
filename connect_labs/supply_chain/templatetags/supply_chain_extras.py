@@ -37,6 +37,22 @@ def supplies(owner):
 
 
 @register.filter
+def document_kind(kind):
+    """A document kind as every page names it (records.DOCUMENT_KIND_LABELS): "duty exemption"."""
+    from connect_labs.supply_chain.records import document_kind_label
+
+    return document_kind_label(kind)
+
+
+@register.filter
+def not_on_file(kind):
+    """The chip a figure carries while its document is missing: "duty exemption not on file"."""
+    from connect_labs.supply_chain.records import document_not_on_file
+
+    return document_not_on_file(kind)
+
+
+@register.filter
 def dictkey(mapping, key):
     return (mapping or {}).get(key)
 

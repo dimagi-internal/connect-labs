@@ -145,7 +145,7 @@ class TestTheComparison:
         body = client_in_program.get(url).content.decode()
         note = _text(re.search(r'data-testid="comparison-duty-terms".*?</summary>', body, re.S).group(0))
         assert "we import, under the program's duty waiver" in note.replace("&#x27;", "'")
-        assert "waiver document not on file" in note
+        assert "duty exemption not on file" in note
         assert Commitment.objects.filter(resolved_on__isnull=False).exists()
 
     def test_a_quote_costed_on_a_waiver_not_on_file_owes_that_fact_on_us(self, da, world, client_in_program):
@@ -164,10 +164,10 @@ class TestTheComparison:
         body = client_in_program.get(url).content.decode()
         if 'data-testid="waiver-pending"' not in body:
             pytest.skip("this world's quote does not leave the import to us")
-        assert "document not on file · us" in body
+        assert "duty exemption not on file · us" in body
         # The quote's header chip counts it ("1 fact on us" / "2 facts on us").
         assert re.search(r'data-testid="grid-status">\d+ facts? on us<', body)
-        assert ">Attach waiver document<" in body
+        assert ">Attach duty exemption<" in body
         # Award may still be offered, but never as the filled button while the fact is open.
         assert 'primary-dark" data-testid="grid-action"' not in body
 

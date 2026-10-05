@@ -94,8 +94,8 @@ scenes:
   full_page: false
   concept_claim: The tender's status view records each quote from the supplier's own
     email with a mark saying the AI recorded it, names the fact each quote left out,
-    shows when each silent supplier was last chased with a link to the reminder already
-    drafted for it, and gives the step the tender is on with its deadline in days, the
+    shows when each silent supplier was last chased with a link to its reminder once
+    one falls due and is drafted, and gives the step the tender is on with its deadline in days, the
     answered and silent counts, and that its import duty terms are not settled.
   design_intent: 'Bet: framing the demo around silence, the normal case, makes every
     later scene answer a question Sophie actually has; one opening scene carries the
@@ -156,8 +156,8 @@ scenes:
     seconds: 1.5
   - kind: snapshot
     note: the canonical frame is the reminder marked sent -- Sahel's row in the Suppliers table marked just changed, its Last chased cell reading Reminder sent today, the 3rd reminder, and no further reminder before the deadline
-  concept_claim: The tender drafts a reminder for each silent supplier that says when
-    they were asked and last reminded, with a Sent on field holding today's date and
+  concept_claim: The tender drafts a reminder for each silent supplier as one falls
+    due, saying when they were asked and last reminded, with a Sent on field holding today's date and
     a Mark sent button on the draft itself; once marked, the supplier's row reads Reminder
     sent with that day, and no further reminder is scheduled past the tender's deadline.
   design_intent: Chasing is most of the work in a half-silent tender; the record drafts
@@ -383,7 +383,7 @@ scenes:
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the canonical frame is the comparison under the waiver -- the duty terms line, one of three comparable (Harmattan, landed USD 51.30 with our clearing estimate, unconfirmed until the waiver document is on file), and the Import duty row settled for the quotes we import
+    note: the canonical frame is the comparison under the waiver -- the duty terms line, one of three comparable (Harmattan, landed USD 51.30 with our clearing estimate, unconfirmed until the duty exemption is on file), and the Import duty row settled for the quotes we import
   concept_claim: Settling the tender's import duty terms from its terms line is one choice;
     the tender then lists the reply still owed to Northgate with a drafted email, and
     the comparison costs every quote that leaves the import to us under the terms set.
@@ -458,15 +458,31 @@ scenes:
   - kind: scroll_to
     target: css:[data-testid=email-event]:has([data-testid=revision-line]:has-text('Status
       dispatched')) [data-testid=source-excerpt]
+  - kind: hold
+    note: the forwarder's email, centred and read
+    seconds: 2.0
+  - kind: click
+    note: close the forwarder's email again, so the scene returns to the order's status view rather than ending on a second history frame (scene 3 is the history frame)
+    target: css:[data-testid=email-event]:has([data-testid=revision-line]:has-text('Status
+      dispatched')) [data-testid=source-toggle]
+  - kind: click
+    note: and fold the order's History away
+    target: css:[data-testid=fold-history] > summary
+  - kind: scroll_to
+    note: back to the top of the order
+    target: testid:order-header
+  - kind: scroll
+    note: frame the order's breadcrumb (tender 1) and status header down to the On us card, as earlier in the scene
+    value: '270'
   - kind: hover
     note: park the cursor in the top bar's blank middle, off every heading, figure and action
     seconds: 0.6
     target: css:header.fixed
   - kind: hold
-    note: the forwarder's email, centred and read -- the scene's last beat
-    seconds: 2.0
+    note: the status view, held at customs on us, with On us -- the scene's last beat
+    seconds: 1.5
   - kind: snapshot
-    note: the canonical frame is the forwarder's email in the order's History -- held at the border, the consignee to provide Form M and PAAR -- the last beat of the scene
+    note: the canonical frame is the order's status view -- at customs, held, waiting on us, billed vs agreed, days late, and On us with the documents owed -- after the forwarder's email has been read
   concept_claim: The order's status view says it is held at customs waiting on us,
     lists under On us the documents we owe the forwarder and the invoice billed above
     the agreed price, and keeps the forwarder's email in the order's history.
@@ -474,7 +490,8 @@ scenes:
     is our move, and being the importer is what makes it ours.
   show: Sophie opens the tender 1 order -- its PO number, the goods at customs held
     on us, the stage bar and tiles, and On us -- reads the invoice lines above agreed
-    and what we owe the forwarder, then opens the forwarder's email in the order's history.
+    and what we owe the forwarder, opens the forwarder's email in the order's history,
+    and returns to the order's status view.
   url: /supply/orders/${contract_id}/?program_id=${program_id}
 - id: whose-move
   full_page: false

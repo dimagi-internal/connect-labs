@@ -33,5 +33,6 @@ def test_overview_gaps_are_fact_chips_and_the_comparable_chip_leads():
     from django.template.loader import get_template
 
     source = get_template("supply_chain/home.html").template.source
-    assert "status-chip--fact" in source and "%}lead{%" in source
+    chip = get_template("supply_chain/_fact_chip.html").template.source
+    assert '"supply_chain/_fact_chip.html"' in source and "status-chip--fact" in chip and "%}lead{%" in source
     assert 'data-testid="row-missing"' in source.split('data-testid="next-move"', 1)[1]

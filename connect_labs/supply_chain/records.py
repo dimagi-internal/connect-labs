@@ -218,6 +218,25 @@ DOCUMENT_KINDS = (
     "other",
 )
 
+# What each kind of document is CALLED, on every page that names one: the
+# model's choices, the attach forms, the comparison's gap chips and actions,
+# an order's landed table and what-we-owe list, the overview's quote gaps and
+# the history. One map, so a document never goes by two names ("waiver
+# document" on one page, "duty exemption" on the next).
+DOCUMENT_KIND_LABELS = {kind: kind.replace("_", " ") for kind in DOCUMENT_KINDS}
+
+
+def document_kind_label(kind) -> str:
+    """A document kind as the pages name it: "duty_exemption" -> "duty exemption"."""
+    kind = str(kind or "")
+    return DOCUMENT_KIND_LABELS.get(kind) or kind.replace("_", " ")
+
+
+def document_not_on_file(kind) -> str:
+    """The chip a figure carries while the document it rests on is missing: "duty exemption not on file"."""
+    return f"{document_kind_label(kind)} not on file"
+
+
 # What a document can be evidence FOR. Declared here, once, because three
 # places need the same list: the model's foreign keys, the operation schema
 # that accepts `<name>_id`, and the query that filters on it. It used to live
