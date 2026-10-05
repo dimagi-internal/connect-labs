@@ -123,11 +123,11 @@ def next_step_for(round_) -> str:
     it describes is done, and then reads as work outstanding forever.
     """
     if round_.sa_access_state == ACCESS_MISSING:
-        return "YOU: add the Response Sheet Link (column M) — the form has no responses sheet recorded"
+        return "YOU: add the Response Sheet Link — the form has no responses sheet recorded"
     if round_.sa_access_state == ACCESS_DENIED:
         return f"YOU: share the response sheet with {_SA_EMAIL} (Viewer is enough)"
     if not round_.delivery_type:
-        return "YOU: set the Connect Programme (column S) — see the EOI/RFP tab notes for the allowed values"
+        return "YOU: set the Connect Programme — see the EOI/RFP tab notes for the allowed values"
     if not round_.last_ingested_at:
         return "LABS: readable and tagged — will ingest on the next run"
     return ""
@@ -143,26 +143,33 @@ def _write_access_columns(results, rounds, spreadsheet_id) -> None:
     """Put the verified state in the three columns labs owns on the rounds tab.
 
     Keyed on the row each round was parsed from, so a reordered sheet cannot
-    write a verdict against the wrong round. A round whose row is unknown is
-    skipped rather than guessed at.
+    write a verdict against the wrong round, and on the column each owned
+    header was found in, so an inserted or moved column cannot either. A round
+    whose row is unknown, or a header that is absent, is skipped rather than
+    guessed at -- every other column on that tab belongs to people.
     """
     from connect_labs.marketplace import directory
 
-    by_slug = {r.slug: r.source_row for r in rounds if r.source_row}
+    by_slug = {r.slug: r for r in rounds if r.source_row}
     stamp = timezone.now().strftime("%Y-%m-%d %H:%M UTC")
     saved = {r.slug: r for r in Solicitation.objects.all()}
     updates = []
     for result in results:
-        row = by_slug.get(result["slug"])
-        if not row:
+        parsed = by_slug.get(result["slug"])
+        if parsed is None:
             continue
-        label = ACCESS_LABELS.get(result["state"], result["state"])
-        # Columns P and Q: "Labs Access" and "Labs Access Checked".
-        updates.append((f"'{directory.ROUNDS_TAB}'!P{row}:Q{row}", [[label, stamp]]))
+        row, owned = parsed.source_row, parsed.owned_columns
+        values = {
+            directory.LABS_ACCESS: ACCESS_LABELS.get(result["state"], result["state"]),
+            directory.LABS_ACCESS_CHECKED: stamp,
+        }
         round_ = saved.get(result["slug"])
         if round_ is not None:
-            # Column T: "Next Step", derived from what was just verified.
-            updates.append((f"'{directory.ROUNDS_TAB}'!T{row}", [[next_step_for(round_)]]))
+            values[directory.NEXT_STEP] = next_step_for(round_)
+        for header, value in values.items():
+            letter = owned.get(header)
+            if letter:
+                updates.append((f"'{directory.ROUNDS_TAB}'!{letter}{row}", [[value]]))
     directory.update_cells(spreadsheet_id, updates)
 
 

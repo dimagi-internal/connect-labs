@@ -1,27 +1,9 @@
 """Parsing the restructured EOI/RFP tab. All values invented."""
 
 from connect_labs.marketplace.directory import parse_rounds
+from connect_labs.marketplace.testing import SHEET_ROUNDS_HEADER
 
-HEADER = [
-    "Slug",
-    "Program / Initiative Name",
-    "Announcement Type (EOI/RFP)",
-    "Status",
-    "Published Date",
-    "Application Deadline",
-    "Selection Decision Date",
-    "Program Start Date",
-    "Program End Date",
-    "Target Countries / Regions",
-    "Announcement Link",
-    "Form Link",
-    "Response Sheet Link",
-    "Response Tab",
-    "Column Map (JSON, blank = auto-detect)",
-    "Labs Access",
-    "Labs Access Checked",
-    "Notes",
-]
+HEADER = SHEET_ROUNDS_HEADER
 
 SHEET = "https://docs.google.com/spreadsheets/d/1abcDEFghiJKLmnoPQRstuVWxyz0123456789"
 

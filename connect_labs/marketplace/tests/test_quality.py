@@ -6,34 +6,10 @@ actionable, "row 14, Org Team Size, '50+'" is. All data invented.
 
 from connect_labs.marketplace.directory import parse_contacts, parse_organizations
 from connect_labs.marketplace.quality import audit
+from connect_labs.marketplace.testing import SHEET_CONTACT_HEADER, SHEET_ORG_HEADER
 
-ORG_HEADER = [
-    "Organization Name",
-    "Short Name",
-    "Has Used Connect",
-    "Year of Establishment",
-    "Org Team Size",
-    "No. of FLWs Managed",
-    "Countries of Operation",
-    "Regions/States of Operation",
-    "Primary Sector(s)",
-    "Website",
-    "Office Address",
-    "Emails",
-    "EOIs",
-    "Organization Notes",
-    "MSA",
-    "Work Order",
-]
-CONTACT_HEADER = [
-    "Contact Full Name",
-    "Organization Name",
-    "Role / Title",
-    "Main POC?",
-    "Email Address",
-    "Phone Number",
-    "Notes",
-]
+ORG_HEADER = SHEET_ORG_HEADER
+CONTACT_HEADER = SHEET_CONTACT_HEADER
 
 
 def _audit(org_rows, contact_rows, skipped=()):

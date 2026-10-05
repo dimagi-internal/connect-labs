@@ -8,6 +8,7 @@ from connect_labs.marketplace import eoi
 from connect_labs.marketplace.directory import parse_rounds
 from connect_labs.marketplace.eoi import check_access, ingest_round, upsert_rounds
 from connect_labs.marketplace.models import OrgContact
+from connect_labs.marketplace.testing import SHEET_ROUNDS_HEADER
 from connect_labs.solicitations.local_models import (
     ACCESS_DENIED,
     ACCESS_MISSING,
@@ -16,26 +17,7 @@ from connect_labs.solicitations.local_models import (
     SolicitationResponse,
 )
 
-HEADER = [
-    "Slug",
-    "Name",
-    "Type",
-    "Status",
-    "Published Date",
-    "Application Deadline",
-    "Decision",
-    "Start",
-    "End",
-    "Countries",
-    "Announcement",
-    "Form",
-    "Response Sheet",
-    "Response Tab",
-    "Column Map",
-    "Labs Access",
-    "Checked",
-    "Notes",
-]
+HEADER = SHEET_ROUNDS_HEADER
 SHEET = "https://docs.google.com/spreadsheets/d/1abcDEFghiJKLmnoPQRstuVWxyz0123456789"
 
 ROUND_ROWS = [
@@ -302,7 +284,7 @@ class TestAccessWriteBack:
     """
 
     # Every cell labs is allowed to touch on the rounds tab.
-    OWNED = ("!P2:Q2", "!T2")
+    OWNED = ("!P2", "!Q2", "!T2")
 
     def test_writes_the_verified_state_against_the_round_s_own_row(self, round_):
         from connect_labs.marketplace import directory
@@ -314,10 +296,9 @@ class TestAccessWriteBack:
         check_access(lambda sid, tab: [["Timestamp"]], write_back_to=rounds, spreadsheet_id="sheet-id")
 
         by_range = {rng.split("!")[1]: values for rng, values in written}
-        assert set(by_range) == {"P2:Q2", "T2"}
-        state, stamp = by_range["P2:Q2"][0]
-        assert "OK" in state
-        assert stamp
+        assert set(by_range) == {"P2", "Q2", "T2"}
+        assert "OK" in by_range["P2"][0][0]
+        assert by_range["Q2"][0][0]
 
     def test_touches_no_other_column(self, round_):
         from connect_labs.marketplace import directory
@@ -329,6 +310,31 @@ class TestAccessWriteBack:
 
         for rng, _values in written:
             assert any(rng.endswith(owned) for owned in self.OWNED), f"labs wrote outside its own columns: {rng}"
+
+    def test_a_column_inserted_before_labs_columns_moves_the_writes_with_it(self, round_):
+        """Someone adds a column in front of "Labs Access". Writing to fixed
+        letters would overwrite the column a person now keeps there."""
+        from connect_labs.marketplace import directory
+
+        written = []
+        directory.update_cells = lambda sid, updates: written.extend(updates)  # noqa: E731
+        header = HEADER[:15] + ["Owner"] + HEADER[15:]
+        row = ROUND_ROWS[1][:15] + ["a person's note"] + ROUND_ROWS[1][15:]
+        rounds, _ = parse_rounds([header, row])
+        check_access(lambda sid, tab: [["Timestamp"]], write_back_to=rounds, spreadsheet_id="sheet-id")
+
+        assert {rng.split("!")[1] for rng, _ in written} == {"Q2", "R2", "U2"}
+
+    def test_a_labs_column_that_is_missing_is_not_written_anywhere(self, round_):
+        from connect_labs.marketplace import directory
+
+        written = []
+        directory.update_cells = lambda sid, updates: written.extend(updates)  # noqa: E731
+        header = [h for h in HEADER if not h.startswith("Next Step")]
+        rounds, _ = parse_rounds([header, ROUND_ROWS[1]])
+        check_access(lambda sid, tab: [["Timestamp"]], write_back_to=rounds, spreadsheet_id="sheet-id")
+
+        assert {rng.split("!")[1] for rng, _ in written} == {"P2", "Q2"}
 
     def test_a_round_whose_row_is_unknown_is_skipped_not_guessed(self, round_):
         from connect_labs.marketplace import directory
