@@ -66,6 +66,15 @@ import {
   stripPos,
 } from './Scenario';
 import {
+  EnrolmentTargetChart,
+  EnrolmentTargetLegend,
+  EnrolmentTargetSummary,
+  enrolmentProgress,
+  monthLbl,
+  targetWindow,
+  targetedLlos,
+} from './Targets';
+import {
   Button,
   Card,
   Loading,
@@ -75,7 +84,7 @@ import {
   SectionTitle,
 } from './Layout';
 
-export const VERSION = 4;
+export const VERSION = 5;
 
 export const LabsReport = {
   VERSION,
@@ -151,6 +160,14 @@ export const LabsReport = {
   RangeStrip,
   rangeText,
   stripPos,
+  // enrolment against a configured target (VERSION 5)
+  enrolmentProgress,
+  targetedLlos,
+  targetWindow,
+  monthLbl,
+  EnrolmentTargetChart,
+  EnrolmentTargetSummary,
+  EnrolmentTargetLegend,
 };
 
 export type LabsReportLibrary = typeof LabsReport;

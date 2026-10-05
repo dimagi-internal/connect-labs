@@ -3654,9 +3654,10 @@ def semantic_explain_api(request, definition_id):
       format      json (default) | md | sql
       download    1 to send md/sql/json as an attachment
     """
+    from connect_labs.labs.integrations.connect.api_client import LabsAPIError
     from connect_labs.semantic.explain import UnknownIndicator, explain, to_markdown, to_sql
     from connect_labs.semantic.legacy import DEFAULT_REGISTRY_NAME
-    from connect_labs.semantic.runtime import SemanticRuntimeError
+    from connect_labs.semantic.runtime import RegistryNotFound, SemanticRuntimeError
     from connect_labs.semantic.workflow_binding import resolve_registry_for
     from connect_labs.workflow.data_access import SemanticRegistryDataAccess
 
@@ -3690,8 +3691,25 @@ def semantic_explain_api(request, definition_id):
                 definition,
                 registry_access_factory=lambda: SemanticRegistryDataAccess(request=request, **scope_kwargs),
             )
+        except RegistryNotFound as exc:
+            # Shown verbatim in the indicator popover: name the registry, in words
+            # (#2216 -- this used to reach the page as "An internal error occurred").
+            return JsonResponse({"error": str(exc), "registry_id": exc.registry_id}, status=404)
         except SemanticRuntimeError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
+        except LabsAPIError as exc:
+            registry_id = (getattr(definition, "registry_source", None) or {}).get("registry_id")
+            logger.warning("Indicator definitions unreadable for workflow %s: %s", definition_id, exc)
+            return JsonResponse(
+                {
+                    "error": (
+                        f"The indicator definitions (registry {registry_id}) could not be read from "
+                        f"Connect just now (HTTP {exc.status_code or 'error'}). Try again in a moment."
+                    ),
+                    "registry_id": registry_id,
+                },
+                status=502,
+            )
         if not wanted:
             wanted = [
                 (m.get("meta") or {}).get("indicator")

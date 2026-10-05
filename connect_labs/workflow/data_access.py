@@ -19,7 +19,7 @@ import httpx
 from django.conf import settings
 from django.http import HttpRequest
 
-from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClient
+from connect_labs.labs.integrations.connect.api_client import LabsAPIError, LabsRecordAPIClient
 from connect_labs.labs.models import LocalLabsRecord
 from connect_labs.workflow.run_snapshot_store import stored_form
 
@@ -2194,12 +2194,29 @@ class SemanticRegistryDataAccess(BaseDataAccess):
                 registry_id, experiment=self.EXPERIMENT, type=self.RECORD_TYPE, model_class=SemanticRegistryRecord
             )
         scope = {k: v for k, v in home_scope.items() if k in REGISTRY_HOME_SCOPE_KEYS and v is not None}
-        return self.labs_api.get_record_by_id(
-            registry_id,
-            experiment=self.EXPERIMENT,
-            type=self.RECORD_TYPE,
-            model_class=SemanticRegistryRecord,
-            **scope,
+        try:
+            record = self.labs_api.get_record_by_id(
+                registry_id,
+                experiment=self.EXPERIMENT,
+                type=self.RECORD_TYPE,
+                model_class=SemanticRegistryRecord,
+                **scope,
+            )
+        except LabsAPIError as exc:
+            if exc.status_code != 404:
+                raise
+            record = None
+        if record is not None:
+            return record
+        # Not found in that scope -- but the record may since have been made PUBLIC
+        # by its owner, and a binding written before then still names the org scope.
+        # Connect answers an org-scoped read with a 404 to anyone who is not a
+        # member of that org, so a shared registry bound as {registry_id, org} was
+        # unreadable to every outside viewer (#2216: workflow 19778's popover).
+        # Retrying the same id as a public record cannot leak a private one: with no
+        # scope the server serves public records only.
+        return self.labs_api.get_public_record_by_id(
+            registry_id, experiment=self.EXPERIMENT, type=self.RECORD_TYPE, model_class=SemanticRegistryRecord
         )
 
     def create_registry(

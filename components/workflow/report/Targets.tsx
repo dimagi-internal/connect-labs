@@ -1,0 +1,594 @@
+/**
+ * Enrolment against target (VERSION 5): what a programme has enrolled, month by
+ * month, beside the targets it committed to -- and the distance still to go.
+ *
+ * Targets are CONFIG, never code: a report reads them from its workflow's
+ * `config.enrollment_targets` and hands them here with the snapshot's
+ * `monthlyByScope`. Nothing programme-specific lives in this file.
+ *
+ *   {
+ *     source: "KMC Goals | Case & Spend", as_of: "2026-10-05",
+ *     unit: "registered babies", note: "...",
+ *     indicator: "registered_cases",          // optional; the count summed
+ *     llos: {
+ *       NAMA: { before_window: 165, monthly: { "2026-07": 228, ... } },
+ *       ...
+ *     }
+ *   }
+ *
+ * The actual for a month is the snapshot's raw count (`point.counts[ind]`,
+ * which is never suppressed under a min-denominator floor), else the graded
+ * cell's value for runs saved before counts were carried. `before_window` is
+ * the goal sheet's carry-in: enrolments made before the window opened that the
+ * sheet counts toward the total. It is credited to BOTH sides -- it is in the
+ * goal and it has already happened -- so it never moves the gap.
+ */
+import React from 'react';
+import { nCount } from './format';
+
+export interface LloTarget {
+  before_window?: number | null;
+  /** 'YYYY-MM' -> target enrolments that month. */
+  monthly?: Record<string, number>;
+  /** First month this LLO's actuals count from; default its first target month. */
+  start?: string;
+}
+
+export interface EnrolmentTargets {
+  source?: string;
+  as_of?: string;
+  unit?: string;
+  note?: string;
+  indicator?: string;
+  goal?: { programme?: number | null };
+  llos?: Record<string, LloTarget>;
+}
+
+export interface MonthProgress {
+  month: string;
+  target: number;
+  /** Null when the month is in the future, before this scope's start, or unknown. */
+  actual: number | null;
+  future: boolean;
+  cumTarget: number;
+  cumActual: number | null;
+}
+
+export interface EnrolmentProgress {
+  scope: string;
+  llos: string[];
+  months: MonthProgress[];
+  carryIn: number;
+  goal: number;
+  asOfMonth: string;
+  cumActual: number;
+  cumTargetToDate: number;
+  gap: number;
+  gapPct: number | null;
+  remainingMonths: number;
+  runRateNeeded: number | null;
+  /** Past months whose actual could not be read (an old run's suppressed cell). */
+  unknownMonths: string[];
+}
+
+const MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+/** "2026-07" -> "Jul 2026" (or "Jul" when short). */
+export function monthLbl(ym: string, short?: boolean): string {
+  const p = String(ym || '').split('-');
+  const m = MONTHS[Number(p[1]) - 1] || p[1] || '';
+  return short ? m : m + ' ' + p[0];
+}
+
+function nextMonth(ym: string): string {
+  const y = Number(ym.slice(0, 4));
+  const m = Number(ym.slice(5, 7));
+  return m === 12 ? y + 1 + '-01' : y + '-' + (m + 1 < 10 ? '0' : '') + (m + 1);
+}
+
+function monthsBetween(a: string, b: string): string[] {
+  const out: string[] = [];
+  let cur = a;
+  while (cur <= b && out.length < 240) {
+    out.push(cur);
+    cur = nextMonth(cur);
+  }
+  return out;
+}
+
+/** The LLOs that have at least one target, in config order. */
+export function targetedLlos(targets: EnrolmentTargets | null | undefined) {
+  const llos = (targets && targets.llos) || {};
+  return Object.keys(llos).filter(function (k) {
+    const t = llos[k] || {};
+    return (
+      Object.keys(t.monthly || {}).length > 0 || Number(t.before_window) > 0
+    );
+  });
+}
+
+/** The window every chart shares: first to last target month of any LLO. */
+export function targetWindow(
+  targets: EnrolmentTargets | null | undefined,
+): string[] {
+  let lo = '',
+    hi = '';
+  targetedLlos(targets).forEach(function (k) {
+    Object.keys((targets!.llos![k] || {}).monthly || {}).forEach(function (m) {
+      if (!lo || m < lo) lo = m;
+      if (!hi || m > hi) hi = m;
+    });
+  });
+  return lo ? monthsBetween(lo, hi) : [];
+}
+
+function actualOf(point: any, indicator: string): number | null {
+  if (!point) return 0;
+  const c = point.counts && point.counts[indicator];
+  if (typeof c === 'number') return c;
+  const cell = point.ind && point.ind[indicator];
+  if (cell && cell.value !== null && cell.value !== undefined)
+    return Number(cell.value);
+  // A point with no registrations at all has no cell value to suppress.
+  if (point.n === 0) return 0;
+  return null;
+}
+
+/**
+ * Progress for one scope: 'all' (every LLO with a target, summed) or one LLO
+ * by name. `asOf` is the run's as-of date; months after its month are future
+ * and carry the target only. The as-of month itself counts as to-date.
+ */
+export function enrolmentProgress(opts: {
+  targets: EnrolmentTargets;
+  monthlyByScope: Record<string, any[]> | null | undefined;
+  asOf: string;
+  scope: string;
+}): EnrolmentProgress | null {
+  const targets = opts.targets;
+  const all = targetedLlos(targets);
+  const llos =
+    opts.scope === 'all'
+      ? all
+      : all.indexOf(opts.scope) >= 0
+        ? [opts.scope]
+        : [];
+  if (!llos.length) return null;
+  const window = targetWindow(targets);
+  const indicator = targets.indicator || 'registered_cases';
+  const asOfMonth = String(opts.asOf || '').slice(0, 7);
+  const byScope = opts.monthlyByScope || {};
+
+  let carryIn = 0;
+  const unknown: Record<string, boolean> = {};
+  const perMonth = window.map(function (month) {
+    let target = 0;
+    let actual: number | null = 0;
+    let counted = false;
+    llos.forEach(function (llo) {
+      const t = targets.llos![llo] || {};
+      target += Number((t.monthly || {})[month]) || 0;
+      const start =
+        t.start ||
+        Object.keys(t.monthly || {})
+          .sort()
+          .shift() ||
+        window[0];
+      if (month < start || month > asOfMonth) return;
+      counted = true;
+      const points = byScope['llo:' + llo] || [];
+      const pt = points.filter(function (p) {
+        return p && p.month === month;
+      })[0];
+      const a = actualOf(pt, indicator);
+      if (a === null) {
+        unknown[month] = true;
+        return;
+      }
+      actual = (actual as number) + a;
+    });
+    return {
+      month: month,
+      target: target,
+      actual: counted ? actual : null,
+      future: month > asOfMonth,
+    };
+  });
+  llos.forEach(function (llo) {
+    carryIn += Number(targets.llos![llo].before_window) || 0;
+  });
+
+  let cumT = carryIn,
+    cumA = carryIn,
+    cumTargetToDate = carryIn;
+  const months: MonthProgress[] = perMonth.map(function (m) {
+    cumT += m.target;
+    if (!m.future) {
+      cumTargetToDate = cumT;
+      cumA += m.actual || 0;
+    }
+    return Object.assign({}, m, {
+      cumTarget: cumT,
+      // No line before this scope's actuals start counting (an LLO whose
+      // targets begin later than the window), and none into the future.
+      cumActual: m.future || m.actual === null ? null : cumA,
+    });
+  });
+  const goal = cumT;
+  const remaining = months.filter(function (m) {
+    return m.future;
+  }).length;
+  const gap = cumA - cumTargetToDate;
+  return {
+    scope: opts.scope,
+    llos: llos,
+    months: months,
+    carryIn: carryIn,
+    goal: goal,
+    asOfMonth: asOfMonth,
+    cumActual: cumA,
+    cumTargetToDate: cumTargetToDate,
+    gap: gap,
+    gapPct: cumTargetToDate ? gap / cumTargetToDate : null,
+    remainingMonths: remaining,
+    runRateNeeded: remaining ? Math.max(0, goal - cumA) / remaining : null,
+    unknownMonths: Object.keys(unknown).sort(),
+  };
+}
+
+const C_TARGET = '#d1d5db';
+const C_TARGET_FUTURE = '#e5e7eb';
+const C_ACTUAL = '#6366f1';
+const C_CUM_ACTUAL = '#312e81';
+const C_CUM_TARGET = '#9ca3af';
+
+function niceTop(max: number): number {
+  if (max <= 0) return 1;
+  const step = Math.pow(10, Math.floor(Math.log(max) / Math.LN10));
+  const top = Math.ceil(max / step) * step;
+  return top < max ? top + step : top;
+}
+
+/**
+ * Paired monthly bars (target, actual) on the left axis and the two cumulative
+ * lines on the right axis. Future months draw the target bar only, paler.
+ */
+export function EnrolmentTargetChart(props: { progress: EnrolmentProgress }) {
+  const p = props.progress;
+  const months = p.months;
+  const W = 760,
+    H = 240,
+    L = 44,
+    R = 52,
+    T = 14,
+    B = 30;
+  if (!months.length) return null;
+  let maxM = 1,
+    maxC = 1;
+  months.forEach(function (m) {
+    maxM = Math.max(maxM, m.target, m.actual || 0);
+    maxC = Math.max(maxC, m.cumTarget, m.cumActual || 0);
+  });
+  const topM = niceTop(maxM),
+    topC = niceTop(maxC);
+  const iw = W - L - R,
+    ih = H - T - B;
+  const bw = iw / months.length;
+  const yM = function (v: number) {
+    return T + ih - (v / topM) * ih;
+  };
+  const yC = function (v: number) {
+    return T + ih - (v / topC) * ih;
+  };
+  const cx = function (i: number) {
+    return L + i * bw + bw / 2;
+  };
+  const line = function (vals: (number | null)[]) {
+    let d = '';
+    let pen = false;
+    vals.forEach(function (v, i) {
+      if (v === null) {
+        pen = false;
+        return;
+      }
+      d += (pen ? 'L' : 'M') + cx(i).toFixed(1) + ' ' + yC(v).toFixed(1) + ' ';
+      pen = true;
+    });
+    return d;
+  };
+  const asOfIdx = months.filter(function (m) {
+    return !m.future;
+  }).length;
+  const ticks = [0, 0.5, 1];
+  return (
+    <svg
+      viewBox={'0 0 ' + W + ' ' + H}
+      className="w-full h-auto block"
+      role="img"
+      aria-label="Enrolment against target by month"
+    >
+      {ticks.map(function (f) {
+        return (
+          <g key={f}>
+            <line
+              x1={L}
+              x2={W - R}
+              y1={yM(topM * f)}
+              y2={yM(topM * f)}
+              stroke="#eeeef4"
+            />
+            <text
+              x={L - 6}
+              y={yM(topM * f) + 4}
+              fontSize="10"
+              fill="#9ca3af"
+              textAnchor="end"
+            >
+              {nCount(topM * f)}
+            </text>
+            <text
+              x={W - R + 6}
+              y={yC(topC * f) + 4}
+              fontSize="10"
+              fill={C_CUM_ACTUAL}
+              textAnchor="start"
+            >
+              {nCount(topC * f)}
+            </text>
+          </g>
+        );
+      })}
+      {asOfIdx > 0 && asOfIdx < months.length ? (
+        <g>
+          <line
+            x1={L + asOfIdx * bw}
+            x2={L + asOfIdx * bw}
+            y1={T}
+            y2={T + ih}
+            stroke="#a5b4fc"
+            strokeDasharray="4 3"
+          />
+          <text
+            x={L + asOfIdx * bw + 4}
+            y={T + 10}
+            fontSize="10"
+            fill="#6366f1"
+          >
+            future: target only
+          </text>
+        </g>
+      ) : null}
+      {months.map(function (m, i) {
+        const x = L + i * bw;
+        const w = bw * (m.future ? 0.5 : 0.36);
+        const tx = m.future ? x + bw * 0.25 : x + bw * 0.12;
+        const tip =
+          monthLbl(m.month) +
+          ': target ' +
+          nCount(m.target) +
+          (m.future
+            ? ' (future)'
+            : m.actual === null
+              ? ''
+              : ', enrolled ' + nCount(m.actual)) +
+          ' · cumulative target ' +
+          nCount(m.cumTarget) +
+          (m.cumActual === null ? '' : ', enrolled ' + nCount(m.cumActual));
+        return (
+          <g key={m.month}>
+            <title>{tip}</title>
+            {m.target > 0 ? (
+              <rect
+                x={tx.toFixed(1)}
+                y={yM(m.target).toFixed(1)}
+                width={w.toFixed(1)}
+                height={(T + ih - yM(m.target)).toFixed(1)}
+                rx="2"
+                fill={m.future ? C_TARGET_FUTURE : C_TARGET}
+                stroke={m.future ? '#d1d5db' : 'none'}
+                strokeDasharray={m.future ? '3 2' : undefined}
+              />
+            ) : null}
+            {!m.future && m.actual !== null && m.actual > 0 ? (
+              <rect
+                x={(x + bw * 0.52).toFixed(1)}
+                y={yM(m.actual).toFixed(1)}
+                width={(bw * 0.36).toFixed(1)}
+                height={(T + ih - yM(m.actual)).toFixed(1)}
+                rx="2"
+                fill={C_ACTUAL}
+              />
+            ) : null}
+            <text
+              x={cx(i)}
+              y={H - 10}
+              fontSize="10"
+              fill="#6b7280"
+              textAnchor="middle"
+            >
+              {monthLbl(m.month, true) +
+                (i === 0 || m.month.slice(5) === '01'
+                  ? ' ' + m.month.slice(2, 4)
+                  : '')}
+            </text>
+          </g>
+        );
+      })}
+      <path
+        d={line(
+          months.map(function (m) {
+            return m.cumTarget;
+          }),
+        )}
+        fill="none"
+        stroke={C_CUM_TARGET}
+        strokeWidth="2"
+        strokeDasharray="5 4"
+      />
+      <path
+        d={line(
+          months.map(function (m) {
+            return m.cumActual;
+          }),
+        )}
+        fill="none"
+        stroke={C_CUM_ACTUAL}
+        strokeWidth="2.5"
+        strokeLinejoin="round"
+      />
+      {months.map(function (m, i) {
+        return m.cumActual === null ? null : (
+          <circle
+            key={'c' + m.month}
+            cx={cx(i)}
+            cy={yC(m.cumActual)}
+            r="3"
+            fill={C_CUM_ACTUAL}
+            stroke="#fff"
+            strokeWidth="1.5"
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
+function pctLbl(v: number | null): string {
+  if (v === null || v === undefined || isNaN(v)) return '—';
+  return (v > 0 ? '+' : '') + Math.round(v * 100) + '%';
+}
+
+/**
+ * The distance-to-target readout: cumulative actual, cumulative target to date,
+ * the gap (number and %), the full goal, and the monthly run-rate the remaining
+ * months need.
+ */
+export function EnrolmentTargetSummary(props: {
+  progress: EnrolmentProgress;
+  unit?: string;
+}) {
+  const p = props.progress;
+  const last = p.months.length ? p.months[p.months.length - 1].month : '';
+  const behind = p.gap < 0;
+  const items: { label: string; value: string; sub?: string; tone?: string }[] =
+    [
+      {
+        label: 'Enrolled to date',
+        value: nCount(p.cumActual),
+        sub: p.carryIn
+          ? 'incl. ' + nCount(p.carryIn) + ' carried in from before the window'
+          : 'through ' + monthLbl(p.asOfMonth),
+      },
+      {
+        label: 'Target to date',
+        value: nCount(p.cumTargetToDate),
+        sub: 'cumulative through ' + monthLbl(p.asOfMonth),
+      },
+      {
+        label: behind ? 'Behind target' : 'Ahead of target',
+        value:
+          (p.gap > 0 ? '+' : p.gap < 0 ? '−' : '') + nCount(Math.abs(p.gap)),
+        sub: pctLbl(p.gapPct) + ' against target to date',
+        tone: behind ? 'bad' : 'good',
+      },
+      {
+        label: 'Goal by ' + monthLbl(last),
+        value: nCount(p.goal),
+        sub:
+          nCount(Math.max(0, p.goal - p.cumActual)) +
+          ' still to enrol (' +
+          (p.goal ? Math.round((p.cumActual / p.goal) * 100) : 0) +
+          '% reached)',
+      },
+      {
+        label: 'Needed per month',
+        value: p.runRateNeeded === null ? '—' : nCount(p.runRateNeeded),
+        sub: p.remainingMonths
+          ? 'over the ' +
+            p.remainingMonths +
+            ' remaining month' +
+            (p.remainingMonths === 1 ? '' : 's') +
+            ' to reach the goal'
+          : 'the window has closed',
+      },
+    ];
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+      {items.map(function (it) {
+        return (
+          <div
+            key={it.label}
+            className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2"
+          >
+            <div className="text-[11px] uppercase tracking-wide text-gray-500">
+              {it.label}
+            </div>
+            <div
+              className={
+                'text-lg font-semibold ' +
+                (it.tone === 'bad'
+                  ? 'text-red-700'
+                  : it.tone === 'good'
+                    ? 'text-green-700'
+                    : 'text-gray-900')
+              }
+            >
+              {it.value}
+            </div>
+            {it.sub ? (
+              <div className="text-[11px] text-gray-500 leading-snug">
+                {it.sub}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Legend for the chart. */
+export function EnrolmentTargetLegend() {
+  function sw(bg: string, label: string, line?: boolean, dashed?: boolean) {
+    return (
+      <span key={label} className="inline-flex items-center mr-3">
+        <span
+          className={
+            'inline-block mr-1 align-middle ' +
+            (line ? 'w-4 h-0 border-t-2' : 'w-2.5 h-2.5 rounded-sm')
+          }
+          style={
+            line
+              ? {
+                  borderColor: bg,
+                  borderTopStyle: dashed ? 'dashed' : 'solid',
+                }
+              : { background: bg }
+          }
+        />
+        {label}
+      </span>
+    );
+  }
+  return (
+    <div className="text-xs text-gray-500 flex flex-wrap items-center">
+      {sw(C_TARGET, 'Monthly target')}
+      {sw(C_ACTUAL, 'Enrolled that month')}
+      {sw(C_CUM_TARGET, 'Cumulative target', true, true)}
+      {sw(C_CUM_ACTUAL, 'Cumulative enrolled (right axis)', true)}
+    </div>
+  );
+}
