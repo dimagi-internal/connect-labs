@@ -183,11 +183,7 @@ def order_status(
             ),
             "tone": "",
             # The invoice check, as a chip on the money it holds back -- not on the stage bar.
-            "chips": (
-                [{"label": "balance withheld: invoice above agreed", "tone": OURS}]
-                if invoice_above and not paid_all
-                else []
-            ),
+            "chips": ([{"label": "invoice above agreed", "tone": OURS}] if invoice_above and not paid_all else []),
         }
 
     late = (contract_late or {}).get("facts") or {}

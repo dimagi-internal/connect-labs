@@ -94,7 +94,7 @@
           <tr data-testid="grid-actions" data-whose="us">
             <th scope="row" class="px-5 py-1.5 text-left align-top text-sm font-normal text-gray-600">To do</th>
             {% for q in grid.quotes %}
-            <td class="border-l border-gray-100 px-4 py-1.5 align-top"><div class="flex flex-wrap items-start gap-1.5">{% for a in q.ours_actions %}{% if a.terms %}{% ifchanged a.terms %}<a class="text-xs text-brand-indigo hover:underline" data-testid="grid-terms-link" title="{{ a.label }}: once, for the whole tender" href="#duty-terms">duty line</a>{% endifchanged %}{% else %}<a class="button button-sm outline-style" data-testid="grid-action" data-owner="{{ a.owner }}" href="{{ a.href }}">{{ a.label }}</a>{% endif %}{% empty %}<span class="text-gray-600" data-testid="grid-no-move">none</span>{% endfor %}</div></td>
+            <td class="border-l border-gray-100 px-4 py-1.5 align-top"><div class="flex flex-wrap items-start gap-1.5">{% for a in q.ours_actions %}{% if a.terms %}{% ifchanged a.terms %}<a class="text-xs text-brand-indigo hover:underline" data-testid="grid-terms-link" title="Once, for the whole tender, on the import duty line" href="#duty-terms">{{ a.label }}</a>{% endifchanged %}{% else %}<a class="button button-sm outline-style" data-testid="grid-action" data-owner="{{ a.owner }}" href="{{ a.href }}">{{ a.label }}</a>{% endif %}{% empty %}<span class="text-gray-600" data-testid="grid-no-move">none</span>{% endfor %}</div></td>
             {% endfor %}
           </tr>
           <tr data-testid="grid-actions-theirs" data-whose="suppliers">

@@ -116,10 +116,9 @@ def test_the_history_line_that_recorded_a_quote_carries_its_open_facts(da, world
     )
     shown = re.findall(r'data-fact="([^"]+)" data-owner="([^"]+)"', chips.group(1))
     assert [(html.unescape(f), o) for f, o in shown] == expected
-    # The fact, then whose step it is as the comparison's chip: "duty exemption" [to do].
-    assert "status-chip status-chip--fact" in chips.group(1)
+    # One pill per fact, worded with whose step it is: "duty exemption · to do".
     words = [_text(s) for s in re.findall(r"<span[^>]*>([^<]*)</span>", chips.group(1), re.S)]
-    assert words[words.index("duty exemption") + 1] == "to do"
+    assert "duty exemption · to do" in words
 
 
 @pytest.mark.django_db

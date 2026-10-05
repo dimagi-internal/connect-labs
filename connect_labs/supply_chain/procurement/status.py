@@ -360,10 +360,12 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
     ]
     chased_silent = sum(1 for rows in silent.values() if any(o.last_reminder_on for o in rows))
     blocked_terms = sum(1 for c in compared for row in c.blocked if _blocked_by_terms(row))
-    split = [split_gaps(facts) for facts in open_facts.values()]
-    waiting_us = sum(1 for ours_g, _ in split if ours_g)
-    supplier_facts = sum(len(theirs_g) for _, theirs_g in split)
-    supplier_count = sum(1 for _, theirs_g in split if theirs_g)
+    split = {qid: split_gaps(facts) for qid, facts in open_facts.items()}
+    waiting_us = sum(1 for ours_g, _ in split.values() if ours_g)
+    # A supplier's fact is ours to ask until we chase after its quote, then theirs: the tile says which.
+    asked = {qid: asked_since_quote(quote_by_id.get(qid), outreach) for qid in split}
+    to_ask = sum(len(theirs_g) for qid, (_, theirs_g) in split.items() if not asked[qid])
+    waiting = sum(len(theirs_g) for qid, (_, theirs_g) in split.items() if asked[qid])
     oldest = min((m.since for m in ours if m.since), default=None)
     tiles = [
         {
@@ -396,11 +398,8 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
                 p
                 for p in (
                     f"{_plural(waiting_us, 'quote')} with facts to do" if waiting_us else "",
-                    (
-                        f"{_plural(supplier_facts, 'fact')} missing from {_plural(supplier_count, 'supplier')}"
-                        if supplier_facts
-                        else ""
-                    ),
+                    f"{_plural(to_ask, 'fact')} to ask" if to_ask else "",
+                    f"{_plural(waiting, 'fact')} waiting" if waiting else "",
                 )
                 if p
             ),
@@ -735,8 +734,14 @@ def comparison_grid(
             freight_basis = freight_and_duties_for_incoterm(quote.incoterm)[0]
             source = CALC
         freight_label = next((g for g in gaps if g.startswith("freight")), None)
+        # Ex works, the goods are ours at the supplier's door: export clearance and loading at origin
+        # are ours too, not only the main carriage, so the freight we estimate is from there.
+        from_origin = ((quote.incoterm or "").split() or [""])[0].upper() == "EXW"
+        freight_scope = "ours from origin, incl. export clearance" if from_origin else "ours"
         if row.get("freight_ours") == "open":
-            cells["freight"].append(gap("ours: estimate not recorded", label="freight estimate", owner=rules.US))
+            cells["freight"].append(
+                gap(f"{freight_scope}: estimate not recorded", label="freight estimate", owner=rules.US)
+            )
         elif row.get("freight_ours") == "estimate":
             cells["freight"].append(
                 fact(f"ours · USD {money_digits(tender.freight_estimate_per_unit)}{per_unit} (our estimate)", PERSON)
