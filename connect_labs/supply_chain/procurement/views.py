@@ -185,11 +185,11 @@ def _drafts_breakdown(drafts) -> str:
         if (n := counts.get(kind))
     ]
     parts += [f"1 reply to {d.get('supplier_name')}" for d in drafts if d.get("kind") == "reply"]
-    # The tender's terms, told to every invited supplier: one email each, so the
-    # parts still add up to the panel's count.
+    # The tender's terms, told to each supplier they change something for: one email each,
+    # so the parts still add up to the panel's count.
     told = sum(1 for d in drafts if d.get("kind") == "clarification")
     if told:
-        parts.append(f"{told} clarification{'' if told == 1 else 's'} of the duty terms, one to each invited supplier")
+        parts.append(f"{told} clarification{'' if told == 1 else 's'} of the duty terms")
     return " · ".join(parts)
 
 

@@ -102,3 +102,18 @@ class TestOwedNamesItsCounterparty:
         heading = _text(re.search(r'<h2 id="owed" data-testid="owed-heading".*?</h2>', body, re.S).group(0))
         assert heading.startswith("Documents to clear the shipment (via Crescent Rehearsal Freight)")
         assert "Questions and promises" not in heading
+
+
+class TestAnOrderRowReadsOnItsOwnSteps:
+    def test_an_order_held_at_customs_is_on_its_transit_step_not_delivered(self, da, world):
+        """The overview's order bar is the order page's six steps: held at customs is step 4, not Delivery."""
+        from connect_labs.supply_chain.standing import ORDER_BAR
+
+        contract, _ = _held_on_our_form_m(da, world)
+        row = next(r for r in standing_rows(PROGRAM, TODAY) if r.contract_id == contract["id"])
+        assert row.bar_index == ORDER_BAR.index("In transit")
+        assert row.bars == ["done", "done", "done", "now", "todo", "todo"]
+
+    def test_the_overview_keys_both_step_sets(self, da, world, client_in_program):
+        body = client_in_program.get(reverse("supply_chain:home")).content.decode()
+        assert "Order stages: Awarded · Ordered · Dispatched · In transit · Received · Paid" in body
