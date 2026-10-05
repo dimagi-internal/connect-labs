@@ -373,8 +373,16 @@ def semantic_registry_update(
             "INVALID_SCHEMA",
             f"{', '.join(clash)} was sent whole AND edited item by item; send one or the other.",
         )
-    if insert_after is not None and not item_kinds:
-        raise MCPToolError("INVALID_SCHEMA", "insert_after only applies to upsert_* items")
+    if insert_after is not None:
+        anchored = ["measures"] if isinstance(insert_after, str) else list(insert_after or {})
+        unanchored = [k for k in anchored if k in upserts and not upserts[k]]
+        if not anchored or unanchored:
+            raise MCPToolError(
+                "INVALID_SCHEMA",
+                "insert_after places NEW upserted items, but nothing is upserted into "
+                f"{', '.join(unanchored or ['any list'])}; send upsert_{(unanchored or ['measures'])[0]} "
+                "or drop insert_after.",
+            )
 
     access = _access(user, opportunity_id, program_id, organization_id)
     try:
@@ -383,7 +391,7 @@ def semantic_registry_update(
             raise MCPToolError("NOT_FOUND", f"No semantic registry with id {registry_id}")
         if expected_version is not None and before.version != expected_version:
             raise MCPToolError(
-                "CONFLICT",
+                "VERSION_CONFLICT",
                 f"registry {registry_id} is at version {before.version}, not the expected "
                 f"{expected_version}: it changed since you read it. Re-read it with "
                 "semantic_registry_get and reapply your edit.",
