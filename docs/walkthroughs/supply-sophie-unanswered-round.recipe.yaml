@@ -126,6 +126,8 @@ scenes:
     a reminder drafted, and the terms line saying import duty is not settled.'
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
 - id: sophie-chases-sahel
+  # Narrated field by field: its holds carry the voice-over, so the video keeps them (not de-dwelled).
+  pace: teach
   full_page: false
   actions:
   - kind: wait_for
@@ -187,6 +189,8 @@ scenes:
     reminder, with no further reminder before the deadline.
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#draft-supplier-${sahel_supplier_id}
 - id: sahel-finally-answers
+  # Narrated field by field: its holds carry the voice-over, so the video keeps them (not de-dwelled).
+  pace: teach
   full_page: false
   actions:
   - kind: goto
@@ -240,6 +244,8 @@ scenes:
     and sender beside what the AI recorded from it, the reply dated the day it came in.
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#history
 - id: whats-still-missing
+  # Narrated field by field: its holds carry the voice-over, so the video keeps them (not de-dwelled).
+  pace: teach
   full_page: false
   actions:
   - kind: wait_for
@@ -313,6 +319,8 @@ scenes:
     USD 1.20 per carton, sits on the two quotes we import.
   url: /supply/procurement/tenders/${round2_tender_id}/compare/?program_id=${program_id}
 - id: what-we-owe-northgate
+  # Narrated field by field: its holds carry the voice-over, so the video keeps them (not de-dwelled).
+  pace: teach
   full_page: false
   actions:
   - kind: hold
@@ -392,6 +400,8 @@ scenes:
     an answer to write under each.
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
 - id: harmattan-comparable
+  # Narrated field by field: its holds carry the voice-over, so the video keeps them (not de-dwelled).
+  pace: teach
   full_page: false
   actions:
   - kind: hold
@@ -451,6 +461,8 @@ scenes:
     Kanem's and Sahel's quotes still lack facts.
   url: /supply/procurement/tenders/${round2_tender_id}/compare/?program_id=${program_id}
 - id: held-on-us
+  # Narrated field by field: its holds carry the voice-over, so the video keeps them (not de-dwelled).
+  pace: teach
   full_page: false
   actions:
   - kind: hold
@@ -547,6 +559,8 @@ scenes:
     and returns to the order's status view.
   url: /supply/orders/${contract_id}/?program_id=${program_id}
 - id: whose-move
+  # Narrated field by field: its holds carry the voice-over, so the video keeps them (not de-dwelled).
+  pace: teach
   full_page: false
   actions:
   - kind: hold
