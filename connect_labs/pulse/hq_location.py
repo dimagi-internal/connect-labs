@@ -13,10 +13,14 @@ which*, because the alternative is a map that draws a rooftop pin from the word
   region   a region of operation matched an ADM1 boundary      a district, not a desk
   country  only the country is known                           a country, drawn as one
 
-Sources are both already in this repository. Towns come from ``static/pulse/
-towns.js`` -- GeoNames cities500, filtered to the countries Connect delivers in,
-which pulse already ships for its "nearest town" labels. Regions and countries
-come from ``labs.admin_boundaries``, the same PostGIS polygons ``geo.py`` uses.
+Sources are both in this repository. Towns come from ``pulse/data/hq_towns.tsv.gz``
+-- GeoNames cities500 for every African country plus the others the directory
+names (``tools/build_hq_towns.py``). It is deliberately NOT ``static/pulse/
+towns.js``: that file is cut to the countries Connect delivers in so the browser
+can afford it, and reading it here left every partner in Zambia, Malawi or
+Ethiopia -- and every office abroad -- at "country only" however good its
+address was. Regions and countries come from ``labs.admin_boundaries``, the same
+PostGIS polygons ``geo.py`` uses.
 Nothing here calls an external geocoder: partner addresses are not ours to send
 to a third party, and a network dependency inside an import is a bad trade for
 data that changes a few times a year.
@@ -24,6 +28,7 @@ data that changes a few times a year.
 
 from __future__ import annotations
 
+import gzip
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -32,7 +37,7 @@ from pathlib import Path
 
 from connect_labs.microplans.core import iso as iso_codes
 
-TOWNS_JS = Path(__file__).parent.parent / "static" / "pulse" / "towns.js"
+HQ_TOWNS = Path(__file__).parent / "data" / "hq_towns.tsv.gz"
 
 # Address words that are never a town. Without this "Center", "Office" and
 # "Road" match real towns somewhere and scatter partners across the map.
@@ -45,7 +50,59 @@ _STOP = frozenset("""
     north south east west central federal republic democratic united
     """.split())
 
-_WORD = re.compile(r"[A-Za-zÀ-ÿ']{3,}")
+# Words that make the word BEFORE them a street, not a place: "Mumias Rd,
+# Nairobi" is in Nairobi, and "Luwingu Road, Kasama" is in Kasama. Streets are
+# named after towns everywhere, and without this the bigger town wins.
+_STREET = frozenset("""
+    street st road rd avenue ave close crescent lane drive way highway hwy
+    boulevard blvd bypass bye pass link expressway
+    """.split())
+
+# Words that make the word before them an administrative area named after its
+# seat. "Daru ... Kailahun District" is in Daru, not Kailahun town; but
+# "Kaita Road, Katsina State" names no other place, and Katsina is the right
+# answer there. So these demote a match rather than discard it.
+_ADMIN = frozenset("district state province region county chiefdom division lga municipality".split())
+
+# Below this a single-word match is more likely an English word that happens to
+# name a hamlet somewhere ("Science", "Local") than the place an office is in.
+# Multi-word names ("Dar es Salaam") are specific enough not to need it.
+_MIN_SINGLE_WORD_POPULATION = 1000
+
+# Districts of a city that addresses name instead of the city itself, and which
+# cities500 does not carry as places of their own. Keyed by alpha2, folded.
+# Add a row when the import reports an address that names one.
+_DISTRICT_OF = {
+    "CD": {
+        name: "kinshasa"
+        for name in (
+            "gombe",
+            "lingwala",
+            "kintambo",
+            "ngaliema",
+            "limete",
+            "kalamu",
+            "bandalungwa",
+            "barumbu",
+            "kasa vubu",
+            "lemba",
+            "matete",
+            "masina",
+            "ndjili",
+            "kimbanseke",
+            "mont ngafula",
+            "selembao",
+            "bumbu",
+            "makala",
+            "ngiri ngiri",
+            "ngaba",
+            "kisenso",
+            "maluku",
+            "nsele",
+        )
+    },
+    "UG": {name: "kampala" for name in ("kawempe", "makindye", "nakawa", "rubaga", "lubaga")},
+}
 
 
 def _fold(value: str) -> str:
@@ -54,24 +111,34 @@ def _fold(value: str) -> str:
     return re.sub(r"\s+", " ", stripped.lower()).strip()
 
 
-@lru_cache(maxsize=1)
-def _towns() -> dict[str, dict[str, tuple[float, float]]]:
-    """{alpha2: {folded town name: (lat, lon)}} parsed from the shipped JS.
+@dataclass(frozen=True)
+class _Town:
+    name: str
+    lat: float
+    lon: float
+    population: int
 
-    Parsed rather than duplicated into Python: two copies of a gazetteer drift,
-    and the JS file is the one pulse's own map labels already use.
+
+@lru_cache(maxsize=1)
+def _towns() -> dict[str, dict[str, _Town]]:
+    """{alpha2: {name key: town}} from the generated gazetteer.
+
+    Keyed by ``_name_key`` so "Mont-Ngafula" and "Mont Ngafula" are one place.
+    The file is sorted by population descending, so the first writer is the
+    bigger place and keeps an ambiguous name rather than a hamlet stealing it.
     """
-    if not TOWNS_JS.exists():  # pragma: no cover - the file ships with the app
+    if not HQ_TOWNS.exists():  # pragma: no cover - the file ships with the app
         return {}
-    out: dict[str, dict[str, tuple[float, float]]] = {}
-    pattern = re.compile(r"\['([^']+)',\s*'([A-Z]{2})',\s*(-?[\d.]+),\s*(-?[\d.]+)\]")
-    for name, cc, lat, lon in pattern.findall(TOWNS_JS.read_text()):
-        folded = _fold(name)
-        if len(folded) < 4 or folded in _STOP:
-            continue
-        # First writer wins: cities500 is ordered by population, so the bigger
-        # place keeps an ambiguous name rather than a hamlet stealing it.
-        out.setdefault(cc, {}).setdefault(folded, (float(lat), float(lon)))
+    out: dict[str, dict[str, _Town]] = {}
+    with gzip.open(HQ_TOWNS, "rt", encoding="utf-8") as fh:
+        for line in fh:
+            if line.startswith("#"):
+                continue
+            name, cc, lat, lon, population = line.rstrip("\n").split("\t")
+            key = _name_key(name)
+            if len(key) < 4 or key in _STOP:
+                continue
+            out.setdefault(cc, {}).setdefault(key, _Town(name, float(lat), float(lon), int(population)))
     return out
 
 
@@ -199,42 +266,84 @@ def _region_point(iso3: str, regions: str) -> tuple[float, float, str] | None:
 
 
 def _city_point(iso3: str, address: str) -> tuple[float, float, str] | None:
-    alpha2 = iso_codes.to_alpha2(iso3)
-    table = _towns().get(alpha2 or "", {})
+    """The town an address is in, or None.
+
+    Every run of one to four words is a candidate, so "Dar es Salaam" is found
+    whole -- an earlier version dropped words under three letters before
+    matching and so looked for "dar salaam", which is nowhere. A candidate
+    followed by a street word is a street and is skipped. When several real
+    towns appear, the biggest wins: an address names its neighbourhood and its
+    city, and the city is the head office's location ("Kawempe ..., Kampala").
+    A name followed by "District" or "State" only wins when nothing else does.
+    """
+    alpha2 = iso_codes.to_alpha2(iso3) or ""
+    table = _towns().get(alpha2, {})
+    districts = _DISTRICT_OF.get(alpha2, {})
     if not table or not address:
         return None
-    words = [w for w in (_fold(w) for w in _WORD.findall(address)) if w not in _STOP]
-    # Two-word names first ("Port Harcourt"), then single words, so the more
-    # specific place wins before a component of it does.
-    for size in (3, 2, 1):
+    words = _name_key(address).split()
+    best: tuple[tuple[bool, int, int], _Town] | None = None
+    for size in (4, 3, 2, 1):
         for i in range(len(words) - size + 1):
+            following = words[i + size] if i + size < len(words) else ""
+            if following in _STREET:
+                continue
             candidate = " ".join(words[i : i + size])
-            hit = table.get(candidate)
-            if hit:
-                return hit[0], hit[1], candidate.title()
-    return None
+            if size == 1 and (len(candidate) < 4 or candidate in _STOP):
+                continue
+            town = table.get(candidate) or table.get(districts.get(candidate, ""))
+            if town is None:
+                continue
+            if size == 1 and town.population < _MIN_SINGLE_WORD_POPULATION:
+                continue
+            # A named place beats an area named after one; then the biggest
+            # town; among equals, the one later in the address, because
+            # addresses run from the street out to the city.
+            rank = (following not in _ADMIN, town.population, i)
+            if best is None or rank > best[0]:
+                best = (rank, town)
+    if best is None:
+        return None
+    town = best[1]
+    return town.lat, town.lon, town.name
 
 
-def resolve(countries: str, regions: str, address: str) -> HqLocation | None:
-    """Finest location the row supports, or None when even the country is absent."""
-    raw = (countries or "").replace('"', "").strip()
+def _countries(raw: str) -> list[str]:
+    """Every ISO3 the countries cell names, in the order it names them."""
+    raw = (raw or "").replace('"', "").strip()
     # Whole string first. Several ISO names contain a comma -- "Congo, the
     # Democratic Republic of the" -- and splitting on it leaves "Congo", which
     # resolves to the OTHER Congo. Only a name that fails whole gets split, for
     # the cells that really do list several countries.
-    iso3 = country_to_iso3(raw)
-    if not iso3:
-        for part in raw.split(","):
-            iso3 = country_to_iso3(part.strip())
-            if iso3:
-                break
-    if not iso3:
+    whole = country_to_iso3(raw)
+    if whole:
+        return [whole]
+    found: list[str] = []
+    for part in raw.split(","):
+        iso3 = country_to_iso3(part.strip())
+        if iso3 and iso3 not in found:
+            found.append(iso3)
+    return found
+
+
+def resolve(countries: str, regions: str, address: str) -> HqLocation | None:
+    """Finest location the row supports, or None when even the country is absent.
+
+    The address is tried against every country the row lists, in order: an
+    organisation that works in Sierra Leone but writes a London office address
+    is located in London, not at the middle of Sierra Leone. The country it
+    falls back to is still the first one listed.
+    """
+    isos = _countries(countries)
+    if not isos:
         return None
 
-    city = _city_point(iso3, address)
-    if city:
-        return HqLocation(city[0], city[1], "city", city[2], iso3)
+    for iso3 in isos:
+        city = _city_point(iso3, address)
+        if city:
+            return HqLocation(city[0], city[1], "city", city[2], iso3)
 
+    iso3 = isos[0]
     region = _region_point(iso3, regions)
     if region:
         return HqLocation(region[0], region[1], "region", region[2], iso3)
