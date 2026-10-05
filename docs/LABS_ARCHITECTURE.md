@@ -1,8 +1,6 @@
 # Labs Architecture
 
-> **Status (2026-07-25 doc-regen):** partially outdated — the '7 labs apps' count predates microplans/campaign/pages/funder_dashboard/mcp etc., and 'labs never writes domain data to the local database' is no longer true for labs-only synthetic opps (`labs/synthetic/local_records_backend.py`). Diagrams and CRUD flow remain useful.
-
-Most production apps have been removed from this codebase. Only the 7 labs apps plus minimal retained apps (for models/migrations) remain. See [CLAUDE.md](../CLAUDE.md) for the full app map.
+How data moves through labs. The app list, per-app ownership and cross-app connections live in [CLAUDE.md](../CLAUDE.md) § App Map; this doc covers the flows they share.
 
 ## System Overview
 
@@ -25,11 +23,17 @@ Labs Django (labs.connect.dimagi.com / localhost:8000)
   │
   ├── Celery tasks ────────────────► Redis (localhost:6379)
   │
-  └── Local cache only ────────────► PostgreSQL (localhost:5432)
-                                       └── RawVisitCache, ComputedVisitCache, ComputedFLWCache
+  └── Labs database ───────────────► PostgreSQL + PostGIS (localhost:5432)
+                                       ├── caches: RawVisitCache, ComputedVisitCache, ComputedFLWCache
+                                       ├── LabsLocalRecord: LabsRecords of labs-only opps (id ≥ 10,000)
+                                       └── labs-owned domain tables (supply_chain, microplans, marketplace, …)
 ```
 
-**Labs never writes domain data to the local database.** All persistent data lives in production via the LabsRecord API. The local PostgreSQL is used only for Django sessions, the analysis cache, and admin boundary GIS data.
+**Where data lives.** Records that describe work on a real Connect opportunity (audits, tasks, workflows, pipelines, flags, solicitations) live in production via the LabsRecord API. Three things live in the labs database instead:
+
+- **Caches** of production exports (visits, computed rows), and sessions.
+- **LabsRecords of labs-only opportunities** (id ≥ 10,000). `LabsRecordAPIClient` sends them to `labs/synthetic/local_records_backend.py`, which stores them as `LabsLocalRecord` rows with no HTTP and no permission check.
+- **Labs-owned domains** with real Django models: `supply_chain` (its system of record), `microplans`, `marketplace`, `benchmarks`, `audit_trail`, admin boundaries and targeting indicators. These have no Connect counterpart.
 
 ## Data Flow: LabsRecord CRUD
 
@@ -40,7 +44,7 @@ This is the primary data flow for audit, tasks, workflow, and solicitations.
        │
        ▼
 2. Django view receives request
-   ├── request.user          → LabsUser (transient, from session OAuth)
+   ├── request.user          → Django User (created/updated at OAuth login)
    ├── request.labs_context  → {opportunity_id, program_id, organization_id}
    └── request.session["labs_oauth"]["access_token"] → OAuth Bearer token
        │
@@ -56,8 +60,11 @@ This is the primary data flow for audit, tasks, workflow, and solicitations.
    └── client.delete_record(record_id=123)
        │
        ▼
-5. LabsRecordAPIClient makes HTTP request to production
-   └── POST/GET/DELETE https://connect.dimagi.com/export/labs_record/
+5. LabsRecordAPIClient routes the call
+   ├── labs-only opp (id ≥ 10,000) → local_records_backend (labs DB, no HTTP)
+   └── otherwise → POST/GET/DELETE https://connect.dimagi.com/export/labs_record/
+   (a workflow_run snapshot is encoded on write and decoded on read here; see
+    workflow/run_codec.py and workflow/run_snapshot_store.py)
        │
        ▼
 6. Production validates OAuth token (scope: "export")
@@ -99,24 +106,6 @@ Used by audit (visit filtering) and workflow (pipeline data).
 7. Returns result objects (FLWRow, VisitRow with custom_fields)
 ```
 
-## Cross-App Dependency Matrix
-
-| App | Depends on | Used by | Shared via |
-|-----|-----------|---------|------------|
-| `labs/` | (none — foundation) | All apps | `LabsRecordAPIClient`, `LocalLabsRecord`, middleware, `AnalysisPipeline` |
-| `audit/` | `labs/` | `workflow/`, `tasks/` (ref only) | `AuditDataAccess`, `AuditSessionRecord` |
-| `tasks/` | `labs/` | `workflow/` | `TaskDataAccess`, `TaskRecord` |
-| `workflow/` | `labs/`, `audit/`, `tasks/` | `ai/` | `WorkflowDataAccess`, `PipelineDataAccess` |
-| `ai/` | `workflow/`, `solicitations/` | (called from UI) | Agent functions via SSE |
-| `solicitations/` | `labs/` | `ai/` | `SolicitationsDataAccess` |
-| `coverage/` | CommCare HQ OAuth | (standalone) | `CoverageDataAccess` |
-
-**Import direction:**
-- Workflow imports `AuditDataAccess` and `TaskDataAccess` to create audits/tasks from workflow actions
-- AI agents import `WorkflowDataAccess` and `SolicitationsDataAccess` to modify data via tool calls
-- Tasks store `audit_session_id` as a reference but don't import audit code
-- Coverage is fully standalone (uses CommCare HQ, not Connect production)
-
 ## LabsRecord Data Model
 
 Every record stored via the API has these fields:
@@ -124,7 +113,7 @@ Every record stored via the API has these fields:
 | Field | Type | Purpose |
 |-------|------|---------|
 | `id` | int | Auto-incrementing, assigned by production |
-| `experiment` | str | App namespace: `"audit"`, `"tasks"`, `"workflow"`, `"pipeline"`, `"solicitations"` |
+| `experiment` | str | Namespace: a fixed app name (`"audit"`, `"tasks"`, `"workflow"`, `"pipeline"`, `"semantic"`, `"flags"`) or, for solicitations, a program / LLO entity id. Full table: CLAUDE.md § Record Type Conventions |
 | `type` | str | Record type within experiment: `"AuditSession"`, `"Task"`, `"workflow_definition"`, etc. |
 | `data` | JSON | All domain-specific fields (the actual content) |
 | `username` | str | Primary user identifier (NOT user_id) |
@@ -164,7 +153,10 @@ Labs uses three frontend approaches depending on complexity:
 ```
 What data do you need?
 │
-├── Domain data (records you create/manage)
+├── Domain data with no Connect counterpart that needs relational work
+│   └── Real Django models in the labs DB (see supply_chain/, microplans/)
+│
+├── Records about a Connect opportunity/program (create/manage)
 │   └── Use LabsRecordAPIClient via data_access.py
 │       ├── Define proxy model (subclass LocalLabsRecord)
 │       ├── Create DataAccess class wrapping LabsRecordAPIClient
@@ -184,8 +176,11 @@ What data do you need?
 ├── AI agent integration
 │   └── Add agent in ai/agents/, register tools, use AIStreamView for SSE
 │
+├── Something an agent should be able to do
+│   └── An MCP tool in mcp/tools/ (or the app's mcp_tools.py), registered via tool_registry
+│
 └── Async processing (long-running tasks)
-    └── Celery task in {app}/tasks.py, SSE streaming for progress updates
+    └── Celery task in {app}/tasks.py; persist progress on the record and let the page poll it
 ```
 
 ## Related Documentation

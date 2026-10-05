@@ -1,5 +1,7 @@
 # Durable GDrive-backed profile bundles (follow-up to #655)
 
+> **Status: shipped (PR #660, 2026-06-19) — historical record, not current-state.**
+
 **Date:** 2026-06-19
 **Status:** Design — pending review
 **Author:** Jonathan Jackson (with Claude)

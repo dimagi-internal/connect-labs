@@ -1,5 +1,7 @@
 # Synthetic Sample Data for Labs Opportunities — Design
 
+> **Status: shipped (PR #68, 2026-04-20) — historical record, not current-state.**
+
 **Date:** 2026-04-20
 **Author:** jjackson + Claude
 **Status:** Design approved; implementation plan pending

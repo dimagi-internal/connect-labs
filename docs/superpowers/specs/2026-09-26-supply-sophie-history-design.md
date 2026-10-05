@@ -1,5 +1,7 @@
 # Supply: record history, provenance, and Sophie's program view
 
+> **Status: shipped (PR #2075, 2026-09-26) — historical record, not current-state.**
+
 Status: design approved in conversation 2026-09-26; spec awaiting review.
 
 ## 1. Why

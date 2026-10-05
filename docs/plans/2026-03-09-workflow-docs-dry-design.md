@@ -1,5 +1,7 @@
 # Workflow Engine Documentation & Tooling DRY Refactor
 
+> **Status: shipped (2026-03-09) — historical record, not current-state.**
+
 **Date:** 2026-03-09
 **Status:** Approved
 

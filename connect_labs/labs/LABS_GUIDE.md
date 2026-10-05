@@ -44,10 +44,10 @@ Follow the standard Connect setup in the main [README.md](../../README.md), then
 
 ## Key Architecture
 
-- **OAuth Authentication**: Session-based, no local user database
-- **Data Storage**: Production LabsRecord API (not local database)
-- **API Client**: `LabsRecordAPIClient` for all data operations
-- **Transient Objects**: `LabsUser` and `LocalLabsRecord` (never saved locally)
+- **OAuth Authentication**: OAuth login via production Connect creates/updates a Django `User` (`User.objects.update_or_create()`); the token rides in `request.session["labs_oauth"]`
+- **Data Storage**: Production LabsRecord API for records about real opportunities; labs-only opps (id ≥ 10,000) and labs-owned domains (e.g. `supply_chain`) live in the labs DB — see `docs/LABS_ARCHITECTURE.md`
+- **API Client**: `LabsRecordAPIClient` for all LabsRecord operations (it routes labs-only opps locally)
+- **Proxy Objects**: `LocalLabsRecord` subclasses are read-only views over the API response (`.save()` raises)
 
 ## Getting Started
 
@@ -85,7 +85,7 @@ user_profile = introspect_token(
 # user_profile contains: {id, username, email, first_name, last_name}
 ```
 
-**Create LabsUser from CLI Token:**
+**Get a Django User from the CLI Token:**
 
 ```python
 from connect_labs.labs.integrations.connect.cli import get_labs_user_from_token
@@ -244,14 +244,13 @@ token_data = get_oauth_token(
     client_secret="secret"  # Required for introspection
 )
 
-# Create LabsUser from saved token
+# Get a Django User from the saved token
 user = get_labs_user_from_token()
 
 # Manage tokens
 manager = TokenManager()
 access_token = manager.get_valid_token()
-user_profile = manager.get_user_profile()
-has_profile = manager.has_user_profile()
+expired = manager.is_expired()
 ```
 
 ## Settings Configuration
@@ -340,8 +339,8 @@ if __name__ == "__main__":
 
 ## Important Notes
 
-1. **No Local Storage**: User profiles are NOT stored locally - they're fetched at runtime via token introspection
-2. **No Local Database Writes**: `LocalLabsRecord` and `LabsUser` cannot be saved locally
+1. **CLI user profiles** are fetched at runtime via token introspection; web logins create/update a Django `User`
+2. **No `.save()` on records**: `LocalLabsRecord` cannot be saved locally — persist through `LabsRecordAPIClient`
 3. **Opportunity Scoping**: All API calls are scoped to an opportunity_id
 4. **Username, not User ID**: Production API uses username as primary identifier
 5. **Lists, not QuerySets**: API returns Python lists, not Django QuerySets

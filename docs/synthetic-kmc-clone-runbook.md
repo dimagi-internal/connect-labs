@@ -1,37 +1,11 @@
 # KMC Synthetic Clone Runbook
 
+> **When to use this runbook:** to build or refresh a **named cohort** of clones from a YAML spec (`connect_labs/labs/synthetic/cohorts/*.yaml`) — a pinned `program_id`, `curate`, and regenerating the same labs-only opps in place. For a one-off clone into a new program, use `synthetic_clone_opp` instead (see `docs/SYNTHETIC_OPPS.md`).
+
 Clone the 11 production KMC opportunities into a single labs-only "KMC (Synthetic)" program
-using the two-phase profile/generate workflow.
-
----
-
-## Preferred: local generation + MCP repoint (fast, no prod DB)
-
-Phase 2 is pure compute + GDrive I/O — it does **not** need prod Connect. Run the
-heavy generation on a fast local machine and keep all DB writes server-side via the
-`connect_labs` MCP. This avoids the slow, timeout-prone server-side generation (a
-large cohort can drop the MCP transport mid-run).
-
-Only the **GDrive service-account** creds are needed locally (no prod DB):
-
-```bash
-LABS_SYNTHETIC_GDRIVE_SA_KEY=<json-or-path> \
-LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID=<folder-id> \
-  python manage.py synthetic_generate_opps --spec kmc.yaml --no-register
-```
-
-This reads the Phase-1 bundles, regenerates fixtures locally, uploads each to a new
-GDrive folder, and prints one `source_opp -> gdrive_folder_id` line per opp. Then,
-over the `connect_labs` MCP, per line:
-
-- **Overwrite an existing cloned opp in place** (same labs opp id, matched by
-  `cloned_from`): `synthetic_repoint_by_source(source_opportunity_id=<src>, gdrive_folder_id=<folder>)`
-- **Register a brand-new opp**: `synthetic_create_labs_only(gdrive_folder_id=<folder>, label=..., program_id=...)`
-
-`synthetic_repoint_by_source` is the server-side half: it does the `cloned_from`
-lookup + pointer update with the labs DB, so the generating machine never needs DB
-access. Use this for regenerating the existing KMC opps (10012–10022) after a
-generator change (e.g. enabling `mirror`).
+using the two-phase profile/generate workflow. All synthetic work runs on the background
+worker (#2140): an MCP call queues a job and waits up to 8 minutes, or returns a `task_id`
+at once with `wait=false` (follow it with `synthetic_job_status`).
 
 ---
 
@@ -40,7 +14,7 @@ generator change (e.g. enabling `mirror`).
 Describe the cohort once in a YAML spec, then run two commands. Hand the **same file** to
 both — Step 1 records the resolved `bundle_root` back into it.
 
-**`kmc.yaml`:**
+**`kmc.yaml`** (illustrative; the live spec is `connect_labs/labs/synthetic/cohorts/kmc.yaml`, pinned to program 10011):
 ```yaml
 program_id: 10010                       # optional — auto-allocated + written back if omitted
 program_name: "KMC (Synthetic)"
@@ -223,6 +197,26 @@ persist in Drive, you can recover or rebuild **without re-touching production**:
 
 ---
 
+## Fallback: generate on a laptop, repoint over MCP
+
+Phase 2 needs only the GDrive service account, not the labs DB. If the worker is
+unavailable, generate locally and repoint server-side:
+
+```bash
+LABS_SYNTHETIC_GDRIVE_SA_KEY=<json-or-path> \
+LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID=<folder-id> \
+  python manage.py synthetic_generate_opps --spec kmc.yaml --no-register
+```
+
+It prints one `source_opp -> gdrive_folder_id` line per opp. For each, call
+`synthetic_repoint_by_source(source_opportunity_id=<src>, gdrive_folder_id=<folder>)`
+to overwrite the existing clone in place (matched by `cloned_from`), or
+`synthetic_create_labs_only(...)` for a new one. An opp repointed this way is **not**
+marked generated until `python manage.py synthetic_mark_generated --apply` runs
+(see `docs/SYNTHETIC_OPPS.md`, "Provenance").
+
+---
+
 ## Verification
 
 ### Labs picker
@@ -270,4 +264,4 @@ A healthy report shows:
 | Phase 2 `skipped=True` for all opps | Rows already exist and `fresh=False` | Pass `fresh=True` to regenerate |
 | `app_structure_present=False` after generate | The opp's HQ app returned empty app_structure in Phase 1 | Re-run Phase 1 for that opp ID; check HQ app is published |
 | High correlation Frobenius (> 0.5) | Very small visit count (< 50) means poor rank correlation estimates | Expected for small opps; not a bug |
-| GDrive upload error | Service-account credentials not configured on the labs server | Check `GDRIVE_SERVICE_ACCOUNT_KEY` env var |
+| GDrive upload error | Service-account credentials not configured on the labs server | Check the `LABS_SYNTHETIC_GDRIVE_SA_KEY` env var |

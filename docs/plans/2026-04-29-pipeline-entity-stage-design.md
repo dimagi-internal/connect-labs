@@ -1,5 +1,7 @@
 # Pipeline: Entity Stage
 
+> **Status: shipped (PR #103, 2026-04-29) — historical record, not current-state.**
+
 **Date:** 2026-04-29
 **Status:** Draft
 **Prerequisite for:** the runs/snapshots framework — canonical design: [Run State (final)](2026-05-04-run-state-final.md)

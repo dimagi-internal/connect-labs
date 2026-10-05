@@ -1,5 +1,7 @@
 # The labs supply domain, and RUTF procurement — design
 
+> **Status: shipped (PR #1768, 2026-09-12) — the "not yet implemented" line below is stale — historical record, not current-state.**
+
 **Status:** approved design, not yet implemented.
 **Date:** 2026-09-11 (revised same day twice: see "Clients, not callers", and
 section 2 on the `/supply/` domain).
