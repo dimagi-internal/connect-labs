@@ -336,9 +336,8 @@ export function EnrolmentTargetChart(props: { progress: EnrolmentProgress }) {
     });
     return d;
   };
-  const asOfIdx = months.filter(function (m) {
-    return !m.future;
-  }).length;
+  // No as-of divider: the paler, dashed future bars already say which months
+  // are still to come, and a labelled line through the chart read as noise.
   const ticks = [0, 0.5, 1];
   return (
     <svg
@@ -378,26 +377,6 @@ export function EnrolmentTargetChart(props: { progress: EnrolmentProgress }) {
           </g>
         );
       })}
-      {asOfIdx > 0 && asOfIdx < months.length ? (
-        <g>
-          <line
-            x1={L + asOfIdx * bw}
-            x2={L + asOfIdx * bw}
-            y1={T - 22}
-            y2={T + ih}
-            stroke="#a5b4fc"
-            strokeDasharray="4 3"
-          />
-          <text
-            x={L + asOfIdx * bw + 4}
-            y={T - 10}
-            fontSize="10"
-            fill="#6366f1"
-          >
-            future: target only
-          </text>
-        </g>
-      ) : null}
       {months.map(function (m, i) {
         const x = L + i * bw;
         const w = bw * (m.future ? 0.5 : 0.36);
@@ -627,6 +606,311 @@ export function EnrolmentTargetLegend() {
       {sw(C_ACTUAL, 'Enrolled that month')}
       {sw(C_CUM_TARGET, 'Cumulative target', true, true)}
       {sw(C_CUM_ACTUAL, 'Cumulative enrolled (right axis)', true)}
+    </div>
+  );
+}
+
+// ── VERSION 6: this month, day by day ────────────────────────────────────────
+
+function swatch(bg: string, label: string, line?: boolean, dashed?: boolean) {
+  return (
+    <span key={label} className="inline-flex items-center mr-3">
+      <span
+        className={
+          'inline-block mr-1 align-middle ' +
+          (line ? 'w-4 h-0 border-t-2' : 'w-2.5 h-2.5 rounded-sm')
+        }
+        style={
+          line
+            ? { borderColor: bg, borderTopStyle: dashed ? 'dashed' : 'solid' }
+            : { background: bg }
+        }
+      />
+      {label}
+    </span>
+  );
+}
+
+export interface DailySnapshot {
+  months?: string[];
+  as_of?: string;
+  byScope?: Record<string, Record<string, number[]>>;
+}
+
+export interface DailyProgress {
+  month: string;
+  previousMonth: string;
+  daysInMonth: number;
+  day: number;
+  /** Running total by day, day 1 .. the as-of day. */
+  cumulative: number[];
+  /** Last month's running total by day, its full length. */
+  previous: number[];
+  target: number;
+  onPace: number;
+  enrolled: number;
+  gap: number;
+  /** Last month's running total by the same day (null if it had no such day). */
+  previousByDay: number | null;
+}
+
+function daysIn(ym: string): number {
+  const y = Number(ym.slice(0, 4)),
+    m = Number(ym.slice(5, 7));
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
+function running(xs: number[]): number[] {
+  let t = 0;
+  return (xs || []).map(function (v) {
+    t += Number(v) || 0;
+    return t;
+  });
+}
+
+function addInto(acc: number[], xs: number[] | undefined) {
+  (xs || []).forEach(function (v, i) {
+    acc[i] = (acc[i] || 0) + (Number(v) || 0);
+  });
+}
+
+/**
+ * The as-of month against its target, day by day, for 'all' (every LLO with a
+ * target, summed -- the same population as the monthly chart) or one LLO. The
+ * on-pace line is the month's target spread evenly over its days.
+ */
+export function dailyProgress(opts: {
+  targets: EnrolmentTargets;
+  daily: DailySnapshot | null | undefined;
+  scope: string;
+}): DailyProgress | null {
+  const d = opts.daily;
+  if (!d || !d.months || d.months.length < 2 || !d.byScope) return null;
+  const all = targetedLlos(opts.targets);
+  const llos =
+    opts.scope === 'all'
+      ? all
+      : all.indexOf(opts.scope) >= 0
+        ? [opts.scope]
+        : [];
+  if (!llos.length) return null;
+  const prevM = d.months[0],
+    curM = d.months[1];
+  const cur: number[] = [],
+    prev: number[] = [];
+  let target = 0;
+  llos.forEach(function (llo) {
+    const s = d.byScope!['llo:' + llo] || {};
+    addInto(cur, s[curM]);
+    addInto(prev, s[prevM]);
+    target +=
+      Number(((opts.targets.llos![llo] || {}).monthly || {})[curM]) || 0;
+  });
+  const days = daysIn(curM);
+  const day = Math.max(
+    cur.length,
+    Number(String(d.as_of || '').slice(8, 10)) || cur.length,
+  );
+  while (cur.length < day) cur.push(0);
+  const cumulative = running(cur);
+  const previous = running(prev);
+  const enrolled = cumulative.length ? cumulative[cumulative.length - 1] : 0;
+  const onPace = (target * day) / days;
+  return {
+    month: curM,
+    previousMonth: prevM,
+    daysInMonth: days,
+    day: day,
+    cumulative: cumulative,
+    previous: previous,
+    target: target,
+    onPace: onPace,
+    enrolled: enrolled,
+    gap: enrolled - onPace,
+    previousByDay: previous.length >= day ? previous[day - 1] : null,
+  };
+}
+
+/** "Day 4 of 31: 247 enrolled vs 194 on pace (+53) · last month by day 4: 180". */
+export function dailyReadout(p: DailyProgress): string {
+  const g = Math.round(p.gap);
+  return (
+    'Day ' +
+    p.day +
+    ' of ' +
+    p.daysInMonth +
+    ': ' +
+    nCount(p.enrolled) +
+    ' enrolled vs ' +
+    nCount(p.onPace) +
+    ' on pace (' +
+    (g > 0 ? '+' : g < 0 ? '−' : '±') +
+    nCount(Math.abs(g)) +
+    ')' +
+    (p.previousByDay === null
+      ? ''
+      : ' · last month by day ' + p.day + ': ' + nCount(p.previousByDay))
+  );
+}
+
+/**
+ * This month, day by day, on one axis: the running total of enrolments (solid),
+ * the month's target spread evenly over its days (dashed, "on pace"), and last
+ * month's running total (grey) for a day-for-day comparison.
+ */
+export function EnrolmentDailyChart(props: { progress: DailyProgress }) {
+  const p = props.progress;
+  const W = 760,
+    H = 220,
+    L = 52,
+    R = 16,
+    T = 14,
+    B = 30;
+  const xMax = Math.max(p.daysInMonth, p.previous.length);
+  let max = Math.max(1, p.target, p.enrolled);
+  p.previous.forEach(function (v) {
+    max = Math.max(max, v);
+  });
+  const top = niceTop(max);
+  const iw = W - L - R,
+    ih = H - T - B;
+  const x = function (day: number) {
+    return L + (day / xMax) * iw;
+  };
+  const y = function (v: number) {
+    return T + ih - (v / top) * ih;
+  };
+  const path = function (vals: number[]) {
+    return (
+      'M' +
+      x(0).toFixed(1) +
+      ' ' +
+      y(0).toFixed(1) +
+      vals
+        .map(function (v, i) {
+          return ' L' + x(i + 1).toFixed(1) + ' ' + y(v).toFixed(1);
+        })
+        .join('')
+    );
+  };
+  const ticks = [1, 5, 10, 15, 20, 25, p.daysInMonth].filter(
+    function (d, i, a) {
+      return (
+        d <= xMax &&
+        a.indexOf(d) === i &&
+        (d === p.daysInMonth || p.daysInMonth - d >= 3)
+      );
+    },
+  );
+  const ahead = p.gap >= 0;
+  return (
+    <div>
+      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
+        <div className="text-sm font-semibold text-gray-900">
+          {'This month, day by day · ' + monthLbl(p.month)}
+        </div>
+        <div className="text-xs text-gray-500 flex flex-wrap items-center">
+          {swatch(C_CUM_ACTUAL, 'Enrolled this month', true)}
+          {swatch(C_CUM_TARGET, 'On pace for the target', true, true)}
+          {swatch(
+            '#cbd5e1',
+            'Last month (' + monthLbl(p.previousMonth, true) + ')',
+            true,
+          )}
+        </div>
+      </div>
+      <div
+        className={
+          'text-xs font-medium mb-1 ' +
+          (ahead ? 'text-green-700' : 'text-red-700')
+        }
+      >
+        {dailyReadout(p)}
+      </div>
+      <svg
+        viewBox={'0 0 ' + W + ' ' + H}
+        className="w-full h-auto block"
+        role="img"
+        aria-label="Enrolment this month, day by day"
+      >
+        {[0, 0.5, 1].map(function (f) {
+          return (
+            <g key={f}>
+              <line
+                x1={L}
+                x2={W - R}
+                y1={y(top * f)}
+                y2={y(top * f)}
+                stroke="#eeeef4"
+              />
+              <text
+                x={L - 6}
+                y={y(top * f) + 4}
+                fontSize="10"
+                fill="#9ca3af"
+                textAnchor="end"
+              >
+                {nCount(top * f)}
+              </text>
+            </g>
+          );
+        })}
+        {ticks.map(function (d) {
+          return (
+            <text
+              key={d}
+              x={x(d)}
+              y={H - 10}
+              fontSize="10"
+              fill="#6b7280"
+              textAnchor="middle"
+            >
+              {String(d)}
+            </text>
+          );
+        })}
+        {p.previous.length ? (
+          <path
+            d={path(p.previous)}
+            fill="none"
+            stroke="#cbd5e1"
+            strokeWidth="2"
+          />
+        ) : null}
+        <line
+          x1={x(0)}
+          y1={y(0)}
+          x2={x(p.daysInMonth)}
+          y2={y(p.target)}
+          stroke={C_CUM_TARGET}
+          strokeWidth="2"
+          strokeDasharray="5 4"
+        />
+        <path
+          d={path(p.cumulative)}
+          fill="none"
+          stroke={C_CUM_ACTUAL}
+          strokeWidth="2.5"
+          strokeLinejoin="round"
+        />
+        <circle
+          cx={x(p.day)}
+          cy={y(p.enrolled)}
+          r="3.5"
+          fill={C_CUM_ACTUAL}
+          stroke="#fff"
+          strokeWidth="1.5"
+        />
+      </svg>
+      <p className="text-xs text-gray-500 mt-0.5">
+        {'Day of the month along the bottom. The dashed line is ' +
+          monthLbl(p.month, true) +
+          "'s target of " +
+          nCount(p.target) +
+          ' spread evenly over its ' +
+          p.daysInMonth +
+          ' days.'}
+      </p>
     </div>
   );
 }

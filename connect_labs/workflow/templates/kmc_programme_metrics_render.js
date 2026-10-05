@@ -2122,6 +2122,13 @@ function WorkflowUI({
       scope: scope,
     });
     if (!prog) return null;
+    // This month, day by day: the snapshot's per-day registrations for the
+    // as-of month and the one before (absent on runs saved before it carried
+    // them, in which case the chart is simply not drawn).
+    var daily =
+      R.dailyProgress && P.daily
+        ? R.dailyProgress({ targets: TARGETS, daily: P.daily, scope: scope })
+        : null;
     var win = R.targetWindow(TARGETS);
     var first = win[0];
     var last = win[win.length - 1];
@@ -2206,6 +2213,11 @@ function WorkflowUI({
           <R.EnrolmentTargetLegend />
           <R.EnrolmentTargetChart progress={prog} />
         </div>
+        {daily ? (
+          <div className="mt-5 pt-3 border-t border-gray-100">
+            <R.EnrolmentDailyChart progress={daily} />
+          </div>
+        ) : null}
         <div className="mt-1 text-xs text-gray-400 space-y-0.5">
           {prog.carryIn ? (
             <p>
@@ -3427,9 +3439,9 @@ function WorkflowUI({
 
       {selLLO ? <FLWTable /> : <OrgTable />}
 
-      <EnrolmentTargets />
-
       <ChartsRow />
+
+      <EnrolmentTargets />
 
       <AllIndicators />
 

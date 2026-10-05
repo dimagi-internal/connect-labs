@@ -221,6 +221,10 @@ def slice_for_opportunity(
             # Pooled over the programme's credible recorders: a programme figure,
             # and one that names which organisations recorded credibly.
             "pooledOverCredible": {},
+            # Registrations by day are per programme and per ORGANISATION -- a
+            # sibling opportunity's babies are in both -- and no opportunity
+            # report draws them. Not handed down.
+            "daily": {},
             "meta": meta,
         }
     )
@@ -245,6 +249,7 @@ _REPLACED = frozenset(
         "deployment",
         "credibility",
         "pooledOverCredible",
+        "daily",
         "meta",
     }
 )

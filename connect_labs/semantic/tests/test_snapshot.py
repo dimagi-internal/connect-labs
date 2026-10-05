@@ -1134,3 +1134,58 @@ class TestAProgrammeRunStoresNoCaseList:
         out = self._build(True)
         assert len(out["cases"]) == 3
         assert sorted(len(f["rows"]) for f in out["byFLW"]) == [1, 2]
+
+
+class TestDailyCounts:
+    """ "This month, day by day": registrations per day for the as-of month and the
+    month before, per scope, counting only cases with the spec's flag set -- so
+    a month's days sum to what `registered_cases` counts for it."""
+
+    SPEC = {"daily": {"flag": "registered"}}
+    LLO = {10016: "EHA", 10017: "GHI"}
+
+    def _cases(self):
+        return [
+            {"reg_date": "2026-10-01", "llo": "EHA", "registered": True},
+            {"reg_date": "2026-10-04", "llo": "GHI", "registered": True},
+            # After the as-of day: not counted (the builder has already cut, but
+            # the list must stop at the as-of day regardless).
+            {"reg_date": "2026-10-05", "llo": "GHI", "registered": True},
+            # No registration form: not an enrolment.
+            {"reg_date": "2026-10-02", "llo": "EHA", "registered": False},
+            # No reg_date: dated by the first visit, as the cohort month is.
+            {"first_visit_date": "2026-09-30", "llo": "EHA", "registered": "true"},
+            {"reg_date": "2026-09-01", "llo": "GHI", "registered": True},
+            # Two months back: outside the window.
+            {"reg_date": "2026-08-31", "llo": "GHI", "registered": True},
+        ]
+
+    def test_two_months_previous_full_current_to_the_as_of_day(self):
+        d = snap.daily_counts(self._cases(), self.SPEC, self.LLO, "2026-10-04")
+        assert d["months"] == ["2026-09", "2026-10"]
+        assert d["as_of"] == "2026-10-04"
+        sep, oct_ = d["byScope"]["all"]["2026-09"], d["byScope"]["all"]["2026-10"]
+        assert len(sep) == 30 and len(oct_) == 4
+        assert oct_ == [1, 0, 0, 1]
+        assert sep[0] == 1 and sep[29] == 1 and sum(sep) == 2
+
+    def test_each_llo_gets_its_own_days(self):
+        d = snap.daily_counts(self._cases(), self.SPEC, self.LLO, "2026-10-04")
+        assert d["byScope"]["llo:EHA"]["2026-10"] == [1, 0, 0, 0]
+        assert d["byScope"]["llo:GHI"]["2026-10"] == [0, 0, 0, 1]
+        assert sum(d["byScope"]["llo:EHA"]["2026-09"]) == 1
+
+    def test_without_a_flag_every_dated_case_counts(self):
+        d = snap.daily_counts(self._cases(), {}, self.LLO, "2026-10-04")
+        assert d["byScope"]["all"]["2026-10"] == [1, 1, 0, 1]
+
+    def test_the_payload_carries_it(self):
+        payload = snap.build(
+            spec=self.SPEC,
+            rows=[{"scope": "programme", "n_cases": 1}],
+            measures=[],
+            deployment={"llo_map": self.LLO},
+            cases=self._cases()[:2],
+            as_of="2026-10-04",
+        )
+        assert payload["daily"]["byScope"]["all"]["2026-10"] == [1, 0, 0, 1]

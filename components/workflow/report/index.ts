@@ -66,8 +66,11 @@ import {
   stripPos,
 } from './Scenario';
 import {
+  EnrolmentDailyChart,
   EnrolmentTargetChart,
   EnrolmentTargetLegend,
+  dailyProgress,
+  dailyReadout,
   EnrolmentTargetSummary,
   elapsedFraction,
   enrolmentProgress,
@@ -85,7 +88,7 @@ import {
   SectionTitle,
 } from './Layout';
 
-export const VERSION = 5;
+export const VERSION = 6;
 
 export const LabsReport = {
   VERSION,
@@ -170,6 +173,10 @@ export const LabsReport = {
   EnrolmentTargetChart,
   EnrolmentTargetSummary,
   EnrolmentTargetLegend,
+  // this month, day by day (VERSION 6)
+  dailyProgress,
+  dailyReadout,
+  EnrolmentDailyChart,
 };
 
 export type LabsReportLibrary = typeof LabsReport;
