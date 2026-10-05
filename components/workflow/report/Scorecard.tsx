@@ -43,7 +43,7 @@ export function ScoreCellText(props: {
         className="text-slate-400"
         title={
           props.notCredibleTitle ||
-          'Death recording is not credible for this organisation'
+          'Death recording is not credible for this organization'
         }
       >
         {text}

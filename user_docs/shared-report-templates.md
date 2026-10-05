@@ -1,6 +1,6 @@
 # Shared Report Templates
 
-When the **same report** is needed for many opportunities (one Opportunity Report per opportunity in a programme, say), Labs can make every copy **point at one shared source** instead of holding its own. The page layout, the pipelines and the indicator definitions each live in one place. Change that place once, and every copy changes with it.
+When the **same report** is needed for many opportunities (one Opportunity Report per opportunity in a program, say), Labs can make every copy **point at one shared source** instead of holding its own. The page layout, the pipelines and the indicator definitions each live in one place. Change that place once, and every copy changes with it.
 
 This page explains how that works, how to set it up, and what still needs a person. It uses KMC's 12 Opportunity Reports as the worked example, but the mechanism works for any template.
 
@@ -76,33 +76,33 @@ A shared instance references the source report's pipelines in the scope they liv
 
 ## Template workflows: change a report with no release
 
-Following a **deployed** template means every page change is a code change, a review and a Labs release. A **template workflow** is the faster option: the page, its default settings and its snapshot settings live as **data** in Labs, so a change reaches every report that follows it in seconds, with no release.
+Following a **deployed** template means every page change is a code change, a review and a Labs release. A **template workflow** is the faster option: the page, its default settings and its snapshot settings live as **data** in Labs (Labs records, like every other workflow), so a change reaches every report that follows it in seconds, with no release.
 
 | | Following the deployed template | Following a template workflow |
 | --- | --- | --- |
 | Where the page lives | The Labs code | A template workflow, as data |
 | How a change reaches every copy | A developer's change, then a Labs release | Edit the draft, preview, publish |
 | Undo | Another release | Roll back to any earlier version |
-| Who can change it | Developers | The template's owners |
+| Who can change it | Developers | Anyone with write access to the program or opportunity that owns the template |
 
 **How it works:**
 
-- **Draft, preview, publish.** Every change goes to the template's **draft** first. No report changes yet. An owner can open any following report with the draft applied (Claude gives you a *draft preview* link; it adds `&template_draft=1` to the page address, and only owners see the draft there — everyone else still sees what is published). **Publishing** makes the draft live, and every following report shows it the next time it is opened.
+- **Draft, preview, publish.** Every change goes to the template's **draft** first. No report changes yet. Anyone who can edit the template can open any following report with the draft applied (Claude gives you a *draft preview* link; it adds `&template_draft=1` to the page address, and only people who can edit the template see the draft there — everyone else still sees what is published). **Publishing** makes the draft live, and every following report shows it the next time it is opened.
 - **History and rollback.** Every publish is kept as a numbered version. Rolling back publishes a copy of an older version, so the history always shows what was live when.
-- **Settings are inherited, and a report's own settings win.** A following report gets the template's default settings and snapshot settings, except for any setting it sets itself. KMC's programme report keeps its own enrolment targets this way while taking everything else from the template. When a report starts following, any setting it has that is *identical* to the template's is dropped so it stays in step with the template from then on; settings that really differ stay as that report's own.
-- **Owners and followers.** Only the template's owners can edit the draft, preview it, publish or roll back. Anyone who can see the template (everyone for a `global` template; otherwise members of its organisation, programme or opportunity) can make their report follow it.
+- **Settings are inherited, and a report's own settings win.** A following report gets the template's default settings and snapshot settings, except for any setting it sets itself. KMC's program report keeps its own enrollment targets this way while taking everything else from the template. When a report starts following, any setting it has that is *identical* to the template's is dropped so it stays in step with the template from then on; settings that really differ stay as that report's own.
+- **Who can edit, and who can follow.** A template belongs to a program or an opportunity, and uses that program's or opportunity's normal Labs access — there is no separate owners list. Anyone who can change Labs records for the owning program (members of the organization that manages it) or opportunity can edit the draft, preview it, publish, roll back and change its sharing. Who can *follow* it depends on its sharing: unshared, only people with access to the owning program or opportunity; shared publicly, a report in any program or opportunity can follow it.
 
 **What still needs a release (the engine boundary).** A page can only show what Labs already calculates and serves to it. Rearranging sections, removing a divider, changing a chart, renaming a label or showing a figure the snapshot already contains is all template data. **A figure Labs does not yet calculate** (for example, daily counts the snapshot never stored) is a change to the engine, and still needs a developer and a release. Once it ships, the page that shows it is a template change again.
 
 Ask Claude in plain language:
 
-> *"Create a template workflow from the KMC programme report template, and make workflows 19778 and 5456 follow it."*
+> *"Create a template workflow for program 46 from the KMC program report template, share it publicly, and make workflows 19778 and 5456 follow it."*
 >
-> *"In the KMC Programme Metrics template, move the trends section above the scorecard. Show me the draft on 19778, then publish it."*
+> *"In the KMC Program Metrics template, move the trends section above the scorecard. Show me the draft on 19778, then publish it."*
 >
-> *"Roll the KMC Programme Metrics template back to version 2."*
+> *"Roll the KMC Program Metrics template back to version 2."*
 
-The tools Claude uses: `workflow_template_create`, `workflow_follow_template`, `workflow_template_update_draft`, `workflow_template_preview`, `workflow_template_publish`, `workflow_template_rollback`, `workflow_template_get`, `workflow_template_list` and `workflow_template_set_owners`.
+The tools Claude uses: `workflow_template_create`, `workflow_follow_template`, `workflow_template_update_draft`, `workflow_template_preview`, `workflow_template_publish`, `workflow_template_rollback`, `workflow_template_get`, `workflow_template_list` and `workflow_template_set_sharing`.
 
 ---
 
@@ -120,7 +120,7 @@ Claude uses `benchmarks_create_opp_reports` with the cohort, the template (the d
 
 - **Name a source report.** Without one, each instance creates its own pipelines and its own copy of the definitions. It still works, but you are back to twelve copies. The result says `shared: false` when that happened.
 - **It's safe to repeat.** An opportunity that already has an instance of the template is skipped, so re-running after adding an opportunity only creates the new one.
-- **You need access to everything involved:** the cohort's organisation, every opportunity in the cohort (creating a report in an opportunity is a change to that opportunity), and the source report's scope.
+- **You need access to everything involved:** the cohort's organization, every opportunity in the cohort (creating a report in an opportunity is a change to that opportunity), and the source report's scope.
 
 ### One more copy of an existing report
 
@@ -130,23 +130,23 @@ For "the same report somewhere else" without a cohort, use a **linked** copy:
 
 Claude uses `workflow_clone` with `linked: true`. A linked copy references the original's pipelines, binds its registry and follows the template: the same three things a fan-out instance does. An unlinked copy (the default) is a fork with its own page.
 
-### The generic indicator cascade (any programme)
+### The generic indicator cascade (any program)
 
-Three templates give any programme the KMC report cascade, driven entirely by its [semantic registry](semantic-layer.md#how-a-report-reads-it-display):
+Three templates give any program the KMC report cascade, driven entirely by its [semantic registry](semantic-layer.md#how-a-report-reads-it-display):
 
 | Template | What it is |
 | --- | --- |
-| `indicator_programme_report` | The programme report: headline tiles with targets and week-on-week change, an organisation scorecard grouped by indicator category, workers with peer cohorts, activity by week, trends across saved reports, and every indicator's definition. Drills programme → organisation → opportunity → worker → case. |
-| `indicator_worker_review` | Its companion: one worker's indicators against their peers, their cases, and each case's visits (with the registry's reading series charted, and photos where the visits carry them). Created automatically with the programme report. |
-| `indicator_opp_report` | The programme report cut to one opportunity, for its network manager, with a Benchmarks tab. Receives the programme report's saved weeks. |
+| `indicator_programme_report` | The program report: headline tiles with targets and week-on-week change, an organization scorecard grouped by indicator category, workers with peer cohorts, activity by week, trends across saved reports, and every indicator's definition. Drills program → organization → opportunity → worker → case. |
+| `indicator_worker_review` | Its companion: one worker's indicators against their peers, their cases, and each case's visits (with the registry's reading series charted, and photos where the visits carry them). Created automatically with the program report. |
+| `indicator_opp_report` | The program report cut to one opportunity, for its network manager, with a Benchmarks tab. Receives the program report's saved weeks. |
 
-All three **follow the template from the moment they are created**, so there is nothing to sync. One create gives the programme report and its worker review, on the same pipelines and the same registry record, linked both ways:
+All three **follow the template from the moment they are created**, so there is nothing to sync. One create gives the program report and its worker review, on the same pipelines and the same registry record, linked both ways:
 
-> *"Create an indicator programme report for program 10011 over opportunities 10013 to 10022, bound to registry 19784, sharing the pipelines of workflow 5456."*
+> *"Create an indicator program report for program 10011 over opportunities 10013 to 10022, bound to registry 19784, sharing the pipelines of workflow 5456."*
 
 Claude uses `workflow_create_from_template` with `registry_source` (the registry) and, when the registry reads form fields, `pipelines_from` (an existing report whose pipelines to reference). Without `pipelines_from` the report gets one pipeline of the columns every visit carries, which is all a registry like `visit_quality` needs. Without `registry_source` it gets a new copy of `visit_quality`.
 
-For the opportunity reports, use the benchmark fan-out with `template_key: indicator_opp_report` and the programme report as the source. Each report is stamped with that source (`source_workflow_id`), so every week the programme report saves is handed down to it.
+For the opportunity reports, use the benchmark fan-out with `template_key: indicator_opp_report` and the program report as the source. Each report is stamped with that source (`source_workflow_id`), so every week the program report saves is handed down to it.
 
 ### Every new instance needs a run
 
@@ -170,7 +170,7 @@ A newly created report has no run, and its page needs one to open. Ask Claude to
 
 ## Keeping it healthy
 
-- **A new opportunity joins the programme:** add it to the cohort (`benchmarks_cohort_add_opportunities`), re-run `benchmarks_create_opp_reports`, then create a run for the new instance. Also add the opportunity to the shared registry's `deployment` facts ([why](semantic-layer.md#recommendations), recommendation 4).
+- **A new opportunity joins the program:** add it to the cohort (`benchmarks_cohort_add_opportunities`), re-run `benchmarks_create_opp_reports`, then create a run for the new instance. Also add the opportunity to the shared registry's `deployment` facts ([why](semantic-layer.md#recommendations), recommendation 4).
 - **A template setting's value changes:** existing instances keep their own value. Patch them with `workflow_update_definition`.
 - **A page fix ships in Labs:** nothing to do. Following instances show it on the next load.
 - **An indicator definition changes:** nothing to do for the live figures. Every instance bound to the registry shows the change on its next load. Saved runs keep their old figures until history is rebuilt (see [Weekly Trends and Saved Runs](weekly-trends-and-snapshots.md)).
@@ -194,13 +194,13 @@ A newly created report has no run, and its page needs one to open. Ask Claude to
 
 ## Worked example: KMC
 
-KMC has 12 opportunities across several organisations and Connect programmes, and each one has a **KMC Opportunity Report** (template `kmc_opp_report`) showing its own scorecard, its own workers and its [benchmark](benchmarks.md).
+KMC has 12 opportunities across several organizations and Connect programs, and each one has a **KMC Opportunity Report** (template `kmc_opp_report`) showing its own scorecard, its own workers and its [benchmark](benchmarks.md).
 
-- **Created in one step** with `benchmarks_create_opp_reports` over the 12-member *KMC programme peers* cohort, naming the **KMC Programme Report** (workflow 19778 in production) as the source.
+- **Created in one step** with `benchmarks_create_opp_reports` over the 12-member *KMC program peers* cohort, naming the **KMC Program Report** (workflow 19778 in production) as the source.
 - **Page:** all 12 follow the deployed `kmc_opp_report` template. A Labs release updates all 12 at once, and none can be edited on its own.
-- **Pipelines:** all 12 reference the Programme Report's pipelines rather than holding copies, so the visit data is read and cached once.
-- **Indicator definitions:** all 12 are bound to the Programme Report's registry, the shared **KMC indicators** record, so an edit to `mortality` reaches all 12, the Programme Report and the Worker Review on the next load.
-- **Loading data on open:** the template sets `warm_cache_on_read`. An Opportunity Report never streams its pipelines; it asks the semantic layer for its figures. With this setting, opening it loads that opportunity's visit data if nobody else has recently. It is best effort: if loading fails, the page reports a cold or partial cache instead. The multi-opportunity Programme Report does not do this, so opening it never triggers a download of every opportunity.
+- **Pipelines:** all 12 reference the Program Report's pipelines rather than holding copies, so the visit data is read and cached once.
+- **Indicator definitions:** all 12 are bound to the Program Report's registry, the shared **KMC indicators** record, so an edit to `mortality` reaches all 12, the Program Report and the Worker Review on the next load.
+- **Loading data on open:** the template sets `warm_cache_on_read`. An Opportunity Report never streams its pipelines; it asks the semantic layer for its figures. With this setting, opening it loads that opportunity's visit data if nobody else has recently. It is best effort: if loading fails, the page reports a cold or partial cache instead. The multi-opportunity Program Report does not do this, so opening it never triggers a download of every opportunity.
 - **When a thirteenth opportunity joins**, the steps are the ones in [Keeping it healthy](#keeping-it-healthy): add it to the cohort and the registry, re-run the fan-out, create a run.
 
 ---

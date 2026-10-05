@@ -10,16 +10,16 @@ function WorkflowUI({
 }) {
   // ══ ONE opportunity's KMC report, for the people who run it ════════════════
   //
-  // The programme report's content for this one opportunity -- headline tiles,
+  // The program report's content for this one opportunity -- headline tiles,
   // activity by week, indicator trends across saved reports, a row per field
-  // worker on the programme's scorecard -- plus where it sits among anonymous
+  // worker on the program's scorecard -- plus where it sits among anonymous
   // peers. Drawn with the shared report library (window.LabsReport), which is
-  // the programme report's own look.
+  // the program report's own look.
   //
-  // ONE PAYLOAD, as on the programme report: the graded output of the
+  // ONE PAYLOAD, as on the program report: the graded output of the
   // semantic-snapshot builder, over this opportunity. A completed run reads it
   // off the run record -- either one this report saved, or one HANDED DOWN from
-  // the programme report when that report saved its week (workflow/hand_down.py;
+  // the program report when that report saved its week (workflow/hand_down.py;
   // `meta.handed_down_from` says which). An in-progress run fetches the same
   // payload as a live preview, which fills this opportunity's visit cache itself
   // if it has gone cold. This file grades nothing.
@@ -236,7 +236,7 @@ function WorkflowUI({
     [definition && definition.id, instance && instance.definition_id],
   );
   // One point per as-of date. A handed-down week and a week saved here can
-  // share a date; the later completion wins, as on the programme report. The
+  // share a date; the later completion wins, as on the program report. The
   // run in view is a point too.
   var historyPoints = React.useMemo(
     function () {
@@ -329,8 +329,8 @@ function WorkflowUI({
     return R.sortRows(rows, sortOf(table), valueOf);
   }
   var DEF_SCOPE_LABEL = {
-    programme: 'the programme',
-    llo: 'organisation',
+    programme: 'the program',
+    llo: 'organization',
     opportunity: 'opportunity',
     flw: 'worker',
   };
@@ -860,7 +860,7 @@ function WorkflowUI({
     setOpenWorker = sOpenWorker[1];
 
   // The worker's own review page, where a report is configured with one. A
-  // handed-down run reads the same way the programme report's does.
+  // handed-down run reads the same way the program report's does.
   var FLW_REVIEW = cfg.flw_review || null;
   function flwReviewUrl(w) {
     if (!FLW_REVIEW || !FLW_REVIEW.workflow_id || !FLW_REVIEW.run_id)
@@ -1001,9 +1001,9 @@ function WorkflowUI({
   // withheld everything -- and is explained in words. Only a failed REQUEST is
   // an error.
   var benchmarkEmptyMessage =
-    'No organisation benchmark is published for this opportunity yet: it is ' +
+    'No organization benchmark is published for this opportunity yet: it is ' +
     'not in a benchmark cohort, or its cohort has not been republished since ' +
-    'organisations were added.';
+    'organizations were added.';
   var sBench = React.useState({ status: 'loading' });
   var bench = sBench[0],
     setBench = sBench[1];
@@ -1047,19 +1047,19 @@ function WorkflowUI({
     },
     [oppId],
   );
-  // The benchmark tab: this opportunity's ORGANISATION against the programme's
-  // other organisations, one row per indicator. The rows come from the
-  // benchmark store's organisation rows (benchmarks/publish.py), published from
-  // the programme report's saved week: the reader's own organisation apart, the
+  // The benchmark tab: this opportunity's ORGANIZATION against the program's
+  // other organizations, one row per indicator. The rows come from the
+  // benchmark store's organization rows (benchmarks/publish.py), published from
+  // the program report's saved week: the reader's own organization apart, the
   // others unnamed and re-sorted on every row. A complete cohort keeps every
-  // organisation on every row, a withheld one as an outline with its reason.
+  // organization on every row, a withheld one as an outline with its reason.
   var sOpenRow = React.useState(null);
   var openRow = sOpenRow[0],
     setOpenRow = sOpenRow[1];
-  var ownOrgLabel = (llo || 'Your organisation') + ' (you)';
+  var ownOrgLabel = (llo || 'Your organization') + ' (you)';
   function benchmarkRows(bp) {
     var cohorts = bp.cohorts || {};
-    // The first cohort that publishes organisation rows. A programme has one.
+    // The first cohort that publishes organization rows. A program has one.
     var cid = Object.keys(cohorts).filter(function (id) {
       var fam = (bp.indicators || {})[id] || {};
       return Object.keys(fam).some(function (s) {
@@ -1109,12 +1109,12 @@ function WorkflowUI({
     return (
       <div className="space-y-3">
         <div className="text-sm text-gray-600 max-w-4xl">
-          {ownOrgLabel.replace(' (you)', '')} against the programme's other
-          organisations, as of{' '}
+          {ownOrgLabel.replace(' (you)', '')} against the program's other
+          organizations, as of{' '}
           {R.dateLbl(built.meta.as_of || (bench.payload || {}).as_of)}. Each
-          small chart is every organisation, best to worst: yours in blue, the
+          small chart is every organization, best to worst: yours in blue, the
           others unnamed and re-sorted on every row, so no grey bar can be
-          followed down the page. An outline is an organisation without a usable
+          followed down the page. An outline is an organization without a usable
           figure; the coverage column says why. Click a row for the full chart.
         </div>
         <div className="flex flex-wrap items-center gap-5 text-xs text-gray-500">
@@ -1127,7 +1127,7 @@ function WorkflowUI({
               className="inline-block w-2.5 h-3.5 rounded-sm"
               style={{ background: '#c7c5bc' }}
             />
-            Another organisation
+            Another organization
           </span>
           <span className="flex items-center gap-1.5">
             <span
@@ -1243,8 +1243,8 @@ function WorkflowUI({
                           <b className="text-gray-800">
                             {R.fmtValue(r.m, entryOf(ind, id).value)}
                           </b>
-                          . The organisation figure pools every opportunity{' '}
-                          {llo || 'it'} runs in this programme.
+                          . The organization figure pools every opportunity{' '}
+                          {llo || 'it'} runs in this program.
                         </div>
                       </div>,
                     );
@@ -1622,13 +1622,13 @@ function WorkflowUI({
     <R.Pill
       tone="source"
       title={
-        'Handed down from programme report ' +
+        'Handed down from program report ' +
         handedDown.workflow_id +
         ', run ' +
         handedDown.run_id
       }
     >
-      From the programme report
+      From the program report
     </R.Pill>
   ) : isCompleted ? (
     <R.Pill tone="source">Saved here</R.Pill>
@@ -1702,7 +1702,7 @@ function WorkflowUI({
         )
       ) : (
         <div className="space-y-4">
-          {/* The programme report's order -- tiles, the table, the charts --
+          {/* The program report's order -- tiles, the table, the charts --
               with the peers after them: seventeen peer cards above the worker
               table pushed it three screens down. */}
           <R.Tabs
