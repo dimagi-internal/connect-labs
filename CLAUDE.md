@@ -82,8 +82,12 @@ Each item in the list can include `program_id`, `opportunity_id`, or `organizati
 | Solicitations  | `program_id`     | `solicitation`          | Scoped by program     |
 | Sol. Responses | `llo_entity_id`  | `solicitation_response` | Scoped by entity      |
 | Sol. Reviews   | `llo_entity_id`  | `solicitation_review`   | Scoped by entity      |
-| Audits         | `opportunity_id` | varies                  | Scoped by opportunity |
-| Workflows      | `opportunity_id` | varies                  | Scoped by opportunity |
+| Audits         | `"audit"`        | `AuditSession`, `AuditCreationJob` | Scoped by `opportunity_id` |
+| Tasks          | `"tasks"`        | `Task`                  | Scoped by `opportunity_id` |
+| Workflows      | `"workflow"`     | `workflow_definition`, `workflow_render_code`, `workflow_run` (+ child `workflow_run_snapshot`), `workflow_chat_history` | Scoped by `opportunity_id` |
+| Pipelines      | `"pipeline"`     | `pipeline_definition`, `pipeline_render_code`, `pipeline_chat_history` | Scoped by `opportunity_id` |
+| Semantic registries | `"semantic"` | `semantic_registry`    |                       |
+| Flags          | `"flags"`        | `Flag`                  | Hang off a workflow run |
 
 ## App Map
 
@@ -441,11 +445,11 @@ The `connect_labs` remote MCP tool families: **targeting** (`targeting_*` — in
 - **[LABS_GUIDE.md](connect_labs/labs/LABS_GUIDE.md)** — Detailed development patterns: OAuth setup, API client usage, proxy models, CLI scripts
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — Code style, testing conventions, PR process, step-by-step guide for adding new features
 - **[.claude/AGENTS.md](.claude/AGENTS.md)** — Full architecture reference: per-app details, API endpoints, data access patterns, common mistakes
-- **[docs/LABS_ARCHITECTURE.md](docs/LABS_ARCHITECTURE.md)** — Architecture diagrams, data flow, cross-app dependency matrix. Caution: its "7 labs apps" count and "labs never writes domain data locally" claim predate the current app set and the labs-only synthetic backend
+- **[docs/LABS_ARCHITECTURE.md](docs/LABS_ARCHITECTURE.md)** — data flows (LabsRecord CRUD, visit analysis), where data lives (prod API vs labs DB), LabsRecord fields, frontend stack, and a decision tree for new features
 - **[docs/SAFE_MODE.md](docs/SAFE_MODE.md)** — `inv safe-claude`: locked-down Claude Code config for working near PII
 - **[docs/WORKFLOW_EDITOR_QUICKSTART.md](docs/WORKFLOW_EDITOR_QUICKSTART.md)** — non-developer onboarding: mint a PAT, run safe-claude
 - **[docs/DOCS_AUTOMATION.md](docs/DOCS_AUTOMATION.md)** — the automation that consumes PR `## Product Description` sections (mkdocs site, Confluence updater, weekly changelog)
-- **[docs/synthetic-kmc-clone-runbook.md](docs/synthetic-kmc-clone-runbook.md)** — **superseded** by the one-call `synthetic_clone_opp` worker job (#2140); kept as a record of the two-phase profile→generate flow. For current cloning use `docs/SYNTHETIC_OPPS.md`
+- **[docs/synthetic-kmc-clone-runbook.md](docs/synthetic-kmc-clone-runbook.md)** — cohort clones from a YAML spec (`labs/synthetic/cohorts/`): pinned program, refreshed in place. For a one-off clone into a new program use `synthetic_clone_opp` (`docs/SYNTHETIC_OPPS.md`)
 - **[docs/PERFORMANCE_RUNBOOK.md](docs/PERFORMANCE_RUNBOOK.md)** — **written for AI agents.** Labs slow, hanging, or 5xx-ing? Start with `python3 tools/perf_triage.py --hours 3`, which does steps 1–5 and prints a verdict
 - **[docs/multi-site-auth.md](docs/multi-site-auth.md)** — the contract behind the `supply` / `campaign` satellite sites: one Django project, one user table, one session cookie, so **authentication is global but authorization is per-surface**. Read before adding a site or a permission check
 - **[docs/OUTBOUND_EMAIL.md](docs/OUTBOUND_EMAIL.md)** — SES sending, live since 2026-07-29 behind `LABS_EMAIL_ENABLED`
