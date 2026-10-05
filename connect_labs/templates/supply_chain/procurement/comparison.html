@@ -63,7 +63,8 @@
   {% endif %}
 
   {% if grid and grid.quotes %}
-  <section class="border-brand-border-light overflow-hidden rounded-lg border bg-white" aria-label="Quotes side by side">
+  {% comment %}data-sticky-head: on a wide screen the supplier names stay in view as the facts scroll (base.html).{% endcomment %}
+  <section class="border-brand-border-light overflow-hidden rounded-lg border bg-white" aria-label="Quotes side by side" data-sticky-head>
     <div class="max-w-full overflow-x-auto" tabindex="0" role="region" aria-label="Comparison, scrolls sideways">
       <table class="w-full table-fixed text-sm {% if grid.quotes|length > 3 %}min-w-[1080px]{% elif grid.quotes|length == 3 %}min-w-[860px]{% else %}min-w-[640px]{% endif %}" data-testid="comparison-grid">
         <thead class="border-b border-gray-200">
