@@ -123,6 +123,12 @@ class TestTownMatching:
         got = hq_location.resolve("Nigeria", "", "Plot 5, opposite the market, Kano", hq_city="Maiduguri")
         assert (got.label, got.iso3) == ("Maiduguri", "NGA")
 
+    def test_hq_city_names_a_small_town_exactly(self):
+        """The size guard keeps stray words in an address from matching a
+        hamlet. HQ City names a town on purpose, so the guard does not apply."""
+        got = hq_location.resolve("Nigeria", "", "", hq_city="Michika, Nigeria")
+        assert (got.precision, got.label) == ("city", "Michika")
+
     def test_hq_city_abroad_is_located_abroad(self):
         got = hq_location.resolve("Sierra Leone", "", "", hq_city="London, UK")
         assert (got.precision, got.label, got.iso3) == ("city", "London", "GBR")
