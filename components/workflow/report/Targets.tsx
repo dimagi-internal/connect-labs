@@ -297,10 +297,10 @@ export function EnrolmentTargetChart(props: { progress: EnrolmentProgress }) {
   const p = props.progress;
   const months = p.months;
   const W = 760,
-    H = 240,
+    H = 252,
     L = 44,
     R = 52,
-    T = 14,
+    T = 26,
     B = 30;
   if (!months.length) return null;
   let maxM = 1,
@@ -383,14 +383,14 @@ export function EnrolmentTargetChart(props: { progress: EnrolmentProgress }) {
           <line
             x1={L + asOfIdx * bw}
             x2={L + asOfIdx * bw}
-            y1={T}
+            y1={T - 22}
             y2={T + ih}
             stroke="#a5b4fc"
             strokeDasharray="4 3"
           />
           <text
             x={L + asOfIdx * bw + 4}
-            y={T + 10}
+            y={T - 10}
             fontSize="10"
             fill="#6366f1"
           >
