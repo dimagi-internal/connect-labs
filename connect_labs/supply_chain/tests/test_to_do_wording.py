@@ -57,3 +57,11 @@ def test_a_suppliers_fact_is_to_ask_until_we_chase_after_its_quote():
     assert fact_owner("exchange rate", asked=False) == moves.US
     assert moves.facts_chip(["sachets per carton"], moves.TO_ASK) == "sachets per carton · to ask"
     assert supplies(moves.TO_ASK) == "to ask"
+
+
+def test_the_last_stage_is_a_step_not_an_outcome():
+    """An order held at customs is in its Delivery step; a bar reading "Delivered" claimed it done."""
+    from connect_labs.supply_chain.standing import STAGES, stage_bars
+
+    assert STAGES[-1] == "Delivery"
+    assert stage_bars(5)[-1] == "now" and stage_bars(6)[-1] == "done"
