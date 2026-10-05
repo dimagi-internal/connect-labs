@@ -340,6 +340,19 @@ def buyer_org_id(access, create_if_missing: bool = False) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _enrol(w, day, name, country, city, kind, contact, address) -> int:
+    """Enrol a supplier, then set its contact outright.
+
+    The company is shared across programs and outlives the reset, and enrolling only fills a blank
+    profile, so an address changed in this file would otherwise never reach the drafts.
+    """
+    data = {"name": name, "country": country, "city": city, "type": kind, "status": "contacted"}
+    contacts = [{"name": contact, "email": address}]
+    supplier_id = w.op("sophie", day, "supplier_create", data={**data, "contacts": contacts})["id"]
+    w.op("sophie", day, "supplier_update", supplier_id=supplier_id, data={"contacts": contacts})
+    return supplier_id
+
+
 def _round(w: World, *, label: str, opened: str, deadline: str) -> int:
     tender = w.op(
         "sophie",
@@ -398,19 +411,7 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
 
     suppliers = {}
     for key, name, country, city, kind, contact, address in SUPPLIERS:
-        suppliers[key] = w.op(
-            "sophie",
-            d("2026-07-01"),
-            "supplier_create",
-            data={
-                "name": name,
-                "country": country,
-                "city": city,
-                "type": kind,
-                "status": "contacted",
-                "contacts": [{"name": contact, "email": address}],
-            },
-        )["id"]
+        suppliers[key] = _enrol(w, d("2026-07-01"), name, country, city, kind, contact, address)
 
     # ---- Round 1 (ten weeks back): history. Harmattan answered fully and won. ---
     r1 = _round(w, label="RUTF tender 1: 2,000 cartons to Kano", opened=d("2026-07-06"), deadline=d("2026-07-20"))
@@ -767,19 +768,7 @@ def _rusf_tender(w: World, d) -> int:
     w.op("sophie", d("2026-09-30"), "commodity_upsert", data=dict(rusf))
     suppliers = {}
     for key, name, country, city, kind, contact, address in RUSF_SUPPLIERS:
-        suppliers[key] = w.op(
-            "sophie",
-            d("2026-09-30"),
-            "supplier_create",
-            data={
-                "name": name,
-                "country": country,
-                "city": city,
-                "type": kind,
-                "status": "contacted",
-                "contacts": [{"name": contact, "email": address}],
-            },
-        )["id"]
+        suppliers[key] = _enrol(w, d("2026-09-30"), name, country, city, kind, contact, address)
     tender = w.op(
         "sophie",
         d("2026-09-30"),
