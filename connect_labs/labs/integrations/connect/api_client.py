@@ -858,10 +858,18 @@ class LabsRecordAPIClient:
                 scope_record = self.get_record_by_id(run_id, experiment=experiment, type=RUN_RECORD_TYPE)
                 if scope_record is None:
                     raise LabsAPIError(f"Record {run_id} not found")
-            if child_id is None and not child_absent:
-                # A retry after a child write whose run write then failed: reuse it.
-                child_id = self._find_snapshot_child(run_id, experiment, scope_record)
-            child_id = self._write_snapshot_child(child_id, run_id, experiment, encoded, scope_record).id
+            try:
+                if child_id is None and not child_absent:
+                    # A retry after a child write whose run write then failed: reuse it.
+                    child_id = self._find_snapshot_child(run_id, experiment, scope_record)
+                child_id = self._write_snapshot_child(child_id, run_id, experiment, encoded, scope_record).id
+            except Exception:  # noqa: BLE001 -- a save must never fail because the child could not be written
+                # Store the snapshot INLINE, exactly as before this module existed:
+                # the run is complete and correct, only its listing stays heavy. An
+                # earlier child, if any, is left for the run's delete to cascade.
+                logger.warning("run %s: snapshot child write failed; storing inline", run_id, exc_info=True)
+                inline = {k: v for k, v in data.items() if k not in (REF_KEY, SUMMARY_KEY)}
+                return inline, _UNSET, scope_record
         decoded = decode_snapshot(snapshot)
         summary = data.get(SUMMARY_KEY)
         if not (unchanged and isinstance(summary, dict)):
