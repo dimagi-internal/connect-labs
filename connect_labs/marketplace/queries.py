@@ -823,20 +823,23 @@ def unreadable_rounds():
 
 
 def map_points(rows, delivering: set[str], countries=()) -> list[dict]:
-    """The organisations as points on the globe: one per place each works.
+    """The organisations as points on the globe.
 
-    A point per region of operation the directory names (`operating_areas`),
-    or per country where it names none. An organisation resolved before those
-    existed falls back to its single head-office point, so nothing drops off
-    the map between a deploy and the next import.
+    **The head office wins.** An organisation whose HQ resolved to a town
+    (``location_precision == "city"``) is one dot, there, whatever country it is
+    in. Only an organisation with no town-level HQ is drawn where it works: a
+    point per region of operation the directory names (``operating_areas``), or
+    per country where it names none. Drawn the other way round, one
+    organisation listing eight countries of operation became eight hollow
+    rings, and the map stopped answering "where are our partners".
 
-    With a country filter applied, only that country's points are drawn: an
-    organisation found by "Kenya" should not light up Uganda as well.
+    With a country filter applied, only that country's points are drawn. An
+    organisation whose HQ is elsewhere but which works in the filtered country
+    is drawn at its operating area there, so the filter still finds it.
 
     Precision travels with every point, because the sources behind it are not
-    equivalent: a region is a district, a country is a whole country. The globe
-    draws them differently and the legend says so — a map that hides the
-    difference draws a rooftop from the word "Nigeria".
+    equivalent: a town is a pin, a country is a whole country. The globe draws
+    them differently and the legend says so.
     """
     wanted = {iso3 for iso3 in (_country_iso3(c) for c in countries) if iso3}
     points = []
@@ -852,17 +855,20 @@ def map_points(rows, delivering: set[str], countries=()) -> list[dict]:
             "contacts": row.contact_count,
             "applications": row.application_count,
         }
-        areas = profile.operating_areas or []
-        if not areas and profile.lat is not None and profile.lon is not None:
-            areas = [
-                {
-                    "lat": profile.lat,
-                    "lon": profile.lon,
-                    "precision": profile.location_precision or "country",
-                    "label": profile.location_label or "",
-                    "iso3": profile.country_iso3 or "",
-                }
-            ]
+        head_office = None
+        if profile.lat is not None and profile.lon is not None:
+            head_office = {
+                "lat": profile.lat,
+                "lon": profile.lon,
+                "precision": profile.location_precision or "country",
+                "label": profile.location_label or "",
+                "iso3": profile.country_iso3 or "",
+            }
+        hq_is_a_town = head_office is not None and head_office["precision"] == "city"
+        if hq_is_a_town and (not wanted or head_office["iso3"] in wanted):
+            areas = [head_office]
+        else:
+            areas = profile.operating_areas or ([head_office] if head_office else [])
         for area in areas:
             if wanted and area.get("iso3") not in wanted:
                 continue
