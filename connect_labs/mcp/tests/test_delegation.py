@@ -16,6 +16,7 @@ correctly, end to end, through labs' real URLs and its real ASGI app:
 
 from __future__ import annotations
 
+import json
 from unittest import mock
 
 import httpx
@@ -243,8 +244,40 @@ def test_metadata_advertises_the_grant_only_when_it_is_on(settings):
     assert on["token_endpoint"] == TOKEN_ENDPOINT
     prm = oauth.protected_resource_metadata()
     assert prm["dpop_signing_alg_values_supported"] == ["EdDSA", "ES256"]
-    assert prm["scopes_supported"] == ["mcp", "marketplace:read", "targeting:read", "workflow:act", "workflow:read"]
+    # The sign-in scope only: this list is what an interactive client registers for.
+    assert prm["scopes_supported"] == ["mcp"]
     assert prm["resource"] == RESOURCE
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("restricted", [False, True])
+def test_a_client_can_register_for_every_scope_the_resource_advertises(client, settings, restricted):
+    """A spec-following client (Claude Code) registers for the PRM's scopes_supported.
+
+    With the grant on, the SDK added the grant's tool scopes there, and
+    register_client refused them -- every new MCP sign-in failed with
+    "The scopes available are 'mcp', 'mcp:no-uservisit-data'".
+    """
+    settings.LABS_PUBLIC_URL = BASE
+    settings.CANOPY_SIGNING_KEY = _host_key()
+    settings.CANOPY_CLIENT_ID = f"{BASE}/canopy/oauth/client.json"
+    cache.clear()
+
+    scopes = oauth.protected_resource_metadata(restricted=restricted)["scopes_supported"]
+    resp = client.post(
+        oauth.REGISTRATION_PATH,
+        data=json.dumps(
+            {
+                "client_name": "Spec client",
+                "redirect_uris": ["http://127.0.0.1:33418/callback"],
+                "token_endpoint_auth_method": "none",
+                "scope": " ".join(scopes),
+            }
+        ),
+        content_type="application/json",
+    )
+
+    assert resp.status_code == 201, resp.content
 
 
 def test_no_signing_key_means_no_grant_is_advertised(settings):
