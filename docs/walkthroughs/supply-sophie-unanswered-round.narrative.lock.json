@@ -9,7 +9,7 @@
     "held-on-us",
     "whose-move"
   ],
-  "fetched_at": "2026-10-05T17:59:08.738159+00:00",
+  "fetched_at": "2026-10-05T18:59:18.192783+00:00",
   "name": "supply-sophie-unanswered-round",
   "narrative": "Sophie runs RUTF procurement for the Connect-RUTF program. 17 days ago she asked six suppliers to quote tender 2: half have never answered, despite two reminders, and the deadline is four days off, so chasing them is still worth it; and she forwards whatever does arrive to an AI that records it. Sophie opens tender 2 and reads where it stands: collecting quotes with its deadline in 4 days, three of six answered and three silent, each quote recorded from the supplier's own email with the fact it left out, each silent supplier with when she last chased it and a reminder already drafted, and that the tender has not settled how import duty is handled. She opens the reminder drafted for Sahel, which says when Sahel was asked and last reminded, sends it, and marks it sent from the draft itself; no further reminder falls before the deadline. Sahel answers with a quote; Sophie forwards it, and in the tender's history, turned to replies only, Sahel's email comes first: she opens it beside what the AI recorded from it, the reply dated the day it came in. On the comparison, side by side, no quote can be compared yet: the tender's import duty terms are not settled, so Harmattan's carriage-paid quote, which leaves the import to us, waits on them; Kanem has not stated its pack, and Sahel's quote is ex works, so its freight is ours with no freight estimate recorded, and in euros with no exchange rate recorded; our clearing estimate sits on the quotes we import. Back on the tender she settles import duty on its terms line: we import, under the program's duty waiver. Northgate's three questions are still on her, and Reply opens an email drafted with the three questions, an answer to write under each. The comparison then costs the quotes we import under the waiver: Harmattan's becomes comparable, one of three, landed at its quoted price plus our clearing estimate, while Kanem's pack, our freight estimate for Sahel and Sahel's exchange rate are still missing. Importing makes the paperwork hers, and tender 1 shows what that means: its order with Harmattan is at customs, held, waiting on us. Its status view shows nothing received yet, the invoice billed above the agreed price and the days it is late, and To do lists the documents owed to the forwarder and the invoice to review; the forwarder's email in the order's history says the trucks are held at the border on our import permit. Back on her overview, tender 2 reads what changed: three of six answered and none comparable when she opened it, four answered and 1 of 3 comparable, Harmattan, now, its next move hers, the reply to Northgate; the order is hers too, and a RUSF tender she asked two days ago waits on its suppliers, with the moves on her counted against those waiting on suppliers.",
   "personas": {
@@ -46,7 +46,7 @@
         }
       ],
       "id": "half-the-round-is-silent",
-      "narrative": "Sophie asked six suppliers to quote tender 2 and reminded the quiet ones twice. She opens the tender: collecting quotes, its deadline in 4 days, so there is still time to chase; half have answered and three are silent. Each quote that came in is recorded from the supplier's own email, marked as recorded by the AI, and the fact a quote left out is pulled out beside it: Kanem's sachets per carton. Sahel's row, like each silent supplier's, shows when she last chased it, and Sahel's reminder, the one now due, is already drafted. The terms line says the tender has not settled how import duty is handled.",
+      "narrative": "Sophie asked six suppliers to quote tender 2. The deadline is 4 days off, half have answered and three are silent. Each quote is recorded by the AI from the supplier's own email, with what it left out beside it: Kanem's sachets per carton. Sahel's row shows when she last chased it, and its reminder is now due. The terms line says import duty is not settled.",
       "persona": "sophie",
       "provenance": "S1",
       "title": "Half the tender never answered"
@@ -70,7 +70,7 @@
         }
       ],
       "id": "sophie-chases-sahel",
-      "narrative": "With the deadline four days off, Sophie opens the tender's draft emails at the reminder drafted for Sahel: it says when Sahel was asked and when she last reminded them, and under the message the Sent on field already holds today's date beside Mark sent. Once the reminder has gone she marks it sent, and back on the tender's Suppliers table Sahel's row is marked: reminder sent today, the third reminder, and no further reminder before the deadline.",
+      "narrative": "Sophie opens the drafts at Sahel's reminder: when Sahel was asked, when she last reminded them, and today's date ready beside Mark sent. Once it has gone she marks it sent, and Sahel's row is recorded: third reminder, sent today, the last before the deadline.",
       "persona": "sophie",
       "provenance": "S2",
       "title": "She chases Sahel from a drafted reminder"
@@ -94,7 +94,7 @@
         }
       ],
       "id": "sahel-finally-answers",
-      "narrative": "Sahel answers the reminder with a quote and Sophie forwards it to the AI. She lands on the tender's history, turned to replies only, where Sahel's email comes first. She opens Sahel's own email and reads who wrote it, the mail domain it came from and that the AI recorded it, the excerpt of what Sahel wrote, and below it what the AI recorded from it, the reply dated the day it came in, so she can check the record against Sahel's words.",
+      "narrative": "Sahel replies with a quote, and Sophie forwards it to the AI. In the tender's history she opens Sahel's own email: who wrote it, the domain it came from, the excerpt, and what the AI recorded from it, so the record answers to Sahel's words.",
       "persona": "sophie",
       "provenance": "S3",
       "title": "Sahel finally answers, and she opens the email"
@@ -113,7 +113,7 @@
         }
       ],
       "id": "whats-still-missing",
-      "narrative": "Sophie opens the comparison, every quote side by side, and none can be compared yet, for more than one reason. The tender's import duty terms are not settled, and Harmattan quotes carriage paid to Kano, which leaves the import to us, so its duty is ours to cost and its column waits on our terms. Each quote's other gaps are marked where they fall: Kanem has not stated its pack, and Sahel's new quote is ex works Niamey, so the freight from Niamey, export clearance included, is ours and our estimate of it is not recorded, and it is in euros, with no exchange rate recorded yet. Our clearing and forwarding estimate, USD 1.20 per carton, sits on both quotes we import; Kanem's delivered-duty-paid quote clears its own. Settling the terms would free only the quotes that leave the import to us; Kanem's pack and Sahel's rate are still owed. A quote that cannot be compared shows no landed figure: its header counts the facts owed by us and by the supplier, and the same gaps appear as its next steps.",
+      "narrative": "In the comparison, no quote can be compared yet. The tender's terms are not settled, and Harmattan quotes carriage paid to Kano, so its duty waits on them. Kanem has not stated its pack. Sahel quotes ex works Niamey: the freight from Niamey, export clearance included, is ours to estimate, our clearing estimate of USD 1.20 a carton applies, and it is in euros with no exchange rate yet.",
       "persona": "sophie",
       "provenance": "S4",
       "title": "No quote can be compared yet: duty terms unsettled, facts missing"
@@ -132,7 +132,7 @@
         }
       ],
       "id": "what-we-owe-northgate",
-      "narrative": "Back on the tender, Sophie settles import duty on the tender's terms line: we import, under the program's duty waiver, and the line reads the waiver, just recorded. That answers who imports every quote that leaves the import to us: the third of Northgate's three questions. The three questions are still on her list under To do, and Reply opens an email drafted for them, each question restated with an answer to write under it.",
+      "narrative": "Back on the tender, Sophie settles import duty: we import, under the program's duty waiver, and the terms line reads it, just recorded. That answers who imports, the third of Northgate's questions; all three stay on her To do list, and Reply opens the reply drafted for them.",
       "persona": "sophie",
       "provenance": "S5",
       "title": "She settles the tender's duty terms; the reply to Northgate is drafted"
@@ -151,7 +151,7 @@
         }
       ],
       "id": "harmattan-comparable",
-      "narrative": "She opens the comparison again: the duty line reads the waiver, the Import duty row is settled for the quotes we import, and Harmattan's quote is now comparable, one of three: its landed figure, USD 51.30 per carton, is its quoted price plus our clearing estimate, marked unconfirmed while the duty exemption is not on file, a fact to do. Award is offered on it with what is still open on the tender: the deadline in four days, two suppliers silent and the reply owed to Northgate. Kanem's quote still lacks its pack, which nobody has asked Kanem for yet, and Sahel's waits on our exchange rate and freight estimate, ours to record.",
+      "narrative": "In the comparison the duty line reads the waiver, import duty is settled for the quotes we import, and Harmattan's quote is comparable, one of three: landed at USD 51.30 a carton with our clearing estimate, unconfirmed until the duty exemption is on file. Award is offered with what is still open: the deadline in four days, two suppliers silent and the reply owed to Northgate.",
       "persona": "sophie",
       "provenance": "S5",
       "title": "Harmattan becomes comparable, and Award says what is still open"
@@ -175,7 +175,7 @@
         }
       ],
       "id": "held-on-us",
-      "narrative": "Importing makes the paperwork hers, and tender 1 shows what that means: its order with Harmattan for 2,000 cartons is at customs, held, waiting on us. The status view shows nothing received yet, the invoice billed above the agreed price, and the days late split between the supplier's and ours; To do lists the documents owed to the forwarder, to mark provided, and the invoice, to pay or dispute. The invoice's lines read billed against agreed, what we owe lists the import permit and the customs declaration, each holding the shipment, and the duty exemption owed under the tender's duty terms, each to mark provided, and the forwarder's email in the order's history says the trucks are held at the border until the permit is lodged.",
+      "narrative": "Importing makes the paperwork hers. Tender 1's order with Harmattan for 2,000 cartons is at customs, held on us, and its invoice is billed above the agreed price. To do lists the import permit and the customs declaration we owe the forwarder, and the forwarder's email says the trucks wait at the border for the permit.",
       "persona": "sophie",
       "provenance": "S6",
       "title": "Tender 1's order: held on our permit, billed high"
@@ -199,12 +199,12 @@
         }
       ],
       "id": "whose-move",
-      "narrative": "Back on her overview, tender 2's row now leads with 1 of 3 comparable, Harmattan, where the comparison showed none when she started, and four of six have answered, Northgate with questions rather than a quote. What the quotes still miss sits under its next move as outlined facts, apart from the moves. Its next move is hers: reply to Northgate's three questions. The items to do are counted against those waiting on suppliers, each row carrying its own: a RUSF tender for Maiduguri, asked two days ago, waits on its suppliers, and the tender 1 order at customs is hers.",
+      "narrative": "Back on her overview, tender 2 now leads with 1 of 3 comparable, Harmattan, and four of six have answered. Its open facts sit under its next move, which is hers: reply to Northgate's questions. Items to do are counted against those waiting on suppliers: a RUSF tender for Maiduguri waits on its suppliers, and the tender 1 order at customs is hers.",
       "persona": "sophie",
       "provenance": "S7",
       "title": "Whose move each procurement is, ours or the suppliers'"
     }
   ],
   "slug": "supply-sophie-unanswered-round",
-  "version": 43
+  "version": 44
 }
