@@ -109,6 +109,18 @@ class TestParseOrganizations:
         assert org.countries == ["Nigeria"]
         assert org.unresolved_countries == ["Atlantis"]
 
+    def test_hq_city_is_found_by_its_header_wherever_it_sits(self):
+        """Added after the fixed columns, so it is located by name: a column
+        inserted or moved later must not start feeding the resolver a
+        different field."""
+        rows = [ORG_HEADER + ["Notes 2", "HQ City"], ["Fenwick Trust"] + [""] * 16 + ["Kasama"]]
+        [org] = parse_organizations(rows)
+        assert org.hq_city == "Kasama"
+
+    def test_a_sheet_without_an_hq_city_column_reads_as_blank(self):
+        [org] = parse_organizations([ORG_HEADER, ["Fenwick Trust"]])
+        assert org.hq_city == ""
+
     def test_skips_blank_and_duplicate_names(self):
         rows = [ORG_HEADER, ["Fenwick Trust"], [""], ["Fenwick Trust"], ["   "]]
         assert [o.name for o in parse_organizations(rows)] == ["Fenwick Trust"]

@@ -54,6 +54,9 @@ class DirectoryOrg:
     # Kept verbatim for the location resolver, which wants the raw cells.
     raw_countries: str = ""
     raw_regions: str = ""
+    # The head office's town, when someone has written one down. Preferred
+    # over parsing Office Address, which is often an email or a PO box.
+    hq_city: str = ""
 
 
 @dataclass
@@ -122,9 +125,25 @@ def _split_list(raw: str) -> list[str]:
     return [part.strip() for part in re.split(r"[;,]", raw or "") if part.strip()]
 
 
+# Optional, and found by its header rather than its position: it was added after
+# the fixed columns above, and a column someone inserts or moves must not
+# silently start feeding the resolver a different field.
+HQ_CITY_HEADER = "hq city"
+
+
+def _column(rows: list[list[str]], header: str) -> int | None:
+    if not rows:
+        return None
+    for index, title in enumerate(rows[0]):
+        if re.sub(r"\s+", " ", (title or "").strip().lower()) == header:
+            return index
+    return None
+
+
 def parse_organizations(rows: list[list[str]]) -> list[DirectoryOrg]:
     seen: set[str] = set()
     out: list[DirectoryOrg] = []
+    hq_city_col = _column(rows, HQ_CITY_HEADER)
     for index, row in enumerate(rows[1:], start=2):
         name = cell(row, 0)
         if not name or name in seen:
@@ -149,6 +168,7 @@ def parse_organizations(rows: list[list[str]]) -> list[DirectoryOrg]:
                 source_row=index,
                 raw_countries=cell(row, 6),
                 raw_regions=cell(row, 7),
+                hq_city=cell(row, hq_city_col) if hq_city_col is not None else "",
             )
         )
     return out
