@@ -14,12 +14,26 @@
  * country is a hollow ring, because the middle of that country is exactly what
  * we do not know. A map that flattens the two draws a rooftop from the word
  * "Nigeria".
+ *
+ * The map is built once. When a filter changes, network.js hands it the new
+ * points through `MarketplaceGlobe.setPoints` and only the source's data moves;
+ * rebuilding the globe on every click re-downloaded its style and tiles.
  */
 (function () {
   'use strict';
 
   var DELIVERING = '#feaf31'; // brand-marigold
   var BENCH = '#a9b3e8';
+
+  var map = null;
+  var loaded = false;
+  var pending = null; // points that arrived before the style finished loading
+
+  function setPoints(points) {
+    var source = loaded && map && map.getSource('orgs');
+    if (source) source.setData(collection(points || []));
+    else pending = points || [];
+  }
 
   function render(container, points) {
     if (!window.ConnectMap || !window.mapboxgl || !window.MAPBOX_TOKEN) {
@@ -31,7 +45,7 @@
       return;
     }
 
-    var map = window.ConnectMap.createMap(container, {
+    map = window.ConnectMap.createMap(container, {
       center: [22, 4],
       zoom: 1.6,
       projection: 'globe',
@@ -63,7 +77,12 @@
         'star-intensity': 0.08,
       });
 
-      map.addSource('orgs', { type: 'geojson', data: collection(points) });
+      map.addSource('orgs', {
+        type: 'geojson',
+        data: collection(pending || points),
+      });
+      pending = null;
+      loaded = true;
 
       map.addLayer({
         id: 'orgs-glow',
@@ -168,9 +187,36 @@
     };
   }
 
+  function readEmbedded() {
+    var el = document.getElementById('mk-points');
+    if (!el) return null;
+    try {
+      return JSON.parse(el.textContent);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // The box can change size without the window doing so -- the resize bar,
+  // the filter rail opening on a phone -- and Mapbox only listens to the window.
+  function followSize(container) {
+    if (!window.ResizeObserver) return;
+    new window.ResizeObserver(function () {
+      if (map) map.resize();
+    }).observe(container);
+  }
+
   function start() {
     var container = document.getElementById('mk-globe');
     if (!container) return;
+    followSize(container);
+
+    var embedded = readEmbedded();
+    if (embedded) {
+      render(container, embedded);
+      return;
+    }
+
     var url = container.getAttribute('data-points-url');
     if (!url) return;
 
@@ -189,6 +235,8 @@
           'color:#8ea1ff;font-size:13px;">Could not load the map.</div>';
       });
   }
+
+  window.MarketplaceGlobe = { setPoints: setPoints };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', start);

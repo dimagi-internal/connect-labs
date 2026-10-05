@@ -57,10 +57,41 @@ def invalidate() -> None:
     """
     _cache.update(dict.fromkeys(_CACHED))
     _cache["loaded_at"] = 0.0
+    from django.core.cache import cache
+
+    cache.delete(_SPINE_KEY)
 
 
 def _fresh() -> bool:
     return bool(_cache["loaded_at"]) and (time.monotonic() - _cache["loaded_at"]) < _CACHE_TTL_SECONDS
+
+
+# The spine aggregate under both answers below is a MIN over every visit labs
+# holds -- millions of rows, seconds cold. Held only in the minute-long process
+# cache above, each of the three web workers paid it again every minute, so a
+# filter click after a pause took 2-4s where a warm one took a quarter of a
+# second. It is shared across workers in Redis and re-warmed on beat
+# (`marketplace.tasks.warm_network`) before it lapses, so no click pays it.
+# What it answers is when a partner FIRST delivered: it changes when a new
+# partner starts, which half an hour of staleness does not hide for long.
+_SPINE_KEY = "marketplace:first_service_by_partner:v1"
+_SPINE_TTL_SECONDS = 30 * 60
+
+
+def spine_first_service(refresh: bool = False) -> dict:
+    """Partner name -> first verified delivery, through the shared cache."""
+    from django.core.cache import cache
+
+    if not refresh:
+        hit = cache.get(_SPINE_KEY)
+        if hit is not None:
+            return hit
+
+    from connect_labs.pulse.network_api import first_service_by_partner
+
+    out = dict(first_service_by_partner())
+    cache.set(_SPINE_KEY, out, _SPINE_TTL_SECONDS)
+    return out
 
 
 def delivering_names() -> set[str]:
@@ -72,9 +103,7 @@ def delivering_names() -> set[str]:
     if _fresh() and _cache["delivering"] is not None:
         return _cache["delivering"]
 
-    from connect_labs.pulse.network_api import first_service_by_partner
-
-    names = set(first_service_by_partner())
+    names = set(spine_first_service())
     _cache["delivering"] = names
     _cache["loaded_at"] = time.monotonic()
     return names
@@ -90,9 +119,7 @@ def first_service_by_org_name() -> dict:
     if _fresh() and _cache["first_service"] is not None:
         return _cache["first_service"]
 
-    from connect_labs.pulse.network_api import first_service_by_partner
-
-    out = dict(first_service_by_partner())
+    out = spine_first_service()
     _cache["first_service"] = out
     _cache["loaded_at"] = _cache["loaded_at"] or time.monotonic()
     return out
@@ -863,7 +890,27 @@ def facet_rail(facets: dict, selected: dict, querydict) -> list[dict]:
                     "url": "?" + params.urlencode(),
                 }
             )
-        out.append({"param": param, "title": title, "rows": rows, "chosen": len(chosen)})
+        # One link that ticks every value, or clears them all once every
+        # value is ticked. Built like the rows' links, so it keeps the rest
+        # of the query too.
+        values_here = [entry["value"] for entry in values]
+        every = bool(values_here) and all(v in chosen for v in values_here)
+        params = querydict.copy()
+        if every:
+            params.setlist(param, [])
+        else:
+            current = [v for v in params.getlist(param) if v]
+            params.setlist(param, current + [v for v in values_here if v not in current])
+        out.append(
+            {
+                "param": param,
+                "title": title,
+                "rows": rows,
+                "chosen": len(chosen),
+                "all_selected": every,
+                "toggle_all_url": "?" + params.urlencode(),
+            }
+        )
     return out
 
 
