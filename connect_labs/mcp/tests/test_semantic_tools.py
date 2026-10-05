@@ -406,7 +406,7 @@ class TestItemLevelUpdate:
         with pytest.raises(MCPToolError) as exc:
             self._update(monkeypatch, access, upsert_measures=self.NEW_TRIO, expected_version=6)
 
-        assert exc.value.code == "CONFLICT"
+        assert exc.value.code == "VERSION_CONFLICT"
         assert "version 7" in str(exc.value)
         access.labs_api.update_record.assert_not_called()
 
@@ -439,6 +439,11 @@ class TestItemLevelUpdate:
             ({"remove": {"measures": ["no_such_measure"]}}, "NOT_FOUND"),
             ({"upsert_measures": NEW_TRIO, "insert_after": "no_such_measure"}, "NOT_FOUND"),
             ({"upsert_measures": [{"title": "no name"}]}, "INVALID_SCHEMA"),
+            (
+                {"upsert_properties": [{"name": "p", "type": "bool", "sql": "TRUE"}], "insert_after": "total_cases"},
+                "INVALID_SCHEMA",
+            ),
+            ({"upsert_measures": NEW_TRIO, "insert_after": {"aggregates": "num_visits"}}, "INVALID_SCHEMA"),
             ({"upsert_measures": [NEW_TRIO[1], NEW_TRIO[1]]}, "INVALID_SCHEMA"),
             ({"upsert_measures": NEW_TRIO, "indicators_doc": {"measures": []}}, "INVALID_SCHEMA"),
         ],
