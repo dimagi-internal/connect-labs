@@ -521,6 +521,12 @@ class TenderDetailView(_Base):
             for row in context["status"]["suppliers"]:
                 mine = by_supplier.get(row["supplier_id"]) or []
                 row["outreach"] = next((o for o in mine if o.get("changed")), mine[0] if mine else None)
+            # The History's line that recorded a quote carries what that quote still lacks: the
+            # same open facts the Suppliers table counts and the comparison tags, as they stand now.
+            quote_facts = context["status"].get("quote_facts") or {}
+            for entry in context["timeline"] or []:
+                if getattr(entry, "quote_id", None) in quote_facts:
+                    entry.open_facts = quote_facts[entry.quote_id]
         context["counts"] = {
             "quotes": len([q for q in context["quotes"] if not q.get("voided")]),
             "history": len(context["timeline"] or []) if isinstance(context["timeline"], list) else None,
@@ -1068,6 +1074,16 @@ class ComparisonView(_Base):
         context["award_incomplete_count"] = len(
             [row for row in (comparison or {}).get("blocked") or [] if row.get("blockers")]
         )
+        # What is still open on the tender, as chips on the award form: an early award is
+        # allowed, and these are recorded with it (moves.open_at_decision).
+        context["award_open_chips"] = []
+        if comparison and comparison.get("comparable") and not getattr(self.request, "supply_as_of", None):
+            from connect_labs.supply_chain.models import Tender as _Tender
+            from connect_labs.supply_chain.moves import open_at_decision, open_at_decision_chips
+
+            found = _Tender.objects.filter(pk=tender_id, program_id=_access(self.request).program_id).first()
+            if found is not None:
+                context["award_open_chips"] = open_at_decision_chips(open_at_decision(found, date.today()))
         # Where the tender's duty terms came from, when an answer to a supplier set them:
         # the comparison then carries the answer-to-terms link itself.
         if tender.get("duty_terms"):
@@ -1757,6 +1773,9 @@ class AwardDetailView(_Base):
         if detail is None:
             raise Http404(f"no award {award_id} in this programme")
         context["award"] = detail
+        from connect_labs.supply_chain.moves import open_at_decision_chips
+
+        context["open_at_decision_chips"] = open_at_decision_chips(detail.get("open_at_decision"))
         # The heading named the product's slug; what was awarded is a kit.
         context["awarded_item"] = award.quote.item.name if award.quote.item_id else None
         context["supplier"] = self.op("supplier_get", supplier_id=detail["supplier_id"])

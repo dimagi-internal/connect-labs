@@ -37,6 +37,13 @@ from connect_labs.supply_chain.models import (
 from connect_labs.supply_chain.values import possessive
 
 
+def _as_date(value):
+    """A date from a date or an ISO string; None when there is none."""
+    if not value or isinstance(value, date):
+        return value or None
+    return date.fromisoformat(str(value))
+
+
 def _same_offer(quote, data) -> bool:
     """Whether `data` states the offer `quote` already holds, by any one mark."""
     from decimal import Decimal, InvalidOperation
@@ -598,6 +605,7 @@ class ProcurementRepositoryMixin:
 
     def create_award(self, data):
         from connect_labs.supply_chain.data_access import _columns, _fresh
+        from connect_labs.supply_chain.moves import open_at_decision
 
         if not data.get("rationale"):
             raise ValueError("an award needs a rationale")
@@ -612,9 +620,12 @@ class ProcurementRepositoryMixin:
             commodity=self._resolve_commodity(data.get("commodity_slug")) or (quote.commodity if quote else None),
             # Provisional when the comparison it froze was: an award made while
             # some suppliers could not yet be compared could still be beaten.
+            # An award before the deadline is allowed (owner decision, 2026-10-04);
+            # what was still open on the tender that day is recorded with it.
             **{
                 "decided_on": date.today(),
                 "provisional": bool((data.get("comparison_snapshot") or {}).get("provisional")),
+                "open_at_decision": open_at_decision(found, _as_date(data.get("decided_on")) or date.today()),
                 **_columns(Award, data),
             },
         )

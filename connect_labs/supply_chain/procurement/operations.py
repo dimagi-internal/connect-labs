@@ -789,8 +789,10 @@ def tender_outstanding_questions(access, tender_id, commodity_slug):
     name="award_create",
     summary=(
         "Award a tender to a quote. Requires a rationale and freezes the "
-        "comparison as it stood at the moment of decision. Once every line of a draft or open tender "
-        "has an award, the tender's status becomes awarded; a closed tender is left as it is."
+        "comparison as it stood at the moment of decision, with what was still open on the tender "
+        "(deadline days left, silent suppliers, replies we owe) -- an award before the deadline is allowed. "
+        "Once every line of a draft or open tender has an award, the tender's status becomes awarded; "
+        "a closed tender is left as it is."
     ),
     input_schema=obj(
         {

@@ -127,7 +127,7 @@ def test_facts_on_us_lists_open_facts_only_never_award(da, world):
     (column,) = grid["quotes"]
     labels = [a["label"] for a in column["actions"]]
     assert "Award" not in labels
-    assert "Attach waiver document" in labels and all(a["owner"] for a in column["actions"])
+    assert "Attach duty exemption" in labels and all(a["owner"] for a in column["actions"])
     source = get_template("supply_chain/procurement/comparison.html").template.source
     assert "a.award" not in source
     assert 'data-testid="award-start"' in source
@@ -178,5 +178,6 @@ def test_gap_tags_name_who_supplies_the_fact():
     assert supplies(rules.US) == "we supply"
     assert supplies(rules.SUPPLIERS) == "supplier supplies"
     source = get_template("supply_chain/home.html").template.source
-    assert "owner|supplies" in source
+    assert '"supply_chain/_fact_chip.html"' in source
+    assert "owner|supplies" in get_template("supply_chain/_fact_chip.html").template.source
     assert "ours{% else %}supplier's" not in source
