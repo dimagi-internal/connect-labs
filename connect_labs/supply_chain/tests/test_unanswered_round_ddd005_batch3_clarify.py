@@ -156,6 +156,4 @@ def test_breakdown_counts_clarifications_so_the_parts_add_up():
         {"kind": "clarification", "supplier_id": 1},
         {"kind": "clarification", "supplier_id": 2},
     ]
-    assert _drafts_breakdown(drafts) == (
-        "1 reminder · 2 clarifications of the duty terms, one to each invited supplier"
-    )
+    assert _drafts_breakdown(drafts) == ("1 reminder · 2 clarifications of the duty terms")
