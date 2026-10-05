@@ -490,3 +490,231 @@ class TestItemLevelUpdate:
         content = data["result"]["structuredContent"]
         assert content["version"] == 8
         assert content["items_changed"]["measures"]["upserted"][0] == "registered_share"
+
+
+class TestCreateNeedsAScope:
+    """#2233: a create naming no scope minted a record nobody could read, list or
+    delete (registry 25526). Connect answers an unscoped read from public records
+    only, so the record was unreachable the moment it existed."""
+
+    def test_a_create_with_no_scope_is_refused_before_anything_is_written(self, monkeypatch):
+        from connect_labs.mcp.tools import semantic as tools
+
+        built = MagicMock()
+        monkeypatch.setattr(tools, "_access", built)
+        with pytest.raises(MCPToolError) as err:
+            tools.semantic_registry_create(user=None, seed_from="visit_quality")
+        assert err.value.code == "INVALID_SCHEMA"
+        for key in ("organization_id", "program_id", "opportunity_id"):
+            assert key in err.value.message
+        built.assert_not_called()
+
+    def test_a_scoped_create_still_goes_through(self, monkeypatch):
+        from connect_labs.mcp.tools import semantic as tools
+
+        access = MagicMock()
+        access.create_registry.return_value = MagicMock(
+            id=9, version=1, is_shared=False, indicators_doc={}, properties_doc={}, description=""
+        )
+        access.create_registry.return_value.name = "vq"
+        seen = {}
+
+        def _access(user, opportunity_id=None, program_id=None, organization_id=None):
+            seen.update(organization_id=organization_id)
+            return access
+
+        monkeypatch.setattr(tools, "_access", _access)
+        out = tools.semantic_registry_create(user=None, seed_from="visit_quality", organization_id=179)
+        assert out["id"] == 9
+        assert seen["organization_id"] == 179
+        access.create_registry.assert_called_once()
+
+
+class TestDelete:
+    """`semantic_registry_delete` (#2233): write access to the registry's own scope,
+    refused while a workflow binds it, and confirmed by a read-back because
+    Connect's DELETE answers 200 for an id it skipped."""
+
+    @staticmethod
+    def _record(rid=25527):
+        from connect_labs.workflow.data_access import SemanticRegistryRecord
+
+        return SemanticRegistryRecord(
+            {
+                "id": rid,
+                "experiment": "semantic",
+                "type": "semantic_registry",
+                "data": {"name": "scratch"},
+                "opportunity_id": None,
+            }
+        )
+
+    def _run(self, monkeypatch, *, in_scope, bindings=(), still_there=False, **kwargs):
+        from connect_labs.mcp.tools import semantic as tools
+
+        access = MagicMock()
+        access.access_token = "tok"
+        reads = [in_scope, self._record() if still_there else None]
+        access.get_registry_in_scope.side_effect = reads
+        scopes_seen = {}
+
+        def _access(user, opportunity_id=None, program_id=None, organization_id=None):
+            scopes_seen.update(opportunity_id=opportunity_id, program_id=program_id, organization_id=organization_id)
+            return access
+
+        def _find(token, registry_id, scopes):
+            scopes_seen["binding_scopes"] = scopes
+            if isinstance(bindings, Exception):
+                raise bindings
+            return list(bindings)
+
+        monkeypatch.setattr(tools, "_access", _access)
+        monkeypatch.setattr(tools, "find_registry_bindings", _find)
+        monkeypatch.setattr(tools, "_bindings_scopes", lambda user, token, home: [home, {}, {"opportunity_id": 5}])
+        result = tools.semantic_registry_delete(user=None, registry_id=25527, **kwargs)
+        return result, access, scopes_seen
+
+    def test_an_unbound_registry_in_a_scope_you_hold_is_deleted(self, monkeypatch):
+        result, access, seen = self._run(monkeypatch, in_scope=self._record(), organization_id=179)
+        assert result == {"registry_id": 25527, "name": "scratch", "deleted": True, "scope": {"organization_id": 179}}
+        access.delete_registry.assert_called_once_with(25527)
+        assert seen["organization_id"] == 179
+        assert {"organization_id": 179} in seen["binding_scopes"]
+
+    @pytest.mark.parametrize("kwargs", [{}, {"organization_id": 1, "opportunity_id": 2}])
+    def test_exactly_one_scope_must_be_named(self, monkeypatch, kwargs):
+        with pytest.raises(MCPToolError) as err:
+            self._run(monkeypatch, in_scope=self._record(), **kwargs)
+        assert err.value.code == "INVALID_SCHEMA"
+
+    def test_a_registry_not_readable_in_that_scope_is_not_deleted(self, monkeypatch):
+        """Not a member of the scope (Connect 404s), or the wrong scope: same answer."""
+        with pytest.raises(MCPToolError) as err:
+            self._run(monkeypatch, in_scope=None, organization_id=179)
+        assert err.value.code == "NOT_FOUND"
+
+    def test_a_bound_registry_is_refused_and_the_workflows_are_named(self, monkeypatch):
+        bound = [
+            {"workflow_id": 19778, "name": "KMC", "scope": {"opportunity_id": 5}},
+            {"workflow_id": 20001, "name": "copy", "scope": "public"},
+        ]
+        with pytest.raises(MCPToolError) as err:
+            self._run(monkeypatch, in_scope=self._record(), bindings=bound, organization_id=179)
+        assert err.value.code == "CONFLICT"
+        assert "19778" in err.value.message and "20001" in err.value.message
+        assert err.value.details["workflows"] == bound
+
+    def test_a_bound_registry_is_never_deleted(self, monkeypatch):
+        from connect_labs.mcp.tools import semantic as tools
+
+        access = MagicMock()
+        access.get_registry_in_scope.return_value = self._record()
+        monkeypatch.setattr(tools, "_access", lambda *a, **k: access)
+        monkeypatch.setattr(tools, "_bindings_scopes", lambda *a: [{}])
+        monkeypatch.setattr(
+            tools, "find_registry_bindings", lambda *a: [{"workflow_id": 1, "name": "w", "scope": "public"}]
+        )
+        with pytest.raises(MCPToolError):
+            tools.semantic_registry_delete(user=None, registry_id=25527, organization_id=179)
+        access.delete_registry.assert_not_called()
+
+    def test_when_the_bindings_cannot_be_checked_nothing_is_deleted(self, monkeypatch):
+        from connect_labs.workflow.data_access import RegistryBindingsUnknown
+
+        with pytest.raises(MCPToolError) as err:
+            self._run(
+                monkeypatch,
+                in_scope=self._record(),
+                bindings=RegistryBindingsUnknown("opportunity_id=5: 502"),
+                organization_id=179,
+            )
+        assert err.value.code == "UPSTREAM_UNAVAILABLE"
+
+    def test_a_delete_connect_silently_skipped_is_reported(self, monkeypatch):
+        with pytest.raises(MCPToolError) as err:
+            self._run(monkeypatch, in_scope=self._record(), still_there=True, organization_id=179)
+        assert err.value.code == "PERMISSION_DENIED"
+
+    def test_delete_is_flagged_as_a_write(self):
+        import connect_labs.mcp.tools.semantic  # noqa: F401 -- registers the tools
+        from connect_labs.mcp.tool_registry import _REGISTRY
+
+        assert _REGISTRY["semantic_registry_delete"].is_write
+
+
+class TestFindRegistryBindings:
+    """The binding scan reads each scope on its own -- reads are an exact scope
+    match -- and fails closed when any one of them cannot be read."""
+
+    @staticmethod
+    def _wf(wid, binding):
+        from connect_labs.workflow.data_access import WorkflowDefinitionRecord
+
+        return WorkflowDefinitionRecord(
+            {
+                "id": wid,
+                "experiment": "workflow",
+                "type": "workflow_definition",
+                "data": {"name": f"wf{wid}", **({"registry_source": binding} if binding is not None else {})},
+                "opportunity_id": None,
+            }
+        )
+
+    def _patch(self, monkeypatch, by_scope):
+        from connect_labs.workflow import data_access as da
+
+        class FakeWDA:
+            EXPERIMENT = "workflow"
+
+            def __init__(self, access_token, **scope):
+                self.scope = scope
+                self.labs_api = MagicMock()
+
+                def get_records(**kw):
+                    key = "public" if kw.get("public") else tuple(sorted(scope.items()))
+                    value = by_scope[key]
+                    if isinstance(value, Exception):
+                        raise value
+                    return value
+
+                self.labs_api.get_records.side_effect = get_records
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        monkeypatch.setattr(da, "WorkflowDataAccess", FakeWDA)
+        return da
+
+    def test_it_finds_bindings_in_every_scope_and_ignores_other_registries(self, monkeypatch):
+        da = self._patch(
+            monkeypatch,
+            {
+                "public": [self._wf(1, {"registry_id": 25527, "public": True}), self._wf(2, {"name": "kmc"})],
+                (("opportunity_id", 5),): [self._wf(3, {"registry_id": "25527", "organization_id": 179})],
+                (("program_id", 9),): [self._wf(4, {"registry_id": 19784}), self._wf(5, None)],
+            },
+        )
+        hits = da.find_registry_bindings("tok", 25527, [{}, {"opportunity_id": 5}, {"program_id": 9}])
+        assert [h["workflow_id"] for h in hits] == [1, 3]
+        assert hits[1]["scope"] == {"opportunity_id": 5}
+
+    def test_a_scope_that_cannot_be_read_fails_closed(self, monkeypatch):
+        da = self._patch(monkeypatch, {"public": [], (("opportunity_id", 5),): RuntimeError("502 from Connect")})
+        with pytest.raises(da.RegistryBindingsUnknown) as err:
+            da.find_registry_bindings("tok", 25527, [{}, {"opportunity_id": 5}])
+        assert "opportunity_id=5" in str(err.value)
+
+
+class TestGetRegistryInScope:
+    def test_it_never_falls_back_to_the_public_read(self):
+        from connect_labs.labs.integrations.connect.api_client import LabsAPIError
+        from connect_labs.workflow.data_access import SemanticRegistryDataAccess
+
+        access = SemanticRegistryDataAccess.__new__(SemanticRegistryDataAccess)
+        access.labs_api = MagicMock()
+        access.labs_api.get_record_by_id.side_effect = LabsAPIError("nope", status_code=404)
+        assert access.get_registry_in_scope(25527) is None
+        access.labs_api.get_public_record_by_id.assert_not_called()

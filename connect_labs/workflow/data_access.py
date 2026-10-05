@@ -2336,8 +2336,94 @@ class SemanticRegistryDataAccess(BaseDataAccess):
             }
         )
 
+    def get_registry_in_scope(self, registry_id: int) -> SemanticRegistryRecord | None:
+        """Read a registry ONLY in this accessor's own scope -- no public fallback.
+
+        This is the read that proves write access before a delete. Connect answers
+        a scoped read with a 404 to anyone who is not a member of that scope, so a
+        hit here means the caller may write the record. `get_registry` would also
+        return a SHARED registry read from outside its scope, which proves nothing
+        about who may delete it.
+        """
+        try:
+            return self.labs_api.get_record_by_id(
+                registry_id,
+                experiment=self.EXPERIMENT,
+                type=self.RECORD_TYPE,
+                model_class=SemanticRegistryRecord,
+            )
+        except LabsAPIError as exc:
+            if exc.status_code != 404:
+                raise
+            return None
+
     def delete_registry(self, registry_id: int) -> None:
         self.labs_api.delete_record(registry_id)
+
+
+class RegistryBindingsUnknown(Exception):
+    """Could not establish which workflows bind a registry -- so it must not be deleted."""
+
+
+def find_registry_bindings(access_token: str, registry_id: int, scopes: list[dict]) -> list[dict]:
+    """Every workflow definition, in `scopes`, whose `registry_source` binds `registry_id`.
+
+    `scopes` is a list of single-key scope dicts (`{"opportunity_id": 5}`, ...);
+    `{}` means the PUBLIC (shared) definitions. Reads are an exact scope match, so
+    there is no one query for "every workflow that binds this": each scope is read
+    on its own. Any scope that cannot be read raises `RegistryBindingsUnknown` --
+    a delete gated on this must fail closed, never treat "could not look" as
+    "nothing there".
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    from django.db import connections
+
+    registry_id = int(registry_id)
+
+    def _scan(scope: dict) -> list[dict]:
+        try:
+            with WorkflowDataAccess(access_token=access_token, **scope) as wda:
+                try:
+                    if scope:
+                        records = wda.labs_api.get_records(
+                            experiment=wda.EXPERIMENT, type="workflow_definition", model_class=WorkflowDefinitionRecord
+                        )
+                    else:
+                        records = wda.labs_api.get_records(
+                            experiment=wda.EXPERIMENT,
+                            type="workflow_definition",
+                            model_class=WorkflowDefinitionRecord,
+                            public=True,
+                        )
+                finally:
+                    wda.labs_api.close()
+        except Exception as exc:  # noqa: BLE001 -- re-raised as the one error a caller must handle
+            label = ", ".join(f"{k}={v}" for k, v in scope.items()) or "public"
+            raise RegistryBindingsUnknown(f"could not read the workflows in scope {label}: {exc}") from exc
+        finally:
+            # The labs-only path and the audit trail use the ORM from this worker thread.
+            connections.close_all()
+        hits = []
+        for record in records:
+            bound = (record.registry_source or {}).get("registry_id")
+            try:
+                matches = bound is not None and int(bound) == registry_id
+            except (TypeError, ValueError):
+                matches = False
+            if matches:
+                hits.append({"workflow_id": record.id, "name": record.name, "scope": dict(scope) or "public"})
+        return hits
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(_scan, scopes))
+    seen, out = set(), []
+    for hits in results:
+        for hit in hits:
+            if hit["workflow_id"] not in seen:
+                seen.add(hit["workflow_id"])
+                out.append(hit)
+    return sorted(out, key=lambda h: h["workflow_id"])
 
 
 class PipelineDataAccess(BaseDataAccess):
