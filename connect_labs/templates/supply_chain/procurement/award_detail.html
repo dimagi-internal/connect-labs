@@ -37,6 +37,11 @@ the award, so the page says so where the order button would otherwise be.
   {% if award.rationale %}
     <p class="text-sm text-gray-800 mt-2 max-w-3xl"><span class="text-gray-600">Why:</span> {{ award.rationale }}</p>
   {% endif %}
+  {% if open_at_decision_chips %}
+    <div class="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-gray-600" data-testid="award-open-at-decision">Open at decision
+      {% for chip in open_at_decision_chips %}<span class="status-chip status-chip--{{ chip.tone }}">{{ chip.label }}</span>{% endfor %}
+    </div>
+  {% endif %}
   {% comment %}What was actually awarded, in figures: the offer's own money,
   read from the comparison rather than recomputed, and the awarded kit against
   the specification it was chosen for. The award stated a kit, a decider and a

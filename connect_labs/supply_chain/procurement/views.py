@@ -1074,6 +1074,16 @@ class ComparisonView(_Base):
         context["award_incomplete_count"] = len(
             [row for row in (comparison or {}).get("blocked") or [] if row.get("blockers")]
         )
+        # What is still open on the tender, as chips on the award form: an early award is
+        # allowed, and these are recorded with it (moves.open_at_decision).
+        context["award_open_chips"] = []
+        if comparison and comparison.get("comparable") and not getattr(self.request, "supply_as_of", None):
+            from connect_labs.supply_chain.models import Tender as _Tender
+            from connect_labs.supply_chain.moves import open_at_decision, open_at_decision_chips
+
+            found = _Tender.objects.filter(pk=tender_id, program_id=_access(self.request).program_id).first()
+            if found is not None:
+                context["award_open_chips"] = open_at_decision_chips(open_at_decision(found, date.today()))
         # Where the tender's duty terms came from, when an answer to a supplier set them:
         # the comparison then carries the answer-to-terms link itself.
         if tender.get("duty_terms"):
@@ -1763,6 +1773,9 @@ class AwardDetailView(_Base):
         if detail is None:
             raise Http404(f"no award {award_id} in this programme")
         context["award"] = detail
+        from connect_labs.supply_chain.moves import open_at_decision_chips
+
+        context["open_at_decision_chips"] = open_at_decision_chips(detail.get("open_at_decision"))
         # The heading named the product's slug; what was awarded is a kit.
         context["awarded_item"] = award.quote.item.name if award.quote.item_id else None
         context["supplier"] = self.op("supplier_get", supplier_id=detail["supplier_id"])

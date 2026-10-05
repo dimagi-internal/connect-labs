@@ -237,6 +237,7 @@ def award(obj) -> dict:
         "decided_by": obj.decided_by,
         "rationale": obj.rationale,
         "comparison_snapshot": obj.comparison_snapshot,
+        "open_at_decision": obj.open_at_decision,
         "provisional": obj.provisional,
         "assumed_buyer_of_record": obj.assumed_buyer_of_record,
     }

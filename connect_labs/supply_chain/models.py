@@ -751,6 +751,10 @@ class Award(TimestampedModel):
     # its landed totals assumed (design doc section 17.1). Without that, a
     # replayed comparison can silently disagree with the award it justified.
     comparison_snapshot = models.JSONField(default=dict, blank=True)
+    # What was still open on the tender when it was decided (moves.open_at_decision):
+    # deadline days left, silent suppliers, replies we owed. An early award is allowed;
+    # this is how the record says it was early.
+    open_at_decision = models.JSONField(default=dict, blank=True)
     provisional = models.BooleanField(default=False)
     assumed_buyer_of_record = models.CharField(
         max_length=16, blank=True, default="", choices=_choices(records.BUYER_OF_RECORD)
