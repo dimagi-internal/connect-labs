@@ -277,6 +277,8 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
             # the quote (and what Ask asks for); ours are a count, linking to the comparison.
             ours_g, theirs_g = split_gaps(open_facts.get(quote.pk, []))
             row["missing"] = theirs_g
+            # Whose step each missing fact is: ours to ask until we chase after the quote, then theirs.
+            row["missing_owner"] = rules.SUPPLIERS if asked_since_quote(quote, mine) else rules.TO_ASK
             row["on_us"] = rules.facts_chip(ours_g, rules.US)
             row["on_us_href"] = (
                 reverse("supply_chain:procurement_comparison", args=[tender.pk]) + f"?commodity={quote.commodity.slug}"
@@ -663,11 +665,12 @@ def comparison_grid(
                 else:
                     actions.append({"label": f"Record {g}", "href": quote_url, "owner": rules.US})
             for g in supplier_gaps:
+                # Not yet asked: asking is ours, under To do; once asked, the supplier's, under Waiting.
                 actions.append(
                     {
                         "label": f"Ask for {g}",
                         "href": f"{tender_url}#{anchor}" if anchor in draft_anchors else quote_url,
-                        "owner": rules.SUPPLIERS,
+                        "owner": supplier_owner,
                     }
                 )
             # No Award here: the next steps are open facts only. The award is the
