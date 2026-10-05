@@ -153,14 +153,10 @@ def protected_resource_metadata(restricted: bool = False) -> dict:
         # grant issues, never for sign-ins or PATs, hence not "required" here.
         from canopy_sdk.host import protected_resource_metadata as with_grant
 
+        # dimagi-canopy >= 0.6.1 leaves scopes_supported alone here: it is what an
+        # interactive client registers for, and register_client accepts only
+        # MCP_SCOPES (canopy-web#1157; the regression test is in test_delegation).
         doc = with_grant(config, doc)
-        # The SDK unions the grant's tool scopes into scopes_supported. Here that
-        # list is what an interactive client asks ``register_client`` for, and
-        # registration only accepts MCP_SCOPES -- so advertising the tool scopes
-        # broke every new sign-in (Claude Code: "Dynamic Client Registration
-        # rejected ... The scopes available are 'mcp', 'mcp:no-uservisit-data'").
-        # canopy reads the grant's scopes from the RFC 8414 document, not this one.
-        doc["scopes_supported"] = [resource_scope(restricted)]
     return doc
 
 
