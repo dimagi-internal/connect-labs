@@ -465,8 +465,16 @@ SNAPSHOT_INPUTS = {
             "first_visit_date": "first_visit",
             "last_visit_date": "last_visit",
             "last_kmc_status": "kmc_status",
+            # Read by `daily` below, never displayed: whether the baby has a
+            # registration form, so the day-by-day count sums to registered_cases.
+            "registered": "registered",
         },
     },
+    # Registrations by day for the as-of month and the month before, per scope:
+    # the "this month, day by day" chart of the enrolment-against-target section.
+    # `flag` keeps only babies with a registration form (semantic/snapshot.py
+    # daily_counts).
+    "daily": {"flag": "registered"},
     "visits_pipeline": "visits",
     # The case-index date every maturity window counts from (`days_since_first_visit`
     # in the registry): with the registry's longest window, when an opportunity's
@@ -569,6 +577,13 @@ SNAPSHOT_SCHEMA = {
             "month's credible recorders, and `counts`: every count indicator's raw figure "
             "(e.g. registered_cases), never suppressed under the min-denominator floor, which "
             "the enrolment-against-target section sums month by month"
+        ),
+        "state.snapshot.daily": (
+            "Registrations by day for the as-of month and the month before it, per scope "
+            "(all / llo:<name>): {months: [previous, current], as_of, byScope: {scope: {month: "
+            "[count per day]}}}. The previous month runs its full length, the current one to "
+            "the as-of day. Counts babies with a registration form, by their registry cohort "
+            "date (reg_date, else first visit), so a month sums to its registered_cases"
         ),
         "state.snapshot.monthlyByScope": (
             "Monthly series precomputed per drill scope (all / llo:<name> / opp:<id>) so a "

@@ -721,5 +721,7 @@ BUILDER_SPEC_KEYS = {
         "min_denominator_default",
         "state_key",
         "maturity_anchor",
+        # {flag: <case-index field>}: registrations by day (semantic/snapshot.py daily_counts)
+        "daily",
     },
 }
