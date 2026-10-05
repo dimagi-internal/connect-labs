@@ -15,6 +15,10 @@ lg up, so the desktop layout never depends on JavaScript having run.
 The globe is the same stack as the Pulse wall display -- Mapbox GL through the
 shared ConnectMap helper -- so this reads as part of the product rather than a
 different thing that happens to plot dots.
+
+Filtering does not reload the page. network.js fetches the filtered page,
+swaps every `data-mk-swap` region and moves the globe's points, so the map and
+the scroll position stay put; every link and form still works without it.
 {% endcomment %}
 {% load static %}
 {% block title %}The network{% endblock %}
@@ -25,7 +29,7 @@ different thing that happens to plot dots.
 {% endblock %}
 
 {% block content %}
-<div class="max-w-screen-2xl mx-auto px-0 sm:px-6 lg:px-8 py-5 sm:py-6">
+<div id="mk-network" class="max-w-screen-2xl mx-auto px-0 sm:px-6 lg:px-8 py-5 sm:py-6">
 
   <div class="flex flex-wrap-reverse items-start justify-between gap-x-6 gap-y-2 mb-5">
     <div>
@@ -41,7 +45,7 @@ different thing that happens to plot dots.
   </div>
 
   {# Segments are the jobs people come to do; the rail refines within one. #}
-  <form method="get" id="mk-segments">
+  <form method="get" id="mk-segments" data-mk-filter data-mk-swap="segments">
     {% for value in selected.countries %}<input type="hidden" name="country" value="{{ value }}">{% endfor %}
     {% for value in selected.delivered %}<input type="hidden" name="delivered" value="{{ value }}">{% endfor %}
     {% for value in selected.applied %}<input type="hidden" name="applied" value="{{ value }}">{% endfor %}
@@ -70,14 +74,17 @@ different thing that happens to plot dots.
           <i class="fa-solid fa-chevron-down text-[10px] text-gray-400 transition-transform lg:hidden"
              :class="open && 'rotate-180'"></i>
         </button>
-        {% if any_facet or selected.q %}
-          <a href="{% url 'marketplace:network' %}?segment={{ selected.segment }}"
-             class="text-xs text-gray-400 hover:text-gray-600">Reset</a>
-        {% endif %}
+        <span data-mk-swap="reset">
+          {% if any_facet or selected.q %}
+            <a href="{% url 'marketplace:network' %}?segment={{ selected.segment }}" data-mk-filter
+               class="text-xs text-gray-400 hover:text-gray-600">Reset</a>
+          {% endif %}
+        </span>
       </div>
 
       <div class="hidden lg:block" :class="{ 'hidden': !open }">
-      <form method="get" class="px-4 py-3 border-b border-gray-100">
+      <div data-mk-swap="rail">
+      <form method="get" data-mk-filter class="px-4 py-3 border-b border-gray-100">
         <input type="hidden" name="segment" value="{{ selected.segment }}">
         {% for value in selected.countries %}<input type="hidden" name="country" value="{{ value }}">{% endfor %}
         {% for value in selected.delivered %}<input type="hidden" name="delivered" value="{{ value }}">{% endfor %}
@@ -91,13 +98,21 @@ different thing that happens to plot dots.
 
       {% for section in rail %}
         <div class="px-4 py-3.5 {% if not forloop.last %}border-b border-gray-100{% endif %}">
-          <div class="text-[11px] font-semibold text-gray-500 tracking-wider mb-2.5">{{ section.title|upper }}</div>
+          <div class="flex items-baseline justify-between gap-2 mb-2.5">
+            <div class="text-[11px] font-semibold text-gray-500 tracking-wider">{{ section.title|upper }}</div>
+            {% if section.rows|length > 1 %}
+              <a href="{{ section.toggle_all_url }}" data-mk-filter
+                 class="text-[11px] text-brand-indigo hover:text-brand-deep-purple whitespace-nowrap">
+                {% if section.all_selected %}Select none{% else %}Select all{% endif %}
+              </a>
+            {% endif %}
+          </div>
           <div class="flex flex-col gap-0.5 {% if section.rows|length > 8 %}max-h-64 overflow-y-auto pr-1{% endif %}">
             {% for row in section.rows %}
-              <a href="{{ row.url }}"
+              <a href="{{ row.url }}" data-mk-filter data-mk-row
                  class="flex items-center gap-2.5 text-[13px] px-1.5 -mx-1.5 py-1 rounded-md transition
                         {% if row.selected %}bg-indigo-50 text-brand-deep-purple font-medium{% else %}text-gray-700 hover:bg-gray-50{% endif %}">
-                <span class="w-[15px] h-[15px] rounded border inline-flex items-center justify-center text-[9px] shrink-0
+                <span data-mk-box class="w-[15px] h-[15px] rounded border inline-flex items-center justify-center text-[9px] shrink-0
                              {% if row.selected %}bg-brand-indigo border-brand-indigo text-white{% else %}bg-white border-brand-border-light text-transparent{% endif %}">
                   {% if row.selected %}<i class="fa-solid fa-check"></i>{% endif %}
                 </span>
@@ -111,17 +126,25 @@ different thing that happens to plot dots.
         </div>
       {% endfor %}
       </div>
+      </div>
     </div>
 
     <div>
-      <div class="flex items-center gap-3 mb-3 flex-wrap">
+      <div class="flex items-center gap-3 mb-3 flex-wrap" data-mk-swap="summary">
         <span class="text-[13px] text-gray-500"><span class="font-semibold text-gray-900">{{ shown }}</span> shown</span>
         {% if why %}<span class="text-[12.5px] text-gray-500">· {{ why }}</span>{% endif %}
       </div>
 
-      <div class="rounded-lg overflow-hidden border border-brand-border-light mb-4 relative bg-brand-deep-purple h-[220px] sm:h-[280px] lg:h-[320px]">
+      {{ points|json_script:"mk-points" }}
+      {# Drag the bar along the bottom edge to make the map taller or shorter; double-click it to put it back. #}
+      <div id="mk-globe-box" class="rounded-lg overflow-hidden border border-brand-border-light mb-4 relative bg-brand-deep-purple h-[220px] sm:h-[280px] lg:h-[320px]">
         <div id="mk-globe" class="w-full h-full"
              data-points-url="{% url 'marketplace:network_points' %}?{{ request.GET.urlencode }}"></div>
+        <div id="mk-globe-resize" role="separator" aria-orientation="horizontal" aria-label="Resize the map" tabindex="0"
+             title="Drag to resize the map. Double-click to reset."
+             class="absolute inset-x-0 bottom-0 h-3 flex items-end justify-center pb-1 cursor-ns-resize touch-none z-10 group">
+          <span class="block w-12 h-1 rounded-full bg-white/40 group-hover:bg-white/80 group-focus:bg-white/80 transition"></span>
+        </div>
         <div class="absolute left-3 bottom-3 sm:left-4 sm:bottom-4 max-w-[calc(100%-1.5rem)] flex flex-wrap items-center gap-x-3 gap-y-1 sm:gap-x-4 text-[10.5px] sm:text-[11.5px] text-white/80 bg-black/25 rounded-lg px-2.5 sm:px-3 py-1.5 sm:py-2 backdrop-blur-sm">
           <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-brand-marigold inline-block"></span>delivering</span>
           <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full inline-block" style="background:#a9b3e8"></span>available</span>
@@ -129,7 +152,7 @@ different thing that happens to plot dots.
         </div>
       </div>
 
-      <div class="flex flex-col gap-2.5">
+      <div class="flex flex-col gap-2.5 transition-opacity" data-mk-swap="list">
         {% for row in listed %}
           <div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-[18px] py-3.5 sm:py-4 grid grid-cols-1 lg:grid-cols-[2.4fr_1.3fr_2.6fr] gap-2.5 lg:gap-4 items-start lg:items-center hover:shadow-sm transition">
 
@@ -200,6 +223,7 @@ different thing that happens to plot dots.
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
   <script src="{% static 'maps/connect_map.js' %}"></script>
   <script src="{% static 'marketplace/globe.js' %}"></script>
+  <script src="{% static 'marketplace/network.js' %}"></script>
 {% endblock %}
 
 {% comment %}
