@@ -240,7 +240,7 @@ class RequiredDocumentForm(ProvenancedForm):
         set_choices(
             self,
             "kind",
-            [("", "—")] + [(value, str(value).replace("_", " ").capitalize()) for value in records.DOCUMENT_KINDS],
+            [("", "—")] + [(value, label.capitalize()) for value, label in records.DOCUMENT_KIND_LABELS.items()],
         )
         # Organisations are labs-wide, so this picker is deliberately unscoped.
         self.fields["owed_by_org"].queryset = LabsOrg.objects.order_by("name")

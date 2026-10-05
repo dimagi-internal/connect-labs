@@ -18,6 +18,7 @@ from functools import lru_cache
 from django.urls import reverse
 
 from connect_labs.supply_chain import moves as rules
+from connect_labs.supply_chain.records import document_kind_label, document_not_on_file
 from connect_labs.supply_chain.standing import STAGES, stage_bars
 from connect_labs.supply_chain.values import money_digits, quantity_phrase, unit_noun
 
@@ -91,7 +92,8 @@ def _blocked_by_terms(row) -> bool:
     return _ROUND_DUTY in (row.gaps or [])
 
 
-_WAIVER_DOC = "waiver document"
+# The duty exemption a quote costed on the waiver rests on, named as the document is everywhere.
+_WAIVER_DOC = document_kind_label("duty_exemption")
 # Our own estimates, recorded on the tender's Terms box: never a supplier's to give.
 _ESTIMATE_GAPS = ("freight estimate", "clearing estimate")
 
@@ -99,7 +101,7 @@ _ESTIMATE_GAPS = ("freight estimate", "clearing estimate")
 @lru_cache(maxsize=1)
 def _our_gap_words() -> frozenset:
     """The gaps that are ours: every gap whose question is addressed to us (questions.py), plus
-    the two only the tender carries -- the waiver document and our clearing estimate.
+    the two only the tender carries -- the duty exemption and our clearing estimate.
 
     One table decides both whose a gap is and whether a follow-up asks the supplier for it,
     so the comparison, the tender's Suppliers table and the drafted emails cannot disagree.
@@ -121,6 +123,12 @@ def _gap_word(gap: str) -> str:
 def gap_owner(gap: str) -> str:
     """Whose a gap is: our tender terms and the rates we record are ours; what a quote states, the supplier's."""
     return rules.US if gap in _our_gap_words() or gap.startswith("exchange rate") else rules.SUPPLIERS
+
+
+def fact_chips(gaps) -> list:
+    """[(fact, owner)]: open facts as the outlined gap chips name them, ours first."""
+    ours, theirs = split_gaps(gaps)
+    return [(_gap_word(g), rules.US) for g in ours] + [(_gap_word(g), gap_owner(g)) for g in theirs]
 
 
 def split_gaps(gaps) -> tuple[list, list]:
@@ -148,7 +156,7 @@ def quote_open_facts(tender, row, quote, *, waiver_on_file=True) -> list:
     the tender's Suppliers table and comparable-quotes tile, and the overview's Quote gaps all read it.
 
     The comparison's gaps, our estimates still to record (which do not block the ranking), and,
-    for a quote costed on a duty waiver with no copy of it on file, the waiver document.
+    for a quote costed on a duty waiver with no copy of it on file, the duty exemption.
     Split it by `split_gaps` for whose each fact is.
     """
     from connect_labs.supply_chain.procurement.services.pricing import quote_rests_on_relief
@@ -452,6 +460,8 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
         "quoted": quoted,
         "comparable_chip": comparable_chip(compared),
         "primary": _primary_action(tender, ours, comparable),
+        # Each live quote's open facts as chips -- (fact, owner) -- for the History's quote lines.
+        "quote_facts": {qid: fact_chips(facts) for qid, facts in open_facts.items() if facts},
     }
 
 
@@ -611,7 +621,7 @@ def comparison_grid(
                 elif g == _WAIVER_DOC:
                     actions.append(
                         {
-                            "label": "Attach waiver document",
+                            "label": f"Attach {_WAIVER_DOC}",
                             "href": reverse("supply_chain:tender_document_attach", args=[tender.pk]),
                             "owner": rules.US,
                         }
@@ -718,7 +728,7 @@ def comparison_grid(
             cells["clearing"].append(blank("supplier's (it imports)" if quote.delivery_mode != "pickup" else "—"))
         duty = _duty_cell(tender, quote, gaps, src)
         if waiver_gap:
-            duty["pending"] = "document not on file"
+            duty["pending"] = document_not_on_file("duty_exemption")
             duty["pending_owner"] = rules.US
         cells["duty"].append(duty)
         if (quote.as_quoted_currency or "USD") == "USD":

@@ -32,7 +32,7 @@
     <div id="duty-terms" data-testid="comparison-duty-terms" class="flex flex-wrap items-center gap-2.5 rounded-lg border px-3 py-1.5 text-sm {% if tender.duty_terms %}border-brand-border-light bg-white{% else %}border-message-warning-border/50 bg-message-warning{% endif %}">
       <span data-testid="duty-terms-chip"><span class="text-gray-600">Import duty:</span> <strong data-testid="duty-terms-value" class="{% if tender.duty_terms %}text-gray-900{% else %}text-message-warning-text{% endif %}">{% if tender.duty_terms %}{{ tender.duty_terms|duty_terms_words }}{% else %}not settled{% endif %}</strong></span>
       {% if grid_blocked_by_terms %}<span class="text-gray-700" data-testid="duty-terms-blocks">· blocks {{ grid_blocked_by_terms|join:", " }}</span>{% endif %}
-      {% if tender.duty_terms == "buyer_waiver" %}<span class="text-xs text-gray-600" data-testid="waiver-evidence">· waiver document {% if waiver_on_file %}on file{% else %}not on file{% endif %}</span>{% endif %}
+      {% if tender.duty_terms == "buyer_waiver" %}<span class="text-xs text-gray-600" data-testid="waiver-evidence">· {{ "duty_exemption"|document_kind }} {% if waiver_on_file %}on file{% else %}not on file{% endif %}</span>{% endif %}
       {% if not supply_as_of %}
       <details class="relative">
         <summary data-testid="duty-terms-change" role="button" class="text-brand-indigo cursor-pointer list-none font-semibold hover:underline [&::-webkit-details-marker]:hidden">{% if tender.duty_terms %}Change{% else %}Settle{% endif %}</summary>

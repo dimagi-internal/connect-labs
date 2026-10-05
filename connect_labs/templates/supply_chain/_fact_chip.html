@@ -1,0 +1,2 @@
+{% load supply_chain_extras %}{% comment %}One open fact a quote lacks, as an outlined chip: "exchange rate · we supply". `fact`,
+`owner` (moves.US / SUPPLIERS) and, on the overview, `n` -- how many quotes lack it.{% endcomment %}<span class="status-chip status-chip--fact" data-testid="fact-chip" data-fact="{{ fact }}" data-owner="{{ owner }}">{{ fact }} · {{ owner|supplies }}{% if n > 1 %} · {{ n }} quotes{% endif %}</span>

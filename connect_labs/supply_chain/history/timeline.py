@@ -21,7 +21,7 @@ rewind restored included). A supplier renamed since reads by its new name.
 
 import datetime
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Q
@@ -103,6 +103,11 @@ class Entry:
     # Why an AI-entered quote's line offers no Correct or Void: "voided" or
     # "corrected", so every such line says something in that place.
     fix_status: str = ""
+    # On the line that recorded a quote: which one, and -- set by a page that
+    # has computed them (procurement/status.py quote_open_facts) -- the facts
+    # that quote still lacks as it stands, as [(fact, owner)].
+    quote_id: int | None = None
+    open_facts: list = field(default_factory=list)
 
     # A single change, not an email's worth of them (see EmailEvent).
     is_group = False
@@ -485,6 +490,8 @@ def entry_for(revision, *, lookup=None, offer_fixes=True, live_quote_ids=None, u
     elif revision.action == "update":
         entry.sender = ""
     entry.bookkeeping = _is_bookkeeping(model, revision)
+    if model is Quote and revision.action == "create":
+        entry.quote_id = int(revision.object_id)
     if model is Quote and ai and offer_fixes and revision.action != "delete":
         quote_id = int(revision.object_id)
         if live_quote_ids is None:
