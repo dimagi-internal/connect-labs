@@ -32,6 +32,7 @@ from connect_labs.marketplace import directory, eoi
 from connect_labs.marketplace.identity import ensure_org
 from connect_labs.marketplace.models import OrgConnectSlug, OrgContact, OrgProfile
 from connect_labs.marketplace.quality import audit, findings_tab_rows
+from connect_labs.pulse.hq_location import operating_areas
 from connect_labs.pulse.hq_location import resolve as resolve_hq
 
 PROFILE_FIELDS = (
@@ -93,6 +94,8 @@ def import_directory(org_rows, contact_rows, date_rows, map_rows, *, prune: bool
                     location_label=located.label,
                 )
                 tiers[located.precision] += 1
+
+            fields["operating_areas"] = operating_areas(row.countries, row.raw_regions)
 
             joined = dates.get(row.name)
             if joined:
