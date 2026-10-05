@@ -1,6 +1,6 @@
 # Audit Export to S3 — Design Spec
 
-> **Status (2026-09-08 doc-regen):** shipped — historical design record. See `docs/AUDIT_LOGGING.md` for the current audit-trail/export behaviour.
+> **Status (2026-09-08 doc-regen):** shipped — historical design record. The export lives in `connect_labs/labs/s3_export.py`. (`docs/AUDIT_LOGGING.md` covers a different system: the `audit_trail` access log and its Object-Lock archive.)
 
 **Date:** 2026-03-16
 **Scope:** Export `WorkflowRunRecord` and `AuditSessionRecord` data to S3 for durable archival outside of Labs.

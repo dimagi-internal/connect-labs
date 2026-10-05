@@ -1,9 +1,8 @@
 # Connect Marketplace — org registry, EOI history, and directory
 
 **Status:** phase 1 SHIPPED 2026-09-16 — all five steps are live at
-`/labs/marketplace/`. Plan for steps ①② is
-`docs/superpowers/plans/2026-09-16-marketplace-org-registry.md`; steps ③–⑤ were
-executed directly against the landed code rather than planned separately.
+`/labs/marketplace/`. All steps were executed directly against the landed code;
+no separate plan doc was kept.
 Outreach (phase 2) not started.
 
 **Known gap:** seven response sheets are not yet shared with the labs service

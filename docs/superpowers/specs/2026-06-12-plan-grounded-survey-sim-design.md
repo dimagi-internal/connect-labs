@@ -1,5 +1,7 @@
 # Plan-grounded synthetic survey generation
 
+> **Status: shipped (PR #536, 2026-06-12) — historical record, not current-state.**
+
 **Date:** 2026-06-12
 **Status:** Approved (design), implementing
 **Context:** Verified Monitoring DDD (stream ②), synthetic program `-10008`

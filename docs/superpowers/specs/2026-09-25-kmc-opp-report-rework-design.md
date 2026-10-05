@@ -1,5 +1,7 @@
 # KMC opportunity report rework — design
 
+> **Status: shipped (PR #2034, 2026-09-25) — historical record, not current-state.**
+
 Status: agreed in conversation with Jonathan, 2026-09-25. Three pieces, one PR each,
 built in order.
 

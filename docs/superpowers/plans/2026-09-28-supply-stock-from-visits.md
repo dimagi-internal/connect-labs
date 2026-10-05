@@ -1,5 +1,7 @@
 # Supply: Stock From Visits Implementation Plan
 
+> **Status: shipped (PR #2103, 2026-09-29) — historical record, not current-state.**
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Turn each submitted Connect visit into `consumption` leaving the field worker's own supply point, so that every level of the network, down to the individual worker, has an honest answer to "how much does this worker hold, and how long will it last?", with the unapproved and estimated parts shown on every figure.

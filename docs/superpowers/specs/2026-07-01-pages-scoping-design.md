@@ -1,5 +1,7 @@
 # Pages — Scoping & Context-Aware Slug Resolution
 
+> **Status: shipped (PR #806, 2026-07-02) — historical record, not current-state.**
+
 **Date:** 2026-07-01
 **Status:** Design approved (brainstorming) — pending spec review → implementation plan
 **App:** `connect_labs/pages/` (enhancement to the shipped pages app, PR #796)

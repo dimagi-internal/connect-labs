@@ -1,5 +1,7 @@
 # Synthetic UI Polish — Design
 
+> **Status: shipped (PR #83, 2026-04-21) — historical record, not current-state.**
+
 **Date:** 2026-04-21
 **Author:** jjackson + Claude
 **Status:** Approved; implementing

@@ -1,5 +1,7 @@
 # Create a solicitation from a micro-plan
 
+> **Status: shipped (PR #616, 2026-06-18) — historical record, not current-state.**
+
 **Date:** 2026-06-17
 **Status:** Approved (design) — ready for implementation plan
 

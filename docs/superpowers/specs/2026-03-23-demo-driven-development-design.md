@@ -1,5 +1,7 @@
 # Demo-Driven Development: `/walkthrough` Skill
 
+> **Status: superseded (PR #52, 2026-03-25) — the skill moved to the canopy plugin — historical record, not current-state.**
+
 **Date:** 2026-03-23
 **Status:** Approved
 **Branch:** emdash/solicitation-review-1xh

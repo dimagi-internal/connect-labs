@@ -8,16 +8,16 @@ Most production apps have been removed from this codebase. The remaining non-lab
 
 **Key principles:**
 
-- **OAuth session auth** — no Django User model. `LabsUser` is transient (created from session on each request, never saved to DB)
-- **All data via API** — `LabsRecordAPIClient` calls `/export/labs_record/` on production for all CRUD operations
+- **OAuth + Django User** — OAuth login via production Connect creates/updates a Django `User`; the OAuth token lives in `request.session["labs_oauth"]`
+- **LabsRecords via API** — `LabsRecordAPIClient` calls `/export/labs_record/` on production for all LabsRecord CRUD, except labs-only opps (id ≥ 10,000), which it serves from the labs DB (`labs/synthetic/local_records_backend.py`). Labs-owned domains such as `supply_chain` use real Django models
 - **Proxy models** — `LocalLabsRecord` subclasses provide typed access to JSON data from the API. They cannot be saved locally.
 - **Context middleware** — `request.labs_context` provides `opportunity_id`, `program_id`, `organization_id` on every request
 
-**Three middleware layers** (configured in `config/settings/local.py`):
+**Labs middleware** (inserted after Django's `AuthenticationMiddleware` in `config/settings/local.py` and `labs_aws.py`):
 
-1. `LabsAuthenticationMiddleware` — populates `request.user` as `LabsUser` from session OAuth data
-2. `LabsURLWhitelistMiddleware` — redirects non-labs URLs to `connect.dimagi.com`; whitelisted prefixes: `/ai/`, `/audit/`, `/coverage/`, `/tasks/`, `/solicitations/`, `/labs/`, `/custom_analysis/`
-3. `LabsContextMiddleware` — extracts opportunity/program/organization from URL params and session into `request.labs_context`
+1. `labs.oauth_session.LabsOAuthSessionMiddleware` — keeps `session["labs_oauth"]` fresh (refreshes an expired token, or logs the user out if refresh fails)
+2. `labs.context.LabsContextMiddleware` — extracts opportunity/program/organization from URL params and session into `request.labs_context`
+3. `campaign.middleware.CampaignOAuthSessionMiddleware` — the same for the campaign tool's own CommCare OAuth
 
 **Important:** Use `config.settings.local` for local development, NOT `config.settings.labs_aws`. The `labs_aws` settings are only for the AWS deployment at `labs.connect.dimagi.com`. Local settings already have `IS_LABS_ENVIRONMENT = True`.
 
@@ -251,7 +251,7 @@ Interactive map visualization of FLW coverage.
 Foundation layer used by all other apps.
 
 - **Key files:**
-  - `models.py` — `LabsUser`, `LocalLabsRecord` base classes
+  - `models.py` — `LocalLabsRecord` base class, per-user tokens (`UserConnectToken`, `UserCCHQToken`, `UserOCSToken`), `LabsOrg`, `WorkflowSchedule`
   - `middleware.py` — Authentication, URL whitelist, context middleware
   - `context.py` — Context extraction and session management
   - `view_mixins.py` — `AsyncLoadingViewMixin`, `AsyncDataViewMixin`
@@ -279,7 +279,7 @@ Coverage ──────────→ CommCare HQ (separate OAuth, no Conne
 | File                                                   | Purpose                                            |
 | ------------------------------------------------------ | -------------------------------------------------- |
 | `connect_labs/labs/integrations/connect/api_client.py` | Core `LabsRecordAPIClient`                         |
-| `connect_labs/labs/models.py`                          | `LabsUser`, `LocalLabsRecord` base classes         |
+| `connect_labs/labs/models.py`                          | `LocalLabsRecord` base class, per-user tokens, `LabsOrg` |
 | `connect_labs/labs/middleware.py`                      | Auth, URL whitelist, context middleware            |
 | `connect_labs/labs/context.py`                         | Context extraction and session management          |
 | `connect_labs/labs/view_mixins.py`                     | Base view mixins for labs views                    |
@@ -292,7 +292,7 @@ Coverage ──────────→ CommCare HQ (separate OAuth, no Conne
 
 1. **Using Django ORM models** (`Opportunity`, `User`, `Organization`) expecting production data — these tables are empty in labs
 2. **Using `config.settings.labs_aws` locally** — use `config.settings.local` instead. The `labs_aws` settings are only for the AWS deployment.
-3. **Calling `.save()` on `LabsUser` or `LocalLabsRecord`** — raises `NotImplementedError`. Use `LabsRecordAPIClient` for persistence.
+3. **Calling `.save()` on `LocalLabsRecord`** — raises `NotImplementedError`. Use `LabsRecordAPIClient` for persistence.
 4. **Forgetting the URL whitelist** — new app URL prefixes must be added to `WHITELISTED_PREFIXES` in `connect_labs/labs/middleware.py`
 5. **Using `user_id` with the production API** — production uses `username` as the primary identifier, not integer IDs
 6. **Not handling API errors** — `LabsRecordAPIClient` raises `LabsAPIError` on HTTP failures; handle timeouts gracefully

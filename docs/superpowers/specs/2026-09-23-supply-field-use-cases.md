@@ -1,5 +1,7 @@
 # Supply: what three real procurements need that the domain does not yet do
 
+> **Status: shipped (PR #1970, 2026-09-23) — historical record, not current-state.**
+
 **Status:** gap analysis, approved for build.
 **Date:** 2026-09-23.
 **Source:** the requirements interview, three tabs (CHC procurement, IPTSc, Chlorine),
