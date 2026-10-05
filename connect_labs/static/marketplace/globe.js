@@ -28,11 +28,58 @@
   var map = null;
   var loaded = false;
   var pending = null; // points that arrived before the style finished loading
+  var current = []; // the points as given, before spreading
+
+  // One dot per organisation, and organisations share cities: seven are in
+  // Maiduguri. Drawn at the same coordinate they stack into one dot and the map
+  // undercounts by half. So points that share a spot are fanned out on a small
+  // ring -- in screen pixels, recomputed on zoom, so they stay a few pixels
+  // apart at any zoom instead of drifting tens of kilometres when zoomed in.
+  var RING_PX = 7;
+  var PER_RING = 8;
+
+  function spread(points, zoom) {
+    var groups = {};
+    points.forEach(function (p) {
+      var key = p.lat.toFixed(3) + ',' + p.lon.toFixed(3);
+      (groups[key] = groups[key] || []).push(p);
+    });
+    // Degrees per screen pixel at this zoom (512px tiles). Longitude degrees
+    // shrink with latitude, so the east-west offset is scaled back up.
+    var degPerPx = 360 / (512 * Math.pow(2, zoom));
+    var out = [];
+    Object.keys(groups).forEach(function (key) {
+      var group = groups[key];
+      if (group.length === 1) {
+        out.push(group[0]);
+        return;
+      }
+      group.forEach(function (p, i) {
+        var ring = Math.floor(i / PER_RING);
+        var onThisRing = Math.min(PER_RING, group.length - ring * PER_RING);
+        var angle = (i % PER_RING) * ((Math.PI * 2) / onThisRing);
+        var radius = RING_PX * (ring + 1) * degPerPx;
+        var cosLat = Math.max(0.2, Math.cos((p.lat * Math.PI) / 180));
+        out.push(
+          Object.assign({}, p, {
+            lat: p.lat + Math.sin(angle) * radius,
+            lon: p.lon + (Math.cos(angle) * radius) / cosLat,
+          }),
+        );
+      });
+    });
+    return out;
+  }
+
+  function spreadNow() {
+    return collection(spread(current, map ? map.getZoom() : 1.6));
+  }
 
   function setPoints(points) {
+    current = points || [];
     var source = loaded && map && map.getSource('orgs');
-    if (source) source.setData(collection(points || []));
-    else pending = points || [];
+    if (source) source.setData(spreadNow());
+    else pending = current;
   }
 
   function render(container, points) {
@@ -77,12 +124,17 @@
         'star-intensity': 0.08,
       });
 
+      current = pending || points;
       map.addSource('orgs', {
         type: 'geojson',
-        data: collection(pending || points),
+        data: spreadNow(),
       });
       pending = null;
       loaded = true;
+      map.on('zoomend', function () {
+        var source = map.getSource('orgs');
+        if (source) source.setData(spreadNow());
+      });
 
       map.addLayer({
         id: 'orgs-glow',
@@ -236,7 +288,7 @@
       });
   }
 
-  window.MarketplaceGlobe = { setPoints: setPoints };
+  window.MarketplaceGlobe = { setPoints: setPoints, spread: spread };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', start);
