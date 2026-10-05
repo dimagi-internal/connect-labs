@@ -60,7 +60,7 @@ def test_the_comparison_names_it_and_its_action_by_that_name(da, world, client_i
     assert terms == "· duty exemption not on file"
     if 'data-testid="waiver-pending"' not in body:
         pytest.skip("this world's quote does not leave the import to us")
-    assert "duty exemption not on file · us" in body
+    assert "duty exemption not on file · to do" in body
     assert ">Attach duty exemption<" in body
 
 
@@ -78,7 +78,7 @@ def test_the_order_s_nil_duty_is_the_figure_and_the_comparison_s_chip(da, world,
     contract = _contract(da, world, duties_basis="excluded", duties_amount="0.00")
     body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
     cell = re.search(r'data-testid="duty-relief-unevidenced"[^>]*>(.*?)</span>\s*</td>', body, re.S).group(1)
-    assert _text(cell) == "USD 0.00 duty exemption not on file · us"
+    assert _text(cell) == "USD 0.00 duty exemption not on file · to do"
     assert 'class="status-chip status-chip--ours" data-testid="waiver-pending"' in cell
     assert "duty relief is documented" not in body and "no document on file" not in body
 
@@ -113,10 +113,10 @@ def test_the_history_line_that_recorded_a_quote_carries_its_open_facts(da, world
     expected = fact_chips(quote_open_facts(tender, row, quote, waiver_on_file=waiver_on_file(tender)))
     shown = re.findall(r'data-fact="([^"]+)" data-owner="([^"]+)"', chips.group(1))
     assert [(html.unescape(f), o) for f, o in shown] == expected
-    # Outlined chips, worded as the overview's: "<fact> · we supply" / "· supplier supplies".
+    # The fact, then whose step it is as the comparison's chip: "duty exemption" [to do].
     assert "status-chip status-chip--fact" in chips.group(1)
-    words = [_text(s) for s in re.findall(r"<span[^>]*>(.*?)</span>", chips.group(1), re.S)]
-    assert "duty exemption · we supply" in words
+    words = [_text(s) for s in re.findall(r"<span[^>]*>([^<]*)</span>", chips.group(1), re.S)]
+    assert words[words.index("duty exemption") + 1] == "to do"
 
 
 @pytest.mark.django_db

@@ -44,7 +44,10 @@ Artifacts publish to the canopy-web `connect` workspace (`.canopy/ddd/config.yam
   six coarse rules, each item naming its rule — judgement calls belong to the canopy AI layer, not
   hard-coded rules; duty follows the tender's duty terms by Incoterm, clearing and freight estimates
   live on the tender, freight is ours under EXW/FCA/FOB (#2170, #2179); a reminder counts only when
-  marked sent (#2179).
+  marked sent (#2179). An award before the deadline is allowed; the Award line shows what is still
+  open (deadline days, silent, replies owed) and the award records it (#2200, 2026-10-04). Moves and
+  quote facts stay separate: "On us N" / "Us N" count moves only, a quote's missing fact is never a
+  move and is not counted there (2026-10-04, product-lens "two ledgers" finding: leave as is).
 
 ## Current phase (2026-10-04)
 

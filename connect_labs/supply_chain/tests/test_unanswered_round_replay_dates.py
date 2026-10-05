@@ -137,7 +137,7 @@ def test_the_just_asked_rusf_tender_waits_on_its_suppliers(replay):
     assert {(today - o.sent_on).days for o in asked} == {2}
     assert not asked.filter(responded=True).exists()
     emails = [c["email"] for o in asked for c in o.supplier.contacts]
-    assert emails and all(e.endswith(".example.invalid") for e in emails)
+    assert emails and all(e.endswith(".example") for e in emails)
 
     rows = {r.tender_id: r for r in standing_rows(out["program_id"], today) if r.kind == "tender"}
     rusf = rows[out["rusf_tender_id"]]

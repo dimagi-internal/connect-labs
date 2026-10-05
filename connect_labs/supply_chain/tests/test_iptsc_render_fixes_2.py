@@ -171,8 +171,9 @@ class TestTheOrderPage:
         assert "Received on this order 450 packets" in card
 
     def test_equal_totals_per_buyer_are_one_line(self, scoped, played):
-        text = _visible(_page(scoped, "order_detail", played["order"]["id"]))
-        assert "Same total whichever party buys: USD 1,260.00" in text
+        body = _page(scoped, "order_detail", played["order"]["id"])
+        assert 'data-testid="same-for-any-buyer">same total for any buyer<' in body
+        assert "Same total whichever party buys" not in body
 
     def test_the_header_is_labelled_fields_under_a_plain_heading(self, scoped, played):
         body = _page(scoped, "order_detail", played["order"]["id"])

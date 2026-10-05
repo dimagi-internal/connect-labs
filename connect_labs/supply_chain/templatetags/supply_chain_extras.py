@@ -30,10 +30,10 @@ def possessive_filter(value):
 
 @register.filter
 def supplies(owner):
-    """Who supplies a quote's missing fact, as its tag: "we supply" or "supplier supplies" (moves.SUPPLIES)."""
-    from connect_labs.supply_chain.moves import SUPPLIERS, SUPPLIES
+    """Whose step a quote's missing fact is, as its chip: "to do" or "waiting" (moves.OWNER_CHIP)."""
+    from connect_labs.supply_chain.moves import OWNER_CHIP, SUPPLIERS
 
-    return SUPPLIES.get(owner) or SUPPLIES[SUPPLIERS]
+    return OWNER_CHIP.get(owner) or OWNER_CHIP[SUPPLIERS]
 
 
 @register.filter
