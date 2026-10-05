@@ -149,11 +149,55 @@ class TestToggleLinks:
 
 
 @pytest.mark.django_db
+class TestSelectAllOrNone:
+    """One link per section that ticks every value, or clears them all once
+    every value is ticked."""
+
+    def _rail(self, client, params=None):
+        return {s["param"]: s for s in client.get(reverse("marketplace:network"), params or {}).context["rail"]}
+
+    def test_with_nothing_ticked_it_ticks_everything(self, client, user, network):
+        client.force_login(user)
+        section = self._rail(client)["country"]
+        assert not section["all_selected"]
+        chosen = QueryDict(section["toggle_all_url"].lstrip("?")).getlist("country")
+        assert sorted(chosen) == ["Kenya", "Malawi", "Uganda"]
+
+    def test_with_some_ticked_it_adds_the_rest_once(self, client, user, network):
+        client.force_login(user)
+        section = self._rail(client, {"country": "Uganda"})["country"]
+        chosen = QueryDict(section["toggle_all_url"].lstrip("?")).getlist("country")
+        assert sorted(chosen) == ["Kenya", "Malawi", "Uganda"]
+
+    def test_with_everything_ticked_it_clears_the_section(self, client, user, network):
+        client.force_login(user)
+        section = self._rail(client, {"country": ["Uganda", "Malawi", "Kenya"]})["country"]
+        assert section["all_selected"]
+        assert "country=" not in section["toggle_all_url"]
+
+    def test_it_keeps_every_other_control(self, client, user, network):
+        client.force_login(user)
+        section = self._rail(client, {"segment": "available", "applied": "chc", "q": "a"})["country"]
+        query = QueryDict(section["toggle_all_url"].lstrip("?"))
+        assert query["segment"] == "available"
+        assert query["applied"] == "chc"
+        assert query["q"] == "a"
+
+
+@pytest.mark.django_db
 class TestTheGlobeFollowsTheRail:
     def test_the_points_endpoint_honours_multi_select(self, client, user, network):
         client.force_login(user)
         data = client.get(reverse("marketplace:network_points"), {"country": ["Uganda", "Malawi"]}).json()
         assert len(data["points"]) == 0  # none of these fixtures carry coordinates
+
+    def test_the_page_carries_its_own_points(self, client, user, network):
+        """The globe draws from the page, not a second request that recomputes
+        the same population."""
+        client.force_login(user)
+        response = client.get(reverse("marketplace:network"))
+        assert response.context["points"] == []
+        assert b'id="mk-points"' in response.content
 
 
 @pytest.mark.django_db
