@@ -350,7 +350,8 @@ def daily_counts(
         prev.strftime("%Y-%m"): (cur - prev).days,
         cur.strftime("%Y-%m"): day.day,
     }
-    flag = ((spec or {}).get("daily") or {}).get("flag")
+    spec = spec or {}
+    flag = (spec.get("daily") or {}).get("flag")
     date_fields = case_date_fields(spec)
 
     def _blank():
