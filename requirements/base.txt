@@ -112,7 +112,7 @@ cryptography==50.0.1
     #   secretstorage
 cyclopts==4.25.3
     # via fastmcp-slim
-dimagi-canopy[django] @ https://github.com/dimagi-internal/canopy-web/releases/download/dimagi-canopy-v0.5.0/dimagi_canopy-0.5.0-py3-none-any.whl
+dimagi-canopy[django] @ https://github.com/dimagi-internal/canopy-web/releases/download/dimagi-canopy-v0.6.1/dimagi_canopy-0.6.1-py3-none-any.whl
     # via -r requirements/base.in
 distro==1.9.0
     # via google-genai
