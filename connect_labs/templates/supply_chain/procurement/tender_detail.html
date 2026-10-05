@@ -222,8 +222,8 @@ is folded away, each fold with its count.
     </div>
 
     <aside class="flex min-w-0 flex-[1_1_320px] flex-col gap-4">
-      {% include "supply_chain/_moves.html" with moves=status.ours whose="ours" heading="On us" testid="on-us" count_testid="on-us-count" %}
-      {% include "supply_chain/_moves.html" with moves=status.theirs whose="theirs" heading="On suppliers" testid="on-suppliers" %}
+      {% include "supply_chain/_moves.html" with moves=status.ours whose="ours" heading="To do" testid="on-us" count_testid="on-us-count" %}
+      {% include "supply_chain/_moves.html" with moves=status.theirs whose="theirs" heading="Waiting on suppliers" testid="on-suppliers" %}
     </aside>
   </div>
 
@@ -232,7 +232,7 @@ is folded away, each fold with its count.
   <section class="border-brand-border-light flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white px-6 py-4" data-testid="related-order">
     <div class="flex min-w-0 flex-col gap-1">
       <div class="text-sm text-gray-600">Earlier: <a class="text-brand-indigo hover:underline" href="{{ o.tender_url }}">{{ o.tender_label }}</a> → order {{ o.reference }} · {{ o.supplier }}</div>
-      <div class="flex flex-wrap items-center gap-1.5 text-sm" data-testid="related-order-chips">{% for part in o.stage_parts %}<span class="status-chip status-chip--neutral">{{ part }}</span>{% endfor %}{% if o.ours %}<span class="status-chip status-chip--ours" title="{% for m in o.ours %}{{ m.text }}{% if not forloop.last %}; {% endif %}{% endfor %}">on us · {{ o.ours|length }}</span>{% endif %}</div>
+      <div class="flex flex-wrap items-center gap-1.5 text-sm" data-testid="related-order-chips">{% for part in o.stage_parts %}<span class="status-chip status-chip--neutral">{{ part }}</span>{% endfor %}{% if o.ours %}<span class="status-chip status-chip--ours" title="{% for m in o.ours %}{{ m.text }}{% if not forloop.last %}; {% endif %}{% endfor %}">to do · {{ o.ours|length }}</span>{% endif %}</div>
     </div>
     <a href="{{ o.url }}" class="button button-sm outline-style" data-testid="related-order-open">Open order</a>
   </section>

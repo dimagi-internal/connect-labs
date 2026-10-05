@@ -287,7 +287,7 @@ OUTPUTS = HERE / "outputs.json"
 MCP_URL = os.environ.get("LABS_MCP_URL", "https://labs.connect.dimagi.com/mcp/")
 
 SAHEL_REPLY = {
-    "ref": "<a82c4-r2@mail.sahel-nutrition.example.invalid>",
+    "ref": "<a82c4-r2@mail.sahel-nutrition.example>",
     "excerpt": (
         "Apologies for the late reply. We can offer 300,000 sachets (2,000 cartons of 150 x 92 g) at "
         "EUR 0.31 per sachet, EXW Niamey. Transport to Kano can be arranged at your cost; freight estimate on "

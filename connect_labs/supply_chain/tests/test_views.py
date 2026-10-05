@@ -618,7 +618,7 @@ def test_with_nothing_comparable_the_page_does_not_claim_a_provisional_ranking(c
 
     # The page states the count, and each quote's status: what it is missing, not a ranking.
     assert ">0 of 2 comparable<" in body
-    assert body.count('data-testid="grid-status">1 fact on supplier<') == 2
+    assert len(re.findall(r'data-testid="grid-status">[^<]+ · waiting<', body)) == 2
     assert "could still beat it" not in body and "PROVISIONAL" not in body
     # Who has to answer is still reported.
     assert "EHA Clinics" in body
