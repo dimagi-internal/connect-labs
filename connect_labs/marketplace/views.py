@@ -247,7 +247,7 @@ def network(request):
             # In the page rather than fetched after it: the globe draws from
             # the same population this render already holds, and a second
             # request recomputed all of it to say the same thing.
-            "points": queries.map_points(rows, delivering),
+            "points": queries.map_points(rows, delivering, state["selected"]["countries"]),
             "unreadable": queries.unreadable_rounds(),
             # The agent panel is told WHICH organisations are on screen and how
             # the visitor narrowed to them — never the rows, which it reads for
@@ -272,7 +272,9 @@ def network_points(request):
     without reloading the page or re-rendering every row.
     """
     state = _population(request)
-    return JsonResponse({"points": queries.map_points(state["rows"], state["delivering"])})
+    return JsonResponse(
+        {"points": queries.map_points(state["rows"], state["delivering"], state["selected"]["countries"])}
+    )
 
 
 @login_required

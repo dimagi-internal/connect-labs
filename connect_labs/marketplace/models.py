@@ -64,6 +64,12 @@ class OrgProfile(models.Model):
     )
     location_label = models.CharField(max_length=160, blank=True, default="")
 
+    # Where it says it WORKS, rather than where its office is: a point per
+    # region of operation the sheet names, or per country when it names none
+    # there. Each is {lat, lon, precision, label, iso3}. Resolved at import by
+    # `pulse.hq_location.operating_areas`; the network map draws these.
+    operating_areas = models.JSONField(default=list, blank=True)
+
     source_row = models.IntegerField(null=True, blank=True)
     imported_at = models.DateTimeField(auto_now=True)
 
