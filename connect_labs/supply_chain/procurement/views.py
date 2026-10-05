@@ -199,6 +199,10 @@ def draft_anchors(drafts) -> set:
     for i, d in enumerate(drafts):
         if d.get("kind") == "reply":
             out.add(f"draft-reply-{d.get('supplier_id') or i}")
+        elif d.get("kind") == "clarification":
+            # A clarification is the tender's, not a supplier's next step: no anchor, so a
+            # supplier's row never reads it as a reminder due.
+            continue
         elif d.get("supplier_id") is not None and d["supplier_id"] not in seen:
             seen.add(d["supplier_id"])
             out.add(f"draft-supplier-{d['supplier_id']}")
@@ -338,7 +342,11 @@ class TenderDetailView(_Base):
             d["rows"] = _message_rows(d.get("text") or "")
             if d["kind"] == "reminder":
                 d["facts"] = _reminder_facts(by_outreach.get(d.get("outreach_id")), interval_days, as_of)
-            if d.get("supplier_id") is not None and d["kind"] != "reply" and d["supplier_id"] not in anchored:
+            if (
+                d.get("supplier_id") is not None
+                and d["kind"] not in ("reply", "clarification")
+                and d["supplier_id"] not in anchored
+            ):
                 anchored.add(d["supplier_id"])
                 d["anchor"] = f"draft-supplier-{d['supplier_id']}"
             elif d["kind"] == "reply":

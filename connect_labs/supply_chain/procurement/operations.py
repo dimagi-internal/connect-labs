@@ -265,9 +265,10 @@ def tender_drafts_render(access, tender_id, today=None):
         drafts += _followups(access, tender, commodities, quotes, day, sender)
     # What we owe comes first and outlives the award: a supplier who asked us
     # something is owed an answer whether or not it won.
-    drafts += _replies(access, tender, day, sender)
+    replies = _replies(access, tender, day, sender)
+    drafts += replies
     if accepting:
-        drafts += _clarifications(access, tender, sender)
+        drafts += _clarifications(access, tender, sender, quotes=quotes, replies=replies)
     drafts.sort(key=lambda d: (_KIND_ORDER[d["kind"]], d["supplier_name"].lower(), d["commodity_slug"]))
 
     result = {
@@ -473,17 +474,21 @@ _CLARIFICATION_ASK = {
 }
 
 
-def _clarifications(access, tender, sender):
-    """A clarification of the tender's import duty terms to every supplier invited to it.
+def _clarifications(access, tender, sender, *, quotes=(), replies=()):
+    """A clarification of the tender's import duty terms to each invited supplier it changes something for.
 
     An answer to one supplier ("we import, under the waiver") changes how every
-    quote on the tender is costed, so every invited supplier is told -- not only
-    the one who asked.
+    quote on the tender is costed, so every invited supplier it affects is told --
+    not only the one who asked. Two are not sent one:
+      - a supplier we owe a reply already: the terms go into that reply, so it does
+        not get two overlapping emails;
+      - a supplier whose quote is already comparable: nothing in its quote changes.
     """
     template = _CLARIFICATION_ASK.get(tender.duty_terms or "")
     if template is None:
         return []
     from connect_labs.supply_chain.history.timeline import duty_terms_answer
+    from connect_labs.supply_chain.procurement.status import comparisons
     from connect_labs.supply_chain.values import destination_phrase
 
     ask = template.format(where=destination_phrase(tender.delivery_points or []))
@@ -498,9 +503,23 @@ def _clarifications(access, tender, sender):
     suppliers = {}
     for row in access.list_outreach(tender_id=tender.pk):
         suppliers.setdefault(row.supplier_id, row.supplier)
+    # The terms, written into each reply we already owe.
+    for reply in replies:
+        if reply.get("supplier_id") in suppliers:
+            closing = reply["text"].rfind("\n\nKind regards,")
+            if closing >= 0:
+                reply["text"] = reply["text"][:closing] + f"\n\n{ask}" + reply["text"][closing:]
+    replied = {r.get("supplier_id") for r in replies}
+    quote_by_id = {q.pk: q for q in quotes}
+    settled = {
+        quote_by_id[row.quote_id].supplier_id
+        for c in comparisons(tender, list(quotes))
+        for row in c.comparable
+        if row.quote_id in quote_by_id
+    }
     drafts = []
     for supplier in suppliers.values():
-        if supplier is None:
+        if supplier is None or supplier.pk in replied or supplier.pk in settled:
             continue
         address = ""
         for contact in getattr(supplier, "contacts", None) or []:
