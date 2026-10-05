@@ -10,7 +10,7 @@ REAL `WorkflowDataAccess` and template code against an in-memory LabsRecord stor
 that enforces Connect's rules: a scoped read or write needs access to that scope,
 and a scope-less read sees public records only. They pin: follow, inherit,
 override, ACL-based edit/publish (write scope allowed, read-only refused), follow
-through a public read, draft vs publish, preview, rollback, and the legacy import.
+through a public read, draft vs publish, preview, and rollback.
 """
 
 from __future__ import annotations
@@ -241,10 +241,7 @@ def _person(username):
 @pytest.fixture
 def store():
     s = Store()
-    with (
-        patch("connect_labs.mcp.tools.workflow_templates_data.WorkflowDataAccess", side_effect=s.dao),
-        patch("connect_labs.mcp.tools.workflow_templates_legacy_import.WorkflowDataAccess", side_effect=s.dao),
-    ):
+    with (patch("connect_labs.mcp.tools.workflow_templates_data.WorkflowDataAccess", side_effect=s.dao),):
         yield s
 
 
@@ -684,85 +681,3 @@ class TestDraftPreviewPublish:
         assert {t["template_workflow_id"] for t in out["templates"]} == {mine, shared}
         out = _ok(call_tool(follower_only[1], "workflow_template_list", {}))
         assert [(t["template_workflow_id"], t["you_can_edit"]) for t in out["templates"]] == [(shared, False)]
-
-
-# -----------------------------------------------------------------------------
-# The legacy import (#2236): labs-DB tables -> LabsRecords
-# -----------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-class TestLegacyImport:
-    def test_versions_draft_and_followers_move_and_followers_render_identically(self, store, owner):
-        from connect_labs.workflow.models import TemplateWorkflow, TemplateWorkflowFollower, TemplateWorkflowVersion
-
-        user, raw = owner
-        store.put_definition(
-            25528, FOLLOWER_SCOPE, {"name": "KMC Program Metrics", "description": "d", "config": {"templateType": KEY}}
-        )
-        legacy = TemplateWorkflow.objects.create(
-            workflow_id=25528,
-            scope_key="opp:523",
-            opportunity_id=523,
-            name="KMC Program Metrics",
-            template_scope="org:160",
-            template_type=KEY,
-            seeded_from=f"code:{KEY}",
-            draft_render_code="R v4",
-            draft_config={"templateType": KEY, "a": 4},
-            draft_revision=4,
-        )
-        legacy.owners.add(user)
-        for n, code, restores in ((1, "R v1", None), (2, "R v2", None), (3, "R v1", 1), (4, "R v4", None)):
-            v = TemplateWorkflowVersion.objects.create(
-                template=legacy,
-                number=n,
-                render_code=code,
-                config={"templateType": KEY, "a": n},
-                note=f"note {n}",
-                restores_version=restores,
-                published_by=user,
-            )
-        legacy.published = v
-        legacy.save()
-        _follower(store, enrollment_targets={"goal": 1})
-        store.raw(19778)["render_source"] = {"workflow": 25528, "opportunity_id": 523}
-        # The legacy follow already dropped every key equal to the live version's.
-        store.raw(19778)["config"].pop("templateType")
-        TemplateWorkflowFollower.objects.create(
-            template=legacy, workflow_id=19778, scope_key="opp:523", opportunity_id=523
-        )
-        own_before = copy.deepcopy(store.raw(19778)["config"])
-
-        out = _ok(
-            call_tool(
-                raw,
-                "workflow_template_import_legacy",
-                {
-                    "legacy_template_workflow_id": 25528,
-                    "legacy_opportunity_id": 523,
-                    **TEMPLATE_SCOPE,
-                    "public": True,
-                },
-            )
-        )
-        tid = out["template_workflow_id"]
-        assert out["scope"] == TEMPLATE_SCOPE and out["published_version"] == 4
-        assert [(v["number"], v["note"], v["restores_version"]) for v in out["versions"]] == [
-            (4, "note 4", None),
-            (3, "note 3", 1),
-            (2, "note 2", None),
-            (1, "note 1", None),
-        ]
-        assert out["draft"]["revision"] == 4 and out["sharing"]["public"] is True
-        assert out["repointed"] == [
-            {
-                "workflow_id": 19778,
-                **FOLLOWER_SCOPE,
-                "render_source": {"workflow": tid, **TEMPLATE_SCOPE},
-                "own_config_unchanged": True,
-            }
-        ]
-        assert store.raw(19778)["config"] == own_before
-        _, code, source = _page(store)
-        assert code == "R v4" and source["version"] == 4
