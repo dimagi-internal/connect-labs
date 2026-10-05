@@ -22,12 +22,27 @@ from connect_labs.audit_trail.models import Outcome as _AuditOutcome
 from connect_labs.labs.models import LocalLabsRecord
 from connect_labs.labs.synthetic import local_records_backend as _local_backend
 from connect_labs.utils import request_telemetry
-from connect_labs.workflow.run_codec import encode_record_data
+from connect_labs.workflow.run_codec import RUN_RECORD_TYPE, decode_snapshot, encode_record_data, encode_snapshot
+from connect_labs.workflow.run_snapshot_store import (
+    EXTERNALIZE_MIN_BYTES,
+    REF_KEY,
+    SNAPSHOT_KEY,
+    SNAPSHOT_RECORD_TYPE,
+    SUMMARY_KEY,
+    LazyRunData,
+    build_summary,
+    digest,
+    stored_body,
+    stored_form,
+)
 
 logger = logging.getLogger(__name__)
 
 
 _BODY_TRUNCATION = 2000
+
+# "No snapshot to prime the returned run record with" (None is a legal snapshot).
+_UNSET = object()
 
 
 def _audited(action):
@@ -114,6 +129,15 @@ def _audited(action):
         return wrapper
 
     return decorator
+
+
+def _needs_child(data) -> bool:
+    """Whether a run's (encoded) data carries a snapshot big enough to externalize."""
+    if not isinstance(data, dict) or data.get(SNAPSHOT_KEY) is None:
+        return False
+    if isinstance(data.get(REF_KEY), dict):
+        return True
+    return len(stored_body(encode_snapshot(data[SNAPSHOT_KEY]))) >= EXTERNALIZE_MIN_BYTES
 
 
 class LabsAPIError(Exception):
@@ -259,17 +283,19 @@ class LabsRecordAPIClient:
             LabsAPIError: If API request fails
         """
         if self._is_labs_only(opportunity_id):
-            return _local_backend.get_records(
-                opportunity_id=self._effective_opportunity_id(opportunity_id),
-                experiment=experiment,
-                type=type,
-                username=username,
-                program_id=program_id or self.program_id,
-                organization_id=organization_id if isinstance(organization_id, int) else self.organization_id,
-                labs_record_id=labs_record_id,
-                model_class=model_class,
-                public=public,
-                **data_filters,
+            return self._attach_snapshot_loaders(
+                _local_backend.get_records(
+                    opportunity_id=self._effective_opportunity_id(opportunity_id),
+                    experiment=experiment,
+                    type=type,
+                    username=username,
+                    program_id=program_id or self.program_id,
+                    organization_id=organization_id if isinstance(organization_id, int) else self.organization_id,
+                    labs_record_id=labs_record_id,
+                    model_class=model_class,
+                    public=public,
+                    **data_filters,
+                )
             )
         try:
             # Build query parameters
@@ -331,7 +357,7 @@ class LabsRecordAPIClient:
             # Deserialize to LocalLabsRecord instances (or proxy model if specified)
             records_data = response.json()
             record_class = model_class if model_class else LocalLabsRecord
-            return [record_class(item) for item in records_data]
+            return self._attach_snapshot_loaders([record_class(item) for item in records_data])
 
         except httpx.HTTPError as e:
             logger.error(f"Failed to fetch records: {e}", exc_info=True)
@@ -388,21 +414,25 @@ class LabsRecordAPIClient:
             and organization_id is None
             and _local_backend.is_labs_only_program_id(program_id)
         ):
-            return _local_backend.get_record_by_id(
-                record_id=record_id,
-                program_id=int(program_id),
-                experiment=experiment,
-                type=type,
-                model_class=model_class,
+            return self._attach_snapshot_loader(
+                _local_backend.get_record_by_id(
+                    record_id=record_id,
+                    program_id=int(program_id),
+                    experiment=experiment,
+                    type=type,
+                    model_class=model_class,
+                )
             )
 
         if not home_override and self._is_labs_only(opportunity_id):
-            return _local_backend.get_record_by_id(
-                record_id=record_id,
-                opportunity_id=effective_opportunity_id,
-                experiment=experiment,
-                type=type,
-                model_class=model_class,
+            return self._attach_snapshot_loader(
+                _local_backend.get_record_by_id(
+                    record_id=record_id,
+                    opportunity_id=effective_opportunity_id,
+                    experiment=experiment,
+                    type=type,
+                    model_class=model_class,
+                )
             )
         try:
             url = f"{self.base_url}/export/labs_record/"
@@ -438,7 +468,7 @@ class LabsRecordAPIClient:
             records_data = response.json()
             if records_data:
                 record_class = model_class if model_class else LocalLabsRecord
-                return record_class(records_data[0])
+                return self._attach_snapshot_loader(record_class(records_data[0]))
             return None
 
         except httpx.HTTPError as e:
@@ -480,7 +510,7 @@ class LabsRecordAPIClient:
                 response = self.http_client.get(url, params=base)
                 response.raise_for_status()
                 hit = next((r for r in response.json() or [] if r.get("id") == record_id), None)
-            return record_class(hit) if hit else None
+            return self._attach_snapshot_loader(record_class(hit)) if hit else None
         except httpx.HTTPError as e:
             logger.error(f"Failed to fetch public record {record_id}: {e}", exc_info=True)
             raise _wrap_http_error(f"Failed to fetch public record {record_id}: {e}", e) from e
@@ -513,8 +543,46 @@ class LabsRecordAPIClient:
         Raises:
             LabsAPIError: If API request fails
         """
+        if type == RUN_RECORD_TYPE:
+            data = stored_form(data)
         # Storage format for a workflow run's snapshot (no-op for other types).
         data = encode_record_data(type, data)
+        record = self._create_record_raw(
+            experiment=experiment,
+            type=type,
+            data=data,
+            username=username,
+            program_id=program_id,
+            labs_record_id=labs_record_id,
+            public=public,
+        )
+        if type == RUN_RECORD_TYPE and _needs_child(data):
+            # A run created WITH a large snapshot (seeders, the mbw adapter, direct
+            # client writers -- the DAO creates runs in_progress, without one). It
+            # was just written inline, so a failure from here on leaves a complete
+            # legacy-shaped run rather than one missing its snapshot; the update
+            # moves the snapshot into a child and re-writes the run with the ref.
+            return self.update_record(
+                record.id,
+                experiment=experiment,
+                type=type,
+                data=data,
+                current_record=record,
+                _child_absent=True,
+            )
+        return self._attach_snapshot_loader(record)
+
+    def _create_record_raw(
+        self,
+        *,
+        experiment: str,
+        type: str,
+        data: dict,
+        username: str | None,
+        program_id: int | None,
+        labs_record_id: int | None,
+        public: bool,
+    ) -> LocalLabsRecord:
         if self._is_labs_only():
             return _local_backend.create_record(
                 opportunity_id=self.opportunity_id,
@@ -579,6 +647,7 @@ class LabsRecordAPIClient:
         labs_record_id: int | None = None,
         public: bool | None = None,
         current_record: LocalLabsRecord | None = None,
+        _child_absent: bool = False,
     ) -> LocalLabsRecord:
         """Update an existing record in production (upsert).
 
@@ -599,10 +668,23 @@ class LabsRecordAPIClient:
         Raises:
             LabsAPIError: If API request fails
         """
+        if current_record is not None and current_record.id != record_id:
+            logger.warning(
+                f"current_record.id ({current_record.id}) != record_id ({record_id}); "
+                f"ignoring current_record and fetching fresh"
+            )
+            current_record = None
+        primed = _UNSET
+        if type == RUN_RECORD_TYPE:
+            # A large snapshot moves to (or stays in) its child record; see
+            # workflow/run_snapshot_store.py.
+            data, primed, current_record = self._prepare_run_write(
+                record_id, experiment, data, current_record, child_absent=_child_absent
+            )
         # Storage format for a workflow run's snapshot (no-op for other types).
         data = encode_record_data(type, data)
         if self._is_labs_only():
-            return _local_backend.update_record(
+            record = _local_backend.update_record(
                 record_id=record_id,
                 opportunity_id=self.opportunity_id,
                 experiment=experiment,
@@ -614,13 +696,8 @@ class LabsRecordAPIClient:
                 labs_record_id=labs_record_id,
                 public=public,
             )
+            return self._finish_run_record(record, primed)
         # Use provided record or fetch current to read metadata
-        if current_record is not None and current_record.id != record_id:
-            logger.warning(
-                f"current_record.id ({current_record.id}) != record_id ({record_id}); "
-                f"ignoring current_record and fetching fresh"
-            )
-            current_record = None
         current = current_record or self.get_record_by_id(record_id, experiment=experiment, type=type)
         if not current:
             raise LabsAPIError(f"Record {record_id} not found")
@@ -676,11 +753,222 @@ class LabsRecordAPIClient:
             if not result:
                 raise LabsAPIError("API returned empty response after update")
 
-            return LocalLabsRecord(result[0])
+            return self._finish_run_record(LocalLabsRecord(result[0]), primed)
 
         except httpx.HTTPError as e:
             logger.error(f"Failed to update record: {e}", exc_info=True)
             raise _wrap_http_error(f"Failed to update record in production API: {e}", e) from e
+
+    # ─── A run's snapshot in a child record (workflow/run_snapshot_store.py) ──
+
+    def _attach_snapshot_loaders(self, records: list[LocalLabsRecord]) -> list[LocalLabsRecord]:
+        for record in records:
+            self._attach_snapshot_loader(record)
+        return records
+
+    def _attach_snapshot_loader(self, record: LocalLabsRecord | None) -> LocalLabsRecord | None:
+        """Read boundary: a run whose snapshot is in a child gets a `LazyRunData`.
+
+        Nothing is fetched here. The loader fetches the child by id the first time
+        the snapshot itself is asked for -- so a listing of runs costs no child
+        reads, and a run page costs exactly one.
+        """
+        if record is None or record.type != RUN_RECORD_TYPE:
+            return record
+        data = record.data
+        if (
+            isinstance(data, dict)
+            and not isinstance(data, LazyRunData)
+            and SNAPSHOT_KEY not in data
+            and isinstance(data.get(REF_KEY), dict)
+        ):
+            record.data = LazyRunData(data, self._snapshot_loader(record))
+        return record
+
+    def _snapshot_loader(self, record: LocalLabsRecord):
+        child_id = record.data[REF_KEY].get("record_id")
+        run_id, experiment = record.id, record.experiment
+        scope = (record.opportunity_id, record.program_id, record.organization_id)
+
+        def load():
+            # Readers routinely close the DAO before touching the runs it listed
+            # (run_history_api does), so the loader cannot assume this client is
+            # still open; a closed one is replaced by a same-scoped one for the read.
+            client = self
+            if self.http_client.is_closed:
+                client = LabsRecordAPIClient(
+                    self.access_token,
+                    opportunity_id=self.opportunity_id,
+                    organization_id=self.organization_id,
+                    program_id=self.program_id,
+                )
+            try:
+                child = client._get_snapshot_child(child_id, experiment, scope)
+            finally:
+                if client is not self:
+                    client.close()
+            if child is None:
+                logger.error("Run %s points at snapshot record %s, which was not found", run_id, child_id)
+                return None
+            return decode_snapshot((child.data or {}).get(SNAPSHOT_KEY))
+
+        return load
+
+    def _get_snapshot_child(self, child_id, experiment: str, scope: tuple) -> LocalLabsRecord | None:
+        """The child, read in its RUN's scope -- which is not necessarily this
+        client's: a program-scoped DAO lists opportunity-owned runs."""
+        opportunity_id, program_id, organization_id = scope
+        kwargs: dict = {}
+        if opportunity_id:
+            kwargs["opportunity_id"] = opportunity_id
+        elif program_id:
+            kwargs["program_id"] = program_id
+        elif isinstance(organization_id, int):
+            kwargs["organization_id"] = organization_id
+        return self.get_record_by_id(child_id, experiment=experiment, type=SNAPSHOT_RECORD_TYPE, **kwargs)
+
+    def _prepare_run_write(self, run_id: int, experiment: str, data, scope_record, *, child_absent: bool = False):
+        """Write boundary for a workflow run. Returns `(data, primed, scope_record)`.
+
+        * no snapshot in `data` -> written as given (a `snapshot_ref` rides along,
+          so a rename of an externalized run never touches its child);
+        * a snapshot under `EXTERNALIZE_MIN_BYTES` and no existing ref -> inline,
+          exactly as before;
+        * otherwise -> the child is created or updated (skipped when the content
+          hash equals the ref's: rename_run / update_run_state re-write the whole
+          `data`), and the run is written with `snapshot_ref` + `snapshot_summary`
+          in place of `snapshot`.
+
+        `primed` is the decoded snapshot, so the returned record needs no fetch.
+        """
+        data = stored_form(data)
+        if not isinstance(data, dict) or data.get(SNAPSHOT_KEY) is None:
+            return data, _UNSET, scope_record
+        snapshot = data[SNAPSHOT_KEY]
+        ref = data.get(REF_KEY) if isinstance(data.get(REF_KEY), dict) else None
+        encoded = encode_snapshot(snapshot)
+        body = stored_body(encoded)
+        if ref is None and len(body) < EXTERNALIZE_MIN_BYTES:
+            return data, _UNSET, scope_record
+        sha = digest(body)
+        child_id = ref.get("record_id") if ref else None
+        unchanged = bool(child_id) and ref.get("sha256") == sha
+        if not unchanged:
+            if scope_record is None:
+                scope_record = self.get_record_by_id(run_id, experiment=experiment, type=RUN_RECORD_TYPE)
+                if scope_record is None:
+                    raise LabsAPIError(f"Record {run_id} not found")
+            try:
+                if child_id is None and not child_absent:
+                    # A retry after a child write whose run write then failed: reuse it.
+                    child_id = self._find_snapshot_child(run_id, experiment, scope_record)
+                child_id = self._write_snapshot_child(child_id, run_id, experiment, encoded, scope_record).id
+            except Exception:  # noqa: BLE001 -- a save must never fail because the child could not be written
+                # Store the snapshot INLINE, exactly as before this module existed:
+                # the run is complete and correct, only its listing stays heavy. An
+                # earlier child, if any, is left for the run's delete to cascade.
+                logger.warning("run %s: snapshot child write failed; storing inline", run_id, exc_info=True)
+                inline = {k: v for k, v in data.items() if k not in (REF_KEY, SUMMARY_KEY)}
+                return inline, _UNSET, scope_record
+        decoded = decode_snapshot(snapshot)
+        summary = data.get(SUMMARY_KEY)
+        if not (unchanged and isinstance(summary, dict)):
+            summary = build_summary(decoded)
+        out = {k: v for k, v in data.items() if k != SNAPSHOT_KEY}
+        out[REF_KEY] = {"record_id": child_id, "bytes": len(body), "sha256": sha}
+        out[SUMMARY_KEY] = summary
+        return out, decoded, scope_record
+
+    def _finish_run_record(self, record: LocalLabsRecord, primed) -> LocalLabsRecord:
+        if primed is not _UNSET and record.type == RUN_RECORD_TYPE and isinstance(record.data, dict):
+            record.data = {**stored_form(record.data), SNAPSHOT_KEY: primed}
+            return record
+        return self._attach_snapshot_loader(record)
+
+    def _find_snapshot_child(self, run_id: int, experiment: str, scope_record) -> int | None:
+        kwargs = {"opportunity_id": scope_record.opportunity_id} if scope_record.opportunity_id else {}
+        children = self.get_records(experiment=experiment, type=SNAPSHOT_RECORD_TYPE, labs_record_id=run_id, **kwargs)
+        return min((c.id for c in children if c.labs_record_id == run_id), default=None)
+
+    def _write_snapshot_child(self, child_id, run_id: int, experiment: str, encoded, scope_record):
+        data = {SNAPSHOT_KEY: encoded}
+        if child_id is None:
+            return self.create_child_record(
+                parent=scope_record, experiment=experiment, type=SNAPSHOT_RECORD_TYPE, data=data
+            )
+        # The update needs the child's scope, which is its run's: hand it over rather
+        # than letting update_record GET the child -- that would download the very
+        # snapshot being replaced.
+        current = LocalLabsRecord(
+            {
+                "id": child_id,
+                "experiment": experiment,
+                "type": SNAPSHOT_RECORD_TYPE,
+                "data": {},
+                "username": scope_record.username,
+                "opportunity_id": scope_record.opportunity_id,
+                "organization_id": scope_record.organization_id,
+                "program_id": scope_record.program_id,
+                "labs_record_id": run_id,
+            }
+        )
+        return self.update_record(
+            child_id,
+            experiment=experiment,
+            type=SNAPSHOT_RECORD_TYPE,
+            data=data,
+            labs_record_id=run_id,
+            current_record=current,
+        )
+
+    @_audited(_AuditAction.CREATE)
+    def create_child_record(
+        self, parent: LocalLabsRecord, experiment: str, type: str, data: dict, public: bool = False
+    ) -> LocalLabsRecord:
+        """Create a record whose parent is `parent` and whose SCOPE is the parent's.
+
+        `create_record` stamps THIS client's scope, which is not always the parent's
+        (a program-scoped DAO writes opportunity-owned runs). A child in another scope
+        would be unreadable from where its parent is read.
+        """
+        opportunity_id = parent.opportunity_id or self.opportunity_id
+        program_id = parent.program_id or self.program_id
+        organization_id = parent.organization_id if isinstance(parent.organization_id, int) else self.organization_id
+        if self._is_labs_only(opportunity_id) or (
+            opportunity_id is None and _local_backend.is_labs_only_program_id(program_id)
+        ):
+            return _local_backend.create_record(
+                opportunity_id=opportunity_id,
+                experiment=experiment,
+                type=type,
+                data=data,
+                username=parent.username,
+                program_id=program_id,
+                organization_id=organization_id if isinstance(organization_id, int) else None,
+                labs_record_id=parent.id,
+                public=public,
+            )
+        payload = {"experiment": experiment, "type": type, "data": data, "public": public, "labs_record_id": parent.id}
+        if parent.username:
+            payload["username"] = parent.username
+        if program_id:
+            payload["program_id"] = program_id
+        if organization_id and isinstance(organization_id, int):
+            payload["organization_id"] = organization_id
+        if opportunity_id:
+            payload["opportunity_id"] = opportunity_id
+        try:
+            response = self.http_client.post(f"{self.base_url}/export/labs_record/", json=[payload])
+            if response.status_code >= 400:
+                logger.error(f"API error response ({response.status_code}): {response.text[:1000]}")
+            response.raise_for_status()
+            result = response.json()
+            if not result:
+                raise LabsAPIError("API returned empty response after create")
+            return LocalLabsRecord(result[0])
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to create child record: {e}", exc_info=True)
+            raise _wrap_http_error(f"Failed to create child record in production API: {e}", e) from e
 
     def delete_record(self, record_id: int) -> None:
         """Delete a single record.

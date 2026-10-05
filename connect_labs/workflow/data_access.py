@@ -21,6 +21,7 @@ from django.http import HttpRequest
 
 from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClient
 from connect_labs.labs.models import LocalLabsRecord
+from connect_labs.workflow.run_snapshot_store import stored_form
 
 logger = logging.getLogger(__name__)
 
@@ -1381,7 +1382,9 @@ class WorkflowDataAccess(BaseDataAccess):
 
         current_state = run.data.get("state", {})
         merged_state = {**current_state, **sanitized}
-        updated_data = {**run.data, "state": merged_state}
+        # stored_form: the run's fields as stored, its snapshot NOT fetched -- an
+        # externalized one rides along as its ref (see run_snapshot_store).
+        updated_data = {**stored_form(run.data), "state": merged_state}
 
         result = self.labs_api.update_record(
             record_id=run_id,
@@ -1414,7 +1417,9 @@ class WorkflowDataAccess(BaseDataAccess):
         if not run:
             return None
 
-        updated_data = {**run.data, "name": name}
+        # stored_form: a rename must not fetch a multi-MB snapshot only to write
+        # the same one back (see run_snapshot_store).
+        updated_data = {**stored_form(run.data), "name": name}
 
         result = self.labs_api.update_record(
             record_id=run_id,
@@ -1462,7 +1467,7 @@ class WorkflowDataAccess(BaseDataAccess):
 
         completed_at = datetime.now(timezone.utc).isoformat()
         updated_data = {
-            **run.data,
+            **stored_form(run.data),
             "status": RUN_STATUS_COMPLETED,
             "completed_at": completed_at,
             "snapshot": snapshot,
