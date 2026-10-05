@@ -10,7 +10,7 @@
     "held-on-us",
     "whose-move"
   ],
-  "fetched_at": "2026-10-05T21:49:26.610645+00:00",
+  "fetched_at": "2026-10-05T21:59:34.799681+00:00",
   "name": "supply-sophie-unanswered-round",
   "narrative": "Sophie runs RUTF procurement for the Connect-RUTF program. 17 days ago she asked six suppliers to quote tender 2: half have never answered, despite two reminders, and the deadline is four days off, so chasing them is still worth it; and she forwards whatever does arrive to an AI that records it. Sophie opens tender 2 and reads where it stands: collecting quotes with its deadline in 4 days, three of six answered and three silent, each quote recorded from the supplier's own email with the fact it left out, each silent supplier with when she last chased it and a reminder already drafted, and that the tender has not settled how import duty is handled. She opens the reminder drafted for Sahel, which says when Sahel was asked and last reminded, sends it, and marks it sent from the draft itself; no further reminder falls before the deadline. Sahel answers with a quote; Sophie forwards it, and in the tender's history, turned to replies only, Sahel's email comes first: she opens it beside what the AI recorded from it, the reply dated the day it came in. On the comparison, side by side, no quote can be compared yet: the tender's import duty terms are not settled, so Harmattan's carriage-paid quote, which leaves the import to us, waits on them; Kanem has not stated its pack, and Sahel's quote is ex works, so its freight is ours with no freight estimate recorded, and in euros with no exchange rate recorded; our clearing estimate sits on the quotes we import. Back on the tender she settles import duty on its terms line: we import, under the program's duty waiver. Northgate's three questions are still on her, and Reply opens an email drafted with the three questions, an answer to write under each. The comparison then costs the quotes we import under the waiver: Harmattan's becomes comparable, one of three, landed at its quoted price plus our clearing estimate, while Kanem's pack, our freight estimate for Sahel and Sahel's exchange rate are still missing. Importing makes the paperwork hers, and tender 1 shows what that means: its order with Harmattan is at customs, held, waiting on us. Its status view shows nothing received yet, the invoice billed above the agreed price and the days it is late, and To do lists the documents owed to the forwarder and the invoice to review; the forwarder's email in the order's history says the trucks are held at the border on our import permit. Back on her overview, tender 2 reads what changed: three of six answered and none comparable when she opened it, four answered and 1 of 3 comparable, Harmattan, now, its next move hers, the reply to Northgate; the order is hers too, and a RUSF tender she asked two days ago waits on its suppliers, with the moves on her counted against those waiting on suppliers.",
   "personas": {
@@ -61,7 +61,7 @@
         }
       ],
       "id": "half-the-round-is-silent",
-      "narrative": "Sophie asked six suppliers to quote tender 2. The deadline is 4 days off, half have answered and three are silent. Each quote is recorded by the AI from the supplier's own email, with what it left out beside it: Kanem's sachets per carton. Sahel's row shows when she last chased it, and its reminder is now due. The terms line says import duty is not settled.",
+      "narrative": "Sophie asked six suppliers to quote tender 2. The deadline is 4 days off, half have answered and three are silent. Each quote is recorded by the AI from the supplier's own email, with what it left out beside it: Kanem's sachets per carton. Sahel's row shows when she last chased it, and a reminder is ready to send. The terms line says import duty is not settled.",
       "persona": "sophie",
       "provenance": "S1",
       "title": "Half the tender never answered"
@@ -190,7 +190,7 @@
         }
       ],
       "id": "held-on-us",
-      "narrative": "Tender 1's order with Harmattan for 2,000 cartons shows what importing makes hers: it is at customs, held on us, and its invoice is billed above the agreed price; the days late split between the supplier's 11 and the 20 the shipment has waited on us. The documents to clear it, the import permit and the customs declaration, are ours to send: we owe them to the forwarder, and the forwarder's email in the order's history says the trucks wait at the border until the permit is lodged.",
+      "narrative": "Tender 1's order with Harmattan for 2,000 cartons is at customs, held on us. Its invoice is billed above the agreed price, and the days late split between the supplier's 11 and our 20. The import permit and the customs declaration are ours: we owe them to the forwarder, whose email says the trucks wait at the border until the permit is lodged.",
       "persona": "sophie",
       "provenance": "S6",
       "title": "Tender 1's order: held on our permit, billed high"
@@ -214,12 +214,12 @@
         }
       ],
       "id": "whose-move",
-      "narrative": "Back on her overview, tender 2 now leads with 1 of 3 comparable, Harmattan, and four of six have answered. Its open facts sit under its next move, which is hers: reply to Northgate's questions. Items to do are counted against those waiting on suppliers: a RUSF tender for Maiduguri waits on its suppliers, and the tender 1 order at customs is hers.",
+      "narrative": "Back on her overview, tender 2 leads with 1 of 3 comparable, Harmattan, and four of six have answered. Its open facts sit under its next move, which is hers: reply to Northgate's questions. Three to do are counted against five waiting on suppliers: the Maiduguri RUSF tender waits on its suppliers, and the tender 1 order at customs is hers.",
       "persona": "sophie",
       "provenance": "S7",
       "title": "Whose move each procurement is, ours or the suppliers'"
     }
   ],
   "slug": "supply-sophie-unanswered-round",
-  "version": 47
+  "version": 48
 }
