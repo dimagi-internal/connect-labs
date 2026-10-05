@@ -1094,7 +1094,7 @@ class Document(SourcedModel):
     """
 
     program_id = models.IntegerField(db_index=True)
-    kind = models.CharField(max_length=32, choices=_choices(records.DOCUMENT_KINDS))
+    kind = models.CharField(max_length=32, choices=list(records.DOCUMENT_KIND_LABELS.items()))
     title = models.CharField(max_length=255, blank=True, default="")
     filename = models.CharField(max_length=255, blank=True, default="")
     content_type = models.CharField(max_length=128, blank=True, default="")

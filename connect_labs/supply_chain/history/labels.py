@@ -18,6 +18,7 @@ from decimal import Decimal
 from django.db import models
 from django.utils.dateformat import format as date_format
 
+from connect_labs.supply_chain.records import document_kind_label
 from connect_labs.supply_chain.templatetags.supply_chain_extras import VOCAB_LABELS, words
 from connect_labs.supply_chain.values import money_digits, quantity_digits, unit_noun
 
@@ -287,7 +288,7 @@ def _required_documents_clause(old, new) -> str:
     for document in new or []:
         if not isinstance(document, dict):
             continue
-        what = str(document.get("kind") or "").replace("_", " ").strip()
+        what = document_kind_label(document.get("kind")).strip()
         if not what:
             continue
         local = str(document.get("name") or "").strip()
@@ -483,7 +484,7 @@ def _identity(model, values, lookup) -> str:
         "Payment": lambda: _cash(values),
         "Commitment": lambda: name_org(values.get("owed_to_org_id")),
         "Document": lambda: values.get("title")
-        or (words(values.get("kind")).capitalize() if values.get("kind") else ""),
+        or (document_kind_label(values.get("kind")).capitalize() if values.get("kind") else ""),
         "ShipmentLine": lambda: _qty(values, "quantity", "quantity_unit"),
         "ReceiptLine": lambda: _qty(values, "quantity_accepted", "quantity_unit"),
     }

@@ -629,7 +629,7 @@ class DocumentForm(ProvenancedForm):
         set_choices(
             self,
             "kind",
-            [("", "—")] + [(value, str(value).replace("_", " ").capitalize()) for value in records.DOCUMENT_KINDS],
+            [("", "—")] + [(value, label.capitalize()) for value, label in records.DOCUMENT_KIND_LABELS.items()],
         )
         self.helper.layout = Layout(
             Row(Column("kind"), Column("title"), css_class="grid md:grid-cols-2 gap-x-6"),

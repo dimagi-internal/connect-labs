@@ -25,6 +25,8 @@ said the shipment is held on it, so it never reads as holding the shipment.
 from dataclasses import dataclass
 from datetime import date
 
+from connect_labs.supply_chain.records import document_kind_label
+
 
 @dataclass(frozen=True)
 class Hold:
@@ -122,7 +124,7 @@ def holds_for(contracts) -> dict[int, list[Hold]]:
             if entry.get("owed_by_org_id") in ours and entry.get("kind") not in on_file:
                 holds.setdefault(shipment.contract_id, []).append(
                     Hold(
-                        what=(entry.get("kind") or "a document").replace("_", " "),
+                        what=document_kind_label(entry.get("kind")) or "a document",
                         # No record says when the hold began, and the day it was
                         # recorded is not that day: left unknown, not guessed.
                         since=None,
@@ -184,7 +186,7 @@ def _add_relief_holds(by_id, holds, received) -> None:
             continue
         holds.setdefault(cid, []).append(
             Hold(
-                what="duty exemption",
+                what=document_kind_label("duty_exemption"),
                 since=None,
                 asked_by=(sources.get(shipment.pk) or _Source()).sender or (shipment.carrier or "").strip(),
                 shipment_id=shipment.pk,

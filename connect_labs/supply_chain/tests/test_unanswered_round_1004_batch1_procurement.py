@@ -104,9 +104,9 @@ def test_the_open_facts_carry_the_waiver_document_for_a_comparable_quote(da, wor
     (compared,) = comparisons(tender, quotes)
     (row,) = compared.comparable
     facts = quote_open_facts(tender, row, quotes[0], waiver_on_file=False)
-    assert "waiver document" in facts
+    assert "duty exemption" in facts
     ours, theirs = split_gaps(facts)
-    assert "waiver document" in ours and not theirs
+    assert "duty exemption" in ours and not theirs
 
 
 def test_the_overview_reads_the_same_facts_the_comparison_counts(da, world):
@@ -115,8 +115,8 @@ def test_the_overview_reads_the_same_facts_the_comparison_counts(da, world):
     tender = _tender(world)
     quotes = list(Quote.objects.filter(tender=tender).select_related("supplier__org", "commodity", "item"))
     missing = {fact: (n, owner) for fact, n, owner in _missing_facts(tender, quotes)}
-    # The waiver document is on every quote we import under the waiver, comparable or not.
-    assert missing["waiver document"] == (2, rules.US)
+    # The duty exemption is on every quote we import under the waiver, comparable or not.
+    assert missing["duty exemption"] == (2, rules.US)
     assert missing["exchange rate"][1] == rules.US
     assert all(owner == rules.US for _, owner in missing.values())
 
