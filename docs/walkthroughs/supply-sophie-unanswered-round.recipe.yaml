@@ -18,6 +18,25 @@ video_viewport_height: 900
 video_viewport_width: 1440
 why_brief: supply-sophie-unanswered-round.why_brief.yaml
 scenes:
+- id: the-unanswered-tender
+  role: overview
+  full_page: false
+  actions:
+  - kind: hold
+    note: the opener -- the video speaks this scene's narrative over its title card and does not replay the footage
+    seconds: 0.5
+  - kind: wait_for
+    target: testid:stage-bar
+  - kind: hold
+    seconds: 1.0
+  - kind: snapshot
+    note: the tender as Sophie finds it, behind the title card
+  concept_claim: An RUTF tender where half the invited suppliers never answered can still
+    be moved to a decision when the record shows whose move each open item is.
+  design_intent: Say what the viewer will see and why before any screen is demoed, so each
+    later scene answers a question already posed.
+  show: The tender's page, behind the opening title card.
+  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
 - id: half-the-round-is-silent
   actions:
   - kind: hold
@@ -101,7 +120,6 @@ scenes:
     later scene answer a question Sophie actually has; one opening scene carries the
     stage, the counts, the supplier table and the unsettled duty terms that scene 5 settles.'
   pace: teach
-  role: overview
   show: 'Sophie opens tender 2, its deadline four days off, and reads its stage bar, the Answered
     and Silent tiles, and the Suppliers table: each quote recorded from its email by
     the AI, the sachets per carton Kanem left out, Sahel silent with its last chase and
