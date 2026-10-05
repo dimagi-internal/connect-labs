@@ -330,6 +330,16 @@ Labs checks every registry before saving it:
 
 Validation doesn't run the SQL, so **it catches a broken definition, not a wrong number.**
 
+### Editing a saved registry
+
+You don't have to resend a whole document to change part of it. `semantic_registry_update` takes the items you're changing, by `name`:
+
+- `upsert_measures`, `upsert_properties` and `upsert_aggregates` replace an item with the same name where it stands, or add a new one. A new one goes at the end, or after the item named in `insert_after`, so a new indicator can sit beside related ones in the scorecard.
+- `remove` deletes items by name, e.g. `{measures: ["old_rate", "old_rate_numerator", "old_rate_denominator"]}`.
+- `expected_version` refuses the edit if someone else has changed the registry since you read it, and names the current version.
+
+Adding one indicator with its numerator and denominator is a payload of about 1 KB. Validation still runs on the whole registry after your edit, and a rejected edit saves nothing.
+
 ---
 
 ## Reading the generated SQL
