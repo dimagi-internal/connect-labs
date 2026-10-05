@@ -2202,9 +2202,14 @@ function WorkflowUI({
           Enrolment against target
         </R.SectionTitle>
         <R.EnrolmentTargetSummary progress={prog} unit={unit} />
-        <div className="mt-3">
-          <R.EnrolmentTargetLegend />
-          <R.EnrolmentTargetChart progress={prog} />
+        {/* Two charts, one axis each: a reader asked what the running-total
+            line over the monthly bars was conveying when they shared a chart
+            on two scales. */}
+        <div className="mt-4">
+          <R.EnrolmentMonthlyChart progress={prog} />
+        </div>
+        <div className="mt-4">
+          <R.EnrolmentCumulativeChart progress={prog} />
         </div>
         <div className="mt-1 text-xs text-gray-400 space-y-0.5">
           {prog.carryIn ? (
@@ -3427,9 +3432,9 @@ function WorkflowUI({
 
       {selLLO ? <FLWTable /> : <OrgTable />}
 
-      <EnrolmentTargets />
-
       <ChartsRow />
+
+      <EnrolmentTargets />
 
       <AllIndicators />
 

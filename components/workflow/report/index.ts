@@ -66,8 +66,11 @@ import {
   stripPos,
 } from './Scenario';
 import {
+  EnrolmentCumulativeChart,
+  EnrolmentMonthlyChart,
   EnrolmentTargetChart,
   EnrolmentTargetLegend,
+  cumulativeKnots,
   EnrolmentTargetSummary,
   elapsedFraction,
   enrolmentProgress,
@@ -85,7 +88,7 @@ import {
   SectionTitle,
 } from './Layout';
 
-export const VERSION = 5;
+export const VERSION = 6;
 
 export const LabsReport = {
   VERSION,
@@ -170,6 +173,10 @@ export const LabsReport = {
   EnrolmentTargetChart,
   EnrolmentTargetSummary,
   EnrolmentTargetLegend,
+  // two single-axis charts replacing the combined one (VERSION 6)
+  EnrolmentMonthlyChart,
+  EnrolmentCumulativeChart,
+  cumulativeKnots,
 };
 
 export type LabsReportLibrary = typeof LabsReport;

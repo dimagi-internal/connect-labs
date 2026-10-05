@@ -293,3 +293,17 @@ def test_enrolment_targets_are_config_not_code():
     from connect_labs.workflow.templates.kmc_programme_metrics import DEFINITION
 
     assert "enrollment_targets" not in DEFINITION["config"], "a target is never a template default"
+
+
+def test_the_trends_sit_above_enrolment_against_target_and_each_chart_has_one_axis():
+    """Jonathan, reviewing run 25495: the indicator trends belong ABOVE enrolment
+    against target, and a running total drawn over the monthly bars on a second
+    axis read as noise ("what is this blue line conveying?"). The section draws
+    two single-axis charts instead."""
+    src = RENDER.read_text()
+    assert src.index("<ChartsRow />") < src.index("<EnrolmentTargets />")
+    body = src[src.index("function EnrolmentTargets()") : src.index("// ── One scorecard head")]
+    assert "<R.EnrolmentMonthlyChart progress={prog} />" in body
+    assert "<R.EnrolmentCumulativeChart progress={prog} />" in body
+    assert "EnrolmentTargetChart" not in body, "the dual-axis chart is retired from this report"
+    assert "right axis" not in body
