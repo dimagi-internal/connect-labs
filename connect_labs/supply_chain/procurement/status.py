@@ -771,7 +771,11 @@ def comparison_grid(
             met = spec.get("met") or []
             cells["spec"].append(
                 fact(
-                    (f"Meets {'; '.join(met)}" if met else spec.get("summary") or "meets")
+                    (
+                        f"Meets {'; '.join(m[:1].lower() + m[1:] for m in met)}"
+                        if met
+                        else spec.get("summary") or "meets"
+                    )
                     + (f" ({len(met)} of {spec.get('requirement_count') or len(met)} met)" if len(met) > 1 else ""),
                     CALC,
                 )
