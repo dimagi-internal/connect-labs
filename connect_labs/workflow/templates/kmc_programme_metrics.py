@@ -565,8 +565,10 @@ SNAPSHOT_SCHEMA = {
             "Programme monthly trend series: per cohort month, the graded indicators, cohort "
             "size, the count of visits that HAPPENED that month (activity, from the visit rows "
             "— a different grouping from the cohort month, so not derivable from the "
-            "indicators) and, per credibility-gated indicator, the figure pooled over that "
-            "month's credible recorders"
+            "indicators), per credibility-gated indicator, the figure pooled over that "
+            "month's credible recorders, and `counts`: every count indicator's raw figure "
+            "(e.g. registered_cases), never suppressed under the min-denominator floor, which "
+            "the enrolment-against-target section sums month by month"
         ),
         "state.snapshot.monthlyByScope": (
             "Monthly series precomputed per drill scope (all / llo:<name> / opp:<id>) so a "
@@ -668,6 +670,11 @@ DEFINITION = {
         # here, never a real id: an id in the template would point every new
         # instance at one review workflow in one scope.
         "flw_review": None,
+        # Enrolment against target is drawn only when an instance carries
+        # `config.enrollment_targets` (per-LLO monthly targets, set with
+        # workflow_update_definition). Deliberately NOT declared here: a key the
+        # template declares is filled into every instance on read, and a target is
+        # a programme's commitment, never a template default.
     },
     "pipeline_sources": [],
     "snapshot_inputs": SNAPSHOT_INPUTS,

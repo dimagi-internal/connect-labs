@@ -859,6 +859,67 @@ class TestMonthlyTrendPoints:
         assert jan["n"] == 3
 
 
+class TestMonthlyPointsCarryRawCounts:
+    """Enrolment against a target sums REGISTERED babies month by month. The graded
+    cell suppresses a value under the min-denominator floor (PIPN registered 5
+    babies in May 2026 and its cell read null), which is right for a rate and wrong
+    for a tally: summed into a cumulative total, the month would silently vanish.
+    So each monthly point also carries every count indicator's raw figure."""
+
+    REG = {
+        "id": "registered_cases",
+        "indicator": "registered_cases",
+        "unit": "n",
+        "kind": "count",
+        "direction": "none",
+        "inputs": [],
+    }
+    RATE = {"id": "c14", "indicator": "C14", "unit": "%", "direction": "lower", "inputs": []}
+
+    def _build(self):
+        rows = [
+            {"scope": "programme", "n_cases": 30},
+            {
+                "scope": "month",
+                "cohort_month": "2026-05-01",
+                "n_cases": 5,
+                "registered_cases": 5,
+                "registered_cases_denominator": 5,
+                "c14": 2.0,
+                "c14_denominator": 5,
+            },
+            {
+                "scope": "llo_month",
+                "llo": "EHA",
+                "cohort_month": "2026-05-01",
+                "n_cases": 5,
+                "registered_cases": 4,
+                "registered_cases_denominator": 5,
+            },
+        ]
+        return snap.build(
+            spec={"scopes": ["programme", "month", "llo_month"]},
+            rows=rows,
+            measures=[self.REG, self.RATE],
+            deployment={"llo_map": LLO_MAP},
+            cases=[],
+            registry_min_denominator=20,
+        )
+
+    def test_a_count_below_the_floor_is_graded_insufficient_but_still_counted(self):
+        may = self._build()["monthly"][0]
+        assert may["ind"]["registered_cases"]["value"] is None, "the graded cell keeps its floor"
+        assert may["counts"] == {"registered_cases": 5}
+
+    def test_only_count_indicators_are_carried(self):
+        may = self._build()["monthly"][0]
+        assert "C14" not in may["counts"]
+
+    def test_the_drill_carries_its_own_counts(self):
+        eha = self._build()["monthlyByScope"]["llo:EHA"][0]
+        assert eha["counts"] == {"registered_cases": 4}
+
+
 N06 = {"id": "n06", "indicator": "N06", "unit": "g", "direction": "none", "min_denominator": 20, "inputs": []}
 
 

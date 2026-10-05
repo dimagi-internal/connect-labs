@@ -273,3 +273,23 @@ def test_the_trends_say_they_are_loading_rather_than_one_report_so_far():
     assert effect.index("setHistory([])") < effect.index(
         "var cancelled"
     ), "a page with no definition id must settle, not load forever"
+
+
+def test_enrolment_targets_are_config_not_code():
+    """Neal's "what we've done and the targets through March" view reads its targets
+    from the workflow's `config.enrollment_targets`. A number in the render would
+    show one programme's commitment on every instance -- including the synthetic
+    twin and any other KMC report -- and would need a deploy to correct."""
+    src = RENDER.read_text()
+    assert "definition.config.enrollment_targets" in src
+    assert "<EnrolmentTargets />" in src
+    body = src[src.index("function EnrolmentTargets()") : src.index("// ── One scorecard head")]
+    # The arithmetic is the shared library's, so it is tested once, there.
+    assert "R.enrolmentProgress(" in body
+    for literal in ("1515", "9659", "1597", "12771", "11000", "11,000", "'NAMA'", "'PIPN'", "'EHA'"):
+        assert literal not in body, f"programme-specific {literal} hard-coded in the render"
+    # An instance with no targets draws nothing.
+    assert "if (!TARGETS || !R.enrolmentProgress) return null;" in body
+    from connect_labs.workflow.templates.kmc_programme_metrics import DEFINITION
+
+    assert "enrollment_targets" not in DEFINITION["config"], "a target is never a template default"

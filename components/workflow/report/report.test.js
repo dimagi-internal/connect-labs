@@ -625,3 +625,169 @@ describe('scenario building blocks (VERSION 4)', () => {
     expect(out).toContain('dashed');
   });
 });
+
+describe('enrolment against target (VERSION 5)', () => {
+  // The KMC goals sheet's monthly enrolment targets (programme as of 2026-10-05),
+  // against the registrations a saved run carries per LLO and cohort month.
+  const TARGETS = {
+    unit: 'registered babies',
+    llos: {
+      NAMA: {
+        before_window: 165,
+        monthly: {
+          '2026-07': 228,
+          '2026-08': 187,
+          '2026-09': 176,
+          '2026-10': 150,
+          '2026-11': 150,
+          '2026-12': 75,
+          '2027-01': 100,
+          '2027-02': 130,
+          '2027-03': 154,
+        },
+      },
+      PIPN: {
+        before_window: 309,
+        monthly: {
+          '2026-07': 453,
+          '2026-08': 489,
+          '2026-09': 460,
+          '2026-10': 1200,
+          '2026-11': 1600,
+          '2026-12': 1400,
+          '2027-01': 1100,
+          '2027-02': 1100,
+          '2027-03': 1548,
+        },
+      },
+      EHA: {
+        monthly: {
+          '2026-08': 50,
+          '2026-09': 222,
+          '2026-10': 240,
+          '2026-11': 240,
+          '2026-12': 150,
+          '2027-01': 215,
+          '2027-02': 240,
+          '2027-03': 240,
+        },
+      },
+      BERI: {},
+    },
+  };
+  const pt = (month, count, graded) => ({
+    month,
+    n: count,
+    counts: graded === undefined ? { registered_cases: count } : undefined,
+    ind: { registered_cases: { value: graded === undefined ? count : graded } },
+  });
+  const BY_SCOPE = {
+    'llo:NAMA': [
+      pt('2026-06', 102),
+      pt('2026-07', 228),
+      pt('2026-08', 187),
+      pt('2026-09', 194),
+    ],
+    'llo:PIPN': [pt('2026-07', 453), pt('2026-08', 489), pt('2026-09', 578)],
+    'llo:EHA': [pt('2026-07', 149), pt('2026-08', 229), pt('2026-09', 221)],
+    'llo:BERI': [pt('2026-07', 411)],
+  };
+  const progress = (scope, byScope) =>
+    R.enrolmentProgress({
+      targets: TARGETS,
+      monthlyByScope: byScope || BY_SCOPE,
+      asOf: '2026-09-27',
+      scope,
+    });
+
+  test('the window runs from the first to the last target month', () => {
+    const w = R.targetWindow(TARGETS);
+    expect(w[0]).toBe('2026-07');
+    expect(w[w.length - 1]).toBe('2027-03');
+    expect(w.length).toBe(9);
+    expect(R.targetedLlos(TARGETS)).toEqual(['NAMA', 'PIPN', 'EHA']);
+  });
+
+  test('one LLO: carry-in counts toward both sides, the goal is the sheet total', () => {
+    const p = progress('NAMA');
+    expect(p.goal).toBe(1515);
+    expect(p.carryIn).toBe(165);
+    expect(p.cumActual).toBe(165 + 228 + 187 + 194);
+    expect(p.cumTargetToDate).toBe(165 + 228 + 187 + 176);
+    expect(p.gap).toBe(18);
+    expect(p.remainingMonths).toBe(6);
+    expect(p.runRateNeeded).toBeCloseTo((1515 - 774) / 6, 6);
+  });
+
+  test('months after the as-of month carry the target only', () => {
+    const p = progress('PIPN');
+    const oct = p.months.find((m) => m.month === '2026-10');
+    expect(oct.future).toBe(true);
+    expect(oct.actual).toBeNull();
+    expect(oct.cumActual).toBeNull();
+    expect(oct.target).toBe(1200);
+    expect(p.goal).toBe(9659);
+  });
+
+  test("an LLO's actuals count from its own first target month", () => {
+    // EHA's targets start in August: July's 149 registrations are not credited.
+    const p = progress('EHA');
+    expect(p.months.find((m) => m.month === '2026-07').actual).toBeNull();
+    expect(p.cumActual).toBe(229 + 221);
+    expect(p.goal).toBe(1597);
+  });
+
+  test('the programme is the sum of the LLOs that have a target, and only those', () => {
+    const p = progress('all');
+    expect(p.llos).toEqual(['NAMA', 'PIPN', 'EHA']);
+    expect(p.goal).toBe(12771);
+    expect(p.cumActual).toBe(774 + 1829 + 450);
+    expect(p.cumTargetToDate).toBe(756 + 1711 + 272);
+  });
+
+  test('a raw count wins over a suppressed graded cell; an unreadable month is named', () => {
+    const p = progress('PIPN', {
+      'llo:PIPN': [
+        pt('2026-07', 453),
+        pt('2026-08', 489, null),
+        pt('2026-09', 578),
+      ],
+    });
+    expect(p.unknownMonths).toEqual(['2026-08']);
+    expect(p.cumActual).toBe(309 + 453 + 578);
+    const legacy = {
+      month: '2026-08',
+      n: 5,
+      ind: { registered_cases: { value: 5 } },
+    };
+    expect(
+      progress('PIPN', { 'llo:PIPN': [legacy] }).months.find(
+        (m) => m.month === '2026-08',
+      ).actual,
+    ).toBe(5);
+  });
+
+  test('a scope with no target has no progress', () => {
+    expect(progress('BERI')).toBeNull();
+    expect(
+      R.enrolmentProgress({
+        targets: {},
+        monthlyByScope: BY_SCOPE,
+        asOf: '2026-09-27',
+        scope: 'all',
+      }),
+    ).toBeNull();
+  });
+
+  test('the readout and chart draw the distance to target', () => {
+    const p = progress('NAMA');
+    const out = html(h(R.EnrolmentTargetSummary, { progress: p }));
+    expect(out).toContain('Ahead of target');
+    expect(out).toContain('1,515');
+    expect(out).toContain('124');
+    expect(out).toContain('6 remaining months');
+    const svg = html(h(R.EnrolmentTargetChart, { progress: p }));
+    expect(svg).toContain('future: target only');
+    expect(svg).toContain('Mar');
+  });
+});
