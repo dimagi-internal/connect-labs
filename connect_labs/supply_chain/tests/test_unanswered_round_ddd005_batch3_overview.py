@@ -116,4 +116,4 @@ class TestAnOrderRowReadsOnItsOwnSteps:
 
     def test_the_overview_keys_both_step_sets(self, da, world, client_in_program):
         body = client_in_program.get(reverse("supply_chain:home")).content.decode()
-        assert "Order stages: Awarded · Ordered · Dispatched · In transit · Received · Paid" in body
+        assert "Order stages: Awarded · Ordered · Dispatched · In transit or at customs · Received · Paid" in body
