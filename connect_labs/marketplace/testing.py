@@ -61,3 +61,69 @@ def make_partner(name: str, short: str = "", *, delivers=(), **profile_fields) -
 
     queries.invalidate()
     return org
+
+
+# The LLO Directory's header rows, verbatim from the live sheet (2026-10-05).
+# The parser finds every column by its header, so a fixture with an invented or
+# truncated header row tests nothing real -- build fixtures on these instead.
+SHEET_ORG_HEADER = [
+    "Organization Name",
+    "Short Name",
+    "Has Used Connect",
+    "Year of Establishment",
+    "Org Team Size",
+    "No. of FLWs Managed",
+    "Countries of Operation",
+    "Regions/States of Operation",
+    "Primary Sector(s)",
+    "Website",
+    "Office Address",
+    "Email addresses from Contacts sheet",
+    "EOIs Applied for (Add Link to EOI)",
+    "Organization Notes",
+    "Latest MSA Link",
+    "Latest Work Order Link",
+]
+SHEET_CONTACT_HEADER = [
+    "Contact Full Name",
+    "Organization Name",
+    "Role / Title",
+    "Main POC?",
+    "Email Address",
+    "Phone Number",
+    "Contact Notes (e.g. best way to contact)",
+]
+SHEET_DATES_HEADER = ["Organization Name", "Joined Connect Network", "Joined — basis"]
+SHEET_MAPPING_HEADER = [
+    "Connect Org Slug",
+    "Connect Org Name",
+    "Resolved Partner",
+    "Partner Short Name",
+    "How it resolved",
+    "Why",
+    "Lifetime Works",
+    "Confirmed? (y/n)",
+    "Corrected Partner (overrides)",
+]
+SHEET_ROUNDS_HEADER = [
+    "Slug",
+    "Program / Initiative Name",
+    "Announcement Type (EOI/RFP)",
+    "Status",
+    "Published Date",
+    "Application Deadline",
+    "Selection Decision Date",
+    "Program Start Date",
+    "Program End Date",
+    "Target Countries / Regions",
+    "Announcement Link",
+    "Form Link",
+    "Response Sheet Link",
+    "Response Tab",
+    "Column Map (JSON, blank = auto-detect)",
+    "Labs Access",
+    "Labs Access Checked",
+    "Notes",
+    "Connect Programme (delivery_type)",
+    "Next Step (written by labs — do not edit)",
+]

@@ -19,13 +19,10 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
-from connect_labs.marketplace.directory import CONTACTS_TAB, ORGANIZATIONS_TAB, cell
+from connect_labs.marketplace.directory import CONTACTS_TAB, ORG_NAME, ORGANIZATIONS_TAB, Columns
 
 # Columns that should hold a number, by index, with the header a person reads.
-NUMBER_COLUMNS = {
-    3: "Year of Establishment",
-    4: "Org Team Size",
-}
+NUMBER_COLUMNS = ("Year of Establishment", "Org Team Size")
 
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -52,10 +49,15 @@ def audit(org_rows, contact_rows, orgs, contacts, skipped) -> list[Finding]:
     """Everything about these tabs that a person should look at."""
     findings: list[Finding] = []
 
+    # Header lookups, never positions. The parser has already refused a tab
+    # missing a column it needs, so nothing here is required again.
+    org_cols = Columns(org_rows, ORGANIZATIONS_TAB)
+    contact_cols = Columns(contact_rows, CONTACTS_TAB)
+
     # Number columns that did not parse.
     for index, row in enumerate(org_rows[1:], start=2):
-        for column, header in NUMBER_COLUMNS.items():
-            raw = cell(row, column)
+        for header in NUMBER_COLUMNS:
+            raw = org_cols.get(row, header)
             if not raw:
                 continue
             try:
@@ -73,7 +75,7 @@ def audit(org_rows, contact_rows, orgs, contacts, skipped) -> list[Finding]:
     # Organisation names that differ only incidentally.
     first_seen: dict[str, int] = {}
     for index, row in enumerate(org_rows[1:], start=2):
-        name = cell(row, 0)
+        name = org_cols.get(row, ORG_NAME)
         if not name:
             continue
         key = _fold(name)
@@ -128,16 +130,17 @@ def audit(org_rows, contact_rows, orgs, contacts, skipped) -> list[Finding]:
 
     # Contact rows that cannot become contacts.
     for index, row in enumerate(contact_rows[1:], start=2):
-        email, org_name = cell(row, 4), cell(row, 1)
+        email, org_name = contact_cols.get(row, "Email Address"), contact_cols.get(row, ORG_NAME)
         if not org_name and not email:
             continue
         if not email:
+            who = contact_cols.get(row, "Contact Full Name") or "a contact"
             findings.append(
                 Finding(
                     "contact_without_email",
                     index,
                     CONTACTS_TAB,
-                    f"{cell(row, 0) or 'a contact'} at {org_name!r} has no email address — not imported",
+                    f"{who} at {org_name!r} has no email address — not imported",
                 )
             )
         elif not _EMAIL.match(email):

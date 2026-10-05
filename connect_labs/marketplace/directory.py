@@ -125,60 +125,138 @@ def _split_list(raw: str) -> list[str]:
     return [part.strip() for part in re.split(r"[;,]", raw or "") if part.strip()]
 
 
-# Optional, and found by its header rather than its position: it was added after
-# the fixed columns above, and a column someone inserts or moves must not
-# silently start feeding the resolver a different field.
-HQ_CITY_HEADER = "hq city"
+class DirectoryFormatError(ValueError):
+    """A tab is missing a column labs reads. Raised, never defaulted: a renamed
+    header read as blank would silently empty that field for every row."""
 
 
-def _column(rows: list[list[str]], header: str) -> int | None:
-    if not rows:
-        return None
-    for index, title in enumerate(rows[0]):
-        if re.sub(r"\s+", " ", (title or "").strip().lower()) == header:
-            return index
-    return None
+def _header_key(title: str) -> str:
+    """A header as people retitle it: case, spacing, a parenthetical note and
+    trailing punctuation are not part of its name, so "Verdict (link | not an
+    LLO)" and "verdict" are one column. "Organisation" and "Organization" are
+    the same word on these tabs."""
+    text = re.sub(r"\([^)]*\)", " ", (title or "").lower())
+    text = re.sub(r"[?:*]+", " ", text).replace("organisation", "organization")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def column_letter(index: int) -> str:
+    letters = ""
+    index += 1
+    while index:
+        index, rem = divmod(index - 1, 26)
+        letters = chr(65 + rem) + letters
+    return letters
+
+
+class Columns:
+    """A tab's columns, looked up by header text rather than by position.
+
+    The sheet is maintained by hand. A column inserted, moved or added at the
+    end must not shift which field labs reads, so every read goes through the
+    header row. A header the parser needs that is missing raises, naming it.
+    """
+
+    def __init__(self, rows: list[list[str]], tab: str, required=(), optional=()):
+        self.tab = tab
+        self._index: dict[str, int] = {}
+        for position, title in enumerate(rows[0] if rows else []):
+            key = _header_key(title)
+            if key and key not in self._index:
+                self._index[key] = position
+        missing = [h for h in required if _header_key(h) not in self._index]
+        if missing and rows:
+            raise DirectoryFormatError(
+                f"The '{tab}' tab has no column headed "
+                + ", ".join(repr(h) for h in missing)
+                + ". Labs finds columns by their header text; restore the header (a note in brackets "
+                "after it is fine) rather than letting every row read as blank."
+            )
+
+    def index(self, header: str) -> int | None:
+        return self._index.get(_header_key(header))
+
+    def get(self, row: list[str], header: str) -> str:
+        position = self.index(header)
+        return cell(row, position) if position is not None else ""
+
+    def letter(self, header: str) -> str | None:
+        position = self.index(header)
+        return column_letter(position) if position is not None else None
+
+
+ORG_NAME = "Organization Name"
+ORG_COLUMNS = (
+    ORG_NAME,
+    "Short Name",
+    "Has Used Connect",
+    "Year of Establishment",
+    "Org Team Size",
+    "Countries of Operation",
+    "Regions/States of Operation",
+    "Website",
+    "Office Address",
+    "Organization Notes",
+    "Latest MSA Link",
+    "Latest Work Order Link",
+)
+# Optional: the head office's town, when someone has written one down.
+HQ_CITY = "HQ City"
 
 
 def parse_organizations(rows: list[list[str]]) -> list[DirectoryOrg]:
+    cols = Columns(rows, ORGANIZATIONS_TAB, required=ORG_COLUMNS, optional=(HQ_CITY,))
     seen: set[str] = set()
     out: list[DirectoryOrg] = []
-    hq_city_col = _column(rows, HQ_CITY_HEADER)
     for index, row in enumerate(rows[1:], start=2):
-        name = cell(row, 0)
+        name = cols.get(row, ORG_NAME)
         if not name or name in seen:
             continue
         seen.add(name)
-        countries, unresolved = parse_countries(cell(row, 6))
+        raw_countries = cols.get(row, "Countries of Operation")
+        raw_regions = cols.get(row, "Regions/States of Operation")
+        countries, unresolved = parse_countries(raw_countries)
         out.append(
             DirectoryOrg(
                 name=name,
-                short_name=cell(row, 1),
-                has_used_connect=_bool_or_none(cell(row, 2)),
-                year_established=_int_or_none(cell(row, 3)),
-                team_size=_int_or_none(cell(row, 4)),
+                short_name=cols.get(row, "Short Name"),
+                has_used_connect=_bool_or_none(cols.get(row, "Has Used Connect")),
+                year_established=_int_or_none(cols.get(row, "Year of Establishment")),
+                team_size=_int_or_none(cols.get(row, "Org Team Size")),
                 countries=countries,
                 unresolved_countries=unresolved,
-                regions=_split_list(cell(row, 7)),
-                website=cell(row, 9),
-                office_address=cell(row, 10),
-                notes=cell(row, 13),
-                msa_link=cell(row, 14),
-                work_order_link=cell(row, 15),
+                regions=_split_list(raw_regions),
+                website=cols.get(row, "Website"),
+                office_address=cols.get(row, "Office Address"),
+                notes=cols.get(row, "Organization Notes"),
+                msa_link=cols.get(row, "Latest MSA Link"),
+                work_order_link=cols.get(row, "Latest Work Order Link"),
                 source_row=index,
-                raw_countries=cell(row, 6),
-                raw_regions=cell(row, 7),
-                hq_city=cell(row, hq_city_col) if hq_city_col is not None else "",
+                raw_countries=raw_countries,
+                raw_regions=raw_regions,
+                hq_city=cols.get(row, HQ_CITY),
             )
         )
     return out
 
 
+CONTACT_COLUMNS = (
+    "Contact Full Name",
+    ORG_NAME,
+    "Role / Title",
+    "Main POC",
+    "Email Address",
+    "Phone Number",
+    "Contact Notes",
+)
+
+
 def parse_contacts(rows: list[list[str]]) -> list[DirectoryContact]:
+    cols = Columns(rows, CONTACTS_TAB, required=CONTACT_COLUMNS)
     out: list[DirectoryContact] = []
     for index, row in enumerate(rows[1:], start=2):
-        email = cell(row, 4).lower()
-        org_name = cell(row, 1)
+        email = cols.get(row, "Email Address").lower()
+        org_name = cols.get(row, ORG_NAME)
         # The email is the key: a contact without one cannot be deduplicated and
         # cannot be written to, so it is not yet a contact. ``quality.audit``
         # reports each one dropped here.
@@ -186,13 +264,13 @@ def parse_contacts(rows: list[list[str]]) -> list[DirectoryContact]:
             continue
         out.append(
             DirectoryContact(
-                full_name=cell(row, 0),
+                full_name=cols.get(row, "Contact Full Name"),
                 org_name=org_name,
-                role_title=cell(row, 2),
-                is_main_poc=_bool_or_none(cell(row, 3)) is True,
+                role_title=cols.get(row, "Role / Title"),
+                is_main_poc=_bool_or_none(cols.get(row, "Main POC")) is True,
                 email=email,
-                phone=cell(row, 5),
-                notes=cell(row, 6),
+                phone=cols.get(row, "Phone Number"),
+                notes=cols.get(row, "Contact Notes"),
                 source_row=index,
             )
         )
@@ -201,9 +279,11 @@ def parse_contacts(rows: list[list[str]]) -> list[DirectoryContact]:
 
 def parse_dates(rows: list[list[str]]) -> dict[str, tuple[str, str]]:
     """name -> (ISO join date, basis). Non-ISO cells are free text and ignored."""
+    cols = Columns(rows, DATES_TAB, required=(ORG_NAME, "Joined Connect Network", "Joined — basis"))
     out: dict[str, tuple[str, str]] = {}
     for row in rows[1:]:
-        name, joined, basis = cell(row, 0), cell(row, 1), cell(row, 2)
+        name = cols.get(row, ORG_NAME)
+        joined, basis = cols.get(row, "Joined Connect Network"), cols.get(row, "Joined — basis")
         if name and _ISO_DATE.fullmatch(joined):
             out[name] = (joined, basis[:200])
     return out
@@ -215,10 +295,12 @@ def parse_mapping(rows: list[list[str]], known_names: set[str]) -> tuple[dict[st
     Refusals are returned rather than logged so the caller can print them: a
     verdict silently dropped is worse than one never recorded.
     """
+    cols = Columns(rows, MAPPING_TAB, required=("Connect Org Slug", "Why", "Corrected Partner"))
     mapped: dict[str, tuple[str, str]] = {}
     skipped: list[str] = []
     for row in rows[1:]:
-        slug, target, why = cell(row, 0), cell(row, 8), cell(row, 5)
+        slug = cols.get(row, "Connect Org Slug")
+        target, why = cols.get(row, "Corrected Partner"), cols.get(row, "Why")
         if not slug or not target:
             continue
         if target not in known_names:
@@ -260,6 +342,35 @@ class DirectoryRound:
     notes: str = ""
     delivery_type: str = ""
     source_row: int | None = None
+    # Where labs' own columns are on this sheet, by header: {header: letter}.
+    # Written to by ``eoi._write_access_columns``; a header that is absent has
+    # no entry and is never written, rather than written to a guessed column.
+    owned_columns: dict = field(default_factory=dict)
+
+
+ROUND_COLUMNS = (
+    "Slug",
+    "Program / Initiative Name",
+    "Announcement Type",
+    "Status",
+    "Published Date",
+    "Application Deadline",
+    "Selection Decision Date",
+    "Program Start Date",
+    "Program End Date",
+    "Target Countries / Regions",
+    "Announcement Link",
+    "Form Link",
+    "Response Sheet Link",
+    "Response Tab",
+    "Column Map",
+    "Notes",
+    "Connect Programme",
+)
+# The columns labs writes. Optional to read: a missing one is simply not written.
+LABS_ACCESS = "Labs Access"
+LABS_ACCESS_CHECKED = "Labs Access Checked"
+NEXT_STEP = "Next Step"
 
 
 def parse_rounds(rows: list[list[str]]) -> tuple[list[DirectoryRound], list[str]]:
@@ -270,13 +381,15 @@ def parse_rounds(rows: list[list[str]]) -> tuple[list[DirectoryRound], list[str]
     and modelling the announcement as the round made those invisible, because a
     round with no responses of its own is not a round.
     """
+    cols = Columns(rows, ROUNDS_TAB, required=ROUND_COLUMNS, optional=(LABS_ACCESS, LABS_ACCESS_CHECKED, NEXT_STEP))
+    owned = {h: cols.letter(h) for h in (LABS_ACCESS, LABS_ACCESS_CHECKED, NEXT_STEP) if cols.letter(h)}
     out: list[DirectoryRound] = []
     skipped: list[str] = []
     seen: set[str] = set()
 
     for index, row in enumerate(rows[1:], start=2):
-        slug = cell(row, 0)
-        title = cell(row, 1)
+        slug = cols.get(row, "Slug")
+        title = cols.get(row, "Program / Initiative Name")
         if not slug and not title:
             continue
         if not slug:
@@ -287,7 +400,7 @@ def parse_rounds(rows: list[list[str]]) -> tuple[list[DirectoryRound], list[str]
             continue
         seen.add(slug)
 
-        raw_map = cell(row, 14)
+        raw_map = cols.get(row, "Column Map")
         column_map: dict = {}
         if raw_map:
             try:
@@ -295,9 +408,9 @@ def parse_rounds(rows: list[list[str]]) -> tuple[list[DirectoryRound], list[str]
             except ValueError:
                 skipped.append(f"row {index} ({slug}): Column Map is not valid JSON — falling back to auto-detect")
 
-        kind = cell(row, 2).strip().lower()
-        status = cell(row, 3).strip().lower()
-        sheet_link = cell(row, 12)
+        kind = cols.get(row, "Announcement Type").strip().lower()
+        status = cols.get(row, "Status").strip().lower()
+        sheet_link = cols.get(row, "Response Sheet Link")
         found = _SHEET_ID.search(sheet_link)
 
         out.append(
@@ -308,23 +421,24 @@ def parse_rounds(rows: list[list[str]]) -> tuple[list[DirectoryRound], list[str]
                 # "Published" means the call is live; anything else we treat as
                 # closed rather than guessing at a third state.
                 status="active" if status.startswith("publish") else "closed",
-                published_on=cell(row, 4),
-                application_deadline=cell(row, 5),
-                decision_on=cell(row, 6),
-                expected_start_date=cell(row, 7),
-                expected_end_date=cell(row, 8),
-                target_countries=cell(row, 9),
-                announcement_url=cell(row, 10),
-                form_url=cell(row, 11),
+                published_on=cols.get(row, "Published Date"),
+                application_deadline=cols.get(row, "Application Deadline"),
+                decision_on=cols.get(row, "Selection Decision Date"),
+                expected_start_date=cols.get(row, "Program Start Date"),
+                expected_end_date=cols.get(row, "Program End Date"),
+                target_countries=cols.get(row, "Target Countries / Regions"),
+                announcement_url=cols.get(row, "Announcement Link"),
+                form_url=cols.get(row, "Form Link"),
                 response_spreadsheet_id=found.group(1) if found else "",
-                response_tab=cell(row, 13),
+                response_tab=cols.get(row, "Response Tab"),
                 column_map=column_map,
-                notes=cell(row, 17),
-                # Column S. Connect's own delivery_type, decided by a human —
-                # the sheet is the master, so labs reads this rather than
-                # guessing a program from the round's title.
-                delivery_type=cell(row, 18).strip().lower(),
+                notes=cols.get(row, "Notes"),
+                # Connect's own delivery_type, decided by a human — the sheet is
+                # the master, so labs reads this rather than guessing a program
+                # from the round's title.
+                delivery_type=cols.get(row, "Connect Programme").strip().lower(),
                 source_row=index,
+                owned_columns=dict(owned),
             )
         )
     return out, skipped
@@ -363,11 +477,15 @@ def parse_response_mapping(rows, known_names: set[str]) -> tuple[dict, list[str]
     are not organisations at all, and without a way to say so they would sit in
     the review queue for ever, indistinguishable from work not yet done.
     """
+    cols = Columns(
+        rows, RESPONSE_MAPPING_TAB, required=("Round Slug", "Response Row", "Organisation", "Verdict", "Why")
+    )
     mapped: dict = {}
     skipped: list[str] = []
     for index, row in enumerate(rows[1:], start=2):
-        slug, raw_row = cell(row, 0), cell(row, 1)
-        target, raw_verdict, why = cell(row, 2), cell(row, 3), cell(row, 4)
+        slug, raw_row = cols.get(row, "Round Slug"), cols.get(row, "Response Row")
+        target, raw_verdict = cols.get(row, "Organisation"), cols.get(row, "Verdict")
+        why = cols.get(row, "Why")
         if not slug and not raw_row:
             continue
         # A tab people work in carries guidance for them. A '#' row is a note to
@@ -434,11 +552,17 @@ def parse_opportunity_groups(rows) -> tuple[dict, list[str]]:
     guess a later reader trusts. Labs never writes here: this is a decision
     people make, and the sheet is where it lives.
     """
+    cols = Columns(
+        rows,
+        OPPORTUNITY_GROUPS_TAB,
+        required=("Group Slug", "Group Name", "Connect Org Slug", "Opportunity ID", "Why"),
+    )
     groups: dict = {}
     skipped: list[str] = []
     for index, row in enumerate(rows[1:], start=2):
-        slug, name, org = cell(row, 0), cell(row, 1), cell(row, 2)
-        raw_id, why = cell(row, 3), cell(row, 5)
+        slug, name = cols.get(row, "Group Slug"), cols.get(row, "Group Name")
+        org = cols.get(row, "Connect Org Slug")
+        raw_id, why = cols.get(row, "Opportunity ID"), cols.get(row, "Why")
         if not slug and not raw_id:
             continue
         # A '#' row is guidance for whoever maintains the tab, not a verdict.

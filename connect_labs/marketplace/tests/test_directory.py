@@ -6,25 +6,14 @@ returned. All names and addresses are invented.
 """
 
 from connect_labs.marketplace.directory import parse_contacts, parse_dates, parse_mapping, parse_organizations
+from connect_labs.marketplace.testing import (
+    SHEET_CONTACT_HEADER,
+    SHEET_DATES_HEADER,
+    SHEET_MAPPING_HEADER,
+    SHEET_ORG_HEADER,
+)
 
-ORG_HEADER = [
-    "Organization Name",
-    "Short Name",
-    "Has Used Connect",
-    "Year of Establishment",
-    "Org Team Size",
-    "No. of FLWs Managed",
-    "Countries of Operation",
-    "Regions/States of Operation",
-    "Primary Sector(s)",
-    "Website",
-    "Office Address",
-    "Email addresses from Contacts sheet",
-    "EOIs Applied for (Add Link to EOI)",
-    "Organization Notes",
-    "Latest MSA Link",
-    "Latest Work Order Link",
-]
+ORG_HEADER = SHEET_ORG_HEADER
 
 
 class TestParseOrganizations:
@@ -117,6 +106,31 @@ class TestParseOrganizations:
         [org] = parse_organizations(rows)
         assert org.hq_city == "Kasama"
 
+    def test_a_column_is_read_wherever_it_sits(self):
+        """Columns are found by header. Moving Office Address to the front, or
+        inserting a column before it, must not change what is read as it."""
+        header = ["Office Address"] + [h for h in ORG_HEADER if h != "Office Address"]
+        row = ["12 Example Road", "Fenwick Trust"] + [""] * 14
+        [org] = parse_organizations([header, row])
+        assert (org.name, org.office_address) == ("Fenwick Trust", "12 Example Road")
+
+    def test_a_renamed_header_fails_loudly_naming_it(self):
+        """Read as blank, a renamed column would quietly empty that field for
+        every organisation. Refusing names the header to restore."""
+        import pytest
+
+        from connect_labs.marketplace.directory import DirectoryFormatError
+
+        header = ["Address" if h == "Office Address" else h for h in ORG_HEADER]
+        with pytest.raises(DirectoryFormatError, match="'Office Address'"):
+            parse_organizations([header, ["Fenwick Trust"]])
+
+    def test_a_note_in_brackets_or_a_change_of_case_is_the_same_header(self):
+        header = ["office address (street and town)" if h == "Office Address" else h for h in ORG_HEADER]
+        row = ["Fenwick Trust"] + [""] * 9 + ["12 Example Road"]
+        [org] = parse_organizations([header, row])
+        assert org.office_address == "12 Example Road"
+
     def test_a_sheet_without_an_hq_city_column_reads_as_blank(self):
         [org] = parse_organizations([ORG_HEADER, ["Fenwick Trust"]])
         assert org.hq_city == ""
@@ -159,12 +173,12 @@ class TestParseContacts:
     def test_drops_rows_with_no_email(self):
         """The email is the key. A contact without one cannot be deduplicated
         and cannot be written to, so it is not a contact yet."""
-        rows = [["Contact Full Name", "Organization Name"], ["A Person", "Fenwick Trust"]]
+        rows = [SHEET_CONTACT_HEADER, ["A Person", "Fenwick Trust"]]
         assert parse_contacts(rows) == []
 
     def test_lowercases_the_email_so_case_drift_does_not_duplicate(self):
         rows = [
-            ["Contact Full Name", "Organization Name", "Role / Title", "Main POC?", "Email Address"],
+            SHEET_CONTACT_HEADER,
             ["A Person", "Fenwick Trust", "", "", "  A@Example.INVALID "],
         ]
         assert parse_contacts(rows)[0].email == "a@example.invalid"
@@ -172,19 +186,19 @@ class TestParseContacts:
 
 class TestParseDates:
     def test_reads_an_iso_join_date_and_its_basis(self):
-        rows = [["Organization Name", "Joined", "Basis"], ["Fenwick Trust", "2025-03-04", "EOI submission"]]
+        rows = [SHEET_DATES_HEADER, ["Fenwick Trust", "2025-03-04", "EOI submission"]]
         assert parse_dates(rows) == {"Fenwick Trust": ("2025-03-04", "EOI submission")}
 
     def test_ignores_a_date_that_is_not_iso(self):
         """The tab holds free text like "Rolling" and "Q2 2025"."""
-        rows = [["Organization Name", "Joined"], ["Fenwick Trust", "Q2 2025"]]
+        rows = [SHEET_DATES_HEADER, ["Fenwick Trust", "Q2 2025"]]
         assert parse_dates(rows) == {}
 
 
 class TestParseMapping:
     def test_carries_a_verdict_with_its_reason(self):
         rows = [
-            ["slug"] + [""] * 7 + ["org"],
+            SHEET_MAPPING_HEADER,
             ["fenwick-ng", "", "", "", "", "second workspace", "", "", "Fenwick Trust"],
         ]
         mapped, skipped = parse_mapping(rows, {"Fenwick Trust"})
@@ -194,13 +208,13 @@ class TestParseMapping:
     def test_refuses_a_verdict_with_no_reason(self):
         """An attribution without a stated reason is a guess someone will
         later trust, so it is skipped loudly rather than applied."""
-        rows = [["slug"] + [""] * 7 + ["org"], ["fenwick-ng", "", "", "", "", "", "", "", "Fenwick Trust"]]
+        rows = [SHEET_MAPPING_HEADER, ["fenwick-ng", "", "", "", "", "", "", "", "Fenwick Trust"]]
         mapped, skipped = parse_mapping(rows, {"Fenwick Trust"})
         assert mapped == {}
         assert "no reason given" in skipped[0]
 
     def test_refuses_a_verdict_pointing_at_an_unknown_organisation(self):
-        rows = [["slug"] + [""] * 7 + ["org"], ["fenwick-ng", "", "", "", "", "a reason", "", "", "Ghost Org"]]
+        rows = [SHEET_MAPPING_HEADER, ["fenwick-ng", "", "", "", "", "a reason", "", "", "Ghost Org"]]
         mapped, skipped = parse_mapping(rows, {"Fenwick Trust"})
         assert mapped == {}
         assert "not on the Organizations tab" in skipped[0]
