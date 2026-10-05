@@ -140,7 +140,7 @@ export function displayOf(payload: any): Display {
       key: (raw.entity && raw.entity.key) || null,
     }),
     worker: noun(raw.worker, 'worker', 'workers'),
-    organisation: noun(raw.organisation, 'organisation', 'organisations'),
+    organisation: noun(raw.organisation, 'organization', 'organizations'),
     categories: cats,
     headline: headline,
     indicators: indicators,

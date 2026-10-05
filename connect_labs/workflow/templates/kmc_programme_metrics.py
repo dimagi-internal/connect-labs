@@ -1,7 +1,7 @@
-"""KMC Programme Metrics (Layer 2 + rollups).
+"""KMC Program Metrics (Layer 2 + rollups).
 
 The KMC indicator set (connect_labs/semantic/registry/kmc) evaluated live and rolled
-up Programme -> LLO -> opportunity -> FLW -> case.
+up Program -> LLO -> opportunity -> FLW -> case.
 
 Two things in here are load-bearing and easy to lose, which is why this template
 exists as a file rather than only as a DB row:
@@ -86,7 +86,7 @@ BABY_CASE_ID_FIELD = {
 # entity stage groups by `baby_case_id` -- the same key every indicator and the
 # weight series use. Grouping by Connect's entity_id (the earlier setting) is not
 # the baby: measured 2026-09-11 it gave 9,183 rows for the indicators' 8,823
-# babies, off in both directions per organisation (PIPN +660, EHA -147), and a
+# babies, off in both directions per organization (PIPN +660, EHA -147), and a
 # case whose entity_id differed lost its weight series in the drill, which joins
 # the two on the baby key.
 CASE_PROPERTIES_SCHEMA = {
@@ -247,7 +247,7 @@ CASE_PROPERTIES_SCHEMA = {
             ],
             "transform": "float",
             "aggregation": "first",
-            "description": "Days between hospital discharge and registration \u2014 the enrolment indicators' input",
+            "description": "Days between hospital discharge and registration \u2014 the enrollment indicators' input",
         },
         {
             "name": "danger_visits",
@@ -446,10 +446,10 @@ SNAPSHOT_INPUTS = {
     # their score counted. Fields are reader name -> registry column; a column the
     # bound registry does not define yet is left out of the list, not refused.
     #
-    # `embed: false`: a programme run grades every case but STORES none. Its page
+    # `embed: false`: a program run grades every case but STORES none. Its page
     # shows no case list (the worker panel links to the worker review), and each
     # opportunity's cases are stored once, on that opportunity's report, by
-    # hand-down. Storing the whole cohort on every programme week is what pushed
+    # hand-down. Storing the whole cohort on every program week is what pushed
     # this snapshot to the 5 MB cap.
     "case_index": {
         "source": "semantic",
@@ -471,7 +471,7 @@ SNAPSHOT_INPUTS = {
         },
     },
     # Registrations by day for the as-of month and the month before, per scope:
-    # the "this month, day by day" chart of the enrolment-against-target section.
+    # the "this month, day by day" chart of the enrollment-against-target section.
     # `flag` keeps only babies with a registration form (semantic/snapshot.py
     # daily_counts).
     "daily": {"flag": "registered"},
@@ -502,7 +502,7 @@ SNAPSHOT_INPUTS = {
 SNAPSHOT_SCHEMA = {
     "version": 3,
     "keys": {
-        "state.snapshot.programInd": "Programme-wide indicator results, keyed by indicator id, as published",
+        "state.snapshot.programInd": "Program-wide indicator results, keyed by indicator id, as published",
         "state.snapshot.byLLO": "Per-LLO indicator results, with each LLO's opportunities nested",
         "state.snapshot.byOpp": "Per-opportunity indicator results",
         "state.snapshot.byFLW": (
@@ -552,14 +552,14 @@ SNAPSHOT_SCHEMA = {
         "state.snapshot.pooledOverCredible": (
             "indicator -> {ind, llos, of}: for each credibility-gated indicator, the figure "
             "POOLED over the recorders the workbook accepts, which LLOs those were, and how "
-            "many there were in total. The programme row pools every LLO, so on mortality it "
+            "many there were in total. The program row pools every LLO, so on mortality it "
             "reads lower than reality — non-recorders contribute denominator without deaths. "
             "A saved run cannot rebuild this from its graded cells: a row banded "
             "'insufficient' still contributes to the pool while storing no value"
         ),
         "state.snapshot.series": (
             "Further indicator families graded from the same evaluation, keyed by series, "
-            "each with its catalog and its programme / LLO / opportunity / worker cells in the "
+            "each with its catalog and its program / LLO / opportunity / worker cells in the "
             "same {id, n, value, band} shape as the headline series. Empty for KMC, which has "
             "one family; runs saved before #2004 carry the old scorecard under `N`"
         ),
@@ -570,13 +570,13 @@ SNAPSHOT_SCHEMA = {
             "point per run computed as of its period end, served by the run-history API"
         ),
         "state.snapshot.monthly": (
-            "Programme monthly trend series: per cohort month, the graded indicators, cohort "
+            "Program monthly trend series: per cohort month, the graded indicators, cohort "
             "size, the count of visits that HAPPENED that month (activity, from the visit rows "
             "— a different grouping from the cohort month, so not derivable from the "
             "indicators), per credibility-gated indicator, the figure pooled over that "
             "month's credible recorders, and `counts`: every count indicator's raw figure "
             "(e.g. registered_cases), never suppressed under the min-denominator floor, which "
-            "the enrolment-against-target section sums month by month"
+            "the enrollment-against-target section sums month by month"
         ),
         "state.snapshot.daily": (
             "Registrations by day for the as-of month and the month before it, per scope "
@@ -598,7 +598,7 @@ SNAPSHOT_SCHEMA = {
             "which the render reads to show the 'built on synthetic clones' disclaimer. "
             "Resolved from the SyntheticOpportunity registry, and ABSENT rather than false "
             "when that cannot be determined, since a confident false would claim real "
-            "programme data"
+            "program data"
         ),
     },
 }
@@ -641,12 +641,12 @@ UNVERIFIED_SCALE_LLOS = {"GHI", "Kikapu"} | _CONFLICTING_SCALE_LLOS
 
 
 DEFINITION = {
-    "name": "KMC Programme Metrics",
+    "name": "KMC Program Metrics",
     "description": (
-        "Kangaroo Mother Care programme report, one page per saved weekly run: five headline "
-        "indicators with a week-on-week delta, the indicator scorecard by organisation with "
+        "Kangaroo Mother Care program report, one page per saved weekly run: five headline "
+        "indicators with a week-on-week delta, the indicator scorecard by organization with "
         "last visit and attention, activity by week and indicator trends across saved reports. "
-        "An organisation opens to its opportunities and workers; a worker opens to the KMC "
+        "An organization opens to its opportunities and workers; a worker opens to the KMC "
         "Worker Review. Every figure comes off the semantic-snapshot payload; indicators an "
         "app does not collect render as not in this app."
     ),
@@ -663,7 +663,7 @@ DEFINITION = {
         "showSummaryCards": True,
         "templateType": "kmc_programme_metrics",
         # --- drill-to-action -------------------------------------------------
-        # The dashboard already drills programme -> LLO -> opportunity -> FLW ->
+        # The dashboard already drills program -> LLO -> opportunity -> FLW ->
         # case. What it could not do was ACT on what the drill found: a worker
         # reading red had to be carried by hand into a separate workflow. These
         # let the FLW panel open an audit on that one worker directly.
@@ -685,11 +685,11 @@ DEFINITION = {
         # here, never a real id: an id in the template would point every new
         # instance at one review workflow in one scope.
         "flw_review": None,
-        # Enrolment against target is drawn only when an instance carries
+        # Enrollment against target is drawn only when an instance carries
         # `config.enrollment_targets` (per-LLO monthly targets, set with
         # workflow_update_definition). Deliberately NOT declared here: a key the
         # template declares is filled into every instance on read, and a target is
-        # a programme's commitment, never a template default.
+        # a program's commitment, never a template default.
     },
     "pipeline_sources": [],
     "snapshot_inputs": SNAPSHOT_INPUTS,
@@ -698,7 +698,7 @@ DEFINITION = {
 # The scorecard: the columns every KMC report's tables carry, in order, following
 # Neal's metrics workbook (2026-10-03). `denOnly` prints the cell's denominator
 # (Elig N: the babies in the growth funnel -- eligible and not an early death). The opportunity
-# report reads it from its config; the programme render still holds its own copy.
+# report reads it from its config; the program render still holds its own copy.
 SCORECARD_COLUMNS = [
     {"id": "total_cases", "label": "Total", "title": "Total cases"},
     {"id": "registered_cases", "label": "Reg", "title": "Registered"},
@@ -732,7 +732,7 @@ SCORECARD_COLUMNS = [
 SCORECARD_GROUPS = [
     {"label": "Scale", "span": 3},
     {"label": "Cohort", "span": 2},
-    {"label": "Enrolment & visits", "span": 3},
+    {"label": "Enrollment & visits", "span": 3},
     {"label": "Growth (of good weight data)", "span": 4},
     {"label": "Outcome", "span": 1},
     {"label": "Data quality", "span": 2},
@@ -740,7 +740,7 @@ SCORECARD_GROUPS = [
 
 TEMPLATE = {
     "key": "kmc_programme_metrics",
-    "name": "KMC Programme Metrics",
+    "name": "KMC Program Metrics",
     "description": DEFINITION["description"],
     "icon": "fa-chart-line",
     "color": "indigo",

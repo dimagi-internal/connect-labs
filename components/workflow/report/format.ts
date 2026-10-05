@@ -1,7 +1,7 @@
 /**
  * Value formatting and band vocabulary shared by every indicator report.
  *
- * Lifted verbatim from the KMC programme report, whose look is the library's
+ * Lifted verbatim from the KMC program report, whose look is the library's
  * look. A graded cell is `{id, n, value, band, thinDenominator?}` as the
  * semantic snapshot builder emits it (connect_labs/semantic/snapshot.py); a
  * measure is one entry of the payload's measure catalog (`unit`, `kind`,

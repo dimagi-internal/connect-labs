@@ -379,7 +379,7 @@ describe('organisation benchmark', () => {
       }),
     );
     expect(out).toContain('NAMA (you)');
-    expect(out.match(/Another organisation/g)).toHaveLength(5);
+    expect(out.match(/Another organization/g)).toHaveLength(5);
     expect(out).toContain('not collected');
   });
 });

@@ -950,9 +950,10 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         )
 
     def get_context_data(self, **kwargs):
-        # `?template_draft=1`: a template workflow's OWNER sees the follower rendered
-        # with the template's unpublished draft (render, config, snapshot spec), for
-        # this request only. Anyone else gets the published version as usual.
+        # `?template_draft=1`: someone with write access to a template workflow's scope
+        # sees the follower rendered with the template's unpublished draft (render,
+        # config, snapshot spec), for this request only. The draft record is never
+        # public, so anyone else reads the published version as usual.
         if self.request.GET.get("template_draft") == "1":
             from connect_labs.workflow.template_workflows import preview_drafts
 

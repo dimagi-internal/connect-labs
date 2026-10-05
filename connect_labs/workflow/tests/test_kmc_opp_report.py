@@ -210,7 +210,7 @@ def test_the_peer_trend_lines_are_gone():
 def test_the_other_organisations_are_never_named_on_the_page():
     src = RENDER.read_text()
     body = src[src.index("function benchmarkRows(") : src.index("  // ══ The worker table")]
-    assert "Another organisation" in body
+    assert "Another organization" in body
     assert ".organisation" not in body.replace(".organisations", ""), "a provenance field reached the render"
 
 

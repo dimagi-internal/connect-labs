@@ -79,16 +79,14 @@ class WorkflowActionExecution(models.Model):
 
 
 # =============================================================================
-# Template workflows: a template's render, config defaults and snapshot spec as DATA
+# RETIRED: template workflows in the labs DB (connect-labs#2231 -> #2236)
 # =============================================================================
 #
-# A workflow that follows `render_source: {"workflow": <id>, <scope>}` renders the
-# PUBLISHED version of that template workflow and inherits its config defaults and
-# snapshot_inputs (its own keys win). The content lives here, in the labs DB, and not
-# on the template's LabsRecord, for three reasons: a follower in another scope (a
-# synthetic twin, another programme) must read it without a cross-scope API call; a
-# publish needs an immutable history to roll back to; and a page load must not wait on
-# production for it. See workflow/template_workflows.py.
+# Template workflows now live as LabsRecords under the LabsRecord ACL
+# (workflow/template_workflows.py). These models remain only so the one-off
+# `workflow_template_import_legacy` MCP tool can read what #2231 stored; nothing
+# else reads or writes them. They go, with that tool, in the migration that drops
+# their tables once the data has moved.
 
 
 class TemplateWorkflow(models.Model):

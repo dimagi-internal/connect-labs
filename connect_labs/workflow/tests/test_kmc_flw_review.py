@@ -78,7 +78,7 @@ def test_the_scorecard_shares_the_programme_reports_header_and_the_indicators_ta
     ]
     # case-level labels drop the aggregate words
     assert "caseLabel: 'GA'" in block and "caseLabel: 'BW'" in block
-    assert "scorecardRow('Programme'" in src
+    assert "scorecardRow('Program'" in src
 
 
 def test_each_case_row_carries_its_contribution_and_opens_inline():
@@ -281,7 +281,7 @@ def test_the_programme_row_reads_the_programme_cells():
     src = RENDER.read_text()
     block = src[src.index("  var SC = {") : src.index("};", src.index("  var SC = {"))]
     assert "programme: P.programInd" in block
-    assert "scorecardRow('Programme', SC && SC.programme)" in src
+    assert "scorecardRow('Program', SC && SC.programme)" in src
 
 
 def test_a_cold_case_cache_is_an_error_with_a_retry_not_a_blank_table():
