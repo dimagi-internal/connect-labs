@@ -822,67 +822,41 @@ def unreadable_rounds():
     return Solicitation.objects.exclude(sa_access_state=ACCESS_OK).order_by("title")
 
 
-def map_points(rows, delivering: set[str], countries=()) -> list[dict]:
-    """The organisations as points on the globe: one per place each works.
+def map_points(rows, delivering: set[str]) -> list[dict]:
+    """The organisations as points on the globe: one dot per organisation, at
+    its head office.
 
-    A point per region of operation the directory names (`operating_areas`),
-    or per country where it names none. An organisation resolved before those
-    existed falls back to its single head-office point, so nothing drops off
-    the map between a deploy and the next import.
-
-    With a country filter applied, only that country's points are drawn: an
-    organisation found by "Kenya" should not light up Uganda as well.
+    This map answers "where are our partners". Where an organisation works, or
+    could work, is a different question: ``OrgProfile.operating_areas`` holds
+    it, and it belongs on a map of its own. Drawn here, one organisation that
+    listed eight countries of operation became eight hollow rings.
 
     Precision travels with every point, because the sources behind it are not
-    equivalent: a region is a district, a country is a whole country. The globe
-    draws them differently and the legend says so — a map that hides the
-    difference draws a rooftop from the word "Nigeria".
+    equivalent: a town is a pin, a region is a district, a country is a whole
+    country. The globe draws them differently and the legend says so -- a map
+    that hides the difference draws a rooftop from the word "Nigeria".
     """
-    wanted = {iso3 for iso3 in (_country_iso3(c) for c in countries) if iso3}
     points = []
     for row in rows:
         profile = getattr(row, "marketplace_profile", None)
-        if profile is None:
+        if profile is None or profile.lat is None or profile.lon is None:
             continue
-        common = {
-            "name": row.name,
-            "short": row.short_name or row.name,
-            "slug": row.slug,
-            "delivering": row.name in delivering,
-            "contacts": row.contact_count,
-            "applications": row.application_count,
-        }
-        areas = profile.operating_areas or []
-        if not areas and profile.lat is not None and profile.lon is not None:
-            areas = [
-                {
-                    "lat": profile.lat,
-                    "lon": profile.lon,
-                    "precision": profile.location_precision or "country",
-                    "label": profile.location_label or "",
-                    "iso3": profile.country_iso3 or "",
-                }
-            ]
-        for area in areas:
-            if wanted and area.get("iso3") not in wanted:
-                continue
-            points.append(
-                common
-                | {
-                    "lat": area["lat"],
-                    "lon": area["lon"],
-                    "precision": area.get("precision") or "country",
-                    "place": area.get("label") or "",
-                    "iso3": area.get("iso3") or "",
-                }
-            )
+        points.append(
+            {
+                "name": row.name,
+                "short": row.short_name or row.name,
+                "slug": row.slug,
+                "lat": profile.lat,
+                "lon": profile.lon,
+                "precision": profile.location_precision or "country",
+                "place": profile.location_label or "",
+                "iso3": profile.country_iso3 or "",
+                "delivering": row.name in delivering,
+                "contacts": row.contact_count,
+                "applications": row.application_count,
+            }
+        )
     return points
-
-
-def _country_iso3(name: str) -> str | None:
-    from connect_labs.pulse.hq_location import country_to_iso3
-
-    return country_to_iso3(name)
 
 
 def facet_rail(facets: dict, selected: dict, querydict) -> list[dict]:
