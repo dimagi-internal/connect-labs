@@ -696,7 +696,7 @@ describe('enrolment against target (VERSION 5)', () => {
     R.enrolmentProgress({
       targets: TARGETS,
       monthlyByScope: byScope || BY_SCOPE,
-      asOf: '2026-09-27',
+      asOf: '2026-09-30',
       scope,
     });
 
@@ -773,7 +773,7 @@ describe('enrolment against target (VERSION 5)', () => {
       R.enrolmentProgress({
         targets: {},
         monthlyByScope: BY_SCOPE,
-        asOf: '2026-09-27',
+        asOf: '2026-09-30',
         scope: 'all',
       }),
     ).toBeNull();
@@ -789,5 +789,31 @@ describe('enrolment against target (VERSION 5)', () => {
     const svg = html(h(R.EnrolmentTargetChart, { progress: p }));
     expect(svg).toContain('future: target only');
     expect(svg).toContain('Mar');
+  });
+  test("the as-of month's target is pro-rated to the days elapsed", () => {
+    // As of 4 October, PIPN has had 4/31 of October's 1,200 -- not all of it.
+    expect(R.elapsedFraction('2026-10-04')).toBeCloseTo(4 / 31, 9);
+    expect(R.elapsedFraction('2026-09-30')).toBe(1);
+    const p = R.enrolmentProgress({
+      targets: TARGETS,
+      monthlyByScope: {
+        'llo:PIPN': [...BY_SCOPE['llo:PIPN'], pt('2026-10', 210)],
+      },
+      asOf: '2026-10-04',
+      scope: 'PIPN',
+    });
+    const f = 4 / 31;
+    expect(p.cumTargetToDate).toBeCloseTo(1711 + 1200 * f, 6);
+    expect(p.cumActual).toBe(1829 + 210);
+    expect(p.asOfFraction).toBeCloseTo(f, 9);
+    expect(p.remainingMonths).toBe(5);
+    expect(p.runRateNeeded).toBeCloseTo((9659 - 2039) / (5 + 1 - f), 6);
+    // The bars and the cumulative target line still state whole months.
+    expect(p.months.find((m) => m.month === '2026-10').cumTarget).toBe(
+      1711 + 1200,
+    );
+    const out = html(h(R.EnrolmentTargetSummary, { progress: p }));
+    expect(out).toContain('pro-rated');
+    expect(out).toContain('rest of Oct');
   });
 });
