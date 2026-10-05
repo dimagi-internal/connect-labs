@@ -373,3 +373,22 @@ def test_the_case_list_can_be_limited_to_some_opportunities(fixture_visits):
     assert other == []
     _rows, own, _ = evaluate_with_cases(None, [10042], case_opportunity_ids=[10042], **kwargs)
     assert len(own) == 2
+
+
+def test_grading_off_a_materialised_extraction_changes_no_figure(fixture_visits):
+    """A history rebuild extracts Layer 1 once and grades every date off the table.
+    The date cuts the visit set inside the compiled chain, so each date's figures
+    must be exactly those of a fresh extraction."""
+    from connect_labs.semantic.runtime import drop_materialized, materialize_visits, materialized_exists
+
+    table = materialize_visits(None, [10042], registry_name="kmc", visit_sql=fixture_visits)
+    try:
+        assert materialized_exists(table)
+        for as_of in ("DATE '2026-01-15'", "'2026-04-01'"):
+            kwargs = dict(registry_name="kmc", series="KMC", scopes=["programme", "flw"], as_of=as_of)
+            fresh = evaluate(None, [10042], visit_sql=fixture_visits, **kwargs)
+            reused = evaluate(None, [10042], visit_sql=f"SELECT * FROM {table}", **kwargs)
+            assert reused == fresh
+    finally:
+        drop_materialized(table)
+    assert not materialized_exists(table)

@@ -662,3 +662,77 @@ def evaluate_with_cases(
         logger.debug("[semantic] failing SQL:\n%s\n%s\n%s", props_sql, rollup_sql, cases_sql)
         raise SemanticRuntimeError(f"semantic query failed: {exc}") from exc
     return rows, cases, dropped
+
+
+def materialize_visits(
+    pipeline_schema: dict[str, Any] | None,
+    opportunity_ids: list[int],
+    *,
+    extra_fields: dict[str, Any] | None = None,
+    registry_documents: tuple[dict[str, Any], dict[str, Any]] | None = None,
+    registry_name: str | None = None,
+    visit_sql: str | None = None,
+    connection=None,
+) -> str:
+    """Run the Layer 1 extraction ONCE into a temporary table and return its name.
+
+    The extraction -- every JSON path out of every cached visit, de-duplicated --
+    does not depend on the report date: the date only cuts the visit SET, in the
+    compiled chain's `visits` CTE. A history rebuild grades dozens of dates over the
+    same cache, so it extracts once and passes `visit_sql="SELECT * FROM <table>"`
+    to every evaluation. On the production KMC cohort the extraction is most of a
+    week's cost and grows with the cohort (40 s a week rising to 66 s, 2026-10-04).
+
+    The table lives on the caller's database connection and dies with it; the
+    caller drops it when done (`drop_materialized`).
+    """
+    _props_doc, _registry, visit_sql = _registry_and_visit_sql(
+        pipeline_schema,
+        opportunity_ids,
+        visit_sql=visit_sql,
+        extra_fields=extra_fields,
+        registry_name=registry_name,
+        registry_documents=registry_documents,
+        series=None,
+        visit_filter=None,
+    )
+    if connection is None:
+        from django.db import connection as django_connection
+
+        connection = django_connection
+    table = f"semantic_visits_{uuid.uuid4().hex[:12]}"
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(f"CREATE TEMPORARY TABLE {table} AS\n{visit_sql}")
+    except Exception as exc:
+        raise SemanticRuntimeError(f"layer 1 materialisation failed: {exc}") from exc
+    return table
+
+
+def materialized_exists(table: str, connection=None) -> bool:
+    """Whether a table from `materialize_visits` is still on this connection."""
+    if connection is None:
+        from django.db import connection as django_connection
+
+        connection = django_connection
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT to_regclass(%s)", [table])
+            return cursor.fetchone()[0] is not None
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def drop_materialized(table: str, connection=None) -> None:
+    """Drop a `materialize_visits` table. Never raises: it dies with the session anyway."""
+    if not re.fullmatch(r"semantic_visits_[0-9a-f]{12}", str(table)):
+        return
+    if connection is None:
+        from django.db import connection as django_connection
+
+        connection = django_connection
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(f"DROP TABLE IF EXISTS {table}")
+    except Exception:  # noqa: BLE001
+        logger.debug("[semantic] could not drop %s", table, exc_info=True)
