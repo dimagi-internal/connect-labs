@@ -117,7 +117,7 @@
   {% comment %}The award itself, folded under each comparable quote: why, when, who.{% endcomment %}
   {% for row in comparison.comparable %}{% if row.quote_id not in awarded_quote_ids %}
   <details class="fold" id="award-{{ row.quote_id }}" data-testid="award-start"{% if row.quote_id == award_anchor_quote_id and award_error or row.quote_id == award_anchor_quote_id and award_step %} open{% endif %}>
-    <summary data-testid="award-open"{% if row.quote_id == award_anchor_quote_id %} id="award"{% endif %}>Award {{ row.supplier_name }}{% if award_anyway %} <span class="text-sm font-normal text-gray-600" data-anyway title="{{ award_anyway_detail }}">· {{ award_incomplete_count }} other quote{{ award_incomplete_count|pluralize }} not comparable yet</span>{% endif %}</summary>
+    <summary data-testid="award-open"{% if row.quote_id == award_anchor_quote_id %} id="award"{% endif %}>Award {{ row.supplier_name }}{% if award_anyway %} <span class="text-sm font-normal text-gray-600" data-anyway title="{{ award_anyway_detail }}">· {{ award_incomplete_count }} other quote{{ award_incomplete_count|pluralize }} not comparable yet</span>{% endif %}{% if award_open_chips %} <span class="inline-flex flex-wrap items-center gap-1 align-middle text-xs font-normal text-gray-600" data-testid="award-open-facts">· still open {% for chip in award_open_chips %}<span class="status-chip status-chip--{{ chip.tone }}">{{ chip.label }}</span>{% endfor %}</span>{% endif %}</summary>
     <div class="fold-body">
                   <form method="post" action="" data-testid="award-form" class="mt-2 flex flex-wrap items-end gap-2 min-w-0">
                     {% csrf_token %}

@@ -377,6 +377,48 @@ def contract_moves(contract, today, *, holds=None, commitments=None):
     return ours, []
 
 
+def open_at_decision(tender, on, *, outreach=None, quotes=None, commitments=None) -> dict:
+    """What was still open on a tender on the day `on`: the facts an early award is made over.
+
+    {"deadline": iso date or None, "deadline_days": days left (None once it has passed or when
+    the tender is no longer open), "silent": suppliers silent under rule (e), "replies_owed":
+    counterparties whose questions we have not answered under rule (a)}. An award is allowed
+    over any of them; the award form shows them and the award records them, so the decision
+    says what it was made over.
+    """
+    ours, theirs = tender_moves(tender, on, outreach=outreach, quotes=quotes, commitments=commitments)
+    deadline = tender.response_deadline
+    still_open = tender.status == "open" and deadline is not None and deadline >= on
+    if commitments is None:
+        from connect_labs.supply_chain.models import Commitment
+
+        commitments = Commitment.objects.filter(tender=tender, resolved_on__isnull=True)
+    owed_to = {c.owed_to_org_id for c in commitments if c.kind == "question" and c.resolved_on is None}
+    return {
+        "deadline": deadline.isoformat() if deadline else None,
+        "deadline_days": (deadline - on).days if still_open else None,
+        "silent": len(theirs),
+        "replies_owed": len(owed_to),
+    }
+
+
+def open_at_decision_chips(facts) -> list[dict]:
+    """The open facts as chips, in the moves' own words; none when nothing was open."""
+    facts = facts or {}
+    chips = []
+    days = facts.get("deadline_days")
+    if days is not None:
+        chips.append(
+            {"label": "Deadline today" if days == 0 else f"Deadline in {_plural(days, 'day')}", "tone": "neutral"}
+        )
+    if facts.get("silent"):
+        chips.append({"label": f"{facts['silent']} silent", "tone": "theirs"})
+    if facts.get("replies_owed"):
+        n = facts["replies_owed"]
+        chips.append({"label": f"{n} {'reply' if n == 1 else 'replies'} owed", "tone": "ours"})
+    return chips
+
+
 def first_move(ours, theirs):
     """The row's next move and whose it is: ours first, then the suppliers'."""
     if ours:
