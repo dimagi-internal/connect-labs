@@ -293,3 +293,18 @@ def test_enrolment_targets_are_config_not_code():
     from connect_labs.workflow.templates.kmc_programme_metrics import DEFINITION
 
     assert "enrollment_targets" not in DEFINITION["config"], "a target is never a template default"
+
+
+def test_trends_sit_above_enrolment_and_the_day_by_day_chart_follows_the_toggle():
+    """Owner review of run 25495: the indicator trends belong ABOVE enrolment
+    against target, and the section gains "this month, day by day" for the same
+    scope as its monthly chart, drawn only when the snapshot carries `daily`."""
+    src = RENDER.read_text()
+    assert src.index("<ChartsRow />") < src.index("<EnrolmentTargets />")
+    body = src[src.index("function EnrolmentTargets()") : src.index("// ── One scorecard head")]
+    assert "R.dailyProgress({ targets: TARGETS, daily: P.daily, scope: scope })" in body
+    assert "<R.EnrolmentDailyChart progress={daily} />" in body
+    from connect_labs.workflow.templates.kmc_programme_metrics import SNAPSHOT_INPUTS
+
+    assert SNAPSHOT_INPUTS["daily"] == {"flag": "registered"}
+    assert SNAPSHOT_INPUTS["case_index"]["fields"]["registered"] == "registered"

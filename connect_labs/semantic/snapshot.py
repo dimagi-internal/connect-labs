@@ -307,6 +307,75 @@ def case_date_fields(spec: dict) -> tuple[str, ...]:
     return tuple(str(f) for f in fields) if isinstance(fields, list) and fields else _DEFAULT_CASE_DATE_FIELDS
 
 
+_TRUTHY = {"true", "t", "1", "yes", "y"}
+
+
+def _truthy(v) -> bool:
+    if isinstance(v, str):
+        return v.strip().lower() in _TRUTHY
+    return bool(v)
+
+
+def daily_counts(
+    cases: list[dict],
+    spec: dict,
+    llo_map: dict,
+    as_of: str | None,
+) -> dict:
+    """Registrations by DAY for the as-of month and the month before it.
+
+    For "this month, day by day": a running total against the month's target,
+    beside last month's at the same day. Two months only, per drill scope
+    (all / llo:<name>), so the payload stays a few hundred integers.
+
+    The day is the case's first `date_fields` value -- reg_date, else the first
+    visit -- which is the registry's cohort date, so a month's daily counts sum to
+    what the monthly series counts. `spec.daily.flag` names a case-index field
+    that must be true for a case to count (KMC: `registered`, so this sums to
+    `registered_cases`); without one every dated case counts, as `weekly` does.
+
+    Returns `{months: [previous, current], as_of, byScope: {scope: {month:
+    [count per day]}}}`. The previous month's list runs its full length; the
+    current month's stops at the as-of day.
+    """
+    day = None
+    try:
+        day = dt.date.fromisoformat(str(as_of)[:10]) if as_of else None
+    except ValueError:
+        day = None
+    day = day or dt.date.today()
+    cur = day.replace(day=1)
+    prev = (cur - dt.timedelta(days=1)).replace(day=1)
+    lengths = {
+        prev.strftime("%Y-%m"): (cur - prev).days,
+        cur.strftime("%Y-%m"): day.day,
+    }
+    flag = ((spec or {}).get("daily") or {}).get("flag")
+    date_fields = case_date_fields(spec)
+
+    def _blank():
+        return {m: [0] * n for m, n in lengths.items()}
+
+    by_scope: dict[str, dict[str, list[int]]] = {"all": _blank()}
+    for name in sorted({x for x in (llo_map or {}).values() if x}):
+        by_scope[f"llo:{name}"] = _blank()
+    for c in cases or []:
+        if flag and not _truthy(c.get(flag)):
+            continue
+        d = str(next((c.get(f) for f in date_fields if c.get(f)), None) or "")[:10]
+        m, dd = d[:7], d[8:10]
+        if m not in lengths or not dd.isdigit():
+            continue
+        i = int(dd) - 1
+        if i < 0 or i >= lengths[m]:
+            continue
+        by_scope["all"][m][i] += 1
+        llo = c.get("llo")
+        if llo and f"llo:{llo}" in by_scope:
+            by_scope[f"llo:{llo}"][m][i] += 1
+    return {"months": list(lengths), "as_of": day.isoformat(), "byScope": by_scope}
+
+
 def resolve_credibility(spec: dict, settings: dict) -> dict[str, dict]:
     """indicator -> credibility table, from the spec's mapping onto registry settings.
 
@@ -727,6 +796,8 @@ def build(
     return {
         # Activity by week per drill scope -- see above.
         "weekly": weekly,
+        # Registrations by day, as-of month and the one before -- see daily_counts.
+        "daily": daily_counts(cases, spec, llo_map, as_of),
         # 3: `byFLW[].rows` carries positions into `cases`; `credibility` replaces the
         # single-purpose `mortalityCredible`; graded by the framework, not a template.
         "schema": 3,
