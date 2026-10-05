@@ -1,7 +1,5 @@
 # Connect Labs Documentation Automation
 
-> **Status (2026-07-25 doc-regen):** file map drifted — `automation/regenerate_confluence.py` + `.github/workflows/regenerate-confluence.yml` exist but are not listed, and `user_docs/` now has two pages (`connect-mcp.md`, `connect-safe-mode.md`) where this doc describes one.
-
 Automated system that keeps user-facing documentation current without manual effort. Every merged PR can update the help site and Confluence; every Monday a changelog summary goes to Confluence and Slack.
 
 ## Overview
@@ -41,6 +39,8 @@ automation/
   update_docs.py         Per-merge: triage → update markdown + Confluence summary
   weekly_changelog.py    Weekly: summarise PRs → Confluence row + Slack message
   bootstrap_docs.py      One-time seeder (already run; do not re-run)
+  regenerate_confluence.py  Rebuild every Confluence summary page from user_docs/ (manual)
+  tests/                 Tests for the scripts above
 
 user_docs/
   index.md               Landing page
@@ -54,6 +54,10 @@ user_docs/
   connect-mcp.md         Connect MCP & Safe Mode
   connect-safe-mode.md   (linked from connect-mcp.md; not auto-updated)
   reports-with-claude.md (not auto-updated)
+  semantic-layer.md, benchmarks.md, cross-program-rollups.md,
+  shared-report-templates.md, weekly-trends-and-snapshots.md
+                         Report/indicator pages (not auto-updated: no entry in
+                         update_docs.py's FEATURE_TO_DOC_FILE, so no Confluence page)
   assets/screenshots/    Manually maintained screenshots
 
 mkdocs.yml               MkDocs Material theme config (Mermaid.js via superfences)
@@ -62,6 +66,7 @@ mkdocs.yml               MkDocs Material theme config (Mermaid.js via superfence
   docs-deploy.yml        Strict MkDocs build check on PRs (no deploy)
   docs-update.yml        Per-merge doc updater
   weekly-changelog.yml   Weekly changelog cron + workflow_dispatch
+  regenerate-confluence.yml  workflow_dispatch only: runs regenerate_confluence.py
 ```
 
 ## GitHub Actions secrets required

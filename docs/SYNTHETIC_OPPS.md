@@ -1,7 +1,5 @@
 # Synthetic Opportunities — Operator Guide
 
-> **Status (2026-07-25 doc-regen):** covers the GDrive-fixture *read* path only. The 'no writes are intercepted' claim predates labs-only opps (id ≥ 10,000), whose LabsRecord reads AND writes are served locally by `labs/synthetic/local_records_backend.py` — see CLAUDE.md § Synthetic / labs-only opportunities.
-
 Labs can serve fake `/export/opportunity/<id>/...` data for opportunities
 registered as "synthetic". Use this for demos, grant prototyping, and
 visualization iteration before real FLW data is collected.
@@ -11,9 +9,13 @@ visualization iteration before real FLW data is collected.
 Every call that would otherwise hit Connect's export API goes through
 `get_export_client(opp_id, access_token)`. If the opp is registered in
 `/labs/synthetic/`, the factory returns a `SyntheticExportClient` that reads
-fixture JSON from the opp's Google Drive folder. Writes (`LabsRecord` updates,
-audit reviews, workflow state changes) are unaffected — they still land in
-prod. Clean up by deleting the demo opp's `LabsRecord`s manually.
+fixture JSON from the opp's Google Drive folder. `LabsRecord` reads and writes
+(audit reviews, workflow definitions, runs, tasks, flags) for a **labs-only** opp
+(id ≥ 10,000, `labs_only=True`) never reach prod: `LabsRecordAPIClient` hands them
+to `labs/synthetic/local_records_backend.py`, which stores them in the labs
+database with no HTTP and no permission check. Every opp the generator makes is
+labs-only. The exception is a synthetic registration on a **real** opp id (below
+10,000): its exports come from Drive, but its `LabsRecord` writes still go to prod.
 
 ## One-time setup
 
@@ -186,10 +188,12 @@ failure mode this section exists to prevent.
 
 ## Limitations
 
-- Image endpoints (`/export/opportunity/<id>/image/`) still hit prod. Image
-  IDs in synthetic data will typically 404 and render as broken images in
-  audit/KMC/RUTF views. Not a blocker for the dashboards you're likely demoing.
+- Images: generated visits carry `synth-<corpus>-…` blob ids, which
+  `labs/synthetic/image_server.py` serves from a stock-image Drive folder (check it
+  with `synthetic_image_server_status`). Any other image id on a synthetic opp is
+  fetched from prod and will usually 404.
 - Pagination, `last_id` cursors, and `?images=true`-style filters are ignored —
   fixtures are returned whole in one page.
-- No writes are intercepted. If a reviewer flags a synthetic visit, that
-  `LabsRecord` goes to prod. Delete the demo opp's records from prod when done.
+- A synthetic registration on a real opp id (below 10,000) does not intercept
+  writes: a review on it lands in prod. Use a labs-only opp for anything you will
+  write to.
