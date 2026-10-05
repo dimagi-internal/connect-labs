@@ -1,5 +1,7 @@
 # Bulk Image Audit — Dynamic Image Types & Review Filter
 
+> **Status: shipped (2026-03-10) — historical record, not current-state.**
+
 **Date:** 2026-03-10
 **Status:** Approved
 

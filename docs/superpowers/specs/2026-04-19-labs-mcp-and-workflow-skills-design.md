@@ -1,5 +1,7 @@
 # Labs MCP + Workflow Author Skills — Design
 
+> **Status: shipped (PR #59, 2026-04-19) — PAT-only auth since replaced by OAuth 2.1, see docs/MCP_SETUP.md — historical record, not current-state.**
+
 **Status:** Draft for review
 **Date:** 2026-04-19
 **Author:** jjackson (via brainstorming with Claude)

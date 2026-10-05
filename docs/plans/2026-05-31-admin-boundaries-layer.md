@@ -1,5 +1,7 @@
 # Admin-boundaries map layer (issue #347)
 
+> **Status: shipped (PR #362, 2026-05-31) — historical record, not current-state.**
+
 > **Status:** DESIGN, approved for planning. Implements contract **C4** of
 > `docs/plans/2026-05-31-microplans-leftrail-layers-inspector.md`. The map-panel
 > foundation (#342) and work-area inspector (#344) it builds on are already merged.

@@ -1,5 +1,7 @@
 # Auth Simplification Design
 
+> **Status: shipped (PR #6, 2026-03-13) — historical record, not current-state.**
+
 **Date:** 2026-03-12
 **Status:** Approved
 

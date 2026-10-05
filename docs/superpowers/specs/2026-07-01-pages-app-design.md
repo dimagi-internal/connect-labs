@@ -1,5 +1,7 @@
 # Pages App — Composable Card Surfaces for Opps, Programs & Users
 
+> **Status: shipped (PR #796, 2026-07-01) — historical record, not current-state.**
+
 **Date:** 2026-07-01
 **Status:** Design approved (brainstorming) — pending spec review → implementation plan
 **App:** new Django app `connect_labs/pages/`

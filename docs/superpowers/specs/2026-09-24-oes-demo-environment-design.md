@@ -1,5 +1,7 @@
 # A demo environment for the OES call — design
 
+> **Status: shipped (PR #2015, 2026-09-25) — historical record, not current-state.**
+
 **Status:** approved approach, spec awaiting review.
 **Date:** 2026-09-24.
 **Reads against:** `2026-09-11-rutf-procurement-design.md` (the domain),

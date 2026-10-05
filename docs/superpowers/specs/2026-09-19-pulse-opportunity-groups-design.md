@@ -1,5 +1,7 @@
 # Pulse opportunity groups: several Connect opportunities, one real engagement
 
+> **Status: shipped (PR #1947, 2026-09-20) — the "not yet implemented" line below is stale — historical record, not current-state.**
+
 **Status:** approved design, not yet implemented (2026-09-19)
 
 ## The problem

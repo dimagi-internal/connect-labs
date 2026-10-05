@@ -1,5 +1,7 @@
 # Solicitations New — Design Document
 
+> **Status: shipped (2026-03-17) — historical record, not current-state.**
+
 **Date:** 2026-03-02
 **Status:** Approved
 **App name:** `solicitations`

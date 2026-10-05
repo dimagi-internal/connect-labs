@@ -1,5 +1,7 @@
 # Audit Program Report — two-template design (program 176)
 
+> **Status: shipped (PR #773, 2026-06-30) — historical record, not current-state.**
+
 **Date:** 2026-06-30
 **Status:** Approved (design)
 **Author:** Jonathan Jackson (with Claude)
