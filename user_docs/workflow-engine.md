@@ -134,6 +134,26 @@ Program-scoped Drive pipelines are built through the labs MCP. The steps are:
 
 ---
 
+## Indicator Registries
+
+An **indicator registry** is a shared list of named indicators that multiple reports can read from a single place. Rather than defining the same indicator separately in each report, you define it once in a registry and reports refer to it by name.
+
+### Creating a registry
+
+When creating a registry you must say where it lives — an **organisation**, a **programme**, or an **opportunity**. This scope determines who can see and use the registry, and it is how the system knows where to find it when a report loads.
+
+A registry created without a scope cannot be opened, edited, or deleted, so the system now requires a scope before saving. If you are asked to set up a registry and are unsure which scope to use, check with your program administrator.
+
+### Deleting a registry
+
+You can delete a registry you no longer need from the same organisation, programme, or opportunity page where it lives.
+
+Before deleting, the system checks whether any reports are still bound to the registry. If they are, the deletion is blocked and you will see a list of the affected report IDs. You must either rebind those reports to a different registry or remove the registry from them before the deletion can go ahead. This prevents reports from silently losing their indicator definitions.
+
+Once no reports are bound to it, the registry can be deleted without further steps.
+
+---
+
 ## Taking Actions from a Report
 
 Some reports can offer **action buttons** — for example, **"Initiate AI coach"** or **"Create follow-up task"** — that let you act on the data you are looking at without leaving the page. The same actions can also be run by an AI assistant. Both features are off by default and must be switched on for each report individually; at present they are enabled for the **Spark facilitator program report** only.
@@ -210,15 +230,4 @@ The **Indicator Programme Report** template works the same way: selecting it cre
 Before this change, creating the KMC Programme Metrics report by hand left worker rows that were plain text rather than links; a separate API step was required to connect the two workflows. That step is no longer needed.
 
 !!! note "The opportunity picker spans all programmes you can access"
-    When you create a workflow from the programme-level Workflows page, the opportunity picker shows **every opportunity you have access to**, not only those belonging to the current programme. The current programme's own opportunities appear at the top of the list and are pre-ticked, so the default selection is correct for most reports. If your KMC report needs to span opportunities from several programmes — which is common for whole-programme KMC metrics — you can tick the additional opportunities from the same picker without navigating away.
-
-### Updating a template workflow without a new release
-
-Some report layouts — such as the KMC Programme Report — are defined as **template workflows**. This means their page structure, default settings, and snapshot settings are stored as data rather than being fixed in the software. Owners of a template workflow can update what every following report displays without waiting for a new Labs release.
-
-The update cycle has four steps:
-
-1. **Draft** — the owner edits the template. Changes are saved as a draft and are not visible to anyone else yet.
-2. **Preview** — the owner opens any report that follows the template and adds `&template_draft=1` to the URL. The report loads with the draft applied and shows a **yellow banner** to confirm it is showing draft content. No other users see the draft.
-3. **Publish** — when the draft looks correct, the owner publishes it. The change becomes live on every following report on its next load. Each publish is saved as a numbered version.
-4. **Rollback** — if a published change causes a problem, the owner can roll back to any earlier numbered version. Rolling back pu
+    When you create a workflow from the programme-level Workflows page, the opportunity picker shows **every opportunity you have access to**, not only those belonging to the current programme. The current programme's own opportunities appear at the top of the list and are pre-ticked, so the default selection is correct for most reports
