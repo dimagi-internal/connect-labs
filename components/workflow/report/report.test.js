@@ -787,7 +787,7 @@ describe('enrolment against target (VERSION 5)', () => {
     expect(out).toContain('124');
     expect(out).toContain('6 remaining months');
     const svg = html(h(R.EnrolmentTargetChart, { progress: p }));
-    expect(svg).toContain('future: target only');
+    expect(svg).toContain('stroke-dasharray="3 2"'); // future bars: dashed, paler
     expect(svg).toContain('Mar');
   });
   test("the as-of month's target is pro-rated to the days elapsed", () => {
@@ -815,5 +815,69 @@ describe('enrolment against target (VERSION 5)', () => {
     const out = html(h(R.EnrolmentTargetSummary, { progress: p }));
     expect(out).toContain('pro-rated');
     expect(out).toContain('rest of Oct');
+  });
+  test('the monthly chart draws no as-of divider', () => {
+    const svg = html(h(R.EnrolmentTargetChart, { progress: progress('NAMA') }));
+    expect(svg).not.toContain('future: target only');
+    expect(svg).not.toContain('#a5b4fc');
+  });
+
+  // Registrations by day, as the builder emits them (semantic/snapshot.py
+  // daily_counts): September in full, October to the as-of day.
+  const sep = (n) => Array.from({ length: 30 }, (_, i) => (i < n ? 6 : 0));
+  const DAILY = {
+    months: ['2026-09', '2026-10'],
+    as_of: '2026-10-04',
+    byScope: {
+      'llo:PIPN': { '2026-09': sep(30), '2026-10': [50, 40, 60, 50] },
+      'llo:NAMA': { '2026-09': sep(30), '2026-10': [2, 3, 0, 3] },
+      'llo:BERI': { '2026-09': sep(30), '2026-10': [9, 9, 9, 9] },
+    },
+  };
+
+  test('day by day: running total against the target spread over the month', () => {
+    const p = R.dailyProgress({
+      targets: TARGETS,
+      daily: DAILY,
+      scope: 'PIPN',
+    });
+    expect(p.month).toBe('2026-10');
+    expect(p.daysInMonth).toBe(31);
+    expect(p.day).toBe(4);
+    expect(p.cumulative).toEqual([50, 90, 150, 200]);
+    expect(p.target).toBe(1200);
+    expect(p.onPace).toBeCloseTo((1200 * 4) / 31, 9);
+    expect(p.previousByDay).toBe(24);
+    expect(p.previous.length).toBe(30);
+    expect(R.dailyReadout(p)).toBe(
+      'Day 4 of 31: 200 enrolled vs 155 on pace (+45) · last month by day 4: 24',
+    );
+  });
+
+  test('day by day: the programme sums the LLOs with a target, and only those', () => {
+    const p = R.dailyProgress({ targets: TARGETS, daily: DAILY, scope: 'all' });
+    expect(p.enrolled).toBe(200 + 8);
+    expect(p.target).toBe(1200 + 150 + 240);
+    expect(
+      R.dailyProgress({ targets: TARGETS, daily: DAILY, scope: 'BERI' }),
+    ).toBeNull();
+    expect(
+      R.dailyProgress({ targets: TARGETS, daily: null, scope: 'all' }),
+    ).toBeNull();
+  });
+
+  test('day by day: behind pace reads with a minus and draws three lines', () => {
+    const p = R.dailyProgress({
+      targets: TARGETS,
+      daily: DAILY,
+      scope: 'NAMA',
+    });
+    expect(R.dailyReadout(p)).toContain('8 enrolled vs 19 on pace (−11)');
+    const svg = html(h(R.EnrolmentDailyChart, { progress: p }));
+    expect(svg).toContain('This month, day by day · Oct 2026');
+    expect(svg).toContain('Last month (Sep)');
+    expect(svg).toContain('text-red-700');
+    expect(svg).toContain('stroke-dasharray="5 4"');
+    expect(R.VERSION).toBeGreaterThanOrEqual(6);
   });
 });
