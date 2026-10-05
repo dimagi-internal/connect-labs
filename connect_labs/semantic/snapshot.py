@@ -545,6 +545,30 @@ def build(
                 out[k] = out.get(k, 0) + 1
         return out
 
+    def _counts(r, ms) -> dict[str, int]:
+        """Every COUNT indicator's raw figure for one month, ungraded.
+
+        A graded cell suppresses its value under the min-denominator floor, which
+        is right for a rate and wrong for a tally: a month that registered 5
+        babies registered 5, not "too few to score". Progress against an
+        enrolment target sums these month by month, so a suppressed early or
+        late month would silently drop out of the cumulative total.
+        """
+        out: dict[str, int] = {}
+        if not r:
+            return out
+        for m in ms:
+            if m.get("kind") != "count":
+                continue
+            raw = r.get(m["id"])
+            try:
+                v = float(raw)
+            except (TypeError, ValueError):
+                continue
+            if v == v:
+                out[m["indicator"]] = int(round(v))
+        return out
+
     def _series(scope_rows, visits_pred, drilled_llo=None, drilled=False, catalog=None):
         """One trend point per month for one drill scope.
 
@@ -584,6 +608,7 @@ def build(
                     "n": int(float((r or {}).get("n_cases") or 0)),
                     "visits": vcounts.get(k, 0),
                     "pooled": pooled,
+                    "counts": _counts(r, ms),
                 }
             )
         return out

@@ -65,6 +65,23 @@ class SemanticRuntimeError(RuntimeError):
     """Raised when the registry cannot be loaded or the query cannot run."""
 
 
+class RegistryNotFound(SemanticRuntimeError):
+    """A bound registry record that cannot be read: absent, or not visible to the reader.
+
+    Connect answers "exists but you may not see it" and "does not exist" with the
+    same 404, so the message cannot honestly tell them apart and says both. It is
+    written to be shown to a person as-is (the indicator-definition popover does).
+    """
+
+    def __init__(self, registry_id):
+        self.registry_id = registry_id
+        super().__init__(
+            f"The indicator definitions (registry {registry_id}) could not be found or are not "
+            f"visible to you. No semantic registry with id {registry_id} could be read in the "
+            f"scope this workflow binds it in, nor as a public record."
+        )
+
+
 def load_registry(name: str) -> tuple[dict[str, Any], dict[str, Any]]:
     """(properties_doc, indicators_doc) for a registry directory."""
     root = REGISTRY_ROOT / name
@@ -203,9 +220,18 @@ def resolve_registry(
     home = {k: source[k] for k in REGISTRY_HOME_SCOPE_KEYS if source.get(k) is not None}
     if source.get("public") is True:
         home = {"public": True}
-    record = registry_access.get_registry(int(registry_id), **home)
+    from connect_labs.labs.integrations.connect.api_client import LabsAPIError
+
+    try:
+        record = registry_access.get_registry(int(registry_id), **home)
+    except LabsAPIError as exc:
+        # A 403/404 from Connect is a visibility answer, not a server fault: say
+        # which registry, in words, instead of letting it surface as a 500.
+        if exc.status_code in (403, 404):
+            raise RegistryNotFound(registry_id) from exc
+        raise
     if record is None:
-        raise SemanticRuntimeError(f"no semantic registry with id {registry_id}")
+        raise RegistryNotFound(registry_id)
 
     props = record.properties_doc
     inds = record.indicators_doc

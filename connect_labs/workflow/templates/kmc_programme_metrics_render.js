@@ -762,6 +762,13 @@ function WorkflowUI({
   var s7 = React.useState(false);
   var showAllFLW = s7[0],
     setShowAllFLW = s7[1];
+  // Which scope the enrolment-against-target section shows when the page is not
+  // drilled into an organisation: 'all' or an LLO name. Lives here, not in the
+  // section, because the section is a function defined inside WorkflowUI and
+  // would lose its own state on every remount.
+  var s8 = React.useState('all');
+  var targetPick = s8[0],
+    setTargetPick = s8[1];
   var s4 = React.useState(null);
   var selFLW = s4[0],
     setSelFLW = s4[1];
@@ -2076,6 +2083,170 @@ function WorkflowUI({
     );
   }
 
+  // ── Enrolment against target ──────────────────────────────────────────────
+  // What the programme has enrolled each month against the targets it committed
+  // to, and how far it still has to go. The targets are CONFIG
+  // (`config.enrollment_targets`, set per workflow), never code: an instance
+  // with none shows nothing here. Actuals are registered babies by registration
+  // month off this payload's monthly series; the arithmetic is the library's
+  // (`R.enrolmentProgress`), so this page only chooses the scope.
+  var TARGETS =
+    (definition && definition.config && definition.config.enrollment_targets) ||
+    null;
+  function EnrolmentTargets() {
+    if (!TARGETS || !R.enrolmentProgress) return null;
+    var targeted = R.targetedLlos(TARGETS);
+    if (!targeted.length) return null;
+    var drilled = !!selLLO;
+    var scope = drilled
+      ? selLLO
+      : targeted.indexOf(targetPick) >= 0
+        ? targetPick
+        : 'all';
+    var unit = TARGETS.unit || 'registered babies';
+    if (drilled && targeted.indexOf(selLLO) < 0) {
+      return (
+        <R.Card>
+          <R.SectionTitle>Enrolment against target</R.SectionTitle>
+          <p className="text-sm text-gray-500">
+            No enrolment target is configured for {selLLO}. Targets are set for{' '}
+            {targeted.join(', ')}.
+          </p>
+        </R.Card>
+      );
+    }
+    var prog = R.enrolmentProgress({
+      targets: TARGETS,
+      monthlyByScope: P.monthlyByScope || {},
+      asOf: asOf,
+      scope: scope,
+    });
+    if (!prog) return null;
+    var win = R.targetWindow(TARGETS);
+    var first = win[0];
+    var last = win[win.length - 1];
+    // Organisations with no target still enrol; say how many, so the programme
+    // total is not mistaken for everything that happened.
+    var untargeted = [];
+    if (!drilled && scope === 'all') {
+      Object.keys(P.monthlyByScope || {}).forEach(function (k) {
+        if (k.indexOf('llo:') !== 0) return;
+        var name = k.slice(4);
+        if (targeted.indexOf(name) >= 0) return;
+        var sum = 0;
+        (P.monthlyByScope[k] || []).forEach(function (pt) {
+          if (!pt || pt.month < first || pt.month > prog.asOfMonth) return;
+          var c = pt.counts && pt.counts.registered_cases;
+          if (typeof c !== 'number')
+            c =
+              pt.ind && pt.ind.registered_cases
+                ? pt.ind.registered_cases.value
+                : 0;
+          sum += Number(c) || 0;
+        });
+        untargeted.push(name + ' ' + R.nCount(sum));
+      });
+    }
+    var goalNote =
+      TARGETS.goal &&
+      TARGETS.goal.programme &&
+      TARGETS.goal.programme !== prog.goal &&
+      scope === 'all'
+        ? ' The goal configured for the programme is ' +
+          R.nCount(TARGETS.goal.programme) +
+          '.'
+        : '';
+    function pill(key, label) {
+      var on = scope === key;
+      return (
+        <button
+          key={key}
+          onClick={function () {
+            setTargetPick(key);
+          }}
+          className={
+            'px-2.5 py-1 rounded-full text-xs border ' +
+            (on
+              ? 'border-indigo-300 bg-indigo-50 text-indigo-700 font-medium'
+              : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50')
+          }
+        >
+          {label}
+        </button>
+      );
+    }
+    return (
+      <R.Card>
+        <R.SectionTitle
+          right={
+            drilled ? null : (
+              <span className="inline-flex flex-wrap gap-1">
+                {pill('all', 'Programme')}
+                {targeted.map(function (l) {
+                  return pill(l, l);
+                })}
+              </span>
+            )
+          }
+          sub={
+            'Enrolment = babies with a registration form, by registration month. ' +
+            R.monthLbl(first) +
+            ' to ' +
+            R.monthLbl(last) +
+            (scope === 'all' ? ' · ' + prog.llos.join(' + ') : ' · ' + scope) +
+            ', as of ' +
+            dateLbl(asOf) +
+            '.'
+          }
+        >
+          Enrolment against target
+        </R.SectionTitle>
+        <R.EnrolmentTargetSummary progress={prog} unit={unit} />
+        <div className="mt-3">
+          <R.EnrolmentTargetLegend />
+          <R.EnrolmentTargetChart progress={prog} />
+        </div>
+        <div className="mt-1 text-xs text-gray-400 space-y-0.5">
+          {prog.carryIn ? (
+            <p>
+              Before {R.monthLbl(first)}: {R.nCount(prog.carryIn)} enrolments
+              carried in, as the goals sheet counts them toward the total. They
+              sit in both the enrolled and the target figures, so they never
+              move the gap.
+            </p>
+          ) : null}
+          {prog.unknownMonths.length ? (
+            <p>
+              {prog.unknownMonths
+                .map(function (m) {
+                  return R.monthLbl(m);
+                })
+                .join(', ')}
+              : this report was saved without a raw registration count for{' '}
+              {prog.unknownMonths.length === 1 ? 'that month' : 'those months'},
+              so {prog.unknownMonths.length === 1 ? 'it is' : 'they are'} left
+              out of the enrolled total.
+            </p>
+          ) : null}
+          {untargeted.length ? (
+            <p>
+              No target, not counted above (enrolled {R.monthLbl(first)} to
+              date): {untargeted.join(' · ')}.
+            </p>
+          ) : null}
+          <p>
+            {TARGETS.source
+              ? 'Targets: ' + TARGETS.source
+              : 'Targets from this report’s configuration'}
+            {TARGETS.as_of ? ' (as of ' + dateLbl(TARGETS.as_of) + ')' : ''}.
+            The programme goal is the sum of the organisation targets.{goalNote}
+            {TARGETS.note ? ' ' + TARGETS.note : ''}
+          </p>
+        </div>
+      </R.Card>
+    );
+  }
+
   // ── One scorecard head and one cell renderer, for BOTH tables ─────────────
   // The organisations table and the workers table are the same 15 columns in
   // the same groups, the same labels and the same type; only the leading
@@ -3255,6 +3426,8 @@ function WorkflowUI({
       <Tiles />
 
       {selLLO ? <FLWTable /> : <OrgTable />}
+
+      <EnrolmentTargets />
 
       <ChartsRow />
 
