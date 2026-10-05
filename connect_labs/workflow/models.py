@@ -76,3 +76,104 @@ class WorkflowActionExecution(models.Model):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
         }
+
+
+# =============================================================================
+# Template workflows: a template's render, config defaults and snapshot spec as DATA
+# =============================================================================
+#
+# A workflow that follows `render_source: {"workflow": <id>, <scope>}` renders the
+# PUBLISHED version of that template workflow and inherits its config defaults and
+# snapshot_inputs (its own keys win). The content lives here, in the labs DB, and not
+# on the template's LabsRecord, for three reasons: a follower in another scope (a
+# synthetic twin, another programme) must read it without a cross-scope API call; a
+# publish needs an immutable history to roll back to; and a page load must not wait on
+# production for it. See workflow/template_workflows.py.
+
+
+class TemplateWorkflow(models.Model):
+    """One template workflow: its editable draft, and which version is live."""
+
+    #: The template's own workflow definition record, and its home scope. A labs-only
+    #: (synthetic) record and a production one can share an id, so the scope is part
+    #: of the identity: `scope_key` is "opp:<id>" or "program:<id>".
+    workflow_id = models.IntegerField()
+    scope_key = models.CharField(max_length=40)
+    opportunity_id = models.IntegerField(null=True, blank=True)
+    program_id = models.IntegerField(null=True, blank=True)
+
+    name = models.CharField(max_length=255)
+    #: Who may FOLLOW it: "global", "org:<id>" or "program:<id>" (the existing
+    #: `template_scope` vocabulary on workflow definitions).
+    template_scope = models.CharField(max_length=40)
+    #: The code template its render is written against (`config.templateType`). A
+    #: follower must carry the same one: the render reads that template's pipelines,
+    #: config and snapshot contract.
+    template_type = models.CharField(max_length=100, blank=True, default="")
+    #: Where it started: "code:<template key>" or "workflow:<id>". Informational; the
+    #: seed has no role after creation.
+    seeded_from = models.CharField(max_length=120, blank=True, default="")
+
+    #: Only owners edit the draft, publish, roll back and preview the draft.
+    owners = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name="owned_template_workflows")
+
+    draft_render_code = models.TextField(blank=True, default="")
+    draft_config = models.JSONField(default=dict, blank=True)
+    draft_snapshot_inputs = models.JSONField(null=True, blank=True)
+    #: Bumped on every draft edit: the optimistic-concurrency token for edits.
+    draft_revision = models.IntegerField(default=1)
+    draft_updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    draft_updated_at = models.DateTimeField(auto_now_add=True)
+
+    #: The version every follower renders. Null until the first publish.
+    published = models.ForeignKey(
+        "TemplateWorkflowVersion", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["workflow_id", "scope_key"], name="uniq_template_workflow")]
+
+
+class TemplateWorkflowVersion(models.Model):
+    """An immutable published version. A rollback publishes a COPY of an older one,
+    so the history only ever grows and always says what was live when."""
+
+    template = models.ForeignKey(TemplateWorkflow, on_delete=models.CASCADE, related_name="versions")
+    number = models.IntegerField()
+    render_code = models.TextField()
+    config = models.JSONField(default=dict, blank=True)
+    snapshot_inputs = models.JSONField(null=True, blank=True)
+    note = models.TextField(blank=True, default="")
+    #: Set when this version is a rollback: the version number it copies.
+    restores_version = models.IntegerField(null=True, blank=True)
+    published_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    published_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["template", "number"], name="uniq_template_version")]
+        ordering = ["-number"]
+
+
+class TemplateWorkflowFollower(models.Model):
+    """A workflow set to follow a template workflow -- the list a preview and a
+    publish report against. The follow itself is the definition's `render_source`."""
+
+    template = models.ForeignKey(TemplateWorkflow, on_delete=models.CASCADE, related_name="followers")
+    workflow_id = models.IntegerField()
+    scope_key = models.CharField(max_length=40)
+    opportunity_id = models.IntegerField(null=True, blank=True)
+    program_id = models.IntegerField(null=True, blank=True)
+    followed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    followed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["template", "workflow_id", "scope_key"], name="uniq_template_follower")
+        ]

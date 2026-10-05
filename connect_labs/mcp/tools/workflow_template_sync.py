@@ -119,8 +119,15 @@ def workflow_sync_from_template_file(
         # Pushing a LOCAL template into a workflow that follows the DEPLOYED one would
         # write a copy the page never shows. Preview against a workflow that holds its
         # own copy (render_source null) instead.
-        from connect_labs.workflow.render_source import followed_template
+        from connect_labs.workflow.render_source import followed_template, followed_template_workflow
 
+        template_workflow = followed_template_workflow(current_def)
+        if template_workflow is not None:
+            raise MCPToolError(
+                "CONFLICT",
+                f"workflow {workflow_id} follows template workflow {template_workflow}, so a pushed render "
+                "would never be shown. Edit that template's draft (workflow_template_update_draft) and preview it.",
+            )
         following = followed_template(current_def)
         if following:
             raise MCPToolError(
