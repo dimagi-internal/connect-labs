@@ -148,7 +148,7 @@ def test_no_clearing_estimate_does_not_block_but_labels_the_figure(da, world):
     assert clearing["label"] == "Clearing & forwarding"
     assert clearing["cells"][column]["gap"] and clearing["cells"][column]["owner"] == "us"
     chips = [c["label"] for c in grid["quotes"][column]["chips"]]
-    assert "1 fact on us" in chips and "Comparable" in chips
+    assert "clearing estimate · to do" in chips and "Comparable" in chips
 
 
 # ---- 2. freight follows the Incoterm ------------------------------------------

@@ -215,7 +215,7 @@ def order_status(
                         "tone": THEIRS,
                     },
                     {
-                        "label": "on us",
+                        "label": "us",
                         "words": f"held since {_day(held_since)}",
                         "days": max(0, (today - held_since).days),
                         "tone": OURS,
@@ -223,7 +223,7 @@ def order_status(
                 ]
             elif held_on_us:
                 # No recorded day the hold began: the recorded facts only, no split.
-                chips.append({"label": "held on us", "tone": OURS})
+                chips.append({"label": "held · to do", "tone": OURS})
             else:
                 chips.append({"label": f"supplier {supplier_days} d", "tone": THEIRS})
         late_tile = {

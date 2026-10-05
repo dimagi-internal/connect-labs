@@ -36,10 +36,25 @@ from django.urls import reverse
 US = "us"
 SUPPLIERS = "suppliers"
 
-# Who supplies a fact a quote lacks, as a tag. Not a move: a fact we supply is
-# not "on us" under the six rules above, so its tag names the supplier of the
-# fact and never reads as a task. One wording for every surface that tags one.
-SUPPLIES = {US: "we supply", SUPPLIERS: "supplier supplies"}
+# The words every screen uses for whose step it is (owner decision 2026-10-04: "on us"
+# read as jargon). Ours is a to-do list, theirs is who we are waiting on. A quote's
+# missing fact is tagged with the same words; it is still not a move (rules above).
+TO_DO = "To do"
+WAITING_ON_SUPPLIERS = "Waiting on suppliers"
+OWNER_CHIP = {US: "to do", SUPPLIERS: "waiting"}
+
+
+def facts_chip(gaps, owner) -> str:
+    """A quote's open facts for one party, as a chip: the fact when there is one, else a count.
+
+    "duty terms · to do", "3 facts · to do", "sachets per carton · waiting".
+    """
+    gaps = list(gaps or [])
+    if not gaps:
+        return ""
+    what = gaps[0] if len(gaps) == 1 else f"{len(gaps)} facts"
+    return f"{what} · {OWNER_CHIP.get(owner) or OWNER_CHIP[SUPPLIERS]}"
+
 
 RULE_OWED = "owed"
 RULE_DEADLINE = "deadline"

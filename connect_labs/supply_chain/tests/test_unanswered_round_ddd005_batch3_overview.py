@@ -63,7 +63,7 @@ class TestMoveCounts:
         assert expected >= 1
         body = client_in_program.get(reverse("supply_chain:home")).content.decode()
         count = _text(re.search(r'data-testid="standing-our-moves">(.*?)</div>', body, re.S).group(1))
-        assert count.startswith(f"{expected} on us")
+        assert count.startswith(f"{expected} to do")
         assert "on you" not in count
 
     def test_each_rows_whose_chips_sum_to_the_heading(self, da, world, client_in_program):

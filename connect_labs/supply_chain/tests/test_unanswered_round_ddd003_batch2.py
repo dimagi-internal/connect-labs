@@ -164,9 +164,9 @@ class TestTheComparison:
         body = client_in_program.get(url).content.decode()
         if 'data-testid="waiver-pending"' not in body:
             pytest.skip("this world's quote does not leave the import to us")
-        assert "duty exemption not on file · us" in body
-        # The quote's header chip counts it ("1 fact on us" / "2 facts on us").
-        assert re.search(r'data-testid="grid-status">\d+ facts? on us<', body)
+        assert "duty exemption not on file · to do" in body
+        # The quote's header chip names it, or counts them ("duty exemption · to do" / "2 facts · to do").
+        assert re.search(r'data-testid="grid-status">[^<]+ · to do<', body)
         assert ">Attach duty exemption<" in body
         # Award may still be offered, but never as the filled button while the fact is open.
         assert 'primary-dark" data-testid="grid-action"' not in body

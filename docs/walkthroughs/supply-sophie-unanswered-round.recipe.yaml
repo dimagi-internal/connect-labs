@@ -373,9 +373,9 @@ scenes:
     say: landed
     seconds: 2.0
     target: css:tr[data-fact=landed] th
-  - kind: scroll
-    note: back to the top -- the count chip (1 of 3 comparable) on the same row as the duty terms line with the waiver, each quote's header chips, Harmattan's landed figure, the moves split ours / the supplier's, and the rows down to Import duty
-    value: '215'
+  - kind: scroll_to
+    note: down to the Award line under the grid -- Award Harmattan, with what is still open on the tender (deadline in 4 days, silent suppliers, the reply owed) -- the grid's landed and to-do rows above it
+    target: testid:award-open
   - kind: hover
     note: park the cursor in the top bar's blank middle, off the grid
     seconds: 0.6
@@ -383,7 +383,7 @@ scenes:
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the canonical frame is the comparison under the waiver -- the duty terms line, one of three comparable (Harmattan, landed USD 51.30 with our clearing estimate, unconfirmed until the duty exemption is on file), and the Import duty row settled for the quotes we import
+    note: the canonical frame is the comparison under the waiver -- Harmattan comparable, landed USD 51.30 with our clearing estimate, unconfirmed until the duty exemption is on file -- down to the Award line offered on it, with what is still open on the tender
   concept_claim: Settling the tender's import duty terms from its terms line is one choice;
     the tender then lists the reply still owed to Northgate with a drafted email, and
     the comparison costs every quote that leaves the import to us under the terms set.
