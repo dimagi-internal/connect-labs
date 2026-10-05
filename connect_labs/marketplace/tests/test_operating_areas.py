@@ -66,37 +66,15 @@ class TestOperatingAreas:
 
 
 @pytest.mark.django_db
-class TestTheMapDrawsThem:
+class TestTheNetworkMapIsOneDotPerOrganisation:
+    """The network map answers "where are our partners": one dot each, at the
+    head office. Operating areas are stored for a different map, and are not
+    drawn here."""
+
     def _areas(self, *specs):
         return [{"lat": 0.5, "lon": x, "precision": p, "label": label, "iso3": iso3} for label, x, p, iso3 in specs]
 
-    def test_one_point_per_area_when_there_is_no_town_level_hq(self, db):
-        org = make_partner("Lakeshore Health Trust", "LHT", countries=["Nigeria", "Kenya"], lat=9.0, lon=7.0)
-        org.marketplace_profile.operating_areas = self._areas(
-            ("Borno", 10.5, "region", "NGA"), ("Yobe", 12.5, "region", "NGA"), ("Kenya", 30.5, "country", "KEN")
-        )
-        org.marketplace_profile.save()
-        points = queries.map_points(queries.all_rows_with_rounds(), set())
-        assert [p["place"] for p in points] == ["Borno", "Yobe", "Kenya"]
-        assert {p["name"] for p in points} == {"Lakeshore Health Trust"}
-
-    def test_a_country_filter_draws_only_that_country(self, db):
-        org = make_partner("Lakeshore Health Trust", "LHT", countries=["Nigeria", "Kenya"])
-        org.marketplace_profile.operating_areas = self._areas(
-            ("Borno", 10.5, "region", "NGA"), ("Kenya", 30.5, "country", "KEN")
-        )
-        org.marketplace_profile.save()
-        points = queries.map_points(queries.all_rows_with_rounds(), set(), ["Kenya"])
-        assert [p["place"] for p in points] == ["Kenya"]
-
-    def test_without_areas_it_falls_back_to_the_head_office(self, db):
-        make_partner("Unresolved Trust", "UT", countries=["Kenya"], lat=1.0, lon=36.0, location_precision="city")
-        points = queries.map_points(queries.all_rows_with_rounds(), set())
-        assert [(p["lat"], p["precision"]) for p in points] == [(1.0, "city")]
-
-    def test_a_town_level_hq_is_the_one_dot(self, db):
-        """The head office wins. Listing eight countries of operation used to
-        draw eight hollow rings for one organisation."""
+    def test_operating_areas_do_not_add_dots(self, db):
         org = make_partner(
             "Lakeshore Health Trust",
             "LHT",
@@ -114,22 +92,11 @@ class TestTheMapDrawsThem:
         points = queries.map_points(queries.all_rows_with_rounds(), set())
         assert [(p["place"], p["precision"]) for p in points] == [("Maiduguri", "city")]
 
-    def test_a_country_filter_outside_the_hq_falls_back_to_where_it_works(self, db):
-        org = make_partner(
-            "Lakeshore Health Trust",
-            "LHT",
-            countries=["Nigeria", "Kenya"],
-            lat=11.8,
-            lon=13.2,
-            location_precision="city",
-            location_label="Maiduguri",
-            country_iso3="NGA",
-        )
-        org.marketplace_profile.operating_areas = self._areas(
-            ("Yobe", 12.5, "region", "NGA"), ("Kenya", 30.5, "country", "KEN")
-        )
-        org.marketplace_profile.save()
-        assert [p["place"] for p in queries.map_points(queries.all_rows_with_rounds(), set(), ["Kenya"])] == ["Kenya"]
-        assert [p["place"] for p in queries.map_points(queries.all_rows_with_rounds(), set(), ["Nigeria"])] == [
-            "Maiduguri"
-        ]
+    def test_an_hq_known_only_to_the_country_is_still_one_dot(self, db):
+        make_partner("Unresolved Trust", "UT", countries=["Kenya"], lat=1.0, lon=36.0, location_precision="country")
+        points = queries.map_points(queries.all_rows_with_rounds(), set())
+        assert [(p["lat"], p["precision"]) for p in points] == [(1.0, "country")]
+
+    def test_an_organisation_with_no_point_is_not_drawn(self, db):
+        make_partner("Nowhere Trust", "NT", countries=[])
+        assert queries.map_points(queries.all_rows_with_rounds(), set()) == []
