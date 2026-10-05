@@ -61,7 +61,8 @@ def test_the_comparison_names_it_and_its_action_by_that_name(da, world, client_i
     if 'data-testid="waiver-pending"' not in body:
         pytest.skip("this world's quote does not leave the import to us")
     assert "duty exemption not on file · to do" in body
-    assert ">Attach duty exemption<" in body
+    # Attached once, on the tender's duty line; each quote's column points there.
+    assert 'data-testid="duty-exemption-attach"' in body and 'data-testid="grid-terms-link"' in body
 
 
 @pytest.mark.django_db
@@ -106,11 +107,13 @@ def test_the_history_line_that_recorded_a_quote_carries_its_open_facts(da, world
     chips = re.search(r'data-testid="quote-open-facts"[^>]*>(.*?)</div>', history, re.S)
     assert chips is not None
     # The same facts, one rule: status.quote_open_facts for this quote as it stands.
-    from connect_labs.supply_chain.procurement.status import comparisons, waiver_on_file
+    from connect_labs.supply_chain.procurement.status import asked_since_quote, comparisons, waiver_on_file
 
     tender = quote.tender
     row = next(r for c in comparisons(tender, [quote]) for r in (*c.comparable, *c.blocked) if r.quote_id == quote.pk)
-    expected = fact_chips(quote_open_facts(tender, row, quote, waiver_on_file=waiver_on_file(tender)))
+    expected = fact_chips(
+        quote_open_facts(tender, row, quote, waiver_on_file=waiver_on_file(tender)), asked_since_quote(quote)
+    )
     shown = re.findall(r'data-fact="([^"]+)" data-owner="([^"]+)"', chips.group(1))
     assert [(html.unescape(f), o) for f, o in shown] == expected
     # The fact, then whose step it is as the comparison's chip: "duty exemption" [to do].

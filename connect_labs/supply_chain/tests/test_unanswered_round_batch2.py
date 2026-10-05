@@ -172,7 +172,10 @@ class TestWhatWeOweReads:
         _question(da, world, "Who is the importer of record?")
         _answer_as_sophie(da, answered["id"], "One warehouse in Kano.")
         body = _tender_page(web, world["tender"]["id"])
-        assert _text(re.search(r'<summary id="owed".*?</summary>', body, re.S).group(0)) == "What we owe 1 open"
+        assert (
+            _text(re.search(r'<summary id="owed".*?</summary>', body, re.S).group(0))
+            == "Questions and promises 1 open"
+        )
         open_list = re.search(
             r'<div [^>]*data-testid="owed">.*?</div>\s*</div>\s*(?=<details|<div class="mb)', body, re.S
         )
@@ -191,9 +194,9 @@ class TestWhatWeOweReads:
         asked = _question(da, world)
         _answer_as_sophie(da, asked["id"], "We are the importer.")
         history = _text(_tender_page(web, world["tender"]["id"]).split('data-testid="timeline"', 1)[1])
-        assert "Owed · Northgate Rehearsal Commodities · answered: We are the importer. Sophie" in history
+        assert "To do · Northgate Rehearsal Commodities · answered: We are the importer. Sophie" in history
         assert (
-            "Owed · Northgate Rehearsal Commodities · recorded: they asked: Who is the importer of record?" in history
+            "To do · Northgate Rehearsal Commodities · recorded: they asked: Who is the importer of record?" in history
         )
 
 
@@ -360,7 +363,7 @@ def test_the_order_sections_share_one_heading_style(da, world, client_in_program
     contract = _contract(da, world)
     body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
     styles = {}
-    for name in ("Shipments", "Received", "What we owe them", "Invoices", "Evidence", "History"):
+    for name in ("Shipments", "Received", "Questions and promises", "Invoices", "Evidence", "History"):
         match = re.search(rf'<h[23][^>]*class="([^"]*)"[^>]*>\s*{name}', body)
         assert match, name
         styles[name] = {c for c in match.group(1).split() if c.startswith("text-") or c.startswith("font-")}

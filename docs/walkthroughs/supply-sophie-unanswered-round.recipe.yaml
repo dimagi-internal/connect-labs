@@ -351,10 +351,29 @@ scenes:
     say: reply
     seconds: 2.5
     target: "css:[data-testid=draft]:has-text('Our reply') [data-testid=draft-text]"
-  - kind: goto
-    must_succeed: true
-    note: on to the tender's comparison, which now costs quotes by the terms just set
-    target: /supply/procurement/tenders/${round2_tender_id}/compare/?program_id=${program_id}
+  - kind: hover
+    note: park the cursor in the top bar's blank middle, off the draft
+    seconds: 0.6
+    target: css:header.fixed
+  - kind: hold
+    seconds: 1.5
+  - kind: snapshot
+    note: the canonical frame is the reply drafted to Northgate -- its three questions restated, an answer to write under each -- under the tender whose duty terms were just settled
+  concept_claim: Settling the tender's import duty terms from its terms line is one choice,
+    and the tender then lists the reply still owed to Northgate with a drafted email.
+  design_intent: A question in an email stalls the tender with nobody on the hook;
+    on her To do list it is Sophie's step with its email drafted, and one setting of
+    the tender's terms answers the importer question for every quote.
+  show: Sophie settles the tender's import duty on its terms line as the program's duty
+    waiver, and opens the reply to Northgate drafted from To do -- its three questions,
+    an answer to write under each.
+  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
+- id: harmattan-comparable
+  full_page: false
+  actions:
+  - kind: hold
+    note: a settle before the first wait_for, so the scene's before-frame is the comparison itself, not the draft left from the scene before
+    seconds: 0.5
   - kind: wait_for
     must_succeed: true
     target: testid:comparison-duty-terms
@@ -365,7 +384,7 @@ scenes:
     target: testid:comparison-duty-terms
   - kind: hover
     note: the Import duty row, settled for the quotes we import
-    say: waived
+    say: settled
     seconds: 2.0
     target: css:tr[data-fact=duty] th
   - kind: hover
@@ -374,8 +393,22 @@ scenes:
     seconds: 2.0
     target: css:tr[data-fact=landed] th
   - kind: scroll_to
-    note: down to the Award line under the grid -- Award Harmattan, with what is still open on the tender (deadline in 4 days, silent suppliers, the reply owed) -- the grid's landed and to-do rows above it
+    note: down to the Award line under the grid
     target: testid:award-open
+  - kind: click
+    must_succeed: true
+    note: Award opens its form -- why, when, who -- with what is still open on the tender beside it
+    target: testid:award-open
+  - kind: wait_for
+    target: css:[data-testid=award-start][open] [data-testid=award-form]
+  - kind: hover
+    note: Award Harmattan, with what is still open on the tender -- the deadline in 4 days, silent suppliers, the reply owed
+    say: Award
+    seconds: 2.5
+    target: testid:award-open-facts
+  - kind: scroll
+    note: back to the top of the grid -- supplier names, the count chip (1 of 3 comparable) beside the duty line with the waiver, each quote's header chips, and Harmattan's landed figure
+    value: '215'
   - kind: hover
     note: park the cursor in the top bar's blank middle, off the grid
     seconds: 0.6
@@ -383,20 +416,17 @@ scenes:
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the canonical frame is the comparison under the waiver -- Harmattan comparable, landed USD 51.30 with our clearing estimate, unconfirmed until the duty exemption is on file -- down to the Award line offered on it, with what is still open on the tender
-  concept_claim: Settling the tender's import duty terms from its terms line is one choice;
-    the tender then lists the reply still owed to Northgate with a drafted email, and
-    the comparison costs every quote that leaves the import to us under the terms set.
-  design_intent: A question in an email stalls the tender with nobody on the hook;
-    as a move on us it is Sophie's to-do with its email drafted, and one setting of
-    the tender's terms settles how any quote that leaves the import to us is costed.
-  show: Sophie settles the tender's import duty on its terms line as the program's duty
-    waiver, opens the reply to Northgate drafted from On us -- its three questions, an
-    answer to write under each -- then opens the comparison, which now costs the quotes
-    we import under the waiver; Harmattan's is comparable, one of three, landed at USD
-    51.30 per carton with our clearing estimate added; Kanem's and Sahel's still miss
-    facts of their own.
-  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
+    note: the canonical frame is the comparison under the waiver -- one of three comparable, Harmattan landed at USD 51.30 with our clearing estimate, unconfirmed until the duty exemption is on file, and each quote's facts still to do, to ask or waiting
+  concept_claim: One setting of the tender's duty terms costs every quote that leaves the
+    import to us, so Harmattan's quote becomes comparable and can be awarded early with
+    what is still open in view.
+  design_intent: The comparison should change because the tender's terms changed, and an
+    award before the deadline should say what it is made over rather than be locked.
+  show: Sophie opens the comparison under the waiver; Harmattan's quote is comparable, one
+    of three, landed at USD 51.30 per carton with our clearing estimate added, Award is
+    offered with the deadline, the silent suppliers and the reply owed still open, and
+    Kanem's and Sahel's quotes still lack facts.
+  url: /supply/procurement/tenders/${round2_tender_id}/compare/?program_id=${program_id}
 - id: held-on-us
   full_page: false
   actions:

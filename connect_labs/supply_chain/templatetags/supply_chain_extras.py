@@ -37,6 +37,14 @@ def supplies(owner):
 
 
 @register.filter
+def owner_tone(owner):
+    """The chip tone for whose step a fact is: ours for "to do" and "to ask", theirs for "waiting"."""
+    from connect_labs.supply_chain.moves import TO_ASK, US
+
+    return "ours" if owner in (US, TO_ASK) else "theirs"
+
+
+@register.filter
 def document_kind(kind):
     """A document kind as every page names it (records.DOCUMENT_KIND_LABELS): "duty exemption"."""
     from connect_labs.supply_chain.records import document_kind_label

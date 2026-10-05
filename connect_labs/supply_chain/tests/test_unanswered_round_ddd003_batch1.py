@@ -50,7 +50,7 @@ class TestTheDrafts:
         drafts = op(da, "tender_drafts_render", tender_id=world["tender"]["id"])
         reply = next(d for d in drafts["drafts"] if d["kind"] == "reply")
         assert "commitment_resolve" not in reply["why"]
-        assert "What we owe them" in reply["why"]
+        assert "Questions and promises" in reply["why"]
 
     def test_a_supplier_facing_subject_carries_no_internal_label(self, da, world):
         tender = Tender.objects.get(pk=world["tender"]["id"])

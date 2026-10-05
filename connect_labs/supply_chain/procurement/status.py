@@ -125,10 +125,34 @@ def gap_owner(gap: str) -> str:
     return rules.US if gap in _our_gap_words() or gap.startswith("exchange rate") else rules.SUPPLIERS
 
 
-def fact_chips(gaps) -> list:
+def asked_since_quote(quote, outreach=None) -> bool:
+    """Whether we have chased this supplier since its quote arrived.
+
+    Until we have, a fact only the supplier can state is ours to ask, not theirs to send: a
+    supplier cannot be waited on for a question nobody put to it. A chase is the invitation's
+    `last_reminder_on`, which a sent reminder or a sent follow-up both record.
+    """
+    if quote is None or not getattr(quote, "pk", None):
+        return True
+    if outreach is None:
+        from connect_labs.supply_chain.models import Outreach
+
+        outreach = Outreach.objects.filter(tender_id=quote.tender_id, supplier_id=quote.supplier_id)
+    chased = [o.last_reminder_on for o in outreach if o.supplier_id == quote.supplier_id and o.last_reminder_on]
+    since = quote.received_on
+    return bool(since and chased and max(chased) >= since)
+
+
+def fact_owner(gap: str, asked: bool = True) -> str:
+    """gap_owner, with a supplier's fact nobody has asked it for yet read as ours to ask."""
+    owner = gap_owner(gap)
+    return rules.TO_ASK if owner == rules.SUPPLIERS and not asked else owner
+
+
+def fact_chips(gaps, asked: bool = True) -> list:
     """[(fact, owner)]: open facts as the outlined gap chips name them, ours first."""
     ours, theirs = split_gaps(gaps)
-    return [(_gap_word(g), rules.US) for g in ours] + [(_gap_word(g), gap_owner(g)) for g in theirs]
+    return [(_gap_word(g), rules.US) for g in ours] + [(_gap_word(g), fact_owner(g, asked)) for g in theirs]
 
 
 def split_gaps(gaps) -> tuple[list, list]:
@@ -461,7 +485,11 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
         "comparable_chip": comparable_chip(compared),
         "primary": _primary_action(tender, ours, comparable),
         # Each live quote's open facts as chips -- (fact, owner) -- for the History's quote lines.
-        "quote_facts": {qid: fact_chips(facts) for qid, facts in open_facts.items() if facts},
+        "quote_facts": {
+            qid: fact_chips(facts, asked_since_quote(quote_by_id.get(qid), outreach))
+            for qid, facts in open_facts.items()
+            if facts
+        },
     }
 
 
@@ -598,6 +626,8 @@ def comparison_grid(
         quote_gaps = quote_open_facts(tender, row, quote, waiver_on_file=waiver_on_file)
         waiver_gap = _WAIVER_DOC in quote_gaps
         our_gaps, supplier_gaps = split_gaps(quote_gaps)
+        asked = asked_since_quote(quotes_by_id.get(row.get("quote_id")))
+        supplier_owner = rules.SUPPLIERS if asked else rules.TO_ASK
         # The quote's status chips (one per party owing facts), and one action per open gap, ours first.
         chips, actions = [], []
         if row["quote_id"] in awarded:
@@ -608,7 +638,9 @@ def comparison_grid(
             if our_gaps:
                 chips.append({"label": rules.facts_chip(our_gaps, rules.US), "tone": OURS})
             if supplier_gaps:
-                chips.append({"label": rules.facts_chip(supplier_gaps, rules.SUPPLIERS), "tone": THEIRS})
+                chips.append(
+                    {"label": rules.facts_chip(supplier_gaps, supplier_owner), "tone": THEIRS if asked else OURS}
+                )
             for g in our_gaps:
                 if g == _ROUND_DUTY:
                     actions.append(
@@ -622,8 +654,10 @@ def comparison_grid(
                     actions.append(
                         {
                             "label": f"Attach {_WAIVER_DOC}",
-                            "href": reverse("supply_chain:tender_document_attach", args=[tender.pk]),
+                            "href": "#duty-terms",
                             "owner": rules.US,
+                            # Tender-level: attached once on the duty line, not per quote.
+                            "terms": True,
                         }
                     )
                 else:
@@ -790,6 +824,13 @@ def comparison_grid(
                     "owner": rules.SUPPLIERS,
                 }
             )
+        # A supplier's fact nobody has asked it for is ours to ask: every cell of this column says so.
+        if not asked:
+            for column_cells in cells.values():
+                cell = column_cells[-1] if column_cells else None
+                for item in [cell, *((cell or {}).get("open") or []), *((cell or {}).get("blocked") or [])]:
+                    if isinstance(item, dict) and item.get("owner") == rules.SUPPLIERS:
+                        item["owner"] = rules.TO_ASK
     pack_label = (
         unit_noun(line_unit) if line_qty else f"{unit_noun(rows[0].get('pack_unit') or 'pack')}" if rows else "pack"
     )
