@@ -40,12 +40,12 @@ Ask in **#engineering-connect** if you're unsure about any of these.
 
 ## MCP Addresses
 
-Connect Labs provides two MCP addresses. Choose the one that matches how much data access you need.
+Connect Labs provides two MCP addresses. **Use `mcp/no_user_visit/` unless you need real visit data.** It is the default for everyone.
 
 | Address | What it can access |
 | --- | --- |
-| `https://labs.connect.dimagi.com/mcp/` | Full access matching your Connect permissions, including real visit data. |
-| `https://labs.connect.dimagi.com/mcp/no_user_visit/` | Never shows real user visit data. Can read programme structure (workflows, pipelines, indicator registries, app structure, solicitations, org directory, targeting), can edit workflow and indicator definitions and trigger saved-run generation, and can profile real opportunities and generate synthetic data. Tools that read visits work only on synthetic opportunities whose data was generated. |
+| `https://labs.connect.dimagi.com/mcp/no_user_visit/` (**default**) | Never shows real user visit data. Can read programme structure (workflows, pipelines, indicator registries, app structure, solicitations, org directory, targeting), can edit workflow and indicator definitions and trigger saved-run generation, and can profile real opportunities and generate synthetic data. Tools that read visits work only on synthetic opportunities whose data was generated. |
+| `https://labs.connect.dimagi.com/mcp/` | Full access matching your Connect permissions, including real visit data. Only if your work needs it. |
 
 !!! tip "Using the restricted address for a whole team"
     `mcp/no_user_visit/` is designed as a safe default for a shared or team setup. Signing in through this address gives a restricted token that stays restricted even if it is later used on the main `/mcp/` address.
@@ -62,20 +62,20 @@ Connect Labs provides two MCP addresses. Choose the one that matches how much da
 === "Claude Code"
 
     ```bash
-    claude mcp add --transport http connect_labs https://labs.connect.dimagi.com/mcp/
+    claude mcp add --transport http connect_labs https://labs.connect.dimagi.com/mcp/no_user_visit/
     ```
 
-    To use the restricted address instead:
+    Only if you need real visit data, use the full address instead:
 
     ```bash
-    claude mcp add --transport http connect_labs https://labs.connect.dimagi.com/mcp/no_user_visit/
+    claude mcp add --transport http connect_labs https://labs.connect.dimagi.com/mcp/
     ```
 
     Then type `/mcp`, choose `connect_labs` and sign in with CommCare Connect when the browser opens. There is no token to copy.
 
 === "Claude desktop or claude.ai"
 
-    Open **Settings → Connectors**, choose **Add custom connector**, and add `https://labs.connect.dimagi.com/mcp/` (or `https://labs.connect.dimagi.com/mcp/no_user_visit/` for the restricted version). Click **Connect** and sign in with CommCare Connect.
+    Open **Settings → Connectors**, choose **Add custom connector**, and add `https://labs.connect.dimagi.com/mcp/no_user_visit/` (or `https://labs.connect.dimagi.com/mcp/` only if you need real visit data). Click **Connect** and sign in with CommCare Connect.
 
 Claude acts as you, with your Connect permissions. To see or disconnect the apps you have signed in, visit [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/).
 

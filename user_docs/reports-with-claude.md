@@ -48,25 +48,31 @@ graph LR
 
 ## Get connected
 
-Labs has an MCP server: a secure connection that lets Claude read and change Labs on your behalf. Claude acts as you, so it can see and change exactly what your own Connect login can.
+Labs has an MCP server: a secure connection that lets Claude read and change Labs on your behalf. Claude acts as you, within what your own Connect login can do.
+
+Use the **no user visit data** address below. Claude can still read and edit report and indicator definitions, workflows and pipelines, but it never sees real user visit data. That is everything you need to change how a report works.
 
 === "Claude Code"
 
     Run this once:
 
     ```
-    claude mcp add --transport http connect_labs https://labs.connect.dimagi.com/mcp/
+    claude mcp add --transport http connect_labs https://labs.connect.dimagi.com/mcp/no_user_visit/
     ```
 
-    Then type `/mcp`, choose `connect_labs` and sign in with CommCare Connect when the browser opens.
+    Then type `/mcp`, choose `connect_labs` and sign in with CommCare Connect when the browser opens. There is no token to copy.
 
 === "Claude desktop or claude.ai"
 
     1. Open **Settings → Connectors** and choose **Add custom connector**.
-    2. Name it `Connect Labs` and paste this address: `https://labs.connect.dimagi.com/mcp/`
+    2. Name it `Connect Labs` and paste this address: `https://labs.connect.dimagi.com/mcp/no_user_visit/`
     3. Click **Connect**. A Labs sign-in page opens. Sign in with CommCare Connect and approve.
 
     On a Team or Enterprise plan, an organisation owner may need to allow custom connectors first.
+
+!!! note "Only if you need real visit data"
+    The full address, `https://labs.connect.dimagi.com/mcp/`, also lets Claude read real visit data. Use it only
+    if your work needs that and you are allowed to see it. See [MCP addresses](connect-mcp.md#mcp-addresses).
 
 To check it's working, ask Claude: *"List the Labs workflows for opportunity 12345."*
 
