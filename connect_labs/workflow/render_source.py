@@ -12,6 +12,12 @@ deploy reaches every following workflow at once and there is nothing to sync. It
 stored copy is left alone, and edits to it are refused rather than silently
 invisible. Setting `render_source` to null forks: the template's current code
 becomes the stored copy, so the page does not jump.
+
+`render_source: {"workflow": <id>, "opportunity_id" | "program_id": <scope>}` follows a
+TEMPLATE WORKFLOW instead: data, not code, with a draft, published versions and a
+rollback, so a render change reaches every follower with no deploy. See
+workflow/template_workflows.py. It is set with the `workflow_follow_template` MCP tool
+(which checks the caller may read the template), never by a raw definition patch.
 """
 
 from __future__ import annotations
@@ -29,6 +35,21 @@ class RenderFollowsTemplate(Exception):
         )
 
 
+class RenderFollowsTemplateWorkflow(RenderFollowsTemplate):
+    """An edit to the stored render of a workflow that follows a template WORKFLOW."""
+
+    def __init__(self, definition_id, template_workflow_id: int):
+        self.template_key = None
+        self.template_workflow_id = template_workflow_id
+        Exception.__init__(
+            self,
+            f"workflow {definition_id} follows template workflow {template_workflow_id}, so its render is that "
+            "template's published version and an edit here would never be shown. Edit the template's draft "
+            "(workflow_template_update_draft), preview it, then publish it (workflow_template_publish) -- or "
+            "unfollow (workflow_follow_template with follow=false) to fork a stored copy.",
+        )
+
+
 def render_source_of(definition) -> dict:
     return dict(((getattr(definition, "data", None) or {}).get("render_source")) or {})
 
@@ -41,13 +62,47 @@ def followed_template(definition) -> str | None:
     return key if key and get_template(key) else None
 
 
+def followed_template_workflow(definition) -> int | None:
+    """The template WORKFLOW id this workflow follows, if it follows one."""
+    from connect_labs.workflow.template_workflows import source_of
+
+    rs = source_of(getattr(definition, "data", None))
+    return rs["workflow"] if rs else None
+
+
 def resolve_render_code(data_access, definition) -> tuple[str | None, dict]:
     """`(component_code, source)` -- the code the page should render, and where it came from."""
+    from connect_labs.workflow.template_workflows import content_for_data, source_of
     from connect_labs.workflow.templates import get_template
+
+    rs = source_of(getattr(definition, "data", None))
+    if rs:
+        template, content = content_for_data(definition.data)
+        if content and content.get("render_code"):
+            return content["render_code"], {
+                "source": "template_workflow",
+                "template_workflow": rs["workflow"],
+                "version": content["version"],
+                "draft": content["draft"],
+                **({"draft_revision": content["draft_revision"]} if content["draft"] else {}),
+            }
+        # A template that was deleted or never published: show the stored copy rather
+        # than a blank page, and say so.
+        code, src = _stored(data_access, definition)
+        return code, {
+            **src,
+            "warning": f"follows template workflow {rs['workflow']}, which "
+            + ("has no published version" if template else "was not found")
+            + "; showing this workflow's stored copy",
+        }
 
     key = followed_template(definition)
     if key:
         return get_template(key)["render_code"], {"source": "template", "template": key}
+    return _stored(data_access, definition)
+
+
+def _stored(data_access, definition) -> tuple[str | None, dict]:
     record = data_access.get_render_code(definition.id)
     if not record:
         return None, {"source": "stored", "version": None}
@@ -59,6 +114,9 @@ def resolve_render_code(data_access, definition) -> tuple[str | None, dict]:
 
 
 def refuse_edit_if_following(definition) -> None:
+    template_workflow = followed_template_workflow(definition)
+    if template_workflow is not None:
+        raise RenderFollowsTemplateWorkflow(getattr(definition, "id", "?"), template_workflow)
     key = followed_template(definition)
     if key:
         raise RenderFollowsTemplate(getattr(definition, "id", "?"), key)
@@ -74,6 +132,11 @@ def validate_render_source(value, definition) -> dict | None:
 
     if value is None:
         return None
+    if isinstance(value, dict) and "workflow" in value:
+        raise ValueError(
+            "follow a template workflow with workflow_follow_template, which checks you may read it and "
+            "records the follower; render_source cannot be patched to it directly"
+        )
     if not isinstance(value, dict) or set(value) != {"template"} or not isinstance(value["template"], str):
         raise ValueError('render_source must be null or {"template": "<template key>"}')
     key = value["template"]

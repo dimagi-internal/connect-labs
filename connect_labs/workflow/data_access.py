@@ -22,6 +22,7 @@ from django.http import HttpRequest
 from connect_labs.labs.integrations.connect.api_client import LabsAPIError, LabsRecordAPIClient
 from connect_labs.labs.models import LocalLabsRecord
 from connect_labs.workflow.run_snapshot_store import stored_form
+from connect_labs.workflow.template_workflows import apply_to_record, apply_to_records, strip_inherited
 
 logger = logging.getLogger(__name__)
 
@@ -732,15 +733,23 @@ class WorkflowDataAccess(BaseDataAccess):
                 if r.id not in seen_ids:
                     records.append(r)
 
-        return records
+        # A follower of a template workflow is read with the template's config and
+        # snapshot_inputs under its own (workflow/template_workflows.py).
+        return apply_to_records(records)
 
     def get_definition(self, definition_id: int) -> WorkflowDefinitionRecord | None:
-        """Get a workflow definition by ID."""
-        return self.labs_api.get_record_by_id(
-            record_id=definition_id,
-            experiment=self.EXPERIMENT,
-            type="workflow_definition",
-            model_class=WorkflowDefinitionRecord,
+        """Get a workflow definition by ID.
+
+        A follower of a template workflow comes back EFFECTIVE: the template's
+        config and snapshot_inputs under its own; the raw record is `own_data`.
+        """
+        return apply_to_record(
+            self.labs_api.get_record_by_id(
+                record_id=definition_id,
+                experiment=self.EXPERIMENT,
+                type="workflow_definition",
+                model_class=WorkflowDefinitionRecord,
+            )
         )
 
     def create_definition(self, name: str, description: str, **kwargs) -> WorkflowDefinitionRecord:
@@ -802,7 +811,12 @@ class WorkflowDataAccess(BaseDataAccess):
         )
 
     def update_definition(self, definition_id: int, data: dict) -> WorkflowDefinitionRecord | None:
-        """Update a workflow definition."""
+        """Update a workflow definition.
+
+        Inherited template-workflow values are stripped first, so a read-modify-write
+        of an effective definition never bakes them into the follower.
+        """
+        data = strip_inherited(data)
         result = self.labs_api.update_record(
             record_id=definition_id,
             experiment=self.EXPERIMENT,
@@ -1058,7 +1072,7 @@ class WorkflowDataAccess(BaseDataAccess):
         # leak orphan records.
         definition = self.get_definition(definition_id)
         if definition and definition.data.get("render_code_id") != result.id:
-            updated_data = {**definition.data, "render_code_id": result.id}
+            updated_data = strip_inherited({**definition.data, "render_code_id": result.id})
             self.labs_api.update_record(
                 record_id=definition_id,
                 experiment=self.EXPERIMENT,
@@ -1852,7 +1866,7 @@ class WorkflowDataAccess(BaseDataAccess):
         if not definition:
             return None
 
-        updated_data = {**definition.data, "is_shared": True, "shared_scope": scope}
+        updated_data = strip_inherited({**definition.data, "is_shared": True, "shared_scope": scope})
 
         # Update the record with public=True so others can query it
         result = self.labs_api.update_record(
@@ -1885,7 +1899,7 @@ class WorkflowDataAccess(BaseDataAccess):
         if not definition:
             return None
 
-        updated_data = {**definition.data, "is_shared": False, "shared_scope": None}
+        updated_data = strip_inherited({**definition.data, "is_shared": False, "shared_scope": None})
 
         # Update the record with public=False to restrict access
         result = self.labs_api.update_record(

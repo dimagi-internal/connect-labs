@@ -272,13 +272,13 @@ def names_source(definition, source_workflow_id: int, opportunity_id: int) -> bo
     that happens to share the template key -- the first one found on prod was a
     twin/triplet audit -- and must name its source explicitly to receive anything.
     """
-    from connect_labs.workflow.render_source import followed_template
+    from connect_labs.workflow.render_source import followed_template, followed_template_workflow
 
     config = ((getattr(definition, "data", None) or {}).get("config")) or {}
     declared = config.get("source_workflow_id")
     if declared not in (None, ""):
         return _int(declared) == int(source_workflow_id)
-    if not followed_template(definition):
+    if not (followed_template(definition) or followed_template_workflow(definition) is not None):
         return False
     return int(source_workflow_id) in _cohort_sources(opportunity_id)
 

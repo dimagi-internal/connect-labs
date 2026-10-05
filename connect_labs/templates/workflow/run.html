@@ -55,6 +55,18 @@
     </nav>
     {% endif %}
 
+    {% if render_source.draft %}
+    {% comment %} Template-workflow draft preview (?template_draft=1, owners only): this page
+       shows the template's unpublished draft, which nobody else sees. {% endcomment %}
+    <div class="mb-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900" data-template-draft-preview>
+        <i class="fa-solid fa-flask mr-1"></i>
+        Previewing the <strong>draft</strong> (revision {{ render_source.draft_revision }}) of template workflow
+        {{ render_source.template_workflow }}. Followers still show the published version until it is published.
+    </div>
+    {% elif render_source.warning %}
+    <div class="mb-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900">{{ render_source.warning }}</div>
+    {% endif %}
+
     {% comment %} `not present_mode`: the selection summary, the Edit button and the
        "Edit Opportunities" modal are authoring affordances (connect-labs#1295). {% endcomment %}
     {% if has_context and not error and workflow_data and workflow_data.multi_opp and not present_mode %}

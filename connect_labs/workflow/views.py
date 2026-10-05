@@ -950,6 +950,17 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         )
 
     def get_context_data(self, **kwargs):
+        # `?template_draft=1`: a template workflow's OWNER sees the follower rendered
+        # with the template's unpublished draft (render, config, snapshot spec), for
+        # this request only. Anyone else gets the published version as usual.
+        if self.request.GET.get("template_draft") == "1":
+            from connect_labs.workflow.template_workflows import preview_drafts
+
+            with preview_drafts(self.request.user):
+                return self._run_context_data(**kwargs)
+        return self._run_context_data(**kwargs)
+
+    def _run_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         definition_id = self.kwargs.get("definition_id")
 
@@ -3400,8 +3411,16 @@ def sync_template_render_code_api(request, definition_id):
             return JsonResponse({"error": "Workflow not found"}, status=404)
 
         # Following its template already IS synced -- there is no copy to update.
-        from connect_labs.workflow.render_source import followed_template
+        from connect_labs.workflow.render_source import followed_template, followed_template_workflow
 
+        if followed_template_workflow(definition) is not None:
+            return JsonResponse(
+                {
+                    "success": True,
+                    "follows_template_workflow": followed_template_workflow(definition),
+                    "changed": False,
+                }
+            )
         following = followed_template(definition)
         if following:
             return JsonResponse({"success": True, "follows_template": following, "changed": False})

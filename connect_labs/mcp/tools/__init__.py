@@ -33,6 +33,7 @@ from . import workflow_run  # noqa: F401  -- workflow_run_*, _indicator_explain,
 from . import workflow_run_default  # noqa: F401  -- registers workflow_run_default
 from . import workflow_snapshots  # noqa: F401  -- registers workflow_save_snapshot
 from . import workflow_template_sync  # noqa: F401
+from . import workflow_templates_data  # noqa: F401  -- template workflows: draft/publish/rollback/follow
 from . import workflows  # noqa: F401
 from . import (  # noqa: F401  -- registers targeting_* (indicators/select/methodology/scenario/admin_levels/research)
     targeting,
