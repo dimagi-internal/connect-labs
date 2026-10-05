@@ -69,6 +69,7 @@ import {
   EnrolmentTargetChart,
   EnrolmentTargetLegend,
   EnrolmentTargetSummary,
+  elapsedFraction,
   enrolmentProgress,
   monthLbl,
   targetWindow,
@@ -162,6 +163,7 @@ export const LabsReport = {
   stripPos,
   // enrolment against a configured target (VERSION 5)
   enrolmentProgress,
+  elapsedFraction,
   targetedLlos,
   targetWindow,
   monthLbl,
