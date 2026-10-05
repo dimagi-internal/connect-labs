@@ -244,6 +244,10 @@ def network(request):
                 state["selected"]["countries"] or state["selected"]["delivered"] or state["selected"]["applied"]
             ),
             "mapbox_token": getattr(settings, "MAPBOX_TOKEN", "") or "",
+            # In the page rather than fetched after it: the globe draws from
+            # the same population this render already holds, and a second
+            # request recomputed all of it to say the same thing.
+            "points": queries.map_points(rows, delivering),
             "unreadable": queries.unreadable_rounds(),
             # The agent panel is told WHICH organisations are on screen and how
             # the visitor narrowed to them — never the rows, which it reads for

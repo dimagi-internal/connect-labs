@@ -164,6 +164,34 @@ class TestTheSpineIsReadOnce:
 
         assert len(calls) == 1, f"the pulse spine was aggregated {len(calls)} times for one render"
 
+    def test_the_spine_answer_is_shared_across_workers(self, many):
+        """The process cache alone made each web worker re-aggregate the spine
+        every minute, which is the 2-4s a filter click paid after a pause. A
+        second process, with an empty process cache, must not recompute it."""
+        queries.invalidate()
+        calls = []
+
+        from connect_labs.pulse import network_api
+
+        original = network_api.first_service_by_partner
+        network_api.first_service_by_partner = lambda: (calls.append(1) or original())
+        try:
+            queries.delivering_names()
+            # What another worker sees: its own process cache is empty.
+            queries._cache.update(dict.fromkeys(queries._CACHED))
+            queries._cache["loaded_at"] = 0.0
+            queries.delivering_names()
+        finally:
+            network_api.first_service_by_partner = original
+
+        assert len(calls) == 1
+
+    def test_the_warm_task_refreshes_the_shared_answer(self, many):
+        from connect_labs.marketplace.tasks import warm_network
+
+        queries.invalidate()
+        assert warm_network() == len(queries.spine_first_service())
+
     def test_invalidate_lets_a_new_partner_be_seen(self, many):
         """A cache nothing can clear is a bug generator: the importer clears it,
         and so does make_partner."""

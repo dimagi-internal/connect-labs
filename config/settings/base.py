@@ -830,6 +830,13 @@ CELERY_BEAT_SCHEDULE = {
         "task": "connect_labs.pulse.tasks.warm_summary_cache",
         "schedule": 60.0,
     },
+    # The network directory's delivery answer aggregates the whole pulse spine.
+    # It is cached in Redis for 30 minutes; refreshing every 10 means a filter
+    # click never pays for it. See marketplace.queries.spine_first_service.
+    "marketplace-network-warm": {
+        "task": "connect_labs.marketplace.tasks.warm_network",
+        "schedule": crontab(minute="*/10"),
+    },
     # Bounded nightly backfill catch-up. Selection is self-healing: it walks
     # only cursors not provably complete -- opportunities that just appeared,
     # and ones whose export previously 404d because the poller account lacked
