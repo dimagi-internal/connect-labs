@@ -22,6 +22,7 @@ import logging
 
 from connect_labs.benchmarks.models import BenchmarkCohort
 from connect_labs.benchmarks.publish import _primary_series_name, publish_benchmark
+from connect_labs.workflow.run_snapshot_store import snapshot_state
 from connect_labs.workflow.templates import resolve_snapshot_contract
 
 logger = logging.getLogger(__name__)
@@ -56,7 +57,10 @@ def run_history(wda, workflow_id: int, state_key: str) -> list[dict]:
         for run in wda.list_runs(definition_id=workflow_id):
             if not getattr(run, "is_completed", False):
                 continue
-            payload = ((run.snapshot or {}).get("state") or {}).get(state_key) or {}
+            # Only these paths are read below, and a saved run's snapshot_summary
+            # carries them, so listing the history fetches no snapshot.
+            paths = [f"{state_key}.cMeasures", f"{state_key}.byOpp", f"{state_key}.series.*.byOpp"]
+            payload = snapshot_state(run, paths).get(state_key) or {}
             by_opp = {}
             # The primary family is keyed by its own name -- the one the publisher
             # reads it back under -- not a fixed letter. It used to be "C", which
