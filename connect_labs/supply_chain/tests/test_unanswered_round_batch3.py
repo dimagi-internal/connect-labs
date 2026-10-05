@@ -202,7 +202,7 @@ class TestTheComparison:
         body = self._page(client_in_program, world)
         assert re.search(r'data-testid="comparable-count"[^>]*>1 of 2 comparable<', body)
         grid = re.search(r'<table [^>]*data-testid="comparison-grid".*?</table>', body, re.S).group(0)
-        assert re.search(r">[^<]+ · waiting<", grid)
+        assert re.search(r">[^<]+ · to ask<", grid)  # never asked since the quote came in
         pack = re.search(r'<tr data-fact="pack".*?</tr>', grid, re.S).group(0)
         assert "not stated" in pack
         for word in ("PROVISIONAL", "provisional", "beat"):
@@ -237,7 +237,7 @@ class TestTheOrderPage:
         assert "Nothing owed" not in owed
         assert _text(re.search(r'<h2 id="owed".*?</h2>', body, re.S).group(0)) == (
             # Since DDD 005 batch 3 the section names who the document goes through.
-            "What we owe — to clear the shipment (via Crescent Rehearsal Freight) — 1 open"
+            "Documents to clear the shipment (via Crescent Rehearsal Freight) — 1 open"
         )
         ours = body.split('data-testid="on-us"', 1)[1].split("</section>", 1)[0]
         assert 'data-rule="owed"' in ours and "Provide 1 document to Crescent Rehearsal Freight" in _text(ours)

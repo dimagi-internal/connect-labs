@@ -377,7 +377,12 @@ def _followups(access, tender, commodities, quotes, day, sender):
             f"{count} question{'s' if count != 1 else ''} still outstanding for the supplier on this quote "
             "before it can be compared or accepted."
         )
-        drafts.append(_draft_item(draft, "followup", quote.supplier, commodity, why=why, quote_id=quote.pk))
+        # Sending it is a chase on the supplier's invitation, as a reminder's is: until then the
+        # facts it asks for are ours to ask, after it the supplier's to send (status.asked_since_quote).
+        invited = [o for o in access.list_outreach(tender_id=tender.pk) if o.supplier_id == quote.supplier_id]
+        latest = max(invited, key=lambda o: (o.sent_on or date.min, o.pk)) if invited else None
+        sent = {"outreach_id": latest.pk, "mark_sent": _mark_sent(latest.pk, day)} if latest else {}
+        drafts.append(_draft_item(draft, "followup", quote.supplier, commodity, why=why, quote_id=quote.pk, **sent))
     return drafts
 
 
@@ -433,7 +438,7 @@ def _replies(access, tender, day, sender):
                 "why": (
                     f"{len(still_open)} question{'s' if len(still_open) != 1 else ''} from {name} "
                     f"open since {day_text(asked)}: we owe the answer. Once sent, mark each question answered "
-                    "under What we owe them."
+                    "under Questions and promises."
                     + (
                         f" {len(questions) - len(still_open)} answered today, already written in."
                         if len(still_open) != len(questions)

@@ -41,7 +41,9 @@ SUPPLIERS = "suppliers"
 # missing fact is tagged with the same words; it is still not a move (rules above).
 TO_DO = "To do"
 WAITING_ON_SUPPLIERS = "Waiting on suppliers"
-OWNER_CHIP = {US: "to do", SUPPLIERS: "waiting"}
+# A supplier's fact nobody has asked it for yet: ours to ask (procurement/status.fact_owner).
+TO_ASK = "to_ask"
+OWNER_CHIP = {US: "to do", SUPPLIERS: "waiting", TO_ASK: "to ask"}
 
 
 def facts_chip(gaps, owner) -> str:

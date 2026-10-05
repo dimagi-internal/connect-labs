@@ -641,7 +641,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
 
   {% if contract.consideration == "priced" or invoices or owed_open_count %}
   <details class="fold scroll-mt-20" id="owed-fold" data-testid="fold-owed"{% if owed_holds or owed_answered_expanded or request.GET.changed|slice:":11" == "commitment-" %} open{% endif %}>
-    <summary><h2 id="owed" data-testid="owed-heading" class="text-base font-semibold text-brand-deep-purple">{% if owed_holds %}What we owe — to clear the shipment{% if owed_holds_via %} <span data-testid="owed-via" class="font-normal text-gray-600">(via {{ owed_holds_via }})</span>{% endif %}{% else %}What we owe them{% endif %} <span data-testid="owed-open-count" class="text-sm font-normal tabular-nums text-gray-600">— {{ owed_open_count|default:0 }} open</span></h2></summary>
+    <summary><h2 id="owed" data-testid="owed-heading" class="text-base font-semibold text-brand-deep-purple">{% if owed_holds %}Documents to clear the shipment{% if owed_holds_via %} <span data-testid="owed-via" class="font-normal text-gray-600">(via {{ owed_holds_via }})</span>{% endif %}{% else %}Questions and promises{% endif %} <span data-testid="owed-open-count" class="text-sm font-normal tabular-nums text-gray-600">— {{ owed_open_count|default:0 }} open</span></h2></summary>
     <div class="fold-body">
       {% if not supply_as_of %}<a href="{% url 'supply_chain:contract_commitment_record' contract.id %}" class="text-sm text-brand-indigo hover:underline">+ Record a question or a promise</a>{% endif %}
       {% include "supply_chain/_owed.html" with resolve_label="Mark done" empty_text="Nothing owed on this order." %}

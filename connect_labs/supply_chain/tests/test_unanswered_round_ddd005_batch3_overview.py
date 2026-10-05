@@ -100,5 +100,5 @@ class TestOwedNamesItsCounterparty:
         contract, _ = _held_on_our_form_m(da, world)
         body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
         heading = _text(re.search(r'<h2 id="owed" data-testid="owed-heading".*?</h2>', body, re.S).group(0))
-        assert heading.startswith("What we owe — to clear the shipment (via Crescent Rehearsal Freight)")
-        assert "What we owe them" not in heading
+        assert heading.startswith("Documents to clear the shipment (via Crescent Rehearsal Freight)")
+        assert "Questions and promises" not in heading
