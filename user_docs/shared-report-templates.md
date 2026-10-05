@@ -74,6 +74,38 @@ A shared instance references the source report's pipelines in the scope they liv
 
 ---
 
+## Template workflows: change a report with no release
+
+Following a **deployed** template means every page change is a code change, a review and a Labs release. A **template workflow** is the faster option: the page, its default settings and its snapshot settings live as **data** in Labs, so a change reaches every report that follows it in seconds, with no release.
+
+| | Following the deployed template | Following a template workflow |
+| --- | --- | --- |
+| Where the page lives | The Labs code | A template workflow, as data |
+| How a change reaches every copy | A developer's change, then a Labs release | Edit the draft, preview, publish |
+| Undo | Another release | Roll back to any earlier version |
+| Who can change it | Developers | The template's owners |
+
+**How it works:**
+
+- **Draft, preview, publish.** Every change goes to the template's **draft** first. No report changes yet. An owner can open any following report with the draft applied (Claude gives you a *draft preview* link; it adds `&template_draft=1` to the page address, and only owners see the draft there — everyone else still sees what is published). **Publishing** makes the draft live, and every following report shows it the next time it is opened.
+- **History and rollback.** Every publish is kept as a numbered version. Rolling back publishes a copy of an older version, so the history always shows what was live when.
+- **Settings are inherited, and a report's own settings win.** A following report gets the template's default settings and snapshot settings, except for any setting it sets itself. KMC's programme report keeps its own enrolment targets this way while taking everything else from the template. When a report starts following, any setting it has that is *identical* to the template's is dropped so it stays in step with the template from then on; settings that really differ stay as that report's own.
+- **Owners and followers.** Only the template's owners can edit the draft, preview it, publish or roll back. Anyone who can see the template (everyone for a `global` template; otherwise members of its organisation, programme or opportunity) can make their report follow it.
+
+**What still needs a release (the engine boundary).** A page can only show what Labs already calculates and serves to it. Rearranging sections, removing a divider, changing a chart, renaming a label or showing a figure the snapshot already contains is all template data. **A figure Labs does not yet calculate** (for example, daily counts the snapshot never stored) is a change to the engine, and still needs a developer and a release. Once it ships, the page that shows it is a template change again.
+
+Ask Claude in plain language:
+
+> *"Create a template workflow from the KMC programme report template, and make workflows 19778 and 5456 follow it."*
+>
+> *"In the KMC Programme Metrics template, move the trends section above the scorecard. Show me the draft on 19778, then publish it."*
+>
+> *"Roll the KMC Programme Metrics template back to version 2."*
+
+The tools Claude uses: `workflow_template_create`, `workflow_follow_template`, `workflow_template_update_draft`, `workflow_template_preview`, `workflow_template_publish`, `workflow_template_rollback`, `workflow_template_get`, `workflow_template_list` and `workflow_template_set_owners`.
+
+---
+
 ## Setting it up
 
 There are two ways to get shared instances. Both are driven through Claude.
@@ -130,6 +162,7 @@ A newly created report has no run, and its page needs one to open. Ask Claude to
 | `workflow_get` | Read an instance | Shows whether its page comes from the template or a stored copy, and which registry it's bound to |
 | `workflow_sync_from_deployed_template` | Copy the template's current page into a **forked** instance | Does nothing for an instance that follows the template: there's nothing to sync |
 | `workflow_set_template_flag` | Mark a report as a template other people can copy | **Not** the same as following a template. It controls whether a report appears as a starting point to clone. |
+| `workflow_follow_template` | Make a report follow a **template workflow**, or fork it off one | The no-release way to keep many reports the same ([above](#template-workflows-change-a-report-with-no-release)) |
 
 `workflow_create_from_template` creates a report from a template with its own stored page. To have it share an existing registry, pass `registry_source` (see [The Semantic Layer](semantic-layer.md#recommendations), recommendation 2).
 

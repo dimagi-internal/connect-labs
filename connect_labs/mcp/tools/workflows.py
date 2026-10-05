@@ -579,7 +579,9 @@ def _validate_snapshot_inputs(value) -> None:
     description=(
         "Update fields on a workflow definition. Accepts a patch dict. "
         "Allowed keys: name, description, statuses, config, snapshot_inputs, registry_source, "
-        "render_source. `render_source: {template: <this workflow's template key>}` makes the "
+        "render_source. FASTER: to change a report that several workflows show without a deploy, make them "
+        "follow a template workflow (workflow_template_create + workflow_follow_template) and edit/publish that. "
+        "`render_source: {template: <this workflow's template key>}` makes the "
         "workflow FOLLOW the deployed template -- a deploy updates it, nothing to sync, and "
         "edits to its stored render are refused; null forks it back onto a stored copy "
         "(seeded with the template's current code, so the page does not change). "
@@ -714,7 +716,16 @@ def workflow_update_definition(
             if chosen is None:
                 # Forking: the stored copy becomes the render, so seed it with what the
                 # page shows NOW -- the template's code -- or it would jump to whatever
-                # stale copy was saved before the workflow started following.
+                # stale copy was saved before the workflow started following. A
+                # template-workflow follower forks through workflow_follow_template.
+                from connect_labs.workflow.render_source import followed_template_workflow
+
+                if followed_template_workflow(current) is not None:
+                    raise MCPToolError(
+                        "INVALID_SCHEMA",
+                        "this workflow follows a template workflow; unfollow it with workflow_follow_template "
+                        "(follow=false), which forks the published render into a stored copy",
+                    )
                 fork_from = followed_template(current)
                 new_data.pop("render_source", None)
             else:
@@ -1031,7 +1042,10 @@ def _refuse_if_render_follows(wda, workflow_id: int) -> None:
     try:
         refuse_edit_if_following(wda.get_definition(workflow_id))
     except RenderFollowsTemplate as exc:
-        raise MCPToolError("CONFLICT", str(exc), details={"follows_template": exc.template_key}) from exc
+        details = {"follows_template": exc.template_key}
+        if getattr(exc, "template_workflow_id", None) is not None:
+            details = {"follows_template_workflow": exc.template_workflow_id}
+        raise MCPToolError("CONFLICT", str(exc), details=details) from exc
 
 
 def _binding_or_none(definition):
@@ -1044,7 +1058,9 @@ def _binding_or_none(definition):
 @register(
     name="workflow_create_from_template",
     description=(
-        "Create a new workflow from a built-in Python seed template. "
+        "Create a new workflow from a built-in Python seed template. To create a TEMPLATE WORKFLOW from a code "
+        "template instead -- render/config/snapshot spec as data that followers pick up with no deploy -- use "
+        "workflow_template_create. "
         "template_key is one of the registered templates in "
         "connect_labs/workflow/templates/*.py (e.g. 'performance_review'); "
         "call list_templates to enumerate. Returns the new workflow_id. "
@@ -2013,8 +2029,17 @@ def workflow_sync_from_deployed_template(
 
         # A workflow that FOLLOWS its template renders the deployed code already;
         # there is no copy to bring forward (workflow/render_source.py).
-        from connect_labs.workflow.render_source import followed_template
+        from connect_labs.workflow.render_source import followed_template, followed_template_workflow
 
+        template_workflow = followed_template_workflow(definition)
+        if template_workflow is not None:
+            return {
+                "workflow_id": workflow_id,
+                "follows_template_workflow": template_workflow,
+                "identical": True,
+                "dry_run": dry_run,
+                "note": "follows a template workflow; edit and publish the template instead -- nothing to sync",
+            }
         following = followed_template(definition)
         if following:
             return {
