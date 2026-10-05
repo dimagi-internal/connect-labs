@@ -227,10 +227,21 @@ scenes:
     target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=source-toggle]
   - kind: wait_for
     target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=source-excerpt]
-  - kind: hold
-    note: the camera stays on History, Sahel's opened email whole below its heading
+  - kind: hover
     say: wrote
-    seconds: 2.0
+    seconds: 1.6
+    note: 'who wrote it: the email head, Sahel''s sender'
+    target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=email-event-head]
+  - kind: hover
+    say: domain
+    seconds: 1.4
+    note: the mail domain it came from
+    target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=email-arrival]
+  - kind: hover
+    say: excerpt
+    seconds: 1.6
+    note: the excerpt of what Sahel wrote
+    target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=source-excerpt]
   - kind: hover
     note: the history line that says Sahel replied with a quote, under the day heading it came in on
     say: answers
@@ -395,6 +406,11 @@ scenes:
     say: reply
     seconds: 2.5
     target: css:[data-testid=draft]:has-text('Our reply') [data-testid=draft-text]
+  - kind: hover
+    say: mailbox
+    seconds: 1.6
+    note: 'Open in mail: ready to send from her own mailbox'
+    target: css:[data-testid=draft]:has-text('Our reply') [data-testid=open-in-mail]
   - kind: hold
     seconds: 3.0
   - kind: snapshot
@@ -443,6 +459,9 @@ scenes:
     note: Award opens its form -- why, when, who -- with what is still open on the tender beside it
     target: testid:award-open
   - kind: wait_for
+    target: css:[data-testid=award-start][open] [data-testid=award-form]
+  - kind: scroll_to
+    note: bring the open Award form up, so the Award line and its still-open chips sit mid-screen
     target: css:[data-testid=award-start][open] [data-testid=award-form]
   - kind: hover
     note: Award Harmattan, with what is still open on the tender -- the deadline in 4 days, silent suppliers,

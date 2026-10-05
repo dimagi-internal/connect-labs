@@ -10,7 +10,7 @@
     "held-on-us",
     "whose-move"
   ],
-  "fetched_at": "2026-10-05T21:59:34.799681+00:00",
+  "fetched_at": "2026-10-05T22:21:49.953588+00:00",
   "name": "supply-sophie-unanswered-round",
   "narrative": "Sophie runs RUTF procurement for the Connect-RUTF program. 17 days ago she asked six suppliers to quote tender 2: half have never answered, despite two reminders, and the deadline is four days off, so chasing them is still worth it; and she forwards whatever does arrive to an AI that records it. Sophie opens tender 2 and reads where it stands: collecting quotes with its deadline in 4 days, three of six answered and three silent, each quote recorded from the supplier's own email with the fact it left out, each silent supplier with when she last chased it and a reminder already drafted, and that the tender has not settled how import duty is handled. She opens the reminder drafted for Sahel, which says when Sahel was asked and last reminded, sends it, and marks it sent from the draft itself; no further reminder falls before the deadline. Sahel answers with a quote; Sophie forwards it, and in the tender's history, turned to replies only, Sahel's email comes first: she opens it beside what the AI recorded from it, the reply dated the day it came in. On the comparison, side by side, no quote can be compared yet: the tender's import duty terms are not settled, so Harmattan's carriage-paid quote, which leaves the import to us, waits on them; Kanem has not stated its pack, and Sahel's quote is ex works, so its freight is ours with no freight estimate recorded, and in euros with no exchange rate recorded; our clearing estimate sits on the quotes we import. Back on the tender she settles import duty on its terms line: we import, under the program's duty waiver. Northgate's three questions are still on her, and Reply opens an email drafted with the three questions, an answer to write under each. The comparison then costs the quotes we import under the waiver: Harmattan's becomes comparable, one of three, landed at its quoted price plus our clearing estimate, while Kanem's pack, our freight estimate for Sahel and Sahel's exchange rate are still missing. Importing makes the paperwork hers, and tender 1 shows what that means: its order with Harmattan is at customs, held, waiting on us. Its status view shows nothing received yet, the invoice billed above the agreed price and the days it is late, and To do lists the documents owed to the forwarder and the invoice to review; the forwarder's email in the order's history says the trucks are held at the border on our import permit. Back on her overview, tender 2 reads what changed: three of six answered and none comparable when she opened it, four answered and 1 of 3 comparable, Harmattan, now, its next move hers, the reply to Northgate; the order is hers too, and a RUSF tender she asked two days ago waits on its suppliers, with the moves on her counted against those waiting on suppliers.",
   "personas": {
@@ -147,7 +147,7 @@
         }
       ],
       "id": "what-we-owe-northgate",
-      "narrative": "Back on the tender, Sophie settles import duty: we import, under the program's duty waiver, and the terms line reads it, just recorded. That answers who imports, the third of Northgate's questions, and Reply opens the reply drafted for them: each question restated with room for her answer, and the duty terms she just set already written in, ready to send from her own mailbox.",
+      "narrative": "Back on the tender, Sophie settles import duty: we import, under the program's duty waiver, and the terms line reads it, just recorded. That settles who imports, the third of Northgate's questions, and Reply opens the reply drafted for them: each question restated with room for her answer, and the duty terms she just set written in, ready to send from her own mailbox.",
       "persona": "sophie",
       "provenance": "S5",
       "title": "She settles the tender's duty terms; the reply to Northgate is drafted"
@@ -221,5 +221,5 @@
     }
   ],
   "slug": "supply-sophie-unanswered-round",
-  "version": 48
+  "version": 49
 }
