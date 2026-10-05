@@ -1,5 +1,7 @@
 # KMC FLW Flag Report Template — Design
 
+> **Status: shipped (2026-03-07) — historical record, not current-state.**
+
 **Date:** 2026-03-07
 **Status:** Approved
 **Template key:** `kmc_flw_flags`

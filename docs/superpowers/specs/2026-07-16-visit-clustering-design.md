@@ -1,5 +1,7 @@
 # Visit Clustering — Weekly Dual-Track Image Audit
 
+> **Status: shipped (PR #931, 2026-07-16) — historical record, not current-state.**
+
 **Date:** 2026-07-16
 **Status:** Approved (per-section), pending spec review
 

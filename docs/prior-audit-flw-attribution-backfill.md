@@ -1,5 +1,7 @@
 # After deploying "Highlight FLW's name the number of times they have been flagged for any number of duplicates"
 
+> **Status: shipped (PR #1413, 2026-09-02) — one-time runbook — historical record, not current-state.**
+
 The bulk audit review screen gained a per-FLW duplicate/fake history strip. It reads
 `PriorAuditVerdict.username` and `.visit_date`, two columns added by
 `audit/0006_prior_audit_flw_and_visit_date`.

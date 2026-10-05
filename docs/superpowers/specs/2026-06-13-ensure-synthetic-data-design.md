@@ -1,5 +1,7 @@
 # `ensure_synthetic_data` — a composite-manifest synthetic-environment dispatcher
 
+> **Status: shipped (PR #554, 2026-06-13) — historical record, not current-state.**
+
 **Date:** 2026-06-13
 **Status:** Design approved; ready for implementation plan.
 

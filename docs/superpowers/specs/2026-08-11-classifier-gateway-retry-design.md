@@ -1,5 +1,7 @@
 # AI Classifier Gateway Retry — Design
 
+> **Status: shipped (PR #1178, 2026-08-14) — historical record, not current-state.**
+
 **Status:** Approved, implementing.
 **Date:** 2026-08-11
 

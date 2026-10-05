@@ -1,5 +1,7 @@
 # KMC Synthetic Clone Runbook
 
+> **Status: superseded (PR #2140, 2026-10-01) — use `synthetic_clone_opp` per docs/SYNTHETIC_OPPS.md — historical record, not current-state.**
+
 Clone the 11 production KMC opportunities into a single labs-only "KMC (Synthetic)" program
 using the two-phase profile/generate workflow.
 

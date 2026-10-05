@@ -1,5 +1,7 @@
 # Microplans left-rail: accordion + map Layers/Inspector panel
 
+> **Status: shipped (PRs #341–#346, 2026-05-31) — historical record, not current-state.**
+
 > **Status:** PLAN for review. Two parallel efforts are in flight — (1) combining
 > the setup (create) and review (edit) screens, and (2) a broad code refactor.
 > This plan is written **contract-first** so it maps cleanly onto whatever the

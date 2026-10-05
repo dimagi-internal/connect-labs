@@ -1,5 +1,7 @@
 # High-fidelity synthetic generator + clone KMC opps into one labs-only program
 
+> **Status: shipped (PR #655, 2026-06-19) — flow later reorganised around profile→generate (#2124) — historical record, not current-state.**
+
 **Date:** 2026-06-18
 **Status:** Design — pending review
 **Author:** Jonathan Jackson (with Claude)

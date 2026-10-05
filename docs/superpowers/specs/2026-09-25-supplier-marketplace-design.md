@@ -1,5 +1,7 @@
 # The supplier marketplace — design
 
+> **Status: shipped (PR #2019, 2026-09-25) — historical record, not current-state.**
+
 **Status:** design agreed in conversation 2026-09-25; spec awaiting review.
 **Reads against:** `2026-09-11-rutf-procurement-design.md` (the domain, and §7's
 "a tokenized supplier form attaches to the same records later"),

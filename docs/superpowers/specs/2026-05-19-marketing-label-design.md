@@ -1,5 +1,7 @@
 # Design: `[Marketing]` Labels in Weekly Changelog
 
+> **Status: shipped (2026-05-19) — historical record, not current-state.**
+
 **Date:** 2026-05-19  
 **Status:** Approved
 

@@ -1,5 +1,7 @@
 # Multi-Opportunity Workflows — Design
 
+> **Status: shipped (PR #58, 2026-04-19) — current contract is WORKFLOW_REFERENCE.md §8 — historical record, not current-state.**
+
 **Status:** Draft
 **Date:** 2026-04-17
 **Owner:** jjackson@dimagi.com
