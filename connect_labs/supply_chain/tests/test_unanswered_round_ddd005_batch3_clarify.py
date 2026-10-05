@@ -133,8 +133,14 @@ def test_an_answer_that_sets_terms_drafts_to_everyone_not_only_the_asker(da, rou
         duty_terms="buyer_waiver",
     )
     drafts = _clarifications(da, tender_id)
-    assert len(drafts) == 3
+    # Everyone else is told; the asker is owed a reply already, and the terms go into it instead.
+    assert len(drafts) == 2
+    assert asker["id"] not in {d["supplier_id"] for d in drafts}
     assert "from your answer to Northwind Commodities" in drafts[0]["why"]
+    everything = op(da, "tender_drafts_render", tender_id=tender_id, today=TODAY.isoformat())["drafts"]
+    (reply,) = (d for d in everything if d["kind"] == "reply")
+    assert "\n\nFor this tender we import, under the program's duty waiver" in reply["text"]
+    assert reply["text"].count("For this tender") == 1
 
 
 def test_closed_round_drafts_no_clarification(da, round_):

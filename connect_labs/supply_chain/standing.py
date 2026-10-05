@@ -24,7 +24,9 @@ from connect_labs.supply_chain.history.labels import actor_label, is_ai
 from connect_labs.supply_chain.history.timeline import contract_scope_revisions, tender_scope_revisions
 
 # The six steps every procurement moves through, tender to delivery.
-STAGES = ("Requested", "Collecting quotes", "Comparing", "Awarding", "Ordered", "Delivered")
+# Steps, not outcomes: an order held at customs is in its Delivery step, which a step named
+# "Delivered" would have claimed done. All six done is delivered.
+STAGES = ("Requested", "Collecting quotes", "Comparing", "Awarding", "Ordered", "Delivery")
 
 # The order's chain, in order; the stage is the furthest one reached.
 ORDER_STAGES = ("placed", "dispatched", "received", "invoiced", "paid")
