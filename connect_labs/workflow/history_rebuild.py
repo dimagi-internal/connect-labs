@@ -462,6 +462,13 @@ def rebuild_history(
             }
         )
 
+    # The batch's materialised Layer 1 tables, and where its time went.
+    from connect_labs.workflow.snapshot_builders import drop_layer1_tables
+
+    drop_layer1_tables(memo)
+    if memo.get("timings"):
+        report["timings"] = dict(memo["timings"])
+
     # The history is the peer TREND, so a finished rebuild republishes every cohort
     # that follows this workflow -- from its newest run, once, not once per period.
     # Publishing before rebuilding is what left an older opportunity with no line.
