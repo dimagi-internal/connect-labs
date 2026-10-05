@@ -65,7 +65,10 @@ export interface EnrolmentProgress {
   cumTargetToDate: number;
   gap: number;
   gapPct: number | null;
+  /** Whole months after the as-of month. */
   remainingMonths: number;
+  /** How much of the as-of month had elapsed (1 when it is complete). */
+  asOfFraction: number;
   runRateNeeded: number | null;
   /** Past months whose actual could not be read (an old run's suppressed cell). */
   unknownMonths: string[];
@@ -107,6 +110,16 @@ function monthsBetween(a: string, b: string): string[] {
     cur = nextMonth(cur);
   }
   return out;
+}
+
+/** Share of its month a date has reached: 2026-10-04 -> 4/31. 1 if unparseable. */
+export function elapsedFraction(date: string): number {
+  const y = Number(date.slice(0, 4)),
+    m = Number(date.slice(5, 7)),
+    d = Number(date.slice(8, 10));
+  if (!y || !m || !d) return 1;
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return Math.min(1, d / days);
 }
 
 /** The LLOs that have at least one target, in config order. */
@@ -211,13 +224,21 @@ export function enrolmentProgress(opts: {
     carryIn += Number(targets.llos![llo].before_window) || 0;
   });
 
+  // The as-of month is part-way through: a report as of 4 October has had four
+  // days of October's target, not all of it. Holding it to the whole month read
+  // PIPN as 1,000 behind on the first Sunday of a 1,200 month. So the month's
+  // target is PRO-RATED by the days elapsed, in "target to date" and in the
+  // months still to cover; the bars and the cumulative target line keep whole
+  // months, which is what the goals sheet states.
+  const fraction = elapsedFraction(String(opts.asOf || ''));
   let cumT = carryIn,
     cumA = carryIn,
     cumTargetToDate = carryIn;
   const months: MonthProgress[] = perMonth.map(function (m) {
     cumT += m.target;
     if (!m.future) {
-      cumTargetToDate = cumT;
+      cumTargetToDate =
+        m.month === asOfMonth ? cumT - m.target * (1 - fraction) : cumT;
       cumA += m.actual || 0;
     }
     return Object.assign({}, m, {
@@ -228,9 +249,14 @@ export function enrolmentProgress(opts: {
     });
   });
   const goal = cumT;
-  const remaining = months.filter(function (m) {
+  const futureMonths = months.filter(function (m) {
     return m.future;
   }).length;
+  const inWindow = months.some(function (m) {
+    return m.month === asOfMonth;
+  });
+  // What is left of the as-of month counts as time still to enrol in.
+  const remaining = futureMonths + (inWindow ? 1 - fraction : 0);
   const gap = cumA - cumTargetToDate;
   return {
     scope: opts.scope,
@@ -243,8 +269,9 @@ export function enrolmentProgress(opts: {
     cumTargetToDate: cumTargetToDate,
     gap: gap,
     gapPct: cumTargetToDate ? gap / cumTargetToDate : null,
-    remainingMonths: remaining,
-    runRateNeeded: remaining ? Math.max(0, goal - cumA) / remaining : null,
+    remainingMonths: futureMonths,
+    asOfFraction: inWindow ? fraction : 1,
+    runRateNeeded: remaining > 0 ? Math.max(0, goal - cumA) / remaining : null,
     unknownMonths: Object.keys(unknown).sort(),
   };
 }
@@ -495,7 +522,14 @@ export function EnrolmentTargetSummary(props: {
       {
         label: 'Target to date',
         value: nCount(p.cumTargetToDate),
-        sub: 'cumulative through ' + monthLbl(p.asOfMonth),
+        sub:
+          p.asOfFraction < 1
+            ? 'through ' +
+              monthLbl(p.asOfMonth) +
+              ', its target pro-rated to the ' +
+              Math.round(p.asOfFraction * 100) +
+              '% of the month elapsed'
+            : 'cumulative through ' + monthLbl(p.asOfMonth),
       },
       {
         label: behind ? 'Behind target' : 'Ahead of target',
@@ -516,13 +550,17 @@ export function EnrolmentTargetSummary(props: {
       {
         label: 'Needed per month',
         value: p.runRateNeeded === null ? '—' : nCount(p.runRateNeeded),
-        sub: p.remainingMonths
-          ? 'over the ' +
-            p.remainingMonths +
-            ' remaining month' +
-            (p.remainingMonths === 1 ? '' : 's') +
-            ' to reach the goal'
-          : 'the window has closed',
+        sub:
+          p.runRateNeeded === null
+            ? 'the window has closed'
+            : 'over the ' +
+              (p.asOfFraction < 1
+                ? 'rest of ' + monthLbl(p.asOfMonth, true) + ' and the '
+                : '') +
+              p.remainingMonths +
+              ' remaining month' +
+              (p.remainingMonths === 1 ? '' : 's') +
+              ' to reach the goal',
       },
     ];
   return (
