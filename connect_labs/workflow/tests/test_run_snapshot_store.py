@@ -209,6 +209,26 @@ class TestWrite:
         assert run.snapshot == big_snapshot
         assert server.child_gets() == []
 
+    def test_a_child_connect_refuses_leaves_the_run_saved_inline(self, connect, big_snapshot):
+        """The child record is the optimisation, never the save: if Connect will not
+        take it, the run stores its snapshot inline, exactly as before this module."""
+        wda, server = connect
+        real_post = server.post
+
+        def refuse_children(url, json=None, **kwargs):
+            if json and json[0].get("type") == SNAPSHOT_RECORD_TYPE:
+                raise httpx.HTTPStatusError("400", request=MagicMock(), response=MagicMock(status_code=400))
+            return real_post(url, json=json, **kwargs)
+
+        wda.labs_api.http_client.post.side_effect = refuse_children
+        run = _completed_run(wda, big_snapshot)
+        stored = server.stored[run.id]["data"]
+        assert stored["status"] == "completed"
+        assert stored["snapshot"]["$codec"] == CODEC_ID
+        assert REF_KEY not in stored and SUMMARY_KEY not in stored
+        assert server.of_type(SNAPSHOT_RECORD_TYPE) == {}
+        assert wda.get_run(run.id).snapshot == big_snapshot
+
     def test_small_snapshot_stays_inline(self, connect):
         wda, server = connect
         run = _completed_run(wda, _small_snapshot())
