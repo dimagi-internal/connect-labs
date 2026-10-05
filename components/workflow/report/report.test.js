@@ -816,4 +816,78 @@ describe('enrolment against target (VERSION 5)', () => {
     expect(out).toContain('pro-rated');
     expect(out).toContain('rest of Oct');
   });
+  test('VERSION 6: the monthly chart is bars only, on one axis', () => {
+    expect(R.VERSION).toBeGreaterThanOrEqual(6);
+    const p = progress('NAMA');
+    const svg = html(h(R.EnrolmentMonthlyChart, { progress: p }));
+    expect(svg).toContain('Monthly enrolment');
+    expect(svg).toContain('future: target only');
+    expect(svg).not.toContain('<path');
+    expect(svg).not.toContain('right axis');
+  });
+
+  test('VERSION 6: the cumulative target passes through target-to-date at the as-of date', () => {
+    const p = R.enrolmentProgress({
+      targets: TARGETS,
+      monthlyByScope: {
+        'llo:PIPN': [...BY_SCOPE['llo:PIPN'], pt('2026-10', 210)],
+      },
+      asOf: '2026-10-04',
+      scope: 'PIPN',
+    });
+    const knots = R.cumulativeKnots(p);
+    const f = 4 / 31;
+    const asOf = knots.find((k) => Math.abs(k.at - (3 + f)) < 1e-9);
+    expect(asOf.target).toBeCloseTo(p.cumTargetToDate, 6);
+    expect(asOf.enrolled).toBe(p.cumActual);
+    expect(knots[0]).toEqual({ at: 0, target: 309, enrolled: 309 });
+    expect(knots[knots.length - 1]).toEqual({
+      at: 9,
+      target: 9659,
+      enrolled: null,
+    });
+    // Nothing enrolled is drawn past the as-of date.
+    expect(knots.filter((k) => k.at > 3 + f && k.enrolled !== null)).toEqual(
+      [],
+    );
+  });
+
+  test("VERSION 6: an LLO's running total starts where its actuals start", () => {
+    const knots = R.cumulativeKnots(progress('EHA'));
+    const drawn = knots.filter((k) => k.enrolled !== null);
+    expect(drawn[0]).toEqual({ at: 1, target: 0, enrolled: 0 });
+  });
+
+  test('VERSION 6: the cumulative chart labels its lines and shades the gap', () => {
+    const ahead = html(
+      h(R.EnrolmentCumulativeChart, { progress: progress('NAMA') }),
+    );
+    expect(ahead).toContain('Cumulative enrolment vs goal');
+    expect(ahead).toContain('Enrolled 774');
+    expect(ahead).toContain('Target 756');
+    expect(ahead).toContain('Goal 1,515');
+    expect(ahead).toContain('#16a34a');
+    expect(ahead).toContain(
+      'Running total since Jul, including the 165 enrolled before Jul. Above the dashed line = ahead of target.',
+    );
+    const behind = R.enrolmentProgress({
+      targets: TARGETS,
+      monthlyByScope: {
+        'llo:NAMA': [
+          pt('2026-07', 100),
+          pt('2026-08', 100),
+          pt('2026-09', 100),
+        ],
+      },
+      asOf: '2026-09-30',
+      scope: 'NAMA',
+    });
+    expect(html(h(R.EnrolmentCumulativeChart, { progress: behind }))).toContain(
+      '#dc2626',
+    );
+    // No carry-in, no "including" clause.
+    expect(
+      html(h(R.EnrolmentCumulativeChart, { progress: progress('EHA') })),
+    ).toContain('Running total since Jul. Above the dashed line');
+  });
 });
