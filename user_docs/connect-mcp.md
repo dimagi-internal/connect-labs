@@ -204,7 +204,7 @@ A pipeline source can cover an **entire program** rather than a single opportuni
 
 When a program-scoped source is used:
 
-- **Access is limited to the managing organisation.** Only people whose organisation manages the program can see that data. People whose organisation runs one of the program's opportunities (partner network organisations) cannot — so one cohort's partner never sees another cohort's raw data.
+- **Access is limited to the managing organization.** Only people whose organization manages the program can see that data. People whose organization runs one of the program's opportunities (partner network organizations) cannot — so one cohort's partner never sees another cohort's raw data.
 - **The Drive data is read once for the whole program.** Before, a program dashboard that spanned many opportunities would have read the same rows once per opportunity. Now the data is fetched a single time regardless of how many opportunities the program contains.
 
 You can build a program-scoped pipeline through MCP: create the pipeline in the program, preview it, create a program-owned dashboard, and attach the pipeline (including "load on demand" if the dataset is large).
