@@ -12,6 +12,7 @@ from django.db import models
 from django.utils import timezone
 
 from connect_labs.workflow.run_codec import decode_record_data
+from connect_labs.workflow.run_snapshot_store import LazyRunData
 
 
 class LocalLabsRecord:
@@ -34,7 +35,13 @@ class LocalLabsRecord:
         # A workflow run's snapshot is stored columnar (see workflow/run_codec.py);
         # decoding here, the one place every record is built, means no reader ever
         # sees the storage format. A no-op for every other record type.
-        self.data: dict = decode_record_data(self.type, api_data["data"])
+        #
+        # A run whose snapshot lives in a child record (workflow/run_snapshot_store.py)
+        # arrives here as a LazyRunData carrying its loader -- the DAO re-wraps client
+        # results in WorkflowRunRecord -- and is kept AS IS: decoding it would ask for
+        # its snapshot, which is exactly the fetch it exists to defer.
+        raw = api_data["data"]
+        self.data: dict = raw if isinstance(raw, LazyRunData) else decode_record_data(self.type, raw)
         self.username: str | None = api_data.get("username")  # Primary user identifier (not user_id)
         self.opportunity_id: int = api_data["opportunity_id"]
         self.organization_id: str | None = api_data.get("organization_id")

@@ -17,6 +17,7 @@ from django.db.models import Q
 
 from connect_labs.labs.models import LocalLabsRecord
 from connect_labs.labs.synthetic.models import LABS_ONLY_OPP_ID_FLOOR, LabsLocalRecord, SyntheticOpportunity
+from connect_labs.workflow.run_snapshot_store import SNAPSHOT_RECORD_TYPE
 
 
 def is_labs_only_opportunity_id(opportunity_id: int | None) -> bool:
@@ -204,11 +205,16 @@ def delete_records(
     """
     if not record_ids:
         return
-    qs = LabsLocalRecord.objects.filter(id__in=record_ids)
     if opportunity_id is not None:
-        qs = qs.filter(opportunity_id=opportunity_id)
+        scope = Q(opportunity_id=opportunity_id)
     elif program_id is not None:
-        qs = qs.filter(program_id=program_id)
+        scope = Q(program_id=program_id)
     else:
         raise ValueError("delete_records requires an opportunity_id or program_id scope")
-    qs.delete()
+    doomed = list(LabsLocalRecord.objects.filter(scope, id__in=record_ids).values_list("id", flat=True))
+    # A run's externalized snapshot goes with its run. Connect gets this from the
+    # ON DELETE CASCADE on `LabsRecord.labs_record`; `labs_record_id` here is a
+    # plain integer column, so the cascade is done by hand -- for this type only,
+    # the one whose lifetime is by construction its parent's.
+    children = Q(labs_record_id__in=doomed, type=SNAPSHOT_RECORD_TYPE)
+    LabsLocalRecord.objects.filter(Q(id__in=doomed) | children).delete()
