@@ -70,7 +70,7 @@ class TestTheMapDrawsThem:
     def _areas(self, *specs):
         return [{"lat": 0.5, "lon": x, "precision": p, "label": label, "iso3": iso3} for label, x, p, iso3 in specs]
 
-    def test_one_point_per_area(self, db):
+    def test_one_point_per_area_when_there_is_no_town_level_hq(self, db):
         org = make_partner("Lakeshore Health Trust", "LHT", countries=["Nigeria", "Kenya"], lat=9.0, lon=7.0)
         org.marketplace_profile.operating_areas = self._areas(
             ("Borno", 10.5, "region", "NGA"), ("Yobe", 12.5, "region", "NGA"), ("Kenya", 30.5, "country", "KEN")
@@ -93,3 +93,43 @@ class TestTheMapDrawsThem:
         make_partner("Unresolved Trust", "UT", countries=["Kenya"], lat=1.0, lon=36.0, location_precision="city")
         points = queries.map_points(queries.all_rows_with_rounds(), set())
         assert [(p["lat"], p["precision"]) for p in points] == [(1.0, "city")]
+
+    def test_a_town_level_hq_is_the_one_dot(self, db):
+        """The head office wins. Listing eight countries of operation used to
+        draw eight hollow rings for one organisation."""
+        org = make_partner(
+            "Lakeshore Health Trust",
+            "LHT",
+            countries=["Nigeria", "Kenya"],
+            lat=11.8,
+            lon=13.2,
+            location_precision="city",
+            location_label="Maiduguri",
+            country_iso3="NGA",
+        )
+        org.marketplace_profile.operating_areas = self._areas(
+            ("Yobe", 12.5, "region", "NGA"), ("Kenya", 30.5, "country", "KEN")
+        )
+        org.marketplace_profile.save()
+        points = queries.map_points(queries.all_rows_with_rounds(), set())
+        assert [(p["place"], p["precision"]) for p in points] == [("Maiduguri", "city")]
+
+    def test_a_country_filter_outside_the_hq_falls_back_to_where_it_works(self, db):
+        org = make_partner(
+            "Lakeshore Health Trust",
+            "LHT",
+            countries=["Nigeria", "Kenya"],
+            lat=11.8,
+            lon=13.2,
+            location_precision="city",
+            location_label="Maiduguri",
+            country_iso3="NGA",
+        )
+        org.marketplace_profile.operating_areas = self._areas(
+            ("Yobe", 12.5, "region", "NGA"), ("Kenya", 30.5, "country", "KEN")
+        )
+        org.marketplace_profile.save()
+        assert [p["place"] for p in queries.map_points(queries.all_rows_with_rounds(), set(), ["Kenya"])] == ["Kenya"]
+        assert [p["place"] for p in queries.map_points(queries.all_rows_with_rounds(), set(), ["Nigeria"])] == [
+            "Maiduguri"
+        ]
