@@ -28,6 +28,10 @@ from connect_labs.supply_chain.history.timeline import contract_scope_revisions,
 # "Delivered" would have claimed done. All six done is delivered.
 STAGES = ("Requested", "Collecting quotes", "Comparing", "Awarding", "Ordered", "Delivery")
 
+# An order row's bar on the overview: the order page's steps (fulfilment/status.order_status),
+# so the two cannot disagree about where an order is.
+ORDER_BAR = ("Awarded", "Ordered", "Dispatched", "In transit", "Received", "Paid")
+
 # The order's chain, in order; the stage is the furthest one reached.
 ORDER_STAGES = ("placed", "dispatched", "received", "invoiced", "paid")
 IN_TRANSIT = "in transit"
@@ -65,9 +69,14 @@ class Row:
     # How many quotes the comparison can rank, and whose: "1 of 3 comparable · Harmattan".
     comparable_chip: str = ""
     comparable_count: int = 0
+    # An order's bar is the order page's own six steps (ORDER_BAR), not the tender's:
+    # read against the tender's steps, an order held at customs looked delivered.
+    bar_index: int | None = None
 
     @property
     def bars(self) -> list[str]:
+        if self.bar_index is not None:
+            return ["done" if i < self.bar_index else "now" if i == self.bar_index else "todo" for i in range(6)]
         return stage_bars(self.stage_index)
 
     @property
@@ -440,6 +449,19 @@ def _order_rows(program_id, today, until, own_org_id, *, only=None, keep_done=Fa
             contract, today, holds=holds.get(contract.pk, []), commitments=owed.get(contract.pk, [])
         )
         delivered = contract.pk in received_contracts and contract.status != "part_received"
+        # The order page's step test, step by step (fulfilment/status.order_status).
+        mine = shipments.get(contract.pk, [])
+        received_any = contract.pk in received_contracts
+        moving = [s for s in mine if s.pk not in received_shipments and s.status != "lost" and _dispatched(s)]
+        bar_done = [
+            True,
+            contract.status != "draft",
+            any(_dispatched(s) for s in mine) or received_any,
+            received_any and (not moving or delivered),
+            delivered,
+            contract.pk in paid,
+        ]
+        bar_index = next((i for i, d in enumerate(bar_done) if not d), len(bar_done))
         # Done on both counts and nothing owed: no longer an active order.
         if delivered and contract.pk in paid and not ours and not keep_done:
             continue
@@ -466,6 +488,7 @@ def _order_rows(program_id, today, until, own_org_id, *, only=None, keep_done=Fa
                 title=f"{title} · {contract.supplier.name}",
                 url=reverse("supply_chain:order_detail", args=[contract.pk]),
                 stage_index=index,
+                bar_index=bar_index,
                 stage=stage,
                 sub=sub,
                 ours=ours,
