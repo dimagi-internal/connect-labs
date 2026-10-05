@@ -19,7 +19,11 @@ from connect_labs.semantic.explain import UnknownIndicator, english, explain
 from connect_labs.semantic.runtime import normalise_deployment_facts
 from connect_labs.semantic.seed import registry_payload
 from connect_labs.semantic.validation import RegistryInvalid, validate_registry
-from connect_labs.workflow.data_access import SemanticRegistryDataAccess
+from connect_labs.workflow.data_access import (
+    RegistryBindingsUnknown,
+    SemanticRegistryDataAccess,
+    find_registry_bindings,
+)
 
 from ..connect_token import require_connect_token
 from ..tool_registry import MCPToolError, register
@@ -129,7 +133,9 @@ def semantic_registry_validate(user, properties_doc: dict, indicators_doc: dict,
     description=(
         "Create a semantic registry. Pass `seed_from` ('kmc', 'visit_quality') to copy one of the "
         "built-in on-disk registries as the starting point, or supply the documents "
-        "directly. Refuses anything that does not validate."
+        "directly. Requires a scope -- one of organization_id, program_id or opportunity_id -- "
+        "which is where the registry lives and the scope to read, update or delete it through. "
+        "Refuses anything that does not validate."
     ),
     input_schema={
         "type": "object",
@@ -176,6 +182,16 @@ def semantic_registry_create(
             "INVALID_SCHEMA",
             "supply properties_doc and indicators_doc, or seed_from to copy a built-in registry.",
         )
+    if opportunity_id is None and program_id is None and organization_id is None:
+        # A record created with no scope is readable by nobody: Connect answers a
+        # read with no scope from the PUBLIC records only, and every scoped read
+        # filters on a scope this record does not have. It used to be minted anyway
+        # and its id handed back -- registry 25526 (#2233).
+        raise MCPToolError(
+            "INVALID_SCHEMA",
+            "name the scope the registry lives in: pass one of organization_id, program_id or "
+            "opportunity_id. A registry created with no scope cannot be read back, listed or deleted.",
+        )
 
     access = _access(user, opportunity_id, program_id, organization_id)
     try:
@@ -192,6 +208,120 @@ def semantic_registry_create(
     finally:
         access.close()
     return _summary(record)
+
+
+def _bindings_scopes(user, token, home: dict) -> list[dict]:
+    """Every scope a workflow binding this registry could be read from by this caller.
+
+    The registry's own scope, the public (shared) workflows, and every organisation,
+    programme and opportunity the caller holds. A workflow in a scope the caller
+    does not hold cannot be seen, so it cannot be counted.
+    """
+    from connect_labs.labs.access.scopes import Caller, ScopesUnavailable, holdings
+
+    try:
+        held = holdings(Caller(user=user, access_token=token))
+    except ScopesUnavailable as exc:
+        raise MCPToolError(
+            "UPSTREAM_UNAVAILABLE",
+            f"cannot check which workflows bind this registry ({exc}), so it was not deleted.",
+        ) from exc
+    scopes = [dict(home), {}]
+    for org in held.org_slugs:
+        if str(org).isdigit():
+            scopes.append({"organization_id": int(org)})
+    scopes += [{"program_id": p} for p in sorted(held.program_ids)]
+    scopes += [{"opportunity_id": o} for o in sorted(held.opportunity_ids)]
+    unique, seen = [], set()
+    for scope in scopes:
+        key = tuple(sorted(scope.items()))
+        if key not in seen:
+            seen.add(key)
+            unique.append(scope)
+    return unique
+
+
+@register(
+    name="semantic_registry_delete",
+    description=(
+        "Delete a semantic registry. IRREVERSIBLE. Name the scope it lives in: exactly one of "
+        "organization_id, program_id or opportunity_id (the scope it was created with). Needs "
+        "write access to that scope -- the same access semantic_registry_update needs. Refuses "
+        "while any workflow binds the registry through its registry_source, and names those "
+        "workflows: rebind or delete them first. The check covers every scope you can read; a "
+        "workflow in a scope you do not hold cannot be seen."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {"registry_id": {"type": "integer"}, **_SCOPE_PROPS},
+        "required": ["registry_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def semantic_registry_delete(user, registry_id: int, opportunity_id=None, program_id=None, organization_id=None):
+    home = {
+        k: v
+        for k, v in (
+            ("organization_id", organization_id),
+            ("program_id", program_id),
+            ("opportunity_id", opportunity_id),
+        )
+        if v is not None
+    }
+    if len(home) != 1:
+        raise MCPToolError(
+            "INVALID_SCHEMA",
+            "name the one scope the registry lives in: exactly one of organization_id, program_id "
+            f"or opportunity_id (got {sorted(home) or 'none'}).",
+        )
+
+    access = _access(user, **home)
+    try:
+        # An exact-scope read: Connect 404s a scoped read for anyone who is not a
+        # member of that scope, so finding it HERE is the write-access check. A
+        # shared registry read from outside its scope does not count.
+        record = access.get_registry_in_scope(registry_id)
+        if record is None:
+            raise MCPToolError(
+                "NOT_FOUND",
+                f"No semantic registry {registry_id} in {_scope_label(home)} that you can write. "
+                "Name the scope it was created in.",
+            )
+
+        try:
+            bindings = find_registry_bindings(
+                access.access_token, registry_id, _bindings_scopes(user, access.access_token, home)
+            )
+        except RegistryBindingsUnknown as exc:
+            raise MCPToolError(
+                "UPSTREAM_UNAVAILABLE",
+                f"cannot check which workflows bind registry {registry_id}: {exc}. Not deleted.",
+            ) from exc
+        if bindings:
+            ids = ", ".join(str(b["workflow_id"]) for b in bindings)
+            raise MCPToolError(
+                "CONFLICT",
+                f"registry {registry_id} is bound by workflow(s) {ids}; deleting it would break them. "
+                "Rebind them (workflow_update_definition registry_source) or delete them first. Not deleted.",
+                details={"workflows": bindings},
+            )
+
+        access.delete_registry(registry_id)
+        # Connect's DELETE answers 200 even when it skipped an id the caller could
+        # not delete, so "no error" is not "deleted": read it back.
+        if access.get_registry_in_scope(registry_id) is not None:
+            raise MCPToolError(
+                "PERMISSION_DENIED",
+                f"Connect did not delete registry {registry_id} in {_scope_label(home)}; it is still there.",
+            )
+    finally:
+        access.close()
+    return {"registry_id": registry_id, "name": record.name, "deleted": True, "scope": home}
+
+
+def _scope_label(scope: dict) -> str:
+    return ", ".join(f"{k}={v}" for k, v in scope.items())
 
 
 #: Item-level edits, by the document and list each one lands in. A registry is
