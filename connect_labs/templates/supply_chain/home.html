@@ -25,7 +25,7 @@ tenders and orders sit folded below.
     </div>
     <div class="flex flex-wrap gap-3">
       {% if not supply_as_of %}
-      <div class="stat-tile flex-row items-center gap-2" data-testid="standing-our-moves"><span class="stat-tile-value">{{ move_counts.ours }}</span><span class="status-chip status-chip--ours">on us</span></div>
+      <div class="stat-tile flex-row items-center gap-2" data-testid="standing-our-moves"><span class="stat-tile-value">{{ move_counts.ours }}</span><span class="status-chip status-chip--ours">to do</span></div>
       <div class="stat-tile flex-row items-center gap-2" data-testid="standing-their-moves"><span class="stat-tile-value">{{ move_counts.theirs }}</span><span class="status-chip status-chip--theirs">waiting on suppliers</span></div>
       {% endif %}
     </div>
@@ -40,7 +40,7 @@ tenders and orders sit folded below.
             <th scope="col" class="w-[22%] px-5 pb-2 pt-3.5 font-medium">Procurement</th>
             <th scope="col" class="w-[20%] px-3 pb-2 pt-3.5 font-medium">Stage</th>
             <th scope="col" class="px-3 pb-2 pt-3.5 font-medium">Next move</th>
-            <th scope="col" class="w-28 px-3 pb-2 pt-3.5 font-medium">Whose</th>
+            <th scope="col" class="w-28 px-3 pb-2 pt-3.5 font-medium">To do · waiting</th>
             <th scope="col" class="w-32 px-5 pb-2 pt-3.5 font-medium">Last change</th>
           </tr>
         </thead>
@@ -76,7 +76,7 @@ tenders and orders sit folded below.
                 </div>
               {% else %}<span class="text-gray-600">—</span>{% endif %}{% endwith %}
             </td>
-            <td class="px-3 py-4">{% if row.whose %}<span class="flex flex-col items-start gap-1" data-testid="whose" data-whose="{{ row.whose }}">{% if row.ours %}<span class="status-chip status-chip--ours" data-testid="whose-us" data-count="{{ row.ours|length }}">Us {{ row.ours|length }}</span>{% endif %}{% if row.theirs %}<span class="status-chip status-chip--theirs" data-testid="whose-suppliers" data-count="{{ row.theirs|length }}">Suppliers {{ row.theirs|length }}</span>{% endif %}</span>{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
+            <td class="px-3 py-4">{% if row.whose %}<span class="flex flex-col items-start gap-1" data-testid="whose" data-whose="{{ row.whose }}">{% if row.ours %}<span class="status-chip status-chip--ours" data-testid="whose-us" data-count="{{ row.ours|length }}">To do {{ row.ours|length }}</span>{% endif %}{% if row.theirs %}<span class="status-chip status-chip--theirs" data-testid="whose-suppliers" data-count="{{ row.theirs|length }}">Waiting {{ row.theirs|length }}</span>{% endif %}</span>{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
             <td class="whitespace-nowrap px-5 py-4 text-gray-600">
               {% if row.last_change_at %}
                 {% if supply_as_of %}<span data-testid="last-change" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|date:'j M Y' }}</span>

@@ -175,8 +175,8 @@ def test_the_suppliers_card_counts_answered_as_the_stage_bar_does():
 
 
 def test_gap_tags_name_who_supplies_the_fact():
-    assert supplies(rules.US) == "we supply"
-    assert supplies(rules.SUPPLIERS) == "supplier supplies"
+    assert supplies(rules.US) == "to do"
+    assert supplies(rules.SUPPLIERS) == "waiting"
     source = get_template("supply_chain/home.html").template.source
     assert '"supply_chain/_fact_chip.html"' in source
     assert "owner|supplies" in get_template("supply_chain/_fact_chip.html").template.source

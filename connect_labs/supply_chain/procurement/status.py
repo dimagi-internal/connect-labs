@@ -253,7 +253,7 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
             # the quote (and what Ask asks for); ours are a count, linking to the comparison.
             ours_g, theirs_g = split_gaps(open_facts.get(quote.pk, []))
             row["missing"] = theirs_g
-            row["on_us"] = _plural(len(ours_g), "fact") + " on us" if ours_g else ""
+            row["on_us"] = rules.facts_chip(ours_g, rules.US)
             row["on_us_href"] = (
                 reverse("supply_chain:procurement_comparison", args=[tender.pk]) + f"?commodity={quote.commodity.slug}"
                 if ours_g
@@ -369,7 +369,7 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
             "sub": " · ".join(
                 p
                 for p in (
-                    f"{_plural(waiting_us, 'quote')} with facts on us" if waiting_us else "",
+                    f"{_plural(waiting_us, 'quote')} with facts to do" if waiting_us else "",
                     (
                         f"{_plural(supplier_facts, 'fact')} missing from {_plural(supplier_count, 'supplier')}"
                         if supplier_facts
@@ -381,7 +381,7 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
             "tone": "",
         },
         {
-            "label": "Moves on us",
+            "label": rules.TO_DO,
             "value": str(len(ours)),
             "sub": f"oldest open {_plural((today - oldest).days, 'day')}" if oldest and oldest <= today else "",
             "tone": OURS if ours else "",
@@ -606,9 +606,9 @@ def comparison_grid(
             chips.append({"label": "Comparable", "tone": PRIMARY})
         if row["quote_id"] not in awarded:
             if our_gaps:
-                chips.append({"label": f"{_plural(len(our_gaps), 'fact')} on us", "tone": OURS})
+                chips.append({"label": rules.facts_chip(our_gaps, rules.US), "tone": OURS})
             if supplier_gaps:
-                chips.append({"label": f"{_plural(len(supplier_gaps), 'fact')} on supplier", "tone": THEIRS})
+                chips.append({"label": rules.facts_chip(supplier_gaps, rules.SUPPLIERS), "tone": THEIRS})
             for g in our_gaps:
                 if g == _ROUND_DUTY:
                     actions.append(

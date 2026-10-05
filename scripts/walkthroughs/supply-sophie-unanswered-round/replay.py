@@ -2,7 +2,7 @@
 
 Runs IN-PROCESS inside the labs app (Django already set up): on the labs worker
 through `seed.py`, or against a local database for a dry run. Everything here
-is invented -- companies, people, prices, `.example.invalid` addresses. This
+is invented -- companies, people, prices, `.example` addresses. This
 repository is public.
 
 The story is a half-silent round. Sophie asked six suppliers to quote round 2
@@ -74,7 +74,7 @@ SUPPLIERS = [
         "Tema",
         "manufacturer",
         "Kwame Mensah",
-        "k.mensah@harmattan-tx.example.invalid",
+        "k.mensah@harmattan-tx.example",
     ),
     (
         "kanem",
@@ -83,7 +83,7 @@ SUPPLIERS = [
         "Calabar",
         "manufacturer",
         "Grace Okon",
-        "grace.okon@kanemfoods.example.invalid",
+        "grace.okon@kanemfoods.example",
     ),
     (
         "northgate",
@@ -92,7 +92,7 @@ SUPPLIERS = [
         "Lagos",
         "trader",
         "Tunde Bakare",
-        "tunde@northgate-commodities.example.invalid",
+        "tunde@northgate-commodities.example",
     ),
     (
         "sahel",
@@ -101,7 +101,7 @@ SUPPLIERS = [
         "Niamey",
         "manufacturer",
         "Amadou Issoufou",
-        "sales@sahel-nutrition.example.invalid",
+        "sales@sahel-nutrition.example",
     ),
     (
         "lagoon",
@@ -110,7 +110,7 @@ SUPPLIERS = [
         "Abidjan",
         "manufacturer",
         "Awa Kone",
-        "export@lagoon-nutripharm.example.invalid",
+        "export@lagoon-nutripharm.example",
     ),
     (
         "savanna",
@@ -119,7 +119,7 @@ SUPPLIERS = [
         "Kano",
         "distributor",
         "Musa Abdullahi",
-        "musa@savannaready.example.invalid",
+        "musa@savannaready.example",
     ),
 ]
 SILENT = ("sahel", "lagoon", "savanna")
@@ -149,7 +149,7 @@ RUSF_SUPPLIERS = [
         "Maiduguri",
         "manufacturer",
         "Hauwa Bukar",
-        "hauwa.bukar@borno-agronutrition.example.invalid",
+        "hauwa.bukar@borno-agronutrition.example",
     ),
     (
         "chad-basin",
@@ -158,7 +158,7 @@ RUSF_SUPPLIERS = [
         "Garoua",
         "manufacturer",
         "Paul Ndjock",
-        "orders@chadbasinfoods.example.invalid",
+        "orders@chadbasinfoods.example",
     ),
     (
         "arewa",
@@ -167,7 +167,7 @@ RUSF_SUPPLIERS = [
         "Kaduna",
         "distributor",
         "Ibrahim Sule",
-        "ibrahim@arewarelief.example.invalid",
+        "ibrahim@arewarelief.example",
     ),
 ]
 
@@ -419,8 +419,18 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
     # quote carries duties 0 for exactly that reason). Round 2 leaves them unsettled -- the
     # story settles them on camera when Sophie answers Northgate.
     _settle_duty_terms(w, r1, "buyer_waiver", d("2026-07-06"))
+    # And its clearing & forwarding estimate for Kano, so the order it led to costs the import it
+    # makes: round 2 carries the same figure forward.
+    w.op(
+        "sophie",
+        d("2026-07-06"),
+        "tender_set_import_estimates",
+        tender_id=r1,
+        clearing_estimate_per_unit="1.20",
+        set_on=d("2026-07-06"),
+    )
     src = dict(
-        ref="<PFI0457.k.mensah@harmattan-tx.example.invalid>",
+        ref="<PFI0457.k.mensah@harmattan-tx.example>",
         excerpt="PFI-2026-0457: USD 49.80/CTN x 2,000 (150 x 92 g), CPT Kano. Freight to Kano USD 7,200, billed "
         "as its own line. "
         "MOQ 500 CTN. "
@@ -526,7 +536,7 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
     shipment = w.email(
         d("2026-08-26"),
         "shipment_record",
-        ref="<disp-031@harmattan-tx.example.invalid>",
+        ref="<disp-031@harmattan-tx.example>",
         excerpt="The 2,000 cartons left our Tema warehouse today by truck with Crescent Freight. "
         f"Batch HT2608A. Expected in Kano around {_short(d('2026-09-12'))}.",
         sender="Kwame Mensah, Harmattan Therapeutics",
@@ -546,7 +556,7 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
     w.email(
         d("2026-09-12"),
         "shipment_update",
-        ref="<cfc-trk-4471-0912@crescent-freight.example.invalid>",
+        ref="<cfc-trk-4471-0912@crescent-freight.example>",
         excerpt="CARGO: 2000 CTNS RUTF / TRUCKS: 2 / HELD AT SEME BORDER - DOCUMENTATION (FORM M) / "
         f"REVISED ETA KANO: {_slashed(d('2026-10-10'))} ONCE FORM M IS "
         "LODGED / CONSIGNEE TO PROVIDE FORM M / PAAR.",
@@ -565,7 +575,7 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
     w.email(
         d("2026-09-21"),
         "invoice_record",
-        ref="<inv-0912@harmattan-tx.example.invalid>",
+        ref="<inv-0912@harmattan-tx.example>",
         excerpt="2,000 CTN @ USD 51.20 = 102,400.00; Freight 7,950.00; Total 110,350.00; "
         f"Less advance received {_slashed(d('2026-07-28'))} (USD 53,400.00)",
         sender="Kwame Mensah, Harmattan Therapeutics",
@@ -588,8 +598,8 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
     # ---- Round 2 (asked 17 days back, deadline in 4 days): open, and half of it is silent. ---
     r2 = _round(w, label="RUTF tender 2: 2,000 cartons to Kano", opened=d("2026-09-15"), deadline=d("2026-10-06"))
     r2_out = _ask_everyone(w, r2, suppliers, d("2026-09-15"))
-    # Sophie's clearing & forwarding estimate for Kano, from the clearing agent's last bill on
-    # round 1: every quote we import carries it, so Harmattan lands above its quoted price. No
+    # Sophie's clearing & forwarding estimate for Kano, carried from round 1: every quote we
+    # import carries it, so Harmattan lands above its quoted price. No
     # freight estimate: a quote handed over at origin (EXW, FCA ...) waits on one.
     w.op(
         "sophie",
@@ -601,7 +611,7 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
     )
 
     src = dict(
-        ref="<PFI0611.k.mensah@harmattan-tx.example.invalid>",
+        ref="<PFI0611.k.mensah@harmattan-tx.example>",
         excerpt="PFI-2026-0611: USD 50.10/CTN x 2,000 (150 x 92 g), CPT Kano, freight to Kano included. "
         "Duty nil under your waiver, as on PFI-0457. "
         "Shelf life 24 months. Lead time 5 weeks. MOQ 500 cartons. Validity 30 days.",
@@ -651,7 +661,7 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
     )
 
     src = dict(
-        ref="<ng-rfq-0918@northgate-commodities.example.invalid>",
+        ref="<ng-rfq-0918@northgate-commodities.example>",
         excerpt="Before we can price, kindly clarify: 1. one warehouse in Kano city or several LGA facilities? "
         "2. NAFDAC-registered or UNICEF-prequalified? 3. Who will be importer of record?",
         sender="Tunde Bakare, Northgate Commodities",
@@ -690,7 +700,7 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
         )
 
     src = dict(
-        ref="<CAK9q2719@mail.kanemfoods.example.invalid>",
+        ref="<CAK9q2719@mail.kanemfoods.example>",
         excerpt="Our price for 2,000 cartons of RUTF is USD 55.00 per carton, DDP Kano, duty paid. Delivery 6 "
         "weeks from PO. Shelf life 24 months. Minimum order 500 cartons. Quote valid 45 days.",
         sender="Grace Okon, Kanem Foods Ltd",

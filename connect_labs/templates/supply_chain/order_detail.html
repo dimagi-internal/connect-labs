@@ -47,7 +47,7 @@ out on every render and never stored.
       {% if not supply_as_of %}
       <div class="flex flex-wrap items-center gap-2.5">
         <details class="relative" data-testid="record-menu">
-          <summary class="button button-md primary-dark list-none [&::-webkit-details-marker]:hidden" role="button">Record…</summary>
+          <summary class="button button-md primary-dark list-none [&::-webkit-details-marker]:hidden" role="button">Record an update</summary>
           <div class="border-brand-border-light absolute right-0 z-20 mt-1.5 flex w-64 flex-col gap-2.5 rounded-lg border bg-white p-3.5 text-sm shadow-sm">
             <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:shipment_record' contract.id %}">Record a dispatch</a>
             <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:receipt_record' contract.id %}">Record a receipt</a>
@@ -118,15 +118,15 @@ out on every render and never stored.
 
   {% if moves_theirs %}
   <div class="grid gap-4 md:grid-cols-2">
-    {% include "supply_chain/_moves.html" with moves=moves_ours whose="ours" heading="On us" testid="on-us" count_testid="on-us-count" %}
-    {% include "supply_chain/_moves.html" with moves=moves_theirs whose="theirs" heading="On the supplier or forwarder" testid="on-supplier" %}
+    {% include "supply_chain/_moves.html" with moves=moves_ours whose="ours" heading="To do" testid="on-us" count_testid="on-us-count" %}
+    {% include "supply_chain/_moves.html" with moves=moves_theirs whose="theirs" heading="Waiting on the supplier or forwarder" testid="on-supplier" %}
   </div>
   {% else %}
   {% comment %}Nothing on the supplier or forwarder: one compact row, so On us takes the width.{% endcomment %}
   <div class="flex flex-col gap-2">
-    {% include "supply_chain/_moves.html" with moves=moves_ours whose="ours" heading="On us" testid="on-us" count_testid="on-us-count" %}
-    <div class="border-brand-border-light flex items-baseline gap-3 rounded-lg border bg-white px-5 py-2.5 text-sm" data-testid="on-supplier" aria-label="On the supplier or forwarder">
-      <span class="font-semibold text-brand-deep-purple">On the supplier or forwarder</span>
+    {% include "supply_chain/_moves.html" with moves=moves_ours whose="ours" heading="To do" testid="on-us" count_testid="on-us-count" %}
+    <div class="border-brand-border-light flex items-baseline gap-3 rounded-lg border bg-white px-5 py-2.5 text-sm" data-testid="on-supplier" aria-label="Waiting on the supplier or forwarder">
+      <span class="font-semibold text-brand-deep-purple">Waiting on the supplier or forwarder</span>
       <span class="status-chip status-chip--neutral tabular-nums">0 · Nothing</span>
     </div>
   </div>
@@ -207,8 +207,14 @@ was ordered. Before, the page showed this order's half and a link to the other.
       {% comment %}"Landed cost, assuming a local partner imports" read oddly over a
       local purchase paid out of a setup fee: nothing was priced or imported.{% endcomment %}
       {% if contract.consideration == "priced" %}
-        <span class="text-xs font-semibold text-gray-600">Landed cost</span>
-        <span class="text-xs text-gray-600 ml-2">assuming {{ landed.buyer_of_record|buyer_label }} imports</span>
+        {% comment %}Who imports is a fact of the order (its buyer and Incoterm), shown as the comparison
+        shows it -- a field, not "assuming ..." -- and a total that no buyer changes is a chip.{% endcomment %}
+        <div class="flex flex-wrap items-center gap-1.5" data-testid="landed-who-imports">
+          <span class="text-xs font-semibold text-gray-600">Landed cost</span>
+          <span class="ml-1 text-xs text-gray-600">Who imports</span>
+          <span class="status-chip status-chip--neutral">{{ landed.buyer_of_record|buyer_label|capfirst }}{% if contract.incoterm %} · {{ contract.incoterm }}{% endif %}</span>
+          {% if landed.by_buyer|same_total %}<span class="status-chip status-chip--neutral" data-testid="same-for-any-buyer">same total for any buyer</span>{% endif %}
+        </div>
       {% elif landed.charges %}
         <span class="text-xs font-semibold text-gray-600">Landed cost</span>
       {% else %}
@@ -226,7 +232,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
         <tr><td class="px-4 py-2 text-gray-600">Freight</td>
             <td class="px-4 py-2 text-right tabular-nums" data-freight>{% if contract.freight_basis == "included" %}<span class="text-gray-600">included in the price</span>{% else %}{{ landed.freight|figure_text }}{% endif %}</td></tr>
         <tr><td class="px-4 py-2 text-gray-600">Import duty</td>
-            <td class="px-4 py-2 text-right tabular-nums">{% if contract.duties_basis == "included" %}<span class="text-gray-600">included in the price</span>{% elif duty_relief_unevidenced %}{% comment %}0 by a relief nothing on file shows: the comparison's duty-cell shape -- the figure, and the chip naming the document it waits on.{% endcomment %}<span data-testid="duty-relief-unevidenced">{{ landed.duty|figure_text }} <span class="status-chip status-chip--ours" data-testid="waiver-pending">{{ "duty_exemption"|not_on_file }} · us</span></span>{% else %}{{ landed.duty|figure_text }}{% endif %}</td></tr>
+            <td class="px-4 py-2 text-right tabular-nums">{% if contract.duties_basis == "included" %}<span class="text-gray-600">included in the price</span>{% elif duty_relief_unevidenced %}{% comment %}0 by a relief nothing on file shows: the comparison's duty-cell shape -- the figure, and the chip naming the document it waits on.{% endcomment %}<span data-testid="duty-relief-unevidenced">{{ landed.duty|figure_text }} <span class="status-chip status-chip--ours" data-testid="waiver-pending">{{ "duty_exemption"|not_on_file }} · to do</span></span>{% else %}{{ landed.duty|figure_text }}{% endif %}</td></tr>
         <tr><td class="px-4 py-2 text-gray-600">VAT</td>
             <td class="px-4 py-2 text-right tabular-nums">{{ landed.vat|figure_text }}</td></tr>
         {% if landed.clearing %}
@@ -299,12 +305,11 @@ was ordered. Before, the page showed this order's half and a link to the other.
         <div class="px-4 py-2 text-xs text-message-warning-text bg-message-warning border-t border-message-warning-border/50">{{ reason }}</div>
       {% endfor %}
     {% endif %}
-    {% if contract.consideration == "priced" %}
+    {% if contract.consideration == "priced" and not landed.by_buyer|same_total %}
     <div class="px-4 py-2.5 border-t border-gray-100">
       {% with total=landed.by_buyer|same_total %}
       {% if total %}
-      {% comment %}Three identical rows said one thing three times.{% endcomment %}
-      <div class="text-sm text-gray-700">Same total whichever party buys: {{ total|figure_text }}</div>
+      {% comment %}Three identical rows said one thing three times; it is a chip on the heading.{% endcomment %}
       {% else %}
       <div class="text-xs font-semibold text-gray-600 mb-1">The same order, per buyer</div>
       <div class="overflow-x-auto">
