@@ -1,8 +1,8 @@
 /**
- * The benchmark scorecard: one row per indicator, the reader's organisation
- * against the programme's other organisations, the others unnamed.
+ * The benchmark scorecard: one row per indicator, the reader's organization
+ * against the program's other organizations, the others unnamed.
  *
- * Every organisation is on every row. One without a usable figure keeps its
+ * Every organization is on every row. One without a usable figure keeps its
  * place as a dashed outline and is counted in the coverage line with its
  * reason, so the peer set never changes from row to row -- the failure that
  * made the per-opportunity peer charts unreadable.
@@ -48,14 +48,14 @@ export interface Ranked {
   ordered: { figure: PeerFigure; mine: boolean }[];
   /** 1-based position of the reader among drawable figures, or null. */
   rank: number | null;
-  /** Organisations with a drawable figure. */
+  /** Organizations with a drawable figure. */
   scored: number;
   total: number;
-  /** "all 6 organisations" / "4 of 6 · 1 too few babies · 1 not credible". */
+  /** "all 6 organizations" / "4 of 6 · 1 too few babies · 1 not credible". */
   coverage: string;
   /** Whether "best" has a direction (a two-sided measure has none). */
   ranked: boolean;
-  /** Another organisation has exactly the reader's figure. */
+  /** Another organization has exactly the reader's figure. */
   tied: boolean;
 }
 
@@ -83,8 +83,8 @@ export function rankOrganisations(
     const d = Number(a.figure.value) - Number(b.figure.value);
     return dir === 'higher' ? -d : d;
   });
-  // A tie shares the better place: rank is 1 + the organisations STRICTLY
-  // better. Ordered by position, five organisations tied at 0.0 days ranked the
+  // A tie shares the better place: rank is 1 + the organizations STRICTLY
+  // better. Ordered by position, five organizations tied at 0.0 days ranked the
   // reader "5th of 6" on a lower-is-better indicator where it was joint best.
   const mine = shown.filter(function (a) {
     return a.mine;
@@ -105,7 +105,7 @@ export function rankOrganisations(
   const total = all.length;
   const coverage =
     shown.length === total
-      ? 'all ' + total + ' organisations'
+      ? 'all ' + total + ' organizations'
       : shown.length +
         ' of ' +
         total +
@@ -171,7 +171,7 @@ export function MiniRankBars(props: {
       height={H}
       viewBox={'0 0 ' + W + ' ' + H}
       role="img"
-      aria-label="Organisations, best to worst"
+      aria-label="Organizations, best to worst"
     >
       {items.map(function (a, i) {
         const x = i * (bw + gap);
@@ -221,7 +221,7 @@ export function MiniRankBars(props: {
   );
 }
 
-/** The full chart: one labelled horizontal bar per organisation, best first. */
+/** The full chart: one labelled horizontal bar per organization, best first. */
 export function RankedBars(props: {
   measure: Measure;
   ranked: Ranked;
@@ -277,7 +277,7 @@ export function RankedBars(props: {
                 (a.mine ? 'font-bold text-indigo-700' : 'text-gray-500')
               }
             >
-              {a.mine ? props.ownLabel : 'Another organisation'}
+              {a.mine ? props.ownLabel : 'Another organization'}
             </div>
             <div className="h-4 rounded bg-gray-100 relative">
               <div

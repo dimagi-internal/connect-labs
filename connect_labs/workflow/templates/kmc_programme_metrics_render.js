@@ -480,7 +480,7 @@ function WorkflowUI({
         start: String(ds[0]).slice(0, 10),
         end: String(ds[ds.length - 1]).slice(0, 10),
       };
-    // A programme run stores no case list but records each worker's own span.
+    // A program run stores no case list but records each worker's own span.
     if (f.firstVisit && f.lastVisit)
       return {
         start: String(f.firstVisit).slice(0, 10),
@@ -719,12 +719,12 @@ function WorkflowUI({
     [payload],
   );
 
-  // Most recent visit per organisation -- the one date that says whether an
-  // organisation is still reporting. From the payload's case index.
+  // Most recent visit per organization -- the one date that says whether an
+  // organization is still reporting. From the payload's case index.
   var lastVisitByLLO = React.useMemo(
     function () {
       var out = {};
-      // A programme run stores no case list: each organisation carries its own
+      // A program run stores no case list: each organization carries its own
       // latest visit. An older run carries the list instead.
       (P.byLLO || []).forEach(function (l) {
         if (l.llo && l.lastVisit) out[l.llo] = String(l.lastVisit).slice(0, 10);
@@ -754,7 +754,7 @@ function WorkflowUI({
   var s3 = React.useState(null);
   var selInd = s3[0],
     setSelInd = s3[1];
-  // The organisation drill filters its worker table by opportunity; this is
+  // The organization drill filters its worker table by opportunity; this is
   // that filter, distinct from selOpp, which names the worker panel's opp.
   var s5 = React.useState(null);
   var oppFilter = s5[0],
@@ -762,8 +762,8 @@ function WorkflowUI({
   var s7 = React.useState(false);
   var showAllFLW = s7[0],
     setShowAllFLW = s7[1];
-  // Which scope the enrolment-against-target section shows when the page is not
-  // drilled into an organisation: 'all' or an LLO name. Lives here, not in the
+  // Which scope the enrollment-against-target section shows when the page is not
+  // drilled into an organization: 'all' or an LLO name. Lives here, not in the
   // section, because the section is a function defined inside WorkflowUI and
   // would lose its own state on every remount.
   var s8 = React.useState('all');
@@ -1122,7 +1122,7 @@ function WorkflowUI({
       'Thin denominator: only ' +
       Math.round(100 * (e.coverage || 0)) +
       '% of started cases carry a hospital discharge date, so this rate is computed ' +
-      'over a self-selected minority and reads better than the programme does.'
+      'over a self-selected minority and reads better than the program does.'
     );
   }
 
@@ -1223,8 +1223,8 @@ function WorkflowUI({
     return R.sortRows(rows, sortOf(table), valueOf);
   }
   var DEF_SCOPE_LABEL = {
-    programme: 'the programme',
-    llo: 'organisation',
+    programme: 'the program',
+    llo: 'organization',
     opportunity: 'opportunity',
     flw: 'worker',
   };
@@ -1837,7 +1837,7 @@ function WorkflowUI({
     );
   }
 
-  var crumb = ['Programme'];
+  var crumb = ['Program'];
   if (selLLO) crumb.push(selLLO);
 
   // Saving a run persists the payload this page is already showing: the server
@@ -1862,11 +1862,11 @@ function WorkflowUI({
 
   // ══ The report ══════════════════════════════════════════════════════════════
   // One page, one table. The headline tiles carry a week-on-week delta, the
-  // organisations table is Neal's scorecard with last-visit and attention
+  // organizations table is Neal's scorecard with last-visit and attention
   // columns, and the charts sit under it: activity by week off this payload,
   // indicators over time off the saved-run history. Every indicator is a
   // collapsed panel, not a second table. One level down, the same shape
-  // repeats for an organisation with its workers as the one table.
+  // repeats for an organization with its workers as the one table.
 
   function dateLbl(s) {
     return R.dateLbl(s);
@@ -1885,7 +1885,7 @@ function WorkflowUI({
     return R.tintFor(e);
   }
 
-  // ── Scope: programme, or one organisation (optionally one opportunity) ────
+  // ── Scope: program, or one organization (optionally one opportunity) ────
   var scopeLLO = selLLO
     ? byLLO.filter(function (l) {
         return l.llo === selLLO;
@@ -1905,10 +1905,10 @@ function WorkflowUI({
     ? oppLabel(oppFilter)
     : scopeLLO
       ? scopeLLO.llo
-      : 'Programme';
+      : 'Program';
 
-  // Workers per organisation, for the table's row meta. byFLW is keyed by
-  // (opportunity, username); an organisation is the union over its opps.
+  // Workers per organization, for the table's row meta. byFLW is keyed by
+  // (opportunity, username); an organization is the union over its opps.
   var flwCountByLLO = React.useMemo(
     function () {
       var oppLLO = {};
@@ -1991,7 +1991,7 @@ function WorkflowUI({
               selLLO || oppFilter
                 ? 'two-sided'
                 : !mortalityCredible.ind
-                  ? 'all organisations'
+                  ? 'all organizations'
                   : mortalityCredible.llos && mortalityCredible.llos.length
                     ? mortalityCredible.llos.join(' + ') + ' only'
                     : 'no credible recorder';
@@ -2083,8 +2083,8 @@ function WorkflowUI({
     );
   }
 
-  // ── Enrolment against target ──────────────────────────────────────────────
-  // What the programme has enrolled each month against the targets it committed
+  // ── Enrollment against target ──────────────────────────────────────────────
+  // What the program has enrolled each month against the targets it committed
   // to, and how far it still has to go. The targets are CONFIG
   // (`config.enrollment_targets`, set per workflow), never code: an instance
   // with none shows nothing here. Actuals are registered babies by registration
@@ -2107,9 +2107,9 @@ function WorkflowUI({
     if (drilled && targeted.indexOf(selLLO) < 0) {
       return (
         <R.Card>
-          <R.SectionTitle>Enrolment against target</R.SectionTitle>
+          <R.SectionTitle>Enrollment against target</R.SectionTitle>
           <p className="text-sm text-gray-500">
-            No enrolment target is configured for {selLLO}. Targets are set for{' '}
+            No enrollment target is configured for {selLLO}. Targets are set for{' '}
             {targeted.join(', ')}.
           </p>
         </R.Card>
@@ -2132,7 +2132,7 @@ function WorkflowUI({
     var win = R.targetWindow(TARGETS);
     var first = win[0];
     var last = win[win.length - 1];
-    // Organisations with no target still enrol; say how many, so the programme
+    // Organizations with no target still enroll; say how many, so the program
     // total is not mistaken for everything that happened.
     var untargeted = [];
     if (!drilled && scope === 'all') {
@@ -2159,7 +2159,7 @@ function WorkflowUI({
       TARGETS.goal.programme &&
       TARGETS.goal.programme !== prog.goal &&
       scope === 'all'
-        ? ' The goal configured for the programme is ' +
+        ? ' The goal configured for the program is ' +
           R.nCount(TARGETS.goal.programme) +
           '.'
         : '';
@@ -2188,7 +2188,7 @@ function WorkflowUI({
           right={
             drilled ? null : (
               <span className="inline-flex flex-wrap gap-1">
-                {pill('all', 'Programme')}
+                {pill('all', 'Program')}
                 {targeted.map(function (l) {
                   return pill(l, l);
                 })}
@@ -2196,7 +2196,7 @@ function WorkflowUI({
             )
           }
           sub={
-            'Enrolment = babies with a registration form, by registration month. ' +
+            'Enrollment = babies with a registration form, by registration month. ' +
             R.monthLbl(first) +
             ' to ' +
             R.monthLbl(last) +
@@ -2206,22 +2206,28 @@ function WorkflowUI({
             '.'
           }
         >
-          Enrolment against target
+          Enrollment against target
         </R.SectionTitle>
         <R.EnrolmentTargetSummary progress={prog} unit={unit} />
-        <div className="mt-3">
-          <R.EnrolmentTargetLegend />
-          <R.EnrolmentTargetChart progress={prog} />
-        </div>
-        {daily ? (
-          <div className="mt-5 pt-3 border-t border-gray-100">
-            <R.EnrolmentDailyChart progress={daily} />
+        <div
+          className={
+            'mt-3 grid grid-cols-1 gap-6' + (daily ? ' lg:grid-cols-2' : '')
+          }
+        >
+          <div className="min-w-0">
+            <R.EnrolmentTargetLegend />
+            <R.EnrolmentTargetChart progress={prog} />
           </div>
-        ) : null}
+          {daily ? (
+            <div className="min-w-0">
+              <R.EnrolmentDailyChart progress={daily} />
+            </div>
+          ) : null}
+        </div>
         <div className="mt-1 text-xs text-gray-400 space-y-0.5">
           {prog.carryIn ? (
             <p>
-              Before {R.monthLbl(first)}: {R.nCount(prog.carryIn)} enrolments
+              Before {R.monthLbl(first)}: {R.nCount(prog.carryIn)} enrollments
               carried in, as the goals sheet counts them toward the total. They
               sit in both the enrolled and the target figures, so they never
               move the gap.
@@ -2251,7 +2257,7 @@ function WorkflowUI({
               ? 'Targets: ' + TARGETS.source
               : 'Targets from this report’s configuration'}
             {TARGETS.as_of ? ' (as of ' + dateLbl(TARGETS.as_of) + ')' : ''}.
-            The programme goal is the sum of the organisation targets.{goalNote}
+            The program goal is the sum of the organization targets.{goalNote}
             {TARGETS.note ? ' ' + TARGETS.note : ''}
           </p>
         </div>
@@ -2260,14 +2266,14 @@ function WorkflowUI({
   }
 
   // ── One scorecard head and one cell renderer, for BOTH tables ─────────────
-  // The organisations table and the workers table are the same 15 columns in
+  // The organizations table and the workers table are the same 15 columns in
   // the same groups, the same labels and the same type; only the leading
   // (who) and trailing (last visit / attention / review) columns differ. One
   // component for the head and one for the cells is what keeps them identical.
   var SCORECARD_GROUPS = [
     { label: 'Scale', span: 3 },
     { label: 'Cohort', span: 2 },
-    { label: 'Enrolment & visits', span: 3 },
+    { label: 'Enrollment & visits', span: 3 },
     { label: 'Growth (of good weight data)', span: 4 },
     { label: 'Outcome', span: 1 },
     { label: 'Data quality', span: 2 },
@@ -2372,7 +2378,7 @@ function WorkflowUI({
     return <R.AttentionCell reds={reds} yellows={yellows} />;
   }
 
-  // ── The organisations table: Neal's scorecard, plus last visit and attention ──
+  // ── The organizations table: Neal's scorecard, plus last visit and attention ──
   function OrgTable() {
     if (!SC) return null;
     var nByLLO = {};
@@ -2398,16 +2404,16 @@ function WorkflowUI({
     return (
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <div className="px-4 py-3 flex items-baseline justify-between gap-3 flex-wrap">
-          <div className="font-semibold text-gray-900">Organisations</div>
+          <div className="font-semibold text-gray-900">Organizations</div>
           <div className="text-xs text-gray-400">
             15-metric scorecard · as of {dateLbl(asOf)} · click a row to open
-            the organisation
+            the organization
           </div>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-xs">
             <ScorecardHead
-              lead={[{ label: 'Organisation', sortKey: 'name' }]}
+              lead={[{ label: 'Organization', sortKey: 'name' }]}
               trail={[
                 { label: 'Last visit', sortKey: 'last' },
                 { label: 'Attention', sortKey: 'attn' },
@@ -2463,10 +2469,10 @@ function WorkflowUI({
               })}
               <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
                 <td className="px-3 py-2 whitespace-nowrap">
-                  <div className="text-gray-900">All organisations</div>
+                  <div className="text-gray-900">All organizations</div>
                   <div className="text-xs font-normal text-gray-400">
                     {byLLO.length +
-                      ' organisations · ' +
+                      ' organizations · ' +
                       ((P.meta && P.meta.opportunities) || byOpp.length) +
                       ' opportunities'}
                   </div>
@@ -2483,7 +2489,7 @@ function WorkflowUI({
     );
   }
 
-  // ── One organisation: its opportunities as filter chips, its workers as the table ──
+  // ── One organization: its opportunities as filter chips, its workers as the table ──
   function OppChips() {
     if (!scopeLLO) return null;
     function chip(label, value, reds, count) {
@@ -2533,7 +2539,7 @@ function WorkflowUI({
     );
   }
 
-  // The workers table: the SAME scorecard as the organisations table, one row
+  // The workers table: the SAME scorecard as the organizations table, one row
   // per worker, with the worker's own cells from byFLW.
   function FLWTable() {
     if (!scopeLLO) return null;
@@ -3053,7 +3059,7 @@ function WorkflowUI({
     var agent = AGENT_BY_LLO[f.llo];
     var unverified = UNVERIFIED_SCALE.indexOf(f.llo) !== -1;
     var reviewUrl = flwReviewUrl(f);
-    // How many cases this worker has. The programme stores no case list -- each
+    // How many cases this worker has. The program stores no case list -- each
     // opportunity's report holds its own -- so this is the graded count.
     var nCases = f.n || (f.rows || []).length;
     return (
@@ -3224,7 +3230,7 @@ function WorkflowUI({
         }}
       >
         <summary className="px-4 py-3 text-sm font-semibold text-gray-700 cursor-pointer flex items-center justify-between">
-          <span>All programme indicators · {scopeName}</span>
+          <span>All program indicators · {scopeName}</span>
           <span className="text-xs font-normal text-gray-400">
             value, n and band for every indicator · click a row for its
             definition
@@ -3271,7 +3277,7 @@ function WorkflowUI({
     );
   }
 
-  var headline = selLLO ? selLLO : 'Kangaroo Mother Care programme';
+  var headline = selLLO ? selLLO : 'Kangaroo Mother Care program';
   var meta = P.meta || {};
   function subline() {
     if (!selLLO)
@@ -3283,7 +3289,7 @@ function WorkflowUI({
           babies ·{' '}
           <b className="font-semibold text-gray-900">{nCount(meta.visits)}</b>{' '}
           visits · <b className="font-semibold text-gray-900">{byLLO.length}</b>{' '}
-          organisations ·{' '}
+          organizations ·{' '}
           <b className="font-semibold text-gray-900">
             {meta.opportunities || byOpp.length}
           </b>{' '}
@@ -3416,7 +3422,7 @@ function WorkflowUI({
           <div className="px-4 py-3 text-sm bg-amber-50 text-amber-900 border border-amber-200 rounded-xl">
             <span className="font-medium">
               {live.cache.cold_cache
-                ? 'Every metric is blank because nothing is cached — not because the programme has no data.'
+                ? 'Every metric is blank because nothing is cached — not because the program has no data.'
                 : 'These totals cover only part of the cohort.'}
             </span>{' '}
             {live.cache.cold_cache_hint}
@@ -3447,10 +3453,10 @@ function WorkflowUI({
 
       {runIsSynthetic ? (
         <p className="text-xs text-gray-400 max-w-3xl">
-          Prepared on a synthetic copy of the programme data. Personal
-          identifiers — names, phone numbers, addresses, GPS and free text — are
-          never reproduced, so any measure derived from them is shown as
-          unavailable rather than as zero.
+          Prepared on a synthetic copy of the program data. Personal identifiers
+          — names, phone numbers, addresses, GPS and free text — are never
+          reproduced, so any measure derived from them is shown as unavailable
+          rather than as zero.
         </p>
       ) : null}
     </div>

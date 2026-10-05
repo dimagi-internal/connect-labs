@@ -1,10 +1,10 @@
 /**
- * Enrolment against target (VERSION 5): what a programme has enrolled, month by
+ * Enrollment against target (VERSION 5): what a program has enrolled, month by
  * month, beside the targets it committed to -- and the distance still to go.
  *
  * Targets are CONFIG, never code: a report reads them from its workflow's
  * `config.enrollment_targets` and hands them here with the snapshot's
- * `monthlyByScope`. Nothing programme-specific lives in this file.
+ * `monthlyByScope`. Nothing program-specific lives in this file.
  *
  *   {
  *     source: "KMC Goals | Case & Spend", as_of: "2026-10-05",
@@ -19,7 +19,7 @@
  * The actual for a month is the snapshot's raw count (`point.counts[ind]`,
  * which is never suppressed under a min-denominator floor), else the graded
  * cell's value for runs saved before counts were carried. `before_window` is
- * the goal sheet's carry-in: enrolments made before the window opened that the
+ * the goal sheet's carry-in: enrollments made before the window opened that the
  * sheet counts toward the total. It is credited to BOTH sides -- it is in the
  * goal and it has already happened -- so it never moves the gap.
  */
@@ -28,7 +28,7 @@ import { nCount } from './format';
 
 export interface LloTarget {
   before_window?: number | null;
-  /** 'YYYY-MM' -> target enrolments that month. */
+  /** 'YYYY-MM' -> target enrollments that month. */
   monthly?: Record<string, number>;
   /** First month this LLO's actuals count from; default its first target month. */
   start?: string;
@@ -255,7 +255,7 @@ export function enrolmentProgress(opts: {
   const inWindow = months.some(function (m) {
     return m.month === asOfMonth;
   });
-  // What is left of the as-of month counts as time still to enrol in.
+  // What is left of the as-of month counts as time still to enroll in.
   const remaining = futureMonths + (inWindow ? 1 - fraction : 0);
   const gap = cumA - cumTargetToDate;
   return {
@@ -344,7 +344,7 @@ export function EnrolmentTargetChart(props: { progress: EnrolmentProgress }) {
       viewBox={'0 0 ' + W + ' ' + H}
       className="w-full h-auto block"
       role="img"
-      aria-label="Enrolment against target by month"
+      aria-label="Enrollment against target by month"
     >
       {ticks.map(function (f) {
         return (
@@ -522,7 +522,7 @@ export function EnrolmentTargetSummary(props: {
         value: nCount(p.goal),
         sub:
           nCount(Math.max(0, p.goal - p.cumActual)) +
-          ' still to enrol (' +
+          ' still to enroll (' +
           (p.goal ? Math.round((p.cumActual / p.goal) * 100) : 0) +
           '% reached)',
       },
@@ -754,7 +754,7 @@ export function dailyReadout(p: DailyProgress): string {
 }
 
 /**
- * This month, day by day, on one axis: the running total of enrolments (solid),
+ * This month, day by day, on one axis: the running total of enrollments (solid),
  * the month's target spread evenly over its days (dashed, "on pace"), and last
  * month's running total (grey) for a day-for-day comparison.
  */
@@ -831,7 +831,7 @@ export function EnrolmentDailyChart(props: { progress: DailyProgress }) {
         viewBox={'0 0 ' + W + ' ' + H}
         className="w-full h-auto block"
         role="img"
-        aria-label="Enrolment this month, day by day"
+        aria-label="Enrollment this month, day by day"
       >
         {[0, 0.5, 1].map(function (f) {
           return (

@@ -249,7 +249,7 @@ def test_an_old_runs_mortality_tile_falls_back_to_its_own_cell():
     body = src[src.index("  function tileEntry(id) {") :]
     body = body[: body.index("\n  }\n")]
     assert "mortalityCredible.ind)" in body and "return entryOf(scopeInd, id);" in body
-    assert "'all organisations'" in src
+    assert "'all organizations'" in src
 
 
 def test_the_trends_say_they_are_loading_rather_than_one_report_so_far():

@@ -1,7 +1,7 @@
 /**
  * Page chrome for indicator reports: cards, section titles, notices, the
  * report header. White `rounded-xl` cards on a grey rule, indigo accents --
- * the KMC programme report's look.
+ * the KMC program report's look.
  */
 import React from 'react';
 

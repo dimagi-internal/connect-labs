@@ -8,12 +8,12 @@ function WorkflowUI({
   onUpdateState,
   view,
 }) {
-  // ══ One worker, read from the programme report ═══════════════════════════════
+  // ══ One worker, read from the program report ═══════════════════════════════
   // This workflow computes no indicator. Every graded figure on this page is the
-  // SAME payload the KMC Programme Metrics page shows: the run this page was
+  // SAME payload the KMC Program Metrics page shows: the run this page was
   // opened from (`?source_run=`), read through the same preview endpoint that
-  // page reads, or -- opened on its own -- the newest saved programme report.
-  // What this page adds is what a per-worker review needs and the programme page
+  // page reads, or -- opened on its own -- the newest saved program report.
+  // What this page adds is what a per-worker review needs and the program page
   // must not carry: the worker's cases with their full weight series (from the
   // live pipelines both workflows share), a growth chart per case, and an audit
   // of the worker's recent images.
@@ -43,7 +43,7 @@ function WorkflowUI({
   // as `definition_id` -- it is never written into `data`, so `definition.id`
   // is undefined and both row fetches went to `/api/undefined/pipeline-rows/`.
   // The run knows its definition, and so does the URL (/labs/workflow/<id>/run/).
-  // Same chain as the programme page's `definitionId()`.
+  // Same chain as the program page's `definitionId()`.
   function definitionId() {
     var pathMatch = String(window.location.pathname || '').match(
       /\/workflow\/(\d+)\//,
@@ -235,7 +235,7 @@ function WorkflowUI({
         if (!src)
           return Promise.reject(
             new Error(
-              'This workflow is not linked to a programme report yet ' +
+              'This workflow is not linked to a program report yet ' +
                 '(config.source_workflow_id).',
             ),
           );
@@ -256,7 +256,7 @@ function WorkflowUI({
               return r.state && r.state['snapshot.meta.as_of'];
             });
             if (!runs.length)
-              throw new Error('No saved programme report to read from yet.');
+              throw new Error('No saved program report to read from yet.');
             return readRun(runs[runs.length - 1].id);
           });
       }
@@ -283,7 +283,7 @@ function WorkflowUI({
   // with today's and are left out rather than shown under a name that now means
   // something else. The page says so (`P.legacyIds`).
   //
-  // A COPY of the programme report's translation (kmc_programme_metrics_render.js):
+  // A COPY of the program report's translation (kmc_programme_metrics_render.js):
   // this page reads that report's saved runs, and renders cannot import one
   // another. test_kmc_flw_review pins the two copies identical.
   var LEGACY_ID = {
@@ -419,7 +419,7 @@ function WorkflowUI({
     return LLO_OF[o] ? LLO_OF[o] + ' · opp ' + o : 'opp ' + o;
   }
 
-  // The display contract travels with the payload, as on the programme page.
+  // The display contract travels with the payload, as on the program page.
   var N_LIST = React.useMemo(
     function () {
       return (P.cMeasures || [])
@@ -472,8 +472,8 @@ function WorkflowUI({
         })[0]
       : null;
 
-  // The figures here are the programme report's own rows, so their definitions
-  // are read from the programme workflow's bound registry, not from this one.
+  // The figures here are the program report's own rows, so their definitions
+  // are read from the program workflow's bound registry, not from this one.
   function explainDefId() {
     return cfg.source_workflow_id || null;
   }
@@ -565,8 +565,8 @@ function WorkflowUI({
       });
   }
   var DEF_SCOPE_LABEL = {
-    programme: 'the programme',
-    llo: 'organisation',
+    programme: 'the program',
+    llo: 'organization',
     opportunity: 'opportunity',
     flw: 'worker',
   };
@@ -1063,7 +1063,7 @@ function WorkflowUI({
     }
   }
 
-  // ── Formatting, as the programme page formats ────────────────────────────────
+  // ── Formatting, as the program page formats ────────────────────────────────
   function nCount(value) {
     if (value === null || value === undefined) return '—';
     var num = Number(value);
@@ -1383,7 +1383,7 @@ function WorkflowUI({
   }
 
   // ── Audit of recent images ───────────────────────────────────────────────────
-  // The same action the programme page offers, with the window fixed to the
+  // The same action the program page offers, with the window fixed to the
   // worker's RECENT work: the last `audit_recent_days` before their latest visit.
   var AGENT_BY_LLO = cfg.scale_agent_by_llo || {};
   var UNVERIFIED_SCALE = cfg.scale_unverified_llos || [];
@@ -1709,9 +1709,9 @@ function WorkflowUI({
     );
   }
 
-  // ── The scorecard, in the programme report's own header ────────────────────
-  // Same fifteen columns, same groups, same order as the programme page, so a
-  // worker's row reads against the programme, organisation and opportunity rows
+  // ── The scorecard, in the program report's own header ────────────────────
+  // Same fifteen columns, same groups, same order as the program page, so a
+  // worker's row reads against the program, organization and opportunity rows
   // without relearning the table. The case table below reuses the header with
   // case-level labels.
   var SCORECARD = [
@@ -1811,7 +1811,7 @@ function WorkflowUI({
   var SCORECARD_GROUPS = [
     { label: 'Scale', span: 3 },
     { label: 'Cohort', span: 2 },
-    { label: 'Enrolment & visits', span: 3 },
+    { label: 'Enrollment & visits', span: 3 },
     { label: 'Growth (of good weight data)', span: 4 },
     { label: 'Outcome', span: 1 },
     { label: 'Data quality', span: 2 },
@@ -1851,7 +1851,7 @@ function WorkflowUI({
     return nCount(v);
   }
   // `table` makes the header sortable (the cases table); the scope scorecard
-  // passes none, because its rows are a fixed programme -> worker ladder. Every
+  // passes none, because its rows are a fixed program -> worker ladder. Every
   // indicator's definition is compiled at worker scope: this page is a worker.
   // Scorecard columns sort by position (`col<i>`): N09 is two columns.
   function ScorecardHead(props) {
@@ -1940,7 +1940,7 @@ function WorkflowUI({
   // ── Each case's contribution: the same measures at the `case` scope ────────
   // The registry evaluated one grouping level further down, for this worker's
   // visits only, as of the report's date -- served by the semantic endpoint of
-  // the programme workflow this page reads, so a case row and the worker's row
+  // the program workflow this page reads, so a case row and the worker's row
   // above it are the same computation. At case scope a rate is 0 or 100 with a
   // denominator of 0 or 1 (in the denominator, and whether it counted), a median
   // is the baby's own value, visits-per-case is the baby's count. Nothing is
@@ -2168,7 +2168,7 @@ function WorkflowUI({
   if (report.status === 'loading')
     return (
       <div className="p-6 text-sm text-gray-500">
-        Reading the programme report…
+        Reading the program report…
       </div>
     );
   if (report.status === 'error')
@@ -2210,8 +2210,8 @@ function WorkflowUI({
           <div className="font-medium text-gray-900">Choose a worker</div>
           <div className="text-xs text-gray-500">
             {rows.length} workers in the report as of{' '}
-            {(P.meta && P.meta.as_of) || '—'}. Opening a worker from the
-            programme report brings you here directly.
+            {(P.meta && P.meta.as_of) || '—'}. Opening a worker from the program
+            report brings you here directly.
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -2219,7 +2219,7 @@ function WorkflowUI({
             <thead className="bg-gray-50 text-gray-500">
               <tr>
                 {pickerTh('Worker', 'worker', 'left')}
-                {pickerTh('Organisation', 'org', 'left')}
+                {pickerTh('Organization', 'org', 'left')}
                 {pickerTh('Cases', 'cases', 'right')}
                 {pickerTh('Red', 'reds', 'right')}
               </tr>
@@ -2731,7 +2731,7 @@ function WorkflowUI({
                 href={backHref}
                 className="text-xs text-indigo-600 hover:underline"
               >
-                ← Programme report
+                ← Program report
               </a>
             )}
             <div className="text-xl font-semibold text-gray-900 mt-1">
@@ -2775,7 +2775,7 @@ function WorkflowUI({
                   ? ' · ' +
                     (agent === 'scale_dial_read' ? 'dial' : 'digital') +
                     ' scale reader'
-                  : ' · no scale reader for this organisation'}
+                  : ' · no scale reader for this organization'}
                 {unverified ? ' (hardware unconfirmed)' : ''}
               </div>
               {audit.status === 'created' && (
@@ -2794,7 +2794,7 @@ function WorkflowUI({
           )}
         </div>
         <div className="text-xs text-gray-400 mt-2">
-          Figures are this worker's rows of the programme report
+          Figures are this worker's rows of the program report
           {report.source === 'stored' ? ' (saved report)' : ' (live)'}; n is
           small per worker, so many indicators read n&lt;{MIN_DEN}.
         </div>
@@ -2804,8 +2804,8 @@ function WorkflowUI({
         <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
           Scorecard
           <span className="ml-2 text-xs font-normal text-gray-400">
-            the programme report&rsquo;s fifteen columns &mdash; this
-            worker&rsquo;s row under the programme, organisation and opportunity
+            the program report&rsquo;s fifteen columns &mdash; this
+            worker&rsquo;s row under the program, organization and opportunity
             rows
           </span>
         </div>
@@ -2813,8 +2813,8 @@ function WorkflowUI({
           <table className="min-w-full text-sm">
             <ScorecardHead lead={['Scope']} />
             <tbody>
-              {scorecardRow('Programme', SC && SC.programme)}
-              {scorecardRow(flw.llo || 'Organisation', (lloRow || {}).ind)}
+              {scorecardRow('Program', SC && SC.programme)}
+              {scorecardRow(flw.llo || 'Organization', (lloRow || {}).ind)}
               {scorecardRow(oppLabel(flw.opp), (oppRow || {}).ind)}
               {scorecardRow(flw.flw || '(unassigned)', nFLW && nFLW.ind, true)}
             </tbody>
