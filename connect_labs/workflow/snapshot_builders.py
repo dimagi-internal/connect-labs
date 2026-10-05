@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -203,21 +204,34 @@ def semantic_snapshot(
     )
     case_cfg = spec.get("case_index") or {}
     llo_by_opp = {int(k): v for k, v in (llo_map or {}).items()}
-    if case_cfg.get("source") == "semantic":
-        # The case list from the SAME extraction as the indicators (see
-        # `semantic_case_rows`): as of the run, and the same cases the scores counted.
-        rows, cases, dropped = evaluate_with_cases(
-            pipeline_config,
-            opportunity_ids,
-            scopes=scopes,
-            case_fields=semantic_case_fields(case_cfg),
-            **evaluate_kwargs,
-        )
-        if dropped:
-            logger.info("workflow %s: case fields the registry does not serve: %s", definition_id, dropped)
-    else:
-        rows = evaluate(pipeline_config, opportunity_ids, scopes=scopes, scope=scopes[0], **evaluate_kwargs)
-        cases = snap.case_rows(pipelines, spec, llo_by_opp)
+    memo = context.get("memo")
+    clock = _StageClock(memo)
+    if memo is not None:
+        # A batch of dates over ONE held cache: extract Layer 1 once and grade every
+        # date off it (`runtime.materialize_visits`). The date cuts the visit set
+        # inside the compiled chain, so the figures are exactly those of a fresh
+        # extraction -- only the repeated JSON parsing is gone.
+        with clock("layer1"):
+            table = _layer1_table(
+                memo, definition_id, opportunity_ids, pipeline_config, extra_fields, props_doc, full_registry
+            )
+            evaluate_kwargs["visit_sql"] = f"SELECT * FROM {table}"
+    with clock("evaluate"):
+        if case_cfg.get("source") == "semantic":
+            # The case list from the SAME extraction as the indicators (see
+            # `semantic_case_rows`): as of the run, and the same cases the scores counted.
+            rows, cases, dropped = evaluate_with_cases(
+                pipeline_config,
+                opportunity_ids,
+                scopes=scopes,
+                case_fields=semantic_case_fields(case_cfg),
+                **evaluate_kwargs,
+            )
+            if dropped:
+                logger.info("workflow %s: case fields the registry does not serve: %s", definition_id, dropped)
+        else:
+            rows = evaluate(pipeline_config, opportunity_ids, scopes=scopes, scope=scopes[0], **evaluate_kwargs)
+            cases = snap.case_rows(pipelines, spec, llo_by_opp)
 
     measures = measure_catalog(filter_to_series(full_registry, primary))
     extra_series = {name: measure_catalog(filter_to_series(full_registry, name)) for name in series_list[1:]}
@@ -273,6 +287,7 @@ def semantic_snapshot(
         visits_pipeline=spec.get("visits_pipeline"),
     )
     embed = case_cfg.get("embed", True) is not False
+    clock.start("assemble")
     payload = snap.build(
         display=display,
         spec=spec,
@@ -287,6 +302,7 @@ def semantic_snapshot(
         registry_min_denominator=model.min_denominator,
         embed_cases=embed,
     )
+    clock.stop()
     if not embed and context.get("memo") is not None:
         # The cases this run was graded from, for the caller that hands it down to
         # the opportunity reports while they are in memory (history_rebuild, which
@@ -307,6 +323,78 @@ _CASE_FIELD_SOURCES = {
     "last_visit_date": "last_visit",
     "total_visits": "num_visits",
 }
+
+
+class _StageClock:
+    """Seconds spent per build stage, summed into a batch memo's `timings`.
+
+    A history rebuild reports them, so where a week's time goes is a measured fact
+    rather than a guess. Without a memo (a single save) it records nothing.
+    """
+
+    def __init__(self, memo):
+        self.timings = memo.setdefault("timings", {}) if memo is not None else None
+        self._open = None
+
+    def __call__(self, stage):
+        clock = self
+
+        class _Span:
+            def __enter__(self):
+                clock.start(stage)
+
+            def __exit__(self, *exc):
+                clock.stop()
+
+        return _Span()
+
+    def start(self, stage):
+        self.stop()
+        self._open = (stage, time.perf_counter())
+
+    def stop(self):
+        if self._open is None or self.timings is None:
+            self._open = None
+            return
+        stage, began = self._open
+        self.timings[stage] = round(self.timings.get(stage, 0.0) + time.perf_counter() - began, 3)
+        self._open = None
+
+
+# Where a batch memo keeps its materialised Layer 1 tables (see _layer1_table).
+LAYER1_TABLES = ("layer1_tables",)
+
+
+def _layer1_table(
+    memo, definition_id, opportunity_ids, pipeline_config, extra_fields, props_doc, full_registry
+) -> str:
+    """The batch's materialised Layer 1 table for these opportunities, made on first use.
+
+    Re-made if it has vanished -- a dropped database connection takes its temporary
+    tables with it -- so a long batch can never read a table that is not there.
+    """
+    from connect_labs.semantic.runtime import materialize_visits, materialized_exists
+
+    tables = memo.setdefault(LAYER1_TABLES, {})
+    key = (definition_id, tuple(int(o) for o in opportunity_ids))
+    table = tables.get(key)
+    if table is None or not materialized_exists(table):
+        table = materialize_visits(
+            pipeline_config,
+            list(key[1]),
+            extra_fields=extra_fields,
+            registry_documents=(props_doc, full_registry),
+        )
+        tables[key] = table
+    return table
+
+
+def drop_layer1_tables(memo) -> None:
+    """Drop a batch's materialised Layer 1 tables. Called once the batch is done."""
+    from connect_labs.semantic.runtime import drop_materialized
+
+    for table in (memo or {}).pop(LAYER1_TABLES, {}).values():
+        drop_materialized(table)
 
 
 def semantic_case_fields(case_cfg: dict) -> dict[str, str]:
