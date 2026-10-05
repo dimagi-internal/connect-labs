@@ -238,7 +238,4 @@ Previously, if you wanted totals by questionnaire, by question, by state, and by
 
 A grouping can also group by **several fields at the same time** — for example, question × answer type × state — instead of requiring one pipeline per state.
 
-Every row in the result includes a `row.grouping` field that says which named grouping it belongs to, so a dashboard can easily tell them apart and display each breakdown in the right place.
-
-!!! tip "When this helps"
-    Use multiple groupings when
+Every row in the result includes a `row.grouping` field that says which named group

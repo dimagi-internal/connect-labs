@@ -212,19 +212,13 @@ Before this change, creating the KMC Programme Metrics report by hand left worke
 !!! note "The opportunity picker spans all programmes you can access"
     When you create a workflow from the programme-level Workflows page, the opportunity picker shows **every opportunity you have access to**, not only those belonging to the current programme. The current programme's own opportunities appear at the top of the list and are pre-ticked, so the default selection is correct for most reports. If your KMC report needs to span opportunities from several programmes — which is common for whole-programme KMC metrics — you can tick the additional opportunities from the same picker without navigating away.
 
-### Indicator Programme Report
+### Updating a template workflow without a new release
 
-The **Indicator Programme Report** gives any programme the same report cascade that KMC uses — a programme-level headline report, a per-worker review, and a per-opportunity report with benchmarks — without any custom page-building required. Create it from **Workflows → Create Workflow → "Indicator Programme Report"** (listed under *Programme reports*).
+Some report layouts — such as the KMC Programme Report — are defined as **template workflows**. This means their page structure, default settings, and snapshot settings are stored as data rather than being fixed in the software. Owners of a template workflow can update what every following report displays without waiting for a new Labs release.
 
-Selecting this template creates two workflows at once:
+The update cycle has four steps:
 
-- **Indicator Programme Report** — the programme-wide view described below.
-- **Indicator Worker Review** — created automatically and already linked, so worker rows on the programme report open directly into the worker's individual page.
-
-#### What the programme report shows
-
-The report is built from your programme's indicator definitions (its semantic registry), which determine which figures appear as headlines, what their targets are, what a "case" is called in your programme (for example, baby, community, or beneficiary), and what columns appear in the case table. This means the same template produces a report that looks and reads correctly for your programme's context — you do not need to configure it by hand.
-
-The programme report includes:
-
--
+1. **Draft** — the owner edits the template. Changes are saved as a draft and are not visible to anyone else yet.
+2. **Preview** — the owner opens any report that follows the template and adds `&template_draft=1` to the URL. The report loads with the draft applied and shows a **yellow banner** to confirm it is showing draft content. No other users see the draft.
+3. **Publish** — when the draft looks correct, the owner publishes it. The change becomes live on every following report on its next load. Each publish is saved as a numbered version.
+4. **Rollback** — if a published change causes a problem, the owner can roll back to any earlier numbered version. Rolling back publ
