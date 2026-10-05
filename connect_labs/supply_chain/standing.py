@@ -351,8 +351,9 @@ def _missing_facts(tender, quotes) -> list:
         return []
     from connect_labs.supply_chain.procurement.status import (
         _ROUND_DUTY,
+        asked_since_quote,
         comparisons,
-        gap_owner,
+        fact_owner,
         quote_open_facts,
         waiver_on_file,
     )
@@ -362,10 +363,14 @@ def _missing_facts(tender, quotes) -> list:
     on_file = waiver_on_file(tender)
     for comparison in comparisons(tender, quotes):
         for row in (*comparison.comparable, *comparison.blocked):
-            for gap in quote_open_facts(tender, row, by_id.get(row.quote_id), waiver_on_file=on_file):
+            quote = by_id.get(row.quote_id)
+            asked = asked_since_quote(quote)
+            for gap in quote_open_facts(tender, row, quote, waiver_on_file=on_file):
                 fact = "duty terms" if gap == _ROUND_DUTY else gap
                 counts[fact] = counts.get(fact, 0) + 1
-                owners[fact] = gap_owner(gap)
+                # Any quote not yet asked for it makes the fact ours to ask.
+                owner = fact_owner(gap, asked)
+                owners[fact] = rules.TO_ASK if owners.get(fact) == rules.TO_ASK else owner
     # Each fact carries whose it is, the comparison's own owner chip: (fact, quotes, owner).
     return sorted(((f, n, owners[f]) for f, n in counts.items()), key=lambda t: (-t[1], t[0]))
 

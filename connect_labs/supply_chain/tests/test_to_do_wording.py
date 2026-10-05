@@ -34,3 +34,26 @@ def test_no_supply_screen_says_on_us_as_a_label():
     old = re.compile(r'heading="On us"|heading="On suppliers"|>on us<|>Us \{\{|>Facts on us<|>Moves on us<')
     hits = [str(p) for p in root.rglob("*.html") if old.search(p.read_text())]
     assert hits == []
+
+
+def test_a_suppliers_fact_is_to_ask_until_we_chase_after_its_quote():
+    """Kanem was never asked for its pack: the fact is ours to ask, not theirs to send."""
+    import datetime as dt
+    from types import SimpleNamespace as NS
+
+    from connect_labs.supply_chain.procurement.status import asked_since_quote, fact_owner
+
+    quote = NS(pk=1, tender_id=7, supplier_id=3, received_on=dt.date(2026, 9, 22))
+    chased_before = [NS(supplier_id=3, last_reminder_on=dt.date(2026, 9, 21))]
+    chased_after = [NS(supplier_id=3, last_reminder_on=dt.date(2026, 9, 24))]
+    someone_else = [NS(supplier_id=4, last_reminder_on=dt.date(2026, 9, 30))]
+
+    assert not asked_since_quote(quote, chased_before)
+    assert not asked_since_quote(quote, someone_else)
+    assert asked_since_quote(quote, chased_after)
+    assert fact_owner("sachets per carton", asked=False) == moves.TO_ASK
+    assert fact_owner("sachets per carton", asked=True) == moves.SUPPLIERS
+    # Our own facts are ours whatever has been sent.
+    assert fact_owner("exchange rate", asked=False) == moves.US
+    assert moves.facts_chip(["sachets per carton"], moves.TO_ASK) == "sachets per carton · to ask"
+    assert supplies(moves.TO_ASK) == "to ask"

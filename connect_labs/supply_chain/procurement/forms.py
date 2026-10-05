@@ -495,7 +495,7 @@ class CommitmentForm(ScopedForm):
             "due_on": forms.DateInput(attrs=DATE),
         }
         labels = {
-            "kind": _("What we owe"),
+            "kind": _("Question or promise"),
             "owed_to_org": _("Who is waiting"),
             "text": _("The question, or the promise"),
             "raised_on": _("Asked or promised on"),

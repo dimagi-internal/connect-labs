@@ -46,7 +46,7 @@ MODEL_LABELS = {
     "Contract": "Order",
     "AwardApproval": "Approval request",
     # Something we owe a counterparty: their question, or our promise.
-    "Commitment": "Owed",
+    "Commitment": "To do",
 }
 
 # Vocabulary codes held in a plain CharField (no `choices`), which would
