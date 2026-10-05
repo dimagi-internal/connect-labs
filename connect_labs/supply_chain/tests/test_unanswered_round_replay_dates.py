@@ -145,3 +145,22 @@ def test_the_just_asked_rusf_tender_waits_on_its_suppliers(replay):
     assert rusf.whose == "suppliers"
     assert not rusf.ours and len(rusf.theirs) == 3
     assert rows[out["round2_tender_id"]].whose == "us"
+
+
+@pytest.mark.django_db
+def test_a_reseed_replaces_a_stale_contact_on_the_shared_company(replay):
+    """The company outlives the reset; an address left by an earlier seed must not reach the drafts."""
+    from connect_labs.supply_chain.models import Supplier
+
+    today = dt.date.today() - dt.timedelta(days=40)
+    replay.ensure_program()
+    replay.seed_world(create_buyer=True, today=today)
+    sahel = Supplier.objects.get(org__name="Sahel Nutrition Industries")
+    profile = sahel.org.supplier_profile
+    profile.contacts = [{"name": "Old Contact", "email": "sales@sahel-nutrition.example.invalid"}]
+    profile.save()
+
+    replay.reset()
+    replay.seed_world(create_buyer=True, today=today)
+    emails = [c["email"] for c in Supplier.objects.get(org__name="Sahel Nutrition Industries").contacts]
+    assert emails == ["sales@sahel-nutrition.example"]
