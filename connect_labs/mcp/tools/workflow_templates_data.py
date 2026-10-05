@@ -5,6 +5,12 @@ as data, with a draft, published versions and a rollback. Workflows that follow 
 (`render_source: {workflow: <id>, <scope>}`) show its published version on their next
 load: no PR, no merge, no deploy. See connect_labs/workflow/template_workflows.py.
 
+Everything is LabsRecords in the template's home scope (a program or an opportunity),
+and every permission is that scope's LabsRecord ACL: write access there means edit,
+preview, publish, roll back and change sharing; being able to read the template -- in
+its scope, or anywhere once it is shared publicly -- means follow. Each call runs
+under the caller's own Connect token, so Connect enforces it too.
+
 Only a change to what the ENGINE computes (the snapshot builder, an API) still needs
 a deploy -- a render can only read what those provide.
 """
@@ -23,17 +29,22 @@ _FAST_PATH = (
     "FAST PATH: a template workflow's render, config defaults and snapshot spec are DATA. Edit the draft, "
     "preview it on a follower, publish -- every follower shows it on its next load with no deploy. Prefer this "
     "over editing a code template in the repo; only a change to what the engine computes (the snapshot builder, "
-    "an API) needs a deploy."
+    "an API) needs a deploy. A render can use only Tailwind classes the deployed CSS already contains."
+)
+
+_ACL = (
+    "Permissions are the LabsRecord ACL of the template's home scope (a program or an opportunity): write access "
+    "there means edit, preview, publish and roll back."
 )
 
 _SCOPE_PROPS = {
     "opportunity_id": {
         "type": "integer",
-        "description": "The template workflow's owning opportunity. This OR program_id.",
+        "description": "The template workflow's home (owning) opportunity. This OR program_id.",
     },
     "program_id": {
         "type": "integer",
-        "description": "The template workflow's owning program. This OR opportunity_id.",
+        "description": "The template workflow's home (owning) program. This OR opportunity_id.",
     },
 }
 
@@ -51,15 +62,39 @@ def _wrap(fn, *args, **kwargs):
         raise MCPToolError(exc.code, str(exc)) from exc
 
 
-def _template(workflow_id, opportunity_id, program_id):
-    _scope(opportunity_id, program_id)
-    template = tw.find_template(workflow_id, opportunity_id, program_id)
-    if template is None:
-        raise MCPToolError(
-            "NOT_FOUND",
-            f"workflow {workflow_id} in that scope is not a template workflow (workflow_template_create makes one)",
-        )
-    return template
+class _Home:
+    """The template's home-scope data access under the caller's token, plus the template."""
+
+    def __init__(self, user, workflow_id, opportunity_id, program_id):
+        scope = _scope(opportunity_id, program_id)
+        self.token = require_connect_token(user)
+        self.wda = WorkflowDataAccess(access_token=self.token, **scope)
+        try:
+            self.template = tw.load_template(self.wda.labs_api, workflow_id, **scope)
+        except Exception:
+            self.wda.close()
+            raise
+        if self.template is None:
+            self.wda.close()
+            raise MCPToolError(
+                "NOT_FOUND",
+                f"workflow {workflow_id} in {scope} is not a template workflow you can read: it does not exist, is "
+                "not a template workflow (workflow_template_create makes one), or is not shared with you (its "
+                "owners can share it with workflow_template_set_sharing public=true).",
+            )
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.wda.close()
+
+    def describe(self, **kwargs):
+        return tw.describe(self.wda.labs_api, self.template, **kwargs)
+
+    def reload(self):
+        self.template = _wrap(tw.reload, self.wda, self.template)
+        return self.template
 
 
 def _check_snapshot_inputs(value):
@@ -82,11 +117,13 @@ def _check_config(value):
 @register(
     name="workflow_template_create",
     description=(
-        "Create a TEMPLATE WORKFLOW: a report whose render code, config defaults and snapshot spec live as data, "
-        "with a draft, published versions and rollback. Seed it from a code template (template_key, e.g. "
-        "'kmc_programme_metrics' -- after this the code template has no role for its followers) or from an "
-        "existing workflow (from_workflow). The seed is published as version 1 and you become its owner. Then "
-        "point workflows at it with workflow_follow_template. " + _FAST_PATH
+        "Create a TEMPLATE WORKFLOW: a report whose render code, config defaults and snapshot spec live as data "
+        "(LabsRecords), with a draft, published versions and rollback. Seed it from a code template (template_key, "
+        "e.g. 'kmc_programme_metrics' -- after this the code template has no role for its followers) or from an "
+        "existing workflow (from_workflow). It lives in -- is owned by -- the program or opportunity you name "
+        "(opportunity_id / program_id); seeding from a workflow defaults to that workflow's own scope. The seed is "
+        "published as version 1. " + _ACL + " public=true shares it so workflows in ANY program or opportunity "
+        "can follow it. Then point workflows at it with workflow_follow_template. " + _FAST_PATH
     ),
     input_schema={
         "type": "object",
@@ -95,7 +132,13 @@ def _check_config(value):
             "name": {"type": "string"},
             "template_scope": {
                 "type": "string",
-                "description": "Who may follow it: 'global' (admin-only to set), 'org:<id>' or 'program:<id>'.",
+                "description": "Where it shows in the template picker: 'global' (admin-only to set), 'org:<id>' or "
+                "'program:<id>'. Does not grant access; `public` does.",
+            },
+            "public": {
+                "type": "boolean",
+                "description": "Share it publicly so any program or opportunity may follow it (default false: only "
+                "people with access to its home scope can).",
             },
             "template_key": {"type": "string", "description": "Seed from this code template."},
             "from_workflow": {
@@ -105,7 +148,7 @@ def _check_config(value):
             },
             "description": {"type": "string"},
         },
-        "required": ["name", "template_scope"],
+        "required": ["name"],
         "additionalProperties": False,
     },
     is_write=True,
@@ -113,22 +156,27 @@ def _check_config(value):
 def workflow_template_create(
     user,
     name: str,
-    template_scope: str,
+    template_scope: str = None,
     opportunity_id: int = None,
     program_id: int = None,
     template_key: str = None,
     from_workflow: dict = None,
     description: str = None,
+    public: bool = False,
 ):
     from connect_labs.workflow.render_source import resolve_render_code
     from connect_labs.workflow.templates import get_template
 
     from .workflows import _validate_template_scope
 
-    scope = _scope(opportunity_id, program_id)
-    _validate_template_scope(template_scope, user)
+    if template_scope:
+        _validate_template_scope(template_scope, user)
     if (template_key is None) == (from_workflow is None):
         raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of template_key / from_workflow.")
+    if opportunity_id is None and program_id is None and from_workflow:
+        # The template keeps the seed workflow's own scope unless told otherwise.
+        opportunity_id, program_id = from_workflow.get("opportunity_id"), from_workflow.get("program_id")
+    scope = _scope(opportunity_id, program_id)
     token = require_connect_token(user)
 
     statuses = None
@@ -164,39 +212,27 @@ def workflow_template_create(
         raise MCPToolError("INVALID_SCHEMA", "the seed has no render code")
     template_type = config.get("templateType") or template_key or ""
 
-    wda = WorkflowDataAccess(access_token=token, **scope)
+    home = WorkflowDataAccess(access_token=token, **scope)
     try:
-        # The template's own record is thin: its content lives in the template store,
-        # and the record follows ITSELF, so opening it shows the published version
-        # (or, to an owner with ?template_draft=1, the draft).
-        created = wda.create_definition(
-            name=name,
-            description=description or "",
-            **({"statuses": statuses} if statuses else {}),
-            config={"templateType": template_type} if template_type else {},
-        )
         template = _wrap(
             tw.create_template,
+            home,
             user=user,
-            workflow_id=created.id,
             name=name,
+            description=description,
+            statuses=statuses,
             template_scope=template_scope,
             render_code=render_code,
             config=config,
             snapshot_inputs=snapshot_inputs,
             seeded_from=seeded_from,
             template_type=template_type,
-            **{"opportunity_id": opportunity_id, "program_id": program_id},
+            public=bool(public),
         )
-        data = dict(created.data)
-        data.update(
-            {"is_template": True, "template_scope": template_scope, "render_source": tw.render_source_for(template)}
-        )
-        wda.update_definition(created.id, data)
+        out = tw.describe(home.labs_api, template)
     finally:
-        wda.close()
-    out = tw.describe(template)
-    out["url"] = tw.run_page_url(created.id, opportunity_id, program_id)
+        home.close()
+    out["url"] = tw.run_page_url(template.workflow_id, scope.get("opportunity_id"), scope.get("program_id"))
     out["next"] = "workflow_follow_template to point workflows at it; then edit -> preview -> publish."
     return out
 
@@ -204,10 +240,11 @@ def workflow_template_create(
 @register(
     name="workflow_template_get",
     description=(
-        "Read a template workflow: owners, the draft (revision, whether it differs from what is live), the "
-        "version history, and its followers with each one's page URL and draft-preview URL. include_code=true "
-        "adds the draft's render code, config and snapshot_inputs -- read the draft here before editing it. "
-        + _FAST_PATH
+        "Read a template workflow: who owns it (its scope) and who may edit it, whether YOU can, its sharing "
+        "(who may follow it), the draft (revision, whether it differs from what is live -- shown to editors "
+        "only), the version history, and its followers with each one's page URL and draft-preview URL. "
+        "include_code=true adds the draft's render code, config and snapshot_inputs (editors) or the published "
+        "ones (everyone else) -- read the draft here before editing it. " + _ACL + " " + _FAST_PATH
     ),
     input_schema={
         "type": "object",
@@ -223,58 +260,86 @@ def workflow_template_create(
 def workflow_template_get(
     user, template_workflow_id: int, opportunity_id: int = None, program_id: int = None, include_code: bool = False
 ):
-    template = _template(template_workflow_id, opportunity_id, program_id)
-    if include_code and not tw.is_owner(template, user):
-        # The draft is unpublished work; the published version is what followers read.
-        out = tw.describe(template)
-        published = tw.content_of(template, draft=False) or {}
-        out["published"] = {k: published.get(k) for k in ("render_code", "config", "snapshot_inputs", "version")}
-        out["note"] = "draft content is shown to owners only; this is the published version"
+    with _Home(user, template_workflow_id, opportunity_id, program_id) as home:
+        out = home.describe(include_code=include_code)
+        if include_code and not tw.can_edit(home.template):
+            published = tw.content_of(home.wda.labs_api, home.template, draft=False) or {}
+            out["published"] = {k: published.get(k) for k in ("render_code", "config", "snapshot_inputs", "version")}
         return out
-    return tw.describe(template, include_code=include_code)
 
 
 @register(
     name="workflow_template_list",
-    description="List the template workflows you own, plus every global one. " + _FAST_PATH,
-    input_schema={"type": "object", "properties": {}, "additionalProperties": False},
+    description=(
+        "List template workflows: the ones in a program or opportunity you name (opportunity_id / program_id -- "
+        "with you_can_edit for each), plus every publicly shared one. " + _FAST_PATH
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "opportunity_id": {"type": "integer", "description": "List the templates owned by this opportunity."},
+            "program_id": {"type": "integer", "description": "List the templates owned by this program."},
+        },
+        "additionalProperties": False,
+    },
 )
-def workflow_template_list(user):
-    from django.db.models import Q
+def workflow_template_list(user, opportunity_id: int = None, program_id: int = None):
+    token = require_connect_token(user)
+    found: dict[tuple, dict] = {}
 
-    from connect_labs.workflow.models import TemplateWorkflow
+    def add(record, scope, in_scope):
+        if not (isinstance(record.data, dict) and isinstance(record.data.get(tw.META_KEY), dict)):
+            return
+        t = tw.Template(record, scope, in_scope=in_scope)
+        found[(t.workflow_id, tw.scope_key(t.opportunity_id, t.program_id))] = {
+            "template_workflow_id": t.workflow_id,
+            "scope": dict(t.scope),
+            "name": t.name,
+            "template_type": t.template_type,
+            "template_scope": t.template_scope,
+            "public": t.public,
+            "published_version": (t.published or {}).get("version"),
+            "you_can_edit": in_scope,
+            "followers": len(t.meta.get("followers") or []),
+        }
 
-    rows = TemplateWorkflow.objects.filter(Q(owners=user) | Q(template_scope="global")).distinct()
-    return {
-        "templates": [
-            {
-                "template_workflow_id": t.workflow_id,
-                "scope": (
-                    {"opportunity_id": t.opportunity_id}
-                    if t.opportunity_id is not None
-                    else {"program_id": t.program_id}
-                ),
-                "name": t.name,
-                "template_type": t.template_type,
-                "template_scope": t.template_scope,
-                "published_version": t.published.number if t.published else None,
-                "owner": tw.is_owner(t, user),
-                "followers": t.followers.count(),
-            }
-            for t in rows.order_by("name")
-        ]
-    }
+    if opportunity_id is not None or program_id is not None:
+        scope = _scope(opportunity_id, program_id)
+        wda = WorkflowDataAccess(access_token=token, **scope)
+        try:
+            for record in wda.labs_api.get_records(experiment=tw.EXPERIMENT, type=tw.DEFINITION_TYPE):
+                add(record, scope, True)
+        finally:
+            wda.close()
+    reader = WorkflowDataAccess(access_token=token)
+    try:
+        for record in reader.labs_api.get_records(experiment=tw.EXPERIMENT, type=tw.DEFINITION_TYPE, public=True):
+            if not (isinstance(record.data, dict) and isinstance(record.data.get(tw.META_KEY), dict)):
+                continue
+            home = (
+                {"opportunity_id": record.opportunity_id}
+                if record.opportunity_id
+                else {"program_id": record.program_id} if record.program_id else None
+            )
+            if home is None:
+                continue
+            key = (record.id, tw.scope_key(home.get("opportunity_id"), home.get("program_id")))
+            if key not in found:
+                add(record, home, False)
+    finally:
+        reader.close()
+    return {"templates": sorted(found.values(), key=lambda t: (t["name"] or "", t["template_workflow_id"]))}
 
 
 @register(
     name="workflow_template_update_draft",
     description=(
-        "Edit a template workflow's DRAFT (owners only). Followers see nothing until workflow_template_publish. "
-        "Change the render with `edits` ([{old, new}], each `old` matching exactly once -- best for small changes) "
-        "or a whole `render_code`; `config` merges into the draft's config defaults (config_replace=true replaces "
-        "them); `snapshot_inputs` replaces the snapshot spec (null clears it). A follower's own config keys still "
-        "win over these defaults. expected_revision is the draft revision from workflow_template_get. Check the "
-        "result with the follower's draft_preview_url, then publish. " + _FAST_PATH
+        "Edit a template workflow's DRAFT (write access to its scope). Followers see nothing until "
+        "workflow_template_publish. Change the render with `edits` ([{old, new}], each `old` matching exactly once "
+        "-- best for small changes) or a whole `render_code`; `config` merges into the draft's config defaults "
+        "(config_replace=true replaces them); `snapshot_inputs` replaces the snapshot spec (null clears it). A "
+        "follower's own config keys still win over these defaults. expected_revision is the draft revision from "
+        "workflow_template_get. Check the result with the follower's draft_preview_url, then publish. " + _FAST_PATH
     ),
     input_schema={
         "type": "object",
@@ -312,26 +377,28 @@ def workflow_template_update_draft(
     config_replace: bool = False,
     **kwargs,
 ):
-    template = _template(template_workflow_id, opportunity_id, program_id)
     snapshot_set = "snapshot_inputs" in kwargs
     snapshot_inputs = kwargs.get("snapshot_inputs")
     if snapshot_set:
         _check_snapshot_inputs(snapshot_inputs)
     _check_config(config)
-    _wrap(
-        tw.update_draft,
-        template,
-        user=user,
-        expected_revision=expected_revision,
-        render_code=render_code,
-        edits=edits,
-        config=config,
-        config_replace=bool(config_replace),
-        snapshot_inputs=snapshot_inputs,
-        snapshot_inputs_set=snapshot_set,
-    )
-    out = tw.describe(template)
-    out["warning"] = _render_warning(template.draft_render_code)
+    with _Home(user, template_workflow_id, opportunity_id, program_id) as home:
+        draft = _wrap(
+            tw.update_draft,
+            home.wda,
+            home.template,
+            user=user,
+            expected_revision=expected_revision,
+            render_code=render_code,
+            edits=edits,
+            config=config,
+            config_replace=bool(config_replace),
+            snapshot_inputs=snapshot_inputs,
+            snapshot_inputs_set=snapshot_set,
+        )
+        home.reload()
+        out = home.describe()
+    out["warning"] = _render_warning(draft.get("render_code"))
     return out
 
 
@@ -347,10 +414,11 @@ def _render_warning(code):
 @register(
     name="workflow_template_preview",
     description=(
-        "Preview a template workflow's draft before publishing (owners only): returns, for every follower, the URL "
-        "that renders it WITH THE DRAFT (`draft_preview_url` -- add &run_id=<id> for a saved run; only owners see the "
-        "draft there, everyone else still sees what is published), and a diff of the draft against the published "
-        "version. Followers are not affected. " + _FAST_PATH
+        "Preview a template workflow's draft before publishing (write access to its scope): returns, for every "
+        "follower, the URL that renders it WITH THE DRAFT (`draft_preview_url` -- add &run_id=<id> for a saved run; "
+        "only people with write access to the template's scope see the draft there, everyone else still sees what "
+        "is published), and a diff of the draft against the published version. Followers are not affected. "
+        + _FAST_PATH
     ),
     input_schema={
         "type": "object",
@@ -366,37 +434,44 @@ def _render_warning(code):
 def workflow_template_preview(
     user, template_workflow_id: int, opportunity_id: int = None, program_id: int = None, max_diff_lines: int = 200
 ):
-    template = _template(template_workflow_id, opportunity_id, program_id)
-    _wrap(tw.require_owner, template, user)
-    published = tw.content_of(template, draft=False) or {"render_code": "", "config": {}, "snapshot_inputs": None}
-    diff = list(
-        difflib.unified_diff(
-            (published.get("render_code") or "").splitlines(),
-            (template.draft_render_code or "").splitlines(),
-            fromfile=f"published v{published.get('version')}",
-            tofile=f"draft r{template.draft_revision}",
-            lineterm="",
-            n=2,
+    with _Home(user, template_workflow_id, opportunity_id, program_id) as home:
+        _wrap(tw.require_edit, home.template)
+        api = home.wda.labs_api
+        published = tw.content_of(api, home.template, draft=False) or {
+            "render_code": "",
+            "config": {},
+            "snapshot_inputs": None,
+        }
+        draft = tw.content_of(api, home.template, draft=True) or {}
+        diff = list(
+            difflib.unified_diff(
+                (published.get("render_code") or "").splitlines(),
+                (draft.get("render_code") or "").splitlines(),
+                fromfile=f"published v{published.get('version')}",
+                tofile=f"draft r{draft.get('draft_revision')}",
+                lineterm="",
+                n=2,
+            )
         )
-    )
-    p_config, d_config = published.get("config") or {}, template.draft_config or {}
-    out = tw.describe(template)
-    out["render_diff"] = diff[:max_diff_lines]
-    out["render_diff_truncated"] = len(diff) > max_diff_lines
-    out["config_changed_keys"] = sorted(k for k in set(p_config) | set(d_config) if p_config.get(k) != d_config.get(k))
-    out["snapshot_inputs_changed"] = published.get("snapshot_inputs") != template.draft_snapshot_inputs
-    out["self_preview_url"] = tw.run_page_url(
-        template.workflow_id, template.opportunity_id, template.program_id, draft=True
-    )
-    return out
+        p_config, d_config = published.get("config") or {}, draft.get("config") or {}
+        out = home.describe()
+        out["render_diff"] = diff[:max_diff_lines]
+        out["render_diff_truncated"] = len(diff) > max_diff_lines
+        out["config_changed_keys"] = sorted(
+            k for k in set(p_config) | set(d_config) if p_config.get(k) != d_config.get(k)
+        )
+        out["snapshot_inputs_changed"] = published.get("snapshot_inputs") != draft.get("snapshot_inputs")
+        t = home.template
+        out["self_preview_url"] = tw.run_page_url(t.workflow_id, t.opportunity_id, t.program_id, draft=True)
+        return out
 
 
 @register(
     name="workflow_template_publish",
     description=(
-        "Publish a template workflow's draft as its next version (owners only). Every follower shows it on its "
-        "next page load -- no deploy. The previous version stays in the history for workflow_template_rollback. "
-        + _FAST_PATH
+        "Publish a template workflow's draft as its next version (write access to its scope). Every follower shows "
+        "it on its next page load -- no deploy. The previous version stays in the history for "
+        "workflow_template_rollback. " + _FAST_PATH
     ),
     input_schema={
         "type": "object",
@@ -422,23 +497,27 @@ def workflow_template_publish(
     note: str = "",
     expected_revision: int = None,
 ):
-    template = _template(template_workflow_id, opportunity_id, program_id)
-    if expected_revision is not None and expected_revision != template.draft_revision:
-        raise MCPToolError(
-            "VERSION_CONFLICT", f"draft is at revision {template.draft_revision}, not {expected_revision}"
-        )
-    version = _wrap(tw.publish_draft, template, user=user, note=note)
-    out = tw.describe(template)
-    out["published_now"] = version.number
+    with _Home(user, template_workflow_id, opportunity_id, program_id) as home:
+        _wrap(tw.require_edit, home.template)
+        if expected_revision is not None:
+            draft = tw.read_draft(home.wda.labs_api, home.template)
+            revision = (draft.data or {}).get("revision") if draft else None
+            if revision != expected_revision:
+                raise MCPToolError("VERSION_CONFLICT", f"draft is at revision {revision}, not {expected_revision}")
+        version = _wrap(tw.publish_draft, home.wda, home.template, user=user, note=note)
+        home.reload()
+        out = home.describe()
+    out["published_now"] = version["number"]
     return out
 
 
 @register(
     name="workflow_template_rollback",
     description=(
-        "Roll a template workflow back (owners only): publishes a COPY of an earlier version as the next version, so "
-        "every follower shows it on its next load and the history records the rollback. reset_draft=true also "
-        "resets the draft to that version (otherwise the draft keeps your unpublished edits). " + _FAST_PATH
+        "Roll a template workflow back (write access to its scope): publishes a COPY of an earlier version as the "
+        "next version, so every follower shows it on its next load and the history records the rollback. "
+        "reset_draft=true also resets the draft to that version (otherwise the draft keeps your unpublished edits). "
+        + _FAST_PATH
     ),
     input_schema={
         "type": "object",
@@ -463,58 +542,63 @@ def workflow_template_rollback(
     note: str = "",
     reset_draft: bool = False,
 ):
-    template = _template(template_workflow_id, opportunity_id, program_id)
-    version = _wrap(tw.rollback, template, user=user, to_version=to_version, note=note, reset_draft=bool(reset_draft))
-    out = tw.describe(template)
-    out["published_now"] = version.number
+    with _Home(user, template_workflow_id, opportunity_id, program_id) as home:
+        version = _wrap(
+            tw.rollback,
+            home.wda,
+            home.template,
+            user=user,
+            to_version=to_version,
+            note=note,
+            reset_draft=bool(reset_draft),
+        )
+        home.reload()
+        out = home.describe()
+    out["published_now"] = version["number"]
     out["restores_version"] = to_version
     return out
 
 
 @register(
-    name="workflow_template_set_owners",
+    name="workflow_template_set_sharing",
     description=(
-        "Add or remove owners of a template workflow (owners, or labs admins). Owners edit the draft, preview, "
-        "publish and roll back; anyone who can read the template may follow it. A template keeps at least one owner."
+        "Change who may FOLLOW a template workflow (write access to its scope). public=true shares it -- the "
+        "template and its published versions become public LabsRecords (the same flag workflow sharing uses), so "
+        "workflows in any program or opportunity can follow it; public=false limits it to people with access to "
+        "its home scope (existing followers outside it then fall back to their stored copy, with a warning). "
+        "template_scope only changes where it shows in the template picker. Who may EDIT it is not set here: it "
+        "is the scope's own LabsRecord write access."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "template_workflow_id": {"type": "integer"},
             **_SCOPE_PROPS,
-            "add": {"type": "array", "items": {"type": "string"}, "description": "Usernames to add."},
-            "remove": {"type": "array", "items": {"type": "string"}, "description": "Usernames to remove."},
+            "public": {"type": "boolean"},
+            "template_scope": {"type": "string"},
         },
         "required": ["template_workflow_id"],
         "additionalProperties": False,
     },
     is_write=True,
 )
-def workflow_template_set_owners(
+def workflow_template_set_sharing(
     user,
     template_workflow_id: int,
     opportunity_id: int = None,
     program_id: int = None,
-    add: list = None,
-    remove: list = None,
+    public: bool = None,
+    template_scope: str = None,
 ):
-    from django.contrib.auth import get_user_model
+    from .workflows import _validate_template_scope
 
-    template = _template(template_workflow_id, opportunity_id, program_id)
-    if not (tw.is_owner(template, user) or getattr(user, "is_staff", False)):
-        _wrap(tw.require_owner, template, user)
-    User = get_user_model()
-    for username in add or []:
-        person = User.objects.filter(username=username).first()
-        if person is None:
-            raise MCPToolError("NOT_FOUND", f"no labs user '{username}' (they must have signed in to labs once)")
-        template.owners.add(person)
-    for username in remove or []:
-        template.owners.remove(*User.objects.filter(username=username))
-    if not template.owners.exists():
-        template.owners.add(user)
-        raise MCPToolError("INVALID_SCHEMA", "a template workflow must keep at least one owner")
-    return tw.describe(template)
+    if public is None and template_scope is None:
+        raise MCPToolError("INVALID_SCHEMA", "Pass public and/or template_scope.")
+    if template_scope:
+        _validate_template_scope(template_scope, user)
+    with _Home(user, template_workflow_id, opportunity_id, program_id) as home:
+        home.template = _wrap(tw.set_sharing, home.wda, home.template, public=public, template_scope=template_scope)
+        return home.describe()
 
 
 @register(
@@ -524,10 +608,10 @@ def workflow_template_set_owners(
         "A follower renders the template's PUBLISHED render and inherits its config defaults and snapshot_inputs; "
         "keys the follower sets itself win (e.g. its own enrollment_targets). On follow, any follower key EQUAL to "
         "the template's value is dropped so it stays inherited -- the result lists them under `now_inherited` and "
-        "the real overrides under `overrides`. You must be able to read the template (global, or its scope), and "
-        "the workflow must have the same templateType. follow=false forks: the published render becomes the "
-        "workflow's stored copy and inherited values are written into its own config, so the page does not "
-        "change. " + _FAST_PATH
+        "the real overrides under `overrides`. You must be able to READ the template: have access to its home "
+        "scope, or it is shared publicly (workflow_template_set_sharing). The workflow must have the same "
+        "templateType. follow=false forks: the published render becomes the workflow's stored copy and inherited "
+        "values are written into its own config, so the page does not change. " + _FAST_PATH
     ),
     input_schema={
         "type": "object",
@@ -557,9 +641,24 @@ def workflow_follow_template(
     follow: bool = True,
     expected_version: int = None,
 ):
+    return follow_template(
+        user,
+        workflow_id=workflow_id,
+        scope=_scope(opportunity_id, program_id),
+        template_workflow_id=template_workflow_id,
+        template_scope=(
+            _scope(template_opportunity_id, template_program_id)
+            if (template_opportunity_id is not None or template_program_id is not None)
+            else None
+        ),
+        follow=follow,
+        expected_version=expected_version,
+    )
+
+
+def follow_template(user, *, workflow_id, scope, template_workflow_id, template_scope, follow, expected_version):
     from connect_labs.workflow.render_source import followed_template_workflow, resolve_render_code
 
-    scope = _scope(opportunity_id, program_id)
     token = require_connect_token(user)
     wda = WorkflowDataAccess(access_token=token, **scope)
     try:
@@ -575,6 +674,7 @@ def workflow_follow_template(
         if not follow:
             if followed_template_workflow(current) is None:
                 raise MCPToolError("INVALID_SCHEMA", f"workflow {workflow_id} does not follow a template workflow")
+            rs = tw.source_of(getattr(current, "own_data", current.data))
             code, _src = resolve_render_code(wda, current)
             # `current.data` is the EFFECTIVE definition: dropping render_source and
             # writing it bakes every inherited value into the workflow's own record.
@@ -585,43 +685,50 @@ def workflow_follow_template(
             stored = wda.get_render_code(workflow_id)
             if code:
                 wda.save_render_code(workflow_id, code, version=(stored.version if stored else 0) + 1)
-            tw.forget_follower(workflow_id, **scope)
-            return {"workflow_id": workflow_id, "follows": None, "forked": True, "new_version": version + 1}
-
-        if template_workflow_id is None:
-            raise MCPToolError("INVALID_SCHEMA", "template_workflow_id is required to follow")
-        t_scope = _scope(template_opportunity_id, template_program_id)
-        template = _template(template_workflow_id, template_opportunity_id, template_program_id)
-
-        def read_template_definition():
-            reader = WorkflowDataAccess(access_token=token, **t_scope)
-            try:
-                return reader.get_definition(template_workflow_id)
-            finally:
-                reader.close()
-
-        if not tw.can_follow(template, user, read_template_definition):
-            raise MCPToolError(
-                "PERMISSION_DENIED",
-                f"you cannot read template workflow {template_workflow_id} (scope {template.template_scope}), so "
-                "you cannot follow it",
+            listed = _with_template_home(
+                token, rs, lambda home, t: tw.forget_follower(home, t, workflow_id=workflow_id, scope=scope)
             )
-        own_type = (current.data.get("config") or {}).get("templateType") or ""
-        if template.template_type and own_type != template.template_type:
+            return {
+                "workflow_id": workflow_id,
+                "follows": None,
+                "forked": True,
+                "new_version": version + 1,
+                "removed_from_template_list": bool(listed),
+            }
+
+        if template_workflow_id is None or template_scope is None:
             raise MCPToolError(
                 "INVALID_SCHEMA",
-                f"workflow {workflow_id} is a '{own_type}' workflow; this template renders '{template.template_type}' "
-                "and reads that template's pipelines, config and snapshot contract",
+                "template_workflow_id and one of template_opportunity_id / template_program_id are required to follow",
             )
-        if tw.content_of(template, draft=False) is None:
-            raise MCPToolError("INVALID_SCHEMA", "the template has no published version yet; publish it first")
+        reader = WorkflowDataAccess(access_token=token, **template_scope)
+        try:
+            template = tw.load_template(reader.labs_api, template_workflow_id, **template_scope)
+            if template is None:
+                raise MCPToolError(
+                    "PERMISSION_DENIED",
+                    f"you cannot read template workflow {template_workflow_id} in {template_scope}, so you cannot "
+                    "follow it. Following needs access to that scope, or the template shared publicly: its sharing "
+                    "is set by its owners (workflow_template_set_sharing public=true).",
+                )
+            own_type = (current.data.get("config") or {}).get("templateType") or ""
+            if template.template_type and own_type != template.template_type:
+                raise MCPToolError(
+                    "INVALID_SCHEMA",
+                    f"workflow {workflow_id} is a '{own_type}' workflow; this template renders "
+                    f"'{template.template_type}' and reads that template's pipelines, config and snapshot contract",
+                )
+            if tw.content_of(reader.labs_api, template, draft=False) is None:
+                raise MCPToolError("INVALID_SCHEMA", "the template has no published version yet; publish it first")
 
-        before = getattr(current, "own_data", current.data)
-        data = dict(before)
-        data["render_source"] = tw.render_source_for(template)
-        data["version"] = version + 1
-        updated = wda.update_definition(workflow_id, data)
-        tw.record_follower(template, user=user, workflow_id=workflow_id, **scope)
+            before = getattr(current, "own_data", current.data)
+            data = dict(before)
+            data["render_source"] = template.render_source()
+            data["version"] = version + 1
+            updated = wda.update_definition(workflow_id, data)
+            listed = tw.record_follower(reader, template, workflow_id=workflow_id, scope=scope)
+        finally:
+            reader.close()
     finally:
         wda.close()
 
@@ -631,14 +738,38 @@ def workflow_follow_template(
     a_in = after.get("snapshot_inputs") if isinstance(after.get("snapshot_inputs"), dict) else {}
     return {
         "workflow_id": workflow_id,
-        "follows": tw.render_source_for(template),
-        "published_version": template.published.number if template.published else None,
+        "follows": template.render_source(),
+        "published_version": (template.published or {}).get("version"),
+        "listed_on_template": listed,
+        **(
+            {}
+            if listed
+            else {
+                "note": "you lack write access to the template's scope, so it does not list this follower; the "
+                "follow itself (this workflow's render_source) works regardless"
+            }
+        ),
         "now_inherited": {
             "config": sorted(set(b_cfg) - set(a_cfg)),
             "snapshot_inputs": sorted(set(b_in) - set(a_in)),
         },
         "overrides": {"config": sorted(a_cfg), "snapshot_inputs": sorted(a_in)},
-        "url": tw.run_page_url(workflow_id, opportunity_id, program_id),
-        "draft_preview_url": tw.run_page_url(workflow_id, opportunity_id, program_id, draft=True),
+        "url": tw.run_page_url(workflow_id, scope.get("opportunity_id"), scope.get("program_id")),
+        "draft_preview_url": tw.run_page_url(
+            workflow_id, scope.get("opportunity_id"), scope.get("program_id"), draft=True
+        ),
         "new_version": version + 1,
     }
+
+
+def _with_template_home(token, rs, fn):
+    """Run `fn(home, template)` against the template `rs` names, if it is readable."""
+    scope = tw._scope_from_source(rs) if rs else None
+    if not scope:
+        return None
+    home = WorkflowDataAccess(access_token=token, **scope)
+    try:
+        template = tw.load_template(home.labs_api, rs["workflow"], **scope)
+        return fn(home, template) if template else None
+    finally:
+        home.close()

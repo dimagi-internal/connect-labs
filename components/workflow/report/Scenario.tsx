@@ -5,7 +5,7 @@
  *
  * Same look as the rest of the library (white `rounded-xl` cards, indigo
  * accents, tabular numbers). Same contract: plain data and callbacks, nothing
- * fetches, nothing knows which programme it is drawing. A number input hands
+ * fetches, nothing knows which program it is drawing. A number input hands
  * back the raw string the user typed, so a half-typed "0." survives a render;
  * the page parses it.
  */

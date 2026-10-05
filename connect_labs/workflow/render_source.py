@@ -17,7 +17,8 @@ becomes the stored copy, so the page does not jump.
 TEMPLATE WORKFLOW instead: data, not code, with a draft, published versions and a
 rollback, so a render change reaches every follower with no deploy. See
 workflow/template_workflows.py. It is set with the `workflow_follow_template` MCP tool
-(which checks the caller may read the template), never by a raw definition patch.
+(which checks the caller may read the template -- the LabsRecord ACL), never by a raw
+definition patch.
 """
 
 from __future__ import annotations
@@ -77,7 +78,7 @@ def resolve_render_code(data_access, definition) -> tuple[str | None, dict]:
 
     rs = source_of(getattr(definition, "data", None))
     if rs:
-        template, content = content_for_data(definition.data)
+        template, content = content_for_data(data_access.labs_api, definition.data)
         if content and content.get("render_code"):
             return content["render_code"], {
                 "source": "template_workflow",
@@ -92,7 +93,7 @@ def resolve_render_code(data_access, definition) -> tuple[str | None, dict]:
         return code, {
             **src,
             "warning": f"follows template workflow {rs['workflow']}, which "
-            + ("has no published version" if template else "was not found")
+            + ("has no published version" if template else "is not readable here (not found, or not shared with you)")
             + "; showing this workflow's stored copy",
         }
 
