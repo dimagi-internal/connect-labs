@@ -68,6 +68,7 @@ _ADMIN = frozenset("district state province region county chiefdom division lga 
 # name a hamlet somewhere ("Science", "Local") than the place an office is in.
 # Multi-word names ("Dar es Salaam") are specific enough not to need it.
 _MIN_SINGLE_WORD_POPULATION = 1000
+_MIN_SHORT_NAME_POPULATION = 100_000
 
 # Districts of a city that addresses name instead of the city itself, and which
 # cities500 does not carry as places of their own. Keyed by alpha2, folded.
@@ -102,7 +103,26 @@ _DISTRICT_OF = {
         )
     },
     "UG": {name: "kampala" for name in ("kawempe", "makindye", "nakawa", "rubaga", "lubaga")},
+    "HT": {"tabarre": "port au prince"},
+    "NG": {"kufang": "jos"},
 }
+
+# Kenyan addresses are usually "P.O. Box 41476-00100": the box, then the postal
+# code of the post office that holds it, which names a town. Only the main
+# offices are listed; any other 00xxx code is a Nairobi branch.
+_KE_POSTCODE = {
+    "00100": "nairobi",
+    "80100": "mombasa",
+    "40100": "kisumu",
+    "20100": "nakuru",
+    "30100": "eldoret",
+    "10100": "nyeri",
+    "50100": "kakamega",
+    "90100": "machakos",
+    "60100": "embu",
+    "01000": "thika",
+}
+_BOX_CODE = re.compile(r"\b\d{1,6}\s*[-–]\s*(\d{5})\b")
 
 
 def _fold(value: str) -> str:
@@ -136,7 +156,7 @@ def _towns() -> dict[str, dict[str, _Town]]:
                 continue
             name, cc, lat, lon, population = line.rstrip("\n").split("\t")
             key = _name_key(name)
-            if len(key) < 4 or key in _STOP:
+            if len(key) < 2 or key in _STOP:
                 continue
             out.setdefault(cc, {}).setdefault(key, _Town(name, float(lat), float(lon), int(population)))
     return out
@@ -148,6 +168,33 @@ def _name_key(value: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]+", " ", _fold(value))).strip()
 
 
+# The sheet's long-form names, and the shorthands people type instead -- in the
+# Countries column and inside addresses ("..., Hyderabad, Sindh, Pakistan").
+_ALIASES = {
+    "congo the democratic republic of the": "COD",
+    "democratic republic of the congo": "COD",
+    "dr congo": "COD",
+    "drc": "COD",
+    "tanzania united republic of": "TZA",
+    "tanzania": "TZA",
+    "cote d ivoire": "CIV",
+    "ivory coast": "CIV",
+    "iran": "IRN",
+    "syria": "SYR",
+    "bolivia": "BOL",
+    "venezuela": "VEN",
+    "united kingdom": "GBR",
+    "south korea": "KOR",
+    "laos": "LAO",
+    "moldova": "MDA",
+    "russia": "RUS",
+    "vietnam": "VNM",
+    # ISO renamed this one in 2022; the sheet still says the old name.
+    "turkey": "TUR",
+    "uk": "GBR",
+}
+
+
 def country_to_iso3(name: str) -> str | None:
     """The directory's country dropdown uses ISO 3166 names, so this mostly is a
     lookup -- but it carries the few spellings the sheet actually contains."""
@@ -157,30 +204,7 @@ def country_to_iso3(name: str) -> str | None:
     for row in iso_codes.all_countries():
         if _name_key(row["name"]) == folded:
             return row["alpha3"]
-    # The sheet's long-form names, and the shorthands people type instead.
-    aliases = {
-        "congo the democratic republic of the": "COD",
-        "democratic republic of the congo": "COD",
-        "dr congo": "COD",
-        "drc": "COD",
-        "tanzania united republic of": "TZA",
-        "tanzania": "TZA",
-        "cote d ivoire": "CIV",
-        "ivory coast": "CIV",
-        "iran": "IRN",
-        "syria": "SYR",
-        "bolivia": "BOL",
-        "venezuela": "VEN",
-        "united kingdom": "GBR",
-        "south korea": "KOR",
-        "laos": "LAO",
-        "moldova": "MDA",
-        "russia": "RUS",
-        "vietnam": "VNM",
-        # ISO renamed this one in 2022; the sheet still says the old name.
-        "turkey": "TUR",
-    }
-    return aliases.get(folded)
+    return _ALIASES.get(folded)
 
 
 # Countries the boundary tables do not carry. ``labs.admin_boundaries`` is
@@ -289,7 +313,7 @@ def _city_point(iso3: str, address: str) -> tuple[float, float, str] | None:
             if following in _STREET:
                 continue
             candidate = " ".join(words[i : i + size])
-            if size == 1 and (len(candidate) < 4 or candidate in _STOP):
+            if size == 1 and candidate in _STOP:
                 continue
             # The district map wins: some communes (Masina) are places in their
             # own right in cities500, and the head office is still in the city.
@@ -298,6 +322,11 @@ def _city_point(iso3: str, address: str) -> tuple[float, float, str] | None:
                 continue
             if size == 1 and town.population < _MIN_SINGLE_WORD_POPULATION:
                 continue
+            # A two- or three-letter word is a town only when it is a big one:
+            # Bo, Jos and Aba are cities, and every other short word in an
+            # address ("Box", "Rd", a house number's suffix) is not.
+            if size == 1 and len(candidate) < 4 and town.population < _MIN_SHORT_NAME_POPULATION:
+                continue
             # A named place beats an area named after one; then the biggest
             # town; among equals, the one later in the address, because
             # addresses run from the street out to the city.
@@ -305,9 +334,54 @@ def _city_point(iso3: str, address: str) -> tuple[float, float, str] | None:
             if best is None or rank > best[0]:
                 best = (rank, town)
     if best is None:
-        return None
+        return _postcode_point(alpha2, address, table)
     town = best[1]
     return town.lat, town.lon, town.name
+
+
+def _named_town(iso3: str, hq_city: str) -> tuple[float, float, str] | None:
+    """The town in an "HQ City" cell ("Michika, Nigeria"), by exact name."""
+    town = _name_key((hq_city or "").split(",")[0])
+    if not town:
+        return None
+    hit = _towns().get(iso_codes.to_alpha2(iso3) or "", {}).get(town)
+    return (hit.lat, hit.lon, hit.name) if hit else None
+
+
+def _postcode_point(alpha2: str, address: str, table: dict) -> tuple[float, float, str] | None:
+    """A town from a Kenyan box-and-postcode address that names no town."""
+    if alpha2 != "KE":
+        return None
+    for code in _BOX_CODE.findall(address or ""):
+        key = _KE_POSTCODE.get(code) or ("nairobi" if code.startswith("00") else "")
+        town = table.get(key)
+        if town:
+            return town.lat, town.lon, town.name
+    return None
+
+
+def _countries_in_text(text: str) -> list[str]:
+    """Every country an address names, longest name first.
+
+    The address is the head office, and a head office can sit in a country the
+    organisation does not list as one it works in: a Pakistan address on a row
+    that lists Kenya is in Pakistan. Longest first, and a shorter name inside a
+    longer match is ignored, so "Equatorial Guinea" is not also "Guinea".
+    """
+    haystack = f" {_name_key(text)} "
+    if not haystack.strip():
+        return []
+    names = {_name_key(row["name"]): row["alpha3"] for row in iso_codes.all_countries()}
+    names.update(_ALIASES)
+    found: list[str] = []
+    taken: list[str] = []
+    for name in sorted(names, key=len, reverse=True):
+        if len(name) < 2 or f" {name} " not in haystack or any(name in longer for longer in taken):
+            continue
+        taken.append(name)
+        if names[name] not in found:
+            found.append(names[name])
+    return found
 
 
 def _countries(raw: str) -> list[str]:
@@ -328,24 +402,40 @@ def _countries(raw: str) -> list[str]:
     return found
 
 
-def resolve(countries: str, regions: str, address: str) -> HqLocation | None:
+def resolve(countries: str, regions: str, address: str, hq_city: str = "") -> HqLocation | None:
     """Finest location the row supports, or None when even the country is absent.
 
-    The address is tried against every country the row lists, in order: an
-    organisation that works in Sierra Leone but writes a London office address
-    is located in London, not at the middle of Sierra Leone. The country it
-    falls back to is still the first one listed.
+    The head office wins. ``hq_city`` (the directory's HQ City column) is tried
+    first, then the office address. Both are tried against every country they
+    name themselves, before the countries the row says it works in: a head
+    office can be in a country the organisation does not operate in, and a
+    London or Hyderabad address is in London or Hyderabad whatever the
+    Countries column says. Only when no town is found does the row fall back
+    to a region it works in, then to a country centre.
     """
-    isos = _countries(countries)
+    listed = _countries(countries)
+    named = _countries_in_text(f"{hq_city} {address}")
+    isos = named + [iso for iso in listed if iso not in named]
     if not isos:
         return None
 
+    # HQ City is a town someone (or the AI sweep) named on purpose, so an exact
+    # name is taken as it stands -- no street, size or stop-word guards, which
+    # exist for picking a town out of free-text addresses.
     for iso3 in isos:
-        city = _city_point(iso3, address)
-        if city:
-            return HqLocation(city[0], city[1], "city", city[2], iso3)
+        named_town = _named_town(iso3, hq_city)
+        if named_town:
+            return HqLocation(named_town[0], named_town[1], "city", named_town[2], iso3)
 
-    iso3 = isos[0]
+    for text in (hq_city, address):
+        if not (text or "").strip():
+            continue
+        for iso3 in isos:
+            city = _city_point(iso3, text)
+            if city:
+                return HqLocation(city[0], city[1], "city", city[2], iso3)
+
+    iso3 = (listed or isos)[0]
     region = _region_point(iso3, regions)
     if region:
         return HqLocation(region[0], region[1], "region", region[2], iso3)

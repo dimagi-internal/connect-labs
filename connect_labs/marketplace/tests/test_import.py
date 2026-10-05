@@ -9,36 +9,17 @@ import pytest
 from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace.management.commands.marketplace_import import import_directory
 from connect_labs.marketplace.models import OrgConnectSlug, OrgContact, OrgProfile
+from connect_labs.marketplace.testing import (
+    SHEET_CONTACT_HEADER,
+    SHEET_DATES_HEADER,
+    SHEET_MAPPING_HEADER,
+    SHEET_ORG_HEADER,
+)
 
-ORG_HEADER = [
-    "Organization Name",
-    "Short Name",
-    "Has Used Connect",
-    "Year of Establishment",
-    "Org Team Size",
-    "No. of FLWs Managed",
-    "Countries of Operation",
-    "Regions/States of Operation",
-    "Primary Sector(s)",
-    "Website",
-    "Office Address",
-    "Emails",
-    "EOIs",
-    "Organization Notes",
-    "MSA",
-    "Work Order",
-]
-CONTACT_HEADER = [
-    "Contact Full Name",
-    "Organization Name",
-    "Role / Title",
-    "Main POC?",
-    "Email Address",
-    "Phone Number",
-    "Notes",
-]
-DATE_HEADER = ["Organization Name", "Joined", "Basis"]
-MAP_HEADER = ["slug"] + [""] * 7 + ["org"]
+ORG_HEADER = SHEET_ORG_HEADER
+CONTACT_HEADER = SHEET_CONTACT_HEADER
+DATE_HEADER = SHEET_DATES_HEADER
+MAP_HEADER = SHEET_MAPPING_HEADER
 
 ORGS = [
     ORG_HEADER,

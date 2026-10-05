@@ -113,6 +113,38 @@ class TestTownMatching:
         got = hq_location.resolve("Sierra Leone, United Kingdom", "", "23 Abbotsbury Close, London, E15 2RR")
         assert (got.precision, got.label, got.iso3) == ("city", "London", "GBR")
 
+    def test_an_address_in_a_country_the_row_does_not_list_is_still_the_hq(self):
+        """A head office can sit outside every country an organisation works
+        in. The row lists Kenya; the address is in Pakistan."""
+        got = hq_location.resolve("Kenya", "", "House no 39b Block-B unit no 2 Latifabad Hyderabad Sindh Pakistan")
+        assert (got.precision, got.label, got.iso3) == ("city", "Hyderabad", "PAK")
+
+    def test_hq_city_beats_the_address(self):
+        got = hq_location.resolve("Nigeria", "", "Plot 5, opposite the market, Kano", hq_city="Maiduguri")
+        assert (got.label, got.iso3) == ("Maiduguri", "NGA")
+
+    def test_hq_city_names_a_small_town_exactly(self):
+        """The size guard keeps stray words in an address from matching a
+        hamlet. HQ City names a town on purpose, so the guard does not apply."""
+        got = hq_location.resolve("Nigeria", "", "", hq_city="Michika, Nigeria")
+        assert (got.precision, got.label) == ("city", "Michika")
+
+    def test_hq_city_abroad_is_located_abroad(self):
+        got = hq_location.resolve("Sierra Leone", "", "", hq_city="London, UK")
+        assert (got.precision, got.label, got.iso3) == ("city", "London", "GBR")
+
+    def test_a_shorter_country_inside_a_longer_one_is_not_also_named(self):
+        assert hq_location._countries_in_text("Malabo, Equatorial Guinea") == ["GNQ"]
+
+    def test_a_kenyan_box_postcode_names_its_town(self):
+        assert hq_location._city_point("KEN", "25339-00100 GPO")[2] == "Nairobi"
+        assert hq_location._city_point("KEN", "P.O. Box 1234-80100")[2] == "Mombasa"
+
+    def test_a_short_name_is_a_town_only_when_it_is_a_big_one(self):
+        assert hq_location._city_point("SLE", "15 Dambara Road, Bo")[2] == "Bo"
+        assert hq_location._city_point("NGA", "No 10 Miango Road Kufang")[2] == "Jos"
+        assert hq_location._city_point("NGA", "No 5 Bo Lane, Kano")[2] == "Kano"
+
 
 class TestFirstService:
     def _work(self, slug, when, key):

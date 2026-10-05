@@ -84,7 +84,7 @@ def import_directory(org_rows, contact_rows, date_rows, map_rows, *, prune: bool
             fields = {name: getattr(row, name) for name in PROFILE_FIELDS}
             fields["source_row"] = row.source_row
 
-            located = resolve_hq(row.raw_countries, row.raw_regions, row.office_address)
+            located = resolve_hq(row.raw_countries, row.raw_regions, row.office_address, hq_city=row.hq_city)
             if located:
                 fields.update(
                     country_iso3=located.iso3,
