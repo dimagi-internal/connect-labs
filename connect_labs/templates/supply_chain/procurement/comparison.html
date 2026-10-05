@@ -46,7 +46,7 @@
     </div>
     {% if grid and grid.quotes and not grid.like_for_like %}<a href="{% url 'supply_chain:procurement_tender_detail' tender_id %}#import-estimates" data-testid="not-like-for-like" class="status-chip status-chip--ours px-3 py-1 text-sm hover:underline">Totals not like for like · clearing estimate not recorded</a>{% endif %}
     </div>
-    {% if grid and grid.quotes %}<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600"><span class="inline-flex items-center gap-x-3" data-testid="owner-legend"><span class="inline-flex items-center gap-1"><span class="status-chip status-chip--ours">to do</span>ours</span><span class="inline-flex items-center gap-1"><span class="status-chip status-chip--theirs">waiting</span>on the supplier</span></span>{% include "supply_chain/_src_legend.html" %}</div>{% endif %}
+    {% if grid and grid.quotes %}<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600"><span class="inline-flex items-center gap-x-3" data-testid="owner-legend"><span class="inline-flex items-center gap-1"><span class="status-chip status-chip--ours">to do</span>ours</span><span class="inline-flex items-center gap-1"><span class="status-chip status-chip--ours">to ask</span>ours to ask</span><span class="inline-flex items-center gap-1"><span class="status-chip status-chip--theirs">waiting</span>on the supplier</span></span>{% include "supply_chain/_src_legend.html" %}</div>{% endif %}
   </div>
 
   {% if award_error %}
