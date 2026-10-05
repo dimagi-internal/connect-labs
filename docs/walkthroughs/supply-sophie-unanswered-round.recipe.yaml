@@ -383,7 +383,7 @@ scenes:
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the canonical frame is the comparison under the waiver -- the duty terms line, one of three comparable (Harmattan, landed USD 51.30 with our clearing estimate, unconfirmed until the waiver document is on file), and the Import duty row settled for the quotes we import
+    note: the canonical frame is the comparison under the waiver -- the duty terms line, one of three comparable (Harmattan, landed USD 51.30 with our clearing estimate, unconfirmed until the duty exemption is on file), and the Import duty row settled for the quotes we import
   concept_claim: Settling the tender's import duty terms from its terms line is one choice;
     the tender then lists the reply still owed to Northgate with a drafted email, and
     the comparison costs every quote that leaves the import to us under the terms set.
