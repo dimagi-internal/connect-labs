@@ -2121,13 +2121,14 @@ Two examples ship: `registry/visit_quality` (per beneficiary, generic Connect vi
 
 ### Tools
 
-| Step                                | Tool                                                                                                                                                                                |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Start a registry                    | `semantic_registry_create` (`seed_from: 'visit_quality'` or `'kmc'`, or pass documents)                                                                                             |
-| Check before saving                 | `semantic_registry_validate`. It compiles at every scope the registry can have, and allow-lists every SQL fragment: no subqueries, no other tables, no comments, constants numeric. |
-| Change one indicator's display keys | `semantic_registry_set_indicator_meta`. It's surgical; prefer it to `semantic_registry_update`, which replaces a whole document.                                                    |
-| Read the exact logic                | `semantic_registry_explain`. Pass indicator IDs; with none, you get the index.                                                                                                      |
-| Bind a report                       | `workflow_update_definition` patch `registry_source: {registry_id: N}`, or `workflow_create_from_template(..., registry_source=...)`. Omitting it seeds a private copy.             |
+| Step                                | Tool                                                                                                                                                                                                                                                         |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Start a registry                    | `semantic_registry_create` (`seed_from: 'visit_quality'` or `'kmc'`, or pass documents)                                                                                                                                                                      |
+| Check before saving                 | `semantic_registry_validate`. It compiles at every scope the registry can have, and allow-lists every SQL fragment: no subqueries, no other tables, no comments, constants numeric.                                                                          |
+| Add, replace or remove an indicator | `semantic_registry_update` with `upsert_measures` / `upsert_properties` / `upsert_aggregates` (by `name`; `insert_after` places new ones), `remove`, and `expected_version`. Validated against the merged registry. Send whole documents only for a rewrite. |
+| Change one indicator's display keys | `semantic_registry_set_indicator_meta`. The smallest edit there is: one meta key, nothing else resent.                                                                                                                                                       |
+| Read the exact logic                | `semantic_registry_explain`. Pass indicator IDs; with none, you get the index.                                                                                                                                                                               |
+| Bind a report                       | `workflow_update_definition` patch `registry_source: {registry_id: N}`, or `workflow_create_from_template(..., registry_source=...)`. Omitting it seeds a private copy.                                                                                      |
 
 Registry writes only succeed from the record's **home scope** (the organisation, programme or opportunity it was created in). A shared record can be read and bound from anywhere.
 

@@ -194,12 +194,110 @@ def semantic_registry_create(
     return _summary(record)
 
 
+#: Item-level edits, by the document and list each one lands in. A registry is
+#: three lists of named items -- properties and aggregates in the properties
+#: document, measures in the indicators document -- so a small edit names the
+#: items it touches rather than resending the document they live in (#2224).
+_ITEM_LISTS = {
+    "properties": ("properties_doc", "properties"),
+    "aggregates": ("properties_doc", "aggregates"),
+    "measures": ("indicators_doc", "measures"),
+}
+
+_ITEM_ARRAY = {"type": "array", "items": {"type": "object"}}
+
+
+def _apply_item_ops(items: list, kind: str, upserts: list | None, removals: list | None, insert_after: str | None):
+    """Return a NEW list with `removals` dropped and `upserts` merged in, by `name`.
+
+    An upsert whose name exists REPLACES that item where it stands, so a
+    replacement never moves a measure in the scorecard. A new one is appended,
+    or -- with `insert_after` -- placed after that item, the new items keeping
+    the order they were given in. Every name is checked before anything is
+    applied: a typo in a removal or an anchor is refused rather than ignored,
+    since "removed nothing" and "inserted at the end" would both report success.
+    """
+    upserts = list(upserts or [])
+    removals = list(removals or [])
+    existing = [i.get("name") if isinstance(i, dict) else None for i in items]
+
+    seen = set()
+    for n, item in enumerate(upserts):
+        if not isinstance(item, dict) or not isinstance(item.get("name"), str) or not item["name"].strip():
+            raise MCPToolError("INVALID_SCHEMA", f"upsert_{kind}[{n}] must be an object with a non-empty `name`")
+        if item["name"] in seen:
+            raise MCPToolError("INVALID_SCHEMA", f"upsert_{kind} names {item['name']!r} more than once")
+        seen.add(item["name"])
+
+    for name in removals:
+        if not isinstance(name, str):
+            raise MCPToolError("INVALID_SCHEMA", f"remove.{kind} must be a list of names")
+    unknown = sorted(set(removals) - set(existing))
+    if unknown:
+        raise MCPToolError("NOT_FOUND", f"remove.{kind}: the registry defines no {kind} named {', '.join(unknown)}")
+    both = sorted(set(removals) & seen)
+    if both:
+        raise MCPToolError("INVALID_SCHEMA", f"{kind} {', '.join(both)} is both upserted and removed; pick one")
+
+    if insert_after is not None and (insert_after not in existing or insert_after in removals):
+        raise MCPToolError(
+            "NOT_FOUND",
+            f"insert_after: the registry has no {kind} named {insert_after!r} to insert after"
+            + (" (it is being removed)" if insert_after in removals else ""),
+        )
+
+    by_name = {item["name"]: copy.deepcopy(item) for item in upserts}
+    merged = []
+    for item in items:
+        name = item.get("name") if isinstance(item, dict) else None
+        if name in removals:
+            continue
+        merged.append(by_name.pop(name) if name in by_name else copy.deepcopy(item))
+    new = [by_name[item["name"]] for item in upserts if item["name"] in by_name]
+    if insert_after is None:
+        merged.extend(new)
+    else:
+        at = next(i for i, item in enumerate(merged) if isinstance(item, dict) and item.get("name") == insert_after)
+        merged[at + 1 : at + 1] = new
+    return merged
+
+
+def _insert_after_for(insert_after, kind: str):
+    """`insert_after` is a measure name, or {properties|measures|aggregates: name}."""
+    if insert_after is None:
+        return None
+    if isinstance(insert_after, str):
+        return insert_after if kind == "measures" else None
+    if isinstance(insert_after, dict):
+        unknown = sorted(set(insert_after) - set(_ITEM_LISTS))
+        if unknown:
+            raise MCPToolError("INVALID_SCHEMA", f"insert_after: unknown list(s) {', '.join(unknown)}")
+        return insert_after.get(kind)
+    raise MCPToolError(
+        "INVALID_SCHEMA", "insert_after must be a measure name or {measures|properties|aggregates: name}"
+    )
+
+
 @register(
     name="semantic_registry_update",
     description=(
-        "Patch a semantic registry. Any document you omit is left alone; validation runs "
-        "against the MERGED result, so a change to one document cannot silently break "
-        "another. A definition change bumps the version."
+        "Patch a semantic registry. Two ways to change the definition, and the small one is "
+        "usually the right one:\n"
+        "- ITEM-LEVEL (prefer this): `upsert_measures` / `upsert_properties` / `upsert_aggregates` "
+        "are lists of items keyed by `name` -- an existing name is REPLACED where it stands, a new "
+        "one is appended, or placed after `insert_after` (a measure name, or "
+        "{measures|properties|aggregates: name}) so a new indicator lands beside related ones in "
+        "the scorecard. `remove` is {properties: [names], measures: [names], aggregates: [names]}. "
+        "Adding one indicator with its numerator and denominator is three small items, not the "
+        "whole document. An unknown name in `remove` or `insert_after` is refused.\n"
+        "- WHOLE-DOCUMENT: `properties_doc` / `indicators_doc` / `deployment` replace that "
+        "document outright. Do not combine a whole document with item edits to the same document.\n"
+        "Any document you omit is left alone. Validation runs against the MERGED result, so a "
+        "change cannot silently break another part of the registry, and a refused edit saves "
+        "nothing. A definition change bumps the version. Pass `expected_version` (from "
+        "semantic_registry_get/list) to refuse the write if someone else has changed the "
+        "registry since you read it. For one indicator's display keys, "
+        "semantic_registry_set_indicator_meta is smaller still."
     ),
     input_schema={
         "type": "object",
@@ -211,6 +309,34 @@ def semantic_registry_create(
             "indicators_doc": {"type": "object"},
             "deployment": {"type": "object"},
             "is_shared": {"type": "boolean"},
+            "upsert_properties": {
+                **_ITEM_ARRAY,
+                "description": "Layer-2 properties, keyed by `name`: replace in place, else append.",
+            },
+            "upsert_measures": {
+                **_ITEM_ARRAY,
+                "description": "Indicator measures, keyed by `name`: replace in place, else append "
+                "(or insert after `insert_after`).",
+            },
+            "upsert_aggregates": {
+                **_ITEM_ARRAY,
+                "description": "Per-entity aggregates, keyed by `name`: replace in place, else append.",
+            },
+            "remove": {
+                "type": "object",
+                "properties": {k: {"type": "array", "items": {"type": "string"}} for k in _ITEM_LISTS},
+                "additionalProperties": False,
+                "description": "Names to delete, e.g. {measures: ['old_rate', 'old_rate_numerator']}.",
+            },
+            "insert_after": {
+                "type": ["string", "object"],
+                "description": "Where NEW upserted items go: a measure name, or "
+                "{measures|properties|aggregates: name}. Replacements keep their position.",
+            },
+            "expected_version": {
+                "type": "integer",
+                "description": "Refuse the write unless the registry is still at this version.",
+            },
             **_SCOPE_PROPS,
         },
         "required": ["registry_id"],
@@ -227,21 +353,76 @@ def semantic_registry_update(
     indicators_doc=None,
     deployment=None,
     is_shared=None,
+    upsert_properties=None,
+    upsert_measures=None,
+    upsert_aggregates=None,
+    remove=None,
+    insert_after=None,
+    expected_version=None,
     opportunity_id=None,
     program_id=None,
     organization_id=None,
 ):
+    upserts = {"properties": upsert_properties, "measures": upsert_measures, "aggregates": upsert_aggregates}
+    remove = remove or {}
+    item_kinds = [k for k in _ITEM_LISTS if upserts[k] or remove.get(k)]
+    whole = {"properties_doc": properties_doc, "indicators_doc": indicators_doc}
+    clash = sorted({_ITEM_LISTS[k][0] for k in item_kinds if whole[_ITEM_LISTS[k][0]] is not None})
+    if clash:
+        raise MCPToolError(
+            "INVALID_SCHEMA",
+            f"{', '.join(clash)} was sent whole AND edited item by item; send one or the other.",
+        )
+    if insert_after is not None:
+        anchored = ["measures"] if isinstance(insert_after, str) else list(insert_after or {})
+        unanchored = [k for k in anchored if k in upserts and not upserts[k]]
+        if not anchored or unanchored:
+            raise MCPToolError(
+                "INVALID_SCHEMA",
+                "insert_after places NEW upserted items, but nothing is upserted into "
+                f"{', '.join(unanchored or ['any list'])}; send upsert_{(unanchored or ['measures'])[0]} "
+                "or drop insert_after.",
+            )
+
     access = _access(user, opportunity_id, program_id, organization_id)
     try:
         before = access.get_registry(registry_id)
         if before is None:
             raise MCPToolError("NOT_FOUND", f"No semantic registry with id {registry_id}")
+        if expected_version is not None and before.version != expected_version:
+            raise MCPToolError(
+                "VERSION_CONFLICT",
+                f"registry {registry_id} is at version {before.version}, not the expected "
+                f"{expected_version}: it changed since you read it. Re-read it with "
+                "semantic_registry_get and reapply your edit.",
+            )
+
+        edited = {}
+        changes = {}
+        for kind in item_kinds:
+            doc_key, list_key = _ITEM_LISTS[kind]
+            if doc_key not in edited:
+                source = before.properties_doc if doc_key == "properties_doc" else before.indicators_doc
+                edited[doc_key] = copy.deepcopy(source or {})
+            doc = edited[doc_key]
+            doc[list_key] = _apply_item_ops(
+                doc.get(list_key) or [],
+                kind,
+                upserts[kind],
+                remove.get(kind),
+                _insert_after_for(insert_after, kind),
+            )
+            changes[kind] = {
+                "upserted": [i["name"] for i in upserts[kind] or []],
+                "removed": list(remove.get(kind) or []),
+            }
+
         record = access.update_registry(
             registry_id,
             name=name,
             description=description,
-            properties=properties_doc,
-            indicators=indicators_doc,
+            properties=edited.get("properties_doc", properties_doc),
+            indicators=edited.get("indicators_doc", indicators_doc),
             deployment=deployment,
             is_shared=is_shared,
         )
@@ -249,7 +430,10 @@ def semantic_registry_update(
         raise MCPToolError("INVALID_SCHEMA", "registry rejected:\n  " + "\n  ".join(exc.errors)) from exc
     finally:
         access.close()
-    return {**_summary(record), "_version_before": before.version, "_version_after": record.version}
+    out = {**_summary(record), "_version_before": before.version, "_version_after": record.version}
+    if changes:
+        out["items_changed"] = changes
+    return out
 
 
 @register(
@@ -257,10 +441,8 @@ def semantic_registry_update(
     description=(
         "Set one or more `meta` keys on named indicators, leaving every other measure, every "
         "other key and the other two documents exactly as they are. "
-        "`semantic_registry_update` replaces a whole document, so changing a single key means "
-        "round-tripping the entire indicators doc through the caller -- tens of thousands of "
-        "tokens each way for a one-word edit, and every byte of it a chance to corrupt a live "
-        "registry by transcription. This is the surgical alternative. "
+        "For a single meta key this is the smallest write there is: even an item-level "
+        "`semantic_registry_update` resends the whole measure. "
         "Validation still runs against the MERGED registry, so a patch that breaks an indicator "
         "is refused, and a definition change still bumps the version. "
         "`patches` is {indicator_id: {meta_key: value}}; a null value REMOVES the key. Refuses "
