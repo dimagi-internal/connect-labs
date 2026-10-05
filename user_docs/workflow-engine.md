@@ -221,4 +221,4 @@ The update cycle has four steps:
 1. **Draft** — the owner edits the template. Changes are saved as a draft and are not visible to anyone else yet.
 2. **Preview** — the owner opens any report that follows the template and adds `&template_draft=1` to the URL. The report loads with the draft applied and shows a **yellow banner** to confirm it is showing draft content. No other users see the draft.
 3. **Publish** — when the draft looks correct, the owner publishes it. The change becomes live on every following report on its next load. Each publish is saved as a numbered version.
-4. **Rollback** — if a published change causes a problem, the owner can roll back to any earlier numbered version. Rolling back publ
+4. **Rollback** — if a published change causes a problem, the owner can roll back to any earlier numbered version. Rolling back pu
