@@ -2779,6 +2779,7 @@ def run_history_api(request, definition_id):
     opened from.
     """
     from connect_labs.workflow import history_cache
+    from connect_labs.workflow.run_snapshot_store import snapshot_state
     from connect_labs.workflow.snapshot_runtime import project_state
 
     keys = [k.strip() for k in (request.GET.get("keys") or "").split(",") if k.strip()]
@@ -2803,7 +2804,9 @@ def run_history_api(request, definition_id):
         for run in runs:
             if not run.is_completed:
                 continue
-            state = ((run.data.get("snapshot") or {}).get("state")) or {}
+            # From the run's snapshot_summary when it carries every requested path
+            # -- no snapshot fetch at all -- else from the full snapshot.
+            state = snapshot_state(run, keys)
             out.append(
                 {
                     "id": run.id,
