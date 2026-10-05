@@ -351,14 +351,19 @@ scenes:
     say: reply
     seconds: 2.5
     target: "css:[data-testid=draft]:has-text('Our reply') [data-testid=draft-text]"
+  - kind: click
+    note: close the drafted emails again, so the scene ends on the tender itself
+    target: css:details#drafts > summary
+  - kind: scroll_to
+    target: testid:tender-terms
   - kind: hover
-    note: park the cursor in the top bar's blank middle, off the draft
+    note: park the cursor in the top bar's blank middle, off the page
     seconds: 0.6
     target: css:header.fixed
   - kind: hold
     seconds: 1.5
   - kind: snapshot
-    note: the canonical frame is the reply drafted to Northgate -- its three questions restated, an answer to write under each -- under the tender whose duty terms were just settled
+    note: the canonical frame is the tender with its duty terms just settled -- the terms line reads the waiver, marked just recorded -- and To do still holding the reply to Northgate
   concept_claim: Settling the tender's import duty terms from its terms line is one choice,
     and the tender then lists the reply still owed to Northgate with a drafted email.
   design_intent: A question in an email stalls the tender with nobody on the hook;
