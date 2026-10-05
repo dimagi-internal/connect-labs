@@ -303,3 +303,17 @@ def test_the_tender_page_lists_the_rounds_drafts_with_copy_buttons(client_in_pro
     assert "Northwind Nutrition" in panel
     assert "Follow-up on your quotation of 10 Sep 2026" in panel
     assert "navigator.clipboard.writeText" in panel
+
+
+def test_a_follow_up_can_be_marked_sent_on_the_suppliers_invitation(da, round_):
+    """Sending the follow-up is a chase: after it, the facts it asked for are the supplier's to send."""
+    from connect_labs.supply_chain.models import Quote
+    from connect_labs.supply_chain.procurement.status import asked_since_quote
+
+    followup = by(drafts(da, round_), "followup")["Northwind Nutrition"]
+    mark = followup["mark_sent"]
+    assert mark["operation"] == "outreach_update" and followup["outreach_id"] == mark["outreach_id"]
+    quote = Quote.objects.get(pk=round_["open_quote"]["id"])
+    assert not asked_since_quote(quote)
+    op(da, mark["operation"], outreach_id=mark["outreach_id"], data=mark["data"])
+    assert asked_since_quote(Quote.objects.get(pk=quote.pk))

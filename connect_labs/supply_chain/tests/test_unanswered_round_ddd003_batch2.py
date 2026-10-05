@@ -167,7 +167,7 @@ class TestTheComparison:
         assert "duty exemption not on file · to do" in body
         # The quote's header chip names it, or counts them ("duty exemption · to do" / "2 facts · to do").
         assert re.search(r'data-testid="grid-status">[^<]+ · to do<', body)
-        assert ">Attach duty exemption<" in body
+        assert 'data-testid="duty-exemption-attach"' in body
         # Award may still be offered, but never as the filled button while the fact is open.
         assert 'primary-dark" data-testid="grid-action"' not in body
 

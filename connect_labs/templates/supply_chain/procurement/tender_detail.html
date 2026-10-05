@@ -242,7 +242,7 @@ is folded away, each fold with its count.
   {% comment %}The detail, folded: each section opens on its own, and a link to one of its anchors opens it.{% endcomment %}
 
   <details class="fold scroll-mt-20" id="owed-fold" data-testid="fold-owed"{% if owed_answered_expanded or request.GET.changed|slice:":11" == "commitment-" %} open{% endif %}>
-    <summary id="owed">What we owe <span class="text-sm font-normal tabular-nums text-gray-600" data-testid="owed-open-count">{{ owed_open_count|default:0 }}</span> <span class="text-sm font-normal text-gray-600">open</span></summary>
+    <summary id="owed">Questions and promises <span class="text-sm font-normal tabular-nums text-gray-600" data-testid="owed-open-count">{{ owed_open_count|default:0 }}</span> <span class="text-sm font-normal text-gray-600">open</span></summary>
     <div class="fold-body">
       {% if not supply_as_of %}<a href="{% url 'supply_chain:tender_commitment_record' tender.id %}" class="text-sm text-brand-indigo hover:underline">+ Record a question or a promise</a>{% endif %}
       {% include "supply_chain/_owed.html" with resolve_label="Mark answered" empty_text="Nothing owed on this tender." %}
@@ -315,7 +315,7 @@ next action on anyone (design doc section 22).
              class="inline-flex items-center px-3 py-1.5 text-sm border border-gray-300 text-brand-indigo hover:bg-gray-50 rounded-md"><i class="fa-regular fa-envelope mr-1.5"></i> Open in mail</a>
         </div>
         {% endif %}
-        {% if d.kind == "reminder" and d.outreach_id %}
+        {% if d.outreach_id and d.kind == "reminder" or d.outreach_id and d.kind == "followup" %}
           {% comment %}At the end of the card, where sending finishes: the chase is recorded once
           the email has gone, so the control sits after the email, not above it. The day reads
           as the page's other days do ("2 Oct 2026"); YYYY-MM-DD is accepted too.{% endcomment %}
