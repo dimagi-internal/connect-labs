@@ -73,5 +73,10 @@ def test_mutating_tool_is_flagged_is_write(name):
 
 
 def test_semantic_registry_writes_are_flagged():
-    for name in ("semantic_registry_create", "semantic_registry_update", "semantic_registry_set_indicator_meta"):
+    for name in (
+        "semantic_registry_create",
+        "semantic_registry_update",
+        "semantic_registry_set_indicator_meta",
+        "semantic_registry_delete",
+    ):
         assert _REGISTRY[name].is_write, name

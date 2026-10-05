@@ -340,6 +340,14 @@ You don't have to resend a whole document to change part of it. `semantic_regist
 
 Adding one indicator with its numerator and denominator is a payload of about 1 KB. Validation still runs on the whole registry after your edit, and a rejected edit saves nothing.
 
+### Deleting a registry
+
+`semantic_registry_delete` removes a registry for good. Name the registry and the home it was created in (one of `organization_id`, `program_id` or `opportunity_id`). You need the same access you need to edit it: membership of that home. A shared registry you can read from somewhere else can't be deleted from there.
+
+It refuses while any report is bound to the registry, and names those reports by workflow id. Rebind them or delete them first, because a report whose registry is gone fails on its next load. The check looks at every organisation, programme and opportunity you belong to, plus shared reports. A report in a home you don't belong to is invisible to you, so it can't be counted.
+
+Every registry has a home. `semantic_registry_create` refuses a create that names none, because Connect can't return a record with no home to anyone, so it could never be read, edited or deleted.
+
 ---
 
 ## Reading the generated SQL
@@ -487,7 +495,7 @@ Start by copying the registry closest to your data. Copy `visit_quality` for any
 These steps are the same for any programme:
 
 1. **Pipelines.** The report needs the pipeline named in `pipelines.entity`, with one row per visit and the fields your rules read. If you have a series, it also needs the pipelines named in `pipelines.extra_fields`. Check with `pipeline_preview` that every column comes back filled in.
-2. **Registry.** If a registry for this indicator family already exists, bind to it (see [Managing registries](#managing-registries-across-programmes)). Otherwise create one with `semantic_registry_create`: `seed_from: kmc` or `seed_from: visit_quality` to start from an example, or supply your own documents. Validation runs on every save.
+2. **Registry.** If a registry for this indicator family already exists, bind to it (see [Managing registries](#managing-registries-across-programmes)). Otherwise create one with `semantic_registry_create` in the home it belongs to (`organization_id`, `program_id` or `opportunity_id`; one is required): `seed_from: kmc` or `seed_from: visit_quality` to start from an example, or supply your own documents. Validation runs on every save.
 3. **Bind.** `workflow_update_definition` with `registry_source: {registry_id: N}`. Or create the report from a template with `registry_source` set, so it binds to that registry instead of seeding a copy of its own.
 4. **Page.** The page fetches `/api/<id>/semantic/?scopes=opportunity,flw` (add `&series=<family>` if the registry has several) and grades the rows. The KMC Opportunity Report is a working example. The definitions popup reads `/api/<id>/indicator-definitions/`. For a registry-driven page with no code of your own, use the generic `indicator_programme_report` / `indicator_opp_report` templates (see [Shared Report Templates](shared-report-templates.md)).
 5. **Saved runs.** For a weekly trend, set `snapshot_inputs` to `{builder: semantic_snapshot, series, scopes, case_index, credibility, …}`. `case_index.date_fields` names the fields that date a case; the default is KMC's `reg_date` and `first_visit_date`, so set it for other data. Copy the rest from the KMC Programme Report. Then [rebuild history](reports-with-claude.md#rebuild-the-trend-after-a-definition-change).
