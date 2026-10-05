@@ -339,6 +339,15 @@ def _city_point(iso3: str, address: str) -> tuple[float, float, str] | None:
     return town.lat, town.lon, town.name
 
 
+def _named_town(iso3: str, hq_city: str) -> tuple[float, float, str] | None:
+    """The town in an "HQ City" cell ("Michika, Nigeria"), by exact name."""
+    town = _name_key((hq_city or "").split(",")[0])
+    if not town:
+        return None
+    hit = _towns().get(iso_codes.to_alpha2(iso3) or "", {}).get(town)
+    return (hit.lat, hit.lon, hit.name) if hit else None
+
+
 def _postcode_point(alpha2: str, address: str, table: dict) -> tuple[float, float, str] | None:
     """A town from a Kenyan box-and-postcode address that names no town."""
     if alpha2 != "KE":
@@ -409,6 +418,14 @@ def resolve(countries: str, regions: str, address: str, hq_city: str = "") -> Hq
     isos = named + [iso for iso in listed if iso not in named]
     if not isos:
         return None
+
+    # HQ City is a town someone (or the AI sweep) named on purpose, so an exact
+    # name is taken as it stands -- no street, size or stop-word guards, which
+    # exist for picking a town out of free-text addresses.
+    for iso3 in isos:
+        named_town = _named_town(iso3, hq_city)
+        if named_town:
+            return HqLocation(named_town[0], named_town[1], "city", named_town[2], iso3)
 
     for text in (hq_city, address):
         if not (text or "").strip():
