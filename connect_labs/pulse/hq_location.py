@@ -247,3 +247,77 @@ def resolve(countries: str, regions: str, address: str) -> HqLocation | None:
     if fallback:
         return HqLocation(fallback[0], fallback[1], "country", iso_codes.country_name(iso3) or iso3, iso3)
     return None
+
+
+def operating_areas(countries: list[str], regions: str) -> list[dict]:
+    """Where an organisation says it WORKS, as points: one per named region.
+
+    `resolve` answers a different question -- one point for the head office --
+    and stops at the first thing that matches, so an organisation working
+    across Borno, Yobe and Adamawa was drawn as a single dot in its office
+    town. This walks every listed country and every ADM1 region of that
+    country named in the regions cell. A country with no region named still
+    gets a point, at the country, marked as such: "we work in Kenya" is a
+    claim about all of Kenya, not about its middle.
+
+    The regions cell is not tagged by country, so each country's own regions
+    are looked for in all of it. ADM1 names are rarely shared across the
+    countries one organisation lists; when they are, both are drawn.
+    """
+    from django.contrib.gis.db.models.functions import Centroid
+
+    from connect_labs.labs.admin_boundaries.models import AdminBoundary
+
+    haystack = _fold(regions)
+    out: list[dict] = []
+    seen_iso3: set[str] = set()
+    for country in countries or []:
+        iso3 = country_to_iso3(country)
+        if not iso3 or iso3 in seen_iso3:
+            continue
+        seen_iso3.add(iso3)
+
+        matched: dict[str, dict] = {}
+        if haystack:
+            # AdminBoundary holds several sources' copies of the same unit, so
+            # one region is kept once, from whichever source is listed first.
+            rows = (
+                AdminBoundary.objects.filter(iso_code=iso3, admin_level=1)
+                .order_by("source", "name")
+                .annotate(mid=Centroid("geometry"))
+                .values_list("name", "mid")
+            )
+            for name, point in rows:
+                folded = _fold(name)
+                if len(folded) < 4 or folded in matched:
+                    continue
+                if re.search(rf"\b{re.escape(folded)}\b", haystack):
+                    matched[folded] = {
+                        "lat": point.y,
+                        "lon": point.x,
+                        "precision": "region",
+                        "label": name,
+                        "iso3": iso3,
+                    }
+            # "North East" inside "North East Region" is one place, not two.
+            for short in [k for k in matched if any(k != other and k in other for other in matched)]:
+                matched.pop(short, None)
+
+        if matched:
+            out.extend(matched.values())
+            continue
+        centre = _boundary_point(iso3, 0)
+        if not centre:
+            fallback = _COUNTRY_FALLBACK.get(iso3)
+            centre = (fallback[0], fallback[1], "") if fallback else None
+        if centre:
+            out.append(
+                {
+                    "lat": centre[0],
+                    "lon": centre[1],
+                    "precision": "country",
+                    "label": iso_codes.country_name(iso3) or country,
+                    "iso3": iso3,
+                }
+            )
+    return out
