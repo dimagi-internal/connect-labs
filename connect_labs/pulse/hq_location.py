@@ -291,7 +291,9 @@ def _city_point(iso3: str, address: str) -> tuple[float, float, str] | None:
             candidate = " ".join(words[i : i + size])
             if size == 1 and (len(candidate) < 4 or candidate in _STOP):
                 continue
-            town = table.get(candidate) or table.get(districts.get(candidate, ""))
+            # The district map wins: some communes (Masina) are places in their
+            # own right in cities500, and the head office is still in the city.
+            town = table.get(districts[candidate]) if candidate in districts else table.get(candidate)
             if town is None:
                 continue
             if size == 1 and town.population < _MIN_SINGLE_WORD_POPULATION:

@@ -97,6 +97,8 @@ class TestTownMatching:
         does not carry as a place of its own."""
         got = hq_location._city_point("COD", "Avenue de science 4630, Q/ Haut commandement C/Gombe")
         assert got[2] == "Kinshasa"
+        # Masina is also a place of its own in cities500; the district map wins.
+        assert hq_location._city_point("COD", "Quartier 3, Masina")[2] == "Kinshasa"
 
     def test_an_area_named_after_its_seat_only_wins_when_nothing_else_does(self):
         assert hq_location._city_point("SLE", "57A Benduma Road Daru Jawie Chiefdom Kailahun District")[2] == "Daru"
