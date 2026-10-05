@@ -65,8 +65,53 @@ class TestTownMatching:
         for junk in ("Nothing", "usmantech45@gmail.com", "P.O. Box 41"):
             assert hq_location._city_point("NGA", junk) is None
 
-    def test_a_country_with_no_gazetteer_yields_nothing_rather_than_a_wrong_town(self):
-        assert hq_location._city_point("MWI", "Lilongwe") is None
+    def test_a_country_outside_the_gazetteer_yields_nothing_rather_than_a_wrong_town(self):
+        assert hq_location._city_point("FRA", "Paris") is None
+
+    def test_countries_connect_does_not_deliver_in_are_still_covered(self):
+        """The gazetteer used to be the browser's, cut to Connect's delivery
+        countries, so a Zambian address naming its town still fell to "country
+        only". The directory is not limited to where Connect delivers."""
+        assert hq_location._city_point("ZMB", "123 Off Luwingu Road, Mulenga Hills Kasama")[2] == "Kasama"
+        assert hq_location._city_point("MWI", "P.O Box, 851, Lilongwe")[2] == "Lilongwe"
+        assert (
+            hq_location._city_point("ETH", "Bole Road, Bole Sub-city, House No 518, Addis Ababa")[2] == "Addis Ababa"
+        )
+
+    def test_a_short_word_inside_a_town_name_is_kept(self):
+        """Dropping words under three letters before matching turned "Dar es
+        Salaam" into "dar salaam", which is nowhere."""
+        got = hq_location._city_point("TZA", "PLOT NO. 07/44, MPAKANI A, KIJITONYAMA, DAR ES SALAAM, TANZANIA")
+        assert got[2] == "Dar es Salaam"
+
+    def test_a_street_named_after_a_town_is_not_that_town(self):
+        assert hq_location._city_point("KEN", "Buruburu 1, Mumias Rd, Nairobi (P.O. Box 41476-00100)")[2] == "Nairobi"
+        assert hq_location._city_point("NGA", "8, Port Harcourt Crescent, Area 11, Garki, Abuja")[2] == "Abuja"
+
+    def test_the_city_beats_the_neighbourhood(self):
+        assert hq_location._city_point("IND", "112 Shakti Nagar, Khasra No 66, Nagaur, Rajasthan")[2] == "Nagaur"
+        assert hq_location._city_point("UGA", "Kawempe National Referral Hospital, Kampala")[2] == "Kampala"
+
+    def test_a_district_of_a_city_places_the_city(self):
+        """Kinshasa addresses name the commune ("C/Gombe"), which cities500
+        does not carry as a place of its own."""
+        got = hq_location._city_point("COD", "Avenue de science 4630, Q/ Haut commandement C/Gombe")
+        assert got[2] == "Kinshasa"
+        # Masina is also a place of its own in cities500; the district map wins.
+        assert hq_location._city_point("COD", "Quartier 3, Masina")[2] == "Kinshasa"
+
+    def test_an_area_named_after_its_seat_only_wins_when_nothing_else_does(self):
+        assert hq_location._city_point("SLE", "57A Benduma Road Daru Jawie Chiefdom Kailahun District")[2] == "Daru"
+        assert (
+            hq_location._city_point("NGA", "N0 21. Legislative Quarters, Kaita Road, Katsina State.")[2] == "Katsina"
+        )
+
+    def test_an_office_abroad_is_located_abroad(self):
+        """The row lists Sierra Leone first and gives a London address. Trying
+        only the first country put the head office in the middle of Sierra
+        Leone."""
+        got = hq_location.resolve("Sierra Leone, United Kingdom", "", "23 Abbotsbury Close, London, E15 2RR")
+        assert (got.precision, got.label, got.iso3) == ("city", "London", "GBR")
 
 
 class TestFirstService:
