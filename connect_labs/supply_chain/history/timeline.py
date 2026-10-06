@@ -103,11 +103,12 @@ class Entry:
     # Why an AI-entered quote's line offers no Correct or Void: "voided" or
     # "corrected", so every such line says something in that place.
     fix_status: str = ""
-    # On the line that recorded a quote: which one, and -- set by a page that
-    # has computed them (procurement/status.py quote_open_facts) -- the facts
-    # that quote still lacks as it stands, as [(fact, owner)].
-    quote_id: int | None = None
-    open_facts: list = field(default_factory=list)
+    # When one line stands for several records (`_fold_bookkeeping`), each by
+    # name; `identity` then counts them ("6 suppliers") and the page lists these.
+    members: list = field(default_factory=list)
+    # The record the line is about, (model, pk), so a page can leave its own
+    # record's name off the lines about it (`_unname_own`).
+    object_key: tuple = ()
 
     # A single change, not an email's worth of them (see EmailEvent).
     is_group = False
@@ -490,8 +491,7 @@ def entry_for(revision, *, lookup=None, offer_fixes=True, live_quote_ids=None, u
     elif revision.action == "update":
         entry.sender = ""
     entry.bookkeeping = _is_bookkeeping(model, revision)
-    if model is Quote and revision.action == "create":
-        entry.quote_id = int(revision.object_id)
+    entry.object_key = (model, str(revision.object_id))
     if model is Quote and ai and offer_fixes and revision.action != "delete":
         quote_id = int(revision.object_id)
         if live_quote_ids is None:
@@ -626,6 +626,40 @@ def _fold_corrections(revisions):
     return kept, folded
 
 
+def _fold_reply_days(revisions, suffixes):
+    """Fold the reply day a Received correction moved into the correction's own line.
+
+    Correcting a quote's Received day moves the invitation's reply with it, in
+    the same call (repository._follow_received_on): one email, one day, so one
+    line -- "Quote corrected: received on 30 Sep (was 1 Oct) — reply on 30 Sep
+    (was 1 Oct)" -- not a second line about the invitation.
+    """
+    from connect_labs.supply_chain.models import Outreach, Quote
+
+    corrections = {
+        revision.call_id: revision
+        for revision in revisions
+        if revision.action == "create"
+        and revision.call_id is not None
+        and revision.content_type.model_class() is Quote
+        and getattr(revision.call, "operation", "") == "quote_correct"
+    }
+    kept = []
+    for revision in revisions:
+        correction = corrections.get(revision.call_id) if revision.call_id is not None else None
+        if (
+            correction is not None
+            and revision.action == "update"
+            and revision.content_type.model_class() is Outreach
+            and set(revision.changes) == {"responded_on"}
+        ):
+            old, new = revision.changes["responded_on"]
+            suffixes.setdefault(id(correction), []).append(f"reply on {_day_text(new)} (was {_day_text(old)})")
+            continue
+        kept.append(revision)
+    return kept
+
+
 def _as_correction(entry, revision, superseded_id, lookup):
     """Rewrite a new quote version's create line as the correction it was."""
     from connect_labs.supply_chain.models import Quote
@@ -643,11 +677,13 @@ def _as_correction(entry, revision, superseded_id, lookup):
     entry.sender = sender(Quote, new_values, lookup)
 
 
-def _timeline(revisions, until) -> list[Entry]:
+def _timeline(revisions, until, own=None) -> list[Entry]:
+    """`own`: the (model, pk) of the page the history sits on, whose name its lines leave off."""
     from connect_labs.supply_chain.models import Quote
 
     lookup = Lookup()
     revisions, suffixes = _fold_lines(_merged(list(revisions)), lookup)
+    revisions = _fold_reply_days(revisions, suffixes)
     revisions, corrections = _fold_corrections(revisions)
     by_model = {}
     for revision in revisions:
@@ -682,7 +718,67 @@ def _timeline(revisions, until) -> list[Entry]:
         _mark_holds(built)
     for entry in entries:
         _drop_own_day(entry)
-    return [e for e in entries if e.sentence]
+        _unname_own(entry, own)
+    return _fold_bookkeeping([e for e in entries if e.sentence])
+
+
+def _unname_own(entry, own):
+    """A line about the page's own record leaves its name off: "Tender · Status draft → open".
+
+    On the tender's page, "Tender · RUTF tender 2: 2,000 cartons to Kano · ..."
+    named the tender the page is headed by on every line about it.
+    """
+    if own and entry.what and entry.object_key == (own[0], str(own[1])):
+        entry.identity = ""
+
+
+def _day_of(when):
+    if not when:
+        return None
+    return (timezone.localtime(when) if timezone.is_aware(when) else when).date()
+
+
+def _fold_bookkeeping(entries) -> list[Entry]:
+    """Bookkeeping lines that say the same thing on one day read as one line counting the records.
+
+    Six invitations sent on 19 Sep by Sophie were six lines differing only in the
+    supplier ("Outreach · Kanem Foods Ltd · recorded: sent 19 Sep"); they read as
+    one: "Outreach · 6 suppliers · recorded: sent 19 Sep", each supplier listed
+    under it (`members`) rather than run together into one long line. Only
+    neighbours, only kept-books lines with nothing of their own to show (no
+    source, no fix, no hold), and only by the same person.
+    """
+    out = []
+    for entry in entries:
+        prev = out[-1] if out else None
+        if (
+            prev is not None
+            and entry.bookkeeping
+            and prev.bookkeeping
+            and entry.what
+            and entry.what == prev.what
+            and entry.entity == prev.entity
+            and entry.actor == prev.actor
+            and _day_of(entry.when) == _day_of(prev.when)
+            and not (entry.excerpt or prev.excerpt or entry.hold or prev.hold)
+            and entry.identity
+            and entry.identity not in (prev.members or [prev.identity])
+        ):
+            prev.members = [*(prev.members or [prev.identity]), entry.identity]
+            prev.identity = _counted(prev.entity, len(prev.members))
+            prev.fields = tuple(dict.fromkeys((*prev.fields, *entry.fields)))
+            continue
+        out.append(entry)
+    return out
+
+
+# What a folded line's records are, counted: an invitation is to a supplier.
+_MEMBER_NOUNS = {"Outreach": ("supplier", "suppliers")}
+
+
+def _counted(entity, n) -> str:
+    one, many = _MEMBER_NOUNS.get(entity, ("record", "records"))
+    return f"{n} {one if n == 1 else many}"
 
 
 def _drop_own_day(entry):
@@ -806,11 +902,17 @@ def email_events(entries) -> list:
 
 
 def timeline_for_tender(tender_id, *, program_id, until=None) -> list[Entry]:
-    return _timeline(tender_scope_revisions(tender_id, program_id=program_id, until=until), until)
+    from connect_labs.supply_chain.models import Tender
+
+    revisions = tender_scope_revisions(tender_id, program_id=program_id, until=until)
+    return _timeline(revisions, until, own=(Tender, tender_id))
 
 
 def timeline_for_contract(contract_id, *, program_id, until=None) -> list[Entry]:
-    return _timeline(contract_scope_revisions(contract_id, program_id=program_id, until=until), until)
+    from connect_labs.supply_chain.models import Contract
+
+    revisions = contract_scope_revisions(contract_id, program_id=program_id, until=until)
+    return _timeline(revisions, until, own=(Contract, contract_id))
 
 
 def ai_entered_quotes(quote_ids, *, program_id) -> dict:
@@ -831,6 +933,94 @@ def ai_entered_quotes(quote_ids, *, program_id) -> dict:
     ).select_related("call__actor")
     lookup = Lookup()
     return {int(r.object_id): actor_label(r.call, lookup) for r in creates if is_ai(r.call)}
+
+
+# What a version of a quote is not: its bookkeeping. Every other column is a value
+# someone stated, and a version changed it when it reads differently from the last.
+_VERSION_BOOKKEEPING = HIDDEN_FIELDS | {
+    "version",
+    "superseded_by_id",
+    "correction_reason",
+    "created_at",
+    "updated_at",
+    "voided",
+    "void_reason",
+}
+
+
+def _version_values(quote) -> dict:
+    return {
+        f.attname: getattr(quote, f.attname)
+        for f in type(quote)._meta.concrete_fields
+        if f.attname not in _VERSION_BOOKKEEPING
+    }
+
+
+@dataclass
+class QuoteLineage:
+    """A live quote and the versions behind it, oldest first.
+
+    `fields` is {attname: (version number, entered through an AI)} for the
+    version that last changed each value: a correction that typed one figure
+    owns that figure, and every figure it carried over keeps the source of the
+    version that stated it. `earlier` is one entry per correction, newest
+    first: the version it replaced, what changed and the reason given.
+    """
+
+    fields: dict = field(default_factory=dict)
+    earlier: list = field(default_factory=list)
+
+
+def quote_lineages(quote_ids, *, program_id) -> dict:
+    """{live quote id: QuoteLineage}, read off the version rows and each version's create.
+
+    Two queries: every version of the quotes' tenders, and their create
+    revisions. A version recorded before the history existed has no create and
+    reads as a person's, the rule `ai_entered_quotes` follows.
+    """
+    from connect_labs.supply_chain.models import Quote
+
+    ids = sorted({int(pk) for pk in quote_ids if pk is not None})
+    if not ids:
+        return {}
+    tender_ids = set(Quote._base_manager.filter(pk__in=ids).values_list("tender_id", flat=True))
+    versions = {q.pk: q for q in Quote._base_manager.filter(tender_id__in=tender_ids)}
+    replaced = {q.superseded_by_id: q for q in versions.values() if q.superseded_by_id}
+    creates = Revision.objects.filter(
+        _type_q(Quote), action="create", object_id__in=[str(pk) for pk in versions], program_id=program_id
+    ).select_related("call__actor")
+    by_ai = {int(r.object_id): is_ai(r.call) for r in creates}
+    lookup = Lookup()
+    out = {}
+    for pk in ids:
+        quote = versions.get(pk)
+        if quote is None:
+            continue
+        chain, seen = [quote], {pk}
+        while chain[0].pk in replaced and replaced[chain[0].pk].pk not in seen:
+            chain.insert(0, replaced[chain[0].pk])
+            seen.add(chain[0].pk)
+        values = [_version_values(v) for v in chain]
+        lineage = QuoteLineage()
+        for attname in values[-1]:
+            last = 0
+            for k in range(1, len(chain)):
+                if values[k].get(attname) != values[k - 1].get(attname):
+                    last = k
+            lineage.fields[attname] = (chain[last].version or last + 1, by_ai.get(chain[last].pk, False))
+        for k in range(len(chain) - 1, 0, -1):
+            text, _ = correction_sentence(Quote, values[k - 1], values[k], lookup)
+            lineage.earlier.append(
+                {
+                    "quote_id": chain[k - 1].pk,
+                    "version": chain[k - 1].version or k,
+                    "replaced_on": chain[k].created_at,
+                    "changes": text.partition(": ")[2],
+                    "reason": chain[k].correction_reason or "",
+                }
+            )
+        out[pk] = lineage
+    return out
 
 
 def corrections_for_quotes(quote_ids, *, program_id, until=None) -> dict:
@@ -932,6 +1122,45 @@ def reminders_for_outreach(outreach_ids, *, program_id, until=None) -> dict:
         if new:
             days.setdefault(int(object_id), set()).add(str(new)[:10])
     return {pk: len(found) for pk, found in days.items()}
+
+
+def last_changed_by(model, object_ids, *, program_id, until=None) -> dict:
+    """{id: {"teller", "on"}} for each record changed since it was recorded: who told us its latest change, and when.
+
+    The teller is the change's own: the sender its evidence came from when the
+    call names one ("Crescent Freight & Clearing"), else who made it, as the
+    timeline names them ("Sophie Okafor"). A record's `source` keeps who FIRST
+    told us; the history keeps every teller between. A record never changed
+    is absent. One query.
+    """
+    ids = sorted({int(pk) for pk in object_ids if pk is not None})
+    if not ids:
+        return {}
+    revisions = (
+        Revision.objects.filter(
+            _type_q(model),
+            action="update",
+            object_id__in=[str(pk) for pk in ids],
+            program_id=program_id,
+            call__isnull=False,
+        )
+        .select_related("call__actor")
+        .order_by("recorded_at", "id")
+    )
+    if until is not None:
+        revisions = revisions.filter(recorded_at__lte=end_of_day(until))
+    lookup = Lookup()
+    out = {}
+    for revision in revisions:
+        call = revision.call
+        teller = (getattr(call, "source_sender", "") or "").strip() or actor_label(call, lookup)
+        when = (
+            timezone.localtime(revision.recorded_at)
+            if timezone.is_aware(revision.recorded_at)
+            else revision.recorded_at
+        )
+        out[int(revision.object_id)] = {"teller": teller, "on": when.date()}
+    return out
 
 
 def answered_by(commitment_ids, *, program_id) -> dict:

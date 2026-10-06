@@ -17,9 +17,9 @@ a marked cell into an input and posts here; this module coerces the typed text
 to the field's type and runs the operation.
 
 A quote is the one record a cell does not overwrite: `quote_correct` writes a
-new version and keeps the old one, so the edit carries a reason naming the
-field and both values, and the response names the NEW quote's cell so the page
-can mark it.
+new version and keeps the old one, so the edit carries a reason ("Corrected in
+a table" -- the version itself records the field and both values), and the
+response names the NEW quote's cell so the page can mark it.
 """
 
 from __future__ import annotations
@@ -225,10 +225,6 @@ def _date(text: str, cell: Cell) -> date:
 # ---- the write -----------------------------------------------------------
 
 
-def _shown(value) -> str:
-    return "blank" if value in (None, "") else str(value)
-
-
 def apply(access, kind: str, record_id: int, name: str, text, *, was=None) -> dict:
     """Run the cell's operation. Returns {"key": the cell's key after the write}."""
     spec = KINDS.get(kind)
@@ -260,7 +256,9 @@ def apply(access, kind: str, record_id: int, name: str, text, *, was=None) -> di
 
     payload = {spec.id_arg: record_id, "data": data}
     if kind == "quote":
-        payload["reason"] = f"Corrected in a table: {cell.label} {_shown(was)} → {_shown(value)}"
+        # Why, not what: the new version itself records which field changed and from what,
+        # and the Quotes sheet sets that beside this reason.
+        payload["reason"] = "Corrected in a table"
     result = call_operation(spec.operation, access, payload)
     new_id = (result or {}).get("id", record_id) if isinstance(result, dict) else record_id
     return {"key": key(kind, new_id, name)}

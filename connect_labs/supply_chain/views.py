@@ -892,6 +892,19 @@ class OrderDetailView(OperationBase):
                     seen.add(document["id"])
                     documents.append({**document, "shipment_reference": shipment.get("reference")})
         context["documents"] = documents
+        # Told by is the latest change's teller and day ("Sophie Okafor, 6 Oct"); who first
+        # told us stays on the record's source and in the history below.
+        from connect_labs.supply_chain.history.timeline import last_changed_by
+        from connect_labs.supply_chain.models import Shipment
+
+        told = last_changed_by(
+            Shipment,
+            [s["id"] for s in context["shipments"]],
+            program_id=_access(self.request).program_id,
+            until=getattr(self.request, "supply_as_of", None),
+        )
+        for shipment in context["shipments"]:
+            shipment["last_told"] = told.get(shipment["id"])
         # One predicate with the comparison's landed figure (pricing.relief_unevidenced), read off the costing.
         context["duty_relief_unevidenced"] = bool((context["landed"] or {}).get("duty_relief_unevidenced"))
         context["orgs"] = {o["id"]: o for o in self.op("org_list")}
@@ -926,6 +939,9 @@ class OrderDetailView(OperationBase):
         # says "Nothing owed" beside a banner saying we are waited on.
         context["owed_holds"] = [h for h in context["held_on_us"] if h.get("commitment_id") is None]
         context["owed_open_count"] = context.get("owed_open_count", 0) + len(context["owed_holds"])
+        # Of those, the documents the shipment is held on -- the shipment row's own list. The rest
+        # (the duty exemption, a question, a promise) are owed on the order, not the consignment.
+        context["owed_holding_count"] = sum(1 for h in context["owed_holds"] if h.get("basis") == "held")
         # Who the held documents go through, so the section names its
         # counterparty ("to clear the shipment (via Crescent Freight & Clearing)")
         # instead of an ambiguous "them". One name only when every hold agrees.

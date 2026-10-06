@@ -501,7 +501,7 @@ def sahel_local(*, base_url: str, outputs: str | None = None, misdated: bool = F
     return out
 
 
-def sahel_local_misdated(*, base_url: str, outputs: str | None = None) -> dict:
+def sahel_misdated_local(*, base_url: str, outputs: str | None = None) -> dict:
     """sahel_local, with the email sent the day before the AI says it was received."""
     return sahel_local(base_url=base_url, outputs=outputs, misdated=True)
 
@@ -530,7 +530,7 @@ def seed_local(*, base_url: str, outputs: str | None = None, sheets: bool = Fals
     return result
 
 
-def seed_local_sheets(*, base_url: str, outputs: str | None = None) -> dict:
+def seed_sheets_local(*, base_url: str, outputs: str | None = None) -> dict:
     """seed_local, with Kanem's email stating the pack its recorded quote leaves out (--sheets)."""
     return seed_local(base_url=base_url, outputs=outputs, sheets=True)
 
@@ -560,14 +560,14 @@ def main() -> None:
     local = local_seed.target(args.local, args.base_url)
     if args.sahel_replies:
         if local:
-            call = "sahel_local_misdated" if args.sahel_forward_date else "sahel_local"
+            call = "sahel_misdated_local" if args.sahel_forward_date else "sahel_local"
             local_seed.run(HERE.name, local, Path(args.outputs) if args.outputs else OUTPUTS, call=call)
         else:
             sahel_replies(misdated=args.sahel_forward_date)
         return
     if local:
         outputs = Path(args.outputs) if args.outputs else HERE / "outputs.json"
-        call = "seed_local_sheets" if args.sheets else "seed_local"
+        call = "seed_sheets_local" if args.sheets else "seed_local"
         print(json.dumps(local_seed.run(HERE.name, local, outputs, call=call)))
         return
     result = seed_via_ecs(sheets=args.sheets) if _aws_live() else seed_via_github(sheets=args.sheets)

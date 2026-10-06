@@ -9,7 +9,7 @@
     "the-order-as-sheets",
     "whose-move"
   ],
-  "fetched_at": "2026-10-06T15:56:00.452220+00:00",
+  "fetched_at": "2026-10-06T17:50:11.320144+00:00",
   "name": "supply-sophie-sheets",
   "narrative": "Sophie buys RUTF for the Connect-RUTF program. Half the suppliers she asked to quote tender 2 never answered, and the three who did each left something out. Watch her read the tender as one sheet, correct what the AI recorded right where she reads it, fill the comparison's gaps cell by cell until every quote has a landed price, and end on an overview that says whose move each thing is.",
   "personas": {
@@ -84,11 +84,11 @@
         {
           "description": "Entering the pack in Kanem's Pack cell clears its Missing chip and updates the Comparable tile.",
           "id": "pack-cell-clears-missing",
-          "verify": "Playwright: Kanem's [data-edit$=':base_per_pack_stated'] reads 150; no 'sachets per carton' chip in its row; Comparable quotes tile changes"
+          "verify": "Playwright: Kanem's [data-edit$=':base_per_pack_stated'] reads 150; no 'sachets per carton' chip in its row"
         }
       ],
       "id": "kanems-pack",
-      "narrative": "Kanem's pro-forma says 150 sachets a carton; the AI left it out. Sophie types 150 into Kanem's Pack cell. The chip saying the quote lacks its pack disappears, and the tiles above recount.",
+      "narrative": "Kanem's pro-forma says 150 sachets a carton; the AI left it out. Sophie types 150 into Kanem's Pack cell, and the chip saying the quote lacks its pack disappears from the row.",
       "persona": "sophie",
       "provenance": "S3",
       "title": "Kanem's pack, typed in"
@@ -154,12 +154,12 @@
         }
       ],
       "id": "whose-move",
-      "narrative": "Back on her overview, tender 2 reads three of three comparable; its next move now belongs to the two suppliers still silent, not to her. The order shows the date its shipment is expected. Nothing in it came from her inbox except what she chose to put there.",
+      "narrative": "Back on her overview, tender 2 reads three of three comparable; what is left there is the quotes suppliers still owe and the duty exemption she has to attach. The order shows the date its shipment is expected. Nothing in it came from her inbox except what she chose to put there.",
       "persona": "sophie",
       "provenance": "S8",
       "title": "Whose move, now"
     }
   ],
   "slug": "supply-sophie-sheets",
-  "version": 2
+  "version": 4
 }
