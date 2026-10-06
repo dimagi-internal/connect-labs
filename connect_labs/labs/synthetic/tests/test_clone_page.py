@@ -27,6 +27,8 @@ def test_the_page_lists_real_opportunities_only(client, signed_in):
     assert 'value="2230"' in body and "RUTF Deliver" in body
     # A labs-only opportunity is already synthetic: there is nothing real to measure.
     assert 'value="10096"' not in body
+    # Each row carries what the search box matches on: its name and its number.
+    assert 'data-search="rutf deliver 2230"' in body
 
 
 @pytest.mark.django_db

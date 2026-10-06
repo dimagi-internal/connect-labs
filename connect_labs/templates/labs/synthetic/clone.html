@@ -2,6 +2,30 @@
 
 {% block title %}Clone a real opportunity{% endblock %}
 
+{% block inline_javascript %}
+  {{ block.super }}
+  <script>
+    (function () {
+      var box = document.querySelector("[data-testid=clone-search]");
+      if (!box) return;
+      var rows = document.querySelectorAll("[data-testid=clone-choices] label");
+      var none = document.querySelector("[data-testid=clone-no-match]");
+      box.addEventListener("input", function () {
+        var words = box.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        var shown = 0;
+        rows.forEach(function (row) {
+          var text = row.getAttribute("data-search");
+          var ticked = row.querySelector("input").checked;
+          var match = ticked || words.every(function (w) { return text.indexOf(w) !== -1; });
+          row.classList.toggle("hidden", !match);
+          if (match) shown += 1;
+        });
+        none.classList.toggle("hidden", shown > 0);
+      });
+    })();
+  </script>
+{% endblock %}
+
 {% block content %}
 <div class="container mx-auto max-w-3xl px-4 py-8">
   <a href="{% url 'labs:synthetic:list' %}" class="mb-4 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
@@ -25,15 +49,18 @@
     <fieldset>
       <legend class="mb-2 font-medium text-gray-900">Opportunity to clone</legend>
       {% if choices %}
-      <div class="flex max-h-80 flex-col gap-1 overflow-y-auto rounded-md border border-gray-200 p-2">
+      {% comment %}A long list: typing narrows it by name or number; ticked ones always stay in view.{% endcomment %}
+      <input type="search" class="base-input mb-2 w-full" placeholder="Search by name or number" aria-label="Search opportunities" data-testid="clone-search" autocomplete="off">
+      <div class="flex max-h-80 flex-col gap-1 overflow-y-auto rounded-md border border-gray-200 p-2" data-testid="clone-choices">
         {% for opp in choices %}
-        <label class="flex items-center gap-3 rounded px-2 py-1.5 text-sm hover:bg-gray-50">
+        <label class="flex items-center gap-3 rounded px-2 py-1.5 text-sm hover:bg-gray-50" data-search="{{ opp.name|lower }} {{ opp.id }}">
           <input type="checkbox" name="opportunity" value="{{ opp.id }}"{% if chosen == opp.id|stringformat:"d" %} checked{% endif %}>
           <span class="text-gray-900">{{ opp.name }}</span>
           <span class="ml-auto whitespace-nowrap text-xs text-gray-600">#{{ opp.id }}{% if opp.visits %} · {{ opp.visits }} visits{% endif %}</span>
         </label>
         {% endfor %}
       </div>
+      <p class="mt-2 hidden text-sm text-gray-600" data-testid="clone-no-match">No opportunity matches.</p>
       <p class="mt-1 text-xs text-gray-600">Only the opportunities your Connect account can see are listed. Tick more than one to clone them into one program.</p>
       {% else %}
       <p class="text-sm text-gray-600">Your Connect account sees no opportunities. Sign out and in again if you expected some.</p>
