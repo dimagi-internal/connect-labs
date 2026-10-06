@@ -235,7 +235,7 @@ class TestTheOrderPage:
         hold = _text(re.search(r'data-testid="owed-hold"[^>]*>(.*?)</div>', owed, re.S).group(1))
         # Since DDD 003 batch 8 the hold carries the action that clears it.
         # Since unanswered round 1004 b3 what it rests on is a chip: a recorded requirement holds the shipment.
-        assert hold == "Import permit shipment held Mark provided"
+        assert hold == "Import permit shipment held Attach"
         assert "?kind=import_permit" in owed
         assert "Nothing owed" not in owed
         assert _text(re.search(r'<h2 id="owed".*?</h2>', body, re.S).group(0)) == (

@@ -78,7 +78,8 @@ class TestTheComparisonUnderTheWaiver:
 
 @pytest.mark.django_db
 def test_the_tender_attach_page_offers_the_duty_waiver(da, world, client_in_program):
-    url = reverse("supply_chain:tender_document_attach", args=[world["tender"]["id"]])
+    # The program's exemption is attached once, at program level (test_program_duty_exemption).
+    url = reverse("supply_chain:program_document_attach") + "?kind=duty_exemption"
     response = client_in_program.get(url)
     assert response.status_code == 200
     body = response.content.decode()

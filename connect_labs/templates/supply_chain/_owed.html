@@ -22,7 +22,9 @@ answered" / "Mark done"), empty_text.
         {% else %}
           <span data-testid="owed-hold-basis" class="status-chip status-chip--ours">shipment held</span>
         {% endif %}
-        {% if hold.shipment_id and hold.kind and not supply_as_of %}{% comment %}Providing it is attaching it: the document on file clears the hold (holds.py).{% endcomment %}<a data-testid="owed-hold-provide" class="ml-2 text-brand-indigo hover:underline" href="{% url 'supply_chain:shipment_document_attach' hold.shipment_id %}?kind={{ hold.kind }}">Mark provided</a>{% endif %}
+        {% if hold.shipment_id and hold.kind and not supply_as_of %}{% comment %}Providing it is attaching it: the document on file clears the hold (holds.py).
+        The duty exemption is the program's, one paper for every order and tender that rests on it,
+        so it is attached once at program level; a document the shipment requires is attached to it.{% endcomment %}<a data-testid="owed-hold-provide" class="ml-2 text-brand-indigo hover:underline" href="{% if hold.basis == "duty_terms" %}{% url 'supply_chain:program_document_attach' %}?kind={{ hold.kind }}&next={{ request.path|urlencode }}{% else %}{% url 'supply_chain:shipment_document_attach' hold.shipment_id %}?kind={{ hold.kind }}{% endif %}">Attach</a>{% endif %}
       </div>
       {% if hold.basis == "held" and hold.source_excerpt %}
         {% comment %}The message that holds the shipment on it, in the History's own shape: the

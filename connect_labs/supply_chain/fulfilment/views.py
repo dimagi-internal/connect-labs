@@ -22,6 +22,7 @@ from connect_labs.supply_chain.fulfilment.forms import (
     InvoiceForm,
     PaymentConfirmationForm,
     PaymentForm,
+    ProgramDocumentForm,
 )
 from connect_labs.supply_chain.models import Contract, Invoice
 from connect_labs.supply_chain.values import money_digits
@@ -476,3 +477,46 @@ class DocumentAttachView(_UnderAContract):
 
     def fixed(self, **kwargs):
         return {"data": {"contract_id": int(kwargs["contract_id"])}}
+
+
+# ---- the program's own documents ---------------------------------------
+
+
+class ProgramDocumentAttachView(OperationFormView):
+    """A document the program holds as a whole: above all, its duty exemption.
+
+    Attached once, to no record, so every tender costed on the waiver and every
+    order whose nil duty rests on it reads the same paper
+    (pricing.program_duty_exemption). The same `document_attach` operation as
+    every other attach screen, with no link: the operation's own reading of a
+    program-level document. `?next=` brings the person back to where they asked.
+    """
+
+    operation = "document_attach"
+    form_class = ProgramDocumentForm
+    title = "Attach a program document"
+    intro = (
+        "A document the whole program holds rather than one order or tender — the duty exemption "
+        "every waiver-costed quote and order rests on. Give the days it holds for; it covers the "
+        "imports inside them."
+    )
+    submit_label = "Attach"
+    footnote = "Over 12 MB, store it elsewhere and give a link."
+
+    def _back(self):
+        back = self.request.GET.get("next") or ""
+        return back if back.startswith("/supply/") else reverse("supply_chain:procurement_tender_board")
+
+    def breadcrumb(self, **kwargs):
+        return [{"label": "Sourcing", "href": reverse("supply_chain:procurement_tender_board")}, {"label": self.title}]
+
+    def cancel_href(self, **kwargs):
+        return self._back()
+
+    def redirect_to(self, result):
+        return self._back()
+
+    def get_initial(self):
+        initial = super().get_initial()
+        initial["kind"] = self.request.GET.get("kind") or "duty_exemption"
+        return initial
