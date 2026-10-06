@@ -185,6 +185,9 @@ def test_the_system_escape_hatch_is_greppable():
         # The stock-from-visits seeder: operator-run through its command, and
         # it writes only its own registered labs-only programme (purge refuses others).
         "supply_chain/demo/stock_from_visits.py",
+        # The clone's supply seeder: operator-run through its command; refuses any programme that is not a
+        # labs-only one, and any opportunity not filed under it, before it reads a visit.
+        "supply_chain/demo/clone_supply.py",
         # The alert beat task: no user, reads only programmes that already
         # hold a subscription a member created.
         "supply_chain/alerts/service.py",
