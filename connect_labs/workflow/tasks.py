@@ -904,7 +904,15 @@ def run_scheduled_workflow(schedule_id: int) -> dict:
         if definition is None:
             raise ValueError(f"definition {sched.definition_id} not found")
         result = run_default_for_definition(
-            definition, access_token=token, request=None, cchq_access_token=cchq_token, cadence=sched.cadence
+            definition,
+            access_token=token,
+            request=None,
+            cchq_access_token=cchq_token,
+            cadence=sched.cadence,
+            # The schedule's own scope. A program-owned report is invisible to an
+            # opp-scoped read, so a hook that reads runs needs to know which it is.
+            opportunity_id=sched.opportunity_id,
+            program_id=None if sched.opportunity_id else sched.program_id,
         )
         # A hook reports trouble by RETURNING it at least as often as by raising: creator
         # templates audit several opportunities in one run and record a per-opportunity

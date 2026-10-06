@@ -488,6 +488,80 @@ def rebuild_history(
     return report
 
 
+def save_latest_week(
+    definition,
+    *,
+    access_token: str,
+    opportunity_id: int | None = None,
+    program_id: int | None = None,
+    today: date | None = None,
+    data_access=None,
+) -> dict:
+    """The default-run of a periodic report: save the most recent complete week.
+
+    A periodic report's trend has one point per saved run, and nothing saved those
+    runs except a person opening the report each week -- so a week nobody opened
+    had no point. This is what a schedule calls instead: ONE period of
+    `rebuild_history`, the week that ended last Sunday, built as of that Sunday.
+
+    `replace=False`, so a week that already has a run -- saved by hand, or by an
+    earlier fire of the same schedule -- is left alone. That makes the call
+    idempotent: a schedule set to Daily writes the week once on Monday and skips it
+    the other six days, and a manual save is never overwritten by a machine one.
+
+    The period is always WEEKLY, whatever the schedule's own cadence: the cadence
+    decides how often this checks, the trend's grain is the week.
+
+    Scope comes from the caller when it knows it (the schedule row does); otherwise
+    from the definition -- a programme report is filed under its program, and an
+    opp-scoped read cannot see a program-owned run (the upstream GET is an exact
+    scope match). Returns the rebuild report with a `status`, which the scheduler
+    reads: `failed` when the week could not be built, so a schedule that fails
+    every week does not sit green.
+    """
+    if opportunity_id is None and program_id is None:
+        program_id = getattr(definition, "program_id", None) or None
+        if program_id is None:
+            opportunity_id = getattr(definition, "opportunity_id", None) or None
+    if (opportunity_id is None) == (program_id is None):
+        return {
+            "status": "failed",
+            "error": "could not tell whether this report is filed under a program or an opportunity",
+        }
+
+    owns_dao = data_access is None
+    if owns_dao:
+        from connect_labs.workflow.data_access import WorkflowDataAccess
+
+        data_access = WorkflowDataAccess(
+            access_token=access_token, opportunity_id=opportunity_id, program_id=program_id
+        )
+    end = last_complete_period_end("weekly", today or date.today())
+    try:
+        report = rebuild_history(
+            data_access,
+            definition.id,
+            cadence="weekly",
+            start=end - timedelta(days=6),
+            end=end,
+            opportunity_id=opportunity_id,
+            program_id=program_id,
+            replace=False,
+            today=today,
+        )
+    except HistoryRebuildError as e:
+        return {"status": "failed", "error": e.message, "code": e.code, "period_end": end.isoformat()}
+    finally:
+        if owns_dao:
+            data_access.close()
+
+    errors = [r["error"] for r in report.get("runs", []) if r.get("error")]
+    report["status"] = "failed" if report.get("failed") else ("skipped" if report.get("skipped") else "saved")
+    report["errors"] = errors
+    report["period_end"] = end.isoformat()
+    return report
+
+
 class _InlineHandDown:
     """A rebuild's hand-down, done week by week with the cases already in hand.
 

@@ -1100,3 +1100,101 @@ class TestEachWeekIsHandedDownAsItIsBuilt:
         )
         assert report["created"] == 1
         assert report["hand_down"]["failed"] == 1 and "connect unavailable" in report["hand_down"]["errors"][0]
+
+
+# ---------------------------------------------------------------------------
+# save_latest_week -- what a schedule runs, so a weekly point no longer needs a person.
+# ---------------------------------------------------------------------------
+
+
+class TestSaveLatestWeek:
+    # A Wednesday: the last COMPLETE week is Mon 2026-09-28 .. Sun 2026-10-04.
+    TODAY = date(2026, 10, 7)
+
+    def _definition(self):
+        d = _Definition()
+        d.id = 1
+        d.program_id = None
+        return d
+
+    def test_saves_exactly_the_week_that_ended_last_sunday(self, monkeypatch):
+        dao = _DAO(_Definition())
+        _stub_build(monkeypatch)
+
+        report = hr.save_latest_week(
+            self._definition(), access_token="tok", opportunity_id=10, today=self.TODAY, data_access=dao
+        )
+
+        assert report["status"] == "saved"
+        assert report["period_end"] == "2026-10-04"
+        assert [r["period_end"] for r in report["runs"]] == ["2026-10-04"]
+        (run,) = dao.list_runs(1)
+        assert run.is_completed
+        assert run.period_start == "2026-09-28"
+
+    def test_a_week_already_saved_is_left_alone_so_a_daily_schedule_writes_it_once(self, monkeypatch):
+        # Saved by hand, or by yesterday's fire of the same schedule. Either way it
+        # is not overwritten and not duplicated: the call is idempotent.
+        by_hand = _Run(1, "2026-09-28", "2026-10-04", state={}, completed=True)
+        dao = _DAO(_Definition(), runs=[by_hand])
+        _stub_build(monkeypatch)
+
+        report = hr.save_latest_week(
+            self._definition(), access_token="tok", opportunity_id=10, today=self.TODAY, data_access=dao
+        )
+
+        assert report["status"] == "skipped"
+        assert [r.id for r in dao.list_runs(1)] == [1]
+        assert not [c for c in dao.calls if c[0] in ("create", "delete")]
+
+    def test_a_week_that_cannot_be_built_reports_failed_so_the_schedule_does_not_sit_green(self, monkeypatch):
+        from connect_labs.workflow import snapshot_runtime
+
+        dao = _DAO(_Definition())
+        _stub_build(monkeypatch, fail_on="2026-10-04", error=snapshot_runtime.SnapshotBuildError("non_dict", "boom"))
+
+        report = hr.save_latest_week(
+            self._definition(), access_token="tok", opportunity_id=10, today=self.TODAY, data_access=dao
+        )
+
+        assert report["status"] == "failed"
+        assert report["errors"] == ["boom"]
+
+    def test_a_cold_cache_is_a_failed_status_not_an_exception(self, monkeypatch):
+        # The scheduler records a returned failure; an exception would be reported
+        # too, but this keeps the message the rebuild wrote for a person to act on.
+        from connect_labs.workflow import snapshot_runtime
+
+        dao = _DAO(_Definition())
+        _stub_build(monkeypatch, fail_on="2026-10-04", error=snapshot_runtime.SnapshotBuildError("cache_miss", "cold"))
+
+        report = hr.save_latest_week(
+            self._definition(), access_token="tok", opportunity_id=10, today=self.TODAY, data_access=dao
+        )
+
+        assert report["status"] == "failed"
+        assert report["code"] == "cache_miss"
+
+    def test_a_programme_report_is_read_under_its_program_when_the_caller_gives_no_scope(self, monkeypatch):
+        captured = {}
+
+        def fake_rebuild(data_access, definition_id, **kw):
+            captured.update(kw)
+            return {"runs": [], "failed": 0, "skipped": 0}
+
+        monkeypatch.setattr(hr, "rebuild_history", fake_rebuild)
+        d = self._definition()
+        d.program_id = 77
+
+        hr.save_latest_week(d, access_token="tok", today=self.TODAY, data_access=_DAO(d))
+
+        assert captured["program_id"] == 77
+        assert captured["opportunity_id"] is None
+        assert captured["replace"] is False
+
+
+def test_the_programme_reports_are_schedulable():
+    from connect_labs.workflow.templates import template_supports_default_run
+
+    assert template_supports_default_run("kmc_programme_metrics") is True
+    assert template_supports_default_run("indicator_programme_report") is True
