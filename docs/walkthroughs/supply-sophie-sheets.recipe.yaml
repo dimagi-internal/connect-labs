@@ -174,6 +174,30 @@ scenes:
   show: The tender 1 order page's shipments and invoices, the shipment's expected
     date edited in its row.
   url: /supply/orders/${contract_id}/?program_id=${program_id}
+- id: to-the-field
+  actions:
+  - kind: wait_for
+    target: testid:network-tree
+  - kind: hold
+    seconds: 2.0
+  - kind: click
+    target: text:Show the 20 workers
+  - kind: scroll_to
+    target: css:[data-testid=point-name]:text-is('flw_015')
+  - kind: hold
+    seconds: 1.0
+  - kind: click
+    target: css:[data-testid=point-name]:text-is('flw_015')
+  - kind: wait_for
+    target: testid:worker-timeline
+  - kind: hold
+    seconds: 1.5
+  - kind: snapshot
+  concept_claim: After delivery, a worker's own stock reads as what arrived, less what
+    their visits gave out, with the share on unapproved visits named.
+  show: The network tree on the RUTF opportunity's synthetic clone, then worker flw_015's
+    page with issued, dispensed and on hand.
+  url: /supply/network/?program_id=10110
 - id: whose-move
   actions:
   - kind: wait_for

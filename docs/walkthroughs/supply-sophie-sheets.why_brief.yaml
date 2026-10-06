@@ -103,12 +103,31 @@ spine:
   claim: 'The order from tender 1 reads as sheets too: its shipment held at customs
     and its invoice billed above the agreed price, each a row; when the forwarder
     gives a new date, Sophie types it into the shipment''s row.'
-  status: gap
+  status: grounded
   evidence:
   - ref: 'PR 2244 (second commit): order_detail.html invoices and shipments edit in
       place'
     kind: implemented
+  - ref: 'PR 2253 + 2268: the Expected cell saves on labs (DDD run supply-sophie-sheets-2026-10-06-001,
+      iteration 3 render against deployed main d7049d2a1, all actions ok)'
+    kind: implemented
   rationale: The record keeps tracking after the award, and stays correctable there.
+- id: S9
+  claim: 'Once it is delivered, the RUTF can be followed into the field: a central
+    store feeds a partner store, which feeds each worker, and each worker''s stock
+    falls as their visits give a ration to a child. Shown on the synthetic clone of
+    the real RUTF opportunity, where the deliveries to workers are invented for the
+    demo and say so.'
+  status: grounded
+  evidence:
+  - ref: docs/superpowers/specs/2026-09-28-supply-stock-from-visits-design.md (dispensing
+      rules turn submitted visits into consumption; belief rolls stock up the network)
+    kind: documented
+  - ref: connect_labs/supply_chain/stock/services/belief.py; /supply/network/ and
+      /supply/workers/ views (program 10110, opportunity 10111, seeded by supply_seed_clone_supply)
+    kind: implemented
+  rationale: Procurement ends at the warehouse door only on paper; the buyer of record
+    also answers for whether the food reached children.
 - id: S8
   claim: 'Sophie''s overview says what her corrections changed: tender 2 from none
     comparable to most of its quotes comparable, its next move hers, the order''s
