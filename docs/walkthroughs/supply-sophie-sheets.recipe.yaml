@@ -152,6 +152,8 @@ scenes:
   actions:
   - kind: wait_for
     target: testid:overview
+  - kind: hold
+    value: 1.5
   - kind: snapshot
   concept_claim: 'The overview shows what the session''s corrections changed: tender
     2 all comparable with its next move on the silent suppliers, and the order''s shipment
