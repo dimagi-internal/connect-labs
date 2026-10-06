@@ -48,6 +48,10 @@ export interface Display {
   indicators: Record<string, IndicatorDisplay>;
   case_fields: CaseField[];
   reading: { column: string; label: string; unit?: string } | null;
+  /** Extra columns in one case's visit list. */
+  visit_fields: CaseField[];
+  /** Per-visit review flags: a visit carries one when `column` is yes/true/1, or equals `value`. */
+  visit_flags: { column: string; label: string; value?: string | number }[];
   visits_pipeline: string | null;
   targets_note?: string | null;
   /** The registry's default minimum denominator, when the payload carries it. */
@@ -150,10 +154,32 @@ export function displayOf(payload: any): Display {
       { field: 'total_visits', label: 'Visits', format: 'count' },
     ],
     reading: raw.reading || null,
+    visit_fields: raw.visit_fields || [],
+    visit_flags: raw.visit_flags || [],
     visits_pipeline: raw.visits_pipeline || null,
     targets_note: raw.targets_note || null,
     min_denominator: raw.min_denominator || null,
   };
+}
+
+/** The labels of the display's visit flags this visit row carries, in declared order. */
+export function visitFlagsOf(
+  dsp: Pick<Display, 'visit_flags'>,
+  visit: any,
+): string[] {
+  return (dsp.visit_flags || [])
+    .filter(function (f) {
+      const v = visit ? visit[f.column] : undefined;
+      if (v === null || v === undefined || v === '') return false;
+      if (f.value !== undefined && f.value !== null)
+        return String(v).toLowerCase() === String(f.value).toLowerCase();
+      if (typeof v === 'boolean') return v;
+      const s = String(v).trim().toLowerCase();
+      return s === 'yes' || s === 'true' || s === '1';
+    })
+    .map(function (f) {
+      return f.label;
+    });
 }
 
 /** An indicator's target in the units its VALUES carry (a % target of 70 -> 0.7). */
