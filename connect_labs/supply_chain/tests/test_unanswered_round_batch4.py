@@ -140,9 +140,10 @@ class TestTheComparison:
         start = re.search(r'<details [^>]*data-testid="award-start"[^>]*>(.*?)</details>', body, re.S)
         assert start is not None and " open" not in start.group(0).split(">", 1)[0]
         inner = start.group(1)
-        assert re.search(r'<summary data-testid="award-open"[^>]*>Award Kanem[^<]*</summary>', inner)
+        assert re.search(r'<summary data-testid="award-open"[^>]*>Award[^<]*</summary>', inner)
         form = re.search(r'<form [^>]*data-testid="award-form".*?</form>', inner, re.S).group(0)
         assert 'name="rationale"' in form and 'data-testid="award-submit"' in form
+        assert re.search(r'<option value="\d+" selected>Kanem', form)
 
     def test_a_link_to_the_award_step_opens_the_fields(self, da, world, client_in_program):
         op(da, "quote_record", data=_comparable(world))

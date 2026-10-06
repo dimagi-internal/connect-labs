@@ -193,7 +193,8 @@ class TestTheComparison:
     def test_money_reads_as_money(self, client_in_programme, chain):
         body = self._page(client_in_programme, chain)
         # Every figure currency first, to two places; no storage decimals.
-        assert "USD 0.60 / co-pack" in body
+        # The amount on its line, what it is per beneath it.
+        assert 'USD 0.60<span class="sub">per co-pack</span>' in body
         assert "0000" not in re.sub(r"<[^>]+>", " ", body[body.index('data-testid="comparison-grid"') :])
 
     def test_the_chosen_offer_is_marked_and_not_offered_again(self, client_in_programme, chain):

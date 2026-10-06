@@ -69,6 +69,8 @@ class Row:
     # How many quotes the comparison can rank, and whose: "1 of 3 comparable · Harmattan".
     comparable_chip: str = ""
     comparable_count: int = 0
+    # A tender's response deadline, against today: "deadline 10 Oct · in 4 days". Blank for an order.
+    deadline_note: str = ""
     # An order's bar is the order page's own six steps (ORDER_BAR), not the tender's:
     # read against the tender's steps, an order held at customs looked delivered.
     bar_index: int | None = None
@@ -270,7 +272,8 @@ def tender_stage(tender, *, invited=0, answered=0, comparable=None, quoted=None,
         words = "Collecting quotes"
         if invited:
             words += f" · {answered} of {invited} answered"
-        # The deadline is said once on the overview: in the row's decide move, not here.
+        # The deadline is said once on the overview row: beneath the stage (Row.deadline_note), or in
+        # the decide move once it has passed -- not in these words.
         return 1, words
     if tender.status == "awarded":
         return 3, f"Awarding · to {awardee}" if awardee else "Awarding"
@@ -339,6 +342,13 @@ def _tender_rows(program_id, today, until):
                 stage_index=index,
                 stage=stage,
                 sub=sub,
+                # Under the stage, the deadline the tender page's bar reads -- unless the row's decide
+                # move already says it passed: the deadline is said once on a row.
+                deadline_note=(
+                    ""
+                    if tender.status == "awarded" or any(m.rule == rules.RULE_DEADLINE for m in ours)
+                    else deadline_note(tender.response_deadline, today)
+                ),
                 ours=ours,
                 theirs=theirs,
                 missing=_missing_facts(tender, quotes.get(tender.pk, [])),
@@ -347,6 +357,19 @@ def _tender_rows(program_id, today, until):
             )
         )
     return rows
+
+
+def deadline_note(deadline: date | None, today: date) -> str:
+    """ "deadline 10 Oct · in 4 days" / "· today" / "· passed 3 days ago": the tender's deadline against today."""
+    if deadline is None:
+        return ""
+    ahead = (deadline - today).days
+    when = (
+        f"in {_plural(ahead, 'day')}"
+        if ahead > 0
+        else "today" if ahead == 0 else f"passed {_plural(-ahead, 'day')} ago"
+    )
+    return f"deadline {_day(deadline)} · {when}"
 
 
 def _comparable(tender, quotes) -> dict:

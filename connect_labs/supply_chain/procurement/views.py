@@ -974,17 +974,6 @@ class ComparisonView(_Base):
                     items[item_id] = self.op("item_get", item_id=item_id)
                 context["set_aside"].append({"quote": quote, "item": items.get(item_id)})
         context["comparison"] = comparison
-        # The first offer that can still be awarded carries id="award" on its
-        # ranked ROW, so a link ending "#award" frames the supplier, its figures
-        # and the award form under them together. One per page: ids are unique.
-        context["award_anchor_quote_id"] = next(
-            (
-                row.get("quote_id")
-                for row in (comparison or {}).get("comparable") or []
-                if row.get("quote_id") not in context["awarded_quote_ids"]
-            ),
-            None,
-        )
         # Which offers an AI entered, so each carries the same indigo AI pill as
         # the timeline and the overview -- the reader checks those first.
         context["ai_quotes"] = (
@@ -1150,6 +1139,17 @@ class ComparisonView(_Base):
                 waiver_on_file=context.get("waiver_on_file", True),
             )
             context["grid_blocked_by_terms"] = [q["name"] for q in context["grid"]["quotes"] if q["blocked_by_terms"]]
+            # ONE award block for the tender: a quote's Award link (?award=<id>) opens it with that
+            # quote chosen; otherwise it starts on the cheapest quote that can be awarded.
+            awardable = [q["quote_id"] for q in context["grid"]["quotes"] if q["awardable"]]
+            requested = self.request.POST.get("quote_id") or self.request.GET.get("award")
+            try:
+                requested = int(requested)
+            except (TypeError, ValueError):
+                requested = None
+            context["award_choice_id"] = requested if requested in awardable else next(iter(awardable), None)
+            if requested in awardable:
+                context["award_step"] = True
         return context
 
     def post(self, request, tender_id, *args, **kwargs):
