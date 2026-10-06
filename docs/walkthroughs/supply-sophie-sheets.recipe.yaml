@@ -146,8 +146,8 @@ scenes:
     target: css:[data-testid=draft]:has-text('Northgate') [data-testid=reply-sent-form] button
   - kind: wait_for
     target: testid:on-us-count
-  - kind: hover
-    target: text:Waiting on suppliers
+  - kind: scroll_to
+    target: testid:stage-bar
   - kind: hold
     seconds: 1.0
   - kind: snapshot
@@ -170,6 +170,10 @@ scenes:
     value: Enter
   - kind: wait_for
     target: css:.is-saved
+  - kind: hover
+    target: 'css:#shipments-fold > summary'
+  - kind: hold
+    seconds: 1.0
   - kind: snapshot
   concept_claim: Once ordered, the purchase reads as sheets too, and a new date from
     the forwarder is typed into the shipment's row.
