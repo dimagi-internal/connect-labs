@@ -20,10 +20,12 @@ is folded away, each fold with its count.
       <div class="flex min-w-0 flex-[1_1_480px] flex-col gap-1">
         <div class="text-xs uppercase tracking-wide text-gray-600">Tender</div>
         <h1 id="tender-title" class="text-brand-deep-purple text-2xl font-semibold" data-testid="tender-title">{{ status.header.title|default:tender.label }}</h1>
-        <div class="text-sm text-gray-600" data-testid="tender-summary">
-          {% if status.header.where %}{{ status.header.where }} · {% endif %}{% if status.header.incoterm %}{{ status.header.incoterm }} · {% endif %}{{ status.header.visibility }}
-          <span class="status-chip status-chip--{% if tender.status == 'open' %}primary{% else %}neutral{% endif %} ml-1.5" data-testid="tender-state-pill">{{ tender.status|capfirst }}</span>
-          {% if status.comparable_chip %}<span class="status-chip status-chip--{% if status.comparable %}primary{% else %}neutral{% endif %} ml-1" data-testid="comparable-chip">{{ status.comparable_chip }}</span>{% endif %}
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-600" data-testid="tender-summary">
+          {% if status.header.where %}<span data-testid="tender-where"><span>Where the goods go</span> <span class="font-medium text-gray-900">{{ status.header.where }}</span></span>{% endif %}
+          {% if status.header.incoterm %}<span data-testid="tender-incoterm"><span>Terms</span> <span class="font-medium text-gray-900">{{ status.header.incoterm }}</span></span>{% endif %}
+          <span data-testid="tender-visibility">{{ status.header.visibility|capfirst }}</span>
+          <span class="status-chip status-chip--{% if tender.status == 'open' %}primary{% else %}neutral{% endif %}" data-testid="tender-state-pill">{{ tender.status|capfirst }}</span>
+          {% if status.comparable_chip %}<span class="status-chip status-chip--{% if status.comparable %}primary{% else %}neutral{% endif %}" data-testid="comparable-chip">{{ status.comparable_chip }}</span>{% endif %}
         </div>
       </div>
       <div class="flex shrink-0 flex-wrap items-center gap-2.5">
@@ -55,9 +57,12 @@ is folded away, each fold with its count.
       <span class="flex flex-wrap items-center gap-2">
         <span class="text-gray-600">Import duty</span>
         <span data-testid="tender-duty-terms"{% if duty_terms_changed %} data-changed{% endif %} class="px-1" {% edit_cell "tender" tender.id "duty_terms" tender.duty_terms %}>
-          {% if not tender.duty_terms %}<span class="status-chip status-chip--ours">Not settled</span>{% else %}{% include "supply_chain/_src.html" with src=status.terms.duty_src %}<span class="font-medium text-gray-900">{{ tender.duty_terms|duty_terms_words|capfirst }}</span>{% if tender.duty_terms == "buyer_pays" %}{% if tender.duty_estimate_percent %} · estimate {{ tender.duty_estimate_percent|floatformat:"-2" }}%{% else %} · <span class="text-message-warning-text font-medium">estimate not recorded</span>{% endif %}{% endif %}{% if duty_terms_changed %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% if tender.duty_terms_set_on %}<span class="text-xs text-gray-600"> · set {{ tender.duty_terms_set_on|day }}{% if status.terms.duty_set_by %} · {{ status.terms.duty_set_by }}{% endif %}</span>{% endif %}{% endif %}
-          {% if tender.duty_terms == "buyer_waiver" %}<span data-testid="waiver-evidence" class="text-xs text-gray-600"> · {{ "duty_exemption"|document_kind }} {% if waiver_on_file %}on file{% else %}not on file{% endif %}</span>{% endif %}
+          {% if not tender.duty_terms %}<span class="status-chip status-chip--ours">Not settled</span>{% else %}{% include "supply_chain/_src.html" with src=status.terms.duty_src %}<span class="font-medium text-gray-900">{{ tender.duty_terms|duty_terms_words|capfirst }}</span>{% if tender.duty_terms == "buyer_pays" %}{% if tender.duty_estimate_percent %} · estimate {{ tender.duty_estimate_percent|floatformat:"-2" }}%{% else %} · <span class="text-message-warning-text font-medium">estimate not recorded</span>{% endif %}{% endif %}{% if duty_terms_changed %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% endif %}
         </span>
+        {% comment %}Who set the terms and when, and the waiver's evidence: each its own field
+        beside the terms, not run on after them.{% endcomment %}
+        {% if tender.duty_terms and tender.duty_terms_set_on %}<span class="whitespace-nowrap text-xs text-gray-600" data-testid="duty-terms-set">Set {{ tender.duty_terms_set_on|day }}{% if status.terms.duty_set_by %} · {{ status.terms.duty_set_by }}{% endif %}</span>{% endif %}
+        {% if tender.duty_terms == "buyer_waiver" %}<span data-testid="waiver-evidence" class="whitespace-nowrap text-xs text-gray-600">{{ "duty_exemption"|document_kind|capfirst }} {% if waiver_on_file %}on file{% else %}<span class="text-message-warning-text font-medium">not on file</span>{% endif %}</span>{% if not waiver_on_file and not supply_as_of %} <a class="text-xs text-brand-indigo font-semibold hover:underline" data-testid="duty-exemption-attach" href="{% url 'supply_chain:program_document_attach' %}?kind=duty_exemption&next={{ request.path|urlencode }}">Attach</a>{% endif %}{% endif %}
         {% if not supply_as_of %}
         <details class="relative" data-testid="duty-terms-settle">
           <summary class="button button-sm outline-style list-none [&::-webkit-details-marker]:hidden" role="button" data-testid="duty-terms-open" aria-label="{% if tender.duty_terms %}Change{% else %}Settle{% endif %} import duty">{% if tender.duty_terms %}Change{% else %}Settle{% endif %}</summary>
@@ -260,13 +265,12 @@ next action on anyone (design doc section 22).
           <span class="text-base text-gray-600">· {% if d.kind == "request" %}Quote request{% elif d.kind == "reminder" %}Reminder{% elif d.kind == "reply" %}Our reply{% elif d.kind == "clarification" %}Duty terms clarification{% else %}Follow-up{% endif %}</span>{% if d.duty_terms and d.kind != "clarification" %} <span data-testid="draft-duty-terms" class="status-chip status-chip--neutral text-sm">+ duty terms</span>{% endif %}
         </p>
         {% if d.facts %}
-          {% comment %}A reminder's facts as a labelled row, set apart from the card's body
-          copy: when we asked, when we last reminded, which reminder this is.{% endcomment %}
+          {% comment %}Why the draft is due, as a labelled row set apart from the card's
+          body copy -- never a sentence: for a reminder, when we asked and which reminder
+          this is; for a reply, how many questions and since when; and so on.{% endcomment %}
           <dl class="mt-2 flex flex-wrap gap-x-5 gap-y-1 rounded-md bg-gray-50 border border-gray-200 px-3 py-2 text-sm" data-testid="draft-why">
             {% for f in d.facts %}<div class="flex gap-1.5"><dt class="text-gray-600">{{ f.label }}</dt><dd class="font-medium text-gray-900">{{ f.value }}</dd></div>{% endfor %}
           </dl>
-        {% else %}
-        <p class="text-sm text-gray-700 mt-1" data-testid="draft-why">{{ d.why }}</p>
         {% endif %}
         {% comment %}To, Subject and Message in one grid, each Copy in the same right-hand
         column, so the three read as one composed email; "Open in mail" hands all three

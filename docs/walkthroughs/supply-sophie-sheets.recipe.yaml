@@ -123,9 +123,9 @@ scenes:
   - kind: wait_for
     target: css:.is-saved
   - kind: scroll_to
-    target: css:[data-testid=grid-quote-row]:has-text('Sahel') td[data-fact=landed]
+    target: css:[data-testid=grid-quote-row]:has-text('Kanem') td[data-fact=landed]
   - kind: hover
-    target: css:main h1
+    target: testid:comparable-count
   - kind: hold
     seconds: 1.0
   - kind: snapshot
@@ -140,8 +140,11 @@ scenes:
     target: css:#drafts
   - kind: scroll_to
     target: css:[data-testid=draft]:has-text('Northgate')
+  - kind: hover
+    target: css:[data-testid=draft]:has-text('Northgate') [data-testid=reply-sent-form] button
   - kind: hold
     seconds: 2.0
+  - kind: snapshot
   - kind: click
     target: css:[data-testid=draft]:has-text('Northgate') [data-testid=reply-sent-form] button
   - kind: wait_for
@@ -149,8 +152,7 @@ scenes:
   - kind: scroll_to
     target: testid:stage-bar
   - kind: hold
-    seconds: 1.0
-  - kind: snapshot
+    seconds: 1.5
   concept_claim: What the record says she owes a supplier is drafted as one email
     for her own mailbox, and sending it is one more fact in the record.
   show: The reply drafted to Northgate's three questions, marked sent.

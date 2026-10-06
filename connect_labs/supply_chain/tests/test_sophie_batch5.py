@@ -412,9 +412,9 @@ class TestThePublicListing:
 class TestAnAwardedTenderSaysClosed:
     def test_the_pill(self, da, base, client_in_program):
         tender_id = base["tender"]["id"]
-        assert "open to all suppliers" in _tender_page(client_in_program, tender_id)
+        assert "open to all suppliers" in _tender_page(client_in_program, tender_id).lower()
         Tender.objects.filter(pk=tender_id).update(status="awarded")
         body = _tender_page(client_in_program, tender_id)
         assert "open to all suppliers" not in body.lower()
-        assert "closed to new quotes" in body
+        assert "closed to new quotes" in body.lower()
         assert re.search(r'data-testid="tender-state-pill"[^>]*>Awarded<', body)
