@@ -417,3 +417,97 @@ class TestOpportunityLabels:
         assert "'opportunity-data'" in src
         # ...and the drilled header counts its own scope, not the programme's.
         assert "R.nounCount(scopeCases, ENT)" in src and "R.nounCount(scopeWorkers, WRK)" in src
+
+
+class TestDoneProperty:
+    """`display.entity.done_property`: a finished case is carried into the case index."""
+
+    def _inds(self):
+        import copy
+
+        _props, inds = load_registry("visit_quality")
+        return {**copy.deepcopy(inds), "display": {"entity": {"done_property": "all_approved"}}}
+
+    def test_a_declared_done_property_joins_the_derived_case_index(self):
+        props, _ = load_registry("visit_quality")
+        inds = self._inds()
+        model = resolve_model(props, inds)
+        visit_cfg = MagicMock(terminal_stage=MagicMock(value="visit_level"))
+        spec = resolve_spec_defaults({}, model, visit_cfg, None, {}, inds)
+        assert spec["case_index"]["fields"].count("all_approved") == 1
+
+    def test_the_registry_done_property_is_only_a_bool_property(self):
+        import copy
+
+        from connect_labs.workflow.snapshot_builders import registry_done_property
+
+        props, inds = load_registry("visit_quality")
+        assert registry_done_property(props, inds) is None
+        assert registry_done_property(props, self._inds()) == "all_approved"
+        wrong = {**copy.deepcopy(inds), "display": {"entity": {"done_property": "days_since_last_visit"}}}
+        assert registry_done_property(props, wrong) is None
+
+    def test_stamp_done_matches_on_opportunity_and_entity(self):
+        from connect_labs.workflow.snapshot_builders import stamp_done
+
+        cases = [
+            {"opportunity_id": 1, "entity_id": "a"},
+            {"opportunity_id": 2, "entity_id": "a"},  # same id, another opportunity
+            {"opportunity_id": 1, "entity_id": "b"},  # never graded
+        ]
+        graded = [
+            {"opportunity_id": 1, "username": "w", "entity_id": "a", "done": True},
+            {"opportunity_id": 2, "username": "w", "entity_id": "a", "done": False},
+        ]
+        out = stamp_done(cases, graded, "done")
+        assert [c["done"] for c in out] == [True, False, False]
+
+    def test_a_pipeline_case_index_is_stamped_from_the_graded_rows_in_the_same_pass(self):
+        """The case index read off a pipeline cannot carry a Layer-2 property, so the
+        builder asks the SAME evaluation for it rather than a second extraction."""
+        from connect_labs.workflow import snapshot_builders as sb
+
+        props, _ = load_registry("visit_quality")
+        inds = self._inds()
+        visits = [
+            {"entity_id": "a", "opportunity_id": 1, "username": "w1", "visit_date": "2026-01-01"},
+            {"entity_id": "b", "opportunity_id": 1, "username": "w1", "visit_date": "2026-01-02"},
+        ]
+        spec = {
+            "case_index": {"pipeline": "visits", "group_by": "entity_id", "fields": ["entity_id", "all_approved"]},
+            "scopes": ["programme"],
+        }
+        resolved = {
+            "definition_id": 1,
+            "opportunity_ids": [1],
+            "request": None,
+            "definition": MagicMock(),
+            "props_doc": props,
+            "full_registry": inds,
+            "llo_map": {},
+            "reg_settings": {},
+            "deployment": {},
+            "pipeline_config": object(),
+            "extra_fields": {},
+            "model": resolve_model(props, inds),
+            "spec": spec,
+            "series_list": ["Q"],
+            "primary": "Q",
+        }
+        graded = [{"opportunity_id": 1, "username": "w1", "entity_id": "a", "all_approved": True}]
+        with (
+            patch.object(sb, "_resolve_semantic", return_value=resolved),
+            patch("connect_labs.semantic.runtime.evaluate_with_cases", return_value=([], graded, [])) as ewc,
+            patch("connect_labs.semantic.runtime.evaluate") as ev,
+            patch.object(sb, "worker_names", return_value={}),
+            patch.object(sb, "opportunity_labels", return_value={}),
+            patch.object(sb, "_is_synthetic", return_value=None),
+            patch("connect_labs.semantic.workflow_binding.registry_binding", return_value={}),
+        ):
+            out = sb.semantic_snapshot(spec=spec, pipelines={"visits": {"rows": visits}}, opportunity_id=1, context={})
+        ev.assert_not_called()
+        assert ewc.call_args.kwargs["case_fields"] == {"all_approved": "all_approved"}
+        payload = out["state"]["snapshot"]
+        by = {c["entity_id"]: c for c in payload["cases"]}
+        assert by["a"]["all_approved"] is True and by["b"]["all_approved"] is False
+        assert payload["display"]["entity"]["done_property"] == "all_approved"
