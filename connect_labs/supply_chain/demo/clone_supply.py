@@ -241,3 +241,108 @@ def seed(*, program_id: int, opportunity_id: int, reset: bool = False, today: da
         "distributions": len(issues),
         "weeks": weeks,
     }
+
+
+# ---- keeping it going ----------------------------------------------------------
+#
+# The clone's visits run on past today, and the hourly visit reader posts them as
+# their days arrive. The deliveries the seeder invented stop at the day it ran, so a
+# worker's stock would only ever fall. Each week, `top_up` records the deliveries
+# that have fallen due since -- planned exactly as the seeder plans them, by the same
+# seeded per-worker factors, so a top-up and a reseed agree -- and gives any worker
+# who has appeared since a supply point of their own.
+
+
+def top_up(*, program_id: int, opportunity_id: int, today: date | None = None) -> dict:
+    """Record the invented deliveries that have fallen due on a seeded clone. Idempotent."""
+    from connect_labs.labs.access.scopes import SYSTEM
+    from connect_labs.supply_chain import scopes
+    from connect_labs.supply_chain.data_access import SupplyDataAccess
+    from connect_labs.supply_chain.history.context import seed_overrides
+    from connect_labs.supply_chain.models import DispensingRule, Distribution, SupplyPoint
+    from connect_labs.supply_chain.operations import call_operation
+    from connect_labs.supply_chain.stock.services import visit_source
+    from connect_labs.supply_chain.stock.services.dispensing import evaluate
+    from connect_labs.supply_chain.stock.services.workers import worker_slug
+
+    scopes.require_synthetic(program_id, "top up a clone's supply chain")
+    scopes.require_programme_opportunity(program_id, opportunity_id)
+    today = today or timezone.localdate()
+    rule = (
+        DispensingRule.objects.select_related("item__commodity", "resupply_point")
+        .filter(program_id=program_id, opportunity_id=opportunity_id, item__sku=SKU)
+        .first()
+    )
+    if rule is None:
+        return {"topped_up": False, "reason": "not seeded; run supply_seed_clone_supply first"}
+    partner, first = rule.resupply_point, rule.active_from
+
+    # Each issue covers the fortnight after it, so read the visits that far ahead.
+    horizon = today + timedelta(weeks=CADENCE_WEEKS)
+    visits = [v for v in visit_source.fetch_visits(opportunity_id, None) if _day(v) and _day(v) <= horizon]
+    dispensed: dict = defaultdict(lambda: defaultdict(Decimal))
+    uuids = {}
+    for visit in visits:
+        username = str(visit.get("username") or "").strip()
+        if not username:
+            continue
+        uuids.setdefault(username, str(visit.get("user_id") or ""))
+        given = evaluate(rule.lines, visit.get("form_json") or {}, rule.item, rule_forms=tuple(rule.forms or ()))
+        if given.quantity:
+            dispensed[username][_monday(_day(visit))] += given.quantity
+
+    access = SupplyDataAccess(
+        access_token=visit_source.SYNTHETIC_TOKEN,
+        program_id=program_id,
+        opportunity_id=opportunity_id,
+        caller=SYSTEM,
+    )
+
+    def op(day, hour, name, **payload):
+        at = timezone.make_aware(datetime.combine(day, time(hour)))
+        with seed_overrides(program_id, channel="command", recorded_at=at):
+            return call_operation(name, access, payload)
+
+    known = set(
+        SupplyPoint.objects.filter(program_id=program_id, kind="user_held", opportunity_id=opportunity_id)
+        .exclude(connect_username="")
+        .values_list("connect_username", flat=True)
+    )
+    added = []
+    for username in sorted(set(uuids) - known):
+        op(today, 13, "supply_point_upsert", data={
+            "slug": worker_slug(opportunity_id, username), "name": username, "kind": "user_held",
+            "opportunity_id": opportunity_id, "connect_username": username,
+            "connect_user_uuid": uuids[username], "parent_supply_point_id": partner.pk,
+            "source": "connect_visit", "min_months_of_stock": "0.5", "max_months_of_stock": "1.5",
+        })  # fmt: skip
+        added.append(username)
+
+    done = set(
+        Distribution.objects.filter(program_id=program_id, supply_point=partner).values_list(
+            "distributed_on", flat=True
+        )
+    )
+    recorded = []
+    for issue in plan_distributions(dispensed, first=first, last=today):
+        if issue["on"] in done:
+            continue
+        op(issue["on"], 8, "distribution_record", data={
+            "supply_point_id": partner.pk, "opportunity_id": opportunity_id, "commodity_slug": SLUG,
+            "distributed_on": issue["on"].isoformat(), "source": "partner_reported", "note": INVENTED,
+            "lines": [
+                {"connect_username": u, "item_id": rule.item_id, "quantity": str(q), "quantity_unit": "sachet"}
+                for u, q in sorted(issue["lines"].items())
+            ],
+        })  # fmt: skip
+        recorded.append({"on": issue["on"].isoformat(), "sachets": str(sum(issue["lines"].values()))})
+    return {"topped_up": True, "workers_added": added, "deliveries_recorded": recorded}
+
+
+def seeded_clones() -> list[tuple[int, int]]:
+    """(program, opportunity) of every clone this module invented deliveries for."""
+    from connect_labs.supply_chain.models import Distribution
+
+    return sorted(
+        set(Distribution.objects.filter(note=INVENTED).values_list("program_id", "opportunity_id").distinct())
+    )
