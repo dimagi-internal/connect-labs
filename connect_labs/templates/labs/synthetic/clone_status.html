@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Synthetic clone{% endblock %}
+
+{% block content %}
+<div class="container mx-auto max-w-3xl px-4 py-8">
+  <a href="{% url 'labs:synthetic:list' %}" class="mb-4 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
+    <i class="fa-solid fa-arrow-left mr-2"></i> Synthetic opportunities
+  </a>
+  <h1 class="mb-4 text-2xl font-bold text-gray-900">Synthetic clone</h1>
+
+  <div class="rounded-lg border border-gray-200 bg-white p-6" data-testid="clone-status" data-state="{{ status.state }}">
+    {% if status.state == "SUCCESS" %}
+      <p class="mb-3 font-medium text-message-success-text"><i class="fa-solid fa-circle-check mr-1.5"></i> Done.</p>
+      <p class="mb-3 text-sm text-gray-700">Program <strong>{{ status.result.program_name }}</strong> (#{{ status.result.program_id }}) now holds:</p>
+      <ul class="mb-4 list-disc pl-6 text-sm text-gray-900" data-testid="clone-result">
+        {% for c in status.result.clones %}<li>Opportunity <strong>#{{ c.opportunity_id }}</strong>, a copy of #{{ c.source_opportunity_id }}</li>{% endfor %}
+      </ul>
+      <p class="text-sm text-gray-700">Open <a class="text-brand-indigo underline" href="{% url 'labs:overview' %}">Labs</a> and pick it in the opportunity selector, under that program.</p>
+    {% elif status.state == "FAILURE" %}
+      <p class="mb-2 font-medium text-message-error-text"><i class="fa-solid fa-circle-xmark mr-1.5"></i> The clone did not finish.</p>
+      <p class="text-sm text-gray-700">{{ status.error }}</p>
+      <a href="{% url 'labs:synthetic:clone' %}" class="button button-sm outline-style mt-4">Try again</a>
+    {% else %}
+      <p class="font-medium text-gray-900"><i class="fa-solid fa-spinner fa-spin mr-1.5"></i> <span data-testid="clone-message">{{ status.status }}</span></p>
+      <p class="mt-2 text-sm text-gray-600">This page updates itself. You can leave and come back: the job keeps running.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+  {{ block.super }}
+  {% if status.state != "SUCCESS" and status.state != "FAILURE" %}
+  <script>
+    // Ask where the job stands every 10 seconds; reload once it has finished, so the result renders.
+    (function () {
+      var url = "{% url 'labs:synthetic:clone_status' task_id %}?format=json";
+      setInterval(function () {
+        fetch(url, { credentials: "same-origin" })
+          .then(function (r) { return r.json(); })
+          .then(function (s) {
+            if (s.state === "SUCCESS" || s.state === "FAILURE") { window.location.reload(); return; }
+            var el = document.querySelector("[data-testid=clone-message]");
+            if (el && s.status) { el.textContent = s.status; }
+          })
+          .catch(function () {});
+      }, 10000);
+    })();
+  </script>
+  {% endif %}
+{% endblock %}
