@@ -641,7 +641,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
 
   {% if contract.consideration == "priced" or invoices or owed_open_count %}
   <details class="fold scroll-mt-20" id="owed-fold" data-testid="fold-owed"{% if owed_holds or owed_answered_expanded or request.GET.changed|slice:":11" == "commitment-" %} open{% endif %}>
-    <summary><h2 id="owed" data-testid="owed-heading" class="text-base font-semibold text-brand-deep-purple">{% if owed_holds %}Documents to clear the shipment{% if owed_holds_via %} <span data-testid="owed-via" class="font-normal text-gray-600">(via {{ owed_holds_via }})</span>{% endif %}{% else %}Questions and promises{% endif %} <span data-testid="owed-open-count" class="text-sm font-normal tabular-nums text-gray-600">— {{ owed_open_count|default:0 }} open</span></h2></summary>
+    <summary><h2 id="owed" data-testid="owed-heading" class="text-base font-semibold text-brand-deep-purple">{% if owed_holds %}Documents to clear the shipment{% if owed_holds_via %} <span data-testid="owed-via" class="font-normal text-gray-600">(via {{ owed_holds_via }})</span>{% endif %}{% else %}Questions and promises{% endif %} <span data-testid="owed-open-count" class="text-sm font-normal tabular-nums text-gray-600">— {{ owed_open_count|default:0 }} open</span>{% if owed_holding_count and owed_holding_count != owed_open_count %} <span data-testid="owed-holding-count" class="text-sm font-normal tabular-nums text-gray-600">· {{ owed_holding_count }} hold{{ owed_holding_count|pluralize:"s," }} the shipment</span>{% endif %}</h2></summary>
     <div class="fold-body">
       {% if not supply_as_of %}<a href="{% url 'supply_chain:contract_commitment_record' contract.id %}" class="text-sm text-brand-indigo hover:underline">+ Record a question or a promise</a>{% endif %}
       {% include "supply_chain/_owed.html" with resolve_label="Mark done" empty_text="Nothing owed on this order." %}
@@ -709,7 +709,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
                 <span class="text-xs text-gray-600">none</span>
               {% endif %}
             </td>
-            <td class="px-4 py-2 text-sm text-gray-700">{% told_by_for shipment orgs tellers %}</td>
+            <td class="px-4 py-2 text-sm text-gray-700" data-testid="shipment-told-by">{% if shipment.last_told %}{{ shipment.last_told.teller }}, {{ shipment.last_told.on|day|slice:":-5" }}{% else %}{% told_by_for shipment orgs tellers %}{% endif %}</td>
             <td class="px-4 py-2 text-right whitespace-nowrap">
               {% if forloop.first %}
                 {% comment %}
@@ -747,7 +747,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
             <td class="px-4 py-2">
               {% if shipment.required_documents %}<span class="text-xs {% if shipment.required_on_file == shipment.required_documents|length %}text-message-success-text{% else %}text-message-warning-text{% endif %}">{{ shipment.required_on_file }} of {{ shipment.required_documents|length }} documents on file</span>{% elif shipment.has_certificate %}<span class="text-xs text-message-success-text">on file</span>{% else %}<span class="text-xs text-gray-600">none</span>{% endif %}
             </td>
-            <td class="px-4 py-2 text-sm text-gray-700">{% told_by_for shipment orgs tellers %}</td>
+            <td class="px-4 py-2 text-sm text-gray-700" data-testid="shipment-told-by">{% if shipment.last_told %}{{ shipment.last_told.teller }}, {{ shipment.last_told.on|day|slice:":-5" }}{% else %}{% told_by_for shipment orgs tellers %}{% endif %}</td>
             <td class="px-4 py-2 text-right whitespace-nowrap">
               {% if not supply_as_of %}<a href="{% url 'supply_chain:shipment_status' shipment.id %}" class="text-brand-indigo hover:underline">Update</a>{% endif %}
             </td>
