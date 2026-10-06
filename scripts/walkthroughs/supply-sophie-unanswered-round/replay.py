@@ -390,7 +390,14 @@ def _ask_everyone(w: World, tender_id: int, suppliers: dict, day: str) -> dict:
     }
 
 
-def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, today: dt.date | None = None) -> dict:
+def seed_world(
+    program_id: int = PROGRAM_ID,
+    *,
+    create_buyer: bool = False,
+    today: dt.date | None = None,
+    sheets: bool = False,
+) -> dict:
+    """Seed the round. `sheets` (supply-sophie-sheets): Kanem's email states its pack, the AI's quote does not."""
     today = today or story_today()
 
     def d(story_iso: str) -> str:
@@ -559,13 +566,13 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
         "shipment_update",
         ref="<cfc-trk-4471-0912@crescent-freight.example>",
         excerpt="CARGO: 2000 CTNS RUTF / TRUCKS: 2 / HELD AT SEME BORDER - DOCUMENTATION (FORM M) / "
-        f"REVISED ETA KANO: {_slashed(d('2026-10-10'))} ONCE FORM M IS "
+        f"REVISED ETA KANO: {_slashed(d(REVISED_ETA))} ONCE FORM M IS "
         "LODGED / CONSIGNEE TO PROVIDE FORM M / PAAR.",
         sender="Crescent Freight & Clearing",
         shipment_id=shipment["id"],
         data={
             "status": "at_customs",
-            "expected_on": d("2026-10-10"),
+            "expected_on": d(REVISED_ETA),
             # The email asks the consignee for two documents: each is its own line we owe.
             "required_documents": [
                 {"kind": "import_permit", "name": "Form M", "owed_by_org_id": buyer},
@@ -706,6 +713,10 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
         "weeks from PO. Shelf life 24 months. Minimum order 500 cartons. Quote valid 45 days.",
         sender="Grace Okon, Kanem Foods Ltd",
     )
+    if sheets:
+        # The email states the pack; the AI's quote below still records it as not stated, so
+        # the sheets narrative's correction is fixing an AI omission, not inventing a fact.
+        src["excerpt"] += f" {KANEM_PACK_SENTENCE}"
     w.email(
         d("2026-09-19"),
         "quote_record",
@@ -751,6 +762,7 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
 
     return {
         **story_dates(today),
+        **forwarder_clear_dates(today),
         "program_id": program_id,
         "round1_tender_id": r1,
         "round2_tender_id": r2,
@@ -803,6 +815,22 @@ STORY_DATES = {
 }
 
 
+# The forwarder's revised ETA on the held shipment (8 days after the render day), and the
+# later day the sheets narrative types into that shipment's Expected cell once Form M is
+# lodged: a different day, or the edit would change nothing.
+REVISED_ETA = "2026-10-10"
+FORWARDER_CLEAR_DATE = "2026-10-14"
+
+# What Kanem's email says of its pack in the sheets narrative (seed.py --sheets).
+KANEM_PACK_SENTENCE = "Pro-forma KF/Q/2719 attached: cartons of 150 x 92 g sachets."
+
+
+def forwarder_clear_dates(today: dt.date | None = None) -> dict:
+    """`forwarder_clear_date_iso` ("2026-10-14") and `forwarder_clear_date` ("14 Oct"), moved to the render day."""
+    iso = story_day(FORWARDER_CLEAR_DATE, today)
+    return {"forwarder_clear_date_iso": iso, "forwarder_clear_date": _short(iso)}
+
+
 def story_dates(today: dt.date | None = None) -> dict:
     today = today or story_today()
     dates = {name: display_day(story_day(iso, today)) for name, iso in STORY_DATES.items()}
@@ -831,11 +859,11 @@ def mint_sophie_session(hours: int = 12) -> dict:
     return {"key": store.session_key, "expires": int(time.time() + hours * 3600)}
 
 
-def run(program_id: int = PROGRAM_ID, *, mint: bool = False, create_buyer: bool = False) -> dict:
+def run(program_id: int = PROGRAM_ID, *, mint: bool = False, create_buyer: bool = False, sheets: bool = False) -> dict:
     """Register (once), reset, seed; optionally mint Sophie's session. Returns the recorder's variables."""
     ensure_program(program_id)
     print("purged", reset(program_id))
-    outputs = seed_world(program_id, create_buyer=create_buyer)
+    outputs = seed_world(program_id, create_buyer=create_buyer, sheets=sheets)
     outputs["today"] = story_today().isoformat()
     # The day Sahel's email was sent when the sheets narrative has the AI misdate it
     # (seed.py --sahel-replies --sahel-forward-date): the day before it was forwarded.

@@ -512,7 +512,11 @@ def _order_rows(program_id, today, until, own_org_id, *, only=None, keep_done=Fa
 
 
 def _order_step(contract, shipments, received_shipments, received, paid, *, held=False) -> str:
-    """The order page's own step name for where the order is: "At customs — held", "Received", "Paid"."""
+    """The order page's own step name for where the order is: "At customs — held", "Received", "Paid".
+
+    Goods under way carry the day the moving shipment is expected, the shipment
+    table's own "Expected" column: "At customs — held · expected 14 Oct".
+    """
     if contract.status in ("cancelled", "draft"):
         return _words(contract.status).capitalize()
     full = received and contract.status != "part_received"
@@ -523,7 +527,10 @@ def _order_step(contract, shipments, received_shipments, received, paid, *, held
         name = "In transit"
         if latest is not None and latest.status in ("at_customs", "cleared", "lost"):
             name = latest.status.replace("_", " ").capitalize()
-        return name + (" — held" if held else "")
+        name += " — held" if held else ""
+        if latest is not None and latest.expected_on is not None:
+            name += f" · expected {_day(latest.expected_on)}"
+        return name
     if full:
         return "Paid" if paid else "Received"
     if received:
