@@ -125,6 +125,30 @@ KINDS: dict[str, Kind] = {
             "promised_lead_time_days": Cell("promised lead time (days)", INT),
         },
     ),
+    "invoice": Kind(
+        "invoice_update",
+        "invoice_id",
+        {
+            "reference": Cell("invoice number"),
+            "issued_on": Cell("issued", DATE),
+            "amount": Cell("amount", MONEY),
+            "quantity_billed": Cell("quantity billed", NUMBER),
+            # "queried" reads "disputed" everywhere an invoice is shown; the list says so too.
+            "status": Cell("status", CHOICE, _pairs(records.INVOICE_STATUSES, {"queried": "disputed"})),
+        },
+    ),
+    # A shipment's lines (batch, expiry, quantity) are one list sent whole, so they are edited on
+    # the shipment's own screen; the consignment's own facts edit here.
+    "shipment": Kind(
+        "shipment_update",
+        "shipment_id",
+        {
+            "reference": Cell("reference"),
+            "status": Cell("status", CHOICE, _pairs(records.SHIPMENT_STATUSES)),
+            "expected_on": Cell("expected", DATE),
+            "carrier": Cell("carrier"),
+        },
+    ),
     "supplier": Kind(
         "supplier_update",
         "supplier_id",
