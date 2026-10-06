@@ -360,6 +360,23 @@ function WorkflowUI({
     );
 
   var reading = D.reading;
+  // The registry's per-visit columns and review flags (display.visit_fields /
+  // display.visit_flags). A flag is how a flagged-visit indicator -- a repeat-count
+  // rate, say -- points at WHICH visits; Connect's own review flag (`flagged`) is a
+  // different thing and gets its own column only when some visit carries it.
+  var visitFields = D.visit_fields || [];
+  var visitFlags = D.visit_flags || [];
+  function flagsOf(v) {
+    return R.visitFlagsOf ? R.visitFlagsOf(D, v) : [];
+  }
+  var anyReviewFlag = visits.rows.some(function (v) {
+    return !!v.flagged;
+  });
+  var flaggedCount = visitFlags.length
+    ? visits.rows.filter(function (v) {
+        return flagsOf(v).length > 0;
+      }).length
+    : 0;
   var readingPoints = reading
     ? visits.rows
         .filter(function (v) {
@@ -550,7 +567,11 @@ function WorkflowUI({
         <R.Card>
           <R.SectionTitle
             right={
-              visits.status === 'ready' ? visits.rows.length + ' visits' : ''
+              visits.status === 'ready'
+                ? visits.rows.length +
+                  ' visits' +
+                  (visitFlags.length ? ' · ' + flaggedCount + ' flagged' : '')
+                : ''
             }
           >
             {R.cap(ENT.name) +
@@ -589,7 +610,27 @@ function WorkflowUI({
                         {reading.label}
                       </th>
                     ) : null}
-                    <th className="px-2 py-1.5 text-left">Flag</th>
+                    {visitFields.map(function (f) {
+                      return (
+                        <th
+                          key={f.field}
+                          className={
+                            'px-2 py-1.5 ' +
+                            (f.format === 'count' || f.format === 'number'
+                              ? 'text-right'
+                              : 'text-left')
+                          }
+                        >
+                          {f.label}
+                        </th>
+                      );
+                    })}
+                    {visitFlags.length ? (
+                      <th className="px-2 py-1.5 text-left">Flags</th>
+                    ) : null}
+                    {anyReviewFlag ? (
+                      <th className="px-2 py-1.5 text-left">Review flag</th>
+                    ) : null}
                     {hasImages ? (
                       <th className="px-2 py-1.5 text-left">Images</th>
                     ) : null}
@@ -597,8 +638,15 @@ function WorkflowUI({
                 </thead>
                 <tbody>
                   {visits.rows.map(function (v, i) {
+                    var hit = flagsOf(v);
                     return (
-                      <tr key={v.id || i} className="border-t border-gray-100">
+                      <tr
+                        key={v.id || i}
+                        className={
+                          'border-t border-gray-100' +
+                          (hit.length ? ' bg-amber-50' : '')
+                        }
+                      >
                         <td className="px-2 py-1.5">
                           {R.dateLbl(v.visit_date)}
                         </td>
@@ -613,9 +661,31 @@ function WorkflowUI({
                               : R.nCount(v[reading.column])}
                           </td>
                         ) : null}
-                        <td className="px-2 py-1.5 text-gray-600">
-                          {v.flagged ? 'flagged' : ''}
-                        </td>
+                        {visitFields.map(function (f) {
+                          return (
+                            <td
+                              key={f.field}
+                              className={
+                                'px-2 py-1.5 ' +
+                                (f.format === 'count' || f.format === 'number'
+                                  ? 'text-right tabular-nums'
+                                  : 'text-gray-600')
+                              }
+                            >
+                              {R.fmtCaseField(f, v[f.field])}
+                            </td>
+                          );
+                        })}
+                        {visitFlags.length ? (
+                          <td className="px-2 py-1.5 font-medium text-amber-800">
+                            {hit.join(', ')}
+                          </td>
+                        ) : null}
+                        {anyReviewFlag ? (
+                          <td className="px-2 py-1.5 text-gray-600">
+                            {v.flagged ? 'flagged' : ''}
+                          </td>
+                        ) : null}
                         {hasImages ? (
                           <td className="px-2 py-1.5">
                             {photoUrls(v).map(function (u) {

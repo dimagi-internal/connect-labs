@@ -15,6 +15,7 @@ describe('the published surface', () => {
     // Removing or renaming one of these breaks live render code silently.
     const names = [
       'VERSION',
+      'visitFlagsOf',
       'nCount',
       'dateLbl',
       'fmtValue',
@@ -416,6 +417,34 @@ describe('the registry display contract (VERSION 3)', () => {
       prominence: 'Lower',
     },
   ];
+  test('visit flags: none declared is an empty list, and each declared flag matches its visits', () => {
+    expect(R.displayOf({ cMeasures: measures }).visit_flags).toEqual([]);
+    expect(R.displayOf({ cMeasures: measures }).visit_fields).toEqual([]);
+    const d = R.displayOf({
+      cMeasures: measures,
+      display: {
+        visit_flags: [
+          { column: 'repeat_counts_flag', label: 'Repeat count' },
+          { column: 'risk', label: 'High risk', value: 'high' },
+        ],
+      },
+    });
+    expect(
+      R.visitFlagsOf(d, { repeat_counts_flag: 'yes', risk: 'HIGH' }),
+    ).toEqual(['Repeat count', 'High risk']);
+    expect(R.visitFlagsOf(d, { repeat_counts_flag: true })).toEqual([
+      'Repeat count',
+    ]);
+    expect(R.visitFlagsOf(d, { repeat_counts_flag: 1 })).toEqual([
+      'Repeat count',
+    ]);
+    // 'no', blank and absent are not flags; Connect's own `flagged` is not either
+    expect(
+      R.visitFlagsOf(d, { repeat_counts_flag: 'no', flagged: true }),
+    ).toEqual([]);
+    expect(R.visitFlagsOf(d, { repeat_counts_flag: '' })).toEqual([]);
+    expect(R.visitFlagsOf(d, {})).toEqual([]);
+  });
   test('displayOf falls back to the catalog when a payload carries no display block', () => {
     const d = R.displayOf({ cMeasures: measures });
     expect(d.entity.plural).toBe('cases');

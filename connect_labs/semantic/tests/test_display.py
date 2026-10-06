@@ -89,6 +89,10 @@ def test_a_declared_headline_replaces_the_default():
         ({"display": {"case_fields": [{"field": "a", "format": "money"}]}}, "format"),
         ({"display": {"headline_count": 0}}, "headline_count"),
         ({"display": {"reading": {"label": "x"}}}, "display.reading"),
+        ({"display": {"visit_fields": [{"field": "a b"}]}}, "visit_fields[0]"),
+        ({"display": {"visit_flags": "repeat_counts_flag"}}, "display.visit_flags"),
+        ({"display": {"visit_flags": [{"label": "Repeat"}]}}, "visit_flags[0]"),
+        ({"display": {"visit_flags": [{"column": "f", "value": ["yes"]}]}}, "visit_flags[0].value"),
     ],
 )
 def test_a_malformed_display_block_is_refused(vq, patch, message):
@@ -125,3 +129,26 @@ def test_two_indicators_cannot_share_a_headline_position():
         ]
     }
     assert any("position 1" in p for p in display_problems(doc))
+
+
+def test_visit_flags_and_fields_resolve_and_default_empty(vq):
+    props, inds = vq
+    assert resolve_display(props, inds)["visit_flags"] == []
+    assert resolve_display(props, inds)["visit_fields"] == []
+    doc = {
+        **copy.deepcopy(inds),
+        "display": {
+            "visit_fields": [{"field": "male_attendance", "label": "Men", "format": "count"}],
+            "visit_flags": [
+                {"column": "repeat_counts_flag", "label": "Repeat count"},
+                {"column": "risk", "value": "high"},
+            ],
+        },
+    }
+    assert validate_registry(props, doc, {}) == []
+    d = resolve_display(props, doc)
+    assert d["visit_fields"] == [{"field": "male_attendance", "label": "Men", "format": "count"}]
+    assert d["visit_flags"] == [
+        {"column": "repeat_counts_flag", "label": "Repeat count"},
+        {"column": "risk", "label": "risk", "value": "high"},
+    ]
