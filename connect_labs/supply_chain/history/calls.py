@@ -144,6 +144,7 @@ def run_recorded(operation, access, payload, source, channel, *, digest="", acto
         source_ref=(source or {}).get("ref", ""),
         source_excerpt=(source or {}).get("excerpt", ""),
         source_sender=(source or {}).get("sender", ""),
+        source_sent_on=(source or {}).get("sent_on") or None,
         payload_digest=digest,
     )
     if "recorded_at" in overrides:

@@ -255,7 +255,7 @@ next action on anyone (design doc section 22).
       <div data-testid="draft"{% if d.anchor %} id="{{ d.anchor }}"{% endif %} data-supplier-id="{{ d.supplier_id }}" class="border border-gray-200 rounded-lg p-4 mt-3 scroll-mt-20">
         <p class="text-lg">
           <span class="font-semibold text-gray-900">{{ d.supplier_name }}</span>
-          <span class="text-base text-gray-600">· {% if d.kind == "request" %}Quote request{% elif d.kind == "reminder" %}Reminder{% elif d.kind == "reply" %}Our reply{% elif d.kind == "clarification" %}Duty terms clarification{% else %}Follow-up{% endif %}</span>
+          <span class="text-base text-gray-600">· {% if d.kind == "request" %}Quote request{% elif d.kind == "reminder" %}Reminder{% elif d.kind == "reply" %}Our reply{% elif d.kind == "clarification" %}Duty terms clarification{% else %}Follow-up{% endif %}</span>{% if d.duty_terms and d.kind != "clarification" %} <span data-testid="draft-duty-terms" class="status-chip status-chip--neutral text-sm">+ duty terms</span>{% endif %}
         </p>
         {% if d.facts %}
           {% comment %}A reminder's facts as a labelled row, set apart from the card's body
@@ -437,7 +437,7 @@ next action on anyone (design doc section 22).
     </div>
   </details>
 
-  <details class="fold scroll-mt-20" id="history-fold" data-testid="fold-history">
+  <details class="fold scroll-mt-20" id="history-fold" data-testid="fold-history" data-live>
     <summary>History <span class="text-sm font-normal text-gray-600">newest first</span></summary>
     <div class="fold-body">
       {% comment %}The sheets above set out each quote's terms and what it still lacks, so the
