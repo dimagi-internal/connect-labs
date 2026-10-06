@@ -201,3 +201,12 @@ def test_the_endpoint_refuses_a_malformed_cell(client, django_user_model):
     with mock.patch("connect_labs.supply_chain.cells.has_program_context", return_value=True):
         response = client.post("/supply/cells/", json.dumps({"cell": "quote:seven"}), "application/json")
     assert response.status_code == 400
+
+
+def test_an_invoice_status_reads_disputed_as_the_page_does_and_sends_queried():
+    html = Template('{% load supply_chain_extras %}<td {% edit_cell "invoice" 4 "status" v %}>').render(
+        Context({"v": "queried"})
+    )
+    assert "disputed" in html and "queried" not in html
+    position = [code for code, _ in cells.KINDS["invoice"].fields["status"].choices].index("queried")
+    assert cells.coerce(cells.KINDS["invoice"].fields["status"], str(position)) == "queried"

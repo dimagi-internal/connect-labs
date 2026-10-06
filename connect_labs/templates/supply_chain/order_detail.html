@@ -492,7 +492,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
   {% endfor %}
 </div>
 {% endif %}
-<div id="invoices" class="scroll-mt-20 overflow-hidden rounded-lg border border-gray-100">
+<div id="invoices" class="scroll-mt-20 overflow-hidden rounded-lg border border-gray-100" data-live>
   <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
   <table class="min-w-[44rem] w-full text-sm">
     <thead class="border-b border-gray-200 text-xs text-gray-600">
@@ -527,12 +527,12 @@ was ordered. Before, the page showed this order's half and a link to the other.
         </tr>
         {% endif %}{% endfor %}
         <tr>
-          <td class="px-4 py-2 font-medium text-gray-900 whitespace-nowrap">{{ invoice.reference|default:invoice.id }}</td>
-          <td class="px-4 py-2 text-gray-600 whitespace-nowrap">{{ invoice.issued_on|day|default:"—" }}</td>
-          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">
+          <td class="px-4 py-2 font-medium text-gray-900 whitespace-nowrap" {% edit_cell "invoice" invoice.id "reference" invoice.reference %}>{{ invoice.reference|default:invoice.id }}</td>
+          <td class="px-4 py-2 text-gray-600 whitespace-nowrap" {% edit_cell "invoice" invoice.id "issued_on" invoice.issued_on %}>{{ invoice.issued_on|day|default:"—" }}</td>
+          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap" {% edit_cell "invoice" invoice.id "amount" invoice.amount %}>
             {% if invoice.amount %}{{ invoice.currency }} {{ invoice.amount|money }}{% else %}—{% endif %}
           </td>
-          <td class="px-4 py-2 text-right tabular-nums">
+          <td class="px-4 py-2 text-right tabular-nums" {% edit_cell "invoice" invoice.id "quantity_billed" invoice.quantity_billed %}>
             {% if invoice.quantity_billed %}
               {{ invoice.quantity_billed|qty:invoice.quantity_unit }}
             {% else %}
@@ -544,7 +544,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
               <span class="text-message-warning-text text-xs">not given</span>
             {% endif %}
           </td>
-          <td class="px-4 py-2 text-gray-700">{% if invoice.status == "queried" %}<span data-testid="invoice-disputed">disputed</span>{% if invoice.note %}<div data-testid="invoice-dispute-note" class="text-xs text-gray-600 max-w-xs">{{ invoice.note|linebreaksbr }}</div>{% endif %}{% else %}{{ invoice.status|humanise }}{% endif %}</td>
+          <td class="px-4 py-2 text-gray-700" {% edit_cell "invoice" invoice.id "status" invoice.status %}>{% if invoice.status == "queried" %}<span data-testid="invoice-disputed">disputed</span>{% if invoice.note %}<div data-testid="invoice-dispute-note" class="text-xs text-gray-600 max-w-xs">{{ invoice.note|linebreaksbr }}</div>{% endif %}{% else %}{{ invoice.status|humanise }}{% endif %}</td>
           <td class="px-4 py-2 text-sm text-gray-700 whitespace-nowrap">{% told_by_for invoice orgs tellers %}</td>
           <td class="px-4 py-2 text-right whitespace-nowrap">
             {% if not supply_as_of %}
@@ -649,7 +649,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
   </details>
   {% endif %}
 
-  <details class="fold scroll-mt-20" id="shipments-fold" data-testid="fold-shipments">
+  <details class="fold scroll-mt-20" id="shipments-fold" data-testid="fold-shipments" data-live>
     <summary id="shipments"><h2 class="text-base font-semibold text-brand-deep-purple">Shipments</h2> <span class="text-sm font-normal tabular-nums text-gray-600">{{ shipments|length }}</span>{% for shipment in shipments %}{% if shipment.is_in_transit %} <span class="text-sm font-normal text-gray-600">· {{ shipment.reference|default:shipment.id }} {{ shipment.status|words }}</span>{% endif %}{% endfor %}</summary>
     <div class="fold-body">
 <div class="overflow-hidden rounded-lg border border-gray-100">
@@ -672,7 +672,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
       {% for shipment in shipments %}
         {% for line in shipment.lines %}
           <tr>
-            <td class="px-4 py-2 font-medium text-gray-900">
+            <td class="px-4 py-2 font-medium text-gray-900" {% if forloop.first %}{% edit_cell "shipment" shipment.id "reference" shipment.reference %}{% endif %}>
               {% if forloop.first %}
                 <a class="text-brand-indigo hover:underline"
                    href="{% url 'supply_chain:shipment_detail' shipment.id %}">{{ shipment.reference|default:shipment.id }}</a>
@@ -680,7 +680,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
                 {{ shipment.reference|default:shipment.id }}
               {% endif %}
             </td>
-            <td class="px-4 py-2">
+            <td class="px-4 py-2" {% if forloop.first %}{% edit_cell "shipment" shipment.id "status" shipment.status %}{% endif %}>
               {{ shipment.status|words|capfirst }}
               {% if shipment.is_in_transit %}
                 <div class="text-xs text-message-warning-text">not received yet, so not counted as stock</div>
