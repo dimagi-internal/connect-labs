@@ -22,7 +22,7 @@ from .manifest import Manifest
 from .opportunity import build_opportunity
 from .schema_loader import FormSchema
 from .showcase import build_showcase_visits
-from .status import decide_visit_status
+from .status import authored_visit_status, decide_visit_status
 from .tasks import build_task_records
 from .timeline import expand_visit_schedule
 from .user_data import build_user_data
@@ -239,6 +239,10 @@ def _build_mirror_visits(
             flag_reason_distribution=manifest.flag_reason_distribution,
             over_limit_rate=manifest.over_limit_rate,
         )
+        # A pool that authored this visit's review outcome wins over the draw. The draw
+        # still runs, so the rng stream -- and every other visit -- is unchanged.
+        if pv.review is not None:
+            status = authored_visit_status(pv.review)
         base_hour = _sample_hour(rng, manifest.temporal)
         created_dt = dt.datetime.combine(pv.visit_date, dt.time(base_hour, 0))
         visit = {

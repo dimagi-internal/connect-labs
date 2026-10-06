@@ -133,3 +133,34 @@ def decide_visit_status(
         flag_reason="",
         review_status="approved",
     )
+
+
+_STATUSES = ("approved", "pending", "rejected", "over_limit")
+_REVIEW_STATUSES = ("approved", "pending", "rejected")
+
+
+def authored_visit_status(review: dict[str, Any]) -> VisitStatus:
+    """A visit status the transplant pool AUTHORED (`visits[].review`), validated.
+
+    `flagged` defaults to False; `status` defaults to `pending` when flagged, else
+    `approved`; `review_status` follows `status` (`over_limit` reviews `approved`).
+    An unknown status is refused rather than passed through -- a typo here would
+    otherwise reach every labs consumer as a status no Connect visit can carry.
+    """
+    if not isinstance(review, dict):
+        raise ValueError(f"visits[].review must be an object, got {type(review).__name__}")
+    unknown = set(review) - {"status", "flagged", "flag_reason", "review_status"}
+    if unknown:
+        raise ValueError(f"visits[].review has unknown key(s): {sorted(unknown)}")
+    flagged = bool(review.get("flagged", False))
+    status = review.get("status") or ("pending" if flagged else "approved")
+    if status not in _STATUSES:
+        raise ValueError(f"visits[].review.status {status!r} is not one of {_STATUSES}")
+    default_review = "approved" if status == "over_limit" else status
+    review_status = review.get("review_status") or default_review
+    if review_status not in _REVIEW_STATUSES:
+        raise ValueError(f"visits[].review.review_status {review_status!r} is not one of {_REVIEW_STATUSES}")
+    reason = review.get("flag_reason", "")
+    if isinstance(reason, str):
+        reason = _decode_reason(reason) if reason else ""
+    return VisitStatus(status=status, flagged=flagged, flag_reason=reason, review_status=review_status)
