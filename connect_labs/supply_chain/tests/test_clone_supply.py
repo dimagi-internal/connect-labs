@@ -31,8 +31,8 @@ def test_each_issue_covers_the_next_fortnight_by_a_factor_of_the_workers_own():
 
     assert [i["on"] for i in issues] == [monday, monday + timedelta(weeks=2)]
     first, second = issues
-    # Worker a: 30 given out over the first fortnight, issued 0.8x-1.6x of it, in tens.
-    assert Decimal(24) <= first["lines"]["a"] <= Decimal(50) and first["lines"]["a"] % 10 == 0
+    # Worker a: 30 given out over the first fortnight, issued 1.0x-1.6x of it, in tens: never less.
+    assert Decimal(30) <= first["lines"]["a"] <= Decimal(50) and first["lines"]["a"] % 10 == 0
     # Nothing to give out in a fortnight, nothing issued: b only appears once it dispenses.
     assert "b" not in first["lines"]
     assert set(second["lines"]) == {"a", "b"}
@@ -79,6 +79,14 @@ def test_the_clone_is_seeded_end_to_end_and_every_invented_figure_says_so(clone)
     # What the reader posted is what the seeder sized the issues from (bar reversals of rejected visits).
     assert consumed >= Decimal(summary["sachets_dispensed"]) - Decimal(200)
     assert consumed > 0
+
+    # Nobody gave out stock they were never given, and the stores sit inside their bands.
+    from connect_labs.supply_chain.models import Item
+    from connect_labs.supply_chain.stock.services import belief
+
+    item = Item.objects.select_related("commodity").get(scope_key=f"prog:{opp}", sku=clone_supply.SKU)
+    on_hand = {b.point.connect_username: b for b in belief.worker_beliefs(opp, item)}
+    assert on_hand and all(b.on_hand.amount >= 0 for b in on_hand.values()), {u: b.on_hand for u, b in on_hand.items()}
 
 
 def test_a_second_run_changes_nothing_without_reset(clone):

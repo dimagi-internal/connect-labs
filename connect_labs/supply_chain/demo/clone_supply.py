@@ -34,6 +34,9 @@ from django.utils import timezone
 from connect_labs.supply_chain.demo.stock_from_visits import FORM_SCREENING, FORM_VISIT, PATHS
 
 CADENCE_WEEKS = 2
+# Months of cover each store holds once the issues are out: the middle of its band
+# (central 2-6, partner 1-3), so neither reads "below min" for want of invented stock.
+CENTRAL_MONTHS, PARTNER_MONTHS = Decimal(4), Decimal(2)
 SLUG, SKU = "rutf", "rutf-150"
 NAME = "Ready-to-use therapeutic food (RUTF), 92 g sachet"
 INVENTED = (
@@ -75,13 +78,15 @@ def plan_distributions(dispensed: dict, *, first: date, last: date, seed: int = 
     """{monday: {username: quantity}} every CADENCE_WEEKS, from what each worker then gave out.
 
     `dispensed` is {username: {monday: sachets}}. Each worker's issue covers the
-    next CADENCE_WEEKS weeks times a factor of their own, between 0.8 and 1.6,
-    so the ledger shows the spread a real network has: most comfortable, a
-    few run short before the next issue. A worker with nothing to give out in
-    the window gets nothing.
+    next CADENCE_WEEKS weeks times a factor of their own, between 1.0 and 1.6,
+    so the ledger shows the spread a real network has: some carry spare, some
+    run down to nearly nothing before the next issue -- but none gives out
+    stock it was never given (a factor under 1 left workers below zero, which
+    reads as broken data, not as a network). A worker with nothing to give out
+    in the window gets nothing.
     """
     rng = random.Random(seed)
-    factor = {u: Decimal(str(round(rng.uniform(0.8, 1.6), 2))) for u in sorted(dispensed)}
+    factor = {u: Decimal(str(round(rng.uniform(1.0, 1.6), 2))) for u in sorted(dispensed)}
     issues = []
     monday = _monday(first)
     while monday <= last:
@@ -177,8 +182,13 @@ def seed(*, program_id: int, opportunity_id: int, reset: bool = False, today: da
     issues = plan_distributions(dispensed, first=first, last=today)
     total_issued = sum(q for issue in issues for q in issue["lines"].values())
 
-    # Stock into the network: enough for every issue, with the store's buffer on top.
-    opening = _round_up(total_issued * Decimal("1.5"), 150)
+    # Stock into the network: every issue, plus what holds each store in the middle of
+    # its band of months of cover at the rate the clone's visits give RUTF out.
+    total_dispensed = sum(sum(w.values()) for w in dispensed.values())
+    days = max((today - first).days, 1)
+    monthly = total_dispensed / days * 30
+    to_partner = _round_up(total_issued + monthly * PARTNER_MONTHS, 150)
+    opening = _round_up(to_partner + monthly * CENTRAL_MONTHS, 150)
     base = {"commodity_slug": SLUG, "item_id": item["id"], "quantity_unit": "sachet", "occurred_on": setup.isoformat()}
     op(setup, 10, "movement_record", data={
         **base, "kind": "receipt", "to_supply_point_id": central["id"], "quantity": str(opening),
@@ -186,7 +196,7 @@ def seed(*, program_id: int, opportunity_id: int, reset: bool = False, today: da
     })  # fmt: skip
     op(setup, 11, "movement_record", data={
         **base, "kind": "transfer", "from_supply_point_id": central["id"], "to_supply_point_id": partner["id"],
-        "quantity": str(_round_up(total_issued * Decimal("1.2"), 150)), "source": "we_recorded", "note": INVENTED,
+        "quantity": str(to_partner), "source": "we_recorded", "note": INVENTED,
     })  # fmt: skip
     for username in sorted(uuids):
         op(setup, 13, "supply_point_upsert", data={
@@ -223,7 +233,7 @@ def seed(*, program_id: int, opportunity_id: int, reset: bool = False, today: da
         "workers": len(uuids),
         "visits": len(visits),
         "first_visit": first.isoformat(),
-        "sachets_dispensed": str(sum(sum(w.values()) for w in dispensed.values())),
+        "sachets_dispensed": str(total_dispensed),
         "sachets_issued": str(total_issued),
         "distributions": len(issues),
         "weeks": weeks,
