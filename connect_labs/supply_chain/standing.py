@@ -96,13 +96,17 @@ class Row:
 
     @property
     def silent_names(self) -> list[str]:
-        """The suppliers the no-reply rule lists on this row, by name."""
-        return [m.text.split(": reply")[0] for m in self.theirs if m.rule == rules.RULE_NO_REPLY]
+        """The suppliers the no-reply rule lists on this row, by name: silent, or awaiting a quote."""
+        return [m.party or m.text.split(": ")[0] for m in self.theirs if m.rule == rules.RULE_NO_REPLY]
 
     @property
     def silent_chips(self) -> list[tuple[str, str]]:
-        """[(name, "Silent 17d")]: each silent supplier with the chip the tender page gives it."""
-        return [(m.text.split(": reply")[0], m.chip or "Silent") for m in self.theirs if m.rule == rules.RULE_NO_REPLY]
+        """[(name, "Silent 17d")]: each supplier the no-reply rule lists, with the chip the tender page gives it."""
+        return [
+            (m.party or m.text.split(": ")[0], m.chip or "Silent")
+            for m in self.theirs
+            if m.rule == rules.RULE_NO_REPLY
+        ]
 
     @property
     def move_lines(self) -> list:
@@ -286,10 +290,12 @@ def _tender_rows(program_id, today, until):
         outreach.setdefault(o.tender_id, []).append(o)
     for q in Quote.objects.filter(tender_id__in=ids).select_related("supplier__org", "commodity", "item"):
         quotes.setdefault(q.tender_id, []).append(q)
-    for c in Commitment.objects.filter(
-        program_id=program_id, tender_id__in=ids, resolved_on__isnull=True
-    ).select_related("owed_to_org"):
-        owed.setdefault(c.tender_id, []).append(c)
+    answers = {}
+    for c in Commitment.objects.filter(program_id=program_id, tender_id__in=ids).select_related("owed_to_org"):
+        if c.resolved_on is None:
+            owed.setdefault(c.tender_id, []).append(c)
+        elif c.kind == "question":
+            answers.setdefault(c.tender_id, []).append(c)
     for award in Award.objects.filter(tender_id__in=ids).select_related("quote__supplier__org"):
         awards.setdefault(award.tender_id, award)
 
@@ -302,6 +308,7 @@ def _tender_rows(program_id, today, until):
             outreach=outreach.get(tender.pk, []),
             quotes=quotes.get(tender.pk, []),
             commitments=owed.get(tender.pk, []),
+            answered=rules.questions_answered_on(answers.get(tender.pk, [])),
             provisional=bool(award and award.provisional),
             contracted=False,
         )

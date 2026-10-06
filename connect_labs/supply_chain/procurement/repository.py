@@ -473,7 +473,31 @@ class ProcurementRepositoryMixin:
         replacement = _fresh(replacement)
         existing.superseded_by = replacement
         existing.save(update_fields=["superseded_by", "updated_at"])
+        self._follow_received_on(existing, replacement)
         return replacement
+
+    @staticmethod
+    def _follow_received_on(existing, replacement):
+        """A corrected Received day moves the reply it arrived as: one email, one day.
+
+        The invitation's reply that recorded this quote -- a quote reply from the
+        same supplier on the same tender, dated the quote's old day -- takes the
+        new day, saved (not updated in bulk) so the change is its own revision in
+        the same call. A reply on another day is another email and stays.
+        """
+        old, new = existing.received_on, replacement.received_on
+        if old is None or new is None or old == new:
+            return
+        replies = Outreach.objects.filter(
+            tender_id=existing.tender_id,
+            supplier_id=replacement.supplier_id,
+            responded=True,
+            response_kind="quote",
+            responded_on=old,
+        )
+        for reply in replies:
+            reply.responded_on = new
+            reply.save(update_fields=["responded_on", "updated_at"])
 
     def void_quote(self, quote_id, reason):
         """Leave the record readable; drop it out of comparisons.
