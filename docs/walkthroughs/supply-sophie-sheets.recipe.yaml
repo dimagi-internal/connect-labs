@@ -62,7 +62,7 @@ scenes:
     it, and the correction is kept as a new version with its reason.
   show: The tender's History beside the Quotes sheet, Sahel's Received cell corrected
     in place.
-  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#quotes
+  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}&changed=outreach-${sahel_outreach_id}#quotes
 - id: kanems-pack
   actions:
   - kind: wait_for
