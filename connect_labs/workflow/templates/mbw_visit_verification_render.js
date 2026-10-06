@@ -91,6 +91,25 @@ function WorkflowUI({
     [registrationRows],
   );
 
+  // Registration GPS point per mother (GPS Map tab) -- home_gps is the raw
+  // geopoint captured during the Register Mother form's own GPS block,
+  // saved as a case property of the same name. Same lookup table as
+  // conductedAtRegistration (entity_id === mother_case_id), kept separate
+  // since the two features (exclude-visit toggle vs. map) don't share a
+  // consumer.
+  var motherRegistrationGps = React.useMemo(
+    function () {
+      var map = {};
+      registrationRows.forEach(function (row) {
+        if (row.home_gps && row.entity_id) {
+          map[row.entity_id] = row.home_gps;
+        }
+      });
+      return map;
+    },
+    [registrationRows],
+  );
+
   var _excludeRegistrationVisits = React.useState(true);
   var excludeRegistrationVisits = _excludeRegistrationVisits[0];
   var setExcludeRegistrationVisits = _excludeRegistrationVisits[1];
@@ -796,6 +815,18 @@ function WorkflowUI({
     return isNaN(acc) ? null : acc;
   }
 
+  // Same raw geopoint string ("lat lon altitude accuracy"), indices 0/1 this
+  // time -- used by the GPS Map tab to place markers.
+  function parseGpsLatLon(geopointStr) {
+    if (!geopointStr || typeof geopointStr !== 'string') return null;
+    var parts = geopointStr.trim().split(/\s+/);
+    if (parts.length < 2) return null;
+    var lat = parseFloat(parts[0]);
+    var lon = parseFloat(parts[1]);
+    if (isNaN(lat) || isNaN(lon)) return null;
+    return { lat: lat, lon: lon };
+  }
+
   function buildGpsScatterPoints(rows, distanceKey) {
     var pass = [];
     var fail = [];
@@ -832,6 +863,92 @@ function WorkflowUI({
       );
     },
     [failedAnalysisDisplayRows],
+  );
+
+  // --- GPS Map tab: per-mother registration -> visit chains --------------
+  // Answers "is an FLW doing visits for different mothers very close
+  // together (in space and/or time)?" -- one chain per mother: her
+  // registration GPS point (home_gps, captured on the Register Mother form)
+  // fanned out to each of her visit GPS points still in the current filter
+  // (domain + eligibility + the exclude-registration-visits toggle above --
+  // same displayRows as every other tab). Colored per FLW so one FLW's
+  // activity across several mothers reads as one color on the map.
+  //
+  // A stable 10-color categorical palette (d3's category10) -- username ->
+  // color is a deterministic hash, NOT an index into the currently-visible
+  // FLW list, so a given FLW keeps the same color regardless of which
+  // domain/filter is selected or how many other FLWs are in view.
+  var FLW_MAP_COLORS = [
+    '#1f77b4',
+    '#ff7f0e',
+    '#2ca02c',
+    '#d62728',
+    '#9467bd',
+    '#8c564b',
+    '#e377c2',
+    '#7f7f7f',
+    '#bcbd22',
+    '#17becf',
+  ];
+  function flwMapColor(username) {
+    var s = String(username || '');
+    var hash = 0;
+    for (var i = 0; i < s.length; i += 1) {
+      hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
+    }
+    return FLW_MAP_COLORS[hash % FLW_MAP_COLORS.length];
+  }
+
+  var motherGpsChains = React.useMemo(
+    function () {
+      var byMother = {};
+      displayRows.forEach(function (row) {
+        var key = row.mother_case_id || '';
+        if (!key) return;
+        if (!byMother[key]) byMother[key] = [];
+        byMother[key].push(row);
+      });
+
+      var chains = [];
+      Object.keys(byMother).forEach(function (motherCaseId) {
+        var rows = byMother[motherCaseId].slice().sort(function (a, b) {
+          return (a.visit_datetime || '').localeCompare(b.visit_datetime || '');
+        });
+
+        var visits = [];
+        rows.forEach(function (row) {
+          var pt = parseGpsLatLon(row.gps_normalized_location);
+          if (!pt) return;
+          visits.push({
+            lat: pt.lat,
+            lon: pt.lon,
+            username: row.username,
+            visitDatetime: row.visit_datetime,
+            formName: row.form_name,
+            visitNumber: row.visit_number,
+          });
+        });
+
+        var regPt = parseGpsLatLon(motherRegistrationGps[motherCaseId]);
+        if (!regPt && visits.length === 0) return; // nothing to plot
+
+        // Color the whole chain (registration + every visit) by the FLW of
+        // this mother's earliest visit STILL IN THE CURRENT FILTER -- the
+        // only FLW identity available for a chain, and the one that makes
+        // "one FLW, one color across her mothers" actually work.
+        var flwUsername = visits.length > 0 ? visits[0].username : null;
+
+        chains.push({
+          motherCaseId: motherCaseId,
+          flwUsername: flwUsername,
+          color: flwMapColor(flwUsername),
+          registration: regPt,
+          visits: visits,
+        });
+      });
+      return chains;
+    },
+    [displayRows, motherRegistrationGps],
   );
 
   // --- Mother question fail rate (Failed Verification Analysis tab) ------
@@ -1232,6 +1349,35 @@ function WorkflowUI({
         },
       ],
     },
+    {
+      title: 'GPS Map Tab',
+      body: 'Plots one "chain" per mother on a Leaflet map (plain window.L, not the shared ConnectMap/Mapbox components -- those have no line layer or non-circle marker, both needed here): a circle at her registration GPS point, fanned out with a straight line to a square at each of her visit GPS points. Built from the SAME displayRows every other tab uses (domain + eligibility + verification-block-present + exclude-registration-visits), so a visit excluded there is also absent here -- a mother whose only visit was excluded as "conducted at registration" shows just her registration circle, no squares, no lines.',
+      items: [
+        {
+          name: 'Registration point (circle)',
+          def: 'The GPS location captured on the Register Mother form itself, at registration time.',
+          field:
+            'motherRegistrationGps[mother_case_id] -- pipelines mother_registration (test domain) and/or mother_registration_prod (production domain), field home_gps (case.properties.home_gps, same case property the GPS-outcome distance calculations compare against). Raw geopoint string, parsed client-side via parseGpsLatLon (indices 0/1 of "lat lon altitude accuracy" -- same string format as gps_normalized_location, parsed by parseGpsAccuracyMeters for index 3 elsewhere on this dashboard). A mother with no home_gps on file (never captured, or registered before the GPS block existed) plots no circle.',
+        },
+        {
+          name: 'Visit points (squares)',
+          def: "Every visit still in the current filter, for this mother. A visit with no parseable GPS plots nothing (not a point at the origin) -- quietly dropped, not shown as an error, since that's governed by the same verification-block-present gate as the rest of the dashboard.",
+          field:
+            'gps_normalized_location per row (same field the GPS Verification scatter plot on the Failed Verification Analysis tab reads for its X-axis companion fields), parsed via parseGpsLatLon.',
+        },
+        {
+          name: 'Lines',
+          def: "One line per visit, drawn straight from that mother's registration point to that visit's point -- a fan/star shape out of the registration point, not a chronological path connecting visit to visit in sequence. A mother with no registration point on file shows her visit squares with no lines at all.",
+          field: 'L.polyline([registration latlng, visit latlng], ...)',
+        },
+        {
+          name: 'FLW color',
+          def: 'Every point and line for a mother\'s whole chain (registration circle, all her visit squares, all her lines) is colored by one FLW -- the FLW who conducted her EARLIEST visit still in the current filter (not necessarily her true first-ever visit, if an earlier one was filtered out). A mother with no visits in the filter (registration circle only) has no FLW to color by and shows as "unknown" in the legend. The color itself is a deterministic hash of the username into a fixed 10-color palette (d3\'s category10), NOT an index into the currently-visible FLW list -- so a given FLW keeps the same color across every domain/filter combination, rather than reassigning colors whenever the visible FLW set changes.',
+          field:
+            'flwMapColor(username) -- FNV-ish char-code hash mod 10, indexing FLW_MAP_COLORS. Legend above the map lists every distinct FLW color actually in view, sorted alphabetically.',
+        },
+      ],
+    },
   ];
 
   // --- Tabs ----------------------------------------------------------------
@@ -1239,6 +1385,7 @@ function WorkflowUI({
     { key: 'summary', label: 'Verification Summary' },
     { key: 'table', label: 'Per FLW Verification View' },
     { key: 'failed_analysis', label: 'Failed Verification Analysis' },
+    { key: 'gps_map', label: 'GPS Map' },
     { key: 'definitions', label: 'Definitions' },
   ];
   var _tab = React.useState('summary');
@@ -1542,6 +1689,135 @@ function WorkflowUI({
       };
     },
     [motherQuestionFailRateStats, activeTab],
+  );
+
+  // --- GPS Map tab (Leaflet) -----------------------------------------------
+  // Plain Leaflet (window.L), not the shared ConnectMap/PlanLayers (Mapbox)
+  // components -- those don't expose a line layer or non-circle markers,
+  // both needed here (registration = circle, visit = square, connected by a
+  // line), so this draws directly with L.circleMarker / L.marker+divIcon /
+  // L.polyline instead. Free OSM tiles, no token, same convention as
+  // connect_labs/templates/{coverage/map.html,labs/admin/boundary_map.html}.
+  var gpsMapDivRef = React.useRef(null);
+  var gpsMapInstanceRef = React.useRef(null);
+  var gpsMapLayersRef = React.useRef(null);
+  var _leafletReady = React.useState(
+    typeof window !== 'undefined' && !!window.L,
+  );
+  var leafletReady = _leafletReady[0];
+  var setLeafletReady = _leafletReady[1];
+
+  React.useEffect(
+    function () {
+      if (leafletReady) return undefined;
+      var t = setInterval(function () {
+        if (window.L) {
+          setLeafletReady(true);
+          clearInterval(t);
+        }
+      }, 150);
+      return function () {
+        clearInterval(t);
+      };
+    },
+    [leafletReady],
+  );
+
+  function squareDivIcon(color) {
+    return window.L.divIcon({
+      className: '',
+      html:
+        '<div style="width:10px;height:10px;background:' +
+        color +
+        ';border:1px solid rgba(0,0,0,0.5);box-shadow:0 0 0 1px rgba(255,255,255,0.8);"></div>',
+      iconSize: [10, 10],
+      iconAnchor: [5, 5],
+    });
+  }
+
+  React.useEffect(
+    function () {
+      if (activeTab !== 'gps_map') return undefined;
+      if (!leafletReady || !gpsMapDivRef.current) return undefined;
+      var L = window.L;
+
+      if (!gpsMapInstanceRef.current) {
+        var map = L.map(gpsMapDivRef.current).setView([9.0, 8.6], 7);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; OpenStreetMap contributors',
+          maxZoom: 18,
+        }).addTo(map);
+        gpsMapInstanceRef.current = map;
+        gpsMapLayersRef.current = L.layerGroup().addTo(map);
+      }
+      var map = gpsMapInstanceRef.current;
+      var layerGroup = gpsMapLayersRef.current;
+      layerGroup.clearLayers();
+
+      var allLatLngs = [];
+      motherGpsChains.forEach(function (chain) {
+        var regLatLng = chain.registration
+          ? [chain.registration.lat, chain.registration.lon]
+          : null;
+
+        if (regLatLng) {
+          allLatLngs.push(regLatLng);
+          L.circleMarker(regLatLng, {
+            radius: 7,
+            color: '#ffffff',
+            weight: 1.5,
+            fillColor: chain.color,
+            fillOpacity: 0.95,
+          })
+            .bindTooltip(
+              'Registration -- mother ' +
+                chain.motherCaseId +
+                '<br/>FLW: ' +
+                (chain.flwUsername || 'unknown'),
+            )
+            .addTo(layerGroup);
+        }
+
+        chain.visits.forEach(function (visit) {
+          var visitLatLng = [visit.lat, visit.lon];
+          allLatLngs.push(visitLatLng);
+
+          if (regLatLng) {
+            L.polyline([regLatLng, visitLatLng], {
+              color: chain.color,
+              weight: 2,
+              opacity: 0.55,
+            }).addTo(layerGroup);
+          }
+
+          L.marker(visitLatLng, { icon: squareDivIcon(chain.color) })
+            .bindTooltip(
+              (visit.formName || 'Visit') +
+                ' #' +
+                (visit.visitNumber || '?') +
+                '<br/>' +
+                formatVisitDateTime(visit.visitDatetime) +
+                '<br/>FLW: ' +
+                (visit.username || 'unknown'),
+            )
+            .addTo(layerGroup);
+        });
+      });
+
+      if (allLatLngs.length > 0) {
+        map.fitBounds(allLatLngs, { padding: [30, 30] });
+      }
+
+      // Leaflet sizes its tile grid from the container's dimensions at
+      // creation time -- if the tab wasn't visible yet (display:none via the
+      // {activeTab === 'gps_map' && (...)} gate below) that was 0x0, so a
+      // freshly-switched-to tab needs an explicit invalidateSize to fill in
+      // correctly instead of showing a corner of grey tiles.
+      setTimeout(function () {
+        map.invalidateSize();
+      }, 0);
+    },
+    [activeTab, leafletReady, motherGpsChains],
   );
 
   var summaryCards = (
@@ -1961,6 +2237,81 @@ function WorkflowUI({
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'gps_map' && (
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-base font-semibold text-gray-900">GPS Map</h3>
+            <p className="text-xs text-gray-500">
+              One chain per mother: her registration GPS point (circle) fanned
+              out with a line to each of her visit GPS points still in the
+              current filter (square). Colored per FLW -- the same FLW's
+              activity across different mothers reads as one color, making it
+              easy to spot visits to different mothers happening suspiciously
+              close together in space. Hover a point for details. Respects the
+              domain, eligibility, and exclude-registration-visits filters
+              above, same row set as every other tab.
+            </p>
+          </div>
+
+          {motherGpsChains.length > 0 ? (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
+                <span className="text-sm font-medium text-gray-700">
+                  FLW colors:
+                </span>
+                {(function () {
+                  var seen = {};
+                  var swatches = [];
+                  motherGpsChains.forEach(function (chain) {
+                    var name = chain.flwUsername || 'unknown';
+                    if (seen[name]) return;
+                    seen[name] = true;
+                    swatches.push({ name: name, color: chain.color });
+                  });
+                  swatches.sort(function (a, b) {
+                    return a.name.localeCompare(b.name);
+                  });
+                  return swatches.map(function (s) {
+                    return (
+                      <span
+                        key={s.name}
+                        className="flex items-center gap-1 text-xs text-gray-700"
+                      >
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            width: '10px',
+                            height: '10px',
+                            borderRadius: '9999px',
+                            backgroundColor: s.color,
+                          }}
+                        ></span>
+                        {s.name}
+                      </span>
+                    );
+                  });
+                })()}
+              </div>
+              <div
+                className="overflow-hidden rounded-lg border border-gray-200 shadow-sm"
+                style={{ height: '600px' }}
+              >
+                <div
+                  ref={gpsMapDivRef}
+                  style={{ height: '100%', width: '100%' }}
+                ></div>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+              <p className="text-sm text-gray-500">
+                No GPS points to plot in the current filter.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
