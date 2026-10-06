@@ -67,6 +67,8 @@ scenes:
   actions:
   - kind: wait_for
     target: testid:supplier-table
+  - kind: hold
+    seconds: 1.0
   - kind: click
     target: css:[data-testid=supplier-row]:has-text('Kanem') [data-edit$=':base_per_pack_stated']
   - kind: fill
@@ -76,6 +78,10 @@ scenes:
     value: Enter
   - kind: wait_for
     target: css:.is-saved
+  - kind: hover
+    target: css:[data-testid=supplier-table] thead
+  - kind: hold
+    seconds: 1.0
   - kind: snapshot
   concept_claim: A missing fact the supplier has given is filled in the row that lacked
     it, and the row stops saying it is missing.
@@ -110,6 +116,12 @@ scenes:
     value: Enter
   - kind: wait_for
     target: css:.is-saved
+  - kind: scroll_to
+    target: css:[data-testid=grid-quote-row]:has-text('Sahel') td[data-fact=landed]
+  - kind: hover
+    target: testid:comparable-count
+  - kind: hold
+    seconds: 1.0
   - kind: snapshot
   concept_claim: Each gap in the comparison is a cell, and filling it moves that quote
     toward a landed price that can be compared with the others.
@@ -120,8 +132,16 @@ scenes:
   actions:
   - kind: wait_for
     target: css:#drafts
+  - kind: scroll_to
+    target: css:[data-testid=draft]:has-text('Northgate')
+  - kind: hold
+    seconds: 2.0
   - kind: click
-    target: css:[data-testid=reply-sent-form] button
+    target: css:[data-testid=draft]:has-text('Northgate') [data-testid=reply-sent-form] button
+  - kind: wait_for
+    target: testid:on-us-count
+  - kind: scroll_to
+    target: testid:on-us-count
   - kind: snapshot
   concept_claim: What the record says she owes a supplier is drafted as one email
     for her own mailbox, and sending it is one more fact in the record.
@@ -156,7 +176,7 @@ scenes:
     seconds: 1.5
   - kind: snapshot
   concept_claim: 'The overview shows what the session''s corrections changed: tender
-    2 all comparable with its next move on the silent suppliers, and the order''s shipment
-    dated.'
+    2 all comparable with what is left named by whose move it is, and the order''s
+    shipment dated.'
   show: Sophie's procurements overview.
   url: /supply/?program_id=${program_id}
