@@ -10,10 +10,11 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
-from django.http import HttpResponseRedirect, JsonResponse
+from django.http import Http404, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
+from django.views import View
 from django.views.decorators.http import require_POST
 from django.views.generic import CreateView, DeleteView, ListView, UpdateView
 
@@ -424,3 +425,85 @@ class DumpStreamView(BaseSSEStreamView):
         except Exception as e:  # noqa: BLE001
             logger.exception("synthetic dump failed")
             yield send_sse_event("Dump failed", error=f"{type(e).__name__}: {e}")
+
+
+# ---- clone a real opportunity, from a page ----------------------------------
+#
+# The same job the `synthetic_clone_opp` MCP tool starts, behind a form: pick the
+# real opportunities you can see, press one button, and follow the job on a
+# status page. It runs as the signed-in person, with their own Connect access --
+# nobody needs a token to make a synthetic clone. The tool's own function does
+# the work, so the access check, the per-person limits and the job are the same.
+
+
+def _clone_choices(request) -> list[dict]:
+    """The real opportunities this person can see, newest first, for the picker."""
+    from connect_labs.labs.context import get_org_data
+    from connect_labs.labs.synthetic.models import LABS_ONLY_OPP_ID_FLOOR
+
+    rows = []
+    for opp in get_org_data(request).get("opportunities", []):
+        try:
+            opp_id = int(opp.get("id"))
+        except (TypeError, ValueError):
+            continue
+        if opp_id >= LABS_ONLY_OPP_ID_FLOOR:
+            continue
+        rows.append(
+            {"id": opp_id, "name": opp.get("name") or f"Opportunity {opp_id}", "visits": opp.get("visit_count")}
+        )
+    return sorted(rows, key=lambda r: -r["id"])
+
+
+class CloneRealOppView(LoginRequiredMixin, View):
+    template_name = "labs/synthetic/clone.html"
+
+    def get(self, request):
+        from django.shortcuts import render
+
+        chosen = request.GET.get("opportunity")
+        return render(request, self.template_name, {"choices": _clone_choices(request), "chosen": chosen})
+
+    def post(self, request):
+        from django.shortcuts import render
+
+        from connect_labs.mcp.tool_registry import MCPToolError
+        from connect_labs.mcp.tools.synthetic import synthetic_clone_opp
+
+        ids = [int(x) for x in request.POST.getlist("opportunity") if str(x).isdigit()]
+        context = {"choices": _clone_choices(request), "chosen": None}
+        if not ids:
+            context["error"] = "Choose at least one opportunity to clone."
+            return render(request, self.template_name, context, status=400)
+        try:
+            started = synthetic_clone_opp(
+                request.user,
+                source_opportunity_ids=ids,
+                program_name=(request.POST.get("program_name") or "").strip() or None,
+                # An unticked checkbox is not posted at all: absent means off.
+                case_timelines=request.POST.get("case_timelines") == "on",
+            )
+        except MCPToolError as error:
+            context["error"] = getattr(error, "message", None) or str(error)
+            return render(request, self.template_name, context, status=400)
+        return HttpResponseRedirect(reverse("labs:synthetic:clone_status", args=[started["task_id"]]))
+
+
+class CloneStatusView(LoginRequiredMixin, View):
+    """Where a clone job stands: a page, and (?format=json) what the page polls."""
+
+    template_name = "labs/synthetic/clone_status.html"
+
+    def get(self, request, task_id):
+        from django.shortcuts import render
+
+        from connect_labs.mcp.tool_registry import MCPToolError
+        from connect_labs.mcp.tools.synthetic import synthetic_job_status
+
+        try:
+            status = synthetic_job_status(request.user, task_id=task_id)
+        except MCPToolError:
+            raise Http404("No clone job of yours with that id.") from None
+        if request.GET.get("format") == "json":
+            return JsonResponse(status)
+        return render(request, self.template_name, {"status": status, "task_id": task_id})

@@ -30,7 +30,11 @@
             Refresh cache
           </button>
         </form>
-        <a href="{% url 'labs:synthetic:new' %}" class="button button-sm primary-dark">
+        <a href="{% url 'labs:synthetic:clone' %}" class="button button-sm primary-dark" title="Make a synthetic copy of a real opportunity: its shape, none of its data">
+          <i class="fa-solid fa-clone mr-1.5"></i>
+          Clone a real opportunity
+        </a>
+        <a href="{% url 'labs:synthetic:new' %}" class="button button-sm outline-style">
           <i class="fa-solid fa-plus mr-1.5"></i>
           New synthetic opp
         </a>
