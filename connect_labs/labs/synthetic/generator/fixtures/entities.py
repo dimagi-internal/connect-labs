@@ -34,6 +34,12 @@ class PlannedVisit:
     # reconstructed ISO date strings (e.g. a constant child_dob). fill_form_json
     # writes both directly, bypassing the marginal draws.
     forced_values: dict[str, Any]
+    # The visit's review outcome, when the pool AUTHORS it (`visits[].review`):
+    # `{status, flagged, flag_reason, review_status}`. None = drawn as before.
+    # Curated pools need it to file a flagged record down the programme's own review
+    # path (a desk-review flag is pending + flagged, not approved) -- a status drawn
+    # from the persona's flag rate cannot follow a flag the pool itself wrote.
+    review: dict[str, Any] | None = None
 
 
 def _series_ranges(visits: list[dict]) -> dict[str, tuple[float, float]]:
@@ -287,5 +293,7 @@ def plan_mirror_visits(
                     rng=rng,
                 )
             )
-            planned.append(PlannedVisit(entity_id, entity_name, idx, owner, vdate, vj, forced))
+            planned.append(
+                PlannedVisit(entity_id, entity_name, idx, owner, vdate, vj, forced, review=visit.get("review"))
+            )
     return planned

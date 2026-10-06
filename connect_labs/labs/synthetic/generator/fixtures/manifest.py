@@ -252,7 +252,9 @@ class LongitudinalSpec(BaseModel):
     """How a cohort's per-entity time series are produced.
 
     ``mirror``: replay real de-identified case series from ``transplant_pool`` (each
-    ``{"owner", "start_date", "visits": [{"day", "values": {path: float}}]}``), with
+    ``{"owner", "start_date", "visits": [{"day", "values": {path: float}}]}``; a visit
+    may also carry ``"review": {status, flagged, flag_reason, review_status}`` to AUTHOR
+    its review outcome instead of drawing it from the persona's flag rate), with
     IQR/range-scaled jitter — reproduces visits/case, cases/FLW, timing and trajectory
     exactly. ``synthetic``: draw per-entity trajectories parametrically from ``fields``.
     """
