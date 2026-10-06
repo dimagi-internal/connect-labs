@@ -5,8 +5,8 @@ Document kind (records.DOCUMENT_KIND_LABELS) on every page -- the comparison's c
 actions, the tender's terms, an order's landed table and what-we-owe, the overview's gap
 tags -- and the order's nil duty takes the comparison's cell shape: the figure and a chip.
 
-G: the History's line that recorded a quote carries that quote's open facts as the same
-outlined gap chips the overview uses, read from status.quote_open_facts.
+G (superseded in the sheets round): a quote's open facts are the Suppliers sheet's, not
+repeated on its History line.
 """
 
 import html
@@ -16,10 +16,8 @@ import pytest
 from django.template.loader import get_template
 from django.urls import reverse
 
-from connect_labs.supply_chain import moves as rules
 from connect_labs.supply_chain import records
 from connect_labs.supply_chain.models import Document
-from connect_labs.supply_chain.procurement.status import fact_chips, quote_open_facts
 from connect_labs.supply_chain.tests import test_tracking_reality as reality
 from connect_labs.supply_chain.tests.test_tracking_reality import _contract, op
 from connect_labs.supply_chain.tests.test_unanswered_round_batch1 import _tender_page
@@ -90,48 +88,25 @@ def test_holds_name_documents_by_the_label_map():
     assert 'document_kind_label("duty_exemption")' in source
 
 
-# ---- G. a recorded quote's open facts on its History line --------------------
-
-
-def test_fact_chips_put_ours_first_with_whose_each_is():
-    chips = fact_chips(["sachets per carton", "exchange rate", "freight estimate"])
-    assert chips[:2] == [("exchange rate", rules.US), ("freight estimate", rules.US)]
-    assert chips[2] == ("sachets per carton", rules.SUPPLIERS)
+# ---- G. a recorded quote's open facts: on the Suppliers sheet, not again in History ----
+# (Superseded in the sheets round: the Suppliers sheet's Missing column now carries the same
+# chips, so History stopped repeating them.)
 
 
 @pytest.mark.django_db
-def test_the_history_line_that_recorded_a_quote_carries_its_open_facts(da, world, client_in_program):
-    quote = _waiver(da, world)
+def test_a_quote_s_open_facts_are_the_suppliers_sheet_s_not_history_s(da, world, client_in_program):
+    _waiver(da, world)
     body = _tender_page(client_in_program, world["tender"]["id"])
     history = body[body.index('id="history"') :]
-    chips = re.search(r'data-testid="quote-open-facts"[^>]*>(.*?)</div>', history, re.S)
-    assert chips is not None
-    # The same facts, one rule: status.quote_open_facts for this quote as it stands.
-    from connect_labs.supply_chain.procurement.status import asked_since_quote, comparisons, waiver_on_file
-
-    tender = quote.tender
-    row = next(r for c in comparisons(tender, [quote]) for r in (*c.comparable, *c.blocked) if r.quote_id == quote.pk)
-    expected = fact_chips(
-        quote_open_facts(tender, row, quote, waiver_on_file=waiver_on_file(tender)), asked_since_quote(quote)
-    )
-    shown = re.findall(r'data-fact="([^"]+)" data-owner="([^"]+)"', chips.group(1))
-    assert [(html.unescape(f), o) for f, o in shown] == expected
-    # One pill per fact, worded with whose step it is: "duty exemption · to do".
-    words = [_text(s) for s in re.findall(r"<span[^>]*>([^<]*)</span>", chips.group(1), re.S)]
-    assert "duty exemption · to do" in words
+    assert 'data-fact="' not in history
+    sheet = body[body.index('data-testid="supplier-table"') : body.index('id="history"')]
+    # Ours are the sheet's "to do" chip, linking to the comparison that names each one.
+    on_us = _text(re.search(r'data-testid="supplier-on-us"[^>]*>(.*?)</a>', sheet, re.S).group(1))
+    assert on_us.endswith("· to do")
+    assert on_us == "duty exemption · to do" or re.match(r"\d+ facts · to do$", on_us)
 
 
-@pytest.mark.django_db
-def test_a_quote_with_nothing_open_carries_no_chips(da, world, client_in_program):
-    op(da, "tender_set_duty_terms", tender_id=world["tender"]["id"], duty_terms="supplier_ddp")
-    _quote(da, world, duties_basis="included")
-    body = _tender_page(client_in_program, world["tender"]["id"])
-    history = body[body.index('id="history"') :]
-    for found in re.findall(r'data-testid="quote-open-facts"[^>]*>(.*?)</div>', history, re.S):
-        assert "duty exemption" not in found
-
-
-def test_the_overview_and_history_share_one_chip():
+def test_the_overview_and_the_suppliers_sheet_share_one_chip():
     home = get_template("supply_chain/home.html").template.source
-    line = get_template("supply_chain/_timeline_line.html").template.source
-    assert '"supply_chain/_fact_chip.html"' in home and '"supply_chain/_fact_chip.html"' in line
+    sheet = get_template("supply_chain/procurement/tender_detail.html").template.source
+    assert '"supply_chain/_fact_chip.html"' in home and '"supply_chain/_fact_chip.html"' in sheet

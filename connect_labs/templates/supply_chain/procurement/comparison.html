@@ -71,7 +71,7 @@
     <table class="sheet" data-testid="comparison-grid">
       <thead>
         <tr>
-          <th scope="col" class="sticky left-0 z-[2] min-w-[12rem]">Supplier</th>
+          <th scope="col" class="sheet-pin min-w-[12rem]">Supplier</th>
           {% for r in grid.rows %}
           <th scope="col" data-fact="{{ r.key }}" class="align-bottom{% if r.total %} text-gray-900{% endif %}">{{ r.label }}<span class="sub normal-case">{{ r.src_label }}</span></th>
           {% endfor %}
@@ -84,7 +84,7 @@
       <tbody>
         {% for q in grid.quotes %}
         <tr data-quote-id="{{ q.quote_id }}" data-testid="grid-quote-row">
-          <th scope="row" data-quote-id="{{ q.quote_id }}" data-testid="grid-quote" class="sticky left-0 z-[1] bg-white text-left align-top font-normal">
+          <th scope="row" data-quote-id="{{ q.quote_id }}" data-testid="grid-quote" class="sheet-pin text-left align-top font-normal">
             <a href="{{ q.href }}" class="text-brand-deep-purple font-semibold hover:underline">{{ q.name }}</a>
             {% if q.item %}<span class="sub">{{ q.item }}</span>{% endif %}
             <span class="mt-1 flex flex-wrap gap-1">{% for chip in q.chips %}<span class="status-chip status-chip--{{ chip.tone }}"{% if forloop.first %} data-testid="grid-status"{% endif %}>{{ chip.label }}</span>{% endfor %}</span>

@@ -81,8 +81,8 @@ spine:
 - id: S5
   claim: 'The comparison is a quote to a row, a fact to a column. Each gap is a cell,
     and filling a cell moves the quote: settling import duty in the grid, typing our
-    freight estimate and Sahel''s exchange rate, and the landed column fills and ranks
-    as each quote becomes comparable.'
+    freight estimate and Sahel''s exchange rate, and the landed column fills as each
+    quote becomes comparable.'
   status: grounded
   evidence:
   - ref: 'PR 2250: comparison.html (quotes as rows); status.py comparison_grid edit

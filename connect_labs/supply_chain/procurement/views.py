@@ -41,6 +41,7 @@ from connect_labs.supply_chain.fulfilment.forms import DocumentForm
 from connect_labs.supply_chain.history.timeline import (
     ai_entered_quotes,
     corrections_for_quotes,
+    quote_lineages,
     reminders_for_outreach,
     timeline_for_tender,
 )
@@ -529,14 +530,22 @@ class TenderDetailView(_Base):
             for row in context["status"]["suppliers"]:
                 mine = by_supplier.get(row["supplier_id"]) or []
                 row["outreach"] = next((o for o in mine if o.get("changed")), mine[0] if mine else None)
-            # The History's line that recorded a quote carries what that quote still lacks: the
-            # same open facts the Suppliers table counts and the comparison tags, as they stand now.
-            quote_facts = context["status"].get("quote_facts") or {}
-            for entry in context["timeline"] or []:
-                if getattr(entry, "quote_id", None) in quote_facts:
-                    entry.open_facts = quote_facts[entry.quote_id]
+        # The Quotes sheet: one row per quote that stands, each carrying the versions it
+        # replaced -- what each correction changed and why -- so a corrected quote is
+        # one row, not one per version. A voided quote stands nowhere; History keeps it.
+        current = [q for q in context["quotes"] if not q.get("voided") and not q.get("superseded_by_quote_id")]
+        from connect_labs.supply_chain.procurement.status import PRICE_FIELDS, lineage_sources, value_src
+
+        lineages = quote_lineages([q.get("id") for q in current], program_id=_access(self.request).program_id)
+        sources = lineage_sources(lineages)
+        for quote in current:
+            lineage = lineages.get(quote.get("id"))
+            quote["earlier"] = lineage.earlier if lineage else []
+            # The price's own source: the version that last changed it, not the latest version.
+            quote["price_src"] = value_src(sources, quote.get("id"), PRICE_FIELDS)
+        context["current_quotes"] = current
         context["counts"] = {
-            "quotes": len([q for q in context["quotes"] if not q.get("voided")]),
+            "quotes": len(current),
             "history": len(context["timeline"] or []) if isinstance(context["timeline"], list) else None,
             "drafts": len((context["drafts"] or {}).get("drafts") or []),
             "invited": len(outreach),
@@ -1112,7 +1121,7 @@ class ComparisonView(_Base):
         if comparison:
             from connect_labs.supply_chain.models import Quote as _Quote
             from connect_labs.supply_chain.models import Tender as _Tender
-            from connect_labs.supply_chain.procurement.status import comparison_grid
+            from connect_labs.supply_chain.procurement.status import comparison_grid, quote_sources
 
             program_id = _access(self.request).program_id
             found = _Tender.objects.filter(pk=tender_id, program_id=program_id).first()
@@ -1134,6 +1143,8 @@ class ComparisonView(_Base):
                 comparison,
                 quotes_by_id,
                 ai_quotes=set(context["ai_quotes"]),
+                # Each value marked by the version that last changed it, not the quote's latest version.
+                sources=quote_sources([pk for pk, q in quotes_by_id.items() if q.is_live], program_id=program_id),
                 awarded=context["awarded_quote_ids"],
                 draft_anchors=draft_anchors(drafts),
                 waiver_on_file=context.get("waiver_on_file", True),

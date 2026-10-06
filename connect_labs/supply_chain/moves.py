@@ -20,7 +20,12 @@ short rule label saying why it is listed. The rules, and only these:
 
   ON SUPPLIERS
   (e) no reply      a supplier invited to a tender still collecting quotes who
-                    has neither replied nor quoted: "<supplier>: reply (silent N days)".
+                    has not quoted and has no open question to us. Silent:
+                    "<supplier>: reply (silent N days)". Replied with
+                    questions, all of them answered:
+                    "<supplier>: quote (answered N days ago)". A reply of
+                    questions is not a quote; once we answer them the quote
+                    is theirs to send.
   (f) a question WE asked a supplier is not recorded anywhere in the model, so
       it raises nothing; no model is invented for it.
 
@@ -63,12 +68,17 @@ RULE_DEADLINE = "deadline"
 RULE_INVOICE = "invoice check"
 RULE_NO_REPLY = "no reply"
 
+# Rule (e)'s two states, and the chip the second reads as wherever a supplier is listed.
+SILENT = "silent"
+AWAITING_QUOTE = "awaiting_quote"
+AWAITING_QUOTE_CHIP = "Answered · awaiting quote"
+
 # The rule label's longer reading, for its title attribute.
 RULE_TITLES = {
     RULE_OWED: "We owe this counterparty: an open question or promise, or a document a shipment is held on.",
     RULE_DEADLINE: "The tender is still open after its response deadline.",
     RULE_INVOICE: "An invoice bills more than its order agreed.",
-    RULE_NO_REPLY: "An invited supplier has neither replied nor quoted.",
+    RULE_NO_REPLY: "An invited supplier has not quoted, and has no question open to us.",
 }
 
 
@@ -89,6 +99,10 @@ class Move:
     commitment_ids: list = field(default_factory=list)
     # A supplier's state as a chip, in the tender page's own words ("Silent 17d").
     chip: str = ""
+    # The counterparty by name, for a list that names it beside its chip.
+    party: str = ""
+    # Rule (e) only: SILENT (no reply at all) or AWAITING_QUOTE (replied, no quote yet).
+    state: str = ""
 
     @property
     def rule_title(self) -> str:
@@ -114,12 +128,14 @@ ACTION_REMIND = "remind"  # a silent supplier: open the reminder drafted to them
 ACTION_REPLY = "reply"  # their questions to us: open the reply drafted to them
 ACTION_RECORD_REPLY = "record_reply"  # their email came in: log it against the invitation
 ACTION_ASK = "ask"  # facts their quote left out: open the email asking for them
+ACTION_RECORD_QUOTE = "record_quote"  # their quote is what comes next: record it on the tender
 
 _VERBS = {
     ACTION_REMIND: "Remind",
     ACTION_REPLY: "Reply",
     ACTION_RECORD_REPLY: "Record a reply",
     ACTION_ASK: "Ask",
+    ACTION_RECORD_QUOTE: "Record a quote",
 }
 
 
@@ -319,8 +335,52 @@ def silent_suppliers(outreach, quotes) -> dict:
     return out
 
 
-def no_reply_moves(tender, outreach, quotes, today, *, provisional=False, contracted=False) -> list[Move]:
-    """Rule (e): each invited supplier still silent, on a tender still collecting quotes."""
+def awaiting_quote(outreach, quotes, commitments=(), answered=None) -> dict:
+    """{supplier id: [outreach rows]} for every invited supplier whose reply was questions we have answered.
+
+    Its reply was questions, not a quote; none of them is still open to us (an open
+    one is ours, rule (a)); at least one was answered (`answered`: {org id: day}, from
+    questions_answered_on); it has not declined; and it has not quoted. Its quote is
+    what comes next. A reply of questions none of which were recorded says nothing
+    of who is next, so it is not listed.
+    """
+    answered = answered or {}
+    quoted = {q.supplier_id for q in quotes if q.is_live}
+    asking = {c.owed_to_org_id for c in commitments if c.kind == "question" and c.resolved_on is None}
+    rows = {}
+    for o in outreach:
+        rows.setdefault(o.supplier_id, []).append(o)
+    out = {}
+    for supplier_id, mine in rows.items():
+        kinds = {o.response_kind for o in mine if o.responded}
+        if supplier_id in quoted or "needs_info" not in kinds or "declined" in kinds:
+            continue
+        org_id = getattr(mine[0].supplier, "org_id", None)
+        if org_id in asking or org_id not in answered:
+            continue
+        out[supplier_id] = mine
+    return out
+
+
+def questions_answered_on(commitments) -> dict:
+    """{org id: the last day an answer to its questions went out}: sent, else marked answered."""
+    out = {}
+    for c in commitments:
+        if c.kind != "question" or c.resolved_on is None:
+            continue
+        day = c.reply_sent_on or c.resolved_on
+        if day and (c.owed_to_org_id not in out or day > out[c.owed_to_org_id]):
+            out[c.owed_to_org_id] = day
+    return out
+
+
+def no_reply_moves(
+    tender, outreach, quotes, today, *, commitments=(), answered=None, provisional=False, contracted=False
+) -> list[Move]:
+    """Rule (e): each invited supplier we are waiting on for a quote, on a tender still collecting quotes.
+
+    `answered`: {org id: day our answers to its questions went out} (questions_answered_on).
+    """
     if not collecting(tender, provisional=provisional, contracted=contracted):
         return []
     moves = []
@@ -342,6 +402,34 @@ def no_reply_moves(tender, outreach, quotes, today, *, provisional=False, contra
                 tender_id=tender.pk,
                 supplier_id=supplier_id,
                 chip=f"Silent {days}d" if days is not None else "Silent",
+                party=name,
+                state=SILENT,
+            )
+        )
+    answered = answered or {}
+    for supplier_id, rows in awaiting_quote(outreach, quotes, commitments, answered).items():
+        supplier = rows[0].supplier
+        replied = max((o.responded_on for o in rows if o.responded and o.responded_on), default=None)
+        ours = answered.get(getattr(supplier, "org_id", None))
+        # The ball moved to them on the later of their reply and our answer to it.
+        since = max(d for d in (replied, ours) if d) if (replied or ours) else None
+        word = "answered" if ours and since == ours else "replied"
+        days = (today - since).days if since else None
+        parts = [f"replied {_day(replied)}" if replied else "", f"answered {_day(ours)}" if ours else ""]
+        moves.append(
+            Move(
+                SUPPLIERS,
+                RULE_NO_REPLY,
+                f"{supplier.name}: quote" + (f" ({word} {_plural(days, 'day')} ago)" if days is not None else ""),
+                detail=" · ".join(p for p in parts if p),
+                cta=supplier_action(ACTION_RECORD_QUOTE)["label"],
+                href=reverse("supply_chain:procurement_quote_entry") + f"?tender={tender.pk}",
+                since=since,
+                tender_id=tender.pk,
+                supplier_id=supplier_id,
+                chip=AWAITING_QUOTE_CHIP,
+                party=supplier.name,
+                state=AWAITING_QUOTE,
             )
         )
     moves.sort(key=lambda m: (m.since or date.max, m.text))
@@ -351,8 +439,14 @@ def no_reply_moves(tender, outreach, quotes, today, *, provisional=False, contra
 # ---- per record ------------------------------------------------------------
 
 
-def tender_moves(tender, today, *, outreach=None, quotes=None, commitments=None, provisional=None, contracted=None):
-    """Every move on one tender: (on us, on suppliers). Reads what it is not handed."""
+def tender_moves(
+    tender, today, *, outreach=None, quotes=None, commitments=None, answered=None, provisional=None, contracted=None
+):
+    """Every move on one tender: (on us, on suppliers). Reads what it is not handed.
+
+    `commitments`: the open ones. `answered`: {org id: day our answers went out}, read
+    from the tender's answered questions when not handed (questions_answered_on).
+    """
     from connect_labs.supply_chain.models import Award, Commitment, Contract, Outreach, Quote
 
     if outreach is None:
@@ -362,6 +456,10 @@ def tender_moves(tender, today, *, outreach=None, quotes=None, commitments=None,
     if commitments is None:
         commitments = list(
             Commitment.objects.filter(tender=tender, resolved_on__isnull=True).select_related("owed_to_org")
+        )
+    if answered is None:
+        answered = questions_answered_on(
+            Commitment.objects.filter(tender=tender, kind="question", resolved_on__isnull=False)
         )
     if contracted is None:
         contracted = Contract.objects.filter(tender=tender).exists()
@@ -374,7 +472,16 @@ def tender_moves(tender, today, *, outreach=None, quotes=None, commitments=None,
     deadline = deadline_move(tender, today)
     if deadline is not None:
         ours.append(deadline)
-    theirs = no_reply_moves(tender, outreach, quotes, today, provisional=provisional, contracted=contracted)
+    theirs = no_reply_moves(
+        tender,
+        outreach,
+        quotes,
+        today,
+        commitments=commitments,
+        answered=answered,
+        provisional=provisional,
+        contracted=contracted,
+    )
     return ours, theirs
 
 
@@ -398,7 +505,8 @@ def open_at_decision(tender, on, *, outreach=None, quotes=None, commitments=None
     """What was still open on a tender on the day `on`: the facts an early award is made over.
 
     {"deadline": iso date or None, "deadline_days": days left (None once it has passed or when
-    the tender is no longer open), "silent": suppliers silent under rule (e), "replies_owed":
+    the tender is no longer open), "silent": suppliers silent under rule (e), "awaiting_quote":
+    suppliers that replied without a quote under rule (e), "replies_owed":
     counterparties whose questions we have not answered under rule (a)}. An award is allowed
     over any of them; the award form shows them and the award records them, so the decision
     says what it was made over.
@@ -414,7 +522,8 @@ def open_at_decision(tender, on, *, outreach=None, quotes=None, commitments=None
     return {
         "deadline": deadline.isoformat() if deadline else None,
         "deadline_days": (deadline - on).days if still_open else None,
-        "silent": len(theirs),
+        "silent": sum(1 for m in theirs if m.state == SILENT),
+        "awaiting_quote": sum(1 for m in theirs if m.state == AWAITING_QUOTE),
         "replies_owed": len(owed_to),
     }
 
@@ -430,6 +539,8 @@ def open_at_decision_chips(facts) -> list[dict]:
         )
     if facts.get("silent"):
         chips.append({"label": f"{facts['silent']} silent", "tone": "theirs"})
+    if facts.get("awaiting_quote"):
+        chips.append({"label": f"{facts['awaiting_quote']} awaiting quote", "tone": "theirs"})
     if facts.get("replies_owed"):
         n = facts["replies_owed"]
         chips.append({"label": f"{n} {'reply' if n == 1 else 'replies'} owed", "tone": "ours"})

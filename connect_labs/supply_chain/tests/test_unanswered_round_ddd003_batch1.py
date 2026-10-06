@@ -33,7 +33,8 @@ class TestTheTenderHeader:
         for label in ("Where the goods go", "Visibility"):
             assert f">{label}</dt>" in facts
         terms = _text(re.search(r'data-testid="tender-terms".*?</section>', body, re.S).group(0))
-        for label in ("Import duty", "Deadline", "Asked"):
+        # The day asked is the stage bar's, not repeated on the terms line.
+        for label in ("Import duty", "Deadline"):
             assert label in terms
 
     def test_the_waiver_carries_its_evidence(self, da, world, client_in_program):

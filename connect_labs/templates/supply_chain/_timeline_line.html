@@ -12,12 +12,10 @@
     on the page. gray-700 on gray-100 and indigo-800 on indigo-50 both clear 4.5:1.{% endcomment %}
     {% comment %}Bookkeeping -- an invitation sent, a chase recorded -- is set smaller and
     muted, so the replies and quotes among it are what the eye lands on.{% endcomment %}
-    <div data-testid="revision-text"{% if entry.bookkeeping %} data-bookkeeping{% endif %} class="{% if entry.bookkeeping %}text-xs text-gray-600{% else %}text-sm text-gray-900{% endif %}">{% if in_event %}{{ entry.line|record_kind_lead:event_sender }}{% else %}{{ entry.line|bold_after_arrow }}{% endif %}{% if entry.eta_moved %} <span data-testid="eta-moved" class="ml-1 inline-flex items-center whitespace-nowrap rounded-full bg-gray-100 px-2 py-0.5 text-sm text-gray-700">{{ entry.eta_moved }}</span>{% endif %}</div>
-    {% if entry.open_facts %}
-      {% comment %}What this quote still lacks, as it stands: the outlined gap chips the overview's
-      Quote gaps use, on one line -- the facts the Suppliers table counts and the comparison tags.{% endcomment %}
-      <div data-testid="quote-open-facts" class="mt-1 flex flex-wrap items-center gap-1">{% for fact, owner in entry.open_facts %}{% include "supply_chain/_fact_chip.html" %}{% endfor %}</div>
-    {% endif %}
+    <div data-testid="revision-text"{% if entry.bookkeeping %} data-bookkeeping{% endif %} class="{% if entry.bookkeeping %}text-xs text-gray-600{% else %}text-sm text-gray-900{% endif %}">{% if in_event %}{% if history_quote_price_only %}{{ entry.line|record_kind_lead_price:event_sender }}{% else %}{{ entry.line|record_kind_lead:event_sender }}{% endif %}{% elif entry.members %}{{ entry.entity }} · {{ entry.what|bold_after_arrow }} · <details data-testid="folded-members" class="group inline"><summary data-testid="folded-count" class="inline-flex cursor-pointer list-none items-center gap-1 font-medium text-brand-indigo [&::-webkit-details-marker]:hidden">{{ entry.identity }}<i class="fa-solid fa-chevron-right text-[10px] transition-transform group-open:rotate-90" aria-hidden="true"></i></summary><ul class="mt-1 flex flex-wrap gap-1">{% for name in entry.members %}<li data-testid="folded-member" class="status-chip status-chip--neutral">{{ name }}</li>{% endfor %}</ul></details>{% else %}{{ entry.line|bold_after_arrow }}{% endif %}{% if entry.eta_moved %} <span data-testid="eta-moved" class="ml-1 inline-flex items-center whitespace-nowrap rounded-full bg-gray-100 px-2 py-0.5 text-sm text-gray-700">{{ entry.eta_moved }}</span>{% endif %}</div>
+    {% comment %}A folded line (several invitations sent, or chases, on one day) counts its
+    records and lists them under the count, one chip each: run together, six supplier
+    names made one 22-word line.{% endcomment %}
     {% if entry.hold %}
       {% comment %}The line that made the shipment wait on a document we owe, while it
       still does: in the order banner's own words (holds.py). Calm, not an alarm. Why it is

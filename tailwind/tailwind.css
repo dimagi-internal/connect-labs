@@ -618,6 +618,39 @@
     @apply bg-gray-50/60;
   }
 
+  /* A column held at the left while the rest scrolls under it: opaque, in the
+     row's own tone (hovered too), and above every cell -- an editable cell is
+     positioned, and a transformed source mark makes its own layer. */
+  .sheet .sheet-pin {
+    @apply sticky left-0 z-[3] bg-white;
+  }
+
+  .sheet > thead th.sheet-pin {
+    @apply z-[4] bg-gray-50;
+  }
+
+  .sheet > tbody > tr:hover > .sheet-pin {
+    @apply bg-gray-50;
+  }
+
+  /* The row's actions, held at the right edge while a wide sheet scrolls: a
+     reply to record never sits clipped past the card's edge. */
+  .sheet .sheet-pin-end {
+    @apply sticky right-0 z-[3] whitespace-nowrap bg-white text-right shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.12)];
+  }
+
+  .sheet > thead th.sheet-pin-end {
+    @apply z-[4] bg-gray-50;
+  }
+
+  .sheet > tbody > tr:hover > .sheet-pin-end {
+    @apply bg-gray-50;
+  }
+
+  .sheet > tbody > tr[data-changed] > .sheet-pin-end {
+    @apply bg-yellow-50;
+  }
+
   .sheet .num {
     @apply whitespace-nowrap text-right tabular-nums;
   }

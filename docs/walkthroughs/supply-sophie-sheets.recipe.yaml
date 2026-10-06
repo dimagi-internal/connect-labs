@@ -35,7 +35,7 @@ scenes:
   - kind: wait_for
     target: testid:supplier-table
   - kind: scroll
-    value: top
+    value: '660'
   - kind: snapshot
   concept_claim: The tender's suppliers read as one sheet -- a row each, one value
     to a column -- so where every supplier stands is read without opening an email.
@@ -47,6 +47,8 @@ scenes:
     target: testid:quotes-table
   - kind: click
     target: 'css:#history-fold > summary'
+  - kind: hold
+    seconds: 1.5
   - kind: click
     target: css:[data-testid=quote-row]:has-text('Sahel') [data-edit$=':received_on']
   - kind: fill
@@ -56,17 +58,23 @@ scenes:
     value: Enter
   - kind: wait_for
     target: css:.is-saved
+  - kind: scroll
+    value: '1740'
+  - kind: hold
+    seconds: 1.0
   - kind: snapshot
   before: python3 scripts/walkthroughs/supply-sophie-unanswered-round/seed.py --sahel-replies --sahel-forward-date
   concept_claim: A fact the AI recorded wrongly is corrected in the cell that shows
     it, and the correction is kept as a new version with its reason.
   show: The tender's History beside the Quotes sheet, Sahel's Received cell corrected
     in place.
-  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#quotes
+  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}&changed=outreach-${sahel_outreach_id}#quotes
 - id: kanems-pack
   actions:
   - kind: wait_for
     target: testid:supplier-table
+  - kind: hold
+    seconds: 1.0
   - kind: click
     target: css:[data-testid=supplier-row]:has-text('Kanem') [data-edit$=':base_per_pack_stated']
   - kind: fill
@@ -76,6 +84,10 @@ scenes:
     value: Enter
   - kind: wait_for
     target: css:.is-saved
+  - kind: hover
+    target: css:[data-testid=supplier-row]:has-text('Kanem') td:first-child
+  - kind: hold
+    seconds: 1.0
   - kind: snapshot
   concept_claim: A missing fact the supplier has given is filled in the row that lacked
     it, and the row stops saying it is missing.
@@ -110,6 +122,12 @@ scenes:
     value: Enter
   - kind: wait_for
     target: css:.is-saved
+  - kind: scroll_to
+    target: css:[data-testid=grid-quote-row]:has-text('Sahel') td[data-fact=landed]
+  - kind: hover
+    target: css:main h1
+  - kind: hold
+    seconds: 1.0
   - kind: snapshot
   concept_claim: Each gap in the comparison is a cell, and filling it moves that quote
     toward a landed price that can be compared with the others.
@@ -120,8 +138,16 @@ scenes:
   actions:
   - kind: wait_for
     target: css:#drafts
+  - kind: scroll_to
+    target: css:[data-testid=draft]:has-text('Northgate')
+  - kind: hold
+    seconds: 2.0
   - kind: click
-    target: css:[data-testid=reply-sent-form] button
+    target: css:[data-testid=draft]:has-text('Northgate') [data-testid=reply-sent-form] button
+  - kind: wait_for
+    target: testid:on-us-count
+  - kind: scroll_to
+    target: testid:on-us-count
   - kind: snapshot
   concept_claim: What the record says she owes a supplier is drafted as one email
     for her own mailbox, and sending it is one more fact in the record.
@@ -151,10 +177,12 @@ scenes:
 - id: whose-move
   actions:
   - kind: wait_for
-    target: css:main
+    target: testid:overview
+  - kind: hold
+    seconds: 1.5
   - kind: snapshot
   concept_claim: 'The overview shows what the session''s corrections changed: tender
-    2 all comparable with its next move on the silent suppliers, and the order''s shipment
-    dated.'
+    2 all comparable with what is left named by whose move it is, and the order''s
+    shipment dated.'
   show: Sophie's procurements overview.
   url: /supply/?program_id=${program_id}
