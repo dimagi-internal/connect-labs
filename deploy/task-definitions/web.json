@@ -124,7 +124,7 @@
         },
         {
           "name": "CANOPY_BASE_URL",
-          "value": "https://labs.connect.dimagi.com/canopy"
+          "value": "https://canopy.dimagi.com"
         },
         {
           "name": "CANOPY_APP_NAME",
@@ -132,7 +132,7 @@
         },
         {
           "name": "CANOPY_CLIENT_ID",
-          "value": "https://labs.connect.dimagi.com/canopy/oauth/client.json"
+          "value": "https://canopy.dimagi.com/oauth/client.json"
         }
       ],
       "mountPoints": [],
