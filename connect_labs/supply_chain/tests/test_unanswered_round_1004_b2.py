@@ -52,27 +52,26 @@ def _reply_today(da, world):
 
 @pytest.mark.django_db
 class TestTheSuppliersTableFits:
-    def test_five_columns_that_wrap_and_no_forced_width(self, da, world, client_in_program):
+    def test_a_sheet_of_one_value_columns_across_the_page(self, da, world, client_in_program):
+        """Superseded the five wrapping columns beside a side rail (2026-10-05): the suppliers read as a
+        sheet across the page, one stored value to a column, so each can be edited where it sits."""
         body = _tender_page(client_in_program, world["tender"]["id"])
         table = re.search(r'<table [^>]*data-testid="supplier-table".*?</table>', body, re.S).group(0)
-        head = re.search(r"<thead.*?</thead>", table, re.S).group(0)
-        assert len(re.findall(r"<th ", head)) == 5
-        assert "Missing from quote" not in head and ">Replied<" not in head
-        # No minimum width forcing the table wider than its card, and the name may wrap.
-        section = re.search(r'<section [^>]*id="outreach".*?</section>', body, re.S).group(0)
-        table_tag = re.search(r"<table [^>]*>", section).group(0)
-        assert "min-w-" not in table_tag and "scrolls sideways" not in section
-        name_cell = re.search(r'<tr [^>]*data-testid="supplier-row".*?<td class="([^"]*)"', table, re.S).group(1)
-        assert "whitespace-nowrap" not in name_cell
+        head = _text(re.search(r"<thead.*?</thead>", table, re.S).group(0))
+        for column in ("Supplier", "State", "Asked", "Replied", "Last chased", "Price", "Delivery term", "Pack"):
+            assert column in head
+        assert 'class="sheet"' in table
+        # Nothing beside it: the moves sit above the sheet, not in a rail that squeezes it.
+        assert body.index('id="tender-moves"') < body.index('id="outreach"')
 
-    def test_a_reply_day_rides_the_state_cell(self, da, world, client_in_program):
+    def test_a_reply_day_has_its_own_editable_cell(self, da, world, client_in_program):
         _reply_today(da, world)
         body = _tender_page(client_in_program, world["tender"]["id"])
-        row = re.search(rf'<tr data-outreach-id="{world["outreach"]["id"]}".*?</tr>', body, re.S).group(0)
-        state = r'<td [^>]*><span class="status-chip[^"]*" data-testid="supplier-state">.*?</td>'
-        state_cell = re.search(state, row, re.S)
-        assert 'data-testid="replied-on"' in state_cell.group(0)
-        assert "replied" in _text(state_cell.group(0))
+        outreach_id = world["outreach"]["id"]
+        row = re.search(rf'<tr data-outreach-id="{outreach_id}".*?</tr>', body, re.S).group(0)
+        cell = re.search(r'<td [^>]*data-testid="replied-on"[^>]*>.*?</td>', row, re.S).group(0)
+        assert f'data-edit="outreach:{outreach_id}:responded_on"' in cell
+        assert 'data-testid="replied"' in cell
 
     def test_what_a_quote_lacks_sits_under_the_quote(self, da, world, client_in_program):
         body = _tender_page(client_in_program, world["tender"]["id"])

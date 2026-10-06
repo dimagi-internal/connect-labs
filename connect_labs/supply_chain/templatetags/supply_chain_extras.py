@@ -1704,3 +1704,44 @@ def owes_supplier_facts(rows):
 def dot_parts(value):
     """ "USD 50.10 / carton · CPT Kano" -> its " · " parts, so a template can keep each part whole on a line."""
     return [p for p in str(value or "").split(" · ") if p]
+
+
+@register.simple_tag(takes_context=True)
+def edit_cell(context, kind, record_id, name, value=None):
+    """The attributes that make a table cell editable in place (cells.py, static/supply_chain/cell_edit.js).
+
+    Used inside the cell's opening tag: `<td {% edit_cell "quote" q.id "as_quoted_amount" q.as_quoted_amount %}>`.
+    `value` is the stored value, not the words the cell shows: the input opens on what is
+    stored ("50.1"), while the cell reads "USD 50.10 / carton". Nothing at all is emitted on
+    a page showing the past (?as_of=), for a record with no id, or for a field the registry
+    does not list -- so a typo in a template leaves a plain cell, never one that posts junk.
+    """
+    from connect_labs.supply_chain.cells import CHOICE, DATE, cell_spec, key
+
+    cell = cell_spec(kind, name)
+    if cell is None or record_id in (None, "") or context.get("supply_as_of"):
+        return ""
+    if cell.type == CHOICE:
+        # A choice goes to the page as its position and its words, never its stored code.
+        codes = [code for code, _ in cell.choices]
+        shown = str(codes.index(value or "")) if (value or "") in codes else ""
+    elif value is None:
+        shown = ""
+    elif cell.type == DATE and hasattr(value, "isoformat"):
+        shown = value.isoformat()
+    elif hasattr(value, "normalize"):
+        shown = format(value.normalize(), "f")
+    else:
+        shown = str(value)
+    attrs = [
+        f'data-edit="{escape(key(kind, record_id, name))}"',
+        f'data-edit-type="{cell.type}"',
+        f'data-edit-label="{escape(cell.label)}"',
+        f'data-edit-value="{escape(shown)}"',
+        'tabindex="0"',
+    ]
+    if cell.choices:
+        import json
+
+        attrs.append(f'data-edit-choices="{escape(json.dumps([words for _, words in cell.choices]))}"')
+    return mark_safe(" ".join(attrs))

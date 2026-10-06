@@ -584,6 +584,93 @@
   }
 }
 
+/*-- sheets ---------------------------------------
+   A table read and edited like a spreadsheet: one value to a cell, a header
+   that stays put while the rows scroll, numbers right-aligned on a shared
+   decimal column, and a cell marked by `{% edit_cell %}` editable in place
+   (static/supply_chain/cell_edit.js). An editable cell shows it on hover and
+   focus -- a faint outline and a pencil -- so the table reads as a table, not
+   as a wall of inputs. First used by the supply tables. */
+@layer components {
+  .sheet-wrap {
+    @apply border-brand-border-light max-w-full overflow-x-auto rounded-lg border bg-white;
+  }
+
+  .sheet {
+    @apply w-full border-separate border-spacing-0 text-sm;
+  }
+
+  .sheet > thead th {
+    @apply sticky top-0 z-[1] whitespace-nowrap border-b border-gray-200 bg-gray-50 px-2.5 py-2 text-left text-xs font-medium text-gray-600;
+  }
+
+  .sheet > tbody > tr > td,
+  .sheet > tbody > tr > th {
+    @apply border-b border-gray-100 px-2.5 py-2 align-middle;
+  }
+
+  .sheet > tbody > tr:last-child > td,
+  .sheet > tbody > tr:last-child > th {
+    @apply border-b-0;
+  }
+
+  .sheet > tbody > tr:hover > td {
+    @apply bg-gray-50/60;
+  }
+
+  .sheet .num {
+    @apply whitespace-nowrap text-right tabular-nums;
+  }
+
+  .sheet .sub {
+    @apply block text-xs font-normal text-gray-600;
+  }
+
+  /* Editable cells. */
+  [data-edit] {
+    @apply relative cursor-text rounded-sm outline-none transition-colors;
+  }
+
+  [data-edit]:hover,
+  [data-edit]:focus-visible {
+    @apply bg-brand-indigo/5 ring-brand-indigo/40 ring-1 ring-inset;
+  }
+
+  [data-edit]:hover::after,
+  [data-edit]:focus-visible::after {
+    content: '\270E';
+    @apply text-brand-indigo/60 pointer-events-none absolute right-1 top-1 text-[10px] leading-none;
+  }
+
+  [data-edit].is-editing {
+    @apply bg-white p-0.5 ring-brand-indigo ring-2 ring-inset;
+  }
+
+  [data-edit].is-editing::after {
+    content: none;
+  }
+
+  [data-edit].is-saving {
+    @apply opacity-60;
+  }
+
+  [data-edit].is-saved {
+    @apply bg-message-success ring-message-success-text/40 ring-1 ring-inset;
+  }
+
+  [data-edit].is-refused {
+    @apply ring-message-error-text ring-2 ring-inset;
+  }
+
+  .cell-input {
+    @apply w-full min-w-[6rem] rounded-sm border-0 bg-white px-2 py-1 text-sm text-gray-900 focus:outline-none focus:ring-0;
+  }
+
+  .cell-refusal {
+    @apply bg-message-error text-message-error-text absolute left-0 top-full z-20 mt-1 w-max max-w-xs rounded-md px-2 py-1 text-xs font-medium shadow-sm;
+  }
+}
+
 /*-- tooltips ---------------------------------------*/
 @layer components {
   .tooltip {
