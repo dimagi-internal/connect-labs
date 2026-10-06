@@ -112,6 +112,64 @@ def test_mirror_mode_replays_a_series_as_one_stable_rising_entity():
     assert weights == [1200, 1300, 1400]  # rises with age, exact (no jitter), int-cast to the schema kind
 
 
+def test_mirror_pool_can_author_a_visits_review_outcome():
+    # A curated pool files its own flagged record down the review path (pending,
+    # flagged) instead of leaving the persona-rate draw to call it approved.
+    pool = [
+        {
+            "owner": "flw_001",
+            "start_date": "2026-01-01",
+            "visits": [
+                {"day": 0, "values": {"form.weight": 1200.0}},
+                {
+                    "day": 7,
+                    "values": {"form.weight": 1200.0},
+                    "review": {"flagged": True, "flag_reason": "Same counts as the previous meeting"},
+                },
+                {"day": 14, "values": {"form.weight": 1400.0}, "review": {"status": "rejected", "flagged": True}},
+            ],
+        }
+    ]
+    manifest, detail, schema = _mirror_inputs(pool)
+    baseline_manifest, _, _ = _mirror_inputs(
+        [{**pool[0], "visits": [{k: v for k, v in x.items() if k != "review"} for x in pool[0]["visits"]]}]
+    )
+
+    visits = sorted(
+        generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)["user_visits"],
+        key=lambda v: v["visit_date"],
+    )
+    base = sorted(
+        generate(manifest=baseline_manifest, opportunity_detail=detail, form_schema=schema)["user_visits"],
+        key=lambda v: v["visit_date"],
+    )
+
+    assert [(v["status"], v["flagged"], v["review_status"]) for v in visits[1:]] == [
+        ("pending", True, "pending"),
+        ("rejected", True, "rejected"),
+    ]
+    assert visits[1]["flag_reason"] == "Same counts as the previous meeting"
+    # an un-authored visit is drawn exactly as before -- the rng stream is untouched
+    assert (visits[0]["status"], visits[0]["flagged"], visits[0]["id"]) == (
+        base[0]["status"],
+        base[0]["flagged"],
+        base[0]["id"],
+    )
+    assert [v["id"] for v in visits] == [v["id"] for v in base]
+
+
+def test_authored_visit_status_refuses_an_unknown_status():
+    import pytest
+
+    from connect_labs.labs.synthetic.generator.fixtures.status import authored_visit_status
+
+    with pytest.raises(ValueError):
+        authored_visit_status({"status": "aproved"})
+    with pytest.raises(ValueError):
+        authored_visit_status({"flaged": True})
+    assert authored_visit_status({"status": "over_limit"}).review_status == "approved"
+
+
 def test_mirror_jitter_keeps_values_inside_the_cases_own_range():
     pool = [
         {
