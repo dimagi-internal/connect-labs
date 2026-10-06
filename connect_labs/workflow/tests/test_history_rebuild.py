@@ -1193,8 +1193,158 @@ class TestSaveLatestWeek:
         assert captured["replace"] is False
 
 
-def test_the_programme_reports_are_schedulable():
-    from connect_labs.workflow.templates import template_supports_default_run
+class TestSaveLatestPeriod:
+    TODAY = date(2026, 10, 7)  # a Wednesday
 
-    assert template_supports_default_run("kmc_programme_metrics") is True
-    assert template_supports_default_run("indicator_programme_report") is True
+    def _definition(self):
+        d = _Definition()
+        d.id = 1
+        d.program_id = None
+        return d
+
+    def test_daily_saves_yesterday(self, monkeypatch):
+        dao = _DAO(_Definition())
+        _stub_build(monkeypatch)
+
+        report = hr.save_latest_period(
+            self._definition(),
+            access_token="tok",
+            period="daily",
+            opportunity_id=10,
+            today=self.TODAY,
+            data_access=dao,
+        )
+
+        assert report["status"] == "saved"
+        assert [r["period_end"] for r in report["runs"]] == ["2026-10-06"]
+
+    def test_a_monthly_schedule_of_weekly_points_catches_up_every_missing_week(self, monkeypatch):
+        # Five weeks back, the one saved by hand left alone: a slow cadence never gaps.
+        by_hand = _Run(1, "2026-09-21", "2026-09-27", state={}, completed=True)
+        dao = _DAO(_Definition(), runs=[by_hand])
+        _stub_build(monkeypatch)
+
+        report = hr.save_latest_period(
+            self._definition(),
+            access_token="tok",
+            period="weekly",
+            cadence="monthly",
+            opportunity_id=10,
+            today=self.TODAY,
+            data_access=dao,
+        )
+
+        assert [r["period_end"] for r in report["runs"]] == [
+            "2026-09-06",
+            "2026-09-13",
+            "2026-09-20",
+            "2026-09-27",
+            "2026-10-04",
+        ]
+        assert [r["action"] for r in report["runs"]].count("skipped") == 1
+        assert report["created"] == 4 and report["status"] == "saved"
+
+    def test_an_unknown_period_is_a_failed_status(self):
+        report = hr.save_latest_period(self._definition(), access_token="tok", period="hourly", opportunity_id=10)
+        assert report["status"] == "failed"
+
+
+@pytest.mark.parametrize(
+    "period,cadence,expected",
+    [
+        ("weekly", "weekly", 1),
+        ("weekly", "daily", 1),
+        ("weekly", None, 1),
+        ("weekly", "biweekly", 2),
+        ("weekly", "monthly", 5),
+        ("daily", "daily", 1),
+        ("daily", "interval", 1),
+        ("daily", "weekdays", 3),
+        ("daily", "weekly", 7),
+    ],
+)
+def test_catch_up_covers_the_longest_gap_a_cadence_can_leave(period, cadence, expected):
+    assert hr.catch_up_periods(period, cadence) == expected
+
+
+# ---------------------------------------------------------------------------
+# Schedulable from DATA: a periodic snapshot contract is enough, no template code.
+# ---------------------------------------------------------------------------
+
+
+def test_the_programme_reports_need_no_template_hook_to_be_schedulable():
+    from connect_labs.workflow.templates import definition_supports_default_run, template_supports_default_run
+
+    for key in ("kmc_programme_metrics", "indicator_programme_report"):
+        assert template_supports_default_run(key) is False
+        d = _Definition(manifest=False)
+        d.template_type = key
+        assert definition_supports_default_run(d) is True, key
+
+
+def test_a_periodic_instance_manifest_alone_makes_a_workflow_schedulable():
+    from connect_labs.workflow.templates import definition_saves_periods, definition_supports_default_run
+
+    assert definition_supports_default_run(_Definition()) is True
+    assert definition_saves_periods(_Definition()) is True
+    assert definition_supports_default_run(_Definition(builder="not_a_periodic_builder")) is False
+
+
+def test_a_template_hook_still_wins_over_the_periodic_save():
+    from connect_labs.workflow.templates import TEMPLATES, definition_saves_periods
+
+    hooked = next(k for k, t in TEMPLATES.items() if t.get("supports_default_run") and callable(t.get("run_default")))
+    d = _Definition()
+    d.template_type = hooked
+    assert definition_saves_periods(d) is False
+
+
+def test_the_periodic_save_offers_its_period_and_reads_it_back():
+    from connect_labs.workflow.templates import schedule_options_for_definition, scheduled_period
+
+    d = _Definition()
+    (opt,) = schedule_options_for_definition(d)
+    assert opt["key"] == "period" and opt["type"] == "choice"
+    assert [c["value"] for c in opt["choices"]] == ["weekly", "daily"]
+    assert opt["value"] == "weekly" and scheduled_period(d) == "weekly"
+
+    d.data["config"] = {"schedule_defaults": {"period": "daily"}}
+    assert schedule_options_for_definition(d)[0]["value"] == "daily"
+    assert scheduled_period(d) == "daily"
+
+    d.data["config"] = {"schedule_defaults": {"period": "fortnightly"}}  # hand-patched junk
+    assert schedule_options_for_definition(d)[0]["value"] == "weekly"
+    assert scheduled_period(d) == "weekly"
+
+
+def test_run_default_dispatches_the_periodic_save_with_the_schedules_cadence(monkeypatch):
+    from connect_labs.workflow.templates import run_default_for_definition
+
+    captured = {}
+    monkeypatch.setattr(hr, "save_latest_period", lambda definition, **kw: captured.update(kw) or {"status": "saved"})
+    d = _Definition()
+    d.id = 1
+    d.data["config"] = {"schedule_defaults": {"period": "daily"}}
+
+    result = run_default_for_definition(d, access_token="tok", cadence="weekly", opportunity_id=10, program_id=None)
+
+    assert result == {"status": "saved"}
+    assert captured["period"] == "daily" and captured["cadence"] == "weekly" and captured["opportunity_id"] == 10
+
+
+def test_run_default_still_refuses_a_workflow_with_neither_path():
+    from connect_labs.workflow.templates import run_default_for_definition
+
+    with pytest.raises(ValueError):
+        run_default_for_definition(_Definition(builder="not_a_periodic_builder"), access_token="tok")
+
+
+def test_the_schedule_endpoint_accepts_only_an_offered_period():
+    from connect_labs.workflow.templates import schedule_options_for_definition
+    from connect_labs.workflow.views import _clean_schedule_defaults, _schedule_seed_value
+
+    options = schedule_options_for_definition(_Definition())
+    assert _schedule_seed_value(options[0]) == "weekly"
+    assert _clean_schedule_defaults({"period": "daily"}, options) == ({"period": "daily"}, None)
+    values, error = _clean_schedule_defaults({"period": "hourly"}, options)
+    assert values is None and "weekly" in error

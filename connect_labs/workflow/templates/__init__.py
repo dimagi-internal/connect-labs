@@ -116,14 +116,37 @@ def get_template(template_key: str) -> dict | None:
     return TEMPLATES.get(template_key)
 
 
+def _definition_template_key(definition) -> str | None:
+    return getattr(definition, "template_type", None) or (
+        (getattr(definition, "data", None) or {}).get("config") or {}
+    ).get("templateType")
+
+
 def run_default_for_definition(definition, *, access_token, request=None, **kwargs) -> dict:
     """Run a workflow with its default settings (no UI). Raises ValueError if the
-    definition's template doesn't support default-run."""
-    key = definition.template_type or (definition.data.get("config") or {}).get("templateType")
+    workflow has no default run.
+
+    A template's own ``run_default`` wins. Otherwise a workflow whose snapshot contract
+    is periodic gets the framework's: save the latest complete period(s), see
+    ``history_rebuild.save_latest_period``. That second path is what makes a periodic
+    report schedulable from its DATA -- no template code, so no deploy.
+    """
+    key = _definition_template_key(definition)
     template = TEMPLATES.get(key) if key else None
-    if not template or not template.get("supports_default_run") or not callable(template.get("run_default")):
-        raise ValueError(f"Workflow {getattr(definition, 'id', '?')} (template {key!r}) does not support default-run.")
-    return template["run_default"](definition=definition, access_token=access_token, request=request, **kwargs)
+    if template and template.get("supports_default_run") and callable(template.get("run_default")):
+        return template["run_default"](definition=definition, access_token=access_token, request=request, **kwargs)
+    if definition_saves_periods(definition):
+        from connect_labs.workflow.history_rebuild import save_latest_period
+
+        return save_latest_period(
+            definition,
+            access_token=access_token,
+            period=scheduled_period(definition),
+            cadence=kwargs.get("cadence"),
+            opportunity_id=kwargs.get("opportunity_id"),
+            program_id=kwargs.get("program_id"),
+        )
+    raise ValueError(f"Workflow {getattr(definition, 'id', '?')} (template {key!r}) does not support default-run.")
 
 
 def template_supports_default_run(template_key: str | None) -> bool:
@@ -146,16 +169,67 @@ def definition_supports_default_run(definition) -> bool:
     an enabled schedule, then fails with ValueError the first time it fires --
     a broken schedule that looks healthy until its first run.
     """
-    key = getattr(definition, "template_type", None) or (
-        (getattr(definition, "data", None) or {}).get("config") or {}
-    ).get("templateType")
+    key = _definition_template_key(definition)
     if not template_supports_default_run(key):
-        return False
+        # No template hook: schedulable iff the framework can save its periods.
+        return definition_saves_periods(definition)
     gate = (TEMPLATES.get(key) or {}).get("default_run_config_gate")
     if not gate:
         return True
     config = (getattr(definition, "data", None) or {}).get("config") or {}
     return bool(config.get(gate))
+
+
+def definition_saves_periods(definition) -> bool:
+    """True iff THIS workflow's default run is the framework's periodic save.
+
+    That is: its template declares no ``run_default`` of its own, and its snapshot
+    contract is periodic (``history_rebuild.eligibility``) -- the same test that decides
+    whether its history can be rebuilt. One rule for both, read from the definition's
+    data, so a report authored over MCP with a periodic ``snapshot_inputs`` gets a
+    Schedule button without anyone writing template code.
+    """
+    if definition is None or template_supports_default_run(_definition_template_key(definition)):
+        return False
+    from connect_labs.workflow.history_rebuild import eligibility
+
+    try:
+        ok, _reason = eligibility(definition)
+    except Exception:  # noqa: BLE001 -- runs while building the list page; never take it down
+        logger.warning("could not resolve periodic eligibility for %s", getattr(definition, "id", "?"), exc_info=True)
+        return False
+    return ok
+
+
+# The one schedule option the framework's periodic save offers: the grain of each saved
+# point. A `choice` -- one value from a fixed list -- because the grain must be exactly one
+# of the periods history_rebuild can build. How OFTEN the schedule fires is its cadence; a
+# fire saves every complete period of this grain that the cadence could have skipped.
+PERIOD_OPTION_KEY = "period"
+PERIODIC_SAVE_OPTIONS = [
+    {
+        "key": PERIOD_OPTION_KEY,
+        "type": "choice",
+        "label": "Each saved point covers",
+        "help": (
+            "The trend gets one point per period. Each run saves every complete period "
+            "since the previous run that is not saved yet, so no cadence leaves gaps. "
+            "Changing this changes the grain of new points only; existing points stay."
+        ),
+        "choices": [{"value": "weekly", "label": "A week (Mon–Sun)"}, {"value": "daily", "label": "A day"}],
+        "default": "weekly",
+    }
+]
+
+
+def scheduled_period(definition) -> str:
+    """The saved-period grain this workflow's schedule runs with (default weekly)."""
+    config = ((getattr(definition, "data", None) or {}).get("config")) or {}
+    config = config if isinstance(config, dict) else {}
+    defaults = config.get(SCHEDULE_DEFAULTS_CONFIG_KEY)
+    value = defaults.get(PERIOD_OPTION_KEY) if isinstance(defaults, dict) else None
+    allowed = [c["value"] for c in PERIODIC_SAVE_OPTIONS[0]["choices"]]
+    return value if value in allowed else PERIODIC_SAVE_OPTIONS[0]["default"]
 
 
 # The multi-select option types, mapped to the coercion their stored values get. Both
@@ -164,7 +238,7 @@ def definition_supports_default_run(definition) -> bool:
 # rather than through a second copy of the same branch that could drift from the first.
 MULTI_OPTION_COERCERS = {"multi_int": int, "multi_str": str}
 
-SCHEDULE_OPTION_TYPES = ("int", "bool", *MULTI_OPTION_COERCERS)
+SCHEDULE_OPTION_TYPES = ("int", "bool", "choice", *MULTI_OPTION_COERCERS)
 
 # The config key every schedulable template keeps its headless-run settings under. Named
 # here rather than per template so the scheduling UI and the endpoint that saves it agree
@@ -195,20 +269,28 @@ def template_schedule_options(template_key: str | None) -> list[dict]:
     ``bool``
         An on/off flag, e.g. a dry run that reports what it would do and creates
         nothing.
+    ``choice``
+        Exactly one value from a fixed ``choices`` list of ``{value, label}``, with a
+        ``default`` -- e.g. the grain of a periodic save (``PERIODIC_SAVE_OPTIONS``).
 
     Returns [] for templates that declare none, which is every template but one.
     """
     if not template_supports_default_run(template_key):
         return []
     template = TEMPLATES.get(template_key) or {}
+    return _resolve_options(template.get("schedule_options") or [], template_key)
+
+
+def _resolve_options(declared: list, owner: str | None = None) -> list[dict]:
+    """Normalise declared schedule options; a template's, or the framework's own."""
     options = []
-    for opt in template.get("schedule_options") or []:
+    for opt in declared:
         key = (opt or {}).get("key")
         opt_type = (opt or {}).get("type") or "int"
         if not key or opt_type not in SCHEDULE_OPTION_TYPES:
             # Skip rather than raise: a malformed declaration must not take down the
             # whole workflow list page for every other template.
-            logger.warning("Ignoring schedule option %r on template %r", opt, template_key)
+            logger.warning("Ignoring schedule option %r on template %r", opt, owner)
             continue
         resolved = {
             "key": key,
@@ -219,6 +301,13 @@ def template_schedule_options(template_key: str | None) -> list[dict]:
         if opt_type == "int":
             resolved["min"] = int(opt.get("min", 1))
             resolved["max"] = int(opt.get("max", 1000000))
+        elif opt_type == "choice":
+            resolved["choices"] = [
+                {"value": str(c["value"]), "label": str(c.get("label") or c["value"])}
+                for c in opt.get("choices") or []
+                if isinstance(c, dict) and c.get("value") is not None
+            ]
+            resolved["default"] = opt.get("default")
         elif opt_type in MULTI_OPTION_COERCERS:
             resolved["choices_from_config"] = opt.get("choices_from_config") or ""
             # What to tick when the config has no saved selection yet. The dialog posts
@@ -253,10 +342,17 @@ def schedule_options_for_definition(definition) -> list[dict]:
     defaults = config.get(SCHEDULE_DEFAULTS_CONFIG_KEY)
     defaults = defaults if isinstance(defaults, dict) else {}
 
+    declared = template_schedule_options(getattr(definition, "template_type", None))
+    if not declared and definition_saves_periods(definition):
+        declared = _resolve_options(PERIODIC_SAVE_OPTIONS)
     options = []
-    for opt in template_schedule_options(getattr(definition, "template_type", None)):
+    for opt in declared:
         filled = dict(opt)
         filled["value"] = defaults.get(opt["key"])
+        if opt["type"] == "choice":
+            offered = [c["value"] for c in opt["choices"]]
+            if filled["value"] not in offered:
+                filled["value"] = opt.get("default") if opt.get("default") in offered else (offered or [None])[0]
         coerce = MULTI_OPTION_COERCERS.get(opt["type"])
         if coerce is not None:
             raw = config.get(opt.get("choices_from_config") or "")

@@ -488,37 +488,55 @@ def rebuild_history(
     return report
 
 
-def save_latest_week(
+# How many days a schedule's cadence can leave between two fires. A fire saves every
+# complete period in that span that is not saved yet, so a cadence slower than the period
+# (Monthly firing, weekly points) catches up instead of leaving gaps. Unknown cadences,
+# and "interval" (at most a day apart), count as one day.
+CADENCE_SPAN_DAYS = {"daily": 1, "interval": 1, "weekdays": 3, "weekly": 7, "biweekly": 14, "monthly": 31}
+PERIOD_DAYS = {"weekly": 7, "daily": 1}
+
+
+def catch_up_periods(period: str, cadence: str | None) -> int:
+    """How many trailing periods a fire on `cadence` must cover so none is skipped."""
+    span = CADENCE_SPAN_DAYS.get(cadence or "", 1)
+    return max(1, -(-span // PERIOD_DAYS[period]))
+
+
+def save_latest_period(
     definition,
     *,
     access_token: str,
+    period: str = "weekly",
+    cadence: str | None = None,
     opportunity_id: int | None = None,
     program_id: int | None = None,
     today: date | None = None,
     data_access=None,
 ) -> dict:
-    """The default-run of a periodic report: save the most recent complete week.
+    """The framework's default-run for a periodic report: save its latest complete periods.
 
     A periodic report's trend has one point per saved run, and nothing saved those
-    runs except a person opening the report each week -- so a week nobody opened
-    had no point. This is what a schedule calls instead: ONE period of
-    `rebuild_history`, the week that ended last Sunday, built as of that Sunday.
+    runs except a person opening the report each period -- so a period nobody opened
+    had no point. This is what a schedule calls instead: `rebuild_history` over the
+    trailing periods the schedule's `cadence` could have skipped (one for a matching
+    cadence; five weeks for a Monthly schedule saving weekly points), each built as of
+    its own end.
 
-    `replace=False`, so a week that already has a run -- saved by hand, or by an
-    earlier fire of the same schedule -- is left alone. That makes the call
-    idempotent: a schedule set to Daily writes the week once on Monday and skips it
-    the other six days, and a manual save is never overwritten by a machine one.
-
-    The period is always WEEKLY, whatever the schedule's own cadence: the cadence
-    decides how often this checks, the trend's grain is the week.
+    `period` is the grain of each point (the schedule dialog's "Each saved point
+    covers"); `cadence` is only how often this runs. `replace=False`, so a period that
+    already has a run -- saved by hand, or by an earlier fire -- is left alone: the
+    call is idempotent, a schedule firing more often than the period writes it once,
+    and a manual save is never overwritten by a machine one.
 
     Scope comes from the caller when it knows it (the schedule row does); otherwise
     from the definition -- a programme report is filed under its program, and an
     opp-scoped read cannot see a program-owned run (the upstream GET is an exact
     scope match). Returns the rebuild report with a `status`, which the scheduler
-    reads: `failed` when the week could not be built, so a schedule that fails
-    every week does not sit green.
+    reads: `failed` when a period could not be built, so a schedule that fails every
+    time does not sit green.
     """
+    if period not in PERIOD_DAYS:
+        return {"status": "failed", "error": f"unknown period {period!r}; expected one of {', '.join(PERIOD_DAYS)}"}
     if opportunity_id is None and program_id is None:
         program_id = getattr(definition, "program_id", None) or None
         if program_id is None:
@@ -536,13 +554,15 @@ def save_latest_week(
         data_access = WorkflowDataAccess(
             access_token=access_token, opportunity_id=opportunity_id, program_id=program_id
         )
-    end = last_complete_period_end("weekly", today or date.today())
+    end = last_complete_period_end(period, today or date.today())
+    count = catch_up_periods(period, cadence)
+    start = end - timedelta(days=count * PERIOD_DAYS[period] - 1)
     try:
         report = rebuild_history(
             data_access,
             definition.id,
-            cadence="weekly",
-            start=end - timedelta(days=6),
+            cadence=period,
+            start=start,
             end=end,
             opportunity_id=opportunity_id,
             program_id=program_id,
@@ -556,10 +576,22 @@ def save_latest_week(
             data_access.close()
 
     errors = [r["error"] for r in report.get("runs", []) if r.get("error")]
-    report["status"] = "failed" if report.get("failed") else ("skipped" if report.get("skipped") else "saved")
+    if report.get("failed"):
+        status = "failed"
+    elif report.get("created") or report.get("replaced"):
+        status = "saved"
+    else:
+        status = "skipped"
+    report["status"] = status
     report["errors"] = errors
     report["period_end"] = end.isoformat()
     return report
+
+
+def save_latest_week(definition, **kwargs) -> dict:
+    """`save_latest_period` for one weekly point -- the original scheduled save."""
+    kwargs.pop("period", None)
+    return save_latest_period(definition, period="weekly", **kwargs)
 
 
 class _InlineHandDown:
