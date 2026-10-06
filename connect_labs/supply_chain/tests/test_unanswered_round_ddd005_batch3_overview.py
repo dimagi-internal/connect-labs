@@ -117,3 +117,19 @@ class TestAnOrderRowReadsOnItsOwnSteps:
     def test_the_overview_keys_both_step_sets(self, da, world, client_in_program):
         body = client_in_program.get(reverse("supply_chain:home")).content.decode()
         assert "Order stages: Awarded · Ordered · Dispatched · In transit or at customs · Received · Paid" in body
+
+
+class TestAnOrderRowCarriesItsExpectedDay:
+    def test_goods_under_way_say_when_they_are_expected(self, da, world):
+        contract, _ = _held_on_our_form_m(da, world)
+        row = next(r for r in standing_rows(PROGRAM, TODAY) if r.contract_id == contract["id"])
+        assert row.label == "At customs — held · expected 19 Sep"
+        assert (row.stage_name, row.stage_detail) == ("At customs — held", "expected 19 Sep")
+
+    def test_no_expected_day_means_no_date(self, da, world):
+        from connect_labs.supply_chain.models import Shipment
+
+        contract, shipment = _held_on_our_form_m(da, world)
+        Shipment.objects.filter(pk=shipment["id"]).update(expected_on=None)
+        row = next(r for r in standing_rows(PROGRAM, TODAY) if r.contract_id == contract["id"])
+        assert row.label == "At customs — held"
