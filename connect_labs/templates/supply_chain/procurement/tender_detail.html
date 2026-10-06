@@ -15,7 +15,7 @@ is folded away, each fold with its count.
     {% include "supply_chain/_src_legend.html" %}
   </div>
 
-  <section class="card_bg border-brand-border-light flex flex-col gap-5 border" aria-labelledby="tender-title">
+  <section class="card_bg border-brand-border-light flex flex-col gap-5 border" aria-labelledby="tender-title" id="tender-head" data-live>
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div class="flex min-w-0 flex-[1_1_480px] flex-col gap-1">
         <div class="text-xs uppercase tracking-wide text-gray-600">Tender · {{ tender.label }}</div>
@@ -54,7 +54,7 @@ is folded away, each fold with its count.
     <section class="-mt-1 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-gray-100 pt-3 text-sm" id="duty-terms" data-testid="tender-terms" aria-label="Terms">
       <span class="flex flex-wrap items-center gap-2">
         <span class="text-gray-600">Import duty</span>
-        <span data-testid="tender-duty-terms"{% if duty_terms_changed %} data-changed{% endif %}>
+        <span data-testid="tender-duty-terms"{% if duty_terms_changed %} data-changed{% endif %} class="px-1" {% edit_cell "tender" tender.id "duty_terms" tender.duty_terms %}>
           {% if not tender.duty_terms %}<span class="status-chip status-chip--ours">Not settled</span>{% else %}{% include "supply_chain/_src.html" with src=status.terms.duty_src %}<span class="font-medium text-gray-900">{{ tender.duty_terms|duty_terms_words|capfirst }}</span>{% if tender.duty_terms == "buyer_pays" %}{% if tender.duty_estimate_percent %} · estimate {{ tender.duty_estimate_percent|floatformat:"-2" }}%{% else %} · <span class="text-message-warning-text font-medium">estimate not recorded</span>{% endif %}{% endif %}{% if duty_terms_changed %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% if tender.duty_terms_set_on %}<span class="text-xs text-gray-600"> · set {{ tender.duty_terms_set_on|day }}{% if status.terms.duty_set_by %} · {{ status.terms.duty_set_by }}{% endif %}</span>{% endif %}{% endif %}
           {% if tender.duty_terms == "buyer_waiver" %}<span data-testid="waiver-evidence" class="text-xs text-gray-600"> · {{ "duty_exemption"|document_kind }} {% if waiver_on_file %}on file{% else %}not on file{% endif %}</span>{% endif %}
         </span>
@@ -74,26 +74,14 @@ is folded away, each fold with its count.
       <span class="flex flex-wrap items-center gap-2" id="import-estimates" data-testid="import-estimates"{% if estimates_changed %} data-changed{% endif %}>
         <span class="text-gray-600">Our estimates</span>
         <span class="text-gray-600">clearing</span>
-        <span data-testid="clearing-estimate">{% if tender.clearing_estimate_per_unit is not None %}<span class="font-medium text-gray-900">USD {{ tender.clearing_estimate_per_unit|floatformat:2 }} / {{ estimate_unit }}</span>{% else %}<span class="status-chip status-chip--ours">Not recorded</span>{% endif %}</span>
+        <span data-testid="clearing-estimate" class="px-1" {% edit_cell "tender" tender.id "clearing_estimate_per_unit" tender.clearing_estimate_per_unit %}>{% if tender.clearing_estimate_per_unit is not None %}<span class="font-medium text-gray-900">USD {{ tender.clearing_estimate_per_unit|floatformat:2 }} / {{ estimate_unit }}</span>{% else %}<span class="status-chip status-chip--ours">Not recorded</span>{% endif %}</span>
         <span class="text-gray-600">· freight</span>
-        <span data-testid="freight-estimate">{% if tender.freight_estimate_per_unit is not None %}<span class="font-medium text-gray-900">USD {{ tender.freight_estimate_per_unit|floatformat:2 }} / {{ estimate_unit }}</span>{% else %}<span class="text-gray-600">not recorded</span>{% endif %}</span>
+        <span data-testid="freight-estimate" class="px-1" {% edit_cell "tender" tender.id "freight_estimate_per_unit" tender.freight_estimate_per_unit %}>{% if tender.freight_estimate_per_unit is not None %}<span class="font-medium text-gray-900">USD {{ tender.freight_estimate_per_unit|floatformat:2 }} / {{ estimate_unit }}</span>{% else %}<span class="text-gray-600">not recorded</span>{% endif %}</span>
         {% if tender.import_estimates_set_on %}<span class="whitespace-nowrap text-xs text-gray-600" data-testid="import-estimates-set">{% include "supply_chain/_src.html" with src="person" %}{{ tender.import_estimates_set_on|day|slice:":-5" }}{% if import_estimates_set_by %} · {{ import_estimates_set_by }}{% endif %}</span>{% endif %}
         {% if estimates_changed %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}
-        {% if not supply_as_of %}
-        <details class="relative" data-testid="import-estimates-settle">
-          <summary class="text-brand-indigo cursor-pointer list-none font-semibold hover:underline [&::-webkit-details-marker]:hidden" role="button" data-testid="import-estimates-open">Change</summary>
-          <form method="post" action="{% url 'supply_chain:procurement_tender_import_estimates' tender.id %}" class="border-brand-border-light absolute left-0 z-20 mt-1.5 flex w-72 flex-col gap-2.5 rounded-lg border bg-white p-3.5 shadow-sm">
-            {% csrf_token %}
-            <input type="hidden" name="next" value="{{ request.path }}#import-estimates">
-            <label class="flex flex-col gap-1 text-sm"><span class="text-xs text-gray-600">Clearing &amp; forwarding, USD per {{ estimate_unit }} (quotes we import)</span><input type="number" step="0.01" min="0" name="clearing_estimate_per_unit" data-testid="clearing-estimate-input" class="base-input text-sm" value="{{ tender.clearing_estimate_per_unit|default_if_none:'' }}"></label>
-            <label class="flex flex-col gap-1 text-sm"><span class="text-xs text-gray-600">Freight to the delivery point, USD per {{ estimate_unit }} (EXW, FCA, FAS, FOB)</span><input type="number" step="0.01" min="0" name="freight_estimate_per_unit" data-testid="freight-estimate-input" class="base-input text-sm" value="{{ tender.freight_estimate_per_unit|default_if_none:'' }}"></label>
-            <button type="submit" class="button button-sm primary-dark self-start" data-testid="import-estimates-save">Save</button>
-          </form>
-        </details>
-        {% endif %}
       </span>
       <span class="flex items-center gap-2"><span class="text-gray-600">Deadline</span>
-        <span>{% if tender.response_deadline %}<span class="whitespace-nowrap font-medium text-gray-900" title="{{ tender.response_deadline|day }}">{{ tender.response_deadline|day|slice:":-5" }}</span>{% if deadline_passed %} · <span data-testid="deadline-passed" class="text-message-warning-text whitespace-nowrap font-medium">{{ deadline_passed.days }} day{{ deadline_passed.days|pluralize }} past</span>{% endif %}{% else %}<span class="text-gray-600">not set</span>{% endif %}</span></span>
+        <span class="px-1" data-testid="tender-deadline" {% edit_cell "tender" tender.id "response_deadline" tender.response_deadline %}>{% if tender.response_deadline %}<span class="whitespace-nowrap font-medium text-gray-900" title="{{ tender.response_deadline|day }}">{{ tender.response_deadline|day|slice:":-5" }}</span>{% if deadline_passed %} · <span data-testid="deadline-passed" class="text-message-warning-text whitespace-nowrap font-medium">{{ deadline_passed.days }} day{{ deadline_passed.days|pluralize }} past</span>{% endif %}{% else %}<span class="text-gray-600">not set</span>{% endif %}</span></span>
       <span class="flex items-center gap-2"><span class="text-gray-600">Asked</span>
         <span class="whitespace-nowrap font-medium text-gray-900">{% if status.terms.asked %}{{ status.terms.asked|day|slice:":-5" }}{% else %}<span class="text-gray-600">—</span>{% endif %}</span></span>
     </section>
@@ -119,113 +107,118 @@ is folded away, each fold with its count.
     </div>
   </section>
 
-  <div class="flex flex-wrap items-start gap-5">
-    <div class="flex min-w-0 flex-[999_1_560px] flex-col gap-5">
-    <section class="card_bg border-brand-border-light flex min-w-0 flex-col gap-3 border scroll-mt-20" id="outreach" aria-labelledby="suppliers-h">
-      <div class="flex flex-wrap items-baseline justify-between gap-3">
-        <h2 id="suppliers-h" class="card_title">Suppliers</h2>
-        <div class="flex flex-wrap items-baseline gap-4">
-        <span class="text-sm text-gray-600" data-testid="outreach-replied-count">{{ outreach_replied }} of {{ outreach_asked }} answered</span>
-  {% if not supply_as_of %}
-  {% comment %}One way in for asking a supplier: an invitation sent by email (recorded here)
-  or, while the tender takes bids, one sent through the supplier marketplace.{% endcomment %}
-  {% if invitable_orgs and not tender_is_over %}
-  <details data-testid="invite-menu" class="relative text-sm">
-    <summary class="cursor-pointer list-none [&::-webkit-details-marker]:hidden text-brand-indigo hover:underline">+ Record an invitation</summary>
-    <div class="absolute right-0 z-10 mt-1 w-80 rounded-md border border-gray-200 bg-white p-3 shadow-sm">
-      <a href="{% url 'supply_chain:procurement_outreach_log' tender.id %}"
-         class="block text-brand-indigo hover:underline">Record an invitation you sent</a>
-      <form method="post" action="{% url 'supply_chain:procurement_tender_invite_org' tender.id %}" class="mt-3 flex flex-wrap items-center gap-2">
-        {% csrf_token %}
-        <label for="invite-org" class="basis-full text-gray-700">Invite a registered supplier on the marketplace</label>
-        <select id="invite-org" name="org" required class="text-sm border border-gray-300 rounded-md px-2 py-1 flex-1">
-          {% comment %}Nothing chosen until somebody chooses: a preselected first name was one
-          click from inviting a supplier nobody picked.{% endcomment %}
-          <option value="" selected>Choose a supplier…</option>
-          {% for org in invitable_orgs %}<option value="{{ org.pk }}">{{ org.name }}</option>{% endfor %}
-        </select>
-        <button type="submit" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Invite</button>
-      </form>
-    </div>
-  </details>
-  {% else %}
-  <a href="{% url 'supply_chain:procurement_outreach_log' tender.id %}"
-     class="text-sm text-brand-indigo hover:underline">+ Record an invitation</a>
-  {% endif %}
-  {% endif %}
-        </div>
-      </div>
-      {% comment %}One table of suppliers: who was asked, their state and the day they replied,
-      their quote and what it lacks, and when they were chased. The row a form just saved
-      (?changed=outreach-N) is marked, and the value that moved is set bold with a tag.
-      Five columns that wrap inside their cells, so the table fits its card beside the side
-      rail at 1280px and up: a table wider than its card scrolled sideways, and a link that
-      landed on a row (#outreach-N) landed with the supplier's name scrolled out of view.{% endcomment %}
-      <div class="max-w-full overflow-x-auto" role="region" aria-label="Suppliers">
-        <table class="w-full text-sm" data-testid="supplier-table">
-          <thead class="border-b border-gray-200 text-left text-xs text-gray-600"><tr><th scope="col" class="py-2 pr-3 font-medium">Supplier</th><th scope="col" class="px-3 py-2 font-medium">State</th><th scope="col" class="px-3 py-2 font-medium">Quote</th><th scope="col" class="px-3 py-2 font-medium">Last chased</th><th scope="col" class="w-px py-2 pl-3"><span class="sr-only">Actions</span></th></tr></thead>
-          <tbody class="divide-y divide-gray-100">
-            {% for r in status.suppliers %}
-            {% with o=r.outreach %}
-            <tr{% if o %} data-outreach-id="{{ o.id }}" id="outreach-{{ o.id }}"{% endif %} data-testid="supplier-row" data-supplier-id="{{ r.supplier_id }}" class="align-top{% if o.changed %} bg-yellow-50{% endif %}"{% if o.changed %} data-changed{% endif %}>
-              <td class="min-w-[7rem] py-3 pr-3 font-medium{% if o.changed %} border-l-4 border-brand-indigo pl-2{% endif %}"><a class="text-gray-900 hover:underline" href="{{ r.href }}">{{ r.name }}</a></td>
-              <td class="px-3 py-3"><span class="status-chip status-chip--{{ r.chip.tone }}" data-testid="supplier-state">{{ r.chip.label }}</span>{% if o.waiting_on_us %}<div data-testid="waiting-on-us-row" class="mt-1 text-xs text-gray-600">{{ o.waiting_on_us }}</div>{% endif %}{% if o.responded %}<div data-testid="replied-on" class="mt-1 whitespace-nowrap text-xs tabular-nums {% if o.changed and changed_cell == "replied" %}font-semibold text-gray-900{% else %}text-gray-600{% endif %}">replied <span data-testid="replied">{% if o.responded_on %}{{ o.responded_on|day|slice:":-5" }}{% else %}yes{% endif %}</span>{% if o.changed and changed_cell == "replied" %}<span class="block">{% include "supply_chain/procurement/_new_tag.html" with stacked=1 %}</span>{% endif %}</div>{% elif o.changed and changed_cell == "replied" %}<span class="block">{% include "supply_chain/procurement/_new_tag.html" with stacked=1 %}</span>{% endif %}</td>
-              <td class="px-3 py-3" data-testid="supplier-quote">{% if r.quote %}{% for part in r.quote|dot_parts %}<span class="block whitespace-nowrap">{% if forloop.first %}{% include "supply_chain/_src.html" with src=r.quote_src %}{% endif %}{{ part }}{% if forloop.last and r.quote_src == "ai" %}<span class="src-ai-tag">AI</span>{% endif %}</span>{% endfor %}{% else %}<span class="text-gray-600">—</span>{% endif %}{% if r.missing or r.on_us %}<div class="mt-1 text-xs text-gray-600" data-testid="supplier-missing">{% if r.missing %}<span class="inline-flex flex-wrap items-center gap-1">{% for m in r.missing %}{% include "supply_chain/_fact_chip.html" with fact=m owner=r.missing_owner n=1 %}{% endfor %}</span>{% endif %}{% if r.on_us %}<a class="status-chip status-chip--ours{% if r.missing %} ml-1{% endif %}" data-testid="supplier-on-us" href="{{ r.on_us_href }}">{{ r.on_us }}</a>{% endif %}</div>{% endif %}</td>
-              {% comment %}"<date> · <nth> reminder", a part to a line, so the cell wraps between them and never inside one.{% endcomment %}
-              {% if o.changed and changed_cell == "last_chased" %}
-              <td class="px-3 py-3 font-semibold text-gray-900 tabular-nums" data-testid="supplier-chased">{% for part in r.chased|default:"—"|dot_parts %}<span class="block whitespace-nowrap">{{ part }}</span>{% endfor %}{% if o.next_due %}<span data-testid="next-due" class="block text-xs font-normal text-gray-600">next due {{ o.next_due|day }}</span>{% elif o.reminder_deadline %}<span data-testid="next-due" class="block text-xs font-normal text-gray-600">no further reminder · deadline {{ o.reminder_deadline|day }}</span>{% endif %}<span class="block">{% include "supply_chain/procurement/_new_tag.html" with stacked=1 label="Reminder sent" %}</span></td>
-              {% else %}
-              <td class="px-3 py-3 text-gray-600 tabular-nums" data-testid="supplier-chased">{% for part in r.chased|default:"—"|dot_parts %}<span class="block whitespace-nowrap">{{ part }}</span>{% endfor %}</td>
-              {% endif %}
-              <td class="whitespace-nowrap py-3 pl-3 text-right">{% if not supply_as_of %}<span class="inline-flex items-center gap-2">{% if r.action %}<a class="text-brand-indigo font-medium hover:underline" data-testid="supplier-action" href="{{ r.action.href }}"{% if r.action.href|slice:":7" == "#draft-" %} onclick="return window.openDraft &amp;&amp; window.openDraft('{{ r.action.href|slice:"1:" }}');"{% endif %}>{{ r.action.label }}</a>{% endif %}
-                {% if o %}
-                {% comment %}The rest of the row's record, in a small menu: record a reply where none is
-                recorded, edit what was recorded, or delete an invitation recorded in error.{% endcomment %}
-                <details data-testid="row-more" class="relative inline-block text-left">
-                  <summary class="cursor-pointer list-none [&::-webkit-details-marker]:hidden px-1.5 rounded text-gray-700 hover:bg-gray-100" title="More" aria-label="More actions">⋯</summary>
-                  <div class="absolute right-0 z-10 mt-1 flex w-40 flex-col rounded-md border border-gray-200 bg-white py-1 text-left shadow-sm">
-                    {% if not o.responded and r.action.label != "Record a reply" %}<a data-testid="row-record-reply" href="{% url 'supply_chain:procurement_outreach_reply' o.id %}" class="px-3 py-1 text-sm text-gray-700 hover:bg-gray-50">Record a reply</a>{% endif %}
-                    {% if o.responded %}<a data-testid="row-edit" href="{% url 'supply_chain:procurement_outreach_reply' o.id %}" class="px-3 py-1 text-sm text-gray-700 hover:bg-gray-50">Edit</a>{% endif %}
-                    <a href="{% url 'supply_chain:procurement_outreach_delete' o.id %}" class="px-3 py-1 text-sm text-gray-700 hover:bg-gray-50 hover:text-red-700">Delete</a>
-                  </div>
-                </details>
-                {% endif %}</span>{% endif %}</td>
-            </tr>
-            {% endwith %}
-            {% empty %}
-            <tr><td colspan="5" class="py-3 text-gray-600">Nobody asked yet.</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% if invited_orgs %}
-      <div data-testid="invited-suppliers" class="text-sm">
-        <h3 class="text-sm font-semibold text-gray-900">Invited on the marketplace</h3>
-        <ul class="mt-2 text-sm">
-          {% for org in invited_orgs %}
-            <li class="flex items-center gap-3 py-1">
-              <span>{{ org.name }}</span>
-              {% if not supply_as_of %}
-              <form method="post" action="{% url 'supply_chain:procurement_tender_uninvite_org' tender.id %}" class="inline">
-                {% csrf_token %}
-                <input type="hidden" name="org" value="{{ org.pk }}">
-                <button type="submit" class="text-xs text-gray-600 hover:text-red-700 underline">Remove</button>
-              </form>
-              {% endif %}
-            </li>
-          {% endfor %}
-        </ul>
-      </div>
-      {% endif %}
-    </section>
-
-    </div>
-
-    <aside class="flex min-w-0 flex-[1_1_320px] flex-col gap-4">
-      {% include "supply_chain/_moves.html" with moves=status.ours whose="ours" heading="To do" testid="on-us" count_testid="on-us-count" %}
-      {% include "supply_chain/_moves.html" with moves=status.theirs whose="theirs" heading="Waiting on suppliers" testid="on-suppliers" %}
-    </aside>
+  {% comment %}The moves first, side by side: what is ours to do and who we are waiting on. Then the
+  suppliers as a sheet across the page's full width, one value to a cell, every stored value
+  editable where it sits (cells.py): the day asked, replied and last chased, the quoted price,
+  delivery term and pack. A cell saved re-reads the page's live regions, so the counts, chips
+  and moves above follow it.{% endcomment %}
+  <div class="grid items-start gap-4 md:grid-cols-2" id="tender-moves" data-live>
+    {% include "supply_chain/_moves.html" with moves=status.ours whose="ours" heading="To do" testid="on-us" count_testid="on-us-count" %}
+    {% include "supply_chain/_moves.html" with moves=status.theirs whose="theirs" heading="Waiting on suppliers" testid="on-suppliers" %}
   </div>
+
+  <section class="card_bg border-brand-border-light flex min-w-0 flex-col gap-3 border scroll-mt-20" id="outreach" aria-labelledby="suppliers-h" data-live>
+    <div class="flex flex-wrap items-baseline justify-between gap-3">
+      <div class="flex flex-wrap items-baseline gap-3">
+        <h2 id="suppliers-h" class="card_title">Suppliers</h2>
+        <span class="text-sm text-gray-600" data-testid="outreach-replied-count">{{ outreach_replied }} of {{ outreach_asked }} answered</span>
+        {% if not supply_as_of %}<span class="text-xs text-gray-600">Click any outlined cell to change it.</span>{% endif %}
+      </div>
+      {% if not supply_as_of %}
+      {% comment %}One way in for asking a supplier: an invitation sent by email (recorded here)
+      or, while the tender takes bids, one sent through the supplier marketplace.{% endcomment %}
+      {% if invitable_orgs and not tender_is_over %}
+      <details data-testid="invite-menu" class="relative text-sm">
+        <summary class="cursor-pointer list-none [&::-webkit-details-marker]:hidden text-brand-indigo hover:underline">+ Record an invitation</summary>
+        <div class="absolute right-0 z-10 mt-1 w-80 rounded-md border border-gray-200 bg-white p-3 shadow-sm">
+          <a href="{% url 'supply_chain:procurement_outreach_log' tender.id %}" class="block text-brand-indigo hover:underline">Record an invitation you sent</a>
+          <form method="post" action="{% url 'supply_chain:procurement_tender_invite_org' tender.id %}" class="mt-3 flex flex-wrap items-center gap-2">
+            {% csrf_token %}
+            <label for="invite-org" class="basis-full text-gray-700">Invite a registered supplier on the marketplace</label>
+            {% comment %}Nothing chosen until somebody chooses: a preselected first name was one
+            click from inviting a supplier nobody picked.{% endcomment %}
+            <select id="invite-org" name="org" required class="text-sm border border-gray-300 rounded-md px-2 py-1 flex-1">
+              <option value="" selected>Choose a supplier…</option>
+              {% for org in invitable_orgs %}<option value="{{ org.pk }}">{{ org.name }}</option>{% endfor %}
+            </select>
+            <button type="submit" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Invite</button>
+          </form>
+        </div>
+      </details>
+      {% else %}
+      <a href="{% url 'supply_chain:procurement_outreach_log' tender.id %}" class="text-sm text-brand-indigo hover:underline">+ Record an invitation</a>
+      {% endif %}
+      {% endif %}
+    </div>
+    {% comment %}The row a form just saved (?changed=outreach-N) is marked, as before.{% endcomment %}
+    <div class="sheet-wrap" role="region" aria-label="Suppliers">
+      <table class="sheet" data-testid="supplier-table">
+        <thead><tr>
+          <th scope="col">Supplier</th>
+          <th scope="col">State</th>
+          <th scope="col">Asked</th>
+          <th scope="col">Replied</th>
+          <th scope="col">Last chased</th>
+          <th scope="col" class="text-right">Price</th>
+          <th scope="col">Delivery term</th>
+          <th scope="col">Pack</th>
+          <th scope="col">Missing</th>
+          <th scope="col" class="w-px"><span class="sr-only">Actions</span></th>
+        </tr></thead>
+        <tbody>
+          {% for r in status.suppliers %}
+          {% with o=r.outreach q=r.live_quote %}
+          <tr{% if o %} data-outreach-id="{{ o.id }}" id="outreach-{{ o.id }}"{% endif %} data-testid="supplier-row" data-supplier-id="{{ r.supplier_id }}"{% if o.changed %} class="bg-yellow-50" data-changed{% endif %}>
+            <th scope="row" class="min-w-[8rem] text-left font-medium{% if o.changed %} border-l-4 border-brand-indigo{% endif %}"><a class="text-gray-900 hover:underline" href="{{ r.href }}">{{ r.name }}</a></th>
+            <td><span class="status-chip status-chip--{{ r.chip.tone }}" data-testid="supplier-state">{{ r.chip.label }}</span>{% if o.waiting_on_us %}<span data-testid="waiting-on-us-row" class="sub mt-0.5">{{ o.waiting_on_us }}</span>{% endif %}</td>
+            <td class="num text-left text-gray-700" {% if o %}{% edit_cell "outreach" o.id "sent_on" o.sent_on %}{% endif %}>{% if o.sent_on %}{{ o.sent_on|day|slice:":-5" }}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
+            <td class="num text-left{% if o.changed and changed_cell == 'replied' %} font-semibold text-gray-900{% else %} text-gray-700{% endif %}" data-testid="replied-on" {% if o %}{% edit_cell "outreach" o.id "responded_on" o.responded_on %}{% endif %}>{% if o.responded %}<span data-testid="replied">{% if o.responded_on %}{{ o.responded_on|day|slice:":-5" }}{% else %}yes{% endif %}</span>{% else %}<span class="text-gray-600">—</span>{% endif %}{% if o.changed and changed_cell == "replied" %}{% include "supply_chain/procurement/_new_tag.html" with stacked=1 %}{% endif %}</td>
+            <td class="num text-left{% if o.changed and changed_cell == 'last_chased' %} font-semibold text-gray-900{% else %} text-gray-700{% endif %}" data-testid="supplier-chased" {% if o %}{% edit_cell "outreach" o.id "last_reminder_on" r.chased_on %}{% endif %}>{% if r.chased_on %}{{ r.chased_on|day|slice:":-5" }}{% if r.reminders %}<span class="sub">{{ r.reminders }}</span>{% endif %}{% else %}<span class="text-gray-600">—</span>{% endif %}{% if o.changed and changed_cell == "last_chased" %}{% if o.next_due %}<span data-testid="next-due" class="sub">next due {{ o.next_due|day }}</span>{% elif o.reminder_deadline %}<span data-testid="next-due" class="sub">no further reminder · deadline {{ o.reminder_deadline|day }}</span>{% endif %}{% include "supply_chain/procurement/_new_tag.html" with stacked=1 label="Reminder sent" %}{% endif %}</td>
+            <td class="num" data-testid="supplier-quote" {% if q %}{% edit_cell "quote" q.pk "as_quoted_amount" q.as_quoted_amount %}{% endif %}>{% if r.price %}{% include "supply_chain/_src.html" with src=r.quote_src %}<span class="font-medium text-gray-900">{{ r.price }}</span>{% if r.quote_src == "ai" %}<span class="src-ai-tag">AI</span>{% endif %}{% if r.price_per %}<span class="sub">per {{ r.price_per }}</span>{% endif %}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
+            <td class="whitespace-nowrap text-gray-700" {% if q %}{% edit_cell "quote" q.pk "incoterm" q.incoterm %}{% endif %}>{% if q.incoterm %}{{ q.incoterm }}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
+            <td class="num text-left text-gray-700" {% if q %}{% edit_cell "quote" q.pk "base_per_pack_stated" q.base_per_pack_stated %}{% endif %}>{% if r.pack %}{{ r.pack }}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
+            <td>{% if r.missing or r.on_us %}<div class="flex flex-wrap items-center gap-1" data-testid="supplier-missing">{% for m in r.missing %}{% include "supply_chain/_fact_chip.html" with fact=m owner=r.missing_owner n=1 %}{% endfor %}{% if r.on_us %}<a class="status-chip status-chip--ours" data-testid="supplier-on-us" href="{{ r.on_us_href }}">{{ r.on_us }}</a>{% endif %}</div>{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
+            <td class="whitespace-nowrap text-right">{% if not supply_as_of %}<span class="inline-flex items-center gap-2">{% if r.action %}<a class="text-brand-indigo font-medium hover:underline" data-testid="supplier-action" href="{{ r.action.href }}"{% if r.action.href|slice:":7" == "#draft-" %} onclick="return window.openDraft &amp;&amp; window.openDraft('{{ r.action.href|slice:"1:" }}');"{% endif %}>{{ r.action.label }}</a>{% endif %}
+              {% if o %}
+              {% comment %}The rest of the row's record, in a small menu: record a reply where none is
+              recorded, edit the whole reply, or delete an invitation recorded in error.{% endcomment %}
+              <details data-testid="row-more" class="relative inline-block text-left">
+                <summary class="cursor-pointer list-none [&::-webkit-details-marker]:hidden px-1.5 rounded text-gray-700 hover:bg-gray-100" title="More" aria-label="More actions">⋯</summary>
+                <div class="absolute right-0 z-10 mt-1 flex w-40 flex-col rounded-md border border-gray-200 bg-white py-1 text-left shadow-sm">
+                  {% if not o.responded and r.action.label != "Record a reply" %}<a data-testid="row-record-reply" href="{% url 'supply_chain:procurement_outreach_reply' o.id %}" class="px-3 py-1 text-sm text-gray-700 hover:bg-gray-50">Record a reply</a>{% endif %}
+                  {% if o.responded %}<a data-testid="row-edit" href="{% url 'supply_chain:procurement_outreach_reply' o.id %}" class="px-3 py-1 text-sm text-gray-700 hover:bg-gray-50">Edit</a>{% endif %}
+                  <a href="{% url 'supply_chain:procurement_outreach_delete' o.id %}" class="px-3 py-1 text-sm text-gray-700 hover:bg-gray-50 hover:text-red-700">Delete</a>
+                </div>
+              </details>
+              {% endif %}</span>{% endif %}</td>
+          </tr>
+          {% endwith %}
+          {% empty %}
+          <tr><td colspan="10" class="py-3 text-gray-600">Nobody asked yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if invited_orgs %}
+    <div data-testid="invited-suppliers" class="text-sm">
+      <h3 class="text-sm font-semibold text-gray-900">Invited on the marketplace</h3>
+      <ul class="mt-2 text-sm">
+        {% for org in invited_orgs %}
+          <li class="flex items-center gap-3 py-1">
+            <span>{{ org.name }}</span>
+            {% if not supply_as_of %}
+            <form method="post" action="{% url 'supply_chain:procurement_tender_uninvite_org' tender.id %}" class="inline">
+              {% csrf_token %}
+              <input type="hidden" name="org" value="{{ org.pk }}">
+              <button type="submit" class="text-xs text-gray-600 hover:text-red-700 underline">Remove</button>
+            </form>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </section>
 
   {% if status.related_order %}
   {% with o=status.related_order %}
@@ -396,77 +389,70 @@ next action on anyone (design doc section 22).
 {% endif %}
 
 
-  <details class="fold scroll-mt-20" id="quotes-fold" data-testid="fold-quotes">
+  {% comment %}Every quote on the tender as a sheet: each figure the supplier stated, one to a cell,
+  editable in place. A correction is a new version of the quote (quote_correct), its reason naming
+  the field and both values, so the version it replaced stays readable on the quote's own page.{% endcomment %}
+  <details class="fold scroll-mt-20" id="quotes-fold" data-testid="fold-quotes" data-live>
     <summary id="quotes">Quotes <span class="text-sm font-normal tabular-nums text-gray-600">{{ counts.quotes }}</span></summary>
     <div class="fold-body">
-<div class="bg-white rounded-lg shadow-sm overflow-hidden">
-  {% comment %}
-  A scroll container is not focusable by default, so a keyboard-only user
-  cannot reach the columns it hides -- which re-creates the
-  unreachable-column bug for the people least able to work around it.
-  tabindex makes it a tab stop; the labelled region tells a screen reader
-  what it is once focused.
-  {% endcomment %}
-  <div class="overflow-x-auto" tabindex="0" role="region"
-       aria-label="Table, scrolls sideways">
-  <table class="min-w-[44rem] w-full divide-y divide-gray-200">
-    <thead class="border-b border-gray-200">
-      <tr>
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">Supplier</th>
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">Commodity · trade item</th>
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">As quoted</th>
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">Terms</th>
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">Received</th>
-        {% comment %}The header defines itself on demand: hover or focus the "i".{% endcomment %}
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">
-          Pack spec source
-          <span data-testid="pack-spec-source-help" tabindex="0" role="img"
-                aria-label="Where the pack figures come from: stated on the quote by the supplier, or not stated, in which case the quote cannot be put on a per-carton basis"
-                title="Where the pack figures (units per carton, grams per unit) come from: stated on the quote by the supplier, or not stated, in which case the quote cannot be put on a per-carton basis"
-                class="ml-0.5 cursor-help normal-case text-gray-600"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span>
-        </th>
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600"></th>
-      </tr>
-    </thead>
-    <tbody class="divide-y divide-gray-200">
-      {% for q in quotes %}
-      <tr class="{% if q.voided %}opacity-50{% endif %}">
-        <td class="px-4 py-2 text-sm">
-          <a href="{% url 'supply_chain:procurement_quote_detail' q.id %}"
-             class="font-medium text-brand-indigo hover:underline">{{ supplier_names|dictkey:q.supplier_id|default:"Supplier" }}</a>
-        </td>
-        <td class="px-4 py-2 text-sm text-gray-600">
-          {{ commodity_names|dictkey:q.commodity_slug|default:q.commodity_slug }}
-          {% if q.item %}
-            <div class="text-gray-700">{{ q.item.name }}</div>
-            {% include "supply_chain/procurement/_composition.html" with composition=q.item.components unit=q.item.components_unit %}
-          {% endif %}
-        </td>
-        <td class="px-4 py-2 text-sm text-gray-600 tabular-nums">
-          <span class="whitespace-nowrap">{% if q.as_quoted_amount %}{{ q.as_quoted_currency }} {{ q.as_quoted_amount|money }}{% else %}no price{% endif %}</span>
-          <div class="text-xs text-gray-600 whitespace-nowrap">{{ q.priced_per|default:q.as_quoted_unit|words }}{% if q.per_pack_note %}{% if q.per_pack_note|slice:":1" == "(" %} <span data-testid="per-pack-note" tabindex="0" role="img" aria-label="{{ q.per_pack_note }}" title="{{ q.per_pack_note }}" class="cursor-help"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span>{% else %} · <span data-testid="per-pack-note">{{ q.per_pack_note }}</span>{% endif %}{% endif %}</div>
-        </td>
-        <td data-testid="price-basis" class="px-4 py-2 text-sm text-gray-600">{{ q.price_basis|default:"not stated" }}</td>
-        <td class="px-4 py-2 text-sm text-gray-600">{{ q.received_on|day|default:"—" }}</td>
-        <td class="px-4 py-2 text-sm text-gray-600">{{ q.pack_spec_source|humanise|default:"not stated" }}</td>
-        <td class="px-4 py-2 text-sm">
-          {% if q.voided %}
-            <span class="text-xs text-gray-600">voided</span>
-          {% elif q.superseded_by_quote_id %}
-            <span class="text-xs text-gray-600">superseded</span>
-          {% else %}
-            <a href="{% url 'supply_chain:procurement_quote_detail' q.id %}"
-               class="text-sm text-brand-indigo hover:underline">Detail</a>
-          {% endif %}
-        </td>
-      </tr>
-      {% empty %}
-      <tr><td colspan="7" class="px-4 py-6 text-center text-gray-600">No quotes recorded yet.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  </div>
-</div>
+      <div class="sheet-wrap" tabindex="0" role="region" aria-label="Quotes, scrolls sideways">
+        <table class="sheet min-w-[60rem]" data-testid="quotes-table">
+          <thead><tr>
+            <th scope="col">Supplier</th>
+            <th scope="col">Product</th>
+            <th scope="col" class="text-right">Price</th>
+            <th scope="col">Currency</th>
+            <th scope="col">Per</th>
+            <th scope="col">Delivery term</th>
+            <th scope="col" class="text-right">Pack size</th>
+            <th scope="col" class="text-right">Grams each</th>
+            <th scope="col" class="text-right">Lead time</th>
+            <th scope="col">Valid until</th>
+            <th scope="col">Received</th>
+            <th scope="col">Their ref.</th>
+            <th scope="col"><span class="sr-only">State</span></th>
+          </tr></thead>
+          <tbody>
+            {% for q in quotes %}
+            {% if q.voided or q.superseded_by_quote_id %}
+            <tr class="text-gray-600" data-testid="quote-row" data-quote-id="{{ q.id }}">
+              <th scope="row" class="text-left font-normal"><a href="{% url 'supply_chain:procurement_quote_detail' q.id %}" class="hover:underline">{{ supplier_names|dictkey:q.supplier_id|default:"Supplier" }}</a></th>
+              <td>{{ q.item.name|default:"" }}</td>
+              <td class="num">{% if q.as_quoted_amount %}{{ q.as_quoted_currency }} {{ q.as_quoted_amount|money }}{% endif %}</td>
+              <td>{{ q.as_quoted_currency }}</td>
+              <td>{{ q.priced_per|default:q.as_quoted_unit|words }}</td>
+              <td>{{ q.incoterm }}</td>
+              <td class="num">{{ q.base_per_pack_stated|default_if_none:"" }}</td>
+              <td class="num">{{ q.base_unit_grams_stated|default_if_none:"" }}</td>
+              <td class="num">{% if q.lead_time_days is not None %}{{ q.lead_time_days }} d{% endif %}</td>
+              <td>{{ q.validity_until|day|default:"" }}</td>
+              <td>{{ q.received_on|day|default:"" }}</td>
+              <td>{{ q.supplier_reference|default:"" }}</td>
+              <td class="text-xs">{% if q.voided %}voided{% else %}replaced{% endif %}</td>
+            </tr>
+            {% else %}
+            <tr data-testid="quote-row" data-quote-id="{{ q.id }}">
+              <th scope="row" class="text-left font-medium"><a href="{% url 'supply_chain:procurement_quote_detail' q.id %}" class="text-brand-indigo hover:underline">{{ supplier_names|dictkey:q.supplier_id|default:"Supplier" }}</a></th>
+              <td class="text-gray-700">{{ commodity_names|dictkey:q.commodity_slug|default:q.commodity_slug }}{% if q.item %}<span class="sub">{{ q.item.name }}</span>{% include "supply_chain/procurement/_composition.html" with composition=q.item.components unit=q.item.components_unit %}{% endif %}</td>
+              <td class="num font-medium text-gray-900" {% edit_cell "quote" q.id "as_quoted_amount" q.as_quoted_amount %}>{% if q.as_quoted_amount %}{{ q.as_quoted_currency }} {{ q.as_quoted_amount|money }}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
+              <td {% edit_cell "quote" q.id "as_quoted_currency" q.as_quoted_currency %}>{{ q.as_quoted_currency|default:"—" }}</td>
+              <td class="whitespace-nowrap">{{ q.priced_per|default:q.as_quoted_unit|words }}{% if q.per_pack_note %} <span data-testid="per-pack-note" tabindex="0" role="img" aria-label="{{ q.per_pack_note }}" title="{{ q.per_pack_note }}" class="cursor-help text-gray-600"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span>{% endif %}</td>
+              <td class="whitespace-nowrap" data-testid="price-basis" {% edit_cell "quote" q.id "incoterm" q.incoterm %}>{% if q.incoterm %}{{ q.incoterm }}{% else %}<span class="text-message-warning-text">not stated</span>{% endif %}</td>
+              <td class="num" {% edit_cell "quote" q.id "base_per_pack_stated" q.base_per_pack_stated %}>{% if q.base_per_pack_stated %}{{ q.base_per_pack_stated }}{% else %}<span class="text-message-warning-text">not stated</span>{% endif %}</td>
+              <td class="num" {% edit_cell "quote" q.id "base_unit_grams_stated" q.base_unit_grams_stated %}>{{ q.base_unit_grams_stated|default_if_none:"—" }}</td>
+              <td class="num" {% edit_cell "quote" q.id "lead_time_days" q.lead_time_days %}>{% if q.lead_time_days is not None %}{{ q.lead_time_days }} d{% else %}—{% endif %}</td>
+              <td class="whitespace-nowrap" {% edit_cell "quote" q.id "validity_until" q.validity_until %}>{{ q.validity_until|day|default:"—" }}</td>
+              <td class="whitespace-nowrap" {% edit_cell "quote" q.id "received_on" q.received_on %}>{{ q.received_on|day|default:"—" }}</td>
+              <td {% edit_cell "quote" q.id "supplier_reference" q.supplier_reference %}>{{ q.supplier_reference|default:"—" }}</td>
+              <td class="text-right"><a href="{% url 'supply_chain:procurement_quote_detail' q.id %}" class="text-sm text-brand-indigo hover:underline">Detail</a></td>
+            </tr>
+            {% endif %}
+            {% empty %}
+            <tr><td colspan="13" class="py-6 text-center text-gray-600">No quotes recorded yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
   </details>
 

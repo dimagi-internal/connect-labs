@@ -29,54 +29,47 @@ heard 12 Jun" is the record.
   </div>
 </div>
 
-<div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
-  <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
-    <table class="min-w-[44rem] w-full text-sm">
-      <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
+{% comment %}A sheet: the supplier's own facts (name, type, city, country) edit where they sit
+(cells.py, supplier_update); the counts are the record's and are not typed.{% endcomment %}
+<div class="sheet-wrap" tabindex="0" role="region" aria-label="Suppliers, scrolls sideways" id="suppliers-sheet" data-live>
+  <table class="sheet min-w-[52rem]" data-testid="suppliers-table">
+    <thead>
+      <tr>
+        <th scope="col">Supplier</th>
+        <th scope="col">Type</th>
+        <th scope="col">City</th>
+        <th scope="col">Country</th>
+        <th scope="col">Status</th>
+        {% if has_program_context %}
+          <th scope="col" class="text-right">Invited</th>
+          <th scope="col" class="text-right">Quotes</th>
+          <th scope="col" class="text-right">Orders</th>
+          <th scope="col">Last dated record</th>
+        {% endif %}
+        <th scope="col"><span class="sr-only">Open</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for supplier in suppliers %}
         <tr>
-          <th class="text-left px-4 py-2">Supplier</th>
-          <th class="text-left px-4 py-2">Where</th>
-          <th class="text-left px-4 py-2">Status</th>
+          <th scope="row" class="text-left font-medium text-gray-900" {% if has_program_context %}{% edit_cell "supplier" supplier.id "name" supplier.name %}{% endif %}>{{ supplier.name }}</th>
+          <td {% if has_program_context %}{% edit_cell "supplier" supplier.id "type" supplier.type %}{% endif %}>{% if supplier.type == "donor" %}<span class="text-blue-900">Donor — supplies in kind</span>{% elif supplier.type %}{{ supplier.type|words|capfirst }}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
+          <td {% if has_program_context %}{% edit_cell "supplier" supplier.id "city" supplier.city %}{% endif %}>{{ supplier.city|default:"—" }}</td>
+          <td {% if has_program_context %}{% edit_cell "supplier" supplier.id "country" supplier.country %}{% endif %}>{{ supplier.country|default:"—" }}</td>
+          <td class="text-gray-600">{{ supplier.status|humanise|default:"identified" }}</td>
           {% if has_program_context %}
-            <th class="text-right px-4 py-2">Invited</th>
-            <th class="text-right px-4 py-2">Quotes</th>
-            <th class="text-right px-4 py-2">Orders</th>
-            <th class="text-left px-4 py-2">Last dated record</th>
+            <td class="num text-gray-700">{{ supplier.invitation_count }}</td>
+            <td class="num text-gray-700">{{ supplier.quote_count }}</td>
+            <td class="num text-gray-700">{{ supplier.contract_count }}</td>
+            <td class="text-gray-600">{% if supplier.last_activity %}{{ supplier.last_activity }}{% else %}nothing dated{% endif %}</td>
           {% endif %}
+          <td class="text-right"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:supplier_detail' supplier.id %}">Open</a></td>
         </tr>
-      </thead>
-      <tbody class="divide-y divide-gray-100">
-        {% for supplier in suppliers %}
-          <tr>
-            <td class="px-4 py-2.5">
-              <a class="font-medium text-brand-indigo hover:underline"
-                 href="{% url 'supply_chain:supplier_detail' supplier.id %}">{{ supplier.name }}</a>
-              {% if supplier.type == "donor" %}<div class="text-xs text-blue-900">Donor — supplies in kind</div>{% elif supplier.type %}<div class="text-xs text-gray-600">{{ supplier.type|words|capfirst }}</div>{% endif %}
-            </td>
-            <td class="px-4 py-2.5 text-gray-700">
-              {{ supplier.city|default:supplier.country|default:"—" }}
-            </td>
-            <td class="px-4 py-2.5 text-gray-600">{{ supplier.status|humanise|default:"identified" }}</td>
-            {% if has_program_context %}
-              <td class="px-4 py-2.5 text-right tabular-nums text-gray-700">{{ supplier.invitation_count }}</td>
-              <td class="px-4 py-2.5 text-right tabular-nums text-gray-700">{{ supplier.quote_count }}</td>
-              <td class="px-4 py-2.5 text-right tabular-nums text-gray-700">{{ supplier.contract_count }}</td>
-              <td class="px-4 py-2.5 text-gray-600">
-                {% if supplier.last_activity %}{{ supplier.last_activity }}
-                {% else %}<span class="text-gray-600">nothing dated</span>{% endif %}
-              </td>
-            {% endif %}
-          </tr>
-        {% empty %}
-          <tr>
-            <td colspan="7" class="px-4 py-6 text-center text-gray-600">
-              No suppliers on file yet.
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+      {% empty %}
+        <tr><td colspan="10" class="py-6 text-center text-gray-600">No suppliers on file yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </div>
 
 {% if not has_program_context %}
