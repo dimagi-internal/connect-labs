@@ -98,7 +98,7 @@ export function HeadlineTiles(props: { tiles: Tile[] }) {
             <div className="mt-1 text-2xl font-bold text-gray-900 tabular-nums">
               {tileValue(t, e, tile.minDenominator)}
               {t.unit ? (
-                <span className="ml-2 text-xs font-medium text-gray-400">
+                <span className="ml-2 text-xs font-medium text-gray-500">
                   {t.unit}
                 </span>
               ) : null}
@@ -121,7 +121,7 @@ export function HeadlineTiles(props: { tiles: Tile[] }) {
                 />
               </div>
             ) : null}
-            <div className="mt-1 text-xs text-gray-400 whitespace-nowrap truncate">
+            <div className="mt-1 text-xs text-gray-500 whitespace-nowrap truncate">
               {delta || '\u00a0'}
             </div>
           </div>

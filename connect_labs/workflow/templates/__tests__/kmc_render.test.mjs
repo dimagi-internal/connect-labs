@@ -102,6 +102,7 @@ function checks(file, src, ast) {
       'encodeURIComponent',
       'undefined',
       'NaN',
+      'Infinity',
       'navigator',
       'setTimeout',
       'alert',

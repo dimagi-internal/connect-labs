@@ -467,6 +467,55 @@ def workflow_template_preview(
 
 
 @register(
+    name="workflow_template_export",
+    description=(
+        "The way BACK from data to code: a template workflow's published render (or `version`, or the draft "
+        "with draft=true -- editors) beside a base version (default 1, the verbatim seed from its code template), "
+        "as a unified diff, with every version note in between and the code template's repo path. Use it when a "
+        "template's fixes should reach every NEW programme too: fixes published to a template workflow never "
+        "flow back to the code template that new programmes are seeded from. include_code=true adds base_code "
+        "and code for a three-way merge into the repo (`python tools/promote_template_workflow.py` does the "
+        "call and the merge in one step; WORKFLOW_REFERENCE.md section 12). Reads only. Anyone who can read the "
+        "template may export a published version."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "template_workflow_id": {"type": "integer"},
+            **_SCOPE_PROPS,
+            "version": {"type": "integer", "minimum": 1, "description": "Default: the published version."},
+            "base": {"type": "integer", "minimum": 1, "description": "Default 1: the seed."},
+            "draft": {"type": "boolean", "description": "Export the draft instead (write access)."},
+            "include_code": {"type": "boolean", "description": "Add base_code and code (large)."},
+            "max_diff_lines": {"type": "integer", "minimum": 0, "maximum": 20000},
+        },
+        "required": ["template_workflow_id"],
+        "additionalProperties": False,
+    },
+)
+def workflow_template_export(
+    user,
+    template_workflow_id: int,
+    opportunity_id: int = None,
+    program_id: int = None,
+    version: int = None,
+    base: int = 1,
+    draft: bool = False,
+    include_code: bool = False,
+    max_diff_lines: int = 3000,
+):
+    with _Home(user, template_workflow_id, opportunity_id, program_id) as home:
+        out = _wrap(tw.export, home.wda.labs_api, home.template, version=version, base=base, draft=draft)
+        diff = out["diff"]
+        out["diff"] = diff[:max_diff_lines]
+        out["diff_truncated"] = len(diff) > max_diff_lines
+        if not include_code:
+            out.pop("base_code")
+            out.pop("code")
+        return out
+
+
+@register(
     name="workflow_template_publish",
     description=(
         "Publish a template workflow's draft as its next version (write access to its scope). Every follower shows "

@@ -29,7 +29,7 @@ export function WeeklyActivity(props: { weeks: Week[] }) {
     B = 28;
   if (!weeks.length)
     return (
-      <div className="text-xs text-gray-400 py-10 text-center">
+      <div className="text-xs text-gray-500 py-10 text-center">
         No dated visits in this scope.
       </div>
     );
@@ -71,7 +71,7 @@ export function WeeklyActivity(props: { weeks: Week[] }) {
               x={L - 6}
               y={y(t) + 4}
               fontSize="10"
-              fill="#9ca3af"
+              fill="#6b7280"
               textAnchor="end"
             >
               {nCount(t)}
@@ -107,7 +107,7 @@ export function WeeklyActivity(props: { weeks: Week[] }) {
                 x={x + bw / 2}
                 y={H - 8}
                 fontSize="10"
-                fill="#9ca3af"
+                fill="#6b7280"
                 textAnchor="middle"
               >
                 {dateLbl(w.week)}
@@ -243,14 +243,14 @@ export function TrendCard(props: {
         aria-busy="true"
       >
         <div className="absolute inset-x-3 top-1/2 border-t border-dashed border-gray-200" />
-        <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400">
+        <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-500">
           Loading the trend across saved reports…
         </div>
       </div>
     );
   } else if (real.length < 2) {
     body = (
-      <div className="text-xs text-gray-400 py-8 text-center">
+      <div className="text-xs text-gray-500 py-8 text-center">
         {real.length
           ? 'One report so far — the line builds as reports are saved weekly.'
           : 'No report has enough cases to score this yet.'}
@@ -312,7 +312,7 @@ export function TrendCard(props: {
                 x={L - 5}
                 y={y(t) + 3.5}
                 fontSize="9.5"
-                fill="#9ca3af"
+                fill="#6b7280"
                 textAnchor="end"
               >
                 {f(t)}
@@ -335,7 +335,7 @@ export function TrendCard(props: {
             x={W - R}
             y={y(target) - 3}
             fontSize="9"
-            fill="#9ca3af"
+            fill="#6b7280"
             textAnchor="end"
           >
             {'target ' + f(target)}
@@ -380,7 +380,7 @@ export function TrendCard(props: {
               x={x(i)}
               y={H - 7}
               fontSize="9.5"
-              fill="#9ca3af"
+              fill="#6b7280"
               textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}
             >
               {dateLbl((history || [])[i] && (history || [])[i].date)}

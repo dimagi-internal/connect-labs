@@ -329,7 +329,7 @@ export function ReadingChart(props: {
   });
   if (pts.length < 1)
     return (
-      <div className="text-xs text-gray-400 py-6 text-center">
+      <div className="text-xs text-gray-500 py-6 text-center">
         No {props.label ? props.label.toLowerCase() : 'reading'} recorded.
       </div>
     );
@@ -391,7 +391,7 @@ export function ReadingChart(props: {
               x={L - 5}
               y={y(t) + 3.5}
               fontSize="9.5"
-              fill="#9ca3af"
+              fill="#6b7280"
               textAnchor="end"
             >
               {nCount(t)}
@@ -420,10 +420,10 @@ export function ReadingChart(props: {
           </circle>
         );
       })}
-      <text x={L} y={H - 6} fontSize="9.5" fill="#9ca3af">
+      <text x={L} y={H - 6} fontSize="9.5" fill="#6b7280">
         {dateLbl(pts[0].date)}
       </text>
-      <text x={W - R} y={H - 6} fontSize="9.5" fill="#9ca3af" textAnchor="end">
+      <text x={W - R} y={H - 6} fontSize="9.5" fill="#6b7280" textAnchor="end">
         {dateLbl(pts[pts.length - 1].date)}
       </text>
     </svg>
@@ -434,7 +434,7 @@ function defBlock(title: string, text: string) {
   return (
     <div className="mt-3">
       <div className="flex items-center justify-between">
-        <span className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
+        <span className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">
           {title}
         </span>
         <button
@@ -474,7 +474,7 @@ export function DefinitionBody(props: { entry: any; entityPlural?: string }) {
         {where.map(function (c) {
           return (
             <li key={c} className="flex gap-1.5">
-              <span className="text-gray-400">•</span>
+              <span className="text-gray-500">•</span>
               <span>{c}</span>
             </li>
           );
@@ -652,7 +652,7 @@ export function DefinitionModal(props: {
       >
         <div className="px-5 py-3 border-b border-gray-100 flex items-start justify-between gap-3">
           <div>
-            <div className="font-mono text-xs text-gray-400">{props.id}</div>
+            <div className="font-mono text-xs text-gray-500">{props.id}</div>
             <div className="text-base font-semibold text-gray-900">
               {props.title || (st.entry && st.entry.title) || props.id}
             </div>
@@ -660,7 +660,7 @@ export function DefinitionModal(props: {
           <button
             type="button"
             aria-label="Close"
-            className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+            className="text-gray-500 hover:text-gray-700 text-xl leading-none"
             onClick={props.onClose}
           >
             {'×'}
@@ -672,7 +672,7 @@ export function DefinitionModal(props: {
               Could not read the definition: {st.error}
             </div>
           ) : st.status !== 'ready' ? (
-            <div className="text-xs text-gray-400">Reading the definition…</div>
+            <div className="text-xs text-gray-500">Reading the definition…</div>
           ) : (
             <DefinitionBody
               entry={st.entry}
