@@ -144,8 +144,8 @@ class TestTheComparison:
         url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=rutf"
         body = client_in_program.get(url).content.decode()
         note = _text(re.search(r'data-testid="comparison-duty-terms".*?</summary>', body, re.S).group(0))
-        assert "we import, under the program's duty waiver" in note.replace("&#x27;", "'")
-        assert "duty exemption not on file" in note
+        assert "we import under the duty waiver" in note
+        assert "Duty exemption not on file" in note
         assert Commitment.objects.filter(resolved_on__isnull=False).exists()
 
     def test_a_quote_costed_on_a_waiver_not_on_file_owes_that_fact_on_us(self, da, world, client_in_program):
@@ -164,9 +164,10 @@ class TestTheComparison:
         body = client_in_program.get(url).content.decode()
         if 'data-testid="waiver-pending"' not in body:
             pytest.skip("this world's quote does not leave the import to us")
-        assert "duty exemption not on file · to do" in body
-        # The quote's header chip names it, or counts them ("duty exemption · to do" / "2 facts · to do").
-        assert re.search(r'data-testid="grid-status">[^<]+ · to do<', body)
+        assert "duty exemption not on file · ours to attach" in body
+        # The quote's header chip names it, or counts them:
+        # "duty exemption · ours to attach" / "2 facts · ours to fill".
+        assert re.search(r'data-testid="grid-status">[^<]+ · ours to (attach|fill)<', body)
         assert 'data-testid="duty-exemption-attach"' in body
         # Award may still be offered, but never as the filled button while the fact is open.
         assert 'primary-dark" data-testid="grid-action"' not in body

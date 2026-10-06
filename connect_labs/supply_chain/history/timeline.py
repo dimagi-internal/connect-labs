@@ -735,10 +735,41 @@ def _timeline(revisions, until, own=None) -> list[Entry]:
         built.append((entry, revision))
     if until is None:
         _mark_holds(built)
+    _keep_corrected_where_it_was(built, corrections, lookup)
     for entry in entries:
         _drop_own_day(entry)
         _unname_own(entry, own)
     return _fold_bookkeeping([e for e in entries if e.sentence])
+
+
+def _keep_corrected_where_it_was(built, corrections, lookup):
+    """A replaced version's "since corrected" only on a line showing a value the correction changed.
+
+    The correction's own line says what changed ("pack 120 → 150"); the note beside an
+    earlier line whose price the correction never touched read as if the price had been
+    wrong. A line whose correction is not in this history keeps its note: nothing else says it.
+    """
+    from connect_labs.supply_chain.models import Quote
+
+    changed = {}
+    for entry, revision in built:
+        superseded = corrections.get(id(revision))
+        if superseded is not None:
+            changed[str(superseded)] = ({k: v[1] for k, v in revision.changes.items()}, set(entry.fields))
+    for entry, revision in built:
+        if entry.fix_status != "corrected" or entry.object_key != (Quote, str(revision.object_id)):
+            continue
+        found = changed.get(str(revision.object_id))
+        if found is None:
+            continue
+        new_values, fields = found
+        if revision.action == "create":
+            old_values = {k: v[1] for k, v in revision.changes.items()}
+            shown = create_what(Quote, old_values, lookup) != create_what(Quote, {**old_values, **new_values}, lookup)
+        else:
+            shown = bool(fields & set(revision.changes))
+        if not shown:
+            entry.fix_status = ""
 
 
 def _unname_own(entry, own):

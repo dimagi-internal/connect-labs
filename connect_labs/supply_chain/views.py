@@ -942,6 +942,13 @@ class OrderDetailView(OperationBase):
         # Of those, the documents the shipment is held on -- the shipment row's own list. The rest
         # (the duty exemption, a question, a promise) are owed on the order, not the consignment.
         context["owed_holding_count"] = sum(1 for h in context["owed_holds"] if h.get("basis") == "held")
+        # Each shipment row's Clearing documents cell counts the same holds the section above does.
+        for shipment in context["shipments"]:
+            shipment["holding_count"] = sum(
+                1
+                for h in context["owed_holds"]
+                if h.get("basis") == "held" and h.get("shipment_id") == shipment.get("id")
+            )
         # Who the held documents go through, so the section names its
         # counterparty ("to clear the shipment (via Crescent Freight & Clearing)")
         # instead of an ambiguous "them". One name only when every hold agrees.

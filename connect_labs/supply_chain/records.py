@@ -185,7 +185,7 @@ INVOICE_STATUSES = ("received", "queried", "approved", "part_paid", "paid", "rej
 
 # The documents that certify what is in a consignment, as opposed to the ones
 # that move it through a port. `shipment_without_certificate` and the order
-# page's Certificate column both read this, so they cannot disagree.
+# page's shipment documents column both read this, so they cannot disagree.
 CERTIFICATE_KINDS = ("certificate_of_analysis", "certificate_of_conformity")
 
 DOCUMENT_KINDS = (
@@ -488,7 +488,7 @@ def freight_and_duties_for_incoterm(incoterm) -> tuple[str | None, str | None]:
 DUTY_TERMS = ("", "buyer_waiver", "buyer_pays", "supplier_ddp")
 DUTY_TERMS_LABELS = {
     "": "not settled",
-    "buyer_waiver": "we import, under the program's duty waiver",
+    "buyer_waiver": "we import under the duty waiver",
     "buyer_pays": "we import and pay the duty",
     "supplier_ddp": "the supplier delivers duty paid",
 }

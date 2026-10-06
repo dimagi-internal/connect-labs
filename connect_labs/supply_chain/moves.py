@@ -38,29 +38,64 @@ from datetime import date
 
 from django.urls import reverse
 
+from connect_labs.supply_chain.records import DOCUMENT_KIND_LABELS
+
 US = "us"
 SUPPLIERS = "suppliers"
 
 # The words every screen uses for whose step it is (owner decision 2026-10-04: "on us"
-# read as jargon). Ours is a to-do list, theirs is who we are waiting on. A quote's
-# missing fact is tagged with the same words; it is still not a move (rules above).
+# read as jargon). Ours is a to-do list, theirs is who we are waiting on.
 TO_DO = "To do"
 WAITING_ON_SUPPLIERS = "Waiting on suppliers"
 # A supplier's fact nobody has asked it for yet: ours to ask (procurement/status.fact_owner).
 TO_ASK = "to_ask"
-OWNER_CHIP = {US: "to do", SUPPLIERS: "waiting", TO_ASK: "to ask"}
+
+# A quote's missing fact is NOT a move (rules above), so its chip never borrows the moves'
+# "to do": a To do count of 0 beside "duty terms · to do" read as a contradiction. Theirs
+# keep the waiting words; ours say what closing them takes -- a document to attach, our
+# terms to settle, any other figure of ours to fill.
+OWNER_CHIP = {SUPPLIERS: "waiting", TO_ASK: "to ask"}
+OURS_TO_ATTACH = "ours to attach"
+OURS_TO_SETTLE = "ours to settle"
+OURS_TO_FILL = "ours to fill"
+# The gaps that are documents (named as records names every document kind) and our terms;
+# every other gap of ours is a figure to fill.
+_DOCUMENT_GAPS = frozenset(DOCUMENT_KIND_LABELS.values())
+_TERMS_GAPS = frozenset({"tender duty terms", "duty terms"})
+
+
+def _ours_word(gap) -> str:
+    gap = str(gap or "")
+    if gap in _DOCUMENT_GAPS:
+        return OURS_TO_ATTACH
+    if gap in _TERMS_GAPS:
+        return OURS_TO_SETTLE
+    return OURS_TO_FILL
+
+
+def gap_chip_word(owner, gaps=()) -> str:
+    """Whose a quote's missing facts are, as their chip says it -- one rule for every screen.
+
+    Theirs: "waiting", or "to ask" until we have asked. Ours: "ours to attach" (documents),
+    "ours to settle" (our terms) or "ours to fill" (any other figure); facts of more than
+    one kind are "ours to fill".
+    """
+    if owner != US:
+        return OWNER_CHIP.get(owner) or OWNER_CHIP[SUPPLIERS]
+    words = {_ours_word(g) for g in gaps or ()}
+    return words.pop() if len(words) == 1 else OURS_TO_FILL
 
 
 def facts_chip(gaps, owner) -> str:
     """A quote's open facts for one party, as a chip: the fact when there is one, else a count.
 
-    "duty terms · to do", "3 facts · to do", "sachets per carton · waiting".
+    "duty terms · ours to settle", "3 facts · ours to fill", "sachets per carton · waiting".
     """
     gaps = list(gaps or [])
     if not gaps:
         return ""
-    what = gaps[0] if len(gaps) == 1 else f"{len(gaps)} facts"
-    return f"{what} · {OWNER_CHIP.get(owner) or OWNER_CHIP[SUPPLIERS]}"
+    what = ("duty terms" if gaps[0] in _TERMS_GAPS else gaps[0]) if len(gaps) == 1 else f"{len(gaps)} facts"
+    return f"{what} · {gap_chip_word(owner, gaps)}"
 
 
 RULE_OWED = "owed"

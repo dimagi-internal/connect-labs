@@ -394,6 +394,7 @@ class TenderDetailView(_Base):
         context["estimates_changed"] = self.request.GET.get("estimates") == "changed"
         lines = [line for line in tender.get("lines") or [] if isinstance(line, dict)]
         context["estimate_unit"] = unit_noun(lines[0].get("quantity_unit")) if len(lines) == 1 else "unit"
+        context["freight_in_price"] = _freight_in_price(tender, tender_id, _access(self.request).program_id)
         if tender.get("import_estimates_set_on"):
             from connect_labs.supply_chain.history.timeline import import_estimates_set_by
 
@@ -639,6 +640,26 @@ class QuoteDetailView(_Base):
                 for slug in [part.get("commodity_slug")]
             )
         return context
+
+
+def _freight_in_price(tender, tender_id, program_id) -> str:
+    """The tender's Incoterm ("CPT") when it puts main freight in the supplier's price, else "".
+
+    Freight is ours to estimate only on E and F terms (pricing.freight_is_ours), so under
+    CPT, CIP, DAP or DDP the header says freight is included rather than that our estimate
+    is missing -- unless a live quote came in on a term that leaves the freight to us.
+    """
+    from connect_labs.supply_chain.models import Quote
+    from connect_labs.supply_chain.procurement.services.pricing import freight_is_ours
+    from connect_labs.supply_chain.records import freight_and_duties_for_incoterm
+
+    asked = (tender.get("incoterm_requested") or "").strip()
+    if not asked or freight_and_duties_for_incoterm(asked)[0] != "included":
+        return ""
+    quotes = Quote.objects.filter(tender_id=tender_id, tender__program_id=program_id)
+    if any(freight_is_ours(q) for q in quotes if q.is_live):
+        return ""
+    return asked.split()[0].upper().strip(".,")
 
 
 def _priced_per(quote, item, commodity) -> str | None:
