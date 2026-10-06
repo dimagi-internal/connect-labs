@@ -202,7 +202,7 @@ def _slim(payload: dict) -> dict:
 
 def _action_error(e) -> MCPToolError:
     code = "VERSION_CONFLICT" if e.code.startswith("confirm") else "INVALID_SCHEMA"
-    if e.code == "not_offered":
+    if e.code in ("not_offered", "forbidden"):
         code = "PERMISSION_DENIED"
     return MCPToolError(code, str(e), {"reason": e.code})
 
