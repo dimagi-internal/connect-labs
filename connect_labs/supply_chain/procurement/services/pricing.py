@@ -250,16 +250,75 @@ def quote_rests_on_relief(quote, tender=None) -> bool:
     )
 
 
-def duty_exemption_on_file(*, tender=None, contract=None) -> bool:
+def program_duty_exemption(program_id, on=None):
+    """The program's own duty exemption in force on `on` (today when not given), or None.
+
+    Kept once, at program level -- a duty_exemption document linked to nothing
+    in particular -- because it is one paper: every tender costed on the waiver
+    and every order whose nil duty rests on it read the same row, so attaching
+    it once clears them all. Its valid_from / valid_until bound the imports it
+    covers; an open end holds indefinitely.
+    """
+    from datetime import date
+
+    from django.db.models import Q
+
+    from connect_labs.supply_chain.models import Document
+
+    on = on or date.today()
+    return (
+        Document.objects.filter(
+            program_id=program_id,
+            kind="duty_exemption",
+            **{f"{name}__isnull": True for name in records.DOCUMENT_LINKS},
+        )
+        .filter(Q(valid_from__isnull=True) | Q(valid_from__lte=on))
+        .filter(Q(valid_until__isnull=True) | Q(valid_until__gte=on))
+        .order_by("-uploaded_at", "-pk")
+        .first()
+    )
+
+
+def next_entry_on(contract, today=None):
+    """The day an order's next import enters customs, the day its exemption must hold.
+
+    Its first shipment still to arrive, on its expected day -- or today, when
+    that day has passed, is not known, or nothing has shipped yet.
+    """
+    from datetime import date
+
+    from connect_labs.supply_chain.models import Shipment
+
+    today = today or date.today()
+    shipment = (
+        Shipment.objects.filter(contract_id=contract.pk)
+        .exclude(status__in=("delivered", "lost"))
+        .order_by("pk")
+        .first()
+    )
+    expected = getattr(shipment, "expected_on", None)
+    return max(expected, today) if expected else today
+
+
+def duty_exemption_on_file(*, tender=None, contract=None, on=None) -> bool:
     """Whether a duty exemption is on file for the import it would relieve.
 
-    For an order: named on it, or attached to it or to a shipment of it. For a
-    tender: attached to the tender (the program's waiver it is costed on).
+    The program's own exemption (program_duty_exemption), in force on the
+    import's day: today for a tender's quotes, the next entry for an order
+    (next_entry_on). Or one kept on the record itself, for a relief that is
+    genuinely that order's: named on the order, or attached to it or to a
+    shipment of it; for a tender, one attached to the tender before the
+    exemption was kept at program level.
     """
     from django.db.models import Q
 
     from connect_labs.supply_chain.models import Document
 
+    program_id = getattr(contract if contract is not None else tender, "program_id", None)
+    if program_id is not None:
+        day = on or (next_entry_on(contract) if contract is not None else None)
+        if program_duty_exemption(program_id, day) is not None:
+            return True
     where = Q(pk__in=[])
     if contract is not None:
         if getattr(contract, "duty_relief_document_id", None):

@@ -1109,6 +1109,11 @@ class Document(SourcedModel):
     external_url = models.URLField(max_length=1024, blank=True, default="")
     sha256 = models.CharField(max_length=64, blank=True, default="")
     uploaded_at = models.DateTimeField(null=True, blank=True)
+    # The days a document holds for, when it has any: a program's duty
+    # exemption is granted for a period, and a nil duty rests on it only for
+    # an import inside it. Open at either end when not given.
+    valid_from = models.DateField(null=True, blank=True)
+    valid_until = models.DateField(null=True, blank=True)
 
     contract = models.ForeignKey(Contract, null=True, blank=True, on_delete=models.CASCADE, related_name="documents")
     shipment = models.ForeignKey(Shipment, null=True, blank=True, on_delete=models.CASCADE, related_name="documents")

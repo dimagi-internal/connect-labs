@@ -285,6 +285,7 @@ urlpatterns = [
         stock_views.ReceiptRecordView.as_view(),
         name="receipt_record",
     ),
+    path("documents/new/", fulfilment_views.ProgramDocumentAttachView.as_view(), name="program_document_attach"),
     path("documents/<int:document_id>/", views.document_open, name="document_open"),
     path("shipments/<int:shipment_id>/", views.ShipmentDetailView.as_view(), name="shipment_detail"),
     path("shipments/<int:shipment_id>/status/", stock_views.ShipmentStatusView.as_view(), name="shipment_status"),
