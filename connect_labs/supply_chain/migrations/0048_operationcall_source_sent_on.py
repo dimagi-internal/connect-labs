@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("supply_chain", "0046_award_open_at_decision"),
+        ("supply_chain", "0047_seed_clone_top_up_beat_task"),
     ]
 
     operations = [
