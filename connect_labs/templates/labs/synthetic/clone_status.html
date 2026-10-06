@@ -17,13 +17,17 @@
         {% for c in status.result.clones %}<li>Opportunity <strong>#{{ c.opportunity_id }}</strong>, a copy of #{{ c.source_opportunity_id }}</li>{% endfor %}
       </ul>
       <p class="text-sm text-gray-700">Open <a class="text-brand-indigo underline" href="{% url 'labs:overview' %}">Labs</a> and pick it in the opportunity selector, under that program.</p>
+    {% elif status.state == "REVOKED" %}
+      <p class="mb-2 font-medium text-gray-900"><i class="fa-solid fa-ban mr-1.5"></i> Cancelled.</p>
+      <p class="text-sm text-gray-700">This clone was stopped before it finished.</p>
+      <a href="{% url 'labs:synthetic:clone' %}" class="button button-sm outline-style mt-4">Start a clone</a>
     {% elif status.state == "FAILURE" %}
       <p class="mb-2 font-medium text-message-error-text"><i class="fa-solid fa-circle-xmark mr-1.5"></i> The clone did not finish.</p>
       <p class="text-sm text-gray-700">{{ status.error }}</p>
       <a href="{% url 'labs:synthetic:clone' %}" class="button button-sm outline-style mt-4">Try again</a>
     {% else %}
       <p class="font-medium text-gray-900"><i class="fa-solid fa-spinner fa-spin mr-1.5"></i> <span data-testid="clone-message">{{ status.status }}</span></p>
-      <p class="mt-2 text-sm text-gray-600">This page updates itself. You can leave and come back: the job keeps running.</p>
+      <p class="mt-2 text-sm text-gray-600">This page updates itself. You can leave and come back: the job keeps running. <a class="text-brand-indigo underline" href="{% url 'labs:synthetic:jobs' %}">See or stop your jobs</a>.</p>
     {% endif %}
   </div>
 </div>
@@ -31,7 +35,7 @@
 
 {% block inline_javascript %}
   {{ block.super }}
-  {% if status.state != "SUCCESS" and status.state != "FAILURE" %}
+  {% if status.state != "SUCCESS" and status.state != "FAILURE" and status.state != "REVOKED" %}
   <script>
     // Ask where the job stands every 10 seconds; reload once it has finished, so the result renders.
     (function () {
@@ -40,7 +44,7 @@
         fetch(url, { credentials: "same-origin" })
           .then(function (r) { return r.json(); })
           .then(function (s) {
-            if (s.state === "SUCCESS" || s.state === "FAILURE") { window.location.reload(); return; }
+            if (s.state === "SUCCESS" || s.state === "FAILURE" || s.state === "REVOKED") { window.location.reload(); return; }
             var el = document.querySelector("[data-testid=clone-message]");
             if (el && s.status) { el.textContent = s.status; }
           })
