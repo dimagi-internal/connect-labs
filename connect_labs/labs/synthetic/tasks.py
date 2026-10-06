@@ -20,6 +20,8 @@ import functools
 import logging
 from typing import Any
 
+from celery import signals
+from celery.exceptions import Ignore
 from django.conf import settings
 
 from config import celery_app
@@ -64,12 +66,65 @@ def _release_slot(slot: int, task_id: str) -> None:
         cache.delete(key)
 
 
+# ---- a deploy restarts the worker ---------------------------------------------
+#
+# Every labs deploy replaces the worker. A synthetic job the old worker had accepted --
+# waiting for a slot, or running -- went with it, and its last recorded state stayed
+# RETRY or STARTED: the person saw "Waiting for a free slot" with both slots free, and
+# asking again handed back the same dead job for hours. So on shutdown the worker marks
+# every synthetic job it holds as failed, saying why, and frees its slot. Not requeued:
+# Redis may still redeliver the original message an hour later, and a requeued copy
+# beside it would run the clone twice. That late copy, if it comes, is skipped below.
+
+RESTARTED = "Labs restarted while this job was waiting or running, so it stopped. Start it again."
+_TASK_PREFIX = f"{__name__}."
+
+
+def fail_jobs_held_by_this_worker(requests) -> list[str]:
+    """Mark each synthetic job among `requests` (Celery worker Requests) failed by a restart."""
+    failed = []
+    for request in requests:
+        if not str(getattr(request, "name", "") or "").startswith(_TASK_PREFIX):
+            continue
+        celery_app.backend.store_result(request.id, RuntimeError(RESTARTED), "FAILURE")
+        for i in range(_slots()):
+            _release_slot(i, request.id)
+        failed.append(request.id)
+    return failed
+
+
+def _failed_by_restart(task_id: str) -> bool:
+    from celery.result import AsyncResult
+
+    result = AsyncResult(task_id, app=celery_app)
+    return result.state == "FAILURE" and str(result.info) == RESTARTED
+
+
+@signals.worker_shutting_down.connect
+def _on_worker_shutting_down(**kwargs):
+    from celery.worker import state
+
+    try:
+        failed = fail_jobs_held_by_this_worker([*state.reserved_requests, *state.active_requests])
+    except Exception:  # noqa: BLE001 -- shutdown must go on whatever this does
+        logger.exception("could not mark synthetic jobs failed on worker shutdown")
+        return
+    if failed:
+        logger.warning("worker shutting down: marked %d synthetic job(s) failed: %s", len(failed), failed)
+
+
 def holds_a_synthetic_slot(fn):
     """Run a bound task only while holding one of the system-wide synthetic slots."""
 
     @functools.wraps(fn)
     def wrapper(self, *args, **kwargs):
         task_id = getattr(self.request, "id", None) or ""
+        # A copy of a job a restart already failed (redelivered late): its owner has been
+        # told to start again, and may have, so running this one would clone twice.
+        # Ignore, not return: a return would store SUCCESS over the failure its owner was shown.
+        if task_id and _failed_by_restart(task_id):
+            logger.warning("skipping synthetic job %s: a restart already failed it", task_id)
+            raise Ignore()
         slot = _acquire_slot(task_id)
         if slot is None:
             raise self.retry(countdown=_SLOT_RETRY_SECONDS, max_retries=_SLOT_MAX_RETRIES)
