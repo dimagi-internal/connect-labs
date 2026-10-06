@@ -164,6 +164,34 @@ Indicator reports previously showed raw system identifiers in place of readable 
 
 If you work with an indicator report and still see raw IDs where you would expect names, check with your program administrator that the registry has the case name field configured.
 
+### What indicator reports look like on new programmes
+
+The generic indicator reports — the programme report, the opportunity/partner report, and the worker review — now start every new programme with a consistent set of display improvements. These were previously applied one at a time to individual programme copies during review sessions; they are now part of the standard template so every new programme gets them from the beginning.
+
+**Readable text throughout.** All text that was previously too light to read comfortably — secondary labels, footnotes, chart axis labels, and sort arrows — now uses sufficient contrast to meet accessibility standards.
+
+**Colour-coded status labels explain themselves.** Hovering over a **Watch** or **Off target** badge in any legend, scorecard, or worker review now shows the rule behind the colour — for example, "Meeting regularity 60%–80% (target ≥ 80%)". You no longer need to remember or look up what each threshold means.
+
+**Columns that repeated one value on every row are removed.** If every worker in a table has the same caseload size, the same visit status, or the same benchmark coverage, that value is stated once in a heading or caption rather than filling an entire column with identical text.
+
+**Worker review improvements.** The visit reading chart fills its card fully, shows a date label under each visit, starts from zero, and shades each gap between visits individually — including the gap's length. Status flags appear as clearly labelled pills with an explanation. When peer medians across indicators are identical, they are merged into a single column. The review also distinguishes clearly between "no target set", "no eligible cases", and "no data available" — previously these could appear identical.
+
+**Programme report drill-down improvements.** When you drill into a single partner or opportunity, a caption names it, shows its size, and identifies which indicator it is flagged on. That indicator's trend chart displays at full width with its data points labelled. Headline tiles for indicators that have no target say "no target" explicitly rather than leaving the tile blank or ambiguous.
+
+**Opportunity report — Benchmarks tab improvements.** Bar charts are drawn on a true zero-based scale with a clearly labelled dashed line at the target value. Your own organisation is shown in a distinct colour with its status as a pill. A **See workers →** shortcut link opens the worker list sorted worst-first. Indicators that have no better-or-worse direction (for example, a count with no preferred direction) are grouped separately under "not ranked" rather than being sorted alongside directional indicators.
+
+!!! note "These improvements apply to new programmes created from the standard template"
+    If your programme was created before this change, its reports may not yet reflect all of the above. Contact your program administrator if you would like your existing reports updated to match the current template.
+
+### Optional registry keys for visit flags
+
+Registry authors can add two optional settings to each entry in a registry's `display.visit_flags` list:
+
+- **`fields`** — the visit fields that a flag relates to. When set, those field values are highlighted on any visit that carries the flag, so readers can see at a glance what triggered it.
+- **`description`** — a short plain-English explanation of the flag. When set, this text appears in the Flags tooltip so readers know what the flag means without having to ask.
+
+Both keys are optional. Existing registries that do not use them are unaffected.
+
 ---
 
 ## Taking Actions from a Report
@@ -186,48 +214,4 @@ An AI assistant — either the agent panel on the report itself or your own assi
 
 ### The agent panel on a report
 
-When the agent panel is switched on for a report, an AI assistant appears alongside the report. The assistant:
-
-- Sees what you are currently looking at on the report
-- Follows you as you drill into an organisation or an individual worker
-- Can read the report's indicators, what "red" means for each one, and how each is calculated
-
-This means you can give the assistant instructions like **"start AI coaching for everyone with a red metric"** and it will identify the right workers from the live report data and walk you through the confirmation before sending anything.
-
-### Keeping Chat Studio connected
-
-If your program uses Open Chat Studio for its coaching bots, connecting it once is enough. After that, actions can start conversations on your behalf even when the report page is not open in your browser.
-
-### What an AI assistant can see in Open Chat Studio
-
-When an AI assistant reads Open Chat Studio chat sessions through Connect Labs, it sees only what your own OCS account can see — not every bot's sessions across the whole team. This means the assistant's view of conversations is scoped to your connection, the same as if you logged into OCS directly.
-
-If you have not yet connected your OCS account, the assistant will prompt you to do so at **Settings → Open Chat Studio** (or follow the link it provides). Web dashboards are unaffected by this change — they continue to work as before.
-
-!!! note "These features are off unless switched on for your report"
-    Action buttons and the agent panel are not available on every report. If you do not see an action button or an agent panel on a report you work with, the feature has not yet been enabled for that report. Contact your program administrator if you believe it should be turned on.
-
----
-
-## Creating a Workflow from a Template
-
-You can create new workflows from ready-made templates rather than building them from scratch. The template picker is available from the program's own Workflows page (the URL includes `?program_id=…`) via the **Create Workflow** button. Using the program-level page means you can create whole-program reports — such as the KMC Programme Metrics report — without having to start from an individual opportunity.
-
-### Choosing a template
-
-Clicking **Create Workflow** opens the **Choose a template** modal. The modal is designed to fit a standard desktop screen without scrolling. Templates are presented one per row, grouped by what they produce:
-
-| Group | Examples |
-|---|---|
-| Programme reports | KMC Programme Metrics, Photo Audit Report, Indicator Programme Report, RUTF CIFF Program KPIs, IPTsc School Delivery Dashboard |
-| Automatic reports | Scheduled summary reports |
-| Worker reviews | KMC Worker Review, Indicator Worker Review |
-| Audits | Weekly Dual-Track Image Audit, Muac Picture Audit |
-| Beneficiary tracking | Beneficiary-level dashboards |
-| Outreach & demos | Outreach and demonstration reports |
-| Visit verification | MBW Visit Verification |
-| Opportunity reports | Indicator Opportunity Report |
-
-A **filter box** at the top of the modal lets you type to narrow the list. Each row shows the template's full name — names are never cut short — alongside a coloured icon and a short description on the line below. If a template is always created together with another template, both rows say so, so you know what you will get before you confirm.
-
-!!! note "Template icons and names"
+When the agent panel is switched on for a
