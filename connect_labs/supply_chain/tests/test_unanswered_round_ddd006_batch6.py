@@ -34,5 +34,5 @@ def test_overview_gaps_are_fact_chips_and_the_comparable_chip_leads():
 
     source = get_template("supply_chain/home.html").template.source
     chip = get_template("supply_chain/_fact_chip.html").template.source
-    assert '"supply_chain/_fact_chip.html"' in source and "owner_tone" in chip and "%}lead{%" in source
+    assert '"supply_chain/_fact_chip.html"' in source and "gap_tone" in chip and "%}lead{%" in source
     assert 'data-testid="row-missing"' in source.split('data-testid="next-move"', 1)[1]

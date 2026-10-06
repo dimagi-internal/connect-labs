@@ -62,7 +62,7 @@ is folded away, each fold with its count.
         {% comment %}Who set the terms and when, and the waiver's evidence: each its own field
         beside the terms, not run on after them.{% endcomment %}
         {% if tender.duty_terms and tender.duty_terms_set_on %}<span class="whitespace-nowrap text-xs text-gray-600" data-testid="duty-terms-set">Set {{ tender.duty_terms_set_on|day }}{% if status.terms.duty_set_by %} · {{ status.terms.duty_set_by }}{% endif %}</span>{% endif %}
-        {% if tender.duty_terms == "buyer_waiver" %}<span data-testid="waiver-evidence" class="whitespace-nowrap text-xs text-gray-600">{{ "duty_exemption"|document_kind|capfirst }} {% if waiver_on_file %}on file{% else %}<span class="text-message-warning-text font-medium">not on file</span>{% endif %}</span>{% if not waiver_on_file and not supply_as_of %} <a class="text-xs text-brand-indigo font-semibold hover:underline" data-testid="duty-exemption-attach" href="{% url 'supply_chain:program_document_attach' %}?kind=duty_exemption&next={{ request.path|urlencode }}">Attach</a>{% endif %}{% endif %}
+        {% if tender.duty_terms == "buyer_waiver" %}<span data-testid="waiver-evidence" class="whitespace-nowrap text-xs text-gray-600">{{ "duty_exemption"|document_kind|capfirst }} {% if waiver_on_file %}on file{% else %}<span class="text-message-warning-text font-medium">not on file</span>{% endif %}</span>{% if not waiver_on_file and not supply_as_of %} <span class="text-xs text-gray-600">·</span> <a class="text-xs text-brand-indigo font-semibold hover:underline" data-testid="duty-exemption-attach" href="{% url 'supply_chain:program_document_attach' %}?kind=duty_exemption&next={{ request.path|urlencode }}">Attach</a>{% endif %}{% endif %}
         {% if not supply_as_of %}
         <details class="relative" data-testid="duty-terms-settle">
           <summary class="button button-sm outline-style list-none [&::-webkit-details-marker]:hidden" role="button" data-testid="duty-terms-open" aria-label="{% if tender.duty_terms %}Change{% else %}Settle{% endif %} import duty">{% if tender.duty_terms %}Change{% else %}Settle{% endif %}</summary>
@@ -81,7 +81,7 @@ is folded away, each fold with its count.
         <span class="text-gray-600">clearing</span>
         <span data-testid="clearing-estimate" class="px-1" {% edit_cell "tender" tender.id "clearing_estimate_per_unit" tender.clearing_estimate_per_unit %}>{% if tender.clearing_estimate_per_unit is not None %}<span class="font-medium text-gray-900">USD {{ tender.clearing_estimate_per_unit|floatformat:2 }} / {{ estimate_unit }}</span>{% else %}<span class="status-chip status-chip--ours">Not recorded</span>{% endif %}</span>
         <span class="text-gray-600">· freight</span>
-        <span data-testid="freight-estimate" class="px-1" {% edit_cell "tender" tender.id "freight_estimate_per_unit" tender.freight_estimate_per_unit %}>{% if tender.freight_estimate_per_unit is not None %}<span class="font-medium text-gray-900">USD {{ tender.freight_estimate_per_unit|floatformat:2 }} / {{ estimate_unit }}</span>{% else %}<span class="text-gray-600">not recorded</span>{% endif %}</span>
+        <span data-testid="freight-estimate" class="px-1" {% edit_cell "tender" tender.id "freight_estimate_per_unit" tender.freight_estimate_per_unit %}>{% if tender.freight_estimate_per_unit is not None %}<span class="font-medium text-gray-900">USD {{ tender.freight_estimate_per_unit|floatformat:2 }} / {{ estimate_unit }}</span>{% elif freight_in_price %}<span class="text-gray-900" data-testid="freight-in-price">included ({{ freight_in_price }})</span>{% else %}<span class="text-gray-600">not recorded</span>{% endif %}</span>
         {% if tender.import_estimates_set_on %}<span class="whitespace-nowrap text-xs text-gray-600" data-testid="import-estimates-set">{% include "supply_chain/_src.html" with src="person" %}{{ tender.import_estimates_set_on|day|slice:":-5" }}{% if import_estimates_set_by %} · {{ import_estimates_set_by }}{% endif %}</span>{% endif %}
         {% if estimates_changed %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}
       </span>
@@ -164,7 +164,7 @@ is folded away, each fold with its count.
           <th scope="col" class="text-right">Price</th>
           <th scope="col">Delivery term</th>
           <th scope="col">Pack</th>
-          <th scope="col" class="min-w-[12rem]">Missing</th>
+          <th scope="col" class="min-w-[15rem]">Missing</th>
           <th scope="col" class="sheet-pin-end w-px"><span class="sr-only">Actions</span></th>
         </tr></thead>
         <tbody>
@@ -179,9 +179,9 @@ is folded away, each fold with its count.
             <td class="num" data-testid="supplier-quote" {% if q %}{% edit_cell "quote" q.pk "as_quoted_amount" q.as_quoted_amount %}{% endif %}>{% if r.price %}{% include "supply_chain/_src.html" with src=r.quote_src %}<span class="font-medium text-gray-900">{{ r.price }}</span>{% if r.quote_src == "ai" %}<span class="src-ai-tag">AI</span>{% endif %}{% if r.price_per %}<span class="sub">per {{ r.price_per }}</span>{% endif %}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
             <td class="whitespace-nowrap text-gray-700" {% if q %}{% edit_cell "quote" q.pk "incoterm" q.incoterm %}{% endif %}>{% if q.incoterm %}{% include "supply_chain/_src.html" with src=r.term_src %}{{ q.incoterm }}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
             <td class="num text-left text-gray-700" {% if q %}{% edit_cell "quote" q.pk "base_per_pack_stated" q.base_per_pack_stated %}{% endif %} data-testid="supplier-pack">{% if r.pack %}{% include "supply_chain/_src.html" with src=r.pack_src %}{{ r.pack }}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
-            {% comment %}Room for its chips, which wrap -- a line each if need be -- rather than run on
-            under the actions pinned at the row's end.{% endcomment %}
-            <td class="min-w-[12rem]" data-testid="supplier-missing-cell">{% if r.missing or r.on_us %}<div class="flex flex-wrap items-center gap-1 [&_.status-chip]:text-wrap" data-testid="supplier-missing">{% for m in r.missing %}{% include "supply_chain/_fact_chip.html" with fact=m owner=r.missing_owner n=1 %}{% endfor %}{% if r.on_us %}<a class="status-chip status-chip--ours" data-testid="supplier-on-us" href="{{ r.on_us_href }}">{{ r.on_us }}</a>{% endif %}</div>{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
+            {% comment %}Room for its chips, each whole on one line (a chip never breaks), wrapping
+            chip by chip rather than running on under the actions pinned at the row's end.{% endcomment %}
+            <td class="min-w-[15rem]" data-testid="supplier-missing-cell">{% if r.missing or r.on_us %}<div class="flex flex-wrap items-center gap-1" data-testid="supplier-missing">{% for m in r.missing %}{% include "supply_chain/_fact_chip.html" with fact=m owner=r.missing_owner n=1 %}{% endfor %}{% if r.on_us %}<a class="status-chip status-chip--fact" data-testid="supplier-on-us" href="{{ r.on_us_href }}">{{ r.on_us }}</a>{% endif %}</div>{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
             <td class="sheet-pin-end" data-testid="supplier-actions">{% if not supply_as_of %}<span class="inline-flex items-center gap-2">{% if r.action %}<a class="text-brand-indigo font-medium hover:underline" data-testid="supplier-action" href="{{ r.action.href }}"{% if r.action.href|slice:":7" == "#draft-" %} onclick="return window.openDraft &amp;&amp; window.openDraft('{{ r.action.href|slice:"1:" }}');"{% endif %}>{{ r.action.label }}</a>{% endif %}
               {% if o %}
               {% comment %}The rest of the row's record, in a small menu: record a reply where none is

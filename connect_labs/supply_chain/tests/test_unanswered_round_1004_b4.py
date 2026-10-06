@@ -55,10 +55,10 @@ def test_the_comparison_names_it_and_its_action_by_that_name(da, world, client_i
     body = client_in_program.get(url).content.decode()
     assert "waiver document" not in body
     terms = _text(re.search(r'data-testid="waiver-evidence"[^>]*>(.*?)</span>', body, re.S).group(1))
-    assert terms == "· duty exemption not on file"
+    assert terms == "· Duty exemption not on file"
     if 'data-testid="waiver-pending"' not in body:
         pytest.skip("this world's quote does not leave the import to us")
-    assert "duty exemption not on file · to do" in body
+    assert "duty exemption not on file · ours to attach" in body
     # Attached once, on the tender's duty line; each quote's column points there.
     assert 'data-testid="duty-exemption-attach"' in body and 'data-testid="grid-terms-link"' in body
 
@@ -100,10 +100,9 @@ def test_a_quote_s_open_facts_are_the_suppliers_sheet_s_not_history_s(da, world,
     history = body[body.index('id="history"') :]
     assert 'data-fact="' not in history
     sheet = body[body.index('data-testid="supplier-table"') : body.index('id="history"')]
-    # Ours are the sheet's "to do" chip, linking to the comparison that names each one.
+    # Ours are the sheet's fact chip, linking to the comparison that names each one.
     on_us = _text(re.search(r'data-testid="supplier-on-us"[^>]*>(.*?)</a>', sheet, re.S).group(1))
-    assert on_us.endswith("· to do")
-    assert on_us == "duty exemption · to do" or re.match(r"\d+ facts · to do$", on_us)
+    assert on_us == "duty exemption · ours to attach" or re.match(r"\d+ facts · ours to fill$", on_us)
 
 
 def test_the_overview_and_the_suppliers_sheet_share_one_chip():
