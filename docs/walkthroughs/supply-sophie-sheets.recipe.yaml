@@ -85,7 +85,7 @@ scenes:
   - kind: wait_for
     target: css:.is-saved
   - kind: hover
-    target: css:[data-testid=supplier-row]:has-text('Kanem') td:first-child
+    target: css:[data-testid=supplier-row]:has-text('Kanem') > :first-child
   - kind: hold
     seconds: 1.0
   - kind: snapshot
