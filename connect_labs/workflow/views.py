@@ -226,6 +226,10 @@ def _schedule_seed_value(option):
         return option.get("selected") or []
     if option["type"] == "bool":
         return bool(option.get("value"))
+    if option["type"] == "choice":
+        # Already resolved to an offered value (or the default) by
+        # schedule_options_for_definition, so a select never seeds blank.
+        return option.get("value") or ""
 
     value = option.get("value")
     if value is None:
@@ -5089,6 +5093,13 @@ def _clean_schedule_defaults(raw, options):
             if not opt["min"] <= number <= opt["max"]:
                 return None, f"{opt['label']} must be between {opt['min']} and {opt['max']}"
             values[key] = number
+            continue
+
+        if opt["type"] == "choice":
+            allowed = [c["value"] for c in opt.get("choices") or []]
+            if value not in allowed:
+                return None, f"{opt['label']} must be one of: {', '.join(allowed)}"
+            values[key] = value
             continue
 
         # multi_int / multi_str -- one path, so a string-valued multi-select is
