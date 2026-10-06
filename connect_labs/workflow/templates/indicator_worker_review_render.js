@@ -494,6 +494,11 @@ function WorkflowUI({
       </div>
     );
 
+  // A case whose work is FINISHED (`display.entity.done_property`) has no visit
+  // due: the silence after its last visit is the end of the work, not a gap.
+  function isDone(c) {
+    return R.caseDone ? R.caseDone(D, c) : false;
+  }
   // A case's human label (`display.entity.label_field`), else its id.
   function caseLabel(c, n) {
     if (R.caseLabel) return R.caseLabel(D, c, n);
@@ -738,7 +743,8 @@ function WorkflowUI({
     : '';
   var openGapDays =
     lastVisitDay && asOfDay > lastVisitDay ? gapDays(lastVisitDay, asOfDay) : 0;
-  var openGap = openGapDays > GAP_DAYS;
+  var selDone = selCase ? isDone(selCase) : false;
+  var openGap = !selDone && openGapDays > GAP_DAYS;
   var gapCount =
     visits.rows.filter(function (v, i) {
       return (
@@ -1439,6 +1445,19 @@ function WorkflowUI({
                         }
                       >
                         {caseLabel(c, 12)}
+                        {isDone(c) ? (
+                          <span
+                            data-finished="1"
+                            className="ml-2 font-sans font-semibold text-emerald-700"
+                            title={
+                              'This ' +
+                              ENT.name +
+                              ' is finished: no visit is due'
+                            }
+                          >
+                            finished
+                          </span>
+                        ) : null}
                       </td>
                       {D.case_fields.map(function (f) {
                         return (
@@ -1516,6 +1535,15 @@ function WorkflowUI({
               }
             >
               {R.cap(ENT.name) + ' ' + caseLabel(selCase, 12) + ' · visits'}
+              {selDone ? (
+                <span
+                  data-finished="1"
+                  className="ml-2 text-emerald-700"
+                  title={'This ' + ENT.name + ' is finished: no visit is due'}
+                >
+                  finished
+                </span>
+              ) : null}
             </R.SectionTitle>
             {visits.status === 'loading' || visits.status === 'idle' ? (
               <R.Loading height={120}>Reading the visits…</R.Loading>

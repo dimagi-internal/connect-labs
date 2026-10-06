@@ -216,19 +216,35 @@ def semantic_snapshot(
                 memo, definition_id, opportunity_ids, pipeline_config, extra_fields, props_doc, full_registry
             )
             evaluate_kwargs["visit_sql"] = f"SELECT * FROM {table}"
+    done_property = registry_done_property(props_doc, full_registry)
     with clock("evaluate"):
         if case_cfg.get("source") == "semantic":
             # The case list from the SAME extraction as the indicators (see
             # `semantic_case_rows`): as of the run, and the same cases the scores counted.
+            case_fields = semantic_case_fields(case_cfg)
+            if done_property:
+                case_fields.setdefault(done_property, done_property)
             rows, cases, dropped = evaluate_with_cases(
                 pipeline_config,
                 opportunity_ids,
                 scopes=scopes,
-                case_fields=semantic_case_fields(case_cfg),
+                case_fields=case_fields,
                 **evaluate_kwargs,
             )
             if dropped:
                 logger.info("workflow %s: case fields the registry does not serve: %s", definition_id, dropped)
+        elif done_property and case_cfg.get("pipeline"):
+            # The case list is read off a pipeline, which does not carry a Layer-2
+            # property; the done flag comes from the same graded `props` rows as the
+            # indicators, in the same pass, and is stamped onto each case.
+            rows, done_rows, _dropped = evaluate_with_cases(
+                pipeline_config,
+                opportunity_ids,
+                scopes=scopes,
+                case_fields={done_property: done_property},
+                **evaluate_kwargs,
+            )
+            cases = stamp_done(snap.case_rows(pipelines, spec, llo_by_opp), done_rows, done_property)
         else:
             rows = evaluate(pipeline_config, opportunity_ids, scopes=scopes, scope=scopes[0], **evaluate_kwargs)
             cases = snap.case_rows(pipelines, spec, llo_by_opp)
@@ -403,6 +419,32 @@ def drop_layer1_tables(memo) -> None:
         drop_materialized(table)
 
 
+def registry_done_property(props_doc: dict | None, indicators_doc: dict | None) -> str | None:
+    """The registry's `display.entity.done_property`, when it names a bool property."""
+    from connect_labs.semantic.display import done_property_problems, resolve_display
+
+    name = (resolve_display(props_doc, indicators_doc).get("entity") or {}).get("done_property")
+    if not name or done_property_problems(name, props_doc or {}):
+        return None
+    return name
+
+
+def stamp_done(cases: list[dict], done_rows: list[dict], done_property: str) -> list[dict]:
+    """Each case with `done_property` set from the graded rows, matched on (opportunity, entity).
+
+    `done_rows` are `evaluate_with_cases` case rows, whose `entity_id` is the
+    registry's entity key -- the same value a pipeline-derived case index carries.
+    A case with no graded row (cut by the as-of date, or never graded) gets False:
+    unknown is never finished, so it stays subject to the staleness rule.
+    """
+    done = {
+        (str(r.get("opportunity_id")), str(r.get("entity_id"))): bool(r.get(done_property)) for r in done_rows or []
+    }
+    for c in cases:
+        c[done_property] = done.get((str(c.get("opportunity_id")), str(c.get("entity_id"))), False)
+    return cases
+
+
 def semantic_case_fields(case_cfg: dict) -> dict[str, str]:
     """`case_index.fields` as {output name: registry column}.
 
@@ -473,6 +515,13 @@ def resolve_spec_defaults(spec, model, pipeline_config, extra_fields, llo_map, i
         label_field = (resolved.get("entity") or {}).get("label_field")
         if label_field:
             wanted.append(label_field)
+        # Whether a case's work is finished (`display.entity.done_property`), so the
+        # renders do not call a finished case -- or a worker of only finished cases --
+        # stale. A Layer-2 property, so the builder fills it from the graded `props`
+        # rows when the case index is read off a pipeline (`semantic_snapshot`).
+        done_property = (resolved.get("entity") or {}).get("done_property")
+        if done_property:
+            wanted.append(done_property)
         base = ["entity_id", "username", "opportunity_id", "first_visit_date", "last_visit_date", "total_visits"]
         fields = base + [f for f in dict.fromkeys(wanted) if f not in base]
         out["case_index"] = {"pipeline": entity_alias, "fields": fields}

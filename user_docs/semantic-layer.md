@@ -295,7 +295,8 @@ And one `display:` block at the top of the indicators document:
 display:
   title: Kangaroo Mother Care programme            # report heading
   entity: { name: baby, plural: babies,            # what a case is called
-            label_field: entity_name }             # the case-index field holding a case's name
+            label_field: entity_name,              # the case-index field holding a case's name
+            done_property: discharged }            # a bool property: the case's work is finished
   worker: { name: facilitator, plural: facilitators }
   organisation: { name: partner, plural: partners }
   categories: [Scale, Case mix, Follow-up]         # category order in tables
@@ -313,6 +314,14 @@ display:
 ```
 
 `entity.label_field` is how a case is NAMED rather than identified. It names a field of the case index (a column of the entity pipeline): the case table's first column and the worker review's case heading show its value, falling back to the case id when a case has none. Connect carries each visit's case name in `entity_name`, which every pipeline row already has, so `label_field: entity_name` works on any programme with no pipeline change; a form field works too (declare it in the entity pipeline, e.g. `{name: child_name, path: form.child_name}`, and name that). The builder adds the field to the case index it derives, and a run keeps the labels it was built with. It is a label, never a key: selecting a case and reading its visits still go by `entity_id`.
+
+`entity.done_property` says when a case's work is FINISHED, so the reports stop asking for visits it will never get. It names a Layer-2 property of `type: bool` in the properties document -- e.g. `{name: step7_done, type: bool, sql: 'step7_done_date IS NOT NULL'}` for a community that has completed its final step, or a baby discharged -- and saving refuses a name that is not a bool property. Without it, a programme whose cases end by design reads as neglected the moment they end: a facilitator whose communities all finished shows 100% meeting regularity next to a red "no visit for over 14 days" date. With it:
+
+- the red Last-visit rule skips a finished case: a worker, opportunity or organisation whose cases are ALL finished shows its last visit in grey marked "finished" (and the legend says what that means), while one with any case still under way is judged as before, on its latest visit;
+- the case lists tag each finished case "finished";
+- the worker review draws no open gap ("still open, no visit since") after a finished case's last visit -- the gaps between its visits are still shown.
+
+The builder adds the property to the case index it derives and fills it from the same graded rows as the indicators, as of the run's date. A case is finished only when the property is true; unknown is open. A run keeps the display it was built with, so runs saved before the key was declared read as they did.
 
 **Worker names.** A worker is shown by their display name, not their Connect username. Each saved run resolves the names once per opportunity from Connect's worker list (`user_data`; a labs-only synthetic opportunity is served its manifest personas' `display_name`) and stores them as `byFLW[].name`; selection, review links and audits keep using the username. A worker with no name shows the username, as before. The names stay on the opportunity's own rows: an opportunity report is handed only its own workers, and benchmarks publish no worker-level figures.
 

@@ -125,7 +125,7 @@ def validate_registry(
     #    tables that exist.
     from connect_labs.semantic.display import credibility_problems, display_problems
 
-    errors.extend(display_problems(registry))
+    errors.extend(display_problems(registry, props_doc))
     errors.extend(credibility_problems(registry, settings or {}))
 
     return errors
