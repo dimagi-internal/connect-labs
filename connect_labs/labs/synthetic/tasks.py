@@ -320,3 +320,27 @@ def run_synthetic_clone_opp(
             f"'{spec.program_name}'. Synthetic opportunities are now shown in your labs lists."
         ),
     }
+
+
+def slot_holders() -> list[str | None]:
+    """The task id holding each system-wide synthetic slot, or None where the slot is free."""
+    from django.core.cache import cache
+
+    return [cache.get(f"synthetic:job-slot:{i}") for i in range(_slots())]
+
+
+def cancel_job(task_id: str) -> None:
+    """Stop a synthetic job: revoke it (ending it if it is running), mark it revoked, free its slot.
+
+    Marking it revoked in the result backend is what the per-person limits and the
+    status page read, so a job lost in a worker restart -- queued forever as RETRY --
+    stops counting against its owner at once.
+    """
+    from django.core.cache import cache
+
+    celery_app.control.revoke(task_id, terminate=True)
+    celery_app.backend.store_result(task_id, None, "REVOKED")
+    for i in range(_slots()):
+        key = f"synthetic:job-slot:{i}"
+        if cache.get(key) == task_id:
+            cache.delete(key)
