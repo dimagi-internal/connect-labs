@@ -42,7 +42,17 @@ PER REGISTRY (`display:` in the indicators document)::
         - {field: reg_date, label: Registered, format: date}
         - {field: last_weight_g, label: Latest weight, format: count, unit: g}
       reading: {column: weight_g, label: Weight, unit: g}   # charted per case
+      visit_fields:                                # extra columns in one case's visit list
+        - {field: weight_g, label: Weight, format: count, unit: g}
+      visit_flags:                                 # per-visit review flags, shown by name
+        - {column: repeat_counts_flag, label: Repeat count}   # flagged when 'yes'/true/1
+        - {column: risk_level, label: High risk, value: high} # or when it equals `value`
       targets_note: 'Targets from the 2026 workplan'        # optional footnote
+
+`visit_flags` is how an indicator that counts flagged visits (a repeat-count rate,
+a location-review rate) points the reader at WHICH visits: the worker review marks
+each visit that carries the flag. Without it the visit list can only show Connect's
+own review flag, which is a different thing.
 
 `resolve_display` fills every default so readers never branch on absence, and
 `display_problems` is the save-time gate (`validation.validate_registry` calls it).
@@ -65,6 +75,8 @@ _DISPLAY_KEYS = {
     "headline_count",
     "case_fields",
     "reading",
+    "visit_fields",
+    "visit_flags",
     "targets_note",
 }
 # Every per-indicator meta key this module reads, for the validator.
@@ -77,6 +89,45 @@ DEFAULT_CASE_FIELDS = [
     {"field": "last_visit_date", "label": "Last visit", "format": "date"},
     {"field": "total_visits", "label": "Visits", "format": "count"},
 ]
+
+
+def _fields(raw: Any) -> list[dict[str, Any]]:
+    return [
+        {
+            "field": str(f["field"]),
+            "label": str(f.get("label") or f["field"]),
+            "format": f.get("format") if f.get("format") in CASE_FIELD_FORMATS else "text",
+            **({"unit": str(f["unit"])} if f.get("unit") else {}),
+        }
+        for f in raw or []
+        if isinstance(f, dict) and isinstance(f.get("field"), str)
+    ]
+
+
+def _visit_flags(raw: Any) -> list[dict[str, Any]]:
+    return [
+        {
+            "column": str(f["column"]),
+            "label": str(f.get("label") or f["column"]),
+            **({"value": f["value"]} if f.get("value") is not None else {}),
+        }
+        for f in raw or []
+        if isinstance(f, dict) and isinstance(f.get("column"), str)
+    ]
+
+
+def _fields_problems(key: str, fields: Any, problems: list[str]) -> None:
+    if fields is None:
+        return
+    if not isinstance(fields, list):
+        problems.append(f"display.{key}: must be a list of {{field, label, format}}")
+        return
+    for i, f in enumerate(fields):
+        if not isinstance(f, dict) or not isinstance(f.get("field"), str) or not _FIELD.match(f["field"]):
+            problems.append(f"display.{key}[{i}]: needs `field`, a column name")
+            continue
+        if f.get("format") is not None and f["format"] not in CASE_FIELD_FORMATS:
+            problems.append(f"display.{key}[{i}].format: {f['format']!r} is not one of {list(CASE_FIELD_FORMATS)}")
 
 
 def _noun(value: Any, name: str, plural: str) -> dict[str, str]:
@@ -172,16 +223,7 @@ def resolve_display(
     if _is_num(headline_count):
         headline = headline[: int(headline_count)]
 
-    case_fields = [
-        {
-            "field": str(f["field"]),
-            "label": str(f.get("label") or f["field"]),
-            "format": f.get("format") if f.get("format") in CASE_FIELD_FORMATS else "text",
-            **({"unit": str(f["unit"])} if f.get("unit") else {}),
-        }
-        for f in raw.get("case_fields") or []
-        if isinstance(f, dict) and isinstance(f.get("field"), str)
-    ] or [dict(f) for f in DEFAULT_CASE_FIELDS]
+    case_fields = _fields(raw.get("case_fields")) or [dict(f) for f in DEFAULT_CASE_FIELDS]
 
     reading = raw.get("reading") if isinstance(raw.get("reading"), dict) else None
     if reading is None and model.value_column:
@@ -208,6 +250,8 @@ def resolve_display(
         "indicators": per,
         "case_fields": case_fields,
         "reading": reading,
+        "visit_fields": _fields(raw.get("visit_fields")),
+        "visit_flags": _visit_flags(raw.get("visit_flags")),
         "visits_pipeline": visits_pipeline,
         "targets_note": raw.get("targets_note") or None,
         # The registry's `defaults.min_denominator`: the floor a measure with none of
@@ -243,20 +287,24 @@ def display_problems(indicators_doc: dict[str, Any] | None) -> list[str]:
         hc = raw.get("headline_count")
         if hc is not None and (not isinstance(hc, int) or isinstance(hc, bool) or not 1 <= hc <= 10):
             problems.append("display.headline_count: must be an integer from 1 to 10")
-        fields = raw.get("case_fields")
-        if fields is not None:
-            if not isinstance(fields, list):
-                problems.append("display.case_fields: must be a list of {field, label, format}")
+        _fields_problems("case_fields", raw.get("case_fields"), problems)
+        _fields_problems("visit_fields", raw.get("visit_fields"), problems)
+        flags = raw.get("visit_flags")
+        if flags is not None:
+            if not isinstance(flags, list):
+                problems.append("display.visit_flags: must be a list of {column, label, value?}")
             else:
-                for i, f in enumerate(fields):
-                    if not isinstance(f, dict) or not isinstance(f.get("field"), str) or not _FIELD.match(f["field"]):
-                        problems.append(f"display.case_fields[{i}]: needs `field`, a column name")
-                        continue
-                    if f.get("format") is not None and f["format"] not in CASE_FIELD_FORMATS:
-                        problems.append(
-                            f"display.case_fields[{i}].format: {f['format']!r} is not one of "
-                            f"{list(CASE_FIELD_FORMATS)}"
-                        )
+                for i, f in enumerate(flags):
+                    if (
+                        not isinstance(f, dict)
+                        or not isinstance(f.get("column"), str)
+                        or not _FIELD.match(f["column"])
+                    ):
+                        problems.append(f"display.visit_flags[{i}]: needs `column`, a column name")
+                    elif f.get("label") is not None and not isinstance(f["label"], str):
+                        problems.append(f"display.visit_flags[{i}].label: must be a string")
+                    elif f.get("value") is not None and not isinstance(f["value"], (str, int, float)):
+                        problems.append(f"display.visit_flags[{i}].value: must be a string or a number")
         reading = raw.get("reading")
         if reading is not None and not (
             isinstance(reading, dict) and isinstance(reading.get("column"), str) and _FIELD.match(reading["column"])

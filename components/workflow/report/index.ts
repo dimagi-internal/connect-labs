@@ -54,6 +54,7 @@ import {
   nounCount,
   scorecardLayout,
   targetValue,
+  visitFlagsOf,
 } from './Indicators';
 import {
   Field,
@@ -88,7 +89,7 @@ import {
   SectionTitle,
 } from './Layout';
 
-export const VERSION = 6;
+export const VERSION = 7;
 
 export const LabsReport = {
   VERSION,
@@ -177,6 +178,8 @@ export const LabsReport = {
   dailyProgress,
   dailyReadout,
   EnrolmentDailyChart,
+  // per-visit review flags from the display contract (VERSION 7)
+  visitFlagsOf,
 };
 
 export type LabsReportLibrary = typeof LabsReport;
