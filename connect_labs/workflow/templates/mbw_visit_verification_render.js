@@ -1113,12 +1113,15 @@ function WorkflowUI({
           // draws' own mean/median into one number each.
           var randomMeanAvg = null;
           var randomMedianAvg = null;
+          var randomNAvg = null;
           if (insufficientHistory) {
             randomMeanAvg = mean(matchedValues);
             randomMedianAvg = median(matchedValues);
+            randomNAvg = matchedValues.length;
           } else if (dUat > 0) {
             var sampleMeans = [];
             var sampleMedians = [];
+            var sampleNs = [];
             for (var s = 0; s < RANDOM_SAMPLE_COUNT; s += 1) {
               var idxs = sampleIndicesWithoutReplacement(
                 preUatDayKeys.length,
@@ -1132,9 +1135,11 @@ function WorkflowUI({
               });
               sampleMeans.push(mean(sampleValues));
               sampleMedians.push(median(sampleValues));
+              sampleNs.push(sampleValues.length);
             }
             randomMeanAvg = mean(sampleMeans);
             randomMedianAvg = mean(sampleMedians);
+            randomNAvg = mean(sampleNs);
           }
 
           return {
@@ -1150,6 +1155,7 @@ function WorkflowUI({
             matchedN: matchedValues.length,
             randomMean: randomMeanAvg,
             randomMedian: randomMedianAvg,
+            randomN: randomNAvg,
           };
         });
     },
@@ -1608,15 +1614,15 @@ function WorkflowUI({
         },
         {
           name: 'Pre-UAT (prior window)',
-          def: "The FLW's pre-UAT active days chronologically closest to (immediately before) her own UAT start -- the same COUNT of days as her UAT active-day count, pooling every visit on those days. Controls for seasonal/temporal drift that a random sample drawn from anywhere in her history would not (caseload changes, tenure, time of year).",
+          def: "The FLW's pre-UAT active days chronologically closest to (immediately before) her own UAT start -- the same COUNT of days as her UAT active-day count, pooling every visit on those days. Controls for seasonal/temporal drift that a random sample drawn from anywhere in her history would not (caseload changes, tenure, time of year). The n= shown is the exact visit count behind the figure -- for an FLW with few UAT active days (the table has seen FLWs as low as 1), this is a correspondingly small, single-day-or-few slice, not a stable average.",
           field:
-            "Last N entries of this FLW's ascending-sorted pre-UAT active-day list, where N = her UAT active-day count.",
+            "Last N entries of this FLW's ascending-sorted pre-UAT active-day list, where N = her UAT active-day count. matchedN = matchedValues.length.",
         },
         {
           name: 'Pre-UAT (20-sample avg)',
-          def: "20 random samples of the FLW's pre-UAT active days (without replacement), each sample the same size as her UAT active-day count, pooling every visit on the sampled days per draw (visit-weighted -- a day with more visits contributes more to that draw, same as the UAT/matched-window columns). The mean column averages the 20 draws' own means; the median column averages the 20 draws' own medians. This corrects for an imbalanced sample size, NOT for temporal drift -- see Pre-UAT (prior window) for that.",
+          def: "20 random samples of the FLW's pre-UAT active days (without replacement WITHIN a draw -- the same day CAN recur across different draws), each sample the same size as her UAT active-day count, pooling every visit on the sampled days per draw (visit-weighted -- a day with more visits contributes more to that draw, same as the UAT/matched-window columns). The mean column averages the 20 draws' own means; the median column averages the 20 draws' own medians. This corrects for an imbalanced sample size, NOT for temporal drift -- see Pre-UAT (prior window) for that. The n≈ shown is the AVERAGE visit count across the 20 draws (rounded) -- for an FLW with only 1 UAT active day, every draw is a single random day, so this column is an average over single-day (often single-visit) samples, not a robust multi-day estimate.",
           field:
-            '20 draws via sampleIndicesWithoutReplacement(); mean()/median() computed per draw, then averaged across the 20 draws into one number each.',
+            '20 draws via sampleIndicesWithoutReplacement(); mean()/median()/count computed per draw, then each averaged across the 20 draws into one number. randomN = mean(sampleNs).',
         },
         {
           name: 'Insufficient pre-UAT history ( * )',
@@ -2680,6 +2686,18 @@ function WorkflowUI({
                           ? 'N/A'
                           : Math.round(v) + ' m';
                       }
+                      // Matched-window n is an exact visit count; the
+                      // 20-sample n is an AVERAGE across the 20 draws (each
+                      // draw can land on a different total visit count), so
+                      // it's rounded and marked with "~" to signal that.
+                      function fmtMN(v, n) {
+                        if (v === null || v === undefined) return 'N/A';
+                        return Math.round(v) + ' m (n=' + n + ')';
+                      }
+                      function fmtMRandomN(v, n) {
+                        if (v === null || v === undefined) return 'N/A';
+                        return Math.round(v) + ' m (n≈' + Math.round(n) + ')';
+                      }
                       return (
                         <tr key={s.username}>
                           <td className="whitespace-nowrap border-r border-gray-200 px-3 py-2 font-medium text-gray-900">
@@ -2695,19 +2713,19 @@ function WorkflowUI({
                             {fmtM(s.uatMean)}
                           </td>
                           <td className="whitespace-nowrap px-3 py-2 text-right text-gray-800">
-                            {fmtM(s.matchedMean)}
+                            {fmtMN(s.matchedMean, s.matchedN)}
                           </td>
                           <td className="whitespace-nowrap border-r border-gray-200 px-3 py-2 text-right text-gray-800">
-                            {fmtM(s.randomMean)}
+                            {fmtMRandomN(s.randomMean, s.randomN)}
                           </td>
                           <td className="whitespace-nowrap px-3 py-2 text-right text-gray-800">
                             {fmtM(s.uatMedian)}
                           </td>
                           <td className="whitespace-nowrap px-3 py-2 text-right text-gray-800">
-                            {fmtM(s.matchedMedian)}
+                            {fmtMN(s.matchedMedian, s.matchedN)}
                           </td>
                           <td className="whitespace-nowrap px-3 py-2 text-right text-gray-800">
-                            {fmtM(s.randomMedian)}
+                            {fmtMRandomN(s.randomMedian, s.randomN)}
                           </td>
                         </tr>
                       );
