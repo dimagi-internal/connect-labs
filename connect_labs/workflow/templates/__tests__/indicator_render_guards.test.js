@@ -607,6 +607,139 @@ describe('the worker review, second promotion', () => {
   });
 });
 
+// ── A finished case is not stale (display.entity.done_property) ─────────────
+// A community that completed its final step has no more meetings by design;
+// its facilitator's old last-visit date is the end of the work, not a lapse.
+
+/** The fixture with a done property declared, and two workers' only cases
+ * last visited long before the as-of date: A01's finished, A02's not. */
+function finishedPayload({ declare = true } = {}) {
+  const p = JSON.parse(JSON.stringify(PAYLOAD));
+  if (declare)
+    p.display.entity = { ...p.display.entity, done_property: 'step7_done' };
+  p.cases.forEach((c) => {
+    c.step7_done = false;
+  });
+  const a01 = p.cases[0]; // flw_a01's only case
+  const a02 = p.cases[1]; // flw_a02's only case
+  a01.last_visit_date = '2026-08-01';
+  a01.step7_done = true;
+  a02.last_visit_date = '2026-08-01';
+  return p;
+}
+
+function oppPropsWith(payload) {
+  const props = oppProps();
+  props.view = { isCompleted: true, state: { snapshot: payload } };
+  return props;
+}
+
+function workerRow(el, name) {
+  return byText(el, 'span', name).closest('tr');
+}
+
+function lastVisitCell(row) {
+  // The trailing pair is Last visit, then Attention.
+  const cells = row.querySelectorAll('td');
+  return cells[cells.length - 2];
+}
+
+describe('a finished case is not stale', () => {
+  test('a worker whose cases are all finished is not red; one with an open case still is', async () => {
+    const el = await mount('indicator_report_render.js', {
+      url: '/labs/workflow/2/run/?opportunity_id=10097&run_id=12',
+      props: oppPropsWith(finishedPayload()),
+      routes: {},
+    });
+    const done = lastVisitCell(workerRow(el, 'Worker A01'));
+    expect(done.className).not.toContain('text-red-700');
+    expect(done.getAttribute('data-finished')).toBe('1');
+    expect(done.textContent).toContain('finished');
+    expect(done.getAttribute('title')).toContain('finished');
+
+    const open = lastVisitCell(workerRow(el, 'Worker A02'));
+    expect(open.className).toContain('text-red-700');
+    expect(open.getAttribute('data-finished')).toBeNull();
+    expect(open.getAttribute('title')).toMatch(/^No visits for \d+ days$/);
+
+    // The legend explains both marks, and the page still passes every guard.
+    expect(el.textContent).toContain('no visit > 14 days');
+    expect(el.textContent).toContain('every community done, no visit due');
+    expect(allGuards(el)).toEqual(NONE);
+  });
+
+  test('an opened worker lists the finished case as finished', async () => {
+    const el = await mount('indicator_report_render.js', {
+      url: '/labs/workflow/2/run/?opportunity_id=10097&run_id=12',
+      props: oppPropsWith(finishedPayload()),
+      routes: {},
+    });
+    await click(workerRow(el, 'Worker A01'));
+    // The case list's row carries the tag (the Last-visit cell is a td).
+    const tags = Array.from(el.querySelectorAll('span[data-finished]'));
+    expect(tags.map((t) => t.textContent)).toEqual(['finished']);
+    expect(tags[0].closest('tr').textContent).toContain('case-0001');
+  });
+
+  test('without a done property, the same old date is red whatever the case says', async () => {
+    const el = await mount('indicator_report_render.js', {
+      url: '/labs/workflow/2/run/?opportunity_id=10097&run_id=12',
+      props: oppPropsWith(finishedPayload({ declare: false })),
+      routes: {},
+    });
+    const cell = lastVisitCell(workerRow(el, 'Worker A01'));
+    expect(cell.className).toContain('text-red-700');
+    expect(el.querySelector('[data-finished]')).toBeNull();
+    expect(el.textContent).not.toContain('no visit due');
+  });
+
+  test('the worker review draws no open gap after a finished case, and still does after an open one', async () => {
+    async function openCase(payload) {
+      const firstCase = payload.cases[WORKER.rows[0]];
+      const el = await mount('indicator_worker_review_render.js', {
+        url:
+          '/labs/workflow/3/run/?program_id=1&flw=' +
+          encodeURIComponent(WORKER.key) +
+          '&source_run=11',
+        props: workerProps(),
+        routes: {
+          '/snapshot/preview/': {
+            snapshot: { state: { snapshot: payload } },
+            source: 'stored',
+          },
+          '/pipeline-rows/': { rows: visitRows(firstCase.entity_id) },
+          '/visit-images/': { visit_images: {} },
+        },
+      });
+      // A finished case's cell reads "<id> finished".
+      const cell = Array.from(el.querySelectorAll('td')).find(
+        (td) => td.textContent.trim().indexOf(firstCase.entity_id) === 0,
+      );
+      await click(cell.closest('tr'));
+      return el;
+    }
+    const done = finishedPayload();
+    done.cases[WORKER.rows[0]].step7_done = true;
+    let el = await openCase(done);
+    expect(el.querySelector('rect[data-gap-open]')).toBeNull();
+    expect(el.textContent).not.toContain('still open (no visit since)');
+    // the gaps BETWEEN its visits are still gaps
+    expect(el.textContent).toContain('2 gaps over 7 days');
+    expect(el.querySelectorAll('[data-finished]').length).toBe(2); // row + heading
+    expect(allGuards(el)).toEqual(NONE);
+    await React.act(async () => {
+      root.unmount();
+    });
+    host.remove();
+    root = null;
+
+    el = await openCase(finishedPayload()); // WORKER's case not finished
+    expect(el.querySelector('rect[data-gap-open]')).toBeTruthy();
+    expect(el.textContent).toContain('3 gaps over 7 days');
+    expect(el.querySelector('[data-finished]')).toBeNull();
+  });
+});
+
 // ── The guards catch what they are for ──────────────────────────────────────
 // Each guard against the defect it exists to catch, so a guard that silently
 // stops matching (a renamed class, a moved attribute) fails here rather than

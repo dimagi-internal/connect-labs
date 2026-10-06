@@ -40,8 +40,16 @@ export interface CaseField {
 
 export interface Display {
   title: string | null;
-  /** `label_field`: the case-index field holding a case's human name (VERSION 8). */
-  entity: Noun & { key?: string | null; label_field?: string | null };
+  /**
+   * `label_field`: the case-index field holding a case's human name (VERSION 8).
+   * `done_property`: the case-index field (a registry bool) that is true once a
+   * case's work is finished, so no visit is due (VERSION 9).
+   */
+  entity: Noun & {
+    key?: string | null;
+    label_field?: string | null;
+    done_property?: string | null;
+  };
   worker: Noun;
   organisation: Noun;
   categories: string[];
@@ -144,6 +152,7 @@ export function displayOf(payload: any): Display {
     entity: Object.assign(noun(raw.entity, 'case', 'cases'), {
       key: (raw.entity && raw.entity.key) || null,
       label_field: (raw.entity && raw.entity.label_field) || null,
+      done_property: (raw.entity && raw.entity.done_property) || null,
     }),
     worker: noun(raw.worker, 'worker', 'workers'),
     organisation: noun(raw.organisation, 'organization', 'organizations'),
@@ -180,6 +189,41 @@ export function caseLabel(
     return String(v).trim();
   const id = String((c && c.entity_id) || '');
   return idLength ? id.slice(0, idLength) : id;
+}
+
+/**
+ * Whether a case's work is FINISHED: its `display.entity.done_property` field is
+ * true (a JSON true, or yes/true/1). A finished case has no visit due, so no
+ * staleness rule applies to it. A display with no done property finishes nothing.
+ */
+export function caseDone(
+  dsp: Pick<Display, 'entity'> | null | undefined,
+  c: any,
+): boolean {
+  const field = dsp && dsp.entity && dsp.entity.done_property;
+  const v = field && c ? c[field] : null;
+  if (v === true) return true;
+  if (v === null || v === undefined || v === false) return false;
+  const s = String(v).trim().toLowerCase();
+  return s === 'yes' || s === 'true' || s === '1';
+}
+
+/**
+ * Whether a group of cases (a worker's, an opportunity's, an organisation's) is
+ * all finished: at least one case, and every one done. A group with any open case
+ * -- or none at all -- is still subject to the staleness rule.
+ */
+export function allCasesDone(
+  dsp: Pick<Display, 'entity'> | null | undefined,
+  cases: any[] | null | undefined,
+): boolean {
+  const list = cases || [];
+  return (
+    list.length > 0 &&
+    list.every(function (c) {
+      return caseDone(dsp, c);
+    })
+  );
 }
 
 /** The labels of the display's visit flags this visit row carries, in declared order. */

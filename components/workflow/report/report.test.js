@@ -17,6 +17,8 @@ describe('the published surface', () => {
       'VERSION',
       'visitFlagsOf',
       'caseLabel',
+      'caseDone',
+      'allCasesDone',
       'nCount',
       'dateLbl',
       'fmtValue',
@@ -501,6 +503,33 @@ describe('the registry display contract (VERSION 3)', () => {
       'abc1',
     );
     expect(R.caseLabel(d, { entity_id: 'abc123' })).toBe('abc123');
+  });
+  test('a case is finished by its done property, and a group only when every case is (VERSION 9)', () => {
+    expect(R.VERSION).toBeGreaterThanOrEqual(9);
+    const none = R.displayOf({ cMeasures: measures });
+    expect(none.entity.done_property).toBeNull();
+    // no done property: nothing is ever finished
+    expect(R.caseDone(none, { step7_done: true })).toBe(false);
+    expect(R.allCasesDone(none, [{ step7_done: true }])).toBe(false);
+    const d = R.displayOf({
+      cMeasures: measures,
+      display: { entity: { name: 'community', done_property: 'step7_done' } },
+    });
+    expect(d.entity.done_property).toBe('step7_done');
+    expect(R.caseDone(d, { step7_done: true })).toBe(true);
+    expect(R.caseDone(d, { step7_done: 'yes' })).toBe(true);
+    expect(R.caseDone(d, { step7_done: 1 })).toBe(true);
+    expect(R.caseDone(d, { step7_done: false })).toBe(false);
+    expect(R.caseDone(d, { step7_done: 'no' })).toBe(false);
+    expect(R.caseDone(d, {})).toBe(false);
+    expect(
+      R.allCasesDone(d, [{ step7_done: true }, { step7_done: true }]),
+    ).toBe(true);
+    expect(
+      R.allCasesDone(d, [{ step7_done: true }, { step7_done: false }]),
+    ).toBe(false);
+    // no cases is not "all finished"
+    expect(R.allCasesDone(d, [])).toBe(false);
   });
   test('displayOf falls back to the catalog when a payload carries no display block', () => {
     const d = R.displayOf({ cMeasures: measures });

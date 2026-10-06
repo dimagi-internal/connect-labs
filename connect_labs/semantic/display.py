@@ -34,7 +34,8 @@ PER REGISTRY (`display:` in the indicators document)::
     display:
       title: Kangaroo Mother Care programme        # report title; default: none
       entity: {name: baby, plural: babies,         # default: the model's entity
-               label_field: entity_name}           # a case's human name; default: its id
+               label_field: entity_name,           # a case's human name; default: its id
+               done_property: discharged}          # a bool property: the case's work is finished
       worker: {name: worker, plural: workers}      # default: worker / workers
       organisation: {name: organisation, plural: organisations}
       categories: [Scale, Case mix, Follow-up]     # order; default: first appearance
@@ -57,6 +58,15 @@ PER REGISTRY (`display:` in the indicators document)::
 e.g. Connect's own `entity_name`) whose value is a case's human label: the case
 table's first column and the worker review's case heading show it, falling back
 to the id when a case has none. The builder adds it to the derived case index.
+
+`entity.done_property` names a Layer-2 property of type `bool` (in the properties
+document) that is true once a case's work is FINISHED -- a community that completed
+its final step, a baby discharged -- so no further visit is due. The builder adds it
+to the case index, and the renders' staleness rules (the red "no visit for over N
+days" Last-visit cell, the worker review's open gap since the last visit) skip a
+finished case, and a worker, opportunity or organisation whose cases are ALL
+finished. Without it a programme whose cases end by design reads as neglected the
+moment its cases end.
 
 `visit_flags` is how an indicator that counts flagged visits (a repeat-count rate,
 a location-review rate) points the reader at WHICH visits: the worker review marks
@@ -259,6 +269,7 @@ def resolve_display(
         else {"name": model.entity_name, "plural": raw_entity.get("plural") or model.entity_plural}
     )
     label_field = raw_entity.get("label_field")
+    done_property = raw_entity.get("done_property")
     return {
         "title": raw.get("title") or None,
         "entity": {
@@ -266,6 +277,11 @@ def resolve_display(
             "key": model.key,
             # Present only when declared, so a registry without one resolves as before.
             **({"label_field": label_field} if isinstance(label_field, str) and _FIELD.match(label_field) else {}),
+            **(
+                {"done_property": done_property}
+                if isinstance(done_property, str) and _FIELD.match(done_property)
+                else {}
+            ),
         },
         "worker": _noun(raw.get("worker"), "worker", "workers"),
         "organisation": _noun(raw.get("organisation"), "organisation", "organisations"),
@@ -284,8 +300,12 @@ def resolve_display(
     }
 
 
-def display_problems(indicators_doc: dict[str, Any] | None) -> list[str]:
-    """Every reason the display block or display meta would mislead a reader."""
+def display_problems(indicators_doc: dict[str, Any] | None, props_doc: dict[str, Any] | None = None) -> list[str]:
+    """Every reason the display block or display meta would mislead a reader.
+
+    `props_doc` (the properties document) is what `entity.done_property` is checked
+    against; without it only the key's shape is checked.
+    """
     problems: list[str] = []
     doc = indicators_doc or {}
     raw = doc.get("display")
@@ -298,8 +318,13 @@ def display_problems(indicators_doc: dict[str, Any] | None) -> list[str]:
             problems.append(f"display: unknown key(s) {unknown}; expected {sorted(_DISPLAY_KEYS)}")
         for noun in ("entity", "worker", "organisation"):
             v = raw.get(noun)
-            # The entity may name only its label field; its nouns then default.
-            name_optional = noun == "entity" and isinstance(v, dict) and "name" not in v and "label_field" in v
+            # The entity may name only its label / done fields; its nouns then default.
+            name_optional = (
+                noun == "entity"
+                and isinstance(v, dict)
+                and "name" not in v
+                and ("label_field" in v or "done_property" in v)
+            )
             if v is not None and not (
                 isinstance(v, dict)
                 and (isinstance(v.get("name"), str) or name_optional)
@@ -311,6 +336,8 @@ def display_problems(indicators_doc: dict[str, Any] | None) -> list[str]:
             lf = ent["label_field"]
             if not isinstance(lf, str) or not _FIELD.match(lf):
                 problems.append("display.entity.label_field: must be a case-index field name, e.g. entity_name")
+        if isinstance(ent, dict) and ent.get("done_property") is not None:
+            problems.extend(done_property_problems(ent["done_property"], props_doc))
         for key in ("title", "targets_note"):
             if raw.get(key) is not None and not isinstance(raw[key], str):
                 problems.append(f"display.{key}: must be a string")
@@ -375,6 +402,25 @@ def display_problems(indicators_doc: dict[str, Any] | None) -> list[str]:
         if _is_num(meta.get("target")) and meta.get("unit") == "%" and not 0 <= meta["target"] <= 100:
             problems.append(f"{ind}: meta.target is a percentage (0-100, like its bands), got {meta['target']!r}")
     return problems
+
+
+def done_property_problems(name: Any, props_doc: dict[str, Any] | None) -> list[str]:
+    """`display.entity.done_property` must name a bool property of the properties document."""
+    key = "display.entity.done_property"
+    if not isinstance(name, str) or not _FIELD.match(name):
+        return [f"{key}: must be the name of a bool property, e.g. step7_done"]
+    if props_doc is None:
+        return []
+    types = {
+        str(p.get("name")): p.get("type")
+        for p in (props_doc or {}).get("properties") or []
+        if isinstance(p, dict) and p.get("name")
+    }
+    if name not in types:
+        return [f"{key}: {name!r} is not a property in the properties document"]
+    if types[name] != "bool":
+        return [f"{key}: {name!r} is a {types[name] or 'untyped'} property; it must be type: bool"]
+    return []
 
 
 def credibility_problems(indicators_doc: dict[str, Any], settings: dict[str, Any] | None) -> list[str]:

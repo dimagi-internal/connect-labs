@@ -48,6 +48,8 @@ import {
   DefinitionModal,
   ReadingChart,
   cap,
+  allCasesDone,
+  caseDone,
   caseLabel,
   displayOf,
   fmtCaseField,
@@ -90,7 +92,7 @@ import {
   SectionTitle,
 } from './Layout';
 
-export const VERSION = 8;
+export const VERSION = 9;
 
 export const LabsReport = {
   VERSION,
@@ -183,6 +185,9 @@ export const LabsReport = {
   visitFlagsOf,
   // a case's human label from the display contract (VERSION 8)
   caseLabel,
+  // whether a case's work is finished, so no visit is due (VERSION 9)
+  caseDone,
+  allCasesDone,
 };
 
 export type LabsReportLibrary = typeof LabsReport;
