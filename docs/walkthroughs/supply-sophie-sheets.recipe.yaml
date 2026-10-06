@@ -35,7 +35,7 @@ scenes:
   - kind: wait_for
     target: testid:supplier-table
   - kind: scroll
-    value: top
+    value: '660'
   - kind: snapshot
   concept_claim: The tender's suppliers read as one sheet -- a row each, one value
     to a column -- so where every supplier stands is read without opening an email.
@@ -151,7 +151,7 @@ scenes:
 - id: whose-move
   actions:
   - kind: wait_for
-    target: css:main
+    target: testid:overview
   - kind: snapshot
   concept_claim: 'The overview shows what the session''s corrections changed: tender
     2 all comparable with its next move on the silent suppliers, and the order''s shipment
