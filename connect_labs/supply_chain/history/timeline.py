@@ -626,6 +626,40 @@ def _fold_corrections(revisions):
     return kept, folded
 
 
+def _fold_reply_days(revisions, suffixes):
+    """Fold the reply day a Received correction moved into the correction's own line.
+
+    Correcting a quote's Received day moves the invitation's reply with it, in
+    the same call (repository._follow_received_on): one email, one day, so one
+    line -- "Quote corrected: received on 30 Sep (was 1 Oct) — reply on 30 Sep
+    (was 1 Oct)" -- not a second line about the invitation.
+    """
+    from connect_labs.supply_chain.models import Outreach, Quote
+
+    corrections = {
+        revision.call_id: revision
+        for revision in revisions
+        if revision.action == "create"
+        and revision.call_id is not None
+        and revision.content_type.model_class() is Quote
+        and getattr(revision.call, "operation", "") == "quote_correct"
+    }
+    kept = []
+    for revision in revisions:
+        correction = corrections.get(revision.call_id) if revision.call_id is not None else None
+        if (
+            correction is not None
+            and revision.action == "update"
+            and revision.content_type.model_class() is Outreach
+            and set(revision.changes) == {"responded_on"}
+        ):
+            old, new = revision.changes["responded_on"]
+            suffixes.setdefault(id(correction), []).append(f"reply on {_day_text(new)} (was {_day_text(old)})")
+            continue
+        kept.append(revision)
+    return kept
+
+
 def _as_correction(entry, revision, superseded_id, lookup):
     """Rewrite a new quote version's create line as the correction it was."""
     from connect_labs.supply_chain.models import Quote
@@ -648,6 +682,7 @@ def _timeline(revisions, until) -> list[Entry]:
 
     lookup = Lookup()
     revisions, suffixes = _fold_lines(_merged(list(revisions)), lookup)
+    revisions = _fold_reply_days(revisions, suffixes)
     revisions, corrections = _fold_corrections(revisions)
     by_model = {}
     for revision in revisions:
@@ -932,6 +967,45 @@ def reminders_for_outreach(outreach_ids, *, program_id, until=None) -> dict:
         if new:
             days.setdefault(int(object_id), set()).add(str(new)[:10])
     return {pk: len(found) for pk, found in days.items()}
+
+
+def last_changed_by(model, object_ids, *, program_id, until=None) -> dict:
+    """{id: {"teller", "on"}} for each record changed since it was recorded: who told us its latest change, and when.
+
+    The teller is the change's own: the sender its evidence came from when the
+    call names one ("Crescent Freight & Clearing"), else who made it, as the
+    timeline names them ("Sophie Okafor"). A record's `source` keeps who FIRST
+    told us; the history keeps every teller between. A record never changed
+    is absent. One query.
+    """
+    ids = sorted({int(pk) for pk in object_ids if pk is not None})
+    if not ids:
+        return {}
+    revisions = (
+        Revision.objects.filter(
+            _type_q(model),
+            action="update",
+            object_id__in=[str(pk) for pk in ids],
+            program_id=program_id,
+            call__isnull=False,
+        )
+        .select_related("call__actor")
+        .order_by("recorded_at", "id")
+    )
+    if until is not None:
+        revisions = revisions.filter(recorded_at__lte=end_of_day(until))
+    lookup = Lookup()
+    out = {}
+    for revision in revisions:
+        call = revision.call
+        teller = (getattr(call, "source_sender", "") or "").strip() or actor_label(call, lookup)
+        when = (
+            timezone.localtime(revision.recorded_at)
+            if timezone.is_aware(revision.recorded_at)
+            else revision.recorded_at
+        )
+        out[int(revision.object_id)] = {"teller": teller, "on": when.date()}
+    return out
 
 
 def answered_by(commitment_ids, *, program_id) -> dict:
