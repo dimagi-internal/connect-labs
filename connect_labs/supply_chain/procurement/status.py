@@ -48,6 +48,48 @@ def _src_of_actor(label: str) -> str:
     return AI if label.endswith("(agent)") or label.startswith("via AI") else PERSON
 
 
+# The stored values behind each quote fact a page marks with its source.
+PRICE_FIELDS = ("as_quoted_amount", "as_quoted_currency", "as_quoted_unit", "quantity_basis", "quantity_basis_unit")
+PACK_FIELDS = ("base_per_pack_stated", "base_unit_grams_stated")
+TERM_FIELDS = ("incoterm",)
+
+
+def quote_sources(quote_ids, *, program_id) -> dict:
+    """{quote id: {attname: (version, source)}}: where each value of a live quote came from.
+
+    Per value, not per version: a correction that types one figure marks that
+    figure as a person's, and the figures it carried over keep the mark of the
+    version that stated them (`timeline.quote_lineages`).
+    """
+    from connect_labs.supply_chain.history.timeline import quote_lineages
+
+    return lineage_sources(quote_lineages(quote_ids, program_id=program_id))
+
+
+def lineage_sources(lineages) -> dict:
+    """`quote_sources` from lineages already read (`timeline.quote_lineages`)."""
+    return {
+        qid: {attname: (version, AI if ai else PERSON) for attname, (version, ai) in lineage.fields.items()}
+        for qid, lineage in lineages.items()
+    }
+
+
+def value_src(sources, quote_id, fields, default=PERSON) -> str:
+    """The source of the latest of `fields` to change on a quote; `default` when none is known."""
+    known = [sources[quote_id][f] for f in fields if f in (sources or {}).get(quote_id, {})]
+    return max(known, key=lambda pair: pair[0])[1] if known else default
+
+
+def pack_text(per_pack, grams, base_unit="") -> str:
+    """ "150 × 92 g", or "150 sachets" when no weight was stated: one wording on every sheet."""
+    if not per_pack:
+        return ""
+    if grams:
+        return f"{per_pack} × {grams} g"
+    noun = unit_noun(base_unit, 2) if base_unit else ""
+    return f"{per_pack} {noun}" if noun else str(per_pack)
+
+
 # ---- comparisons -----------------------------------------------------------
 
 
@@ -197,7 +239,7 @@ def quote_open_facts(tender, row, quote, *, waiver_on_file=True) -> list:
 
 def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=None, reminder_counts=None) -> dict:
     """Everything the status view shows for one tender."""
-    from connect_labs.supply_chain.history.timeline import ai_entered_quotes, duty_terms_set_by
+    from connect_labs.supply_chain.history.timeline import duty_terms_set_by
     from connect_labs.supply_chain.models import Award, Commitment, Contract, Outreach, Quote, Receipt
 
     outreach = list(Outreach.objects.filter(tender=tender).select_related("supplier__org"))
@@ -236,7 +278,7 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
     }
     comparable = sum(len(c.comparable) for c in compared)
     quoted = sum(len(c.comparable) + len(c.blocked) for c in compared)
-    ai_quotes = ai_entered_quotes([q.pk for q in live], program_id=program_id)
+    sources = quote_sources([q.pk for q in live], program_id=program_id)
 
     # One row per supplier asked, then any who quoted unasked (a marketplace bid).
     suppliers, order = {}, []
@@ -284,10 +326,15 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
             row["live_quote"] = quote
             price, _, per = row["quote"].split(" · ")[0].partition(" / ")
             row["price"], row["price_per"] = price, per
-            if quote.base_per_pack_stated:
-                grams = f" × {quote.base_unit_grams_stated} g" if quote.base_unit_grams_stated else ""
-                row["pack"] = f"{quote.base_per_pack_stated}{grams}"
-            row["quote_src"] = AI if quote.pk in ai_quotes else PERSON
+            row["pack"] = pack_text(
+                quote.base_per_pack_stated,
+                quote.base_unit_grams_stated,
+                getattr(compared_row, "base_unit", "") or getattr(quote.commodity, "base_unit", ""),
+            )
+            # Each value's own source: a corrected pack is a person's, the AI-read price beside it stays the AI's.
+            row["quote_src"] = value_src(sources, quote.pk, PRICE_FIELDS)
+            row["pack_src"] = value_src(sources, quote.pk, PACK_FIELDS)
+            row["term_src"] = value_src(sources, quote.pk, TERM_FIELDS)
             # Split as the comparison splits it: the supplier's facts are what is missing from
             # the quote (and what Ask asks for); ours are a count, linking to the comparison.
             ours_g, theirs_g = split_gaps(open_facts.get(quote.pk, []))
@@ -463,7 +510,9 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
         index = 2
     first_ask = min((o.sent_on for o in outreach if o.sent_on), default=None)
     awardee = award.quote.supplier.name if award and award.quote_id else ""
-    collecting_note = f"{len(replied)} of {len(invited)} answered" if invited else ""
+    # The bar says where the tender is -- when it was asked, how long it has left -- and
+    # leaves the counts (answered, comparable, suppliers asked) to the tiles beneath it.
+    collecting_note = ""
     if tender.status == "open" and deadline:
         ahead = (deadline - today).days
         collecting_note += (" · " if collecting_note else "") + (
@@ -472,13 +521,9 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
             else "deadline today" if ahead == 0 else f"deadline in {_plural(ahead, 'day')}"
         )
     notes = [
-        (
-            (f"{_day(first_ask)}, {_plural(len(invited), 'supplier')}" if first_ask else "not yet sent")
-            if tender.status != "draft"
-            else "not yet sent"
-        ),
+        ((_day(first_ask) if first_ask else "not yet sent") if tender.status != "draft" else "not yet sent"),
         collecting_note or "—",
-        f"{comparable} of {quoted} comparable" if quoted else "—",
+        "—",
         (awardee + (" · provisional" if provisional and contract is None else "")) if awardee else "—",
         (contract.reference or f"Order {contract.pk}") if contract is not None else "—",
         f"received {_day(received)}" if received else "—",
@@ -626,9 +671,22 @@ def related_order(tender, today, *, own_org_id=None) -> dict | None:
 
 
 def comparison_grid(
-    tender, comparison: dict, quotes_by_id: dict, *, ai_quotes=(), awarded=(), draft_anchors=(), waiver_on_file=True
+    tender,
+    comparison: dict,
+    quotes_by_id: dict,
+    *,
+    ai_quotes=(),
+    sources=None,
+    awarded=(),
+    draft_anchors=(),
+    waiver_on_file=True,
 ):
-    """{"quotes": [...columns], "rows": [...facts]} from a tender_compare snapshot and the quotes themselves."""
+    """{"quotes": [...columns], "rows": [...facts]} from a tender_compare snapshot and the quotes themselves.
+
+    `sources` ({quote id: {attname: (version, source)}}, from `quote_sources`)
+    marks each value by the version that last changed it; a quote without it
+    falls back to `ai_quotes`, whole quote at a time.
+    """
     from connect_labs.supply_chain.procurement.services.pricing import buyer_imports
     from connect_labs.supply_chain.records import freight_and_duties_for_incoterm
 
@@ -647,6 +705,10 @@ def comparison_grid(
         quote = quotes_by_id.get(row.get("quote_id")) or _quote_from_row(row)
         gaps = [g for g in row.get("gaps") or []]
         src = AI if row["quote_id"] in ai_quotes else PERSON
+
+        def src_of(*fields, _qid=row["quote_id"], _src=src):
+            return value_src(sources, _qid, fields, _src)
+
         base, pack = row.get("base_unit") or "", row.get("pack_unit") or ""
         pack_gap = f"per {unit_noun(pack)}" if pack else "per pack"
         quote_url = reverse("supply_chain:procurement_quote_detail", args=[row["quote_id"]])
@@ -736,19 +798,22 @@ def comparison_grid(
             return {"v": words, "gap": False, "mute": True, "src": ""}
 
         cells["price"].append(
-            fact((row.get("as_quoted") or "").replace(" per ", " / ")) if row.get("as_quoted") else gap("no price")
+            fact((row.get("as_quoted") or "").replace(" per ", " / "), src_of(*PRICE_FIELDS))
+            if row.get("as_quoted")
+            else gap("no price")
         )
         pack_label = next((g for g in gaps if g.endswith(pack_gap)), None)
         if pack_label:
             cells["pack"].append(gap(f"{pack_label}: not stated", label=pack_label))
         elif quote.base_per_pack_stated:
-            grams = (
-                f" × {quote.base_unit_grams_stated} g" if quote.base_unit_grams_stated else f" {unit_noun(base, 2)}"
+            cells["pack"].append(
+                fact(pack_text(quote.base_per_pack_stated, quote.base_unit_grams_stated, base), src_of(*PACK_FIELDS))
             )
-            cells["pack"].append(fact(f"{quote.base_per_pack_stated}{grams}"))
         else:
             cells["pack"].append(blank())
-        cells["term"].append(fact(quote.incoterm.strip()) if (quote.incoterm or "").strip() else gap())
+        cells["term"].append(
+            fact(quote.incoterm.strip(), src_of(*TERM_FIELDS)) if (quote.incoterm or "").strip() else gap()
+        )
         if quote.delivery_mode == "pickup":
             cells["imports"].append(fact("Us (we collect)", CALC))
         elif quote.incoterm or quote.duties_basis in ("included", "excluded"):
@@ -758,7 +823,7 @@ def comparison_grid(
         else:
             cells["imports"].append(gap("not known"))
         freight_basis = quote.freight_basis
-        source = src
+        source = src_of("freight_basis")
         if freight_basis not in ("included", "excluded"):
             freight_basis = freight_and_duties_for_incoterm(quote.incoterm)[0]
             source = CALC
@@ -786,7 +851,11 @@ def comparison_grid(
         elif freight_basis == "included":
             cells["freight"].append(fact("included", source))
         elif quote.freight_amount is not None:
-            cells["freight"].append(fact(f"{quote.as_quoted_currency} {money_digits(quote.freight_amount)} added"))
+            cells["freight"].append(
+                fact(
+                    f"{quote.as_quoted_currency} {money_digits(quote.freight_amount)} added", src_of("freight_amount")
+                )
+            )
         else:
             cells["freight"].append(blank())
         if row.get("clearing") == "estimate":
@@ -797,7 +866,7 @@ def comparison_grid(
             cells["clearing"].append(gap("ours: estimate not recorded", label="clearing estimate", owner=rules.US))
         else:
             cells["clearing"].append(blank("supplier's (it imports)" if quote.delivery_mode != "pickup" else "—"))
-        duty = _duty_cell(tender, quote, gaps, src)
+        duty = _duty_cell(tender, quote, gaps, src_of("duties_basis", "incoterm"))
         if waiver_gap:
             duty["pending"] = document_not_on_file("duty_exemption")
             duty["pending_owner"] = rules.US

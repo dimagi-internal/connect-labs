@@ -87,14 +87,14 @@ def ran():
         yield call
 
 
-def test_a_quote_cell_is_a_correction_with_a_reason_naming_the_field_and_both_values(ran):
+def test_a_quote_cell_is_a_correction_with_a_reason(ran):
     result = cells.apply("access", "quote", 7, "as_quoted_amount", "52.00", was="55")
     name, _, payload = ran.call_args.args
     assert name == "quote_correct"
     assert payload == {
         "quote_id": 7,
         "data": {"as_quoted_amount": "52"},
-        "reason": "Corrected in a table: price 55 → 52",
+        "reason": "Corrected in a table",
     }
     # The correction is a new version: the page marks the NEW quote's cell.
     assert result == {"key": "quote:99:as_quoted_amount"}

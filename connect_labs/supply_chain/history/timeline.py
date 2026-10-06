@@ -717,7 +717,45 @@ def _timeline(revisions, until) -> list[Entry]:
         _mark_holds(built)
     for entry in entries:
         _drop_own_day(entry)
-    return [e for e in entries if e.sentence]
+    return _fold_bookkeeping([e for e in entries if e.sentence])
+
+
+def _day_of(when):
+    if not when:
+        return None
+    return (timezone.localtime(when) if timezone.is_aware(when) else when).date()
+
+
+def _fold_bookkeeping(entries) -> list[Entry]:
+    """Bookkeeping lines that say the same thing on one day read as one line naming each record.
+
+    Six invitations sent on 19 Sep by Sophie were six lines differing only in the
+    supplier ("Outreach · Kanem Foods Ltd · recorded: sent 19 Sep"); they read as
+    one: "Outreach · Kanem Foods Ltd, Sahel Nutrition Industries, ... · recorded:
+    sent 19 Sep". Only neighbours, only kept-books lines with nothing of their own
+    to show (no source, no fix, no hold), and only by the same person.
+    """
+    out = []
+    for entry in entries:
+        prev = out[-1] if out else None
+        if (
+            prev is not None
+            and entry.bookkeeping
+            and prev.bookkeeping
+            and entry.what
+            and entry.what == prev.what
+            and entry.entity == prev.entity
+            and entry.actor == prev.actor
+            and _day_of(entry.when) == _day_of(prev.when)
+            and not (entry.excerpt or prev.excerpt or entry.hold or prev.hold)
+            and entry.identity
+            and entry.identity not in prev.identity.split(", ")
+        ):
+            prev.identity = f"{prev.identity}, {entry.identity}"
+            prev.fields = tuple(dict.fromkeys((*prev.fields, *entry.fields)))
+            continue
+        out.append(entry)
+    return out
 
 
 def _drop_own_day(entry):
@@ -866,6 +904,94 @@ def ai_entered_quotes(quote_ids, *, program_id) -> dict:
     ).select_related("call__actor")
     lookup = Lookup()
     return {int(r.object_id): actor_label(r.call, lookup) for r in creates if is_ai(r.call)}
+
+
+# What a version of a quote is not: its bookkeeping. Every other column is a value
+# someone stated, and a version changed it when it reads differently from the last.
+_VERSION_BOOKKEEPING = HIDDEN_FIELDS | {
+    "version",
+    "superseded_by_id",
+    "correction_reason",
+    "created_at",
+    "updated_at",
+    "voided",
+    "void_reason",
+}
+
+
+def _version_values(quote) -> dict:
+    return {
+        f.attname: getattr(quote, f.attname)
+        for f in type(quote)._meta.concrete_fields
+        if f.attname not in _VERSION_BOOKKEEPING
+    }
+
+
+@dataclass
+class QuoteLineage:
+    """A live quote and the versions behind it, oldest first.
+
+    `fields` is {attname: (version number, entered through an AI)} for the
+    version that last changed each value: a correction that typed one figure
+    owns that figure, and every figure it carried over keeps the source of the
+    version that stated it. `earlier` is one entry per correction, newest
+    first: the version it replaced, what changed and the reason given.
+    """
+
+    fields: dict = field(default_factory=dict)
+    earlier: list = field(default_factory=list)
+
+
+def quote_lineages(quote_ids, *, program_id) -> dict:
+    """{live quote id: QuoteLineage}, read off the version rows and each version's create.
+
+    Two queries: every version of the quotes' tenders, and their create
+    revisions. A version recorded before the history existed has no create and
+    reads as a person's, the rule `ai_entered_quotes` follows.
+    """
+    from connect_labs.supply_chain.models import Quote
+
+    ids = sorted({int(pk) for pk in quote_ids if pk is not None})
+    if not ids:
+        return {}
+    tender_ids = set(Quote._base_manager.filter(pk__in=ids).values_list("tender_id", flat=True))
+    versions = {q.pk: q for q in Quote._base_manager.filter(tender_id__in=tender_ids)}
+    replaced = {q.superseded_by_id: q for q in versions.values() if q.superseded_by_id}
+    creates = Revision.objects.filter(
+        _type_q(Quote), action="create", object_id__in=[str(pk) for pk in versions], program_id=program_id
+    ).select_related("call__actor")
+    by_ai = {int(r.object_id): is_ai(r.call) for r in creates}
+    lookup = Lookup()
+    out = {}
+    for pk in ids:
+        quote = versions.get(pk)
+        if quote is None:
+            continue
+        chain, seen = [quote], {pk}
+        while chain[0].pk in replaced and replaced[chain[0].pk].pk not in seen:
+            chain.insert(0, replaced[chain[0].pk])
+            seen.add(chain[0].pk)
+        values = [_version_values(v) for v in chain]
+        lineage = QuoteLineage()
+        for attname in values[-1]:
+            last = 0
+            for k in range(1, len(chain)):
+                if values[k].get(attname) != values[k - 1].get(attname):
+                    last = k
+            lineage.fields[attname] = (chain[last].version or last + 1, by_ai.get(chain[last].pk, False))
+        for k in range(len(chain) - 1, 0, -1):
+            text, _ = correction_sentence(Quote, values[k - 1], values[k], lookup)
+            lineage.earlier.append(
+                {
+                    "quote_id": chain[k - 1].pk,
+                    "version": chain[k - 1].version or k,
+                    "replaced_on": chain[k].created_at,
+                    "changes": text.partition(": ")[2],
+                    "reason": chain[k].correction_reason or "",
+                }
+            )
+        out[pk] = lineage
+    return out
 
 
 def corrections_for_quotes(quote_ids, *, program_id, until=None) -> dict:
