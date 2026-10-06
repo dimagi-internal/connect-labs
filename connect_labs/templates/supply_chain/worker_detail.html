@@ -87,9 +87,9 @@ outside instead, on the Network page.
     </div>
     <div class="bg-white border border-brand-border-light rounded-lg p-3">
       <dt class="text-gray-600">Days to stock-out</dt>
-      <dd class="text-lg text-gray-900 tabular-nums">{{ worker.days_to_stockout|days_text }}</dd>
+      <dd class="text-lg text-gray-900 tabular-nums" data-testid="stockout-figure">{{ worker|stockout_text }}</dd>
       {% for note in worker|stockout_notes %}<dd class="text-xs text-gray-600" data-testid="stockout-note">{{ note }}</dd>{% endfor %}
-      <dd class="text-xs text-gray-600">{{ worker.months_of_stock|months_text }}{% if worker.min_months_of_stock %} (band {{ worker.min_months_of_stock|floatformat:"-2" }}–{{ worker.max_months_of_stock|floatformat:"-2"|default:"—" }} months){% endif %}</dd>
+      {% if not worker|waits_on_rate %}<dd class="text-xs text-gray-600">{{ worker.months_of_stock|months_text }}{% if worker.min_months_of_stock %} (band {{ worker.min_months_of_stock|floatformat:"-2" }}–{{ worker.max_months_of_stock|floatformat:"-2"|default:"—" }} months){% endif %}</dd>{% endif %}
       {% if worker|rests_on_unsettled %}
         <dd class="text-xs text-amber-900">rate includes the unapproved and estimated dispensing above</dd>
       {% endif %}
