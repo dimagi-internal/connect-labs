@@ -286,7 +286,8 @@ function WorkflowUI({
         });
         return {
           key: f.key || f.opp + FLW_SEP + (f.username || f.flw),
-          name: f.username || f.flw,
+          // The display name the run was built with; the key stays the username.
+          name: f.name || f.username || f.flw,
           opp: f.opp,
           org: f.llo || orgOf(f.opp),
           ind: f.ind || {},
@@ -843,6 +844,15 @@ function WorkflowUI({
         (instance && instance.id),
     );
   }
+  // A case's human label (`display.entity.label_field`), else its id.
+  function caseLabel(c, n) {
+    if (R.caseLabel) return R.caseLabel(D, c, n);
+    return String((c && c.entity_id) || '').slice(0, n);
+  }
+  function caseLabelClass(c) {
+    var lf = ENT.label_field;
+    return lf && c && c[lf] ? 'text-gray-900' : 'font-mono text-gray-600';
+  }
   function CaseList(props) {
     var cs = (props.cases || []).slice().sort(function (a, b) {
       return String(b.last_visit_date || '') < String(a.last_visit_date || '')
@@ -878,8 +888,8 @@ function WorkflowUI({
           {cs.map(function (c, i) {
             return (
               <tr key={i} className="border-t border-gray-100">
-                <td className="px-2 py-1.5 font-mono text-gray-600">
-                  {String(c.entity_id || '').slice(0, 10)}
+                <td className={'px-2 py-1.5 ' + caseLabelClass(c)}>
+                  {caseLabel(c, 10)}
                 </td>
                 {D.case_fields.map(function (f) {
                   return (

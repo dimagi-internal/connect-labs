@@ -10,6 +10,7 @@ dashboard, and none of them is keyed on fixture *content*:
 | FixtureStore (parsed fixture JSON) | `(opp_id, folder_id, endpoint_key)` | `fixture_store.reload` |
 | RawVisitCache | `(opportunity_id, raw slot)` | `SQLCacheManager.delete_all_cache` |
 | Computed visit/FLW/entity rows | `(opportunity_id, config_hash, …)` | same |
+| worker display names (`fetch_flw_names`) | `flw_names_<opp_id>` | Django cache |
 
 `synthetic_register` used to clear only the first, so replacing fixture bytes at
 a stable folder id was invisible to the other three. The reported cost (#1034)
@@ -67,6 +68,17 @@ def invalidate_synthetic_caches(opp_id: int, *, drop_sql_cache: bool = True) -> 
     except Exception:
         logger.exception("invalidate_synthetic_caches: fixture store for opp %s", opp_id)
         outcome["fixture_store"] = False
+
+    try:
+        # The worker-name map (`fetch_flw_names`) is cached for an hour off the
+        # fixture's user_data; a regenerated roster must not report the old names.
+        from django.core.cache import cache
+
+        cache.delete_many([f"flw_names_{opp_id}", f"flw_last_active_{opp_id}"])
+        outcome["worker_names"] = True
+    except Exception:
+        logger.exception("invalidate_synthetic_caches: worker-name cache for opp %s", opp_id)
+        outcome["worker_names"] = False
 
     if drop_sql_cache:
         try:

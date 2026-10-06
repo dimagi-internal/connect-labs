@@ -402,6 +402,7 @@ def build(
     registry_min_denominator: int | None = None,
     display: dict | None = None,
     embed_cases: bool = True,
+    worker_names: dict | None = None,
 ) -> dict:
     """Assemble the saved-run payload from evaluated semantic rows.
 
@@ -419,6 +420,13 @@ def build(
     the programme page reads off the cases -- each worker's and organisation's
     activity dates, each opportunity's benchmark anchor -- is computed here
     instead, so nothing it shows depends on the list being stored.
+
+    `worker_names` is `{opportunity id (str): {username: display name}}`, resolved
+    by the caller once per build (`snapshot_builders.worker_names`). Each worker row
+    carries its `name` -- the display name, or the username when none is known --
+    beside `flw`/`username`, which stay the IDENTITY: selection keys, audit payloads
+    and URLs all use the username, so a name can label a worker but never stand in
+    for one.
     """
     llo_map = deployment.get("llo_map") or {}
     settings = deployment.get("settings") or {}
@@ -475,6 +483,11 @@ def build(
     # The reference is the POSITION, deliberately not an id: a synthetic cohort
     # reuses entity ids across cloned opportunities (751 of 8,173 ids appeared under
     # more than one opp), so an id-keyed index silently drops 838 of 9,011 cases.
+    names_by_opp = {str(k): v or {} for k, v in (worker_names or {}).items()}
+
+    def _name(opp, username):
+        return (names_by_opp.get(str(opp)) or {}).get(str(username)) or username
+
     case_idx_by_flw: dict[tuple, list[int]] = {}
     for i, c in enumerate(cases):
         case_idx_by_flw.setdefault((c.get("opportunity_id"), c.get("username")), []).append(i)
@@ -497,6 +510,8 @@ def build(
                 # two names are load-bearing in different places.
                 "flw": username,
                 "username": username,
+                # What a reader calls the worker. Display only -- never a key.
+                "name": _name(opp, username),
                 "llo": llo_of_row(r, llo_map),
                 "rows": case_idx,
                 "ind": ind,
@@ -581,6 +596,7 @@ def build(
                     "key": f"{r.get('opportunity_id')}{FLW_SEP}{r.get('username') or '(unassigned)'}",
                     "opp": r.get("opportunity_id"),
                     "flw": r.get("username"),
+                    "name": _name(r.get("opportunity_id"), r.get("username")),
                     "llo": llo_of_row(r, llo_map),
                     "ind": grade_all(r, ms, **grade_kw),
                     "n": int(float(r.get("n_cases") or 0)),
