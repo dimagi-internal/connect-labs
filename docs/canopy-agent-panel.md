@@ -236,7 +236,7 @@ back there.)
 are wiped on deploy unless pinned there; see the `aws-env-update` skill):
 
 ```
-CANOPY_BASE_URL=https://labs.connect.dimagi.com/canopy
+CANOPY_BASE_URL=https://canopy.dimagi.com
 CANOPY_APP_NAME=connect-labs
 CANOPY_SIGNING_KEY=<the private PEM>      # Secrets Manager, never a plain env var
 ```
@@ -280,7 +280,7 @@ PATs and ordinary MCP OAuth sign-ins never touch any of this.
 `LABS_PUBLIC_URL`, which every JWT here names as issuer):
 
 ```
-CANOPY_CLIENT_ID=https://labs.connect.dimagi.com/canopy/oauth/client.json
+CANOPY_CLIENT_ID=https://canopy.dimagi.com/oauth/client.json
 ```
 
 Unset, nothing changes: no ID-JAG is issued, `/o/token/` answers the grant with
