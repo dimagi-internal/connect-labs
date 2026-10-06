@@ -837,6 +837,9 @@ def run(program_id: int = PROGRAM_ID, *, mint: bool = False, create_buyer: bool 
     print("purged", reset(program_id))
     outputs = seed_world(program_id, create_buyer=create_buyer)
     outputs["today"] = story_today().isoformat()
+    # The day Sahel's email was sent when the sheets narrative has the AI misdate it
+    # (seed.py --sahel-replies --sahel-forward-date): the day before it was forwarded.
+    outputs["sahel_email_date_iso"] = (story_today() - dt.timedelta(days=1)).isoformat()
     if mint:
         outputs["sophie_session"] = mint_sophie_session()
     return outputs
