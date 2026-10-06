@@ -241,8 +241,8 @@ def owed_moves(commitments, holds=(), *, tender_id=None, contract_id=None, suppl
                 RULE_OWED,
                 f"Provide {_plural(len(items), 'document')} to {asked_by}",
                 detail=detail,
-                # The same control as the owed list's own: each item there is marked provided.
-                cta="Mark provided",
+                # The same control as the owed list's own: each item there is attached.
+                cta="Attach",
                 href=f"{base}#owed",
                 since=min((h.since for h in items if h.since), default=None),
                 contract_id=contract_id,
