@@ -25,6 +25,14 @@ export interface Tile {
   sub?: string;
   /** 0..100: draws a progress bar under the value. */
   progress?: number | null;
+  /** The progress bar's fill (default indigo), e.g. the value's band colour. */
+  progressColour?: string;
+  /** 0..100: a tick on the progress bar where the target sits. */
+  progressTarget?: number | null;
+  /** 'lower' shows a "lower is better" chip beside the label. */
+  direction?: string | null;
+  /** Makes the label a button (e.g. to open the indicator's definition). */
+  onLabelClick?: () => void;
   /** The cell from the previous saved report, for the change line. */
   previous?: Cell | null;
   /** What the change is measured TO, when that is not `entry` (e.g. the newest
@@ -92,8 +100,37 @@ export function HeadlineTiles(props: { tiles: Tile[] }) {
             key={t.id}
             className="bg-white border border-gray-200 rounded-xl px-4 pt-3 pb-3"
           >
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 truncate">
-              {t.label}
+            <div
+              className="flex items-center justify-between text-xs whitespace-nowrap"
+              style={{ minWidth: 0, gap: 4 }}
+            >
+              {tile.onLabelClick ? (
+                <button
+                  type="button"
+                  className="font-semibold uppercase tracking-wide text-gray-500 truncate text-left hover:text-indigo-700 underline decoration-dotted decoration-gray-300 underline-offset-2"
+                  style={{ minWidth: 0 }}
+                  onClick={tile.onLabelClick}
+                >
+                  {t.label}
+                </button>
+              ) : (
+                <span className="font-semibold uppercase tracking-wide text-gray-500 truncate">
+                  {t.label}
+                </span>
+              )}
+              {tile.direction === 'lower' ? (
+                <span
+                  className="rounded bg-gray-100 text-gray-600"
+                  style={{
+                    padding: '0 4px',
+                    fontSize: 11,
+                    lineHeight: '16px',
+                    flexShrink: 0,
+                  }}
+                >
+                  lower is better
+                </span>
+              ) : null}
             </div>
             <div className="mt-1 text-2xl font-bold text-gray-900 tabular-nums">
               {tileValue(t, e, tile.minDenominator)}
@@ -114,11 +151,49 @@ export function HeadlineTiles(props: { tiles: Tile[] }) {
               ) : null}
             </div>
             {tile.progress !== null && tile.progress !== undefined ? (
-              <div className="mt-2 h-1.5 rounded bg-gray-100 overflow-hidden">
+              <div
+                className="mt-2 h-1.5 rounded bg-gray-100"
+                style={{ position: 'relative' }}
+                title={
+                  tile.progressTarget !== null &&
+                  tile.progressTarget !== undefined
+                    ? 'target ' + Number(tile.progressTarget).toFixed(1) + '%'
+                    : undefined
+                }
+              >
                 <div
-                  className="h-full rounded bg-indigo-600"
-                  style={{ width: Number(tile.progress).toFixed(1) + '%' }}
+                  className={
+                    'h-full rounded' +
+                    (tile.progressColour ? '' : ' bg-indigo-600')
+                  }
+                  style={{
+                    width:
+                      Math.max(0, Math.min(100, Number(tile.progress))).toFixed(
+                        1,
+                      ) + '%',
+                    background: tile.progressColour || undefined,
+                  }}
                 />
+                {tile.progressTarget !== null &&
+                tile.progressTarget !== undefined ? (
+                  <div
+                    data-target-tick="1"
+                    style={{
+                      position: 'absolute',
+                      left:
+                        'calc(' +
+                        Math.max(
+                          0,
+                          Math.min(100, Number(tile.progressTarget)),
+                        ) +
+                        '% - 1px)',
+                      top: -3,
+                      width: 2,
+                      height: 12,
+                      background: '#111827',
+                    }}
+                  />
+                ) : null}
               </div>
             ) : null}
             <div className="mt-1 text-xs text-gray-500 whitespace-nowrap truncate">
