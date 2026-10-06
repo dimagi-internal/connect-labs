@@ -100,7 +100,10 @@ function stubLabsReport() {
 
 function load(search = '') {
   const code = transformSync(SRC, {
-    presets: [['@babel/preset-react']],
+    // The classic runtime (React.createElement), as the browser's Babel 7
+    // standalone uses. Babel 8's default, "automatic", injects an import of
+    // react/jsx-runtime, which neither the runner nor this sandbox has.
+    presets: [['@babel/preset-react', { runtime: 'classic' }]],
     babelrc: false,
     configFile: false,
   }).code;
