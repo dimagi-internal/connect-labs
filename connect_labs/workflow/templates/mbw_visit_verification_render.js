@@ -156,11 +156,31 @@ function WorkflowUI({
     });
   });
 
+  // Whether a visit's form has the verification block at all (vs. a
+  // pre-UAT submission from before the block existed on that form). The
+  // single gate this whole dashboard uses to mean "is this a UAT-period
+  // visit" -- extracted as a named function since the UAT Comparison tab
+  // also needs it (to split a FLW's full history into UAT vs. pre-UAT),
+  // not just the displayRows filter below.
+  function hasVerificationData(row) {
+    return (
+      row.visit_location_has_prev_home_gps !== null &&
+      row.visit_location_has_prev_home_gps !== undefined &&
+      row.visit_location_has_prev_home_gps !== ''
+    );
+  }
+
   var enrichedRows = React.useMemo(
     function () {
-      // Grouped by mother_case_id -- visit_number and the prior-pass-rate are
-      // per MOTHER (how many times has this mother been visited, and what was
-      // her prior verification track record), not per FLW.
+      // Grouped by mother_case_id -- visit_number, the prior-pass-rate, and
+      // the revisit distance are all per MOTHER (how many times has this
+      // mother been visited, what was her prior verification track record,
+      // how far was this visit from her previous one), not per FLW. The
+      // chain spans her ENTIRE history (pre-UAT and UAT together, every
+      // visit-type form) -- "her previous visit" means exactly that,
+      // regardless of which app version captured it, so the UAT Comparison
+      // tab's revisit-distance metrics are never computed across a chain
+      // that's artificially cut at the UAT boundary.
       var byMother = {};
       allVisitRows.forEach(function (row) {
         var key = row.mother_case_id || '';
@@ -178,6 +198,7 @@ function WorkflowUI({
 
         var passCount = 0;
         var failCount = 0;
+        var prevPoint = null;
         group.forEach(function (row, idx) {
           var denom = passCount + failCount;
           var priorPassRate =
@@ -185,15 +206,32 @@ function WorkflowUI({
               ? Math.round((passCount / denom) * 100) + '% (' + denom + ')'
               : 'N/A (0)';
 
+          // meta_location (CommCare's own per-submission GPS stamp) rather
+          // than gps_normalized_location, since the latter is part of the
+          // verification block and blank pre-UAT -- see meta_location's
+          // definition comment in the Python template.
+          var point = parseGpsLatLon(row.meta_location);
+          var distanceFromPrevVisitM =
+            point && prevPoint
+              ? haversineMeters(
+                  prevPoint.lat,
+                  prevPoint.lon,
+                  point.lat,
+                  point.lon,
+                )
+              : null;
+
           result.push(
             Object.assign({}, row, {
               visit_number: idx + 1,
               prior_verification_pass_rate: priorPassRate,
+              distance_from_prev_visit_m: distanceFromPrevVisitM,
             }),
           );
 
           if (row.visit_verification_outcome === 'Pass') passCount += 1;
           else if (row.visit_verification_outcome === 'Fail') failCount += 1;
+          if (point) prevPoint = point;
         });
       });
       return result;
@@ -206,11 +244,7 @@ function WorkflowUI({
   var displayRows = React.useMemo(
     function () {
       return enrichedRows.filter(function (row) {
-        var hasVerificationData =
-          row.visit_location_has_prev_home_gps !== null &&
-          row.visit_location_has_prev_home_gps !== undefined &&
-          row.visit_location_has_prev_home_gps !== '';
-        if (!hasVerificationData || !eligibleUsernames[row.username])
+        if (!hasVerificationData(row) || !eligibleUsernames[row.username])
           return false;
         if (
           excludeRegistrationVisits &&
@@ -827,6 +861,29 @@ function WorkflowUI({
     return { lat: lat, lon: lon };
   }
 
+  // Standard great-circle (haversine) distance in meters. Used for
+  // enrichedRows' distance_from_prev_visit_m (UAT Comparison tab) -- same
+  // underlying math as the pipeline engine's own lag_haversine window
+  // function (used elsewhere, e.g. mbw_auditing_v5/v6), reimplemented
+  // client-side here because that operation only chains WITHIN one
+  // cchq_forms pipeline (one visit-type form), and this dashboard's 12
+  // separate per-form pipelines need the chain to cross form-type
+  // boundaries (a mother's "previous visit" can be a different visit type).
+  function haversineMeters(lat1, lon1, lat2, lon2) {
+    var R = 6371000;
+    var toRad = Math.PI / 180;
+    var dLat = (lat2 - lat1) * toRad;
+    var dLon = (lon2 - lon1) * toRad;
+    var a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * toRad) *
+        Math.cos(lat2 * toRad) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
   function buildGpsScatterPoints(rows, distanceKey) {
     var pass = [];
     var fail = [];
@@ -949,6 +1006,154 @@ function WorkflowUI({
       return chains;
     },
     [displayRows, motherRegistrationGps],
+  );
+
+  // --- UAT Comparison tab: per-FLW GPS metrics, UAT vs. pre-UAT -----------
+  // Compares each FLW's revisit-distance behavior during the UAT pilot
+  // (visits with the verification block) against her OWN history before it
+  // -- sample-size-matched rather than naively averaging "two weeks of
+  // UAT" against "however many months of pre-UAT history happen to
+  // exist". Two metrics (the funder's M06/M07):
+  //   - Revisit Dist (m): mean distance_from_prev_visit_m
+  //   - Metres/Visit: median distance_from_prev_visit_m
+  // "Day" = a calendar date (visit_datetime sliced to its first 10 chars)
+  // on which this FLW has >=1 row with a usable distance_from_prev_visit_m
+  // -- an ACTIVE day for this specific metric, not just any visit day (a
+  // mother's very first visit ever always has a null distance -- no
+  // previous point to measure from -- so it never contributes a day here;
+  // this also means the exclude-registration-visits toggle above never
+  // needs consulting in this computation, since a visit excluded there is
+  // always exactly such a first visit).
+  //
+  // Built from enrichedRows (not displayRows), which still respects the
+  // domain filter and FLW eligibility (same population as every other
+  // tab) but NOT the verification-block-present gate -- that gate is
+  // exactly the UAT/pre-UAT split being compared, so it can't be filtered
+  // away before this runs.
+  var RANDOM_SAMPLE_COUNT = 20;
+
+  function mean(values) {
+    if (values.length === 0) return null;
+    var sum = 0;
+    for (var i = 0; i < values.length; i += 1) sum += values[i];
+    return sum / values.length;
+  }
+
+  function median(values) {
+    if (values.length === 0) return null;
+    var sorted = values.slice().sort(function (a, b) {
+      return a - b;
+    });
+    var mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0
+      ? (sorted[mid - 1] + sorted[mid]) / 2
+      : sorted[mid];
+  }
+
+  // `count` distinct indices drawn without replacement from [0, n) --
+  // partial Fisher-Yates shuffle.
+  function sampleIndicesWithoutReplacement(n, count) {
+    var pool = [];
+    for (var i = 0; i < n; i += 1) pool.push(i);
+    for (var i = pool.length - 1; i > 0; i -= 1) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = pool[i];
+      pool[i] = pool[j];
+      pool[j] = tmp;
+    }
+    return pool.slice(0, count);
+  }
+
+  var uatComparisonStats = React.useMemo(
+    function () {
+      var byFlw = {};
+      enrichedRows.forEach(function (row) {
+        if (!eligibleUsernames[row.username]) return;
+        if (row.distance_from_prev_visit_m === null) return;
+        var day = (row.visit_datetime || '').slice(0, 10);
+        if (!day) return;
+        if (!byFlw[row.username]) byFlw[row.username] = { uat: {}, preUat: {} };
+        var bucket = hasVerificationData(row)
+          ? byFlw[row.username].uat
+          : byFlw[row.username].preUat;
+        if (!bucket[day]) bucket[day] = [];
+        bucket[day].push(row.distance_from_prev_visit_m);
+      });
+
+      return Object.keys(byFlw)
+        .sort()
+        .map(function (username) {
+          var uatDays = byFlw[username].uat;
+          var preUatDays = byFlw[username].preUat;
+          var uatDayKeys = Object.keys(uatDays).sort();
+          var preUatDayKeys = Object.keys(preUatDays).sort();
+          var dUat = uatDayKeys.length;
+
+          var uatValues = [];
+          uatDayKeys.forEach(function (d) {
+            uatValues = uatValues.concat(uatDays[d]);
+          });
+
+          var insufficientHistory = preUatDayKeys.length < dUat;
+
+          // Matched window: the dUat pre-UAT active days chronologically
+          // closest to (immediately before) this FLW's UAT start -- the
+          // LAST dUat entries of the ascending-sorted day list.
+          var matchedDayKeys = insufficientHistory
+            ? preUatDayKeys
+            : preUatDayKeys.slice(preUatDayKeys.length - dUat);
+          var matchedValues = [];
+          matchedDayKeys.forEach(function (d) {
+            matchedValues = matchedValues.concat(preUatDays[d]);
+          });
+
+          // Random samples: 20 draws of dUat distinct pre-UAT active days
+          // (without replacement), pooling every visit on those days per
+          // draw (visit-weighted, not day-weighted), then averaging the 20
+          // draws' own mean/median into one number each.
+          var randomMeanAvg = null;
+          var randomMedianAvg = null;
+          if (insufficientHistory) {
+            randomMeanAvg = mean(matchedValues);
+            randomMedianAvg = median(matchedValues);
+          } else if (dUat > 0) {
+            var sampleMeans = [];
+            var sampleMedians = [];
+            for (var s = 0; s < RANDOM_SAMPLE_COUNT; s += 1) {
+              var idxs = sampleIndicesWithoutReplacement(
+                preUatDayKeys.length,
+                dUat,
+              );
+              var sampleValues = [];
+              idxs.forEach(function (idx) {
+                sampleValues = sampleValues.concat(
+                  preUatDays[preUatDayKeys[idx]],
+                );
+              });
+              sampleMeans.push(mean(sampleValues));
+              sampleMedians.push(median(sampleValues));
+            }
+            randomMeanAvg = mean(sampleMeans);
+            randomMedianAvg = mean(sampleMedians);
+          }
+
+          return {
+            username: username,
+            uatDays: dUat,
+            preUatDays: preUatDayKeys.length,
+            insufficientHistory: insufficientHistory,
+            uatMean: mean(uatValues),
+            uatMedian: median(uatValues),
+            uatN: uatValues.length,
+            matchedMean: mean(matchedValues),
+            matchedMedian: median(matchedValues),
+            matchedN: matchedValues.length,
+            randomMean: randomMeanAvg,
+            randomMedian: randomMedianAvg,
+          };
+        });
+    },
+    [enrichedRows, eligibleUsernames],
   );
 
   // --- Mother question fail rate (Failed Verification Analysis tab) ------
@@ -1378,6 +1583,47 @@ function WorkflowUI({
         },
       ],
     },
+    {
+      title: 'UAT Comparison Tab',
+      body: "Per FLW, compares two GPS metrics during the UAT pilot against her own history before it. Built from enrichedRows (domain filter + FLW eligibility, same population as every other tab) rather than displayRows, because displayRows already drops every pre-UAT visit via the verification-block-present gate -- exactly the split this tab compares across. The exclude-registration-visits toggle is never consulted here: a mother's very first visit always has no previous point to measure a distance from (distance_from_prev_visit_m is null), so it never contributes a data point regardless of that toggle.",
+      items: [
+        {
+          name: 'distance_from_prev_visit_m',
+          def: "The haversine (great-circle) distance, in meters, between this visit's GPS point and the SAME mother's immediately preceding visit's GPS point -- across her ENTIRE history and every visit-type form, not reset at the UAT boundary or at a form-type change (her 1 Week Visit's \"previous visit\" can be her ANC Visit). Null for a mother's first-ever visit (no previous point exists).",
+          field:
+            "Computed client-side in the same per-mother group-and-sort pass as visit_number/prior_verification_pass_rate (enrichedRows), using meta_location (form.meta.location, CommCare's own standard per-submission GPS stamp -- NOT gps_normalized_location, which is part of the verification block and blank on pre-UAT submissions, so it can't bridge the two periods). Same raw geopoint string format, parsed via the existing parseGpsLatLon. haversineMeters() reimplements the pipeline engine's own lag_haversine window-function math client-side, because that operation only chains WITHIN one cchq_forms pipeline (one visit-type form) and this template reads 12 separate per-form pipelines -- a mother's chain needs to cross form-type boundaries.",
+        },
+        {
+          name: 'UAT vs. pre-UAT split',
+          def: 'Every row with a non-null distance is bucketed by whether that VISIT (not the previous one) has the verification block -- the same hasVerificationData() gate used to build displayRows on every other tab.',
+          field:
+            'hasVerificationData(row) -- visit_location_has_prev_home_gps non-null/non-blank.',
+        },
+        {
+          name: 'Active day',
+          def: 'A calendar date (visit_datetime, first 10 characters) on which this FLW has at least one row with a non-null distance_from_prev_visit_m -- scoped to this metric specifically, not "any visit that day". "UAT active days" in the table is this FLW\'s count of such days within the UAT period; the two pre-UAT columns are sized to match it.',
+          field:
+            'Grouping key for both the matched-window and random-sample baselines below; n= next to each UAT figure is the raw visit count behind it (days can have more than one qualifying visit).',
+        },
+        {
+          name: 'Pre-UAT (prior window)',
+          def: "The FLW's pre-UAT active days chronologically closest to (immediately before) her own UAT start -- the same COUNT of days as her UAT active-day count, pooling every visit on those days. Controls for seasonal/temporal drift that a random sample drawn from anywhere in her history would not (caseload changes, tenure, time of year).",
+          field:
+            "Last N entries of this FLW's ascending-sorted pre-UAT active-day list, where N = her UAT active-day count.",
+        },
+        {
+          name: 'Pre-UAT (20-sample avg)',
+          def: "20 random samples of the FLW's pre-UAT active days (without replacement), each sample the same size as her UAT active-day count, pooling every visit on the sampled days per draw (visit-weighted -- a day with more visits contributes more to that draw, same as the UAT/matched-window columns). The mean column averages the 20 draws' own means; the median column averages the 20 draws' own medians. This corrects for an imbalanced sample size, NOT for temporal drift -- see Pre-UAT (prior window) for that.",
+          field:
+            '20 draws via sampleIndicesWithoutReplacement(); mean()/median() computed per draw, then averaged across the 20 draws into one number each.',
+        },
+        {
+          name: 'Insufficient pre-UAT history ( * )',
+          def: "When an FLW's total pre-UAT active-day count is SMALLER than her UAT active-day count, a same-size sample isn't possible. Both pre-UAT columns fall back to all of her available pre-UAT data instead (the matched-window and random-sample columns become identical for that row), flagged with an asterisk next to her name and a footnote below the table.",
+          field: 'insufficientHistory flag -- preUatDays.length < uatDays.',
+        },
+      ],
+    },
   ];
 
   // --- Tabs ----------------------------------------------------------------
@@ -1386,6 +1632,7 @@ function WorkflowUI({
     { key: 'table', label: 'Per FLW Verification View' },
     { key: 'failed_analysis', label: 'Failed Verification Analysis' },
     { key: 'gps_map', label: 'GPS Map' },
+    { key: 'uat_comparison', label: 'UAT Comparison' },
     { key: 'definitions', label: 'Definitions' },
   ];
   var _tab = React.useState('summary');
@@ -2309,6 +2556,142 @@ function WorkflowUI({
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
               <p className="text-sm text-gray-500">
                 No GPS points to plot in the current filter.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'uat_comparison' && (
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-base font-semibold text-gray-900">
+              UAT Comparison
+            </h3>
+            <p className="text-xs text-gray-500">
+              Per FLW, two GPS metrics during the UAT pilot (visits with the
+              verification block) against her own history before it --
+              sample-size-matched rather than naively comparing a short UAT
+              window to however many months of pre-UAT history happen to exist.
+              "Pre-UAT (prior window)" is the same number of active days
+              immediately before her UAT start; "Pre-UAT (20-sample avg)" draws
+              20 random same-size samples of her pre-UAT active days and
+              averages their metric. Respects the domain filter and FLW
+              eligibility above, same population as every other tab -- NOT the
+              exclude-registration-visits toggle, which is moot here (a mother's
+              very first visit never has a previous point to measure a distance
+              from, so it never contributes to this table either way).
+            </p>
+          </div>
+
+          {uatComparisonStats.length > 0 ? (
+            <div className="space-y-2">
+              <div className="overflow-x-auto rounded border border-gray-200">
+                <table className="min-w-full divide-y divide-gray-200 text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th
+                        rowSpan={2}
+                        className="whitespace-nowrap border-r border-gray-200 px-3 py-2 text-left font-medium text-gray-700"
+                      >
+                        FLW
+                      </th>
+                      <th
+                        rowSpan={2}
+                        className="whitespace-nowrap border-r border-gray-200 px-3 py-2 text-right font-medium text-gray-700"
+                      >
+                        UAT active days
+                      </th>
+                      <th
+                        colSpan={3}
+                        className="whitespace-nowrap border-r border-gray-200 px-3 py-2 text-center font-medium text-gray-700"
+                      >
+                        Revisit Dist (m) -- mean
+                      </th>
+                      <th
+                        colSpan={3}
+                        className="whitespace-nowrap px-3 py-2 text-center font-medium text-gray-700"
+                      >
+                        Metres/Visit -- median
+                      </th>
+                    </tr>
+                    <tr>
+                      <th className="whitespace-nowrap px-3 py-1 text-right font-medium text-gray-600">
+                        UAT
+                      </th>
+                      <th className="whitespace-nowrap px-3 py-1 text-right font-medium text-gray-600">
+                        Pre-UAT (prior window)
+                      </th>
+                      <th className="whitespace-nowrap border-r border-gray-200 px-3 py-1 text-right font-medium text-gray-600">
+                        Pre-UAT (20-sample avg)
+                      </th>
+                      <th className="whitespace-nowrap px-3 py-1 text-right font-medium text-gray-600">
+                        UAT
+                      </th>
+                      <th className="whitespace-nowrap px-3 py-1 text-right font-medium text-gray-600">
+                        Pre-UAT (prior window)
+                      </th>
+                      <th className="whitespace-nowrap px-3 py-1 text-right font-medium text-gray-600">
+                        Pre-UAT (20-sample avg)
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white">
+                    {uatComparisonStats.map(function (s) {
+                      function fmtM(v) {
+                        return v === null || v === undefined
+                          ? 'N/A'
+                          : Math.round(v) + ' m';
+                      }
+                      return (
+                        <tr key={s.username}>
+                          <td className="whitespace-nowrap border-r border-gray-200 px-3 py-2 font-medium text-gray-900">
+                            {s.username}
+                            {s.insufficientHistory && (
+                              <span className="ml-1 text-amber-600">*</span>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap border-r border-gray-200 px-3 py-2 text-right text-gray-700">
+                            {s.uatDays} (n={s.uatN})
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right text-gray-800">
+                            {fmtM(s.uatMean)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right text-gray-800">
+                            {fmtM(s.matchedMean)}
+                          </td>
+                          <td className="whitespace-nowrap border-r border-gray-200 px-3 py-2 text-right text-gray-800">
+                            {fmtM(s.randomMean)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right text-gray-800">
+                            {fmtM(s.uatMedian)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right text-gray-800">
+                            {fmtM(s.matchedMedian)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right text-gray-800">
+                            {fmtM(s.randomMedian)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {uatComparisonStats.some(function (s) {
+                return s.insufficientHistory;
+              }) && (
+                <p className="text-xs text-amber-600">
+                  * Fewer pre-UAT active days than UAT active days -- both
+                  pre-UAT columns show all available pre-UAT data for this FLW
+                  instead of a size-matched sample.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+              <p className="text-sm text-gray-500">
+                No FLWs with revisit-distance data in the current filter.
               </p>
             </div>
           )}
