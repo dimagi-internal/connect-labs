@@ -761,7 +761,7 @@ class TestPages:
 
         # Each quote's price carries its source: one typed by a person, one recorded through the AI.
         heads = re.findall(r'data-quote-id="(\d+)" data-testid="grid-quote"', body)
-        price = re.search(r'<tr data-fact="price".*?</tr>', body, re.S).group(0)
+        price = "".join(re.findall(r'<td [^>]*data-fact="price"[^>]*>.*?</td>', body, re.S))
         sources = re.findall(r'data-src="(\w+)"', price)
         assert dict(zip(map(int, heads), sources)) == {typed["id"]: "person", by_ai["id"]: "ai"}
 
@@ -774,7 +774,7 @@ class TestPages:
         import re
 
         assert f'data-quote-id="{corrected["id"]}"' in body
-        price = re.search(r'<tr data-fact="price".*?</tr>', body, re.S).group(0)
+        price = "".join(re.findall(r'<td [^>]*data-fact="price"[^>]*>.*?</td>', body, re.S))
         assert re.findall(r'data-src="(\w+)"', price) == ["ai"]
 
     def test_the_order_page_as_of_leaves_out_the_later_change(self, client_in_program, order):
