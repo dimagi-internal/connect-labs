@@ -74,5 +74,5 @@ def test_a_restricted_tender_says_so_once_in_its_summary(da, world, client_in_pr
     Tender.objects.filter(pk=world["tender"]["id"]).update(visibility="private")
     body = _tender_page(client_in_program, world["tender"]["id"])
     summary = re.search(r'data-testid="tender-summary".*?</div>', body, re.S).group(0)
-    assert "restricted to" in summary
+    assert "Restricted to" in summary
     assert "only the suppliers below" not in body

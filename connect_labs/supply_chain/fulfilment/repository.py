@@ -20,7 +20,7 @@ one existing at all: a claimed duty relief, and a batch's conformity.
 import base64
 import hashlib
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
@@ -77,6 +77,18 @@ def _safe_external_url(url: str) -> str:
         "A document is rendered as a link, so anything else is executable rather "
         "than a location."
     )
+
+
+def _as_date(value):
+    """A date given as a date or an ISO string, or None."""
+    if value in (None, ""):
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value))
+    except ValueError as error:
+        raise ValueError(f"{value!r} is not a date (YYYY-MM-DD)") from error
 
 
 def _unchanged_provenance(found, data, noun) -> dict:
@@ -534,8 +546,16 @@ class FulfilmentRepositoryMixin:
                 + ". Attach it to the one it is evidence FOR, and reference that."
             )
 
+        valid_from, valid_until = (_as_date(data.get(k)) for k in ("valid_from", "valid_until"))
+        if valid_from and valid_until and valid_until < valid_from:
+            raise ValueError(
+                f"valid_until ({valid_until.isoformat()}) is before valid_from ({valid_from.isoformat()}): "
+                "a document cannot hold for a period that ends before it starts"
+            )
+
         fields = _columns(Document, data)
         fields.pop("storage_key", None)
+        fields.update(valid_from=valid_from, valid_until=valid_until)
 
         if content_base64:
             try:

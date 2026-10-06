@@ -342,7 +342,9 @@ class TenderDetailView(_Base):
         for i, d in enumerate((context["drafts"] or {}).get("drafts") or []):
             d["rows"] = _message_rows(d.get("text") or "")
             if d["kind"] == "reminder":
-                d["facts"] = _reminder_facts(by_outreach.get(d.get("outreach_id")), interval_days, as_of)
+                d["facts"] = _reminder_facts(by_outreach.get(d.get("outreach_id")), interval_days, as_of) or d.get(
+                    "facts"
+                )
             if (
                 d.get("supplier_id") is not None
                 and d["kind"] not in ("reply", "clarification")
@@ -1970,17 +1972,28 @@ class QuoteDocumentAttachView(OperationFormView):
 
 
 class TenderDocumentAttachView(OperationFormView):
-    """A document filed with the tender itself -- above all the duty waiver its quotes are costed on."""
+    """A document filed with the tender itself rather than one quote.
+
+    Not the duty exemption: that is the program's, attached once
+    (fulfilment.views.ProgramDocumentAttachView), so the orders that rest on it
+    read the same paper. A link here asking for one goes there.
+    """
 
     operation = "document_attach"
     form_class = DocumentForm
     title = "Attach a document to this tender"
     intro = (
-        "A document that belongs to the tender rather than to one quote -- the duty waiver every "
-        "quote is costed on, for one. Upload the file or link to where it lives."
+        "A document that belongs to the tender rather than to one quote -- its specification, "
+        "a notice sent to every supplier. Upload the file or link to where it lives."
     )
     submit_label = "Attach"
     footnote = "Over 12 MB, store it elsewhere and give a link."
+
+    def get(self, request, *args, **kwargs):
+        if request.GET.get("kind") == "duty_exemption":
+            back = reverse("supply_chain:procurement_tender_detail", args=[kwargs["tender_id"]])
+            return redirect(f"{reverse('supply_chain:program_document_attach')}?kind=duty_exemption&next={back}")
+        return super().get(request, *args, **kwargs)
 
     def tender(self):
         from connect_labs.supply_chain.models import Tender
@@ -2006,7 +2019,7 @@ class TenderDocumentAttachView(OperationFormView):
 
     def get_initial(self):
         initial = super().get_initial()
-        initial["kind"] = self.request.GET.get("kind") or "duty_exemption"
+        initial["kind"] = self.request.GET.get("kind") or "other"
         return initial
 
     def fixed(self, **kwargs):
