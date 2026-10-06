@@ -110,6 +110,24 @@ function WorkflowUI({
     [registrationRows],
   );
 
+  // Registration timestamp per mother (GPS Map tab tooltip) --
+  // registration_datetime is the mother case's own date_opened (a built-in
+  // CommCare Case API v2 attribute, not a custom property), shown next to
+  // the registration GPS point the same way a visit's own datetime is shown
+  // next to it.
+  var motherRegistrationDatetime = React.useMemo(
+    function () {
+      var map = {};
+      registrationRows.forEach(function (row) {
+        if (row.registration_datetime && row.entity_id) {
+          map[row.entity_id] = row.registration_datetime;
+        }
+      });
+      return map;
+    },
+    [registrationRows],
+  );
+
   var _excludeRegistrationVisits = React.useState(true);
   var excludeRegistrationVisits = _excludeRegistrationVisits[0];
   var setExcludeRegistrationVisits = _excludeRegistrationVisits[1];
@@ -482,6 +500,16 @@ function WorkflowUI({
   var failedFlwDropdownOpen = _failedFlwDropdownOpen[0];
   var setFailedFlwDropdownOpen = _failedFlwDropdownOpen[1];
 
+  var _gpsMapFlwFilter = React.useState([]);
+  var gpsMapFlwFilter = _gpsMapFlwFilter[0];
+  var setGpsMapFlwFilter = _gpsMapFlwFilter[1];
+  var _gpsMapFlwSearch = React.useState('');
+  var gpsMapFlwSearch = _gpsMapFlwSearch[0];
+  var setGpsMapFlwSearch = _gpsMapFlwSearch[1];
+  var _gpsMapFlwDropdownOpen = React.useState(false);
+  var gpsMapFlwDropdownOpen = _gpsMapFlwDropdownOpen[0];
+  var setGpsMapFlwDropdownOpen = _gpsMapFlwDropdownOpen[1];
+
   var allFlwUsernames = React.useMemo(
     function () {
       var set = {};
@@ -512,6 +540,9 @@ function WorkflowUI({
   }
   function toggleFailedFlwFilter(username) {
     toggleUsernameInFilter(setFailedFlwFilter, username);
+  }
+  function toggleGpsMapFlwFilter(username) {
+    toggleUsernameInFilter(setGpsMapFlwFilter, username);
   }
 
   var filteredTableRows = React.useMemo(
@@ -1005,12 +1036,30 @@ function WorkflowUI({
           flwUsername: flwUsername,
           color: flwMapColor(flwUsername),
           registration: regPt,
+          registrationDatetime:
+            motherRegistrationDatetime[motherCaseId] || null,
           visits: visits,
         });
       });
       return chains;
     },
-    [displayRows, motherRegistrationGps],
+    [displayRows, motherRegistrationGps, motherRegistrationDatetime],
+  );
+
+  // GPS Map tab's own FLW filter -- same independent-per-tab pattern as
+  // Summary/Table/Failed Analysis above. Applied to the already-built
+  // chains (not the underlying rows) since a chain already carries exactly
+  // one FLW identity (flwUsername); narrowing post-chain keeps a mother's
+  // registration point and all her visits together as one unit rather than
+  // needing to re-derive the chain from a pre-filtered row set.
+  var filteredMotherGpsChains = React.useMemo(
+    function () {
+      if (gpsMapFlwFilter.length === 0) return motherGpsChains;
+      return motherGpsChains.filter(function (chain) {
+        return gpsMapFlwFilter.indexOf(chain.flwUsername) !== -1;
+      });
+    },
+    [motherGpsChains, gpsMapFlwFilter],
   );
 
   // --- UAT Comparison tab: per-FLW GPS metrics, UAT vs. pre-UAT -----------
@@ -1750,16 +1799,22 @@ function WorkflowUI({
       body: 'Plots one "chain" per mother on a Mapbox GL map (window.ConnectMap.createMap, the same properly-licensed basemap pipeline the rest of this app uses -- NOT raw Leaflet + OpenStreetMap tiles, which this tab used at first until OSM\'s volunteer-run tile servers started blocking the traffic): a circle at her registration GPS point, fanned out with a straight line to a square at each of her visit GPS points. Built from the SAME displayRows every other tab uses (domain + eligibility + verification-block-present + exclude-registration-visits), so a visit excluded there is also absent here -- a mother whose only visit was excluded as "conducted at registration" shows just her registration circle, no squares, no lines.',
       items: [
         {
-          name: 'Registration point (circle)',
-          def: 'The GPS location captured on the Register Mother form itself, at registration time.',
+          name: 'FLW filter',
+          def: "Multi-select with search, same control as the Per FLW Verification View / Verification Summary / Failed Verification Analysis tabs -- narrows the map (and its legend) to just the selected FLWs' mother chains. Independent of those other tabs' own FLW selections; picking FLWs here never affects them or vice versa.",
           field:
-            'motherRegistrationGps[mother_case_id] -- pipelines mother_registration (test domain) and/or mother_registration_prod (production domain), field home_gps (case.properties.home_gps, same case property the GPS-outcome distance calculations compare against). Raw geopoint string, parsed client-side via parseGpsLatLon (indices 0/1 of "lat lon altitude accuracy" -- same string format as gps_normalized_location, parsed by parseGpsAccuracyMeters for index 3 elsewhere on this dashboard). A mother with no home_gps on file (never captured, or registered before the GPS block existed) plots no circle.',
+            'gpsMapFlwFilter state, applied to motherGpsChains to produce filteredMotherGpsChains -- a chain is kept when the filter is empty or includes chain.flwUsername.',
+        },
+        {
+          name: 'Registration point (circle)',
+          def: 'The GPS location captured on the Register Mother form itself, at registration time. Hovering shows the mother ID, the registration datetime, and the FLW.',
+          field:
+            'motherRegistrationGps[mother_case_id] -- pipelines mother_registration (test domain) and/or mother_registration_prod (production domain), field home_gps (case.properties.home_gps, same case property the GPS-outcome distance calculations compare against). Raw geopoint string, parsed client-side via parseGpsLatLon (indices 0/1 of "lat lon altitude accuracy" -- same string format as gps_normalized_location, parsed by parseGpsAccuracyMeters for index 3 elsewhere on this dashboard). The tooltip\'s datetime comes from the same pipelines\' registration_datetime field (case.date_opened -- a built-in CommCare Case API v2 attribute, not a custom property). A mother with no home_gps on file (never captured, or registered before the GPS block existed) plots no circle.',
         },
         {
           name: 'Visit points (squares)',
-          def: "Every visit still in the current filter, for this mother. A visit with no parseable GPS plots nothing (not a point at the origin) -- quietly dropped, not shown as an error, since that's governed by the same verification-block-present gate as the rest of the dashboard.",
+          def: "Every visit still in the current filter, for this mother. Hovering shows the visit type/number, its datetime, the mother ID, and the FLW. A visit with no parseable GPS plots nothing (not a point at the origin) -- quietly dropped, not shown as an error, since that's governed by the same verification-block-present gate as the rest of the dashboard.",
           field:
-            'gps_normalized_location per row (same field the GPS Verification scatter plot on the Failed Verification Analysis tab reads for its X-axis companion fields), parsed via parseGpsLatLon.',
+            'gps_normalized_location per row (same field the GPS Verification scatter plot on the Failed Verification Analysis tab reads for its X-axis companion fields), parsed via parseGpsLatLon. Mother ID in the tooltip is chain.motherCaseId (the same chain the point belongs to), not a per-visit field.',
         },
         {
           name: 'Lines',
@@ -1771,7 +1826,7 @@ function WorkflowUI({
           name: 'FLW color',
           def: 'Every point and line for a mother\'s whole chain (registration circle, all her visit squares, all her lines) is colored by one FLW -- the FLW who conducted her EARLIEST visit still in the current filter (not necessarily her true first-ever visit, if an earlier one was filtered out). A mother with no visits in the filter (registration circle only) has no FLW to color by and shows as "unknown" in the legend. The color itself is a deterministic hash of the username into a fixed 10-color palette (d3\'s category10), NOT an index into the currently-visible FLW list -- so a given FLW keeps the same color across every domain/filter combination, rather than reassigning colors whenever the visible FLW set changes.',
           field:
-            'flwMapColor(username) -- FNV-ish char-code hash mod 10, indexing FLW_MAP_COLORS. Legend above the map lists every distinct FLW color actually in view, sorted alphabetically.',
+            'flwMapColor(username) -- FNV-ish char-code hash mod 10, indexing FLW_MAP_COLORS. Legend above the map lists every distinct FLW color actually in view (after the FLW filter above), sorted alphabetically.',
         },
       ],
     },
@@ -2198,7 +2253,7 @@ function WorkflowUI({
         var allPoints = [];
         var lineFeatures = [];
 
-        motherGpsChains.forEach(function (chain) {
+        filteredMotherGpsChains.forEach(function (chain) {
           var regLngLat = chain.registration
             ? [chain.registration.lon, chain.registration.lat]
             : null;
@@ -2216,6 +2271,8 @@ function WorkflowUI({
             regEl.title =
               'Registration -- mother ' +
               chain.motherCaseId +
+              '\n' +
+              formatVisitDateTime(chain.registrationDatetime) +
               '\nFLW: ' +
               (chain.flwUsername || 'unknown');
             markers.push(
@@ -2254,6 +2311,8 @@ function WorkflowUI({
               (visit.visitNumber || '?') +
               '\n' +
               formatVisitDateTime(visit.visitDatetime) +
+              '\nMother: ' +
+              chain.motherCaseId +
               '\nFLW: ' +
               (visit.username || 'unknown');
             markers.push(
@@ -2299,7 +2358,7 @@ function WorkflowUI({
         map.remove();
       };
     },
-    [activeTab, mapLibReady, motherGpsChains],
+    [activeTab, mapLibReady, filteredMotherGpsChains],
   );
 
   var summaryCards = (
@@ -2738,7 +2797,26 @@ function WorkflowUI({
             </p>
           </div>
 
-          {motherGpsChains.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
+            <span className="text-sm font-medium text-gray-700">FLW:</span>
+            {renderFlwFilterDropdown(
+              gpsMapFlwFilter,
+              setGpsMapFlwFilter,
+              toggleGpsMapFlwFilter,
+              gpsMapFlwSearch,
+              setGpsMapFlwSearch,
+              gpsMapFlwDropdownOpen,
+              setGpsMapFlwDropdownOpen,
+            )}
+            {gpsMapFlwFilter.length > 0 && (
+              <span className="text-xs text-gray-500">
+                Showing {filteredMotherGpsChains.length} of{' '}
+                {motherGpsChains.length} mother chains
+              </span>
+            )}
+          </div>
+
+          {filteredMotherGpsChains.length > 0 ? (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
                 <span className="text-sm font-medium text-gray-700">
@@ -2747,7 +2825,7 @@ function WorkflowUI({
                 {(function () {
                   var seen = {};
                   var swatches = [];
-                  motherGpsChains.forEach(function (chain) {
+                  filteredMotherGpsChains.forEach(function (chain) {
                     var name = chain.flwUsername || 'unknown';
                     if (seen[name]) return;
                     seen[name] = true;
@@ -2882,10 +2960,16 @@ function WorkflowUI({
                   </thead>
                   <tbody className="divide-y divide-gray-100 bg-white">
                     {uatComparisonStats.map(function (s) {
+                      // toLocaleString adds thousands separators (e.g.
+                      // "1,234 m") -- these are raw GPS distances in
+                      // meters and can run into the thousands.
+                      function fmtNum(v) {
+                        return Math.round(v).toLocaleString();
+                      }
                       function fmtM(v) {
                         return v === null || v === undefined
                           ? 'N/A'
-                          : Math.round(v) + ' m';
+                          : fmtNum(v) + ' m';
                       }
                       // Matched-window n is an exact count (mothers, or
                       // achieved visit-count -- can slightly overshoot its
@@ -2895,7 +2979,7 @@ function WorkflowUI({
                       function fmtMN(v, n, insufficient) {
                         if (v === null || v === undefined) return 'N/A';
                         return (
-                          Math.round(v) +
+                          fmtNum(v) +
                           ' m (n=' +
                           n +
                           ')' +
@@ -2905,13 +2989,72 @@ function WorkflowUI({
                       function fmtMRandomN(v, n, insufficient) {
                         if (v === null || v === undefined) return 'N/A';
                         return (
-                          Math.round(v) +
+                          fmtNum(v) +
                           ' m (n≈' +
                           Math.round(n) +
                           ')' +
                           (insufficient ? ' *' : '')
                         );
                       }
+                      // Shades + arrows the UAT cell against BOTH pre-UAT
+                      // baselines -- only when they AGREE on direction (both
+                      // say "UAT is below" or both say "UAT is above"), so a
+                      // single noisy baseline can't manufacture a misleading
+                      // signal on its own. `lowerIsGood` flips which color
+                      // goes with which direction per metric: for Revisit
+                      // Dist, UAT below both baselines is the flagged
+                      // (green) case; for Metres/Visit, UAT above both is.
+                      function uatVerdict(
+                        uatValue,
+                        matched,
+                        random,
+                        lowerIsGood,
+                      ) {
+                        if (
+                          uatValue === null ||
+                          matched === null ||
+                          random === null
+                        ) {
+                          return { arrow: null, className: '' };
+                        }
+                        var belowBoth = uatValue < matched && uatValue < random;
+                        var aboveBoth = uatValue > matched && uatValue > random;
+                        if (belowBoth) {
+                          return lowerIsGood
+                            ? {
+                                arrow: '↓',
+                                className: 'bg-green-100 text-green-800',
+                              }
+                            : {
+                                arrow: '↓',
+                                className: 'bg-red-100 text-red-800',
+                              };
+                        }
+                        if (aboveBoth) {
+                          return lowerIsGood
+                            ? {
+                                arrow: '↑',
+                                className: 'bg-red-100 text-red-800',
+                              }
+                            : {
+                                arrow: '↑',
+                                className: 'bg-green-100 text-green-800',
+                              };
+                        }
+                        return { arrow: null, className: '' };
+                      }
+                      var revisitVerdict = uatVerdict(
+                        s.revisitUatMean,
+                        s.revisitMatchedMean,
+                        s.revisitRandomMean,
+                        true,
+                      );
+                      var visitVerdict = uatVerdict(
+                        s.visitUatMedian,
+                        s.visitMatchedMedian,
+                        s.visitRandomMedian,
+                        false,
+                      );
                       return (
                         <tr key={s.username}>
                           <td className="whitespace-nowrap border-r border-gray-200 px-3 py-2 font-medium text-gray-900">
@@ -2920,13 +3063,23 @@ function WorkflowUI({
                           <td className="whitespace-nowrap border-r border-gray-200 px-3 py-2 text-right text-gray-700">
                             {uatActiveDaysByFlw[s.username] || 0}
                           </td>
-                          <td className="whitespace-nowrap px-3 py-2 text-right text-gray-800">
+                          <td
+                            className={
+                              'whitespace-nowrap px-3 py-2 text-right ' +
+                              (revisitVerdict.className || 'text-gray-800')
+                            }
+                          >
                             {s.revisitUatMean === null
                               ? 'N/A'
                               : fmtM(s.revisitUatMean) +
                                 ' (n=' +
                                 s.revisitUatN +
                                 ')'}
+                            {revisitVerdict.arrow && (
+                              <span className="ml-1">
+                                {revisitVerdict.arrow}
+                              </span>
+                            )}
                           </td>
                           <td className="whitespace-nowrap px-3 py-2 text-right text-gray-800">
                             {fmtMN(
@@ -2942,13 +3095,21 @@ function WorkflowUI({
                               s.revisitInsufficientHistory,
                             )}
                           </td>
-                          <td className="whitespace-nowrap px-3 py-2 text-right text-gray-800">
+                          <td
+                            className={
+                              'whitespace-nowrap px-3 py-2 text-right ' +
+                              (visitVerdict.className || 'text-gray-800')
+                            }
+                          >
                             {s.visitUatMedian === null
                               ? 'N/A'
                               : fmtM(s.visitUatMedian) +
                                 ' (n=' +
                                 s.visitUatN +
                                 ')'}
+                            {visitVerdict.arrow && (
+                              <span className="ml-1">{visitVerdict.arrow}</span>
+                            )}
                           </td>
                           <td className="whitespace-nowrap px-3 py-2 text-right text-gray-800">
                             {fmtMN(
