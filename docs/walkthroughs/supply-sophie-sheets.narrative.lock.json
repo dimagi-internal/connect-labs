@@ -9,7 +9,7 @@
     "the-order-as-sheets",
     "whose-move"
   ],
-  "fetched_at": "2026-10-06T17:02:50.622453+00:00",
+  "fetched_at": "2026-10-06T17:50:11.320144+00:00",
   "name": "supply-sophie-sheets",
   "narrative": "Sophie buys RUTF for the Connect-RUTF program. Half the suppliers she asked to quote tender 2 never answered, and the three who did each left something out. Watch her read the tender as one sheet, correct what the AI recorded right where she reads it, fill the comparison's gaps cell by cell until every quote has a landed price, and end on an overview that says whose move each thing is.",
   "personas": {
@@ -161,5 +161,5 @@
     }
   ],
   "slug": "supply-sophie-sheets",
-  "version": 3
+  "version": 4
 }
