@@ -2,29 +2,6 @@
 
 {% block title %}Clone a real opportunity{% endblock %}
 
-{% block inline_javascript %}
-  {{ block.super }}
-  <script>
-    (function () {
-      var box = document.querySelector("[data-testid=clone-search]");
-      if (!box) return;
-      var rows = document.querySelectorAll("[data-testid=clone-choices] label");
-      var none = document.querySelector("[data-testid=clone-no-match]");
-      box.addEventListener("input", function () {
-        var words = box.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-        var shown = 0;
-        rows.forEach(function (row) {
-          var text = row.getAttribute("data-search");
-          var ticked = row.querySelector("input").checked;
-          var match = ticked || words.every(function (w) { return text.indexOf(w) !== -1; });
-          row.classList.toggle("hidden", !match);
-          if (match) shown += 1;
-        });
-        none.classList.toggle("hidden", shown > 0);
-      });
-    })();
-  </script>
-{% endblock %}
 
 {% block content %}
 <div class="container mx-auto max-w-3xl px-4 py-8">
@@ -81,4 +58,28 @@
     </div>
   </form>
 </div>
+{% endblock %}
+
+{% block inline_javascript %}
+  {{ block.super }}
+  <script>
+    (function () {
+      var box = document.querySelector("[data-testid=clone-search]");
+      if (!box) return;
+      var rows = document.querySelectorAll("[data-testid=clone-choices] label");
+      var none = document.querySelector("[data-testid=clone-no-match]");
+      box.addEventListener("input", function () {
+        var words = box.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        var shown = 0;
+        rows.forEach(function (row) {
+          var text = row.getAttribute("data-search");
+          var ticked = row.querySelector("input").checked;
+          var match = ticked || words.every(function (w) { return text.indexOf(w) !== -1; });
+          row.classList.toggle("hidden", !match);
+          if (match) shown += 1;
+        });
+        none.classList.toggle("hidden", shown > 0);
+      });
+    })();
+  </script>
 {% endblock %}
