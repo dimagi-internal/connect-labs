@@ -7,7 +7,7 @@ narrative_locked: true
 narrative_locked_at: '2026-10-06T14:45:55.637881+00:00'
 review_mode: autonomous
 setup:
-  command: python3 scripts/walkthroughs/supply-sophie-unanswered-round/seed.py --outputs
+  command: python3 scripts/walkthroughs/supply-sophie-unanswered-round/seed.py --sheets --outputs
     scripts/walkthroughs/supply-sophie-unanswered-round/outputs.json
   outputs: scripts/walkthroughs/supply-sophie-unanswered-round/outputs.json
   rerun: per_render
@@ -43,10 +43,10 @@ scenes:
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
 - id: fix-what-the-ai-recorded
   actions:
-  - kind: click
-    target: css:#quotes
   - kind: wait_for
     target: testid:quotes-table
+  - kind: click
+    target: 'css:#history-fold > summary'
   - kind: click
     target: css:[data-testid=quote-row]:has-text('Sahel') [data-edit$=':received_on']
   - kind: fill
@@ -137,7 +137,7 @@ scenes:
     target: css:[data-edit^='shipment:'][data-edit$=':expected_on']
   - kind: fill
     target: css:[data-edit$=':expected_on'] input
-    value: '2026-10-14'
+    value: ${forwarder_clear_date_iso}
   - kind: press
     value: Enter
   - kind: wait_for
@@ -154,6 +154,7 @@ scenes:
     target: css:main
   - kind: snapshot
   concept_claim: 'The overview shows what the session''s corrections changed: tender
-    2 comparable and ready to decide, the order''s move dated.'
+    2 all comparable with its next move on the silent suppliers, and the order''s shipment
+    dated.'
   show: Sophie's procurements overview.
   url: /supply/?program_id=${program_id}
