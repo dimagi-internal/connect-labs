@@ -195,6 +195,12 @@ function WorkflowUI({
     },
     [payload, selKey],
   );
+  function peerN(list, id) {
+    return list.filter(function (f) {
+      var e = f.ind && f.ind[id];
+      return R.drawable(e) && !isNaN(Number(e.value));
+    }).length;
+  }
   function median(list, id) {
     var vs = list
       .map(function (f) {
@@ -317,6 +323,28 @@ function WorkflowUI({
       });
   }
 
+  // The reading chart is drawn at its container's real pixel width.
+  var sChartW = React.useState(0);
+  var chartW = sChartW[0],
+    setChartW = sChartW[1];
+  var sTick = React.useState(0);
+  React.useEffect(function () {
+    function onResize() {
+      sTick[1](function (n) {
+        return n + 1;
+      });
+    }
+    window.addEventListener('resize', onResize);
+    return function () {
+      window.removeEventListener('resize', onResize);
+    };
+  }, []);
+  function chartRef(el) {
+    if (!el) return;
+    var w = Math.floor(el.clientWidth || 0);
+    if (w && Math.abs(w - chartW) > 1) setChartW(w);
+  }
+
   // ══ Render ══════════════════════════════════════════════════════════════════
   if (report.status === 'loading')
     return (
@@ -374,6 +402,48 @@ function WorkflowUI({
   function flagsOf(v) {
     return R.visitFlagsOf ? R.visitFlagsOf(D, v) : [];
   }
+  // On a flagged row, the numeric cells the flag is about -- the registry's
+  // `display.visit_flags[].fields` -- are marked where they equal the same
+  // column on the previous visit (a repeat-count flag points at the counts).
+  function repeatFieldsOf(v) {
+    var hitLabels = flagsOf(v);
+    var out = {};
+    visitFlags.forEach(function (fl) {
+      if (hitLabels.indexOf(fl.label) < 0) return;
+      (fl.fields || []).forEach(function (n) {
+        out[n] = true;
+      });
+    });
+    return out;
+  }
+  function sameAsPrev(v, prev, field) {
+    if (!prev) return false;
+    var a = v[field],
+      b = prev[field];
+    if (a === null || a === undefined || a === '') return false;
+    if (b === null || b === undefined || b === '') return false;
+    return String(a) === String(b) || Number(a) === Number(b);
+  }
+  // The Flags header's tooltip: one line per flag present on this page, with
+  // the registry's `description` for it when it gives one.
+  var flagsOnPage = {};
+  visits.rows.forEach(function (v) {
+    flagsOf(v).forEach(function (l) {
+      flagsOnPage[l] = true;
+    });
+  });
+  function flagDefinition(fl) {
+    return fl.description || '';
+  }
+  var flagsTitle = visitFlags
+    .filter(function (fl) {
+      return flagsOnPage[fl.label];
+    })
+    .map(function (fl) {
+      var d = flagDefinition(fl);
+      return fl.label + ': ' + (d || 'raised on this visit');
+    })
+    .join('\n');
   var anyReviewFlag = visits.rows.some(function (v) {
     return !!v.flagged;
   });
@@ -382,6 +452,56 @@ function WorkflowUI({
         return flagsOf(v).length > 0;
       }).length
     : 0;
+  // One status for every visit: said once in the card header, not per row.
+  var uniformStatus =
+    visits.rows.length > 1 &&
+    visits.rows.every(function (v) {
+      return v.status && String(v.status) === String(visits.rows[0].status);
+    })
+      ? String(visits.rows[0].status)
+      : null;
+  // A visit field with one value on every visit is said once in the card
+  // header, like the status: a column of identical cells says nothing per row.
+  function blank(x) {
+    return x === null || x === undefined || x === '';
+  }
+  var constantFields =
+    visits.rows.length > 1
+      ? visitFields.filter(function (f) {
+          var first = visits.rows[0][f.field];
+          return (
+            !blank(first) &&
+            visits.rows.every(function (v) {
+              return String(v[f.field]) === String(first);
+            })
+          );
+        })
+      : [];
+  var shownFields = visitFields.filter(function (f) {
+    return constantFields.indexOf(f) < 0;
+  });
+  function statusStyle(s, extra) {
+    var st = {
+      display: 'inline-block',
+      padding: '0 6px',
+      borderRadius: 9999,
+      fontSize: 11,
+      lineHeight: '16px',
+      fontWeight: 400,
+      background: /^approv/i.test(s)
+        ? '#ecfdf5'
+        : /^reject/i.test(s)
+          ? '#fef2f2'
+          : '#f3f4f6',
+      color: /^approv/i.test(s)
+        ? '#047857'
+        : /^reject/i.test(s)
+          ? '#b91c1c'
+          : '#4b5563',
+    };
+    for (var k in extra || {}) st[k] = extra[k];
+    return st;
+  }
   var readingPoints = reading
     ? visits.rows
         .filter(function (v) {
@@ -401,6 +521,280 @@ function WorkflowUI({
   var tintBand = function (e) {
     return R.tintFor(e);
   };
+  // Peer columns: ONE column when both cohorts are the same size and every
+  // median agrees (the two columns would only repeat each other).
+  var peerRows = {};
+  LAYOUT.columns.forEach(function (c) {
+    peerRows[c.id] = {
+      ms: median(peers.start, c.id),
+      mc: median(peers.caseload, c.id),
+      ns: peerN(peers.start, c.id),
+      nc: peerN(peers.caseload, c.id),
+    };
+  });
+  var caseloadKeys = {};
+  peers.caseload.forEach(function (f) {
+    caseloadKeys[f.key] = true;
+  });
+  var samePeople =
+    peers.start.length === peers.caseload.length &&
+    peers.start.every(function (f) {
+      return caseloadKeys[f.key];
+    });
+  var mergePeers =
+    peers.start.length > 0 &&
+    peers.start.length === peers.caseload.length &&
+    LAYOUT.columns.every(function (c) {
+      return peerRows[c.id].ms === peerRows[c.id].mc;
+    });
+  // Legend: only the states some cell on this page actually shows.
+  var shownBands = {};
+  LAYOUT.columns.forEach(function (c) {
+    var e = (flw.ind || {})[c.id];
+    if (e && e.band) shownBands[e.band] = true;
+  });
+  var anyLegend =
+    shownBands.red || shownBands.yellow || shownBands.insufficient;
+  // Each coloured state carries its rule, from the measures' own bands (the
+  // thresholds the builder graded on), for the indicators shown in it.
+  function bandNum(m, v) {
+    var u = m && m.unit;
+    return String(Number(v)) + (u === '%' ? '%' : u ? ' ' + u : '');
+  }
+  function bandRuleOf(c, band) {
+    var m = M_BY_ID[c.id] || {};
+    var b = m.bands;
+    if (!b || b.length < 2 || b[0] === null || b[1] === null) return null;
+    var hi = bandNum(m, b[0]),
+      lo = bandNum(m, b[1]);
+    var lower = m.direction === 'lower';
+    if (band === 'yellow')
+      return lower
+        ? c.label + ' ' + hi + '–' + lo + ' (target ≤ ' + hi + ')'
+        : c.label + ' ' + lo + '–' + hi + ' (target ≥ ' + hi + ')';
+    return lower ? c.label + ' > ' + lo : c.label + ' < ' + lo;
+  }
+  function legendRule(band, word) {
+    var rules = LAYOUT.columns
+      .filter(function (c) {
+        var e = (flw.ind || {})[c.id];
+        return e && e.band === band;
+      })
+      .map(function (c) {
+        return bandRuleOf(c, band);
+      })
+      .filter(Boolean);
+    return rules.length ? word + ': ' + rules.join(' · ') : undefined;
+  }
+  // The reading chart, with the line BROKEN where consecutive visits are more
+  // than GAP_DAYS apart (points still drawn), so a multi-week gap is not drawn
+  // as if it had been observed.
+  var GAP_DAYS = 7;
+  function dayMs(d) {
+    return new Date(String(d).slice(0, 10) + 'T00:00:00Z').getTime();
+  }
+  function gappedReadingChart(props) {
+    var t = (props.points || []).filter(function (p) {
+      return p && p.date && p.value !== null && !isNaN(Number(p.value));
+    });
+    if (t.length < 1)
+      return (
+        <div className="text-xs text-gray-500 py-6 text-center">
+          {'No ' +
+            (props.label ? props.label.toLowerCase() : 'reading') +
+            ' recorded.'}
+        </div>
+      );
+    var x0 = dayMs(t[0].date),
+      x1 = dayMs(t[t.length - 1].date);
+    var lo = Infinity,
+      hi = -Infinity;
+    t.forEach(function (p) {
+      lo = Math.min(lo, Number(p.value));
+      hi = Math.max(hi, Number(p.value));
+    });
+    // A non-negative series is drawn on a zero-based axis, so the line's
+    // height reads as magnitude, not as the spread between visits.
+    if (lo >= 0) {
+      lo = 0;
+      if (hi <= 0) hi = 1;
+      // Gridlines at 0, s and 2s for the smallest round step s that clears
+      // the highest reading.
+      var half = hi / 2,
+        mag = Math.pow(10, Math.floor(Math.log(half) / Math.LN10)),
+        steps =
+          mag >= 10
+            ? [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]
+            : [1, 2, 3, 4, 5, 6, 8, 10],
+        s = steps[steps.length - 1] * mag;
+      for (var si = 0; si < steps.length; si++)
+        if (steps[si] * mag >= half) {
+          s = steps[si] * mag;
+          break;
+        }
+      hi = 2 * s;
+    } else {
+      if (hi === lo) {
+        hi += 1;
+        lo -= 1;
+      }
+      var pad = 0.1 * (hi - lo);
+      lo -= pad;
+      hi += pad;
+    }
+    var W = Math.max(chartW || 720, 320),
+      L = 44,
+      RX = W - 20;
+    function X(d) {
+      return x1 === x0
+        ? (L + RX) / 2
+        : L + ((dayMs(d) - x0) / (x1 - x0)) * (RX - L);
+    }
+    function Y(v) {
+      return 146 - ((v - lo) / (hi - lo)) * 130;
+    }
+    // A date tick under every visit point; a label is skipped only where it
+    // would collide with the previous one.
+    var lastLbl = -Infinity;
+    var ticks = t.map(function (p, i) {
+      var x = X(p.date);
+      var show = x - lastLbl >= 48;
+      if (show) lastLbl = x;
+      return { x: x, date: p.date, show: show };
+    });
+    var path = t
+      .map(function (p, i) {
+        var brk =
+          !i || (dayMs(p.date) - dayMs(t[i - 1].date)) / 86400000 > GAP_DAYS;
+        return (
+          (brk ? 'M' : 'L') +
+          X(p.date).toFixed(1) +
+          ' ' +
+          Y(Number(p.value)).toFixed(1)
+        );
+      })
+      .join(' ');
+    return (
+      <svg
+        width={W}
+        height={194}
+        viewBox={'0 0 ' + W + ' 194'}
+        className="block"
+        role="img"
+        aria-label={props.label || 'Readings'}
+      >
+        {props.label ? (
+          <text x={0} y={11} fontSize="12" fontWeight="600" fill="#4b5563">
+            {props.label + (props.unit ? ' (' + props.unit + ')' : '')}
+          </text>
+        ) : null}
+        <g transform="translate(0,18)">
+          {t.map(function (p, i) {
+            if (
+              !i ||
+              (dayMs(p.date) - dayMs(t[i - 1].date)) / 86400000 <= GAP_DAYS
+            )
+              return null;
+            // One band per gap, inset from both visits so adjacent gaps stay
+            // separate bands and never cover a visit point.
+            var gx0 = X(t[i - 1].date) + 6,
+              gx1 = X(p.date) - 6,
+              gw = Math.max(gx1 - gx0, 0),
+              gd = Math.round(
+                (dayMs(p.date) - dayMs(t[i - 1].date)) / 86400000,
+              );
+            return (
+              <g key={'gap' + i}>
+                <rect
+                  data-gap={gd}
+                  x={gx0}
+                  y={Y(hi)}
+                  width={gw}
+                  height={Y(lo) - Y(hi)}
+                  fill="#f3f4f6"
+                />
+                {gw >= 28 ? (
+                  <text
+                    x={gx0 + gw / 2}
+                    y={Y(hi) + 14}
+                    fontSize="12"
+                    fill="#4b5563"
+                    textAnchor="middle"
+                    data-gap-days={gd}
+                  >
+                    {gw >= 52
+                      ? gd + (Number(gd) === 1 ? ' day' : ' days')
+                      : gd + ' d'}
+                  </text>
+                ) : null}
+              </g>
+            );
+          })}
+          {[lo, (lo + hi) / 2, hi].map(function (v) {
+            return (
+              <g key={v}>
+                <line x1={L} x2={RX} y1={Y(v)} y2={Y(v)} stroke="#eeeef4" />
+                <text
+                  x={L - 6}
+                  y={Y(v) + 4}
+                  fontSize="11"
+                  fill="#6b7280"
+                  textAnchor="end"
+                >
+                  {R.nCount(v)}
+                </text>
+              </g>
+            );
+          })}
+          <path d={path} fill="none" stroke="#4f46e5" strokeWidth="2" />
+          {t.map(function (p, i) {
+            return (
+              <circle
+                key={i}
+                cx={X(p.date)}
+                cy={Y(Number(p.value))}
+                r="3"
+                fill="#4f46e5"
+                stroke="#fff"
+                strokeWidth="1.5"
+              >
+                <title>
+                  {R.dateLbl(p.date) +
+                    ': ' +
+                    R.nCount(p.value) +
+                    (props.unit ? ' ' + props.unit : '')}
+                </title>
+              </circle>
+            );
+          })}
+          {ticks.map(function (k, i) {
+            return (
+              <g key={'t' + i}>
+                <line x1={k.x} x2={k.x} y1={150} y2={154} stroke="#d1d5db" />
+                {k.show ? (
+                  <text
+                    x={k.x}
+                    y={168}
+                    fontSize="11"
+                    fill="#6b7280"
+                    textAnchor={
+                      i === 0 && t.length > 1
+                        ? 'start'
+                        : i === t.length - 1 && t.length > 1
+                          ? 'end'
+                          : 'middle'
+                    }
+                  >
+                    {R.dateLbl(k.date)}
+                  </text>
+                ) : null}
+              </g>
+            );
+          })}
+        </g>
+      </svg>
+    );
+  }
   return (
     <div className="p-4 space-y-4 bg-gray-50">
       <R.ReportHeader
@@ -422,10 +816,57 @@ function WorkflowUI({
               {report.source === 'stored' ? 'Saved report' : 'Live report'}
             </R.Pill>
             {flw.startMonth ? (
-              <R.Pill tone="muted">{'Started ' + flw.startMonth}</R.Pill>
+              <R.Pill tone="muted">
+                {'Started ' +
+                  (R.monthLbl && /^\d{4}-\d{2}/.test(String(flw.startMonth))
+                    ? R.monthLbl(String(flw.startMonth).slice(0, 7))
+                    : flw.startMonth)}
+              </R.Pill>
             ) : null}
             {flw.caseloadLabel ? (
-              <R.Pill tone="muted">{'Caseload: ' + flw.caseloadLabel}</R.Pill>
+              <span
+                data-caseload-tip="1"
+                style={{ cursor: 'help' }}
+                title={(function () {
+                  var ce = (P.cohortEdges && P.cohortEdges.caseload) || [];
+                  var nw = (P.byFLW || []).length;
+                  var t =
+                    'Caseload = how many ' +
+                    ((ENT && ENT.plural) || 'records') +
+                    ' this ' +
+                    ((WRK && WRK.name) || 'worker') +
+                    ' holds (' +
+                    flw.n +
+                    '), ranked in thirds against all ' +
+                    nw +
+                    ' ' +
+                    ((WRK && WRK.plural) || 'workers') +
+                    ' in this report: lightest, middle, heaviest.';
+                  if (ce.length === 2) {
+                    t +=
+                      ce[0] === ce[1]
+                        ? ' Most hold the same number, so the bands collapse here: ' +
+                          flw.caseloadLabel +
+                          ' = ' +
+                          ce[1] +
+                          ' or more.'
+                        : ' Cut-points: lightest < ' +
+                          ce[0] +
+                          ', heaviest ≥ ' +
+                          ce[1] +
+                          '.';
+                  }
+                  t +=
+                    ' ' +
+                    peers.caseload.length +
+                    ' of ' +
+                    nw +
+                    ' share this band.';
+                  return t;
+                })()}
+              >
+                <R.Pill tone="muted">{'Caseload: ' + flw.caseloadLabel}</R.Pill>
+              </span>
             ) : null}
           </span>
         }
@@ -435,26 +876,86 @@ function WorkflowUI({
         <div className="px-4 pt-3 pb-2">
           <R.SectionTitle
             right={
-              'against ' +
-              WRK.plural +
-              ' who started the same month (' +
-              peers.start.length +
-              ') and with a similar caseload (' +
-              peers.caseload.length +
-              ')'
+              mergePeers
+                ? 'against ' + peers.start.length + ' peer ' + WRK.plural
+                : 'against ' +
+                  WRK.plural +
+                  ' who started the same month (' +
+                  peers.start.length +
+                  ') and with a similar caseload (' +
+                  peers.caseload.length +
+                  ')'
             }
           >
             Indicators
           </R.SectionTitle>
         </div>
-        <table className="min-w-full text-sm">
+        <table
+          className="min-w-full text-sm"
+          style={{
+            tableLayout: 'fixed',
+            width: '100%',
+            minWidth: 0,
+            maxWidth: 880,
+          }}
+        >
           <thead>
             <tr className="text-xs text-gray-500 border-b border-gray-100">
               <th className="px-4 py-2 text-left">Indicator</th>
-              <th className="px-2 py-2 text-right">{R.cap(WRK.name)}</th>
-              <th className="px-2 py-2 text-right">Same-month median</th>
-              <th className="px-2 py-2 text-right">Similar-caseload median</th>
-              <th className="px-2 py-2 text-right">Target</th>
+              <th className="px-2 py-2 text-right" style={{ width: 112 }}>
+                {R.cap(WRK.name)}
+              </th>
+              {mergePeers ? (
+                <th
+                  className="px-2 py-2 text-right cursor-help"
+                  style={{ width: 150, whiteSpace: 'nowrap' }}
+                  title={
+                    'Median of ' +
+                    WRK.plural +
+                    ' who started the same month (' +
+                    peers.start.length +
+                    ') and of those with a similar caseload (' +
+                    peers.caseload.length +
+                    ')' +
+                    (samePeople
+                      ? ' — the same ' + WRK.plural
+                      : ' — equal on every indicator')
+                  }
+                >
+                  {'Peer median (' + peers.start.length + ') '}
+                  <span className="text-gray-500">ⓘ</span>
+                </th>
+              ) : (
+                <th
+                  className="px-2 py-2 text-right"
+                  style={{ width: 120 }}
+                  title={
+                    WRK.plural +
+                    ' who started the same month (' +
+                    peers.start.length +
+                    ')'
+                  }
+                >
+                  Same-month median
+                </th>
+              )}
+              {mergePeers ? null : (
+                <th
+                  className="px-2 py-2 text-right"
+                  style={{ width: 120 }}
+                  title={
+                    WRK.plural +
+                    ' with a similar caseload (' +
+                    peers.caseload.length +
+                    ')'
+                  }
+                >
+                  Similar-caseload median
+                </th>
+              )}
+              <th className="px-2 py-2 text-right" style={{ width: 96 }}>
+                Target
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -462,41 +963,144 @@ function WorkflowUI({
               var m = M_BY_ID[c.id] || {};
               var e = (flw.ind || {})[c.id];
               var t = R.targetValue(m, D.indicators[c.id]);
-              var ms = median(peers.start, c.id);
-              var mc = median(peers.caseload, c.id);
+              var ms = peerRows[c.id].ms;
+              var mc = peerRows[c.id].mc;
               return (
-                <tr key={c.id} className="border-t border-gray-100">
-                  <td className="px-4 py-2">
-                    <div className="font-medium text-gray-900">{c.label}</div>
-                    <div className="text-xs text-gray-400">{c.category}</div>
+                <tr
+                  key={c.id}
+                  className="border-t border-gray-100"
+                  style={{ scrollMarginTop: 72 }}
+                >
+                  <td className="px-4 py-2" title={c.title || undefined}>
+                    <div className="font-medium text-gray-900">
+                      {c.label}
+                      {c.title ? (
+                        <span
+                          className="ml-1 text-gray-500 cursor-help"
+                          aria-label={'Definition: ' + c.title}
+                        >
+                          ⓘ
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="text-xs text-gray-500">{c.category}</div>
                   </td>
                   <td
                     className={
                       'px-2 py-2 text-right tabular-nums ' + tintBand(e)
                     }
                   >
-                    <R.ScoreCellText
-                      column={c}
-                      entry={e}
-                      measure={m}
-                      minDenominator={MIN_DEN}
-                    />
+                    {e &&
+                    e.band !== 'insufficient' &&
+                    (e.value === null || e.value === undefined) ? (
+                      e.n !== null && e.n !== undefined && Number(e.n) === 0 ? (
+                        <span
+                          className="text-xs text-gray-500 cursor-help"
+                          title={
+                            "No records meet this indicator's denominator yet (n = 0)" +
+                            (c.title ? '. ' + c.title : '')
+                          }
+                        >
+                          none eligible
+                        </span>
+                      ) : (
+                        <span
+                          className="text-xs text-gray-500 cursor-help"
+                          title={
+                            'No value computed' +
+                            (c.title ? '. ' + c.title : '')
+                          }
+                        >
+                          no data
+                        </span>
+                      )
+                    ) : (
+                      <R.ScoreCellText
+                        column={c}
+                        entry={e}
+                        measure={m}
+                        minDenominator={MIN_DEN}
+                      />
+                    )}
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums text-gray-600">
                     {ms === null ? '—' : R.fmtValue(m, ms)}
+                    {ms !== null && peerRows[c.id].ns < peers.start.length ? (
+                      <span
+                        className="text-xs text-gray-500 cursor-help"
+                        title={
+                          'Median over the ' +
+                          peerRows[c.id].ns +
+                          ' of ' +
+                          peers.start.length +
+                          ' peer ' +
+                          WRK.plural +
+                          ' with a value for this indicator'
+                        }
+                      >
+                        {' (n=' + peerRows[c.id].ns + ')'}
+                      </span>
+                    ) : null}
                   </td>
+                  {mergePeers ? null : (
+                    <td className="px-2 py-2 text-right tabular-nums text-gray-600">
+                      {mc === null ? '—' : R.fmtValue(m, mc)}
+                      {mc !== null &&
+                      peerRows[c.id].nc < peers.caseload.length ? (
+                        <span
+                          className="text-xs text-gray-500 cursor-help"
+                          title={
+                            'Median over the ' +
+                            peerRows[c.id].nc +
+                            ' of ' +
+                            peers.caseload.length +
+                            ' peer ' +
+                            WRK.plural +
+                            ' with a value for this indicator'
+                          }
+                        >
+                          {' (n=' + peerRows[c.id].nc + ')'}
+                        </span>
+                      ) : null}
+                    </td>
+                  )}
                   <td className="px-2 py-2 text-right tabular-nums text-gray-600">
-                    {mc === null ? '—' : R.fmtValue(m, mc)}
-                  </td>
-                  <td className="px-2 py-2 text-right text-xs text-gray-500">
-                    {t === null ? '' : R.fmtValue(m, t)}
+                    {t === null ? (
+                      <span className="text-xs text-gray-500">no target</span>
+                    ) : (
+                      R.fmtValue(m, t)
+                    )}
                   </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
-        <R.ScorecardLegend minDenominator={MIN_DEN} />
+        {anyLegend ? (
+          <div className="px-4 py-2 text-xs text-gray-500 border-t border-gray-100 flex items-center gap-4 flex-wrap">
+            {shownBands.red ? (
+              <span
+                className="cursor-help"
+                title={legendRule('red', 'Off target')}
+              >
+                <span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-100 border border-red-400 mr-1 align-middle" />
+                Off target
+              </span>
+            ) : null}
+            {shownBands.yellow ? (
+              <span
+                className="cursor-help"
+                title={legendRule('yellow', 'Watch')}
+              >
+                <span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-100 border border-amber-400 mr-1 align-middle" />
+                Watch
+              </span>
+            ) : null}
+            {shownBands.insufficient ? (
+              <span>{'n<' + MIN_DEN + ' = too few records to compare'}</span>
+            ) : null}
+          </div>
+        ) : null}
       </R.Card>
 
       <R.Card padded={false}>
@@ -542,6 +1146,7 @@ function WorkflowUI({
                         'border-t border-gray-100 cursor-pointer ' +
                         (on ? 'bg-indigo-50' : 'hover:bg-gray-50')
                       }
+                      style={{ scrollMarginTop: 72 }}
                       onClick={function () {
                         setSelCase(on ? null : c);
                       }}
@@ -576,152 +1181,237 @@ function WorkflowUI({
       </R.Card>
 
       {selCase ? (
-        <R.Card>
-          <R.SectionTitle
-            right={
-              visits.status === 'ready'
-                ? visits.rows.length +
-                  ' visits' +
-                  (visitFlags.length ? ' · ' + flaggedCount + ' flagged' : '')
-                : ''
-            }
-          >
-            {R.cap(ENT.name) + ' ' + caseLabel(selCase, 12) + ' · visits'}
-          </R.SectionTitle>
-          {visits.status === 'loading' || visits.status === 'idle' ? (
-            <R.Loading height={120}>Reading the visits…</R.Loading>
-          ) : visits.status === 'error' ? (
-            <R.Notice tone="error">
-              The visits could not be read: {visits.error}
-            </R.Notice>
-          ) : (
-            <div className="space-y-3">
-              {reading ? (
-                <div>
-                  <div className="text-xs font-semibold text-gray-600">
-                    {reading.label +
-                      (reading.unit ? ' (' + reading.unit + ')' : '')}
-                  </div>
-                  <R.ReadingChart
-                    points={readingPoints}
-                    label={reading.label}
-                    unit={reading.unit}
-                  />
-                </div>
-              ) : null}
-              <table className="min-w-full text-xs">
-                <thead>
-                  <tr className="text-gray-500 border-b border-gray-100">
-                    <th className="px-2 py-1.5 text-left">Date</th>
-                    <th className="px-2 py-1.5 text-left">Status</th>
-                    {reading ? (
-                      <th className="px-2 py-1.5 text-right">
-                        {reading.label}
-                      </th>
+        <div style={{ scrollMarginTop: 72 }}>
+          <R.Card>
+            <R.SectionTitle
+              right={
+                visits.status === 'ready' ? (
+                  <span>
+                    {visits.rows.length +
+                      ' visits' +
+                      (visitFlags.length
+                        ? ' · ' + flaggedCount + ' flagged'
+                        : '')}
+                    {uniformStatus ? (
+                      <span
+                        style={statusStyle(uniformStatus, { marginLeft: 8 })}
+                      >
+                        {'status: all ' + uniformStatus}
+                      </span>
                     ) : null}
-                    {visitFields.map(function (f) {
+                    {constantFields.map(function (f) {
                       return (
-                        <th
+                        <span
                           key={f.field}
-                          className={
-                            'px-2 py-1.5 ' +
-                            (f.format === 'count' || f.format === 'number'
-                              ? 'text-right'
-                              : 'text-left')
-                          }
+                          data-constant-field={f.field}
+                          style={statusStyle('', { marginLeft: 8 })}
                         >
-                          {f.label}
-                        </th>
+                          {f.label +
+                            ': ' +
+                            R.fmtCaseField(f, visits.rows[0][f.field]) +
+                            ' at every visit'}
+                        </span>
                       );
                     })}
-                    {visitFlags.length ? (
-                      <th className="px-2 py-1.5 text-left">Flags</th>
-                    ) : null}
-                    {anyReviewFlag ? (
-                      <th className="px-2 py-1.5 text-left">Review flag</th>
-                    ) : null}
-                    {hasImages ? (
-                      <th className="px-2 py-1.5 text-left">Images</th>
-                    ) : null}
-                  </tr>
-                </thead>
-                <tbody>
-                  {visits.rows.map(function (v, i) {
-                    var hit = flagsOf(v);
-                    return (
-                      <tr
-                        key={v.id || i}
-                        className={
-                          'border-t border-gray-100' +
-                          (hit.length ? ' bg-amber-50' : '')
-                        }
-                      >
-                        <td className="px-2 py-1.5">
-                          {R.dateLbl(v.visit_date)}
-                        </td>
-                        <td className="px-2 py-1.5 text-gray-600">
-                          {v.status || '—'}
-                        </td>
-                        {reading ? (
-                          <td className="px-2 py-1.5 text-right tabular-nums">
-                            {v[reading.column] === null ||
-                            v[reading.column] === undefined
-                              ? '—'
-                              : R.nCount(v[reading.column])}
+                  </span>
+                ) : (
+                  ''
+                )
+              }
+            >
+              {R.cap(ENT.name) + ' ' + caseLabel(selCase, 12) + ' · visits'}
+            </R.SectionTitle>
+            {visits.status === 'loading' || visits.status === 'idle' ? (
+              <R.Loading height={120}>Reading the visits…</R.Loading>
+            ) : visits.status === 'error' ? (
+              <R.Notice tone="error">
+                The visits could not be read: {visits.error}
+              </R.Notice>
+            ) : (
+              <div className="space-y-3">
+                {reading ? (
+                  <div>
+                    <div ref={chartRef} style={{ width: '100%' }}>
+                      {gappedReadingChart({
+                        points: readingPoints,
+                        label: reading.label,
+                        unit: reading.unit,
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+                <table className="min-w-full text-xs">
+                  <thead>
+                    <tr className="text-gray-500 border-b border-gray-100">
+                      <th className="px-2 py-1.5 text-left">Date</th>
+                      {uniformStatus ? null : (
+                        <th className="px-2 py-1.5 text-left">Status</th>
+                      )}
+                      {reading ? (
+                        <th className="px-2 py-1.5 text-right">
+                          {reading.label}
+                        </th>
+                      ) : null}
+                      {shownFields.map(function (f) {
+                        return (
+                          <th
+                            key={f.field}
+                            className={
+                              'px-2 py-1.5 ' +
+                              (f.format === 'count' || f.format === 'number'
+                                ? 'text-right'
+                                : 'text-left')
+                            }
+                          >
+                            {f.label}
+                          </th>
+                        );
+                      })}
+                      {visitFlags.length && flaggedCount ? (
+                        <th
+                          className="px-3 py-1.5 text-left cursor-help"
+                          title={flagsTitle || undefined}
+                        >
+                          {'Flags '}
+                          <span className="text-gray-500">ⓘ</span>
+                        </th>
+                      ) : null}
+                      {anyReviewFlag ? (
+                        <th className="px-2 py-1.5 text-left">Review flag</th>
+                      ) : null}
+                      {hasImages ? (
+                        <th className="px-2 py-1.5 text-left">Images</th>
+                      ) : null}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visits.rows.map(function (v, i) {
+                      var hit = flagsOf(v);
+                      var repF = hit.length ? repeatFieldsOf(v) : {};
+                      var prevV = i > 0 ? visits.rows[i - 1] : null;
+                      return (
+                        <tr
+                          key={v.id || i}
+                          className="border-t border-gray-100"
+                        >
+                          <td
+                            className="px-2 py-1.5"
+                            style={
+                              hit.length
+                                ? { boxShadow: 'inset 3px 0 0 #f59e0b' }
+                                : undefined
+                            }
+                          >
+                            {R.dateLbl(v.visit_date)}
                           </td>
-                        ) : null}
-                        {visitFields.map(function (f) {
-                          return (
-                            <td
-                              key={f.field}
-                              className={
-                                'px-2 py-1.5 ' +
-                                (f.format === 'count' || f.format === 'number'
-                                  ? 'text-right tabular-nums'
-                                  : 'text-gray-600')
-                              }
-                            >
-                              {R.fmtCaseField(f, v[f.field])}
+                          {uniformStatus ? null : (
+                            <td className="px-2 py-1.5">
+                              {v.status ? (
+                                <span style={statusStyle(v.status)}>
+                                  {v.status}
+                                </span>
+                              ) : (
+                                '—'
+                              )}
                             </td>
-                          );
-                        })}
-                        {visitFlags.length ? (
-                          <td className="px-2 py-1.5 font-medium text-amber-800">
-                            {hit.join(', ')}
-                          </td>
-                        ) : null}
-                        {anyReviewFlag ? (
-                          <td className="px-2 py-1.5 text-gray-600">
-                            {v.flagged ? 'flagged' : ''}
-                          </td>
-                        ) : null}
-                        {hasImages ? (
-                          <td className="px-2 py-1.5">
-                            {photoUrls(v).map(function (u) {
-                              return (
-                                <a
-                                  key={u}
-                                  href={u}
-                                  target="_blank"
-                                  rel="noopener"
-                                >
-                                  <img
-                                    src={u}
-                                    className="inline-block h-10 w-10 object-cover rounded mr-1"
-                                  />
-                                </a>
-                              );
-                            })}
-                          </td>
-                        ) : null}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </R.Card>
+                          )}
+                          {reading ? (
+                            <td className="px-2 py-1.5 text-right tabular-nums">
+                              {v[reading.column] === null ||
+                              v[reading.column] === undefined
+                                ? '—'
+                                : R.nCount(v[reading.column])}
+                            </td>
+                          ) : null}
+                          {shownFields.map(function (f) {
+                            var rep =
+                              repF[f.field] &&
+                              (f.format === 'count' || f.format === 'number') &&
+                              sameAsPrev(v, prevV, f.field);
+                            return (
+                              <td
+                                key={f.field}
+                                className={
+                                  'px-2 py-1.5 ' +
+                                  (f.format === 'count' || f.format === 'number'
+                                    ? 'text-right tabular-nums'
+                                    : 'text-gray-600')
+                                }
+                                data-repeat={rep ? '1' : undefined}
+                                title={
+                                  rep ? 'Same as the previous visit' : undefined
+                                }
+                                style={
+                                  rep
+                                    ? {
+                                        background: '#fffbeb',
+                                        color: '#92400e',
+                                      }
+                                    : undefined
+                                }
+                              >
+                                {R.fmtCaseField(f, v[f.field])}
+                              </td>
+                            );
+                          })}
+                          {visitFlags.length && flaggedCount ? (
+                            <td className="px-3 py-1.5 font-medium text-amber-800">
+                              {hit.map(function (h) {
+                                return (
+                                  <span
+                                    key={h}
+                                    data-flag-chip="1"
+                                    style={{
+                                      display: 'inline-block',
+                                      border: '1px solid #f59e0b',
+                                      borderRadius: 9999,
+                                      padding: '0 8px',
+                                      fontSize: 12,
+                                      lineHeight: '18px',
+                                      whiteSpace: 'nowrap',
+                                      marginRight: 4,
+                                      background: '#fffbeb',
+                                    }}
+                                  >
+                                    {h}
+                                  </span>
+                                );
+                              })}
+                            </td>
+                          ) : null}
+                          {anyReviewFlag ? (
+                            <td className="px-2 py-1.5 text-gray-600">
+                              {v.flagged ? 'flagged' : ''}
+                            </td>
+                          ) : null}
+                          {hasImages ? (
+                            <td className="px-2 py-1.5">
+                              {photoUrls(v).map(function (u) {
+                                return (
+                                  <a
+                                    key={u}
+                                    href={u}
+                                    target="_blank"
+                                    rel="noopener"
+                                  >
+                                    <img
+                                      src={u}
+                                      className="inline-block h-10 w-10 object-cover rounded mr-1"
+                                    />
+                                  </a>
+                                );
+                              })}
+                            </td>
+                          ) : null}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </R.Card>
+        </div>
       ) : null}
     </div>
   );

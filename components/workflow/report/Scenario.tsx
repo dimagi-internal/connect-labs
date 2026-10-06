@@ -77,7 +77,7 @@ export function StatTiles(props: { tiles: StatTile[]; columns?: number }) {
             <div className="mt-1 text-2xl font-bold text-gray-900 tabular-nums">
               {t.value}
               {t.unit ? (
-                <span className="ml-2 text-xs font-medium text-gray-400">
+                <span className="ml-2 text-xs font-medium text-gray-500">
                   {t.unit}
                 </span>
               ) : null}
@@ -185,7 +185,7 @@ export function RangeField(props: {
           props.onChange(v, String(high));
         }}
       />
-      <span className="text-xs text-gray-400">to</span>
+      <span className="text-xs text-gray-500">to</span>
       <NumberField
         value={high}
         ariaLabel={(props.ariaLabel || 'range') + ' high'}
