@@ -6,7 +6,7 @@ is chosen: the page states facts and ranks nobody (September design §22), so
 there is no "worst first" and no colour ranking the rows.
 
 Every figure that rests on unapproved visits or on protocol estimates says so
-in its own cell ("120 sachets · 30 unapproved · 30 estimated"). The variance
+in its own cell, a short line under it ("of 30 given out: 30 on unapproved visits"). The variance
 names its sign and its day: reported minus the ledger ON THE COUNT DAY, so
 stock that arrived after the count is not read as a discrepancy. A receipt
 the worker reports that no store recorded is said on the worker's own row.
@@ -76,12 +76,13 @@ the worker reports that no store recorded is said on the worker's own row.
                   {% endfor %}
                 </td>
                 <td class="px-4 py-2 align-top tabular-nums">
-                  {{ row.on_hand|on_hand_words:row }}
+                  {{ row.on_hand|figure_text }}
+                  {% with line=row|given_out_line %}{% if line %}<div class="text-xs text-gray-600 mt-0.5" data-testid="given-out-line">{{ line }}</div>{% endif %}{% endwith %}
                   <div class="mt-0.5">{% include 'supply_chain/_stock_band.html' with status=row.band %}</div>
                 </td>
                 <td class="px-4 py-2 align-top tabular-nums">
                   {{ row.days_to_stockout|days_text }}
-                  {% for reason in row.days_to_stockout|unconfirmed_reasons %}<div class="text-xs text-gray-600 mt-0.5">{{ reason }}</div>{% endfor %}
+                  {% for note in row|stockout_notes %}<div class="text-xs text-gray-600 mt-0.5" data-testid="stockout-note">{{ note }}</div>{% endfor %}
                 </td>
                 <td class="px-4 py-2 align-top tabular-nums">
                   {% if row.variance_reported_minus_ledger %}

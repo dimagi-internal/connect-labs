@@ -64,10 +64,6 @@ own arithmetic -- so workers sit in the tree under their store, behind one
       <div>
         {% if stock %}
           <h2 class="text-sm font-semibold text-gray-900">Stock of {{ stock.item_name }} through the network, in {{ stock.unit|unit_plural }}</h2>
-          <p class="text-xs text-gray-600 mt-0.5">
-            On hand is the ledger. Where the dispensing behind it was on visits not yet approved, or
-            is a protocol's estimate rather than the form's own number, the figure says how much.
-          </p>
         {% else %}
           <h2 class="text-sm font-semibold text-gray-900">The network</h2>
           <p class="text-xs text-gray-600 mt-0.5">No item is catalogued yet, so there is no stock to show.</p>

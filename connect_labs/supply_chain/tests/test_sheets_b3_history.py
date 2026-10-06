@@ -91,7 +91,7 @@ class TestACellCorrectionIsOnTheHistory:
         response = _edit(client_in_program, f"quote:{quote['id']}:received_on", "5 Oct 2026", "2026-10-06")
         assert response.status_code == 200, response.content
         entries = timeline_for_tender(base["tender"]["id"], program_id=PROGRAM)
-        assert any("corrected: received on 5 Oct (was 6 Oct)" in e.line for e in entries)
+        assert any("· received 6 Oct → 5 Oct" in e.line for e in entries)
 
     def test_the_tender_page_history_says_what_was_corrected_by_whom(self, client_in_program, da, base, ace, sophie):
         _, quote = _quoted_reply(da, base, ace)
@@ -104,8 +104,20 @@ class TestACellCorrectionIsOnTheHistory:
         line = re.search(r'<li data-testid="revision-line" data-fields="[^"]*received_on[^"]*".*?</li>', history, re.S)
         assert line, "no History line for the corrected Received day"
         text = re.sub(r"<[^>]+>", "", line.group(0))
-        assert "corrected: received on 5 Oct (was 6 Oct)" in text
+        assert "received 6 Oct → 5 Oct" in text
         assert "Sophie Bello" in text
+        # The record as structure, not a sentence: the change and the reply it moved, in
+        # the update lines' arrow grammar, under the 20 words a line of prose starts at.
+        said = " ".join(
+            re.sub(
+                r"<[^>]+>",
+                " ",
+                re.search(r'data-testid="revision-text"[^>]*>(.*?)</div>', line.group(0), re.S).group(1),
+            ).split()
+        )
+        assert said.endswith("received 6 Oct → 5 Oct — reply 6 Oct → 5 Oct"), said
+        assert "(was" not in said and "corrected" not in said
+        assert len(said.split()) < 20
 
     def test_the_correction_reason_names_the_change(self, client_in_program, da, base, ace, sophie):
         from connect_labs.supply_chain.models import Quote
@@ -115,10 +127,10 @@ class TestACellCorrectionIsOnTheHistory:
         new_id = int(result["key"].split(":")[1])
 
         assert Quote._base_manager.get(pk=new_id).correction_reason == "received 6 Oct → 5 Oct"
-        # Beside the version's own "received on 5 Oct (was 6 Oct)" on the Quotes sheet it is
+        # Beside the version's own "received 6 Oct → 5 Oct" on the Quotes sheet it is
         # not said a second time.
         (earlier,) = quote_lineages([new_id], program_id=PROGRAM)[new_id].earlier
-        assert earlier["changes"] == "received on 5 Oct (was 6 Oct)"
+        assert earlier["changes"] == "received 6 Oct → 5 Oct"
         assert earlier["reason"] == ""
 
     def test_the_email_says_when_it_was_sent_beside_when_it_was_forwarded(self, client_in_program, da, base, ace):

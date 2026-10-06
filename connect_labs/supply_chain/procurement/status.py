@@ -245,9 +245,8 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
     commitments = list(
         Commitment.objects.filter(tender=tender, resolved_on__isnull=True).select_related("owed_to_org")
     )
-    answered = rules.questions_answered_on(
-        Commitment.objects.filter(tender=tender, kind="question", resolved_on__isnull=False)
-    )
+    closed = list(Commitment.objects.filter(tender=tender, kind="question", resolved_on__isnull=False))
+    answered = rules.questions_answered_on(closed)
     contract = Contract.objects.filter(tender=tender).exclude(status="cancelled").order_by("pk").first()
     award = Award.objects.filter(tender=tender).select_related("quote__supplier__org").first()
     provisional = bool(award and award.provisional)
@@ -258,6 +257,7 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
         quotes=quotes,
         commitments=commitments,
         answered=answered,
+        sent=rules.replies_sent_on(closed),
         provisional=provisional,
         contracted=contract is not None,
     )
