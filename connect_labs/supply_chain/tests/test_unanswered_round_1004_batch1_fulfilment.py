@@ -9,8 +9,8 @@ estimate (calculated), else "Not recorded" -- and a total resting on a relief
 nobody has evidenced is marked unconfirmed.
 
 F5: the duty exemption a nil duty rests on is a document we owe while the
-goods are still to arrive: it is held, counted On us, and has its own Mark
-provided.
+goods are still to arrive: it is held, counted On us, and has its own Attach
+(at program level, test_program_duty_exemption).
 """
 
 import re
@@ -177,10 +177,10 @@ class TestTheReliefDocumentIsOwed:
         assert [m.text for m in ours] == ["Provide 3 documents to Rehearsal Freight & Clearing"]
         body = _order(client_in_program, contract["id"])
         assert body.count('data-testid="owed-hold"') == 3
-        # One Mark provided per document, each attaching that document to the shipment.
+        # One Attach per document: the shipment's own to the shipment, the duty exemption to the program.
         provide = re.findall(r'data-testid="owed-hold-provide"[^>]*href="([^"]*)"', body)
         assert len(provide) == 3
-        assert any(href.endswith("?kind=duty_exemption") for href in provide)
+        assert any(href.startswith("/supply/documents/new/?kind=duty_exemption") for href in provide)
         assert re.search(r'data-testid="owed-open-count"[^>]*>— 3 open<', body)
         _attach(da, shipment, "duty_exemption")
         assert "duty_exemption" not in [h.kind for h in holds_on_us(record)]

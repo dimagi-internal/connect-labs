@@ -653,6 +653,33 @@ class DocumentForm(ProvenancedForm):
         return data
 
 
+class ProgramDocumentForm(DocumentForm):
+    """A document the program holds as a whole -- its duty exemption, above all -- and the days it holds for.
+
+    Linked to no order, tender or shipment: one paper, read by every record
+    that rests on it (pricing.program_duty_exemption).
+    """
+
+    class Meta(DocumentForm.Meta):
+        fields = ["kind", "title", "external_url", "valid_from", "valid_until"]
+        widgets = {
+            **DocumentForm.Meta.widgets,
+            "valid_from": forms.DateInput(attrs=DATE),
+            "valid_until": forms.DateInput(attrs=DATE),
+        }
+        labels = {**DocumentForm.Meta.labels, "valid_from": _("Valid from"), "valid_until": _("Valid until")}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper.layout = Layout(
+            Row(Column("kind"), Column("title"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Row(Column("valid_from"), Column("valid_until"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Field("upload"),
+            Field("external_url"),
+            Field("source"),
+        )
+
+
 class InvoiceDisputeForm(forms.Form):
     """Why we dispute an invoice, and the day: kept on the invoice, which is marked queried."""
 

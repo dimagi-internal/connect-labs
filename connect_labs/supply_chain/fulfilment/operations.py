@@ -318,6 +318,9 @@ _DOCUMENT_DATA = _data_with(
     content_base64={"type": "string"},
     external_url={"type": "string"},
     note={"type": "string"},
+    # The days it holds for, when it has any (a duty exemption's period).
+    valid_from=_DATE,
+    valid_until=_DATE,
     source={"enum": list(records.SOURCES)},
     recorded_by_org_id=ID,
     # One `<name>_id` per thing a document can evidence, generated from the
@@ -576,7 +579,10 @@ def document_list(access, kind=None, **links):
     summary=(
         "Attach evidence: either upload the file as content_base64 or point at it with external_url. "
         "Give one, not both. Uploads are hashed, so a later copy can be checked against the one a "
-        "derivation used. Over 12 MB, store it elsewhere and use external_url."
+        "derivation used. Over 12 MB, store it elsewhere and use external_url. With no <thing>_id it "
+        "is the program's own document: a duty_exemption attached that way, with valid_from and "
+        "valid_until, is the program's duty exemption, and every tender and order whose nil duty rests "
+        "on it reads it for an import inside those dates."
     ),
     input_schema=obj({"data": _DOCUMENT_DATA}, required=("data",)),
     is_write=True,
