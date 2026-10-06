@@ -1556,7 +1556,7 @@ function WorkflowUI({
     },
     {
       title: 'GPS Map Tab',
-      body: 'Plots one "chain" per mother on a Leaflet map (plain window.L, not the shared ConnectMap/Mapbox components -- those have no line layer or non-circle marker, both needed here): a circle at her registration GPS point, fanned out with a straight line to a square at each of her visit GPS points. Built from the SAME displayRows every other tab uses (domain + eligibility + verification-block-present + exclude-registration-visits), so a visit excluded there is also absent here -- a mother whose only visit was excluded as "conducted at registration" shows just her registration circle, no squares, no lines.',
+      body: 'Plots one "chain" per mother on a Mapbox GL map (window.ConnectMap.createMap, the same properly-licensed basemap pipeline the rest of this app uses -- NOT raw Leaflet + OpenStreetMap tiles, which this tab used at first until OSM\'s volunteer-run tile servers started blocking the traffic): a circle at her registration GPS point, fanned out with a straight line to a square at each of her visit GPS points. Built from the SAME displayRows every other tab uses (domain + eligibility + verification-block-present + exclude-registration-visits), so a visit excluded there is also absent here -- a mother whose only visit was excluded as "conducted at registration" shows just her registration circle, no squares, no lines.',
       items: [
         {
           name: 'Registration point (circle)',
@@ -1573,7 +1573,8 @@ function WorkflowUI({
         {
           name: 'Lines',
           def: "One line per visit, drawn straight from that mother's registration point to that visit's point -- a fan/star shape out of the registration point, not a chronological path connecting visit to visit in sequence. A mother with no registration point on file shows her visit squares with no lines at all.",
-          field: 'L.polyline([registration latlng, visit latlng], ...)',
+          field:
+            "A single GeoJSON LineString source/layer (ConnectMap.setSource + a line layer, line-color data-driven per feature via ['get', 'color']) -- not one Mapbox layer per line.",
         },
         {
           name: 'FLW color',
@@ -1938,28 +1939,41 @@ function WorkflowUI({
     [motherQuestionFailRateStats, activeTab],
   );
 
-  // --- GPS Map tab (Leaflet) -----------------------------------------------
-  // Plain Leaflet (window.L), not the shared ConnectMap/PlanLayers (Mapbox)
-  // components -- those don't expose a line layer or non-circle markers,
-  // both needed here (registration = circle, visit = square, connected by a
-  // line), so this draws directly with L.circleMarker / L.marker+divIcon /
-  // L.polyline instead. Free OSM tiles, no token, same convention as
-  // connect_labs/templates/{coverage/map.html,labs/admin/boundary_map.html}.
+  // --- GPS Map tab (Mapbox GL via the shared ConnectMap helper) -----------
+  // NOT plain Leaflet + raw OpenStreetMap tiles -- that was this tab's
+  // first cut, and OSM's volunteer-run tile servers block exactly this kind
+  // of unproxied, un-registered production traffic (their usage policy,
+  // osm.wiki/Blocked), so the basemap came back as a wall of 403s. Mapbox
+  // GL via window.ConnectMap.createMap() is the SAME properly-licensed
+  // basemap pipeline verified_monitoring_render.js already uses (a real
+  // token injected server-side as window.MAPBOX_TOKEN -- see
+  // connect_labs/static/maps/connect_map.js). ConnectMap/PlanLayers still
+  // have no line layer or non-circle marker, so markers are hand-rolled
+  // DOM elements via mapboxgl.Marker (circle = registration, square =
+  // visit -- same look as the original Leaflet divIcons, just a different
+  // map engine underneath); the connecting lines are a single GeoJSON line
+  // layer via ConnectMap.setSource.
+  //
+  // The whole map is destroyed and recreated every time this effect runs
+  // (not reused across redraws) -- same "tear down and rebuild" pattern
+  // this file already uses for every Chart.js instance. That's deliberate:
+  // this tab's container <div> is unmounted whenever the user switches to
+  // another tab ({activeTab === 'gps_map' && (...)} below), so a map
+  // instance saved in a ref would otherwise end up bound to a detached,
+  // garbage DOM node the next time this tab is revisited.
   var gpsMapDivRef = React.useRef(null);
-  var gpsMapInstanceRef = React.useRef(null);
-  var gpsMapLayersRef = React.useRef(null);
-  var _leafletReady = React.useState(
-    typeof window !== 'undefined' && !!window.L,
+  var _mapLibReady = React.useState(
+    typeof window !== 'undefined' && !!window.ConnectMap && !!window.mapboxgl,
   );
-  var leafletReady = _leafletReady[0];
-  var setLeafletReady = _leafletReady[1];
+  var mapLibReady = _mapLibReady[0];
+  var setMapLibReady = _mapLibReady[1];
 
   React.useEffect(
     function () {
-      if (leafletReady) return undefined;
+      if (mapLibReady) return undefined;
       var t = setInterval(function () {
-        if (window.L) {
-          setLeafletReady(true);
+        if (window.ConnectMap && window.mapboxgl) {
+          setMapLibReady(true);
           clearInterval(t);
         }
       }, 150);
@@ -1967,104 +1981,127 @@ function WorkflowUI({
         clearInterval(t);
       };
     },
-    [leafletReady],
+    [mapLibReady],
   );
-
-  function squareDivIcon(color) {
-    return window.L.divIcon({
-      className: '',
-      html:
-        '<div style="width:10px;height:10px;background:' +
-        color +
-        ';border:1px solid rgba(0,0,0,0.5);box-shadow:0 0 0 1px rgba(255,255,255,0.8);"></div>',
-      iconSize: [10, 10],
-      iconAnchor: [5, 5],
-    });
-  }
 
   React.useEffect(
     function () {
       if (activeTab !== 'gps_map') return undefined;
-      if (!leafletReady || !gpsMapDivRef.current) return undefined;
-      var L = window.L;
+      if (!mapLibReady || !gpsMapDivRef.current) return undefined;
+      var CM = window.ConnectMap;
+      var map = CM.createMap(gpsMapDivRef.current, {
+        center: [8.5, 9.6],
+        zoom: 7,
+        style: 'mapbox://styles/mapbox/light-v11',
+      });
+      var markers = [];
 
-      if (!gpsMapInstanceRef.current) {
-        var map = L.map(gpsMapDivRef.current).setView([9.0, 8.6], 7);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '&copy; OpenStreetMap contributors',
-          maxZoom: 18,
-        }).addTo(map);
-        gpsMapInstanceRef.current = map;
-        gpsMapLayersRef.current = L.layerGroup().addTo(map);
-      }
-      var map = gpsMapInstanceRef.current;
-      var layerGroup = gpsMapLayersRef.current;
-      layerGroup.clearLayers();
+      function draw() {
+        var allPoints = [];
+        var lineFeatures = [];
 
-      var allLatLngs = [];
-      motherGpsChains.forEach(function (chain) {
-        var regLatLng = chain.registration
-          ? [chain.registration.lat, chain.registration.lon]
-          : null;
+        motherGpsChains.forEach(function (chain) {
+          var regLngLat = chain.registration
+            ? [chain.registration.lon, chain.registration.lat]
+            : null;
 
-        if (regLatLng) {
-          allLatLngs.push(regLatLng);
-          L.circleMarker(regLatLng, {
-            radius: 7,
-            color: '#ffffff',
-            weight: 1.5,
-            fillColor: chain.color,
-            fillOpacity: 0.95,
-          })
-            .bindTooltip(
+          if (regLngLat) {
+            allPoints.push({
+              type: 'Feature',
+              geometry: { type: 'Point', coordinates: regLngLat },
+            });
+            var regEl = document.createElement('div');
+            regEl.style.cssText =
+              'width:14px;height:14px;border-radius:9999px;background:' +
+              chain.color +
+              ';border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,0.35);cursor:pointer;';
+            regEl.title =
               'Registration -- mother ' +
-                chain.motherCaseId +
-                '<br/>FLW: ' +
-                (chain.flwUsername || 'unknown'),
-            )
-            .addTo(layerGroup);
-        }
-
-        chain.visits.forEach(function (visit) {
-          var visitLatLng = [visit.lat, visit.lon];
-          allLatLngs.push(visitLatLng);
-
-          if (regLatLng) {
-            L.polyline([regLatLng, visitLatLng], {
-              color: chain.color,
-              weight: 2,
-              opacity: 0.55,
-            }).addTo(layerGroup);
+              chain.motherCaseId +
+              '\nFLW: ' +
+              (chain.flwUsername || 'unknown');
+            markers.push(
+              new window.mapboxgl.Marker({ element: regEl, anchor: 'center' })
+                .setLngLat(regLngLat)
+                .addTo(map),
+            );
           }
 
-          L.marker(visitLatLng, { icon: squareDivIcon(chain.color) })
-            .bindTooltip(
-              (visit.formName || 'Visit') +
-                ' #' +
-                (visit.visitNumber || '?') +
-                '<br/>' +
-                formatVisitDateTime(visit.visitDatetime) +
-                '<br/>FLW: ' +
-                (visit.username || 'unknown'),
-            )
-            .addTo(layerGroup);
-        });
-      });
+          chain.visits.forEach(function (visit) {
+            var visitLngLat = [visit.lon, visit.lat];
+            allPoints.push({
+              type: 'Feature',
+              geometry: { type: 'Point', coordinates: visitLngLat },
+            });
 
-      if (allLatLngs.length > 0) {
-        map.fitBounds(allLatLngs, { padding: [30, 30] });
+            if (regLngLat) {
+              lineFeatures.push({
+                type: 'Feature',
+                properties: { color: chain.color },
+                geometry: {
+                  type: 'LineString',
+                  coordinates: [regLngLat, visitLngLat],
+                },
+              });
+            }
+
+            var visitEl = document.createElement('div');
+            visitEl.style.cssText =
+              'width:11px;height:11px;background:' +
+              chain.color +
+              ';border:1px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,0.45);cursor:pointer;';
+            visitEl.title =
+              (visit.formName || 'Visit') +
+              ' #' +
+              (visit.visitNumber || '?') +
+              '\n' +
+              formatVisitDateTime(visit.visitDatetime) +
+              '\nFLW: ' +
+              (visit.username || 'unknown');
+            markers.push(
+              new window.mapboxgl.Marker({
+                element: visitEl,
+                anchor: 'center',
+              })
+                .setLngLat(visitLngLat)
+                .addTo(map),
+            );
+          });
+        });
+
+        CM.setSource(map, 'gps-map-lines', {
+          type: 'FeatureCollection',
+          features: lineFeatures,
+        });
+        if (!map.getLayer('gps-map-lines')) {
+          map.addLayer({
+            id: 'gps-map-lines',
+            type: 'line',
+            source: 'gps-map-lines',
+            paint: {
+              'line-color': ['get', 'color'],
+              'line-width': 2,
+              'line-opacity': 0.55,
+            },
+          });
+        }
+
+        if (allPoints.length > 0) {
+          CM.fit(map, { type: 'FeatureCollection', features: allPoints }, 40);
+        }
       }
 
-      // Leaflet sizes its tile grid from the container's dimensions at
-      // creation time -- if the tab wasn't visible yet (display:none via the
-      // {activeTab === 'gps_map' && (...)} gate below) that was 0x0, so a
-      // freshly-switched-to tab needs an explicit invalidateSize to fill in
-      // correctly instead of showing a corner of grey tiles.
-      setTimeout(function () {
-        map.invalidateSize();
-      }, 0);
+      if (map.isStyleLoaded()) draw();
+      else map.on('load', draw);
+
+      return function () {
+        markers.forEach(function (m) {
+          m.remove();
+        });
+        map.remove();
+      };
     },
-    [activeTab, leafletReady, motherGpsChains],
+    [activeTab, mapLibReady, motherGpsChains],
   );
 
   var summaryCards = (
