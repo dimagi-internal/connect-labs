@@ -212,14 +212,15 @@ class TestTheComparison:
         button = " ".join(
             _text(re.search(r'<summary data-testid="award-open"[^>]*>(.*?)</summary>', body, re.S).group(1)).split()
         )
-        assert button.startswith("Award Kanem ") and button.endswith("· 1 other quote not comparable yet")
+        assert button == "Award · 1 other quote not comparable yet"
+        assert re.search(r'<option value="\d+" selected>Kanem', body)
 
     def test_decided_on_is_empty_until_an_award_is_started(self, da, world, client_in_program):
         op(da, "quote_record", data=_comparable(world))
         body = self._page(client_in_program, world)
-        field = re.search(r'<input type="date" id="decided-on-\d+"[^>]*>', body).group(0)
+        field = re.search(r'<input type="date" id="award-decided-on"[^>]*>', body).group(0)
         assert 'value=""' in field
-        rationale = re.search(r'<input type="text" id="rationale-\d+"[^>]*>', body, re.S).group(0)
+        rationale = re.search(r'<input type="text" id="award-rationale"[^>]*>', body, re.S).group(0)
         assert "oninput=" in rationale
 
 

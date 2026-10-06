@@ -53,7 +53,7 @@ class TestOneMoneyFormat:
         other = batch6._supplier(da, "Sahel Nutrition")
         _quote_with(da, tender_id, other["id"], AUG_20, _ALL_BUT_PACK)
         text = _text(_page(client_in_program, tender_id))
-        assert "USD 41.00 / carton" in text and "USD 42.50 / carton" in text
+        assert "USD 41.00 per carton" in text and "USD 42.50 per carton" in text
         # An amount followed by "USD" that is not itself a "USD <amount>" (adjacent table
         # cells run "USD 0.273 USD 41.00" together in the page's text).
         assert not re.search(r"(?<!USD )\b\d[\d,]*\.\d+ USD\b", text)

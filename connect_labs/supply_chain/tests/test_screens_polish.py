@@ -996,23 +996,25 @@ class TestTheAwardControlsFitTheColumn:
     They sit in a full-width row under each offer instead, so the table is
     only as wide as its figures."""
 
-    def test_they_sit_in_a_full_width_row_under_the_offer_not_in_a_cell(self, client_in_programme, da, world):
+    def test_they_sit_in_one_block_under_the_grid_not_in_a_cell(self, client_in_programme, da, world):
         _comparable_pair(da, world)
         body = client_in_programme.get(_compare_url(world)).content.decode()
         forms = re.findall(r'<form method="post" action=""[^>]*? class="([^"]*)"[^>]*>(.*?)</form>', body, re.S)
         award_forms = [(cls, inner) for cls, inner in forms if 'name="rationale"' in inner]
-        assert len(award_forms) == 2
-        for cls, inner in award_forms:
-            assert "flex-wrap" in cls
-            # Same fields, posting to the same URL.
-            for field in ("quote_id", "rationale", "decided_on"):
-                assert f'name="{field}"' in inner
-            assert 'data-testid="decided-by"' in inner
-            assert 'type="submit"' in inner and "Award" in inner
-        # Not in the grid: each award is folded under its quote, below the side-by-side facts.
+        # ONE award for the tender, its quote chosen in it: both comparable quotes are offered.
+        assert len(award_forms) == 1
+        cls, inner = award_forms[0]
+        assert "flex-wrap" in cls
+        for field in ("quote_id", "rationale", "decided_on"):
+            assert f'name="{field}"' in inner
+        assert len(re.findall(r"<option value=\"\d+\"", inner)) == 2
+        assert 'data-testid="decided-by"' in inner
+        assert 'type="submit"' in inner and "Award" in inner
+        # Not in the grid: each comparable row carries a link that opens the block with it chosen.
         grid = re.search(r'<table [^>]*data-testid="comparison-grid".*?</table>', body, re.S).group(0)
         assert "<form" not in grid
-        assert body.count('data-testid="award-start"') == 2
+        assert len(re.findall(r'data-testid="grid-award"', grid)) == 2
+        assert body.count('data-testid="award-start"') == 1
 
     def test_the_stacked_form_still_awards(self, client_in_programme, da, world):
         from connect_labs.supply_chain.models import Award, Quote
