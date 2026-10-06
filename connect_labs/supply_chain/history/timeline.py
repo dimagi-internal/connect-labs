@@ -103,11 +103,12 @@ class Entry:
     # Why an AI-entered quote's line offers no Correct or Void: "voided" or
     # "corrected", so every such line says something in that place.
     fix_status: str = ""
-    # On the line that recorded a quote: which one, and -- set by a page that
-    # has computed them (procurement/status.py quote_open_facts) -- the facts
-    # that quote still lacks as it stands, as [(fact, owner)].
-    quote_id: int | None = None
-    open_facts: list = field(default_factory=list)
+    # When one line stands for several records (`_fold_bookkeeping`), each by
+    # name; `identity` then counts them ("6 suppliers") and the page lists these.
+    members: list = field(default_factory=list)
+    # The record the line is about, (model, pk), so a page can leave its own
+    # record's name off the lines about it (`_unname_own`).
+    object_key: tuple = ()
 
     # A single change, not an email's worth of them (see EmailEvent).
     is_group = False
@@ -490,8 +491,7 @@ def entry_for(revision, *, lookup=None, offer_fixes=True, live_quote_ids=None, u
     elif revision.action == "update":
         entry.sender = ""
     entry.bookkeeping = _is_bookkeeping(model, revision)
-    if model is Quote and revision.action == "create":
-        entry.quote_id = int(revision.object_id)
+    entry.object_key = (model, str(revision.object_id))
     if model is Quote and ai and offer_fixes and revision.action != "delete":
         quote_id = int(revision.object_id)
         if live_quote_ids is None:
@@ -677,7 +677,8 @@ def _as_correction(entry, revision, superseded_id, lookup):
     entry.sender = sender(Quote, new_values, lookup)
 
 
-def _timeline(revisions, until) -> list[Entry]:
+def _timeline(revisions, until, own=None) -> list[Entry]:
+    """`own`: the (model, pk) of the page the history sits on, whose name its lines leave off."""
     from connect_labs.supply_chain.models import Quote
 
     lookup = Lookup()
@@ -717,7 +718,18 @@ def _timeline(revisions, until) -> list[Entry]:
         _mark_holds(built)
     for entry in entries:
         _drop_own_day(entry)
+        _unname_own(entry, own)
     return _fold_bookkeeping([e for e in entries if e.sentence])
+
+
+def _unname_own(entry, own):
+    """A line about the page's own record leaves its name off: "Tender · Status draft → open".
+
+    On the tender's page, "Tender · RUTF tender 2: 2,000 cartons to Kano · ..."
+    named the tender the page is headed by on every line about it.
+    """
+    if own and entry.what and entry.object_key == (own[0], str(own[1])):
+        entry.identity = ""
 
 
 def _day_of(when):
@@ -727,13 +739,14 @@ def _day_of(when):
 
 
 def _fold_bookkeeping(entries) -> list[Entry]:
-    """Bookkeeping lines that say the same thing on one day read as one line naming each record.
+    """Bookkeeping lines that say the same thing on one day read as one line counting the records.
 
     Six invitations sent on 19 Sep by Sophie were six lines differing only in the
     supplier ("Outreach · Kanem Foods Ltd · recorded: sent 19 Sep"); they read as
-    one: "Outreach · Kanem Foods Ltd, Sahel Nutrition Industries, ... · recorded:
-    sent 19 Sep". Only neighbours, only kept-books lines with nothing of their own
-    to show (no source, no fix, no hold), and only by the same person.
+    one: "Outreach · 6 suppliers · recorded: sent 19 Sep", each supplier listed
+    under it (`members`) rather than run together into one long line. Only
+    neighbours, only kept-books lines with nothing of their own to show (no
+    source, no fix, no hold), and only by the same person.
     """
     out = []
     for entry in entries:
@@ -749,13 +762,23 @@ def _fold_bookkeeping(entries) -> list[Entry]:
             and _day_of(entry.when) == _day_of(prev.when)
             and not (entry.excerpt or prev.excerpt or entry.hold or prev.hold)
             and entry.identity
-            and entry.identity not in prev.identity.split(", ")
+            and entry.identity not in (prev.members or [prev.identity])
         ):
-            prev.identity = f"{prev.identity}, {entry.identity}"
+            prev.members = [*(prev.members or [prev.identity]), entry.identity]
+            prev.identity = _counted(prev.entity, len(prev.members))
             prev.fields = tuple(dict.fromkeys((*prev.fields, *entry.fields)))
             continue
         out.append(entry)
     return out
+
+
+# What a folded line's records are, counted: an invitation is to a supplier.
+_MEMBER_NOUNS = {"Outreach": ("supplier", "suppliers")}
+
+
+def _counted(entity, n) -> str:
+    one, many = _MEMBER_NOUNS.get(entity, ("record", "records"))
+    return f"{n} {one if n == 1 else many}"
 
 
 def _drop_own_day(entry):
@@ -879,11 +902,17 @@ def email_events(entries) -> list:
 
 
 def timeline_for_tender(tender_id, *, program_id, until=None) -> list[Entry]:
-    return _timeline(tender_scope_revisions(tender_id, program_id=program_id, until=until), until)
+    from connect_labs.supply_chain.models import Tender
+
+    revisions = tender_scope_revisions(tender_id, program_id=program_id, until=until)
+    return _timeline(revisions, until, own=(Tender, tender_id))
 
 
 def timeline_for_contract(contract_id, *, program_id, until=None) -> list[Entry]:
-    return _timeline(contract_scope_revisions(contract_id, program_id=program_id, until=until), until)
+    from connect_labs.supply_chain.models import Contract
+
+    revisions = contract_scope_revisions(contract_id, program_id=program_id, until=until)
+    return _timeline(revisions, until, own=(Contract, contract_id))
 
 
 def ai_entered_quotes(quote_ids, *, program_id) -> dict:

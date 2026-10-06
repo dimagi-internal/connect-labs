@@ -286,7 +286,8 @@ class TestTheTimeline:
         lines = [e.line for e in timeline_for_contract(order["contract"]["id"], program_id=PROGRAM)]
         assert lines[0] == "Shipment · SH-1 · ETA 5 Sep → 19 Sep"
         assert "Shipment · SH-1 · recorded: ETA 5 Sep" in lines
-        assert lines[-1] == "Order · PO-HARMATTAN · recorded: 600 cartons"
+        # The order's own page is headed by its name; its lines about it leave it off.
+        assert lines[-1] == "Order · recorded: 600 cartons"
 
     def test_a_correction_reads_the_same_way(self, da, base, ace):
         quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _ALL_BUT_PACK)

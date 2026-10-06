@@ -112,7 +112,7 @@ is folded away, each fold with its count.
   and moves above follow it.{% endcomment %}
   <div class="grid items-start gap-4 md:grid-cols-2" id="tender-moves" data-live>
     {% include "supply_chain/_moves.html" with moves=status.ours whose="ours" heading="To do" testid="on-us" count_testid="on-us-count" %}
-    {% include "supply_chain/_moves.html" with moves=status.theirs whose="theirs" heading="Waiting on suppliers" testid="on-suppliers" %}
+    {% include "supply_chain/_moves.html" with moves=status.theirs whose="theirs" heading="Waiting on suppliers" testid="on-suppliers" no_detail=True %}
   </div>
 
   <section class="card_bg border-brand-border-light flex min-w-0 flex-col gap-3 border scroll-mt-20" id="outreach" aria-labelledby="suppliers-h" data-live>
@@ -160,7 +160,7 @@ is folded away, each fold with its count.
           <th scope="col">Delivery term</th>
           <th scope="col">Pack</th>
           <th scope="col">Missing</th>
-          <th scope="col" class="w-px"><span class="sr-only">Actions</span></th>
+          <th scope="col" class="sheet-pin-end w-px"><span class="sr-only">Actions</span></th>
         </tr></thead>
         <tbody>
           {% for r in status.suppliers %}
@@ -175,7 +175,7 @@ is folded away, each fold with its count.
             <td class="whitespace-nowrap text-gray-700" {% if q %}{% edit_cell "quote" q.pk "incoterm" q.incoterm %}{% endif %}>{% if q.incoterm %}{% include "supply_chain/_src.html" with src=r.term_src %}{{ q.incoterm }}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
             <td class="num text-left text-gray-700" {% if q %}{% edit_cell "quote" q.pk "base_per_pack_stated" q.base_per_pack_stated %}{% endif %} data-testid="supplier-pack">{% if r.pack %}{% include "supply_chain/_src.html" with src=r.pack_src %}{{ r.pack }}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
             <td>{% if r.missing or r.on_us %}<div class="flex flex-wrap items-center gap-1" data-testid="supplier-missing">{% for m in r.missing %}{% include "supply_chain/_fact_chip.html" with fact=m owner=r.missing_owner n=1 %}{% endfor %}{% if r.on_us %}<a class="status-chip status-chip--ours" data-testid="supplier-on-us" href="{{ r.on_us_href }}">{{ r.on_us }}</a>{% endif %}</div>{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
-            <td class="whitespace-nowrap text-right">{% if not supply_as_of %}<span class="inline-flex items-center gap-2">{% if r.action %}<a class="text-brand-indigo font-medium hover:underline" data-testid="supplier-action" href="{{ r.action.href }}"{% if r.action.href|slice:":7" == "#draft-" %} onclick="return window.openDraft &amp;&amp; window.openDraft('{{ r.action.href|slice:"1:" }}');"{% endif %}>{{ r.action.label }}</a>{% endif %}
+            <td class="sheet-pin-end" data-testid="supplier-actions">{% if not supply_as_of %}<span class="inline-flex items-center gap-2">{% if r.action %}<a class="text-brand-indigo font-medium hover:underline" data-testid="supplier-action" href="{{ r.action.href }}"{% if r.action.href|slice:":7" == "#draft-" %} onclick="return window.openDraft &amp;&amp; window.openDraft('{{ r.action.href|slice:"1:" }}');"{% endif %}>{{ r.action.label }}</a>{% endif %}
               {% if o %}
               {% comment %}The rest of the row's record, in a small menu: record a reply where none is
               recorded, edit the whole reply, or delete an invitation recorded in error.{% endcomment %}
@@ -440,7 +440,9 @@ next action on anyone (design doc section 22).
   <details class="fold scroll-mt-20" id="history-fold" data-testid="fold-history">
     <summary>History <span class="text-sm font-normal text-gray-600">newest first</span></summary>
     <div class="fold-body">
-      {% include "supply_chain/_timeline.html" with history_heading_class="sr-only" %}
+      {% comment %}The sheets above set out each quote's terms and what it still lacks, so the
+      History names a recorded quote by its price.{% endcomment %}
+      {% include "supply_chain/_timeline.html" with history_heading_class="sr-only" history_quote_price_only=True %}
     </div>
   </details>
 

@@ -530,12 +530,6 @@ class TenderDetailView(_Base):
             for row in context["status"]["suppliers"]:
                 mine = by_supplier.get(row["supplier_id"]) or []
                 row["outreach"] = next((o for o in mine if o.get("changed")), mine[0] if mine else None)
-            # The History's line that recorded a quote carries what that quote still lacks: the
-            # same open facts the Suppliers table counts and the comparison tags, as they stand now.
-            quote_facts = context["status"].get("quote_facts") or {}
-            for entry in context["timeline"] or []:
-                if getattr(entry, "quote_id", None) in quote_facts:
-                    entry.open_facts = quote_facts[entry.quote_id]
         # The Quotes sheet: one row per quote that stands, each carrying the versions it
         # replaced -- what each correction changed and why -- so a corrected quote is
         # one row, not one per version. A voided quote stands nowhere; History keeps it.

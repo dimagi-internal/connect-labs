@@ -1105,7 +1105,7 @@ def bold_after_arrow(text):
 
 
 @register.filter
-def record_kind_lead(text, sender=""):
+def record_kind_lead(text, sender="", terms=True):
     """A record line under an email with its kind set apart: "<b>Outreach</b> · Replied ...".
 
     Under an email's excerpt, what was recorded from it read at the same weight
@@ -1124,7 +1124,7 @@ def record_kind_lead(text, sender=""):
         rest = after
     lead = f'<span data-testid="record-kind" class="font-semibold">{escape(kind)}</span> · '
     if kind == "Quote" and rest.startswith("recorded: "):
-        return mark_safe(lead + _quote_term_chips(rest[len("recorded: ") :]))
+        return mark_safe(lead + _quote_term_chips(rest[len("recorded: ") :], with_terms=terms))
     # "Owed · recorded: they asked: ..." stacked two colons; under the email it came
     # from, the record's kind already says it was recorded.
     for said in ("recorded: they asked: ", "recorded: we promised: "):
@@ -1147,7 +1147,18 @@ _QUOTE_TERM_LABELS = (
 _QUOTE_TERM_ORDER = ("Incoterm", "Pack", "Valid to", "Lead time", "Minimum order", "Shelf life")
 
 
-def _quote_term_chips(text):
+@register.filter
+def record_kind_lead_price(text, sender=""):
+    """`record_kind_lead`, a recorded quote by its price alone.
+
+    For a history on a page that already sets out each quote's terms in its own
+    rows (the tender's Suppliers and Quotes sheets): there the card repeated
+    every term the sheets above it show.
+    """
+    return record_kind_lead(text, sender, terms=False)
+
+
+def _quote_term_chips(text, with_terms=True):
     """A recorded quote's terms as labelled chips: Price · Incoterm · Pack · Valid to · ...
 
     The line ran every term together ("EUR 0.31 per sachet (EXW Niamey: freight
@@ -1176,7 +1187,7 @@ def _quote_term_chips(text):
     # give marked "not stated", so the cells line up from one card to the next.
     (_, price), rest = chips[0], chips[1:]
     head = f'<span data-testid="quote-price" class="text-base font-semibold text-gray-900">{escape(price)}</span>'
-    if not rest:
+    if not rest or not with_terms:
         return head
     given = {}
     extra = []
