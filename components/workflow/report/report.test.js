@@ -128,6 +128,41 @@ describe('headline tiles', () => {
     expect(out).toContain('Off target');
     expect(out).toContain('+2.0 pt since 8 Sep');
   });
+  test('a target tick on the bar, and a chip for a lower-is-better measure', () => {
+    const out = html(
+      h(R.HeadlineTiles, {
+        tiles: [
+          {
+            spec,
+            entry: { value: 0.12, band: 'red', n: 400 },
+            progress: 12,
+            progressColour: '#b91c1c',
+            progressTarget: 10,
+            direction: 'lower',
+          },
+        ],
+      }),
+    );
+    expect(out).toContain('data-target-tick');
+    expect(out).toContain('lower is better');
+    expect(out).toContain('#b91c1c');
+  });
+  test('no tick without a target, no chip for higher is better', () => {
+    const out = html(
+      h(R.HeadlineTiles, {
+        tiles: [
+          {
+            spec,
+            entry: { value: 0.12, band: 'red', n: 400 },
+            progress: 12,
+            direction: 'higher',
+          },
+        ],
+      }),
+    );
+    expect(out).not.toContain('data-target-tick');
+    expect(out).not.toContain('is better');
+  });
   test('too few cases reads as the floor, not a number', () => {
     const out = html(
       h(R.HeadlineTiles, {

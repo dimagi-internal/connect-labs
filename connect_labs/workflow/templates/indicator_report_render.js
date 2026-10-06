@@ -502,6 +502,7 @@ function WorkflowUI({
       );
     return t.sub;
   }
+  var TILE_BAR = { green: '#15803d', yellow: '#b45309', red: '#b91c1c' };
   function Tiles() {
     if (!TILES.length) return null;
     var prev =
@@ -512,9 +513,34 @@ function WorkflowUI({
     return (
       <R.HeadlineTiles
         tiles={TILES.map(function (t) {
+          var e = tileEntry(t.id);
+          var m = M_BY_ID[t.id] || {};
+          // A rate tile gets a value bar: its band's colour when banded,
+          // neutral grey otherwise, with a tick where a target exists.
+          var scored = !!(
+            t.pct &&
+            e &&
+            e.value !== null &&
+            e.value !== undefined &&
+            e.band !== 'insufficient'
+          );
           return {
             spec: t,
-            entry: tileEntry(t.id),
+            entry: e,
+            progress: t.pct
+              ? scored
+                ? 100 * Math.max(0, Math.min(1, Number(e.value)))
+                : 0
+              : null,
+            progressColour: (scored && TILE_BAR[e.band]) || '#6b7280',
+            progressTarget:
+              t.pct && t.target !== undefined && t.target !== null
+                ? 100 * Number(t.target)
+                : null,
+            direction: m.direction || null,
+            onLabelClick: function () {
+              openDef(t.id, 'programme');
+            },
             // An untargeted tile fills the same second-line slot as
             // "target X", so every tile in the row lines up.
             sub:
@@ -573,7 +599,7 @@ function WorkflowUI({
     : undefined;
   function Legend(props) {
     return (
-      <div className="px-4 py-2 text-sm text-gray-700 border-t border-gray-100 space-y-1">
+      <div className="px-4 py-2 text-sm text-gray-700 border-b border-gray-100 space-y-1">
         <div className="flex items-center gap-x-4 gap-y-1 flex-wrap">
           <span
             className={'whitespace-nowrap' + (OFF_RULE ? ' cursor-help' : '')}
@@ -1074,16 +1100,29 @@ function WorkflowUI({
       </thead>
     );
   }
+  // A rate's counts behind it, as the cell's tooltip: "<k> of <n>".
+  function countsTitle(m, e) {
+    if (!m || m.unit !== '%' || !e || !e.n) return undefined;
+    if (e.value === null || e.value === undefined) return undefined;
+    if (e.band === 'insufficient') return undefined;
+    return (
+      R.nCount(Math.round(Number(e.value) * Number(e.n))) +
+      ' of ' +
+      R.nCount(e.n)
+    );
+  }
   function cells(ind) {
     return COLS.map(function (c, i) {
+      var e = ind && ind[c.id];
       return (
         <R.ScoreCell
           key={i}
           column={c}
-          entry={ind && ind[c.id]}
+          entry={e}
           measure={M_BY_ID[c.id]}
           minDenominator={MIN_DEN}
           notCredibleTitle={notCredible}
+          title={c.denOnly ? undefined : countsTitle(M_BY_ID[c.id], e)}
         />
       );
     });
@@ -1165,6 +1204,13 @@ function WorkflowUI({
         <div className="px-4 pt-3 pb-2">
           <R.SectionTitle right={props.right}>{props.title}</R.SectionTitle>
         </div>
+        {/* The legend sits above the table, in the same view as the cells
+            it explains. */}
+        <Legend
+          minDenominator={MIN_DEN}
+          marks={props.marks}
+          right="Click a column name for its definition · ↕ sorts"
+        />
         <div className="overflow-x-auto">
           <table className="min-w-full text-xs">
             <ScorecardHead
@@ -1177,15 +1223,18 @@ function WorkflowUI({
             <tbody>{props.children}</tbody>
           </table>
         </div>
-        <Legend
-          minDenominator={MIN_DEN}
-          marks={props.marks}
-          right="Click a column name for its definition · ↕ sorts"
-        />
       </R.Card>
     );
   }
 
+  function allSame(a) {
+    return (
+      a.length > 1 &&
+      a.every(function (x) {
+        return x === a[0];
+      })
+    );
+  }
   function OrgTable() {
     var rows = sort.sortOf('orgs')
       ? R.sortRows(P.byLLO || [], sort.sortOf('orgs'), function (l, key) {
@@ -1196,6 +1245,19 @@ function WorkflowUI({
           return colValue(key, l.ind);
         })
       : P.byLLO || [];
+    function orgSub(l) {
+      var nWorkers = workerRows.filter(function (w) {
+        return w.org === l.llo;
+      }).length;
+      return (
+        (l.opps || []).length +
+        ((l.opps || []).length === 1 ? ' opportunity' : ' opportunities') +
+        ' · ' +
+        R.nounCount(nWorkers, WRK)
+      );
+    }
+    // A subline that reads the same on every row says nothing about any row.
+    var orgSubSame = allSame(rows.map(orgSub));
     return (
       <Table
         title={R.cap(ORG.plural)}
@@ -1218,9 +1280,6 @@ function WorkflowUI({
         )}
       >
         {rows.map(function (l) {
-          var nWorkers = workerRows.filter(function (w) {
-            return w.org === l.llo;
-          }).length;
           return (
             <tr
               key={l.llo}
@@ -1233,14 +1292,9 @@ function WorkflowUI({
             >
               <td className="px-3 py-2 whitespace-nowrap">
                 <div className="font-semibold text-indigo-700">{l.llo}</div>
-                <div className="text-gray-500">
-                  {(l.opps || []).length +
-                    ((l.opps || []).length === 1
-                      ? ' opportunity'
-                      : ' opportunities') +
-                    ' · ' +
-                    R.nounCount(nWorkers, WRK)}
-                </div>
+                {orgSubSame ? null : (
+                  <div className="text-gray-500">{orgSub(l)}</div>
+                )}
               </td>
               {cells(l.ind)}
               {lastCell(lastVisit.org[l.llo])}
@@ -1272,6 +1326,13 @@ function WorkflowUI({
       }
       return colValue(key, o.ind);
     });
+    function oppSub(o) {
+      var org = o.llo || orgOf(o.opp);
+      return org && oppLabel(o.opp).indexOf(org) === -1
+        ? org + ' · ' + R.nounCount(o.n, ENT)
+        : R.nounCount(o.n, ENT);
+    }
+    var oppSubSame = allSame(rows.map(oppSub));
     return (
       <Table
         title="Opportunities"
@@ -1309,12 +1370,9 @@ function WorkflowUI({
                 <div className="font-semibold text-indigo-700">
                   {oppLabel(o.opp)}
                 </div>
-                <div className="text-gray-500">
-                  {(o.llo || orgOf(o.opp)) &&
-                  oppLabel(o.opp).indexOf(o.llo || orgOf(o.opp)) === -1
-                    ? (o.llo || orgOf(o.opp)) + ' · ' + R.nounCount(o.n, ENT)
-                    : R.nounCount(o.n, ENT)}
-                </div>
+                {oppSubSame ? null : (
+                  <div className="text-gray-500">{oppSub(o)}</div>
+                )}
               </td>
               {cells(o.ind)}
               {lastCell(lastVisit.opp[String(o.opp)])}
@@ -2317,6 +2375,19 @@ function WorkflowUI({
       </div>
     );
   }
+  // Yours against the target, signed: a percentage in points, any other
+  // unit in its own unit ("−14.0 points to target").
+  function benchGap(m, value, tgt) {
+    var d = Number(value) - Number(tgt);
+    if (isNaN(d)) return '';
+    var s = d > 0 ? '+' : d < 0 ? '−' : '±';
+    var pct = /%$/.test(R.fmtValue(m, 0.5));
+    return (
+      (pct
+        ? s + Math.abs(d * 100).toFixed(1) + ' points'
+        : s + R.fmtValue(m, Math.abs(d))) + ' to target'
+    );
+  }
   function Benchmark() {
     if (bench.status === 'idle' || bench.status === 'loading')
       return <R.Loading height={160}>Loading the benchmark…</R.Loading>;
@@ -2411,8 +2482,35 @@ function WorkflowUI({
                           'w-full text-left grid items-center gap-4 px-5 py-2.5 border-b border-gray-100 hover:bg-gray-50 ' +
                           (open ? 'bg-indigo-50/60' : '')
                         }
-                        style={{ gridTemplateColumns: GRID }}
+                        style={{
+                          gridTemplateColumns: GRID,
+                          position: 'relative',
+                        }}
                       >
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 10 10"
+                          width="10"
+                          height="10"
+                          className="text-gray-500"
+                          style={{
+                            position: 'absolute',
+                            left: 6,
+                            top: '50%',
+                            marginTop: -5,
+                            transform: open ? 'rotate(90deg)' : 'none',
+                            transition: 'transform 150ms',
+                          }}
+                        >
+                          <path
+                            d="M3 1.5 L7 5 L3 8.5"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
                         <div className="min-w-0">
                           <div
                             className="text-sm font-semibold text-gray-900 truncate"
@@ -2443,6 +2541,14 @@ function WorkflowUI({
                           }
                         >
                           {ok ? R.fmtValue(r.m, own.value) : '—'}
+                          {ok && r.target !== null ? (
+                            <div
+                              className="text-xs font-semibold text-gray-700 whitespace-nowrap"
+                              data-target-gap="1"
+                            >
+                              {benchGap(r.m, own.value, r.target)}
+                            </div>
+                          ) : null}
                         </div>
                         <div className="text-sm text-gray-700">
                           {!own
@@ -2492,6 +2598,10 @@ function WorkflowUI({
                         <div
                           key={id + ':detail'}
                           className="px-5 py-4 bg-indigo-50/40 border-b border-gray-200"
+                          style={{
+                            borderTop: '1px solid #c7d2fe',
+                            boxShadow: 'inset 0 2px 3px rgba(17, 24, 39, 0.04)',
+                          }}
                         >
                           <BenchBars
                             measure={r.m}
@@ -2635,11 +2745,17 @@ function WorkflowUI({
   var scopeWorkers = workerRows.filter(function (w) {
     return inScope(w.opp, w.org);
   }).length;
-  var scopeOpps = selOrg
+  var scopeOppList = selOrg
     ? (P.byOpp || []).filter(function (o) {
         return (o.llo || orgOf(o.opp)) === selOrg;
-      }).length
-    : 0;
+      })
+    : [];
+  var scopeOpps = scopeOppList.length;
+  // A partner with exactly one opportunity: that opportunity IS the partner's
+  // slice, so a one-row table of it repeats the tiles. The header names it and
+  // the workers table sits directly under the tiles.
+  var soleOpp =
+    selOrg && selOpp === null && scopeOpps === 1 ? scopeOppList[0] : null;
   var OPP_NOUN = { name: 'opportunity', plural: 'opportunities' };
   var cache = live.cache || {};
   return (
@@ -2670,8 +2786,9 @@ function WorkflowUI({
                 <span>
                   {' · '}
                   <b>{R.nounCount(scopeOpps, OPP_NOUN)}</b>
+                  {soleOpp ? ': ' + oppLabel(soleOpp.opp) : null}
                 </span>
-              ) : HAS_ORGS && !DRILLED ? (
+              ) : HAS_ORGS && !DRILLED && !OPP_MODE ? (
                 <span>
                   {' · '}
                   <b>{R.nounCount((P.byLLO || []).length, ORG)}</b>
@@ -2683,7 +2800,6 @@ function WorkflowUI({
         }
         badges={
           <span className="flex flex-wrap items-center gap-2">
-            <R.Pill tone="muted">Report of {R.dateLbl(asOf)}</R.Pill>
             {isCompleted ? (
               <R.Pill tone="muted">Final report</R.Pill>
             ) : (
@@ -2762,7 +2878,7 @@ function WorkflowUI({
           <Tiles />
           {!selOrg && selOpp === null && HAS_ORGS ? <OrgTable /> : null}
           {(!HAS_ORGS && selOpp === null) ||
-          (selOrg && selOpp === null) ||
+          (selOrg && selOpp === null && !soleOpp) ||
           selOpp !== null ? (
             <OppTable />
           ) : null}
