@@ -1,0 +1,156 @@
+{
+  "build_order": [],
+  "fetched_at": "2026-10-06T14:45:55.777209+00:00",
+  "name": "supply-sophie-sheets",
+  "narrative": "Sophie buys RUTF for the Connect-RUTF program. Half the suppliers she asked to quote tender 2 never answered, and the three who did each left something out. Watch her read the tender as one sheet, correct what the AI recorded right where she reads it, fill the comparison's gaps cell by cell until every quote has a landed price, and end on an overview that says whose move each thing is.",
+  "personas": {
+    "sophie": {
+      "color": "#0F766E",
+      "intro": "Sophie buys RUTF for the Connect-RUTF program; suppliers email her, she forwards what they send to an AI that records it, and she keeps the record true.",
+      "name": "Sophie",
+      "org": "",
+      "role": "Program manager, Connect-RUTF (buyer of record)"
+    }
+  },
+  "scenes": [
+    {
+      "features": [
+        {
+          "description": "The opener names the sheet, the in-place correction, the comparison and the overview, in that order.",
+          "id": "opener-names-the-arc",
+          "verify": "Review: the title card voiceover names the sheet, the correction, the comparison and the overview"
+        }
+      ],
+      "id": "the-record-not-the-inbox",
+      "narrative": "Half the suppliers Sophie asked to quote her RUTF tender never answered, and the rest each left something out. Watch her read the tender as one sheet, fix what the AI got wrong in place, and fill the comparison until every quote has a landed price.",
+      "persona": "sophie",
+      "provenance": "S1",
+      "title": "The record, not the inbox"
+    },
+    {
+      "features": [
+        {
+          "description": "The Suppliers sheet has Supplier, State, Asked, Replied, Last chased, Price, Delivery term, Pack and Missing columns, a row per supplier.",
+          "id": "suppliers-sheet-columns",
+          "verify": "Playwright: [data-testid=supplier-table] thead reads those columns; 6 [data-testid=supplier-row]"
+        },
+        {
+          "description": "To do and Waiting on suppliers sit side by side above the sheet.",
+          "id": "moves-above-sheet",
+          "verify": "Playwright: #tender-moves precedes #outreach; [data-testid=on-us-count] reads '1'"
+        },
+        {
+          "description": "Kanem's row names its missing fact as a chip.",
+          "id": "kanem-missing-pack",
+          "verify": "Playwright: Kanem Foods Ltd's [data-testid=supplier-missing] contains 'sachets per carton'"
+        }
+      ],
+      "id": "one-sheet",
+      "narrative": "Sophie opens tender 2. Above the sheet, one thing is hers to do -- reply to Northgate's questions -- and three suppliers have been silent seventeen days. In the sheet, each supplier is a row: when she asked, when they replied, when she last chased, and their price, term and pack. Kanem's row says what its quote is missing: sachets per carton.",
+      "persona": "sophie",
+      "provenance": "S2",
+      "title": "One sheet for the whole tender"
+    },
+    {
+      "features": [
+        {
+          "description": "The Sahel reply hook records received_on as the forward date, with the email's own date in the excerpt.",
+          "id": "sahel-forward-date",
+          "verify": "Playwright: Sahel's quote row [data-edit$=':received_on'] reads the forward date; the History excerpt shows the email's date"
+        },
+        {
+          "description": "Typing the email's date into the Received cell saves a corrected version.",
+          "id": "received-cell-correction",
+          "verify": "Playwright: after Enter, the cell reads the email's date and carries .is-saved; quote_get shows correction_reason containing 'received'"
+        }
+      ],
+      "id": "fix-what-the-ai-recorded",
+      "narrative": "Sahel finally quotes, and the AI records it from the email Sophie forwarded. In the Quotes sheet, Sahel's quote reads received 6 October -- but the email in the History is dated the 5th; the 6th is the day she forwarded it. She clicks the Received cell, types 5 Oct, and presses Enter. The quote is saved as a new version, its reason naming the date it replaced.",
+      "persona": "sophie",
+      "provenance": "S4",
+      "title": "Fix what the AI recorded, where she reads it"
+    },
+    {
+      "features": [
+        {
+          "description": "Entering the pack in Kanem's Pack cell clears its Missing chip and updates the Comparable tile.",
+          "id": "pack-cell-clears-missing",
+          "verify": "Playwright: Kanem's [data-edit$=':base_per_pack_stated'] reads 150; no 'sachets per carton' chip in its row; Comparable quotes tile changes"
+        }
+      ],
+      "id": "kanems-pack",
+      "narrative": "Kanem's pro-forma says 150 sachets a carton; the AI left it out. Sophie types 150 into Kanem's Pack cell. The chip saying the quote lacks its pack disappears, and the tiles above recount.",
+      "persona": "sophie",
+      "provenance": "S3",
+      "title": "Kanem's pack, typed in"
+    },
+    {
+      "features": [
+        {
+          "description": "Choosing the duty terms in a quote's Import duty cell settles them for the tender.",
+          "id": "duty-in-grid",
+          "verify": "Playwright: td[data-fact=duty] select → waiver; [data-testid=comparison-duty-terms] contains 'waiver'"
+        },
+        {
+          "description": "Sahel's Freight and Exchange rate cells take our estimate and the rate.",
+          "id": "freight-and-fx-in-grid",
+          "verify": "Playwright: Sahel's td[data-fact=freight] and td[data-fact=fx] edited; its td[data-fact=landed] shows a USD figure"
+        },
+        {
+          "description": "With those filled, every quote is comparable.",
+          "id": "all-comparable",
+          "verify": "Playwright: [data-testid=comparable-count] reads '3 of 3 comparable'"
+        }
+      ],
+      "id": "fill-the-comparison",
+      "narrative": "On the comparison, each quote is a row and each fact a column. Harmattan's import duty cell says our terms are not settled: Sophie picks \"we import, under the program's duty waiver\" right there. Sahel's quote is ex works, in euros: she types our freight estimate into its Freight cell and the exchange rate into its Exchange rate cell. The landed column fills row by row, and the count reads three of three comparable.",
+      "persona": "sophie",
+      "provenance": "S5",
+      "title": "Fill the comparison, one cell at a time"
+    },
+    {
+      "features": [
+        {
+          "description": "Mark this reply sent clears Northgate's owed questions from To do.",
+          "id": "reply-marked-sent",
+          "verify": "Playwright: [data-testid=reply-sent-form] submit; [data-testid=on-us-count] reads '0'"
+        }
+      ],
+      "id": "one-email",
+      "narrative": "One move is still hers: Northgate's three questions. The reply is drafted with each question and a place for her answer; she sends it from her own mailbox and marks it sent.",
+      "persona": "sophie",
+      "provenance": "S6",
+      "title": "The one email she owes"
+    },
+    {
+      "features": [
+        {
+          "description": "The shipment row's Expected cell is editable and shows the typed date.",
+          "id": "shipment-expected-cell",
+          "verify": "Playwright: [data-edit^='shipment:'][data-edit$=':expected_on'] reads 14 Oct after Enter"
+        }
+      ],
+      "id": "the-order-as-sheets",
+      "narrative": "Tender 1's order with Harmattan is held at customs, and its invoice is billed above the agreed price. The forwarder writes that the trucks clear on the 14th; Sophie types it into the shipment's Expected cell.",
+      "persona": "sophie",
+      "provenance": "S7",
+      "title": "The order, still tracked and still correctable"
+    },
+    {
+      "features": [
+        {
+          "description": "The overview row for tender 2 reads its comparable count and its next move.",
+          "id": "overview-reflects",
+          "verify": "Playwright: the tender 2 row reads '3 of 3 comparable'"
+        }
+      ],
+      "id": "whose-move",
+      "narrative": "Back on her overview, tender 2 reads three of three comparable, ready to decide, and the order shows the date it clears. Nothing in it came from her inbox except what she chose to put there.",
+      "persona": "sophie",
+      "provenance": "S8",
+      "title": "Whose move, now"
+    }
+  ],
+  "slug": "supply-sophie-sheets",
+  "version": 0
+}
