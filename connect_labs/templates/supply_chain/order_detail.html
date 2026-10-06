@@ -28,7 +28,9 @@ out on every render and never stored.
     {% include "supply_chain/_src_legend.html" %}
   </div>
 
-  <section class="card_bg border-brand-border-light flex flex-col gap-6 border" aria-labelledby="order-title" data-testid="order-header">
+  {% comment %}The head, To do and History are live: a cell edited below (cell_edit.js) re-reads them -- an
+  order's status, tiles and moves are read from its shipments, invoices and receipts.{% endcomment %}
+  <section class="card_bg border-brand-border-light flex flex-col gap-6 border" aria-labelledby="order-title" data-testid="order-header" id="order-head" data-live>
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div class="flex min-w-0 flex-col gap-1">
         <div class="text-xs uppercase tracking-wide text-gray-600" data-testid="order-po">Order · {% if contract.reference %}PO {{ contract.reference }}{% else %}no PO number{% endif %}</div>
@@ -116,6 +118,7 @@ out on every render and never stored.
     {% endif %}
   </section>
 
+  <div id="order-moves" data-live>
   {% if moves_theirs %}
   <div class="grid gap-4 md:grid-cols-2">
     {% include "supply_chain/_moves.html" with moves=moves_ours whose="ours" heading="To do" testid="on-us" count_testid="on-us-count" %}
@@ -131,6 +134,7 @@ out on every render and never stored.
     </div>
   </div>
   {% endif %}
+  </div>
 
   {% comment %}The records, folded: each opens on its own, and a link to one of its anchors opens it.{% endcomment %}
 
@@ -841,7 +845,8 @@ was ordered. Before, the page showed this order's half and a link to the other.
     </div>
   </details>
 
-  <details class="fold scroll-mt-20" id="history-fold" data-testid="fold-history">
+  {% comment %}Live, as every region a cell edit can change: the edit is a line of its own here.{% endcomment %}
+  <details class="fold scroll-mt-20" id="history-fold" data-testid="fold-history" data-live>
     <summary><h2 class="text-base font-semibold text-brand-deep-purple">History</h2> <span class="text-sm font-normal text-gray-600">newest first</span></summary>
     <div class="fold-body">
       {% include "supply_chain/_timeline.html" with history_heading_class="sr-only" %}

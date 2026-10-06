@@ -74,6 +74,11 @@ class OperationCall(_AppendOnly):
     # forwarder's update to a shipment the supplier reported read as "Email
     # from" the carrier or the supplier, never the forwarder.
     source_sender = models.CharField(max_length=255, blank=True, default="", db_default="")
+    # The day the email itself was sent, as its Date header says, when the caller
+    # gave it: an email forwarded the next day was recorded then, and a quote's
+    # Received day is the day it was sent (quote_record). Shown beside the
+    # recorded day, it is the evidence a corrected Received day rests on.
+    source_sent_on = models.DateField(null=True, blank=True)
     # sha256 of the canonical JSON of the validated payload, `source` left
     # out. Part of the idempotency key: the same evidence producing the same
     # write is recorded once, but one email quoting two products is two writes.
