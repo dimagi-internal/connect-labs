@@ -95,6 +95,14 @@ SOURCE_SCHEMA = {
                 "both, e.g. 'Grace Okon, Kanem Foods'. The timeline names this as the sender."
             ),
         },
+        "sent_on": {
+            "type": "string",
+            "pattern": r"^\d{4}-\d{2}-\d{2}$",
+            "description": (
+                "The day the email itself was sent, from its Date header (YYYY-MM-DD) -- not the day it was "
+                "forwarded to you. The history shows it beside the day the write was recorded."
+            ),
+        },
     },
     "required": ["ref"],
     "additionalProperties": False,
