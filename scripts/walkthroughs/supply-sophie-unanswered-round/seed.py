@@ -381,12 +381,28 @@ def story_today() -> dt.date:
     return dt.datetime.now(ZoneInfo(APP_TIME_ZONE)).date()
 
 
-def sahel_replies() -> None:
+def _sahel_source(today: dt.date, misdated: bool) -> dict:
+    """The forwarded email. Misdated: Sahel sent it yesterday, and the excerpt says so.
+
+    The sheets narrative (supply-sophie-sheets) shows the mistake the 2026-10-01
+    rehearsal found most often -- the AI recording the day an email was FORWARDED
+    as the day the supplier wrote -- so Sophie can correct it in the Quotes sheet.
+    The excerpt carries the email's own date, which is how she sees it is wrong.
+    """
+    source = dict(SAHEL_REPLY)
+    if misdated:
+        sent = today - dt.timedelta(days=1)
+        source["excerpt"] = f"Sent {sent.day} {sent:%b %Y}. " + source["excerpt"]
+    return source
+
+
+def sahel_replies(misdated: bool = False) -> None:
     """The reply arrives after Sophie's chase; the AI records it as it would any forwarded email."""
     out = json.loads(OUTPUTS.read_text())
     today = story_today().isoformat()
     mcp = Mcp()
-    source = dict(SAHEL_REPLY)
+    # Misdated or not, the AI records the forwarding day: misdated is the run where that is wrong.
+    source = _sahel_source(story_today(), misdated)
     mcp.call(
         "supply_chain_quote_record",
         program_id=out["program_id"],
@@ -430,7 +446,7 @@ SAHEL_QUOTE = {
 }
 
 
-def sahel_local(*, base_url: str, outputs: str | None = None) -> dict:
+def sahel_local(*, base_url: str, outputs: str | None = None, misdated: bool = False) -> dict:
     """The same reply, recorded inside the local build: the agent account over the mcp channel.
 
     The local build has no labs MCP token, so the reply goes through the same
@@ -448,7 +464,7 @@ def sahel_local(*, base_url: str, outputs: str | None = None) -> dict:
     out = json.loads(path.read_text())
     today = replay.story_today()
     world = replay.World(out["program_id"], replay.personas())
-    source = dict(SAHEL_REPLY)
+    source = _sahel_source(today, misdated)
     world.email(
         today.isoformat(),
         "quote_record",
@@ -471,6 +487,11 @@ def sahel_local(*, base_url: str, outputs: str | None = None) -> dict:
     # The local runner re-reads the outputs file it handed us; leave it as it was.
     path.write_text(json.dumps(out, indent=2) + "\n")
     return out
+
+
+def sahel_local_misdated(*, base_url: str, outputs: str | None = None) -> dict:
+    """sahel_local, with the email sent the day before the AI says it was received."""
+    return sahel_local(base_url=base_url, outputs=outputs, misdated=True)
 
 
 def seed_local(*, base_url: str, outputs: str | None = None) -> dict:
@@ -505,14 +526,21 @@ def main() -> None:
         action="store_true",
         help="record Sahel's reply to the chase (scene 3's before: hook): over the labs MCP, or in-process locally",
     )
+    parser.add_argument(
+        "--sahel-forward-date",
+        action="store_true",
+        help="with --sahel-replies: Sahel's email was sent the day before, and the AI records the forwarding "
+        "day as received (supply-sophie-sheets scene 3)",
+    )
     local_seed.add_arguments(parser)
     args = parser.parse_args()
     local = local_seed.target(args.local, args.base_url)
     if args.sahel_replies:
         if local:
-            local_seed.run(HERE.name, local, Path(args.outputs) if args.outputs else OUTPUTS, call="sahel_local")
+            call = "sahel_local_misdated" if args.sahel_forward_date else "sahel_local"
+            local_seed.run(HERE.name, local, Path(args.outputs) if args.outputs else OUTPUTS, call=call)
         else:
-            sahel_replies()
+            sahel_replies(misdated=args.sahel_forward_date)
         return
     if local:
         outputs = Path(args.outputs) if args.outputs else HERE / "outputs.json"
