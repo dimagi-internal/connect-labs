@@ -17,9 +17,9 @@ a marked cell into an input and posts here; this module coerces the typed text
 to the field's type and runs the operation.
 
 A quote is the one record a cell does not overwrite: `quote_correct` writes a
-new version and keeps the old one, so the edit carries a reason ("Corrected in
-a table" -- the version itself records the field and both values), and the
-response names the NEW quote's cell so the page can mark it.
+new version and keeps the old one, so the edit carries a reason naming the
+change ("received 6 Oct → 5 Oct"), and the response names the NEW quote's cell
+so the page can mark it.
 """
 
 from __future__ import annotations
@@ -256,12 +256,39 @@ def apply(access, kind: str, record_id: int, name: str, text, *, was=None) -> di
 
     payload = {spec.id_arg: record_id, "data": data}
     if kind == "quote":
-        # Why, not what: the new version itself records which field changed and from what,
-        # and the Quotes sheet sets that beside this reason.
-        payload["reason"] = "Corrected in a table"
+        # The reason names the change -- "received 6 Oct → 5 Oct" -- so it reads on its own
+        # wherever the version's reason is shown, not as "Corrected in a table" on every one.
+        payload["reason"] = change_words(cell, _stored(access, record_id, name, was), value)
     result = call_operation(spec.operation, access, payload)
     new_id = (result or {}).get("id", record_id) if isinstance(result, dict) else record_id
     return {"key": key(kind, new_id, name)}
+
+
+def _stored(access, record_id, name, was):
+    """The quote's value before the edit, read off the record; the page's own copy (`was`) when it cannot be."""
+    get = getattr(access, "get_quote", None)
+    quote = get(record_id) if callable(get) else None
+    return getattr(quote, name) if quote is not None else was
+
+
+def shown(cell: Cell, value) -> str:
+    """A value as a cell shows it: "6 Oct" for a day, "52" for money, "not stated" for nothing."""
+    if value is None or value == "":
+        return "not stated"
+    if cell.type == DATE:
+        day = value if isinstance(value, date) else _date(str(value)[:10], cell)
+        return f"{day.day} {day:%b}"
+    if cell.type in (MONEY, NUMBER):
+        try:
+            return format(Decimal(str(value)).normalize(), "f")
+        except InvalidOperation:
+            return str(value)
+    return str(value)
+
+
+def change_words(cell: Cell, old, new) -> str:
+    """ "received 6 Oct → 5 Oct": the field, as the cell is labelled, and both values."""
+    return f"{cell.label} {shown(cell, old)} → {shown(cell, new)}"
 
 
 def key(kind: str, record_id, name: str) -> str:

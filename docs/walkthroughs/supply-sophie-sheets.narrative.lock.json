@@ -7,9 +7,10 @@
     "fill-the-comparison",
     "one-email",
     "the-order-as-sheets",
+    "to-the-field",
     "whose-move"
   ],
-  "fetched_at": "2026-10-06T17:50:11.320144+00:00",
+  "fetched_at": "2026-10-06T18:58:31.264724+00:00",
   "name": "supply-sophie-sheets",
   "narrative": "Sophie buys RUTF for the Connect-RUTF program. Half the suppliers she asked to quote tender 2 never answered, and the three who did each left something out. Watch her read the tender as one sheet, correct what the AI recorded right where she reads it, fill the comparison's gaps cell by cell until every quote has a landed price, and end on an overview that says whose move each thing is.",
   "personas": {
@@ -148,6 +149,25 @@
     {
       "features": [
         {
+          "description": "The network tree shows the central store feeding the partner store, which feeds the clone's twenty workers.",
+          "id": "field-network-tree",
+          "verify": "Playwright: /supply/network/?program_id=10110 [data-testid=network-tree] shows Central store > Partner store > 20 workers"
+        },
+        {
+          "description": "A worker's page shows what arrived (issued), what their visits gave out (dispensed, with the share on unapproved visits) and what is left on hand.",
+          "id": "field-worker-in-out",
+          "verify": "Playwright: /supply/workers/<flw_015>/ shows Issued, Dispensed (with 'not yet approved') and On hand; [data-testid=worker-timeline] present"
+        }
+      ],
+      "id": "to-the-field",
+      "narrative": "Once it is delivered, Sophie can see where it goes. On a synthetic copy of the real RUTF opportunity, a central store feeds a partner store, which feeds twenty workers. Worker flw_015 was issued 300 sachets -- deliveries made up for this demo, not recorded -- and their visits have given out 201, eleven of them on visits not yet approved, so 99 are on hand.",
+      "persona": "sophie",
+      "provenance": "S9",
+      "title": "To the field"
+    },
+    {
+      "features": [
+        {
           "description": "The overview row for tender 2 reads its comparable count and its next move.",
           "id": "overview-reflects",
           "verify": "Playwright: the tender 2 row reads '3 of 3 comparable'; the order row carries the shipment's expected date"
@@ -161,5 +181,5 @@
     }
   ],
   "slug": "supply-sophie-sheets",
-  "version": 4
+  "version": 6
 }

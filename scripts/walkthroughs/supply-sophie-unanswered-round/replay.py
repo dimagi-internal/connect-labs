@@ -246,9 +246,12 @@ class World:
         with seed_overrides(self.program_id, actor=self.personas[who], channel=channel, recorded_at=_ten_am(day)):
             return call_operation(name, self.access, payload, channel=channel)
 
-    def email(self, day: str, name: str, *, ref: str, excerpt: str, sender: str, **payload):
-        """What the agent records from one email Sophie forwarded."""
-        return self.op("ace", day, name, source={"ref": ref, "excerpt": excerpt, "sender": sender}, **payload)
+    def email(self, day: str, name: str, *, ref: str, excerpt: str, sender: str, sent_on: str = "", **payload):
+        """What the agent records from one email Sophie forwarded (`sent_on`: the email's own Date, when given)."""
+        source = {"ref": ref, "excerpt": excerpt, "sender": sender}
+        if sent_on:
+            source["sent_on"] = sent_on
+        return self.op("ace", day, name, source=source, **payload)
 
 
 # ---------------------------------------------------------------------------

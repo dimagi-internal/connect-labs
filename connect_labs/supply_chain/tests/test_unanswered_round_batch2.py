@@ -264,7 +264,7 @@ class TestTheComparison:
         button = re.search(r'<summary data-testid="award-open"[^>]*>(.*?)</summary>', body, re.S)
         assert button is not None and "data-anyway" in button.group(1)
         label = " ".join(html.unescape(_text(button.group(1))).split())
-        assert label.startswith("Award Kanem ") and label.endswith("· 1 other quote not comparable yet")
+        assert label == "Award · 1 other quote not comparable yet"
         assert 'title="Northgate Rehearsal Commodities has not stated ' in button.group(1)
 
     def test_an_empty_trailing_column_is_dropped_but_not_one_between_figures(self):
