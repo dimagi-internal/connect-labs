@@ -234,7 +234,8 @@ _KIND_ORDER = {"reply": 0, "request": 1, "reminder": 2, "followup": 3, "clarific
         "waited at least the tender's reminder_interval_days since the request or the last reminder "
         "(7 days when the tender sets none -- the result says which applied); and a `followup` for each "
         "live quote with questions still outstanding for the supplier. Each draft carries supplier, "
-        "kind, subject, text, address and `why` it is due. No requests or reminders once the tender is "
+        "kind, subject, text, address, `why` it is due and the same as labelled `facts`. No requests or "
+        "reminders once the tender is "
         "closed or awarded; no follow-ups once it is awarded. And a `reply` to each supplier whose questions "
         "to us are still open (commitment_record), listing them for the person to answer -- at any stage, "
         "because an answer owed does not lapse with the award. Once the tender's import duty terms are set "
@@ -323,7 +324,17 @@ def _requests_and_reminders(access, tender, commodities, quotes, day, interval, 
             )
             for commodity in commodities:
                 draft = render_initial_request(commodity, tender, supplier, sender=sender, today=day)
-                drafts.append(_draft_item(draft, "request", supplier, commodity, why=why, outreach_id=rows[0].pk))
+                drafts.append(
+                    _draft_item(
+                        draft,
+                        "request",
+                        supplier,
+                        commodity,
+                        why=why,
+                        facts=[_fact("Invitation", "logged"), _fact("Sent", "not yet")],
+                        outreach_id=rows[0].pk,
+                    )
+                )
             continue
         latest = max(sent, key=lambda r: r.sent_on)
         reminded = max((r.last_reminder_on for r in rows if r.last_reminder_on), default=None)
@@ -336,6 +347,10 @@ def _requests_and_reminders(access, tender, commodities, quotes, day, interval, 
         why += f". A reminder is due every {_days(interval)}" + (
             " (the default: this tender sets no reminder interval)." if is_default else ", as this tender sets."
         )
+        facts = [_fact("Asked", day_text(latest.sent_on))]
+        if reminded:
+            facts.append(_fact("Last reminded", day_text(reminded)))
+        facts.append(_fact("Due every", _days(interval) + (" (default)" if is_default else "")))
         for commodity in commodities:
             draft = render_reminder(
                 commodity,
@@ -354,6 +369,7 @@ def _requests_and_reminders(access, tender, commodities, quotes, day, interval, 
                     supplier,
                     commodity,
                     why=why,
+                    facts=facts,
                     outreach_id=latest.pk,
                     mark_sent=_mark_sent(latest.pk, day),
                 )
@@ -384,7 +400,18 @@ def _followups(access, tender, commodities, quotes, day, sender):
         invited = [o for o in access.list_outreach(tender_id=tender.pk) if o.supplier_id == quote.supplier_id]
         latest = max(invited, key=lambda o: (o.sent_on or date.min, o.pk)) if invited else None
         sent = {"outreach_id": latest.pk, "mark_sent": _mark_sent(latest.pk, day)} if latest else {}
-        drafts.append(_draft_item(draft, "followup", quote.supplier, commodity, why=why, quote_id=quote.pk, **sent))
+        drafts.append(
+            _draft_item(
+                draft,
+                "followup",
+                quote.supplier,
+                commodity,
+                why=why,
+                facts=[_fact("Questions for the supplier", str(count)), _fact("Holds up", "comparison and award")],
+                quote_id=quote.pk,
+                **sent,
+            )
+        )
     return drafts
 
 
@@ -421,6 +448,13 @@ def _replies(access, tender, day, sender):
             for i, q in enumerate(questions, start=1)
         ]
         still_open = [q for q in questions if q.resolved_on is None]
+        answered_today = len(questions) - len(still_open)
+        facts = []
+        if still_open:
+            facts += [_fact("Questions open", str(len(still_open))), _fact("Open since", day_text(asked))]
+        if answered_today:
+            facts.append(_fact("Answered today", f"{answered_today}, written in"))
+        facts.append(_fact("Owed by", "us"))
         text = (
             f"Dear {name},\n\nThank you for your questions of {day_text(asked)} about {tender.label}. "
             "Our answers:\n\n"
@@ -449,6 +483,7 @@ def _replies(access, tender, day, sender):
                     if still_open
                     else f"Every question from {name} answered today: the answers are written in, ready to send."
                 ),
+                "facts": facts,
                 "commitment_ids": [q.pk for q in questions],
                 # The answers written in, which the reply carries once sent (commitment_reply_sent).
                 "answered_ids": [q.pk for q in questions if q.resolved_on is not None],
@@ -504,6 +539,10 @@ def _clarifications(access, tender, sender, *, quotes=(), pending=()):
     if answer and answer.get("owed_to"):
         why += f", from your answer to {answer['owed_to']}"
     why += "; every invited supplier is told, so all quote on the same basis."
+    facts = [_fact("Duty terms set", day_text(set_on) if set_on else "yes")]
+    if answer and answer.get("owed_to"):
+        facts.append(_fact("From your answer to", answer["owed_to"]))
+    facts.append(_fact("Goes to", "every invited supplier"))
     suppliers = {}
     for row in access.list_outreach(tender_id=tender.pk):
         suppliers.setdefault(row.supplier_id, row.supplier)
@@ -546,6 +585,7 @@ def _clarifications(access, tender, sender, *, quotes=(), pending=()):
                 "text": text,
                 "to": address,
                 "why": why,
+                "facts": facts,
                 "duty_terms": tender.duty_terms,
             }
         )
@@ -630,7 +670,7 @@ def _mark_sent(outreach_id, day) -> dict:
     return {"operation": "outreach_update", "outreach_id": outreach_id, "data": {"last_reminder_on": day.isoformat()}}
 
 
-def _draft_item(draft, kind, supplier, commodity, *, why, **ids) -> dict:
+def _draft_item(draft, kind, supplier, commodity, *, why, facts, **ids) -> dict:
     return {
         "kind": kind,
         "supplier_id": supplier.pk,
@@ -638,8 +678,14 @@ def _draft_item(draft, kind, supplier, commodity, *, why, **ids) -> dict:
         "commodity_slug": commodity.slug,
         **draft.as_dict(),
         "why": why,
+        "facts": facts,
         **ids,
     }
+
+
+def _fact(label, value) -> dict:
+    """One labelled fact of why a draft is due: the screen sets these out as a row, never as a sentence."""
+    return {"label": label, "value": value}
 
 
 @register_operation(
