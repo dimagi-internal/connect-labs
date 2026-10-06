@@ -765,7 +765,7 @@ class TestPages:
         sources = re.findall(r'data-src="(\w+)"', price)
         assert dict(zip(map(int, heads), sources)) == {typed["id"]: "person", by_ai["id"]: "ai"}
 
-    def test_a_quote_corrected_over_mcp_is_marked_ai_on_the_comparison(self, client_in_program, da, base, ace, sophie):
+    def test_a_value_corrected_over_mcp_is_marked_ai_on_the_comparison(self, client_in_program, da, base, ace, sophie):
         typed = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, {}, channel="web", actor=sophie)
         corrected = _correct_pack(da, typed, ace)
         url = reverse("supply_chain:procurement_comparison", args=[base["tender"]["id"]])
@@ -774,8 +774,12 @@ class TestPages:
         import re
 
         assert f'data-quote-id="{corrected["id"]}"' in body
+        # Marked value by value: the pack the AI corrected is the AI's, the price Sophie
+        # typed and the correction carried over is still hers.
         price = "".join(re.findall(r'<td [^>]*data-fact="price"[^>]*>.*?</td>', body, re.S))
-        assert re.findall(r'data-src="(\w+)"', price) == ["ai"]
+        pack = "".join(re.findall(r'<td [^>]*data-fact="pack"[^>]*>.*?</td>', body, re.S))
+        assert re.findall(r'data-src="(\w+)"', pack) == ["ai"]
+        assert re.findall(r'data-src="(\w+)"', price) == ["person"]
 
     def test_the_order_page_as_of_leaves_out_the_later_change(self, client_in_program, order):
         import re
