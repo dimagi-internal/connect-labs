@@ -59,7 +59,7 @@ scenes:
   - kind: wait_for
     target: css:.is-saved
   - kind: scroll
-    value: '1740'
+    value: '1590'
   - kind: hold
     seconds: 1.0
   - kind: snapshot
