@@ -180,38 +180,28 @@ The generic indicator reports — the programme report, the opportunity/partner 
 
 **Opportunity report — Benchmarks tab improvements.** Bar charts are drawn on a true zero-based scale with a clearly labelled dashed line at the target value. Your own organisation is shown in a distinct colour with its status as a pill. A **See workers →** shortcut link opens the worker list sorted worst-first. Indicators that have no better-or-worse direction (for example, a count with no preferred direction) are grouped separately under "not ranked" rather than being sorted alongside directional indicators.
 
-!!! note "These improvements apply to new programmes created from the standard template"
-    If your programme was created before this change, its reports may not yet reflect all of the above. Contact your program administrator if you would like your existing reports updated to match the current template.
+**Additional improvements now included in the standard template.** A second round of refinements — previously applied only to individual programme copies — is now part of the standard template too. Every new programme will have:
 
-### Optional registry keys for visit flags
+- **Programme report:**
+    - Each rate tile shows a value bar with a tick mark at its target, a "lower is better" chip where that applies, and a label that opens the indicator's definition.
+    - Hovering a rate cell shows the counts behind the percentage — for example, "123 of 124".
+    - A partner or opportunity column that is identical on every row is no longer repeated.
+    - The legend sits above its table rather than below.
+    - When you drill into a partner that runs only one opportunity, the header names that opportunity directly and the one-row Opportunities table is hidden.
+    - The "Report of \<date\>" chip, which duplicated the "figures as of \<date\>" label, is removed.
 
-Registry authors can add two optional settings to each entry in a registry's `display.visit_flags` list:
+- **Opportunity report — Benchmarks tab:**
+    - Your organisation's figure shows its signed gap to target — for example, "−8.0 points to target".
+    - Each row has an expand chevron, and the expanded detail panel reads as a continuation of its row.
+    - The header no longer counts partners when the report covers only a single opportunity.
 
-- **`fields`** — the visit fields that a flag relates to. When set, those field values are highlighted on any visit that carries the flag, so readers can see at a glance what triggered it.
-- **`description`** — a short plain-English explanation of the flag. When set, this text appears in the Flags tooltip so readers know what the flag means without having to ask.
-
-Both keys are optional. Existing registries that do not use them are unaffected.
-
----
-
-## Taking Actions from a Report
-
-Some reports can offer **action buttons** — for example, **"Initiate AI coach"** or **"Create follow-up task"** — that let you act on the data you are looking at without leaving the page. The same actions can also be run by an AI assistant. Both features are off by default and must be switched on for each report individually; at present they are enabled for the **Spark facilitator program report** only.
-
-### Running an action from a button
-
-Clicking an action button opens a confirmation screen before anything happens. The confirmation shows:
-
-- Exactly which workers the action will reach
-- What the coaching bot will be told
-- Which bot will be used (you can choose if more than one is available)
-
-Nothing is sent until you press **Confirm**. Once you confirm, the page shows each worker's result as it completes, so you can see in real time which actions succeeded.
-
-### Running an action from an AI assistant
-
-An AI assistant — either the agent panel on the report itself or your own assistant connected to Connect Labs — can run the same actions. The assistant must show you the same confirmation preview before acting, and it acts as you, using your access and permissions. It cannot bypass the confirmation step.
-
-### The agent panel on a report
-
-When the agent panel is switched on for a
+- **Worker review:**
+    - Indicators are grouped under category rows.
+    - A "higher is better" or "lower is better" label appears once per category when all indicators in that category agree on direction.
+    - Each indicator name is a link that opens its registry definition.
+    - The worker's own column is tinted and bold; peer-median column headers show the cohort size.
+    - The visit chart runs to the report's as-of date: silence since the last visit appears as a hatched "still open" band, every gap boundary has a date label, and a legend explains the bands.
+    - The panel header counts gaps — for example, "3 gaps over 7 days".
+    - A "Days since previous" column marks gaps that exceed the threshold.
+    - Opening a case scrolls its visits into view automatically.
+    - The subtitle names the partner rather
