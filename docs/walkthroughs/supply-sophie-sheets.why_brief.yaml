@@ -1,0 +1,127 @@
+schema_version: 1
+narrative_slug: supply-sophie-sheets
+problem: >-
+  Sophie runs RUTF procurement for the Connect-RUTF program. Half the suppliers she asks never answer,
+  and the ones who do each leave something out, so the facts she buys on arrive in pieces, by email,
+  and are recorded for her by an AI from what she forwards. Her inbox cannot show her where a tender
+  stands, and a record she can only read -- every correction a trip to a form -- is one she stops
+  keeping. She needs one clear view of each tender, its quotes and its order, that she can correct
+  where she reads it, and that answers back at once: what is now comparable, and whose move it is.
+spine:
+- id: S1
+  claim: >-
+    In Sophie's tenders about half the suppliers asked never answer (Jonathan's account); this demo's
+    tender 2 reconstructs that: of six asked 17 days ago, with the deadline four days off, three are
+    silent through two reminders, and the three who answered sent one complete quote, one missing its
+    pack, and questions instead of a price.
+  rationale: The silence and the partial answers are what make a tender hard to read from an inbox.
+  status: grounded
+  evidence:
+  - kind: documented
+    ref: EV-024
+  - kind: implemented
+    ref: EV-007
+- id: S2
+  claim: >-
+    The tender reads as one sheet: a row per supplier asked, one stored value to a column (asked,
+    replied, last chased, price, delivery term, pack, what is missing), with what is ours to do and
+    whom we are waiting on side by side above it.
+  rationale: A clean table is the view Jonathan asked for in place of the email-led walkthrough.
+  status: grounded
+  evidence:
+  - kind: implemented
+    ref: 'PR 2244: connect_labs/templates/supply_chain/procurement/tender_detail.html (Suppliers sheet)'
+- id: S3
+  claim: >-
+    Every stored value in a supply table is edited where it is read: click the cell, type, Enter. The
+    write runs the operation the record's form runs, so it is validated, attributed and kept in the
+    record's history; a quote corrected in a cell is a new version whose reason names the field and
+    both values.
+  rationale: A record people correct in place stays true; one that needs a form for every fix does not.
+  status: grounded
+  evidence:
+  - kind: implemented
+    ref: 'PR 2244: connect_labs/supply_chain/cells.py, static/supply_chain/cell_edit.js'
+  - kind: implemented
+    ref: 'connect_labs/supply_chain/tests/test_cells.py'
+- id: S4
+  claim: >-
+    What the AI records from a forwarded email can be wrong in the way the rehearsal found most often:
+    the day it was forwarded recorded as the day the supplier wrote. Sophie sees it against the email
+    in the tender's history and fixes it in the Quotes sheet.
+  rationale: >-
+    The 2026-10-01 rehearsal (12 invented emails recorded by an AI) showed forward-date-for-reply-date
+    as a recurring fault; correcting the AI is part of the job, not an exception.
+  status: gap
+  evidence:
+  - kind: documented
+    ref: 'project memory: supply lead story = tracking reality (rehearsal findings, 2026-10-01)'
+- id: S5
+  claim: >-
+    The comparison is a quote to a row, a fact to a column. Each gap is a cell, and filling a cell
+    moves the quote: settling import duty in the grid, typing our freight estimate and Sahel's exchange
+    rate, and the landed column fills and ranks as each quote becomes comparable.
+  rationale: The comparison's payoff is watching the record become decidable, one fact at a time.
+  status: grounded
+  evidence:
+  - kind: implemented
+    ref: 'PR 2250: comparison.html (quotes as rows); status.py comparison_grid edit targets'
+- id: S6
+  claim: >-
+    Answering a supplier is still an email Sophie sends from her own mailbox: Northgate's three
+    questions are drafted into one reply, and she marks it sent.
+  rationale: Email is how suppliers are reached; it is one move in the record, not the record.
+  status: grounded
+  evidence:
+  - kind: implemented
+    ref: 'tender_detail.html Draft emails; procurement_reply_sent'
+- id: S7
+  claim: >-
+    The order from tender 1 reads as sheets too: its shipment held at customs and its invoice billed
+    above the agreed price, each a row; when the forwarder gives a new date, Sophie types it into the
+    shipment's row.
+  rationale: The record keeps tracking after the award, and stays correctable there.
+  status: gap
+  evidence:
+  - kind: implemented
+    ref: 'PR 2244 (second commit): order_detail.html invoices and shipments edit in place'
+- id: S8
+  claim: >-
+    Sophie's overview says what her corrections changed: tender 2 from none comparable to most of its
+    quotes comparable, its next move hers, the order's move hers too.
+  rationale: The overview is where the work of the session shows.
+  status: grounded
+  evidence:
+  - kind: implemented
+    ref: 'connect_labs/templates/supply_chain/home.html (procurements overview)'
+gaps:
+- id: G1
+  type: RESEARCH
+  claim_ref: S1
+  detail: >-
+    The emails are invented reconstructions (real supplier mail cannot enter this public repo); that
+    a real round splits about half silent rests on Jonathan's account.
+  proposed_action: Validate in the working session with Sophie against her real rounds' emails.
+- id: G2
+  type: CAPABILITY
+  claim_ref: S4
+  detail: >-
+    The seeder's Sahel reply records its quote with the email's own date, so there is no AI mistake
+    on camera to correct.
+  proposed_action: >-
+    seed.py --sahel-replies records Sahel's quote with received_on = the day Sophie forwarded it (one
+    day after Sahel's email), the excerpt carrying Sahel's own date, so the History shows the
+    disagreement and the Quotes sheet's Received cell is the one to fix.
+- id: G3
+  type: CAPABILITY
+  claim_ref: S7
+  detail: >-
+    Order, invoice and shipment edits are attributed to the caller's organisation; the walkthrough
+    persona has none locally, so a shipment edit is refused there. Unverified on labs.
+  proposed_action: >-
+    Confirm the persona's shipment edit on labs; if refused, seed the persona as a member of the
+    buyer organisation so order-page cells can be edited on camera.
+  resolved: >-
+    Verified on labs 2026-10-06 after the #2250 deploy: Sophie changed shipment 153's status in its cell
+    and it saved (the local refusal is the local build having no Connect organisation). Still to build:
+    the shipments table has no Expected column, so the expected date is not yet a cell.
