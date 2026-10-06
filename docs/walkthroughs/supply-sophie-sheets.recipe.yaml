@@ -123,9 +123,9 @@ scenes:
   - kind: wait_for
     target: css:.is-saved
   - kind: scroll_to
-    target: css:[data-testid=grid-quote-row]:has-text('Sahel') td[data-fact=landed]
+    target: css:[data-testid=grid-quote-row]:has-text('Kanem') td[data-fact=landed]
   - kind: hover
-    target: css:main h1
+    target: testid:comparable-count
   - kind: hold
     seconds: 1.0
   - kind: snapshot
