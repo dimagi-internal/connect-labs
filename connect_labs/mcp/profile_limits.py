@@ -143,3 +143,31 @@ def record(user, task_id: str, *, kind: str, opportunity_ids: list[int], args: d
             cache.incr(key, len(opportunity_ids))
         except ValueError:
             cache.set(key, len(opportunity_ids), 2 * 86400)
+
+
+def recent_jobs(user) -> list[dict]:
+    """This person's synthetic jobs from the last few hours, newest first, each with its state now.
+
+    The same records the limits count, read for a page: what was asked (kind and
+    opportunities), when, and where it stands in Celery.
+    """
+    now = time.time()
+    rows = []
+    for job in cache.get(_inflight_key(user)) or []:
+        if now - job.get("at", 0) > _MAX_AGE_SECONDS:
+            continue
+        asked = json.loads(job.get("signature") or "{}")
+        rows.append(
+            {
+                "task_id": job["task_id"],
+                "kind": asked.get("kind", ""),
+                "opportunity_ids": asked.get("opportunity_ids") or [],
+                "started": datetime.fromtimestamp(job.get("at", now), UTC),
+                "state": _state(job["task_id"]),
+            }
+        )
+    return sorted(rows, key=lambda r: r["started"], reverse=True)
+
+
+def is_live(state: str) -> bool:
+    return state in _LIVE_STATES

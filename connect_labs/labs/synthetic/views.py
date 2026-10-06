@@ -507,3 +507,63 @@ class CloneStatusView(LoginRequiredMixin, View):
         if request.GET.get("format") == "json":
             return JsonResponse(status)
         return render(request, self.template_name, {"status": status, "task_id": task_id})
+
+
+_STATE_WORDS = {
+    "PENDING": "Queued",
+    "RECEIVED": "Queued",
+    "RETRY": "Waiting for a free slot",
+    "STARTED": "Running",
+    "PROGRESS": "Running",
+    "SUCCESS": "Done",
+    "FAILURE": "Failed",
+    "REVOKED": "Cancelled",
+}
+_KIND_WORDS = {"clone_opp": "Clone"}
+
+
+class SyntheticJobsView(LoginRequiredMixin, View):
+    """Your synthetic jobs (clones and profiles), where each stands, and a way to stop one.
+
+    Also how many of the system-wide slots are busy -- the reason a job waits -- and
+    whether a job waiting for a slot is waiting while one is free, which is what a job
+    lost in a worker restart looks like.
+    """
+
+    template_name = "labs/synthetic/jobs.html"
+
+    def get(self, request):
+        from django.shortcuts import render
+
+        from connect_labs.labs.synthetic.tasks import slot_holders
+        from connect_labs.mcp import profile_limits
+
+        jobs = profile_limits.recent_jobs(request.user)
+        mine = {job["task_id"] for job in jobs}
+        holders = slot_holders()
+        free = sum(1 for holder in holders if holder is None)
+        for job in jobs:
+            job["state_words"] = _STATE_WORDS.get(job["state"], job["state"].capitalize())
+            job["kind_words"] = _KIND_WORDS.get(job["kind"], job["kind"].replace("_", " ").capitalize() or "Job")
+            job["live"] = profile_limits.is_live(job["state"])
+            job["stuck"] = job["state"] == "RETRY" and free > 0
+        context = {
+            "jobs": jobs,
+            "slots": [{"busy": h is not None, "mine": h in mine} for h in holders],
+            "free": free,
+        }
+        return render(request, self.template_name, context)
+
+
+class CancelSyntheticJobView(LoginRequiredMixin, View):
+    """Stop one of your own synthetic jobs. Someone else's id is refused as if it did not exist."""
+
+    def post(self, request, task_id):
+        from connect_labs.labs.synthetic.tasks import cancel_job
+        from connect_labs.mcp.tools.synthetic import _profile_task_owned_by
+
+        if not _profile_task_owned_by(request.user, task_id):
+            raise Http404("No synthetic job of yours with that id.")
+        cancel_job(task_id)
+        messages.success(request, "Job cancelled. You can start it again whenever you like.")
+        return HttpResponseRedirect(reverse("labs:synthetic:jobs"))
