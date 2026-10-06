@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Clone a real opportunity{% endblock %}
+
+{% block content %}
+<div class="container mx-auto max-w-3xl px-4 py-8">
+  <a href="{% url 'labs:synthetic:list' %}" class="mb-4 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
+    <i class="fa-solid fa-arrow-left mr-2"></i> Synthetic opportunities
+  </a>
+  <h1 class="mb-2 text-2xl font-bold text-gray-900">Clone a real opportunity</h1>
+  {% comment %}What the clone is, in the words of someone who has never made one.{% endcomment %}
+  <p class="mb-6 text-gray-700">
+    Makes a <strong>synthetic copy</strong> you can demo and build on freely. Labs measures the real
+    opportunity as it stands today -- how many workers, how many cases each, how visits are spaced, what
+    the forms answer -- and generates new data with the same shape. <strong>No real visit, case, name or
+    date is copied.</strong> The copy goes into a new program of its own, and only you see it at first.
+  </p>
+
+  {% if error %}
+  <div class="mb-4 rounded-lg border border-message-error-text/30 bg-message-error px-4 py-3 text-sm text-message-error-text" role="alert" data-testid="clone-error">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" class="flex flex-col gap-5 rounded-lg border border-gray-200 bg-white p-6" data-testid="clone-form">
+    {% csrf_token %}
+    <fieldset>
+      <legend class="mb-2 font-medium text-gray-900">Opportunity to clone</legend>
+      {% if choices %}
+      <div class="flex max-h-80 flex-col gap-1 overflow-y-auto rounded-md border border-gray-200 p-2">
+        {% for opp in choices %}
+        <label class="flex items-center gap-3 rounded px-2 py-1.5 text-sm hover:bg-gray-50">
+          <input type="checkbox" name="opportunity" value="{{ opp.id }}"{% if chosen == opp.id|stringformat:"d" %} checked{% endif %}>
+          <span class="text-gray-900">{{ opp.name }}</span>
+          <span class="ml-auto whitespace-nowrap text-xs text-gray-600">#{{ opp.id }}{% if opp.visits %} · {{ opp.visits }} visits{% endif %}</span>
+        </label>
+        {% endfor %}
+      </div>
+      <p class="mt-1 text-xs text-gray-600">Only the opportunities your Connect account can see are listed. Tick more than one to clone them into one program.</p>
+      {% else %}
+      <p class="text-sm text-gray-600">Your Connect account sees no opportunities. Sign out and in again if you expected some.</p>
+      {% endif %}
+    </fieldset>
+    <label class="flex flex-col gap-1 text-sm">
+      <span class="font-medium text-gray-900">Name for the new program <span class="font-normal text-gray-600">(optional)</span></span>
+      <input type="text" name="program_name" class="base-input" placeholder="e.g. RUTF Kano, synthetic">
+    </label>
+    <label class="flex items-start gap-3 text-sm">
+      <input type="checkbox" name="case_timelines" checked class="mt-1">
+      <span><span class="font-medium text-gray-900">Follow each case over time</span><br>
+        <span class="text-gray-600">Recommended: cases grow, are revisited and close the way real ones do. Untick for a faster copy that only matches each answer's overall spread.</span></span>
+    </label>
+    <div class="flex items-center gap-4">
+      <button type="submit" class="button button-md primary-dark" data-testid="clone-start">Make the clone</button>
+      <span class="text-xs text-gray-600">Takes a few minutes; a large opportunity up to about 20. You can leave the page.</span>
+    </div>
+  </form>
+</div>
+{% endblock %}
