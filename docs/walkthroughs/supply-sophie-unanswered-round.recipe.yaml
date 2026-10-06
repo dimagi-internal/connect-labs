@@ -291,12 +291,12 @@ scenes:
       terms are settled
     say: duty
     seconds: 2.0
-    target: css:tr[data-fact=duty] th
+    target: css:th[data-fact=duty]
   - kind: hover
     note: Kanem's pack size, not stated
     say: Kanem
     seconds: 2.0
-    target: css:tr[data-fact=pack] td[data-gap]
+    target: css:td[data-fact=pack][data-gap]
   - kind: hover
     note: Sahel's column, the quote the AI just recorded, missing facts of its own
     say: Sahel
@@ -307,18 +307,18 @@ scenes:
       recorded, a fact on us
     say: freight
     seconds: 2.0
-    target: css:tr[data-fact=freight] th
+    target: css:th[data-fact=freight]
   - kind: hover
     note: the Clearing & forwarding row -- our estimate per carton on every quote we import, the supplier's
       on Kanem's delivered-duty-paid quote
     say: clearing
     seconds: 2.0
-    target: css:tr[data-fact=clearing] th
+    target: css:th[data-fact=clearing]
   - kind: hover
     note: the exchange rate row -- Sahel's price is in euros and no rate is recorded
     say: euros
     seconds: 2.0
-    target: css:tr[data-fact=fx] th
+    target: css:th[data-fact=fx]
   - kind: scroll
     note: back to the top -- the compact head (title, the 0 of 3 comparable chip, the duty terms line)
       and the grid down to the Exchange rate row whole, nothing under the fixed bar
@@ -444,13 +444,13 @@ scenes:
     note: the Import duty row, settled for the quotes we import
     say: settled
     seconds: 2.0
-    target: css:tr[data-fact=duty] th
+    target: css:th[data-fact=duty]
   - kind: hover
     note: Harmattan's landed per carton, its quoted 50.10 plus our clearing estimate of 1.20, chipped
       unconfirmed while no copy of the waiver is on file
     say: landed
     seconds: 2.0
-    target: css:tr[data-fact=landed] th
+    target: css:th[data-fact=landed]
   - kind: scroll_to
     note: down to the Award line under the grid
     target: testid:award-open

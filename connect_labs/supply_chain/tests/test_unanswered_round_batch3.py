@@ -205,7 +205,7 @@ class TestTheComparison:
         assert re.search(r'data-testid="comparable-count"[^>]*>1 of 2 comparable<', body)
         grid = re.search(r'<table [^>]*data-testid="comparison-grid".*?</table>', body, re.S).group(0)
         assert re.search(r">[^<]+ · to ask<", grid)  # never asked since the quote came in
-        pack = re.search(r'<tr data-fact="pack".*?</tr>', grid, re.S).group(0)
+        pack = "".join(re.findall(r'<td [^>]*data-fact="pack"[^>]*>.*?</td>', grid, re.S))
         assert "not stated" in pack
         for word in ("PROVISIONAL", "provisional", "beat"):
             assert word not in grid
