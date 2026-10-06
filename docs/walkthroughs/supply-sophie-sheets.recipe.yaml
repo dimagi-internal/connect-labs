@@ -35,7 +35,7 @@ scenes:
   - kind: wait_for
     target: testid:supplier-table
   - kind: scroll
-    value: '660'
+    value: '620'
   - kind: snapshot
   concept_claim: The tender's suppliers read as one sheet -- a row each, one value
     to a column -- so where every supplier stands is read without opening an email.
@@ -146,8 +146,10 @@ scenes:
     target: css:[data-testid=draft]:has-text('Northgate') [data-testid=reply-sent-form] button
   - kind: wait_for
     target: testid:on-us-count
-  - kind: scroll_to
-    target: testid:on-us-count
+  - kind: hover
+    target: text:Waiting on suppliers
+  - kind: hold
+    seconds: 1.0
   - kind: snapshot
   concept_claim: What the record says she owes a supplier is drafted as one email
     for her own mailbox, and sending it is one more fact in the record.
