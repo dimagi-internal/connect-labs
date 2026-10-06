@@ -31,7 +31,7 @@ export function ScoreCellText(props: {
   if (c.denOnly) return <>{e.n ? nCount(e.n) : '—'}</>;
   if (e.band === 'insufficient')
     return (
-      <span className="text-gray-400">
+      <span className="text-gray-500">
         n&lt;{m.min_denominator || props.minDenominator || 20}
       </span>
     );
@@ -117,7 +117,7 @@ export function AttentionCell(props: { reds: number; yellows: number }) {
           {yellows}
         </span>
       ) : (
-        <span className="text-gray-300">0</span>
+        <span className="text-gray-500">0</span>
       )}
     </td>
   );
@@ -128,7 +128,7 @@ export function ScorecardLegend(props: {
   minDenominator?: number;
 }) {
   return (
-    <div className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100 flex items-center gap-4 flex-wrap">
+    <div className="px-4 py-2 text-xs text-gray-500 border-t border-gray-100 flex items-center gap-4 flex-wrap">
       <span>
         <span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-100 border border-red-400 mr-1 align-middle" />
         Off target

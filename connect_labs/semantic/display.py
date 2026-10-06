@@ -48,6 +48,9 @@ PER REGISTRY (`display:` in the indicators document)::
       visit_flags:                                 # per-visit review flags, shown by name
         - {column: repeat_counts_flag, label: Repeat count}   # flagged when 'yes'/true/1
         - {column: risk_level, label: High risk, value: high} # or when it equals `value`
+        - {column: dup_flag, label: Repeat count,
+           fields: [male_attendance, female_attendance],  # visit_fields it is about
+           description: 'Counts exactly repeat the previous visit'}  # Flags tooltip
       targets_note: 'Targets from the 2026 workplan'        # optional footnote
 
 `entity.label_field` names a case-index field (a column of the entity pipeline,
@@ -58,7 +61,10 @@ to the id when a case has none. The builder adds it to the derived case index.
 `visit_flags` is how an indicator that counts flagged visits (a repeat-count rate,
 a location-review rate) points the reader at WHICH visits: the worker review marks
 each visit that carries the flag. Without it the visit list can only show Connect's
-own review flag, which is a different thing.
+own review flag, which is a different thing. A flag's optional `fields` names the
+`visit_fields` it is about: on a flagged visit, each of those cells that equals the
+previous visit's is marked (a repeat-count flag points at the repeated counts). Its
+optional `description` is the sentence the Flags column's tooltip gives for it.
 
 `resolve_display` fills every default so readers never branch on absence, and
 `display_problems` is the save-time gate (`validation.validate_registry` calls it).
@@ -116,6 +122,8 @@ def _visit_flags(raw: Any) -> list[dict[str, Any]]:
             "column": str(f["column"]),
             "label": str(f.get("label") or f["column"]),
             **({"value": f["value"]} if f.get("value") is not None else {}),
+            **({"fields": [str(x) for x in f["fields"]]} if isinstance(f.get("fields"), list) else {}),
+            **({"description": str(f["description"])} if f.get("description") else {}),
         }
         for f in raw or []
         if isinstance(f, dict) and isinstance(f.get("column"), str)
@@ -330,6 +338,13 @@ def display_problems(indicators_doc: dict[str, Any] | None) -> list[str]:
                         problems.append(f"display.visit_flags[{i}].label: must be a string")
                     elif f.get("value") is not None and not isinstance(f["value"], (str, int, float)):
                         problems.append(f"display.visit_flags[{i}].value: must be a string or a number")
+                    elif f.get("fields") is not None and not (
+                        isinstance(f["fields"], list)
+                        and all(isinstance(x, str) and _FIELD.match(x) for x in f["fields"])
+                    ):
+                        problems.append(f"display.visit_flags[{i}].fields: must be a list of visit_fields names")
+                    elif f.get("description") is not None and not isinstance(f["description"], str):
+                        problems.append(f"display.visit_flags[{i}].description: must be a string")
         reading = raw.get("reading")
         if reading is not None and not (
             isinstance(reading, dict) and isinstance(reading.get("column"), str) and _FIELD.match(reading["column"])

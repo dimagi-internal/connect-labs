@@ -1,0 +1,2843 @@
+{
+  "byFLW": [
+    {
+      "caseloadBand": 2,
+      "caseloadLabel": "heaviest",
+      "firstVisit": "2026-07-07",
+      "flw": "flw_a01",
+      "ind": {
+        "SF_C1": {
+          "band": "unbanded",
+          "id": "SF_C1",
+          "n": 13,
+          "value": 0.9231
+        },
+        "SF_D1": { "band": "unbanded", "id": "SF_D1", "n": 13, "value": 0 },
+        "SF_D2": { "band": "unbanded", "id": "SF_D2", "n": 13, "value": 0 },
+        "SF_D3": { "band": "unbanded", "id": "SF_D3", "n": 7, "value": 0.5714 },
+        "SF_P1": { "band": "green", "id": "SF_P1", "n": 13, "value": 1 },
+        "SF_P3": { "band": "green", "id": "SF_P3", "n": 1, "value": 1 },
+        "SF_S1": {
+          "band": "unbanded",
+          "id": "SF_S1",
+          "n": 1014,
+          "value": 0.6834
+        },
+        "SF_S2": {
+          "band": "unbanded",
+          "id": "SF_S2",
+          "n": 736,
+          "value": 0.4416
+        },
+        "SF_S3": {
+          "band": "unbanded",
+          "id": "SF_S3",
+          "n": 736,
+          "value": 0.3791
+        },
+        "SF_S4": {
+          "band": "unbanded",
+          "id": "SF_S4",
+          "n": 325,
+          "value": 0.3262
+        },
+        "SF_S5": { "band": "unbanded", "id": "SF_S5", "n": 1, "value": 1 }
+      },
+      "key": "10097::flw_a01",
+      "lastVisit": "2026-09-29",
+      "llo": "Partner A",
+      "n": 1,
+      "name": "Worker A01",
+      "opp": 10097,
+      "reds": 0,
+      "rows": [0],
+      "startMonth": "2026-07",
+      "username": "flw_a01",
+      "yellows": 0
+    },
+    {
+      "caseloadBand": 2,
+      "caseloadLabel": "heaviest",
+      "firstVisit": "2026-07-09",
+      "flw": "flw_a02",
+      "ind": {
+        "SF_C1": { "band": "unbanded", "id": "SF_C1", "n": 10, "value": 1 },
+        "SF_D1": { "band": "unbanded", "id": "SF_D1", "n": 10, "value": 0 },
+        "SF_D2": { "band": "unbanded", "id": "SF_D2", "n": 10, "value": 0.2 },
+        "SF_D3": { "band": "unbanded", "id": "SF_D3", "n": 6, "value": 0.6667 },
+        "SF_P1": { "band": "yellow", "id": "SF_P1", "n": 13, "value": 0.7 },
+        "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+        "SF_S1": {
+          "band": "unbanded",
+          "id": "SF_S1",
+          "n": 2020,
+          "value": 0.701
+        },
+        "SF_S2": {
+          "band": "unbanded",
+          "id": "SF_S2",
+          "n": 1578,
+          "value": 0.4461
+        },
+        "SF_S3": {
+          "band": "unbanded",
+          "id": "SF_S3",
+          "n": 1578,
+          "value": 0.3777
+        },
+        "SF_S4": {
+          "band": "unbanded",
+          "id": "SF_S4",
+          "n": 704,
+          "value": 0.321
+        },
+        "SF_S5": { "band": "unbanded", "id": "SF_S5", "n": 1, "value": 0 }
+      },
+      "key": "10097::flw_a02",
+      "lastVisit": "2026-09-24",
+      "llo": "Partner A",
+      "n": 1,
+      "name": "Worker A02",
+      "opp": 10097,
+      "reds": 0,
+      "rows": [1],
+      "startMonth": "2026-07",
+      "username": "flw_a02",
+      "yellows": 1
+    },
+    {
+      "caseloadBand": 2,
+      "caseloadLabel": "heaviest",
+      "firstVisit": "2026-07-08",
+      "flw": "flw_a03",
+      "ind": {
+        "SF_C1": { "band": "unbanded", "id": "SF_C1", "n": 10, "value": 1 },
+        "SF_D1": { "band": "unbanded", "id": "SF_D1", "n": 10, "value": 0 },
+        "SF_D2": { "band": "unbanded", "id": "SF_D2", "n": 10, "value": 0.1 },
+        "SF_D3": { "band": "unbanded", "id": "SF_D3", "n": 7, "value": 0.7143 },
+        "SF_P1": { "band": "red", "id": "SF_P1", "n": 10, "value": 0.5 },
+        "SF_P3": { "band": "yellow", "id": "SF_P3", "n": 1, "value": 0.6 },
+        "SF_S1": {
+          "band": "unbanded",
+          "id": "SF_S1",
+          "n": 1650,
+          "value": 0.6679
+        },
+        "SF_S2": {
+          "band": "unbanded",
+          "id": "SF_S2",
+          "n": 1137,
+          "value": 0.4327
+        },
+        "SF_S3": {
+          "band": "unbanded",
+          "id": "SF_S3",
+          "n": 1137,
+          "value": 0.387
+        },
+        "SF_S4": {
+          "band": "unbanded",
+          "id": "SF_S4",
+          "n": 492,
+          "value": 0.311
+        },
+        "SF_S5": { "band": "unbanded", "id": "SF_S5", "n": 1, "value": 1 }
+      },
+      "key": "10097::flw_a03",
+      "lastVisit": "2026-09-09",
+      "llo": "Partner A",
+      "n": 1,
+      "name": "Worker A03",
+      "opp": 10097,
+      "reds": 1,
+      "rows": [2],
+      "startMonth": "2026-07",
+      "username": "flw_a03",
+      "yellows": 1
+    },
+    {
+      "caseloadBand": 2,
+      "caseloadLabel": "heaviest",
+      "firstVisit": "2026-07-07",
+      "flw": "flw_b01",
+      "ind": {
+        "SF_C1": { "band": "unbanded", "id": "SF_C1", "n": 9, "value": 1 },
+        "SF_D1": { "band": "unbanded", "id": "SF_D1", "n": 9, "value": 0 },
+        "SF_D2": { "band": "unbanded", "id": "SF_D2", "n": 9, "value": 0 },
+        "SF_D3": { "band": "unbanded", "id": "SF_D3", "n": 7, "value": 0.7143 },
+        "SF_P1": { "band": "green", "id": "SF_P1", "n": 9, "value": 1 },
+        "SF_P3": { "band": "green", "id": "SF_P3", "n": 1, "value": 1 },
+        "SF_S1": {
+          "band": "unbanded",
+          "id": "SF_S1",
+          "n": 1098,
+          "value": 0.7086
+        },
+        "SF_S2": {
+          "band": "unbanded",
+          "id": "SF_S2",
+          "n": 851,
+          "value": 0.3854
+        },
+        "SF_S3": {
+          "band": "unbanded",
+          "id": "SF_S3",
+          "n": 851,
+          "value": 0.3925
+        },
+        "SF_S4": {
+          "band": "unbanded",
+          "id": "SF_S4",
+          "n": 328,
+          "value": 0.3079
+        },
+        "SF_S5": { "band": "unbanded", "id": "SF_S5", "n": 1, "value": 1 }
+      },
+      "key": "10098::flw_b01",
+      "lastVisit": "2026-09-01",
+      "llo": "Partner B",
+      "n": 1,
+      "name": "Worker B01",
+      "opp": 10098,
+      "reds": 0,
+      "rows": [3],
+      "startMonth": "2026-07",
+      "username": "flw_b01",
+      "yellows": 0
+    },
+    {
+      "caseloadBand": 2,
+      "caseloadLabel": "heaviest",
+      "firstVisit": "2026-07-08",
+      "flw": "flw_b02",
+      "ind": {
+        "SF_C1": { "band": "unbanded", "id": "SF_C1", "n": 12, "value": 1 },
+        "SF_D1": { "band": "unbanded", "id": "SF_D1", "n": 12, "value": 0 },
+        "SF_D2": { "band": "unbanded", "id": "SF_D2", "n": 12, "value": 0 },
+        "SF_D3": { "band": "unbanded", "id": "SF_D3", "n": 7, "value": 0.4286 },
+        "SF_P1": { "band": "green", "id": "SF_P1", "n": 12, "value": 1 },
+        "SF_P3": { "band": "green", "id": "SF_P3", "n": 1, "value": 1 },
+        "SF_S1": {
+          "band": "unbanded",
+          "id": "SF_S1",
+          "n": 1500,
+          "value": 0.66
+        },
+        "SF_S2": {
+          "band": "unbanded",
+          "id": "SF_S2",
+          "n": 1075,
+          "value": 0.4223
+        },
+        "SF_S3": {
+          "band": "unbanded",
+          "id": "SF_S3",
+          "n": 1075,
+          "value": 0.3916
+        },
+        "SF_S4": {
+          "band": "unbanded",
+          "id": "SF_S4",
+          "n": 454,
+          "value": 0.3348
+        },
+        "SF_S5": { "band": "unbanded", "id": "SF_S5", "n": 1, "value": 1 }
+      },
+      "key": "10098::flw_b02",
+      "lastVisit": "2026-09-23",
+      "llo": "Partner B",
+      "n": 1,
+      "name": "Worker B02",
+      "opp": 10098,
+      "reds": 0,
+      "rows": [4],
+      "startMonth": "2026-07",
+      "username": "flw_b02",
+      "yellows": 0
+    },
+    {
+      "caseloadBand": 2,
+      "caseloadLabel": "heaviest",
+      "firstVisit": "2026-07-10",
+      "flw": "flw_b03",
+      "ind": {
+        "SF_C1": { "band": "unbanded", "id": "SF_C1", "n": 8, "value": 1 },
+        "SF_D1": { "band": "unbanded", "id": "SF_D1", "n": 8, "value": 0 },
+        "SF_D2": { "band": "unbanded", "id": "SF_D2", "n": 8, "value": 0 },
+        "SF_D3": { "band": "unbanded", "id": "SF_D3", "n": 7, "value": 0.8571 },
+        "SF_P1": { "band": "green", "id": "SF_P1", "n": 8, "value": 1 },
+        "SF_P3": { "band": "green", "id": "SF_P3", "n": 1, "value": 1 },
+        "SF_S1": {
+          "band": "unbanded",
+          "id": "SF_S1",
+          "n": 1672,
+          "value": 0.6657
+        },
+        "SF_S2": {
+          "band": "unbanded",
+          "id": "SF_S2",
+          "n": 1201,
+          "value": 0.5204
+        },
+        "SF_S3": {
+          "band": "unbanded",
+          "id": "SF_S3",
+          "n": 1201,
+          "value": 0.5887
+        },
+        "SF_S4": {
+          "band": "unbanded",
+          "id": "SF_S4",
+          "n": 625,
+          "value": 0.7184
+        },
+        "SF_S5": { "band": "unbanded", "id": "SF_S5", "n": 1, "value": 1 }
+      },
+      "key": "10098::flw_b03",
+      "lastVisit": "2026-08-28",
+      "llo": "Partner B",
+      "n": 1,
+      "name": "Worker B03",
+      "opp": 10098,
+      "reds": 0,
+      "rows": [5],
+      "startMonth": "2026-07",
+      "username": "flw_b03",
+      "yellows": 0
+    },
+    {
+      "caseloadBand": 2,
+      "caseloadLabel": "heaviest",
+      "firstVisit": "2026-07-09",
+      "flw": "flw_c01",
+      "ind": {
+        "SF_C1": { "band": "unbanded", "id": "SF_C1", "n": 9, "value": 1 },
+        "SF_D1": { "band": "unbanded", "id": "SF_D1", "n": 9, "value": 0 },
+        "SF_D2": { "band": "unbanded", "id": "SF_D2", "n": 9, "value": 0 },
+        "SF_D3": { "band": "unbanded", "id": "SF_D3", "n": 7, "value": 0.7143 },
+        "SF_P1": { "band": "green", "id": "SF_P1", "n": 11, "value": 0.8182 },
+        "SF_P3": { "band": "green", "id": "SF_P3", "n": 1, "value": 1 },
+        "SF_S1": {
+          "band": "unbanded",
+          "id": "SF_S1",
+          "n": 1530,
+          "value": 0.4523
+        },
+        "SF_S2": {
+          "band": "unbanded",
+          "id": "SF_S2",
+          "n": 769,
+          "value": 0.3602
+        },
+        "SF_S3": {
+          "band": "unbanded",
+          "id": "SF_S3",
+          "n": 769,
+          "value": 0.2913
+        },
+        "SF_S4": {
+          "band": "unbanded",
+          "id": "SF_S4",
+          "n": 277,
+          "value": 0.2238
+        },
+        "SF_S5": { "band": "unbanded", "id": "SF_S5", "n": 1, "value": 0 }
+      },
+      "key": "10099::flw_c01",
+      "lastVisit": "2026-09-17",
+      "llo": "Partner C",
+      "n": 1,
+      "name": "Worker C01",
+      "opp": 10099,
+      "reds": 0,
+      "rows": [6],
+      "startMonth": "2026-07",
+      "username": "flw_c01",
+      "yellows": 0
+    },
+    {
+      "caseloadBand": 2,
+      "caseloadLabel": "heaviest",
+      "firstVisit": "2026-07-10",
+      "flw": "flw_c02",
+      "ind": {
+        "SF_C1": { "band": "unbanded", "id": "SF_C1", "n": 9, "value": 1 },
+        "SF_D1": { "band": "unbanded", "id": "SF_D1", "n": 9, "value": 0 },
+        "SF_D2": { "band": "unbanded", "id": "SF_D2", "n": 9, "value": 0 },
+        "SF_D3": { "band": "unbanded", "id": "SF_D3", "n": 4, "value": 0.25 },
+        "SF_P1": { "band": "yellow", "id": "SF_P1", "n": 13, "value": 0.6923 },
+        "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+        "SF_S1": {
+          "band": "unbanded",
+          "id": "SF_S1",
+          "n": 1836,
+          "value": 0.4368
+        },
+        "SF_S2": {
+          "band": "unbanded",
+          "id": "SF_S2",
+          "n": 884,
+          "value": 0.3733
+        },
+        "SF_S3": {
+          "band": "unbanded",
+          "id": "SF_S3",
+          "n": 884,
+          "value": 0.2919
+        },
+        "SF_S4": {
+          "band": "unbanded",
+          "id": "SF_S4",
+          "n": 330,
+          "value": 0.2273
+        },
+        "SF_S5": { "band": "unbanded", "id": "SF_S5", "n": 1, "value": 1 }
+      },
+      "key": "10099::flw_c02",
+      "lastVisit": "2026-10-02",
+      "llo": "Partner C",
+      "n": 1,
+      "name": "Worker C02",
+      "opp": 10099,
+      "reds": 0,
+      "rows": [7],
+      "startMonth": "2026-07",
+      "username": "flw_c02",
+      "yellows": 1
+    },
+    {
+      "caseloadBand": 2,
+      "caseloadLabel": "heaviest",
+      "firstVisit": "2026-07-08",
+      "flw": "flw_c03",
+      "ind": {
+        "SF_C1": { "band": "unbanded", "id": "SF_C1", "n": 10, "value": 1 },
+        "SF_D1": { "band": "unbanded", "id": "SF_D1", "n": 10, "value": 0.1 },
+        "SF_D2": { "band": "unbanded", "id": "SF_D2", "n": 10, "value": 0.3 },
+        "SF_D3": { "band": "unbanded", "id": "SF_D3", "n": 4, "value": 0.5 },
+        "SF_P1": { "band": "yellow", "id": "SF_P1", "n": 13, "value": 0.7692 },
+        "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+        "SF_S1": {
+          "band": "unbanded",
+          "id": "SF_S1",
+          "n": 1480,
+          "value": 0.4561
+        },
+        "SF_S2": {
+          "band": "unbanded",
+          "id": "SF_S2",
+          "n": 705,
+          "value": 0.3688
+        },
+        "SF_S3": {
+          "band": "unbanded",
+          "id": "SF_S3",
+          "n": 705,
+          "value": 0.2794
+        },
+        "SF_S4": {
+          "band": "unbanded",
+          "id": "SF_S4",
+          "n": 260,
+          "value": 0.2192
+        },
+        "SF_S5": { "band": "unbanded", "id": "SF_S5", "n": 1, "value": 0 }
+      },
+      "key": "10099::flw_c03",
+      "lastVisit": "2026-09-30",
+      "llo": "Partner C",
+      "n": 1,
+      "name": "Worker C03",
+      "opp": 10099,
+      "reds": 0,
+      "rows": [8],
+      "startMonth": "2026-07",
+      "username": "flw_c03",
+      "yellows": 1
+    }
+  ],
+  "byLLO": [
+    {
+      "firstVisit": "2026-07-07",
+      "ind": {
+        "SF_C1": {
+          "band": "unbanded",
+          "id": "SF_C1",
+          "n": 134,
+          "value": 0.9478
+        },
+        "SF_D1": {
+          "band": "unbanded",
+          "id": "SF_D1",
+          "n": 134,
+          "value": 0.0821
+        },
+        "SF_D2": {
+          "band": "unbanded",
+          "id": "SF_D2",
+          "n": 134,
+          "value": 0.0896
+        },
+        "SF_D3": {
+          "band": "unbanded",
+          "id": "SF_D3",
+          "n": 78,
+          "value": 0.6282
+        },
+        "SF_P1": { "band": "yellow", "id": "SF_P1", "n": 141, "value": 0.72 },
+        "SF_P3": { "band": "green", "id": "SF_P3", "n": 8, "value": 1 },
+        "SF_S1": {
+          "band": "unbanded",
+          "id": "SF_S1",
+          "n": 20553,
+          "value": 0.6762
+        },
+        "SF_S2": {
+          "band": "unbanded",
+          "id": "SF_S2",
+          "n": 15363,
+          "value": 0.4405
+        },
+        "SF_S3": {
+          "band": "unbanded",
+          "id": "SF_S3",
+          "n": 15363,
+          "value": 0.382
+        },
+        "SF_S4": {
+          "band": "unbanded",
+          "id": "SF_S4",
+          "n": 6768,
+          "value": 0.3262
+        },
+        "SF_S5": { "band": "unbanded", "id": "SF_S5", "n": 12, "value": 0.75 }
+      },
+      "lastVisit": "2026-10-02",
+      "llo": "Partner A",
+      "opps": [
+        {
+          "firstVisit": "2026-07-07",
+          "ind": {
+            "SF_C1": {
+              "band": "unbanded",
+              "id": "SF_C1",
+              "n": 134,
+              "value": 0.9478
+            },
+            "SF_D1": {
+              "band": "unbanded",
+              "id": "SF_D1",
+              "n": 134,
+              "value": 0.0821
+            },
+            "SF_D2": {
+              "band": "unbanded",
+              "id": "SF_D2",
+              "n": 134,
+              "value": 0.0896
+            },
+            "SF_D3": {
+              "band": "unbanded",
+              "id": "SF_D3",
+              "n": 78,
+              "value": 0.6282
+            },
+            "SF_P1": {
+              "band": "green",
+              "id": "SF_P1",
+              "n": 141,
+              "value": 0.9504
+            },
+            "SF_P3": { "band": "green", "id": "SF_P3", "n": 8, "value": 1 },
+            "SF_S1": {
+              "band": "unbanded",
+              "id": "SF_S1",
+              "n": 20553,
+              "value": 0.6762
+            },
+            "SF_S2": {
+              "band": "unbanded",
+              "id": "SF_S2",
+              "n": 15363,
+              "value": 0.4405
+            },
+            "SF_S3": {
+              "band": "unbanded",
+              "id": "SF_S3",
+              "n": 15363,
+              "value": 0.382
+            },
+            "SF_S4": {
+              "band": "unbanded",
+              "id": "SF_S4",
+              "n": 6768,
+              "value": 0.3262
+            },
+            "SF_S5": {
+              "band": "unbanded",
+              "id": "SF_S5",
+              "n": 12,
+              "value": 0.75
+            }
+          },
+          "lastVisit": "2026-10-02",
+          "llo": "Partner A",
+          "n": 12,
+          "opp": 10097,
+          "rows": []
+        }
+      ],
+      "reds": 0,
+      "rows": [],
+      "yellows": 1
+    },
+    {
+      "firstVisit": "2026-07-07",
+      "ind": {
+        "SF_C1": {
+          "band": "unbanded",
+          "id": "SF_C1",
+          "n": 123,
+          "value": 0.9919
+        },
+        "SF_D1": { "band": "unbanded", "id": "SF_D1", "n": 123, "value": 0 },
+        "SF_D2": {
+          "band": "unbanded",
+          "id": "SF_D2",
+          "n": 123,
+          "value": 0.065
+        },
+        "SF_D3": {
+          "band": "unbanded",
+          "id": "SF_D3",
+          "n": 83,
+          "value": 0.6506
+        },
+        "SF_P1": { "band": "green", "id": "SF_P1", "n": 124, "value": 0.9919 },
+        "SF_P3": { "band": "green", "id": "SF_P3", "n": 11, "value": 1 },
+        "SF_S1": {
+          "band": "unbanded",
+          "id": "SF_S1",
+          "n": 19201,
+          "value": 0.6765
+        },
+        "SF_S2": {
+          "band": "unbanded",
+          "id": "SF_S2",
+          "n": 14340,
+          "value": 0.4169
+        },
+        "SF_S3": {
+          "band": "unbanded",
+          "id": "SF_S3",
+          "n": 14340,
+          "value": 0.4055
+        },
+        "SF_S4": {
+          "band": "unbanded",
+          "id": "SF_S4",
+          "n": 5978,
+          "value": 0.3734
+        },
+        "SF_S5": { "band": "unbanded", "id": "SF_S5", "n": 12, "value": 0.8333 }
+      },
+      "lastVisit": "2026-10-02",
+      "llo": "Partner B",
+      "opps": [
+        {
+          "firstVisit": "2026-07-07",
+          "ind": {
+            "SF_C1": {
+              "band": "unbanded",
+              "id": "SF_C1",
+              "n": 123,
+              "value": 0.9919
+            },
+            "SF_D1": {
+              "band": "unbanded",
+              "id": "SF_D1",
+              "n": 123,
+              "value": 0
+            },
+            "SF_D2": {
+              "band": "unbanded",
+              "id": "SF_D2",
+              "n": 123,
+              "value": 0.065
+            },
+            "SF_D3": {
+              "band": "unbanded",
+              "id": "SF_D3",
+              "n": 83,
+              "value": 0.6506
+            },
+            "SF_P1": {
+              "band": "green",
+              "id": "SF_P1",
+              "n": 124,
+              "value": 0.9919
+            },
+            "SF_P3": { "band": "green", "id": "SF_P3", "n": 11, "value": 1 },
+            "SF_S1": {
+              "band": "unbanded",
+              "id": "SF_S1",
+              "n": 19201,
+              "value": 0.6765
+            },
+            "SF_S2": {
+              "band": "unbanded",
+              "id": "SF_S2",
+              "n": 14340,
+              "value": 0.4169
+            },
+            "SF_S3": {
+              "band": "unbanded",
+              "id": "SF_S3",
+              "n": 14340,
+              "value": 0.4055
+            },
+            "SF_S4": {
+              "band": "unbanded",
+              "id": "SF_S4",
+              "n": 5978,
+              "value": 0.3734
+            },
+            "SF_S5": {
+              "band": "unbanded",
+              "id": "SF_S5",
+              "n": 12,
+              "value": 0.8333
+            }
+          },
+          "lastVisit": "2026-10-02",
+          "llo": "Partner B",
+          "n": 12,
+          "opp": 10098,
+          "rows": []
+        }
+      ],
+      "reds": 0,
+      "rows": [],
+      "yellows": 0
+    },
+    {
+      "firstVisit": "2026-07-07",
+      "ind": {
+        "SF_C1": {
+          "band": "unbanded",
+          "id": "SF_C1",
+          "n": 108,
+          "value": 0.9074
+        },
+        "SF_D1": {
+          "band": "unbanded",
+          "id": "SF_D1",
+          "n": 108,
+          "value": 0.0093
+        },
+        "SF_D2": {
+          "band": "unbanded",
+          "id": "SF_D2",
+          "n": 108,
+          "value": 0.1481
+        },
+        "SF_D3": {
+          "band": "unbanded",
+          "id": "SF_D3",
+          "n": 47,
+          "value": 0.4681
+        },
+        "SF_P1": { "band": "yellow", "id": "SF_P1", "n": 154, "value": 0.7013 },
+        "SF_P3": { "band": "green", "id": "SF_P3", "n": 1, "value": 1 },
+        "SF_S1": {
+          "band": "unbanded",
+          "id": "SF_S1",
+          "n": 17862,
+          "value": 0.4474
+        },
+        "SF_S2": {
+          "band": "unbanded",
+          "id": "SF_S2",
+          "n": 8646,
+          "value": 0.3631
+        },
+        "SF_S3": {
+          "band": "unbanded",
+          "id": "SF_S3",
+          "n": 8646,
+          "value": 0.2889
+        },
+        "SF_S4": {
+          "band": "unbanded",
+          "id": "SF_S4",
+          "n": 3139,
+          "value": 0.2198
+        },
+        "SF_S5": { "band": "unbanded", "id": "SF_S5", "n": 6, "value": 0.6667 }
+      },
+      "lastVisit": "2026-10-02",
+      "llo": "Partner C",
+      "opps": [
+        {
+          "firstVisit": "2026-07-07",
+          "ind": {
+            "SF_C1": {
+              "band": "unbanded",
+              "id": "SF_C1",
+              "n": 108,
+              "value": 0.9074
+            },
+            "SF_D1": {
+              "band": "unbanded",
+              "id": "SF_D1",
+              "n": 108,
+              "value": 0.0093
+            },
+            "SF_D2": {
+              "band": "unbanded",
+              "id": "SF_D2",
+              "n": 108,
+              "value": 0.1481
+            },
+            "SF_D3": {
+              "band": "unbanded",
+              "id": "SF_D3",
+              "n": 47,
+              "value": 0.4681
+            },
+            "SF_P1": {
+              "band": "yellow",
+              "id": "SF_P1",
+              "n": 154,
+              "value": 0.7013
+            },
+            "SF_P3": { "band": "green", "id": "SF_P3", "n": 1, "value": 1 },
+            "SF_S1": {
+              "band": "unbanded",
+              "id": "SF_S1",
+              "n": 17862,
+              "value": 0.4474
+            },
+            "SF_S2": {
+              "band": "unbanded",
+              "id": "SF_S2",
+              "n": 8646,
+              "value": 0.3631
+            },
+            "SF_S3": {
+              "band": "unbanded",
+              "id": "SF_S3",
+              "n": 8646,
+              "value": 0.2889
+            },
+            "SF_S4": {
+              "band": "unbanded",
+              "id": "SF_S4",
+              "n": 3139,
+              "value": 0.2198
+            },
+            "SF_S5": {
+              "band": "unbanded",
+              "id": "SF_S5",
+              "n": 6,
+              "value": 0.6667
+            }
+          },
+          "lastVisit": "2026-10-02",
+          "llo": "Partner C",
+          "n": 12,
+          "opp": 10099,
+          "rows": []
+        }
+      ],
+      "reds": 0,
+      "rows": [],
+      "yellows": 1
+    }
+  ],
+  "byOpp": [
+    {
+      "firstVisit": "2026-07-07",
+      "ind": {
+        "SF_C1": {
+          "band": "unbanded",
+          "id": "SF_C1",
+          "n": 134,
+          "value": 0.9478
+        },
+        "SF_D1": {
+          "band": "unbanded",
+          "id": "SF_D1",
+          "n": 134,
+          "value": 0.0821
+        },
+        "SF_D2": {
+          "band": "unbanded",
+          "id": "SF_D2",
+          "n": 134,
+          "value": 0.0896
+        },
+        "SF_D3": {
+          "band": "unbanded",
+          "id": "SF_D3",
+          "n": 78,
+          "value": 0.6282
+        },
+        "SF_P1": { "band": "yellow", "id": "SF_P1", "n": 141, "value": 0.72 },
+        "SF_P3": { "band": "green", "id": "SF_P3", "n": 8, "value": 1 },
+        "SF_S1": {
+          "band": "unbanded",
+          "id": "SF_S1",
+          "n": 20553,
+          "value": 0.6762
+        },
+        "SF_S2": {
+          "band": "unbanded",
+          "id": "SF_S2",
+          "n": 15363,
+          "value": 0.4405
+        },
+        "SF_S3": {
+          "band": "unbanded",
+          "id": "SF_S3",
+          "n": 15363,
+          "value": 0.382
+        },
+        "SF_S4": {
+          "band": "unbanded",
+          "id": "SF_S4",
+          "n": 6768,
+          "value": 0.3262
+        },
+        "SF_S5": { "band": "unbanded", "id": "SF_S5", "n": 12, "value": 0.75 }
+      },
+      "lastVisit": "2026-10-02",
+      "llo": "Partner A",
+      "n": 12,
+      "opp": 10097,
+      "rows": []
+    },
+    {
+      "firstVisit": "2026-07-07",
+      "ind": {
+        "SF_C1": {
+          "band": "unbanded",
+          "id": "SF_C1",
+          "n": 123,
+          "value": 0.9919
+        },
+        "SF_D1": { "band": "unbanded", "id": "SF_D1", "n": 123, "value": 0 },
+        "SF_D2": {
+          "band": "unbanded",
+          "id": "SF_D2",
+          "n": 123,
+          "value": 0.065
+        },
+        "SF_D3": {
+          "band": "unbanded",
+          "id": "SF_D3",
+          "n": 83,
+          "value": 0.6506
+        },
+        "SF_P1": { "band": "green", "id": "SF_P1", "n": 124, "value": 0.9919 },
+        "SF_P3": { "band": "green", "id": "SF_P3", "n": 11, "value": 1 },
+        "SF_S1": {
+          "band": "unbanded",
+          "id": "SF_S1",
+          "n": 19201,
+          "value": 0.6765
+        },
+        "SF_S2": {
+          "band": "unbanded",
+          "id": "SF_S2",
+          "n": 14340,
+          "value": 0.4169
+        },
+        "SF_S3": {
+          "band": "unbanded",
+          "id": "SF_S3",
+          "n": 14340,
+          "value": 0.4055
+        },
+        "SF_S4": {
+          "band": "unbanded",
+          "id": "SF_S4",
+          "n": 5978,
+          "value": 0.3734
+        },
+        "SF_S5": { "band": "unbanded", "id": "SF_S5", "n": 12, "value": 0.8333 }
+      },
+      "lastVisit": "2026-10-02",
+      "llo": "Partner B",
+      "n": 12,
+      "opp": 10098,
+      "rows": []
+    },
+    {
+      "firstVisit": "2026-07-07",
+      "ind": {
+        "SF_C1": {
+          "band": "unbanded",
+          "id": "SF_C1",
+          "n": 108,
+          "value": 0.9074
+        },
+        "SF_D1": {
+          "band": "unbanded",
+          "id": "SF_D1",
+          "n": 108,
+          "value": 0.0093
+        },
+        "SF_D2": {
+          "band": "unbanded",
+          "id": "SF_D2",
+          "n": 108,
+          "value": 0.1481
+        },
+        "SF_D3": {
+          "band": "unbanded",
+          "id": "SF_D3",
+          "n": 47,
+          "value": 0.4681
+        },
+        "SF_P1": { "band": "yellow", "id": "SF_P1", "n": 154, "value": 0.7013 },
+        "SF_P3": { "band": "green", "id": "SF_P3", "n": 1, "value": 1 },
+        "SF_S1": {
+          "band": "unbanded",
+          "id": "SF_S1",
+          "n": 17862,
+          "value": 0.4474
+        },
+        "SF_S2": {
+          "band": "unbanded",
+          "id": "SF_S2",
+          "n": 8646,
+          "value": 0.3631
+        },
+        "SF_S3": {
+          "band": "unbanded",
+          "id": "SF_S3",
+          "n": 8646,
+          "value": 0.2889
+        },
+        "SF_S4": {
+          "band": "unbanded",
+          "id": "SF_S4",
+          "n": 3139,
+          "value": 0.2198
+        },
+        "SF_S5": { "band": "unbanded", "id": "SF_S5", "n": 6, "value": 0.6667 }
+      },
+      "lastVisit": "2026-10-02",
+      "llo": "Partner C",
+      "n": 12,
+      "opp": 10099,
+      "rows": []
+    }
+  ],
+  "cMeasures": [
+    {
+      "bands": [80, 60],
+      "bands_source": null,
+      "benchmarkable": true,
+      "category": "Delivery",
+      "coverage_denominator": null,
+      "credibility": null,
+      "direction": "higher",
+      "flw_applicable": true,
+      "headline": 1,
+      "id": "sf_p1",
+      "indicator": "SF_P1",
+      "inputs": [],
+      "kind": null,
+      "label": "Meeting regularity",
+      "min_denominator": null,
+      "min_input_coverage": null,
+      "order": 1,
+      "plain": "Of the weeks since each community enrolled (7-day weeks counted from its enrolment date), the share with at least one verified community meeting.",
+      "prominence": "Top",
+      "scope_note": "PDD §8.1 P1 — target ≥ 80%. Numerator and denominator count the same 7-day weeks from each community's enrolment date; the window ends at Step-7 completion or pilot end (the report date while the pilot runs).",
+      "scorecard": true,
+      "series": "SF",
+      "target": 80,
+      "tbd_input": null,
+      "title": "Meeting regularity",
+      "unit": "%"
+    },
+    {
+      "bands": [75, 50],
+      "bands_source": null,
+      "benchmarkable": true,
+      "category": "Progression",
+      "coverage_denominator": null,
+      "credibility": null,
+      "direction": "higher",
+      "flw_applicable": true,
+      "headline": 2,
+      "id": "sf_p3",
+      "indicator": "SF_P3",
+      "inputs": [],
+      "kind": null,
+      "label": "Step 7 on time",
+      "min_denominator": null,
+      "min_input_coverage": null,
+      "order": 1,
+      "plain": "Of enrolled communities whose 15 weeks since enrolment have run out (or that already finished Step 7), the share that completed Step 7 within 15 weeks. Reported, not paid on.",
+      "prominence": "Top",
+      "scope_note": "PDD §8.1 P3 — target ≥ 75% (reported, not priced, §7.4). Denominator: enrolled communities, each counted once its 15-week window closes or it completes Step 7, so none is marked late early. Enrolment is filed on an unpaid form that does not reach Connect (PDD §5), so a community enrolled but never visited is absent from visit data; reconcile against the enrolment list in CommCare HQ.",
+      "scorecard": true,
+      "series": "SF",
+      "target": 75,
+      "tbd_input": null,
+      "title": "On-time step progression",
+      "unit": "%"
+    },
+    {
+      "bands": null,
+      "bands_source": null,
+      "benchmarkable": true,
+      "category": "Participation",
+      "coverage_denominator": null,
+      "credibility": null,
+      "direction": "higher",
+      "flw_applicable": true,
+      "headline": null,
+      "id": "sf_s1",
+      "indicator": "SF_S1",
+      "inputs": [],
+      "kind": null,
+      "label": "Household attendance",
+      "min_denominator": null,
+      "min_input_coverage": null,
+      "order": 1,
+      "plain": "Households represented at verified meetings, out of the community's enrolled households.",
+      "prominence": "Top",
+      "scope_note": "PDD §8.2 S1 (Fixture's own definition). The PDD sets no target.",
+      "scorecard": true,
+      "series": "SF",
+      "target": null,
+      "tbd_input": null,
+      "title": "Household attendance",
+      "unit": "%"
+    },
+    {
+      "bands": null,
+      "bands_source": null,
+      "benchmarkable": true,
+      "category": "Participation",
+      "coverage_denominator": null,
+      "credibility": null,
+      "direction": "higher",
+      "flw_applicable": true,
+      "headline": 3,
+      "id": "sf_s2",
+      "indicator": "SF_S2",
+      "inputs": [],
+      "kind": null,
+      "label": "Women attending",
+      "min_denominator": null,
+      "min_input_coverage": null,
+      "order": 2,
+      "plain": "Of everyone attending verified meetings, the share who were women.",
+      "prominence": "Top",
+      "scope_note": "PDD §8.2 S2. The PDD sets no target.",
+      "scorecard": true,
+      "series": "SF",
+      "target": null,
+      "tbd_input": null,
+      "title": "Female attendance",
+      "unit": "%"
+    },
+    {
+      "bands": null,
+      "bands_source": null,
+      "benchmarkable": true,
+      "category": "Participation",
+      "coverage_denominator": null,
+      "credibility": null,
+      "direction": "higher",
+      "flw_applicable": true,
+      "headline": null,
+      "id": "sf_s3",
+      "indicator": "SF_S3",
+      "inputs": [],
+      "kind": null,
+      "label": "Spoke up",
+      "min_denominator": null,
+      "min_input_coverage": null,
+      "order": 3,
+      "plain": "Of everyone attending verified meetings, the share who spoke.",
+      "prominence": "Top",
+      "scope_note": "PDD §8.2 S3. The PDD sets no target.",
+      "scorecard": true,
+      "series": "SF",
+      "target": null,
+      "tbd_input": null,
+      "title": "Overall participation",
+      "unit": "%"
+    },
+    {
+      "bands": null,
+      "bands_source": null,
+      "benchmarkable": true,
+      "category": "Participation",
+      "coverage_denominator": null,
+      "credibility": null,
+      "direction": "higher",
+      "flw_applicable": true,
+      "headline": 4,
+      "id": "sf_s4",
+      "indicator": "SF_S4",
+      "inputs": [],
+      "kind": null,
+      "label": "Women who spoke",
+      "min_denominator": null,
+      "min_input_coverage": null,
+      "order": 4,
+      "plain": "Of the women attending verified meetings, the share who spoke.",
+      "prominence": "Top",
+      "scope_note": "PDD §8.2 S4. The PDD sets no target.",
+      "scorecard": true,
+      "series": "SF",
+      "target": null,
+      "tbd_input": null,
+      "title": "Female participation",
+      "unit": "%"
+    },
+    {
+      "bands": null,
+      "bands_source": null,
+      "benchmarkable": true,
+      "category": "Progression",
+      "coverage_denominator": null,
+      "credibility": null,
+      "direction": "higher",
+      "flw_applicable": false,
+      "headline": null,
+      "id": "sf_s5",
+      "indicator": "SF_S5",
+      "inputs": [],
+      "kind": null,
+      "label": "Saving",
+      "min_denominator": null,
+      "min_input_coverage": null,
+      "order": 2,
+      "plain": "Of communities on Step 5 or later, the share whose latest meeting reported the community is saving.",
+      "prominence": "Lower",
+      "scope_note": "PDD §8.2 S5 — denominator restricted to Step 5+ (§5.6). The PDD sets no target.",
+      "scorecard": false,
+      "series": "SF",
+      "target": null,
+      "tbd_input": null,
+      "title": "Communities saving",
+      "unit": "%"
+    },
+    {
+      "bands": null,
+      "bands_source": null,
+      "benchmarkable": true,
+      "category": "Data quality",
+      "coverage_denominator": null,
+      "credibility": null,
+      "direction": "lower",
+      "flw_applicable": true,
+      "headline": 5,
+      "id": "sf_d1",
+      "indicator": "SF_D1",
+      "inputs": [],
+      "kind": null,
+      "label": "Repeat counts",
+      "min_denominator": null,
+      "min_input_coverage": null,
+      "order": 1,
+      "plain": "Of verified meetings, the share whose attendance counts exactly repeat the previous meeting's — a review flag, not a rejection.",
+      "prominence": "Top",
+      "scope_note": "PDD §5.4 repeat_counts_flag; S-1 review stratum (§7.2). The PDD sets no threshold.",
+      "scorecard": true,
+      "series": "SF",
+      "target": null,
+      "tbd_input": null,
+      "title": "Repeat-count flag rate",
+      "unit": "%"
+    },
+    {
+      "bands": null,
+      "bands_source": null,
+      "benchmarkable": true,
+      "category": "Data quality",
+      "coverage_denominator": null,
+      "credibility": null,
+      "direction": "lower",
+      "flw_applicable": true,
+      "headline": null,
+      "id": "sf_d2",
+      "indicator": "SF_D2",
+      "inputs": [],
+      "kind": null,
+      "label": "Location flags",
+      "min_denominator": null,
+      "min_input_coverage": null,
+      "order": 2,
+      "plain": "Of meeting records, the share whose location was missing, worse than 50 m, or more than 2 km from the community — reviewed, never a payment condition.",
+      "prominence": "Lower",
+      "scope_note": "PDD §5.7 location review; S-1 review stratum (§7.2). The PDD sets no threshold.",
+      "scorecard": false,
+      "series": "SF",
+      "target": null,
+      "tbd_input": null,
+      "title": "Location review flag rate",
+      "unit": "%"
+    },
+    {
+      "bands": null,
+      "bands_source": null,
+      "benchmarkable": true,
+      "category": "Data quality",
+      "coverage_denominator": null,
+      "credibility": null,
+      "direction": "lower",
+      "flw_applicable": true,
+      "headline": null,
+      "id": "sf_d3",
+      "indicator": "SF_D3",
+      "inputs": [],
+      "kind": null,
+      "label": "One-meeting steps",
+      "min_denominator": null,
+      "min_input_coverage": null,
+      "order": 3,
+      "plain": "Of the steps communities completed, the share marked complete at the step's first meeting — a review flag, since a step usually takes about two meetings.",
+      "prominence": "Lower",
+      "scope_note": "PDD §7.2 S-1 (\"a step advanced after a single meeting\"); §3.2 ~1.9 meetings per step. The PDD sets no threshold.",
+      "scorecard": false,
+      "series": "SF",
+      "target": null,
+      "tbd_input": null,
+      "title": "Single-meeting step rate",
+      "unit": "%"
+    },
+    {
+      "bands": null,
+      "bands_source": null,
+      "benchmarkable": true,
+      "category": "Delivery",
+      "coverage_denominator": null,
+      "credibility": null,
+      "direction": "none",
+      "flw_applicable": true,
+      "headline": null,
+      "id": "sf_c1",
+      "indicator": "SF_C1",
+      "inputs": [],
+      "kind": null,
+      "label": "Within the cap",
+      "min_denominator": null,
+      "min_input_coverage": null,
+      "order": 2,
+      "plain": "Of verified meetings, the share within the community's first three on its step — the meetings the pilot pays for; the rest are recorded and unpaid.",
+      "prominence": "Lower",
+      "scope_note": "PDD §3.2 per-step cap (3 per step, payable_slot = yes, §7.1 rule 2). The PDD sets no target.",
+      "scorecard": false,
+      "series": "SF",
+      "target": null,
+      "tbd_input": null,
+      "title": "In-cap share of meetings",
+      "unit": "%"
+    }
+  ],
+  "cases": [
+    {
+      "enrolled_households": 78,
+      "entity_id": "case-0001",
+      "first_visit_date": "2026-07-07",
+      "last_visit_date": "2026-09-29",
+      "llo": "Partner A",
+      "opportunity_id": 10097,
+      "step_number": 7,
+      "total_visits": 13,
+      "username": "flw_a01"
+    },
+    {
+      "enrolled_households": 202,
+      "entity_id": "case-0002",
+      "first_visit_date": "2026-07-09",
+      "last_visit_date": "2026-09-24",
+      "llo": "Partner A",
+      "opportunity_id": 10097,
+      "step_number": 7,
+      "total_visits": 10,
+      "username": "flw_a02"
+    },
+    {
+      "enrolled_households": 165,
+      "entity_id": "case-0003",
+      "first_visit_date": "2026-07-08",
+      "last_visit_date": "2026-09-09",
+      "llo": "Partner A",
+      "opportunity_id": 10097,
+      "step_number": 7,
+      "total_visits": 10,
+      "username": "flw_a03"
+    },
+    {
+      "enrolled_households": 122,
+      "entity_id": "case-0004",
+      "first_visit_date": "2026-07-07",
+      "last_visit_date": "2026-09-01",
+      "llo": "Partner B",
+      "opportunity_id": 10098,
+      "step_number": 7,
+      "total_visits": 9,
+      "username": "flw_b01"
+    },
+    {
+      "enrolled_households": 125,
+      "entity_id": "case-0005",
+      "first_visit_date": "2026-07-08",
+      "last_visit_date": "2026-09-23",
+      "llo": "Partner B",
+      "opportunity_id": 10098,
+      "step_number": 7,
+      "total_visits": 12,
+      "username": "flw_b02"
+    },
+    {
+      "enrolled_households": 209,
+      "entity_id": "case-0006",
+      "first_visit_date": "2026-07-10",
+      "last_visit_date": "2026-08-28",
+      "llo": "Partner B",
+      "opportunity_id": 10098,
+      "step_number": 7,
+      "total_visits": 8,
+      "username": "flw_b03"
+    },
+    {
+      "enrolled_households": 170,
+      "entity_id": "case-0007",
+      "first_visit_date": "2026-07-09",
+      "last_visit_date": "2026-09-17",
+      "llo": "Partner C",
+      "opportunity_id": 10099,
+      "step_number": 7,
+      "total_visits": 9,
+      "username": "flw_c01"
+    },
+    {
+      "enrolled_households": 204,
+      "entity_id": "case-0008",
+      "first_visit_date": "2026-07-10",
+      "last_visit_date": "2026-10-02",
+      "llo": "Partner C",
+      "opportunity_id": 10099,
+      "step_number": 5,
+      "total_visits": 9,
+      "username": "flw_c02"
+    },
+    {
+      "enrolled_households": 148,
+      "entity_id": "case-0009",
+      "first_visit_date": "2026-07-08",
+      "last_visit_date": "2026-09-30",
+      "llo": "Partner C",
+      "opportunity_id": 10099,
+      "step_number": 5,
+      "total_visits": 10,
+      "username": "flw_c03"
+    }
+  ],
+  "cohortEdges": { "caseload": [1, 1] },
+  "credibility": {},
+  "daily": {
+    "as_of": "2026-10-04",
+    "byScope": {
+      "all": {
+        "2026-09": [
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+          0, 0, 0, 0, 0, 0, 0
+        ],
+        "2026-10": [0, 0, 0, 0]
+      },
+      "llo:Partner A": {
+        "2026-09": [
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+          0, 0, 0, 0, 0, 0, 0
+        ],
+        "2026-10": [0, 0, 0, 0]
+      },
+      "llo:Partner B": {
+        "2026-09": [
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+          0, 0, 0, 0, 0, 0, 0
+        ],
+        "2026-10": [0, 0, 0, 0]
+      },
+      "llo:Partner C": {
+        "2026-09": [
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+          0, 0, 0, 0, 0, 0, 0
+        ],
+        "2026-10": [0, 0, 0, 0]
+      }
+    },
+    "months": ["2026-09", "2026-10"]
+  },
+  "deployment": {
+    "app_asks": {},
+    "asks_as": {},
+    "llo_map": {
+      "10097": "Partner A",
+      "10098": "Partner B",
+      "10099": "Partner C"
+    },
+    "opportunity_labels": {
+      "10097": "Partner A",
+      "10098": "Partner B",
+      "10099": "Partner C"
+    }
+  },
+  "display": {
+    "case_fields": [
+      { "field": "step_number", "format": "count", "label": "FCAP step" },
+      {
+        "field": "enrolled_households",
+        "format": "count",
+        "label": "Households enrolled"
+      },
+      {
+        "field": "first_visit_date",
+        "format": "date",
+        "label": "First meeting"
+      },
+      {
+        "field": "last_visit_date",
+        "format": "date",
+        "label": "Latest meeting"
+      },
+      { "field": "total_visits", "format": "count", "label": "Records" }
+    ],
+    "categories": ["Delivery", "Progression", "Participation", "Data quality"],
+    "entity": {
+      "key": "community_case_id",
+      "name": "community",
+      "plural": "communities"
+    },
+    "headline": ["SF_P1", "SF_P3", "SF_S2", "SF_S4", "SF_D1"],
+    "indicators": {
+      "SF_C1": {
+        "credibility": null,
+        "headline": null,
+        "label": "Within the cap",
+        "order": 2,
+        "plain": "Of verified meetings, the share within the community's first three on its step — the meetings the pilot pays for; the rest are recorded and unpaid.",
+        "scorecard": false,
+        "target": null,
+        "target_declared": false
+      },
+      "SF_D1": {
+        "credibility": null,
+        "headline": 5,
+        "label": "Repeat counts",
+        "order": 1,
+        "plain": "Of verified meetings, the share whose attendance counts exactly repeat the previous meeting's — a review flag, not a rejection.",
+        "scorecard": true,
+        "target": null,
+        "target_declared": false
+      },
+      "SF_D2": {
+        "credibility": null,
+        "headline": null,
+        "label": "Location flags",
+        "order": 2,
+        "plain": "Of meeting records, the share whose location was missing, worse than 50 m, or more than 2 km from the community — reviewed, never a payment condition.",
+        "scorecard": false,
+        "target": null,
+        "target_declared": false
+      },
+      "SF_D3": {
+        "credibility": null,
+        "headline": null,
+        "label": "One-meeting steps",
+        "order": 3,
+        "plain": "Of the steps communities completed, the share marked complete at the step's first meeting — a review flag, since a step usually takes about two meetings.",
+        "scorecard": false,
+        "target": null,
+        "target_declared": false
+      },
+      "SF_P1": {
+        "credibility": null,
+        "headline": 1,
+        "label": "Meeting regularity",
+        "order": 1,
+        "plain": "Of the weeks since each community enrolled (7-day weeks counted from its enrolment date), the share with at least one verified community meeting.",
+        "scorecard": true,
+        "target": 80,
+        "target_declared": true
+      },
+      "SF_P3": {
+        "credibility": null,
+        "headline": 2,
+        "label": "Step 7 on time",
+        "order": 1,
+        "plain": "Of enrolled communities whose 15 weeks since enrolment have run out (or that already finished Step 7), the share that completed Step 7 within 15 weeks. Reported, not paid on.",
+        "scorecard": true,
+        "target": 75,
+        "target_declared": true
+      },
+      "SF_S1": {
+        "credibility": null,
+        "headline": null,
+        "label": "Household attendance",
+        "order": 1,
+        "plain": "Households represented at verified meetings, out of the community's enrolled households.",
+        "scorecard": true,
+        "target": null,
+        "target_declared": false
+      },
+      "SF_S2": {
+        "credibility": null,
+        "headline": 3,
+        "label": "Women attending",
+        "order": 2,
+        "plain": "Of everyone attending verified meetings, the share who were women.",
+        "scorecard": true,
+        "target": null,
+        "target_declared": false
+      },
+      "SF_S3": {
+        "credibility": null,
+        "headline": null,
+        "label": "Spoke up",
+        "order": 3,
+        "plain": "Of everyone attending verified meetings, the share who spoke.",
+        "scorecard": true,
+        "target": null,
+        "target_declared": false
+      },
+      "SF_S4": {
+        "credibility": null,
+        "headline": 4,
+        "label": "Women who spoke",
+        "order": 4,
+        "plain": "Of the women attending verified meetings, the share who spoke.",
+        "scorecard": true,
+        "target": null,
+        "target_declared": false
+      },
+      "SF_S5": {
+        "credibility": null,
+        "headline": null,
+        "label": "Saving",
+        "order": 2,
+        "plain": "Of communities on Step 5 or later, the share whose latest meeting reported the community is saving.",
+        "scorecard": false,
+        "target": null,
+        "target_declared": false
+      }
+    },
+    "min_denominator": 1,
+    "organisation": { "name": "partner", "plural": "partners" },
+    "reading": {
+      "column": "female_participants",
+      "label": "Women who spoke",
+      "unit": "people"
+    },
+    "targets_note": "Synthetic fixture for the indicator render guards.",
+    "title": "Fixture programme (synthetic)",
+    "visit_fields": [
+      {
+        "field": "male_attendance",
+        "format": "count",
+        "label": "Men attending"
+      },
+      {
+        "field": "female_attendance",
+        "format": "count",
+        "label": "Women attending"
+      }
+    ],
+    "visit_flags": [
+      {
+        "column": "repeat_counts_flag",
+        "description": "Attendance counts exactly repeat the previous visit",
+        "fields": ["male_attendance", "female_attendance"],
+        "label": "Repeat count"
+      },
+      { "column": "gps_missing_flag", "label": "Location missing" },
+      { "column": "far_from_enrolment_flag", "label": "Far from community" }
+    ],
+    "visits_pipeline": "visits",
+    "worker": { "name": "facilitator", "plural": "facilitators" }
+  },
+  "generated_at": "2026-10-06T03:31:56.502922Z",
+  "meta": {
+    "as_of": "2026-10-04",
+    "cases": 9,
+    "llos": 3,
+    "opportunities": 3,
+    "registry": { "registry_id": 7185, "source": "record" },
+    "settles": {
+      "after_days": 0,
+      "anchor": "first_visit_date",
+      "latest": {
+        "10097": "2026-07-14",
+        "10098": "2026-07-10",
+        "10099": "2026-07-17"
+      }
+    },
+    "synthetic": true,
+    "visits": 365
+  },
+  "monthly": [
+    {
+      "counts": {},
+      "ind": {
+        "SF_C1": {
+          "band": "unbanded",
+          "id": "SF_C1",
+          "n": 365,
+          "value": 0.9507
+        },
+        "SF_D1": {
+          "band": "unbanded",
+          "id": "SF_D1",
+          "n": 365,
+          "value": 0.0329
+        },
+        "SF_D2": {
+          "band": "unbanded",
+          "id": "SF_D2",
+          "n": 365,
+          "value": 0.0986
+        },
+        "SF_D3": {
+          "band": "unbanded",
+          "id": "SF_D3",
+          "n": 208,
+          "value": 0.601
+        },
+        "SF_P1": { "band": "green", "id": "SF_P1", "n": 419, "value": 0.8711 },
+        "SF_P3": { "band": "green", "id": "SF_P3", "n": 20, "value": 1 },
+        "SF_S1": {
+          "band": "unbanded",
+          "id": "SF_S1",
+          "n": 57616,
+          "value": 0.6053
+        },
+        "SF_S2": {
+          "band": "unbanded",
+          "id": "SF_S2",
+          "n": 38349,
+          "value": 0.4142
+        },
+        "SF_S3": {
+          "band": "unbanded",
+          "id": "SF_S3",
+          "n": 38349,
+          "value": 0.3698
+        },
+        "SF_S4": {
+          "band": "unbanded",
+          "id": "SF_S4",
+          "n": 15885,
+          "value": 0.3229
+        },
+        "SF_S5": { "band": "unbanded", "id": "SF_S5", "n": 30, "value": 0.7667 }
+      },
+      "month": "2026-07",
+      "n": 36,
+      "pooled": {},
+      "visits": 137
+    },
+    {
+      "counts": {},
+      "ind": {
+        "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+        "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+        "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+        "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+        "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+        "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+        "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+        "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+        "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+        "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+        "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+      },
+      "month": "2026-08",
+      "n": 0,
+      "pooled": {},
+      "visits": 125
+    },
+    {
+      "counts": {},
+      "ind": {
+        "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+        "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+        "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+        "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+        "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+        "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+        "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+        "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+        "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+        "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+        "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+      },
+      "month": "2026-09",
+      "n": 0,
+      "pooled": {},
+      "visits": 100
+    },
+    {
+      "counts": {},
+      "ind": {
+        "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+        "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+        "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+        "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+        "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+        "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+        "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+        "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+        "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+        "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+        "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+      },
+      "month": "2026-10",
+      "n": 0,
+      "pooled": {},
+      "visits": 3
+    }
+  ],
+  "monthlyByScope": {
+    "all": [
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": {
+            "band": "unbanded",
+            "id": "SF_C1",
+            "n": 365,
+            "value": 0.9507
+          },
+          "SF_D1": {
+            "band": "unbanded",
+            "id": "SF_D1",
+            "n": 365,
+            "value": 0.0329
+          },
+          "SF_D2": {
+            "band": "unbanded",
+            "id": "SF_D2",
+            "n": 365,
+            "value": 0.0986
+          },
+          "SF_D3": {
+            "band": "unbanded",
+            "id": "SF_D3",
+            "n": 208,
+            "value": 0.601
+          },
+          "SF_P1": {
+            "band": "green",
+            "id": "SF_P1",
+            "n": 419,
+            "value": 0.8711
+          },
+          "SF_P3": { "band": "green", "id": "SF_P3", "n": 20, "value": 1 },
+          "SF_S1": {
+            "band": "unbanded",
+            "id": "SF_S1",
+            "n": 57616,
+            "value": 0.6053
+          },
+          "SF_S2": {
+            "band": "unbanded",
+            "id": "SF_S2",
+            "n": 38349,
+            "value": 0.4142
+          },
+          "SF_S3": {
+            "band": "unbanded",
+            "id": "SF_S3",
+            "n": 38349,
+            "value": 0.3698
+          },
+          "SF_S4": {
+            "band": "unbanded",
+            "id": "SF_S4",
+            "n": 15885,
+            "value": 0.3229
+          },
+          "SF_S5": {
+            "band": "unbanded",
+            "id": "SF_S5",
+            "n": 30,
+            "value": 0.7667
+          }
+        },
+        "month": "2026-07",
+        "n": 36,
+        "pooled": {},
+        "visits": 137
+      },
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+          "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+          "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+          "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+          "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+          "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+          "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+          "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+          "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+          "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+          "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+        },
+        "month": "2026-08",
+        "n": 0,
+        "pooled": {},
+        "visits": 125
+      },
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+          "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+          "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+          "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+          "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+          "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+          "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+          "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+          "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+          "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+          "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+        },
+        "month": "2026-09",
+        "n": 0,
+        "pooled": {},
+        "visits": 100
+      },
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+          "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+          "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+          "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+          "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+          "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+          "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+          "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+          "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+          "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+          "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+        },
+        "month": "2026-10",
+        "n": 0,
+        "pooled": {},
+        "visits": 3
+      }
+    ],
+    "llo:Partner A": [
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": {
+            "band": "unbanded",
+            "id": "SF_C1",
+            "n": 134,
+            "value": 0.9478
+          },
+          "SF_D1": {
+            "band": "unbanded",
+            "id": "SF_D1",
+            "n": 134,
+            "value": 0.0821
+          },
+          "SF_D2": {
+            "band": "unbanded",
+            "id": "SF_D2",
+            "n": 134,
+            "value": 0.0896
+          },
+          "SF_D3": {
+            "band": "unbanded",
+            "id": "SF_D3",
+            "n": 78,
+            "value": 0.6282
+          },
+          "SF_P1": {
+            "band": "green",
+            "id": "SF_P1",
+            "n": 141,
+            "value": 0.9504
+          },
+          "SF_P3": { "band": "green", "id": "SF_P3", "n": 8, "value": 1 },
+          "SF_S1": {
+            "band": "unbanded",
+            "id": "SF_S1",
+            "n": 20553,
+            "value": 0.6762
+          },
+          "SF_S2": {
+            "band": "unbanded",
+            "id": "SF_S2",
+            "n": 15363,
+            "value": 0.4405
+          },
+          "SF_S3": {
+            "band": "unbanded",
+            "id": "SF_S3",
+            "n": 15363,
+            "value": 0.382
+          },
+          "SF_S4": {
+            "band": "unbanded",
+            "id": "SF_S4",
+            "n": 6768,
+            "value": 0.3262
+          },
+          "SF_S5": { "band": "unbanded", "id": "SF_S5", "n": 12, "value": 0.75 }
+        },
+        "month": "2026-07",
+        "n": 12,
+        "pooled": {},
+        "visits": 46
+      },
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+          "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+          "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+          "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+          "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+          "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+          "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+          "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+          "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+          "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+          "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+        },
+        "month": "2026-08",
+        "n": 0,
+        "pooled": {},
+        "visits": 44
+      },
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+          "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+          "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+          "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+          "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+          "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+          "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+          "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+          "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+          "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+          "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+        },
+        "month": "2026-09",
+        "n": 0,
+        "pooled": {},
+        "visits": 43
+      },
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+          "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+          "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+          "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+          "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+          "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+          "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+          "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+          "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+          "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+          "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+        },
+        "month": "2026-10",
+        "n": 0,
+        "pooled": {},
+        "visits": 1
+      }
+    ],
+    "llo:Partner B": [
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": {
+            "band": "unbanded",
+            "id": "SF_C1",
+            "n": 123,
+            "value": 0.9919
+          },
+          "SF_D1": { "band": "unbanded", "id": "SF_D1", "n": 123, "value": 0 },
+          "SF_D2": {
+            "band": "unbanded",
+            "id": "SF_D2",
+            "n": 123,
+            "value": 0.065
+          },
+          "SF_D3": {
+            "band": "unbanded",
+            "id": "SF_D3",
+            "n": 83,
+            "value": 0.6506
+          },
+          "SF_P1": {
+            "band": "green",
+            "id": "SF_P1",
+            "n": 124,
+            "value": 0.9919
+          },
+          "SF_P3": { "band": "green", "id": "SF_P3", "n": 11, "value": 1 },
+          "SF_S1": {
+            "band": "unbanded",
+            "id": "SF_S1",
+            "n": 19201,
+            "value": 0.6765
+          },
+          "SF_S2": {
+            "band": "unbanded",
+            "id": "SF_S2",
+            "n": 14340,
+            "value": 0.4169
+          },
+          "SF_S3": {
+            "band": "unbanded",
+            "id": "SF_S3",
+            "n": 14340,
+            "value": 0.4055
+          },
+          "SF_S4": {
+            "band": "unbanded",
+            "id": "SF_S4",
+            "n": 5978,
+            "value": 0.3734
+          },
+          "SF_S5": {
+            "band": "unbanded",
+            "id": "SF_S5",
+            "n": 12,
+            "value": 0.8333
+          }
+        },
+        "month": "2026-07",
+        "n": 12,
+        "pooled": {},
+        "visits": 47
+      },
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+          "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+          "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+          "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+          "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+          "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+          "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+          "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+          "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+          "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+          "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+        },
+        "month": "2026-08",
+        "n": 0,
+        "pooled": {},
+        "visits": 48
+      },
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+          "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+          "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+          "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+          "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+          "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+          "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+          "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+          "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+          "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+          "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+        },
+        "month": "2026-09",
+        "n": 0,
+        "pooled": {},
+        "visits": 27
+      },
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+          "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+          "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+          "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+          "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+          "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+          "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+          "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+          "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+          "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+          "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+        },
+        "month": "2026-10",
+        "n": 0,
+        "pooled": {},
+        "visits": 1
+      }
+    ],
+    "llo:Partner C": [
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": {
+            "band": "unbanded",
+            "id": "SF_C1",
+            "n": 108,
+            "value": 0.9074
+          },
+          "SF_D1": {
+            "band": "unbanded",
+            "id": "SF_D1",
+            "n": 108,
+            "value": 0.0093
+          },
+          "SF_D2": {
+            "band": "unbanded",
+            "id": "SF_D2",
+            "n": 108,
+            "value": 0.1481
+          },
+          "SF_D3": {
+            "band": "unbanded",
+            "id": "SF_D3",
+            "n": 47,
+            "value": 0.4681
+          },
+          "SF_P1": {
+            "band": "yellow",
+            "id": "SF_P1",
+            "n": 154,
+            "value": 0.7013
+          },
+          "SF_P3": { "band": "green", "id": "SF_P3", "n": 1, "value": 1 },
+          "SF_S1": {
+            "band": "unbanded",
+            "id": "SF_S1",
+            "n": 17862,
+            "value": 0.4474
+          },
+          "SF_S2": {
+            "band": "unbanded",
+            "id": "SF_S2",
+            "n": 8646,
+            "value": 0.3631
+          },
+          "SF_S3": {
+            "band": "unbanded",
+            "id": "SF_S3",
+            "n": 8646,
+            "value": 0.2889
+          },
+          "SF_S4": {
+            "band": "unbanded",
+            "id": "SF_S4",
+            "n": 3139,
+            "value": 0.2198
+          },
+          "SF_S5": {
+            "band": "unbanded",
+            "id": "SF_S5",
+            "n": 6,
+            "value": 0.6667
+          }
+        },
+        "month": "2026-07",
+        "n": 12,
+        "pooled": {},
+        "visits": 44
+      },
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+          "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+          "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+          "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+          "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+          "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+          "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+          "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+          "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+          "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+          "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+        },
+        "month": "2026-08",
+        "n": 0,
+        "pooled": {},
+        "visits": 33
+      },
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+          "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+          "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+          "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+          "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+          "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+          "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+          "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+          "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+          "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+          "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+        },
+        "month": "2026-09",
+        "n": 0,
+        "pooled": {},
+        "visits": 30
+      },
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+          "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+          "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+          "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+          "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+          "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+          "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+          "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+          "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+          "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+          "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+        },
+        "month": "2026-10",
+        "n": 0,
+        "pooled": {},
+        "visits": 1
+      }
+    ],
+    "opp:10097": [
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": {
+            "band": "unbanded",
+            "id": "SF_C1",
+            "n": 134,
+            "value": 0.9478
+          },
+          "SF_D1": {
+            "band": "unbanded",
+            "id": "SF_D1",
+            "n": 134,
+            "value": 0.0821
+          },
+          "SF_D2": {
+            "band": "unbanded",
+            "id": "SF_D2",
+            "n": 134,
+            "value": 0.0896
+          },
+          "SF_D3": {
+            "band": "unbanded",
+            "id": "SF_D3",
+            "n": 78,
+            "value": 0.6282
+          },
+          "SF_P1": {
+            "band": "green",
+            "id": "SF_P1",
+            "n": 141,
+            "value": 0.9504
+          },
+          "SF_P3": { "band": "green", "id": "SF_P3", "n": 8, "value": 1 },
+          "SF_S1": {
+            "band": "unbanded",
+            "id": "SF_S1",
+            "n": 20553,
+            "value": 0.6762
+          },
+          "SF_S2": {
+            "band": "unbanded",
+            "id": "SF_S2",
+            "n": 15363,
+            "value": 0.4405
+          },
+          "SF_S3": {
+            "band": "unbanded",
+            "id": "SF_S3",
+            "n": 15363,
+            "value": 0.382
+          },
+          "SF_S4": {
+            "band": "unbanded",
+            "id": "SF_S4",
+            "n": 6768,
+            "value": 0.3262
+          },
+          "SF_S5": { "band": "unbanded", "id": "SF_S5", "n": 12, "value": 0.75 }
+        },
+        "month": "2026-07",
+        "n": 12,
+        "pooled": {},
+        "visits": 46
+      },
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+          "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+          "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+          "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+          "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+          "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+          "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+          "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+          "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+          "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+          "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+        },
+        "month": "2026-08",
+        "n": 0,
+        "pooled": {},
+        "visits": 44
+      },
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+          "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+          "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+          "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+          "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+          "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+          "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+          "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+          "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+          "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+          "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+        },
+        "month": "2026-09",
+        "n": 0,
+        "pooled": {},
+        "visits": 43
+      },
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+          "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+          "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+          "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+          "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+          "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+          "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+          "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+          "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+          "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+          "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+        },
+        "month": "2026-10",
+        "n": 0,
+        "pooled": {},
+        "visits": 1
+      }
+    ],
+    "opp:10098": [
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": {
+            "band": "unbanded",
+            "id": "SF_C1",
+            "n": 123,
+            "value": 0.9919
+          },
+          "SF_D1": { "band": "unbanded", "id": "SF_D1", "n": 123, "value": 0 },
+          "SF_D2": {
+            "band": "unbanded",
+            "id": "SF_D2",
+            "n": 123,
+            "value": 0.065
+          },
+          "SF_D3": {
+            "band": "unbanded",
+            "id": "SF_D3",
+            "n": 83,
+            "value": 0.6506
+          },
+          "SF_P1": {
+            "band": "green",
+            "id": "SF_P1",
+            "n": 124,
+            "value": 0.9919
+          },
+          "SF_P3": { "band": "green", "id": "SF_P3", "n": 11, "value": 1 },
+          "SF_S1": {
+            "band": "unbanded",
+            "id": "SF_S1",
+            "n": 19201,
+            "value": 0.6765
+          },
+          "SF_S2": {
+            "band": "unbanded",
+            "id": "SF_S2",
+            "n": 14340,
+            "value": 0.4169
+          },
+          "SF_S3": {
+            "band": "unbanded",
+            "id": "SF_S3",
+            "n": 14340,
+            "value": 0.4055
+          },
+          "SF_S4": {
+            "band": "unbanded",
+            "id": "SF_S4",
+            "n": 5978,
+            "value": 0.3734
+          },
+          "SF_S5": {
+            "band": "unbanded",
+            "id": "SF_S5",
+            "n": 12,
+            "value": 0.8333
+          }
+        },
+        "month": "2026-07",
+        "n": 12,
+        "pooled": {},
+        "visits": 47
+      },
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+          "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+          "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+          "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+          "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+          "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+          "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+          "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+          "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+          "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+          "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+        },
+        "month": "2026-08",
+        "n": 0,
+        "pooled": {},
+        "visits": 48
+      },
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+          "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+          "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+          "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+          "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+          "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+          "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+          "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+          "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+          "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+          "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+        },
+        "month": "2026-09",
+        "n": 0,
+        "pooled": {},
+        "visits": 27
+      },
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+          "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+          "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+          "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+          "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+          "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+          "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+          "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+          "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+          "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+          "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+        },
+        "month": "2026-10",
+        "n": 0,
+        "pooled": {},
+        "visits": 1
+      }
+    ],
+    "opp:10099": [
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": {
+            "band": "unbanded",
+            "id": "SF_C1",
+            "n": 108,
+            "value": 0.9074
+          },
+          "SF_D1": {
+            "band": "unbanded",
+            "id": "SF_D1",
+            "n": 108,
+            "value": 0.0093
+          },
+          "SF_D2": {
+            "band": "unbanded",
+            "id": "SF_D2",
+            "n": 108,
+            "value": 0.1481
+          },
+          "SF_D3": {
+            "band": "unbanded",
+            "id": "SF_D3",
+            "n": 47,
+            "value": 0.4681
+          },
+          "SF_P1": {
+            "band": "yellow",
+            "id": "SF_P1",
+            "n": 154,
+            "value": 0.7013
+          },
+          "SF_P3": { "band": "green", "id": "SF_P3", "n": 1, "value": 1 },
+          "SF_S1": {
+            "band": "unbanded",
+            "id": "SF_S1",
+            "n": 17862,
+            "value": 0.4474
+          },
+          "SF_S2": {
+            "band": "unbanded",
+            "id": "SF_S2",
+            "n": 8646,
+            "value": 0.3631
+          },
+          "SF_S3": {
+            "band": "unbanded",
+            "id": "SF_S3",
+            "n": 8646,
+            "value": 0.2889
+          },
+          "SF_S4": {
+            "band": "unbanded",
+            "id": "SF_S4",
+            "n": 3139,
+            "value": 0.2198
+          },
+          "SF_S5": {
+            "band": "unbanded",
+            "id": "SF_S5",
+            "n": 6,
+            "value": 0.6667
+          }
+        },
+        "month": "2026-07",
+        "n": 12,
+        "pooled": {},
+        "visits": 44
+      },
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+          "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+          "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+          "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+          "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+          "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+          "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+          "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+          "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+          "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+          "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+        },
+        "month": "2026-08",
+        "n": 0,
+        "pooled": {},
+        "visits": 33
+      },
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+          "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+          "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+          "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+          "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+          "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+          "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+          "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+          "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+          "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+          "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+        },
+        "month": "2026-09",
+        "n": 0,
+        "pooled": {},
+        "visits": 30
+      },
+      {
+        "counts": {},
+        "ind": {
+          "SF_C1": { "band": "nodata", "id": "SF_C1", "n": 0, "value": null },
+          "SF_D1": { "band": "nodata", "id": "SF_D1", "n": 0, "value": null },
+          "SF_D2": { "band": "nodata", "id": "SF_D2", "n": 0, "value": null },
+          "SF_D3": { "band": "nodata", "id": "SF_D3", "n": 0, "value": null },
+          "SF_P1": { "band": "nodata", "id": "SF_P1", "n": 0, "value": null },
+          "SF_P3": { "band": "nodata", "id": "SF_P3", "n": 0, "value": null },
+          "SF_S1": { "band": "nodata", "id": "SF_S1", "n": 0, "value": null },
+          "SF_S2": { "band": "nodata", "id": "SF_S2", "n": 0, "value": null },
+          "SF_S3": { "band": "nodata", "id": "SF_S3", "n": 0, "value": null },
+          "SF_S4": { "band": "nodata", "id": "SF_S4", "n": 0, "value": null },
+          "SF_S5": { "band": "nodata", "id": "SF_S5", "n": 0, "value": null }
+        },
+        "month": "2026-10",
+        "n": 0,
+        "pooled": {},
+        "visits": 1
+      }
+    ]
+  },
+  "nSeries": null,
+  "pooledOverCredible": {},
+  "programInd": {
+    "SF_C1": { "band": "unbanded", "id": "SF_C1", "n": 365, "value": 0.9507 },
+    "SF_D1": { "band": "unbanded", "id": "SF_D1", "n": 365, "value": 0.0329 },
+    "SF_D2": { "band": "unbanded", "id": "SF_D2", "n": 365, "value": 0.0986 },
+    "SF_D3": { "band": "unbanded", "id": "SF_D3", "n": 208, "value": 0.601 },
+    "SF_P1": { "band": "green", "id": "SF_P1", "n": 419, "value": 0.8711 },
+    "SF_P3": { "band": "green", "id": "SF_P3", "n": 20, "value": 1 },
+    "SF_S1": { "band": "unbanded", "id": "SF_S1", "n": 57616, "value": 0.6053 },
+    "SF_S2": { "band": "unbanded", "id": "SF_S2", "n": 38349, "value": 0.4142 },
+    "SF_S3": { "band": "unbanded", "id": "SF_S3", "n": 38349, "value": 0.3698 },
+    "SF_S4": { "band": "unbanded", "id": "SF_S4", "n": 15885, "value": 0.3229 },
+    "SF_S5": { "band": "unbanded", "id": "SF_S5", "n": 30, "value": 0.7667 }
+  },
+  "schema": 3,
+  "series": {},
+  "weekly": {
+    "all": [
+      { "registered": 32, "visits": 32, "week": "2026-07-06" },
+      { "registered": 4, "visits": 36, "week": "2026-07-13" },
+      { "registered": 0, "visits": 35, "week": "2026-07-20" },
+      { "registered": 0, "visits": 34, "week": "2026-07-27" },
+      { "registered": 0, "visits": 32, "week": "2026-08-03" },
+      { "registered": 0, "visits": 32, "week": "2026-08-10" },
+      { "registered": 0, "visits": 31, "week": "2026-08-17" },
+      { "registered": 0, "visits": 30, "week": "2026-08-24" },
+      { "registered": 0, "visits": 27, "week": "2026-08-31" },
+      { "registered": 0, "visits": 24, "week": "2026-09-07" },
+      { "registered": 0, "visits": 22, "week": "2026-09-14" },
+      { "registered": 0, "visits": 18, "week": "2026-09-21" },
+      { "registered": 0, "visits": 12, "week": "2026-09-28" }
+    ],
+    "llo:Partner A": [
+      { "registered": 11, "visits": 11, "week": "2026-07-06" },
+      { "registered": 1, "visits": 12, "week": "2026-07-13" },
+      { "registered": 0, "visits": 11, "week": "2026-07-20" },
+      { "registered": 0, "visits": 12, "week": "2026-07-27" },
+      { "registered": 0, "visits": 10, "week": "2026-08-03" },
+      { "registered": 0, "visits": 10, "week": "2026-08-10" },
+      { "registered": 0, "visits": 12, "week": "2026-08-17" },
+      { "registered": 0, "visits": 12, "week": "2026-08-24" },
+      { "registered": 0, "visits": 11, "week": "2026-08-31" },
+      { "registered": 0, "visits": 11, "week": "2026-09-07" },
+      { "registered": 0, "visits": 9, "week": "2026-09-14" },
+      { "registered": 0, "visits": 8, "week": "2026-09-21" },
+      { "registered": 0, "visits": 5, "week": "2026-09-28" }
+    ],
+    "llo:Partner B": [
+      { "registered": 12, "visits": 12, "week": "2026-07-06" },
+      { "registered": 0, "visits": 12, "week": "2026-07-13" },
+      { "registered": 0, "visits": 12, "week": "2026-07-20" },
+      { "registered": 0, "visits": 11, "week": "2026-07-27" },
+      { "registered": 0, "visits": 12, "week": "2026-08-03" },
+      { "registered": 0, "visits": 12, "week": "2026-08-10" },
+      { "registered": 0, "visits": 12, "week": "2026-08-17" },
+      { "registered": 0, "visits": 12, "week": "2026-08-24" },
+      { "registered": 0, "visits": 9, "week": "2026-08-31" },
+      { "registered": 0, "visits": 7, "week": "2026-09-07" },
+      { "registered": 0, "visits": 6, "week": "2026-09-14" },
+      { "registered": 0, "visits": 4, "week": "2026-09-21" },
+      { "registered": 0, "visits": 2, "week": "2026-09-28" }
+    ],
+    "llo:Partner C": [
+      { "registered": 9, "visits": 9, "week": "2026-07-06" },
+      { "registered": 3, "visits": 12, "week": "2026-07-13" },
+      { "registered": 0, "visits": 12, "week": "2026-07-20" },
+      { "registered": 0, "visits": 11, "week": "2026-07-27" },
+      { "registered": 0, "visits": 10, "week": "2026-08-03" },
+      { "registered": 0, "visits": 10, "week": "2026-08-10" },
+      { "registered": 0, "visits": 7, "week": "2026-08-17" },
+      { "registered": 0, "visits": 6, "week": "2026-08-24" },
+      { "registered": 0, "visits": 7, "week": "2026-08-31" },
+      { "registered": 0, "visits": 6, "week": "2026-09-07" },
+      { "registered": 0, "visits": 7, "week": "2026-09-14" },
+      { "registered": 0, "visits": 6, "week": "2026-09-21" },
+      { "registered": 0, "visits": 5, "week": "2026-09-28" }
+    ],
+    "opp:10097": [
+      { "registered": 11, "visits": 11, "week": "2026-07-06" },
+      { "registered": 1, "visits": 12, "week": "2026-07-13" },
+      { "registered": 0, "visits": 11, "week": "2026-07-20" },
+      { "registered": 0, "visits": 12, "week": "2026-07-27" },
+      { "registered": 0, "visits": 10, "week": "2026-08-03" },
+      { "registered": 0, "visits": 10, "week": "2026-08-10" },
+      { "registered": 0, "visits": 12, "week": "2026-08-17" },
+      { "registered": 0, "visits": 12, "week": "2026-08-24" },
+      { "registered": 0, "visits": 11, "week": "2026-08-31" },
+      { "registered": 0, "visits": 11, "week": "2026-09-07" },
+      { "registered": 0, "visits": 9, "week": "2026-09-14" },
+      { "registered": 0, "visits": 8, "week": "2026-09-21" },
+      { "registered": 0, "visits": 5, "week": "2026-09-28" }
+    ],
+    "opp:10098": [
+      { "registered": 12, "visits": 12, "week": "2026-07-06" },
+      { "registered": 0, "visits": 12, "week": "2026-07-13" },
+      { "registered": 0, "visits": 12, "week": "2026-07-20" },
+      { "registered": 0, "visits": 11, "week": "2026-07-27" },
+      { "registered": 0, "visits": 12, "week": "2026-08-03" },
+      { "registered": 0, "visits": 12, "week": "2026-08-10" },
+      { "registered": 0, "visits": 12, "week": "2026-08-17" },
+      { "registered": 0, "visits": 12, "week": "2026-08-24" },
+      { "registered": 0, "visits": 9, "week": "2026-08-31" },
+      { "registered": 0, "visits": 7, "week": "2026-09-07" },
+      { "registered": 0, "visits": 6, "week": "2026-09-14" },
+      { "registered": 0, "visits": 4, "week": "2026-09-21" },
+      { "registered": 0, "visits": 2, "week": "2026-09-28" }
+    ],
+    "opp:10099": [
+      { "registered": 9, "visits": 9, "week": "2026-07-06" },
+      { "registered": 3, "visits": 12, "week": "2026-07-13" },
+      { "registered": 0, "visits": 12, "week": "2026-07-20" },
+      { "registered": 0, "visits": 11, "week": "2026-07-27" },
+      { "registered": 0, "visits": 10, "week": "2026-08-03" },
+      { "registered": 0, "visits": 10, "week": "2026-08-10" },
+      { "registered": 0, "visits": 7, "week": "2026-08-17" },
+      { "registered": 0, "visits": 6, "week": "2026-08-24" },
+      { "registered": 0, "visits": 7, "week": "2026-08-31" },
+      { "registered": 0, "visits": 6, "week": "2026-09-07" },
+      { "registered": 0, "visits": 7, "week": "2026-09-14" },
+      { "registered": 0, "visits": 6, "week": "2026-09-21" },
+      { "registered": 0, "visits": 5, "week": "2026-09-28" }
+    ]
+  }
+}

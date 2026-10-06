@@ -515,7 +515,11 @@ function WorkflowUI({
           return {
             spec: t,
             entry: tileEntry(t.id),
-            sub: tileSub(t),
+            // An untargeted tile fills the same second-line slot as
+            // "target X", so every tile in the row lines up.
+            sub:
+              tileSub(t) ||
+              (t.target === undefined || t.target === null ? 'no target' : ''),
             previous: prev ? prev.ind && prev.ind[t.id] : null,
             current: cur ? (cur.ind && cur.ind[t.id]) || null : null,
             previousDate: prev ? prev.date : null,
@@ -529,6 +533,400 @@ function WorkflowUI({
   // ══ Scorecard tables ═══════════════════════════════════════════════════════
   var COLS = LAYOUT.columns;
   var GROUPS = LAYOUT.groups;
+
+  // ── Legend, attention cell and trend card, drawn here for legibility ──────
+  // Presentation only: every band is still the engine's grade. The legend
+  // states each banded column's rule from its measure's own `bands` (the
+  // thresholds the builder grades on), so it reads the same for any registry.
+  function bandNum(m, v) {
+    var u = m && m.unit;
+    return String(Number(v)) + (u === '%' ? '%' : u ? ' ' + u : '');
+  }
+  function bandRule(c) {
+    var m = M_BY_ID[c.id] || {};
+    var b = m.bands;
+    if (!b || b.length < 2 || b[0] === null || b[1] === null) return null;
+    var hi = bandNum(m, b[0]),
+      lo = bandNum(m, b[1]);
+    if (m.direction === 'lower')
+      return {
+        watch: c.label + ' ' + hi + '–' + lo + ' (target ≤ ' + hi + ')',
+        off: c.label + ' > ' + lo,
+      };
+    return {
+      watch: c.label + ' ' + lo + '–' + hi + ' (target ≥ ' + hi + ')',
+      off: c.label + ' < ' + lo,
+    };
+  }
+  // Each band's rule rides on its legend chip as a tooltip, built from the
+  // measures' own thresholds.
+  var BAND_RULES = COLS.map(bandRule).filter(Boolean);
+  var WATCH_RULE = BAND_RULES.length
+    ? BAND_RULES.map(function (b) {
+        return b.watch;
+      }).join(' · ')
+    : undefined;
+  var OFF_RULE = BAND_RULES.length
+    ? BAND_RULES.map(function (b) {
+        return b.off;
+      }).join(' · ')
+    : undefined;
+  function Legend(props) {
+    return (
+      <div className="px-4 py-2 text-sm text-gray-700 border-t border-gray-100 space-y-1">
+        <div className="flex items-center gap-x-4 gap-y-1 flex-wrap">
+          <span
+            className={'whitespace-nowrap' + (OFF_RULE ? ' cursor-help' : '')}
+            title={OFF_RULE}
+          >
+            <span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-100 border border-red-400 mr-1 align-middle"></span>
+            Off target
+          </span>
+          <span
+            className="whitespace-nowrap cursor-help"
+            title={
+              'Short of target, not yet off target' +
+              (WATCH_RULE ? ' — ' + WATCH_RULE : '')
+            }
+          >
+            <span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-100 border border-amber-400 mr-1 align-middle"></span>
+            Watch
+          </span>
+          <span className="whitespace-nowrap">
+            Uncoloured: on target or no target
+          </span>
+          <span className="whitespace-nowrap">
+            {'n<' + props.minDenominator + ': too few records'}
+          </span>
+          {props.marks && props.marks.stale ? (
+            <span
+              className="whitespace-nowrap cursor-help"
+              title={
+                'Last visit more than ' +
+                STALE +
+                ' days before ' +
+                R.dateLbl(asOf)
+              }
+            >
+              <span className="text-red-700 font-semibold mr-1">
+                {R.dateLbl(props.marks.stale)}
+              </span>
+              {'no visit > ' + STALE + ' days'}
+            </span>
+          ) : null}
+          {props.marks && props.marks.dash ? (
+            <span className="whitespace-nowrap">
+              <span className="mr-1">—</span>no data yet
+            </span>
+          ) : null}
+          <span className="ml-auto whitespace-nowrap">{props.right}</span>
+        </div>
+      </div>
+    );
+  }
+  function AttnCell(props) {
+    if (props.reds || props.yellows)
+      return <R.AttentionCell reds={props.reds} yellows={props.yellows} />;
+    return (
+      <td className="px-1.5 py-2 text-right">
+        <span className="text-gray-600">0</span>
+      </td>
+    );
+  }
+  // The library's trend card at a legible label size: same points, band word
+  // and point tooltips ("As of <date>: <value> (n = <n>)").
+  function TrendCardL(e) {
+    var r = !!e.pct;
+    var a = e.target !== null && e.target !== undefined;
+    var o = a ? Number(e.target) : 0;
+    var pts = e.points;
+    var W = e.wide;
+    var l = (pts || []).map(function (p) {
+      var t = p.entry;
+      if (!t || t.value === null || t.value === undefined) return null;
+      if (t.band === 'insufficient' || t.band === 'notcredible') return null;
+      return { v: Number(t.value), e: t, date: p.date, n: t.n };
+    });
+    var s = l.length;
+    var u = l.filter(Boolean);
+    var last = u.length ? u[u.length - 1].e : null;
+    var body;
+    if (pts === null || e.loading)
+      body = (
+        <div
+          className="relative rounded bg-gray-50 animate-pulse"
+          style={{ height: 112 }}
+          aria-busy="true"
+        >
+          <div className="absolute inset-x-3 top-1/2 border-t border-dashed border-gray-200"></div>
+          <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-500">
+            Loading the trend across saved reports…
+          </div>
+        </div>
+      );
+    else if (u.length < 2)
+      body = (
+        <div className="text-xs text-gray-500 py-8 text-center">
+          {u.length
+            ? 'One report so far — the line builds as reports are saved weekly.'
+            : 'No report has enough cases to score this yet.'}
+        </div>
+      );
+    else {
+      var lo = a ? o : u[0].v,
+        hi = a ? o : u[0].v;
+      u.forEach(function (x) {
+        lo = Math.min(lo, x.v);
+        hi = Math.max(hi, x.v);
+      });
+      if (r) {
+        lo = Math.max(0, Math.floor(10 * (lo - 0.05)) / 10);
+        hi = Math.min(1, Math.ceil(10 * (hi + 0.05)) / 10);
+      } else {
+        lo = Math.floor(lo - 1);
+        hi = Math.ceil(hi + 1);
+      }
+      if (hi <= lo) hi = lo + 1;
+      // Wide (one indicator in focus): a date tick per saved report.
+      var L = W ? 48 : 34,
+        RR = W ? 952 : 166,
+        TOP = W ? 20 : 14,
+        BOT = W ? 160 : 90,
+        FS = 11;
+      var px = function (i) {
+        return L + (s > 1 ? ((RR - L) * i) / (s - 1) : (RR - L) / 2);
+      };
+      var py = function (v) {
+        return BOT - ((v - lo) / (hi - lo)) * (BOT - TOP);
+      };
+      var fmtAx = function (v) {
+        return r ? Math.round(100 * v) + '%' : Number(v).toFixed(0);
+      };
+      var path = '',
+        on = false;
+      l.forEach(function (x, i) {
+        if (x) {
+          path +=
+            (on ? 'L' : 'M') +
+            px(i).toFixed(1) +
+            ' ' +
+            py(x.v).toFixed(1) +
+            ' ';
+          on = true;
+        } else on = false;
+      });
+      var b = u[u.length - 1];
+      var bi = l.lastIndexOf(b);
+      var ticks = [lo, (lo + hi) / 2, hi];
+      var xt = W
+        ? l.map(function (x, i) {
+            return i;
+          })
+        : [0, Math.floor((s - 1) / 2), s - 1];
+      var col = R.bandColour(b.e.band);
+      body = (
+        <svg
+          viewBox={W ? '0 0 960 184' : '0 0 170 112'}
+          className="w-full h-auto block"
+          role="img"
+          aria-label={e.label}
+        >
+          {ticks.map(function (v) {
+            return (
+              <g key={'y' + v}>
+                <line x1={L} x2={RR} y1={py(v)} y2={py(v)} stroke="#eeeef4" />
+                <text
+                  x={L - 4}
+                  y={py(v) + 4}
+                  fontSize={FS}
+                  fill="#6b7280"
+                  textAnchor="end"
+                >
+                  {fmtAx(v)}
+                </text>
+              </g>
+            );
+          })}
+          {a ? (
+            <line
+              x1={L}
+              x2={RR}
+              y1={py(o)}
+              y2={py(o)}
+              stroke="#9ca3af"
+              strokeDasharray="3 3"
+            />
+          ) : null}
+          {a ? (
+            <text
+              x={RR}
+              y={py(o) - 3}
+              fontSize={FS}
+              fill="#6b7280"
+              textAnchor="end"
+            >
+              {'target ' + fmtAx(o)}
+            </text>
+          ) : null}
+          <path
+            d={path}
+            fill="none"
+            stroke="#4f46e5"
+            strokeWidth="2"
+            strokeLinejoin="round"
+          />
+          {l.map(function (x, i) {
+            if (!x) return null;
+            var big = i === bi;
+            return (
+              <circle
+                key={x.date}
+                cx={px(i)}
+                cy={py(x.v)}
+                r={big ? (W ? 6 : 4.5) : W ? 4 : 3}
+                fill={big ? col : '#4f46e5'}
+                stroke="#fff"
+                strokeWidth="1.5"
+              >
+                <title>
+                  {'As of ' +
+                    R.dateLbl(x.date) +
+                    ': ' +
+                    e.format(x.e) +
+                    ' (n = ' +
+                    R.nCount(x.n) +
+                    ')'}
+                </title>
+              </circle>
+            );
+          })}
+          {W
+            ? (function () {
+                // Wide only: a small value label above each point so a still
+                // frame reads the series. Always keep the first, the first
+                // point below target and the last; skip any other label that
+                // would collide with one already placed.
+                var fb = -1;
+                if (a)
+                  l.forEach(function (x, i) {
+                    if (x && fb < 0 && x.v < o) fb = i;
+                  });
+                var fi = l.indexOf(u[0]);
+                var cand = [];
+                l.forEach(function (x, i) {
+                  if (!x) return;
+                  var txt = e.format(x.e);
+                  var w = String(txt).length * 6.2;
+                  var anc = i === fi ? 'start' : i === bi ? 'end' : 'middle';
+                  var x0 =
+                    anc === 'start'
+                      ? px(i) - 4
+                      : anc === 'end'
+                        ? px(i) + 4 - w
+                        : px(i) - w / 2;
+                  var y = py(x.v) - 9;
+                  if (
+                    a &&
+                    i === bi &&
+                    px(i) + 4 - w < RR &&
+                    Math.abs(y - (py(o) - 3)) < 12
+                  )
+                    y = py(x.v) + 18;
+                  cand.push({
+                    i: i,
+                    t: txt,
+                    anc: anc,
+                    x:
+                      anc === 'start'
+                        ? px(i) - 4
+                        : anc === 'end'
+                          ? px(i) + 4
+                          : px(i),
+                    x0: x0,
+                    x1: x0 + w,
+                    y: y,
+                    must: i === fi || i === fb || i === bi,
+                  });
+                });
+                var placed = [];
+                var fits = function (c) {
+                  return placed.every(function (p) {
+                    return (
+                      c.x1 + 4 < p.x0 ||
+                      c.x0 > p.x1 + 4 ||
+                      Math.abs(c.y - p.y) >= 12
+                    );
+                  });
+                };
+                cand.forEach(function (c) {
+                  if (c.must) placed.push(c);
+                });
+                cand.forEach(function (c) {
+                  if (!c.must && fits(c)) placed.push(c);
+                });
+                return placed.map(function (c) {
+                  return (
+                    <text
+                      key={'v' + c.i}
+                      x={c.x}
+                      y={c.y}
+                      fontSize={10.5}
+                      fill="#6b7280"
+                      textAnchor={c.anc}
+                      style={{ pointerEvents: 'none' }}
+                    >
+                      {c.t}
+                    </text>
+                  );
+                });
+              })()
+            : null}
+          {xt.map(function (i, k) {
+            return (
+              <text
+                key={'x' + k}
+                x={px(i)}
+                y={W ? 180 : 107}
+                fontSize={FS}
+                fill="#6b7280"
+                textAnchor={i === 0 ? 'start' : i === s - 1 ? 'end' : 'middle'}
+              >
+                {R.dateLbl((pts || [])[i] && pts[i].date)}
+              </text>
+            );
+          })}
+        </svg>
+      );
+    }
+    return (
+      <div
+        className={
+          'bg-white border border-gray-200 rounded-xl px-4 pt-3 pb-2' +
+          (W ? ' col-span-full' : '')
+        }
+      >
+        <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+          <div
+            className="text-sm font-semibold text-gray-900 whitespace-nowrap"
+            title={e.title}
+          >
+            {e.label}
+          </div>
+          {last && last.band && R.BAND_WORD[last.band] ? (
+            <span
+              className={
+                'text-xs font-semibold whitespace-nowrap ' +
+                R.BAND_TEXT[last.band]
+              }
+            >
+              {R.BAND_WORD[last.band]}
+            </span>
+          ) : null}
+        </div>
+        {body}
+      </div>
+    );
+  }
   var notCredible = 'Not recorded credibly by this ' + ORG.name;
   function headCell(o) {
     var s = o.table ? sort.sortOf(o.table) : null;
@@ -537,6 +935,7 @@ function WorkflowUI({
       <th
         key={o.key}
         title={o.title}
+        data-constant-ok={o.constantOk ? 'indicator' : undefined}
         className={
           (o.className ||
             'px-1.5 py-2 text-right font-semibold text-gray-600 whitespace-nowrap') +
@@ -563,7 +962,7 @@ function WorkflowUI({
               aria-label={'Sort by ' + o.label}
               className={
                 'text-[10px] ' +
-                (on ? 'text-indigo-600' : 'text-gray-300 hover:text-indigo-600')
+                (on ? 'text-indigo-600' : 'text-gray-500 hover:text-indigo-600')
               }
               onClick={function () {
                 sort.toggle(o.table, o.sortKey);
@@ -576,10 +975,49 @@ function WorkflowUI({
       </th>
     );
   }
+  // The indicator a row is flagged on: its first Off-target column, else its
+  // first Watch column (the engine's bands), or null.
+  function flagOf(ind) {
+    var hit = null;
+    ['red', 'yellow'].some(function (band) {
+      return COLS.some(function (c) {
+        var e = ind && ind[c.id];
+        if (e && e.band === band) hit = { col: c, entry: e };
+        return !!hit;
+      });
+    });
+    return hit;
+  }
   function ScorecardHead(props) {
+    var cap = props.caption;
     return (
       <thead>
-        <tr className="text-[10px] uppercase tracking-wide text-gray-400 border-b border-gray-200">
+        {cap ? (
+          <tr className="border-b border-gray-200 bg-gray-50">
+            <th
+              colSpan={props.lead.length + COLS.length + props.trail.length}
+              className="px-3 py-2 text-left text-sm font-normal text-gray-700 whitespace-nowrap"
+            >
+              <span className="font-semibold text-gray-900">{cap.label}</span>
+              {' · ' + cap.count}
+              {cap.flag ? (
+                <span>
+                  {' · ' + cap.flag.label + ' '}
+                  <span className="font-semibold text-gray-900">
+                    {cap.flag.value}
+                  </span>{' '}
+                  <span
+                    className={'font-semibold ' + R.BAND_TEXT[cap.flag.band]}
+                  >
+                    {R.BAND_WORD[cap.flag.band]}
+                  </span>
+                </span>
+              ) : null}
+              {cap.each ? ' · ' + cap.each : null}
+            </th>
+          </tr>
+        ) : null}
+        <tr className="text-[10px] uppercase tracking-wide text-gray-500 border-b border-gray-200">
           {props.lead.map(function (l, i) {
             return <th key={'gl' + i} className="px-3 py-1"></th>;
           })}
@@ -587,7 +1025,7 @@ function WorkflowUI({
             return (
               <th
                 key={g.label}
-                className="px-1.5 py-1 text-center"
+                className="px-1.5 py-1 text-center border-l border-gray-200"
                 colSpan={g.span}
               >
                 {g.label}
@@ -619,12 +1057,15 @@ function WorkflowUI({
               scope: props.scope,
               table: props.table,
               sortKey: 'col' + i,
+              // Everyone on the same figure is a finding, not a redundancy.
+              constantOk: true,
             });
           })}
           {props.trail.map(function (l, i) {
             return headCell({
               key: 't' + i,
               label: l.label,
+              title: l.title,
               table: props.table,
               sortKey: l.sortKey,
             });
@@ -682,9 +1123,42 @@ function WorkflowUI({
     );
   }
   var TRAIL = [
-    { label: 'Last visit', sortKey: 'last' },
-    { label: 'Attention', sortKey: 'attn' },
+    {
+      label: 'Last visit',
+      sortKey: 'last',
+      title: 'Red: no visit for more than ' + STALE + ' days',
+    },
+    {
+      label: 'Attention',
+      sortKey: 'attn',
+      title:
+        'Indicators Off target (red count); if none, indicators on Watch (amber count)',
+    },
   ];
+  // Which marks a table's rows actually carry, so the legend lists only those:
+  // the oldest red Last-visit date, and whether any cell shows "—".
+  function dashEntry(c, e) {
+    if (!e) return true;
+    if (c.denOnly) return !e.n;
+    if (e.band === 'insufficient') return false;
+    return e.value === null || e.value === undefined;
+  }
+  function marksOf(items) {
+    var m = { stale: null, dash: false };
+    items.forEach(function (it) {
+      var gap = it.last ? R.daysBetween(it.last, asOf) : null;
+      if (gap !== null && gap > STALE && (!m.stale || it.last < m.stale))
+        m.stale = it.last;
+      if (it.lastCell && !it.last) m.dash = true;
+      if (
+        COLS.some(function (c) {
+          return dashEntry(c, it.ind && it.ind[c.id]);
+        })
+      )
+        m.dash = true;
+    });
+    return m;
+  }
   function Table(props) {
     return (
       <R.Card padded={false}>
@@ -694,6 +1168,7 @@ function WorkflowUI({
         <div className="overflow-x-auto">
           <table className="min-w-full text-xs">
             <ScorecardHead
+              caption={props.caption}
               lead={props.lead}
               trail={TRAIL}
               table={props.table}
@@ -702,9 +1177,10 @@ function WorkflowUI({
             <tbody>{props.children}</tbody>
           </table>
         </div>
-        <R.ScorecardLegend
+        <Legend
           minDenominator={MIN_DEN}
-          right="Click a column name for its definition · the arrow sorts"
+          marks={props.marks}
+          right="Click a column name for its definition · ↕ sorts"
         />
       </R.Card>
     );
@@ -729,6 +1205,17 @@ function WorkflowUI({
         lead={[{ label: R.cap(ORG.name), sortKey: 'name' }]}
         table="orgs"
         scope="llo"
+        marks={marksOf(
+          rows
+            .map(function (l) {
+              return {
+                ind: l.ind,
+                last: lastVisit.org[l.llo] || null,
+                lastCell: true,
+              };
+            })
+            .concat([{ ind: P.programInd }]),
+        )}
       >
         {rows.map(function (l) {
           var nWorkers = workerRows.filter(function (w) {
@@ -746,7 +1233,7 @@ function WorkflowUI({
             >
               <td className="px-3 py-2 whitespace-nowrap">
                 <div className="font-semibold text-indigo-700">{l.llo}</div>
-                <div className="text-gray-400">
+                <div className="text-gray-500">
                   {(l.opps || []).length +
                     ((l.opps || []).length === 1
                       ? ' opportunity'
@@ -757,7 +1244,7 @@ function WorkflowUI({
               </td>
               {cells(l.ind)}
               {lastCell(lastVisit.org[l.llo])}
-              <R.AttentionCell reds={l.reds || 0} yellows={l.yellows || 0} />
+              <AttnCell reds={l.reds || 0} yellows={l.yellows || 0} />
             </tr>
           );
         })}
@@ -792,6 +1279,15 @@ function WorkflowUI({
         lead={[{ label: 'Opportunity', sortKey: 'name' }]}
         table="opps"
         scope="opportunity"
+        marks={marksOf(
+          rows.map(function (o) {
+            return {
+              ind: o.ind,
+              last: lastVisit.opp[String(o.opp)] || null,
+              lastCell: true,
+            };
+          }),
+        )}
       >
         {rows.map(function (o) {
           var a = R.attention(o.ind);
@@ -813,7 +1309,7 @@ function WorkflowUI({
                 <div className="font-semibold text-indigo-700">
                   {oppLabel(o.opp)}
                 </div>
-                <div className="text-gray-400">
+                <div className="text-gray-500">
                   {(o.llo || orgOf(o.opp)) &&
                   oppLabel(o.opp).indexOf(o.llo || orgOf(o.opp)) === -1
                     ? (o.llo || orgOf(o.opp)) + ' · ' + R.nounCount(o.n, ENT)
@@ -822,7 +1318,7 @@ function WorkflowUI({
               </td>
               {cells(o.ind)}
               {lastCell(lastVisit.opp[String(o.opp)])}
-              <R.AttentionCell reds={a.reds} yellows={a.yellows} />
+              <AttnCell reds={a.reds} yellows={a.yellows} />
             </tr>
           );
         })}
@@ -941,6 +1437,11 @@ function WorkflowUI({
       return colValue(key, w.ind);
     });
     var groups = [{ label: null, rows: sorted }];
+    // Every row in one opportunity: its name on each row says nothing the
+    // header does not, and doubles the row height.
+    var oneOpp = list.every(function (w) {
+      return list.length && String(w.opp) === String(list[0].opp);
+    });
     if (cohortDim !== 'none') {
       var by = {};
       var order = [];
@@ -961,10 +1462,42 @@ function WorkflowUI({
         };
       });
     }
-    var width = 2 + COLS.length + 2;
+    // Every row has the same size: the size column says nothing per row, so it
+    // moves into the caption (drilled) or the title ("· 1 community each").
+    var sameN =
+      list.length > 1 &&
+      list.every(function (w) {
+        return w.n === list[0].n;
+      });
+    var width = (sameN ? 1 : 2) + COLS.length + 2;
+    // Drilled to one organisation or opportunity: a caption row names it, its
+    // size and the indicator it is flagged on.
+    var caption = null;
+    if (selOpp !== null || selOrg) {
+      var fl = flagOf(scopeInd);
+      var fm = fl ? M_BY_ID[fl.col.id] : null;
+      caption = {
+        label: selOpp !== null ? oppLabel(selOpp) : selOrg,
+        count: R.nounCount(list.length, WRK),
+        flag: fl
+          ? {
+              label: fl.col.label,
+              value: R.fmtValue(fm, fl.entry.value),
+              band: fl.entry.band,
+            }
+          : null,
+        each: sameN ? R.nounCount(list[0].n, ENT) + ' each' : null,
+      };
+    }
     return (
       <Table
-        title={R.cap(WRK.plural)}
+        caption={caption}
+        title={
+          R.cap(WRK.plural) +
+          (sameN && !caption
+            ? ' · ' + R.nounCount(list[0].n, ENT) + ' each'
+            : '')
+        }
         right={
           <span className="inline-flex items-center gap-2">
             {WF_ACTIONS.map(function (a) {
@@ -996,12 +1529,21 @@ function WorkflowUI({
             </select>
           </span>
         }
-        lead={[
-          { label: R.cap(WRK.name), sortKey: 'name' },
-          { label: R.cap(ENT.plural), sortKey: 'size' },
-        ]}
+        lead={
+          sameN
+            ? [{ label: R.cap(WRK.name), sortKey: 'name' }]
+            : [
+                { label: R.cap(WRK.name), sortKey: 'name' },
+                { label: R.cap(ENT.plural), sortKey: 'size' },
+              ]
+        }
         table="workers"
         scope="flw"
+        marks={marksOf(
+          list.map(function (w) {
+            return { ind: w.ind, last: w.last || null, lastCell: true };
+          }),
+        )}
       >
         {groups.map(function (g) {
           var out = [];
@@ -1061,19 +1603,23 @@ function WorkflowUI({
                       </button>
                     );
                   })}
-                  <div className="text-gray-400">
-                    {oppLabel(w.opp) +
-                      (w.org && oppLabel(w.opp).indexOf(w.org) === -1
-                        ? ' · ' + w.org
-                        : '')}
-                  </div>
+                  {oneOpp ? null : (
+                    <div className="text-gray-500">
+                      {oppLabel(w.opp) +
+                        (w.org && oppLabel(w.opp).indexOf(w.org) === -1
+                          ? ' · ' + w.org
+                          : '')}
+                    </div>
+                  )}
                 </td>
-                <td className="px-1.5 py-2 text-right tabular-nums text-gray-600">
-                  {R.nCount(w.n)}
-                </td>
+                {sameN ? null : (
+                  <td className="px-1.5 py-2 text-right tabular-nums text-gray-600">
+                    {R.nCount(w.n)}
+                  </td>
+                )}
                 {cells(w.ind)}
                 {lastCell(w.last)}
-                <R.AttentionCell reds={w.reds} yellows={w.yellows} />
+                <AttnCell reds={w.reds} yellows={w.yellows} />
               </tr>,
             );
             if (open)
@@ -1094,20 +1640,34 @@ function WorkflowUI({
   // ══ Activity and trends ════════════════════════════════════════════════════
   function ChartsRow() {
     var weeks = (P.weekly || {})[scopeKey] || [];
-    var trends = TILES.slice(0, 4);
+    // Drilled: the headline indicator the scope is flagged on gets a full-width
+    // trend with a tick per saved report; the other cards stay as they are.
+    var fl = selOrg || selOpp !== null ? flagOf(scopeInd) : null;
+    var focus = fl
+      ? TILES.filter(function (t) {
+          return t.id === fl.col.id;
+        })[0] || null
+      : null;
+    var trends = TILES.filter(function (t) {
+      return t !== focus;
+    }).slice(0, 4);
+    if (focus) trends = [focus].concat(trends);
     return (
       <div>
         <div className="grid grid-cols-1 lg:grid-cols-6 gap-3">
-          <R.WeeklyActivityCard
-            weeks={weeks}
-            className="lg:col-span-2"
-            registeredLabel={R.cap(ENT.plural) + ' registered'}
-          />
-          {trends.map(function (t) {
+          {focus ? null : (
+            <R.WeeklyActivityCard
+              weeks={weeks}
+              className="lg:col-span-2"
+              registeredLabel={R.cap(ENT.plural) + ' registered'}
+            />
+          )}
+          {trends.map(function (t, ti) {
             var m = M_BY_ID[t.id] || {};
-            return (
-              <R.TrendCard
+            var card = (
+              <TrendCardL
                 key={t.id}
+                wide={t === focus}
                 label={t.label}
                 title={m.title}
                 pct={t.pct}
@@ -1124,9 +1684,19 @@ function WorkflowUI({
                 })}
               />
             );
+            if (t !== focus) return card;
+            return [
+              card,
+              <R.WeeklyActivityCard
+                key="weekly"
+                weeks={weeks}
+                className="lg:col-span-2"
+                registeredLabel={R.cap(ENT.plural) + ' registered'}
+              />,
+            ];
           })}
         </div>
-        <p className="mt-2 text-xs text-gray-400">
+        <p className="mt-2 text-xs text-gray-500">
           Activity is counted in the week it happened, to {R.dateLbl(asOf)}.
           Each indicator point is the figure as of a saved report; a gap is a
           report with too few {ENT.plural} to score, not a zero. Dashed line =
@@ -1198,7 +1768,7 @@ function WorkflowUI({
                               openDef(m.indicator, 'programme');
                             }}
                           >
-                            {m.title || m.indicator}
+                            {d.label || m.title || m.indicator}
                           </button>
                           {d.plain ? (
                             <div className="text-xs text-gray-500">
@@ -1303,6 +1873,35 @@ function WorkflowUI({
     setOpenRow = sOpenRow[1];
   var ownOrg = oppId !== null ? orgOf(oppId) : null;
   var ownLabel = (ownOrg || 'Your ' + ORG.name) + ' (you)';
+  // The status-band rule a row is graded by, for a hover title: the registry's
+  // bands are [target, watch floor] in the measure's own unit.
+  function benchBandRule(m, tgt) {
+    var b = (m && m.bands) || [];
+    var dir = m && m.direction;
+    if (tgt === null || (dir !== 'higher' && dir !== 'lower')) return '';
+    var t = R.fmtValue(m, tgt);
+    var w = b.length > 1 ? Number(b[1]) : NaN;
+    if (isNaN(w)) return 'Target ' + t + ', ' + dir + ' is better';
+    var wv = R.fmtValue(m, m.unit === '%' ? w / 100 : w);
+    return dir === 'higher'
+      ? 'On target ≥ ' +
+          t +
+          ' · Watch ' +
+          wv +
+          '–' +
+          t +
+          ' · Off target < ' +
+          wv
+      : 'On target ≤ ' +
+          t +
+          ' · Watch ' +
+          t +
+          '–' +
+          wv +
+          ' · Off target > ' +
+          wv;
+  }
+
   function benchmarkRows(bp) {
     var cohorts = bp.cohorts || {};
     var cid = Object.keys(cohorts).filter(function (id) {
@@ -1333,9 +1932,11 @@ function WorkflowUI({
       byCat[cat].rows.push({
         m: m,
         orgs: orgs,
-        ranked: R.rankOrganisations(m, orgs.own, orgs.others || [], {
-          entityPlural: ENT.plural,
-        }),
+        ranked: tiesYoursFirst(
+          R.rankOrganisations(m, orgs.own, orgs.others || [], {
+            entityPlural: ENT.plural,
+          }),
+        ),
         target: R.targetValue(m, D.indicators[m.indicator]),
       });
     });
@@ -1346,6 +1947,375 @@ function WorkflowUI({
       }),
       meta: cohorts[cid] || {},
     };
+  }
+  // The expanded row's every-organization bars. Drawn here rather than with the
+  // library's RankedBars so the label column fits a full "<org> (you)" name and
+  // the dashed target line carries its value; same figures, same order.
+  // Within a group of equal figures, yours is drawn first: a joint rank shows
+  // at its tied position instead of trailing the organizations it ties with.
+  function tiesYoursFirst(rk) {
+    var ord = (rk.ordered || []).slice();
+    var mi = -1;
+    ord.forEach(function (o, i) {
+      if (o.mine && R.drawable(o.figure)) mi = i;
+    });
+    if (mi > 0) {
+      var v = Number(ord[mi].figure.value);
+      var at = mi;
+      while (
+        at > 0 &&
+        R.drawable(ord[at - 1].figure) &&
+        Number(ord[at - 1].figure.value) === v
+      )
+        at--;
+      if (at < mi) ord.splice(at, 0, ord.splice(mi, 1)[0]);
+    }
+    return Object.assign({}, rk, { ordered: ord });
+  }
+  // One true axis from zero: a percentage indicator always spans 0-100%, so
+  // bars and the dashed target sit at their real values, not stretched to the
+  // largest figure on the row.
+  function axisMax(m, vals, tgt) {
+    var mx = Math.max.apply(
+      null,
+      vals.concat(tgt !== null && tgt !== undefined ? [tgt] : []).concat([0]),
+    );
+    if (m && m.unit === '%') mx = Math.max(mx, 1);
+    return mx > 0 ? mx : 1;
+  }
+  function isRankedRow(r) {
+    return r.m.direction === 'higher' || r.m.direction === 'lower';
+  }
+  // Scale ticks under the expanded bars: 0 / half / full for a percentage
+  // axis, 0 / max otherwise. Labels reuse the indicator's own formatter.
+  function axisTicks(m, max) {
+    var t = m && m.unit === '%' ? [0, max / 2, max] : [0, max];
+    return t.map(function (v) {
+      return {
+        pct: (100 * v) / max,
+        label: String(R.fmtValue(m, v)).replace(/\.0+(?=\D*$)/, ''),
+      };
+    });
+  }
+  function MiniBars(props) {
+    var W = props.width || 260;
+    var H = props.height || 44;
+    var rows = props.ranked.ordered || [];
+    var vals = rows
+      .filter(function (o) {
+        return R.drawable(o.figure);
+      })
+      .map(function (o) {
+        return Number(o.figure.value);
+      });
+    var tgt = props.target;
+    var hasTgt = tgt !== null && tgt !== undefined;
+    var max = axisMax(props.measure, vals, tgt);
+    var n = Math.max(rows.length, 1);
+    var bw = Math.min(34, (W - 8 * (n - 1)) / n);
+    var u = H - 4;
+    return (
+      <svg
+        width={W}
+        height={H}
+        viewBox={'0 0 ' + W + ' ' + H}
+        role="img"
+        aria-label={
+          R.cap(ORG.plural) +
+          (props.unranked ? ', not ranked' : ', best to worst')
+        }
+        style={props.unranked ? { opacity: 0.45 } : undefined}
+      >
+        <line
+          x1="0"
+          x2={W}
+          y1={H - 1.5}
+          y2={H - 1.5}
+          stroke="#d6d4cc"
+          strokeWidth="1"
+        />
+        {rows.map(function (o, i) {
+          var x = i * (bw + 8);
+          if (!R.drawable(o.figure))
+            return (
+              <rect
+                key={i}
+                x={x + 0.75}
+                y={H - 12}
+                width={bw - 1.5}
+                height={10}
+                rx="3"
+                fill="none"
+                stroke="#b9b7ae"
+                strokeWidth="1.5"
+                strokeDasharray="3 3"
+              />
+            );
+          var h = Math.max(3, (u * Number(o.figure.value)) / max);
+          return (
+            <rect
+              key={i}
+              x={x}
+              y={H - 2 - h}
+              width={bw}
+              height={h}
+              rx="3"
+              fill={o.mine ? '#4f46e5' : '#c7c5bc'}
+            >
+              <title>
+                {R.fmtValue(props.measure, o.figure.value) +
+                  (o.mine && R.BAND_WORD[o.figure.band]
+                    ? ' (' + R.BAND_WORD[o.figure.band] + ')'
+                    : '')}
+              </title>
+            </rect>
+          );
+        })}
+        {hasTgt ? (
+          <line
+            x1="0"
+            x2={W}
+            y1={H - 2 - (u * tgt) / max}
+            y2={H - 2 - (u * tgt) / max}
+            stroke="#1d1d24"
+            strokeWidth="1.5"
+            strokeDasharray="5 4"
+          />
+        ) : null}
+      </svg>
+    );
+  }
+  var BAR_REASON = {
+    insufficient: 'too few ' + ENT.plural,
+    notcredible: 'not credible',
+    notinapp: 'not collected',
+    unrecorded: 'not recorded',
+    nodata: 'no data',
+  };
+  function BenchBars(props) {
+    var m = props.measure;
+    var rows = props.ranked.ordered || [];
+    var vals = rows
+      .filter(function (o) {
+        return R.drawable(o.figure);
+      })
+      .map(function (o) {
+        return Number(o.figure.value);
+      });
+    var tgt = props.target;
+    var max = axisMax(m, vals, tgt);
+    var LABEL_W = 230;
+    var VALUE_W = 120;
+    var GAP = 12;
+    var lineLeft =
+      'calc(' +
+      (LABEL_W + GAP) +
+      'px + (100% - ' +
+      (LABEL_W + VALUE_W + 2 * GAP) +
+      'px) * ' +
+      (tgt !== null && tgt !== undefined ? tgt / max : 0) +
+      ')';
+    var hasTgt = tgt !== null && tgt !== undefined;
+    var mineFig = (
+      rows.filter(function (o) {
+        return o.mine;
+      })[0] || {}
+    ).figure;
+    var mineCls = (mineFig && R.BAND_TEXT[mineFig.band]) || '';
+    var mineWord = (mineFig && R.BAND_WORD[mineFig.band]) || '';
+    var mineFill = '#4f46e5';
+    return (
+      <div>
+        {hasTgt ? (
+          <div style={{ position: 'relative', height: 18 }}>
+            <div
+              className="text-[11px] font-semibold text-gray-800 whitespace-nowrap"
+              style={{
+                position: 'absolute',
+                left: lineLeft,
+                bottom: 2,
+                transform: 'translateX(-50%)',
+              }}
+            >
+              {'target ' + R.fmtValue(m, tgt)}
+            </div>
+          </div>
+        ) : null}
+        <div style={{ position: 'relative' }} className="flex flex-col gap-2">
+          {hasTgt ? (
+            <div
+              style={{
+                position: 'absolute',
+                top: -2,
+                bottom: 4,
+                left: lineLeft,
+                borderLeft: '2px dashed #1d1d24',
+                zIndex: 1,
+              }}
+            />
+          ) : null}
+          {rows.map(function (o, i) {
+            var ok = R.drawable(o.figure);
+            var w = ok
+              ? Math.max(1.5, (100 * Number(o.figure.value)) / max)
+              : 0;
+            return (
+              <div
+                key={i}
+                className="grid items-center"
+                style={{
+                  gridTemplateColumns:
+                    LABEL_W + 'px minmax(0, 1fr) ' + VALUE_W + 'px',
+                  columnGap: GAP,
+                  height: 24,
+                }}
+              >
+                <div
+                  className={
+                    'text-sm whitespace-nowrap ' +
+                    (o.mine ? 'font-bold text-indigo-700' : 'text-gray-600')
+                  }
+                >
+                  {o.mine ? props.ownLabel : 'Another ' + ORG.name}
+                </div>
+                <div className="h-4 rounded bg-gray-100 relative">
+                  <div
+                    className={'absolute left-0 top-0 bottom-0 rounded'}
+                    style={{
+                      width: w + '%',
+                      background: o.mine ? mineFill : '#c7c5bc',
+                    }}
+                  />
+                </div>
+                <div
+                  className={
+                    'text-sm tabular-nums ' +
+                    (ok
+                      ? o.mine
+                        ? 'font-bold ' + (mineCls || 'text-indigo-700')
+                        : 'text-gray-700'
+                      : 'italic text-gray-600')
+                  }
+                >
+                  {ok
+                    ? o.mine && mineWord
+                      ? [
+                          R.fmtValue(m, o.figure.value),
+                          <span
+                            key="st"
+                            className={
+                              'ml-1.5 px-1.5 py-0.5 rounded text-[11px] font-semibold ' +
+                              (R.BAND_CLS[mineFig.band] || '')
+                            }
+                            title={
+                              hasTgt
+                                ? 'Status against the target (' +
+                                  R.fmtValue(m, tgt) +
+                                  ')'
+                                : 'Status'
+                            }
+                          >
+                            {mineWord}
+                          </span>,
+                        ]
+                      : R.fmtValue(m, o.figure.value)
+                    : (o.figure.value !== null && o.figure.value !== undefined
+                        ? R.fmtValue(m, o.figure.value) + ' · '
+                        : '') + (BAR_REASON[o.figure.band] || 'no figure')}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div
+          className="grid"
+          style={{
+            gridTemplateColumns:
+              LABEL_W + 'px minmax(0, 1fr) ' + VALUE_W + 'px',
+            columnGap: GAP,
+            height: 18,
+            marginTop: 2,
+          }}
+          aria-hidden="true"
+        >
+          <div />
+          <div style={{ position: 'relative', borderTop: '1px solid #d6d4cc' }}>
+            {axisTicks(m, max).map(function (t, i, all) {
+              var last = i === all.length - 1;
+              return (
+                <div
+                  key={i}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: t.pct + '%',
+                    transform:
+                      i === 0
+                        ? 'none'
+                        : last
+                          ? 'translateX(-100%)'
+                          : 'translateX(-50%)',
+                    textAlign: i === 0 ? 'left' : last ? 'right' : 'center',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 1,
+                      height: 4,
+                      background: '#b9b7ae',
+                      marginLeft: i === 0 ? 0 : 'auto',
+                      marginRight: last ? 0 : 'auto',
+                    }}
+                  />
+                  <div
+                    className="tabular-nums whitespace-nowrap"
+                    style={{
+                      fontSize: 10,
+                      lineHeight: '12px',
+                      color: '#6b7280',
+                    }}
+                  >
+                    {t.label}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div />
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600">
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              className="inline-block w-3 h-3 rounded-sm"
+              style={{ background: mineFill }}
+            />
+            {'Yours'}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              className="inline-block w-3 h-3 rounded-sm"
+              style={{ background: '#c7c5bc' }}
+            />
+            {'Another ' + ORG.name}
+          </span>
+          {hasTgt ? (
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                className="inline-block"
+                aria-hidden="true"
+                style={{
+                  width: 2,
+                  height: 14,
+                  background:
+                    'repeating-linear-gradient(to bottom, #1d1d24 0px, #1d1d24 4px, transparent 4px, transparent 7px)',
+                }}
+              />
+              {'Target'}
+            </span>
+          ) : null}
+        </div>
+      </div>
+    );
   }
   function Benchmark() {
     if (bench.status === 'idle' || bench.status === 'loading')
@@ -1367,29 +2337,49 @@ function WorkflowUI({
             'cohort, or its cohort has not been published since its programme report saved a week.'}
         </R.Notice>
       );
-    var GRID = '300px 120px 150px 280px minmax(0, 1fr)';
+    var covVals = [];
+    built.groups.forEach(function (g) {
+      g.rows.forEach(function (r) {
+        covVals.push(
+          String(r.ranked.coverage == null ? '' : r.ranked.coverage),
+        );
+      });
+    });
+    var sameCov =
+      covVals.length > 0 &&
+      covVals.every(function (c) {
+        return c === covVals[0];
+      });
+    var oneCov = sameCov ? covVals[0] : null;
+    var GRID = sameCov
+      ? '300px 120px 150px 280px'
+      : '300px 120px 150px 280px minmax(0, 1fr)';
     return (
       <div className="space-y-3">
         <div className="text-sm text-gray-600 max-w-4xl">
           {ownLabel.replace(' (you)', '') +
-            " against the programme's other " +
+            ' against the other ' +
             ORG.plural +
             ', as of ' +
             R.dateLbl(built.meta.as_of || (bench.payload || {}).as_of) +
-            '. Each small chart is every ' +
-            ORG.name +
-            ', best to worst: yours in blue, the others unnamed and re-sorted on every row. An outline has no usable figure; the coverage column says why.'}
+            (sameCov && oneCov
+              ? ' · ' +
+                (oneCov.indexOf('all ') === 0
+                  ? oneCov + ' covered'
+                  : 'coverage ' + oneCov)
+              : '') +
+            '.'}
         </div>
         <R.Card padded={false}>
           <div
-            className="grid items-center gap-4 px-5 py-2.5 border-b border-gray-200 text-[11px] uppercase tracking-wide text-gray-500"
+            className="grid items-center gap-4 px-5 py-2.5 border-b border-gray-200 text-[11px] uppercase tracking-wide text-gray-600"
             style={{ gridTemplateColumns: GRID }}
           >
             <div>Indicator</div>
             <div>{ownOrg || 'Yours'}</div>
             <div>Rank</div>
             <div>Best → worst</div>
-            <div>Coverage</div>
+            {sameCov ? null : <div>Coverage</div>}
           </div>
           {built.groups.map(function (g) {
             return (
@@ -1397,96 +2387,168 @@ function WorkflowUI({
                 <div className="px-5 pt-2.5 pb-1 text-[11px] font-bold uppercase tracking-wide text-gray-700 bg-gray-50 border-b border-gray-100">
                   {g.name}
                 </div>
-                {g.rows.map(function (r) {
-                  var id = r.m.indicator;
-                  var open = openRow === id;
-                  var own = r.orgs.own;
-                  var ok = R.drawable(own);
-                  var out = [
-                    <button
-                      key={id}
-                      type="button"
-                      aria-expanded={open}
-                      onClick={function () {
-                        setOpenRow(open ? null : id);
-                      }}
-                      className={
-                        'w-full text-left grid items-center gap-4 px-5 py-2.5 border-b border-gray-100 hover:bg-gray-50 ' +
-                        (open ? 'bg-indigo-50/60' : '')
-                      }
-                      style={{ gridTemplateColumns: GRID }}
-                    >
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold text-gray-900 truncate">
-                          {r.m.title || id}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {(r.m.direction === 'lower'
-                            ? 'lower is better'
-                            : r.m.direction === 'higher'
-                              ? 'higher is better'
-                              : 'not ranked') +
-                            (r.target !== null
-                              ? ' · target ' + R.fmtValue(r.m, r.target)
-                              : '')}
-                        </div>
-                      </div>
-                      <div
+                {g.rows
+                  .filter(isRankedRow)
+                  .concat(
+                    g.rows.filter(function (x) {
+                      return !isRankedRow(x);
+                    }),
+                  )
+                  .map(function (r, ri, arr) {
+                    var id = r.m.indicator;
+                    var open = openRow === id;
+                    var own = r.orgs.own;
+                    var ok = R.drawable(own);
+                    var out = [
+                      <button
+                        key={id}
+                        type="button"
+                        aria-expanded={open}
+                        onClick={function () {
+                          setOpenRow(open ? null : id);
+                        }}
                         className={
-                          'text-lg font-bold tabular-nums ' +
-                          (ok
-                            ? R.BAND_TEXT[own.band] || 'text-gray-900'
-                            : 'text-gray-400')
+                          'w-full text-left grid items-center gap-4 px-5 py-2.5 border-b border-gray-100 hover:bg-gray-50 ' +
+                          (open ? 'bg-indigo-50/60' : '')
                         }
+                        style={{ gridTemplateColumns: GRID }}
                       >
-                        {ok ? R.fmtValue(r.m, own.value) : '—'}
-                      </div>
-                      <div className="text-sm text-gray-700">
-                        {!own
-                          ? '—'
-                          : r.ranked.rank === null
-                            ? 'no usable figure'
-                            : !r.ranked.ranked
-                              ? '—'
-                              : (r.ranked.tied ? 'joint ' : '') +
-                                R.ordinal(r.ranked.rank) +
-                                ' of ' +
-                                r.ranked.scored}
-                      </div>
-                      <R.MiniRankBars
-                        ranked={r.ranked}
-                        target={r.target}
-                        width={280}
-                      />
-                      <div className="text-xs text-gray-500">
-                        {r.ranked.coverage}
-                      </div>
-                    </button>,
-                  ];
-                  if (open)
-                    out.push(
-                      <div
-                        key={id + ':detail'}
-                        className="px-5 py-4 bg-indigo-50/40 border-b border-gray-200"
-                      >
-                        <R.RankedBars
+                        <div className="min-w-0">
+                          <div
+                            className="text-sm font-semibold text-gray-900 truncate"
+                            title={r.m.title || id}
+                          >
+                            {(D.indicators[id] || {}).label || r.m.title || id}
+                          </div>
+                          <div
+                            className="text-xs text-gray-600"
+                            title={benchBandRule(r.m, r.target) || undefined}
+                          >
+                            {(r.m.direction === 'lower'
+                              ? 'lower is better'
+                              : r.m.direction === 'higher'
+                                ? 'higher is better'
+                                : 'not ranked') +
+                              (r.target !== null
+                                ? ' · target ' + R.fmtValue(r.m, r.target)
+                                : '')}
+                          </div>
+                        </div>
+                        <div
+                          className={
+                            'text-lg font-bold tabular-nums ' +
+                            (ok
+                              ? R.BAND_TEXT[own.band] || 'text-gray-900'
+                              : 'text-gray-500')
+                          }
+                        >
+                          {ok ? R.fmtValue(r.m, own.value) : '—'}
+                        </div>
+                        <div className="text-sm text-gray-700">
+                          {!own
+                            ? '—'
+                            : r.ranked.rank === null
+                              ? 'no usable figure'
+                              : !r.ranked.ranked
+                                ? '—'
+                                : (r.ranked.tied ? 'joint ' : '') +
+                                  R.ordinal(r.ranked.rank) +
+                                  ' of ' +
+                                  r.ranked.scored}
+                        </div>
+                        <MiniBars
+                          unranked={!isRankedRow(r)}
                           measure={r.m}
                           ranked={r.ranked}
-                          ownLabel={ownLabel}
                           target={r.target}
+                          width={280}
                         />
-                        <div className="mt-3 text-xs text-gray-500">
-                          This opportunity on its own:{' '}
-                          <b className="text-gray-800">
-                            {R.fmtValue(r.m, entryOf(P.programInd, id).value)}
-                          </b>
-                          . The {ORG.name} figure pools every opportunity it
-                          runs in this programme.
-                        </div>
-                      </div>,
-                    );
-                  return out;
-                })}
+                        {sameCov ? null : (
+                          <div className="text-xs text-gray-600">
+                            {r.ranked.coverage}
+                          </div>
+                        )}
+                      </button>,
+                    ];
+                    if (
+                      !isRankedRow(r) &&
+                      (ri === 0 || isRankedRow(arr[ri - 1]))
+                    )
+                      out.unshift(
+                        <div
+                          key={id + ':unranked-hdr'}
+                          className="px-5 pt-2 pb-1 text-[11px] uppercase tracking-wide text-gray-500 border-b border-gray-100"
+                          title={
+                            'These indicators have no better or worse direction, so ' +
+                            ORG.plural +
+                            ' are shown for comparison, not ranked'
+                          }
+                        >
+                          {'Not ranked · for comparison only'}
+                        </div>,
+                      );
+                    if (open)
+                      out.push(
+                        <div
+                          key={id + ':detail'}
+                          className="px-5 py-4 bg-indigo-50/40 border-b border-gray-200"
+                        >
+                          <BenchBars
+                            measure={r.m}
+                            ranked={r.ranked}
+                            ownLabel={ownLabel}
+                            target={r.target}
+                          />
+                          <div className="mt-3">
+                            <button
+                              type="button"
+                              className="rounded border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                              title={
+                                'Open the Report tab with its ' +
+                                WRK.name +
+                                ' table sorted by this indicator, worst first'
+                              }
+                              onClick={function () {
+                                var ci = COLS.findIndex(function (c) {
+                                  return c.id === id;
+                                });
+                                if (ci >= 0)
+                                  sort.set('workers', {
+                                    key: 'col' + ci,
+                                    dir:
+                                      r.m.direction === 'lower'
+                                        ? 'desc'
+                                        : 'asc',
+                                  });
+                                setTab('report');
+                                setTimeout(function () {
+                                  var el =
+                                    document.getElementById('ir-worker-table');
+                                  if (el) el.scrollIntoView({ block: 'start' });
+                                }, 60);
+                              }}
+                            >
+                              {'See ' + WRK.plural + ' →'}
+                            </button>
+                          </div>
+                          {R.fmtValue(r.m, entryOf(P.programInd, id).value) ===
+                          R.fmtValue(r.m, (own || {}).value) ? null : (
+                            <div className="mt-3 text-xs text-gray-600">
+                              This opportunity on its own:{' '}
+                              <b className="text-gray-800">
+                                {R.fmtValue(
+                                  r.m,
+                                  entryOf(P.programInd, id).value,
+                                )}
+                              </b>
+                              . The {ORG.name} figure pools every opportunity it
+                              runs in this programme.
+                            </div>
+                          )}
+                        </div>,
+                      );
+                    return out;
+                  })}
               </div>
             );
           })}
@@ -1623,7 +2685,7 @@ function WorkflowUI({
           <span className="flex flex-wrap items-center gap-2">
             <R.Pill tone="muted">Report of {R.dateLbl(asOf)}</R.Pill>
             {isCompleted ? (
-              <R.Pill tone="final">Final report</R.Pill>
+              <R.Pill tone="muted">Final report</R.Pill>
             ) : (
               <R.Pill tone="current">Live · not saved</R.Pill>
             )}
@@ -1687,7 +2749,9 @@ function WorkflowUI({
           ) : (
             <div className="space-y-4">
               <Tiles />
-              <WorkerTable />
+              <div id="ir-worker-table">
+                <WorkerTable />
+              </div>
               <ChartsRow />
               <Definitions />
             </div>

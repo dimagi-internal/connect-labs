@@ -681,3 +681,58 @@ class TestDraftPreviewPublish:
         assert {t["template_workflow_id"] for t in out["templates"]} == {mine, shared}
         out = _ok(call_tool(follower_only[1], "workflow_template_list", {}))
         assert [(t["template_workflow_id"], t["you_can_edit"]) for t in out["templates"]] == [(shared, False)]
+
+
+# -----------------------------------------------------------------------------
+# The way back: export a template's changes for a code PR
+# -----------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestExport:
+    def _publish(self, raw, tid, rev, old, new, note):
+        _ok(_edit(raw, tid, rev, old, new))
+        _ok(
+            call_tool(
+                raw,
+                "workflow_template_publish",
+                {"template_workflow_id": tid, **TEMPLATE_SCOPE, "note": note, "expected_revision": rev + 1},
+            )
+        )
+
+    def test_the_published_render_comes_back_as_a_diff_against_its_seed(self, store, owner):
+        _, raw = owner
+        tid = _create(raw)["template_workflow_id"]
+        self._publish(raw, tid, 1, "published v1", "fix one", "first fix")
+        self._publish(raw, tid, 2, "fix one", "fix two", "second fix")
+        args = {"template_workflow_id": tid, **TEMPLATE_SCOPE}
+        out = _ok(call_tool(raw, "workflow_template_export", {**args, "include_code": True}))
+        assert out["base"]["version"] == 1 and out["target"] == "v3"
+        assert [c["note"] for c in out["changes"]] == ["first fix", "second fix"]
+        assert out["base_code"] == TEMPLATE_RENDER and "fix two" in out["code"]
+        assert "-function R(){return 'published v1'}" in out["diff"]
+        assert "+function R(){return 'fix two'}" in out["diff"]
+        # An inline code template has no file to merge into.
+        assert out["code_template"] == {"path": None, "deployed_equals_base": None}
+        # Without include_code the payload carries the diff only.
+        slim = _ok(call_tool(raw, "workflow_template_export", {**args, "version": 2}))
+        assert "code" not in slim and slim["target"] == "v2" and len(slim["changes"]) == 1
+
+    def test_a_reader_exports_what_is_published_but_not_the_draft(self, store, owner, follower_only):
+        _, raw = owner
+        _, f_raw = follower_only
+        tid = _create(raw, public=True)["template_workflow_id"]
+        self._publish(raw, tid, 1, "published v1", "shared fix", "fix")
+        args = {"template_workflow_id": tid, **TEMPLATE_SCOPE}
+        assert "+function R(){return 'shared fix'}" in _ok(call_tool(f_raw, "workflow_template_export", args))["diff"]
+        assert (
+            _err(call_tool(f_raw, "workflow_template_export", {**args, "draft": True}))["code"] == "PERMISSION_DENIED"
+        )
+
+    def test_a_file_backed_code_template_names_its_render_file(self):
+        assert (
+            tw.code_template_path("indicator_worker_review")
+            == "connect_labs/workflow/templates/indicator_worker_review_render.js"
+        )
+        # The programme and opportunity reports share one render.
+        assert tw.code_template_path("indicator_opp_report") == tw.code_template_path("indicator_programme_report")
