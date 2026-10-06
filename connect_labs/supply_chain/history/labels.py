@@ -27,6 +27,7 @@ FIELD_LABELS = {
     ("Shipment", "expected_on"): "ETA",
     ("Shipment", "dispatched_on"): "Dispatched",
     ("Receipt", "received_on"): "Received",
+    ("Quote", "received_on"): "Received",
     ("Payment", "paid_on"): "Paid",
     ("Quote", "voided"): "Voided",
     ("Quote", "base_per_pack_stated"): "Units per pack",
@@ -682,13 +683,14 @@ _PACK_FIGURES = {"base_per_pack_stated", "base_unit_grams_stated"}
 def correction_sentence(model, old_values, new_values, lookup, *, with_before=True):
     """A corrected version against the one it replaced, as (sentence, attnames).
 
-    "Quote corrected: sachets per carton 150 (was not stated)" -- a pack
+    "Quote corrected: sachets per carton not stated → 150" -- a pack
     figure in the commodity's own units, when it names them.
 
-    Names every field whose value reads differently now, old value in
-    brackets; a value that was blank reads "not stated". `with_before=False`
-    leaves the brackets off, for a one-line note that says only what the
-    quote says now: "sachets per carton 150".
+    Names every field whose value reads differently now, in the update
+    lines' own grammar ("ETA 5 Sep → 19 Sep"): old value, arrow, new; a value
+    that was blank reads "not stated". `with_before=False` leaves the old
+    value off, for a one-line note that says only what the quote says now:
+    "sachets per carton 150".
     """
     clauses, fields = [], []
     for attname, new in new_values.items():
@@ -708,7 +710,7 @@ def correction_sentence(model, old_values, new_values, lookup, *, with_before=Tr
             label = label[:1].lower() + label[1:]
         clause = f"{label} {after or 'not stated'}"
         if with_before:
-            clause += f" (was {before or 'not stated'})"
+            clause = f"{label} {before or 'not stated'} → {after or 'not stated'}"
         clauses.append((attname, clause))
         fields.append(attname)
     if _PACK_FIGURES & set(fields):

@@ -75,6 +75,44 @@ def window_too_short(window_days):
     return None
 
 
+def observed(earliest, end, window_days):
+    """How many days of the window the rate is averaged over: the window, or less when demand began inside it.
+
+    None when nothing has been recorded yet. Fewer than MINIMUM_WINDOW_DAYS and
+    there is no rate (`rate_from`), which a page can say as a field -- "28 d of
+    30" -- instead of as the reason's sentence.
+    """
+    if earliest is None:
+        return None
+    return min(window_days, (end - earliest).days + 1)
+
+
+def estimate_from(earliest, end, window_days):
+    """The first day a monthly rate can be estimated, while too few days of demand stand behind one; else None.
+
+    The day the recorded days reach MINIMUM_WINDOW_DAYS, counting the first
+    day of demand as one. None with no demand at all, with a rate already,
+    and with a window that could never hold enough days (`window_too_short`).
+    """
+    if earliest is None or window_too_short(window_days) is not None:
+        return None
+    if observed(earliest, end, window_days) >= MINIMUM_WINDOW_DAYS:
+        return None
+    return earliest + timedelta(days=MINIMUM_WINDOW_DAYS - 1)
+
+
+def per_day_so_far(total, earliest, end):
+    """Demand per day over the days recorded so far, or None.
+
+    Not a rate to plan on -- there are too few days for that (`rate_from`) --
+    but what those days show: the total over the days since the first.
+    """
+    if earliest is None or not isinstance(total, Quantity):
+        return None
+    days = (end - earliest).days + 1
+    return Quantity((total.amount / Decimal(days)).quantize(ledger.QUANTITY_SCALE), total.unit)
+
+
 def rate_from(total, earliest, end, window_days, basis):
     """A monthly rate from a window's total and the earliest demand ever recorded.
 
@@ -84,7 +122,7 @@ def rate_from(total, earliest, end, window_days, basis):
     """
     if earliest is None:
         return unconfirmed(NO_CONSUMPTION_YET)
-    observed_days = min(window_days, (end - earliest).days + 1)
+    observed_days = observed(earliest, end, window_days)
     if observed_days < MINIMUM_WINDOW_DAYS:
         what = "dispensing" if basis == CONSUMPTION else "releases"
         return unconfirmed(

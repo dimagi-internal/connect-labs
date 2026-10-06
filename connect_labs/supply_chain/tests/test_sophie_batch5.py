@@ -293,7 +293,7 @@ class TestTheTimeline:
         quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _ALL_BUT_PACK)
         _correct_pack(da, quote, ace)
         lines = [e.line for e in timeline_for_tender(base["tender"]["id"], program_id=PROGRAM)]
-        assert "Quote · Northwind Foods · corrected: sachets per carton 150 (was not stated)" in lines
+        assert "Quote · Northwind Foods · sachets per carton not stated → 150" in lines
         assert any(line.startswith("Quote · Northwind Foods · recorded: USD 42.50 per carton") for line in lines)
 
     def test_the_page_renders_the_line_and_dates_with_their_year(self, da, base, order, client_in_program):

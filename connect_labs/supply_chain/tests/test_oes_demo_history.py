@@ -434,7 +434,7 @@ class TestTheClarification:
         replies = [e for e in entries if e.excerpt == "Each carton holds 150 sachets."]
         # One call, one line: the correction, naming what it changed.
         assert len(replies) == 1
-        assert replies[0].sentence.startswith("Quote corrected: sachets per carton 150 (was not stated)"), replies[
+        assert replies[0].sentence.startswith("Quote corrected: sachets per carton not stated → 150"), replies[
             0
         ].sentence
         assert "base_per_pack_stated" in replies[0].fields

@@ -3,7 +3,8 @@ One "On us" / "On suppliers" list (moves.py, nothing else): a card headed by its
 count, one .move-item per move with its rule label and the link that makes it.
 Takes `moves`, `whose` ("ours" | "theirs"), `heading`, `testid`, and optionally
 `count_testid`, `empty_text` and `no_detail` (leave each move's dates to a table beside
-it that already carries them, as the tender's Suppliers sheet does). A move to a drafted email on this page opens
+it that already carries them, as the tender's Suppliers sheet does; a move's `note`, a
+fact that table does not carry -- "reply sent 6 Oct" -- still shows under it). A move to a drafted email on this page opens
 the draft panel at it (window.openDraft, the tender page's).
 {% endcomment %}
 <section class="card_bg border-brand-border-light flex flex-col gap-3 border" data-testid="{{ testid }}" aria-label="{{ heading }}">
@@ -13,7 +14,7 @@ the draft panel at it (window.openDraft, the tender page's).
   </div>
   {% for m in moves %}
   <div class="move-item move-item--{{ whose }}" data-testid="move" data-rule="{{ m.rule }}">
-    <div class="flex min-w-0 flex-col gap-1"><span class="flex flex-wrap items-center gap-x-1.5 gap-y-1 font-medium text-gray-900"><span>{{ m.text }}</span>{% if m.chip %}<span class="status-chip status-chip--theirs whitespace-nowrap" data-testid="move-chip">{{ m.chip }}</span>{% endif %}</span>{% if not m.chip or not no_detail %}<span data-testid="move-detail" class="flex flex-wrap items-center gap-y-1 text-xs text-gray-600">{% if not m.chip %}<span class="move-rule whitespace-nowrap" title="{{ m.rule_title }}">{{ m.rule }}</span>{% endif %}{% if not no_detail %}{% for part in m.detail_parts %}<span class="whitespace-nowrap">{{ part }}{% if not forloop.last %}&nbsp;·&nbsp;{% endif %}</span>{% endfor %}{% endif %}</span>{% endif %}</div>
+    <div class="flex min-w-0 flex-col gap-1"><span class="flex flex-wrap items-center gap-x-1.5 gap-y-1 font-medium text-gray-900"><span>{{ m.text }}</span>{% if m.chip %}<span class="status-chip status-chip--theirs whitespace-nowrap" data-testid="move-chip">{{ m.chip }}</span>{% endif %}</span>{% if not m.chip or not no_detail %}<span data-testid="move-detail" class="flex flex-wrap items-center gap-y-1 text-xs text-gray-600">{% if not m.chip %}<span class="move-rule whitespace-nowrap" title="{{ m.rule_title }}">{{ m.rule }}</span>{% endif %}{% if not no_detail %}{% for part in m.detail_parts %}<span class="whitespace-nowrap">{{ part }}{% if not forloop.last %}&nbsp;·&nbsp;{% endif %}</span>{% endfor %}{% endif %}</span>{% endif %}{% if m.note and no_detail %}<span data-testid="move-note" class="text-xs text-gray-600">{{ m.note }}</span>{% endif %}</div>
     {% if m.due %}<span class="status-chip status-chip--neutral justify-self-end whitespace-nowrap" data-testid="move-due">{{ m.due }}</span>{% elif not supply_as_of %}<a class="text-brand-indigo justify-self-end whitespace-nowrap font-semibold hover:underline" data-testid="move-cta" href="{{ m.href }}"{% if "#draft-" in m.href %} onclick="return window.openDraft &amp;&amp; window.openDraft('{{ m.href|cut:request.path|slice:"1:" }}');"{% endif %}>{{ m.cta }}</a>{% endif %}
   </div>
   {% empty %}

@@ -233,5 +233,28 @@ class WorkerDetailView(OperationBase):
         from connect_labs.supply_chain.network.views import band_of
 
         data["worker"]["band"] = band_of(data["worker"])
-        context.update(data=data, worker=data["worker"], chart=mark_safe(timeline_svg(data["timeline"])))
+        listed, gave_none = split_visits(data["visits"])
+        context.update(
+            data=data,
+            worker=data["worker"],
+            chart=mark_safe(timeline_svg(data["timeline"])),
+            listed_visits=listed,
+            gave_none_visits=gave_none,
+        )
         return context
+
+
+def split_visits(visits):
+    """(listed, gave none): the visits that moved stock first, then the rest that say something.
+
+    A visit that gave none and moved nothing is counted rather than listed --
+    most of a worker's visits are screenings, and fifty rows of "Gave none"
+    hid the few that make up the Dispensed figure. Newest first within each.
+    """
+
+    def gave_none(v):
+        return v.get("outcome") == "nothing_given" and not v.get("moved") and not v.get("reported")
+
+    moved = [v for v in visits if v.get("moved")]
+    said = [v for v in visits if not v.get("moved") and not gave_none(v)]
+    return moved + said, [v for v in visits if gave_none(v)]

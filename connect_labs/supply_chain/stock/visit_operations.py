@@ -5,6 +5,8 @@ so the HTTP API and the MCP server both get them with no second list.
 Design: docs/superpowers/specs/2026-09-28-supply-stock-from-visits-design.md.
 """
 
+from django.db.models import Q
+
 from connect_labs.supply_chain.operations import ID, QUANTITY, obj, record, register_operation
 
 _DATE = {"type": "string", "format": "date"}
@@ -233,6 +235,34 @@ def _reported_on_visits(program_id, point, item, visit_ids) -> dict:
     return out
 
 
+def _moved_by_visits(program_id, point, item, visit_ids, on_date) -> dict:
+    """{visit_id: [{"quantity": "-5", "unit": "sachet"}, ...]} -- each ledger line a visit posted, in order.
+
+    One query. Signed from the worker's side: consumption leaves (negative), its
+    reversal comes back (positive), so a rejected visit reads "-5, +5".
+    """
+    from connect_labs.supply_chain.models import Movement
+    from connect_labs.supply_chain.values import decimal_string
+
+    out = {}
+    if not visit_ids:
+        return out
+    rows = (
+        Movement.objects.for_program(program_id)
+        .as_of(on_date)
+        .filter(item=item, visit_id__in=visit_ids)
+        .filter(Q(from_supply_point=point) | Q(to_supply_point=point))
+        .order_by("id")
+        .values("visit_id", "to_supply_point_id", "quantity", "quantity_unit")
+    )
+    for row in rows:
+        sign = "+" if row["to_supply_point_id"] == point.pk else "-"
+        out.setdefault(row["visit_id"], []).append(
+            {"quantity": sign + decimal_string(row["quantity"]), "unit": row["quantity_unit"]}
+        )
+    return out
+
+
 @register_operation(
     name="network_tree",
     summary=(
@@ -296,6 +326,7 @@ def worker_stock_get(access, supply_point_id, item_id, as_of=None, window_days=9
     worker = belief.point_belief(program_id, point, item, on_date=on_date, window_days=window_days)
     shown = list(visits.order_by("-visit_date", "-id")[:200])
     reported = _reported_on_visits(program_id, point, item, [v.visit_id for v in shown])
+    moved = _moved_by_visits(program_id, point, item, [v.visit_id for v in shown], on_date)
     return {
         "item_id": item.pk,
         "item_name": item.name,
@@ -316,6 +347,9 @@ def worker_stock_get(access, supply_point_id, item_id, as_of=None, window_days=9
                 # receipt, which are counts beside the ledger, not an outcome.
                 "reported": reported["item"].get(v.visit_id, []),
                 "stock_form": v.visit_id in reported["any"] or "stock" in (v.form_name or "").lower(),
+                # What the visit moved on the ledger, signed from the worker's side:
+                # "-5" given out, "+5" put back when it was rejected. Empty when nothing moved.
+                "moved": moved.get(v.visit_id, []),
             }
             for v in shown
         ],

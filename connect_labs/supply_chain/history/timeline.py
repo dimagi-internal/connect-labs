@@ -647,8 +647,8 @@ def _fold_reply_days(revisions, suffixes):
 
     Correcting a quote's Received day moves the invitation's reply with it, in
     the same call (repository._follow_received_on): one email, one day, so one
-    line -- "Quote corrected: received on 30 Sep (was 1 Oct) — reply on 30 Sep
-    (was 1 Oct)" -- not a second line about the invitation.
+    line -- "Quote corrected: received 1 Oct → 30 Sep — reply 1 Oct → 30 Sep"
+    -- not a second line about the invitation.
     """
     from connect_labs.supply_chain.models import Outreach, Quote
 
@@ -670,7 +670,7 @@ def _fold_reply_days(revisions, suffixes):
             and set(revision.changes) == {"responded_on"}
         ):
             old, new = revision.changes["responded_on"]
-            suffixes.setdefault(id(correction), []).append(f"reply on {_day_text(new)} (was {_day_text(old)})")
+            suffixes.setdefault(id(correction), []).append(f"reply {_day_text(old)} → {_day_text(new)}")
             continue
         kept.append(revision)
     return kept
@@ -689,7 +689,10 @@ def _as_correction(entry, revision, superseded_id, lookup):
     entry.subject = subject(Quote, new_values, lookup).removeprefix(model_label(Quote) + " · ")
     entry.entity = model_label(Quote)
     entry.identity = identity(Quote, new_values, lookup)
-    entry.what = "corrected" + entry.sentence.removeprefix(f"{model_label(Quote)} corrected")
+    # The changes alone, "received 6 Oct → 5 Oct": the arrows say it changed, the
+    # version it replaced reads "since corrected", and the line stays short.
+    changes = entry.sentence.removeprefix(f"{model_label(Quote)} corrected").removeprefix(": ")
+    entry.what = changes or "corrected"
     entry.sender = sender(Quote, new_values, lookup)
 
 

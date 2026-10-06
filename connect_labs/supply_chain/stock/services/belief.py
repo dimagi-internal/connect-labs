@@ -94,6 +94,12 @@ class Belief:
     days_to_stockout: object
     status: str
     unmatched_receipts: list = field(default_factory=list)
+    # The days the rate is averaged over (resupply.observed); None with no demand yet.
+    rate_days: int | None = None
+    # While those days are too few for a rate: the day one becomes possible
+    # (resupply.estimate_from) and demand per day so far (resupply.per_day_so_far).
+    rate_estimate_from: date | None = None
+    rate_per_day_so_far: Quantity | None = None
     workers: int = 0
     workers_below_min: int = 0
     subtree: dict | None = None
@@ -296,6 +302,7 @@ def _belief(point, raw, count, unmatched, item, unit, end, window_days) -> Belie
         basis, total, earliest = resupply.RELEASES, raw["r_window"], raw["r_earliest"]
     amc = _rate(item, unit, total, earliest, end, window_days, basis)
     plan = resupply.cover(on_hand, amc, basis, point, item=item, window_days=window_days)
+    estimate_on, so_far = _waiting(item, unit, total, earliest, end, window_days)
 
     reported = ledger_on_count_day = variance = None
     if count is not None:
@@ -327,7 +334,23 @@ def _belief(point, raw, count, unmatched, item, unit, end, window_days) -> Belie
         days_to_stockout=plan["days_to_stockout"],
         status=plan["status"],
         unmatched_receipts=unmatched,
+        rate_days=resupply.observed(earliest, end, window_days),
+        rate_estimate_from=estimate_on,
+        rate_per_day_so_far=so_far,
     )
+
+
+def _waiting(item, unit, total, earliest, end, window_days):
+    """(the day a rate becomes possible, demand per day so far) while there are too few days for one.
+
+    (None, None) once there are enough days, with none at all, or for a durable item.
+    """
+    if resupply._is_durable(item):
+        return None, None
+    estimate_on = resupply.estimate_from(earliest, end, window_days)
+    if estimate_on is None:
+        return None, None
+    return estimate_on, resupply.per_day_so_far(ledger.collapse(total, item, unit), earliest, end)
 
 
 def _window(on_date, window_days):
@@ -406,6 +429,7 @@ def _subtree_figures(point, total, members, item, unit, end, window_days) -> dic
                 _add(outside, u, amount)
     amc = _rate(item, unit, total["c_window"], total["c_earliest"], end, window_days, resupply.CONSUMPTION)
     plan = resupply.cover(on_hand, amc, resupply.CONSUMPTION, point, item=item, window_days=window_days)
+    estimate_on, so_far = _waiting(item, unit, total["c_window"], total["c_earliest"], end, window_days)
     return {
         "on_hand": on_hand,
         "received_from_outside": ledger.collapse(outside, item, unit),
@@ -418,6 +442,8 @@ def _subtree_figures(point, total, members, item, unit, end, window_days) -> dic
         "months_of_stock": plan["months_of_stock"],
         "days_to_stockout": plan["days_to_stockout"],
         "status": plan["status"],
+        "rate_estimate_from": estimate_on.isoformat() if estimate_on else None,
+        "rate_per_day_so_far": so_far,
     }
 
 
@@ -489,7 +515,7 @@ def wire(b: Belief) -> dict:
     subtree = None
     if b.subtree:
         subtree = {
-            key: (value if key in ("status", "amc_basis", "no_answer_visits") else _plain(value))
+            key: (value if key in ("status", "amc_basis", "no_answer_visits", "rate_estimate_from") else _plain(value))
             for key, value in b.subtree.items()
         }
     return {
@@ -516,6 +542,13 @@ def wire(b: Belief) -> dict:
         "amc_basis": b.amc_basis,
         "months_of_stock": _plain(b.months_of_stock),
         "days_to_stockout": _plain(b.days_to_stockout),
+        # How many days the rate rests on, and the fewest it needs. With too few,
+        # days to stock-out has no figure, and a page says when it will and what
+        # the days so far show: "estimate from 9 Oct", "~7 a day so far".
+        "rate_days": b.rate_days,
+        "rate_days_needed": resupply.MINIMUM_WINDOW_DAYS,
+        "rate_estimate_from": b.rate_estimate_from.isoformat() if b.rate_estimate_from else None,
+        "rate_per_day_so_far": maybe(b.rate_per_day_so_far),
         "status": b.status,
         "min_months_of_stock": band(b.point.min_months_of_stock),
         "max_months_of_stock": band(b.point.max_months_of_stock),
