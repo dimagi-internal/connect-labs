@@ -169,6 +169,14 @@ function WorkflowUI({
   var ENT = D.entity,
     WRK = D.worker,
     ORG = D.organisation;
+  // A case whose work is FINISHED (`display.entity.done_property`) has no visit
+  // due, so it is never stale -- nor is a worker, opportunity or organisation
+  // whose cases are all finished. A display with no done property finishes
+  // nothing, and the staleness rule reads exactly as before.
+  function isDone(c) {
+    return R.caseDone ? R.caseDone(D, c) : false;
+  }
+  var FINISHED_TIP = 'Every ' + ENT.name + ' here is finished: no visit is due';
   // The registry's default floor (display.min_denominator); a measure's own
   // min_denominator still wins cell by cell.
   var MIN_DEN =
@@ -258,15 +266,32 @@ function WorkflowUI({
   var caseIndex = P.cases || [];
   var lastVisit = React.useMemo(
     function () {
-      var out = { org: {}, opp: {} };
+      // `open` counts each group's cases still under way; a group with cases
+      // and none open is finished.
+      var out = {
+        org: {},
+        opp: {},
+        open: { org: {}, opp: {} },
+        n: { org: {}, opp: {} },
+      };
       caseIndex.forEach(function (c) {
+        var o = String(c.opportunity_id);
+        var g = c.llo || orgOf(c.opportunity_id);
+        var open = isDone(c) ? 0 : 1;
+        out.n.opp[o] = (out.n.opp[o] || 0) + 1;
+        out.open.opp[o] = (out.open.opp[o] || 0) + open;
+        if (g) {
+          out.n.org[g] = (out.n.org[g] || 0) + 1;
+          out.open.org[g] = (out.open.org[g] || 0) + open;
+        }
         var d = String(c.last_visit_date || '').slice(0, 10);
         if (!d) return;
-        var o = String(c.opportunity_id);
         if (!out.opp[o] || d > out.opp[o]) out.opp[o] = d;
-        var g = c.llo || orgOf(c.opportunity_id);
         if (g && (!out.org[g] || d > out.org[g])) out.org[g] = d;
       });
+      out.doneOf = function (kind, key) {
+        return !!out.n[kind][key] && !out.open[kind][key];
+      };
       return out;
     },
     [payload],
@@ -296,6 +321,7 @@ function WorkflowUI({
           cases: rows,
           n: rows.length || f.n || 0,
           last: last,
+          done: rows.length > 0 && rows.every(isDone),
           startMonth: f.startMonth || null,
           caseload: f.caseloadLabel || null,
         };
@@ -638,6 +664,17 @@ function WorkflowUI({
                 {R.dateLbl(props.marks.stale)}
               </span>
               {'no visit > ' + STALE + ' days'}
+            </span>
+          ) : null}
+          {props.marks && props.marks.done ? (
+            <span
+              className="whitespace-nowrap cursor-help"
+              title={FINISHED_TIP}
+            >
+              <span className="text-emerald-700 font-semibold mr-1">
+                finished
+              </span>
+              {'every ' + ENT.name + ' done, no visit due'}
             </span>
           ) : null}
           {props.marks && props.marks.dash ? (
@@ -1146,18 +1183,30 @@ function WorkflowUI({
     }
     return fallback;
   }
-  function lastCell(d) {
+  // `done`: every case behind the row is finished, so an old last visit is the
+  // end of the work, not a lapse -- shown in grey and labelled, never red.
+  function lastCell(d, done) {
     var gap = d ? R.daysBetween(d, asOf) : null;
-    var stale = gap !== null && gap > STALE;
+    var stale = !done && gap !== null && gap > STALE;
     return (
       <td
         className={
           'px-1.5 py-2 text-right whitespace-nowrap tabular-nums ' +
           (stale ? 'text-red-700 font-semibold' : 'text-gray-600')
         }
-        title={stale ? 'No visits for ' + gap + ' days' : undefined}
+        data-finished={done ? '1' : undefined}
+        title={
+          done
+            ? FINISHED_TIP
+            : stale
+              ? 'No visits for ' + gap + ' days'
+              : undefined
+        }
       >
         {d ? R.dateLbl(d) : '—'}
+        {done ? (
+          <span className="ml-1 text-emerald-700 font-semibold">finished</span>
+        ) : null}
       </td>
     );
   }
@@ -1165,7 +1214,13 @@ function WorkflowUI({
     {
       label: 'Last visit',
       sortKey: 'last',
-      title: 'Red: no visit for more than ' + STALE + ' days',
+      title:
+        'Red: no visit for more than ' +
+        STALE +
+        ' days' +
+        (ENT.done_property
+          ? ', unless every ' + ENT.name + ' is finished'
+          : ''),
     },
     {
       label: 'Attention',
@@ -1183,10 +1238,11 @@ function WorkflowUI({
     return e.value === null || e.value === undefined;
   }
   function marksOf(items) {
-    var m = { stale: null, dash: false };
+    var m = { stale: null, dash: false, done: false };
     items.forEach(function (it) {
       var gap = it.last ? R.daysBetween(it.last, asOf) : null;
-      if (gap !== null && gap > STALE && (!m.stale || it.last < m.stale))
+      if (it.done) m.done = true;
+      else if (gap !== null && gap > STALE && (!m.stale || it.last < m.stale))
         m.stale = it.last;
       if (it.lastCell && !it.last) m.dash = true;
       if (
@@ -1273,6 +1329,7 @@ function WorkflowUI({
               return {
                 ind: l.ind,
                 last: lastVisit.org[l.llo] || null,
+                done: lastVisit.doneOf('org', l.llo),
                 lastCell: true,
               };
             })
@@ -1297,7 +1354,7 @@ function WorkflowUI({
                 )}
               </td>
               {cells(l.ind)}
-              {lastCell(lastVisit.org[l.llo])}
+              {lastCell(lastVisit.org[l.llo], lastVisit.doneOf('org', l.llo))}
               <AttnCell reds={l.reds || 0} yellows={l.yellows || 0} />
             </tr>
           );
@@ -1345,6 +1402,7 @@ function WorkflowUI({
             return {
               ind: o.ind,
               last: lastVisit.opp[String(o.opp)] || null,
+              done: lastVisit.doneOf('opp', String(o.opp)),
               lastCell: true,
             };
           }),
@@ -1375,7 +1433,10 @@ function WorkflowUI({
                 )}
               </td>
               {cells(o.ind)}
-              {lastCell(lastVisit.opp[String(o.opp)])}
+              {lastCell(
+                lastVisit.opp[String(o.opp)],
+                lastVisit.doneOf('opp', String(o.opp)),
+              )}
               <AttnCell reds={a.reds} yellows={a.yellows} />
             </tr>
           );
@@ -1444,6 +1505,17 @@ function WorkflowUI({
               <tr key={i} className="border-t border-gray-100">
                 <td className={'px-2 py-1.5 ' + caseLabelClass(c)}>
                   {caseLabel(c, 10)}
+                  {isDone(c) ? (
+                    <span
+                      data-finished="1"
+                      className="ml-2 font-sans font-semibold text-emerald-700"
+                      title={
+                        'This ' + ENT.name + ' is finished: no visit is due'
+                      }
+                    >
+                      finished
+                    </span>
+                  ) : null}
                 </td>
                 {D.case_fields.map(function (f) {
                   return (
@@ -1599,7 +1671,12 @@ function WorkflowUI({
         scope="flw"
         marks={marksOf(
           list.map(function (w) {
-            return { ind: w.ind, last: w.last || null, lastCell: true };
+            return {
+              ind: w.ind,
+              last: w.last || null,
+              done: w.done,
+              lastCell: true,
+            };
           }),
         )}
       >
@@ -1676,7 +1753,7 @@ function WorkflowUI({
                   </td>
                 )}
                 {cells(w.ind)}
-                {lastCell(w.last)}
+                {lastCell(w.last, w.done)}
                 <AttnCell reds={w.reds} yellows={w.yellows} />
               </tr>,
             );

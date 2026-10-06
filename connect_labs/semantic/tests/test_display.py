@@ -192,3 +192,46 @@ def test_a_case_label_field_resolves_and_keeps_the_models_nouns(vq):
     named = {**copy.deepcopy(inds), "display": {"entity": {"name": "child", "label_field": "child_name"}}}
     assert validate_registry(props, named, {}) == []
     assert resolve_display(props, named)["entity"]["label_field"] == "child_name"
+
+
+def test_a_done_property_resolves_and_must_name_a_bool_property(vq):
+    """`display.entity.done_property` names the Layer-2 bool that says a case's work is
+    finished. Undeclared, the entity block is exactly what it was."""
+    props, inds = vq
+    assert "done_property" not in resolve_display(props, inds)["entity"]
+    doc = {**copy.deepcopy(inds), "display": {"entity": {"done_property": "all_approved"}}}
+    assert validate_registry(props, doc, {}) == []
+    entity = resolve_display(props, doc)["entity"]
+    # declared alone, it keeps the model's nouns
+    assert entity == {
+        "name": "beneficiary",
+        "plural": "beneficiaries",
+        "key": "entity_id",
+        "done_property": "all_approved",
+    }
+    both = {
+        **copy.deepcopy(inds),
+        "display": {"entity": {"name": "child", "label_field": "entity_name", "done_property": "all_approved"}},
+    }
+    assert validate_registry(props, both, {}) == []
+    assert resolve_display(props, both)["entity"]["done_property"] == "all_approved"
+
+
+@pytest.mark.parametrize(
+    "name, message",
+    [
+        ("finished", "'finished' is not a property"),
+        ("num_visits", "is not a property"),  # an aggregate, not a property
+        ("days_since_last_visit", "must be type: bool"),  # a property, but not a bool
+        ("not a name", "must be the name of a bool property"),
+        (3, "must be the name of a bool property"),
+    ],
+)
+def test_a_done_property_that_is_not_a_bool_property_is_refused(vq, name, message):
+    props, inds = vq
+    doc = {**copy.deepcopy(inds), "display": {"entity": {"done_property": name}}}
+    errors = validate_registry(props, doc, {})
+    assert any("display.entity.done_property" in e and message in e for e in errors), errors
+    # without the properties document only the shape is checked
+    shape_only = display_problems(doc)
+    assert bool(shape_only) == (not isinstance(name, str) or " " in name)
