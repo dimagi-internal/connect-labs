@@ -134,19 +134,3 @@ TEMPLATE = {
         }
     ],
 }
-
-
-def run_default(*, definition, access_token, opportunity_id=None, program_id=None, **_):
-    """Schedulable: save the most recent complete week, as a person saving the report would.
-
-    Without this the report had no Schedule button, so each week's trend point existed
-    only if someone opened the report and saved it. See history_rebuild.save_latest_week.
-    """
-    from connect_labs.workflow.history_rebuild import save_latest_week
-
-    return save_latest_week(
-        definition, access_token=access_token, opportunity_id=opportunity_id, program_id=program_id
-    )
-
-
-TEMPLATE["supports_default_run"] = True
