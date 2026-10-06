@@ -605,7 +605,7 @@ class TestLineHooks:
         lines = [e for e in entries if e.excerpt == PACK_EMAIL]
         assert len(lines) == 1
         line = lines[0]
-        assert line.sentence == "Quote corrected: sachets per carton 150 (was not stated)"
+        assert line.sentence == "Quote corrected: sachets per carton not stated → 150"
         assert line.subject == "Northwind Foods"
         assert "base_per_pack_stated" in line.fields
         assert line.actor == "ACE (agent)" and line.is_ai

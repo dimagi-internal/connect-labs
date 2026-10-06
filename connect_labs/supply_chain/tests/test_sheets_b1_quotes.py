@@ -166,7 +166,7 @@ def test_the_quotes_sheet_is_one_row_per_standing_quote_with_its_earlier_version
     versions = re.findall(r'<tr\b[^>]*data-testid="quote-version-row"[^>]*>.*?</tr>', body, re.S)
     assert len(versions) == 2
     assert ">v2</a>" in versions[0] and ">v1</a>" in versions[1]
-    assert "21 Sep" in versions[0] and "(was 20 Sep)" in versions[0]
+    assert "20 Sep → 21 Sep" in versions[0]
     assert "data-edit" not in "".join(versions)
 
 

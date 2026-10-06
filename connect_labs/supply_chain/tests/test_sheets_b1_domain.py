@@ -81,7 +81,7 @@ class TestACorrectedReceivedDayMovesTheReply:
         cells.apply(da, "quote", quote["id"], "received_on", "30 Sep 2026", was="1 Oct 2026")
 
         lines = [e.sentence for e in timeline_for_tender(world["tender"]["id"], program_id=PROGRAM)]
-        assert "Quote corrected: received on 30 Sep (was 1 Oct) — reply on 30 Sep (was 1 Oct)" in lines
+        assert "Quote corrected: received 1 Oct → 30 Sep — reply 1 Oct → 30 Sep" in lines
         assert not [line for line in lines if line.startswith("Responded on")]
         # The reply as first recorded stays in the history.
         assert "Replied with a quote" in lines

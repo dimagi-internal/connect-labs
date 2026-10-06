@@ -1490,13 +1490,13 @@ def _nonzero_amount(cell):
 
 
 def _unsettled_parts(parts) -> list[str]:
-    """ "30 on visits not yet approved", "30 estimated": the dispensing that is not settled, in words."""
+    """ "30 on unapproved visits", "30 estimated": the dispensing that is not settled, as short parts."""
     parts = parts or {}
     said = []
-    for key, words_for in (("unapproved", "on visits not yet approved"), ("estimated", "estimated")):
+    for key, words_for in (("unapproved", "on unapproved visits"), ("estimated", "estimated")):
         part = parts.get(key)
         if isinstance(part, dict) and "unconfirmed" in part:
-            said.append(f"an unknown part {words_for}")
+            said.append(f"unknown {words_for}")
             continue
         amount = _nonzero_amount(part)
         if amount is not None:
@@ -1504,35 +1504,165 @@ def _unsettled_parts(parts) -> list[str]:
     return said
 
 
-@register.filter
-def on_hand_words(cell, parts):
-    """An on-hand figure, and what the dispensing behind it rests on.
+def _signed_digits(number) -> str:
+    """ "+ 5", "− 5": a term of a sum, its sign a true minus."""
+    return f"{'−' if number < 0 else '+'} {quantity_digits(abs(number))}"
 
-    "120 sachets on hand — of the 90 sachets dispensed, 30 on visits not yet
-    approved, 30 estimated". `parts` is the row (or a store's subtree): its
-    `dispensed`, `unapproved` and `estimated`, all in the figure's own unit.
-    The parts are DISPENSING, never stock on hand, so they are said as parts
-    of what was dispensed -- set beside on hand with no noun, "30 unapproved"
-    read as though 30 of the sachets on hand were. Said ON the figure, never
-    in a footnote (design 2026-09-28 §6); a figure resting on nothing
-    unsettled is just "120 sachets on hand".
+
+@register.filter
+def given_out_line(parts):
+    """What the dispensing behind a figure rests on, as one short line beside it, or "".
+
+    "of 201 given out: 11 on unapproved visits · 30 estimated". `parts` is a
+    worker row (or a store's subtree): its `dispensed`, `unapproved` and
+    `estimated`, all in the figure's own unit. The parts are DISPENSING, never
+    stock on hand, so the line names what they are part of; a figure resting
+    on nothing unsettled has no line at all (design 2026-09-28 §6).
     """
-    text = f"{figure_text(cell)} on hand"
     said = _unsettled_parts(parts)
     if not said:
-        return text
-    return f"{text} — of the {figure_text((parts or {}).get('dispensed'))} dispensed, {', '.join(said)}"
+        return ""
+    dispensed = _amount_of((parts or {}).get("dispensed"))
+    lead = f"of {quantity_digits(dispensed)} given out: " if dispensed is not None else ""
+    return lead + " · ".join(said)
+
+
+def _amount_of(cell):
+    if not isinstance(cell, dict) or "unconfirmed" in cell or cell.get("amount") in (None, ""):
+        return None
+    return _as_decimal(cell["amount"])
 
 
 @register.filter
-def dispensed_words(cell, parts):
-    """A dispensed figure and its unsettled parts.
+def stock_sum(row):
+    """A worker's on hand as the sum behind it: "300 issued − 201 given out · 11 on unapproved visits".
 
-    "90 sachets dispensed — 30 on visits not yet approved, 30 estimated".
+    On hand is the ledger -- everything in less everything out -- so anything
+    that is neither an issue nor a standing dispense (a correction, a return)
+    is its own term ("+ 4 other") and the sum always comes to the figure above
+    it. A figure that is not a number falls back to the unsettled parts alone.
     """
-    text = f"{figure_text(cell)} dispensed"
-    said = _unsettled_parts(parts)
-    return f"{text} — {', '.join(said)}" if said else text
+    row = row or {}
+    issued, dispensed, on_hand = (_amount_of(row.get(k)) for k in ("issued", "dispensed", "on_hand"))
+    unsettled = _unsettled_parts(row)
+    if issued is None or dispensed is None or on_hand is None:
+        return " · ".join(unsettled)
+    terms = [f"{quantity_digits(issued)} issued", f"− {quantity_digits(dispensed)} given out"]
+    other = on_hand - (issued - dispensed)
+    if other:
+        terms.append(f"{_signed_digits(other)} other")
+    return " · ".join([" ".join(terms), *unsettled])
+
+
+def _rate_wait(row, figure_key):
+    """While too few days of demand stand behind a rate, what a page says for `figure_key` instead of "unknown".
+
+    {"on": "9 Oct", "after": "after 30 days of dispensing", "so_far": "~7 a day so far"},
+    or None: when the figure is a number, when it is blocked by something
+    other than the rate (a negative balance), or when there is no date to give.
+    """
+    row = row or {}
+    estimate_from = row.get("rate_estimate_from")
+    reasons = set(unconfirmed_reasons(row.get(figure_key)))
+    if not estimate_from or not reasons or not reasons & set(unconfirmed_reasons(row.get("amc"))):
+        return None
+    from datetime import date, timedelta
+
+    from connect_labs.supply_chain.stock.services.resupply import MINIMUM_WINDOW_DAYS, RELEASES
+
+    needed = row.get("rate_days_needed") or MINIMUM_WINDOW_DAYS
+    on = date.fromisoformat(str(estimate_from)[:10])
+    text = f"{on.day} {on.strftime('%b')}"
+    # The year only when the wait crosses one: dispensing that began in December.
+    if (on - timedelta(days=needed - 1)).year != on.year:
+        text += f" {on.year}"
+    what = "releases" if row.get("amc_basis") == RELEASES else "dispensing"
+    return {
+        "on": text,
+        "after": f"after {needed} days of {what}",
+        "so_far": _so_far_text(row.get("rate_per_day_so_far")),
+    }
+
+
+def _so_far_text(cell):
+    """ "~7 a day so far", "under 1 a day so far", or "" with no figure."""
+    number = _as_decimal((cell or {}).get("amount")) if isinstance(cell, dict) else None
+    if number is None:
+        return ""
+    whole = number.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    if whole < 1:
+        return "under 1 a day so far"
+    return f"~{quantity_digits(whole)} a day so far"
+
+
+@register.filter
+def stockout_text(row):
+    """The days-to-stock-out cell: "102 days", or, while the rate waits on more days, "estimate from 9 Oct"."""
+    wait = _rate_wait(row, "days_to_stockout")
+    if wait:
+        return f"estimate from {wait['on']}"
+    return days_text((row or {}).get("days_to_stockout"))
+
+
+@register.filter
+def cover_text(row):
+    """Months of cover, or, while the rate waits on more days, "cover estimate from 9 Oct"."""
+    wait = _rate_wait(row, "months_of_stock")
+    if wait:
+        return f"cover estimate from {wait['on']}"
+    return months_text((row or {}).get("months_of_stock"))
+
+
+@register.filter
+def waits_on_rate(row):
+    """Whether days to stock-out stands as "estimate from <day>" rather than a figure or a reason."""
+    return _rate_wait(row, "days_to_stockout") is not None
+
+
+@register.filter
+def stockout_notes(row):
+    """What stands under days to stock-out when there is no figure: fields, not the reason's sentence.
+
+    While too few days of demand stand behind a rate (the cell reads
+    "estimate from 9 Oct"), the notes are what that needs and what the days
+    so far show -- "after 30 days of dispensing", "~7 a day so far" -- and
+    the rate's own reason is not repeated. Any other reason is listed as it is.
+    """
+    return _wait_notes(row, "days_to_stockout")
+
+
+@register.filter
+def cover_notes(row):
+    """The same notes for a months-of-cover figure (`stockout_notes`)."""
+    return _wait_notes(row, "months_of_stock")
+
+
+def _wait_notes(row, figure_key):
+    row = row or {}
+    reasons = list(unconfirmed_reasons(row.get(figure_key)))
+    wait = _rate_wait(row, figure_key)
+    if not wait:
+        return reasons if figure_key == "days_to_stockout" else []
+    rate_reasons = set(unconfirmed_reasons(row.get("amc")))
+    return [n for n in (wait["after"], wait["so_far"]) if n] + [r for r in reasons if r not in rate_reasons]
+
+
+@register.filter
+def moved_text(moved, unit=None):
+    """A visit's ledger lines as signed figures: "−5", "−5 · +5" (posted, then put back), or "".
+
+    The unit is said only where a line is in another unit than the column's.
+    """
+    out = []
+    for line in moved or []:
+        number = _as_decimal((line or {}).get("quantity"))
+        if number is None:
+            continue
+        text = f"{'−' if number < 0 else '+'}{quantity_digits(abs(number))}"
+        if unit and line.get("unit") and line["unit"] != unit:
+            text += f" {unit_noun(line['unit'], abs(number))}"
+        out.append(text)
+    return " · ".join(out)
 
 
 @register.filter

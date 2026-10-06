@@ -132,7 +132,7 @@ class TestACorrectionSaysItsUnitsAndOpensOnItsSource:
         ).content.decode()
         # Under its email event (unanswered round 1004 b3): the kind set apart, the
         # supplier named once in the event's head rather than again on the line.
-        assert "Quote</span> · corrected: sachets per carton 150 (was not stated)" in body
+        assert re.search(r"Quote</span> · sachets per carton not stated → <strong[^>]*>150</strong>", body)
         assert "units per pack" not in body
 
     def test_a_commodity_without_units_keeps_the_generic_words(self):

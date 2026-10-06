@@ -866,9 +866,15 @@ was ordered. Before, the page showed this order's half and a link to the other.
       if (fold && !fold.open) { fold.open = true; }
       if (target.tagName === "SUMMARY" && target.parentNode.tagName === "DETAILS") { target.parentNode.open = true; }
       target.scrollIntoView({block: "start"});
+      return window.scrollY;
     }
-    openTo();
+    var landed = openTo();
     window.addEventListener("hashchange", openTo);
+    // Fonts and the bundles reflow the page after this runs: land again once they
+    // have, so the target is not left under the top bar, unless the reader has scrolled.
+    window.addEventListener("load", function () {
+      if (landed !== undefined && window.scrollY === landed) { openTo(); }
+    });
   })();
 </script>
 {% endif %}

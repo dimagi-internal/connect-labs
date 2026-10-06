@@ -312,6 +312,7 @@ def _tender_rows(program_id, today, until):
             quotes=quotes.get(tender.pk, []),
             commitments=owed.get(tender.pk, []),
             answered=rules.questions_answered_on(answers.get(tender.pk, [])),
+            sent=rules.replies_sent_on(answers.get(tender.pk, [])),
             provisional=bool(award and award.provisional),
             contracted=False,
         )
