@@ -152,6 +152,18 @@ Before deleting, the system checks whether any reports are still bound to the re
 
 Once no reports are bound to it, the registry can be deleted without further steps.
 
+### How workers and cases are named in indicator reports
+
+Indicator reports previously showed raw system identifiers in place of readable names. Worker tables displayed internal usernames (such as a short code on test programmes or a long string of characters on live ones), and case tables were headed by a truncated system ID. Reports now display human-readable names instead.
+
+**Workers are shown by name.** The worker table and the worker review page both show each field worker's name. This applies to the generic indicator report family and the KMC reports, which share the same builder. If a worker's name is not available, the report falls back to their username.
+
+**Cases can be shown by name.** A registry can be configured with a field that holds the case's display name — for example, the field where Connect stores a beneficiary's name. When that field is set, the first column of the case table and the heading in the worker review both show the case's name rather than its ID. If a particular case has no name value, the ID is shown as a fallback.
+
+**Test (synthetic) programmes are also covered.** Programmes used for testing already had display names defined for their simulated workers, and those names now appear in reports. Generated test cases previously appeared as "Beneficiary 1", "Beneficiary 2", and so on; they can now be given real names in the programme's configuration, which will appear in reports instead.
+
+If you work with an indicator report and still see raw IDs where you would expect names, check with your program administrator that the registry has the case name field configured.
+
 ---
 
 ## Taking Actions from a Report
@@ -219,15 +231,4 @@ Clicking **Create Workflow** opens the **Choose a template** modal. The modal is
 A **filter box** at the top of the modal lets you type to narrow the list. Each row shows the template's full name — names are never cut short — alongside a coloured icon and a short description on the line below. If a template is always created together with another template, both rows say so, so you know what you will get before you confirm.
 
 !!! note "Template icons and names"
-    Every template displays a coloured icon. Previously, some icons appeared in the wrong colour or did not appear at all (for example, Verified Monitoring showed no icon). This has been corrected — all icons now draw in their intended colour, and every template has one.
-
-### Templates that create linked workflows together
-
-Some templates produce more than one workflow in a single action. The **KMC Programme Metrics** template is the main example: selecting it creates both the **KMC Programme Metrics** report and the **KMC Worker Review** page at the same time, over the same set of opportunities, with a run ready on each and the two pages already linked to each other. Worker rows on the programme metrics report open directly into the worker review — no manual linking step is needed.
-
-The **Indicator Programme Report** template works the same way: selecting it creates both the **Indicator Programme Report** and the **Indicator Worker Review** together, already linked, so that clicking a worker row on the programme report opens directly into their individual review.
-
-Before this change, creating the KMC Programme Metrics report by hand left worker rows that were plain text rather than links; a separate API step was required to connect the two workflows. That step is no longer needed.
-
-!!! note "The opportunity picker spans all programmes you can access"
-    When you create a workflow from the programme-level Workflows page, the opportunity picker shows **every opportunity you have access to**, not only those belonging to the current programme. The current programme's own opportunities appear at the top of the list and are pre-ticked, so the default selection is correct for most reports
+    Every template displays a coloured icon
