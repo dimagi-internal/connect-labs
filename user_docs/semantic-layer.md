@@ -303,8 +303,15 @@ display:
     - { field: reg_date, label: Registered, format: date }      # date | count | number | text
     - { field: last_weight_g, label: Latest weight, format: count, unit: g }
   reading: { column: weight_g, label: Weight, unit: g }        # charted per case in the worker review
+  visit_fields:                                    # extra columns of one case's visit list
+    - { field: weight_g, label: Weight, format: count, unit: g }
+  visit_flags:                                     # review flags marked on each visit
+    - { column: repeat_counts_flag, label: Repeat count }       # flagged when yes / true / 1
+    - { column: risk_level, label: High risk, value: high }     # or when it equals `value`
   targets_note: 'Targets from the 2026 workplan.'
 ```
+
+`visit_flags` is how an indicator that counts flagged visits (a repeat-count rate, a location-review rate) shows the reader WHICH visits: the worker review names the flags each visit carries, tints those rows, and counts them in the list's heading. It is separate from Connect's own review flag, which gets a "Review flag" column only when some visit carries it. `visit_fields` and `visit_flags` name columns of the visit pipeline; a column the pipeline lacks reads as blank.
 
 Every key is optional. Without the block: the entity noun is the model's `entity.name` / `entity.plural`, workers are "workers", organisations "organisations", categories appear in the order the indicators first use them, the case table shows first visit, last visit and visit count, and the worker review charts the registry's `weight_series` value column if it has one (nothing otherwise).
 
