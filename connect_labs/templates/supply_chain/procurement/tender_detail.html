@@ -159,7 +159,7 @@ is folded away, each fold with its count.
           <th scope="col" class="text-right">Price</th>
           <th scope="col">Delivery term</th>
           <th scope="col">Pack</th>
-          <th scope="col">Missing</th>
+          <th scope="col" class="min-w-[12rem]">Missing</th>
           <th scope="col" class="sheet-pin-end w-px"><span class="sr-only">Actions</span></th>
         </tr></thead>
         <tbody>
@@ -174,7 +174,9 @@ is folded away, each fold with its count.
             <td class="num" data-testid="supplier-quote" {% if q %}{% edit_cell "quote" q.pk "as_quoted_amount" q.as_quoted_amount %}{% endif %}>{% if r.price %}{% include "supply_chain/_src.html" with src=r.quote_src %}<span class="font-medium text-gray-900">{{ r.price }}</span>{% if r.quote_src == "ai" %}<span class="src-ai-tag">AI</span>{% endif %}{% if r.price_per %}<span class="sub">per {{ r.price_per }}</span>{% endif %}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
             <td class="whitespace-nowrap text-gray-700" {% if q %}{% edit_cell "quote" q.pk "incoterm" q.incoterm %}{% endif %}>{% if q.incoterm %}{% include "supply_chain/_src.html" with src=r.term_src %}{{ q.incoterm }}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
             <td class="num text-left text-gray-700" {% if q %}{% edit_cell "quote" q.pk "base_per_pack_stated" q.base_per_pack_stated %}{% endif %} data-testid="supplier-pack">{% if r.pack %}{% include "supply_chain/_src.html" with src=r.pack_src %}{{ r.pack }}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
-            <td>{% if r.missing or r.on_us %}<div class="flex flex-wrap items-center gap-1" data-testid="supplier-missing">{% for m in r.missing %}{% include "supply_chain/_fact_chip.html" with fact=m owner=r.missing_owner n=1 %}{% endfor %}{% if r.on_us %}<a class="status-chip status-chip--ours" data-testid="supplier-on-us" href="{{ r.on_us_href }}">{{ r.on_us }}</a>{% endif %}</div>{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
+            {% comment %}Room for its chips, which wrap -- a line each if need be -- rather than run on
+            under the actions pinned at the row's end.{% endcomment %}
+            <td class="min-w-[12rem]" data-testid="supplier-missing-cell">{% if r.missing or r.on_us %}<div class="flex flex-wrap items-center gap-1 [&_.status-chip]:text-wrap" data-testid="supplier-missing">{% for m in r.missing %}{% include "supply_chain/_fact_chip.html" with fact=m owner=r.missing_owner n=1 %}{% endfor %}{% if r.on_us %}<a class="status-chip status-chip--ours" data-testid="supplier-on-us" href="{{ r.on_us_href }}">{{ r.on_us }}</a>{% endif %}</div>{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
             <td class="sheet-pin-end" data-testid="supplier-actions">{% if not supply_as_of %}<span class="inline-flex items-center gap-2">{% if r.action %}<a class="text-brand-indigo font-medium hover:underline" data-testid="supplier-action" href="{{ r.action.href }}"{% if r.action.href|slice:":7" == "#draft-" %} onclick="return window.openDraft &amp;&amp; window.openDraft('{{ r.action.href|slice:"1:" }}');"{% endif %}>{{ r.action.label }}</a>{% endif %}
               {% if o %}
               {% comment %}The rest of the row's record, in a small menu: record a reply where none is
@@ -255,7 +257,7 @@ next action on anyone (design doc section 22).
       <div data-testid="draft"{% if d.anchor %} id="{{ d.anchor }}"{% endif %} data-supplier-id="{{ d.supplier_id }}" class="border border-gray-200 rounded-lg p-4 mt-3 scroll-mt-20">
         <p class="text-lg">
           <span class="font-semibold text-gray-900">{{ d.supplier_name }}</span>
-          <span class="text-base text-gray-600">· {% if d.kind == "request" %}Quote request{% elif d.kind == "reminder" %}Reminder{% elif d.kind == "reply" %}Our reply{% elif d.kind == "clarification" %}Duty terms clarification{% else %}Follow-up{% endif %}</span>
+          <span class="text-base text-gray-600">· {% if d.kind == "request" %}Quote request{% elif d.kind == "reminder" %}Reminder{% elif d.kind == "reply" %}Our reply{% elif d.kind == "clarification" %}Duty terms clarification{% else %}Follow-up{% endif %}</span>{% if d.duty_terms and d.kind != "clarification" %} <span data-testid="draft-duty-terms" class="status-chip status-chip--neutral text-sm">+ duty terms</span>{% endif %}
         </p>
         {% if d.facts %}
           {% comment %}A reminder's facts as a labelled row, set apart from the card's body
@@ -437,7 +439,7 @@ next action on anyone (design doc section 22).
     </div>
   </details>
 
-  <details class="fold scroll-mt-20" id="history-fold" data-testid="fold-history">
+  <details class="fold scroll-mt-20" id="history-fold" data-testid="fold-history" data-live>
     <summary>History <span class="text-sm font-normal text-gray-600">newest first</span></summary>
     <div class="fold-body">
       {% comment %}The sheets above set out each quote's terms and what it still lacks, so the

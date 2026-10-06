@@ -51,10 +51,10 @@ def _ranked(body, quote_id):
 
 
 def _actions(body, quote_id):
-    """The award, folded under its quote on the comparison."""
-    return re.search(
-        rf'<details class="fold" id="award-{quote_id}" data-testid="award-start".*?</details>', body, re.S
-    ).group(0)
+    """The award: one block under the comparison, starting on this quote."""
+    block = re.search(r'<details class="fold" id="award-block" data-testid="award-start".*?</details>', body, re.S)
+    assert re.search(rf'<option value="{quote_id}" selected>', block.group(0))
+    return block.group(0)
 
 
 # ---- 1. the questions and the award form do not overlap --------------------
@@ -68,7 +68,7 @@ class TestTheQuestionsAndTheAwardFormAreTwoBlocks:
         quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _COMPARABLE)
         row = _actions(_page(client_in_program, base["tender"]["id"]), quote["id"])
         form = re.search(r'<form [^>]*data-testid="award-form"[^>]*>.*?</form>', row, re.S).group(0)
-        assert f'name="quote_id" value="{quote["id"]}"' in form
+        assert 'name="quote_id"' in form and f'<option value="{quote["id"]}" selected>' in form
         assert 'name="rationale"' in form
         assert re.search(r'<button [^>]*type="submit"[^>]*>\s*Award\s*</button>', form)
 

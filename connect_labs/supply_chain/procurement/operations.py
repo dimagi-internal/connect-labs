@@ -239,8 +239,9 @@ _KIND_ORDER = {"reply": 0, "request": 1, "reminder": 2, "followup": 3, "clarific
         "to us are still open (commitment_record), listing them for the person to answer -- at any stage, "
         "because an answer owed does not lapse with the award. Once the tender's import duty terms are set "
         "(tender_set_duty_terms, or an answer that sets them), and while the tender still takes quotes, a "
-        "`clarification` to every invited supplier stating those terms, so all quote on the same basis. "
-        "Writes nothing."
+        "`clarification` to every invited supplier stating those terms, so all quote on the same basis -- "
+        "except where another email to that supplier is pending, which carries the terms instead "
+        "(marked `duty_terms`), or a reply to it was marked sent since the terms were set. Writes nothing."
     ),
     input_schema=obj({"tender_id": ID, "today": _TODAY}, required=("tender_id",)),
 )
@@ -268,7 +269,7 @@ def tender_drafts_render(access, tender_id, today=None):
     replies = _replies(access, tender, day, sender)
     drafts += replies
     if accepting:
-        drafts += _clarifications(access, tender, sender, quotes=quotes, replies=replies)
+        drafts += _clarifications(access, tender, sender, quotes=quotes, pending=drafts)
     drafts.sort(key=lambda d: (_KIND_ORDER[d["kind"]], d["supplier_name"].lower(), d["commodity_slug"]))
 
     result = {
@@ -474,14 +475,17 @@ _CLARIFICATION_ASK = {
 }
 
 
-def _clarifications(access, tender, sender, *, quotes=(), replies=()):
+def _clarifications(access, tender, sender, *, quotes=(), pending=()):
     """A clarification of the tender's import duty terms to each invited supplier it changes something for.
 
     An answer to one supplier ("we import, under the waiver") changes how every
     quote on the tender is costed, so every invited supplier it affects is told --
-    not only the one who asked. Two are not sent one:
-      - a supplier we owe a reply already: the terms go into that reply, so it does
-        not get two overlapping emails;
+    not only the one who asked. One email to a supplier, never two:
+      - a supplier with another email already pending (a reply we owe, a request,
+        a reminder, a follow-up): the terms go into that email (`pending`, edited
+        in place and marked `duty_terms`);
+      - a supplier whose reply was marked sent since the terms were set: the terms
+        went with it;
       - a supplier whose quote is already comparable: nothing in its quote changes.
     """
     template = _CLARIFICATION_ASK.get(tender.duty_terms or "")
@@ -503,13 +507,14 @@ def _clarifications(access, tender, sender, *, quotes=(), replies=()):
     suppliers = {}
     for row in access.list_outreach(tender_id=tender.pk):
         suppliers.setdefault(row.supplier_id, row.supplier)
-    # The terms, written into each reply we already owe.
-    for reply in replies:
-        if reply.get("supplier_id") in suppliers:
-            closing = reply["text"].rfind("\n\nKind regards,")
-            if closing >= 0:
-                reply["text"] = reply["text"][:closing] + f"\n\n{ask}" + reply["text"][closing:]
-    replied = {r.get("supplier_id") for r in replies}
+    # The terms, written into each email already pending to an invited supplier.
+    told = set()
+    for draft in pending:
+        if draft.get("supplier_id") in suppliers and draft.get("kind") != "clarification":
+            draft["text"] = _with_terms(draft["text"], ask)
+            draft["duty_terms"] = tender.duty_terms
+            told.add(draft["supplier_id"])
+    told |= _replied_since(access, tender, suppliers, set_on)
     quote_by_id = {q.pk: q for q in quotes}
     settled = {
         quote_by_id[row.quote_id].supplier_id
@@ -519,7 +524,7 @@ def _clarifications(access, tender, sender, *, quotes=(), replies=()):
     }
     drafts = []
     for supplier in suppliers.values():
-        if supplier is None or supplier.pk in replied or supplier.pk in settled:
+        if supplier is None or supplier.pk in told or supplier.pk in settled:
             continue
         address = ""
         for contact in getattr(supplier, "contacts", None) or []:
@@ -545,6 +550,34 @@ def _clarifications(access, tender, sender, *, quotes=(), replies=()):
             }
         )
     return drafts
+
+
+# How a drafted email closes: a reply's "Kind regards," or render.py's "With thanks,".
+_CLOSINGS = ("\n\nKind regards,", "\n\nWith thanks,")
+
+
+def _with_terms(text, ask):
+    """The email with the tender's duty terms set in as its last paragraph before the closing."""
+    closing = max(text.rfind(c) for c in _CLOSINGS)
+    if closing < 0:
+        return f"{text}\n\n{ask}"
+    return text[:closing] + f"\n\n{ask}" + text[closing:]
+
+
+def _replied_since(access, tender, suppliers, set_on) -> set:
+    """Invited suppliers whose reply was marked sent on or after the day the duty terms were set.
+
+    The reply drafted after the terms were set carried them (`_with_terms`), so
+    the supplier has been told.
+    """
+    if not set_on:
+        return set()
+    orgs = {
+        c.owed_to_org_id
+        for c in access.list_commitments(tender_id=tender.pk)
+        if c.kind == "question" and c.reply_sent_on is not None and c.reply_sent_on >= set_on
+    }
+    return {pk for pk, supplier in suppliers.items() if supplier is not None and supplier.org_id in orgs}
 
 
 def _sender(access) -> Sender:
