@@ -93,6 +93,9 @@ def test_a_declared_headline_replaces_the_default():
         ({"display": {"visit_flags": "repeat_counts_flag"}}, "display.visit_flags"),
         ({"display": {"visit_flags": [{"label": "Repeat"}]}}, "visit_flags[0]"),
         ({"display": {"visit_flags": [{"column": "f", "value": ["yes"]}]}}, "visit_flags[0].value"),
+        ({"display": {"visit_flags": [{"column": "f", "fields": "a"}]}}, "visit_flags[0].fields"),
+        ({"display": {"visit_flags": [{"column": "f", "fields": ["a b"]}]}}, "visit_flags[0].fields"),
+        ({"display": {"visit_flags": [{"column": "f", "description": 3}]}}, "visit_flags[0].description"),
         ({"display": {"entity": {"name": "child", "label_field": "child name"}}}, "display.entity.label_field"),
         ({"display": {"entity": {"label_field": 3}}}, "display.entity.label_field"),
     ],
@@ -154,6 +157,22 @@ def test_visit_flags_and_fields_resolve_and_default_empty(vq):
         {"column": "repeat_counts_flag", "label": "Repeat count"},
         {"column": "risk", "label": "risk", "value": "high"},
     ]
+
+
+def test_a_visit_flag_names_the_fields_it_is_about_and_explains_itself(vq):
+    """`fields` and `description` reach the page: the worker review marks the named
+    cells on a flagged visit that repeat the previous one, and the Flags tooltip
+    reads the description -- instead of guessing either from the flag's wording."""
+    props, inds = vq
+    flag = {
+        "column": "repeat_counts_flag",
+        "label": "Repeat count",
+        "fields": ["male_attendance", "female_attendance"],
+        "description": "Attendance counts exactly repeat the previous visit",
+    }
+    doc = {**copy.deepcopy(inds), "display": {"visit_flags": [flag]}}
+    assert validate_registry(props, doc, {}) == []
+    assert resolve_display(props, doc)["visit_flags"] == [flag]
 
 
 def test_a_case_label_field_resolves_and_keeps_the_models_nouns(vq):

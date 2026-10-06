@@ -78,7 +78,7 @@ export function PeerBars(props: {
           {ownNum === null ? '' : ' + this opportunity'}, low to high
         </span>
         {ownNum === null ? (
-          <span className="shrink-0 whitespace-nowrap text-gray-400">
+          <span className="shrink-0 whitespace-nowrap text-gray-500">
             this opportunity: no value
           </span>
         ) : (
@@ -213,7 +213,7 @@ export function PeerTrend(props: {
                 y={y(t) + 3}
                 textAnchor="end"
                 fontSize="7"
-                fill="#9ca3af"
+                fill="#6b7280"
               >
                 {fmtValue(measure, t)}
               </text>
@@ -229,7 +229,7 @@ export function PeerTrend(props: {
               y={H - 6}
               textAnchor={i === 0 ? 'start' : i === 2 ? 'end' : 'middle'}
               fontSize="7"
-              fill="#9ca3af"
+              fill="#6b7280"
             >
               {periodLabel(letter + n)}
             </text>
@@ -280,7 +280,7 @@ export function PeerTrend(props: {
             this opportunity
           </span>
         ) : (
-          <span className="shrink-0 whitespace-nowrap text-gray-400">
+          <span className="shrink-0 whitespace-nowrap text-gray-500">
             this opportunity: not in the window
           </span>
         )}
@@ -309,19 +309,19 @@ export function PeerCard(props: {
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <div className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">
+          <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">
             Where it sits
           </div>
           {(entry.peers || []).length ? (
             <PeerBars peers={entry.peers || []} measure={m} own={props.own} />
           ) : (
-            <div className="text-[11px] text-gray-400">
+            <div className="text-[11px] text-gray-500">
               No point value cleared the disclosure floors.
             </div>
           )}
         </div>
         <div>
-          <div className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">
+          <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">
             Over time
           </div>
           {hasTrend ? (
@@ -331,7 +331,7 @@ export function PeerCard(props: {
               measure={m}
             />
           ) : (
-            <div className="text-[11px] text-gray-400">
+            <div className="text-[11px] text-gray-500">
               Too few peers span enough reports to publish a trend for this
               indicator.
             </div>

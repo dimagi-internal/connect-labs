@@ -360,7 +360,7 @@ export function EnrolmentTargetChart(props: { progress: EnrolmentProgress }) {
               x={L - 6}
               y={yM(topM * f) + 4}
               fontSize="10"
-              fill="#9ca3af"
+              fill="#6b7280"
               textAnchor="end"
             >
               {nCount(topM * f)}
@@ -847,7 +847,7 @@ export function EnrolmentDailyChart(props: { progress: DailyProgress }) {
                 x={L - 6}
                 y={y(top * f) + 4}
                 fontSize="10"
-                fill="#9ca3af"
+                fill="#6b7280"
                 textAnchor="end"
               >
                 {nCount(top * f)}

@@ -22,6 +22,7 @@
     "css-loader": "^6.5.1",
     "dotenv-webpack": "^8.0.1",
     "flatpickr": "^4.6.13",
+    "happy-dom": "^20.14.5",
     "htmx-ext-loading-states": "^2.0.2",
     "htmx.org": "^2.0.11",
     "lucide-react": "^0.263.1",

@@ -59,6 +59,7 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import copy
+import difflib
 import logging
 from datetime import UTC, datetime
 
@@ -791,6 +792,111 @@ def forget_follower(home, template: Template, *, workflow_id, scope: dict) -> bo
     if followers != list(template.meta.get("followers") or []):
         _write_meta(home, template, followers=followers)
     return True
+
+
+def code_template_path(template_type: str | None) -> str | None:
+    """The repo path of the code template's render file for `template_type`.
+
+    Templates read their render from a sibling `.js` file (or inline it); the file
+    is found by content, so this needs no per-template mapping. None when the
+    render is inline or the type is not a deployed template.
+    """
+    from pathlib import Path
+
+    from connect_labs.workflow.templates import TEMPLATES
+
+    code = (TEMPLATES.get(template_type or "") or {}).get("render_code")
+    if not code:
+        return None
+    root = Path(__file__).resolve().parent / "templates"
+    repo = root.parents[2]
+    for f in sorted(root.rglob("*.js")):
+        if "__tests__" in f.parts:
+            continue
+        try:
+            if f.read_text() == code:
+                return str(f.relative_to(repo))
+        except OSError:
+            continue
+    return None
+
+
+def export(labs_api, template: Template, *, version: int | None = None, base: int = 1, draft: bool = False) -> dict:
+    """A template's render at one version (or its draft) beside a BASE version.
+
+    The way back from data to code. A template workflow is seeded from a code
+    template (version 1 is that seed, verbatim) and then edited as data; this
+    returns what changed since the base, with every version note in between, so the
+    changes can be merged into the code template as a three-way merge -- base,
+    template, repo -- rather than retyped (tools/promote_template_workflow.py).
+    """
+    versions = {int((r.data or {}).get("number") or 0): r for r in list_versions(labs_api, template)}
+    if not versions:
+        raise TemplateWorkflowError("NOT_FOUND", "the template has no published version")
+    if base not in versions:
+        raise TemplateWorkflowError("NOT_FOUND", f"version {base} is not in this template's history")
+    if draft:
+        require_edit(template)
+        record = read_draft(labs_api, template)
+        if record is None:
+            raise TemplateWorkflowError("NOT_FOUND", "the template has no draft you can read")
+        target_code = (record.data or {}).get("render_code") or ""
+        target_label = f"draft r{(record.data or {}).get('revision')}"
+        upto = max(versions)
+    else:
+        number = version if version is not None else (template.published or {}).get("version") or max(versions)
+        if number not in versions:
+            raise TemplateWorkflowError("NOT_FOUND", f"version {number} is not in this template's history")
+        target_code = (versions[number].data or {}).get("render_code") or ""
+        target_label = f"v{number}"
+        upto = number
+    base_code = (versions[base].data or {}).get("render_code") or ""
+    path = code_template_path(template.template_type)
+    deployed = None
+    if path:
+        from connect_labs.workflow.templates import TEMPLATES
+
+        deployed = TEMPLATES[template.template_type]["render_code"]
+    changes = []
+    for n in sorted(versions):
+        if base < n <= upto:
+            d = versions[n].data or {}
+            changes.append(
+                {
+                    "version": n,
+                    "note": d.get("note"),
+                    "published_at": d.get("published_at"),
+                    "restores_version": d.get("restores_version"),
+                }
+            )
+    diff = list(
+        difflib.unified_diff(
+            base_code.splitlines(),
+            target_code.splitlines(),
+            fromfile=f"v{base}",
+            tofile=target_label,
+            lineterm="",
+        )
+    )
+    return {
+        "template_workflow_id": template.workflow_id,
+        "scope": dict(template.scope),
+        "name": template.name,
+        "template_type": template.template_type,
+        "seeded_from": template.meta.get("seeded_from"),
+        "base": {"version": base, "published_at": (versions[base].data or {}).get("published_at")},
+        "target": target_label,
+        "changes": changes,
+        "code_template": {
+            "path": path,
+            # False: the code template has moved on since the base was seeded, so
+            # a plain copy would undo that work -- merge, do not overwrite.
+            "deployed_equals_base": None if deployed is None else deployed == base_code,
+        },
+        "diff": diff,
+        "base_code": base_code,
+        "code": target_code,
+    }
 
 
 def describe(labs_api, template: Template, *, include_code=False) -> dict:

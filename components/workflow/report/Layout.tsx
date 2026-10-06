@@ -88,7 +88,7 @@ export function Loading(props: {
       style={{ height: props.height || 96 }}
       aria-busy="true"
     >
-      <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400">
+      <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-500">
         {props.children || 'Loading…'}
       </div>
     </div>
