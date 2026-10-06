@@ -96,6 +96,10 @@ def _workers_schema(item_properties: dict) -> dict:
 
 _PRIORITY = {"type": "string", "enum": ["low", "medium", "high"]}
 
+#: The QA-redirect argument of ``start_ocs_outreach``: a staff member's own ConnectID
+#: username, to receive a worker's conversation instead of the worker.
+DELIVER_TO = "deliver_to"
+
 
 @dataclass(frozen=True)
 class WorkerContext:
@@ -166,13 +170,24 @@ def _execute_create_task(ctx: WorkerContext) -> None:
 def _execute_ocs_outreach(ctx: WorkerContext) -> None:
     from connect_labs.tasks.ai_sessions import start_ai_session
 
+    is_new = not ctx.prior.get("task_id")
     task = _follow_up_task(ctx)
+    indicators = ctx.item.get("indicators")
+    if is_new and indicators:
+        # The coaching-progress DENOMINATOR (workflow/views.py `_coaching_indicators`):
+        # written once, at creation, and never by the chatbot.
+        task.data = {**(task.data or {}), "coaching_indicators": list(indicators)}
+        ctx.tasks.save_task(task)
+    deliver_to = ctx.arguments.get(DELIVER_TO)
     started = start_ai_session(
         ctx.execution.user,
         ctx.tasks,
         task,
         ocs=ctx.ocs,
-        identifier=ctx.username,
+        # A QA redirect (`deliver_to`): the task is still the worker's, but the
+        # conversation goes to a staff member's own Connect app.
+        identifier=deliver_to or ctx.username,
+        on_behalf_of=ctx.username if deliver_to else None,
         experiment=ctx.arguments["bot"],
         prompt_text=ctx.item.get("prompt") or ctx.arguments.get("prompt") or "",
         start_new_session=True,
@@ -211,9 +226,13 @@ ACTION_TYPES: dict[str, ActionType] = {
             description=(
                 "For each worker, a follow-up task attached to this run and an Open Chat Studio "
                 "conversation with them, `prompt` being the bot's instructions (an item's own `prompt` "
-                "wins -- use it to name that worker's own red indicators). `bot` is an OCS bot id; "
-                "without one, the preview lists the bots the person can use. On synthetic "
-                "opportunities no message is sent: each task gets a sample coaching conversation."
+                "wins -- use it to name that worker's own red indicators; its `indicators` lists the "
+                "indicator keys the conversation covers, recorded on the task as the coaching-progress "
+                "denominator). `bot` is an OCS bot id; without one, the preview lists the bots the "
+                "person can use. On synthetic opportunities no message is sent: each task gets a "
+                "sample coaching conversation. `deliver_to` (Dimagi staff only, one worker at a time) "
+                "is a QA redirect: the conversation goes to that ConnectID username instead of the "
+                "worker -- on a synthetic opportunity too, where it is then a real OCS conversation."
             ),
             parameters={
                 "type": "object",
@@ -222,12 +241,27 @@ ACTION_TYPES: dict[str, ActionType] = {
                         {
                             "prompt": {"type": "string", "maxLength": 4000},
                             "title": {"type": "string", "maxLength": 200},
+                            "indicators": {
+                                "type": "array",
+                                "maxItems": 50,
+                                "items": {"type": "string", "minLength": 1, "maxLength": 100},
+                                "description": "Indicator keys (e.g. 'SF_P1') this worker is coached on, worst first.",
+                            },
                         }
                     ),
                     "prompt": {"type": "string", "maxLength": 4000},
                     "title": {"type": "string", "maxLength": 200},
                     "bot": {"type": "string"},
                     "priority": _PRIORITY,
+                    DELIVER_TO: {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 150,
+                        "description": (
+                            "QA only, Dimagi staff only: a ConnectID username to deliver the conversation "
+                            "to instead of the worker. One worker at a time."
+                        ),
+                    },
                 },
                 "required": ["workers"],
                 "additionalProperties": False,
@@ -319,6 +353,8 @@ def declaration_problems(raw: Any) -> list[str]:
             problems.append(f"{where}.defaults: {e.message}")
         if "workers" in defaults:
             problems.append(f"{where}.defaults cannot name workers; the button or caller does")
+        if DELIVER_TO in defaults:
+            problems.append(f"{where}.defaults cannot set {DELIVER_TO}; it is a QA choice made per run")
     return problems
 
 
@@ -362,9 +398,10 @@ def run_roster(wda, run, definition) -> dict[str, dict]:
     return roster
 
 
-def resolve_arguments(action: dict, arguments: Any, roster: dict[str, dict]) -> dict:
+def resolve_arguments(action: dict, arguments: Any, roster: dict[str, dict], *, user=None) -> dict:
     """The action's defaults under the caller's arguments, validated against the
-    type's schema and the run's roster, in canonical form."""
+    type's schema and the run's roster, in canonical form. ``user`` is the person
+    the action runs for; ``deliver_to`` is refused unless they are Dimagi staff."""
     import jsonschema
 
     from connect_labs.workflow.agent_sharing import split_worker_key
@@ -397,7 +434,9 @@ def resolve_arguments(action: dict, arguments: Any, roster: dict[str, dict]) -> 
         missing = sorted(i["key"] for i in merged["workers"] if not (i.get("prompt") or merged.get("prompt")))
         if missing:
             raise ActionError("invalid", f"no prompt for {missing[:10]}: give `prompt`, or one on each item")
-        if _all_synthetic(merged):
+        if merged.get(DELIVER_TO):
+            _check_deliver_to(user, merged)
+        elif _all_synthetic(merged):
             # A synthetic opportunity never reaches OCS: each task gets a sample
             # coaching conversation instead (tasks/ai_sessions.py). Decided HERE so a
             # preview and its commit resolve to the same arguments.
@@ -405,6 +444,28 @@ def resolve_arguments(action: dict, arguments: Any, roster: dict[str, dict]) -> 
 
             merged["bot"] = SYNTHETIC_BOT
     return merged
+
+
+def _check_deliver_to(user, arguments: dict) -> None:
+    """A QA redirect is a Dimagi-staff tool, for one worker at a time, to a real bot."""
+    from connect_labs.tasks.ai_sessions import SYNTHETIC_BOT
+    from connect_labs.utils.dimagi_user import is_dimagi_user
+
+    if user is None or not is_dimagi_user(user):
+        raise ActionError(
+            "forbidden", f"`{DELIVER_TO}` (a QA redirect of the conversation) is only available to Dimagi staff."
+        )
+    if len(arguments["workers"]) > 1:
+        # One QA recipient is one OCS participant per bot: several workers' conversations
+        # would land in, and overwrite, the same one.
+        raise ActionError(
+            "invalid",
+            f"`{DELIVER_TO}` supports one worker at a time: several workers redirected to the same "
+            "person would share one Open Chat Studio participant. Run it once per worker.",
+        )
+    if arguments.get("bot") == SYNTHETIC_BOT:
+        # The sample conversation is not a bot anyone can receive: ask for a real one.
+        arguments.pop("bot")
 
 
 def _all_synthetic(arguments: dict) -> bool:
@@ -438,7 +499,7 @@ def preview(user, *, wda, run, definition, key: str, arguments: Any, request=Non
 
     action = find_action(definition, key)
     roster = run_roster(wda, run, definition)
-    args = resolve_arguments(action, arguments, roster)
+    args = resolve_arguments(action, arguments, roster, user=user)
 
     needs: list[str] = []
     out: dict[str, Any] = {}
@@ -467,15 +528,23 @@ def preview(user, *, wda, run, definition, key: str, arguments: Any, request=Non
         row = {"key": item["key"], "name": who["name"], "opportunity_id": who["opportunity_id"]}
         if action["type"] == "start_ocs_outreach":
             row["prompt"] = item.get("prompt") or args.get("prompt")
+            if item.get("indicators"):
+                row["indicators"] = item["indicators"]
+            if args.get(DELIVER_TO):
+                row["sending_to"] = f"sending to: {args[DELIVER_TO]} (QA, on behalf of {who['username']})"
         row["title"] = item.get("title") or args.get("title")
         workers.append(row)
 
     n = len(workers)
+    summary = f"{action['label']} for {n} worker{'s' if n != 1 else ''}"
+    if args.get(DELIVER_TO):
+        out[DELIVER_TO] = args[DELIVER_TO]
+        summary += f" -- QA: the conversation goes to {args[DELIVER_TO]}, not to the worker"
     result = {
         "action": key,
         "type": action["type"],
         "label": action["label"],
-        "summary": f"{action['label']} for {n} worker{'s' if n != 1 else ''}",
+        "summary": summary,
         "workers": workers,
         "arguments": args,
         "needs": needs,
@@ -501,7 +570,7 @@ def commit(
     from connect_labs.workflow.tasks import execute_workflow_action
 
     action = find_action(definition, key)
-    args = resolve_arguments(action, arguments, run_roster(wda, run, definition))
+    args = resolve_arguments(action, arguments, run_roster(wda, run, definition), user=user)
     try:
         signed = signing.loads(confirm or "", salt=_CONFIRM_SALT, max_age=CONFIRM_MAX_AGE_SECONDS)
     except signing.SignatureExpired as e:

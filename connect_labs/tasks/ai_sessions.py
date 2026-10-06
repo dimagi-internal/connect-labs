@@ -30,6 +30,7 @@ def start_ai_session(
     prompt_text: str,
     platform: str = "commcare_connect",
     start_new_session: bool = False,
+    on_behalf_of: str | None = None,
 ) -> dict:
     """Start (or attach) the conversation as ``user`` and record it on ``task``,
     which is saved.
@@ -38,6 +39,11 @@ def start_ai_session(
     the user with no request); when omitted one is made for ``user`` from their
     stored token. Returns ``{"session_id", "status", "message"}``. Raises
     ``OCSAPIError`` when OCS refuses; the caller decides what the person sees.
+
+    ``on_behalf_of`` marks a QA redirect: ``identifier`` is then a staff member's own
+    ConnectID username, receiving the conversation meant for that worker. It is
+    recorded on the session (``qa_recipient`` / ``on_behalf_of``), and on a synthetic
+    opportunity the conversation is REAL -- the point is to QA the actual bot.
     """
     from connect_labs.labs.synthetic.manager_flow_views import _coaching_conversation
     from connect_labs.labs.synthetic.registry import get_synthetic_opp
@@ -49,11 +55,13 @@ def start_ai_session(
         "platform": platform,
         "prompt_text": prompt_text,
     }
+    qa_redirect = {"qa_recipient": identifier, "on_behalf_of": on_behalf_of} if on_behalf_of else {}
+    session_params.update(qa_redirect)
 
     # Synthetic-opp short circuit: skip the real OCS call and attach a canned
     # coaching transcript directly onto the task — keeps the manager-flow demo
     # self-contained without requiring a real OCS account / experiment.
-    if experiment == SYNTHETIC_BOT or get_synthetic_opp(int(task.opportunity_id)) is not None:
+    if experiment == SYNTHETIC_BOT or (not qa_redirect and get_synthetic_opp(int(task.opportunity_id)) is not None):
         updated_data = dict(task.data or {})
         updated_data["ocs_conversation"] = _coaching_conversation(
             prompt_text, flw_name=task.flw_name or task.username or "there"
@@ -81,6 +89,7 @@ def start_ai_session(
         "opportunity_id": str(task.opportunity_id),
         "username": task.task_username,
         "created_by": getattr(user, "username", "unknown"),
+        **qa_redirect,
     }
     ocs_client = ocs if ocs is not None else OCSDataAccess(user=user)
     try:

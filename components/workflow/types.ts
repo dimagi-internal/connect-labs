@@ -1050,6 +1050,8 @@ export interface WorkflowActionPreview {
     opportunity_id: number;
     prompt?: string;
     title?: string;
+    /** Set on a QA redirect (`deliver_to`): where this worker's conversation goes. */
+    sending_to?: string;
   }>;
   arguments: Record<string, unknown> & { workers: WorkflowActionWorker[] };
   /** What must be settled before it can be confirmed: `bot`, `connect_ocs`. */
