@@ -34,6 +34,11 @@ recorder says it is rendering against a loopback origin
 (`CANOPY_RENDER_BASE_URL`). The outputs come out in the same shape.
 
     python3 scripts/walkthroughs/supply-sophie-unanswered-round/seed.py --local --outputs <file>
+
+**`--sheets`** (the supply-sophie-sheets narrative, on any route): Kanem's
+forwarded email states its pack while the AI's recorded quote still leaves it
+unstated, so the correction Sophie makes is fixing an AI omission. Without it
+the world is the sibling narrative's, unchanged.
 """
 
 from __future__ import annotations
@@ -67,7 +72,7 @@ REPLAY_PATH = "scripts/walkthroughs/supply-sophie-unanswered-round/replay.py"
 DRIVER = """
 import base64, json
 __LOAD__
-out = replay["run"](mint=True)
+out = replay["run"](mint=True, **__RUN_KWARGS__)
 session = out.pop("sophie_session")
 SEAL = __SEAL__
 if SEAL:
@@ -94,8 +99,15 @@ exec(compile(_src, "replay.py", "exec"), replay)
 """
 
 
-def _driver(load: str, seal: str = "") -> str:
-    return DRIVER.replace("__LOAD__", load).replace("__SEAL__", repr(seal)).replace("__MARK__", MARK)
+def _driver(load: str, seal: str = "", sheets: bool = False) -> str:
+    # Only a sheets seed names the keyword, so the default call stays the one every replay accepts.
+    kwargs = {"sheets": True} if sheets else {}
+    return (
+        DRIVER.replace("__LOAD__", load)
+        .replace("__SEAL__", repr(seal))
+        .replace("__RUN_KWARGS__", repr(kwargs))
+        .replace("__MARK__", MARK)
+    )
 
 
 def _parse(output: str, why: str) -> dict:
@@ -151,7 +163,7 @@ def _unseal(sealed: str) -> dict:
     return json.loads(opened)
 
 
-def seed_via_github() -> dict:
+def seed_via_github(sheets: bool = False) -> dict:
     sha = subprocess.run(
         ["git", "rev-parse", "origin/main"], cwd=HERE, capture_output=True, text=True, check=True
     ).stdout.strip()
@@ -159,7 +171,7 @@ def seed_via_github() -> dict:
     if subprocess.run(["curl", "-sfI", probe], capture_output=True).returncode != 0:
         sys.exit(f"{REPLAY_PATH} is not on origin/main ({sha[:9]}); merge it before seeding over GitHub")
     load = FETCHED.replace("__REPO__", REPO).replace("__SHA__", sha).replace("__PATH__", REPLAY_PATH)
-    driver = _driver(load, seal=base64.b64encode(_seal_public_key()).decode())
+    driver = _driver(load, seal=base64.b64encode(_seal_public_key()).decode(), sheets=sheets)
     packed = base64.b64encode(zlib.compress(driver.encode(), 9)).decode()
     command = f"shell -c \"exec(__import__('zlib').decompress(__import__('base64').b64decode('{packed}')).decode())\""
     if len(command) > 7000:
@@ -220,12 +232,12 @@ def seed_via_github() -> dict:
     return result
 
 
-def seed_via_ecs() -> dict:
+def seed_via_ecs(sheets: bool = False) -> dict:
     sys.path.insert(0, str(HERE.parent / "oes-demo"))
     import ensure_demo as oes  # noqa: E402  (the worker-task lookup and aws wrapper)
 
     load = INLINE.replace("__REPLAY_B64__", base64.b64encode((HERE / "replay.py").read_bytes()).decode())
-    packed = base64.b64encode(zlib.compress(_driver(load).encode(), 9)).decode()
+    packed = base64.b64encode(zlib.compress(_driver(load, sheets=sheets).encode(), 9)).decode()
     command = (
         "python manage.py shell -c \"exec(__import__('zlib').decompress("
         f"__import__('base64').b64decode('{packed}')).decode())\""
@@ -494,7 +506,7 @@ def sahel_local_misdated(*, base_url: str, outputs: str | None = None) -> dict:
     return sahel_local(base_url=base_url, outputs=outputs, misdated=True)
 
 
-def seed_local(*, base_url: str, outputs: str | None = None) -> dict:
+def seed_local(*, base_url: str, outputs: str | None = None, sheets: bool = False) -> dict:
     """Inside the local labs app (Django set up): reset, seed, sign Sophie and the agent in.
 
     Called by `tools/ddd_demo.py` against the local build's own database. Refused
@@ -510,12 +522,17 @@ def seed_local(*, base_url: str, outputs: str | None = None) -> dict:
     replay = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(replay)
     # A fresh local database has no buyer organisation; labs has one, so only here is it created.
-    result = replay.run(create_buyer=True)
+    result = replay.run(create_buyer=True, sheets=sheets)
     people = replay.personas()
     local_seed.write_state(STORAGE_STATE, demo_sessions.storage_state(people["sophie"], base_url))
     local_seed.write_state(AGENT_STORAGE_STATE, demo_sessions.storage_state(people["ace"], base_url))
     Path(outputs or HERE / "outputs.json").write_text(json.dumps(result, indent=2, default=str) + "\n")
     return result
+
+
+def seed_local_sheets(*, base_url: str, outputs: str | None = None) -> dict:
+    """seed_local, with Kanem's email stating the pack its recorded quote leaves out (--sheets)."""
+    return seed_local(base_url=base_url, outputs=outputs, sheets=True)
 
 
 def main() -> None:
@@ -532,6 +549,12 @@ def main() -> None:
         help="with --sahel-replies: Sahel's email was sent the day before, and the AI records the forwarding "
         "day as received (supply-sophie-sheets scene 3)",
     )
+    parser.add_argument(
+        "--sheets",
+        action="store_true",
+        help="seed for supply-sophie-sheets: Kanem's email states its pack (cartons of 150 x 92 g) while the "
+        "AI-recorded quote leaves it unstated",
+    )
     local_seed.add_arguments(parser)
     args = parser.parse_args()
     local = local_seed.target(args.local, args.base_url)
@@ -544,9 +567,10 @@ def main() -> None:
         return
     if local:
         outputs = Path(args.outputs) if args.outputs else HERE / "outputs.json"
-        print(json.dumps(local_seed.run(HERE.name, local, outputs)))
+        call = "seed_local_sheets" if args.sheets else "seed_local"
+        print(json.dumps(local_seed.run(HERE.name, local, outputs, call=call)))
         return
-    result = seed_via_ecs() if _aws_live() else seed_via_github()
+    result = seed_via_ecs(sheets=args.sheets) if _aws_live() else seed_via_github(sheets=args.sheets)
     write_storage_state(result.pop("sophie_session"))
     if args.outputs:
         Path(args.outputs).write_text(json.dumps(result, indent=2) + "\n")
