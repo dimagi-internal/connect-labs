@@ -9,6 +9,9 @@ urlpatterns = [
     path("new/", views.SyntheticCreateView.as_view(), name="new"),
     # Clone real opportunities into new synthetic ones (profile, then generate), from a page.
     path("clone/", views.CloneRealOppView.as_view(), name="clone"),
+    # Your synthetic jobs, and stopping one.
+    path("jobs/", views.SyntheticJobsView.as_view(), name="jobs"),
+    path("jobs/<str:task_id>/cancel/", views.CancelSyntheticJobView.as_view(), name="cancel_job"),
     path("clone/<str:task_id>/", views.CloneStatusView.as_view(), name="clone_status"),
     path("labs-only/new/", views.LabsOnlySyntheticCreateView.as_view(), name="labs_only_new"),
     path(

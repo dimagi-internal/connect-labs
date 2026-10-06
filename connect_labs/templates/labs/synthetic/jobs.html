@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Your synthetic jobs{% endblock %}
+
+{% block content %}
+<div class="container mx-auto max-w-4xl px-4 py-8">
+  <a href="{% url 'labs:synthetic:list' %}" class="mb-4 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
+    <i class="fa-solid fa-arrow-left mr-2"></i> Synthetic opportunities
+  </a>
+  <div class="mb-4 flex flex-wrap items-baseline justify-between gap-3">
+    <h1 class="text-2xl font-bold text-gray-900">Your synthetic jobs</h1>
+    <a href="{% url 'labs:synthetic:clone' %}" class="button button-sm primary-dark">Clone a real opportunity</a>
+  </div>
+
+  {% comment %}Why a job waits: labs runs a fixed number of these at once, for everyone.{% endcomment %}
+  <p class="mb-4 text-sm text-gray-700" data-testid="slots">
+    Labs runs {{ slots|length }} clone or profile job{{ slots|length|pluralize }} at a time, for everyone.
+    Now: {% for s in slots %}<span class="status-chip {% if not s.busy %}status-chip--neutral{% elif s.mine %}status-chip--primary{% else %}status-chip--theirs{% endif %}">{% if not s.busy %}free{% elif s.mine %}yours{% else %}someone else's{% endif %}</span> {% endfor %}
+  </p>
+
+  <div class="sheet-wrap">
+    <table class="sheet" data-testid="jobs-table">
+      <thead><tr><th scope="col">Started</th><th scope="col">Job</th><th scope="col">Opportunities</th><th scope="col">State</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+      <tbody>
+        {% for job in jobs %}
+        <tr data-testid="job-row" data-task-id="{{ job.task_id }}">
+          <td class="whitespace-nowrap text-gray-700">{{ job.started|date:"j M, H:i" }} UTC</td>
+          <td>{{ job.kind_words }}</td>
+          <td class="text-gray-700">{% for o in job.opportunity_ids %}#{{ o }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
+          <td>
+            <span class="font-medium {% if job.state == 'FAILURE' %}text-message-error-text{% elif job.state == 'SUCCESS' %}text-message-success-text{% else %}text-gray-900{% endif %}">{{ job.state_words }}</span>
+            {% if job.stuck %}<span class="sub text-message-warning-text" data-testid="job-stuck">A slot is free, so this job should have started. It was probably lost when labs restarted: cancel it and start it again.</span>{% endif %}
+          </td>
+          <td class="whitespace-nowrap text-right">
+            <a href="{% url 'labs:synthetic:clone_status' job.task_id %}" class="text-brand-indigo hover:underline">Open</a>
+            {% if job.live %}
+            <form method="post" action="{% url 'labs:synthetic:cancel_job' job.task_id %}" class="ml-3 inline" onsubmit="return confirm('Stop this job? Anything it has not finished is discarded.');">
+              {% csrf_token %}
+              <button type="submit" class="text-message-error-text hover:underline" data-testid="job-cancel">Cancel</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="py-6 text-center text-gray-600">No jobs in the last three hours.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="mt-2 text-xs text-gray-600">Jobs you started in the last three hours. Only you see your jobs.</p>
+</div>
+{% endblock %}
