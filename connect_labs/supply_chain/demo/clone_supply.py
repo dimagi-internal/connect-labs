@@ -188,7 +188,10 @@ def seed(*, program_id: int, opportunity_id: int, reset: bool = False, today: da
     days = max((today - first).days, 1)
     monthly = total_dispensed / days * 30
     to_partner = _round_up(total_issued + monthly * PARTNER_MONTHS, 150)
-    opening = _round_up(to_partner + monthly * CENTRAL_MONTHS, 150)
+    # The central store's cover is read against what IT sends out -- the one transfer to the
+    # partner store, over the time since setup -- not against the visits' rate.
+    central_monthly = to_partner / max(Decimal((today - setup).days) / 30, Decimal(1))
+    opening = _round_up(to_partner + central_monthly * CENTRAL_MONTHS, 150)
     base = {"commodity_slug": SLUG, "item_id": item["id"], "quantity_unit": "sachet", "occurred_on": setup.isoformat()}
     op(setup, 10, "movement_record", data={
         **base, "kind": "receipt", "to_supply_point_id": central["id"], "quantity": str(opening),
