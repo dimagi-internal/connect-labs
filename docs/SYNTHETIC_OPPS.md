@@ -148,6 +148,36 @@ Opps generated before provenance existed, or generated on a laptop
 `python manage.py synthetic_mark_generated` to list them and `--apply` to mark
 those whose Drive folder has the generator's `-generated` name.
 
+### Human names: workers and cases
+
+A generated opp reads like a real one when its workers and cases have names.
+Both come from the manifest given to `synthetic_generate_from_manifest`:
+
+```yaml
+flw_personas:
+  - id: cbf_a07                 # the Connect username: identity, never shown when a name exists
+    display_name: Amina Okafor  # served as user_data.json `name`
+    archetype: steady
+    # ...
+beneficiary_cohorts:
+  - id: main
+    size: 40
+    entity_names: [Grace Mwangi, Joseph Otieno, ...]   # each visit's `entity_name`
+    # ...
+```
+
+- `display_name` lands in the opp's `user_data` export as `name`. The indicator
+  reports and the audit views resolve worker names from that export
+  (`fetch_flw_names`), so the worker tables show "Amina Okafor", not `cbf_a07`.
+- `entity_names` names entity N with the Nth name (past the end the list repeats
+  with a " (2)" suffix). It is written to every visit's `entity_name`, the field
+  Connect itself carries a case's name in. Without it a case is "Beneficiary N".
+  For one name per case across visits, use a `longitudinal` cohort: an i.i.d.
+  cohort mints a new entity per visit.
+- A report shows the case name once its registry says so:
+  `display: {entity: {label_field: entity_name}}`
+  (`user_docs/semantic-layer.md`, "How a report reads it").
+
 ## Updating fixtures
 
 Edit the JSON files in Drive, then either:

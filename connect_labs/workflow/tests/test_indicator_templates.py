@@ -127,6 +127,17 @@ class TestBuilderDefaults:
         assert spec["case_index"]["group_by"] == "entity_id"
         assert spec["maturity_anchor"] == "first_visit_date"
 
+    def test_a_declared_case_label_field_joins_the_derived_case_index(self):
+        import copy
+
+        props, inds = load_registry("visit_quality")
+        inds = {**copy.deepcopy(inds), "display": {"entity": {"label_field": "entity_name"}}}
+        model = resolve_model(props, inds)
+        visit_cfg = MagicMock(terminal_stage=MagicMock(value="visit_level"))
+        spec = resolve_spec_defaults({}, model, visit_cfg, None, {}, inds)
+        fields = spec["case_index"]["fields"]
+        assert fields.count("entity_name") == 1 and fields[0] == "entity_id"
+
     def test_a_stated_spec_is_kept_as_written(self):
         from connect_labs.workflow.templates.kmc_programme_metrics import SNAPSHOT_INPUTS
 
@@ -176,6 +187,125 @@ def test_a_visit_level_case_index_is_folded_per_entity():
     assert by["a"]["total_visits"] == 2
     assert (by["a"]["first_visit_date"], by["a"]["last_visit_date"]) == ("2026-01-01", "2026-01-05")
     assert by["a"]["username"] == "w1" and by["a"]["llo"] == "Org"
+
+
+def test_a_folded_case_carries_its_latest_name():
+    visits = [
+        {
+            "entity_id": "a",
+            "entity_name": "Grace M.",
+            "opportunity_id": 1,
+            "username": "w1",
+            "visit_date": "2026-01-01",
+        },
+        {"entity_id": "a", "entity_name": "", "opportunity_id": 1, "username": "w1", "visit_date": "2026-01-05"},
+    ]
+    spec = {"case_index": {"pipeline": "visits", "group_by": "entity_id", "fields": ["entity_id", "entity_name"]}}
+    (row,) = snap.case_rows({"visits": {"rows": visits}}, spec, {})
+    assert row["entity_name"] == "Grace M."
+
+
+class TestWorkerNames:
+    """A worker reads by name; the username stays the identity."""
+
+    def _rows(self):
+        return [
+            {"scope": "flw", "opportunity_id": 10_082, "username": "cbf_a07", "n_cases": 3},
+            {"scope": "flw", "opportunity_id": 10_082, "username": "cbf_a08", "n_cases": 1},
+            {"scope": "flw", "opportunity_id": 10_083, "username": "cbf_a07", "n_cases": 2},
+        ]
+
+    def test_each_worker_row_carries_its_name_beside_its_identity(self):
+        names = {"10082": {"cbf_a07": "Amina Okafor"}, "10083": {"cbf_a07": "Somebody Else"}}
+        out = snap.build(spec={}, rows=self._rows(), measures=[], deployment={}, worker_names=names)
+        by = {f["key"]: f for f in out["byFLW"]}
+        a07 = by[f"10082{snap.FLW_SEP}cbf_a07"]
+        assert a07["name"] == "Amina Okafor"
+        # identity untouched: selection, audits and URLs key on these
+        assert a07["flw"] == "cbf_a07" and a07["username"] == "cbf_a07"
+        # the same username in another opportunity is a different worker with its own name
+        assert by[f"10083{snap.FLW_SEP}cbf_a07"]["name"] == "Somebody Else"
+        # no name known: the username, as before
+        assert by[f"10082{snap.FLW_SEP}cbf_a08"]["name"] == "cbf_a08"
+
+    def test_without_names_a_run_reads_as_it_always_did(self):
+        out = snap.build(spec={}, rows=self._rows(), measures=[], deployment={})
+        assert all(f["name"] == f["username"] for f in out["byFLW"])
+
+    def test_names_are_resolved_per_opportunity_and_a_failure_is_not_fatal(self):
+        from connect_labs.workflow.snapshot_builders import worker_names
+
+        def fake(token, oid, **kw):
+            if oid == 2:
+                raise RuntimeError("Connect is down")
+            return {"u1": "Amina Okafor", "u2": "u2", "u3": ""}
+
+        with patch("connect_labs.labs.analysis.data_access.fetch_flw_names", side_effect=fake) as f:
+            out = worker_names([1, 2, 1], access_token="tok")
+        # a name equal to the username, or blank, is no name; a failed opportunity is skipped
+        assert out == {"1": {"u1": "Amina Okafor"}}
+        assert sorted(c.args[1] for c in f.call_args_list) == [1, 2]
+        assert f.call_args_list[0].args[0] == "tok"
+
+    def test_with_no_token_only_a_fixture_backed_opportunity_is_asked(self):
+        from connect_labs.workflow.snapshot_builders import worker_names
+
+        with (
+            patch("connect_labs.labs.analysis.data_access.fetch_flw_names", return_value={"u1": "Amina"}) as f,
+            patch(
+                "connect_labs.labs.synthetic.registry.get_synthetic_opp",
+                side_effect=lambda oid: object() if oid == 10_082 else None,
+            ),
+        ):
+            out = worker_names([814, 10_082])
+        assert out == {"10082": {"u1": "Amina"}}
+        assert [c.args[1] for c in f.call_args_list] == [10_082]
+
+    def test_a_synthetic_roster_names_its_workers_from_the_manifest_personas(self, db):
+        """A labs-only opp is served its fixture user_data, whose `name` is the persona's
+        display_name -- so the same resolver names synthetic workers with no token."""
+        from connect_labs.labs.synthetic.client import SyntheticExportClient
+        from connect_labs.workflow.snapshot_builders import worker_names
+
+        store = MagicMock()
+        store.load_endpoint.return_value = [
+            {"username": "cbf_a07", "name": "Amina Okafor"},
+            {"username": "cbf_a08", "name": "cbf_a08"},
+        ]
+        client = SyntheticExportClient(opp_id=10_082, fixture_store=store)
+        with (
+            patch("connect_labs.labs.integrations.connect.factory.get_export_client", return_value=client),
+            patch("connect_labs.labs.synthetic.registry.get_synthetic_opp", return_value=object()),
+        ):
+            out = worker_names([10_082])
+        assert out == {"10082": {"cbf_a07": "Amina Okafor"}}
+        store.load_endpoint.assert_called_with(10_082, "user_data")
+
+    def test_a_handed_down_slice_carries_only_its_own_workers_names(self):
+        from connect_labs.workflow.hand_down import slice_for_opportunity
+
+        names = {"10082": {"cbf_a07": "Amina Okafor"}, "10083": {"cbf_a07": "Somebody Else"}}
+        rows = self._rows() + [
+            {"scope": "opportunity", "opportunity_id": 10_082, "n_cases": 4},
+            {"scope": "opportunity", "opportunity_id": 10_083, "n_cases": 2},
+        ]
+        payload = snap.build(spec={}, rows=rows, measures=[], deployment={}, worker_names=names)
+        sliced = slice_for_opportunity(payload, 10_082)
+        assert {f["name"] for f in sliced["byFLW"]} == {"Amina Okafor", "cbf_a08"}
+        assert "Somebody Else" not in str(sliced)
+
+    def test_the_renders_show_the_name_and_key_on_the_username(self):
+        from pathlib import Path
+
+        root = Path(__file__).parents[1] / "templates"
+        report = (root / "indicator_report_render.js").read_text()
+        assert "name: f.name || f.username || f.flw" in report
+        assert "key: f.key || f.opp + FLW_SEP + (f.username || f.flw)" in report
+        review = (root / "indicator_worker_review_render.js").read_text()
+        assert "title={flw.name || flw.flw || flw.username}" in review
+        # and a case reads by its label field through the shared library
+        for src in (report, review):
+            assert "R.caseLabel(D, c, n)" in src
 
 
 def test_the_payload_carries_the_display_block_and_the_kmc_one_is_unchanged_without_it():

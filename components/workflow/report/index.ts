@@ -48,6 +48,7 @@ import {
   DefinitionModal,
   ReadingChart,
   cap,
+  caseLabel,
   displayOf,
   fmtCaseField,
   headlineSpecs,
@@ -89,7 +90,7 @@ import {
   SectionTitle,
 } from './Layout';
 
-export const VERSION = 7;
+export const VERSION = 8;
 
 export const LabsReport = {
   VERSION,
@@ -180,6 +181,8 @@ export const LabsReport = {
   EnrolmentDailyChart,
   // per-visit review flags from the display contract (VERSION 7)
   visitFlagsOf,
+  // a case's human label from the display contract (VERSION 8)
+  caseLabel,
 };
 
 export type LabsReportLibrary = typeof LabsReport;

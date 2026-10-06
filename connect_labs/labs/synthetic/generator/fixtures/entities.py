@@ -19,7 +19,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from .manifest import LongitudinalSpec
+from .manifest import LongitudinalSpec, entity_label
 
 
 @dataclass(frozen=True)
@@ -197,7 +197,11 @@ def _case_shape(design: str, *, entity_id: str, is_registration: bool, rng) -> d
 
 
 def plan_mirror_visits(
-    spec: LongitudinalSpec, *, seed: int, no_jitter_paths: set[str] | None = None
+    spec: LongitudinalSpec,
+    *,
+    seed: int,
+    no_jitter_paths: set[str] | None = None,
+    entity_names: list[str] | None = None,
 ) -> list[PlannedVisit]:
     """Replay each transplanted case as a stable entity.
 
@@ -220,7 +224,7 @@ def plan_mirror_visits(
     planned: list[PlannedVisit] = []
     for idx, series in enumerate(spec.transplant_pool, start=1):
         entity_id = str(uuid.UUID(int=rng.getrandbits(128)))  # one stable id per case
-        entity_name = f"Beneficiary {idx}"
+        entity_name = entity_label(entity_names or [], idx)
         owner = series["owner"]
         start = dt.date.fromisoformat(series["start_date"])
         series_visits = series["visits"]

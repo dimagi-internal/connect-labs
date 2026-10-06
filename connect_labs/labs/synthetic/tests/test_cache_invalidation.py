@@ -126,3 +126,13 @@ def test_reload_tool_404s_on_an_unregistered_opp():
     with patch("connect_labs.mcp.tools.synthetic._require_opportunity_access", lambda u, o: None):
         with pytest.raises(MCPToolError):
             get_tool("synthetic_reload_fixtures").handler(user=user, opportunity_id=99999)
+
+
+def test_a_regenerated_roster_forgets_the_cached_worker_names(layers):
+    from django.core.cache import cache
+
+    cache.set("flw_names_10777", {"cbf_a07": "Old Name"})
+    cache.set("flw_last_active_10777", {"cbf_a07": "2026-01-01"})
+    outcome = invalidate_synthetic_caches(10777, drop_sql_cache=False)
+    assert outcome["worker_names"] is True
+    assert cache.get("flw_names_10777") is None and cache.get("flw_last_active_10777") is None
