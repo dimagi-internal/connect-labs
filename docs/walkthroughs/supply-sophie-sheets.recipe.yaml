@@ -125,7 +125,7 @@ scenes:
   - kind: scroll_to
     target: css:[data-testid=grid-quote-row]:has-text('Kanem') td[data-fact=landed]
   - kind: hover
-    target: testid:comparable-count
+    target: css:[data-testid=grid-quote-row]:has-text('Kanem') > :first-child
   - kind: hold
     seconds: 1.0
   - kind: snapshot
