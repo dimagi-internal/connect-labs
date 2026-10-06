@@ -31,3 +31,23 @@ def ingest_visit_consumption() -> dict:
 
     with audit_context(source="celery"):
         return visit_reader.run_scheduled()
+
+
+@celery_app.task
+def top_up_clone_supply() -> dict:
+    """Record the invented deliveries due on every seeded clone (demo/clone_supply.py). Weekly, by migration 0047.
+
+    Synthetic programmes only: top_up refuses anything else before it reads a visit.
+    """
+    from connect_labs.supply_chain.demo import clone_supply
+
+    results = {}
+    with audit_context(source="celery"):
+        for program_id, opportunity_id in clone_supply.seeded_clones():
+            try:
+                results[f"{program_id}/{opportunity_id}"] = clone_supply.top_up(
+                    program_id=program_id, opportunity_id=opportunity_id
+                )
+            except ValueError as error:
+                results[f"{program_id}/{opportunity_id}"] = {"topped_up": False, "reason": str(error)}
+    return results

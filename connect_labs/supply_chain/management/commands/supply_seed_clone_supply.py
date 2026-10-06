@@ -24,12 +24,18 @@ class Command(BaseCommand):
         parser.add_argument("--program", type=int, required=True)
         parser.add_argument("--opportunity", type=int, required=True)
         parser.add_argument("--reset", action="store_true", help="Purge this programme's supply data first.")
+        parser.add_argument(
+            "--top-up", action="store_true", help="Only record the invented deliveries due since (weekly on beat)."
+        )
 
     def handle(self, *args, **options):
         try:
-            result = clone_supply.seed(
-                program_id=options["program"], opportunity_id=options["opportunity"], reset=options["reset"]
-            )
+            if options["top_up"]:
+                result = clone_supply.top_up(program_id=options["program"], opportunity_id=options["opportunity"])
+            else:
+                result = clone_supply.seed(
+                    program_id=options["program"], opportunity_id=options["opportunity"], reset=options["reset"]
+                )
         except ValueError as error:
             raise CommandError(str(error)) from None
         self.stdout.write(json.dumps(result, indent=2))
