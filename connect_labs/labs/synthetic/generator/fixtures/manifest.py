@@ -20,6 +20,7 @@ from pydantic import (
     NonNegativeInt,
     PositiveInt,
     ValidationError,
+    field_validator,
     model_validator,
 )
 
@@ -296,6 +297,16 @@ class RelevanceRule(BaseModel):
         return any(str(controller_value) == str(e) for e in expected)
 
 
+def entity_label(names: list[str], idx: int) -> str:
+    """Entity `idx` (1-based)'s name from `names`, or "Beneficiary <idx>" when there are none."""
+    if not names:
+        return f"Beneficiary {idx}"
+    i = max(int(idx), 1) - 1
+    base = names[i % len(names)]
+    rnd = i // len(names)
+    return base if rnd == 0 else f"{base} ({rnd + 1})"
+
+
 class BeneficiaryCohort(BaseModel):
     id: str
     size: PositiveInt
@@ -311,6 +322,23 @@ class BeneficiaryCohort(BaseModel):
     repeat_groups: dict[str, RepeatGroupSpec] = Field(default_factory=dict)
     # Per-entity longitudinal behaviour. None → legacy i.i.d. per-visit draws.
     longitudinal: LongitudinalSpec | None = None
+    # Human names for the cohort's entities, written to each visit's `entity_name`
+    # (the field Connect itself carries the case name in). Entity N (1-based) takes
+    # the Nth name; past the end the list repeats with a " (2)", " (3)" suffix so
+    # names stay distinct. Empty keeps the old "Beneficiary N".
+    entity_names: list[str] = Field(default_factory=list)
+
+    @field_validator("entity_names")
+    @classmethod
+    def _check_entity_names(cls, v: list[str]) -> list[str]:
+        names = [str(n).strip() for n in v]
+        if any(not n for n in names):
+            raise ValueError("entity_names must not contain blank names")
+        return names
+
+    def entity_label(self, idx: int) -> str:
+        """The display name of entity `idx` (1-based)."""
+        return entity_label(self.entity_names, idx)
 
 
 # ---------- Anomalies ----------

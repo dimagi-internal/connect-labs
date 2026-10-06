@@ -2557,7 +2557,7 @@ function WorkflowUI({
         return oppSet[String(f.opp)];
       }),
       function (f, key) {
-        if (key === 'name') return String(f.flw || '').toLowerCase();
+        if (key === 'name') return String(f.name || f.flw || '').toLowerCase();
         if (key === 'opp') return String(oppLabel(f.opp)).toLowerCase();
         if (key === 'attn') return (f.reds || 0) * 1000 + (f.yellows || 0);
         var nf = nByFLW[f.key];
@@ -2618,7 +2618,7 @@ function WorkflowUI({
                       }}
                     >
                       <td className="px-3 py-2 font-semibold text-indigo-700 whitespace-nowrap">
-                        {f.flw}
+                        {f.name || f.flw}
                       </td>
                       <td className="px-1.5 py-2 text-gray-600 whitespace-nowrap">
                         {oppLabel(f.opp)}
@@ -3066,7 +3066,9 @@ function WorkflowUI({
       <div className="border-t-2 border-indigo-100">
         <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap bg-indigo-50">
           <div>
-            <span className="font-semibold text-gray-900">{f.flw}</span>
+            <span className="font-semibold text-gray-900">
+              {f.name || f.flw}
+            </span>
             <span className="ml-2 text-xs text-gray-500">
               {oppLabel(f.opp)} · {caseCount(f)} cases ·{' '}
               {f.reds

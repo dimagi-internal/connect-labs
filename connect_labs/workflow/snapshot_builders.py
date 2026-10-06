@@ -281,6 +281,11 @@ def semantic_snapshot(
 
     from connect_labs.semantic.display import resolve_display
 
+    names = _once_in(
+        context.get("memo"),
+        ("worker_names", tuple(int(o) for o in opportunity_ids)),
+        lambda: worker_names(opportunity_ids, access_token=context.get("access_token"), request=request),
+    )
     display = resolve_display(
         props_doc,
         full_registry,
@@ -301,6 +306,7 @@ def semantic_snapshot(
         as_of=as_of_date,
         registry_min_denominator=model.min_denominator,
         embed_cases=embed,
+        worker_names=names,
     )
     clock.stop()
     if not embed and context.get("memo") is not None:
@@ -460,9 +466,15 @@ def resolve_spec_defaults(spec, model, pipeline_config, extra_fields, llo_map, i
     if "case_index" not in out and entity_alias:
         from connect_labs.semantic.display import resolve_display
 
-        wanted = [f["field"] for f in resolve_display(None, indicators_doc)["case_fields"]]
+        resolved = resolve_display(None, indicators_doc)
+        wanted = [f["field"] for f in resolved["case_fields"]]
+        # A case's human label (`display.entity.label_field`), so the case table and
+        # the worker review can name a case rather than print its id.
+        label_field = (resolved.get("entity") or {}).get("label_field")
+        if label_field:
+            wanted.append(label_field)
         base = ["entity_id", "username", "opportunity_id", "first_visit_date", "last_visit_date", "total_visits"]
-        fields = base + [f for f in wanted if f not in base]
+        fields = base + [f for f in dict.fromkeys(wanted) if f not in base]
         out["case_index"] = {"pipeline": entity_alias, "fields": fields}
         if entity_visit_level:
             out["case_index"]["group_by"] = model.key
@@ -681,6 +693,67 @@ def opportunity_labels(opportunity_ids, request=None, declared=None) -> dict[str
                 out[str(int(k))] = str(v)
         except (TypeError, ValueError):
             continue
+    return out
+
+
+def _once_in(memo, key, load):
+    """`load()`, memoised in a batch memo when there is one (see `_resolve_semantic`)."""
+    if memo is None:
+        return load()
+    if key not in memo:
+        memo[key] = load()
+    return memo[key]
+
+
+def _request_token(request) -> str | None:
+    try:
+        return (request.session.get("labs_oauth") or {}).get("access_token")
+    except Exception:  # noqa: BLE001 -- no session (MCP, Celery) means no token here
+        return None
+
+
+def _serves_fixtures(opportunity_id: int) -> bool:
+    try:
+        from connect_labs.labs.synthetic.registry import get_synthetic_opp
+
+        return get_synthetic_opp(int(opportunity_id)) is not None
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def worker_names(opportunity_ids, access_token=None, request=None) -> dict[str, dict[str, str]]:
+    """opportunity id (str) -> {username: display name}, for every opportunity in scope.
+
+    The worker table used to print the Connect username -- `cbf_a07` on a synthetic
+    programme, a 32-character hex id on a real one -- because nothing resolved a
+    name. Connect has one: its `user_data` export carries each worker's `name`, and
+    `fetch_flw_names` (the audit views' resolver, cached) reads it. A labs-only
+    synthetic opportunity is served the same export from its fixtures, whose
+    `name` is the manifest persona's `display_name` -- so one call covers both.
+
+    Only names that differ from the username are kept: a worker with no name is
+    left out and the render shows the username, exactly as before. Resolved once
+    per build and stored on the run, so a saved week keeps the names it was built
+    with. Best-effort by construction: a name is a label, and must not be able to
+    fail a snapshot.
+    """
+    from connect_labs.labs.analysis.data_access import fetch_flw_names
+
+    token = access_token or _request_token(request) or ""
+    out: dict[str, dict[str, str]] = {}
+    for oid in sorted({int(o) for o in opportunity_ids or []}):
+        # Without a token only a fixture-backed (synthetic) opportunity can answer;
+        # asking Connect anonymously would just fail, slowly.
+        if not token and not _serves_fixtures(oid):
+            continue
+        try:
+            names = fetch_flw_names(token, oid)
+        except Exception:  # noqa: BLE001
+            logger.warning("could not read worker names for opportunity %s", oid, exc_info=True)
+            continue
+        kept = {str(u): str(n) for u, n in (names or {}).items() if u and n and str(n) != str(u)}
+        if kept:
+            out[str(oid)] = kept
     return out
 
 

@@ -832,7 +832,7 @@ function WorkflowUI({
         });
         return {
           key: f.key || f.opp + '::' + (f.username || f.flw),
-          name: f.username || f.flw,
+          name: f.name || f.username || f.flw,
           ind: f.ind || {},
           reds: f.reds || 0,
           yellows: f.yellows || 0,

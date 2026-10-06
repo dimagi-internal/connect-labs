@@ -40,7 +40,8 @@ export interface CaseField {
 
 export interface Display {
   title: string | null;
-  entity: Noun & { key?: string | null };
+  /** `label_field`: the case-index field holding a case's human name (VERSION 8). */
+  entity: Noun & { key?: string | null; label_field?: string | null };
   worker: Noun;
   organisation: Noun;
   categories: string[];
@@ -142,6 +143,7 @@ export function displayOf(payload: any): Display {
     title: raw.title || null,
     entity: Object.assign(noun(raw.entity, 'case', 'cases'), {
       key: (raw.entity && raw.entity.key) || null,
+      label_field: (raw.entity && raw.entity.label_field) || null,
     }),
     worker: noun(raw.worker, 'worker', 'workers'),
     organisation: noun(raw.organisation, 'organization', 'organizations'),
@@ -160,6 +162,24 @@ export function displayOf(payload: any): Display {
     targets_note: raw.targets_note || null,
     min_denominator: raw.min_denominator || null,
   };
+}
+
+/**
+ * What a reader calls a case: its `display.entity.label_field` value when the
+ * case carries one, else its id cut to `idLength` characters. A label is never a
+ * key -- selection and lookups stay on `entity_id`.
+ */
+export function caseLabel(
+  dsp: Pick<Display, 'entity'> | null | undefined,
+  c: any,
+  idLength?: number,
+): string {
+  const field = dsp && dsp.entity && dsp.entity.label_field;
+  const v = field && c ? c[field] : null;
+  if (v !== null && v !== undefined && String(v).trim() !== '')
+    return String(v).trim();
+  const id = String((c && c.entity_id) || '');
+  return idLength ? id.slice(0, idLength) : id;
 }
 
 /** The labels of the display's visit flags this visit row carries, in declared order. */

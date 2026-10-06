@@ -751,3 +751,44 @@ def test_geography_gps_lands_where_the_service_delivery_pipeline_reads_it():
         assert parsed is not None, f"SD pipeline could not parse {meta_loc!r}"
         lon, lat = parsed
         assert 8.30 <= lon <= 8.40 and 11.78 <= lat <= 11.88
+
+
+def test_a_cohorts_entity_names_name_its_cases():
+    """`entity_names` replaces "Beneficiary N" in each visit's `entity_name` -- the
+    field Connect carries a case's name in, which a report shows through
+    `display.entity.label_field`."""
+    manifest, detail, schema = _load_inputs()
+    cohort = manifest.beneficiary_cohorts[0]
+    names = ["Grace Mwangi", "Joseph Otieno", "Amina Hassan"]
+    named = manifest.model_copy(update={"beneficiary_cohorts": [cohort.model_copy(update={"entity_names": names})]})
+    plain = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
+    out = generate(manifest=named, opportunity_detail=detail, form_schema=schema)
+    assert all(v["entity_name"].startswith("Beneficiary ") for v in plain["user_visits"])
+    got = {v["entity_name"] for v in out["user_visits"]}
+    assert got and all(n.split(" (")[0] in names for n in got)
+    # the names change nothing else about the data
+    strip = lambda vs: [{k: v for k, v in x.items() if k != "entity_name"} for x in vs]  # noqa: E731
+    assert strip(out["user_visits"]) == strip(plain["user_visits"])
+
+
+def test_a_mirrored_case_takes_its_cohorts_name():
+    pool = [
+        {"owner": "flw_001", "start_date": "2026-01-01", "visits": [{"day": 0, "values": {"form.weight": 1200.0}}]},
+        {"owner": "flw_001", "start_date": "2026-01-02", "visits": [{"day": 0, "values": {"form.weight": 1250.0}}]},
+    ]
+    manifest, detail, schema = _mirror_inputs(pool)
+    cohort = manifest.beneficiary_cohorts[0].model_copy(update={"entity_names": ["Grace Mwangi"]})
+    manifest = manifest.model_copy(update={"beneficiary_cohorts": [cohort]})
+    out = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
+    assert sorted({v["entity_name"] for v in out["user_visits"]}) == ["Grace Mwangi", "Grace Mwangi (2)"]
+
+
+def test_entity_label_cycles_with_a_suffix_and_refuses_blank_names():
+    import pytest
+
+    from connect_labs.labs.synthetic.generator.fixtures.manifest import BeneficiaryCohort, entity_label
+
+    assert entity_label([], 4) == "Beneficiary 4"
+    assert [entity_label(["A", "B"], i) for i in (1, 2, 3, 4, 5)] == ["A", "B", "A (2)", "B (2)", "A (3)"]
+    with pytest.raises(ValueError, match="entity_names"):
+        BeneficiaryCohort(id="c", size=2, field_distributions={}, progression="flat", entity_names=["A", " "])

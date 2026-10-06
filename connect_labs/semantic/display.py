@@ -33,7 +33,8 @@ PER REGISTRY (`display:` in the indicators document)::
 
     display:
       title: Kangaroo Mother Care programme        # report title; default: none
-      entity: {name: baby, plural: babies}         # default: the model's entity
+      entity: {name: baby, plural: babies,         # default: the model's entity
+               label_field: entity_name}           # a case's human name; default: its id
       worker: {name: worker, plural: workers}      # default: worker / workers
       organisation: {name: organisation, plural: organisations}
       categories: [Scale, Case mix, Follow-up]     # order; default: first appearance
@@ -48,6 +49,11 @@ PER REGISTRY (`display:` in the indicators document)::
         - {column: repeat_counts_flag, label: Repeat count}   # flagged when 'yes'/true/1
         - {column: risk_level, label: High risk, value: high} # or when it equals `value`
       targets_note: 'Targets from the 2026 workplan'        # optional footnote
+
+`entity.label_field` names a case-index field (a column of the entity pipeline,
+e.g. Connect's own `entity_name`) whose value is a case's human label: the case
+table's first column and the worker review's case heading show it, falling back
+to the id when a case has none. The builder adds it to the derived case index.
 
 `visit_flags` is how an indicator that counts flagged visits (a repeat-count rate,
 a location-review rate) points the reader at WHICH visits: the worker review marks
@@ -237,11 +243,21 @@ def resolve_display(
         if not reading["column"]:
             reading = None
 
+    raw_entity = raw.get("entity") if isinstance(raw.get("entity"), dict) else {}
+    # A block that only names the label field keeps the model's nouns.
+    entity_noun = (
+        raw_entity
+        if raw_entity.get("name")
+        else {"name": model.entity_name, "plural": raw_entity.get("plural") or model.entity_plural}
+    )
+    label_field = raw_entity.get("label_field")
     return {
         "title": raw.get("title") or None,
         "entity": {
-            **_noun(raw.get("entity") or {"name": model.entity_name, "plural": model.entity_plural}, "case", "cases"),
+            **_noun(entity_noun, "case", "cases"),
             "key": model.key,
+            # Present only when declared, so a registry without one resolves as before.
+            **({"label_field": label_field} if isinstance(label_field, str) and _FIELD.match(label_field) else {}),
         },
         "worker": _noun(raw.get("worker"), "worker", "workers"),
         "organisation": _noun(raw.get("organisation"), "organisation", "organisations"),
@@ -274,10 +290,19 @@ def display_problems(indicators_doc: dict[str, Any] | None) -> list[str]:
             problems.append(f"display: unknown key(s) {unknown}; expected {sorted(_DISPLAY_KEYS)}")
         for noun in ("entity", "worker", "organisation"):
             v = raw.get(noun)
+            # The entity may name only its label field; its nouns then default.
+            name_optional = noun == "entity" and isinstance(v, dict) and "name" not in v and "label_field" in v
             if v is not None and not (
-                isinstance(v, dict) and isinstance(v.get("name"), str) and isinstance(v.get("plural", ""), str)
+                isinstance(v, dict)
+                and (isinstance(v.get("name"), str) or name_optional)
+                and isinstance(v.get("plural", ""), str)
             ):
                 problems.append(f"display.{noun}: must be {{name: <str>, plural: <str>}}")
+        ent = raw.get("entity")
+        if isinstance(ent, dict) and ent.get("label_field") is not None:
+            lf = ent["label_field"]
+            if not isinstance(lf, str) or not _FIELD.match(lf):
+                problems.append("display.entity.label_field: must be a case-index field name, e.g. entity_name")
         for key in ("title", "targets_note"):
             if raw.get(key) is not None and not isinstance(raw[key], str):
                 problems.append(f"display.{key}: must be a string")

@@ -294,7 +294,8 @@ And one `display:` block at the top of the indicators document:
 ```yaml
 display:
   title: Kangaroo Mother Care programme            # report heading
-  entity: { name: baby, plural: babies }           # what a case is called
+  entity: { name: baby, plural: babies,            # what a case is called
+            label_field: entity_name }             # the case-index field holding a case's name
   worker: { name: facilitator, plural: facilitators }
   organisation: { name: partner, plural: partners }
   categories: [Scale, Case mix, Follow-up]         # category order in tables
@@ -310,6 +311,10 @@ display:
     - { column: risk_level, label: High risk, value: high }     # or when it equals `value`
   targets_note: 'Targets from the 2026 workplan.'
 ```
+
+`entity.label_field` is how a case is NAMED rather than identified. It names a field of the case index (a column of the entity pipeline): the case table's first column and the worker review's case heading show its value, falling back to the case id when a case has none. Connect carries each visit's case name in `entity_name`, which every pipeline row already has, so `label_field: entity_name` works on any programme with no pipeline change; a form field works too (declare it in the entity pipeline, e.g. `{name: child_name, path: form.child_name}`, and name that). The builder adds the field to the case index it derives, and a run keeps the labels it was built with. It is a label, never a key: selecting a case and reading its visits still go by `entity_id`.
+
+**Worker names.** A worker is shown by their display name, not their Connect username. Each saved run resolves the names once per opportunity from Connect's worker list (`user_data`; a labs-only synthetic opportunity is served its manifest personas' `display_name`) and stores them as `byFLW[].name`; selection, review links and audits keep using the username. A worker with no name shows the username, as before. The names stay on the opportunity's own rows: an opportunity report is handed only its own workers, and benchmarks publish no worker-level figures.
 
 `visit_flags` is how an indicator that counts flagged visits (a repeat-count rate, a location-review rate) shows the reader WHICH visits: the worker review names the flags each visit carries, tints those rows, and counts them in the list's heading. It is separate from Connect's own review flag, which gets a "Review flag" column only when some visit carries it. `visit_fields` and `visit_flags` name columns of the visit pipeline; a column the pipeline lacks reads as blank.
 
