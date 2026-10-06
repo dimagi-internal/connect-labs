@@ -24,6 +24,7 @@ three more that had been written by copying a neighbour. This encodes it so the
 next copied alarm cannot reintroduce it silently.
 """
 
+import re
 from pathlib import Path
 
 import pytest
@@ -96,3 +97,53 @@ def test_multi_period_alarms_set_datapoints_to_alarm(logical_id, alarm_name, pro
         f"so a single sub-threshold datapoint clears it while the condition continues. "
         f"Set DatapointsToAlarm (M-of-N), or add it to DELIBERATE_N_OF_N with the reason."
     )
+
+
+class _SubKeepingLoader(yaml.SafeLoader):
+    """Like _CfnLoader, but keeps a short-form intrinsic's scalar (the !Sub string)
+    so a composite's AlarmRule can be read for its children."""
+
+
+_SubKeepingLoader.add_multi_constructor(
+    "!", lambda loader, suffix, node: node.value if isinstance(node, yaml.ScalarNode) else None
+)
+
+
+def _composite_children():
+    """Yield (composite_name, description, child_name, child_props) for each
+    multi-period metric alarm a composite's AlarmRule references as ALARM("${LogicalId}")."""
+    resources = yaml.load(TEMPLATE_PATH.read_text(), Loader=_SubKeepingLoader)["Resources"]
+    for resource in resources.values():
+        if resource.get("Type") != "AWS::CloudWatch::CompositeAlarm":
+            continue
+        props = resource["Properties"]
+        for child_id in re.findall(r'ALARM\("\$\{(\w+)\}"\)', props.get("AlarmRule") or ""):
+            child = resources.get(child_id, {}).get("Properties", {})
+            # Multi-period children only: a 1-of-1 suppressor (deploy-in-progress)
+            # has no "M of the last N" for the description to state.
+            if child.get("Period") and (child.get("EvaluationPeriods") or 1) > 1:
+                yield props["AlarmName"], props.get("AlarmDescription") or "", child["AlarmName"], child
+
+
+def test_composite_descriptions_found_their_children():
+    """Guards the test below against passing vacuously on a loader change."""
+    assert any(name == "labs-jj-web-cpu-high-actionable" for name, *_ in _composite_children())
+
+
+@pytest.mark.parametrize("composite,description,child,child_props", list(_composite_children()))
+def test_composite_description_states_its_childs_live_rule(composite, description, child, child_props):
+    """The COMPOSITE pages, so its description is the responder's only briefing — but
+    the rule lives on the child. #1647 moved labs-jj-web-cpu-high to 4-of-5 @ 60s and
+    the paging composite went on saying "3 of the last 5 five-minute periods ...
+    Maximum over 300s" for four weeks (#2256). Any "M of the last N" or "over Ns"
+    the description states must match the child it names."""
+    m, n = child_props.get("DatapointsToAlarm"), child_props.get("EvaluationPeriods")
+    for stated_m, stated_n in re.findall(r"(\d+) of the last (\d+)", description):
+        assert (int(stated_m), int(stated_n)) == (
+            m,
+            n,
+        ), f"{composite} says '{stated_m} of the last {stated_n}' but {child} is {m}-of-{n}"
+    for stated_period in re.findall(r"over (\d+)s\b", description):
+        assert (
+            int(stated_period) == child_props["Period"]
+        ), f"{composite} says 'over {stated_period}s' but {child} has Period {child_props['Period']}"

@@ -497,9 +497,9 @@ Resources:
       #
       # M-of-N adds hysteresis without dulling detection: still N breaching
       # datapoints to fire (marginally EARLIER than M-of-M, since they need not
-      # be consecutive), but clearing now requires 4 of the last 5 to fall back
-      # under threshold — so a one-datapoint dip inside a sustained pin no longer
-      # resolves the incident. That reasoning was written for 3-of-5 at Period
+      # be consecutive), and one dip inside a pin no longer clears it. It clears
+      # once FEWER THAN 4 breach (not "4 of 5 under"): 10-05 paged 22:31:01Z,
+      # OK 22:32:01Z. That reasoning was written for 3-of-5 at Period
       # 300 and it survives the period change intact; only the meaning of a
       # "datapoint" got honest. Statistic stays Maximum for the reason above.
       #
@@ -589,19 +589,15 @@ Resources:
       # pasted into the notification email, and that email pages an agent
       # mailbox, so it is read cold by a session with no prior context.
       AlarmDescription: >-
-        A web task is at/over 90% CPU in 3 of the last 5 five-minute periods AND
-        no deploy is rolling. Deploy rollouts are already excluded, so unlike the
-        raw labs-jj-web-cpu-high signal this one should NOT be explained away as
-        deploy churn — check `labs-jj-deploy-in-progress` to confirm, then treat
-        it as real. Each task has 1 vCPU, so a pinned task means requests queue
-        behind CPU-bound Python and every user routed to it stalls. Likeliest
-        cause is a request path fanning out remote calls in a loop: query the
-        /ecs/labs-jj-web log group for one URL repeating at high volume, and read
-        the outbound_ms / db_ms / self_ms split before reaching for a scale-up.
-        Caveat when you read the metric: Statistic is Maximum over 300s, which
-        records the peak INSTANT in each bucket, not a duration — so confirm the
-        pin is sustained by re-reading CPUUtilization at Period 60 before
-        concluding the tier was saturated for 15 minutes. See connect-labs#1461.
+        A web task was at/over 90% CPU for 4 of the last 5 MINUTES (Maximum,
+        Period 60) while labs-jj-deploy-in-progress was OK. Each task has 1
+        vCPU, so its requests queue. The suppressor lifts 15-20 min after a
+        rollout ends, so first check gh run list for deploy-labs.yml. Then group
+        the audit trail by minute and source: an MCP agent session (ensure
+        visit cache, rapid workflow polling) or a whole-opp visit read is the
+        commonest real cause; then read self_ms/outbound_ms/db_ms in
+        /ecs/labs-jj-web. An OK a minute after the page is the pin's edge, not
+        a fix. See #1461, #1512.
       AlarmRule: !Sub 'ALARM("${WebCpuHighAlarm}") AND NOT ALARM("${DeployInProgressAlarm}")'
       AlarmActions: [!Ref AlertTopic]
       OKActions: [!Ref AlertTopic]
