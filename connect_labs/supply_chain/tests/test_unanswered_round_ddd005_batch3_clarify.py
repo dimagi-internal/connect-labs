@@ -105,6 +105,10 @@ def test_setting_terms_drafts_a_clarification_to_every_invited_supplier(da, roun
         assert expected in d["text"]
         assert d["subject"] == "Kano round — clarification: import duty terms"
         assert "every invited supplier" in d["why"]
+        # On the page, why is a labelled row (sheets b5): when the terms were set, who it goes to.
+        facts = {f["label"]: f["value"] for f in d["facts"]}
+        assert set(facts) == {"Duty terms set", "Goes to"}
+        assert facts["Goes to"] == "every invited supplier"
     asker = next(d for d in drafts if d["supplier_name"] == "Northwind Commodities")
     assert asker["to"] == "a@northwind.example.invalid"
 
@@ -137,6 +141,7 @@ def test_an_answer_that_sets_terms_drafts_to_everyone_not_only_the_asker(da, rou
     assert len(drafts) == 2
     assert asker["id"] not in {d["supplier_id"] for d in drafts}
     assert "from your answer to Northwind Commodities" in drafts[0]["why"]
+    assert {"label": "From your answer to", "value": "Northwind Commodities"} in drafts[0]["facts"]
     everything = op(da, "tender_drafts_render", tender_id=tender_id, today=TODAY.isoformat())["drafts"]
     (reply,) = (d for d in everything if d["kind"] == "reply")
     assert "\n\nFor this tender we import, under the program's duty waiver" in reply["text"]

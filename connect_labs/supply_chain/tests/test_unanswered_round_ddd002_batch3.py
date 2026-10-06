@@ -44,10 +44,8 @@ class TestTheReminderDraft:
         today = f"{datetime.date.today():%-d %b %Y}"
         assert re.search(rf'data-testid="chase-date" type="text" name="last_reminder_on"\s+value="{today}"', card)
         # The why line is body text, not the smallest grey on the card.
-        # A reminder's facts are a labelled row (DDD 003 batch 2); other drafts keep the sentence.
-        assert re.search(r'<p class="text-sm text-gray-700 mt-1" data-testid="draft-why">', card) or re.search(
-            r'<dl class="[^"]*" data-testid="draft-why">', card
-        )
+        # Every draft's why is a labelled row (DDD 003 batch 2; sheets b5), never a sentence.
+        assert re.search(r'<dl class="[^"]*" data-testid="draft-why">', card)
 
     def test_a_chase_day_typed_as_the_page_writes_it_is_recorded(self, da, world, web):  # noqa: F811
         outreach_id = world["outreach"]["id"]
