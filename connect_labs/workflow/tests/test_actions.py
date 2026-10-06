@@ -368,6 +368,109 @@ def test_synthetic_outreach_never_opens_ocs(user):
 
 
 # ---------------------------------------------------------------------------
+# QA redirect (deliver_to) and coached indicators
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def staff(db):
+    return get_user_model().objects.create_user(username="qa", password="p", email="qa@dimagi.com")
+
+
+def _preview_coach(who, arguments):
+    return preview(
+        who, wda=_wda(), run=RUN, definition=_definition(COACH), key="initiate_ai_coach", arguments=arguments
+    )
+
+
+def test_a_qa_redirect_preview_says_plainly_where_the_conversation_goes(staff, real_opps, bots):
+    out = _preview_coach(staff, {"workers": [{"key": "10::a10"}], "deliver_to": "qa_connect"})
+    assert out["deliver_to"] == "qa_connect"
+    assert out["workers"][0]["sending_to"] == "sending to: qa_connect (QA, on behalf of a10)"
+    assert "QA" in out["summary"] and "qa_connect" in out["summary"]
+    assert out["arguments"]["deliver_to"] == "qa_connect"
+    assert out["confirm"]
+
+
+def test_the_confirm_token_is_bound_to_the_qa_recipient(staff, real_opps, bots):
+    definition = _definition(COACH)
+    p = _previewed(staff, definition, "initiate_ai_coach", {"workers": [{"key": "10::a10"}], "deliver_to": "qa_a"})
+    with pytest.raises(ActionError) as e:
+        _commit(staff, definition, "initiate_ai_coach", {**p["arguments"], "deliver_to": "qa_b"}, p["confirm"])
+    assert e.value.code == "confirm_mismatch"
+
+
+def test_a_qa_redirect_is_refused_for_anyone_not_dimagi_staff(user, real_opps, bots):
+    user.email = "someone@partner.org"
+    user.save()
+    with pytest.raises(ActionError) as e:
+        _preview_coach(user, {"workers": [{"key": "10::a10"}], "deliver_to": "qa_connect"})
+    assert e.value.code == "forbidden"
+
+
+def test_a_qa_redirect_is_refused_for_several_workers(staff, real_opps, bots):
+    with pytest.raises(ActionError, match="one worker at a time"):
+        _preview_coach(staff, {"workers": [{"key": "10::a10"}, {"key": "11::b11"}], "deliver_to": "qa_connect"})
+
+
+def test_a_qa_redirect_on_synthetic_opportunities_uses_a_real_bot(staff, monkeypatch, bots):
+    monkeypatch.setattr("connect_labs.labs.synthetic.registry.get_synthetic_opp", lambda opp: object())
+    out = _preview_coach(staff, {"workers": [{"key": "10::a10"}], "deliver_to": "qa_connect"})
+    assert "synthetic" not in out
+    assert out["bot"] == {"id": "bot-1", "name": "Coach"}
+    assert out["arguments"]["bot"] == "bot-1"
+
+
+def test_a_declaration_cannot_default_a_qa_redirect():
+    problems = actions.declaration_problems([{**COACH, "defaults": {**COACH["defaults"], "deliver_to": "qa"}}])
+    assert any("deliver_to" in p for p in problems)
+
+
+def test_a_qa_redirect_execution_sends_to_the_recipient_for_the_worker(staff):
+    execution = _execution(staff, keys=("10::a10",))
+    execution.arguments = {**execution.arguments, "deliver_to": "qa_connect"}
+    execution.save()
+    factory, made, _ = _fake_tasks()
+    with (
+        patch("connect_labs.labs.connect_tokens.get_valid_access_token", return_value="ct"),
+        patch("connect_labs.tasks.data_access.TaskDataAccess", side_effect=factory),
+        patch("connect_labs.labs.integrations.ocs.api_client.OCSDataAccess"),
+        patch("connect_labs.tasks.ai_sessions.start_ai_session", return_value={"session_id": "s1"}) as start,
+    ):
+        actions.execute(execution.pk)
+    assert made[0]["username"] == "a10"  # the task is the worker's
+    sent = start.call_args.kwargs
+    assert (sent["identifier"], sent["on_behalf_of"]) == ("qa_connect", "a10")
+
+
+def test_coached_indicators_are_recorded_on_a_new_task(user):
+    execution = _execution(user, keys=("10::a10", "11::b11"))
+    execution.arguments = {
+        **execution.arguments,
+        "workers": [{"key": "10::a10", "indicators": ["SF_P1", "SF_P3"]}, {"key": "11::b11"}],
+    }
+    execution.save()
+    tdas = []
+
+    def factory(**kwargs):
+        tda = MagicMock()
+        tda.create_task.side_effect = lambda **kw: SimpleNamespace(id=100 + len(tdas), data={"title": "t"})
+        tdas.append(tda)
+        return tda
+
+    with (
+        patch("connect_labs.labs.connect_tokens.get_valid_access_token", return_value="ct"),
+        patch("connect_labs.tasks.data_access.TaskDataAccess", side_effect=factory),
+        patch("connect_labs.labs.integrations.ocs.api_client.OCSDataAccess"),
+        patch("connect_labs.tasks.ai_sessions.start_ai_session", return_value={"session_id": "s"}),
+    ):
+        actions.execute(execution.pk)
+    saved = tdas[0].save_task.call_args.args[0]
+    assert saved.data == {"title": "t", "coaching_indicators": ["SF_P1", "SF_P3"]}
+    tdas[1].save_task.assert_not_called()  # no indicators given, nothing to record
+
+
+# ---------------------------------------------------------------------------
 # Checking a declaration when it is saved
 # ---------------------------------------------------------------------------
 

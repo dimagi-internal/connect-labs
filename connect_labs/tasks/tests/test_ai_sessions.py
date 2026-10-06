@@ -75,3 +75,78 @@ def test_the_synthetic_bot_never_calls_ocs():
     assert out["session_id"] == "synthetic-coaching-session"
     assert task.data["ocs_conversation"] == [{"m": 1}]
     tda.add_ai_session.assert_called_once()
+
+
+def test_a_qa_redirect_goes_to_the_staff_member_and_says_so():
+    task, tda = _task(), MagicMock()
+    client = MagicMock()
+    client.trigger_bot.return_value = {"session": {"id": 77}}
+    with patch("connect_labs.labs.synthetic.registry.get_synthetic_opp", return_value=None):
+        start_ai_session(
+            _user(),
+            tda,
+            task,
+            ocs=client,
+            identifier="qa_staff",
+            on_behalf_of="asha",
+            experiment="bot-1",
+            prompt_text="Hi",
+        )
+
+    sent = client.trigger_bot.call_args.kwargs
+    assert sent["identifier"] == "qa_staff"
+    assert sent["session_data"]["username"] == "asha"  # still the worker's task
+    assert sent["session_data"]["qa_recipient"] == "qa_staff"
+    assert sent["session_data"]["on_behalf_of"] == "asha"
+    assert sent["session_data"]["created_by"] == "manager"
+    params = task.add_ai_session.call_args.kwargs["session_params"]
+    assert (params["qa_recipient"], params["on_behalf_of"]) == ("qa_staff", "asha")
+
+
+def test_without_a_redirect_the_session_data_carries_no_qa_fields():
+    task, tda = _task(), MagicMock()
+    client = MagicMock()
+    client.trigger_bot.return_value = {"session_id": "1"}
+    with patch("connect_labs.labs.synthetic.registry.get_synthetic_opp", return_value=None):
+        start_ai_session(_user(), tda, task, ocs=client, identifier="asha", experiment="bot-1", prompt_text="Hi")
+
+    assert "qa_recipient" not in client.trigger_bot.call_args.kwargs["session_data"]
+
+
+def test_a_qa_redirect_on_a_synthetic_opportunity_really_calls_ocs():
+    """The point of the redirect is to QA the actual bot from a synthetic report, so the
+    canned-transcript short circuit must not swallow it."""
+    task, tda = _task(opportunity_id=10001), MagicMock()
+    client = MagicMock()
+    client.trigger_bot.return_value = {"session_id": "42"}
+    with (
+        patch("connect_labs.labs.synthetic.registry.get_synthetic_opp", return_value=object()),
+        patch("connect_labs.labs.synthetic.manager_flow_views._coaching_conversation") as canned,
+    ):
+        out = start_ai_session(
+            _user(),
+            tda,
+            task,
+            ocs=client,
+            identifier="qa_staff",
+            on_behalf_of="asha",
+            experiment="bot-1",
+            prompt_text="Hi",
+        )
+
+    client.trigger_bot.assert_called_once()
+    canned.assert_not_called()
+    assert out["session_id"] == "42"
+
+
+def test_a_synthetic_opportunity_without_a_redirect_still_gets_the_canned_conversation():
+    task, tda = _task(opportunity_id=10001), MagicMock()
+    client = MagicMock()
+    with (
+        patch("connect_labs.labs.synthetic.registry.get_synthetic_opp", return_value=object()),
+        patch("connect_labs.labs.synthetic.manager_flow_views._coaching_conversation", return_value=[]),
+    ):
+        out = start_ai_session(_user(), tda, task, ocs=client, identifier="asha", experiment="bot-1", prompt_text="Hi")
+
+    client.trigger_bot.assert_not_called()
+    assert out["session_id"] == "synthetic-coaching-session"

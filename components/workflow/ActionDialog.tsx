@@ -248,6 +248,11 @@ export function ActionDialog({
                               : ''}
                       </span>
                     </div>
+                    {w.sending_to && (
+                      <p className="mt-1 text-xs font-medium text-amber-700">
+                        {w.sending_to}
+                      </p>
+                    )}
                     {w.prompt && (
                       <p className="mt-1 whitespace-pre-wrap text-xs text-gray-600">
                         {w.prompt}

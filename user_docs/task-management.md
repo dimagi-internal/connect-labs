@@ -116,6 +116,10 @@ This means you can ask the assistant to act on what it sees — for example:
 
 Before the assistant carries out any action, it shows you the same confirmation preview that the button does — who will be reached, what the bot will say, and which bot will be used. Nothing is sent until you approve. The assistant acts as you, using your access level.
 
+**Testing a coaching bot yourself (Dimagi staff only).** When you run **Initiate AI coach** for a single worker, you can ask for the conversation to be sent to your own Connect app instead of the worker's — useful for trying out a coach on a synthetic (demo) report, where it is otherwise replaced by a sample conversation. The confirmation preview says plainly where the message will go ("sending to: *you* (QA, on behalf of *worker*)"). The follow-up task is still filed under the worker and is marked as a QA test. Only one worker can be redirected at a time.
+
+When an action records which indicators a worker is being coached on, the task keeps that list, so the coaching progress shown on the report can tell you how many of those topics the conversation has covered.
+
 You can also connect your own assistant (outside Labs) to the report if your program uses a separate tool. Once connected, it can run actions on your behalf even if the report page is not open — you do not need to keep the browser tab active.
 
 !!! note
