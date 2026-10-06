@@ -135,6 +135,8 @@ VIEWS_WITHOUT_TABS = frozenset(
         # JSON, not a page.
         "supply_chain:api_operations",
         "supply_chain:api_operation",
+        # A table cell's edit (cells.py): JSON back to the page that posted it.
+        "supply_chain:cell_edit",
         # Streams a stored file back.
         "supply_chain:document_open",
         # A supplier's own login-free page: deliberately no programme chrome,
