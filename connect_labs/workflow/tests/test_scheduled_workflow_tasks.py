@@ -52,7 +52,9 @@ def test_run_scheduled_workflow_program_scoped_constructs_dao_with_program_id():
     with (
         mock.patch("connect_labs.workflow.tasks.get_valid_access_token", return_value="tok"),
         mock.patch("connect_labs.workflow.tasks.WorkflowDataAccess") as DA,
-        mock.patch("connect_labs.workflow.tasks.run_default_for_definition", return_value={"ran": True}),
+        mock.patch(
+            "connect_labs.workflow.tasks.run_default_for_definition", return_value={"ran": True}
+        ) as run_default,
     ):
         DA.return_value.get_definition.return_value = mock.Mock(id=42)
         from connect_labs.workflow.tasks import run_scheduled_workflow
@@ -62,6 +64,10 @@ def test_run_scheduled_workflow_program_scoped_constructs_dao_with_program_id():
     sched.refresh_from_db()
     assert sched.last_status == WorkflowSchedule.STATUS_OK
     DA.assert_called_once_with(access_token="tok", program_id=99)
+    # The hook is told the schedule's scope: a programme report's runs are filed
+    # under its program, and an opp-scoped read cannot see them.
+    assert run_default.call_args.kwargs["program_id"] == 99
+    assert run_default.call_args.kwargs["opportunity_id"] is None
 
 
 @pytest.mark.django_db
@@ -176,7 +182,13 @@ def test_run_scheduled_workflow_forwards_cchq_token_when_available():
     sched.refresh_from_db()
     assert sched.last_status == WorkflowSchedule.STATUS_OK
     run_default.assert_called_once_with(
-        mock.ANY, access_token="tok", request=None, cchq_access_token="cchq-tok", cadence="daily"
+        mock.ANY,
+        access_token="tok",
+        request=None,
+        cchq_access_token="cchq-tok",
+        cadence="daily",
+        opportunity_id=1237,
+        program_id=None,
     )
 
 
@@ -204,7 +216,13 @@ def test_run_scheduled_workflow_missing_cchq_token_does_not_block_run():
     sched.refresh_from_db()
     assert sched.last_status == WorkflowSchedule.STATUS_OK
     run_default.assert_called_once_with(
-        mock.ANY, access_token="tok", request=None, cchq_access_token=None, cadence="daily"
+        mock.ANY,
+        access_token="tok",
+        request=None,
+        cchq_access_token=None,
+        cadence="daily",
+        opportunity_id=1237,
+        program_id=None,
     )
 
 
