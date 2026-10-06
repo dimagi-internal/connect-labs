@@ -103,6 +103,9 @@ class Move:
     party: str = ""
     # Rule (e) only: SILENT (no reply at all) or AWAITING_QUOTE (replied, no quote yet).
     state: str = ""
+    # A fact a list shows under the row even where it leaves dates to a table beside
+    # it: "reply sent 6 Oct" on a supplier our answers went out to.
+    note: str = ""
 
     @property
     def rule_title(self) -> str:
@@ -374,12 +377,32 @@ def questions_answered_on(commitments) -> dict:
     return out
 
 
+def replies_sent_on(commitments) -> dict:
+    """{org id: the last day a reply answering its questions was marked sent} -- sent only, never just resolved."""
+    out = {}
+    for c in commitments:
+        day = getattr(c, "reply_sent_on", None)
+        if c.kind == "question" and day and (c.owed_to_org_id not in out or day > out[c.owed_to_org_id]):
+            out[c.owed_to_org_id] = day
+    return out
+
+
 def no_reply_moves(
-    tender, outreach, quotes, today, *, commitments=(), answered=None, provisional=False, contracted=False
+    tender,
+    outreach,
+    quotes,
+    today,
+    *,
+    commitments=(),
+    answered=None,
+    sent=None,
+    provisional=False,
+    contracted=False,
 ) -> list[Move]:
     """Rule (e): each invited supplier we are waiting on for a quote, on a tender still collecting quotes.
 
     `answered`: {org id: day our answers to its questions went out} (questions_answered_on).
+    `sent`: {org id: day our reply was marked sent} (replies_sent_on), said under the row.
     """
     if not collecting(tender, provisional=provisional, contracted=contracted):
         return []
@@ -407,8 +430,10 @@ def no_reply_moves(
             )
         )
     answered = answered or {}
+    sent = sent or {}
     for supplier_id, rows in awaiting_quote(outreach, quotes, commitments, answered).items():
         supplier = rows[0].supplier
+        reply_sent = sent.get(getattr(supplier, "org_id", None))
         replied = max((o.responded_on for o in rows if o.responded and o.responded_on), default=None)
         ours = answered.get(getattr(supplier, "org_id", None))
         # The ball moved to them on the later of their reply and our answer to it.
@@ -430,6 +455,7 @@ def no_reply_moves(
                 chip=AWAITING_QUOTE_CHIP,
                 party=supplier.name,
                 state=AWAITING_QUOTE,
+                note=f"reply sent {_day(reply_sent)}" if reply_sent else "",
             )
         )
     moves.sort(key=lambda m: (m.since or date.max, m.text))
@@ -440,12 +466,22 @@ def no_reply_moves(
 
 
 def tender_moves(
-    tender, today, *, outreach=None, quotes=None, commitments=None, answered=None, provisional=None, contracted=None
+    tender,
+    today,
+    *,
+    outreach=None,
+    quotes=None,
+    commitments=None,
+    answered=None,
+    sent=None,
+    provisional=None,
+    contracted=None,
 ):
     """Every move on one tender: (on us, on suppliers). Reads what it is not handed.
 
     `commitments`: the open ones. `answered`: {org id: day our answers went out}, read
-    from the tender's answered questions when not handed (questions_answered_on).
+    from the tender's answered questions when not handed (questions_answered_on), and
+    `sent` with it (replies_sent_on); handed `answered` alone, no row says a reply went.
     """
     from connect_labs.supply_chain.models import Award, Commitment, Contract, Outreach, Quote
 
@@ -458,9 +494,10 @@ def tender_moves(
             Commitment.objects.filter(tender=tender, resolved_on__isnull=True).select_related("owed_to_org")
         )
     if answered is None:
-        answered = questions_answered_on(
-            Commitment.objects.filter(tender=tender, kind="question", resolved_on__isnull=False)
-        )
+        closed = list(Commitment.objects.filter(tender=tender, kind="question", resolved_on__isnull=False))
+        answered = questions_answered_on(closed)
+        if sent is None:
+            sent = replies_sent_on(closed)
     if contracted is None:
         contracted = Contract.objects.filter(tender=tender).exists()
     if provisional is None:
@@ -479,6 +516,7 @@ def tender_moves(
         today,
         commitments=commitments,
         answered=answered,
+        sent=sent,
         provisional=provisional,
         contracted=contracted,
     )

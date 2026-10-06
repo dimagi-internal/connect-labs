@@ -318,12 +318,14 @@ def test_an_unknown_sort_falls_back_to_the_name(client_in_program, world):
 
 
 def test_the_unapproved_and_estimated_parts_are_said_on_the_figure(client_in_program, world):
-    text = text_of(get(client_in_program, "workers"))
-    # The parts are said as parts of what was DISPENSED, never as stock on hand.
-    assert "120 sachets on hand — of the 30 sachets dispensed, 30 on visits not yet approved, 30 estimated" in text
-    # baobab's figure rests on nothing unsettled: it carries no caveat at all.
-    assert "110 sachets on hand —" not in text
-    assert "110 sachets on hand" in text
+    body = get(client_in_program, "workers")
+    # The parts are said as parts of what was DISPENSED, never as stock on hand:
+    # a short line under acacia's figure, and none under baobab's, which rests on nothing unsettled.
+    lines = [text_of(x) for x in re.findall(r'data-testid="given-out-line">(.*?)</div>', body, re.S)]
+    assert lines == ["of 30 given out: 30 on unapproved visits · 30 estimated"]
+    text = text_of(body)
+    assert "120 sachets" in text and "110 sachets" in text
+    assert "on hand —" not in text
 
 
 def test_the_variance_says_its_sign_and_its_day(client_in_program, world):
@@ -348,7 +350,7 @@ def test_the_network_shows_a_stores_workers_and_their_totals(client_in_program, 
     text = text_of(body)
     assert "2 workers" in text
     # 120 + 110 on hand below the partner store; 40 + 30 dispensed there.
-    assert "230 sachets on hand — of the 70 sachets dispensed, 30 on visits not yet approved, 30 estimated" in text
+    assert "230 sachets on hand of 70 given out: 30 on unapproved visits · 30 estimated" in text
 
 
 def test_a_store_row_shows_what_came_in_once_never_a_hop_summed_issued(client_in_program, world):
@@ -356,6 +358,12 @@ def test_a_store_row_shows_what_came_in_once_never_a_hop_summed_issued(client_in
     tree = text_of(re.search(r'data-testid="network-tree".*?</section>', body, re.S).group(0))
     assert "300 sachets came in from outside" in tree
     assert "issued" not in tree.lower()
+
+
+def _testid_text(body, testid):
+    match = re.search(rf'data-testid="{testid}"[^>]*>(.*?)</', body, re.S)
+    assert match, f"no {testid}"
+    return text_of(match.group(1)).strip()
 
 
 def own_line(body, name):
@@ -469,8 +477,14 @@ def test_a_worker_page_shows_the_timeline_and_the_visits_behind_it(client_in_pro
     assert "Not yet approved" in body
     text = text_of(body)
     assert "Issued" in text and "150 sachets" in text
-    assert "120 sachets on hand — of the 30 sachets dispensed, 30 on visits not yet approved, 30 estimated" in text
-    assert "30 sachets dispensed — 30 on visits not yet approved, 30 estimated" in text
+    # On hand is a bare figure, the sum behind it a short line under it; Dispensed does not repeat it.
+    assert _testid_text(body, "worker-on-hand") == "120 sachets"
+    assert (
+        _testid_text(body, "worker-on-hand-sum")
+        == "150 issued − 30 given out · 30 on unapproved visits · 30 estimated"
+    )
+    assert _testid_text(body, "worker-dispensed") == "30 sachets"
+    assert "not yet approved," not in text
     # The chart's figures, as a table, for anyone who cannot see the chart.
     assert 'data-testid="timeline-table"' in body
 
@@ -496,6 +510,80 @@ def test_a_rejected_visit_is_shown_reversed_not_arrived(client_in_program, world
     assert "Not yet approved" not in text  # a rejected visit is not one still waiting
     arrived = text.split("Stock that arrived")[1]
     assert "10 sachets" not in arrived
+
+
+def _visit_rows(body):
+    """[(day-or-blank, signed quantities, read as)] for each listed visit row, in order."""
+    rows = []
+    for row in re.findall(r'<tr data-testid="visit-row">(.*?)</tr>', body, re.S):
+        moved = re.search(r'data-testid="visit-moved"[^>]*>(.*?)</td>', row, re.S).group(1).strip()
+        read_as = text_of(re.search(r'data-testid="visit-read-as">(.*?)</td>', row, re.S).group(1)).strip()
+        rows.append((moved, read_as))
+    return rows
+
+
+def _screening(world, worker, visit_id, days_ago):
+    WorkerVisit.objects.create(
+        program_id=PROGRAM,
+        opportunity_id=PROGRAM,
+        visit_id=visit_id,
+        xform_id=f"xf-{visit_id}",
+        supply_point=worker,
+        visit_date=TODAY - timedelta(days=days_ago),
+        status="approved",
+        outcomes={outcome_key(world["item"].pk): "nothing_given"},
+        answers={"form.x": "0"},
+    )
+
+
+def test_each_visit_says_what_it_moved_and_those_that_moved_stock_come_first(client_in_program, world):
+    acacia = world["worker-acacia"]
+    # Two screenings, newer than the visit that dispensed: they gave none.
+    _screening(world, acacia, "v-screen-1", 3)
+    _screening(world, acacia, "v-screen-2", 4)
+
+    body = get(client_in_program, "worker_detail", acacia.pk)
+    assert '<th scope="col" class="text-right px-4 py-2">Sachets</th>' in body
+    # The dispensing visit first, with its figure; then the one that did not say, blank.
+    assert _visit_rows(body) == [("−30", "Gave some out"), ("", "Did not say")]
+    # The screenings are counted on one row, not listed among them.
+    count = re.search(r'data-testid="visits-gave-none-count"[^>]*>(.*?)</summary>', body, re.S).group(1)
+    assert text_of(count).strip() == "2 visits gave none"
+    assert "xf-v-screen-1" in body.split('data-testid="visits-gave-none"', 1)[1]
+
+
+def test_a_rejected_visit_reads_its_dispense_and_the_put_back(client_in_program, world):
+    body = get(client_in_program, "worker_detail", world["worker-baobab"].pk)
+    rows = _visit_rows(body)
+    assert ("−10 · +10", "Reversed — stock put back") in rows
+    assert ("−40", "Gave some out") in rows
+    assert 'data-testid="visits-gave-none"' not in body
+
+
+def test_a_short_window_reads_as_a_field_on_both_worker_screens(client_in_program, world):
+    """Ten days of dispensing: no rate yet, and the page says so as "Window 11 d of 30 needed"."""
+    with recorded(60):
+        cedar = _issue(world, "worker-cedar")
+    with recorded(10):
+        _visit(world, cedar, "worker-cedar", dispensed=5, status="approved", estimated=False, days_ago=10)
+
+    detail = get(client_in_program, "worker_detail", cedar.pk)
+    notes = [text_of(n).strip() for n in re.findall(r'data-testid="stockout-note">(.*?)</dd>', detail, re.S)]
+    assert notes == ["Window 11 d of 30 needed"]
+    assert "monthly rate means anything" not in detail
+    assert "unknown" in text_of(detail)
+
+    listing = get(client_in_program, "workers")
+    assert "Window 11 d of 30 needed" in text_of(listing)
+    assert "monthly rate means anything" not in listing
+
+
+def test_the_chart_key_and_the_arrivals_carry_no_sentences(client_in_program, world):
+    body = get(client_in_program, "worker_detail", world["worker-baobab"].pk)
+    key = re.search(r'<ul[^>]*aria-label="Key">(.*?)</ul>', body, re.S).group(1)
+    items = [text_of(i).strip() for i in re.findall(r"<li[^>]*>(.*?)</li>", key, re.S)]
+    assert items == ["issued", "dispensed", "put back · rejected visit", "worker's count", "ledger"]
+    assert "is a reversal of that visit" not in body
 
 
 def test_a_worker_in_another_programme_is_a_404(client_in_program, world):
@@ -570,7 +658,7 @@ def test_as_of_shows_the_day_as_it_stood(client_in_program, world):
     past = {"as_of": (TODAY - timedelta(days=50)).isoformat()}
     text = text_of(get(client_in_program, "workers", **past))
     assert text.count("150 sachets") >= 2
-    assert "not yet approved, 30 estimated" not in text
+    assert 'data-testid="given-out-line"' not in get(client_in_program, "workers", **past)
     detail = get(client_in_program, "worker_detail", world["worker-acacia"].pk, **past)
     assert "xf-worker-acacia" not in detail  # that visit had not happened yet
 
@@ -597,36 +685,66 @@ def test_the_page_costs_the_same_whatever_the_number_of_workers(client_in_progra
 
 
 class TestFigureWords:
-    def test_an_on_hand_figure_says_its_parts_are_dispensing(self):
-        from connect_labs.supply_chain.templatetags.supply_chain_extras import on_hand_words
+    def test_the_given_out_line_says_its_parts_are_dispensing(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import given_out_line
 
         parts = {
             "dispensed": {"amount": "90.0000", "unit": "sachet"},
             "unapproved": {"amount": "38.0000", "unit": "sachet"},
             "estimated": {"amount": "60", "unit": "sachet"},
         }
-        assert on_hand_words({"amount": "412.0000", "unit": "sachet"}, parts) == (
-            "412 sachets on hand — of the 90 sachets dispensed, 38 on visits not yet approved, 60 estimated"
-        )
-        assert on_hand_words({"amount": "412", "unit": "sachet"}, {"unapproved": {"amount": "0"}}) == (
-            "412 sachets on hand"
-        )
+        assert given_out_line(parts) == "of 90 given out: 38 on unapproved visits · 60 estimated"
+        assert given_out_line({"unapproved": {"amount": "0"}}) == ""
         assert (
-            on_hand_words(
-                {"amount": "4", "unit": "sachet"},
-                {"dispensed": {"amount": "2", "unit": "sachet"}, "estimated": {"unconfirmed": ["x"]}},
-            )
-            == "4 sachets on hand — of the 2 sachets dispensed, an unknown part estimated"
+            given_out_line({"dispensed": {"amount": "2", "unit": "sachet"}, "estimated": {"unconfirmed": ["x"]}})
+            == "of 2 given out: unknown estimated"
         )
 
-    def test_a_dispensed_figure_names_its_unsettled_parts(self):
-        from connect_labs.supply_chain.templatetags.supply_chain_extras import dispensed_words
+    def test_the_on_hand_sum_comes_to_the_figure(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import stock_sum
 
-        parts = {"unapproved": {"amount": "30", "unit": "sachet"}}
-        assert dispensed_words({"amount": "90", "unit": "sachet"}, parts) == (
-            "90 sachets dispensed — 30 on visits not yet approved"
+        row = {
+            "issued": {"amount": "300", "unit": "sachet"},
+            "dispensed": {"amount": "201", "unit": "sachet"},
+            "on_hand": {"amount": "99", "unit": "sachet"},
+            "unapproved": {"amount": "11", "unit": "sachet"},
+        }
+        assert stock_sum(row) == "300 issued − 201 given out · 11 on unapproved visits"
+        # Anything neither issued nor dispensed (a correction, a return) is its own term.
+        assert stock_sum({**row, "on_hand": {"amount": "103", "unit": "sachet"}}) == (
+            "300 issued − 201 given out + 4 other · 11 on unapproved visits"
         )
-        assert dispensed_words({"amount": "90", "unit": "sachet"}, {}) == "90 sachets dispensed"
+        assert stock_sum({**row, "on_hand": {"amount": "95", "unit": "sachet"}, "unapproved": None}) == (
+            "300 issued − 201 given out − 4 other"
+        )
+        # A figure that is not a number leaves only the parts.
+        assert stock_sum({**row, "on_hand": {"unconfirmed": ["mixed units"]}}) == "11 on unapproved visits"
+
+    def test_a_short_window_is_a_field_not_the_rate_s_sentence(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import stockout_notes
+
+        reason = "only 28 days of dispensing have been recorded here; at least 30 are needed"
+        row = {
+            "days_to_stockout": {"unconfirmed": [reason]},
+            "amc": {"unconfirmed": [reason]},
+            "rate_days": 28,
+            "rate_days_needed": 30,
+        }
+        assert stockout_notes(row) == ["Window 28 d of 30 needed"]
+        # Any other reason is said as it is.
+        other = {"days_to_stockout": {"unconfirmed": ["no consumption yet"]}, "amc": {"unconfirmed": ["x"]}}
+        assert stockout_notes({**other, "rate_days": None, "rate_days_needed": 30}) == ["no consumption yet"]
+        assert stockout_notes({"days_to_stockout": "12.5", "rate_days": 60, "rate_days_needed": 30}) == []
+
+    def test_a_visit_s_ledger_lines_read_signed(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import moved_text
+
+        assert moved_text([{"quantity": "-5", "unit": "sachet"}], "sachet") == "−5"
+        assert moved_text(
+            [{"quantity": "-10", "unit": "sachet"}, {"quantity": "+10", "unit": "sachet"}], "sachet"
+        ) == ("−10 · +10")
+        assert moved_text([{"quantity": "-1", "unit": "carton"}], "sachet") == "−1 carton"
+        assert moved_text([], "sachet") == ""
 
     def test_a_difference_always_says_its_sign(self):
         from connect_labs.supply_chain.templatetags.supply_chain_extras import signed_figure

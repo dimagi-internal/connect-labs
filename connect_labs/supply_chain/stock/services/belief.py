@@ -94,6 +94,8 @@ class Belief:
     days_to_stockout: object
     status: str
     unmatched_receipts: list = field(default_factory=list)
+    # The days the rate is averaged over (resupply.observed); None with no demand yet.
+    rate_days: int | None = None
     workers: int = 0
     workers_below_min: int = 0
     subtree: dict | None = None
@@ -327,6 +329,7 @@ def _belief(point, raw, count, unmatched, item, unit, end, window_days) -> Belie
         days_to_stockout=plan["days_to_stockout"],
         status=plan["status"],
         unmatched_receipts=unmatched,
+        rate_days=resupply.observed(earliest, end, window_days),
     )
 
 
@@ -516,6 +519,10 @@ def wire(b: Belief) -> dict:
         "amc_basis": b.amc_basis,
         "months_of_stock": _plain(b.months_of_stock),
         "days_to_stockout": _plain(b.days_to_stockout),
+        # How many days the rate rests on, and the fewest it needs: with too few,
+        # days to stock-out has no figure and a page says "28 d of 30" for why.
+        "rate_days": b.rate_days,
+        "rate_days_needed": resupply.MINIMUM_WINDOW_DAYS,
         "status": b.status,
         "min_months_of_stock": band(b.point.min_months_of_stock),
         "max_months_of_stock": band(b.point.max_months_of_stock),

@@ -489,9 +489,16 @@ next action on anyone (design doc section 22).
       if (fold && !fold.open) { fold.open = true; }
       if (target.tagName === "SUMMARY" && target.parentNode.tagName === "DETAILS") { target.parentNode.open = true; }
       target.scrollIntoView({block: "start"});
+      return window.scrollY;
     }
-    openTo();
+    var landed = openTo();
     window.addEventListener("hashchange", openTo);
+    // Fonts and the bundles arrive after this runs and reflow the page above the
+    // target, which slid it back under the top bar: land again once they have,
+    // unless the reader has scrolled since.
+    window.addEventListener("load", function () {
+      if (landed !== undefined && window.scrollY === landed) { openTo(); }
+    });
   })();
 </script>
 {% else %}
