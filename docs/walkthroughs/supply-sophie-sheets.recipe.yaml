@@ -58,8 +58,8 @@ scenes:
     value: Enter
   - kind: wait_for
     target: css:.is-saved
-  - kind: scroll_to
-    target: css:#history-fold [data-testid=email-event]
+  - kind: scroll
+    value: '1740'
   - kind: hold
     seconds: 1.0
   - kind: snapshot
@@ -85,7 +85,7 @@ scenes:
   - kind: wait_for
     target: css:.is-saved
   - kind: hover
-    target: css:[data-testid=supplier-table] thead
+    target: css:[data-testid=supplier-row]:has-text('Kanem') td:first-child
   - kind: hold
     seconds: 1.0
   - kind: snapshot
