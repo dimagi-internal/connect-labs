@@ -692,7 +692,7 @@ CANOPY_AGENT_SLUG = env("CANOPY_AGENT_SLUG", default="ace")
 CANOPY_SIGNING_KEY = env("CANOPY_SIGNING_KEY", default="").replace("\\n", "\n")
 # Canopy acting AS the visitor at labs' MCP (the jwt-bearer grant, served by
 # the canopy SDK). The canopy client's id — the URL of its Client ID Metadata
-# Document, e.g. https://labs.connect.dimagi.com/canopy/oauth/client.json.
+# Document, e.g. https://canopy.dimagi.com/oauth/client.json.
 # Unset = the grant is off: no ID-JAG is issued, /o/token/ refuses the grant,
 # and nothing else changes. Needs LABS_PUBLIC_URL and CANOPY_SIGNING_KEY too.
 CANOPY_CLIENT_ID = env("CANOPY_CLIENT_ID", default="")

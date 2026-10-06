@@ -86,7 +86,7 @@
         },
         {
           "name": "CANOPY_BASE_URL",
-          "value": "https://labs.connect.dimagi.com/canopy"
+          "value": "https://canopy.dimagi.com"
         },
         {
           "name": "CANOPY_APP_NAME",
