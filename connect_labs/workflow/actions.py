@@ -96,6 +96,12 @@ def _workers_schema(item_properties: dict) -> dict:
 
 _PRIORITY = {"type": "string", "enum": ["low", "medium", "high"]}
 
+#: What a coaching preview on synthetic data says happens instead of a conversation.
+SYNTHETIC_NOTE = (
+    "Synthetic data: no message is sent; the task gets a sample conversation. "
+    "Set deliver_to to send a real test conversation to yourself."
+)
+
 #: The QA-redirect argument of ``start_ocs_outreach``: a staff member's own ConnectID
 #: username, to receive a worker's conversation instead of the worker.
 DELIVER_TO = "deliver_to"
@@ -398,10 +404,17 @@ def run_roster(wda, run, definition) -> dict[str, dict]:
     return roster
 
 
-def resolve_arguments(action: dict, arguments: Any, roster: dict[str, dict], *, user=None) -> dict:
+def resolve_arguments(action: dict, arguments: Any, roster: dict[str, dict], *, user=None, briefing=None) -> dict:
     """The action's defaults under the caller's arguments, validated against the
     type's schema and the run's roster, in canonical form. ``user`` is the person
-    the action runs for; ``deliver_to`` is refused unless they are Dimagi staff."""
+    the action runs for; ``deliver_to`` is refused unless they are Dimagi staff.
+    ``briefing`` (see ``briefing_source``) lets a coaching action brief each worker
+    from the run's grading."""
+    return _resolve(action, arguments, roster, user=user, briefing=briefing)[0]
+
+
+def _resolve(action: dict, arguments: Any, roster: dict[str, dict], *, user=None, briefing=None) -> tuple[dict, list]:
+    """``resolve_arguments``, plus the workers it left out: ``[{key, name, reason}]``."""
     import jsonschema
 
     from connect_labs.workflow.agent_sharing import split_worker_key
@@ -430,7 +443,9 @@ def resolve_arguments(action: dict, arguments: Any, roster: dict[str, dict], *, 
 
     merged.setdefault("priority", "medium")
     merged.setdefault("title", action["label"])
+    skipped: list[dict] = []
     if action["type"] == "start_ocs_outreach":
+        skipped = _brief_workers(merged, roster, briefing)
         missing = sorted(i["key"] for i in merged["workers"] if not (i.get("prompt") or merged.get("prompt")))
         if missing:
             raise ActionError("invalid", f"no prompt for {missing[:10]}: give `prompt`, or one on each item")
@@ -443,7 +458,85 @@ def resolve_arguments(action: dict, arguments: Any, roster: dict[str, dict], *, 
             from connect_labs.tasks.ai_sessions import SYNTHETIC_BOT
 
             merged["bot"] = SYNTHETIC_BOT
-    return merged
+    return merged, skipped
+
+
+#: The longest text one worker's conversation may open with (the item ``prompt`` schema).
+_PROMPT_MAX = 4000
+
+
+def _brief_workers(merged: dict, roster: dict[str, dict], briefing) -> list[dict]:
+    """Give each worker with no text of their own a briefing from the run's grading
+    (``coach_briefing.py``), the action's own ``prompt`` appended as the programme
+    team's note. Workers with nothing red or yellow to raise are taken out of the
+    run and returned, with the reason, for the preview to show.
+
+    Does nothing when every worker already has a prompt (so a commit of a preview's
+    own arguments never re-grades), or when the workflow is not an indicator report.
+    """
+    from connect_labs.workflow import coach_briefing
+
+    if briefing is None or all(i.get("prompt") for i in merged["workers"]):
+        return []
+    source = briefing()
+    if source is None:
+        return []
+    graded, programme = source
+    by_key = {f.get("key"): f for f in graded.get("byFLW") or []}
+    note = merged.get("prompt")
+    kept, skipped = [], []
+    for item in merged["workers"]:
+        if item.get("prompt"):
+            kept.append(item)
+            continue
+        who = roster[item["key"]]
+        row = by_key.get(item["key"])
+        topics = coach_briefing.coachable_topics(graded, row.get("ind") or {}) if row else []
+        if not topics:
+            reason = coach_briefing.SKIP_NOTHING_OFF_TARGET if row else coach_briefing.SKIP_NOT_GRADED
+            skipped.append({"key": item["key"], "name": who["name"], "reason": reason})
+            continue
+        text, used = coach_briefing.fit_briefing(
+            programme=programme,
+            worker=(row.get("name") or who["name"] or who["username"]),
+            topics=topics,
+            note=note,
+            limit=_PROMPT_MAX,
+        )
+        item["prompt"] = text
+        item.setdefault("indicators", [t["key"] for t in used])
+        kept.append(item)
+    merged["workers"] = kept
+    return skipped
+
+
+def briefing_source(user, wda, run, definition, *, opportunity_id=None, program_id=None, restricted=False):
+    """A lazy reader of the run's grading for ``_brief_workers``: ``(graded, programme
+    name)``, or None when the workflow is not an indicator report. Read only when a
+    worker needs a briefing; the scope defaults to the run's own."""
+    from connect_labs.workflow import coach_briefing, run_grading
+
+    if opportunity_id is None and program_id is None:
+        opportunity_id = getattr(run, "opportunity_id", None) or None
+        program_id = None if opportunity_id else getattr(run, "program_id", None)
+
+    def load():
+        if not run_grading.is_semantic_report(definition):
+            return None
+        try:
+            graded = run_grading.graded_for_run(
+                user, wda, run, opportunity_id=opportunity_id, program_id=program_id, restricted=restricted
+            )
+        except run_grading.NotGraded:
+            return None
+        except run_grading.GradingUnavailable as e:
+            raise ActionError(
+                "grading_unavailable",
+                f"Could not read this run's indicators to brief the coach: {e.message}. Try again shortly.",
+            ) from e
+        return graded, coach_briefing.programme_name(graded, definition)
+
+    return load
 
 
 def _check_deliver_to(user, arguments: dict) -> None:
@@ -488,7 +581,7 @@ def _digest(user_id: int, run_id: int, key: str, arguments: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
-def preview(user, *, wda, run, definition, key: str, arguments: Any, request=None) -> dict:
+def preview(user, *, wda, run, definition, key: str, arguments: Any, request=None, briefing=None) -> dict:
     """What running ``key`` with ``arguments`` would do, and the token to confirm it.
 
     ``needs`` names what must be settled first — ``bot`` (choose one of
@@ -499,14 +592,23 @@ def preview(user, *, wda, run, definition, key: str, arguments: Any, request=Non
 
     action = find_action(definition, key)
     roster = run_roster(wda, run, definition)
-    args = resolve_arguments(action, arguments, roster, user=user)
+    if briefing is None:
+        briefing = briefing_source(user, wda, run, definition)
+    args, skipped = _resolve(action, arguments, roster, user=user, briefing=briefing)
 
     needs: list[str] = []
     out: dict[str, Any] = {}
     if ACTION_TYPES[action["type"]].uses_ocs:
         if args.get("bot") == SYNTHETIC_BOT:
+            # Synthetic data never reaches OCS. Name the bot the workflow DECLARES --
+            # the one a real run would use -- never the sample stand-in, and say plainly
+            # what happens instead.
             out["synthetic"] = True
-            out["bot"] = {"id": SYNTHETIC_BOT, "name": "Sample coaching conversation (synthetic data)"}
+            out["synthetic_note"] = SYNTHETIC_NOTE
+            declared = (arguments.get("bot") if isinstance(arguments, dict) else None) or action["defaults"].get("bot")
+            # Named by its id: a synthetic preview never asks OCS anything.
+            if declared and declared != SYNTHETIC_BOT:
+                out["bot"] = {"id": declared, "name": declared}
         else:
             bots = _ocs_bots(user, request)
             if bots is None:
@@ -537,6 +639,18 @@ def preview(user, *, wda, run, definition, key: str, arguments: Any, request=Non
 
     n = len(workers)
     summary = f"{action['label']} for {n} worker{'s' if n != 1 else ''}"
+    if skipped:
+        summary += f" ({len(skipped)} left out: nothing to coach)"
+    if not workers:
+        # Every worker asked for had nothing red or yellow: there is nothing to run.
+        needs.append("workers")
+        summary = f"{action['label']}: nothing to coach -- no indicator is off target or on watch"
+    if action["type"] == "start_ocs_outreach" and len(workers) == 1:
+        from connect_labs.utils.dimagi_user import is_dimagi_user
+
+        # Whether the page may offer "send to me instead": the QA redirect is for
+        # Dimagi staff, one worker at a time (``_check_deliver_to``).
+        out["qa_redirect"] = is_dimagi_user(user)
     if args.get(DELIVER_TO):
         out[DELIVER_TO] = args[DELIVER_TO]
         summary += f" -- QA: the conversation goes to {args[DELIVER_TO]}, not to the worker"
@@ -548,6 +662,7 @@ def preview(user, *, wda, run, definition, key: str, arguments: Any, request=Non
         "workers": workers,
         "arguments": args,
         "needs": needs,
+        **({"skipped": skipped} if skipped else {}),
         **out,
     }
     if not needs:
@@ -559,7 +674,18 @@ def preview(user, *, wda, run, definition, key: str, arguments: Any, request=Non
 
 
 def commit(
-    user, *, wda, run, definition, key: str, arguments: Any, confirm: str, via: str, actor: str = "", request=None
+    user,
+    *,
+    wda,
+    run,
+    definition,
+    key: str,
+    arguments: Any,
+    confirm: str,
+    via: str,
+    actor: str = "",
+    request=None,
+    briefing=None,
 ):
     """Record and queue the action a preview described. ``arguments`` must be what
     that preview returned as ``arguments`` (or resolve to it); ``confirm`` is its
@@ -570,7 +696,11 @@ def commit(
     from connect_labs.workflow.tasks import execute_workflow_action
 
     action = find_action(definition, key)
-    args = resolve_arguments(action, arguments, run_roster(wda, run, definition), user=user)
+    if briefing is None:
+        briefing = briefing_source(user, wda, run, definition)
+    args = resolve_arguments(action, arguments, run_roster(wda, run, definition), user=user, briefing=briefing)
+    if not args["workers"]:
+        raise ActionError("nothing_to_do", "None of these workers has an indicator off target or on watch.")
     try:
         signed = signing.loads(confirm or "", salt=_CONFIRM_SALT, max_age=CONFIRM_MAX_AGE_SECONDS)
     except signing.SignatureExpired as e:
