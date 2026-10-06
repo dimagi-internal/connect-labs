@@ -63,51 +63,45 @@
   {% endif %}
 
   {% if grid and grid.quotes %}
-  <section class="border-brand-border-light overflow-hidden rounded-lg border bg-white" aria-label="Quotes side by side">
-    <div class="max-w-full overflow-x-auto" tabindex="0" role="region" aria-label="Comparison, scrolls sideways">
-      <table class="w-full table-fixed text-sm {% if grid.quotes|length > 3 %}min-w-[1080px]{% elif grid.quotes|length == 3 %}min-w-[860px]{% else %}min-w-[640px]{% endif %}" data-testid="comparison-grid">
-        <thead class="border-b border-gray-200">
-          <tr>
-            <th scope="col" class="w-52 px-5 py-2.5 text-left align-top text-xs font-normal text-gray-600">Fact</th>
-            {% for q in grid.quotes %}
-            <th scope="col" data-quote-id="{{ q.quote_id }}" data-testid="grid-quote" class="border-l border-gray-100 px-4 py-2.5 text-left align-top font-normal">
-              <div class="flex flex-col gap-1">
-                <a href="{{ q.href }}" class="text-brand-deep-purple text-base font-semibold hover:underline">{{ q.name }}</a>
-                {% if q.item %}<span class="text-xs text-gray-600">{{ q.item }}</span>{% endif %}
-                <span class="flex flex-wrap gap-1">{% for chip in q.chips %}<span class="status-chip status-chip--{{ chip.tone }}"{% if forloop.first %} data-testid="grid-status"{% endif %}>{{ chip.label }}</span>{% endfor %}</span>
-              </div>
-            </th>
-            {% endfor %}
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-100">
+  {% comment %}A quote to a row, a fact to a column (2026-10-06): the quotes are the records being
+  compared, so each reads across like a line of a sheet, its supplier and status held at the left
+  while the facts scroll. Each column's heading says where its values come from. The landed total
+  leads, beside the name; the moves (ours, then the supplier's) close the row.{% endcomment %}
+  <section class="sheet-wrap" tabindex="0" role="region" aria-label="Quotes side by side, scrolls sideways">
+    <table class="sheet" data-testid="comparison-grid">
+      <thead>
+        <tr>
+          <th scope="col" class="sticky left-0 z-[2] min-w-[12rem]">Supplier</th>
           {% for r in grid.rows %}
-          <tr data-fact="{{ r.key }}"{% if r.total %} class="bg-stone-50 text-base"{% endif %}>
-            <th scope="row" class="px-5 py-2 text-left align-top text-sm {% if r.total %}font-semibold text-gray-900{% else %}font-normal text-gray-600{% endif %}">{{ r.label }}<div class="text-xs font-normal text-gray-600">{{ r.src_label }}</div></th>
-            {% for c in r.cells %}
-            <td class="border-l border-gray-100 px-4 py-2 align-top{% if r.key == "price" or r.key == "landed" or r.key == "fx" %} tabular-nums{% endif %}{% if r.total %} font-semibold text-gray-900{% endif %}" data-testid="grid-cell" data-quote-id="{{ c.quote_id }}"{% if c.gap %} data-gap{% endif %}{% if c.edit %} {% edit_cell c.edit.0 c.edit.1 c.edit.2 c.edit.3 %}{% endif %}>{% if c.gap %}<span class="{% if c.owner|owner_tone == 'ours' %}text-message-warning-text{% else %}text-gray-900{% endif %} font-medium"{% if c.why %} title="{{ c.why }}"{% endif %}>{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}</span>{% if c.owner %} <span class="status-chip status-chip--{{ c.owner|owner_tone }}" data-testid="gap-owner">{{ c.owner|supplies }}</span>{% endif %}{% elif c.blocked %}<span class="text-sm font-normal text-gray-600" data-testid="landed-blocked">{{ c.v }}</span>{% elif c.mute %}<span class="text-gray-600">{{ c.v }}</span>{% else %}{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}{% if c.qualifier %} <span class="text-message-warning-text text-xs font-medium" data-testid="landed-qualifier">{{ c.qualifier }}</span>{% endif %}{% if c.unconfirmed %} <span class="status-chip status-chip--ours font-medium" data-testid="landed-unconfirmed">unconfirmed</span>{% endif %}{% if c.pending %} <span class="status-chip status-chip--ours" data-testid="waiver-pending">{{ c.pending }} · to do</span>{% endif %}{% endif %}</td>
-            {% endfor %}
-          </tr>
-          {% if r.total and not supply_as_of %}
-          {% comment %}The next steps, split by whose they are: ours, then the supplier's. Open facts only; the award is the fold below.
-          The tender-wide duty terms are settled in the line above the grid; a column points there.{% endcomment %}
-          <tr data-testid="grid-actions" data-whose="us">
-            <th scope="row" class="px-5 py-1.5 text-left align-top text-sm font-normal text-gray-600">To do</th>
-            {% for q in grid.quotes %}
-            <td class="border-l border-gray-100 px-4 py-1.5 align-top"><div class="flex flex-wrap items-start gap-1.5">{% for a in q.ours_actions %}{% if a.terms %}{% ifchanged a.terms %}<a class="text-xs text-brand-indigo hover:underline" data-testid="grid-terms-link" title="Once, for the whole tender, on the import duty line" href="#duty-terms">{{ a.label }}</a>{% endifchanged %}{% else %}<a class="button button-sm outline-style" data-testid="grid-action" data-owner="{{ a.owner }}" href="{{ a.href }}">{{ a.label }}</a>{% endif %}{% empty %}<span class="text-gray-600" data-testid="grid-no-move">none</span>{% endfor %}</div></td>
-            {% endfor %}
-          </tr>
-          <tr data-testid="grid-actions-theirs" data-whose="suppliers">
-            <th scope="row" class="px-5 py-1.5 text-left align-top text-sm font-normal text-gray-600">Waiting on supplier</th>
-            {% for q in grid.quotes %}
-            <td class="border-l border-gray-100 px-4 py-1.5 align-top"><div class="flex flex-wrap items-start gap-1.5">{% for a in q.theirs_actions %}<a class="button button-sm outline-style" data-testid="grid-action" data-owner="{{ a.owner }}" href="{{ a.href }}">{{ a.label }}</a>{% empty %}<span class="text-gray-600" data-testid="grid-no-move">none</span>{% endfor %}</div></td>
-            {% endfor %}
-          </tr>
-          {% endif %}
+          <th scope="col" data-fact="{{ r.key }}" class="align-bottom{% if r.total %} text-gray-900{% endif %}">{{ r.label }}<span class="sub normal-case">{{ r.src_label }}</span></th>
           {% endfor %}
-        </tbody>
-      </table>
-    </div>
+          {% if not supply_as_of %}
+          <th scope="col" class="align-bottom" data-testid="grid-actions-head">To do</th>
+          <th scope="col" class="align-bottom">Waiting on supplier</th>
+          {% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for q in grid.quotes %}
+        <tr data-quote-id="{{ q.quote_id }}" data-testid="grid-quote-row">
+          <th scope="row" data-quote-id="{{ q.quote_id }}" data-testid="grid-quote" class="sticky left-0 z-[1] bg-white text-left align-top font-normal">
+            <a href="{{ q.href }}" class="text-brand-deep-purple font-semibold hover:underline">{{ q.name }}</a>
+            {% if q.item %}<span class="sub">{{ q.item }}</span>{% endif %}
+            <span class="mt-1 flex flex-wrap gap-1">{% for chip in q.chips %}<span class="status-chip status-chip--{{ chip.tone }}"{% if forloop.first %} data-testid="grid-status"{% endif %}>{{ chip.label }}</span>{% endfor %}</span>
+          </th>
+          {% for c in q.cells %}
+          <td class="align-top{% if c.fact == "price" or c.fact == "landed" or c.fact == "fx" %} tabular-nums{% endif %}{% if c.fact in "price landed term imports" %} whitespace-nowrap{% else %} min-w-[9.5rem]{% endif %}{% if c.fact == "landed" %} bg-stone-50 font-semibold text-gray-900{% endif %}" data-testid="grid-cell" data-fact="{{ c.fact }}" data-quote-id="{{ c.quote_id }}"{% if c.gap %} data-gap{% endif %}{% if c.edit %} {% edit_cell c.edit.0 c.edit.1 c.edit.2 c.edit.3 %}{% endif %}>{% if c.gap %}<span class="{% if c.owner|owner_tone == 'ours' %}text-message-warning-text{% else %}text-gray-900{% endif %} font-medium"{% if c.why %} title="{{ c.why }}"{% endif %}>{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}</span>{% if c.owner %} <span class="status-chip status-chip--{{ c.owner|owner_tone }}" data-testid="gap-owner">{{ c.owner|supplies }}</span>{% endif %}{% elif c.blocked %}<span class="text-sm font-normal text-gray-600" data-testid="landed-blocked">{{ c.v }}</span>{% elif c.mute %}<span class="font-normal text-gray-600">{{ c.v }}</span>{% else %}{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}{% if c.qualifier %} <span class="text-message-warning-text text-xs font-medium" data-testid="landed-qualifier">{{ c.qualifier }}</span>{% endif %}{% if c.unconfirmed %} <span class="status-chip status-chip--ours font-medium" data-testid="landed-unconfirmed">unconfirmed</span>{% endif %}{% if c.pending %} <span class="status-chip status-chip--ours" data-testid="waiver-pending">{{ c.pending }} · to do</span>{% endif %}{% endif %}</td>
+          {% endfor %}
+          {% if not supply_as_of %}
+          {% comment %}The next steps, split by whose they are: ours, then the supplier's. Open facts only;
+          the award is the fold below. The tender-wide duty terms are settled in the line above the grid.{% endcomment %}
+          <td class="min-w-[10rem] align-top" data-testid="grid-actions" data-whose="us"><div class="flex flex-wrap items-start gap-1.5">{% for a in q.ours_actions %}{% if a.terms %}{% ifchanged a.terms %}<a class="text-xs text-brand-indigo hover:underline" data-testid="grid-terms-link" title="Once, for the whole tender, on the import duty line" href="#duty-terms">{{ a.label }}</a>{% endifchanged %}{% else %}<a class="button button-sm outline-style" data-testid="grid-action" data-owner="{{ a.owner }}" href="{{ a.href }}">{{ a.label }}</a>{% endif %}{% empty %}<span class="text-gray-600" data-testid="grid-no-move">none</span>{% endfor %}</div></td>
+          <td class="min-w-[9rem] align-top" data-testid="grid-actions-theirs" data-whose="suppliers"><div class="flex flex-wrap items-start gap-1.5">{% for a in q.theirs_actions %}<a class="button button-sm outline-style" data-testid="grid-action" data-owner="{{ a.owner }}" href="{{ a.href }}">{{ a.label }}</a>{% empty %}<span class="text-gray-600" data-testid="grid-no-move">none</span>{% endfor %}</div></td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </section>
   {% elif comparison %}
   <div class="card_bg border-brand-border-light border text-gray-600">No live quote on this product yet.</div>

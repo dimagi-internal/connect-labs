@@ -889,6 +889,11 @@ def comparison_grid(
     for key, *_ in facts:
         for column, cell in zip(columns, cells[key]):
             cell["quote_id"] = column["quote_id"]
+            cell["fact"] = key
+    # The page reads it the other way round: a quote to a row, a fact to a column. Each
+    # quote carries its own cells, in the facts' order, for its row.
+    for index, column in enumerate(columns):
+        column["cells"] = [cells[key][index] for key, *_ in facts]
     # Quotes we import are shown without clearing beside quotes the supplier imports:
     # their totals are not like for like until the clearing estimate is recorded.
     return {

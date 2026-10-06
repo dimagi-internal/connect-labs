@@ -72,8 +72,8 @@ def _page(client, tender_id, **params):
 
 
 def _fact(body, key):
-    """One fact's row of the comparison grid."""
-    return re.search(rf'<tr data-fact="{key}".*?</tr>', body, re.S).group(0)
+    """One fact's column of the comparison grid: its cells, a quote to a row (2026-10-06)."""
+    return "".join(re.findall(rf'<td [^>]*data-fact="{key}"[^>]*>.*?</td>', body, re.S))
 
 
 def _card(body, quote_id):
