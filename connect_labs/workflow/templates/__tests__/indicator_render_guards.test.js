@@ -405,10 +405,205 @@ describe('the worker review', () => {
   test('shades each gap separately, between its two visits', async () => {
     const { el, firstCase } = await mountWorker();
     await click(byText(el, 'td', firstCase.entity_id).closest('tr'));
-    const gaps = Array.from(el.querySelectorAll('rect[data-gap]'));
+    const gaps = Array.from(
+      el.querySelectorAll('rect[data-gap]:not([data-gap-open])'),
+    );
     // 20 Jul -> 10 Aug (21 days) and 17 Aug -> 31 Aug (14 days).
     expect(gaps.map((g) => g.getAttribute('data-gap'))).toEqual(['21', '14']);
     expect(gapsOverVisits(el)).toEqual([]);
+  });
+});
+
+// ── What the second promotion adds (templates 7712 / 7715 / 7718) ───────────
+
+describe('the programme report, second promotion', () => {
+  test('a partner with one opportunity names it instead of a one-row table', async () => {
+    const el = await mount('indicator_report_render.js', {
+      url: '/labs/workflow/1/run/?program_id=1&run_id=11',
+      props: programmeProps(),
+      routes: {},
+    });
+    await click(byText(el, 'div', 'Partner A').closest('tr'));
+    expect(el.textContent).toContain('1 opportunity: Partner A');
+    expect(
+      Array.from(el.querySelectorAll('h2, h3, div')).some(
+        (e) => e.textContent.trim() === 'Opportunities' && !e.children.length,
+      ),
+    ).toBe(false);
+    expect(allGuards(el)).toEqual(NONE);
+  });
+
+  test('a row subline the same on every row is dropped; the header has no "Report of" chip', async () => {
+    const el = await mount('indicator_report_render.js', {
+      url: '/labs/workflow/1/run/?program_id=1&run_id=11',
+      props: programmeProps(),
+      routes: {},
+    });
+    // Every fixture partner runs one opportunity with three workers.
+    expect(el.textContent).not.toMatch(/1 opportunity · 3 \w+/);
+    expect(el.textContent).not.toContain('Report of');
+  });
+
+  test('a rate cell states the counts behind it', async () => {
+    const el = await mount('indicator_report_render.js', {
+      url: '/labs/workflow/1/run/?program_id=1&run_id=11',
+      props: programmeProps(),
+      routes: {},
+    });
+    const cell = byText(el, 'td', '99.2%');
+    // Partner B, meeting regularity: 0.9919 of 124.
+    expect(cell.getAttribute('title')).toBe('123 of 124');
+  });
+
+  test('headline tiles: a value bar with a target tick, and the direction chip', async () => {
+    const el = await mount('indicator_report_render.js', {
+      url: '/labs/workflow/1/run/?program_id=1&run_id=11',
+      props: programmeProps(),
+      routes: {},
+    });
+    // Two targeted rate tiles (meeting regularity 80%, the other 75%).
+    expect(el.querySelectorAll('[data-target-tick]').length).toBe(2);
+    expect(el.textContent).toContain('lower is better');
+    // A tile's label opens the indicator's definition.
+    const before = el.querySelectorAll('[role="dialog"]').length;
+    const label = byText(el, 'button', 'Meeting regularity');
+    expect(label).toBeTruthy();
+    await click(label);
+    expect(el.querySelectorAll('[role="dialog"]').length).toBeGreaterThan(
+      before,
+    );
+  });
+});
+
+describe('the opportunity report benchmarks, second promotion', () => {
+  test('yours carries its signed gap to target, in points', async () => {
+    const el = await mount('indicator_report_render.js', {
+      url: '/labs/workflow/2/run/?opportunity_id=10097&run_id=12',
+      props: oppProps(),
+      routes: { '/labs/benchmarks/api/': benchmarkPayload() },
+    });
+    await click(byText(el, 'button', 'Benchmarks'));
+    const gaps = Array.from(el.querySelectorAll('[data-target-gap]')).map(
+      (e) => e.textContent,
+    );
+    // Partner A's meeting regularity, 72.0% against a target of 80%.
+    expect(gaps).toContain('−8.0 points to target');
+    expect(el.textContent).not.toContain('Report of');
+    expect(allGuards(el)).toEqual(NONE);
+  });
+});
+
+describe('the worker review, second promotion', () => {
+  test('the silence since the last visit is a hatched open gap, counted in the header', async () => {
+    const { el, firstCase } = await mountWorker();
+    await click(byText(el, 'td', firstCase.entity_id).closest('tr'));
+    // Last visit 7 Sep, report as of 4 Oct: 27 days and still open.
+    const open = el.querySelector('rect[data-gap-open]');
+    expect(open.getAttribute('data-gap')).toBe('27');
+    expect(el.textContent).toContain('still open (no visit since)');
+    expect(el.textContent).toContain('no visit for over 7 days');
+    expect(el.textContent).toContain(
+      '7 visits · 1 flagged · 3 gaps over 7 days',
+    );
+    expect(el.textContent).toContain('as of 4 Oct 2026');
+    expect(gapsOverVisits(el)).toEqual([]);
+  });
+
+  test('every gap bound is labelled on the date axis', async () => {
+    const { el, firstCase } = await mountWorker();
+    await click(byText(el, 'td', firstCase.entity_id).closest('tr'));
+    const labels = Array.from(el.querySelectorAll('svg text')).map(
+      (t) => t.textContent,
+    );
+    ['6 Jul', '20 Jul', '10 Aug', '17 Aug', '31 Aug', '7 Sep'].forEach(
+      function (d) {
+        expect(labels).toContain(d);
+      },
+    );
+  });
+
+  test('days since the previous visit, the over-threshold ones marked', async () => {
+    const { el, firstCase } = await mountWorker();
+    await click(byText(el, 'td', firstCase.entity_id).closest('tr'));
+    expect(byText(el, 'th', 'Days since previous')).toBeTruthy();
+    const over = Array.from(el.querySelectorAll('[data-over-gap]')).map(
+      (e) => e.textContent,
+    );
+    expect(over).toEqual(['21', '14']);
+  });
+
+  test('the gap threshold follows config.stale_after_days when the review has one', async () => {
+    const firstCase = PAYLOAD.cases[WORKER.rows[0]];
+    const props = workerProps();
+    props.definition.config.stale_after_days = 14;
+    const el = await mount('indicator_worker_review_render.js', {
+      url:
+        '/labs/workflow/3/run/?program_id=1&flw=' +
+        encodeURIComponent(WORKER.key) +
+        '&source_run=11',
+      props,
+      routes: {
+        '/snapshot/preview/': {
+          snapshot: { state: { snapshot: PAYLOAD } },
+          source: 'stored',
+        },
+        '/pipeline-rows/': { rows: visitRows(firstCase.entity_id) },
+        '/visit-images/': { visit_images: {} },
+      },
+    });
+    await click(byText(el, 'td', firstCase.entity_id).closest('tr'));
+    const closed = Array.from(
+      el.querySelectorAll('rect[data-gap]:not([data-gap-open])'),
+    ).map((g) => g.getAttribute('data-gap'));
+    // Only the 21-day gap is over 14 days; the 14-day one is not.
+    expect(closed).toEqual(['21']);
+    expect(el.textContent).toContain('2 gaps over 14 days');
+  });
+
+  test('indicators sit under category rows with the direction said once', async () => {
+    const { el } = await mountWorker();
+    // A category whose indicators all point one way carries one chip.
+    const chips = Array.from(el.querySelectorAll('td span')).filter(
+      (s) => s.textContent === 'lower is better',
+    );
+    expect(chips.length).toBeGreaterThan(0);
+    expect(chips[0].closest('td').getAttribute('colspan')).toBeTruthy();
+  });
+
+  test('an indicator name opens its registry definition', async () => {
+    const { el } = await mountWorker();
+    window.fetch = globalThis.fetch;
+    const seen = [];
+    const orig = window.fetch;
+    globalThis.fetch = window.fetch = async function (u) {
+      seen.push(String(u));
+      if (String(u).indexOf('/indicator-definitions/') >= 0)
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            indicators: [{ id: 'SF_P1', title: 'Meeting regularity' }],
+          }),
+        };
+      return orig(u);
+    };
+    await click(byText(el, 'button', 'Meeting regularity'));
+    expect(
+      seen.some(
+        (u) =>
+          u.indexOf('/labs/workflow/api/1/indicator-definitions/') >= 0 &&
+          u.indexOf('scope=flw') >= 0,
+      ),
+    ).toBe(true);
+  });
+
+  test('the header names the partner, and drops a caseload band every worker shares', async () => {
+    const { el } = await mountWorker();
+    expect(el.textContent).toContain('Partner A · ');
+    expect(el.textContent).not.toContain('opportunity 10097');
+    // Every fixture worker is in the same caseload band.
+    expect(el.querySelector('[data-caseload-tip]')).toBeNull();
+    expect(el.textContent).toContain('figures as of 4 Oct 2026');
   });
 });
 
