@@ -3,8 +3,9 @@
 `tender_status` builds the top of a tender's page -- header, the six-step
 stage bar, four tiles, one row per supplier, the On us / On suppliers lists
 (from `moves.py`, nothing else), the terms and a related earlier order.
-`comparison_grid` builds the comparison: one column per quote, one row per
-fact, with a gap shown as a gap ("not stated") rather than explained.
+`comparison_grid` builds the comparison: one row per quote, cheapest landed
+price first, one column per fact, with a gap shown as a gap ("not stated")
+rather than explained.
 
 Every fact carries where it came from (`src`): "person" (recorded by
 someone), "ai" (from an email, recorded through an AI) or "calc" (worked out
@@ -678,15 +679,42 @@ def comparison_grid(
     from connect_labs.supply_chain.procurement.services.pricing import buyer_imports
     from connect_labs.supply_chain.records import freight_and_duties_for_incoterm
 
-    # One column order on every visit, by supplier: a quote turning comparable keeps its place.
+    line_qty, line_unit = _tender_line(tender)
+    # Cheapest first: the quotes with a landed price, lowest first, then the rest by supplier.
+    # The landed price is the one the Landed column shows, so the order is the column's order.
+    priced = {}
+    for row in [*comparison.get("comparable", []), *comparison.get("blocked", [])]:
+        if row.get("is_comparable") or row.get("quote_id") in awarded:
+            amount = _landed_amount(row, line_qty)
+            if amount is not None:
+                priced[row.get("quote_id")] = amount
     rows = sorted(
         [*comparison.get("comparable", []), *comparison.get("blocked", [])],
-        key=lambda r: ((r.get("supplier_name") or "").lower(), r.get("quote_id") or 0),
+        key=lambda r: (
+            r.get("quote_id") not in priced,
+            priced.get(r.get("quote_id"), Decimal(0)),
+            (r.get("supplier_name") or "").lower(),
+            r.get("quote_id") or 0,
+        ),
     )
+    # One comparable price is not a ranking: "lowest" and the difference need two.
+    lowest = min(priced.values()) if len(priced) > 1 else None
     columns, cells = [], {
-        k: [] for k in ("price", "pack", "term", "imports", "freight", "clearing", "duty", "fx", "spec", "landed")
+        k: []
+        for k in (
+            "price",
+            "pack",
+            "term",
+            "imports",
+            "freight",
+            "clearing",
+            "duty",
+            "fx",
+            "spec",
+            "landed",
+            "vs_lowest",
+        )
     }
-    line_qty, line_unit = _tender_line(tender)
     per_unit = f" / {unit_noun(line_unit)}" if line_unit else ""
     tender_url = reverse("supply_chain:procurement_tender_detail", args=[tender.pk])
     for row in rows:
@@ -751,8 +779,8 @@ def comparison_grid(
                         "owner": supplier_owner,
                     }
                 )
-            # No Award here: the next steps are open facts only. The award is the
-            # fold under the grid, one per comparable quote -- the single place it is offered.
+            # No Award here: the next steps are open facts only. The award is ONE block under
+            # the grid, which each comparable quote's Award link opens with that quote chosen.
         if not chips:
             chips.append({"label": "Not comparable", "tone": NEUTRAL})
         columns.append(
@@ -769,6 +797,8 @@ def comparison_grid(
                 "blocked_by_terms": _ROUND_DUTY in gaps,
                 "href": reverse("supply_chain:procurement_quote_detail", args=[row["quote_id"]]),
                 "comparable": bool(row.get("is_comparable")),
+                # Offered on the one award block below the grid; an awarded quote is not offered again.
+                "awardable": bool(row.get("is_comparable")) and row["quote_id"] not in awarded,
             }
         )
 
@@ -785,11 +815,12 @@ def comparison_grid(
         def blank(words="—"):
             return {"v": words, "gap": False, "mute": True, "src": ""}
 
-        cells["price"].append(
-            fact((row.get("as_quoted") or "").replace(" per ", " / "), src_of(*PRICE_FIELDS))
-            if row.get("as_quoted")
-            else gap("no price")
-        )
+        if row.get("as_quoted"):
+            # The amount on the line, what it is per beneath it: the column stays as narrow as a figure.
+            amount, _, per = row["as_quoted"].partition(" per ")
+            cells["price"].append({**fact(amount, src_of(*PRICE_FIELDS)), "per": f"per {per}" if per else ""})
+        else:
+            cells["price"].append(gap("no price"))
         pack_label = next((g for g in gaps if g.endswith(pack_gap)), None)
         if pack_label:
             cells["pack"].append(gap(f"{pack_label}: not stated", label=pack_label))
@@ -802,14 +833,13 @@ def comparison_grid(
         cells["term"].append(
             fact(quote.incoterm.strip(), src_of(*TERM_FIELDS)) if (quote.incoterm or "").strip() else gap()
         )
+        # Who imports follows from the term, so it reads under the term, in the same cell.
         if quote.delivery_mode == "pickup":
-            cells["imports"].append(fact("Us (we collect)", CALC))
+            cells["imports"].append(fact("we collect", CALC))
         elif quote.incoterm or quote.duties_basis in ("included", "excluded"):
-            term_code = ((quote.incoterm or "").split() or [""])[0].upper()
-            who = "Us" if buyer_imports(quote) else "Supplier"
-            cells["imports"].append(fact(f"{who} · {term_code}" if term_code else who, CALC))
+            cells["imports"].append(fact("we import" if buyer_imports(quote) else "supplier imports", CALC))
         else:
-            cells["imports"].append(gap("not known"))
+            cells["imports"].append(gap("importer not known"))
         freight_basis = quote.freight_basis
         source = src_of("freight_basis")
         if freight_basis not in ("included", "excluded"):
@@ -905,6 +935,8 @@ def comparison_grid(
             )
         elif isinstance(landed, dict) and landed.get("amount") not in (None, "") and not landed.get("unconfirmed"):
             figure = fact(f"{landed.get('currency') or 'USD'} {money_digits(landed['amount'])}", CALC)
+            if lowest is not None and priced.get(row["quote_id"]) == lowest:
+                figure["lowest"] = True
             if row.get("clearing") == "open":
                 figure["qualifier"] = "excl. clearing"
             # Nil duty on a waiver no document on file shows: the order's own mark, pricing.relief_unevidenced.
@@ -912,8 +944,18 @@ def comparison_grid(
                 figure["unconfirmed"] = True
             figure["open"] = [{"label": _gap_word(g), "owner": gap_owner(g)} for g in quote_gaps]
             cells["landed"].append(figure)
+            columns[-1]["landed"] = figure["v"]
         else:
             cells["landed"].append(blank())
+        # How far above the lowest landed price, per the same unit: the gap the award has to justify.
+        amount = priced.get(row["quote_id"])
+        if lowest is None or amount is None:
+            cells["vs_lowest"].append(blank())
+        elif amount == lowest:
+            cells["vs_lowest"].append(blank())
+        else:
+            currency = (landed.get("currency") if isinstance(landed, dict) else None) or "USD"
+            cells["vs_lowest"].append(fact(f"+ {currency} {money_digits(amount - lowest)}", CALC))
         spec = row.get("specification") or {}
         if not spec:
             cells["spec"].append(blank())
@@ -954,19 +996,25 @@ def comparison_grid(
         ("landed", f"Landed per {pack_label}", "calculated"),
         ("price", "Quoted price", "as quoted"),
         ("pack", "Pack", "as quoted"),
-        ("term", "Delivery term", "as quoted"),
-        ("imports", "Who imports", "from the term"),
+        ("term", "Delivery term", "as quoted · who imports"),
         ("freight", "Freight", "quote or term"),
         ("clearing", "Clearing & forwarding", "our estimate"),
         ("duty", "Import duty", "tender terms"),
         ("fx", "Exchange rate", "recorded by us"),
-        ("spec", "Specification", "checked"),
     ]
+    if lowest is not None:
+        facts.insert(1, ("vs_lowest", "Above lowest", f"per {pack_label}"))
     # Each cell names its quote, so a page (or a recorder) can find one quote's fact.
-    for key, *_ in facts:
+    for key in [*(k for k, *_ in facts), "spec", "imports"]:
         for column, cell in zip(columns, cells[key]):
             cell["quote_id"] = column["quote_id"]
             cell["fact"] = key
+    # The specification check is one verdict per quote, not a figure beside the others:
+    # it rides on the quote's own cell, with its status, not as a column of its own.
+    for column, cell in zip(columns, cells["spec"]):
+        column["spec"] = _spec_chip(cell)
+    for term, imports in zip(cells["term"], cells["imports"]):
+        term["imports"] = imports
     # The page reads it the other way round: a quote to a row, a fact to a column. Each
     # quote carries its own cells, in the facts' order, for its row.
     for index, column in enumerate(columns):
@@ -993,6 +1041,35 @@ def _tender_line(tender) -> tuple:
     except (InvalidOperation, TypeError, ValueError):
         return None, None
     return (quantity, lines[0].get("quantity_unit") or "") if quantity > 0 else (None, None)
+
+
+def _spec_chip(cell) -> dict | None:
+    """A quote's specification check as one chip: "spec met · 3 of 3", or what fails, by whose it is."""
+    if not cell or cell.get("mute"):
+        return None
+    if not cell.get("gap"):
+        met = cell["v"].rsplit(" (", 1)
+        count = met[1].removesuffix(" met)") if len(met) == 2 and met[1].endswith(" met)") else ""
+        return {"label": f"spec met · {count}" if count else "spec met", "tone": PRIMARY, "detail": cell["v"]}
+    return {
+        "label": f"spec: {cell['v']}" if cell.get("v") else "spec not met",
+        "tone": OURS if cell.get("owner") in (rules.US, rules.TO_ASK) else THEIRS,
+        "detail": cell.get("why") or "",
+        "owner": cell.get("owner") or "",
+    }
+
+
+def _landed_amount(row, quantity):
+    """The landed price the grid's Landed column shows for a comparison row, as a Decimal; None without one."""
+    landed = _landed_per_unit(row, quantity) if quantity else {}
+    if not landed:
+        landed = (row.get("figures") or {}).get("usd_per_pack_normalized") or {}
+    if not isinstance(landed, dict) or landed.get("unconfirmed") or landed.get("amount") in (None, ""):
+        return None
+    try:
+        return Decimal(str(landed["amount"]))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
 
 
 def _landed_per_unit(row, quantity) -> dict:
