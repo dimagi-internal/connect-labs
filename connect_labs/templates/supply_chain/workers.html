@@ -81,7 +81,7 @@ the worker reports that no store recorded is said on the worker's own row.
                   <div class="mt-0.5">{% include 'supply_chain/_stock_band.html' with status=row.band %}</div>
                 </td>
                 <td class="px-4 py-2 align-top tabular-nums">
-                  {{ row.days_to_stockout|days_text }}
+                  {{ row|stockout_text }}
                   {% for note in row|stockout_notes %}<div class="text-xs text-gray-600 mt-0.5" data-testid="stockout-note">{{ note }}</div>{% endfor %}
                 </td>
                 <td class="px-4 py-2 align-top tabular-nums">

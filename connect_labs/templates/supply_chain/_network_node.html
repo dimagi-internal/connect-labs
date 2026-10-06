@@ -31,7 +31,8 @@ works, not a stock-out. The red alarm stays for points meant to hold stock.
       {% if node.passes_on %}
         <span class="text-xs text-gray-600" data-testid="passes-on">passes stock on</span>
       {% else %}
-        <span class="text-sm text-gray-600">{{ node.stock.months_of_stock|months_text }}</span>
+        <span class="text-sm text-gray-600" data-testid="cover">{{ node.stock|cover_text }}</span>
+        {% for note in node.stock|cover_notes %}<span class="text-xs text-gray-600" data-testid="cover-note">{{ note }}</span>{% endfor %}
         {% include 'supply_chain/_stock_band.html' with status=node.band %}
       {% endif %}
       <span class="text-xs text-gray-600">{% if node.stock.reported_on %}counted {{ node.stock.reported_on|day }}{% else %}never counted{% endif %}</span>
@@ -51,7 +52,7 @@ works, not a stock-out. The red alarm stays for points meant to hold stock.
     <div class="text-sm text-gray-700 mt-1 flex flex-wrap gap-x-3 gap-y-0.5" data-testid="subtree">
       <span>With everything below it: <span class="tabular-nums">{{ node.stock.subtree.on_hand|figure_text }} on hand</span>{% with line=node.stock.subtree|given_out_line %}{% if line %} <span class="text-xs text-gray-600 tabular-nums" data-testid="given-out-line">{{ line }}</span>{% endif %}{% endwith %}</span>
       <span>· {{ node.stock.subtree.received_from_outside|figure_text }} came in from outside</span>
-      <span>· {{ node.stock.subtree.months_of_stock|months_text }}, recomputed for all of it {% include 'supply_chain/_stock_band.html' with status=node.stock.subtree.status %}</span>
+      <span>· {{ node.stock.subtree|cover_text }}, recomputed for all of it{% for note in node.stock.subtree|cover_notes %} <span class="text-xs text-gray-600" data-testid="cover-note">{{ note }}</span>{% endfor %} {% include 'supply_chain/_stock_band.html' with status=node.stock.subtree.status %}</span>
       {% if node.stock.workers %}<span>· {{ node.stock.workers }} worker{{ node.stock.workers|pluralize }}{% if node.stock.workers_below_min %}, <span class="text-amber-900">{{ node.stock.workers_below_min }} below minimum</span>{% endif %}</span>{% endif %}
     </div>
   {% endif %}

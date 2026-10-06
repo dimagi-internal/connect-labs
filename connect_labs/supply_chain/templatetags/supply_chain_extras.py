@@ -1554,21 +1554,97 @@ def stock_sum(row):
     return " · ".join([" ".join(terms), *unsettled])
 
 
+def _rate_wait(row, figure_key):
+    """While too few days of demand stand behind a rate, what a page says for `figure_key` instead of "unknown".
+
+    {"on": "9 Oct", "after": "after 30 days of dispensing", "so_far": "~7 a day so far"},
+    or None: when the figure is a number, when it is blocked by something
+    other than the rate (a negative balance), or when there is no date to give.
+    """
+    row = row or {}
+    estimate_from = row.get("rate_estimate_from")
+    reasons = set(unconfirmed_reasons(row.get(figure_key)))
+    if not estimate_from or not reasons or not reasons & set(unconfirmed_reasons(row.get("amc"))):
+        return None
+    from datetime import date, timedelta
+
+    from connect_labs.supply_chain.stock.services.resupply import MINIMUM_WINDOW_DAYS, RELEASES
+
+    needed = row.get("rate_days_needed") or MINIMUM_WINDOW_DAYS
+    on = date.fromisoformat(str(estimate_from)[:10])
+    text = f"{on.day} {on.strftime('%b')}"
+    # The year only when the wait crosses one: dispensing that began in December.
+    if (on - timedelta(days=needed - 1)).year != on.year:
+        text += f" {on.year}"
+    what = "releases" if row.get("amc_basis") == RELEASES else "dispensing"
+    return {
+        "on": text,
+        "after": f"after {needed} days of {what}",
+        "so_far": _so_far_text(row.get("rate_per_day_so_far")),
+    }
+
+
+def _so_far_text(cell):
+    """ "~7 a day so far", "under 1 a day so far", or "" with no figure."""
+    number = _as_decimal((cell or {}).get("amount")) if isinstance(cell, dict) else None
+    if number is None:
+        return ""
+    whole = number.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    if whole < 1:
+        return "under 1 a day so far"
+    return f"~{quantity_digits(whole)} a day so far"
+
+
+@register.filter
+def stockout_text(row):
+    """The days-to-stock-out cell: "102 days", or, while the rate waits on more days, "estimate from 9 Oct"."""
+    wait = _rate_wait(row, "days_to_stockout")
+    if wait:
+        return f"estimate from {wait['on']}"
+    return days_text((row or {}).get("days_to_stockout"))
+
+
+@register.filter
+def cover_text(row):
+    """Months of cover, or, while the rate waits on more days, "cover estimate from 9 Oct"."""
+    wait = _rate_wait(row, "months_of_stock")
+    if wait:
+        return f"cover estimate from {wait['on']}"
+    return months_text((row or {}).get("months_of_stock"))
+
+
+@register.filter
+def waits_on_rate(row):
+    """Whether days to stock-out stands as "estimate from <day>" rather than a figure or a reason."""
+    return _rate_wait(row, "days_to_stockout") is not None
+
+
 @register.filter
 def stockout_notes(row):
     """What stands under days to stock-out when there is no figure: fields, not the reason's sentence.
 
-    A rate needs `rate_days_needed` days of demand behind it; with fewer, the
-    gap is said as a field -- "Window 28 d of 30 needed" -- in place of the
-    rate's reason. Any other reason is listed as it is.
+    While too few days of demand stand behind a rate (the cell reads
+    "estimate from 9 Oct"), the notes are what that needs and what the days
+    so far show -- "after 30 days of dispensing", "~7 a day so far" -- and
+    the rate's own reason is not repeated. Any other reason is listed as it is.
     """
+    return _wait_notes(row, "days_to_stockout")
+
+
+@register.filter
+def cover_notes(row):
+    """The same notes for a months-of-cover figure (`stockout_notes`)."""
+    return _wait_notes(row, "months_of_stock")
+
+
+def _wait_notes(row, figure_key):
     row = row or {}
-    reasons = list(unconfirmed_reasons(row.get("days_to_stockout")))
-    observed, needed = row.get("rate_days"), row.get("rate_days_needed")
-    if reasons and isinstance(observed, int) and needed and observed < needed:
-        rate_reasons = set(unconfirmed_reasons(row.get("amc")))
-        return [f"Window {observed} d of {needed} needed", *(r for r in reasons if r not in rate_reasons)]
-    return reasons
+    reasons = list(unconfirmed_reasons(row.get(figure_key)))
+    wait = _rate_wait(row, figure_key)
+    if not wait:
+        return reasons if figure_key == "days_to_stockout" else []
+    rate_reasons = set(unconfirmed_reasons(row.get("amc")))
+    return [n for n in (wait["after"], wait["so_far"]) if n] + [r for r in reasons if r not in rate_reasons]
 
 
 @register.filter

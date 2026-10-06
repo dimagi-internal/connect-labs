@@ -560,22 +560,34 @@ def test_a_rejected_visit_reads_its_dispense_and_the_put_back(client_in_program,
     assert 'data-testid="visits-gave-none"' not in body
 
 
-def test_a_short_window_reads_as_a_field_on_both_worker_screens(client_in_program, world):
-    """Ten days of dispensing: no rate yet, and the page says so as "Window 11 d of 30 needed"."""
+def test_too_few_days_say_when_an_estimate_comes_and_the_rate_so_far(client_in_program, world):
+    """77 given out over 11 days: no rate yet. Each screen gives the day one comes, and ~7 a day so far."""
     with recorded(60):
         cedar = _issue(world, "worker-cedar")
     with recorded(10):
-        _visit(world, cedar, "worker-cedar", dispensed=5, status="approved", estimated=False, days_ago=10)
+        _visit(world, cedar, "worker-cedar", dispensed=77, status="approved", estimated=False, days_ago=10)
+    # The first dispensing day counts as one of the thirty.
+    on = TODAY - timedelta(days=10) + timedelta(days=29)
+    when = f"{on.day} {on.strftime('%b')}" + ("" if on.year == TODAY.year else f" {on.year}")
 
     detail = get(client_in_program, "worker_detail", cedar.pk)
+    figure = re.search(r'data-testid="stockout-figure">(.*?)</dd>', detail, re.S).group(1)
+    assert text_of(figure).strip() == f"estimate from {when}"
     notes = [text_of(n).strip() for n in re.findall(r'data-testid="stockout-note">(.*?)</dd>', detail, re.S)]
-    assert notes == ["Window 11 d of 30 needed"]
+    assert notes == ["after 30 days of dispensing", "~7 a day so far"]
+    card = detail.split("Days to stock-out", 1)[1].split("</div>", 1)[0]
+    assert "unknown" not in text_of(card)
     assert "monthly rate means anything" not in detail
-    assert "unknown" in text_of(detail)
 
     listing = get(client_in_program, "workers")
-    assert "Window 11 d of 30 needed" in text_of(listing)
+    assert f"estimate from {when}" in text_of(listing)
+    assert "~7 a day so far" in text_of(listing)
     assert "monthly rate means anything" not in listing
+
+    network = get(client_in_program, "network")
+    node = network.split(">worker-cedar<", 1)[1].split('data-testid="network-node"', 1)[0]
+    assert f"cover estimate from {when}" in text_of(node)
+    assert "cover unknown" not in text_of(node)
 
 
 def test_the_chart_key_and_the_arrivals_carry_no_sentences(client_in_program, world):
@@ -720,21 +732,48 @@ class TestFigureWords:
         # A figure that is not a number leaves only the parts.
         assert stock_sum({**row, "on_hand": {"unconfirmed": ["mixed units"]}}) == "11 on unapproved visits"
 
-    def test_a_short_window_is_a_field_not_the_rate_s_sentence(self):
-        from connect_labs.supply_chain.templatetags.supply_chain_extras import stockout_notes
+    def test_too_few_days_read_as_a_date_and_a_rate_so_far(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import (
+            cover_notes,
+            cover_text,
+            stockout_notes,
+            stockout_text,
+        )
 
         reason = "only 28 days of dispensing have been recorded here; at least 30 are needed"
         row = {
             "days_to_stockout": {"unconfirmed": [reason]},
+            "months_of_stock": {"unconfirmed": [reason]},
             "amc": {"unconfirmed": [reason]},
+            "amc_basis": "consumption",
             "rate_days": 28,
             "rate_days_needed": 30,
+            "rate_estimate_from": "2026-10-09",
+            "rate_per_day_so_far": {"amount": "6.6071", "unit": "sachet"},
         }
-        assert stockout_notes(row) == ["Window 28 d of 30 needed"]
-        # Any other reason is said as it is.
+        assert stockout_text(row) == "estimate from 9 Oct"
+        assert stockout_notes(row) == ["after 30 days of dispensing", "~7 a day so far"]
+        assert cover_text(row) == "cover estimate from 9 Oct"
+        assert cover_notes(row) == ["after 30 days of dispensing", "~7 a day so far"]
+        # A store rated on what it releases; a trickle; a wait that crosses a year.
+        crossing = {
+            **row,
+            "amc_basis": "releases",
+            "rate_estimate_from": "2027-01-05",
+            "rate_per_day_so_far": {"amount": "0.3", "unit": "sachet"},
+        }
+        assert stockout_text(crossing) == "estimate from 5 Jan 2027"
+        assert stockout_notes(crossing) == ["after 30 days of releases", "under 1 a day so far"]
+        # Blocked by something other than the rate: the reason stands, no date.
+        negative = {**row, "days_to_stockout": {"unconfirmed": ["a negative balance"]}}
+        assert stockout_text(negative) == "unknown"
+        assert stockout_notes(negative) == ["a negative balance"]
+        # No dispensing at all is left as it was; a figure has no notes.
         other = {"days_to_stockout": {"unconfirmed": ["no consumption yet"]}, "amc": {"unconfirmed": ["x"]}}
+        assert stockout_text({**other, "rate_days": None}) == "unknown"
         assert stockout_notes({**other, "rate_days": None, "rate_days_needed": 30}) == ["no consumption yet"]
         assert stockout_notes({"days_to_stockout": "12.5", "rate_days": 60, "rate_days_needed": 30}) == []
+        assert stockout_text({"days_to_stockout": "12.5"}) == "12 days"
 
     def test_a_visit_s_ledger_lines_read_signed(self):
         from connect_labs.supply_chain.templatetags.supply_chain_extras import moved_text
