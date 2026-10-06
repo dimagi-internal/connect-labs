@@ -633,6 +633,24 @@
     @apply bg-gray-50;
   }
 
+  /* The row's actions, held at the right edge while a wide sheet scrolls: a
+     reply to record never sits clipped past the card's edge. */
+  .sheet .sheet-pin-end {
+    @apply sticky right-0 z-[3] whitespace-nowrap bg-white text-right shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.12)];
+  }
+
+  .sheet > thead th.sheet-pin-end {
+    @apply z-[4] bg-gray-50;
+  }
+
+  .sheet > tbody > tr:hover > .sheet-pin-end {
+    @apply bg-gray-50;
+  }
+
+  .sheet > tbody > tr[data-changed] > .sheet-pin-end {
+    @apply bg-yellow-50;
+  }
+
   .sheet .num {
     @apply whitespace-nowrap text-right tabular-nums;
   }

@@ -191,12 +191,6 @@ def fact_owner(gap: str, asked: bool = True) -> str:
     return rules.TO_ASK if owner == rules.SUPPLIERS and not asked else owner
 
 
-def fact_chips(gaps, asked: bool = True) -> list:
-    """[(fact, owner)]: open facts as the outlined gap chips name them, ours first."""
-    ours, theirs = split_gaps(gaps)
-    return [(_gap_word(g), rules.US) for g in ours] + [(_gap_word(g), fact_owner(g, asked)) for g in theirs]
-
-
 def split_gaps(gaps) -> tuple[list, list]:
     """(ours, the supplier's), by gap_owner -- one rule for the tile and the grid."""
     gaps = list(gaps or [])
@@ -559,12 +553,6 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
         "quoted": quoted,
         "comparable_chip": comparable_chip(compared),
         "primary": _primary_action(tender, ours, comparable),
-        # Each live quote's open facts as chips -- (fact, owner) -- for the History's quote lines.
-        "quote_facts": {
-            qid: fact_chips(facts, asked_since_quote(quote_by_id.get(qid), outreach))
-            for qid, facts in open_facts.items()
-            if facts
-        },
     }
 
 
