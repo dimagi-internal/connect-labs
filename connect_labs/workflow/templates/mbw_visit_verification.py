@@ -143,6 +143,25 @@ _VISIT_FIELDS = [
         "aggregation": "first",
     },
     {
+        # CommCare's own standard per-submission GPS stamp (form.meta.location)
+        # -- present on every form submission regardless of app version or
+        # verification-block membership, unlike gps_normalized_location above
+        # (which is part of the verification block and blank on pre-UAT
+        # submissions). Confirmed via commcare_hq_mcp: the verification
+        # block's own normalized_location calc actually falls back to THIS
+        # field when its accuracy is good enough, so it's the same underlying
+        # capture, just always-present. Used for the UAT Comparison tab's
+        # revisit-distance metrics, which need a GPS source spanning both the
+        # pre-UAT and UAT periods. Same raw geopoint string format ("lat lon
+        # altitude accuracy") as gps_normalized_location.
+        "name": "meta_location",
+        "paths": [
+            "form.meta.location.#text",
+            "form.meta.location",
+        ],
+        "aggregation": "first",
+    },
+    {
         "name": "qr_code_visit_verification",
         "path": "form.qr_code_verification.qr_code_visit_verification",
         "aggregation": "first",
