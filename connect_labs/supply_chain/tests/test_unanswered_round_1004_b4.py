@@ -68,7 +68,7 @@ def test_the_tender_terms_name_it_the_same(da, world, client_in_program):
     _waiver(da, world)
     body = _tender_page(client_in_program, world["tender"]["id"])
     terms = _text(re.search(r'data-testid="waiver-evidence"[^>]*>(.*?)</span>', body, re.S).group(1))
-    assert terms == "· duty exemption not on file"
+    assert terms == "Duty exemption not on file"
     assert "waiver document" not in body
 
 

@@ -41,7 +41,7 @@ class TestTheTenderHeader:
         _set(da, world, "buyer_waiver")
         body = _tender_page(client_in_program, world["tender"]["id"])
         terms = _text(re.search(r'data-testid="tender-terms".*?</section>', body, re.S).group(0))
-        assert "duty exemption not on file" in terms
+        assert "Duty exemption not on file" in terms
 
 
 @pytest.mark.django_db

@@ -342,7 +342,9 @@ class TenderDetailView(_Base):
         for i, d in enumerate((context["drafts"] or {}).get("drafts") or []):
             d["rows"] = _message_rows(d.get("text") or "")
             if d["kind"] == "reminder":
-                d["facts"] = _reminder_facts(by_outreach.get(d.get("outreach_id")), interval_days, as_of)
+                d["facts"] = _reminder_facts(by_outreach.get(d.get("outreach_id")), interval_days, as_of) or d.get(
+                    "facts"
+                )
             if (
                 d.get("supplier_id") is not None
                 and d["kind"] not in ("reply", "clarification")

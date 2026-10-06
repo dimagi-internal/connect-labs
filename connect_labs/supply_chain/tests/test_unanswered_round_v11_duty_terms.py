@@ -116,7 +116,7 @@ class TestTheTenderPageLine:
         line = re.search(pattern, body, re.S).group(1)
         text = html.unescape(" ".join(re.sub(r"<[^>]+>", " ", line).split()))
         assert text.startswith("We import, under the program's duty waiver")
-        assert " set " in text and 'data-testid="changed-chip"' in line
+        assert " Set " in text and 'data-testid="changed-chip"' in line
 
 
 @pytest.mark.django_db
