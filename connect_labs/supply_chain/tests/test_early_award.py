@@ -115,6 +115,8 @@ class TestTheAwardRecordsWhatWasOpen:
             "deadline": (TODAY + datetime.timedelta(days=4)).isoformat(),
             "deadline_days": 4,
             "silent": 1,
+            # Marsh's question is still open, so it is not yet waited on for a quote.
+            "awaiting_quote": 0,
             "replies_owed": 1,
         }
         assert Award.objects.get(pk=award["id"]).open_at_decision["deadline_days"] == 4

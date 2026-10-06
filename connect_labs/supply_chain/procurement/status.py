@@ -208,6 +208,9 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
     commitments = list(
         Commitment.objects.filter(tender=tender, resolved_on__isnull=True).select_related("owed_to_org")
     )
+    answered = rules.questions_answered_on(
+        Commitment.objects.filter(tender=tender, kind="question", resolved_on__isnull=False)
+    )
     contract = Contract.objects.filter(tender=tender).exclude(status="cancelled").order_by("pk").first()
     award = Award.objects.filter(tender=tender).select_related("quote__supplier__org").first()
     provisional = bool(award and award.provisional)
@@ -217,6 +220,7 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
         outreach=outreach,
         quotes=quotes,
         commitments=commitments,
+        answered=answered,
         provisional=provisional,
         contracted=contract is not None,
     )
@@ -246,6 +250,8 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
             order.append(q.supplier_id)
     invited = {o.supplier_id for o in outreach}
     silent = rules.silent_suppliers(outreach, quotes) if invited else {}
+    # Replied without a quote, their questions answered: waiting on their quote (rule e).
+    awaiting = {m.supplier_id for m in theirs if m.state == rules.AWAITING_QUOTE}
     replied = (invited & ({o.supplier_id for o in outreach if o.responded} | {q.supplier_id for q in live})) or set()
     owed_by_org = {}
     for c in commitments:
@@ -323,10 +329,20 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
                     "label": rules.supplier_action(rules.ACTION_RECORD_REPLY)["label"],
                     "href": reverse("supply_chain:procurement_outreach_reply", args=[mine[0].pk]),
                 }
+        elif sid in awaiting:
+            row["chip"] = {"label": rules.AWAITING_QUOTE_CHIP, "tone": THEIRS}
+            row["missing"], row["on_us"] = [], ""
+            row["action"] = {
+                "label": rules.supplier_action(rules.ACTION_RECORD_QUOTE)["label"],
+                "href": reverse("supply_chain:procurement_quote_entry") + f"?tender={tender.pk}",
+            }
         else:
             kind = next((o.response_kind for o in mine if o.responded and o.response_kind), "")
-            # One word for a reply that was questions, here and in the comparison: questions for us.
-            if kind == "needs_info":
+            # One word for a reply that was questions, here and in the comparison: questions for us --
+            # until they are answered, when they are no longer ours.
+            if kind == "needs_info" and getattr(supplier, "org_id", None) in answered:
+                row["chip"] = {"label": "Questions answered", "tone": NEUTRAL}
+            elif kind == "needs_info":
                 row["chip"] = {"label": "Questions for us", "tone": OURS}
             else:
                 row["chip"] = {"label": (kind.replace("_", " ") or "replied").capitalize(), "tone": NEUTRAL}
@@ -344,6 +360,10 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
     theirs.sort(key=lambda m: position.get(m.supplier_id, len(order)))
     for m in theirs:
         name = suppliers[m.supplier_id].name if m.supplier_id in suppliers else m.text
+        if m.state == rules.AWAITING_QUOTE:
+            # Named, with its own chip; no reminder is drafted to a supplier that replied.
+            m.text = name
+            continue
         rows_for = silent.get(m.supplier_id) or []
         asked = max((o.sent_on for o in rows_for if o.sent_on), default=None)
         chased = max((o.last_reminder_on for o in rows_for if o.last_reminder_on), default=None)
