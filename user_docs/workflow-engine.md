@@ -219,7 +219,7 @@ Clicking **Create Workflow** opens the **Choose a template** modal. The modal is
 
 | Group | Examples |
 |---|---|
-| Programme reports | KMC Programme Metrics, Photo Audit Report, Indicator Programme Report, RUTF CIFF Program KPIs |
+| Programme reports | KMC Programme Metrics, Photo Audit Report, Indicator Programme Report, RUTF CIFF Program KPIs, IPTsc School Delivery Dashboard |
 | Automatic reports | Scheduled summary reports |
 | Worker reviews | KMC Worker Review, Indicator Worker Review |
 | Audits | Weekly Dual-Track Image Audit, Muac Picture Audit |
@@ -231,4 +231,3 @@ Clicking **Create Workflow** opens the **Choose a template** modal. The modal is
 A **filter box** at the top of the modal lets you type to narrow the list. Each row shows the template's full name — names are never cut short — alongside a coloured icon and a short description on the line below. If a template is always created together with another template, both rows say so, so you know what you will get before you confirm.
 
 !!! note "Template icons and names"
-    Every template displays a coloured icon
