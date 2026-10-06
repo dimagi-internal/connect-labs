@@ -77,6 +77,9 @@ class Entry:
     # their behalf (an MCP call under their own token): "Sophie Okafor". Blank
     # for an agent's own account or a person's own write -- never guessed.
     forwarded_by: str = ""
+    # The day the email itself was sent, as its Date header says, when the
+    # caller gave it (`source.sent_on`); None otherwise -- never guessed.
+    sent_on: object = None  # date
     # The line as the page reads it, one grammar for every kind of change:
     # "<entity> · <which one> · <what happened>" -- "Shipment · SH-1 ·
     # recorded: ETA 5 Sep", "Shipment · SH-1 · ETA 5 Sep → 19 Sep".
@@ -119,6 +122,18 @@ class Entry:
         if self.source_kind != "Email" or "@" not in self.source_ref:
             return ""
         return self.source_ref.rsplit("@", 1)[1].strip().rstrip(">").strip()
+
+    @property
+    def forwarded_on(self):
+        """The day the email was recorded, when it was not the day it was sent; else None.
+
+        "sent 5 Oct · forwarded 6 Oct": an email forwarded a day late is recorded
+        the day it was forwarded, and its quote's Received day is the day it was sent.
+        """
+        if self.sent_on is None or self.recorded_on is None:
+            return None
+        recorded = _day_of(self.recorded_on)
+        return recorded if recorded != self.sent_on else None
 
     @property
     def source_link_text(self) -> str:
@@ -466,6 +481,7 @@ def entry_for(revision, *, lookup=None, offer_fixes=True, live_quote_ids=None, u
         recorded_on=getattr(call, "recorded_at", None) or revision.recorded_at,
         replayed_at=_replayed_at(call, until),
         forwarded_by=_forwarded_by(call),
+        sent_on=getattr(call, "source_sent_on", None),
         eta_moved=eta_moved(revision.changes) if revision.action == "update" else "",
     )
     if model is None:
@@ -1010,17 +1026,33 @@ def quote_lineages(quote_ids, *, program_id) -> dict:
             lineage.fields[attname] = (chain[last].version or last + 1, by_ai.get(chain[last].pk, False))
         for k in range(len(chain) - 1, 0, -1):
             text, _ = correction_sentence(Quote, values[k - 1], values[k], lookup)
+            changes = text.partition(": ")[2]
             lineage.earlier.append(
                 {
                     "quote_id": chain[k - 1].pk,
                     "version": chain[k - 1].version or k,
                     "replaced_on": chain[k].created_at,
-                    "changes": text.partition(": ")[2],
-                    "reason": chain[k].correction_reason or "",
+                    "changes": changes,
+                    "reason": _reason_worth_saying(chain[k].correction_reason or "", changes),
                 }
             )
         out[pk] = lineage
     return out
+
+
+def _words(text) -> set:
+    return set(re.findall(r"[a-z0-9]+", str(text).lower()))
+
+
+def _reason_worth_saying(reason, changes) -> str:
+    """A correction's reason, unless it only restates the change beside it.
+
+    A cell edit's reason names its change ("received 6 Oct → 5 Oct", cells.py),
+    so it reads on its own; beside the version's own "received on 5 Oct (was
+    6 Oct)" it said the same thing twice.
+    """
+    words = _words(reason)
+    return "" if words and words <= _words(changes) else reason
 
 
 def corrections_for_quotes(quote_ids, *, program_id, until=None) -> dict:

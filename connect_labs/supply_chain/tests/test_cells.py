@@ -94,10 +94,23 @@ def test_a_quote_cell_is_a_correction_with_a_reason(ran):
     assert payload == {
         "quote_id": 7,
         "data": {"as_quoted_amount": "52"},
-        "reason": "Corrected in a table",
+        "reason": "price 55 → 52",
     }
     # The correction is a new version: the page marks the NEW quote's cell.
     assert result == {"key": "quote:99:as_quoted_amount"}
+
+
+def test_a_correction_reason_names_the_field_and_both_values(ran):
+    """Not "Corrected in a table": the reason says what changed, read off the record before the edit."""
+
+    class Access:
+        def get_quote(self, quote_id):
+            return mock.Mock(received_on=date(2026, 10, 6), base_per_pack_stated=None)
+
+    cells.apply(Access(), "quote", 7, "received_on", "5 Oct 2026", was="2026-10-01")
+    assert ran.call_args.args[2]["reason"] == "received 6 Oct → 5 Oct"
+    cells.apply(Access(), "quote", 7, "base_per_pack_stated", "150")
+    assert ran.call_args.args[2]["reason"] == "pack size not stated → 150"
 
 
 def test_a_pack_figure_typed_in_is_recorded_as_stated_on_the_quote(ran):

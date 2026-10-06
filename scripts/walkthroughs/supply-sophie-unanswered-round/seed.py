@@ -405,6 +405,9 @@ def _sahel_source(today: dt.date, misdated: bool) -> dict:
     if misdated:
         sent = today - dt.timedelta(days=1)
         source["excerpt"] = f"Sent {sent.day} {sent:%b %Y}. " + source["excerpt"]
+        # The email's own Date, as the AI reads it off the forwarded message: the history
+        # sets it beside the day it was forwarded, the evidence for Sophie's correction.
+        source["sent_on"] = sent.isoformat()
     return source
 
 
