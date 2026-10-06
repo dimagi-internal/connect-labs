@@ -16,6 +16,7 @@ describe('the published surface', () => {
     const names = [
       'VERSION',
       'visitFlagsOf',
+      'caseLabel',
       'nCount',
       'dateLbl',
       'fmtValue',
@@ -444,6 +445,27 @@ describe('the registry display contract (VERSION 3)', () => {
     ).toEqual([]);
     expect(R.visitFlagsOf(d, { repeat_counts_flag: '' })).toEqual([]);
     expect(R.visitFlagsOf(d, {})).toEqual([]);
+  });
+  test('a case reads by its label field, falling back to its id (VERSION 8)', () => {
+    expect(R.VERSION).toBeGreaterThanOrEqual(8);
+    const none = R.displayOf({ cMeasures: measures });
+    expect(none.entity.label_field).toBeNull();
+    expect(R.caseLabel(none, { entity_id: 'abcdef123456789' }, 6)).toBe(
+      'abcdef',
+    );
+    const d = R.displayOf({
+      cMeasures: measures,
+      display: { entity: { name: 'child', label_field: 'entity_name' } },
+    });
+    expect(d.entity.label_field).toBe('entity_name');
+    expect(
+      R.caseLabel(d, { entity_id: 'abc123', entity_name: ' Amina K. ' }, 4),
+    ).toBe('Amina K.');
+    // a case without the field (or with a blank one) still reads by its id
+    expect(R.caseLabel(d, { entity_id: 'abc123', entity_name: '' }, 4)).toBe(
+      'abc1',
+    );
+    expect(R.caseLabel(d, { entity_id: 'abc123' })).toBe('abc123');
   });
   test('displayOf falls back to the catalog when a payload carries no display block', () => {
     const d = R.displayOf({ cMeasures: measures });

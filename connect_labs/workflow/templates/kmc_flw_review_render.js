@@ -2187,7 +2187,8 @@ function WorkflowUI({
         return b.reds - a.reds || b.n - a.n;
       }),
       function (f, key) {
-        if (key === 'worker') return String(f.flw || '').toLowerCase();
+        if (key === 'worker')
+          return String(f.name || f.flw || '').toLowerCase();
         if (key === 'org') return String(oppLabel(f.opp)).toLowerCase();
         if (key === 'cases') return Number(f.n) || 0;
         return Number(f.reds) || 0;
@@ -2235,7 +2236,7 @@ function WorkflowUI({
                     }}
                   >
                     <td className="px-3 py-2 font-medium text-gray-900">
-                      {f.flw || '(unassigned)'}
+                      {f.name || f.flw || '(unassigned)'}
                     </td>
                     <td className="px-3 py-2 text-gray-600">
                       {oppLabel(f.opp)}
@@ -2690,7 +2691,7 @@ function WorkflowUI({
               Worker
             </div>
             <div className="text-sm text-gray-900">
-              {flw.flw || '(unassigned)'}
+              {flw.name || flw.flw || '(unassigned)'}
               <span className="text-gray-400"> · {flw.n} cases</span>
               {flw.reds ? (
                 <span className="ml-2 px-2 py-0.5 rounded text-xs bg-red-100 text-red-800">
@@ -2735,7 +2736,7 @@ function WorkflowUI({
               </a>
             )}
             <div className="text-xl font-semibold text-gray-900 mt-1">
-              {flw.flw || '(unassigned)'}
+              {flw.name || flw.flw || '(unassigned)'}
             </div>
             <div className="text-sm text-gray-500">
               {oppLabel(flw.opp)} · {flw.n} cases · as of{' '}

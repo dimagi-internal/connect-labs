@@ -350,7 +350,7 @@ function WorkflowUI({
                     setSelKey(f.key);
                   }}
                 >
-                  {f.flw || f.username}
+                  {f.name || f.flw || f.username}
                 </button>
               );
             })}
@@ -359,6 +359,11 @@ function WorkflowUI({
       </div>
     );
 
+  // A case's human label (`display.entity.label_field`), else its id.
+  function caseLabel(c, n) {
+    if (R.caseLabel) return R.caseLabel(D, c, n);
+    return String((c && c.entity_id) || '').slice(0, n);
+  }
   var reading = D.reading;
   // The registry's per-visit columns and review flags (display.visit_fields /
   // display.visit_flags). A flag is how a flagged-visit indicator -- a repeat-count
@@ -400,7 +405,7 @@ function WorkflowUI({
     <div className="p-4 space-y-4 bg-gray-50">
       <R.ReportHeader
         crumbs={(D.title || 'Indicator report') + ' › ' + WRK.name + ' review'}
-        title={flw.flw || flw.username}
+        title={flw.name || flw.flw || flw.username}
         subtitle={
           <span>
             {'opportunity ' +
@@ -541,8 +546,15 @@ function WorkflowUI({
                         setSelCase(on ? null : c);
                       }}
                     >
-                      <td className="px-3 py-1.5 font-mono text-indigo-700">
-                        {String(c.entity_id || '').slice(0, 12)}
+                      <td
+                        className={
+                          'px-3 py-1.5 text-indigo-700 ' +
+                          (ENT.label_field && c[ENT.label_field]
+                            ? ''
+                            : 'font-mono')
+                        }
+                      >
+                        {caseLabel(c, 12)}
                       </td>
                       {D.case_fields.map(function (f) {
                         return (
@@ -574,10 +586,7 @@ function WorkflowUI({
                 : ''
             }
           >
-            {R.cap(ENT.name) +
-              ' ' +
-              String(selCase.entity_id).slice(0, 12) +
-              ' · visits'}
+            {R.cap(ENT.name) + ' ' + caseLabel(selCase, 12) + ' · visits'}
           </R.SectionTitle>
           {visits.status === 'loading' || visits.status === 'idle' ? (
             <R.Loading height={120}>Reading the visits…</R.Loading>

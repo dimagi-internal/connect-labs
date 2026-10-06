@@ -93,6 +93,8 @@ def test_a_declared_headline_replaces_the_default():
         ({"display": {"visit_flags": "repeat_counts_flag"}}, "display.visit_flags"),
         ({"display": {"visit_flags": [{"label": "Repeat"}]}}, "visit_flags[0]"),
         ({"display": {"visit_flags": [{"column": "f", "value": ["yes"]}]}}, "visit_flags[0].value"),
+        ({"display": {"entity": {"name": "child", "label_field": "child name"}}}, "display.entity.label_field"),
+        ({"display": {"entity": {"label_field": 3}}}, "display.entity.label_field"),
     ],
 )
 def test_a_malformed_display_block_is_refused(vq, patch, message):
@@ -152,3 +154,22 @@ def test_visit_flags_and_fields_resolve_and_default_empty(vq):
         {"column": "repeat_counts_flag", "label": "Repeat count"},
         {"column": "risk", "label": "risk", "value": "high"},
     ]
+
+
+def test_a_case_label_field_resolves_and_keeps_the_models_nouns(vq):
+    """`display.entity.label_field` names the case-index field holding a case's human
+    name. Declared alone, the entity keeps the model's nouns; undeclared, the entity
+    block is exactly what it was, so saved runs and older registries are unchanged."""
+    props, inds = vq
+    assert "label_field" not in resolve_display(props, inds)["entity"]
+    doc = {**copy.deepcopy(inds), "display": {"entity": {"label_field": "entity_name"}}}
+    assert validate_registry(props, doc, {}) == []
+    assert resolve_display(props, doc)["entity"] == {
+        "name": "beneficiary",
+        "plural": "beneficiaries",
+        "key": "entity_id",
+        "label_field": "entity_name",
+    }
+    named = {**copy.deepcopy(inds), "display": {"entity": {"name": "child", "label_field": "child_name"}}}
+    assert validate_registry(props, named, {}) == []
+    assert resolve_display(props, named)["entity"]["label_field"] == "child_name"

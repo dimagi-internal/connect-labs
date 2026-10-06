@@ -185,7 +185,12 @@ def _build_mirror_visits(
     # The app's own `calculate` expressions tell us which values are derived rather
     # than measured; those are replayed verbatim instead of jittered.
     computed_paths = {q.json_path for q in form_schema.questions if getattr(q, "calculated", False)}
-    planned = plan_mirror_visits(longitudinal, seed=manifest.random_seed, no_jitter_paths=computed_paths)
+    planned = plan_mirror_visits(
+        longitudinal,
+        seed=manifest.random_seed,
+        no_jitter_paths=computed_paths,
+        entity_names=cohort.entity_names,
+    )
     entity_count = max((pv.beneficiary_idx for pv in planned), default=0)
     household_locations = (
         _build_household_locations(manifest.geography, entity_count, rng)
@@ -440,7 +445,7 @@ def generate(
             "deliver_unit": str(deliver_unit_id) if deliver_unit_id is not None else "",
             "deliver_unit_id": deliver_unit_id,
             "entity_id": traj_entity_id if traj else str(uuid.UUID(int=rng.getrandbits(128))),
-            "entity_name": f"Beneficiary {beneficiary_idx}",
+            "entity_name": cohort.entity_label(beneficiary_idx),
             "visit_date": slot.visit_date.isoformat(),
             "status": status.status,
             "reason": None,
