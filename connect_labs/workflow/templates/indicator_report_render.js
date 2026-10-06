@@ -1540,6 +1540,28 @@ function WorkflowUI({
   // runner previews the action and runs it only on the person's confirm; an agent
   // runs the same actions through the labs MCP (workflow/actions.py).
   var WF_ACTIONS = (view && view.workflowActions) || [];
+  // A coaching action (start_ocs_outreach) is only for workers with something to
+  // coach: an indicator that makes sense per worker (meta.flw_applicable not
+  // false) graded red or yellow. The server briefs each one from the same cells
+  // and leaves out anyone with nothing off target.
+  function isCoaching(a) {
+    return a && a.type === 'start_ocs_outreach';
+  }
+  function coachable(w) {
+    var ind = (w && w.ind) || {};
+    return Object.keys(ind).some(function (id) {
+      var m = M_BY_ID[id];
+      var band = ind[id] && ind[id].band;
+      return (
+        !!m &&
+        m.flw_applicable !== false &&
+        (band === 'red' || band === 'yellow')
+      );
+    });
+  }
+  function actionRows(a, rows) {
+    return isCoaching(a) ? rows.filter(coachable) : rows;
+  }
   function runWorkflowAction(key, rows) {
     if (!actions || !actions.runAction || !rows.length) return;
     actions
@@ -1631,6 +1653,8 @@ function WorkflowUI({
         right={
           <span className="inline-flex items-center gap-2">
             {WF_ACTIONS.map(function (a) {
+              var targets = actionRows(a, list);
+              if (!targets.length) return null;
               return (
                 <button
                   key={'act:' + a.key}
@@ -1638,10 +1662,13 @@ function WorkflowUI({
                   title={a.description}
                   className="rounded border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
                   onClick={function () {
-                    runWorkflowAction(a.key, list);
+                    runWorkflowAction(a.key, targets);
                   }}
                 >
-                  {a.label + ' · ' + R.nounCount(list.length, WRK)}
+                  {a.label +
+                    ' · ' +
+                    R.nounCount(targets.length, WRK) +
+                    (isCoaching(a) ? ' off target or on watch' : '')}
                 </button>
               );
             })}
@@ -1723,6 +1750,7 @@ function WorkflowUI({
                     </a>
                   ) : null}
                   {WF_ACTIONS.map(function (a) {
+                    if (isCoaching(a) && !coachable(w)) return null;
                     return (
                       <button
                         key={'act:' + a.key}

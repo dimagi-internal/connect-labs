@@ -162,6 +162,11 @@ def test_on_synthetic_opportunities_no_ocs_is_needed(user, monkeypatch):
     assert out["synthetic"] is True
     assert out["arguments"]["bot"] == "synthetic-muac-coaching"
     assert out["confirm"]
+    # The preview names the bot the workflow DECLARES, never the sample stand-in,
+    # and says what happens instead of a conversation.
+    assert out["bot"] == {"id": "bot-1", "name": "bot-1"}
+    assert "no message is sent" in out["synthetic_note"]
+    assert "deliver_to" in out["synthetic_note"]
 
 
 def test_an_action_the_workflow_does_not_offer_is_refused(user):

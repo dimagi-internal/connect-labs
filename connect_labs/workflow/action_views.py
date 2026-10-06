@@ -16,7 +16,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_POST
 
-from connect_labs.workflow.actions import ActionError, commit, preview
+from connect_labs.workflow.actions import ActionError, briefing_source, commit, preview
 from connect_labs.workflow.data_access import WorkflowDataAccess
 from connect_labs.workflow.models import WorkflowActionExecution
 
@@ -44,6 +44,18 @@ def _run_and_definition(request, run_id):
     return wda, run, definition
 
 
+def _briefing(request, wda, run, definition):
+    """The run's grading for a coaching briefing, read in the scope the page stamped on
+    the URL (falling back to the run's own)."""
+    scope = {}
+    for name in ("opportunity_id", "program_id"):
+        value = request.GET.get(name)
+        if value and value.isdigit():
+            scope[name] = int(value)
+            break
+    return briefing_source(request.user, wda, run, definition, **scope)
+
+
 def _refusal(e: ActionError) -> JsonResponse:
     return JsonResponse(
         {"error": e.public_message, "code": e.code},
@@ -67,6 +79,7 @@ def action_preview_api(request, run_id, key):
                 key=key,
                 arguments=_body(request).get("arguments") or {},
                 request=request,
+                briefing=_briefing(request, wda, run, definition),
             )
         )
     except ActionError as e:
@@ -93,6 +106,7 @@ def action_run_api(request, run_id, key):
             confirm=body.get("confirm") or "",
             via="page",
             request=request,
+            briefing=_briefing(request, wda, run, definition),
         )
     except ActionError as e:
         return _refusal(e)
