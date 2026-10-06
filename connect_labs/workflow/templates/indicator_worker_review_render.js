@@ -323,6 +323,113 @@ function WorkflowUI({
       });
   }
 
+  // Opening a case brings its visits panel into view (clear of the sticky
+  // header), once on open and again when its visits have loaded.
+  var panelRef = React.useRef(null);
+  React.useEffect(
+    function () {
+      if (!selCase || !panelRef.current) return;
+      var el = panelRef.current;
+      if (typeof el.scrollIntoView !== 'function') return;
+      var id = window.setTimeout(function () {
+        try {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } catch (e) {
+          el.scrollIntoView(true);
+        }
+      }, 30);
+      return function () {
+        window.clearTimeout(id);
+      };
+    },
+    [
+      selCase && selCase.opportunity_id,
+      selCase && selCase.entity_id,
+      visits.status === 'ready',
+    ],
+  );
+
+  // ══ Definitions, from the explain reader of the source report's registry ══
+  var sDef = React.useState(null);
+  var colDef = sDef[0],
+    setColDef = sDef[1];
+  var sDefCache = React.useState({});
+  var defCache = sDefCache[0],
+    setDefCache = sDefCache[1];
+  var srcDefRef = React.useRef(null);
+  function sourceDefId() {
+    if (cfg.source_workflow_id) return Promise.resolve(cfg.source_workflow_id);
+    if (srcDefRef.current) return Promise.resolve(srcDefRef.current);
+    var rid = report.runId || sourceRun;
+    if (!rid) return Promise.reject(new Error('no source report'));
+    return getJson(withParams('/labs/workflow/api/run/' + rid + '/')).then(
+      function (j) {
+        var id = (j.run || {}).definition_id;
+        if (!id) throw new Error('the source report is not known');
+        srcDefRef.current = id;
+        return id;
+      },
+    );
+  }
+  function explainUrl(defId, id, fmt, download) {
+    return withParams(
+      '/labs/workflow/api/' + defId + '/indicator-definitions/',
+      'indicators=' +
+        encodeURIComponent(id) +
+        '&scope=flw&format=' +
+        fmt +
+        (download ? '&download=1' : ''),
+    );
+  }
+  function openDef(id) {
+    setColDef({ id: id });
+    if (defCache[id] && defCache[id].status !== 'error') return;
+    function put(v) {
+      setDefCache(function (prev) {
+        var next = Object.assign({}, prev);
+        next[id] = v;
+        return next;
+      });
+    }
+    put({ status: 'loading' });
+    sourceDefId()
+      .then(function (defId) {
+        return getJson(explainUrl(defId, id, 'json', false)).then(function (j) {
+          var e = (j.indicators || [])[0];
+          if (!e) throw new Error('no definition came back for ' + id);
+          put({ status: 'ready', entry: e, defId: defId });
+        });
+      })
+      .catch(function (err) {
+        put({ status: 'error', error: String((err && err.message) || err) });
+      });
+  }
+  function DefModal() {
+    if (!colDef) return null;
+    var m = M_BY_ID[colDef.id] || {};
+    var st = defCache[colDef.id] || { status: 'loading' };
+    return (
+      <R.DefinitionModal
+        id={colDef.id}
+        title={m.title}
+        state={st}
+        entityPlural={ENT.plural}
+        onClose={function () {
+          setColDef(null);
+        }}
+        downloadUrl={
+          st.defId ? explainUrl(st.defId, colDef.id, 'sql', true) : null
+        }
+        textUrl={st.defId ? explainUrl(st.defId, colDef.id, 'md', false) : null}
+      />
+    );
+  }
+  // An as-of date carries its year ("4 Oct 2026").
+  function asOfLbl(d) {
+    var y = String(d || '').slice(0, 4);
+    return R.dateLbl(d) + (/^\d{4}$/.test(y) ? ' ' + y : '');
+  }
+
   // The reading chart is drawn at its container's real pixel width.
   var sChartW = React.useState(0);
   var chartW = sChartW[0],
@@ -521,6 +628,32 @@ function WorkflowUI({
   var tintBand = function (e) {
     return R.tintFor(e);
   };
+  // A category whose indicators all point the same way carries the direction
+  // chip once, on its subheader; otherwise each directional row carries it.
+  var catDirs = {};
+  LAYOUT.columns.forEach(function (c) {
+    var d = (M_BY_ID[c.id] || {}).direction || '';
+    (catDirs[c.category] = catDirs[c.category] || {})[d] = true;
+  });
+  var catDir = {};
+  Object.keys(catDirs).forEach(function (k) {
+    var ds = Object.keys(catDirs[k]);
+    if (ds.length === 1 && (ds[0] === 'higher' || ds[0] === 'lower'))
+      catDir[k] = ds[0];
+  });
+  var dirChip = {
+    display: 'inline-block',
+    marginLeft: 8,
+    padding: '0 8px',
+    borderRadius: 9999,
+    fontSize: 12,
+    fontWeight: 400,
+    background: '#e5e7eb',
+    color: '#374151',
+  };
+  // The worker's own column keeps a light tint (where no band tints it), so
+  // the eye finds it among the peer medians.
+  var OWN_BG = '#f5f7ff';
   // Peer columns: ONE column when both cohorts are the same size and every
   // median agrees (the two columns would only repeat each other).
   var peerRows = {};
@@ -588,11 +721,39 @@ function WorkflowUI({
   }
   // The reading chart, with the line BROKEN where consecutive visits are more
   // than GAP_DAYS apart (points still drawn), so a multi-week gap is not drawn
-  // as if it had been observed.
-  var GAP_DAYS = 7;
+  // as if it had been observed. The threshold is the report's own staleness
+  // rule (config.stale_after_days) when the review is given one.
+  var GAP_DAYS = Number(cfg.stale_after_days) || 7;
   function dayMs(d) {
     return new Date(String(d).slice(0, 10) + 'T00:00:00Z').getTime();
   }
+  function gapDays(a, b) {
+    return Math.round((dayMs(b) - dayMs(a)) / 86400000);
+  }
+  // Gaps over the threshold between the case's visits, plus the silence since
+  // its last visit when that is still open on the report's as-of date.
+  var asOfDay = String(asOf || '').slice(0, 10);
+  var lastVisitDay = visits.rows.length
+    ? String(visits.rows[visits.rows.length - 1].visit_date).slice(0, 10)
+    : '';
+  var openGapDays =
+    lastVisitDay && asOfDay > lastVisitDay ? gapDays(lastVisitDay, asOfDay) : 0;
+  var openGap = openGapDays > GAP_DAYS;
+  var gapCount =
+    visits.rows.filter(function (v, i) {
+      return (
+        i > 0 && gapDays(visits.rows[i - 1].visit_date, v.visit_date) > GAP_DAYS
+      );
+    }).length + (openGap ? 1 : 0);
+  // "Days since previous" is a column only when it varies.
+  var sinceVals = visits.rows.slice(1).map(function (v, i) {
+    return gapDays(visits.rows[i].visit_date, v.visit_date);
+  });
+  var showSince =
+    sinceVals.length > 1 &&
+    sinceVals.some(function (d) {
+      return d !== sinceVals[0];
+    });
   function gappedReadingChart(props) {
     var t = (props.points || []).filter(function (p) {
       return p && p.date && p.value !== null && !isNaN(Number(p.value));
@@ -605,8 +766,12 @@ function WorkflowUI({
             ' recorded.'}
         </div>
       );
+    var lastDay = t[t.length - 1].date;
+    // The axis runs to the report's as-of date, so silence after the last
+    // visit shows.
+    var runsToAsOf = !!(asOfDay && asOfDay > lastDay);
     var x0 = dayMs(t[0].date),
-      x1 = dayMs(t[t.length - 1].date);
+      x1 = dayMs(runsToAsOf ? asOfDay : lastDay);
     var lo = Infinity,
       hi = -Infinity;
     t.forEach(function (p) {
@@ -653,15 +818,44 @@ function WorkflowUI({
     function Y(v) {
       return 146 - ((v - lo) / (hi - lo)) * 130;
     }
-    // A date tick under every visit point; a label is skipped only where it
-    // would collide with the previous one.
-    var lastLbl = -Infinity;
+    // A date tick under every visit point. The ends and both bounds of every
+    // gap are always labelled; any other date only where it does not collide
+    // with a label already placed.
+    var must = {};
+    must[t[0].date] = true;
+    must[lastDay] = true;
+    t.forEach(function (p, i) {
+      if (i && gapDays(t[i - 1].date, p.date) > GAP_DAYS) {
+        must[t[i - 1].date] = true;
+        must[p.date] = true;
+      }
+    });
+    var placed = [];
+    function clear(x) {
+      return placed.every(function (px) {
+        return Math.abs(px - x) >= 48;
+      });
+    }
+    t.forEach(function (p) {
+      if (must[p.date]) placed.push(X(p.date));
+    });
     var ticks = t.map(function (p, i) {
       var x = X(p.date);
-      var show = x - lastLbl >= 48;
-      if (show) lastLbl = x;
+      var show = !!must[p.date];
+      if (!show && clear(x)) {
+        placed.push(x);
+        show = true;
+      }
       return { x: x, date: p.date, show: show };
     });
+    // The as-of end is labelled when it clears the last visit's label.
+    if (runsToAsOf)
+      ticks.push({
+        x: X(asOfDay),
+        date: asOfDay,
+        show: X(asOfDay) - X(lastDay) >= 96,
+        asOf: true,
+      });
     var path = t
       .map(function (p, i) {
         var brk =
@@ -688,6 +882,25 @@ function WorkflowUI({
             {props.label + (props.unit ? ' (' + props.unit + ')' : '')}
           </text>
         ) : null}
+        <defs>
+          <pattern
+            id="wr-open-hatch"
+            patternUnits="userSpaceOnUse"
+            width="7"
+            height="7"
+            patternTransform="rotate(45)"
+          >
+            <rect width="7" height="7" fill="#f3f4f6" />
+            <line
+              x1="0"
+              y1="0"
+              x2="0"
+              y2="7"
+              stroke="#d1d5db"
+              strokeWidth="2"
+            />
+          </pattern>
+        </defs>
         <g transform="translate(0,18)">
           {t.map(function (p, i) {
             if (
@@ -730,6 +943,27 @@ function WorkflowUI({
               </g>
             );
           })}
+          {runsToAsOf && openGap ? (
+            <g>
+              <rect
+                data-gap={openGapDays}
+                data-gap-open="1"
+                x={X(lastDay) + 6}
+                y={Y(hi)}
+                width={Math.max(X(asOfDay) - X(lastDay) - 6, 0)}
+                height={Y(lo) - Y(hi)}
+                fill="url(#wr-open-hatch)"
+              >
+                <title>
+                  {openGapDays +
+                    ' days without a visit since ' +
+                    R.dateLbl(lastDay) +
+                    ', still open on ' +
+                    asOfLbl(asOfDay)}
+                </title>
+              </rect>
+            </g>
+          ) : null}
           {[lo, (lo + hi) / 2, hi].map(function (v) {
             return (
               <g key={v}>
@@ -778,14 +1012,14 @@ function WorkflowUI({
                     fontSize="11"
                     fill="#6b7280"
                     textAnchor={
-                      i === 0 && t.length > 1
+                      i === 0 && ticks.length > 1
                         ? 'start'
-                        : i === t.length - 1 && t.length > 1
+                        : i === ticks.length - 1 && ticks.length > 1
                           ? 'end'
                           : 'middle'
                     }
                   >
-                    {R.dateLbl(k.date)}
+                    {k.asOf ? 'as of ' + asOfLbl(k.date) : R.dateLbl(k.date)}
                   </text>
                 ) : null}
               </g>
@@ -802,12 +1036,9 @@ function WorkflowUI({
         title={flw.name || flw.flw || flw.username}
         subtitle={
           <span>
-            {'opportunity ' +
-              flw.opp +
-              (flw.llo ? ' · ' + flw.llo : '') +
-              ' · '}
+            {(flw.llo ? flw.llo : 'opportunity ' + flw.opp) + ' · '}
             <b>{R.nounCount(cases.length || flw.n, ENT)}</b>
-            {' · figures as of ' + R.dateLbl(asOf)}
+            {' · figures as of ' + asOfLbl(asOf)}
           </span>
         }
         badges={
@@ -823,7 +1054,8 @@ function WorkflowUI({
                     : flw.startMonth)}
               </R.Pill>
             ) : null}
-            {flw.caseloadLabel ? (
+            {flw.caseloadLabel &&
+            peers.caseload.length < (P.byFLW || []).length ? (
               <span
                 data-caseload-tip="1"
                 style={{ cursor: 'help' }}
@@ -902,7 +1134,10 @@ function WorkflowUI({
           <thead>
             <tr className="text-xs text-gray-500 border-b border-gray-100">
               <th className="px-4 py-2 text-left">Indicator</th>
-              <th className="px-2 py-2 text-right" style={{ width: 112 }}>
+              <th
+                className="px-2 py-2 text-right text-gray-900"
+                style={{ width: 112, background: OWN_BG }}
+              >
                 {R.cap(WRK.name)}
               </th>
               {mergePeers ? (
@@ -936,7 +1171,7 @@ function WorkflowUI({
                     ')'
                   }
                 >
-                  Same-month median
+                  {'Same-month median (' + peers.start.length + ')'}
                 </th>
               )}
               {mergePeers ? null : (
@@ -950,7 +1185,7 @@ function WorkflowUI({
                     ')'
                   }
                 >
-                  Similar-caseload median
+                  {'Similar-caseload median (' + peers.caseload.length + ')'}
                 </th>
               )}
               <th className="px-2 py-2 text-right" style={{ width: 96 }}>
@@ -959,13 +1194,39 @@ function WorkflowUI({
             </tr>
           </thead>
           <tbody>
-            {LAYOUT.columns.map(function (c) {
+            {LAYOUT.columns.map(function (c, ci) {
               var m = M_BY_ID[c.id] || {};
               var e = (flw.ind || {})[c.id];
               var t = R.targetValue(m, D.indicators[c.id]);
               var ms = peerRows[c.id].ms;
               var mc = peerRows[c.id].mc;
-              return (
+              // Rows sit under their category; the direction chip goes on the
+              // category when the whole category shares it, else on the row.
+              var groupDir = catDir[c.category] || null;
+              var rowDir =
+                !groupDir &&
+                (m.direction === 'higher' || m.direction === 'lower')
+                  ? m.direction
+                  : null;
+              var out = [];
+              if (ci === 0 || LAYOUT.columns[ci - 1].category !== c.category)
+                out.push(
+                  <tr
+                    key={'cat' + ci}
+                    className="border-t border-gray-100 bg-gray-50"
+                  >
+                    <td
+                      colSpan={mergePeers ? 4 : 5}
+                      className="px-4 py-1.5 text-xs font-semibold text-gray-600"
+                    >
+                      {c.category}
+                      {groupDir ? (
+                        <span style={dirChip}>{groupDir + ' is better'}</span>
+                      ) : null}
+                    </td>
+                  </tr>,
+                );
+              out.push(
                 <tr
                   key={c.id}
                   className="border-t border-gray-100"
@@ -973,7 +1234,15 @@ function WorkflowUI({
                 >
                   <td className="px-4 py-2" title={c.title || undefined}>
                     <div className="font-medium text-gray-900">
-                      {c.label}
+                      <button
+                        type="button"
+                        className="text-left font-medium text-gray-900 hover:text-indigo-700 underline decoration-dotted decoration-gray-300 underline-offset-2"
+                        onClick={function () {
+                          openDef(c.id);
+                        }}
+                      >
+                        {c.label}
+                      </button>
                       {c.title ? (
                         <span
                           className="ml-1 text-gray-500 cursor-help"
@@ -982,13 +1251,17 @@ function WorkflowUI({
                           ⓘ
                         </span>
                       ) : null}
+                      {rowDir ? (
+                        <span style={dirChip}>{rowDir + ' is better'}</span>
+                      ) : null}
                     </div>
-                    <div className="text-xs text-gray-500">{c.category}</div>
                   </td>
                   <td
                     className={
-                      'px-2 py-2 text-right tabular-nums ' + tintBand(e)
+                      'px-2 py-2 text-right tabular-nums font-semibold ' +
+                      tintBand(e)
                     }
+                    style={tintBand(e) ? undefined : { background: OWN_BG }}
                   >
                     {e &&
                     e.band !== 'insufficient' &&
@@ -1071,8 +1344,9 @@ function WorkflowUI({
                       R.fmtValue(m, t)
                     )}
                   </td>
-                </tr>
+                </tr>,
               );
+              return out;
             })}
           </tbody>
         </table>
@@ -1115,17 +1389,22 @@ function WorkflowUI({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full text-xs">
+            <table className="min-w-full text-sm">
               <thead>
-                <tr className="text-gray-500 border-b border-gray-100">
-                  <th className="px-3 py-1.5 text-left font-semibold">
+                <tr className="text-xs text-gray-500 border-b border-gray-100">
+                  <th className="px-4 py-2 text-left font-semibold">
                     {R.cap(ENT.name)}
                   </th>
                   {D.case_fields.map(function (f) {
                     return (
                       <th
                         key={f.field}
-                        className="px-2 py-1.5 text-right font-semibold"
+                        className={
+                          'py-2 text-right font-semibold ' +
+                          (D.case_fields.indexOf(f) === D.case_fields.length - 1
+                            ? 'px-4'
+                            : 'px-2')
+                        }
                       >
                         {f.label}
                       </th>
@@ -1153,7 +1432,7 @@ function WorkflowUI({
                     >
                       <td
                         className={
-                          'px-3 py-1.5 text-indigo-700 ' +
+                          'px-4 py-2 text-indigo-700 ' +
                           (ENT.label_field && c[ENT.label_field]
                             ? ''
                             : 'font-mono')
@@ -1165,7 +1444,13 @@ function WorkflowUI({
                         return (
                           <td
                             key={f.field}
-                            className="px-2 py-1.5 text-right tabular-nums"
+                            className={
+                              'py-2 text-right tabular-nums ' +
+                              (D.case_fields.indexOf(f) ===
+                              D.case_fields.length - 1
+                                ? 'px-4'
+                                : 'px-2')
+                            }
                           >
                             {R.fmtCaseField(f, c[f.field])}
                           </td>
@@ -1181,16 +1466,27 @@ function WorkflowUI({
       </R.Card>
 
       {selCase ? (
-        <div style={{ scrollMarginTop: 72 }}>
+        <div
+          ref={panelRef}
+          style={{ scrollMarginTop: 96, minHeight: 'calc(100vh - 96px)' }}
+        >
           <R.Card>
             <R.SectionTitle
               right={
                 visits.status === 'ready' ? (
-                  <span>
+                  <span className="font-semibold text-gray-900">
                     {visits.rows.length +
                       ' visits' +
                       (visitFlags.length
                         ? ' · ' + flaggedCount + ' flagged'
+                        : '') +
+                      (gapCount
+                        ? ' · ' +
+                          gapCount +
+                          (gapCount === 1 ? ' gap' : ' gaps') +
+                          ' over ' +
+                          GAP_DAYS +
+                          ' days'
                         : '')}
                     {uniformStatus ? (
                       <span
@@ -1238,12 +1534,51 @@ function WorkflowUI({
                         unit: reading.unit,
                       })}
                     </div>
+                    {gapCount ? (
+                      <div className="flex flex-wrap gap-4 text-xs text-gray-600">
+                        {gapCount > (openGap ? 1 : 0) ? (
+                          <span>
+                            <span
+                              className="inline-block mr-1 align-middle"
+                              style={{
+                                width: 12,
+                                height: 12,
+                                borderRadius: 2,
+                                background: '#f3f4f6',
+                                border: '1px solid #d1d5db',
+                              }}
+                            />
+                            {'no visit for over ' + GAP_DAYS + ' days'}
+                          </span>
+                        ) : null}
+                        {openGap ? (
+                          <span>
+                            <span
+                              className="inline-block mr-1 align-middle"
+                              style={{
+                                width: 12,
+                                height: 12,
+                                borderRadius: 2,
+                                background:
+                                  'repeating-linear-gradient(45deg, #d1d5db 0 2px, #f3f4f6 2px 5px)',
+                              }}
+                            />
+                            {'still open (no visit since)'}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
                 <table className="min-w-full text-xs">
                   <thead>
                     <tr className="text-gray-500 border-b border-gray-100">
                       <th className="px-2 py-1.5 text-left">Date</th>
+                      {showSince ? (
+                        <th className="px-2 py-1.5 text-right">
+                          Days since previous
+                        </th>
+                      ) : null}
                       {uniformStatus ? null : (
                         <th className="px-2 py-1.5 text-left">Status</th>
                       )}
@@ -1277,7 +1612,9 @@ function WorkflowUI({
                         </th>
                       ) : null}
                       {anyReviewFlag ? (
-                        <th className="px-2 py-1.5 text-left">Review flag</th>
+                        <th className="px-2 py-1.5 text-left">
+                          Sent to review
+                        </th>
                       ) : null}
                       {hasImages ? (
                         <th className="px-2 py-1.5 text-left">Images</th>
@@ -1304,6 +1641,29 @@ function WorkflowUI({
                           >
                             {R.dateLbl(v.visit_date)}
                           </td>
+                          {showSince ? (
+                            <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">
+                              {i === 0 ? (
+                                '—'
+                              ) : sinceVals[i - 1] > GAP_DAYS ? (
+                                <span
+                                  data-over-gap="1"
+                                  className="font-semibold text-gray-900"
+                                  style={{
+                                    background: '#f3f4f6',
+                                    border: '1px solid #d1d5db',
+                                    padding: '0 6px',
+                                    borderRadius: 2,
+                                  }}
+                                  title={'More than ' + GAP_DAYS + ' days'}
+                                >
+                                  {sinceVals[i - 1]}
+                                </span>
+                              ) : (
+                                sinceVals[i - 1]
+                              )}
+                            </td>
+                          ) : null}
                           {uniformStatus ? null : (
                             <td className="px-2 py-1.5">
                               {v.status ? (
@@ -1381,7 +1741,7 @@ function WorkflowUI({
                           ) : null}
                           {anyReviewFlag ? (
                             <td className="px-2 py-1.5 text-gray-600">
-                              {v.flagged ? 'flagged' : ''}
+                              {v.flagged ? 'Yes' : ''}
                             </td>
                           ) : null}
                           {hasImages ? (
@@ -1413,6 +1773,7 @@ function WorkflowUI({
           </R.Card>
         </div>
       ) : null}
+      <DefModal />
     </div>
   );
 }
