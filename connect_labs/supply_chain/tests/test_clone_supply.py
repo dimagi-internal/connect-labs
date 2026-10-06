@@ -104,3 +104,30 @@ def test_a_real_programme_is_refused_before_anything_is_read(db):
     with patch(FETCH) as fetch, pytest.raises(ValueError, match="refusing"):
         clone_supply.seed(program_id=263, opportunity_id=2230)
     fetch.assert_not_called()
+
+
+def test_a_weekly_top_up_records_only_the_deliveries_due_since(clone):
+    """Seeded part-way through the clone's visits; four weeks later the fortnightly issues since are recorded once."""
+    from connect_labs.supply_chain.models import Distribution
+
+    opp = clone["opp"]
+    midway = START + timedelta(weeks=4, days=-1)
+    with patch(FETCH, return_value=clone["world"].visits):
+        clone_supply.seed(program_id=opp, opportunity_id=opp, today=midway)
+        before = set(Distribution.objects.filter(program_id=opp).values_list("distributed_on", flat=True))
+        first = clone_supply.top_up(program_id=opp, opportunity_id=opp, today=TODAY)
+        again = clone_supply.top_up(program_id=opp, opportunity_id=opp, today=TODAY)
+
+    after = set(Distribution.objects.filter(program_id=opp).values_list("distributed_on", flat=True))
+    new = sorted(after - before)
+    assert new and all(day > midway for day in new)
+    assert [d["on"] for d in first["deliveries_recorded"]] == [d.isoformat() for d in new]
+    assert again["deliveries_recorded"] == []
+    assert all(r.note.startswith("Invented for the demo") for r in Distribution.objects.filter(program_id=opp))
+    assert clone_supply.seeded_clones() == [(opp, opp)]
+
+
+def test_a_top_up_before_any_seed_says_so(clone):
+    opp = clone["opp"]
+    with patch(FETCH, return_value=clone["world"].visits):
+        assert clone_supply.top_up(program_id=opp, opportunity_id=opp, today=TODAY)["topped_up"] is False
