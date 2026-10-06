@@ -7,6 +7,9 @@ app_name = "synthetic"
 urlpatterns = [
     path("", views.SyntheticListView.as_view(), name="list"),
     path("new/", views.SyntheticCreateView.as_view(), name="new"),
+    # Clone real opportunities into new synthetic ones (profile, then generate), from a page.
+    path("clone/", views.CloneRealOppView.as_view(), name="clone"),
+    path("clone/<str:task_id>/", views.CloneStatusView.as_view(), name="clone_status"),
     path("labs-only/new/", views.LabsOnlySyntheticCreateView.as_view(), name="labs_only_new"),
     path(
         "labs-only/clone/<int:source_opp_id>/",
