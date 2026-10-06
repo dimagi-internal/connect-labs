@@ -2,7 +2,7 @@ from django.conf import settings
 from django.urls import path, re_path
 from django.views.generic import RedirectView
 
-from connect_labs.supply_chain import api_views, views
+from connect_labs.supply_chain import api_views, cells, views
 from connect_labs.supply_chain.alerts import views as alert_views
 from connect_labs.supply_chain.distribution import views as distribution_views
 from connect_labs.supply_chain.fulfilment import views as fulfilment_views
@@ -236,6 +236,8 @@ urlpatterns = [
         procurement_views.ApprovalDecideView.as_view(),
         name="approval_decide",
     ),
+    # One table cell, edited in place (cells.py): every supply table posts here.
+    path("cells/", cells.CellEditView.as_view(), name="cell_edit"),
     path("orders/", views.OrdersView.as_view(), name="orders"),
     # "new" before the int route, so the literal cannot be read as an id.
     path("orders/new/", fulfilment_views.ContractCreateView.as_view(), name="contract_create"),

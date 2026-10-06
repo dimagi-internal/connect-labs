@@ -209,8 +209,13 @@ def test_reminder_draft_says_mark_sent_and_row_says_reminder_sent():
     source = get_template("supply_chain/procurement/tender_detail.html").template.source
     assert 'data-testid="mark-sent"' in source and ">Mark sent</button>" in source
     assert "Record chase</button>" not in source
-    # The changed cell keeps every row's "<date> · <nth> reminder" shape; the sent state rides the tag.
-    assert 'data-testid="supplier-chased">{% for part in r.chased|default:"—"|dot_parts %}' in source
+    # The changed cell keeps every row's shape -- the day, its nth reminder under it -- and the sent
+    # state rides the tag. One cell, edited in place (2026-10-05).
+    assert (
+        'data-testid="supplier-chased" {% if o %}{% edit_cell "outreach" o.id "last_reminder_on" r.chased_on %}'
+        in source
+    )
+    assert '<span class="sub">{{ r.reminders }}</span>' in source
     assert 'label="Reminder sent"' in source
     assert "no further reminder · deadline" in source
 

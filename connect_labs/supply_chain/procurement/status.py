@@ -261,17 +261,26 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
         asked = max((o.sent_on for o in mine if o.sent_on), default=None)
         chased = max((o.last_reminder_on for o in mine if o.last_reminder_on), default=None)
         row = {"name": supplier.name, "supplier_id": sid, "href": reverse("supply_chain:supplier_detail", args=[sid])}
+        # The stored values behind the Suppliers sheet's cells, each editable in place (cells.py).
+        row["asked_on"], row["chased_on"], row["reminders"] = asked, chased, 0
         # Last chased reads the same chase record as Invitations, replied or not.
         count = max(((reminder_counts or {}).get(o.pk, 0) for o in mine), default=0)
         if chased:
             count = max(count, 1)
         row["chased"] = (_day(chased) + (f" · {_ordinal(count)} reminder" if count else "")) if chased else ""
+        row["reminders"] = f"{_ordinal(count)} reminder" if count else ""
         if theirs_quotes:
             quote = theirs_quotes[-1]
             compared_row = rows_by_quote.get(quote.pk)
             late = bool(quote.received_on and deadline and quote.received_on > deadline)
             row["chip"] = {"label": "Quote, late" if late else "Quote", "tone": PRIMARY}
             row["quote"] = _quote_summary(quote, compared_row)
+            row["live_quote"] = quote
+            price, _, per = row["quote"].split(" · ")[0].partition(" / ")
+            row["price"], row["price_per"] = price, per
+            if quote.base_per_pack_stated:
+                grams = f" × {quote.base_unit_grams_stated} g" if quote.base_unit_grams_stated else ""
+                row["pack"] = f"{quote.base_per_pack_stated}{grams}"
             row["quote_src"] = AI if quote.pk in ai_quotes else PERSON
             # Split as the comparison splits it: the supplier's facts are what is missing from
             # the quote (and what Ask asks for); ours are a count, linking to the comparison.
@@ -781,6 +790,28 @@ def comparison_grid(
             )
         else:
             cells["fx"].append(gap("not recorded", label="exchange rate", owner=rules.US))
+        # Which stored value each fact cell is, so the grid can edit it in place (cells.py):
+        # the supplier's own figures on its quote, ours (estimates, duty terms) on the tender.
+        qid = row["quote_id"]
+        edits = {
+            "price": ("quote", qid, "as_quoted_amount", getattr(quote, "as_quoted_amount", None)),
+            "pack": ("quote", qid, "base_per_pack_stated", quote.base_per_pack_stated),
+            "term": ("quote", qid, "incoterm", quote.incoterm),
+        }
+        if row.get("freight_ours") in ("open", "estimate"):
+            edits["freight"] = ("tender", tender.pk, "freight_estimate_per_unit", tender.freight_estimate_per_unit)
+        elif quote.freight_amount is not None:
+            edits["freight"] = ("quote", qid, "freight_amount", quote.freight_amount)
+        if row.get("clearing") in ("open", "estimate"):
+            edits["clearing"] = ("tender", tender.pk, "clearing_estimate_per_unit", tender.clearing_estimate_per_unit)
+        if quote.delivery_mode == "pickup" or buyer_imports(quote):
+            edits["duty"] = ("tender", tender.pk, "duty_terms", tender.duty_terms)
+        if (quote.as_quoted_currency or "USD") != "USD":
+            edits["fx"] = ("quote", qid, "fx_rate_to_usd", quote.fx_rate_to_usd)
+        # Only a quote record to hand can be corrected; a bare comparison row cannot.
+        for fact_key, edit in edits.items() if qid in quotes_by_id else ():
+            if cells[fact_key]:
+                cells[fact_key][-1]["edit"] = edit
         landed = _landed_per_unit(row, line_qty) if line_qty else {}
         if not landed:
             landed = (row.get("figures") or {}).get("usd_per_pack_normalized") or {}

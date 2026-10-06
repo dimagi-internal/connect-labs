@@ -72,10 +72,12 @@ class TestASilentRound:
         assert re.search(rf'data-testid="supplier-state">Silent {days}d<', silent)
         assert ">No<" not in silent and "No reply" not in silent and "Record a reply" in silent
         assert "Days waiting" not in body
-        # A silent row has no "replied" line; its chase date is kept whole on its own line.
-        assert 'data-testid="replied-on"' not in silent
-        chased = re.search(r'<td [^>]*data-testid="supplier-chased">(.*?)</td>', silent, re.S).group(1)
-        assert re.match(r'<span class="block whitespace-nowrap">', chased)
+        # A silent row has no reply day (its Replied cell is empty, ready to type one in), and one
+        # never chased says so with a dash in a Last chased cell that takes a day typed into it.
+        assert 'data-testid="replied"' not in silent
+        cell = re.search(r'<td [^>]*data-testid="supplier-chased"[^>]*>(.*?)</td>', silent, re.S)
+        assert f'data-edit="outreach:{outreach_id}:last_reminder_on"' in cell.group(0)
+        assert re.sub(r"<[^>]+>", "", cell.group(1)).strip() == "—"
 
         op(
             da,

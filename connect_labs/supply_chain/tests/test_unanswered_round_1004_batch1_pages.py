@@ -63,8 +63,8 @@ class TestOneSuppliersTable:
         body = _page(client_in_program, asked["tender_id"])
         assert 'data-testid="fold-invitations"' not in body
         assert body.count('data-testid="supplier-table"') == 1
-        # The day a supplier replied rides its State cell, not a column of its own (2026-10-04 b2).
-        assert not re.search(r'<th scope="col"[^>]*>Replied</th>', body)
+        # The day a supplier replied is a column of its own again, edited in place (2026-10-05).
+        assert re.search(r'<th scope="col"[^>]*>Replied</th>', body)
         assert "+ Record an invitation" in body
         rows = _rows(body)
         assert len(rows) == 2
@@ -95,5 +95,5 @@ class TestOneSuppliersTable:
         body = client_in_program.get(location.split("#")[0]).content.decode()
         (row,) = (r for r in _rows(body).values() if "data-changed" in r)
         assert f'id="outreach-{outreach_id}"' in row
-        chased = re.search(r'data-testid="supplier-chased">(.*?)</td>', row, re.S).group(1)
+        chased = re.search(r'data-testid="supplier-chased"[^>]*>(.*?)</td>', row, re.S).group(1)
         assert "1st reminder" in chased and "Reminder sent" in chased
