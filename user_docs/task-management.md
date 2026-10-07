@@ -82,7 +82,7 @@ To trigger the OCS bot:
 4. The bot sends a message to the FLW through CommCare Connect
 5. The conversation transcript appears in the task timeline as it progresses
 
-The prompt shown in the modal is an instruction to the assistant describing what to coach the worker about and why — for example, noting which flag was raised and what it typically means. The assistant then opens the conversation with the worker in its own words. You can edit the instructions before clicking **Initiate AI** if you want to adjust the focus or add context.
+The prompt shown in the modal is an instruction to the assistant describing what to coach the worker about and why — for example, noting which flag was raised and what it typically means. The assistant then opens the conversation with the worker using a short, fixed greeting (see below). You can edit the instructions before clicking **Initiate AI** if you want to adjust the focus or add context.
 
 !!! note
     The OCS bot is only available for programs that have been configured to use it. Ask your program administrator if you're unsure whether it's enabled.
@@ -105,7 +105,13 @@ Action buttons appear in the report alongside worker or indicator rows.
 3. Review the details. Nothing is sent until you confirm.
 4. Click **Confirm**. The panel then shows each worker's result as it completes.
 
-**Start coaching on an indicator report.** The coaching button appears only for workers with at least one indicator off target (red) or on watch (yellow), and the button above the table counts only them — for example, "Start coaching · 6 facilitators off target or on watch". The confirmation panel shows, for each worker, the exact briefing the coach will start from: their own figures (for example, "Meetings held — 5 of 12 (42%), band red"), most urgent first, followed by any note your programme team set up. It also shows the opening line the worker receives first — for example, *opening: "Hello Tiyamike! This is a short, friendly check-in about how your work has been going. Is now a good time to talk for a few minutes?"* The worker never sees the briefing itself; the coach reads it privately and raises the topics in conversation. Workers with nothing off target are listed as left out rather than contacted. Dimagi staff coaching a single worker also see **Send to me instead (QA)**: enter your PersonalID username and the preview updates to show the conversation going to you on the worker's behalf.
+**Start coaching on an indicator report.** The coaching button appears only for workers with at least one indicator off target (red) or on watch (yellow), and the button above the table counts only them — for example, "Start coaching · 6 facilitators off target or on watch". The confirmation panel shows, for each worker, the opening line the worker receives first, followed by the briefing the coach reads privately.
+
+The opening line is a short, fixed greeting — for example:
+
+> *Hello Tiyamike! This is a short, friendly check-in about how your work has been going. Is now a good time to talk for a few minutes?*
+
+Workers known only by a username or code (for example, `spark_fac_07`) receive a plain *Hello!* instead. The briefing — each worker's own figures (for example, "Meetings held — 5 of 12 (42%), band red"), most urgent first, followed by any note your programme team set up — is shown beneath the opening line in the confirmation panel. The worker never sees the briefing itself; the coach reads it privately and raises the topics in conversation. Workers with nothing off target are listed as left out rather than contacted. Dimagi staff coaching a single worker also see **Send to me instead (QA)**: enter your PersonalID username and the preview updates to show the conversation going to you on the worker's behalf.
 
 ### Running an action from the agent panel
 
@@ -116,7 +122,7 @@ This means you can ask the assistant to act on what it sees — for example:
 - *"Start AI coaching for everyone with a red metric."*
 - *"Create follow-up tasks for the workers flagged this week."*
 
-Before the assistant carries out any action, it shows you the same confirmation preview that the button does — who will be reached, what the bot will say, and which bot will be used. Nothing is sent until you approve. The assistant acts as you, using your access level.
+Before the assistant carries out any action, it shows you the same confirmation preview that the button does — who will be reached, the opening line the worker will receive, the briefing the coach will use, and which bot will be used. Nothing is sent until you approve. The assistant acts as you, using your access level.
 
 **Testing a coaching bot yourself (Dimagi staff only).** When you run **Initiate AI coach** for a single worker, you can ask for the conversation to be sent to your own Connect app instead of the worker's — useful for trying out a coach on a synthetic (demo) report, where it is otherwise replaced by a sample conversation. The confirmation preview says plainly where the message will go ("sending to: *you* (QA, on behalf of *worker*)"). The follow-up task is still filed under the worker and is marked as a QA test. Only one worker can be redirected at a time.
 
@@ -182,3 +188,6 @@ Yes — if you have connected an external assistant such as Chat Studio, it stay
 
 **The OCS bot showed an error when I tried to start a coaching conversation. What should I do?**
 The error message should now describe the specific reason the request failed — for example, if the worker could not be reached through CommCare Connect or if the messaging service declined the request. Note the exact message and share it with your program administrator so they can investigate.
+
+**What does the worker actually receive when coaching starts?**
+The worker receives a short, fixed greeting — for example, *"Hello Tiyamike! This is a short, friendly check-in about how your work has been going. Is now a good time to talk for a few minutes?"* The briefing about which indicators are off target is never shown to the worker; the coach reads it privately and raises the topics during the conversation. You can see the exact opening line for each worker in the confirmation panel before you send anything.
