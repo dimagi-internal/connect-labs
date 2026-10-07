@@ -58,9 +58,9 @@ def test_the_comparison_names_it_and_its_action_by_that_name(da, world, client_i
     assert terms == "· Duty exemption not on file"
     if 'data-testid="waiver-pending"' not in body:
         pytest.skip("this world's quote does not leave the import to us")
-    assert "duty exemption not on file · ours to attach" in body
-    # Attached once, on the tender's duty line; each quote's column points there.
-    assert 'data-testid="duty-exemption-attach"' in body and 'data-testid="grid-terms-link"' in body
+    assert re.search(r'data-testid="waiver-pending">duty exemption not on file<', body)
+    # Attached once, on the tender's duty line, and only there: no per-quote link to it.
+    assert 'data-testid="duty-exemption-attach"' in body and 'data-testid="grid-terms-link"' not in body
 
 
 @pytest.mark.django_db
@@ -77,7 +77,7 @@ def test_the_order_s_nil_duty_is_the_figure_and_the_comparison_s_chip(da, world,
     contract = _contract(da, world, duties_basis="excluded", duties_amount="0.00")
     body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
     cell = re.search(r'data-testid="duty-relief-unevidenced"[^>]*>(.*?)</span>\s*</td>', body, re.S).group(1)
-    assert _text(cell) == "USD 0.00 duty exemption not on file · to do"
+    assert _text(cell) == "USD 0.00 (waiver) duty exemption not on file"
     assert 'class="status-chip status-chip--ours" data-testid="waiver-pending"' in cell
     assert "duty relief is documented" not in body and "no document on file" not in body
 

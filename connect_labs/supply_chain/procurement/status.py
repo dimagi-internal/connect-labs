@@ -19,7 +19,7 @@ from functools import lru_cache
 from django.urls import reverse
 
 from connect_labs.supply_chain import moves as rules
-from connect_labs.supply_chain.records import document_kind_label, document_not_on_file
+from connect_labs.supply_chain.records import document_kind_label, document_not_on_file, waived_duty
 from connect_labs.supply_chain.standing import STAGES, stage_bars
 from connect_labs.supply_chain.values import money_digits, quantity_phrase, unit_noun
 
@@ -736,6 +736,9 @@ def comparison_grid(
         quote_gaps = quote_open_facts(tender, row, quote, waiver_on_file=waiver_on_file)
         waiver_gap = _WAIVER_DOC in quote_gaps
         our_gaps, supplier_gaps = split_gaps(quote_gaps)
+        # The exemption document is the tender's, attached once: the duty line above the grid
+        # and each quote's duty cell say it; the quote's own cell keeps to what is the quote's.
+        our_gaps = [g for g in our_gaps if g != _WAIVER_DOC]
         asked = asked_since_quote(quotes_by_id.get(row.get("quote_id")))
         supplier_owner = rules.SUPPLIERS if asked else rules.TO_ASK
         # The quote's status chips (one per party owing facts), and one action per open gap, ours first.
@@ -759,16 +762,6 @@ def comparison_grid(
                 elif g in _ESTIMATE_GAPS:
                     actions.append(
                         {"label": f"Record {g}", "href": f"{tender_url}#import-estimates", "owner": rules.US}
-                    )
-                elif g == _WAIVER_DOC:
-                    actions.append(
-                        {
-                            "label": f"Attach {_WAIVER_DOC}",
-                            "href": "#duty-terms",
-                            "owner": rules.US,
-                            # Tender-level: attached once on the duty line, not per quote.
-                            "terms": True,
-                        }
                     )
                 else:
                     actions.append({"label": f"Record {g}", "href": quote_url, "owner": rules.US})
@@ -888,9 +881,10 @@ def comparison_grid(
             cells["clearing"].append(blank("supplier's (it imports)" if quote.delivery_mode != "pickup" else "—"))
         duty = _duty_cell(tender, quote, gaps, src_of("duties_basis", "incoterm"))
         if waiver_gap:
+            # One shape wherever this nil duty shows (here and the order's duty line): the
+            # figure, and one chip naming the document it waits on.
             duty["pending"] = document_not_on_file("duty_exemption")
             duty["pending_owner"] = rules.US
-            duty["pending_chip"] = rules.gap_chip_word(rules.US, [_WAIVER_DOC])
         cells["duty"].append(duty)
         if (quote.as_quoted_currency or "USD") == "USD":
             cells["fx"].append(blank("n/a · quoted in USD"))
@@ -1139,7 +1133,7 @@ def _duty_cell(tender, quote, gaps, src) -> dict:
             }
         return {"v": "not stated", "gap": True, "src": "", "owner": rules.SUPPLIERS}
     if terms == "buyer_waiver":
-        return {"v": "waived (our import)", "gap": False, "src": CALC}
+        return {"v": waived_duty(f"USD {money_digits(0)}"), "gap": False, "src": CALC}
     if terms == "buyer_pays":
         if tender.duty_estimate_percent is None:
             return {"v": "our estimate: not recorded", "gap": True, "src": "", "owner": rules.US}

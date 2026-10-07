@@ -237,6 +237,16 @@ def document_not_on_file(kind) -> str:
     return f"{document_kind_label(kind)} not on file"
 
 
+def waived_duty(figure) -> str:
+    """A nil duty that rests on a waiver, as every page shows it: "USD 0.00 (waiver)".
+
+    The figure first (it is a figure, added into the landed cost), then what makes it
+    nil; the document it rests on, when missing, is the one chip beside it
+    (document_not_on_file). Never the bare word "waived" in place of the figure.
+    """
+    return f"{figure} (waiver)"
+
+
 # What a document can be evidence FOR. Declared here, once, because three
 # places need the same list: the model's foreign keys, the operation schema
 # that accepts `<name>_id`, and the query that filters on it. It used to live
