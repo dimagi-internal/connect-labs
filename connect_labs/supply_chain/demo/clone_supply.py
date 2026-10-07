@@ -77,22 +77,24 @@ def _round_up(quantity: Decimal, step: int = 10) -> Decimal:
 COUNTED = (
     "Invented for the demo: the clone's visits carry no stock balance a worker could report "
     "(the app's running balance is a calculated field, which a clone does not reproduce). "
-    "The ledger's own balance that Sunday, off by what a real count is often off by."
+    "The ledger's own balance that Sunday; for a few workers, well under it."
 )
 
 
 def count_offsets(usernames, *, seed: int = 13) -> dict:
     """{username: sachets} each worker's weekly count is off from the ledger by.
 
-    Most counts land within a couple of sachets; about one worker in six counts
-    well below what the ledger says they hold, the variance a real network shows
-    (sachets given out without being recorded, or lost). Seeded, so a top-up and a
+    Most workers count exactly what the ledger holds; about one worker in six
+    counts well below it -- the variance a real network shows (sachets given out
+    without being recorded, or lost). Every non-zero offset raises a
+    stock_variance check, which the map draws as a blocker, so small noise on
+    every worker would bury the gaps that matter. Seeded, so a top-up and a
     reseed agree.
     """
     rng = random.Random(seed)
     offsets = {}
     for username in sorted(usernames):
-        offsets[username] = -rng.randint(5, 15) if rng.random() < 1 / 6 else rng.randint(-2, 2)
+        offsets[username] = -rng.randint(5, 15) if rng.random() < 1 / 6 else 0
     return offsets
 
 
