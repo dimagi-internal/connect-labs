@@ -76,12 +76,15 @@ class TestListVisits:
                 vaccination="yes",
             ),
             _FakeRow("v2", form_name="No Children Found", wa_case_id="wa-2"),
-            _FakeRow("v3", form_name="Inaccessible WA", wa_case_id="wa-3"),
+            # Inaccessible is a Connect work-area status, not a visit: no such
+            # form exists in any CHC opportunity's export, and one that did
+            # appear must not be counted as if it were the indicator's source.
+            _FakeRow("v3", form_name="Inaccessible WA", wa_case_id="wa-3"),  # excluded
             _FakeRow("v4", form_name="Some Other Form", wa_case_id="wa-4"),  # excluded
         ]
         pipeline = _FakePipeline(rows)
         visits = list_visits(1, pipeline=pipeline)
-        assert len(visits) == 3
+        assert len(visits) == 2
         hsd = visits[0]
         assert hsd == {
             "wa_case_id": "wa-1",
@@ -96,7 +99,7 @@ class TestListVisits:
 
     def test_pull_is_not_filtered_to_approved_and_carries_each_visits_status(self):
         # NCF counts at any review status, so the pull itself must not drop
-        # unapproved visits -- the approved-only rule for HSD/Inaccessible is
+        # unapproved visits -- the approved-only rule for HSD is
         # applied per form in aggregate_visits_by_wa. A rejected NCF row has
         # to come through with its real status attached.
         rows = [
@@ -138,14 +141,12 @@ class TestAggregateVisitsByWa:
                 "vaccination_given": True,
             },
             {"wa_case_id": "wa-1", "form_name": "No Children Found"},
-            {"wa_case_id": "wa-1", "form_name": "Inaccessible WA"},
             {"wa_case_id": "wa-2", "form_name": "Health Service Delivery", "deworming_given": True},
         ]
         agg = aggregate_visits_by_wa(visits)
         assert agg["wa-1"] == {
             "approved_hsd_count": 2,
             "approved_ncf_count": 1,
-            "approved_inaccessible_count": 1,
             "deworming_given": 1,
             "muac_given": 2,
             "vaccination_given": 1,
@@ -166,7 +167,7 @@ class TestAggregateVisitsByWa:
         agg = aggregate_visits_by_wa(visits)
         assert {wa: agg[wa]["approved_ncf_count"] for wa in agg} == {"wa-1": 1, "wa-2": 1, "wa-3": 1, "wa-4": 1}
 
-    def test_hsd_and_inaccessible_still_need_approval(self):
+    def test_hsd_still_needs_approval(self):
         visits = [
             {
                 "wa_case_id": "wa-1",
@@ -181,18 +182,16 @@ class TestAggregateVisitsByWa:
                 "deworming_given": True,
             },
             {"wa_case_id": "wa-1", "form_name": "Health Service Delivery", "status": "pending", "muac_recorded": True},
-            {"wa_case_id": "wa-2", "form_name": "Inaccessible WA", "status": "approved"},
-            {"wa_case_id": "wa-3", "form_name": "Inaccessible WA", "status": "rejected"},
+            {"wa_case_id": "wa-2", "form_name": "Health Service Delivery", "status": "rejected"},
         ]
         agg = aggregate_visits_by_wa(visits)
         # Only the one approved HSD visit counts, along with its own DQ fields.
         assert agg["wa-1"]["approved_hsd_count"] == 1
         assert agg["wa-1"]["deworming_given"] == 1
         assert agg["wa-1"]["muac_given"] == 0
-        assert agg["wa-2"]["approved_inaccessible_count"] == 1
-        # A WA whose only visit is an unapproved Inaccessible/HSD never enters
-        # the aggregate at all (build_evaluation_rows zero-fills it).
-        assert "wa-3" not in agg
+        # A WA whose only visit is an unapproved HSD never enters the
+        # aggregate at all (build_evaluation_rows zero-fills it).
+        assert "wa-2" not in agg
 
     def test_unapproved_non_ncf_visit_does_not_set_the_submitter_but_an_unapproved_ncf_does(self):
         visits = [
@@ -315,7 +314,6 @@ class TestBuildEvaluationRows:
             "wa-1": {
                 "approved_hsd_count": 5,
                 "approved_ncf_count": 1,
-                "approved_inaccessible_count": 0,
                 "deworming_given": 4,
                 "muac_given": 5,
                 "vaccination_given": 3,
@@ -332,12 +330,12 @@ class TestBuildEvaluationRows:
                 "flw_username": "flw-1",
                 "lat": None,
                 "lon": None,
+                "connect_inaccessible": 0,
                 "status": "VISITED",
                 "building_count": 10,
                 "expected_visit_count": 8,
                 "approved_hsd_count": 5,
                 "approved_ncf_count": 1,
-                "approved_inaccessible_count": 0,
                 "deworming_given": 4,
                 "muac_given": 5,
                 "vaccination_given": 3,
@@ -385,7 +383,6 @@ class TestBuildEvaluationRows:
             "wa-1": {
                 "approved_hsd_count": 1,
                 "approved_ncf_count": 0,
-                "approved_inaccessible_count": 0,
                 "deworming_given": 0,
                 "muac_given": 0,
                 "vaccination_given": 0,

@@ -24,7 +24,7 @@ def _wa(wa_id, **overrides):
         "expected_visit_count": 10,
         "approved_hsd_count": 8,
         "approved_ncf_count": 1,
-        "approved_inaccessible_count": 1,
+        "connect_inaccessible": 1,
         "deworming_given": 8,
         "muac_given": 8,
         "vaccination_given": 8,
@@ -181,31 +181,31 @@ class TestVisitPresenceAffected:
 
     @pytest.mark.parametrize(
         "key,field",
-        [(ind.NCF, "approved_ncf_count"), (ind.INACCESSIBLE, "approved_inaccessible_count")],
+        [(ind.NCF, "approved_ncf_count"), (ind.INACCESSIBLE, "connect_inaccessible")],
     )
     def test_true_when_own_visit_type_present(self, key, field):
-        overrides = {"approved_ncf_count": 0, "approved_inaccessible_count": 0, field: 1}
+        overrides = {"approved_ncf_count": 0, "connect_inaccessible": 0, field: 1}
         wa = _wa("a", building_count=10, **overrides)
         assert ind._visit_presence_affected(wa, key, {"min_building_count": 1}) is True
 
     @pytest.mark.parametrize("key", [ind.NCF, ind.INACCESSIBLE])
     def test_false_when_neither_visit_type_present(self, key):
-        wa = _wa("a", building_count=10, approved_ncf_count=0, approved_inaccessible_count=0)
+        wa = _wa("a", building_count=10, approved_ncf_count=0, connect_inaccessible=0)
         assert ind._visit_presence_affected(wa, key, {"min_building_count": 1}) is False
 
     @pytest.mark.parametrize("key", [ind.NCF, ind.INACCESSIBLE])
     def test_none_when_gated_out_by_min_building_count(self, key):
-        wa = _wa("a", building_count=0, approved_ncf_count=1, approved_inaccessible_count=1)
+        wa = _wa("a", building_count=0, approved_ncf_count=1, connect_inaccessible=1)
         assert ind._visit_presence_affected(wa, key, {"min_building_count": 1}) is None
 
     def test_ncf_and_inaccessible_are_mutually_exclusive_signals(self):
         # The whole point of the split: an NCF-only visit trips NCF but not
         # Inaccessible, and vice versa.
-        ncf_only = _wa("a", building_count=10, approved_ncf_count=1, approved_inaccessible_count=0)
+        ncf_only = _wa("a", building_count=10, approved_ncf_count=1, connect_inaccessible=0)
         assert ind._visit_presence_affected(ncf_only, ind.NCF, {"min_building_count": 1}) is True
         assert ind._visit_presence_affected(ncf_only, ind.INACCESSIBLE, {"min_building_count": 1}) is False
 
-        inaccessible_only = _wa("a", building_count=10, approved_ncf_count=0, approved_inaccessible_count=1)
+        inaccessible_only = _wa("a", building_count=10, approved_ncf_count=0, connect_inaccessible=1)
         assert ind._visit_presence_affected(inaccessible_only, ind.NCF, {"min_building_count": 1}) is False
         assert ind._visit_presence_affected(inaccessible_only, ind.INACCESSIBLE, {"min_building_count": 1}) is True
 
@@ -213,13 +213,11 @@ class TestVisitPresenceAffected:
 class TestVisitPresenceNeighborCount:
     def test_counts_only_affected_neighbors_of_the_same_visit_type(self):
         by_id = {
-            "b": _wa("b", building_count=10, approved_ncf_count=1, approved_inaccessible_count=0),  # NCF-affected
+            "b": _wa("b", building_count=10, approved_ncf_count=1, connect_inaccessible=0),  # NCF-affected
             "c": _wa(
-                "c", building_count=10, approved_ncf_count=0, approved_inaccessible_count=1
+                "c", building_count=10, approved_ncf_count=0, connect_inaccessible=1
             ),  # Inaccessible-affected, not NCF -- shouldn't count for NCF
-            "d": _wa(
-                "d", building_count=0, approved_ncf_count=1, approved_inaccessible_count=0
-            ),  # gated out, doesn't count
+            "d": _wa("d", building_count=0, approved_ncf_count=1, connect_inaccessible=0),  # gated out, doesn't count
         }
         count = ind.visit_presence_neighbor_count(_wa("a"), ["b", "c", "d"], by_id, ind.NCF, {"min_building_count": 1})
         assert count == 1
@@ -312,10 +310,10 @@ class TestEvaluateRunFloor:
 
     @pytest.mark.parametrize(
         "key,field",
-        [(ind.NCF, "approved_ncf_count"), (ind.INACCESSIBLE, "approved_inaccessible_count")],
+        [(ind.NCF, "approved_ncf_count"), (ind.INACCESSIBLE, "connect_inaccessible")],
     )
     def test_ncf_or_inaccessible_floor_is_presence_not_a_ratio(self, key, field):
-        overrides = {"approved_ncf_count": 0, "approved_inaccessible_count": 0, field: 1}
+        overrides = {"approved_ncf_count": 0, "connect_inaccessible": 0, field: 1}
         was = [_wa("a", **overrides)]
         candidates = ind.evaluate_run(was, {key: {"enabled": True}}, _no_filter())
         assert len(candidates) == 1
@@ -323,7 +321,7 @@ class TestEvaluateRunFloor:
 
     @pytest.mark.parametrize("key", [ind.NCF, ind.INACCESSIBLE])
     def test_ncf_or_inaccessible_not_flagged_when_no_matching_visit(self, key):
-        was = [_wa("a", approved_ncf_count=0, approved_inaccessible_count=0)]
+        was = [_wa("a", approved_ncf_count=0, connect_inaccessible=0)]
         candidates = ind.evaluate_run(was, {key: {"enabled": True}}, _no_filter())
         assert candidates == []
 
@@ -331,7 +329,7 @@ class TestEvaluateRunFloor:
         # A WA with only an Inaccessible visit trips the Inaccessible row,
         # not NCF, even with both enabled -- confirms the split isn't just a
         # relabeling of one shared signal.
-        was = [_wa("a", approved_ncf_count=0, approved_inaccessible_count=1)]
+        was = [_wa("a", approved_ncf_count=0, connect_inaccessible=1)]
         candidates = ind.evaluate_run(
             was, {ind.NCF: {"enabled": True}, ind.INACCESSIBLE: {"enabled": True}}, _no_filter()
         )
@@ -339,7 +337,7 @@ class TestEvaluateRunFloor:
         assert candidates[0]["triggered_indicators"] == [ind.INACCESSIBLE]
 
     def test_ncf_detail_carries_own_affected(self):
-        was = [_wa("a", approved_ncf_count=1, approved_inaccessible_count=0)]
+        was = [_wa("a", approved_ncf_count=1, connect_inaccessible=0)]
         candidates = ind.evaluate_run(was, {ind.NCF: {"enabled": True}}, _no_filter())
         assert candidates[0]["detail"][ind.NCF]["own_affected"] is True
 
@@ -347,7 +345,7 @@ class TestEvaluateRunFloor:
         # With the filter off, NCF's own neighbor distance/count settings
         # still compute an informational "is this part of a cluster" signal,
         # but nothing is ever dropped on account of it.
-        was = [_wa("a", lat=12.0, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0)]
+        was = [_wa("a", lat=12.0, lon=8.0, approved_ncf_count=1, connect_inaccessible=0)]
         candidates = ind.evaluate_run(was, {ind.NCF: {"enabled": True}}, _no_filter(min_affected_neighbors_ncf=1))
         detail = candidates[0]["detail"][ind.NCF]
         assert detail["affected_neighbor_count"] == 0
@@ -449,7 +447,7 @@ class TestEvaluateRunClusterAwareFilter:
         # The filter applies to NCF just like every other indicator -- "a"
         # is the only WA (no neighbors at all), so it has nothing to
         # corroborate it and gets dropped.
-        was = [_wa("a", lat=12.0, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0)]
+        was = [_wa("a", lat=12.0, lon=8.0, approved_ncf_count=1, connect_inaccessible=0)]
         candidates = ind.evaluate_run(
             was,
             {ind.NCF: {"enabled": True}},
@@ -459,8 +457,8 @@ class TestEvaluateRunClusterAwareFilter:
 
     def test_ncf_survives_the_filter_when_neighbors_corroborate(self):
         was = [
-            _wa("a", lat=12.0, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0),
-            _wa("b", lat=12.0005, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0),  # ~55m away
+            _wa("a", lat=12.0, lon=8.0, approved_ncf_count=1, connect_inaccessible=0),
+            _wa("b", lat=12.0005, lon=8.0, approved_ncf_count=1, connect_inaccessible=0),  # ~55m away
         ]
         candidates = ind.evaluate_run(
             was,
@@ -485,7 +483,7 @@ class TestEvaluateRunClusterAwareFilter:
                 lon=8.0,
                 approved_hsd_count=1,
                 approved_ncf_count=1,
-                approved_inaccessible_count=0,
+                connect_inaccessible=0,
                 expected_visit_count=10,
             )
         ]
@@ -518,7 +516,7 @@ class TestEvaluateRunClusterAwareFilter:
                 lon=8.0,
                 approved_hsd_count=1,
                 approved_ncf_count=1,
-                approved_inaccessible_count=0,
+                connect_inaccessible=0,
                 expected_visit_count=10,
             ),
             _wa(
@@ -527,7 +525,7 @@ class TestEvaluateRunClusterAwareFilter:
                 lon=8.0,
                 approved_hsd_count=9,
                 approved_ncf_count=1,
-                approved_inaccessible_count=0,
+                connect_inaccessible=0,
                 expected_visit_count=10,
             ),
         ]

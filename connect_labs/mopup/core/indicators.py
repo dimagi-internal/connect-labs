@@ -20,7 +20,9 @@ layers are responsible for populating these — this module only computes):
         "expected_visit_count": int,
         "approved_hsd_count": int,
         "approved_ncf_count": int,    # NCF visits at ANY review status (name is historical; see core/visits.py)
-        "approved_inaccessible_count": int,
+        "connect_inaccessible": int,  # 1 if Connect's work-area status is INACCESSIBLE or
+                                       # REQUEST_FOR_INACCESSIBLE, else 0 (a status, not a visit
+                                       # -- see core/geometry.py's INACCESSIBLE_CONNECT_STATUSES)
         "deworming_given": int,       # of approved_hsd_count visits
         "muac_given": int,
         "vaccination_given": int,
@@ -33,10 +35,14 @@ layers are responsible for populating these — this module only computes):
 Every rate the three data-quality metrics compute shares `approved_hsd_count`
 as its denominator; EVC shortfall's denominator is `expected_visit_count`.
 NCF and Inaccessible each have no rate/threshold at all (see below) — a work
-area only ever logs ONE NCF-or-Inaccessible visit, never a mix and never more
-than one (confirmed: NCF can only be filled in once, and any HSD visit makes
-NCF impossible thereafter), so "was this WA ever affected by THAT specific
-visit type" is the natural signal for each. They started life as one combined
+area is only ever one of the two, never a mix (NCF can only be filled in once,
+and an area an FLW could not reach never gets a delivery visit), so "was this
+WA ever affected by THAT specific thing" is the natural signal for each. They
+come from different places in Connect: NCF is a "No Children Found" visit (at
+any review status, see core/visits.py), Inaccessible is the work area's own
+Connect status (INACCESSIBLE, or REQUEST_FOR_INACCESSIBLE while a request
+awaits review) -- an inaccessibility request is not a visit and never appears
+in the visit export. They started life as one combined
 indicator ("NCF/inaccessible") and were later split into their own rows/counts
 per reviewer request, while continuing to share the same neighbor-distance/
 min-neighbor-count/min-building-count settings (see `_VISIT_PRESENCE_INDICATORS`)
@@ -103,7 +109,12 @@ TIER_2_INDICATORS = {DEWORMING, MUAC, VACCINATION}
 # logs at most one such visit ever (see module docstring), so they remain
 # mutually exclusive, but reviewers wanted the "which one" broken out into
 # its own row/count rather than folded into a single "affected" bucket.
-_VISIT_PRESENCE_INDICATORS = {NCF: "approved_ncf_count", INACCESSIBLE: "approved_inaccessible_count"}
+#
+# The two presence signals have different sources: NCF is a count of "No
+# Children Found" VISITS; Inaccessible is a 0/1 flag from Connect's work-area
+# STATUS (an inaccessibility request is not a visit, so it never appears in the
+# visit export). Both are read the same way below -- "is it > 0".
+_VISIT_PRESENCE_INDICATORS = {NCF: "approved_ncf_count", INACCESSIBLE: "connect_inaccessible"}
 
 # "below" = flagged when the rate is BELOW threshold (a shortfall). NCF and
 # Inaccessible have no threshold/direction — see _visit_presence_affected.
@@ -189,12 +200,15 @@ def is_flagged(rate: float | None, threshold: float, indicator_key: str) -> bool
 
 
 def _visit_presence_affected(wa: dict, indicator_key: str, global_config: dict) -> bool | None:
-    """Does this WA have an approved visit of `indicator_key`'s own type (NCF
-    or Inaccessible)? `None` if gated out by `min_building_count` — never a
-    guess. This is the unconditional candidacy floor for NCF/Inaccessible: no
-    threshold, no rate — presence/absence of THAT specific visit type is the
-    signal (a WA logs at most one NCF-or-Inaccessible visit ever, so it can
-    trigger at most one of these two indicators)."""
+    """Is this WA affected by `indicator_key`'s own condition (NCF: it has a
+    "No Children Found" visit; Inaccessible: Connect has it marked
+    inaccessible, or an inaccessibility request pending)? `None` if gated out
+    by `min_building_count` — never a guess. This is the unconditional
+    candidacy floor for NCF/Inaccessible: no threshold, no rate —
+    presence/absence of THAT specific condition is the signal (a WA is only
+    ever one of the two, so it can trigger at most one of these two
+    indicators). Where each signal comes from: see
+    `_VISIT_PRESENCE_INDICATORS`."""
     min_buildings = global_config.get("min_building_count", 1)
     if wa.get("building_count", 0) < min_buildings:
         return None

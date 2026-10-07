@@ -1,16 +1,22 @@
-"""HSD/NCF/Inaccessible visit-form data, aggregated per work area —
+"""HSD/NCF visit-form data, aggregated per work area —
 the expensive pull (design brief §5), scoped in application logic to
 whichever ward(s) Phase 1 selected. Real field paths re-verified this
 session against `core/areas.py`'s `ward_children_per_building` (which already
 pulls HSD visits the same way) — re-verify again before relying on them, per
 the brief's own caveat: these evolve.
 
-Review status: HSD and Inaccessible visits count only once APPROVED, but an
-NCF ("No Children Found") visit counts at ANY review status. A rejected or
-still-pending NCF is still a real report that nobody was home to serve, and
-reviewers were losing work areas from the plan because of the rejection
-(confirmed on opp 2156: a whole work-area group of rejected NCF visits was
-invisible to the indicator).
+Review status: HSD visits count only once APPROVED, but an NCF ("No Children
+Found") visit counts at ANY review status. A rejected or still-pending NCF is
+still a real report that nobody was home to serve, and reviewers were losing
+work areas from the plan because of the rejection (confirmed on opp 2156: a
+whole work-area group of rejected NCF visits was invisible to the indicator).
+
+Inaccessible is deliberately NOT here: it is not a visit. An FLW's
+inaccessibility request changes the work area's own Connect status and
+creates a review request, and neither appears in the visit export (confirmed
+on all four CHC opportunities: the only forms present are "Health Service
+Delivery" and "No Children Found"). It is read from `core/geometry.py`'s
+`connect_status` instead.
 """
 
 from __future__ import annotations
@@ -20,7 +26,6 @@ from django.http import HttpRequest
 from connect_labs.mopup.core.areas import HSD_FORM_NAME, WA_CASE_ID_PATHS
 
 NCF_FORM_NAME = "No Children Found"
-INACCESSIBLE_FORM_NAME = "Inaccessible WA"
 
 _FORM_NAME_PATH = "form.@name"
 _DEWORMING_PATH = "form.case.update.dw_meds_delivery_status"
@@ -36,7 +41,7 @@ def list_visits(
     request: HttpRequest | None = None,
     pipeline=None,
 ) -> list[dict]:
-    """One dict per HSD/NCF/Inaccessible visit in `opportunity_id`, at ANY
+    """One dict per HSD/NCF visit in `opportunity_id`, at ANY
     review status: ``{"wa_case_id", "form_name", "status", "deworming_given",
     "muac_recorded", "vaccination_given", "username", "visit_date"}``.
     `aggregate_visits_by_wa` decides which statuses count for which form
@@ -72,7 +77,7 @@ def list_visits(
         # to FLW aggregation on a cache miss.
         terminal_stage=CacheStage.VISIT_LEVEL,
         # No status filter: NCF counts at any review status (see the module
-        # docstring), so the approved-only rule for HSD/Inaccessible is applied
+        # docstring), so the approved-only rule for HSD is applied
         # per form in `aggregate_visits_by_wa` instead. Visit-level filters are
         # applied at read time and are not part of the computed-cache hash
         # (`get_config_hash`), so this reads the very same cached rows.
@@ -104,7 +109,7 @@ def list_visits(
         # program-217 data this session.
         c = row.computed or {}
         form_name = c.get("form_name")
-        if form_name not in (HSD_FORM_NAME, NCF_FORM_NAME, INACCESSIBLE_FORM_NAME):
+        if form_name not in (HSD_FORM_NAME, NCF_FORM_NAME):
             continue
         visits.append(
             {
@@ -131,13 +136,13 @@ def list_visits(
 def aggregate_visits_by_wa(visits: list[dict], wa_ids: set[str] | None = None) -> dict[str, dict]:
     """Roll up `list_visits`' rows into one aggregate per
     `wa_case_id`: ``{"approved_hsd_count", "approved_ncf_count",
-    "approved_inaccessible_count", "deworming_given", "muac_given",
-    "vaccination_given", "flw_username"}`` — the count fields are the exact
-    ones `core.indicators.wa_rate` expects, minus the work-area case
-    properties (ward/status/building_count/etc.), which come from
-    `core/work_areas.py` instead.
+    "deworming_given", "muac_given", "vaccination_given", "flw_username"}``
+    — the count fields are the exact ones `core.indicators.wa_rate` expects,
+    minus the work-area case properties (ward/status/building_count/etc.),
+    which come from `core/work_areas.py` instead. (Inaccessible is not a visit
+    count at all -- see this module's docstring.)
 
-    Review status: HSD and Inaccessible visits are counted only when
+    Review status: HSD visits are counted only when
     `status == "approved"`; an NCF visit is counted at ANY status (see this
     module's docstring). `approved_ncf_count` keeps its name even though it is
     no longer approved-only: it is the key every saved run's cached rows and
@@ -175,7 +180,7 @@ def aggregate_visits_by_wa(visits: list[dict], wa_ids: set[str] | None = None) -
             continue
         # NCF counts at any review status; everything else needs approval.
         # Skipped before touching `agg` or the submitter pick, so an
-        # unapproved HSD/Inaccessible visit leaves no trace at all.
+        # unapproved HSD visit leaves no trace at all.
         if v["form_name"] != NCF_FORM_NAME and v.get("status", "approved") != "approved":
             continue
         row = agg.setdefault(
@@ -183,7 +188,6 @@ def aggregate_visits_by_wa(visits: list[dict], wa_ids: set[str] | None = None) -
             {
                 "approved_hsd_count": 0,
                 "approved_ncf_count": 0,
-                "approved_inaccessible_count": 0,
                 "deworming_given": 0,
                 "muac_given": 0,
                 "vaccination_given": 0,
@@ -200,8 +204,6 @@ def aggregate_visits_by_wa(visits: list[dict], wa_ids: set[str] | None = None) -
                 row["vaccination_given"] += 1
         elif v["form_name"] == NCF_FORM_NAME:
             row["approved_ncf_count"] += 1
-        elif v["form_name"] == INACCESSIBLE_FORM_NAME:
-            row["approved_inaccessible_count"] += 1
 
         username = v.get("username")
         if username:
@@ -218,8 +220,8 @@ def build_evaluation_rows(work_areas: list[dict], visit_aggregates: dict[str, di
     `aggregate_visits_by_wa`'s per-WA visit aggregates into
     `core.indicators.evaluate_run`'s expected input shape.
 
-    `lat`/`lon`/`boundary` are left `None`/unset here — `core/candidates.py`'s
-    `build_evaluation_input` merges those in afterwards from
+    `lat`/`lon`/`boundary`/`connect_inaccessible` are left `None`/unset/0 here —
+    `core/candidates.py`'s `build_evaluation_input` merges those in afterwards from
     `core.geometry.fetch_work_area_geometry` (this function only knows about
     case data + visit aggregates, not geometry).
 
@@ -232,7 +234,6 @@ def build_evaluation_rows(work_areas: list[dict], visit_aggregates: dict[str, di
     zero_agg = {
         "approved_hsd_count": 0,
         "approved_ncf_count": 0,
-        "approved_inaccessible_count": 0,
         "deworming_given": 0,
         "muac_given": 0,
         "vaccination_given": 0,
@@ -250,6 +251,9 @@ def build_evaluation_rows(work_areas: list[dict], visit_aggregates: dict[str, di
                 "state": wa["state"],
                 "lat": None,
                 "lon": None,
+                # Set from Connect's work-area status once geometry is merged
+                # in (see this function's docstring); 0 until then.
+                "connect_inaccessible": 0,
                 "status": wa["status"],
                 "building_count": wa["building_count"],
                 "expected_visit_count": wa["expected_visit_count"],

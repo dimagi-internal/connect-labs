@@ -29,7 +29,7 @@ window.MopupAnalysis = (function () {
       'How far the number of children actually served (approved Health Service Delivery visits) falls short of the expected number for this work area. A low ratio can mean the area was under-delivered — or that the expected-count estimate itself was too high for this specific cell. Only scored for work areas that have had at least one approved HSD visit — a work area with zero is excluded entirely (it’s already covered by NCF/inaccessible), not counted as a 0% rate.',
     ncf: "This work area has at least one visit that came back 'No Children Found' instead of a completed service visit. Unlike every other indicator, NCF counts a visit whether or not it has been approved — a rejected or pending NCF still means nobody was found there. A work area logs at most one NCF-or-Inaccessible visit ever, so this and Inaccessible are mutually exclusive.",
     inaccessible:
-      "This work area has at least one approved visit that came back 'Inaccessible' instead of a completed service visit. A work area logs at most one NCF-or-Inaccessible visit ever, so this and NCF are mutually exclusive.",
+      "Connect has this work area marked Inaccessible, or an FLW's inaccessibility request for it is still awaiting review. This comes from the work area's own status in Connect, not from a visit. A denied request puts the area back to Not Visited, so it drops out. A work area is either NCF or Inaccessible, never both.",
     deworming:
       'Of children served here, the share who received deworming medication. A low rate can reflect real refusals or a medication stockout — or an FLW not actually administering it.',
     muac: 'Of children served here, the share who had a MUAC (mid-upper arm circumference) measurement recorded.',
