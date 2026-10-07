@@ -84,7 +84,14 @@ class TestTheTaskCarriesWhatItWasCreatedToCover:
         assert body["tasks"]["flw_a"][0]["coaching_indicators"] == ["image_missing", "zero_danger"]
 
     def test_every_other_field_still_comes_back(self):
-        """This is an additive change to an endpoint three dashboards already read."""
+        """This is an additive change to an endpoint three dashboards already read.
+
+        Deliberately exact equality rather than a subset check. A subset check would catch a
+        field being REMOVED, which is the obvious hazard, but would silently allow one being
+        added -- and a field that appears without anyone deciding it should is how a response
+        three dashboards parse quietly grows a shape nobody agreed to. Adding one here is a
+        one-line change; the point is that it has to be a deliberate one.
+        """
         _, body = _worker_tasks([_task(coaching_indicators=["image_missing"], review="satisfied")])
         row = body["tasks"]["flw_a"][0]
 
@@ -93,9 +100,14 @@ class TestTheTaskCarriesWhatItWasCreatedToCover:
             "status",
             "title",
             "created_at",
+            "updated_at",
+            "updated_by",
+            "last_change",
             "review",
             "session_ids",
             "workflow_run_id",
+            "opportunity_id",
+            "coaching",
             "coaching_indicators",
         }
 
