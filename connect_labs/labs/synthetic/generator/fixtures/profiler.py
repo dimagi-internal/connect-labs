@@ -14,6 +14,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import logging
+import math
 import random
 import re
 import statistics
@@ -943,6 +944,59 @@ def _profile_kpis(
     return kpis
 
 
+# How far a clone's whole map is moved from the source's, and how far each worker's
+# point is then nudged on its own. Far enough that the clone cannot be laid over the
+# real map; near enough that it stays in the same district, so the geography reads
+# true at a glance.
+GEO_SHIFT_KM = (3.0, 8.0)
+GEO_WORKER_JITTER_KM = 0.6
+# How tightly a worker's households sit around their point (the engine's spread).
+GEO_HOUSEHOLD_SPREAD_KM = 1.0
+
+
+def _visit_point(visit: dict) -> tuple[float, float] | None:
+    """(lat, lon) the phone reported for a visit, from the export or the form's metadata."""
+    from connect_labs.pulse.normalize import parse_location
+
+    form_json = visit.get("form_json") if isinstance(visit.get("form_json"), dict) else {}
+    metadata = form_json.get("metadata") if isinstance(form_json.get("metadata"), dict) else {}
+    return parse_location(visit.get("location")) or parse_location(metadata.get("location"))
+
+
+def _profile_geography(visits_by_flw: dict[str, list[dict]], *, seed: int) -> dict | None:
+    """Where each worker works, moved: the manifest's `geography`, or None with no GPS.
+
+    One point per worker -- the median of their own visits' GPS, never a single
+    visit -- so no household or case location is carried. Every point is then
+    moved by one shift for the whole opportunity (a random bearing, GEO_SHIFT_KM
+    away) and nudged by its own jitter, both drawn from `seed` (the server-keyed
+    noise seed), so the clone keeps the programme's shape -- workers spread the
+    way the real ones are, each in their own area -- without lying on the real map.
+    Keyed by persona id in the profiler's volume ranking, so no username is kept.
+    """
+    from statistics import median
+
+    rng = random.Random(seed)
+    bearing = rng.uniform(0, 2 * math.pi)
+    shift_km = rng.uniform(*GEO_SHIFT_KM)
+    centers: dict[str, list[float]] = {}
+    ranked = sorted(visits_by_flw.items(), key=lambda kv: -len(kv[1]))
+    for i, (_, visits) in enumerate(ranked):
+        points = [p for p in (_visit_point(v) for v in visits) if p is not None]
+        if not points:
+            continue
+        lat = median(p[0] for p in points)
+        lon = median(p[1] for p in points)
+        north = shift_km * math.cos(bearing) + rng.gauss(0.0, GEO_WORKER_JITTER_KM)
+        east = shift_km * math.sin(bearing) + rng.gauss(0.0, GEO_WORKER_JITTER_KM)
+        lat += north / 111.0
+        lon += east / (111.0 * max(0.1, math.cos(math.radians(lat))))
+        centers[f"flw_{i + 1:03d}"] = [round(lon, 4), round(lat, 4)]
+    if not centers:
+        return None
+    return {"persona_centers": centers, "settlement_spread_km": GEO_HOUSEHOLD_SPREAD_KM}
+
+
 def _mirror_noise_seed(opportunity_id: int) -> int:
     """A per-opp seed only this server can reproduce.
 
@@ -1200,6 +1254,11 @@ def profile(
         # as a measurement, not as an absence.
         "over_limit_rate": profile_over_limit_rate(user_visits),
     }
+    geography = _profile_geography(
+        visits_by_flw, seed=noise_seed if noise_seed is not None else _mirror_noise_seed(opportunity_id)
+    )
+    if geography is not None:
+        manifest_dict["geography"] = geography
 
     manifest_yaml = yaml.dump(manifest_dict, default_flow_style=False, sort_keys=False)
 
