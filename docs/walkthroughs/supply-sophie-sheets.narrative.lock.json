@@ -10,7 +10,7 @@
     "to-the-field",
     "whose-move"
   ],
-  "fetched_at": "2026-10-06T18:58:31.264724+00:00",
+  "fetched_at": "2026-10-07T00:00:22.423455+00:00",
   "name": "supply-sophie-sheets",
   "narrative": "Sophie buys RUTF for the Connect-RUTF program. Half the suppliers she asked to quote tender 2 never answered, and the three who did each left something out. Watch her read the tender as one sheet, correct what the AI recorded right where she reads it, fill the comparison's gaps cell by cell until every quote has a landed price, and end on an overview that says whose move each thing is.",
   "personas": {
@@ -113,7 +113,7 @@
         }
       ],
       "id": "fill-the-comparison",
-      "narrative": "On the comparison, each quote is a row and each fact a column. Harmattan's import duty cell says our terms are not settled: Sophie picks \"we import, under the program's duty waiver\" right there. Sahel's quote is ex works, in euros: she types our freight estimate into its Freight cell and the exchange rate into its Exchange rate cell. The landed column fills row by row, and the count reads three of three comparable.",
+      "narrative": "On the comparison, each quote is a row and each fact a column. Harmattan's import duty cell says our terms are not settled: Sophie picks \"we import under the duty waiver\" right there. Sahel's quote is ex works, in euros: she types our freight estimate into its Freight cell and the exchange rate into its Exchange rate cell. The landed column fills row by row, and the count reads three of three comparable.",
       "persona": "sophie",
       "provenance": "S5",
       "title": "Fill the comparison, one cell at a time"
@@ -181,5 +181,5 @@
     }
   ],
   "slug": "supply-sophie-sheets",
-  "version": 6
+  "version": 7
 }

@@ -318,8 +318,8 @@ class TestOwedDocumentsSayWhatHoldsTheShipment:
         assert _text(re.search(r'data-testid="owed-open-count"[^>]*>(.*?)</span>', body).group(1)) == "— 3 open"
         holding = re.search(r'data-testid="owed-holding-count"[^>]*>(.*?)</span>', body).group(1)
         assert _text(holding) == "· 2 hold the shipment"
-        # The shipment row's own list: the same two.
-        assert "0 of 2 documents on file" in body
+        # The shipment row's own list: the same two, in the section's own words.
+        assert "2 hold the shipment · 0 on file" in body
 
     def test_no_split_when_everything_open_holds_the_shipment(self, da, world, client_in_program):
         contract, shipment = _held_shipment(da, world)

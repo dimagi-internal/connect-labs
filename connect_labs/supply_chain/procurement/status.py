@@ -25,8 +25,9 @@ from connect_labs.supply_chain.values import money_digits, quantity_phrase, unit
 
 PERSON, AI, CALC = "person", "ai", "calc"
 
-# Chip tones, by meaning (tailwind.css .status-chip--<tone>): done/primary, on us, on suppliers, neutral.
-PRIMARY, OURS, THEIRS, NEUTRAL = "primary", "ours", "theirs", "neutral"
+# Chip tones, by meaning (tailwind.css .status-chip--<tone>): done/primary, on us, on suppliers, neutral,
+# and a quote's missing fact of ours -- outlined, never the moves' amber, since it is not a move.
+PRIMARY, OURS, THEIRS, NEUTRAL, FACT = "primary", "ours", "theirs", "neutral", "fact"
 
 _ROUND_DUTY = "tender duty terms"
 
@@ -433,6 +434,7 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
     blocked_terms = sum(1 for c in compared for row in c.blocked if _blocked_by_terms(row))
     split = {qid: split_gaps(facts) for qid, facts in open_facts.items()}
     waiting_us = sum(1 for ours_g, _ in split.values() if ours_g)
+    ours_word = rules.gap_chip_word(rules.US, [g for ours_g, _ in split.values() for g in ours_g])
     # A supplier's fact is ours to ask until we chase after its quote, then theirs: the tile says which.
     asked = {qid: asked_since_quote(quote_by_id.get(qid), outreach) for qid in split}
     to_ask = sum(len(theirs_g) for qid, (_, theirs_g) in split.items() if not asked[qid])
@@ -468,7 +470,7 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
             "sub": " · ".join(
                 p
                 for p in (
-                    f"{_plural(waiting_us, 'quote')} with facts to do" if waiting_us else "",
+                    f"{ours_word} on {_plural(waiting_us, 'quote')}" if waiting_us else "",
                     f"{_plural(to_ask, 'fact')} to ask" if to_ask else "",
                     f"{_plural(waiting, 'fact')} waiting" if waiting else "",
                 )
@@ -744,10 +746,10 @@ def comparison_grid(
             chips.append({"label": "Comparable", "tone": PRIMARY})
         if row["quote_id"] not in awarded:
             if our_gaps:
-                chips.append({"label": rules.facts_chip(our_gaps, rules.US), "tone": OURS})
+                chips.append({"label": rules.facts_chip(our_gaps, rules.US), "tone": FACT})
             if supplier_gaps:
                 chips.append(
-                    {"label": rules.facts_chip(supplier_gaps, supplier_owner), "tone": THEIRS if asked else OURS}
+                    {"label": rules.facts_chip(supplier_gaps, supplier_owner), "tone": THEIRS if asked else FACT}
                 )
             for g in our_gaps:
                 if g == _ROUND_DUTY:
@@ -807,7 +809,7 @@ def comparison_grid(
         def gap(words="not stated", label=None, owner=rules.SUPPLIERS):
             reason = why.get(label) if label else next((f for k, f in why.items() if k and words and k in words), "")
             # A gap is a value nobody has recorded, so it carries no mark of where a value came from.
-            return {"v": words, "gap": True, "src": "", "why": reason or "", "owner": owner}
+            return {"v": words, "gap": True, "src": "", "why": reason or "", "owner": owner, "label": label}
 
         def fact(value, source=src):
             return {"v": value, "gap": False, "src": source}
@@ -888,6 +890,7 @@ def comparison_grid(
         if waiver_gap:
             duty["pending"] = document_not_on_file("duty_exemption")
             duty["pending_owner"] = rules.US
+            duty["pending_chip"] = rules.gap_chip_word(rules.US, [_WAIVER_DOC])
         cells["duty"].append(duty)
         if (quote.as_quoted_currency or "USD") == "USD":
             cells["fx"].append(blank("n/a · quoted in USD"))
@@ -1009,6 +1012,9 @@ def comparison_grid(
         for column, cell in zip(columns, cells[key]):
             cell["quote_id"] = column["quote_id"]
             cell["fact"] = key
+            # A missing value's chip, in the one quote-gap vocabulary (moves.gap_chip_word).
+            if cell.get("gap") and cell.get("owner"):
+                cell["chip"] = rules.gap_chip_word(cell["owner"], [cell["label"]] if cell.get("label") else [])
     # The specification check is one verdict per quote, not a figure beside the others:
     # it rides on the quote's own cell, with its status, not as a column of its own.
     for column, cell in zip(columns, cells["spec"]):
@@ -1053,7 +1059,7 @@ def _spec_chip(cell) -> dict | None:
         return {"label": f"spec met · {count}" if count else "spec met", "tone": PRIMARY, "detail": cell["v"]}
     return {
         "label": f"spec: {cell['v']}" if cell.get("v") else "spec not met",
-        "tone": OURS if cell.get("owner") in (rules.US, rules.TO_ASK) else THEIRS,
+        "tone": FACT if cell.get("owner") in (rules.US, rules.TO_ASK) else THEIRS,
         "detail": cell.get("why") or "",
         "owner": cell.get("owner") or "",
     }
@@ -1110,7 +1116,7 @@ def _duty_cell(tender, quote, gaps, src) -> dict:
 
     terms = tender.duty_terms or ""
     if _ROUND_DUTY in gaps:
-        return {"v": "our terms: not settled", "gap": True, "src": "", "owner": rules.US}
+        return {"v": "our terms: not settled", "gap": True, "src": "", "owner": rules.US, "label": _ROUND_DUTY}
     if not buyer_imports(quote):
         if quote.duties_basis == "included" or (quote.incoterm or "").upper().startswith("DDP"):
             return {"v": "in price (supplier)", "gap": False, "src": src}

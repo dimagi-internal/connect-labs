@@ -339,7 +339,7 @@ class TestTheOrdersEvidence:
     def test_a_consignment_with_its_own_list_reports_that_list(self, scoped, da, world):
         self._shipment(da, world)
         body = _visible(_order_page(scoped, world))
-        assert "1 of 2 documents on file" in body
+        assert "1 of 2 on file" in body
 
 
 class TestReadBackNamesTheRecord:

@@ -70,7 +70,7 @@ class TestTheComparisonUnderTheWaiver:
         url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=rutf"
         body = client_in_program.get(url).content.decode()
         note = _text(re.search(r'data-testid="comparison-duty-terms".*?</summary>', body, re.S).group(0))
-        assert "we import, under the program's duty waiver" in note
+        assert "we import under the duty waiver" in note
         grid = _text(re.search(r'data-testid="comparison-grid".*?</table>', body, re.S).group(0))
         assert "our terms: not settled" not in grid
 
@@ -89,4 +89,4 @@ def test_the_duty_terms_history_line_reads_as_a_sentence():
     line = sentence(
         Tender, "update", {"duty_terms": ["", "buyer_waiver"], "duty_terms_set_on": [None, "2026-10-03"]}, None
     )
-    assert line == "Set the tender's import duties: we import, under the program's duty waiver"
+    assert line == "Set the tender's import duties: we import under the duty waiver"

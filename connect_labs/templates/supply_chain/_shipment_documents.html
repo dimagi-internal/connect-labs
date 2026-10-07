@@ -1,0 +1,3 @@
+{% comment %}A shipment's clearing documents, in the Documents section's own count: those that hold
+the shipment and how many are on file ("2 hold the shipment · 0 on file"), so the row and the
+section read as one fact. `shipment` carries required_documents, required_on_file, holding_count.{% endcomment %}<span data-testid="shipment-documents" class="text-xs {% if shipment.required_on_file == shipment.required_documents|length %}text-message-success-text{% else %}text-message-warning-text{% endif %}">{% if shipment.holding_count %}{{ shipment.holding_count }} hold{{ shipment.holding_count|pluralize:"s," }} the shipment · {{ shipment.required_on_file }} on file{% else %}{{ shipment.required_on_file }} of {{ shipment.required_documents|length }} on file{% endif %}</span>
