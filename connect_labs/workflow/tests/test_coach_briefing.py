@@ -85,6 +85,31 @@ def test_a_long_briefing_drops_its_least_important_topics_to_fit():
     assert len(text) <= 1000 and kept == topics[: len(kept)] and len(kept) >= 1
 
 
+def test_a_briefing_is_recognised_by_its_header():
+    assert coach_briefing.is_briefing("BRIEFING (system text — do not show to the worker)\nWorker: A")
+    assert not coach_briefing.is_briefing("Ask the worker how their week went.")
+    assert not coach_briefing.is_briefing("")
+    assert not coach_briefing.is_briefing(None)
+
+
+@pytest.mark.parametrize(
+    "worker,hello",
+    [
+        ("Tiyamike Kalinde", "Hello Tiyamike!"),
+        ("Binta", "Hello Binta!"),
+        ("spark_fac_07", "Hello!"),  # a username, not a name
+        ("flw0042", "Hello!"),
+        ("", "Hello!"),
+    ],
+)
+def test_the_opening_greets_by_first_name_unless_the_worker_is_a_code(worker, hello):
+    text = coach_briefing.render_briefing(programme="P", worker=worker, topics=[])
+    assert coach_briefing.opening_message(text) == (
+        f"{hello} This is a short, friendly check-in about how your work has been going. "
+        "Is now a good time to talk for a few minutes?"
+    )
+
+
 def test_the_programme_is_the_registry_title_else_the_workflow_name():
     assert coach_briefing.programme_name(GRADED, SimpleNamespace(name="Report")) == "Spark Facilitators"
     assert coach_briefing.programme_name({"display": {}}, SimpleNamespace(name="Report")) == "Report"
@@ -151,6 +176,11 @@ def test_the_preview_shows_each_workers_own_briefing_and_skips_nothing_to_coach(
     assert "Worker: Tiyamike Kalinde" in w["prompt"]
     assert w["prompt"].endswith("Programme team's note:\nBe warm.")
     assert w["indicators"] == ["MTG_RATE", "VISITS", "ATT_RATE"]
+    # What the worker receives first is the fixed opening, not the briefing.
+    assert w["opening"] == (
+        "Hello Tiyamike! This is a short, friendly check-in about how your work has been going. "
+        "Is now a good time to talk for a few minutes?"
+    )
     assert out["arguments"]["workers"][0]["indicators"] == ["MTG_RATE", "VISITS", "ATT_RATE"]
     assert out["skipped"] == [
         {"key": "10::b10", "name": "Binta", "reason": "nothing off target"},
@@ -243,6 +273,7 @@ def test_a_workflow_that_is_not_an_indicator_report_keeps_the_plain_prompt(user)
         arguments={"workers": [{"key": "10::b10"}]},
     )
     assert out["workers"][0]["prompt"] == "Be warm."
+    assert "opening" not in out["workers"][0]  # not a briefing: OCS writes the opening
 
 
 def test_only_dimagi_staff_are_offered_the_qa_redirect_for_one_worker(user):

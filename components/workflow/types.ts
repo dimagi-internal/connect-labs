@@ -1052,6 +1052,9 @@ export interface WorkflowActionPreview {
     title?: string;
     /** Set on a QA redirect (`deliver_to`): where this worker's conversation goes. */
     sending_to?: string;
+    /** A coaching briefing's fixed first message: what the worker receives first
+     * (the briefing itself goes into the conversation's state, not to the worker). */
+    opening?: string;
     /** Indicator keys the conversation covers (a coaching briefing's topics). */
     indicators?: string[];
   }>;
