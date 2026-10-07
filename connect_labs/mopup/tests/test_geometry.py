@@ -113,13 +113,39 @@ class TestFetchWorkAreaGeometry:
         rows = [_FakeRow("103083", wa_case_id="wa-1", boundary=None, centroid=None)]
         pipeline = _FakePipeline(rows)
         geometry = fetch_work_area_geometry(1, pipeline=pipeline)
-        assert geometry["wa-1"] == {"lat": None, "lon": None, "boundary": None, "wag_name": ""}
+        assert geometry["wa-1"] == {"lat": None, "lon": None, "boundary": None, "wag_name": "", "connect_status": ""}
 
     def test_malformed_geometry_does_not_raise(self):
         rows = [_FakeRow("103083", wa_case_id="wa-1", boundary="not json", centroid="also not json")]
         pipeline = _FakePipeline(rows)
         geometry = fetch_work_area_geometry(1, pipeline=pipeline)
-        assert geometry["wa-1"] == {"lat": None, "lon": None, "boundary": None, "wag_name": ""}
+        assert geometry["wa-1"] == {"lat": None, "lon": None, "boundary": None, "wag_name": "", "connect_status": ""}
+
+    def test_pulls_connects_work_area_status_and_upper_cases_it(self):
+        # Inaccessibility lives ONLY in this status (it is never a visit), so
+        # the pull has to read it from the same export record as the geometry.
+        rows = [
+            _FakeRow("1", wa_case_id="wa-1", connect_status="INACCESSIBLE"),
+            _FakeRow("2", wa_case_id="wa-2", connect_status="request_for_inaccessible"),
+            _FakeRow("3", wa_case_id="wa-3", connect_status="VISITED"),
+            _FakeRow("4", wa_case_id="wa-4"),
+        ]
+        pipeline = _FakePipeline(rows)
+        geometry = fetch_work_area_geometry(1, pipeline=pipeline)
+        assert pipeline.last_config.fields[-1].path == "work_area.status"
+        assert {k: v["connect_status"] for k, v in geometry.items()} == {
+            "wa-1": "INACCESSIBLE",
+            "wa-2": "REQUEST_FOR_INACCESSIBLE",
+            "wa-3": "VISITED",
+            "wa-4": "",
+        }
+
+    def test_inaccessible_statuses_are_the_approved_and_pending_ones_only(self):
+        from connect_labs.mopup.core.geometry import INACCESSIBLE_CONNECT_STATUSES
+
+        # A denied request goes back to NOT_VISITED and EXCLUDED areas are out
+        # of scope, so neither may ever count as inaccessible.
+        assert INACCESSIBLE_CONNECT_STATUSES == {"INACCESSIBLE", "REQUEST_FOR_INACCESSIBLE"}
 
     def test_rows_with_no_wa_case_id_are_skipped(self):
         rows = [_FakeRow("103083", wa_case_id=None)]

@@ -27,6 +27,17 @@ import json
 
 from django.http import HttpRequest
 
+# Connect's own work-area `status` values that mean "this area could not be
+# reached": an FLW's inaccessibility request is awaiting an admin's review
+# (REQUEST_FOR_INACCESSIBLE) or has been approved (INACCESSIBLE); a denied
+# request puts the area back to NOT_VISITED, so it correctly drops out. This
+# is the ONLY place inaccessibility exists in Connect's data -- it is never a
+# visit (the request is a `work_area_update` block handled by
+# commcare-connect's form_receiver, not a deliver-unit visit), which is why the
+# "Inaccessible WA" visit form the indicator used to look for never existed in
+# any CHC opportunity's visit export.
+INACCESSIBLE_CONNECT_STATUSES = frozenset({"INACCESSIBLE", "REQUEST_FOR_INACCESSIBLE"})
+
 
 def fetch_work_area_geometry(
     opportunity_id: int,
@@ -34,9 +45,12 @@ def fetch_work_area_geometry(
     request: HttpRequest | None = None,
     pipeline=None,
 ) -> dict[str, dict]:
-    """``{wa_case_id: {"lat": float|None, "lon": float|None, "boundary": dict|None, "wag_name": str}}``
-    for every work area in `opportunity_id`. A row with unparseable/missing
-    geometry maps to ``{"lat": None, "lon": None, "boundary": None, "wag_name": ""}``
+    """``{wa_case_id: {"lat": float|None, "lon": float|None, "boundary": dict|None, "wag_name": str,
+    "connect_status": str}}`` for every work area in `opportunity_id`.
+    `connect_status` is Connect's own work-area status enum, upper-cased ("" if
+    absent) -- see `INACCESSIBLE_CONNECT_STATUSES` for the values the
+    Inaccessible indicator keys off. A row with unparseable/missing
+    geometry maps to ``{"lat": None, "lon": None, "boundary": None, "wag_name": "", ...}``
     rather than being skipped — callers should treat a missing entry the
     same way (this function never raises on a single bad row)."""
     from connect_labs.labs.analysis.config import (
@@ -75,6 +89,10 @@ def fetch_work_area_geometry(
             # against commcare-connect's real serializer) -- no separate
             # `work_area_groups` endpoint/join needed.
             FieldComputation(name="wag_name", path="work_area.work_area_group_name", aggregation="first"),
+            # Same export record again (`status` is on WorkAreaDataSerializer):
+            # Connect's native status enum, the only place a work area being
+            # inaccessible is recorded -- see INACCESSIBLE_CONNECT_STATUSES.
+            FieldComputation(name="connect_status", path="work_area.status", aggregation="first"),
         ],
         # Real production bug, found live this session: without this, this
         # ad-hoc config shares ONE raw-visit-cache slot per opportunity with
@@ -121,6 +139,12 @@ def fetch_work_area_geometry(
             except (TypeError, json.JSONDecodeError):
                 boundary = None
 
-        geometry[wa_case_id] = {"lat": lat, "lon": lon, "boundary": boundary, "wag_name": c.get("wag_name") or ""}
+        geometry[wa_case_id] = {
+            "lat": lat,
+            "lon": lon,
+            "boundary": boundary,
+            "wag_name": c.get("wag_name") or "",
+            "connect_status": str(c.get("connect_status") or "").upper(),
+        }
 
     return geometry
