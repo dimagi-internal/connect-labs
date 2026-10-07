@@ -5894,7 +5894,10 @@ def worker_tasks_api(request):
                     "review": task.data.get("review"),
                     "session_ids": session_ids,
                     "workflow_run_id": task.data.get("workflow_run_id"),
-                    "opportunity_id": task.opportunity_id,
+                    # From task.data, like every other field here. Reading the attribute
+                    # off the record wrapper was the one value in this dict that was not
+                    # plain JSON, and create_task writes opportunity_id into data anyway.
+                    "opportunity_id": task.data.get("opportunity_id"),
                     "coaching": is_coaching,
                     # What the dashboard asked the chatbot to cover, written at creation and
                     # never touched afterwards. This is the DENOMINATOR for coaching progress:
