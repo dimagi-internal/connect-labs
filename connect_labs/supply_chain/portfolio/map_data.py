@@ -556,7 +556,7 @@ def portfolio_programs(portfolio, reachable, *, everything=False):
     return programs, hidden
 
 
-def portfolio_map(request, portfolio, reachable, *, everything=False) -> dict:
+def portfolio_map(request, portfolio, reachable, *, everything=False, cover_url=None) -> dict:
     """Every reachable program in the portfolio's own order, plus what is hidden.
 
     With `everything`, every OTHER program the viewer can reach that has a
@@ -574,8 +574,8 @@ def portfolio_map(request, portfolio, reachable, *, everything=False) -> dict:
         "stated": len(portfolio.program_ids),
         "hidden": hidden,
         "everything": everything,
-        "cover_url": reverse("supply_chain:portfolio_map_cover", args=[portfolio.slug])
-        + ("?scope=all" if everything else ""),
+        "cover_url": cover_url
+        or reverse("supply_chain:portfolio_map_cover", args=[portfolio.slug]) + ("?scope=all" if everything else ""),
         "programs": programs,
         "network": network_members(),
         "vocabulary": _vocabulary(),
