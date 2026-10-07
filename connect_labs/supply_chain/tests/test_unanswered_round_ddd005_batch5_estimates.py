@@ -1,5 +1,5 @@
 """Batch 5: landed cost under buyer-import terms, freight that follows the Incoterm,
-"Mark sent" reminders that stop at the deadline, and the comparable-count chip.
+"Mark sent" reminders that stop at the deadline, and the quote count (data, not a verdict).
 
 Every supplier, person and price here is invented.
 """
@@ -15,7 +15,7 @@ from connect_labs.supply_chain.models import Commodity, Quote, Tender
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.procurement.services.comparison import compare_tender
 from connect_labs.supply_chain.procurement.services.questions import audience_for_reason
-from connect_labs.supply_chain.procurement.status import comparable_chip, comparison_grid, comparisons, gap_owner
+from connect_labs.supply_chain.procurement.status import comparison_grid, comparisons, gap_owner, quote_count_words
 from connect_labs.supply_chain.procurement.views import next_reminder_due
 from connect_labs.supply_chain.values import Money, Unconfirmed
 
@@ -148,7 +148,8 @@ def test_no_clearing_estimate_does_not_block_but_labels_the_figure(da, world):
     assert clearing["label"] == "Clearing & forwarding"
     assert clearing["cells"][column]["gap"] and clearing["cells"][column]["owner"] == "us"
     chips = [c["label"] for c in grid["quotes"][column]["chips"]]
-    assert "clearing estimate · ours to fill" in chips and "Comparable" in chips
+    # The open estimate is the quote's one chip: a fact and whose it is, beside its shown figure.
+    assert chips == ["clearing estimate · ours to fill"]
 
 
 # ---- 2. freight follows the Incoterm ------------------------------------------
@@ -212,42 +213,48 @@ def test_reminder_draft_says_mark_sent_and_row_says_reminder_sent():
     # The changed cell keeps every row's shape -- the day, its nth reminder under it -- and the sent
     # state rides the tag. One cell, edited in place (2026-10-05).
     assert (
-        'data-testid="supplier-chased" {% if o %}{% edit_cell "outreach" o.id "last_reminder_on" r.chased_on %}'
-        in source
+        'data-testid="supplier-chased" data-sort-value="{{ r.chased_on|sort_key }}" '
+        '{% if o %}{% edit_cell "outreach" o.id "last_reminder_on" r.chased_on %}' in source
     )
     assert '<span class="sub">{{ r.reminders }}</span>' in source
     assert 'label="Reminder sent"' in source
     assert "no further reminder · deadline" in source
 
 
-# ---- 4. the comparable chip -----------------------------------------------------
+# ---- 4. the quote count: data, not a verdict (2026-10-07) ------------------------
 
 
-def test_comparable_chip_counts_from_the_comparison(da, world):
+def test_the_quote_count_counts_quotes_and_landed_prices(da, world):
     tender = Tender.objects.get(pk=world["tender"]["id"])
-    assert comparable_chip(comparisons(tender, [])) == ""
+    assert quote_count_words(comparisons(tender, [])) == ""
     _quote(da, world, "cpt", "CPT Kano", freight_basis="included")
     _quote(da, world, "exw", "EXW Niamey")
     _quote(da, world, "ddp", "DDP Kano", pack_spec_source="not_stated", base_per_pack_stated=None)
     quotes = list(Quote.objects.filter(tender=tender).select_related("supplier__org", "commodity", "item"))
-    assert comparable_chip(comparisons(tender, quotes)) == "1 of 3 comparable · Harmattan"
+    # Ex works leaves freight to our estimate (not recorded) and DDP states no pack: only the
+    # carriage-paid quote has a landed price. The count says so, and names nobody as comparable.
+    assert quote_count_words(comparisons(tender, quotes)) == "3 quotes · 1 with a landed price"
 
 
-def test_overview_row_carries_the_chip_and_stays_collecting(da, world):
+def test_overview_row_carries_the_count_and_stays_collecting(da, world):
     from connect_labs.supply_chain.standing import _tender_rows
 
     _quote(da, world, "cpt", "CPT Kano", freight_basis="included")
     rows = _tender_rows(PROGRAM, TODAY, None)
     row = next(r for r in rows if r.tender_id == world["tender"]["id"])
     assert row.stage_name == "Collecting quotes"
-    assert row.comparable_chip == "1 of 1 comparable · Harmattan" and row.comparable_count == 1
+    assert row.quotes_chip == "1 quote · 1 with a landed price"
 
 
-def test_tender_status_header_has_the_chip(da, world):
+def test_tender_status_counts_quotes_in_a_plain_tile(da, world):
     from connect_labs.supply_chain.procurement.status import tender_status
 
     _quote(da, world, "cpt", "CPT Kano", freight_basis="included")
     _quote(da, world, "exw", "EXW Niamey")
     status = tender_status(Tender.objects.get(pk=world["tender"]["id"]), TODAY, program_id=PROGRAM)
-    assert status["comparable_chip"] == "1 of 2 comparable · Harmattan"
+    assert "comparable_chip" not in status and "comparable" not in status
+    assert (status["quoted"], status["priced"]) == (2, 1)
+    tile = next(t for t in status["tiles"] if t["label"] == "Quotes")
+    assert tile["value"] == "2" and tile["sub"].startswith("1 with a landed price")
+    assert not any("omparable" in t["label"] for t in status["tiles"])
     assert status["stages"][1]["state"] == "now"

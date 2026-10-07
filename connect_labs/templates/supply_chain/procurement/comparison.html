@@ -20,15 +20,16 @@
   </div>
 {% else %}
   {% comment %}A compact head, so the count, the duty terms and the grid down to Import duty share one screen:
-  the title line, then the page's status (the comparable count) on the same row as the tender's
-  duty terms -- they apply to every quote below -- with the source legend at that row's end.{% endcomment %}
+  the title line, then the quote count (and how many have a landed price -- data, never a verdict
+  on which quotes may be compared) on the same row as the tender's duty terms -- they apply to
+  every quote below -- with the source legend at that row's end.{% endcomment %}
   <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
     <h1 class="text-brand-deep-purple text-xl font-semibold">Compare quotes</h1>
     <span class="text-sm text-gray-600">{{ commodity_name }}{% if tender.label %} · {{ tender.label }}{% endif %}</span>
   </div>
   <div class="-mt-2 flex flex-wrap items-center justify-between gap-3" data-testid="comparison-status-row">
     <div class="flex flex-wrap items-center gap-3">
-    {% if comparison %}<span data-testid="comparable-count" class="status-chip {% if comparison.comparable_count %}status-chip--primary{% else %}status-chip--ours{% endif %} px-3 py-1 text-sm font-semibold">{{ comparison.comparable_count }} of {{ comparison.total_count }} comparable</span>{% endif %}
+    {% if comparison %}<span data-testid="quote-count" class="status-chip status-chip--neutral px-3 py-1 text-sm font-semibold">{{ comparison.total_count }} quote{{ comparison.total_count|pluralize }}{% if comparison.priced_count %} · {{ comparison.priced_count }} with a landed price{% endif %}</span>{% endif %}
     <div id="duty-terms" data-testid="comparison-duty-terms" class="flex flex-wrap items-center gap-2.5 rounded-lg border px-3 py-1.5 text-sm {% if tender.duty_terms %}border-brand-border-light bg-white{% else %}border-message-warning-border/50 bg-message-warning{% endif %}">
       <span data-testid="duty-terms-chip"><span class="text-gray-600">Import duty:</span> <strong data-testid="duty-terms-value" {% edit_cell "tender" tender_id "duty_terms" tender.duty_terms %} class="px-1 {% if tender.duty_terms %}text-gray-900{% else %}text-message-warning-text{% endif %}">{% if tender.duty_terms %}{{ tender.duty_terms|duty_terms_words }}{% else %}not settled{% endif %}</strong></span>
       {% if grid_blocked_by_terms %}<span class="text-gray-700" data-testid="duty-terms-blocks">· blocks {{ grid_blocked_by_terms|join:", " }}</span>{% endif %}
@@ -44,7 +45,7 @@
       </details>
       {% endif %}
     </div>
-    {% if grid and grid.quotes and not grid.like_for_like %}<a href="{% url 'supply_chain:procurement_tender_detail' tender_id %}#import-estimates" data-testid="not-like-for-like" class="status-chip status-chip--ours px-3 py-1 text-sm hover:underline">Totals not like for like · clearing estimate not recorded</a>{% endif %}
+    {% if grid and grid.quotes and not grid.like_for_like %}<a href="{% url 'supply_chain:procurement_tender_detail' tender_id %}#import-estimates" data-testid="clearing-not-recorded" class="status-chip status-chip--ours px-3 py-1 text-sm hover:underline">Clearing estimate not recorded · quotes we import are shown excl. clearing</a>{% endif %}
     </div>
     {% if grid and grid.quotes %}<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600"><span class="inline-flex items-center gap-x-3" data-testid="owner-legend"><span class="inline-flex items-center gap-1"><span class="status-chip status-chip--fact">ours to attach · settle · fill</span>ours</span><span class="inline-flex items-center gap-1"><span class="status-chip status-chip--fact">to ask</span>ours to ask</span><span class="inline-flex items-center gap-1"><span class="status-chip status-chip--theirs">waiting</span>on the supplier</span></span>{% include "supply_chain/_src_legend.html" %}</div>{% endif %}
   </div>
@@ -67,21 +68,21 @@
   compared, so each reads across like a line of a sheet, cheapest landed price first, its supplier,
   status, specification check and next moves held in the pinned cell at the left while the figures
   scroll. Each column's heading says where its values come from. The landed price leads, then how
-  far it sits above the lowest.{% endcomment %}
+  far it sits above the lowest. A click on a heading sorts the rows by it (sheet_sort.js).{% endcomment %}
   <section class="sheet-wrap" tabindex="0" role="region" aria-label="Quotes side by side, scrolls sideways">
     <table class="sheet" data-testid="comparison-grid">
       <thead>
         <tr>
-          <th scope="col" class="sheet-pin">Supplier</th>
+          <th scope="col" class="sheet-pin" data-sort>Supplier</th>
           {% for r in grid.rows %}
-          <th scope="col" data-fact="{{ r.key }}" class="align-bottom whitespace-normal{% if r.total %} text-gray-900{% endif %}{% if r.pin %} {{ r.pin }}{% endif %}">{{ r.label }}<span class="sub normal-case">{{ r.src_label }}</span></th>
+          <th scope="col" data-fact="{{ r.key }}" class="align-bottom whitespace-normal{% if r.total %} text-gray-900{% endif %}{% if r.pin %} {{ r.pin }}{% endif %}" data-sort>{{ r.label }}<span class="sub normal-case">{{ r.src_label }}</span></th>
           {% endfor %}
         </tr>
       </thead>
       <tbody>
         {% for q in grid.quotes %}
         <tr data-quote-id="{{ q.quote_id }}" data-testid="grid-quote-row">
-          <th scope="row" data-quote-id="{{ q.quote_id }}" data-testid="grid-quote" class="sheet-pin text-left align-top font-normal whitespace-normal">
+          <th scope="row" data-quote-id="{{ q.quote_id }}" data-testid="grid-quote" data-sort-value="{{ q.name }}" class="sheet-pin text-left align-top font-normal whitespace-normal">
             <a href="{{ q.href }}" class="text-brand-deep-purple font-semibold hover:underline">{{ q.name }}</a>
             {% if q.item %}<span class="sub">{{ q.item }}</span>{% endif %}
             <span class="mt-1 flex flex-wrap gap-1">{% for chip in q.chips %}<span class="status-chip status-chip--{{ chip.tone }}"{% if forloop.first %} data-testid="grid-status"{% endif %}>{{ chip.label }}</span>{% endfor %}{% if q.spec %}<span class="status-chip status-chip--{{ q.spec.tone }}" data-testid="grid-spec" data-fact="spec"{% if q.spec.detail %} title="{{ q.spec.detail }}"{% endif %}>{{ q.spec.label }}</span>{% endif %}</span>
@@ -99,7 +100,7 @@
             {% endif %}
           </th>
           {% for c in q.cells %}
-          <td class="align-top{% if c.pin %} {{ c.pin }}{% endif %}{% if c.fact == "price" or c.fact == "landed" or c.fact == "fx" or c.fact == "vs_lowest" %} tabular-nums{% endif %}{% if c.fact == "price" or c.fact == "landed" or c.fact == "term" or c.fact == "pack" or c.fact == "vs_lowest" %} whitespace-nowrap{% else %} min-w-[7.5rem]{% endif %}{% if c.fact == "landed" %} bg-stone-50 font-semibold text-gray-900{% endif %}" data-testid="grid-cell" data-fact="{{ c.fact }}" data-quote-id="{{ c.quote_id }}"{% if c.gap %} data-gap{% endif %}{% if c.lowest %} data-lowest{% endif %}{% if c.edit %} {% edit_cell c.edit.0 c.edit.1 c.edit.2 c.edit.3 %}{% endif %}>{% if c.gap %}<span class="{% if c.owner|owner_tone == 'ours' %}text-message-warning-text{% else %}text-gray-900{% endif %} font-medium"{% if c.why %} title="{{ c.why }}"{% endif %}>{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}</span>{% if c.owner %} <span class="status-chip status-chip--{{ c.owner|gap_tone }}" data-testid="gap-owner">{{ c.chip }}</span>{% endif %}{% elif c.blocked %}<span class="text-sm font-normal text-gray-600" data-testid="landed-blocked">{{ c.v }}</span>{% elif c.mute %}<span class="font-normal text-gray-600">{{ c.v }}</span>{% else %}{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}{% if c.per %}<span class="sub">{{ c.per }}</span>{% endif %}{% if c.lowest or c.qualifier or c.unconfirmed %}<span class="mt-0.5 flex flex-wrap items-center gap-1">{% if c.lowest %}<span class="status-chip status-chip--primary font-medium" data-testid="landed-lowest">lowest</span>{% endif %}{% if c.qualifier %}<span class="text-message-warning-text text-xs font-medium" data-testid="landed-qualifier">{{ c.qualifier }}</span>{% endif %}{% if c.unconfirmed %}<span class="status-chip status-chip--ours font-medium" data-testid="landed-unconfirmed">unconfirmed</span>{% endif %}</span>{% endif %}{% if c.pending %} <span class="status-chip status-chip--{{ c.pending_owner|gap_tone }} mt-1 block w-fit" data-testid="waiver-pending">{{ c.pending }}</span>{% endif %}{% endif %}{% if c.imports and not c.gap %}<span class="sub{% if c.imports.gap %} text-message-warning-text{% endif %}" data-testid="grid-imports" data-fact="imports">{{ c.imports.v }}{% if c.imports.gap and c.imports.owner %} · {{ c.imports.owner|supplies }}{% endif %}</span>{% endif %}</td>
+          <td class="align-top{% if c.pin %} {{ c.pin }}{% endif %}{% if c.fact == "price" or c.fact == "landed" or c.fact == "fx" or c.fact == "vs_lowest" %} tabular-nums{% endif %}{% if c.fact == "price" or c.fact == "landed" or c.fact == "term" or c.fact == "pack" or c.fact == "vs_lowest" %} whitespace-nowrap{% else %} min-w-[7.5rem]{% endif %}{% if c.fact == "landed" %} bg-stone-50 font-semibold text-gray-900{% endif %}" data-testid="grid-cell" data-fact="{{ c.fact }}" data-quote-id="{{ c.quote_id }}"{% if "sort" in c %} data-sort-value="{{ c.sort }}"{% endif %}{% if c.gap %} data-gap{% endif %}{% if c.lowest %} data-lowest{% endif %}{% if c.edit %} {% edit_cell c.edit.0 c.edit.1 c.edit.2 c.edit.3 %}{% endif %}>{% if c.gap %}<span class="{% if c.owner|owner_tone == 'ours' %}text-message-warning-text{% else %}text-gray-900{% endif %} font-medium"{% if c.why %} title="{{ c.why }}"{% endif %}>{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}</span>{% if c.owner %} <span class="status-chip status-chip--{{ c.owner|gap_tone }}" data-testid="gap-owner">{{ c.chip }}</span>{% endif %}{% elif c.needs %}<span class="text-sm font-normal text-gray-600" data-testid="landed-needs">{{ c.v }}</span>{% elif c.mute %}<span class="font-normal text-gray-600">{{ c.v }}</span>{% else %}{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}{% if c.per %}<span class="sub">{{ c.per }}</span>{% endif %}{% if c.lowest or c.qualifier or c.unconfirmed %}<span class="mt-0.5 flex flex-wrap items-center gap-1">{% if c.lowest %}<span class="status-chip status-chip--primary font-medium" data-testid="landed-lowest">lowest</span>{% endif %}{% if c.qualifier %}<span class="text-message-warning-text text-xs font-medium" data-testid="landed-qualifier">{{ c.qualifier }}</span>{% endif %}{% if c.unconfirmed %}<span class="status-chip status-chip--ours font-medium" data-testid="landed-unconfirmed">unconfirmed</span>{% endif %}</span>{% endif %}{% if c.pending %} <span class="status-chip status-chip--{{ c.pending_owner|gap_tone }} mt-1 block w-fit" data-testid="waiver-pending">{{ c.pending }}</span>{% endif %}{% endif %}{% if c.imports and not c.gap %}<span class="sub{% if c.imports.gap %} text-message-warning-text{% endif %}" data-testid="grid-imports" data-fact="imports">{{ c.imports.v }}{% if c.imports.gap and c.imports.owner %} · {{ c.imports.owner|supplies }}{% endif %}</span>{% endif %}</td>
           {% endfor %}
         </tr>
         {% endfor %}
@@ -113,16 +114,17 @@
   {% if award_choice_id and not supply_as_of %}
   {% comment %}The award: ONE block for the tender, so what is still open on it (deadline days,
   silent suppliers, replies owed) is said once. A quote's Award link above opens it with that quote
-  chosen; otherwise it starts on the cheapest quote that can be awarded. Why, when, who.{% endcomment %}
+  chosen; otherwise it starts on the cheapest quote. Every live quote can be awarded: whether its facts
+  are enough is the buyer's call, recorded with the reason. Why, when, who.{% endcomment %}
   <details class="fold" id="award-block" data-testid="award-start"{% if award_error or award_step %} open{% endif %}>
-    <summary data-testid="award-open" id="award">Award{% if award_anyway %} <span class="text-sm font-normal text-gray-600" data-anyway title="{{ award_anyway_detail }}">· {{ award_incomplete_count }} other quote{{ award_incomplete_count|pluralize }} not comparable yet</span>{% endif %}{% if award_open_chips %} <span class="inline-flex flex-wrap items-center gap-1 align-middle text-xs font-normal text-gray-600" data-testid="award-open-facts">· still open {% for chip in award_open_chips %}<span class="status-chip status-chip--{{ chip.tone }}">{{ chip.label }}</span>{% endfor %}</span>{% endif %}</summary>
+    <summary data-testid="award-open" id="award">Award{% if award_open_chips %} <span class="inline-flex flex-wrap items-center gap-1 align-middle text-xs font-normal text-gray-600" data-testid="award-open-facts">· still open {% for chip in award_open_chips %}<span class="status-chip status-chip--{{ chip.tone }}">{{ chip.label }}</span>{% endfor %}</span>{% endif %}</summary>
     <div class="fold-body">
                   <form method="post" action="" data-testid="award-form" class="mt-2 flex flex-wrap items-end gap-2 min-w-0">
                     {% csrf_token %}
                     <label class="flex flex-col gap-0.5 text-xs text-gray-600" for="award-quote">Quote
                       <select id="award-quote" name="quote_id" data-testid="award-quote" required
                               class="border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-900">
-                        {% for q in grid.quotes %}{% if q.awardable %}<option value="{{ q.quote_id }}"{% if q.quote_id == award_choice_id %} selected{% endif %}>{{ q.name }}{% if q.landed %} · {{ q.landed }}{% endif %}</option>{% endif %}{% endfor %}
+                        {% for q in award_options %}<option value="{{ q.quote_id }}"{% if q.quote_id == award_choice_id %} selected{% endif %}>{{ q.name }}{% if q.item %} · {{ q.item }}{% endif %}{% if q.landed %} · {{ q.landed }}{% endif %}</option>{% endfor %}
                       </select>
                     </label>
                     <label class="flex flex-col gap-0.5 text-xs text-gray-600 min-w-0 flex-1 basis-64" for="award-rationale">Why this offer
@@ -182,13 +184,13 @@
 
 {% if comparison.not_comparable %}
   {% comment %}
-  Terminal, not missing information: filed under "Needs info" with a question
-  for the supplier, an offer holding other contents read as if an answer could
-  make it comparable, and it made the ranking above read as provisional.
+  Offers holding other contents than the tender's line: a fact about each offer, said with its
+  contents and price beside what the tender buys, so the buyer can read the difference. Not a
+  question for the supplier, and not a verdict -- these can still be awarded from the block above.
   {% endcomment %}
-  <section class="mt-6 mb-4">
+  <section class="mt-6 mb-4" data-testid="different-contents">
     <h2 class="text-lg font-semibold text-gray-900 mb-2">
-      Not comparable — different contents
+      Different contents from the tender
     </h2>
     {% if comparison.tender_contents %}
       <p class="text-sm text-gray-600 mb-2">This tender buys</p>

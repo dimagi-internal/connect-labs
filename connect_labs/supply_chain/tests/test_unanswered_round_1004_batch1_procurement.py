@@ -129,7 +129,7 @@ def test_the_suppliers_table_splits_a_quotes_facts_as_the_comparison_does(da, wo
     assert row["on_us"].endswith(" · ours to fill")
     assert reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) in row["on_us_href"]
     assert row["action"]["label"] == "Open quote"
-    tile = next(t for t in status["tiles"] if t["label"] == "Comparable quotes")
+    tile = next(t for t in status["tiles"] if t["label"] == "Quotes")
     assert "ours to fill on 1 quote" in tile["sub"]
     assert "missing from" not in tile["sub"]
 

@@ -190,9 +190,9 @@ class TestTheComparison:
         url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=rutf"
         return client.get(url).content.decode()
 
-    def test_the_grid_shows_the_gap_and_the_award_says_what_is_not_comparable(self, da, world, client_in_program):
-        op(da, "quote_record", data=_comparable(world))
-        op(
+    def test_the_grid_shows_the_gap_and_the_award_offers_every_quote(self, da, world, client_in_program):
+        kanem = op(da, "quote_record", data=_comparable(world))
+        northgate = op(
             da,
             "quote_record",
             data={
@@ -202,18 +202,26 @@ class TestTheComparison:
             },
         )
         body = self._page(client_in_program, world)
-        assert re.search(r'data-testid="comparable-count"[^>]*>1 of 2 comparable<', body)
+        # The count is data -- quotes, and how many have a landed price -- not a verdict.
+        assert re.search(r'data-testid="quote-count"[^>]*>2 quotes · 1 with a landed price<', body)
         grid = re.search(r'<table [^>]*data-testid="comparison-grid".*?</table>', body, re.S).group(0)
         assert re.search(r">[^<]+ · to ask<", grid)  # never asked since the quote came in
         pack = "".join(re.findall(r'<td [^>]*data-fact="pack"[^>]*>.*?</td>', grid, re.S))
         assert "not stated" in pack
-        for word in ("PROVISIONAL", "provisional", "beat"):
+        # Northgate's landed cell names the input its figure needs, as data.
+        landed = re.search(
+            rf'<td [^>]*data-fact="landed" data-quote-id="{northgate["id"]}"[^>]*>(.*?)</td>', grid, re.S
+        ).group(1)
+        assert re.search(r'data-testid="landed-needs">needs sachets per carton<', landed)
+        for word in ("PROVISIONAL", "provisional", "beat", "omparable"):
             assert word not in grid
         button = " ".join(
             _text(re.search(r'<summary data-testid="award-open"[^>]*>(.*?)</summary>', body, re.S).group(1)).split()
         )
-        assert button == "Award · 1 other quote not comparable yet"
-        assert re.search(r'<option value="\d+" selected>Kanem', body)
+        assert button == "Award"
+        # Both are offered, the one with a landed price first.
+        assert re.search(rf'<option value="{kanem["id"]}" selected>Kanem', body)
+        assert f'<option value="{northgate["id"]}">' in body
 
     def test_decided_on_is_empty_until_an_award_is_started(self, da, world, client_in_program):
         op(da, "quote_record", data=_comparable(world))

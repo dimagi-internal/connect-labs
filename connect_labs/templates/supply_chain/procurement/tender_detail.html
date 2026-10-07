@@ -25,7 +25,6 @@ is folded away, each fold with its count.
           {% if status.header.incoterm %}<span data-testid="tender-incoterm"><span>Terms</span> <span class="font-medium text-gray-900">{{ status.header.incoterm }}</span></span>{% endif %}
           <span data-testid="tender-visibility">{{ status.header.visibility|capfirst }}</span>
           <span class="status-chip status-chip--{% if tender.status == 'open' %}primary{% else %}neutral{% endif %}" data-testid="tender-state-pill">{{ tender.status|capfirst }}</span>
-          {% if status.comparable_chip %}<span class="status-chip status-chip--{% if status.comparable %}primary{% else %}neutral{% endif %}" data-testid="comparable-chip">{{ status.comparable_chip }}</span>{% endif %}
         </div>
       </div>
       <div class="flex shrink-0 flex-wrap items-center gap-2.5">
@@ -156,15 +155,15 @@ is folded away, each fold with its count.
     <div class="sheet-wrap" role="region" aria-label="Suppliers">
       <table class="sheet" data-testid="supplier-table">
         <thead><tr>
-          <th scope="col">Supplier</th>
-          <th scope="col">State</th>
-          <th scope="col">Asked</th>
-          <th scope="col">Replied</th>
-          <th scope="col">Last chased</th>
-          <th scope="col" class="text-right">Price</th>
-          <th scope="col">Delivery term</th>
-          <th scope="col">Pack</th>
-          <th scope="col" class="min-w-[15rem]">Missing</th>
+          <th scope="col" data-sort>Supplier</th>
+          <th scope="col" data-sort>State</th>
+          <th scope="col" data-sort>Asked</th>
+          <th scope="col" data-sort>Replied</th>
+          <th scope="col" data-sort>Last chased</th>
+          <th scope="col" class="text-right" data-sort>Price</th>
+          <th scope="col" data-sort>Delivery term</th>
+          <th scope="col" data-sort>Pack</th>
+          <th scope="col" class="min-w-[15rem]" data-sort>Missing</th>
           <th scope="col" class="sheet-pin-end w-px"><span class="sr-only">Actions</span></th>
         </tr></thead>
         <tbody>
@@ -173,12 +172,12 @@ is folded away, each fold with its count.
           <tr{% if o %} data-outreach-id="{{ o.id }}" id="outreach-{{ o.id }}"{% endif %} data-testid="supplier-row" data-supplier-id="{{ r.supplier_id }}"{% if o.changed %} class="bg-yellow-50" data-changed{% endif %}>
             <th scope="row" class="min-w-[8rem] text-left font-medium{% if o.changed %} border-l-4 border-brand-indigo{% endif %}"><a class="text-gray-900 hover:underline" href="{{ r.href }}">{{ r.name }}</a></th>
             <td><span class="status-chip status-chip--{{ r.chip.tone }}" data-testid="supplier-state">{{ r.chip.label }}</span>{% if o.waiting_on_us %}<span data-testid="waiting-on-us-row" class="sub mt-0.5">{{ o.waiting_on_us }}</span>{% endif %}</td>
-            <td class="num text-left text-gray-700" {% if o %}{% edit_cell "outreach" o.id "sent_on" o.sent_on %}{% endif %}>{% if o.sent_on %}{{ o.sent_on|day|slice:":-5" }}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
-            <td class="num text-left{% if o.changed and changed_cell == 'replied' %} font-semibold text-gray-900{% else %} text-gray-700{% endif %}" data-testid="replied-on" {% if o %}{% edit_cell "outreach" o.id "responded_on" o.responded_on %}{% endif %}>{% if o.responded %}<span data-testid="replied">{% if o.responded_on %}{{ o.responded_on|day|slice:":-5" }}{% else %}yes{% endif %}</span>{% else %}<span class="text-gray-600">—</span>{% endif %}{% if o.changed and changed_cell == "replied" %}{% include "supply_chain/procurement/_new_tag.html" with stacked=1 %}{% endif %}</td>
-            <td class="num text-left{% if o.changed and changed_cell == 'last_chased' %} font-semibold text-gray-900{% else %} text-gray-700{% endif %}" data-testid="supplier-chased" {% if o %}{% edit_cell "outreach" o.id "last_reminder_on" r.chased_on %}{% endif %}>{% if r.chased_on %}{{ r.chased_on|day|slice:":-5" }}{% if r.reminders %}<span class="sub">{{ r.reminders }}</span>{% endif %}{% else %}<span class="text-gray-600">—</span>{% endif %}{% if o.changed and changed_cell == "last_chased" %}{% if o.next_due %}<span data-testid="next-due" class="sub">next due {{ o.next_due|day }}</span>{% elif o.reminder_deadline %}<span data-testid="next-due" class="sub">no further reminder · deadline {{ o.reminder_deadline|day }}</span>{% endif %}{% include "supply_chain/procurement/_new_tag.html" with stacked=1 label="Reminder sent" %}{% endif %}</td>
-            <td class="num" data-testid="supplier-quote" {% if q %}{% edit_cell "quote" q.pk "as_quoted_amount" q.as_quoted_amount %}{% endif %}>{% if r.price %}{% include "supply_chain/_src.html" with src=r.quote_src %}<span class="font-medium text-gray-900">{{ r.price }}</span>{% if r.quote_src == "ai" %}<span class="src-ai-tag">AI</span>{% endif %}{% if r.price_per %}<span class="sub">per {{ r.price_per }}</span>{% endif %}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
+            <td class="num text-left text-gray-700" data-sort-value="{{ o.sent_on|sort_key }}" {% if o %}{% edit_cell "outreach" o.id "sent_on" o.sent_on %}{% endif %}>{% if o.sent_on %}{{ o.sent_on|day|slice:":-5" }}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
+            <td class="num text-left{% if o.changed and changed_cell == 'replied' %} font-semibold text-gray-900{% else %} text-gray-700{% endif %}" data-testid="replied-on" data-sort-value="{% if o.responded %}{{ o.responded_on|sort_key|default:'0' }}{% endif %}" {% if o %}{% edit_cell "outreach" o.id "responded_on" o.responded_on %}{% endif %}>{% if o.responded %}<span data-testid="replied">{% if o.responded_on %}{{ o.responded_on|day|slice:":-5" }}{% else %}yes{% endif %}</span>{% else %}<span class="text-gray-600">—</span>{% endif %}{% if o.changed and changed_cell == "replied" %}{% include "supply_chain/procurement/_new_tag.html" with stacked=1 %}{% endif %}</td>
+            <td class="num text-left{% if o.changed and changed_cell == 'last_chased' %} font-semibold text-gray-900{% else %} text-gray-700{% endif %}" data-testid="supplier-chased" data-sort-value="{{ r.chased_on|sort_key }}" {% if o %}{% edit_cell "outreach" o.id "last_reminder_on" r.chased_on %}{% endif %}>{% if r.chased_on %}{{ r.chased_on|day|slice:":-5" }}{% if r.reminders %}<span class="sub">{{ r.reminders }}</span>{% endif %}{% else %}<span class="text-gray-600">—</span>{% endif %}{% if o.changed and changed_cell == "last_chased" %}{% if o.next_due %}<span data-testid="next-due" class="sub">next due {{ o.next_due|day }}</span>{% elif o.reminder_deadline %}<span data-testid="next-due" class="sub">no further reminder · deadline {{ o.reminder_deadline|day }}</span>{% endif %}{% include "supply_chain/procurement/_new_tag.html" with stacked=1 label="Reminder sent" %}{% endif %}</td>
+            <td class="num" data-testid="supplier-quote" data-sort-value="{{ q.as_quoted_amount|sort_key }}" {% if q %}{% edit_cell "quote" q.pk "as_quoted_amount" q.as_quoted_amount %}{% endif %}>{% if r.price %}{% include "supply_chain/_src.html" with src=r.quote_src %}<span class="font-medium text-gray-900">{{ r.price }}</span>{% if r.quote_src == "ai" %}<span class="src-ai-tag">AI</span>{% endif %}{% if r.price_per %}<span class="sub">per {{ r.price_per }}</span>{% endif %}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
             <td class="whitespace-nowrap text-gray-700" {% if q %}{% edit_cell "quote" q.pk "incoterm" q.incoterm %}{% endif %}>{% if q.incoterm %}{% include "supply_chain/_src.html" with src=r.term_src %}{{ q.incoterm }}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
-            <td class="num text-left text-gray-700" {% if q %}{% edit_cell "quote" q.pk "base_per_pack_stated" q.base_per_pack_stated %}{% endif %} data-testid="supplier-pack">{% if r.pack %}{% include "supply_chain/_src.html" with src=r.pack_src %}{{ r.pack }}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
+            <td class="num text-left text-gray-700" data-sort-value="{{ q.base_per_pack_stated|sort_key }}" {% if q %}{% edit_cell "quote" q.pk "base_per_pack_stated" q.base_per_pack_stated %}{% endif %} data-testid="supplier-pack">{% if r.pack %}{% include "supply_chain/_src.html" with src=r.pack_src %}{{ r.pack }}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
             {% comment %}Room for its chips, each whole on one line (a chip never breaks), wrapping
             chip by chip rather than running on under the actions pinned at the row's end.{% endcomment %}
             <td class="min-w-[15rem]" data-testid="supplier-missing-cell">{% if r.missing or r.on_us %}<div class="flex flex-wrap items-center gap-1" data-testid="supplier-missing">{% for m in r.missing %}{% include "supply_chain/_fact_chip.html" with fact=m owner=r.missing_owner n=1 %}{% endfor %}{% if r.on_us %}<a class="status-chip status-chip--fact" data-testid="supplier-on-us" href="{{ r.on_us_href }}">{{ r.on_us }}</a>{% endif %}</div>{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
@@ -402,15 +401,15 @@ next action on anyone (design doc section 22).
       <div class="sheet-wrap" tabindex="0" role="region" aria-label="Quotes">
         <table class="sheet" data-testid="quotes-table">
           <thead><tr>
-            <th scope="col">Supplier</th>
-            <th scope="col">Product</th>
-            <th scope="col" class="text-right">Price</th>
-            <th scope="col">Currency</th>
-            <th scope="col" class="text-right">Grams each</th>
-            <th scope="col" class="text-right">Lead time</th>
-            <th scope="col">Valid until</th>
-            <th scope="col">Received</th>
-            <th scope="col">Their ref.</th>
+            <th scope="col" data-sort>Supplier</th>
+            <th scope="col" data-sort>Product</th>
+            <th scope="col" class="text-right" data-sort>Price</th>
+            <th scope="col" data-sort>Currency</th>
+            <th scope="col" class="text-right" data-sort>Grams each</th>
+            <th scope="col" class="text-right" data-sort>Lead time</th>
+            <th scope="col" data-sort>Valid until</th>
+            <th scope="col" data-sort>Received</th>
+            <th scope="col" data-sort>Their ref.</th>
             <th scope="col" class="w-px"><span class="sr-only">Detail</span></th>
           </tr></thead>
           <tbody>
@@ -419,17 +418,17 @@ next action on anyone (design doc section 22).
               <th scope="row" class="text-left font-medium"><a href="{% url 'supply_chain:procurement_quote_detail' q.id %}" class="text-brand-indigo hover:underline">{{ supplier_names|dictkey:q.supplier_id|default:"Supplier" }}</a>{% if q.earlier %} <span class="status-chip status-chip--neutral" data-testid="quote-version">v{{ q.version }}</span>{% endif %}</th>
               <td class="text-gray-700">{{ commodity_names|dictkey:q.commodity_slug|default:q.commodity_slug }}{% if q.item %}<span class="sub">{{ q.item.name }}</span>{% include "supply_chain/procurement/_composition.html" with composition=q.item.components unit=q.item.components_unit %}{% endif %}</td>
               {% comment %}A supplier quoting two products has two rows here and one on the Suppliers sheet, so each standing quote keeps its own price.{% endcomment %}
-              <td class="num" data-testid="quote-price" {% edit_cell "quote" q.id "as_quoted_amount" q.as_quoted_amount %}>{% if q.as_quoted_amount %}{% include "supply_chain/_src.html" with src=q.price_src %}{{ q.as_quoted_currency }} {{ q.as_quoted_amount|money }}<span class="sub">{{ q.priced_per|default:q.as_quoted_unit|words }}{% if q.per_pack_note %} <span data-testid="per-pack-note" tabindex="0" role="img" aria-label="{{ q.per_pack_note }}" title="{{ q.per_pack_note }}" class="cursor-help text-gray-600"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span>{% endif %}</span>{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
+              <td class="num" data-testid="quote-price" data-sort-value="{{ q.as_quoted_amount|sort_key }}" {% edit_cell "quote" q.id "as_quoted_amount" q.as_quoted_amount %}>{% if q.as_quoted_amount %}{% include "supply_chain/_src.html" with src=q.price_src %}{{ q.as_quoted_currency }} {{ q.as_quoted_amount|money }}<span class="sub">{{ q.priced_per|default:q.as_quoted_unit|words }}{% if q.per_pack_note %} <span data-testid="per-pack-note" tabindex="0" role="img" aria-label="{{ q.per_pack_note }}" title="{{ q.per_pack_note }}" class="cursor-help text-gray-600"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span>{% endif %}</span>{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
               <td {% edit_cell "quote" q.id "as_quoted_currency" q.as_quoted_currency %}>{{ q.as_quoted_currency|default:"—" }}</td>
               <td class="num" {% edit_cell "quote" q.id "base_unit_grams_stated" q.base_unit_grams_stated %}>{{ q.base_unit_grams_stated|default_if_none:"—" }}</td>
-              <td class="num" {% edit_cell "quote" q.id "lead_time_days" q.lead_time_days %}>{% if q.lead_time_days is not None %}{{ q.lead_time_days }} d{% else %}—{% endif %}</td>
-              <td class="whitespace-nowrap" {% edit_cell "quote" q.id "validity_until" q.validity_until %}>{{ q.validity_until|day|default:"—" }}</td>
-              <td class="whitespace-nowrap" {% edit_cell "quote" q.id "received_on" q.received_on %}>{{ q.received_on|day|default:"—" }}</td>
+              <td class="num" data-sort-value="{{ q.lead_time_days|sort_key }}" {% edit_cell "quote" q.id "lead_time_days" q.lead_time_days %}>{% if q.lead_time_days is not None %}{{ q.lead_time_days }} d{% else %}—{% endif %}</td>
+              <td class="whitespace-nowrap" data-sort-value="{{ q.validity_until|sort_key }}" {% edit_cell "quote" q.id "validity_until" q.validity_until %}>{{ q.validity_until|day|default:"—" }}</td>
+              <td class="whitespace-nowrap" data-sort-value="{{ q.received_on|sort_key }}" {% edit_cell "quote" q.id "received_on" q.received_on %}>{{ q.received_on|day|default:"—" }}</td>
               <td {% edit_cell "quote" q.id "supplier_reference" q.supplier_reference %}>{{ q.supplier_reference|default:"—" }}</td>
               <td class="text-right"><a href="{% url 'supply_chain:procurement_quote_detail' q.id %}" class="text-sm text-brand-indigo hover:underline">Detail</a></td>
             </tr>
             {% for e in q.earlier %}
-            <tr class="text-xs text-gray-600" data-testid="quote-version-row" data-quote-id="{{ e.quote_id }}">
+            <tr class="text-xs text-gray-600" data-testid="quote-version-row" data-quote-id="{{ e.quote_id }}" data-sort-follows>
               <td class="pl-6"><a href="{% url 'supply_chain:procurement_quote_detail' e.quote_id %}" class="hover:underline">v{{ e.version }}</a> · replaced {{ e.replaced_on|day|slice:":-5" }}</td>
               <td colspan="9">{% if e.changes %}<span data-testid="version-changes">{{ e.changes }}</span>{% endif %}{% if e.reason %}{% if e.changes %} · {% endif %}<span data-testid="version-reason">{{ e.reason }}</span>{% endif %}</td>
             </tr>

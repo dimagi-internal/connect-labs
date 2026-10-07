@@ -71,6 +71,8 @@ there is no document.body there yet.
   {{ block.super }}
   {% comment %}Any cell a table marks with {% edit_cell %} is edited in place; a page showing the past marks none.{% endcomment %}
   {% if not supply_as_of %}<script src="{% static 'supply_chain/cell_edit.js' %}"></script>{% endif %}
+  {% comment %}Any header a sheet marks data-sort sorts its rows on a click -- the past included: sorting reads, never writes.{% endcomment %}
+  <script src="{% static 'supply_chain/sheet_sort.js' %}"></script>
   {% if supply_as_of %}
     <script>
       (function () {

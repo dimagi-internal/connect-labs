@@ -155,24 +155,25 @@ def test_waiting_on_suppliers_leaves_the_dates_to_the_suppliers_sheet(da, world,
     assert "{% if not no_detail %}" in source
 
 
-# ---- The overview: the count is the chip, the names wrap under it ----------------------
+# ---- The overview: the quote count is the chip, how many are priced wraps under it --------
 
 
 @pytest.mark.django_db
-def test_the_overview_comparable_chip_is_the_count_and_the_names_wrap_beneath(da, world, client_in_program):
+def test_the_overview_chip_is_the_quote_count_and_the_priced_count_wraps_beneath(da, world, client_in_program):
     from connect_labs.supply_chain.standing import _tender_rows
 
     op(da, "tender_set_duty_terms", tender_id=world["tender"]["id"], duty_terms="supplier_ddp")
     _quote(da, world, duties_basis="included")
     row = next(r for r in _tender_rows(reality.PROGRAM, None, None) if r.tender_id == world["tender"]["id"])
-    assert row.comparable_chip
+    assert re.fullmatch(r"1 quote( · 1 with a landed price)?", row.quotes_chip)
     body = client_in_program.get(reverse("supply_chain:home")).content.decode()
-    chip = _text(re.search(r'data-testid="row-comparable"[^>]*>(.*?)</span>', body, re.S).group(1))
-    count, _, names = row.comparable_chip.partition(" · ")
-    assert chip == count and "·" not in chip
-    if names:
-        shown = _text(re.search(r'data-testid="row-comparable-names"[^>]*>(.*?)</span>', body, re.S).group(1))
-        assert shown == names
+    chip = _text(re.search(r'data-testid="row-quotes"[^>]*>(.*?)</span>', body, re.S).group(1))
+    count, _, priced = row.quotes_chip.partition(" · ")
+    assert chip == count == "1 quote"
+    if priced:
+        shown = _text(re.search(r'data-testid="row-quotes-priced"[^>]*>(.*?)</span>', body, re.S).group(1))
+        assert shown == priced
+    assert 'data-testid="row-comparable"' not in body
 
 
 # ---- The Suppliers sheet: actions pinned to the right ----------------------------------

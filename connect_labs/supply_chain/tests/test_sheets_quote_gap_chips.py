@@ -104,7 +104,10 @@ def test_the_tender_page_reads_one_name_and_the_fact_chips(da, world, client_in_
     )
     by_label = {label: (value, sub) for label, value, sub in tiles}
     assert by_label["To do"][0] == "0"
-    assert re.match(r"ours to \w+ on 1 quote", by_label["Comparable quotes"][1])
+    # The quotes tile counts quotes -- data -- and says whose the open facts are; no verdict.
+    assert "Comparable quotes" not in by_label
+    assert by_label["Quotes"][0] == "1"
+    assert re.search(r"ours to \w+ on 1 quote", by_label["Quotes"][1])
 
 
 @pytest.mark.django_db

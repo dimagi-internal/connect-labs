@@ -58,9 +58,9 @@ tenders and orders sit folded below.
               <div class="flex flex-col gap-1.5">
                 <div class="stage-minibar" aria-hidden="true">{% for b in row.bars %}<div class="stage-seg stage-seg--{{ b }}"></div>{% endfor %}</div>
                 <span class="flex flex-col text-xs" data-testid="row-stage"><span class="font-semibold text-gray-900" data-testid="row-stage-name">{{ row.stage_name }}</span>{% if row.stage_detail %}<span class="text-gray-600">{{ row.stage_detail }}</span>{% endif %}{% if row.deadline_note %}<span class="text-gray-700" data-testid="row-deadline">{{ row.deadline_note }}</span>{% endif %}</span>
-                {% comment %}The count is the chip; who is comparable wraps beneath it, inside the
-                column -- one nowrap chip carrying the names ran over the next column.{% endcomment %}
-                {% if row.comparable_chip %}{% with parts=row.comparable_chip|dot_parts %}<span class="status-chip status-chip--{% if row.comparable_count %}lead{% else %}neutral{% endif %} self-start" data-testid="row-comparable">{{ parts.0 }}</span>{% if parts.1 %}<span class="text-xs text-gray-700" data-testid="row-comparable-names">{{ parts.1 }}</span>{% endif %}{% endwith %}{% endif %}
+                {% comment %}How many quotes are in, and beneath it how many have a landed price: data, not a
+                verdict on which may be compared -- the comparison shows the figures.{% endcomment %}
+                {% if row.quotes_chip %}{% with parts=row.quotes_chip|dot_parts %}<span class="status-chip status-chip--neutral self-start" data-testid="row-quotes">{{ parts.0 }}</span>{% if parts.1 %}<span class="text-xs text-gray-700" data-testid="row-quotes-priced">{{ parts.1 }}</span>{% endif %}{% endwith %}{% endif %}
               </div>
             </td>
             <td class="px-3 py-4" data-testid="next-move">
