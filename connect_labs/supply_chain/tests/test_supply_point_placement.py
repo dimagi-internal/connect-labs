@@ -170,3 +170,31 @@ def test_the_backfill_keeps_existing_coordinates_as_recorded_and_places_children
     assert got["a-surveyed-store"] == (9.9, 8.8, "recorded")
     assert tally == {"changed": 3, "unplaced": 0, "total": 3}
     assert place_all(PROGRAMME)["changed"] == 0
+
+
+def test_a_store_nothing_else_places_sits_among_the_places_it_restocks_not_its_drawn_children():
+    """`served`: the middle of children placed by something real; a child drawn AT the store is not one."""
+    central = SupplyPoint.objects.create(program_id=PROGRAMME, slug="central", name="Central", kind="central_store")
+    partner = SupplyPoint.objects.create(
+        program_id=PROGRAMME, slug="partner", name="Partner", kind="regional_store", parent=central
+    )
+    for slug, where in (("w1", (9.0, 7.0)), ("w2", (9.4, 7.4))):
+        SupplyPoint.objects.create(
+            program_id=PROGRAMME, slug=slug, name=slug, kind="user_held", parent=partner,
+            latitude=where[0], longitude=where[1], location_source="recorded",
+        )  # fmt: skip
+    SupplyPoint.objects.create(program_id=PROGRAMME, slug="w3", name="w3", kind="user_held", parent=partner)
+
+    place_all(PROGRAMME)
+
+    partner.refresh_from_db()
+    central.refresh_from_db()
+    drawn = SupplyPoint.objects.get(slug="w3")
+    assert partner.location_source == "served"
+    assert (partner.latitude, partner.longitude) == (pytest.approx(9.2), pytest.approx(7.2))
+    assert partner.location_label == "middle of the 2 places it restocks"
+    assert central.location_source == "served"
+    assert (central.latitude, central.longitude) == (partner.latitude, partner.longitude)
+    assert drawn.location_source == "parent"
+    # Stable: a second pass moves nothing.
+    assert place_all(PROGRAMME)["changed"] == 0

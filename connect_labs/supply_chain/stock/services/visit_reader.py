@@ -36,7 +36,7 @@ import logging
 from django.db import connection, transaction
 from django.utils import timezone
 
-from connect_labs.supply_chain.models import DispensingRule, Movement, WorkerVisit
+from connect_labs.supply_chain.models import DispensingRule, Movement, SupplyPoint, WorkerVisit
 from connect_labs.supply_chain.stock.services import ingest, ledger, posting
 from connect_labs.supply_chain.stock.services.dispensing import (
     DISPENSED,
@@ -190,6 +190,7 @@ def ingest_visit_consumption(access, *, opportunity_id, visits, until=None, toda
     seen = {w.visit_id: w for w in WorkerVisit.objects.filter(program_id=program_id, visit_id__in=ids)}
     index = WorkerIndex(access, opportunity_id)
     pending_reports: dict[int, dict] = {}
+    moved: set[int] = set()  # workers whose visits brought a new GPS fix
 
     for visit in visits:
         visit_id = str(visit.get("id") or "")
@@ -263,9 +264,13 @@ def ingest_visit_consumption(access, *, opportunity_id, visits, until=None, toda
             if outcome is not None:
                 outcomes[outcome_key(rule.item_id)] = outcome
 
-        _remember(seen, program_id, opportunity_id, visit, visit_id, point, on, status, form_name, outcomes, answers)
+        if _remember(
+            seen, program_id, opportunity_id, visit, visit_id, point, on, status, form_name, outcomes, answers
+        ):
+            moved.add(point.pk)
 
     _record_reports(access, report, pending_reports, opportunity_id)
+    _place_moved(moved)
     report["created_supply_points"] = list(index.created)
     _log(report)
     return report
@@ -419,8 +424,32 @@ def _log(report):
         )
 
 
+def visit_location(visit) -> tuple[float | None, float | None]:
+    """Where the phone said the visit happened, rounded to about 100 m; (None, None) without usable GPS.
+
+    The export's `location` first, then the form's own metadata -- the same
+    "<lat> <lon> <alt> <accuracy>" string either way.
+    """
+    from connect_labs.pulse.normalize import parse_location
+
+    form_json = visit.get("form_json") if isinstance(visit.get("form_json"), dict) else {}
+    metadata = form_json.get("metadata") if isinstance(form_json.get("metadata"), dict) else {}
+    found = parse_location(visit.get("location")) or parse_location(metadata.get("location"))
+    if found is None:
+        return None, None
+    return round(found[0], 3), round(found[1], 3)
+
+
+def _place_moved(point_ids) -> None:
+    """Re-place each worker whose visits moved, and the stores drawn among them."""
+    from connect_labs.supply_chain.stock.services.placement import place_upward
+
+    for point in SupplyPoint.objects.filter(pk__in=point_ids).select_related("managed_by_org", "parent"):
+        place_upward(point)
+
+
 def _remember(seen, program_id, opportunity_id, visit, visit_id, point, on, status, form_name, outcomes, answers):
-    """Create or update the WorkerVisit, saving only when something changed.
+    """Create or update the WorkerVisit, saving only when something changed. True when its GPS is new.
 
     An unchanged re-read writes nothing -- not even a revision -- and reads
     nothing either: `seen` was loaded once, and the point is compared by id so
@@ -429,6 +458,7 @@ def _remember(seen, program_id, opportunity_id, visit, visit_id, point, on, stat
     """
     existing = seen.get(visit_id)
     form_json = visit.get("form_json") if isinstance(visit.get("form_json"), dict) else {}
+    latitude, longitude = visit_location(visit)
     fields = {
         "xform_id": str(visit.get("xform_id") or form_json.get("id") or "")[:64],
         "connect_username": str(visit.get("username") or "")[:150],
@@ -436,6 +466,8 @@ def _remember(seen, program_id, opportunity_id, visit, visit_id, point, on, stat
         "visit_date": on,
         "status": status[:32],
         "form_name": form_name[:255],
+        "latitude": latitude,
+        "longitude": longitude,
     }
     if existing is None:
         seen[visit_id] = WorkerVisit.objects.create(
@@ -446,7 +478,7 @@ def _remember(seen, program_id, opportunity_id, visit, visit_id, point, on, stat
             answers=answers,
             **fields,
         )
-        return
+        return latitude is not None
     changed = [name for name, value in fields.items() if getattr(existing, name) != value]
     for name in changed:
         setattr(existing, name, fields[name])
@@ -460,6 +492,7 @@ def _remember(seen, program_id, opportunity_id, visit, visit_id, point, on, stat
         changed.append("answers")
     if changed:
         existing.save(update_fields=[*changed, "updated_at"])
+    return bool({"latitude", "longitude", "supply_point_id"} & set(changed))
 
 
 def run_scheduled() -> dict:

@@ -69,7 +69,9 @@
   };
   var LOCATION_LABEL = {
     recorded: 'Its own location',
+    visits: 'The middle of its visits',
     org_hq: 'Organisation head office',
+    served: 'The middle of the places it restocks',
     parent: 'Where it is restocked from',
     country: 'Country centre',
   };
@@ -78,6 +80,8 @@
   // location, not a guess. What is approximate is a location known only to
   // a region or a country (the directory records no town for the office), a
   // field worker drawn at the store that restocks them, or a country centre.
+  // A worker drawn at the middle of their own visits is where the stock is; a
+  // store drawn among the places it restocks is near them, not at an address.
   function whereIs(pt) {
     var src = pt.location.source;
     var prec = pt.location.precision;
@@ -87,9 +91,17 @@
       prec === 'region' ||
       prec === 'country' ||
       src === 'parent' ||
+      src === 'served' ||
       src === 'country';
     var text;
     if (src === 'recorded' || !src) text = 'At its own recorded location';
+    else if (src === 'visits')
+      text = 'At the ' + (pt.location.label || 'middle of its visits');
+    else if (src === 'served')
+      text =
+        'Drawn at the ' +
+        (pt.location.label || 'middle of the places it restocks') +
+        ' (no address recorded)';
     else if (src === 'org_hq')
       text =
         'At ' +
