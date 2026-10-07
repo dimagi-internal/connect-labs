@@ -305,6 +305,11 @@ export function ActionDialog({
                         {w.sending_to}
                       </p>
                     )}
+                    {w.opening && (
+                      <p className="mt-1 text-xs font-medium text-gray-800">
+                        opening: &ldquo;{w.opening}&rdquo;
+                      </p>
+                    )}
                     {w.prompt && (
                       <p className="mt-1 whitespace-pre-wrap text-xs text-gray-600">
                         {w.prompt}
