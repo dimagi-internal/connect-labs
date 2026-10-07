@@ -70,6 +70,23 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
             "targeting_cost_effectiveness",
         }
     ),
+    # A tender and its quotes, read as the visitor through the supply operations, which
+    # check program membership on every call. Reads only: the panel analyses what the
+    # tables show (ruling 2026-10-07: the product shows the data, the AI judges it on
+    # request); every change stays the person's own, made in the tables.
+    "supply:read": frozenset(
+        {
+            "supply_chain_tender_get",
+            "supply_chain_tender_compare",
+            "supply_chain_tender_outstanding_questions",
+            "supply_chain_quote_list",
+            "supply_chain_quote_get",
+            "supply_chain_outreach_list",
+            "supply_chain_award_list",
+            "supply_chain_supplier_get",
+            "supply_chain_commitment_list",
+        }
+    ),
 }
 
 #: Write scopes whose every tool acts only on a confirmed preview.
@@ -90,6 +107,8 @@ PAGE_SCOPES: dict[str, tuple[str, ...]] = {
     "marketplace:round": ("marketplace:read",),
     "labs:workflow:run": ("workflow:read", "workflow:act"),
     "targeting:index": ("targeting:read",),
+    "supply_chain:procurement_tender_detail": ("supply:read",),
+    "supply_chain:procurement_comparison": ("supply:read",),
 }
 
 #: The panel's look on labs' pages. Rendered by the SDK's ``canopy_host/panel.html``.
