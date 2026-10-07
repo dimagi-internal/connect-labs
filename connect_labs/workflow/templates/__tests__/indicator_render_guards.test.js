@@ -797,3 +797,57 @@ describe('the guards themselves', () => {
     ).toEqual([{ gap: [10, 110], visitAt: 50 }]);
   });
 });
+
+describe('starting coaching', () => {
+  function coachingProps(calls) {
+    const p = oppProps();
+    p.view = {
+      ...completed,
+      workflowActions: [
+        {
+          key: 'initiate_ai_coach',
+          type: 'start_ocs_outreach',
+          label: 'Start coaching',
+          description: 'Coach them',
+        },
+      ],
+    };
+    p.actions = {
+      runAction: (key, args) => {
+        calls.push({ key, args });
+        return Promise.resolve(null);
+      },
+    };
+    return p;
+  }
+
+  test('is offered only to workers with something red or yellow to coach', async () => {
+    const calls = [];
+    const el = await mount('indicator_report_render.js', {
+      url: '/labs/workflow/2/run/?opportunity_id=10097&run_id=12',
+      props: coachingProps(calls),
+      routes: {},
+    });
+    const buttons = Array.from(el.querySelectorAll('button'));
+    const rowButtons = buttons.filter(
+      (b) => b.textContent.trim() === 'Start coaching',
+    );
+    // Four of the fixture's nine workers have a red or yellow per-worker
+    // indicator; the other five have nothing off target and get no button.
+    expect(rowButtons.length).toBe(4);
+    const bulk = buttons.find((b) =>
+      b.textContent.startsWith('Start coaching ·'),
+    );
+    expect(bulk.textContent).toBe(
+      'Start coaching · 4 facilitators off target or on watch',
+    );
+    await click(bulk);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].args.workers.map((w) => w.key).sort()).toEqual([
+      '10097::flw_a02',
+      '10097::flw_a03',
+      '10099::flw_c02',
+      '10099::flw_c03',
+    ]);
+  });
+});

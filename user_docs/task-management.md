@@ -105,6 +105,8 @@ Action buttons appear in the report alongside worker or indicator rows.
 3. Review the details. Nothing is sent until you confirm.
 4. Click **Confirm**. The panel then shows each worker's result as it completes.
 
+**Start coaching on an indicator report.** The coaching button appears only for workers with at least one indicator off target (red) or on watch (yellow), and the button above the table counts only them — for example, "Start coaching · 6 facilitators off target or on watch". The confirmation panel shows, for each worker, the exact briefing the coach will start from: their own figures (for example, "Meetings held — 5 of 12 (42%), band red"), most urgent first, followed by any note your programme team set up. Workers with nothing off target are listed as left out rather than contacted. Dimagi staff coaching a single worker also see **Send to me instead (QA)**: enter your PersonalID username and the preview updates to show the conversation going to you on the worker's behalf.
+
 ### Running an action from the agent panel
 
 Reports that have actions enabled also have an **agent panel** — an AI assistant that can see the same data you are viewing. The agent panel follows you as you drill into an organisation or an individual worker, and it understands each indicator: what "red" means for that metric and how it is calculated.

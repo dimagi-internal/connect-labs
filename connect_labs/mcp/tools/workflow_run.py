@@ -27,11 +27,6 @@ from ..tool_registry import MCPToolError, register
 
 logger = logging.getLogger(__name__)
 
-#: A live run's grading is rebuilt from the visit cache on every read, which is
-#: seconds of work. An agent reads it several times in one exchange, so a short
-#: per-person cache keeps that to one build.
-GRADED_CACHE_SECONDS = 120
-
 _SCOPE = {
     "run_id": {"type": "integer", "description": "The workflow run (on a run page: the page state's filters.run_id)."},
     "opportunity_id": {
@@ -129,49 +124,26 @@ class _Run:
         return f"/labs/workflow/{self.definition.id}/run/?run_id={self.run.id}&{scope}"
 
     def graded(self) -> dict:
-        """The run's grading, trimmed to what an agent reads, with its provenance.
-
-        A completed run answers from its stored snapshot — the week as published. A
-        live run is graded now by the same builder a save would run, and cached
-        briefly per person (the cache holds only what this person could build).
-        """
-        from django.core.cache import cache
-
-        from connect_labs.workflow.agent_sharing import graded_payload
-        from connect_labs.workflow.snapshot_runtime import SnapshotBuildError, build_snapshot_for_run, cache_state
+        """The run's grading, trimmed to what an agent reads, with its provenance
+        (``workflow/run_grading.py``: stored for a completed run, else live and
+        briefly cached per person)."""
+        from connect_labs.workflow.run_grading import GradingUnavailable, NotGraded, graded_for_run
 
         from ..visit_access import caller_restricted
 
-        run = self.run
-        # A restricted caller is graded live, never from the stored snapshot: that was
-        # built from whatever the run read when it was saved, which provenance as it is
-        # now does not vouch for (visit_access.caller_restricted).
-        restricted = caller_restricted()
-        if run.is_completed and run.snapshot and not restricted:
-            payload = graded_payload(run.snapshot)
-            if payload is None:
-                raise _not_semantic(run.id)
-            return {**_slim(payload), "source": "stored", "cache": None}
-
-        # Scoped by opportunity/program as well as run id: labs-local run ids and
-        # production run ids are separate sequences and overlap.
-        scope = f"o{self.opportunity_id}" if self.opportunity_id is not None else f"p{self.program_id}"
-        key = f"wf-agent-graded:v2:{self.user.pk}:{scope}:{run.id}:{'r' if restricted else 'f'}"
-        hit = cache.get(key)
-        if hit is not None:
-            return hit
         try:
-            built = build_snapshot_for_run(
-                self.wda, run, requested_opportunity_id=self.opportunity_id, program_id=self.program_id
+            return graded_for_run(
+                self.user,
+                self.wda,
+                self.run,
+                opportunity_id=self.opportunity_id,
+                program_id=self.program_id,
+                restricted=caller_restricted(),
             )
-        except SnapshotBuildError as e:
+        except NotGraded as e:
+            raise _not_semantic(self.run.id) from e
+        except GradingUnavailable as e:
             raise MCPToolError("UPSTREAM_ERROR", e.message) from e
-        payload = graded_payload(built["payload"])
-        if payload is None:
-            raise _not_semantic(run.id)
-        out = {**_slim(payload), "source": "live", "cache": cache_state(built["opportunity_ids"])}
-        cache.set(key, out, GRADED_CACHE_SECONDS)
-        return out
 
 
 def _not_semantic(run_id) -> MCPToolError:
@@ -180,24 +152,6 @@ def _not_semantic(run_id) -> MCPToolError:
         f"run {run_id} is not graded by the semantic layer (its snapshot has no per-worker "
         "indicator grading), so there is nothing to read by band.",
     )
-
-
-def _slim(payload: dict) -> dict:
-    """The graded payload without its case records: every cell and catalog, none of
-    the rows behind them (``byFLW[].rows`` indexes a case list that can be MBs)."""
-    by_flw = [{k: v for k, v in f.items() if k != "rows"} for f in payload.get("byFLW") or []]
-    by_llo = [{k: v for k, v in r.items() if k not in ("rows", "opps")} for r in payload.get("byLLO") or []]
-    by_opp = [{k: v for k, v in r.items() if k != "rows"} for r in payload.get("byOpp") or []]
-    return {
-        "byFLW": by_flw,
-        "byLLO": by_llo,
-        "byOpp": by_opp,
-        "programInd": payload.get("programInd") or {},
-        "cMeasures": payload.get("cMeasures") or [],
-        "display": payload.get("display") or {},
-        "generated_at": payload.get("generated_at"),
-        "opportunity_labels": (payload.get("deployment") or {}).get("opportunity_labels") or {},
-    }
 
 
 def _action_error(e) -> MCPToolError:
@@ -467,12 +421,33 @@ def workflow_run_action(
     program_id=None,
     confirm: str | None = None,
 ) -> dict[str, Any]:
-    from connect_labs.workflow.actions import ActionError, commit, preview
+    from connect_labs.workflow.actions import ActionError, briefing_source, commit, preview
+
+    from ..visit_access import caller_restricted
 
     with _Run(user, run_id, opportunity_id, program_id) as r:
+        # A coaching action briefs each worker from the run's grading, read in the
+        # caller's own scope and restriction -- the same cells workflow_run_indicators returns.
+        briefing = briefing_source(
+            user,
+            r.wda,
+            r.run,
+            r.definition,
+            opportunity_id=opportunity_id,
+            program_id=program_id,
+            restricted=caller_restricted(),
+        )
         try:
             if not confirm:
-                out = preview(user, wda=r.wda, run=r.run, definition=r.definition, key=action, arguments=arguments)
+                out = preview(
+                    user,
+                    wda=r.wda,
+                    run=r.run,
+                    definition=r.definition,
+                    key=action,
+                    arguments=arguments,
+                    briefing=briefing,
+                )
                 out["next"] = (
                     "Nothing has been done. Settle `needs`, then preview again."
                     if out["needs"]
@@ -490,6 +465,7 @@ def workflow_run_action(
                 confirm=confirm,
                 via="canopy" if r.delegated else "mcp",
                 actor=_caller_actor(),
+                briefing=briefing,
             )
         except ActionError as e:
             raise _action_error(e) from e

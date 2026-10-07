@@ -331,3 +331,29 @@ def test_saving_an_invalid_action_declaration_is_refused_before_anything_is_read
             expected_version=1,
             patch={"config": {"actions": [{"key": "x", "type": "send_sms"}]}},
         )
+
+
+def test_worker_rows_carry_the_name_the_report_shows(user, wda):
+    """An agent maps "Asha Banda" to a worker key without previewing everyone."""
+    PAYLOAD["byFLW"][0]["name"] = "Asha Banda"
+    try:
+        out = _call("workflow_run_indicators", user, run_id=70, program_id=25, band="red")
+    finally:
+        PAYLOAD["byFLW"][0].pop("name")
+    assert [(w["key"], w["name"]) for w in out["workers"]] == [("10::asha", "Asha Banda")]
+
+
+def test_a_coaching_preview_briefs_each_worker_from_the_runs_grading(user, actionable):
+    out = _call(
+        "workflow_run_action",
+        user,
+        run_id=70,
+        program_id=25,
+        action="initiate_ai_coach",
+        arguments={"workers": [{"key": "10::asha"}, {"key": "10::binta"}]},
+    )
+    asha, binta = out["workers"]
+    assert "1. Weighed [wt] — 12 of 30 (40%), band red" in asha["prompt"]
+    assert "1. Followed up [fu] — 18 of 22 (80%), band yellow" in binta["prompt"]
+    assert asha["prompt"].endswith("Programme team's note:\nTalk with them.")
+    assert asha["indicators"] == ["wt"]
