@@ -306,14 +306,59 @@ export function ActionDialog({
                       </p>
                     )}
                     {w.opening && (
-                      <p className="mt-1 text-xs font-medium text-gray-800">
-                        opening: &ldquo;{w.opening}&rdquo;
+                      <p className="mt-1 text-xs text-gray-800">
+                        <span className="font-medium">
+                          First message the worker receives:
+                        </span>{' '}
+                        &ldquo;{w.opening}&rdquo;
                       </p>
                     )}
-                    {w.prompt && (
-                      <p className="mt-1 whitespace-pre-wrap text-xs text-gray-600">
-                        {w.prompt}
-                      </p>
+                    {w.briefing && w.prompt ? (
+                      <div className="mt-2 text-xs text-gray-700">
+                        <div className="font-medium text-gray-800">
+                          What the coach will raise
+                        </div>
+                        <ul className="mt-0.5 space-y-0.5">
+                          {w.briefing.topics.map((t, i) => (
+                            <li key={i}>
+                              {t.label} — {t.figure},{' '}
+                              <span
+                                className={
+                                  t.band === 'red'
+                                    ? 'text-red-700'
+                                    : t.band === 'yellow'
+                                      ? 'text-amber-700'
+                                      : ''
+                                }
+                              >
+                                {t.status}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                        {w.briefing.note && (
+                          <p className="mt-1 whitespace-pre-wrap">
+                            <span className="font-medium">
+                              Programme team&rsquo;s note:
+                            </span>{' '}
+                            {w.briefing.note}
+                          </p>
+                        )}
+                        <details className="mt-1 text-gray-500">
+                          <summary className="cursor-pointer">
+                            Show the exact text sent to the coach
+                          </summary>
+                          <pre className="mt-1 whitespace-pre-wrap font-sans text-gray-600">
+                            {w.prompt}
+                          </pre>
+                        </details>
+                      </div>
+                    ) : (
+                      w.prompt && (
+                        <p className="mt-1 whitespace-pre-wrap text-xs text-gray-600">
+                          {w.prompt}
+                        </p>
+                      )
                     )}
                   </li>
                 );

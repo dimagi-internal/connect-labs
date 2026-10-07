@@ -99,8 +99,16 @@ _PRIORITY = {"type": "string", "enum": ["low", "medium", "high"]}
 #: What a coaching preview on synthetic data says happens instead of a conversation.
 SYNTHETIC_NOTE = (
     "Synthetic data: no message is sent; the task gets a sample conversation. "
-    "Set deliver_to to send a real test conversation to yourself."
+    "To send a real test conversation to yourself, enter your PersonalID username below."
 )
+
+#: What a preview calls the coach when it cannot name the bot without asking OCS.
+UNNAMED_BOT = "the programme's coach"
+
+#: Bot names seen on a real preview, so a synthetic one (which never asks OCS) can
+#: name the same bot rather than show its id.
+_BOT_NAME_CACHE_KEY = "workflow_action_bot_name:{}"
+_BOT_NAME_TTL = 7 * 24 * 3600
 
 #: The QA-redirect argument of ``start_ocs_outreach``: a staff member's own ConnectID
 #: username, to receive a worker's conversation instead of the worker.
@@ -607,9 +615,10 @@ def preview(user, *, wda, run, definition, key: str, arguments: Any, request=Non
             out["synthetic"] = True
             out["synthetic_note"] = SYNTHETIC_NOTE
             declared = (arguments.get("bot") if isinstance(arguments, dict) else None) or action["defaults"].get("bot")
-            # Named by its id: a synthetic preview never asks OCS anything.
+            # A synthetic preview never asks OCS anything: the name is the one a real
+            # preview last saw for this bot, else a plain description -- never the id.
             if declared and declared != SYNTHETIC_BOT:
-                out["bot"] = {"id": declared, "name": declared}
+                out["bot"] = {"id": declared, "name": _cached_bot_name(declared) or UNNAMED_BOT}
         else:
             bots = _ocs_bots(user, request)
             if bots is None:
@@ -631,14 +640,18 @@ def preview(user, *, wda, run, definition, key: str, arguments: Any, request=Non
         row = {"key": item["key"], "name": who["name"], "opportunity_id": who["opportunity_id"]}
         if action["type"] == "start_ocs_outreach":
             row["prompt"] = item.get("prompt") or args.get("prompt")
-            if args.get("bot") != SYNTHETIC_BOT and coach_briefing.is_briefing(row["prompt"]):
-                # What the worker actually receives first (the briefing itself goes
-                # into the session state, never to the worker -- tasks/ai_sessions.py).
-                row["opening"] = coach_briefing.opening_message(row["prompt"])
+            if coach_briefing.is_briefing(row["prompt"]):
+                # Shown to the person confirming in plain words; ``prompt`` stays the
+                # exact text the bot receives.
+                row["briefing"] = coach_briefing.briefing_summary(row["prompt"])
+                if args.get("bot") != SYNTHETIC_BOT:
+                    # What the worker actually receives first (the briefing itself goes
+                    # into the session state, never to the worker -- tasks/ai_sessions.py).
+                    row["opening"] = coach_briefing.opening_message(row["prompt"])
             if item.get("indicators"):
                 row["indicators"] = item["indicators"]
             if args.get(DELIVER_TO):
-                row["sending_to"] = f"sending to: {args[DELIVER_TO]} (QA, on behalf of {who['username']})"
+                row["sending_to"] = f"sending to {args[DELIVER_TO]} — a test, on behalf of {who['name']}"
         row["title"] = item.get("title") or args.get("title")
         workers.append(row)
 
@@ -657,8 +670,8 @@ def preview(user, *, wda, run, definition, key: str, arguments: Any, request=Non
         # Dimagi staff, one worker at a time (``_check_deliver_to``).
         out["qa_redirect"] = is_dimagi_user(user)
     if args.get(DELIVER_TO):
+        # Said once, in the dialog's banner -- not repeated in the title.
         out[DELIVER_TO] = args[DELIVER_TO]
-        summary += f" -- QA: the conversation goes to {args[DELIVER_TO]}, not to the worker"
     result = {
         "action": key,
         "type": action["type"],
@@ -745,7 +758,7 @@ def _ocs_bots(user, request) -> list[dict] | None:
     try:
         if not client.check_token_valid():
             return None
-        return [
+        bots = [
             {"id": e.get("public_id") or str(e.get("id")), "name": e.get("name") or ""}
             for e in client.list_experiments()
         ]
@@ -754,6 +767,26 @@ def _ocs_bots(user, request) -> list[dict] | None:
         return None
     finally:
         client.close()
+    _remember_bot_names(bots)
+    return bots
+
+
+def _remember_bot_names(bots: list[dict]) -> None:
+    from django.core.cache import cache
+
+    try:
+        cache.set_many({_BOT_NAME_CACHE_KEY.format(b["id"]): b["name"] for b in bots if b["name"]}, _BOT_NAME_TTL)
+    except Exception:  # noqa: BLE001 -- a name for display only
+        logger.warning("Could not cache OCS bot names", exc_info=True)
+
+
+def _cached_bot_name(bot_id: str) -> str | None:
+    from django.core.cache import cache
+
+    try:
+        return cache.get(_BOT_NAME_CACHE_KEY.format(bot_id))
+    except Exception:  # noqa: BLE001 -- a name for display only
+        return None
 
 
 # ---------------------------------------------------------------------------

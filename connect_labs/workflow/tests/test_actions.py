@@ -164,9 +164,25 @@ def test_on_synthetic_opportunities_no_ocs_is_needed(user, monkeypatch):
     assert out["confirm"]
     # The preview names the bot the workflow DECLARES, never the sample stand-in,
     # and says what happens instead of a conversation.
-    assert out["bot"] == {"id": "bot-1", "name": "bot-1"}
+    # Never the bot's id: OCS is not asked, so it is described rather than named.
+    assert out["bot"] == {"id": "bot-1", "name": "the programme's coach"}
     assert "no message is sent" in out["synthetic_note"]
-    assert "deliver_to" in out["synthetic_note"]
+    assert "PersonalID username" in out["synthetic_note"] and "deliver_to" not in out["synthetic_note"]
+
+
+def test_a_synthetic_preview_names_the_bot_a_real_preview_already_saw(user, monkeypatch):
+    actions._remember_bot_names([{"id": "bot-1", "name": "Spark Coach"}])
+    monkeypatch.setattr("connect_labs.labs.synthetic.registry.get_synthetic_opp", lambda opp: object())
+    monkeypatch.setattr(actions, "_ocs_bots", MagicMock(side_effect=AssertionError("OCS must not be asked")))
+    out = preview(
+        user,
+        wda=_wda(),
+        run=RUN,
+        definition=_definition(COACH),
+        key="initiate_ai_coach",
+        arguments={"workers": [{"key": "10::a10"}]},
+    )
+    assert out["bot"] == {"id": "bot-1", "name": "Spark Coach"}
 
 
 def test_an_action_the_workflow_does_not_offer_is_refused(user):
@@ -391,8 +407,9 @@ def _preview_coach(who, arguments):
 def test_a_qa_redirect_preview_says_plainly_where_the_conversation_goes(staff, real_opps, bots):
     out = _preview_coach(staff, {"workers": [{"key": "10::a10"}], "deliver_to": "qa_connect"})
     assert out["deliver_to"] == "qa_connect"
-    assert out["workers"][0]["sending_to"] == "sending to: qa_connect (QA, on behalf of a10)"
-    assert "QA" in out["summary"] and "qa_connect" in out["summary"]
+    assert out["workers"][0]["sending_to"] == "sending to qa_connect — a test, on behalf of Asha 10"
+    # The dialog's banner says it; the title does not repeat it.
+    assert out["summary"] == "Initiate AI coach for 1 worker"
     assert out["arguments"]["deliver_to"] == "qa_connect"
     assert out["confirm"]
 
