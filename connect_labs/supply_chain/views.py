@@ -226,7 +226,7 @@ def checks_by_audience(checks, *, scope=""):
 def _headline(kinds, count):
     """What the group is, in the words of the thing rather than the kind."""
     if kinds == {"quote_not_comparable"}:
-        return f"{'quote' if count == 1 else 'quotes'} not yet comparable"
+        return f"{'quote' if count == 1 else 'quotes'} missing facts"
     if kinds == {"commodity_course_undefined"}:
         return "ration table not set"
     return "open " + ("check" if count == 1 else "checks")

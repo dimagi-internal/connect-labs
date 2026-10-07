@@ -66,9 +66,9 @@ class Row:
     step_label: str = ""
     # Quote facts still absent on a tender: [(fact, number of quotes)], from the comparison's gaps.
     missing: list = field(default_factory=list)
-    # How many quotes the comparison can rank, and whose: "1 of 3 comparable · Harmattan".
-    comparable_chip: str = ""
-    comparable_count: int = 0
+    # How many live quotes, and how many have a landed price: "3 quotes · 2 with a landed price".
+    # A count of data, never a verdict on which quotes may be compared.
+    quotes_chip: str = ""
     # A tender's response deadline, against today: "deadline 10 Oct · in 4 days". Blank for an order.
     deadline_note: str = ""
     # An order's bar is the order page's own six steps (ORDER_BAR), not the tender's:
@@ -264,7 +264,7 @@ def awaiting_reply(program_id) -> dict:
     return {"suppliers": suppliers, "tenders": count}
 
 
-def tender_stage(tender, *, invited=0, answered=0, comparable=None, quoted=None, awardee="", today=None):
+def tender_stage(tender, *, invited=0, answered=0, quoted=None, awardee="", today=None):
     """(step index, words) for a tender not yet ordered."""
     if tender.status == "draft":
         return 0, "Draft · not yet sent"
@@ -278,8 +278,8 @@ def tender_stage(tender, *, invited=0, answered=0, comparable=None, quoted=None,
     if tender.status == "awarded":
         return 3, f"Awarding · to {awardee}" if awardee else "Awarding"
     words = "Comparing"
-    if comparable is not None and quoted:
-        words += f" · {comparable} of {quoted} comparable"
+    if quoted:
+        words += f" · {quoted} quote{'s' if quoted != 1 else ''}"
     return 2, words
 
 
@@ -353,7 +353,7 @@ def _tender_rows(program_id, today, until):
                 ours=ours,
                 theirs=theirs,
                 missing=_missing_facts(tender, quotes.get(tender.pk, [])),
-                **_comparable(tender, quotes.get(tender.pk, [])),
+                **_quote_count(tender, quotes.get(tender.pk, [])),
                 **_last_change(tender_scope_revisions(tender.pk, program_id=program_id, until=until, orders=False)),
             )
         )
@@ -373,22 +373,18 @@ def deadline_note(deadline: date | None, today: date) -> str:
     return f"deadline {_day(deadline)} · {when}"
 
 
-def _comparable(tender, quotes) -> dict:
-    """The tender's comparable-count chip, from the comparison itself; empty before any quote."""
+def _quote_count(tender, quotes) -> dict:
+    """The tender's quote-count chip, from the comparison's own rows; empty before any quote."""
     if not any(q.is_live for q in quotes):
         return {}
-    from connect_labs.supply_chain.procurement.status import comparable_chip, comparisons
+    from connect_labs.supply_chain.procurement.status import comparisons, quote_count_words
 
-    compared = comparisons(tender, quotes)
-    return {
-        "comparable_chip": comparable_chip(compared),
-        "comparable_count": sum(len(c.comparable) for c in compared),
-    }
+    return {"quotes_chip": quote_count_words(comparisons(tender, quotes))}
 
 
 def _missing_facts(tender, quotes) -> list:
     """[(fact, quotes lacking it)]: each quote's open facts -- the list the comparison's headers
-    count -- counted per fact across the tender's quotes, comparable or not."""
+    count -- counted per fact across the tender's quotes."""
     if not any(q.is_live for q in quotes):
         return []
     from connect_labs.supply_chain.procurement.status import (

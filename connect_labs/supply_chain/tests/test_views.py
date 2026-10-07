@@ -276,9 +276,10 @@ def test_the_comparison_page_shows_outstanding_questions_for_a_comparable_row(cl
     body = response.content.decode()
     assert response.status_code == 200
     assert "Northwind Nutrition" in body
-    # A shelf-life question does not block: the quote stays comparable, with its award to hand.
-    assert 'data-testid="grid-status">Comparable<' in body
+    # A shelf-life question does not hide the quote's award: it is offered, and no verdict is passed on it.
     assert 'data-testid="award-form"' in body
+    assert '<option value="7" selected>' in body
+    assert ">Comparable<" not in body
     # provisional is False -- the PROVISIONAL badge must not render.
     assert "PROVISIONAL" not in body
 
@@ -616,8 +617,12 @@ def test_with_nothing_comparable_the_page_does_not_claim_a_provisional_ranking(c
         response = client.get(reverse("supply_chain:procurement_comparison", args=[1]) + "?commodity=rutf")
     body = response.content.decode()
 
-    # The page states the count, and each quote's status: what it is missing, not a ranking.
-    assert ">0 of 2 comparable<" in body
+    # The page states the count, and each quote's status: what it is missing, not a ranking or a verdict.
+    assert re.search(r'data-testid="quote-count"[^>]*>2 quotes<', body)
+    assert "comparable<" not in body
+    # Both quotes can still be awarded: whether what they state is enough is the buyer's call.
+    # Neither has a landed price, so they read by supplier: DABS first, chosen to start.
+    assert '<option value="1" selected>' in body and '<option value="2">' in body
     assert len(re.findall(r'data-testid="grid-status">[^<]+ · waiting<', body)) == 2
     assert "could still beat it" not in body and "PROVISIONAL" not in body
     # Who has to answer is still reported.

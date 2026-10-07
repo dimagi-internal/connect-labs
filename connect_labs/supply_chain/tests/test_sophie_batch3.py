@@ -121,8 +121,10 @@ class TestTheSpecificationReadsWhatTheQuoteStates:
         assert not [q for q in row["questions"] if q["key"].startswith("spec:") or q["key"] == "shelf_life"]
 
         body = _page(client_in_program, base["tender"]["id"])
-        # On the grid: comparable, and nothing about it shown as a gap.
-        assert 'data-testid="grid-status">Comparable<' in body
+        # On the grid: its landed price, nothing about it shown as a gap, and no verdict chip.
+        landed = _fact(body, "landed")
+        assert "landed-needs" not in landed and re.search(r"USD [\d,]+\.\d\d", landed)
+        assert 'data-testid="grid-status"' not in body
         assert "data-gap" not in _fact(body, "pack")
 
     @pytest.mark.django_db

@@ -906,7 +906,9 @@
       var ev = src.evaluation || {};
       var bits = [plural((src.demand || {}).tenders || 0, 'tender')];
       if (ev.of)
-        bits.push(ev.comparable + ' of ' + ev.of + ' quotes comparable');
+        bits.push(
+          (ev.priced || 0) + ' of ' + ev.of + ' quotes with a landed price',
+        );
       if ((src.award || {}).count) bits.push(plural(src.award.count, 'award'));
       return bits.join(' · ');
     }

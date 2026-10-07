@@ -604,6 +604,24 @@
     @apply sticky top-0 z-[1] whitespace-nowrap border-b border-gray-200 bg-gray-50 px-2.5 py-2 text-left text-xs font-medium text-gray-600;
   }
 
+  /* A header marked data-sort is a button (static/supply_chain/sheet_sort.js): it reads as
+     the header it was, with an arrow saying which way the rows are in order by it. */
+  .sheet > thead th > .sheet-sort {
+    @apply inline-flex cursor-pointer flex-wrap items-baseline gap-1 border-0 bg-transparent p-0 text-left hover:text-gray-900;
+    font: inherit;
+    color: inherit;
+  }
+
+  .sheet > thead th[aria-sort='ascending'] > .sheet-sort::after {
+    content: '▲';
+    @apply text-[0.6rem] text-gray-700;
+  }
+
+  .sheet > thead th[aria-sort='descending'] > .sheet-sort::after {
+    content: '▼';
+    @apply text-[0.6rem] text-gray-700;
+  }
+
   .sheet > tbody > tr > td,
   .sheet > tbody > tr > th {
     @apply border-b border-gray-100 px-2.5 py-2 align-middle;

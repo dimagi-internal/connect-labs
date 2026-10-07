@@ -59,6 +59,7 @@ from connect_labs.supply_chain.procurement.services.questions import (
 )
 from connect_labs.supply_chain.records import course_applies_to_category, freight_and_duties_for_incoterm
 from connect_labs.supply_chain.values import (
+    Money,
     Unconfirmed,
     decimal_string,
     destination_phrase,
@@ -236,6 +237,11 @@ class ComparisonRow:
     clearing: str = ""  # "" (not ours) | "estimate" | "open"
     # Main freight is ours under an E or F term ("estimate" or "open").
     freight_ours: str = ""
+
+    @property
+    def has_landed_price(self) -> bool:
+        """Whether the landed total for the tender's quantity could be computed: a fact, not a ranking."""
+        return isinstance(self.figures.get("landed_total_for_tender_quantity"), Money)
 
     @property
     def open_estimates(self) -> list[str]:
@@ -439,6 +445,11 @@ class Comparison:
         return len(self.comparable)
 
     @property
+    def priced_count(self) -> int:
+        """How many quotes in the grid have a landed price -- a count of a computed figure, no verdict."""
+        return sum(1 for row in (*self.comparable, *self.blocked) if row.has_landed_price)
+
+    @property
     def total_count(self) -> int:
         return len(self.comparable) + len(self.blocked) + len(self.not_comparable)
 
@@ -500,6 +511,7 @@ class Comparison:
             "generated_at": self.generated_at,
             "comparable_count": self.comparable_count,
             "total_count": self.total_count,
+            "priced_count": self.priced_count,
             "ranked_by": self.ranked_by,
             "unavailable": self.unavailable,
             "provisional": self.provisional,
