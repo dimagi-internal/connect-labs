@@ -485,3 +485,62 @@ def test_two_runs_in_one_transaction_take_the_lock_and_post_once(da, rutf, rutf_
     assert (first["posted"], second["posted"], second["skipped_already_posted"]) == (1, 0, 1)
     assert Movement.objects.filter(kind="consumption").count() == 1
     assert sum("pg_advisory_xact_lock" in q["sql"] for q in queries.captured_queries) == 2
+
+
+# ---- where a worker is: the middle of their visits ---------------------------
+# Coordinates are invented placeholders (public repo).
+
+
+def _at(lat, lng):
+    return {"location": f"{lat} {lng} 300 5"}
+
+
+def test_a_worker_is_placed_at_the_middle_of_their_visits_and_their_store_among_them(da, rutf, rutf_rule, store):
+    read(
+        da,
+        [
+            visit(9101, answers={RUTF_PATH: "14"}, **_at(9.0, 7.0)),
+            visit(9102, answers={RUTF_PATH: "14"}, **_at(9.2, 7.2)),
+            # One stray fix far away does not drag a median off.
+            visit(9103, answers={RUTF_PATH: "14"}, **_at(40.0, 60.0)),
+            visit(9104, username="worker-baobab", user_id="uuid-baobab", answers={RUTF_PATH: "7"}, **_at(9.4, 7.4)),
+        ],
+    )
+
+    acacia = _worker()
+    assert (acacia.latitude, acacia.longitude) == (9.2, 7.2)
+    assert acacia.location_source == "visits"
+    assert acacia.location_label == "middle of 3 visits"
+    store.refresh_from_db()
+    assert store.location_source == "served"
+    assert (store.latitude, store.longitude) == (pytest.approx(9.3), pytest.approx(7.3))
+
+
+def test_gps_comes_from_the_forms_metadata_when_the_export_has_none_and_is_rounded(da, rutf, rutf_rule):
+    row = visit(9111, answers={RUTF_PATH: "14"})
+    row["form_json"]["metadata"] = {"location": "9.12345 7.98765 300 5"}
+    read(da, [row])
+
+    remembered = WorkerVisit.objects.get(visit_id="9111")
+    assert (remembered.latitude, remembered.longitude) == (9.123, 7.988)
+    assert _worker().location_source == "visits"
+
+
+def test_a_visit_without_usable_gps_leaves_the_worker_at_their_store(da, rutf, rutf_rule, store):
+    store.latitude, store.longitude = 9.0, 7.0
+    store.save()
+    read(da, [visit(9121, answers={RUTF_PATH: "14"}, location="0.0 0.0 0 0")])
+
+    worker = _worker()
+    assert worker.location_source == "parent"
+    assert WorkerVisit.objects.get(visit_id="9121").latitude is None
+
+
+def test_re_reading_visits_with_gps_writes_and_places_nothing_new(da, rutf, rutf_rule):
+    visits = [visit(9131 + i, answers={RUTF_PATH: "14"}, **_at(9.0 + i / 10, 7.0)) for i in range(3)]
+    read(da, visits)
+    revisions = Revision.objects.count()
+
+    read(da, visits)
+
+    assert Revision.objects.count() == revisions
