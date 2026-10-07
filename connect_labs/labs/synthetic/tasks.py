@@ -356,7 +356,10 @@ def run_synthetic_clone_opp(
             spec, base_url=settings.CONNECT_PRODUCTION_URL, oauth_token=oauth_token, drive=drive, progress=progress
         )
         progress(1, 2, "Step 2 of 2: generating the clones")
-        spec, results = generate_cohort(spec, drive=drive, authorize=authorize, created_by=user, progress=progress)
+        # A new clone every time: "clone this" never hands back an older clone of the same source.
+        spec, results = generate_cohort(
+            spec, drive=drive, authorize=authorize, created_by=user, progress=progress, new_opportunities=True
+        )
     if not user.view_synthetic_opps:
         user.view_synthetic_opps = True
         user.save(update_fields=["view_synthetic_opps"])

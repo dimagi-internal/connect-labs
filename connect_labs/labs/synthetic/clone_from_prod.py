@@ -478,6 +478,7 @@ def generate_opps_bulk(
     image_config: dict | None = None,
     authorize=None,
     created_by=None,
+    new_opportunities: bool = False,
 ) -> list[CloneResult]:
     """Generate fixtures for every bundle subdirectory under *bundle_root*.
 
@@ -496,6 +497,11 @@ def generate_opps_bulk(
             this collection are generated; the rest are logged and skipped.
             Without it a root shared by several cohorts regenerates everything —
             with ``fresh=True`` that trampled opps the caller never named (#1166).
+        new_opportunities: Generate each source into a NEW labs-only opportunity
+            under ``program_id``, even when that source already has a clone
+            elsewhere. Without it an existing clone is reused (``skipped=True``) --
+            right for a cohort refreshed in place, wrong for "clone this", which
+            otherwise came back with an empty program and no clone.
 
     Returns:
         List of :class:`CloneResult` for every bundle that succeeded.
@@ -531,6 +537,11 @@ def generate_opps_bulk(
                     image_config=image_config,
                     authorize=authorize,
                     created_by=created_by,
+                    target_opportunity_id=(
+                        max(SyntheticOpportunity.next_labs_only_opp_id(), program_id + 1)
+                        if new_opportunities
+                        else None
+                    ),
                 )
             )
             outcome = f"generated opportunity {bundle.source_opp_id}"
@@ -673,6 +684,7 @@ def generate_cohort(
     progress=NULL_PROGRESS,
     authorize=None,
     created_by=None,
+    new_opportunities: bool = False,
 ) -> tuple[CohortSpec, list[CloneResult]]:
     """Phase 2 (offline) for a whole cohort spec.
 
@@ -697,5 +709,6 @@ def generate_cohort(
         image_config=spec.image_config,
         authorize=authorize,
         created_by=created_by,
+        new_opportunities=new_opportunities,
     )
     return spec, results
