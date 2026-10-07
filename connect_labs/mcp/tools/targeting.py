@@ -1298,3 +1298,64 @@ def targeting_cost_effectiveness(
         "caveats": caveats,
         "basis": "GiveWell ORS/zinc CEA (Aug 2023) chain as applied to CHAI Bauchi; modelled, not measured.",
     }
+
+
+@register(
+    name="targeting_pmc_schedules",
+    description=(
+        "Perennial malaria chemoprevention (PMC) in Nigeria: WHICH delivery schedule, and WHERE. Returns IDM's "
+        "EMOD model comparison of six PMC schedules (no PMC; SP at vaccine visits at 25% coverage; Connect "
+        "quarterly, every two months, or monthly through the six-month high season for children 3-24 months; "
+        "Connect quarterly for 12-24 months only) -- cases averted in children 3-24 months with a +/- range "
+        "across six seeds, doses, and the cost per case averted recomputed at the given visit price -- plus "
+        "Nigeria's states with live DHS malaria prevalence, rainfall seasonality, zero-dose and DPT3, the "
+        "estimated children 3-24 months, whether each state's prevalence is near the modelled setting, and a "
+        "one-year projection for the chosen schedule. The model setting is ONE uncalibrated southern-Nigeria-"
+        "like setting, precomputed (EMOD is not run by this call): read 'caveats' and quote results as "
+        "illustrative, never as a state's calibrated estimate. Use it to propose states and a schedule for a "
+        "PMC proposal, and to show how the answer moves with the price per visit."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "schedule": {
+                "type": "string",
+                "description": "Schedule code to project per state. Default: the cheapest per case averted.",
+            },
+            "states": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Only these states (names as returned, case-insensitive). Default: all 37.",
+            },
+            "cost_per_visit": {"type": "number", "description": "USD per verified visit. Default 0.80."},
+            "platform_fee": {"type": "number", "description": "Share added on top, e.g. 0.2 for 20% (the default)."},
+            "dose_rate": {"type": "number", "description": "Share of visits that give a dose, 0-1. Default 0.95."},
+        },
+        "additionalProperties": False,
+    },
+)
+def targeting_pmc_schedules(
+    user, *, schedule=None, states=None, cost_per_visit=None, platform_fee=None, dose_rate=None
+):
+    from connect_labs.labs.indicators import pmc
+
+    try:
+        costs = pmc.costs_or_default(cost_per_visit, platform_fee, dose_rate)
+        out = pmc.summary(costs)
+    except ValueError as e:
+        raise MCPToolError("BAD_REQUEST", str(e)) from None
+    codes = [s["code"] for s in out["schedules"]]
+    chosen = schedule or out["best_schedule"]
+    if chosen not in codes:
+        raise MCPToolError("BAD_REQUEST", f"Unknown schedule {chosen!r}. Known: {', '.join(codes)}.")
+    rows = pmc.state_rows(chosen, costs)
+    if states:
+        wanted = {s.strip().lower() for s in states}
+        found = {r["name"].lower() for r in rows}
+        missing = sorted(wanted - found)
+        rows = [r for r in rows if r["name"].lower() in wanted]
+        if missing:
+            out["states_not_found"] = missing
+    out["schedule"] = chosen
+    out["states"] = rows
+    return out
