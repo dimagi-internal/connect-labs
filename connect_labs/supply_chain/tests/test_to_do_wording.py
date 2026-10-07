@@ -1,8 +1,8 @@
 """Whose step it is, in plain words: "To do" and "Waiting on ...", never "on us".
 
 Owner decision, 2026-10-04: "on us" read as jargon. Ours is a to-do list, theirs
-is who we are waiting on, and a quote's missing fact carries the same words as a
-chip. Moves and facts stay separate (a fact is still not a move).
+is who we are waiting on. A quote's missing fact is not a move, so its chip says whose it
+is without the moves' "to do" (ours to attach, settle or fill; waiting; to ask).
 
 THIS REPOSITORY IS PUBLIC. Nothing here names a real company.
 """
@@ -12,14 +12,16 @@ from connect_labs.supply_chain.templatetags.supply_chain_extras import supplies
 
 
 def test_one_fact_is_named_and_several_are_counted():
-    assert moves.facts_chip(["tender duty terms"], moves.US) == "tender duty terms · to do"
-    assert moves.facts_chip(["exchange rate", "freight estimate", "duty exemption"], moves.US) == "3 facts · to do"
+    assert moves.facts_chip(["tender duty terms"], moves.US) == "duty terms · ours to settle"
+    assert (
+        moves.facts_chip(["exchange rate", "freight estimate", "duty exemption"], moves.US) == "3 facts · ours to fill"
+    )
     assert moves.facts_chip(["sachets per carton"], moves.SUPPLIERS) == "sachets per carton · waiting"
     assert moves.facts_chip([], moves.US) == ""
 
 
 def test_the_fact_chip_and_the_rails_use_the_same_words():
-    assert supplies(moves.US) == moves.OWNER_CHIP[moves.US] == "to do"
+    assert supplies(moves.US) == moves.OURS_TO_FILL == "ours to fill"
     assert supplies(moves.SUPPLIERS) == moves.OWNER_CHIP[moves.SUPPLIERS] == "waiting"
     assert moves.TO_DO == "To do"
     assert moves.WAITING_ON_SUPPLIERS == "Waiting on suppliers"

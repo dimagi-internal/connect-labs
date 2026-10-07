@@ -668,7 +668,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
         <th class="text-left font-medium px-4 py-2">Batch</th>
         <th class="text-left font-medium px-4 py-2">Best before</th>
         <th class="text-left font-medium px-4 py-2">Quantity</th>
-        <th class="text-left font-medium px-4 py-2">Certificate</th>
+        <th class="text-left font-medium px-4 py-2">Clearing documents</th>
         <th class="text-left font-medium px-4 py-2">Told by</th>
         <th class="px-4 py-2"><span class="sr-only">Actions</span></th>
       </tr>
@@ -706,7 +706,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
               list, the way the checks read it; "none" in amber beside four import
               documents on file read as a gap that was not there.{% endcomment %}
               {% if shipment.required_documents %}
-                <span class="text-xs {% if shipment.required_on_file == shipment.required_documents|length %}text-message-success-text{% else %}text-message-warning-text{% endif %}">{{ shipment.required_on_file }} of {{ shipment.required_documents|length }} documents on file</span>
+                {% include "supply_chain/_shipment_documents.html" %}
               {% elif shipment.has_certificate %}
                 <span class="text-xs text-message-success-text">on file</span>
               {% else %}
@@ -749,7 +749,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
             <td class="px-4 py-2 whitespace-nowrap text-gray-700" {% edit_cell "shipment" shipment.id "expected_on" shipment.expected_on %}>{{ shipment.expected_on|day|default:"—" }}</td>
             <td colspan="3" class="px-4 py-2 text-xs text-gray-600">no lines recorded</td>
             <td class="px-4 py-2">
-              {% if shipment.required_documents %}<span class="text-xs {% if shipment.required_on_file == shipment.required_documents|length %}text-message-success-text{% else %}text-message-warning-text{% endif %}">{{ shipment.required_on_file }} of {{ shipment.required_documents|length }} documents on file</span>{% elif shipment.has_certificate %}<span class="text-xs text-message-success-text">on file</span>{% else %}<span class="text-xs text-gray-600">none</span>{% endif %}
+              {% if shipment.required_documents %}{% include "supply_chain/_shipment_documents.html" %}{% elif shipment.has_certificate %}<span class="text-xs text-message-success-text">on file</span>{% else %}<span class="text-xs text-gray-600">none</span>{% endif %}
             </td>
             <td class="px-4 py-2 text-sm text-gray-700" data-testid="shipment-told-by">{% if shipment.last_told %}{{ shipment.last_told.teller }}, {{ shipment.last_told.on|day|slice:":-5" }}{% else %}{% told_by_for shipment orgs tellers %}{% endif %}</td>
             <td class="px-4 py-2 text-right whitespace-nowrap">

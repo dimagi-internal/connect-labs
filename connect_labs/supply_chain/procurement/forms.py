@@ -151,7 +151,7 @@ class TenderForm(ScopedForm):
         self.fields["owner_org"].queryset = LabsOrg.objects.order_by("name")
         self.fields["duty_terms"].choices = [
             ("", _("Not settled")),
-            ("buyer_waiver", _("We import, under the program's duty waiver")),
+            ("buyer_waiver", _("We import under the duty waiver")),
             ("buyer_pays", _("We import and pay the duty")),
             ("supplier_ddp", _("The supplier delivers duty paid")),
         ]
@@ -571,7 +571,7 @@ class TenderDutyTermsForm(forms.Form):
         required=False,
         choices=[
             ("", _("Not settled")),
-            ("buyer_waiver", _("We import, under the program's duty waiver")),
+            ("buyer_waiver", _("We import under the duty waiver")),
             ("buyer_pays", _("We import and pay the duty")),
             ("supplier_ddp", _("The supplier delivers duty paid")),
         ],

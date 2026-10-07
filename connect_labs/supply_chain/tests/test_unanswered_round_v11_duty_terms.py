@@ -115,7 +115,7 @@ class TestTheTenderPageLine:
         body = _tender_page(client_in_program, world["tender"]["id"], "?duty_terms=changed")
         line = re.search(pattern, body, re.S).group(1)
         text = html.unescape(" ".join(re.sub(r"<[^>]+>", " ", line).split()))
-        assert text.startswith("We import, under the program's duty waiver")
+        assert text.startswith("We import under the duty waiver")
         assert " Set " in text and 'data-testid="changed-chip"' in line
 
 
@@ -164,7 +164,7 @@ class TestComparisonByTerms:
         url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=rutf"
         body = client_in_program.get(url).content.decode()
         note = re.search(r'data-testid="comparison-duty-terms"[^>]*>(.*?)</summary>', body, re.S).group(1)
-        assert "under the program's duty waiver" in note.replace("&#x27;", "'")
+        assert "we import under the duty waiver" in note
 
 
 @pytest.mark.django_db

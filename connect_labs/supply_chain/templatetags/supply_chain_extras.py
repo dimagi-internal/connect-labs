@@ -29,19 +29,28 @@ def possessive_filter(value):
 
 
 @register.filter
-def supplies(owner):
-    """Whose step a quote's missing fact is, as its chip: "to do" or "waiting" (moves.OWNER_CHIP)."""
-    from connect_labs.supply_chain.moves import OWNER_CHIP, SUPPLIERS
+def supplies(owner, fact=""):
+    """Whose a quote's missing fact is, as its chip (moves.gap_chip_word): "ours to attach", "waiting"."""
+    from connect_labs.supply_chain.moves import gap_chip_word
 
-    return OWNER_CHIP.get(owner) or OWNER_CHIP[SUPPLIERS]
+    return gap_chip_word(owner, [fact] if fact else ())
 
 
 @register.filter
 def owner_tone(owner):
-    """The chip tone for whose step a fact is: ours for "to do" and "to ask", theirs for "waiting"."""
+    """The chip tone for whose a step is: ours for "to do" and "to ask", theirs for "waiting"."""
     from connect_labs.supply_chain.moves import TO_ASK, US
 
     return "ours" if owner in (US, TO_ASK) else "theirs"
+
+
+@register.filter
+def gap_tone(owner):
+    """The chip tone for a quote's missing fact: never the moves' amber, which it is not.
+
+    Ours (to attach, settle, fill or ask) read as the outlined fact chip; the supplier's as theirs.
+    """
+    return "fact" if owner_tone(owner) == "ours" else "theirs"
 
 
 @register.filter
@@ -1790,7 +1799,7 @@ def email_events(timeline):
 
 @register.filter
 def duty_terms_words(value) -> str:
-    """ "we import, under the program's duty waiver", or "not settled": a tender's import-duty terms."""
+    """ "we import under the duty waiver", or "not settled": a tender's import-duty terms."""
     from connect_labs.supply_chain.records import DUTY_TERMS_LABELS
 
     return DUTY_TERMS_LABELS.get(value or "", DUTY_TERMS_LABELS[""])
