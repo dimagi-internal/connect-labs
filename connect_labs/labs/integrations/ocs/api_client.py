@@ -251,10 +251,11 @@ class OCSDataAccess:
         identifier: str,
         platform: str,
         experiment_id: str,
-        prompt_text: str,
+        prompt_text: str | None = None,
         start_new_session: bool = False,
         session_data: dict | None = None,
         participant_data: dict | None = None,
+        message_text: str | None = None,
     ) -> dict:
         """
         Trigger an OCS bot conversation using OAuth.
@@ -263,10 +264,13 @@ class OCSDataAccess:
             identifier: Unique identifier for the participant
             platform: Channel platform (e.g., 'commcare_connect', 'whatsapp')
             experiment_id: OCS Experiment ID (UUID)
-            prompt_text: Instructions for the bot
+            prompt_text: Instructions for OCS to write the first message from (a
+                generic LLM call outside the bot's own pipeline)
             start_new_session: Whether to start a new session
             session_data: Custom data to store with the session
             participant_data: Custom data to store with the participant
+            message_text: The first message, sent verbatim (no LLM). Exactly one of
+                ``prompt_text`` / ``message_text`` is sent.
 
         Returns:
             Response data from OCS
@@ -277,15 +281,21 @@ class OCSDataAccess:
         if not self.check_token_valid():
             raise OCSAPIError("OCS OAuth not configured or expired.")
 
+        if (prompt_text is None) == (message_text is None):
+            raise ValueError("trigger_bot needs exactly one of prompt_text / message_text")
+
         url = f"{self.base_url}/api/trigger_bot"
 
         payload = {
             "identifier": identifier,
             "platform": platform,
             "experiment": experiment_id,
-            "prompt_text": prompt_text,
             "start_new_session": start_new_session,
         }
+        if message_text is not None:
+            payload["message_text"] = message_text
+        else:
+            payload["prompt_text"] = prompt_text
 
         if session_data:
             payload["session_data"] = session_data
