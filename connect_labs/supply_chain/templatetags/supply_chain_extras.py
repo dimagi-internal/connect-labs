@@ -70,6 +70,14 @@ def not_on_file(kind):
 
 
 @register.filter
+def waived_duty(figure):
+    """A nil duty resting on a waiver, the comparison's and the order's one shape: "USD 0.00 (waiver)"."""
+    from connect_labs.supply_chain.records import waived_duty as words
+
+    return words(figure)
+
+
+@register.filter
 def dictkey(mapping, key):
     return (mapping or {}).get(key)
 

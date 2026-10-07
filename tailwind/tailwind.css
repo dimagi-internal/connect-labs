@@ -618,18 +618,61 @@
     @apply bg-gray-50/60;
   }
 
-  /* A column held at the left while the rest scrolls under it: opaque, in the
+  /* Columns held at the left while the rest scrolls under them: opaque, in the
      row's own tone (hovered too), and above every cell -- an editable cell is
-     positioned, and a transformed source mark makes its own layer. */
-  .sheet .sheet-pin {
+     positioned, and a transformed source mark makes its own layer. The first
+     (the record's name) is .sheet-pin; the figures that answer the sheet's
+     question ride beside it as .sheet-pin-2 and .sheet-pin-3. Each held column
+     has a set width, so the next one's left offset is exactly the sum of the
+     widths before it -- a sheet can override the widths on its table. The last
+     held column's right edge casts a shadow (a later one paints over an
+     earlier one's), so cells scrolling under them disappear cleanly. */
+  .sheet {
+    --sheet-pin-1: 15rem;
+    --sheet-pin-2: 9.5rem;
+    --sheet-pin-3: 8.5rem;
+  }
+
+  .sheet .sheet-pin,
+  .sheet .sheet-pin-2,
+  .sheet .sheet-pin-3 {
     @apply sticky left-0 z-[3] bg-white;
   }
 
-  .sheet > thead th.sheet-pin {
+  .sheet .sheet-pin {
+    width: var(--sheet-pin-1);
+    min-width: var(--sheet-pin-1);
+    max-width: var(--sheet-pin-1);
+  }
+
+  .sheet .sheet-pin-2,
+  .sheet .sheet-pin-3 {
+    @apply shadow-[6px_0_6px_-6px_rgba(0,0,0,0.12)];
+  }
+
+  .sheet .sheet-pin-2 {
+    left: var(--sheet-pin-1);
+    width: var(--sheet-pin-2);
+    min-width: var(--sheet-pin-2);
+    max-width: var(--sheet-pin-2);
+  }
+
+  .sheet .sheet-pin-3 {
+    left: calc(var(--sheet-pin-1) + var(--sheet-pin-2));
+    width: var(--sheet-pin-3);
+    min-width: var(--sheet-pin-3);
+    max-width: var(--sheet-pin-3);
+  }
+
+  .sheet > thead th.sheet-pin,
+  .sheet > thead th.sheet-pin-2,
+  .sheet > thead th.sheet-pin-3 {
     @apply z-[4] bg-gray-50;
   }
 
-  .sheet > tbody > tr:hover > .sheet-pin {
+  .sheet > tbody > tr:hover > .sheet-pin,
+  .sheet > tbody > tr:hover > .sheet-pin-2,
+  .sheet > tbody > tr:hover > .sheet-pin-3 {
     @apply bg-gray-50;
   }
 
