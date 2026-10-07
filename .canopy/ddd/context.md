@@ -70,6 +70,14 @@ Artifacts publish to the canopy-web `connect` workspace (`.canopy/ddd/config.yam
 - **Days to stock-out needs 30 days of dispensing** -- deliberate; say when the estimate arrives and
   the rate so far, never a bare "unknown". Don't lower the threshold.
 - **A clone started over MCP must equal one made with the page's default button** (comment on #2153).
+- **Data, not verdicts (2026-10-07).** "Comparable" is not a feature: no system-decided comparable
+  counts, chips or tiles, and nothing (award, ranking) gated on one. The tables make every figure
+  plain and sortable -- landed price where its inputs exist, the missing input named where they
+  don't -- and analysis is an AI the person asks, through the canopy panel on the tender and
+  comparison pages (`supply:read`, #2283). A finding that asks the product to decide
+  comparability is out of scope; a finding that a figure is unclear, unsortable or wrong is in.
+  Narration: "the table makes the data plain; Sophie asks the AI what it means", never
+  "N of M comparable".
 
 ## Earlier phase (2026-10-04)
 
