@@ -62,8 +62,12 @@ Artifacts publish to the canopy-web `connect` workspace (`.canopy/ddd/config.yam
 - **Every stored value is editable where it is read** (`supply_chain/cells.py`, #2244): no form
   trip for a one-value correction. One value to a cell, sheets full-width, records as ROWS -- the
   comparison is a quote to a row, a fact to a column (#2250).
-- **End-to-end supply on a synthetic clone of the real RUTF opportunity**: program 10110 /
-  opportunity 10111, a clone of opportunity 2230 (`/labs/synthetic/clone/`, #2255). Its supply
+- **End-to-end supply on a synthetic clone of the real RUTF opportunity**: program 10112 /
+  opportunity 10113, a clone of opportunity 2230 made 2026-10-07 WITH GPS (#2296: each worker's
+  area, moved 3-8 km and jittered), so its workers and stores sit on Supply → Map (#2293, #2295)
+  and "Where it went" (`/supply/flow/`, #2294) follows the RUTF to the visits. The older clone
+  (program 10110 / opportunity 10111) has no GPS and draws nothing on the map; 10110 also holds the
+  nutrition demo's opportunities, so leave it alone. Its supply
   chain is seeded by `manage.py supply_seed_clone_supply` (#2254) and topped up every Monday by beat
   (#2270). How much RUTF each worker RECEIVED is invented (every Distribution's note says so); what
   each visit GAVE OUT is the clone's. Narration must never present the deliveries as recorded.
@@ -103,7 +107,7 @@ video unless asked.
   `/labs/synthetic/jobs/` and coordinate with other sessions that deploy labs (ListAgents +
   SendMessage); 2026-10-06 lost two clones of 2230 to deploys from two sessions.
 - The walkthrough persona's session is scoped to its own program; a scene on another program
-  (the clone, 10110) needs that program reachable for the persona.
+  (the clone, 10112) needs that program reachable for the persona.
 
 - Deploy only from `main`; a labs deploy mid-seed yields new-schema/old-code errors — check
   `gh run list --workflow deploy-labs.yml` before blaming the product.
