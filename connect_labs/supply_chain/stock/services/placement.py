@@ -10,11 +10,19 @@ a field worker drawn at the store that restocks them, and a country centre.
 
 The order, finest first:
 
+  visits   a field worker's own visits: the middle (median) of where their
+           phone said each visit happened. A worker carries the stock to the
+           households, so this is where it is -- not their organisation's
+           office, and not the store that restocks them;
   org_hq   the managing organisation's head office (`OrgProfile.lat/lon`), or
            that of the directory organisation with exactly the same name --
            the OES demo seeded partners as rows of their own beside the
            directory's, and matching is exact-only, as everywhere else in the
            marketplace, so a near-miss name is never guessed at;
+  served   the middle of the places it restocks -- a store nobody gave an
+           address, above workers placed by their visits, sits among them
+           rather than at the store above it or off the map. A place drawn
+           at this one (`parent`) is not counted, or it would chase itself;
   parent   the point it is restocked from, when that one is placed -- a field
            worker with no organisation of its own sits at its store;
   country  the centre of the managing organisation's country.
@@ -27,9 +35,10 @@ recorded -- only a different coordinate does.
 """
 
 from dataclasses import dataclass
+from statistics import median
 
 RECORDED = "recorded"
-STAND_INS = ("org_hq", "parent", "country")
+STAND_INS = ("visits", "org_hq", "served", "parent", "country")
 
 
 @dataclass(frozen=True)
@@ -81,6 +90,10 @@ def stand_in(point, OrgProfile=None) -> Placement | None:
     historical ones; everything else uses the defaults.
     """
     OrgProfile = OrgProfile or _org_profile_model()
+    if point.kind == "user_held":
+        found = _middle_of_visits(point)
+        if found is not None:
+            return found
     org = point.managed_by_org
     if org is not None:
         profile = _profile_of(org, OrgProfile)
@@ -93,6 +106,10 @@ def stand_in(point, OrgProfile=None) -> Placement | None:
                 profile.location_precision or "country",
                 f"{profile.org.name} office" + (f" ({where})" if where else ""),
             )
+
+    found = _middle_of_served(point)
+    if found is not None:
+        return found
 
     parent = point.parent
     if parent is not None and parent.latitude is not None and parent.longitude is not None:
@@ -110,6 +127,48 @@ def stand_in(point, OrgProfile=None) -> Placement | None:
         if country is not None:
             return Placement(country.lat, country.lon, "country", "country", f"{country.label}, country centre")
     return None
+
+
+def _middle(coordinates):
+    """The median latitude and longitude: one stray GPS fix cannot drag it off."""
+    return median(lat for lat, _ in coordinates), median(lng for _, lng in coordinates)
+
+
+def _middle_of_visits(point) -> Placement | None:
+    from connect_labs.supply_chain.models import WorkerVisit
+
+    if point.pk is None:
+        return None
+    coordinates = list(
+        WorkerVisit.objects.filter(supply_point=point, latitude__isnull=False, longitude__isnull=False).values_list(
+            "latitude", "longitude"
+        )
+    )
+    if not coordinates:
+        return None
+    lat, lng = _middle(coordinates)
+    count = len(coordinates)
+    return Placement(lat, lng, "visits", "", f"middle of {count} visit{'s' if count != 1 else ''}")
+
+
+def _middle_of_served(point) -> Placement | None:
+    """The middle of the placed points this one restocks; a stand-in of a stand-in stays coarse."""
+    if point.pk is None:
+        return None
+    children = list(
+        point.children.filter(latitude__isnull=False, longitude__isnull=False)
+        .exclude(location_source="parent")
+        .values_list("latitude", "longitude", "location_precision")
+    )
+    if not children:
+        return None
+    lat, lng = _middle([(c[0], c[1]) for c in children])
+    coarse = {c[2] for c in children} & {"region", "country"}
+    precision = "country" if "country" in coarse else ("region" if coarse else "")
+    count = len(children)
+    return Placement(
+        lat, lng, "served", precision, f"middle of the {count} place{'s' if count != 1 else ''} it restocks"
+    )
 
 
 def place(point, *, submitted=None, OrgProfile=None) -> bool:
@@ -170,16 +229,44 @@ def place_all(program_id=None, *, SupplyPoint=None, OrgProfile=None) -> dict:
     if program_id is not None:
         points = points.filter(program_id=program_id)
     tally = {"changed": 0, "unplaced": 0, "total": 0}
-    # Roots before their children: a field worker inherits its store's spot.
-    for point in sorted(points, key=_depth):
-        tally["total"] += 1
+    ordered = sorted(points, key=_depth)
+    # Roots before their children: a field worker with no visits inherits its
+    # store's spot. Then leaves before their parents: a store nothing else
+    # places sits among the places it restocks.
+    changed = set()
+    for point in ordered:
         if point.parent_id:
             point.parent.refresh_from_db()
         if place(point, OrgProfile=OrgProfile):
-            tally["changed"] += 1
+            changed.add(point.pk)
+    for point in reversed(ordered):
+        if point.latitude is None or point.location_source in ("served", "parent"):
+            if place(point, OrgProfile=OrgProfile):
+                changed.add(point.pk)
+    for point in ordered:
+        tally["total"] += 1
         if point.latitude is None:
             tally["unplaced"] += 1
+    tally["changed"] = len(changed)
     return tally
+
+
+def place_upward(point, OrgProfile=None) -> int:
+    """Re-place `point`, then each store above it that stands in among what it restocks.
+
+    A worker's visits moved its middle, so a store placed among its workers
+    moves with them. Stops at the first store placed by anything else.
+    """
+    changed = int(place(point, OrgProfile=OrgProfile))
+    seen = {point.pk}
+    node = point.parent
+    while node is not None and node.pk not in seen:
+        seen.add(node.pk)
+        if node.latitude is not None and node.location_source != "served":
+            break
+        changed += int(place(node, OrgProfile=OrgProfile))
+        node = node.parent
+    return changed
 
 
 def _depth(point, _seen=None):
