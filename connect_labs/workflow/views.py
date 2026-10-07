@@ -5857,13 +5857,20 @@ def worker_tasks_api(request):
                         session_id = event.get("session_id")
                         if session_id and session_id not in session_ids:
                             session_ids.append(session_id)
-                    # Who last changed this task and when. Timestamps are compared as strings,
-                    # which is correct for ISO-8601 and avoids parsing a field that several
-                    # versions of this code have written in slightly different shapes.
-                    if stamp >= updated_at:
+                    # Who last CHANGED this task, and when. Only "updated" events count: a
+                    # chatbot session opening, or the task being created, is activity but
+                    # nobody editing the record, and reporting "changed by system" for an
+                    # ai_session would be worse than reporting nothing. This deliberately
+                    # matches what the dashboard derives from the per-task event log, so the
+                    # two routes to the same fact cannot disagree.
+                    #
+                    # Timestamps are compared as strings, which is correct for ISO-8601 and
+                    # avoids parsing a field that several versions of this code have written
+                    # in slightly different shapes.
+                    if event_type == "updated" and stamp >= updated_at:
                         updated_at = stamp
                         updated_by = event.get("actor") or ""
-                        last_change = event.get("description") or (event_type or "")
+                        last_change = event.get("description") or ""
             except Exception:
                 # By id, so the offending record can be found and repaired rather than counted.
                 logger.exception(
