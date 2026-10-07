@@ -28,7 +28,7 @@ from collections.abc import Callable
 
 from django.http import HttpRequest
 
-from connect_labs.mopup.core.geometry import fetch_work_area_geometry
+from connect_labs.mopup.core.geometry import INACCESSIBLE_CONNECT_STATUSES, fetch_work_area_geometry
 from connect_labs.mopup.core.visits import aggregate_visits_by_wa, build_evaluation_rows, list_visits
 from connect_labs.mopup.core.work_areas import list_work_areas
 
@@ -95,6 +95,10 @@ def build_evaluation_input(
         row["lon"] = geo.get("lon")
         row["boundary"] = geo.get("boundary")
         row["wag_name"] = geo.get("wag_name") or ""
+        # Inaccessibility is a work-area STATUS in Connect, never a visit --
+        # see geometry.INACCESSIBLE_CONNECT_STATUSES. 0/1 so the Inaccessible
+        # indicator reads it the same way it reads NCF's visit count.
+        row["connect_inaccessible"] = 1 if geo.get("connect_status") in INACCESSIBLE_CONNECT_STATUSES else 0
 
     if access_token:
         stage("Resolving FLW names…")
@@ -145,9 +149,10 @@ def summarize_candidates_by_ward(candidates: list[dict], all_rows: list[dict]) -
 
     `total_hsd`/`total_ncf` mirror what the NCF and Inaccessible indicators
     each check individually (`core.indicators._visit_presence_affected`), just
-    summed together here (NCF + Inaccessible visit counts) for one combined
-    "how many visits came back neither-of-the-above" column, so the ward
-    summary's numbers are traceable back to what those indicators compute.
+    summed together here (NCF visits + Inaccessible work areas -- a work area
+    has at most one of the two) for one combined "how many came back
+    neither-of-the-above" column, so the ward summary's numbers are
+    traceable back to what those indicators compute.
 
     Every ward present in `all_rows` gets a row here, even one with zero
     candidates under the current thresholds — this is a survey of what was
@@ -162,7 +167,7 @@ def summarize_candidates_by_ward(candidates: list[dict], all_rows: list[dict]) -
         row = by_ward.setdefault(key, _empty_ward_row(wa["ward"], wa["lga"], wa["state"]))
         row["total_work_areas"] += 1
         row["total_hsd"] += wa.get("approved_hsd_count", 0) or 0
-        row["total_ncf"] += (wa.get("approved_ncf_count", 0) or 0) + (wa.get("approved_inaccessible_count", 0) or 0)
+        row["total_ncf"] += (wa.get("approved_ncf_count", 0) or 0) + (wa.get("connect_inaccessible", 0) or 0)
         row["total_buildings"] += wa.get("building_count", 0) or 0
         row["total_evc"] += wa.get("expected_visit_count", 0) or 0
 
