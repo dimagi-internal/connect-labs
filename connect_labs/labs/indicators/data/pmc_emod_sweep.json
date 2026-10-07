@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "run_date": "2026-10-07",
+  "model": {
+    "name": "EMOD malaria (IDM), via emodpy-malaria from EMOD-Hub",
+    "url": "https://github.com/EMOD-Hub/emodpy-malaria",
+    "runtime": "ghcr.io/emod-hub/emod-ubuntu-runtime (Docker, linux/amd64)",
+    "script": "tools/pmc_emod/pmc_sweep.py"
+  },
+  "setting": {
+    "label": "Southern-Nigeria-like, uncalibrated",
+    "calibrated": false,
+    "description": "One simulated setting, not a real state: year-round transmission (An. gambiae and An. funestus) with a long-rains peak from about April to October. Background case management (50% of clinical cases, 70% of severe) and bed nets (50% coverage) are the same in every schedule.",
+    "pfpr_2_5y": 0.44,
+    "population": 5000,
+    "children_3_24m": 369,
+    "seeds": 6,
+    "burn_in_years": 2,
+    "intervention_years": 2,
+    "outcome": "Clinical malaria cases in children 3-24 months over the 2 intervention years",
+    "baseline_cases": 1960,
+    "baseline_note": "No-PMC cases over 2 years. The 2-seed run counted 1,956; the 6-seed run's reported costs reproduce at about 1,960."
+  },
+  "default_costs": {
+    "cost_per_visit": 0.8,
+    "platform_fee": 0.2,
+    "dose_rate": 0.95,
+    "source": "Connect PMC costing: $0.80 per verified visit, a 20% platform fee, 95% of visits giving a dose"
+  },
+  "schedules": [
+    {
+      "code": "none",
+      "label": "No PMC",
+      "channel": "none",
+      "detail": "Background case management and nets only. The comparison point.",
+      "rounds_per_year": 0,
+      "age_months": [3, 24],
+      "coverage": 0,
+      "averted_pct": 0.0,
+      "averted_ci": 3.7,
+      "doses": 0
+    },
+    {
+      "code": "epi_linked",
+      "label": "At vaccine visits (EPI-linked), 25% coverage",
+      "channel": "health_system",
+      "detail": "SP given at the 10-week, 14-week, 9-month and 15-month vaccine contacts, reaching 25% of children: the range reported for Osun's EPI-linked PMC.",
+      "rounds_per_year": null,
+      "age_months": [2, 16],
+      "coverage": 0.25,
+      "averted_pct": 3.4,
+      "averted_ci": 4.8,
+      "doses": 385
+    },
+    {
+      "code": "connect_quarterly_3_24",
+      "label": "Connect quarterly, 3-24 months",
+      "channel": "connect",
+      "detail": "A Connect worker visits every 91 days and gives SP to every child aged 3-24 months, 85% coverage.",
+      "rounds_per_year": 4,
+      "age_months": [3, 24],
+      "coverage": 0.85,
+      "averted_pct": 10.1,
+      "averted_ci": 2.2,
+      "doses": 2407
+    },
+    {
+      "code": "connect_bimonthly_3_24",
+      "label": "Connect every 2 months, 3-24 months",
+      "channel": "connect",
+      "detail": "A Connect visit every 61 days, 3-24 months, 85% coverage.",
+      "rounds_per_year": 6,
+      "age_months": [3, 24],
+      "coverage": 0.85,
+      "averted_pct": 11.8,
+      "averted_ci": 2.4,
+      "doses": 3363
+    },
+    {
+      "code": "connect_monthly_in_season_3_24",
+      "label": "Connect monthly through the high season, 3-24 months",
+      "channel": "connect",
+      "detail": "Six monthly Connect rounds a year, starting about 1 April with the long rains, 3-24 months, 85% coverage.",
+      "rounds_per_year": 6,
+      "age_months": [3, 24],
+      "coverage": 0.85,
+      "averted_pct": 31.1,
+      "averted_ci": 2.8,
+      "doses": 3584
+    },
+    {
+      "code": "connect_quarterly_12_24",
+      "label": "Connect quarterly, 12-24 months only",
+      "channel": "connect",
+      "detail": "Quarterly Connect rounds restricted to the second year of life, 85% coverage.",
+      "rounds_per_year": 4,
+      "age_months": [12, 24],
+      "coverage": 0.85,
+      "averted_pct": 3.7,
+      "averted_ci": 2.6,
+      "doses": 1376
+    }
+  ],
+  "references": [
+    {
+      "label": "Malaria Journal 2023: modelling PMC in Nigeria with EMOD (IDM, Northwestern, Malaria Consortium, NMEP)",
+      "url": "https://malariajournal.biomedcentral.com/articles/10.1186/s12936-023-04564-9"
+    }
+  ]
+}

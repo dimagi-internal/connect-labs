@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 
 import markdown
 from django.conf import settings
@@ -881,3 +882,67 @@ class CoverageView(OpenLocallyMixin, View):
                 ],
             }
         )
+
+
+#: What the PMC page tells the agent the visitor is looking at.
+PMC_PANEL_FILTER_KEYS = ("schedule", "states", "cost_per_visit", "platform_fee", "dose_rate")
+
+
+def _pmc_costs(request) -> dict:
+    from connect_labs.labs.indicators import pmc
+
+    defaults = pmc.costs_or_default()
+    costs = {k: _float(request, k, v) for k, v in defaults.items()}
+    # A nonsense price is answered with the proposal's own, not an error page.
+    for k, v in costs.items():
+        if not math.isfinite(v):
+            costs[k] = defaults[k]
+    if not 0 < costs["dose_rate"] <= 1:
+        costs["dose_rate"] = defaults["dose_rate"]
+    for k in ("cost_per_visit", "platform_fee"):
+        if costs[k] < 0:
+            costs[k] = defaults[k]
+    return costs
+
+
+class PmcView(OpenLocallyMixin, TemplateView):
+    """PMC schedule explorer: IDM's EMOD schedule comparison beside Nigeria's states."""
+
+    template_name = "indicators/pmc.html"
+
+    def get_context_data(self, **kwargs):
+        from connect_labs.labs.indicators import pmc
+
+        ctx = super().get_context_data(**kwargs)
+        ctx["sweep"] = pmc.load_sweep()
+        ctx["caveats"] = pmc.CAVEATS
+        # Same rule as the map page: the panel only for a signed-in visitor, and
+        # it carries what the visitor chose, never the rows.
+        if self.request.user.is_authenticated:
+            from canopy_sdk.django.pages import panel_context
+
+            ctx["canopy_panel"] = panel_context(
+                self.request,
+                resource="labs-targeting://pmc",
+                backing_tool="targeting_pmc_schedules",
+                filters={"iso": pmc.ISO}
+                | {k: v for k, v in self.request.GET.items() if k in PMC_PANEL_FILTER_KEYS and v},
+                path=self.request.path,
+            )
+        return ctx
+
+
+class PmcDataView(OpenLocallyMixin, View):
+    """The schedules at the visitor's prices, and the states with a projection for one schedule."""
+
+    def get(self, request):
+        from connect_labs.labs.indicators import pmc
+
+        costs = _pmc_costs(request)
+        out = pmc.summary(costs)
+        schedule = request.GET.get("schedule") or out["best_schedule"]
+        if schedule not in {s["code"] for s in out["schedules"]}:
+            schedule = out["best_schedule"]
+        out["schedule"] = schedule
+        out["states"] = pmc.state_rows(schedule, costs)
+        return JsonResponse(out)
