@@ -784,6 +784,11 @@ function WorkflowUI({
         // against. Not tracked for the other 4 methods -- "no location to
         // match on" is a GPS-specific concept.
         var noMatch = 0;
+        // QR-only: how often qrOutcome() lands on 'Not available' -- the
+        // mother didn't have her QR code photo at this visit, so nothing
+        // could be scanned. Distinct from a plain 'NA' (which would mean no
+        // data at all) and not a Fail -- it genuinely couldn't be attempted.
+        var notAvailable = 0;
         summaryDisplayRows.forEach(function (row) {
           var v = m.getOutcome(row);
           if (v === 'Pass') pass += 1;
@@ -791,6 +796,7 @@ function WorkflowUI({
           else if (typeof v === 'string' && v.indexOf('Pending') !== -1)
             pending += 1;
           else if (m.label === 'GPS' && v === 'NA') noMatch += 1;
+          else if (m.label === 'QR' && v === 'Not available') notAvailable += 1;
         });
         return {
           label: m.label,
@@ -798,6 +804,7 @@ function WorkflowUI({
           pending: pending,
           fail: fail,
           noMatch: noMatch,
+          notAvailable: notAvailable,
         };
       });
     },
@@ -1739,6 +1746,12 @@ function WorkflowUI({
           field:
             'methodStats[gps].noMatch -- count of summaryDisplayRows where gpsOutcome(row) === "NA" (GPS method only).',
         },
+        {
+          name: 'Stacked bar chart -- "Not available (QR)" (grey)',
+          def: "QR-only segment, after Pass/Pending/Fail. Counts visits where qrOutcome() landed on 'Not available' -- the mother didn't have her QR code photo at this visit, so nothing could be scanned. Not a Fail (nothing was attempted) and kept separate from a plain NA (which would mean no data at all). Not tracked for the other 4 methods, since this is specifically what a blank qr_code_visit_verification plus mother_has_qr_code_available = 'no' means.",
+          field:
+            "methodStats[qr].notAvailable -- count of summaryDisplayRows where qrOutcome(row) === 'Not available' (QR method only).",
+        },
       ],
     },
     {
@@ -1937,6 +1950,13 @@ function WorkflowUI({
                 return m.noMatch;
               }),
               backgroundColor: '#9ca3af',
+            },
+            {
+              label: 'Not available (QR)',
+              data: methodStats.map(function (m) {
+                return m.notAvailable;
+              }),
+              backgroundColor: '#d1d5db',
             },
           ],
         },
