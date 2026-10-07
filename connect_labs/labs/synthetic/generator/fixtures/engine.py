@@ -128,10 +128,19 @@ def _default_deliver_unit(detail: dict[str, Any]) -> int | None:
     return units[0]["id"] if units else None
 
 
-def _build_household_locations(geography, cohort_size: int, rng: random.Random) -> dict[int, tuple[float, float]]:
+def _build_household_locations(
+    geography, cohort_size: int, rng: random.Random, owners: dict[int, str] | None = None
+) -> dict[int, tuple[float, float]]:
     """Place one fixed household point (lon, lat) per beneficiary index, scattered
     across a few settlement clusters inside the geography polygon. Deterministic
-    given ``rng``. Visits to the same beneficiary then stack at the same point."""
+    given ``rng``. Visits to the same beneficiary then stack at the same point.
+
+    A clone's geography carries a point per worker instead of a polygon: each
+    household then sits around the point of the worker who owns it (``owners``:
+    beneficiary index -> persona id), or around a random worker's point when its
+    owner has none."""
+    if geography.polygon is None:
+        return _households_around_workers(geography, cohort_size, rng, owners or {})
     from shapely.geometry import Point, shape
 
     poly = shape(geography.polygon)
@@ -155,6 +164,19 @@ def _build_household_locations(geography, cohort_size: int, rng: random.Random) 
         if not poly.contains(p):
             p = c  # offset wandered outside the ward — clamp to the settlement center
         locations[bidx] = (p.x, p.y)
+    return locations
+
+
+def _households_around_workers(geography, cohort_size: int, rng: random.Random, owners: dict[int, str]):
+    centers = geography.persona_centers
+    names = sorted(centers)
+    spread = float(geography.settlement_spread_km)
+    locations: dict[int, tuple[float, float]] = {}
+    for bidx in range(1, cohort_size + 1):
+        lon, lat = centers.get(owners.get(bidx, "")) or centers[names[rng.randrange(len(names))]]
+        dlat = rng.gauss(0.0, spread) / 111.0
+        dlon = rng.gauss(0.0, spread) / (111.0 * max(0.1, math.cos(math.radians(lat))))
+        locations[bidx] = (lon + dlon, lat + dlat)
     return locations
 
 
@@ -192,8 +214,9 @@ def _build_mirror_visits(
         entity_names=cohort.entity_names,
     )
     entity_count = max((pv.beneficiary_idx for pv in planned), default=0)
+    owners = {pv.beneficiary_idx: pv.owner for pv in planned}
     household_locations = (
-        _build_household_locations(manifest.geography, entity_count, rng)
+        _build_household_locations(manifest.geography, entity_count, rng, owners)
         if manifest.geography and entity_count
         else None
     )
