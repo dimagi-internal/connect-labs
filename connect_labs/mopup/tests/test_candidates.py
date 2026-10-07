@@ -44,7 +44,7 @@ class TestBuildEvaluationInput:
         )
         monkeypatch.setattr(
             candidates_module,
-            "list_approved_visits",
+            "list_visits",
             lambda opportunity_id, request=None, pipeline=None: [
                 {
                     "wa_case_id": "wa-1",
@@ -90,7 +90,7 @@ class TestBuildEvaluationInput:
                 }
             ],
         )
-        monkeypatch.setattr(candidates_module, "list_approved_visits", lambda *a, **k: [])
+        monkeypatch.setattr(candidates_module, "list_visits", lambda *a, **k: [])
         monkeypatch.setattr(
             candidates_module,
             "fetch_work_area_geometry",
@@ -121,7 +121,7 @@ class TestBuildEvaluationInput:
                 }
             ],
         )
-        monkeypatch.setattr(candidates_module, "list_approved_visits", lambda *a, **k: [])
+        monkeypatch.setattr(candidates_module, "list_visits", lambda *a, **k: [])
         monkeypatch.setattr(
             candidates_module,
             "fetch_work_area_geometry",
@@ -196,7 +196,7 @@ class TestBuildEvaluationInput:
                 },
             ],
         )
-        monkeypatch.setattr(candidates_module, "list_approved_visits", lambda *a, **k: [])
+        monkeypatch.setattr(candidates_module, "list_visits", lambda *a, **k: [])
         monkeypatch.setattr(
             candidates_module, "fetch_work_area_geometry", lambda opportunity_id, request=None, pipeline=None: {}
         )

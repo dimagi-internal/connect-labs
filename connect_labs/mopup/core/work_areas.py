@@ -99,7 +99,7 @@ def list_work_areas(
         + [FieldComputation(name="owner_id", path=_OWNER_ID_PATH, aggregation="first")],
         # Real production bug, found live this session: leaving this unset
         # makes this ad-hoc config share ONE raw-visit-cache slot per
-        # opportunity with every other ad-hoc caller (list_approved_visits,
+        # opportunity with every other ad-hoc caller (list_visits,
         # fetch_work_area_geometry included) — each one's wholesale
         # DELETE+INSERT clobbers whatever the others just wrote, exactly the
         # `AnalysisPipelineConfig.pipeline_id` docstring's own documented
