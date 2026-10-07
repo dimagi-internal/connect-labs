@@ -131,3 +131,80 @@ def test_a_top_up_before_any_seed_says_so(clone):
     opp = clone["opp"]
     with patch(FETCH, return_value=clone["world"].visits):
         assert clone_supply.top_up(program_id=opp, opportunity_id=opp, today=TODAY)["topped_up"] is False
+
+
+# ---- the weekly count, when the clone's visits carry no balance ----------------
+
+
+def _without_balances(visits):
+    """The world's visits with every stock answer taken out, as a clone's arrive."""
+    import copy
+
+    from connect_labs.supply_chain.demo.stock_from_visits import PATHS
+
+    stripped = []
+    for visit in copy.deepcopy(visits):
+        form = (visit.get("form_json") or {}).get("form") or {}
+        if "stock" in str(form.get("@name", "")).lower():
+            continue  # a Stock Management form is not a deliver visit; a clone has none
+        for key in ("balance", "remaining", "received", "received_on"):
+            node, parts = visit.get("form_json") or {}, PATHS[key].split(".")
+            for part in parts[:-1]:
+                node = node.get(part) if isinstance(node, dict) else None
+            if isinstance(node, dict):
+                node.pop(parts[-1], None)
+        stripped.append(visit)
+    return stripped
+
+
+def test_with_no_balance_in_the_visits_each_worker_counts_weekly_and_it_says_so(clone):
+    from connect_labs.supply_chain.models import Item, StockCount
+    from connect_labs.supply_chain.stock.services import belief, ledger
+
+    opp = clone["opp"]
+    with patch(FETCH, return_value=_without_balances(clone["world"].visits)):
+        summary = clone_supply.seed(program_id=opp, opportunity_id=opp, today=TODAY)
+
+    counts = StockCount.objects.filter(program_id=opp)
+    assert counts.exists() and all(c.note == clone_supply.COUNTED for c in counts)
+    assert {c.kind for c in counts} == {"self_reported"}
+    assert all(w["counts"] for w in summary["weeks"])
+    # Each count is the ledger's balance that day, off by no more than a real count is.
+    item = Item.objects.select_related("commodity").get(scope_key=f"prog:{opp}", sku=clone_supply.SKU)
+    offsets = clone_supply.count_offsets(set(WORKERS))
+    assert any(offset <= -5 for offset in offsets.values())  # somebody's count is well under the ledger
+    for count in counts.select_related("supply_point")[:40]:
+        held = ledger.balance(opp, count.supply_point, item=item, unit="sachet", on_date=count.counted_on)
+        expected = max(Decimal(0), held.amount + offsets[count.supply_point.connect_username])
+        assert count.quantity == expected
+    # The workers now read as checked, with a variance against the ledger.
+    beliefs = belief.worker_beliefs(opp, item, on_date=TODAY)
+    assert all(b.reported is not None for b in beliefs)
+
+
+def test_a_top_up_counts_each_sunday_since_once(clone):
+    from connect_labs.supply_chain.models import StockCount
+
+    opp = clone["opp"]
+    midway = START + timedelta(weeks=4, days=-1)
+    with patch(FETCH, return_value=_without_balances(clone["world"].visits)):
+        clone_supply.seed(program_id=opp, opportunity_id=opp, today=midway)
+        before = set(StockCount.objects.filter(program_id=opp).values_list("counted_on", flat=True))
+        first = clone_supply.top_up(program_id=opp, opportunity_id=opp, today=TODAY)
+        again = clone_supply.top_up(program_id=opp, opportunity_id=opp, today=TODAY)
+
+    days = set(StockCount.objects.filter(program_id=opp).values_list("counted_on", flat=True))
+    assert days - before and all(day > midway for day in days - before)
+    assert again["counts_recorded"] == []
+    assert len(first["counts_recorded"]) == len(days - before)
+
+
+def test_when_the_visits_carry_balances_nothing_is_invented(clone):
+    from connect_labs.supply_chain.models import StockCount
+
+    opp = clone["opp"]
+    with patch(FETCH, return_value=clone["world"].visits):
+        clone_supply.seed(program_id=opp, opportunity_id=opp, today=TODAY)
+
+    assert StockCount.objects.filter(program_id=opp).exists()
+    assert not StockCount.objects.filter(program_id=opp, note=clone_supply.COUNTED).exists()
