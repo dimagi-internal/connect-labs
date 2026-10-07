@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 
 import markdown
 from django.conf import settings
@@ -893,6 +894,9 @@ def _pmc_costs(request) -> dict:
     defaults = pmc.costs_or_default()
     costs = {k: _float(request, k, v) for k, v in defaults.items()}
     # A nonsense price is answered with the proposal's own, not an error page.
+    for k, v in costs.items():
+        if not math.isfinite(v):
+            costs[k] = defaults[k]
     if not 0 < costs["dose_rate"] <= 1:
         costs["dose_rate"] = defaults["dose_rate"]
     for k in ("cost_per_visit", "platform_fee"):
