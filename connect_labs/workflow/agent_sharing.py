@@ -171,6 +171,8 @@ def select_workers(
         row = {
             "key": f.get("key"),
             "username": f.get("username") or f.get("flw"),
+            # The name the report shows in its worker column: what a person calls them.
+            "name": f.get("name") or f.get("username") or f.get("flw"),
             "opportunity_id": f.get("opp"),
             "organisation": f.get("llo"),
             "cases": f.get("n"),

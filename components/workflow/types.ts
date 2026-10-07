@@ -1052,7 +1052,11 @@ export interface WorkflowActionPreview {
     title?: string;
     /** Set on a QA redirect (`deliver_to`): where this worker's conversation goes. */
     sending_to?: string;
+    /** Indicator keys the conversation covers (a coaching briefing's topics). */
+    indicators?: string[];
   }>;
+  /** Workers asked for but left out, and why (e.g. "nothing off target"). */
+  skipped?: Array<{ key: string; name: string; reason: string }>;
   arguments: Record<string, unknown> & { workers: WorkflowActionWorker[] };
   /** What must be settled before it can be confirmed: `bot`, `connect_ocs`. */
   needs: string[];
@@ -1061,6 +1065,12 @@ export interface WorkflowActionPreview {
   unknown_bot?: string;
   connect_url?: string;
   synthetic?: boolean;
+  /** On synthetic data: what happens instead of a real conversation. */
+  synthetic_note?: string;
+  /** The person may redirect this one conversation to themselves (`deliver_to`, Dimagi staff). */
+  qa_redirect?: boolean;
+  /** The QA recipient, when the preview is redirected. */
+  deliver_to?: string;
   /** Present only when nothing is needed: the single-use token that runs it. */
   confirm?: string;
 }

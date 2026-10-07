@@ -72,11 +72,26 @@ export function ActionDialog({
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [bot, setBot] = useState('');
+  // The QA redirect (`deliver_to`): a Dimagi tester sends this one conversation to
+  // their own Connect app. Applying it changes the arguments, so it re-previews --
+  // the confirm token is bound to them.
+  const [qaTo, setQaTo] = useState(
+    typeof request.args.deliver_to === 'string' ? request.args.deliver_to : '',
+  );
+  const applyQa = (value: string) => {
+    const next = { ...args };
+    if (value.trim()) next.deliver_to = value.trim();
+    else delete next.deliver_to;
+    setArgs(next);
+  };
 
   const load = useCallback(
     async (next: typeof args) => {
       setBusy(true);
       setError('');
+      // A preview's token is bound to ITS arguments: never leave an older one
+      // confirmable while these are being previewed (or after they are refused).
+      setPreview(null);
       try {
         setPreview(
           await send(`${actionBase}${request.key}/preview/${qs}`, csrfToken, {
@@ -161,8 +176,40 @@ export function ActionDialog({
 
           {preview?.synthetic && (
             <div className="rounded bg-gray-50 p-2 text-xs text-gray-600">
-              Synthetic data: each task gets a sample coaching conversation; no
-              message reaches a real worker.
+              {preview.synthetic_note ||
+                'Synthetic data: no message is sent; the task gets a sample conversation.'}
+            </div>
+          )}
+
+          {!execution && Boolean(preview?.qa_redirect || args.deliver_to) && (
+            <label className="block text-xs text-gray-700">
+              Send to me instead (QA) — your PersonalID username
+              <div className="mt-1 flex gap-2">
+                <input
+                  type="text"
+                  className="block w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                  value={qaTo}
+                  placeholder="Leave empty to send to the worker"
+                  onChange={(e) => setQaTo(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="rounded border border-gray-300 px-3 text-sm disabled:opacity-50"
+                  disabled={
+                    busy || qaTo.trim() === String(args.deliver_to || '')
+                  }
+                  onClick={() => applyQa(qaTo)}
+                >
+                  Apply
+                </button>
+              </div>
+            </label>
+          )}
+
+          {preview?.deliver_to && (
+            <div className="rounded bg-amber-50 p-2 text-xs font-medium text-amber-900">
+              QA: this conversation goes to {preview.deliver_to}, not to the
+              worker.
             </div>
           )}
 
@@ -211,7 +258,7 @@ export function ActionDialog({
             </label>
           )}
 
-          {preview?.bot && !preview.synthetic && (
+          {preview?.bot && (
             <div className="text-xs text-gray-600">
               Bot:{' '}
               <span className="font-medium text-gray-900">
@@ -222,6 +269,11 @@ export function ActionDialog({
 
           {preview && (
             <ul className="divide-y divide-gray-100 rounded border border-gray-100">
+              {preview.workers.length === 0 && (
+                <li className="px-3 py-2 text-xs text-gray-500">
+                  Nobody to coach: no indicator is off target or on watch.
+                </li>
+              )}
               {preview.workers.map((w) => {
                 const r = results[w.key];
                 return (
@@ -262,6 +314,13 @@ export function ActionDialog({
                 );
               })}
             </ul>
+          )}
+
+          {preview?.skipped && preview.skipped.length > 0 && (
+            <div className="text-xs text-gray-500">
+              Left out:{' '}
+              {preview.skipped.map((w) => `${w.name} (${w.reason})`).join(', ')}
+            </div>
           )}
 
           {execution && (
