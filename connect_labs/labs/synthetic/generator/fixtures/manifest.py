@@ -644,7 +644,12 @@ class Geography(BaseModel):
     """
 
     # GeoJSON geometry (Polygon or MultiPolygon), coordinates in [lon, lat].
-    polygon: dict[str, Any]
+    polygon: dict[str, Any] | None = None
+    # A clone's alternative to a polygon (profiler._profile_geography): each worker
+    # persona's own point, [lon, lat], already moved off the source's map. A
+    # worker's households cluster around their point, so the clone keeps the
+    # programme's spread without carrying any real household.
+    persona_centers: dict[str, list[float]] = Field(default_factory=dict)
     # How many settlement clusters to scatter households across the polygon.
     settlements: PositiveInt = 6
     # Village radius (km) — households are gaussian-offset from a settlement center.
@@ -656,6 +661,15 @@ class Geography(BaseModel):
 
     @model_validator(mode="after")
     def _check_polygon(self):
+        if self.polygon is None:
+            if not self.persona_centers:
+                raise ValueError("geography needs a polygon or persona_centers")
+            for persona, point in self.persona_centers.items():
+                if len(point) != 2 or not (-180 <= point[0] <= 180 and -90 <= point[1] <= 90):
+                    raise ValueError(f"geography.persona_centers[{persona!r}] must be [lon, lat]")
+            if self.accuracy_m_max < self.accuracy_m_min:
+                raise ValueError("geography.accuracy_m_max must be >= accuracy_m_min")
+            return self
         gtype = self.polygon.get("type") if isinstance(self.polygon, dict) else None
         if gtype not in ("Polygon", "MultiPolygon"):
             raise ValueError("geography.polygon must be a GeoJSON Polygon or MultiPolygon geometry")
