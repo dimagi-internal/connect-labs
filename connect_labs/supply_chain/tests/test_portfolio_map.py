@@ -439,3 +439,67 @@ def test_cover_needs_a_commodity(client, django_user_model):
     portfolio = _portfolio([ONE])
     response = client.get(reverse("supply_chain:portfolio_map_cover", args=[portfolio.slug]))
     assert response.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# A programme's own map: the same page, for the programme in view, no portfolio needed.
+# ---------------------------------------------------------------------------
+
+
+class _InProgramme:
+    """Puts the programme named by the `programme` cookie in the labs context, as the picker would."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        chosen = request.COOKIES.get("programme")
+        request.labs_context = {"program_id": int(chosen)} if chosen else {}
+        return self.get_response(request)
+
+
+@pytest.fixture
+def in_programme(settings):
+    settings.MIDDLEWARE = [*settings.MIDDLEWARE, f"{__name__}._InProgramme"]
+
+
+def test_a_programmes_map_draws_that_programme_and_no_other(client, django_user_model, in_programme):
+    _sign_in(client, django_user_model, [ONE, TWO])
+    _store(ONE, slug="a-store-in-one", lat=9.0, lng=8.0)
+    _store(TWO, slug="a-store-in-two", lat=9.5, lng=8.5)
+    client.cookies["programme"] = str(ONE)
+
+    response = client.get(reverse("supply_chain:programme_map"))
+    payload = _payload(response)
+
+    assert response.status_code == 200
+    assert [p["program_id"] for p in payload["programs"]] == [ONE]
+    assert payload["cover_url"] == reverse("supply_chain:programme_map_cover")
+    assert "A Store In Two" not in json.dumps(payload)
+    assert "All my programs" not in response.content.decode()
+
+
+def test_a_programmes_map_refuses_a_programme_the_viewer_cannot_reach(client, django_user_model, in_programme):
+    _sign_in(client, django_user_model, [ONE])
+    _store(THREE, slug="a-store-nobody-here-holds", lat=9.0, lng=8.0)
+    client.cookies["programme"] = str(THREE)
+
+    assert client.get(reverse("supply_chain:programme_map")).status_code == 404
+    assert client.get(reverse("supply_chain:programme_map_cover"), {"commodity": "x"}).status_code == 404
+
+
+def test_a_programmes_map_with_no_programme_chosen_is_not_found(client, django_user_model, in_programme):
+    _sign_in(client, django_user_model, [ONE])
+
+    assert client.get(reverse("supply_chain:programme_map")).status_code == 404
+
+
+def test_a_programmes_map_cover_answers_for_that_programme_only(client, django_user_model, in_programme):
+    _sign_in(client, django_user_model, [ONE, TWO])
+    _store(ONE, slug="a-store-in-one", lat=9.0, lng=8.0)
+    client.cookies["programme"] = str(ONE)
+
+    response = client.get(reverse("supply_chain:programme_map_cover"), {"commodity": "a-placeholder-product"})
+
+    assert response.status_code == 200
+    assert list(response.json()["programs"]) == [str(ONE)]

@@ -33,6 +33,10 @@ urlpatterns = [
     # portfolio's, so a link to one names which.
     path("portfolios/<slug:slug>/", portfolio_views.PortfolioView.as_view(), name="portfolio"),
     path("portfolios/<slug:slug>/map/", portfolio_views.PortfolioMapView.as_view(), name="portfolio_map"),
+    # The programme in view on the same map: no portfolio needed. Live, like the
+    # portfolio map, which it is (rewinding a map is not something it offers).
+    path("map/", portfolio_views.ProgrammeMapView.as_view(), name="programme_map"),
+    path("map/cover/", portfolio_views.ProgrammeMapCoverView.as_view(), name="programme_map_cover"),
     path(
         "portfolios/<slug:slug>/map/cover/",
         portfolio_views.PortfolioMapCoverView.as_view(),
@@ -394,9 +398,10 @@ if settings.DEBUG:
 # link (no program in the labs context -- the token decides), the API
 # (operations are the write path; an as-of read belongs to the pages), the
 # portfolios (above programs: rewinding the one program in context would show
-# it in the past beside every other one live), the dev login and the old-URL
+# it in the past beside every other one live), the programme map (the same
+# page as a portfolio's), the dev login and the old-URL
 # redirect.
-_LIVE_PREFIXES = ("market/", "u/", "api/", "portfolios/", "dev-login/")
+_LIVE_PREFIXES = ("market/", "u/", "api/", "portfolios/", "map/", "dev-login/")
 
 
 def _is_live(pattern, prefix="") -> bool:
