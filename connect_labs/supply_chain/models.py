@@ -1211,8 +1211,9 @@ class SupplyPoint(SourcedModel):
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
     # How the point got its coordinates. `recorded` is a real one somebody
-    # entered; anything else is a stand-in (the managing organisation's head
-    # office, the parent point, or the country's centre) that is refreshed on
+    # entered; anything else is a stand-in (a worker's visits, the managing
+    # organisation's head office, the parent point, the places it restocks, or
+    # the country's centre) that is refreshed on
     # every write and never mistaken for a survey. See stock/services/placement.
     # db_default as well as default: an older checkout (or an old task during
     # a rolling deploy) inserts without naming these columns, and a Python-only
@@ -1222,7 +1223,7 @@ class SupplyPoint(SourcedModel):
         blank=True,
         default="",
         db_default="",
-        choices=_choices(("recorded", "org_hq", "parent", "country")),
+        choices=_choices(("recorded", "visits", "org_hq", "parent", "served", "country")),
     )
     # For a stand-in, how fine it is: city | region | country (the directory's
     # own precision for the head office it came from).
@@ -1594,6 +1595,11 @@ class WorkerVisit(TimestampedModel):
     form_name = models.CharField(max_length=255, blank=True, default="")
     outcomes = models.JSONField(default=dict, blank=True)
     answers = models.JSONField(default=dict, blank=True)
+    # Where the phone said the visit happened, rounded to about 100 m. A
+    # worker with no recorded location is drawn at the middle of these
+    # (stock/services/placement.py); null when the visit carried no usable GPS.
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
 
     class Meta:
         ordering = ["-visit_date", "-id"]
