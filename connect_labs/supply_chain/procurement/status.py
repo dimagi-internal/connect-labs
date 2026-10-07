@@ -1007,11 +1007,15 @@ def comparison_grid(
     ]
     if lowest is not None:
         facts.insert(1, ("vs_lowest", "Above lowest", f"per {pack_label}"))
+    # The answer stays in view: the landed price (and how far above the lowest) is held beside
+    # the pinned supplier while the facts behind it scroll -- an edit far right never hides it.
+    pins = {"landed": "sheet-pin-2", "vs_lowest": "sheet-pin-3"}
     # Each cell names its quote, so a page (or a recorder) can find one quote's fact.
     for key in [*(k for k, *_ in facts), "spec", "imports"]:
         for column, cell in zip(columns, cells[key]):
             cell["quote_id"] = column["quote_id"]
             cell["fact"] = key
+            cell["pin"] = pins.get(key, "")
             # A missing value's chip, in the one quote-gap vocabulary (moves.gap_chip_word).
             if cell.get("gap") and cell.get("owner"):
                 cell["chip"] = rules.gap_chip_word(cell["owner"], [cell["label"]] if cell.get("label") else [])
@@ -1031,7 +1035,14 @@ def comparison_grid(
         "like_for_like": comparison.get("like_for_like", True),
         "quotes": columns,
         "rows": [
-            {"key": key, "label": label, "src_label": note, "cells": cells[key], "total": key == "landed"}
+            {
+                "key": key,
+                "label": label,
+                "src_label": note,
+                "cells": cells[key],
+                "total": key == "landed",
+                "pin": pins.get(key, ""),
+            }
             for key, label, note in facts
         ],
     }
