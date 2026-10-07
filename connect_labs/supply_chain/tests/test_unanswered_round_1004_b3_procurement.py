@@ -127,7 +127,8 @@ def test_facts_on_us_lists_open_facts_only_never_award(da, world):
     (column,) = grid["quotes"]
     labels = [a["label"] for a in column["actions"]]
     assert "Award" not in labels
-    assert "Attach duty exemption" in labels and all(a["owner"] for a in column["actions"])
+    # The exemption document is the tender's, attached once on the duty line: not a move per quote.
+    assert "Attach duty exemption" not in labels and all(a["owner"] for a in column["actions"])
     source = get_template("supply_chain/procurement/comparison.html").template.source
     assert "a.award" not in source
     assert 'data-testid="award-start"' in source

@@ -10,7 +10,7 @@
     "to-the-field",
     "whose-move"
   ],
-  "fetched_at": "2026-10-07T00:00:22.423455+00:00",
+  "fetched_at": "2026-10-07T00:35:53.750144+00:00",
   "name": "supply-sophie-sheets",
   "narrative": "Sophie buys RUTF for the Connect-RUTF program. Half the suppliers she asked to quote tender 2 never answered, and the three who did each left something out. Watch her read the tender as one sheet, correct what the AI recorded right where she reads it, fill the comparison's gaps cell by cell until every quote has a landed price, and end on an overview that says whose move each thing is.",
   "personas": {
@@ -160,7 +160,7 @@
         }
       ],
       "id": "to-the-field",
-      "narrative": "Once it is delivered, Sophie can see where it goes. On a synthetic copy of the real RUTF opportunity, a central store feeds a partner store, which feeds twenty workers. Worker flw_015 was issued 300 sachets -- deliveries made up for this demo, not recorded -- and their visits have given out 201, eleven of them on visits not yet approved, so 99 are on hand.",
+      "narrative": "Once it is delivered, Sophie can see where it goes. On a synthetic copy of the real RUTF opportunity, a central store feeds a partner store, which feeds twenty workers. Worker flw_015's page reads as a sum: what was issued to them -- deliveries made up for this demo, not recorded -- less what their visits gave out, each visit's sachets listed and the share on visits not yet approved named, leaving what is on hand.",
       "persona": "sophie",
       "provenance": "S9",
       "title": "To the field"
@@ -181,5 +181,5 @@
     }
   ],
   "slug": "supply-sophie-sheets",
-  "version": 7
+  "version": 8
 }
