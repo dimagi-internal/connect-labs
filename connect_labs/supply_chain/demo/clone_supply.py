@@ -74,6 +74,69 @@ def _round_up(quantity: Decimal, step: int = 10) -> Decimal:
     return (quantity / step).to_integral_value(rounding=ROUND_CEILING) * step
 
 
+COUNTED = (
+    "Invented for the demo: the clone's visits carry no stock balance a worker could report "
+    "(the app's running balance is a calculated field, which a clone does not reproduce). "
+    "The ledger's own balance that Sunday, off by what a real count is often off by."
+)
+
+
+def count_offsets(usernames, *, seed: int = 13) -> dict:
+    """{username: sachets} each worker's weekly count is off from the ledger by.
+
+    Most counts land within a couple of sachets; about one worker in six counts
+    well below what the ledger says they hold, the variance a real network shows
+    (sachets given out without being recorded, or lost). Seeded, so a top-up and a
+    reseed agree.
+    """
+    rng = random.Random(seed)
+    offsets = {}
+    for username in sorted(usernames):
+        offsets[username] = -rng.randint(5, 15) if rng.random() < 1 / 6 else rng.randint(-2, 2)
+    return offsets
+
+
+def record_counts(op, *, program_id: int, opportunity_id: int, item, workers, day: date) -> int:
+    """Each worker's invented self-reported count on `day`, from the ledger; returns how many."""
+    from connect_labs.supply_chain.stock.services import ledger
+    from connect_labs.supply_chain.values import Quantity
+
+    if _reports_arrive(program_id):
+        return 0  # the visits carry real balances, and the reader records those
+    offsets = count_offsets(w.connect_username for w in workers)
+    recorded = 0
+    for worker in workers:
+        held = ledger.balance(program_id, worker, item=item, unit="sachet", on_date=day)
+        if not isinstance(held, Quantity):
+            continue
+        counted = max(Decimal(0), held.amount + offsets.get(worker.connect_username, 0))
+        op(day, 18, "stock_count_record", data={
+            "supply_point_id": worker.pk, "item_id": item.pk, "commodity_slug": SLUG,
+            "kind": "self_reported", "counted_on": day.isoformat(), "quantity": str(counted),
+            "quantity_unit": "sachet", "source": "partner_reported", "opportunity_id": opportunity_id,
+            "connect_username": worker.connect_username, "note": COUNTED,
+        })  # fmt: skip
+        recorded += 1
+    return recorded
+
+
+def _reports_arrive(program_id: int) -> bool:
+    """Whether any count came from somewhere other than this module: then none is invented."""
+    from connect_labs.supply_chain.models import StockCount
+
+    return StockCount.objects.filter(program_id=program_id).exclude(note=COUNTED).exists()
+
+
+def _workers(program_id: int, opportunity_id: int):
+    from connect_labs.supply_chain.models import SupplyPoint
+
+    return list(
+        SupplyPoint.objects.filter(program_id=program_id, opportunity_id=opportunity_id, kind="user_held")
+        .exclude(connect_username="")
+        .order_by("connect_username")
+    )
+
+
 def plan_distributions(dispensed: dict, *, first: date, last: date, seed: int = 11) -> list[dict]:
     """{monday: {username: quantity}} every CADENCE_WEEKS, from what each worker then gave out.
 
@@ -226,7 +289,19 @@ def seed(*, program_id: int, opportunity_id: int, reset: bool = False, today: da
         # Read each week on its Sunday evening, as far as that Sunday (today for the current week).
         until = min(monday + timedelta(days=6), today)
         report = op(until, 20, "visit_consumption_ingest", opportunity_id=opportunity_id, until=until.isoformat())
-        weeks.append({"week_of": monday.isoformat(), "posted": report["posted"], "no_answer": report["no_answer"]})
+        # Each worker counts their bag on the Sunday after the week's read (invented; see COUNTED).
+        counts = record_counts(
+            op, program_id=program_id, opportunity_id=opportunity_id, item=saved.item,
+            workers=_workers(program_id, opportunity_id), day=until,
+        )  # fmt: skip
+        weeks.append(
+            {
+                "week_of": monday.isoformat(),
+                "posted": report["posted"],
+                "no_answer": report["no_answer"],
+                "counts": counts,
+            }
+        )
         monday += timedelta(weeks=1)
 
     return {
@@ -336,7 +411,22 @@ def top_up(*, program_id: int, opportunity_id: int, today: date | None = None) -
             ],
         })  # fmt: skip
         recorded.append({"on": issue["on"].isoformat(), "sachets": str(sum(issue["lines"].values()))})
-    return {"topped_up": True, "workers_added": added, "deliveries_recorded": recorded}
+
+    # The weekly count, for each Sunday since the last one recorded (none twice).
+    from connect_labs.supply_chain.models import StockCount
+
+    counted = set(StockCount.objects.filter(program_id=program_id, note=COUNTED).values_list("counted_on", flat=True))
+    sunday = _monday(first) + timedelta(days=6)
+    counts = []
+    while sunday < today:
+        if sunday not in counted:
+            n = record_counts(
+                op, program_id=program_id, opportunity_id=opportunity_id, item=rule.item,
+                workers=_workers(program_id, opportunity_id), day=sunday,
+            )  # fmt: skip
+            counts.append({"on": sunday.isoformat(), "counts": n})
+        sunday += timedelta(weeks=1)
+    return {"topped_up": True, "workers_added": added, "deliveries_recorded": recorded, "counts_recorded": counts}
 
 
 def seeded_clones() -> list[tuple[int, int]]:
