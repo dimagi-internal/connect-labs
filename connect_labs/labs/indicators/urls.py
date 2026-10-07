@@ -17,4 +17,6 @@ urlpatterns = [
     path("api/interventions/", views.InterventionsView.as_view(), name="interventions"),
     path("api/scenario/", views.ScenarioView.as_view(), name="scenario"),
     path("download/", views.SelectionDownloadView.as_view(), name="download"),
+    path("pmc/", views.PmcView.as_view(), name="pmc"),
+    path("api/pmc/", views.PmcDataView.as_view(), name="pmc_data"),
 ]

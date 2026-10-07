@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block css %}
+  {{ block.super }}
+  <style>
+    /* Plain CSS for everything pmc.js renders, as on the targeting page: classes
+       built in JS are kept out of the utility build's guesswork. */
+    .pmc-num { font-variant-numeric: tabular-nums; }
+    .pmc-card { background: #fff; border: 1px solid #e7e5e4; border-radius: 10px; }
+    .pmc-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #78716c; }
+    .pmc-sched { display: grid; grid-template-columns: 22px minmax(220px, 1.4fr) 2fr 90px 110px; gap: 12px;
+                 align-items: center; padding: 10px 14px; border-top: 1px solid #f5f5f4; cursor: pointer; }
+    .pmc-sched:first-of-type { border-top: none; }
+    .pmc-sched:hover { background: #fafaf9; }
+    .pmc-sched.on { background: #eef2ff; }
+    .pmc-sched .name { font-size: 14px; color: #1c1917; font-weight: 500; }
+    .pmc-sched .sub { font-size: 12px; color: #78716c; }
+    .pmc-track { position: relative; height: 16px; background: #f5f5f4; border-radius: 4px; }
+    .pmc-bar { position: absolute; top: 0; left: 0; height: 16px; border-radius: 4px; background: #94a3b8; }
+    .pmc-bar.connect { background: #3843d0; }
+    .pmc-bar.best { background: #16006d; }
+    .pmc-ci { position: absolute; top: 7px; height: 2px; background: #1c1917; opacity: .55; }
+    .pmc-ci::before, .pmc-ci::after { content: ""; position: absolute; top: -4px; width: 2px; height: 10px;
+                                      background: #1c1917; }
+    .pmc-ci::before { left: 0; } .pmc-ci::after { right: 0; }
+    .pmc-pct { font-size: 15px; font-weight: 600; color: #1c1917; text-align: right; }
+    .pmc-cost { font-size: 15px; font-weight: 600; color: #1c1917; text-align: right; }
+    .pmc-cost.muted, .pmc-pct.muted { color: #a8a29e; font-weight: 500; font-size: 13px; }
+    .pmc-chip { display: inline-block; white-space: nowrap; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
+    .pmc-chip.best { background: #16006d; color: #fff; }
+    .pmc-chip.near { background: #dcfce7; color: #166534; }
+    .pmc-chip.outside { background: #fef3c7; color: #92400e; }
+    .pmc-chip.unknown { background: #f5f5f4; color: #78716c; }
+    .pmc-table { width: 100%; font-size: 13px; border-collapse: collapse; }
+    .pmc-table th { position: sticky; top: 0; background: #fafaf9; text-align: right; font-weight: 600;
+                    color: #57534e; padding: 8px 8px; border-bottom: 1px solid #e7e5e4; white-space: nowrap; }
+    .pmc-table th.l, .pmc-table td.l { text-align: left; }
+    .pmc-table td { text-align: right; padding: 7px 8px; border-bottom: 1px solid #f5f5f4; color: #292524; }
+    .pmc-table tr.on td { background: #eef2ff; }
+    .pmc-table tr:hover td { background: #fafaf9; }
+    .pmc-table tr.on:hover td { background: #e0e7ff; }
+    .pmc-wrap { max-height: 560px; overflow: auto; }
+    .pmc-total { display: flex; flex-wrap: wrap; gap: 28px; padding: 12px 16px; background: #16006d; color: #fff;
+                 border-radius: 8px; }
+    .pmc-total .k { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; opacity: .75; }
+    .pmc-total .v { font-size: 20px; font-weight: 700; }
+    .pmc-muted { color: #a8a29e; font-style: italic; }
+    .pmc-input { width: 100%; font-size: 14px; border: 1px solid #d6d3d1; border-radius: 6px; padding: 5px 8px; }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="py-6 space-y-5">
+
+  <div class="flex flex-wrap items-end gap-4">
+    <div>
+      <div class="pmc-label">Targeting · PMC schedule explorer · Nigeria</div>
+      <h1 class="text-2xl font-semibold text-stone-900 mt-1">Which PMC schedule, and where?</h1>
+      <p class="text-sm text-stone-600 mt-1 max-w-3xl">
+        IDM's EMOD malaria model compares how perennial malaria chemoprevention is delivered. Connect can
+        deliver any of these schedules and verify every dose. Pick a schedule, set the visit price, and
+        choose states.
+      </p>
+    </div>
+    <a href="{% url 'targeting:index' %}" class="ml-auto text-sm text-indigo-700 hover:underline">← Targeting map</a>
+  </div>
+
+  <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+    <b>Illustrative.</b> {{ sweep.setting.label }} setting (PfPR 2–5y ≈ {% widthratio sweep.setting.pfpr_2_5y 1 100 %}%),
+    {{ sweep.setting.seeds }} seeds, run {{ sweep.run_date }}. Not a calibrated estimate for any state.
+  </div>
+
+  <div class="flex flex-col lg:flex-row gap-5 items-start">
+
+    <aside class="w-full lg:w-[300px] lg:shrink-0 space-y-4">
+      <div class="pmc-card p-4 space-y-3">
+        <div class="pmc-label">Price</div>
+        <label class="block text-sm text-stone-700">Cost per verified visit (USD)
+          <input id="pmc-cost" class="pmc-input pmc-num mt-1" type="number" min="0" step="0.05">
+        </label>
+        <label class="block text-sm text-stone-700">Platform fee (%)
+          <input id="pmc-fee" class="pmc-input pmc-num mt-1" type="number" min="0" step="1">
+        </label>
+        <label class="block text-sm text-stone-700">Visits that give a dose (%)
+          <input id="pmc-rate" class="pmc-input pmc-num mt-1" type="number" min="1" max="100" step="1">
+        </label>
+        <div class="text-sm text-stone-700 pt-1">Cost per dose: <b id="pmc-per-dose" class="pmc-num">—</b></div>
+        <div class="text-xs text-stone-500">Defaults: {{ sweep.default_costs.source }}.</div>
+      </div>
+
+      <div class="pmc-card p-4 space-y-2 text-xs text-stone-600 leading-relaxed">
+        <div class="pmc-label">The model</div>
+        <p><a class="text-indigo-700 hover:underline" href="{{ sweep.model.url }}" target="_blank" rel="noopener">{{ sweep.model.name }}</a>.</p>
+        <p>{{ sweep.setting.description }}</p>
+        <p>Outcome: {{ sweep.setting.outcome }}. Population {{ sweep.setting.population }}, {{ sweep.setting.burn_in_years }}-year burn-in.</p>
+        {% for ref in sweep.references %}
+          <p><a class="text-indigo-700 hover:underline" href="{{ ref.url }}" target="_blank" rel="noopener">{{ ref.label }}</a></p>
+        {% endfor %}
+      </div>
+    </aside>
+
+    <main class="flex-1 min-w-0 space-y-5">
+
+      <section class="pmc-card">
+        <div class="flex items-baseline gap-3 px-4 pt-3 pb-2">
+          <div class="pmc-label">Schedules · cases averted in children 3–24 months</div>
+          <div class="ml-auto text-xs text-stone-500">bar ± range across seeds · click to choose</div>
+        </div>
+        <div class="pmc-sched" style="cursor:default; padding-top:2px; padding-bottom:2px">
+          <span></span><span class="sub">Schedule</span><span class="sub">Cases averted</span>
+          <span class="sub" style="text-align:right">Doses</span><span class="sub" style="text-align:right">Per case averted</span>
+        </div>
+        <div id="pmc-schedules"></div>
+      </section>
+
+      <section class="pmc-card p-4 space-y-3">
+        <div class="flex items-baseline gap-3">
+          <div class="pmc-label">States · projection for <span id="pmc-chosen" class="normal-case tracking-normal text-stone-800"></span></div>
+          <button id="pmc-clear" type="button" class="ml-auto text-xs text-indigo-700 hover:underline">Clear selection</button>
+        </div>
+        <div id="pmc-total" class="pmc-total"></div>
+        <div class="pmc-wrap">
+          <table class="pmc-table">
+            <thead>
+              <tr>
+                <th class="l"></th>
+                <th class="l">State</th>
+                <th>Prevalence</th>
+                <th class="l">Vs model</th>
+                <th title="Share of annual rain in the wettest three months">Wettest-qtr rain</th>
+                <th>Zero-dose</th>
+                <th>DPT3</th>
+                <th>Children 3–24m</th>
+                <th>Cases averted / yr</th>
+                <th>Doses / yr</th>
+                <th>Cost / yr</th>
+              </tr>
+            </thead>
+            <tbody id="pmc-states"><tr><td class="l" colspan="11">Loading…</td></tr></tbody>
+          </table>
+        </div>
+        <ul class="text-xs text-stone-500 list-disc pl-5 space-y-0.5">
+          {% for c in caveats %}<li>{{ c }}</li>{% endfor %}
+        </ul>
+      </section>
+
+    </main>
+  </div>
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+  {{ block.super }}
+  <script>
+    window.PMC = {
+      url: "{% url 'targeting:pmc_data' %}",
+      defaults: {
+        cost_per_visit: {{ sweep.default_costs.cost_per_visit }},
+        platform_fee: {{ sweep.default_costs.platform_fee }},
+        dose_rate: {{ sweep.default_costs.dose_rate }}
+      }
+    };
+  </script>
+  <script src="{% static 'indicators/pmc/pmc.js' %}"></script>
+  {% comment %}
+    The agent panel: targeting_pmc_schedules plus every targeting_* read tool.
+    Last in the body, as on the map page.
+  {% endcomment %}
+  {% if canopy_panel %}{% include "canopy_host/panel.html" %}{% endif %}
+{% endblock %}
