@@ -101,7 +101,7 @@ scenes:
     target: css:[data-testid=grid-quote-row]:has-text('Harmattan') td[data-fact=duty]
   - kind: select
     target: css:td[data-fact=duty] select
-    value: we import, under the program's duty waiver
+    value: we import under the duty waiver
   - kind: wait_for
     target: css:.is-saved
   - kind: click
