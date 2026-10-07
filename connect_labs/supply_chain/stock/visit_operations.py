@@ -204,6 +204,23 @@ def worker_stock(access, item_id, opportunity_id=None, as_of=None, window_days=9
     }
 
 
+@register_operation(
+    name="stock_flow",
+    summary=(
+        "Where one item went, week by week: from what arrived (by the order its receipt belongs to), through "
+        "each store, to each field worker, to what their visits gave out -- plus anything lost, expired or sent "
+        "outside the network. `nodes` are the places (column 0 the arrivals, the last the ends); `links` carry "
+        "the running total moved along each route at the end of every week in `weeks`, in the item's single "
+        "unit. Adjustments are counted in `adjusted`, not drawn. as_of reads a past day."
+    ),
+    input_schema=obj({"item_id": ID, "as_of": _DATE}, required=("item_id",)),
+)
+def stock_flow(access, item_id, as_of=None):
+    from connect_labs.supply_chain.stock.services.flow import flow
+
+    return flow(access._require_program(), access._resolve_item(item_id), on_date=_on(as_of))
+
+
 def _reported_on_visits(program_id, point, item, visit_ids) -> dict:
     """{"item": {visit_id: [count, ...]}, "any": {visit_id, ...}} -- the counts these visits recorded.
 

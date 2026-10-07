@@ -347,6 +347,7 @@ urlpatterns = [
     # What we believe each field worker holds, and one worker's page.
     path("workers/", visit_views.WorkersView.as_view(), name="workers"),
     path("workers/<int:supply_point_id>/", visit_views.WorkerDetailView.as_view(), name="worker_detail"),
+    path("flow/", visit_views.StockFlowView.as_view(), name="flow"),
     # Our own stock on the road between two of our places. "new" before the
     # int route, so the literal cannot be read as an id.
     path("stock/consignments/new/", stock_views.ConsignmentDispatchView.as_view(), name="consignment_dispatch"),

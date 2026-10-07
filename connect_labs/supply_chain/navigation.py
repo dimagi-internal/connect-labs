@@ -21,6 +21,7 @@ SUPPLY_TABS = (
     ("supply_chain:network", "Network"),
     ("supply_chain:stock", "Stock"),
     ("supply_chain:workers", "Workers"),
+    ("supply_chain:flow", "Where it went"),
     ("supply_chain:distribution", "Distribution"),
     # After the chain, because they cut across it: who is told when something
     # in it changes, and how a supplier records its own part.
