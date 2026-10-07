@@ -359,3 +359,65 @@ class PortfolioMapCoverView(View):
             everything=request.GET.get("scope") == "all",
         )
         return JsonResponse({"commodity": commodity, "programs": {str(pid): points for pid, points in cover.items()}})
+
+
+def _programme_in_view(request):
+    """(program_id, a one-programme stand-in for a portfolio), or Http404 when none is reachable.
+
+    The programme in the labs context, and only if the viewer can reach it --
+    the same rule the portfolio map applies, through the same function. The
+    stand-in is never saved: a programme's own map is not a portfolio.
+    """
+    from types import SimpleNamespace
+
+    program_id = (getattr(request, "labs_context", None) or {}).get("program_id")
+    reachable = reachable_programmes(request)
+    try:
+        program_id = int(program_id)
+    except (TypeError, ValueError):
+        raise Http404("choose a programme to see its map")
+    if program_id not in reachable:
+        raise Http404("choose a programme to see its map")
+    name = reachable[program_id].get("name") or f"Programme {program_id}"
+    return program_id, reachable, SimpleNamespace(slug="", name=name, program_ids=[program_id])
+
+
+@method_decorator(login_required, name="dispatch")
+class ProgrammeMapView(TemplateView):
+    """The programme in view, laid out by place: the portfolio map drawn for this one programme.
+
+    Same payload, same page and same script as a portfolio's map, so every
+    store, worker and movement it draws is drawn the same way; it simply
+    needs no portfolio to exist first.
+    """
+
+    template_name = "supply_chain/portfolio_map.html"
+
+    def get_context_data(self, **kwargs):
+        from django.conf import settings
+
+        from connect_labs.supply_chain.portfolio.map_data import portfolio_map
+
+        context = super().get_context_data(**kwargs)
+        _, reachable, programme = _programme_in_view(self.request)
+        context.update(portfolio=programme, programme_map=True, everything=False)
+        context["map_payload"] = portfolio_map(
+            self.request, programme, reachable, cover_url=reverse("supply_chain:programme_map_cover")
+        )
+        context["mapbox_token"] = getattr(settings, "MAPBOX_TOKEN", "") or ""
+        return context
+
+
+@method_decorator(login_required, name="dispatch")
+class ProgrammeMapCoverView(View):
+    """The programme map's cover, as `PortfolioMapCoverView` gives a portfolio's."""
+
+    def get(self, request):
+        from connect_labs.supply_chain.portfolio.map_data import portfolio_cover
+
+        _, reachable, programme = _programme_in_view(request)
+        commodity = (request.GET.get("commodity") or "").strip()
+        if not commodity:
+            return JsonResponse({"error": "name a commodity: ?commodity=<slug>"}, status=400)
+        cover = portfolio_cover(request, programme, reachable, commodity)
+        return JsonResponse({"commodity": commodity, "programs": {str(pid): points for pid, points in cover.items()}})

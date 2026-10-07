@@ -91,7 +91,7 @@ silently lacks.
   <div class="flex flex-wrap items-end justify-between gap-3">
     <div>
       <div class="text-xs text-gray-600 mb-0.5">
-        <a class="hover:underline" href="{% url 'supply_chain:portfolio' portfolio.slug %}">{{ portfolio.name }}</a> · Map
+        {% if programme_map %}<a class="hover:underline" href="{% url 'supply_chain:network' %}">{{ portfolio.name }}</a>{% else %}<a class="hover:underline" href="{% url 'supply_chain:portfolio' portfolio.slug %}">{{ portfolio.name }}</a>{% endif %} · Map
       </div>
       <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Where the supplies are</h1>
     </div>
@@ -114,10 +114,10 @@ silently lacks.
     </div>
   </div>
   <div class="pm-bar mt-2">
-    <span class="pm-seg">
+    {% if not programme_map %}<span class="pm-seg">
       <a href="?" class="{% if not everything %}pm-on{% endif %}">This portfolio</a>
       <a href="?scope=all" class="{% if everything %}pm-on{% endif %}">All my programs</a>
-    </span>
+    </span>{% endif %}
     <div id="pm-programs" class="pm-bar"></div>
   </div>
 
