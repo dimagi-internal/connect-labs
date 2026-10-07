@@ -128,7 +128,13 @@ def test_the_comparison_names_the_waiver_document_and_its_chip(da, world, client
         r'<span class="status-chip status-chip--(\w+)[^"]*" data-testid="waiver-pending">(.*?)</span>', body
     )
     assert pending.group(1) == "fact"
-    assert _text(pending.group(2)) == "duty exemption not on file · ours to attach"
+    # One chip, the document's own words; the figure beside it says the duty is nil by the waiver.
+    assert _text(pending.group(2)) == "duty exemption not on file"
+    duty_cell = re.search(r'<td [^>]*data-fact="duty"[^>]*>(.*?)</td>', body, re.S).group(1)
+    assert "USD 0.00 (waiver)" in _text(duty_cell) and "waived" not in duty_cell
+    # The quote's own (pinned) cell stays slim: the tender's document is not a chip or a move there.
+    for quote_cell in re.findall(r'<th scope="row"[^>]*data-testid="grid-quote".*?</th>', body, re.S):
+        assert "exemption" not in _text(quote_cell)
     assert not re.search(r'data-testid="grid-status">[^<]+ · to do<', body)
 
 
