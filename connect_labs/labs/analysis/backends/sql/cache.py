@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta
 
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
-from django.db.models import Min, Subquery
+from django.db.models import Min, Q, Subquery
 from django.db.models.fields.json import KeyTextTransform
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
@@ -25,6 +25,30 @@ from connect_labs.labs.analysis.config import USER_VISITS_SOURCE, AnalysisPipeli
 from connect_labs.labs.analysis.utils import get_config_hash
 
 logger = logging.getLogger(__name__)
+
+
+def filter_computed_visits(queryset, filters: dict | None):
+    """Apply a pipeline's `filters` to a ComputedVisitCache queryset (read-time filtering).
+
+    `entity_id` and `status` are columns; every other key is a computed field and
+    matches by JSONB containment. A list value means "any of these" (as it does for
+    `status`): one containment per element, OR-ed, plus the whole-value containment
+    so an array-valued computed field filtered by an array still matches as before.
+    A scalar value is a single containment, unchanged.
+    """
+    for key, value in (filters or {}).items():
+        if key == "entity_id":
+            queryset = queryset.filter(entity_id=value)
+        elif key == "status":
+            queryset = queryset.filter(status__in=value) if isinstance(value, list) else queryset.filter(status=value)
+        elif isinstance(value, list):
+            match = Q(computed_fields__contains={key: value})
+            for element in value:
+                match |= Q(computed_fields__contains={key: element})
+            queryset = queryset.filter(match)
+        else:
+            queryset = queryset.filter(computed_fields__contains={key: value})
+    return queryset
 
 
 class CacheConcurrencyError(Exception):

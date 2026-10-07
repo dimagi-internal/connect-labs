@@ -32,7 +32,7 @@ from connect_labs.labs.analysis.backends.sql.backend import (
     flw_row_from_cache,
     visit_row_from_cache,
 )
-from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
+from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager, filter_computed_visits
 from connect_labs.labs.analysis.config import GROUPING_COLUMN, AnalysisPipelineConfig, CacheStage
 
 logger = logging.getLogger(__name__)
@@ -213,13 +213,7 @@ def cached_queryset(config: AnalysisPipelineConfig, opportunity_id: int):
         qs = manager.get_computed_visits_queryset()
         # The pipeline's own `filters` apply to every read of it, as in
         # SQLBackend.get_cached_visit_result.
-        for key, value in (config.filters or {}).items():
-            if key == "entity_id":
-                qs = qs.filter(entity_id=value)
-            elif key == "status":
-                qs = qs.filter(status__in=value) if isinstance(value, list) else qs.filter(status=value)
-            else:
-                qs = qs.filter(computed_fields__contains={key: value})
+        qs = filter_computed_visits(qs, config.filters)
         return qs
     if stage == CacheStage.ENTITY:
         if config.feeds_joins and not manager.has_valid_computed_visit_cache(0):
