@@ -36,6 +36,7 @@ def register_labs_only_opp(
     cloned_from: int | None = None,
     enabled: bool = True,
     created_by=None,
+    verbatim_paths: list[str] | None = None,
 ) -> SyntheticOpportunity:
     if opportunity_id is None:
         opportunity_id = SyntheticOpportunity.next_labs_only_opp_id()
@@ -57,6 +58,11 @@ def register_labs_only_opp(
         defaults["cloned_from_opportunity_id"] = cloned_from
     if created_by is not None:
         defaults["created_by"] = created_by
+    if verbatim_paths is not None:
+        # Real values copied from the source (verbatim.py). Setting or clearing them
+        # starts the named-viewer list over: it was checked against the old contents.
+        defaults["verbatim_paths"] = list(verbatim_paths)
+        defaults["allowed_emails"] = []
 
     existing = SyntheticOpportunity.objects.filter(opportunity_id=opportunity_id).first()
     previous_folder_id = existing.gdrive_folder_id if existing else None

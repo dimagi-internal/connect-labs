@@ -86,6 +86,23 @@ class SyntheticOpportunity(models.Model):
         "at any other folder un-marks it with no code path to remember. Null = not generated. "
         "Set only by server code: see connect_labs/labs/synthetic/provenance.py.",
     )
+    verbatim_paths = ArrayField(
+        models.CharField(max_length=300),
+        default=list,
+        blank=True,
+        help_text="form_json paths whose values were copied VERBATIM from cloned_from_opportunity_id "
+        "(connect-labs#2150). Non-empty means this opp serves REAL values: it is never generated data, "
+        "and only its creator and the people in allowed_emails may see it, whatever allowed_domains says. "
+        "Set only by the clone flow: see connect_labs/labs/synthetic/verbatim.py.",
+    )
+    allowed_emails = ArrayField(
+        models.CharField(max_length=254),
+        default=list,
+        blank=True,
+        help_text="Individual addresses (besides the creator) who may see an opp carrying verbatim values. "
+        "Each was checked, when added, to read the source opportunity's raw visits with their own token. "
+        "Ignored when verbatim_paths is empty.",
+    )
     visit_count = models.IntegerField(
         null=True,
         blank=True,
@@ -132,6 +149,8 @@ class SyntheticOpportunity(models.Model):
             return False
         if not getattr(user, "view_synthetic_opps", False):
             return False
+        if self.verbatim_paths:
+            return self._verbatim_audience_includes(user)
         if not self.allowed_domains:
             return True
         email = (getattr(user, "email", "") or "").lower()
@@ -168,6 +187,9 @@ class SyntheticOpportunity(models.Model):
         """
         if not self.labs_only:
             return False
+        if self.verbatim_paths:
+            # Real values copied from a source opp: no Dimagi carve-out, no domain.
+            return self._verbatim_audience_includes(user)
         if self.created_by_id and self.created_by_id == getattr(user, "id", None):
             return True
         email = (getattr(user, "email", "") or "").lower()
@@ -198,6 +220,20 @@ class SyntheticOpportunity(models.Model):
             )
             return True
         return any(email.endswith(d.strip().lower()) for d in self.allowed_domains)
+
+    def _verbatim_audience_includes(self, user) -> bool:
+        """Who may see an opp carrying real values: its creator, and named people only.
+
+        A verbatim copy is never more visible than its source (connect-labs#2150). The
+        creator read the source's raw visits with their own token to make it, and each
+        address in ``allowed_emails`` passed the same check when it was added; nobody
+        else is known to be entitled, so nobody else gets in -- Dimagi staff included.
+        Exact address match: a suffix match would let ``xjane@org`` in for ``jane@org``.
+        """
+        if self.created_by_id and self.created_by_id == getattr(user, "id", None):
+            return True
+        email = (getattr(user, "email", "") or "").strip().lower()
+        return bool(email) and email in {e.strip().lower() for e in (self.allowed_emails or [])}
 
 
 class LabsLocalRecord(models.Model):

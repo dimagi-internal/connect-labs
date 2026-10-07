@@ -20,6 +20,8 @@ from .generator.io.uploader import upload_fixtures
 from .models import SyntheticOpportunity
 from .provenance import mark_generated, replays_real_cases
 from .provisioning import allocate_shared_program_id, register_labs_only_opp
+from .verbatim import overlay as overlay_verbatim
+from .verbatim import record_copy as record_verbatim_copy
 
 logger = logging.getLogger(__name__)
 
@@ -256,6 +258,9 @@ class CloneResult:
     dropped_pool_paths: list = field(default_factory=list)
     # Distributional parity of the generated fixtures against the transplant pool.
     parity: dict = field(default_factory=dict)
+    # The verbatim copy's outcome (connect-labs#2150): {"paths", "rows_copied"} when
+    # real values were copied, {"refused": reason} when they were not. Empty = not asked.
+    verbatim: dict = field(default_factory=dict)
 
 
 def generate_opp_from_bundle(
@@ -345,6 +350,7 @@ def _generate_one(
     image_config: dict | None = None,
     authorize=None,
     created_by=None,
+    verbatim=None,
 ) -> CloneResult:
     """Generate fixtures + register a labs-only opp from an already-read bundle.
 
@@ -352,13 +358,20 @@ def _generate_one(
     no prod calls. Idempotent on ``cloned_from_opportunity_id`` — unless
     ``target_opportunity_id`` pins the destination row explicitly, which skips
     the lookup so an existing twin (e.g. an env-owned opp) is never touched.
+
+    ``verbatim`` (a :class:`~connect_labs.labs.synthetic.verbatim.VerbatimSource`, read
+    through its gate before this is called) copies real values for named paths into
+    the generated fixture. It always makes a NEW opp, visible to its creator only.
     """
     source = bundle.source_opp_id
 
+    # A verbatim copy is a different thing from the statistical twin, and its audience
+    # is its creator alone: it never reuses (or overwrites) an existing row, and is
+    # never found as anyone's twin.
     existing = (
         None
-        if target_opportunity_id is not None
-        else SyntheticOpportunity.objects.filter(cloned_from_opportunity_id=source).first()
+        if target_opportunity_id is not None or verbatim is not None
+        else SyntheticOpportunity.objects.filter(cloned_from_opportunity_id=source, verbatim_paths=[]).first()
     )
     if existing and not fresh:
         return CloneResult(
@@ -383,6 +396,11 @@ def _generate_one(
     pre_existing = SyntheticOpportunity.objects.filter(opportunity_id=opp_id).exists()
     if authorize is not None and (target_opportunity_id is not None or pre_existing):
         authorize(opp_id)
+    verbatim_outcome: dict = {}
+    if verbatim is not None and (pre_existing or created_by is None):
+        # Creator-only needs a creator, and an existing row keeps the creator it has.
+        verbatim_outcome = {"refused": "real values are copied only into a new opportunity the caller creates"}
+        verbatim = None
 
     manifest = Manifest.from_yaml(bundle.manifest_yaml)
     if image_config:
@@ -430,28 +448,48 @@ def _generate_one(
             parity.get("categorical_fields") or 0,
         )
 
-    upload = upload_fixtures(drive=drive, opportunity_id=opp_id, fixtures=fixtures)
+    rows_copied = 0
+    if verbatim is not None:
+        # Into the fixture only, after every check above ran on the generated values.
+        rows_copied = overlay_verbatim(fixtures.get("user_visits") or [], verbatim.rows, verbatim.paths)
+    upload = upload_fixtures(
+        drive=drive, opportunity_id=opp_id, fixtures=fixtures, contains_real_values=verbatim is not None
+    )
 
+    if verbatim is not None:
+        default_label = f"[Real values from opp {source}] {manifest.opportunity_name}"
+        # The audience is the creator alone (SyntheticOpportunity.verbatim_paths); no domain.
+        audience: list[str] = []
+    else:
+        default_label = f"[Synthetic] {manifest.opportunity_name}"
+        audience = allowed_domains if allowed_domains is not None else ["@dimagi.com", "@dimagi-ai.com"]
     row = register_labs_only_opp(
         opportunity_id=opp_id,
-        label=label or f"[Synthetic] {manifest.opportunity_name}",
+        label=label or default_label,
         gdrive_folder_id=upload.folder_id,
         org_name=org_name,
         program_name=program_name,
         program_id=program_id,
-        allowed_domains=allowed_domains if allowed_domains is not None else ["@dimagi.com", "@dimagi-ai.com"],
+        allowed_domains=audience,
         cloned_from=source,
         created_by=None if pre_existing else created_by,
+        # In the same write as the folder, so the row never serves real values
+        # without the access model that confines them.
+        verbatim_paths=list(verbatim.paths) if verbatim is not None else [],
     )
     SyntheticOpportunity.objects.filter(opportunity_id=row.opportunity_id).update(
         visit_count=len(fixtures.get("user_visits") or [])
     )
-    # Mirror mode replays real cases near-verbatim: that is not generated data, and a
-    # regeneration over an opp that was generated before must not keep its mark.
-    if replays_real_cases(manifest):
+    # Mirror mode replays real cases near-verbatim, and a verbatim copy IS real values:
+    # neither is generated data, and a regeneration over an opp that was generated
+    # before must not keep its mark.
+    if verbatim is not None or replays_real_cases(manifest):
         SyntheticOpportunity.objects.filter(opportunity_id=row.opportunity_id).update(generated_folder_id=None)
     else:
         mark_generated(row.opportunity_id, upload.folder_id)
+    if verbatim is not None:
+        record_verbatim_copy(verbatim, clone_opportunity_id=row.opportunity_id, rows_copied=rows_copied)
+        verbatim_outcome = {"paths": list(verbatim.paths), "rows_copied": rows_copied}
     return CloneResult(
         source_opportunity_id=source,
         opportunity_id=row.opportunity_id,
@@ -462,6 +500,7 @@ def _generate_one(
         skipped=False,
         dropped_pool_paths=dropped,
         parity=parity,
+        verbatim=verbatim_outcome,
     )
 
 
@@ -478,6 +517,7 @@ def generate_opps_bulk(
     image_config: dict | None = None,
     authorize=None,
     created_by=None,
+    verbatim=None,
 ) -> list[CloneResult]:
     """Generate fixtures for every bundle subdirectory under *bundle_root*.
 
@@ -496,6 +536,8 @@ def generate_opps_bulk(
             this collection are generated; the rest are logged and skipped.
             Without it a root shared by several cohorts regenerates everything —
             with ``fresh=True`` that trampled opps the caller never named (#1166).
+        verbatim: ``{source_opp_id: VerbatimSource}`` -- sources whose real values
+            passed the gate (``verbatim.read_source_rows``) and are copied verbatim.
 
     Returns:
         List of :class:`CloneResult` for every bundle that succeeded.
@@ -531,6 +573,7 @@ def generate_opps_bulk(
                     image_config=image_config,
                     authorize=authorize,
                     created_by=created_by,
+                    verbatim=(verbatim or {}).get(bundle.source_opp_id),
                 )
             )
             outcome = f"generated opportunity {bundle.source_opp_id}"
@@ -673,6 +716,7 @@ def generate_cohort(
     progress=NULL_PROGRESS,
     authorize=None,
     created_by=None,
+    verbatim=None,
 ) -> tuple[CohortSpec, list[CloneResult]]:
     """Phase 2 (offline) for a whole cohort spec.
 
@@ -697,5 +741,6 @@ def generate_cohort(
         image_config=spec.image_config,
         authorize=authorize,
         created_by=created_by,
+        verbatim=verbatim,
     )
     return spec, results
