@@ -19,8 +19,6 @@ from connect_labs.supply_chain.models import Outreach
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.procurement.views import (
     _without_empty_tail,
-    award_anyway,
-    award_anyway_detail,
     not_stated,
 )
 from connect_labs.supply_chain.tests import test_tracking_reality as reality
@@ -207,29 +205,11 @@ class TestTheComparison:
         op(da, "quote_record", data=_comparable(world))
         url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=rutf"
         body = client_in_program.get(url).content.decode()
-        # One offer is one column of facts with its status, and no rank.
+        # One offer is one row of facts, no rank, and no verdict on it: the count is data.
         assert body.count('data-testid="grid-quote"') == 1
-        assert 'data-testid="grid-status">Comparable<' in body
+        count = re.search(r'data-testid="quote-count"[^>]*>([^<]*)<', body)
+        assert count is not None and " ".join(count.group(1).split()) == "1 quote · 1 with a landed price"
         assert 'data-testid="ranked-table"' not in body
-
-    def test_award_anyway_names_who_is_still_missing_what(self):
-        comparison = {
-            "blocked": [
-                {
-                    "supplier_name": "Northgate",
-                    "blockers": [{"fact": "Pack not stated", "label": "sachets per carton"}],
-                },
-                {"supplier_name": "Sahel", "blockers": [{"fact": "ETA", "label": "ETA"}]},
-                {"supplier_name": "Lakeside", "blockers": []},
-            ]
-        }
-        # Since the 002 run's batch 1: the button names its own award and why it is
-        # early; the other suppliers' gaps are its tooltip, never its label.
-        assert award_anyway(comparison) == "2 other quotes can't be compared yet"
-        assert award_anyway_detail(comparison) == (
-            "Northgate has not stated sachets per carton. Sahel has not stated ETA"
-        )
-        assert award_anyway({"blocked": []}) == ""
 
     def test_a_gap_the_buyer_records_is_not_blamed_on_the_supplier(self):
         row = {
@@ -243,13 +223,11 @@ class TestTheComparison:
         only_ours = {"supplier_name": "Sahel", "blockers": [row["blockers"][0]]}
         assert not_stated(only_ours) == "Sahel: no exchange rate recorded for the EUR quote"
 
-    def test_the_award_button_steps_down_while_a_quote_is_blocked(self, da, world, client_in_program):
-        op(da, "quote_record", data=_comparable(world))
+    def test_a_quote_missing_facts_is_still_offered_on_the_award(self, da, world, client_in_program):
+        first = op(da, "quote_record", data=_comparable(world))
         url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=rutf"
-        clear = client_in_program.get(url).content.decode()
-        assert "data-anyway" not in clear
-        # Northgate quotes without saying what freight it includes: blocked.
-        op(
+        # Northgate quotes without saying what freight it includes: its landed price cannot be computed.
+        second = op(
             da,
             "quote_record",
             data={
@@ -260,12 +238,16 @@ class TestTheComparison:
             },
         )
         body = client_in_program.get(url).content.decode()
-        # The award opens from its fold, whose summary says the others are not comparable yet.
+        # Whether its facts are enough is the buyer's call: both quotes are offered, and the
+        # award's summary passes no verdict on the other one.
+        select = re.search(r'<select id="award-quote".*?</select>', body, re.S)
+        assert select is not None
+        offered = {int(v) for v in re.findall(r'<option value="(\d+)"', select.group(0))}
+        assert offered == {first["id"], second["id"]}
         button = re.search(r'<summary data-testid="award-open"[^>]*>(.*?)</summary>', body, re.S)
-        assert button is not None and "data-anyway" in button.group(1)
-        label = " ".join(html.unescape(_text(button.group(1))).split())
-        assert label == "Award · 1 other quote not comparable yet"
-        assert 'title="Northgate Rehearsal Commodities has not stated ' in button.group(1)
+        assert button is not None
+        assert " ".join(html.unescape(_text(button.group(1))).split()).startswith("Award")
+        assert "comparable" not in button.group(1)
 
     def test_an_empty_trailing_column_is_dropped_but_not_one_between_figures(self):
         rows = [{"figures": {"a": {"amount": "1"}, "b": {"amount": None}, "c": {"amount": "2"}, "d": {}}}]

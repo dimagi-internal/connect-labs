@@ -35,16 +35,16 @@ heard 12 Jun" is the record.
   <table class="sheet min-w-[52rem]" data-testid="suppliers-table">
     <thead>
       <tr>
-        <th scope="col">Supplier</th>
-        <th scope="col">Type</th>
-        <th scope="col">City</th>
-        <th scope="col">Country</th>
-        <th scope="col">Status</th>
+        <th scope="col" data-sort>Supplier</th>
+        <th scope="col" data-sort>Type</th>
+        <th scope="col" data-sort>City</th>
+        <th scope="col" data-sort>Country</th>
+        <th scope="col" data-sort>Status</th>
         {% if has_program_context %}
-          <th scope="col" class="text-right">Invited</th>
-          <th scope="col" class="text-right">Quotes</th>
-          <th scope="col" class="text-right">Orders</th>
-          <th scope="col">Last dated record</th>
+          <th scope="col" class="text-right" data-sort>Invited</th>
+          <th scope="col" class="text-right" data-sort>Quotes</th>
+          <th scope="col" class="text-right" data-sort>Orders</th>
+          <th scope="col" data-sort>Last dated record</th>
         {% endif %}
         <th scope="col"><span class="sr-only">Open</span></th>
       </tr>
