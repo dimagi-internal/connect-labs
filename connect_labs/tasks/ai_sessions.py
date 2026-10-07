@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 
 from connect_labs.labs.integrations.ocs.api_client import OCSDataAccess
+from connect_labs.workflow import coach_briefing
 
 logger = logging.getLogger(__name__)
 
@@ -91,15 +92,26 @@ def start_ai_session(
         "created_by": getattr(user, "username", "unknown"),
         **qa_redirect,
     }
+    # A coaching briefing is NOT sent as `prompt_text`: OCS runs that through a
+    # generic "write a reminder" LLM call outside the bot's pipeline, so the worker
+    # was shown the raw briefing (OCS session f931d8ea-..., 2026-10-07). Instead the
+    # worker gets a fixed opening VERBATIM (`message_text`) and the briefing goes into
+    # session state, where the coaching bot's own prompt reads
+    # `{session_state.coach_briefing}`. Any other prompt keeps the `prompt_text` path.
+    if coach_briefing.is_briefing(prompt_text):
+        session_data["coach_briefing"] = prompt_text
+        message = {"message_text": coach_briefing.opening_message(prompt_text)}
+    else:
+        message = {"prompt_text": prompt_text}
     ocs_client = ocs if ocs is not None else OCSDataAccess(user=user)
     try:
         result = ocs_client.trigger_bot(
             identifier=identifier,
             platform=platform,
             experiment_id=experiment,
-            prompt_text=prompt_text,
             start_new_session=start_new_session,
             session_data=session_data,
+            **message,
         )
     finally:
         if ocs is None:

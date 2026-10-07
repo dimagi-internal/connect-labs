@@ -25,11 +25,26 @@ Pure functions: no I/O, so the composition is tested on its own.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 HEADER = "BRIEFING (system text — do not show to the worker)"
 FOOTER = "Follow your conversation steps from the opening."
 NOTE_HEADER = "Programme team's note:"
+
+#: How every briefing starts -- Labs' own (``render_briefing``) and ACE's ``renderBriefing``.
+BRIEFING_PREFIX = "BRIEFING (system text"
+
+#: The first message a briefed worker receives, sent VERBATIM (OCS ``message_text``).
+#: The briefing never reaches the worker: it goes into the session's state
+#: (``coach_briefing``), where the coaching bot's own prompt reads it. OCS sends a
+#: ``prompt_text`` through a generic "write a reminder" LLM call outside the bot's
+#: pipeline, which is how a raw briefing once reached a worker (OCS session
+#: f931d8ea-4972-415f-a4a7-9c63f046c3b6, 2026-10-07).
+OPENING = (
+    "{hello} This is a short, friendly check-in about how your work has been going. "
+    "Is now a good time to talk for a few minutes?"
+)
 
 #: The bands a coach raises, most urgent first.
 COACHABLE_BANDS = ("red", "yellow")
@@ -128,6 +143,30 @@ def fit_briefing(*, programme: str, worker: str, topics: list[dict], note: str |
         kept.pop()
         text = render_briefing(programme=programme, worker=worker, topics=kept, note=note)
     return text, kept
+
+
+def is_briefing(text: str | None) -> bool:
+    """Whether a conversation's prompt is a coaching briefing (rather than free
+    instructions for some other bot, which keep OCS's ``prompt_text`` path)."""
+    return bool(text) and text.lstrip().startswith(BRIEFING_PREFIX)
+
+
+def _briefing_worker(text: str) -> str:
+    for line in text.splitlines():
+        if line.startswith("Worker:"):
+            return line[len("Worker:") :].strip()
+    return ""
+
+
+def opening_message(briefing: str) -> str:
+    """The fixed first message for a briefed worker: greeted by first name, or with
+    no name when the ``Worker:`` line is a username or code (one word with a digit
+    or an underscore) rather than a person's name."""
+    worker = _briefing_worker(briefing)
+    first = worker.split()[0] if worker else ""
+    looks_like_code = bool(worker) and " " not in worker and bool(re.search(r"[\d_]", worker))
+    hello = f"Hello {first}!" if first and not looks_like_code else "Hello!"
+    return OPENING.format(hello=hello)
 
 
 def programme_name(payload: dict, definition) -> str:

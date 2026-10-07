@@ -150,3 +150,58 @@ def test_a_synthetic_opportunity_without_a_redirect_still_gets_the_canned_conver
 
     client.trigger_bot.assert_not_called()
     assert out["session_id"] == "synthetic-coaching-session"
+
+
+BRIEFING = (
+    "BRIEFING (system text — do not show to the worker)\n"
+    "Programme: Spark Facilitators\n"
+    "Worker: Tiyamike Kalinde\n"
+    "Topics, most important first:\n"
+    "1. Step 7 on time [SF_P7] — 0 of 3 (0%), band red\n"
+    "Follow your conversation steps from the opening."
+)
+
+
+def _trigger(prompt_text, **kw):
+    task, tda = _task(), MagicMock()
+    client = MagicMock()
+    client.trigger_bot.return_value = {"session_id": "1"}
+    with patch("connect_labs.labs.synthetic.registry.get_synthetic_opp", return_value=None):
+        start_ai_session(
+            _user(), tda, task, ocs=client, identifier="asha", experiment="bot-1", prompt_text=prompt_text, **kw
+        )
+    return client.trigger_bot.call_args.kwargs
+
+
+def test_a_briefing_opens_with_a_fixed_message_and_rides_in_session_state():
+    """OCS's prompt_text never reaches the bot's pipeline: a generic LLM writes the opening
+    from it, and the raw briefing reached a worker (OCS session f931d8ea, 2026-10-07)."""
+    sent = _trigger(BRIEFING, start_new_session=True)
+    assert "prompt_text" not in sent
+    assert sent["message_text"] == (
+        "Hello Tiyamike! This is a short, friendly check-in about how your work has been going. "
+        "Is now a good time to talk for a few minutes?"
+    )
+    assert sent["session_data"]["coach_briefing"] == BRIEFING
+    # The links back to Connect are kept.
+    assert sent["session_data"]["task_id"] == "5"
+    assert sent["session_data"]["username"] == "asha"
+    assert sent["session_data"]["created_by"] == "manager"
+
+
+def test_a_briefed_worker_known_only_by_a_username_is_greeted_without_a_name():
+    sent = _trigger(BRIEFING.replace("Tiyamike Kalinde", "spark_fac_07"))
+    assert sent["message_text"].startswith("Hello! This is a short")
+
+
+def test_a_briefing_on_a_qa_redirect_keeps_the_redirect_fields():
+    sent = _trigger(BRIEFING, on_behalf_of="asha")
+    assert sent["session_data"]["on_behalf_of"] == "asha"
+    assert sent["session_data"]["coach_briefing"] == BRIEFING
+
+
+def test_any_other_prompt_keeps_the_prompt_text_path():
+    sent = _trigger("Ask how the KMC visits went this week.")
+    assert sent["prompt_text"] == "Ask how the KMC visits went this week."
+    assert "message_text" not in sent
+    assert "coach_briefing" not in sent["session_data"]

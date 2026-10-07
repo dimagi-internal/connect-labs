@@ -589,6 +589,7 @@ def preview(user, *, wda, run, definition, key: str, arguments: Any, request=Non
     ``connect_url``) — and while anything is needed there is no ``confirm``.
     """
     from connect_labs.tasks.ai_sessions import SYNTHETIC_BOT
+    from connect_labs.workflow import coach_briefing
 
     action = find_action(definition, key)
     roster = run_roster(wda, run, definition)
@@ -630,6 +631,10 @@ def preview(user, *, wda, run, definition, key: str, arguments: Any, request=Non
         row = {"key": item["key"], "name": who["name"], "opportunity_id": who["opportunity_id"]}
         if action["type"] == "start_ocs_outreach":
             row["prompt"] = item.get("prompt") or args.get("prompt")
+            if args.get("bot") != SYNTHETIC_BOT and coach_briefing.is_briefing(row["prompt"]):
+                # What the worker actually receives first (the briefing itself goes
+                # into the session state, never to the worker -- tasks/ai_sessions.py).
+                row["opening"] = coach_briefing.opening_message(row["prompt"])
             if item.get("indicators"):
                 row["indicators"] = item["indicators"]
             if args.get(DELIVER_TO):
