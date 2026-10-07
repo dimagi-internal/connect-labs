@@ -27,7 +27,7 @@ window.MopupAnalysis = (function () {
   const INDICATOR_TOOLTIPS = {
     evc_shortfall:
       'How far the number of children actually served (approved Health Service Delivery visits) falls short of the expected number for this work area. A low ratio can mean the area was under-delivered — or that the expected-count estimate itself was too high for this specific cell. Only scored for work areas that have had at least one approved HSD visit — a work area with zero is excluded entirely (it’s already covered by NCF/inaccessible), not counted as a 0% rate.',
-    ncf: "This work area has at least one approved visit that came back 'No Children Found' instead of a completed service visit. A work area logs at most one NCF-or-Inaccessible visit ever, so this and Inaccessible are mutually exclusive.",
+    ncf: "This work area has at least one visit that came back 'No Children Found' instead of a completed service visit. Unlike every other indicator, NCF counts a visit whether or not it has been approved — a rejected or pending NCF still means nobody was found there. A work area logs at most one NCF-or-Inaccessible visit ever, so this and Inaccessible are mutually exclusive.",
     inaccessible:
       "This work area has at least one approved visit that came back 'Inaccessible' instead of a completed service visit. A work area logs at most one NCF-or-Inaccessible visit ever, so this and NCF are mutually exclusive.",
     deworming:
