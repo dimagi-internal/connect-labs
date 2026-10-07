@@ -1,0 +1,98 @@
+{% extends 'supply_chain/base.html' %}
+{% load static supply_chain_extras %}
+{% comment %}
+Where one item went, from `stock_flow`: what arrived, through each store, to
+each field worker, to what their visits gave out. Drawn by
+static/supply_chain/flow.js from the payload below, one week at a time; the
+slider and Play step through the weeks without asking the server again.
+
+Facts only (September design §22): workers are ordered by the store that
+restocks them, then by name, never by how they are doing.
+{% endcomment %}
+{% block supply_content %}
+<div class="flex flex-wrap items-end justify-between gap-4 mb-5">
+  <div>
+    <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Where it went</h1>
+    <p class="text-sm text-gray-600 mt-1">Every unit that arrived, through the stores to each field worker, to what their visits gave out.</p>
+  </div>
+  {% if has_program_context %}
+    <a href="{% url 'supply_chain:workers' %}{% if item %}?item_id={{ item.id }}{% endif %}" class="text-sm text-brand-indigo hover:underline">Workers</a>
+  {% endif %}
+</div>
+{% if not has_program_context %}
+  <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4 max-w-3xl">
+    <h2 class="text-base font-semibold text-message-warning-text mb-1">No programme selected</h2>
+    <p class="text-sm text-message-warning-text/90">Choose a programme above. Stock belongs to one.</p>
+  </div>
+{% elif not item %}
+  <p class="text-sm text-gray-600">No dispensing rule yet, so no visit has given anything out and there is no flow to show.</p>
+{% elif not flow.weeks %}
+  <div class="bg-white border border-brand-border-light rounded-lg px-5 py-8 text-center">
+    <p class="text-sm text-gray-600">No {{ item.name }} has moved yet.</p>
+  </div>
+{% else %}
+  <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+    <p class="text-sm text-gray-700">{{ item.name }}, in {{ flow.unit|unit_plural }}</p>
+    {% if items|length > 1 %}
+      <form method="get" class="text-sm">
+        <label for="flow-item" class="sr-only">Item</label>
+        {% if supply_as_of %}<input type="hidden" name="as_of" value="{{ supply_as_of|date:'Y-m-d' }}">{% endif %}
+        <select id="flow-item" name="item_id" onchange="this.form.submit()" class="rounded-md border border-gray-300 px-2 py-1">
+          {% for choice in items %}<option value="{{ choice.id }}" {% if choice.id == item.id %}selected{% endif %}>{{ choice.name }}</option>{% endfor %}
+        </select>
+        <noscript><button type="submit" class="ml-1 px-2 py-1 rounded-md border border-gray-300">Show</button></noscript>
+      </form>
+    {% endif %}
+  </div>
+
+  <div id="flow-root" class="bg-white border border-brand-border-light rounded-lg p-4">
+    <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4" data-testid="flow-tiles">
+      {% for key, label in flow_tiles %}
+        <div class="rounded-md border border-gray-200 px-3 py-2">
+          <div class="text-[11px] uppercase tracking-wide text-gray-600">{{ label }}</div>
+          <div class="text-xl font-semibold text-gray-900 tabular-nums" data-tile="{{ key }}">—</div>
+        </div>
+      {% endfor %}
+    </div>
+    <div class="flex flex-wrap items-center gap-3 mb-3">
+      <div class="inline-flex rounded-md border border-gray-300 overflow-hidden" role="group" aria-label="What to draw">
+        <button type="button" data-flow-view="workers" aria-pressed="true" class="px-3 py-1.5 text-sm">Close up on the workers</button>
+        <button type="button" data-flow-view="all" aria-pressed="false" class="px-3 py-1.5 text-sm border-l border-gray-300">The whole chain</button>
+      </div>
+      <button type="button" id="flow-play" class="px-3 py-1.5 rounded-md bg-brand-indigo text-white text-sm font-medium">Play</button>
+      <label for="flow-week" class="sr-only">Week</label>
+      <input type="range" id="flow-week" min="0" value="0" step="1" class="flex-1 min-w-[12rem] accent-indigo-600">
+      <span id="flow-week-label" class="text-sm text-gray-700 tabular-nums min-w-[10rem]" aria-live="polite"></span>
+    </div>
+    <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Flow diagram, scrolls sideways">
+      <svg id="flow-svg" role="img" aria-labelledby="flow-svg-title" class="block"><title id="flow-svg-title">Where {{ item.name }} went</title></svg>
+    </div>
+    <div class="flex flex-wrap gap-x-5 gap-y-1 mt-3 text-xs text-gray-600">
+      <span><span class="inline-block w-3 h-3 rounded-sm align-middle mr-1" style="background:#818cf8"></span>moved down the chain</span>
+      <span><span class="inline-block w-3 h-3 rounded-sm align-middle mr-1" style="background:#34d399"></span>given out at visits</span>
+      <span><span class="inline-block w-3 h-3 rounded-sm align-middle mr-1" style="background:#f87171"></span>lost, expired or sent elsewhere</span>
+      <span><span class="inline-block w-3 h-3 rounded-sm align-middle mr-1 border border-gray-400" style="background:repeating-linear-gradient(45deg,#e5e7eb,#e5e7eb 2px,#fff 2px,#fff 4px)"></span>still held there</span>
+    </div>
+    {% if flow.adjusted %}<p class="text-xs text-gray-600 mt-2">Corrections to balances ({{ flow.adjusted }} {{ flow.unit|unit_plural }} net) are not drawn: they move nothing.</p>{% endif %}
+    {% for unit, amount in flow.left_out.items %}<p class="text-xs text-amber-900 mt-1">Left off: {{ amount }} recorded in {{ unit|unit_plural }}, which {{ item.name }} gives no way to convert.</p>{% endfor %}
+    <details class="mt-3 text-sm">
+      <summary class="cursor-pointer text-brand-indigo">The figures behind this diagram</summary>
+      <div class="overflow-x-auto mt-2" tabindex="0" role="region" aria-label="Flow figures, scrolls sideways">
+        <table class="min-w-[36rem] w-full text-sm" id="flow-table">
+          <caption class="sr-only">For each place, what reached it, what it sent on and what it still holds, to the end of the chosen week.</caption>
+          <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
+            <tr><th scope="col" class="text-left px-3 py-2">Place</th><th scope="col" class="text-right px-3 py-2">Reached it</th><th scope="col" class="text-right px-3 py-2">Sent on or given out</th><th scope="col" class="text-right px-3 py-2">Still there</th></tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100"></tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+  {{ flow|json_script:"flow-data" }}
+{% endif %}
+{% endblock %}
+
+{% block inline_javascript %}
+  {{ block.super }}
+  {% if flow.weeks %}<script src="{% static 'supply_chain/flow.js' %}"></script>{% endif %}
+{% endblock %}
