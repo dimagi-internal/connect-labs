@@ -1,9 +1,13 @@
-# DDD Context — connect-labs supply (`supply-sophie-unanswered-round`)
+# DDD Context — connect-labs supply (`supply-sophie-sheets`)
 
 ## Project
 
 connect-labs, the labs/rapid-prototyping environment for Connect. The active narrative is
-`supply-sophie-unanswered-round`: Sophie (program manager, Connect-RUTF, buyer of record) runs an
+`supply-sophie-sheets` (2026-10-06, run `supply-sophie-sheets-2026-10-06-001`): the same tender world
+told through the TABLES -- Sophie reads each tender, quote set and order as a sheet, corrects what the
+AI recorded in the cell where she reads it, fills the comparison until every quote has a landed
+price, and follows the RUTF out to the workers. It replaced `supply-sophie-unanswered-round`, whose
+video Jonathan found "way too focused on the e-mail aspect". In that older story Sophie (program manager, Connect-RUTF, buyer of record) runs an
 RUTF tender where half the invited suppliers never answer — the record shows who owes what, the
 comparison shows what each quote is missing, and her answers move the procurement forward. Domain:
 `/supply/` (`connect_labs/supply_chain/`), the labs DB is the system of record.
@@ -49,7 +53,25 @@ Artifacts publish to the canopy-web `connect` workspace (`.canopy/ddd/config.yam
   quote facts stay separate: "On us N" / "Us N" count moves only, a quote's missing fact is never a
   move and is not counted there (2026-10-04, product-lens "two ledgers" finding: leave as is).
 
-## Current phase (2026-10-04)
+## Product direction from Jonathan, 2026-10-06 (don't re-ask)
+
+- **Tables, not email.** The story is the record read and corrected in place. A finding that is
+  ONLY about drafted emails or clarification mail is low severity and never blocks a round; email
+  is one short beat (scene 6). The 2026-10-06 run sat at 3/5 for six rounds chasing email/duty-mail
+  findings until this was made explicit.
+- **Every stored value is editable where it is read** (`supply_chain/cells.py`, #2244): no form
+  trip for a one-value correction. One value to a cell, sheets full-width, records as ROWS -- the
+  comparison is a quote to a row, a fact to a column (#2250).
+- **End-to-end supply on a synthetic clone of the real RUTF opportunity**: program 10110 /
+  opportunity 10111, a clone of opportunity 2230 (`/labs/synthetic/clone/`, #2255). Its supply
+  chain is seeded by `manage.py supply_seed_clone_supply` (#2254) and topped up every Monday by beat
+  (#2270). How much RUTF each worker RECEIVED is invented (every Distribution's note says so); what
+  each visit GAVE OUT is the clone's. Narration must never present the deliveries as recorded.
+- **Days to stock-out needs 30 days of dispensing** -- deliberate; say when the estimate arrives and
+  the rate so far, never a bare "unknown". Don't lower the threshold.
+- **A clone started over MCP must equal one made with the page's default button** (comment on #2153).
+
+## Earlier phase (2026-10-04)
 
 Four runs (2026-10-02..04, ~24 iterations, 12 PRs) under the old demo objective; the last,
 `supply-sophie-unanswered-round-2026-10-03-002`, stopped not converged at iteration 6 with every
@@ -67,6 +89,13 @@ video unless asked.
 4. Inner loop (`make serve-demo`) between checkpoints; checkpoints deploy through the deploy gate.
 
 ## Repo facts that bite supply renders (see learnings.md for detail)
+
+- **A labs deploy restarts the Celery worker and kills synthetic clone jobs in flight** (since #2265
+  the job then reads "Labs restarted ... start it again"). Before a deploy, check
+  `/labs/synthetic/jobs/` and coordinate with other sessions that deploy labs (ListAgents +
+  SendMessage); 2026-10-06 lost two clones of 2230 to deploys from two sessions.
+- The walkthrough persona's session is scoped to its own program; a scene on another program
+  (the clone, 10110) needs that program reachable for the persona.
 
 - Deploy only from `main`; a labs deploy mid-seed yields new-schema/old-code errors — check
   `gh run list --workflow deploy-labs.yml` before blaming the product.
