@@ -23,6 +23,7 @@ question, not an answer to it.
 from __future__ import annotations
 
 import json
+import math
 from functools import lru_cache
 from pathlib import Path
 
@@ -62,6 +63,8 @@ def load_sweep() -> dict:
 
 def cost_per_dose(cost_per_visit: float, platform_fee: float, dose_rate: float) -> float:
     """All-in cost of one dose given: the visit price plus the platform fee, spread over the visits that dose."""
+    if not all(math.isfinite(v) for v in (cost_per_visit, platform_fee, dose_rate)):
+        raise ValueError("costs must be finite numbers")
     if cost_per_visit < 0 or platform_fee < 0:
         raise ValueError("costs cannot be negative")
     if not 0 < dose_rate <= 1:

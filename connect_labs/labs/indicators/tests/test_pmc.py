@@ -54,7 +54,16 @@ class TestTheSweep:
         base = _rows()["connect_quarterly_3_24"]["cost_per_case_averted"]
         assert dearer["connect_quarterly_3_24"]["cost_per_case_averted"] == pytest.approx(2 * base, abs=0.05)
 
-    @pytest.mark.parametrize("bad", [{"dose_rate": 0}, {"dose_rate": 1.5}, {"cost_per_visit": -1}])
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            {"dose_rate": 0},
+            {"dose_rate": 1.5},
+            {"cost_per_visit": -1},
+            {"cost_per_visit": float("nan")},
+            {"platform_fee": float("inf")},
+        ],
+    )
     def test_impossible_prices_are_refused(self, bad):
         with pytest.raises(ValueError):
             pmc.cost_per_dose(**{**DEFAULTS, **bad})
@@ -127,6 +136,11 @@ class TestThePage:
         # A nonsense dose rate falls back to the proposal's own.
         assert got["costs"]["dose_rate"] == DEFAULTS["dose_rate"]
         assert got["costs"]["cost_per_dose"] == pytest.approx(2.021, abs=1e-3)
+
+    def test_a_non_number_price_falls_back_rather_than_breaking_the_json(self, client_in, nigeria):
+        got = client_in.get(reverse("targeting:pmc_data"), {"cost_per_visit": "nan", "platform_fee": "inf"}).json()
+        assert got["costs"]["cost_per_visit"] == DEFAULTS["cost_per_visit"]
+        assert got["costs"]["platform_fee"] == DEFAULTS["platform_fee"]
 
     def test_the_agent_panel_declares_the_pmc_resource(self, client, django_user_model, settings, nigeria):
         base = "https://labs.example.org"
