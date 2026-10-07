@@ -237,3 +237,37 @@ def test_the_missing_column_has_a_min_width_and_its_chips_wrap():
         re.S,
     )
     assert cell and "flex-wrap" in cell.group(0) and "text-wrap" not in cell.group(0)
+
+
+# ---- 4. the answer stays in view while the facts scroll --------------------------
+
+
+def test_the_landed_price_and_its_difference_are_pinned_beside_the_supplier(client_in_programme, three):
+    """Editing a fact far right scrolls the grid; the landed price must not slide under the supplier."""
+    grid = _grid(client_in_programme.get(_compare_url(three["world"])).content.decode())
+    head = re.search(r"<thead>.*?</thead>", grid, re.S).group(0)
+    assert re.search(r'<th scope="col" class="sheet-pin">Supplier</th>', head)
+    assert re.search(r'<th scope="col" data-fact="landed" class="[^"]*\bsheet-pin-2\b', head)
+    assert re.search(r'<th scope="col" data-fact="vs_lowest" class="[^"]*\bsheet-pin-3\b', head)
+    for quote in ("zulu", "alpha", "mid"):
+        qid = three[quote]["id"]
+        assert re.search(r'class="[^"]*\bsheet-pin-2\b', _cell(grid, qid, "landed"))
+        assert re.search(r'class="[^"]*\bsheet-pin-3\b', _cell(grid, qid, "vs_lowest"))
+        # Only the answer is held; the facts behind it scroll.
+        assert "sheet-pin" not in _cell(grid, qid, "fx")
+    css = open("tailwind/tailwind.css").read()
+    first = "".join(re.findall(r"\.sheet \.sheet-pin \{(.*?)\}", css, re.S))
+    second = "".join(re.findall(r"\.sheet \.sheet-pin-2 \{(.*?)\}", css, re.S))
+    third = "".join(re.findall(r"\.sheet \.sheet-pin-3 \{(.*?)\}", css, re.S))
+    # Each held column's offset is the widths before it, so the supplier's width is fixed.
+    assert "width: var(--sheet-pin-1)" in first and "max-width: var(--sheet-pin-1)" in first
+    assert "left: var(--sheet-pin-1)" in second
+    assert "left: calc(var(--sheet-pin-1) + var(--sheet-pin-2))" in third
+    shared = re.search(r"\.sheet \.sheet-pin,\s*\.sheet \.sheet-pin-2,\s*\.sheet \.sheet-pin-3 \{(.*?)\}", css, re.S)
+    assert shared and "sticky" in shared.group(1) and "bg-white" in shared.group(1)
+
+
+def test_without_a_ranking_only_the_landed_price_is_pinned(client_in_programme, da, world):
+    grid = _grid(client_in_programme.get(_compare_url(world)).content.decode())
+    assert re.search(r'data-fact="landed" class="[^"]*\bsheet-pin-2\b', grid)
+    assert "sheet-pin-3" not in grid
