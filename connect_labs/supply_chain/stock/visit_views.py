@@ -202,6 +202,39 @@ class WorkersView(OperationBase):
         return context
 
 
+# The figures above the flow, each filled by flow.js for the week on view.
+FLOW_TILES = (
+    ("arrived", "Arrived"),
+    ("stores", "In the stores"),
+    ("workers", "With workers"),
+    ("given", "Given out at visits"),
+    ("lost", "Lost or sent elsewhere"),
+)
+
+
+class StockFlowView(OperationBase):
+    """Where one item went, from what arrived to what the visits gave out, week by week (`stock_flow`)."""
+
+    template_name = "supply_chain/flow.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["has_program_context"] = has_program_context(self.request)
+        if not context["has_program_context"]:
+            return context
+        items = rule_items(self.op)
+        item = chosen_item(self.request, items)
+        context.update(items=items, item=item)
+        if item is not None:
+            flow = self.op("stock_flow", item_id=item["id"], **as_of_payload(self.request))
+            from connect_labs.supply_chain.templatetags.supply_chain_extras import unit_plural
+
+            flow["unit_plural"] = unit_plural(flow["unit"])
+            context["flow"] = flow
+            context["flow_tiles"] = FLOW_TILES
+        return context
+
+
 class WorkerDetailView(OperationBase):
     """One worker's stock of one item: the figures, the timeline, and the visits and arrivals behind it."""
 

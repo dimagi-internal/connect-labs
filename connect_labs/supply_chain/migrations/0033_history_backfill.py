@@ -124,13 +124,9 @@ def backfill(apps, schema_editor):
         if model.__name__ in EXCLUDED_MODELS:
             continue
 
-        content_type, _ = ContentType.objects.get_or_create(
-            app_label="supply_chain", model=model._meta.model_name
-        )
+        content_type, _ = ContentType.objects.get_or_create(app_label="supply_chain", model=model._meta.model_name)
         already = set(
-            Revision.objects.filter(content_type=content_type, action="create").values_list(
-                "object_id", flat=True
-            )
+            Revision.objects.filter(content_type=content_type, action="create").values_list("object_id", flat=True)
         )
 
         batch = []
@@ -171,8 +167,7 @@ def backfill(apps, schema_editor):
 
     if unscoped:
         logger.warning(
-            "history backfill: %d row(s) fell back to program None because their program could not be "
-            "resolved: %s",
+            "history backfill: %d row(s) fell back to program None because their program could not be " "resolved: %s",
             sum(unscoped.values()),
             ", ".join(f"{name}={count}" for name, count in sorted(unscoped.items())),
         )

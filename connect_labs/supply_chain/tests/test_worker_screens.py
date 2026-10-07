@@ -619,7 +619,7 @@ def test_a_visit_that_did_not_say_is_counted_and_said_in_words(client_in_program
     assert "Approved" in page  # over a payment cap is still approved
 
 
-@pytest.mark.parametrize("page", ["workers", "network", "worker_detail", "movements"])
+@pytest.mark.parametrize("page", ["workers", "network", "worker_detail", "movements", "flow"])
 def test_no_code_reaches_the_reader(client_in_program, world, page):
     from connect_labs.supply_chain.tests.test_no_raw_codes import CODES, visible_text
 
@@ -631,6 +631,71 @@ def test_no_code_reaches_the_reader(client_in_program, world, page):
             args = [world[worker].pk]
         text = visible_text(get(client_in_program, page, *args, **params))
         assert [c for c in codes if re.search(rf"(?<![\w-]){re.escape(c)}(?![\w-])", text)] == []
+
+
+# ---- Where it went ----------------------------------------------------------
+
+
+def _flow(da, world, **extra):
+    from connect_labs.supply_chain.operations import call_operation
+
+    return call_operation("stock_flow", da, {"item_id": world["item"].pk, **extra})
+
+
+def _final(flow):
+    names = {n["id"]: n["name"] for n in flow["nodes"]}
+    return {(names[link["source"]], names[link["target"]]): link["series"][-1] for link in flow["links"]}
+
+
+def test_the_flow_follows_every_sachet_from_arrival_to_the_visits(da, world):
+    flow = _flow(da, world)
+
+    assert _final(flow) == {
+        ("Received, no order linked", "Partner store"): 300,
+        ("Partner store", "worker-acacia"): 150,
+        ("Partner store", "worker-baobab"): 150,
+        ("worker-acacia", "Given out at visits"): 30,
+        # 40 approved, plus 10 given and then put back when the visit was rejected.
+        ("worker-baobab", "Given out at visits"): 40,
+    }
+    columns = {n["name"]: n["column"] for n in flow["nodes"]}
+    assert columns == {
+        "Received, no order linked": 0,
+        "Partner store": 1,
+        "worker-acacia": 2,
+        "worker-baobab": 2,
+        "Given out at visits": 3,
+    }
+    assert flow["unit"] == "sachet"
+
+
+def test_the_flow_carries_each_route_forward_week_by_week(da, world):
+    flow = _flow(da, world)
+    baobab = f"p{world['worker-baobab'].pk}"
+    baobab_given = next(link for link in flow["links"] if link["target"] == "given" and link["source"] == baobab)
+
+    # Running totals, ending at today's figure. The rejected visit and its reversal fall in one
+    # week, so that week nets them and the line never shows the 10 that went back.
+    series = baobab_given["series"]
+    assert len(series) == len(flow["weeks"])
+    assert series[0] == 0 and series[-1] == 40
+    assert series == sorted(series)
+
+
+def test_the_flow_as_of_a_day_stops_on_that_day(da, world):
+    flow = _flow(da, world, as_of=(TODAY - timedelta(days=50)).isoformat())
+
+    final = _final(flow)
+    assert final[("Partner store", "worker-baobab")] == 150
+    assert ("worker-baobab", "Given out at visits") not in final
+
+
+def test_the_flow_page_draws_from_the_payload_and_has_its_tab(client_in_program, world):
+    body = get(client_in_program, "flow")
+
+    assert 'id="flow-data"' in body and "supply_chain/flow.js" in body
+    assert "Where it went" in body
+    assert 'data-tile="given"' in body
 
 
 # ---- the stock page's movement list --------------------------------------
@@ -684,7 +749,7 @@ def _queries(client, name):
     return len(captured.captured_queries)
 
 
-@pytest.mark.parametrize("page", ["workers", "network", "stock"])
+@pytest.mark.parametrize("page", ["workers", "network", "stock", "flow"])
 def test_the_page_costs_the_same_whatever_the_number_of_workers(client_in_program, world, page):
     _queries(client_in_program, page)  # warm any per-process caches
     few = _queries(client_in_program, page)

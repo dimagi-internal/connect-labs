@@ -20,6 +20,8 @@ def payment_contract_from_invoice(apps, schema_editor):
 class Migration(migrations.Migration):
     dependencies = [("supply_chain", "0041_tracking_reality")]
 
-    operations = [migrations.RunPython(
+    operations = [
+        migrations.RunPython(
             payment_contract_from_invoice, migrations.RunPython.noop, hints={"run_on_secondary": False}
-        )]
+        )
+    ]
