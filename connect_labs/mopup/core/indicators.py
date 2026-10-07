@@ -19,7 +19,7 @@ layers are responsible for populating these — this module only computes):
         "building_count": int,
         "expected_visit_count": int,
         "approved_hsd_count": int,
-        "approved_ncf_count": int,
+        "approved_ncf_count": int,    # NCF visits at ANY review status (name is historical; see core/visits.py)
         "approved_inaccessible_count": int,
         "deworming_given": int,       # of approved_hsd_count visits
         "muac_given": int,

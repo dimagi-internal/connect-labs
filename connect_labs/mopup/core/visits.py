@@ -1,9 +1,16 @@
-"""Approved HSD/NCF/Inaccessible visit-form data, aggregated per work area —
+"""HSD/NCF/Inaccessible visit-form data, aggregated per work area —
 the expensive pull (design brief §5), scoped in application logic to
 whichever ward(s) Phase 1 selected. Real field paths re-verified this
 session against `core/areas.py`'s `ward_children_per_building` (which already
 pulls HSD visits the same way) — re-verify again before relying on them, per
 the brief's own caveat: these evolve.
+
+Review status: HSD and Inaccessible visits count only once APPROVED, but an
+NCF ("No Children Found") visit counts at ANY review status. A rejected or
+still-pending NCF is still a real report that nobody was home to serve, and
+reviewers were losing work areas from the plan because of the rejection
+(confirmed on opp 2156: a whole work-area group of rejected NCF visits was
+invisible to the indicator).
 """
 
 from __future__ import annotations
@@ -23,17 +30,19 @@ _VACCINATION_PATH = "form.case.update.received_any_vaccine"
 _VACCINATION_GIVEN_VALUE = "yes"
 
 
-def list_approved_visits(
+def list_visits(
     opportunity_id: int,
     *,
     request: HttpRequest | None = None,
     pipeline=None,
 ) -> list[dict]:
-    """One dict per approved HSD/NCF/Inaccessible visit in `opportunity_id`:
-    ``{"wa_case_id", "form_name", "deworming_given", "muac_recorded",
-    "vaccination_given"}``.
+    """One dict per HSD/NCF/Inaccessible visit in `opportunity_id`, at ANY
+    review status: ``{"wa_case_id", "form_name", "status", "deworming_given",
+    "muac_recorded", "vaccination_given", "username", "visit_date"}``.
+    `aggregate_visits_by_wa` decides which statuses count for which form
+    (see this module's docstring) — this only reports them.
 
-    This is the expensive pull — the whole opportunity's approved visit-form
+    This is the expensive pull — the whole opportunity's visit-form
     data, cached by `AnalysisPipeline` the same way `core/work_areas.py`'s
     cheap case pull is (see that module's docstring). There is no ward or
     date narrowing at fetch time (verified this session — see the mop-up
@@ -51,7 +60,7 @@ def list_approved_visits(
 
     if pipeline is None:
         if request is None:
-            raise ValueError("list_approved_visits requires either `request` or `pipeline`")
+            raise ValueError("list_visits requires either `request` or `pipeline`")
         pipeline = AnalysisPipeline(request=request)
 
     config = AnalysisPipelineConfig(
@@ -62,7 +71,11 @@ def list_approved_visits(
         # an enum comparison, and a bare string here silently falls through
         # to FLW aggregation on a cache miss.
         terminal_stage=CacheStage.VISIT_LEVEL,
-        filters={"status": ["approved"]},
+        # No status filter: NCF counts at any review status (see the module
+        # docstring), so the approved-only rule for HSD/Inaccessible is applied
+        # per form in `aggregate_visits_by_wa` instead. Visit-level filters are
+        # applied at read time and are not part of the computed-cache hash
+        # (`get_config_hash`), so this reads the very same cached rows.
         fields=[
             FieldComputation(name="form_name", path=_FORM_NAME_PATH, aggregation="first"),
             FieldComputation(name="wa_case_id", paths=WA_CASE_ID_PATHS, aggregation="first"),
@@ -97,6 +110,7 @@ def list_approved_visits(
             {
                 "wa_case_id": c.get("wa_case_id"),
                 "form_name": form_name,
+                "status": row.status or "",
                 "deworming_given": c.get("deworming") == _DEWORMING_GIVEN_VALUE,
                 "muac_recorded": bool(c.get("muac")),
                 "vaccination_given": c.get("vaccination") == _VACCINATION_GIVEN_VALUE,
@@ -115,7 +129,7 @@ def list_approved_visits(
 
 
 def aggregate_visits_by_wa(visits: list[dict], wa_ids: set[str] | None = None) -> dict[str, dict]:
-    """Roll up `list_approved_visits`' rows into one aggregate per
+    """Roll up `list_visits`' rows into one aggregate per
     `wa_case_id`: ``{"approved_hsd_count", "approved_ncf_count",
     "approved_inaccessible_count", "deworming_given", "muac_given",
     "vaccination_given", "flw_username"}`` — the count fields are the exact
@@ -123,9 +137,18 @@ def aggregate_visits_by_wa(visits: list[dict], wa_ids: set[str] | None = None) -
     properties (ward/status/building_count/etc.), which come from
     `core/work_areas.py` instead.
 
+    Review status: HSD and Inaccessible visits are counted only when
+    `status == "approved"`; an NCF visit is counted at ANY status (see this
+    module's docstring). `approved_ncf_count` keeps its name even though it is
+    no longer approved-only: it is the key every saved run's cached rows and
+    `core.indicators` already read, and renaming it would zero NCF on any
+    run whose rows were fetched before the change. A visit dict with no
+    `status` key at all (hand-built, never from `list_visits`, which always
+    sets one) is treated as approved.
+
     `flw_username` is the Connect username of the work area's LAST
     submitter — its own visits' `username`, ordered by `visit_date`, not the
-    work-area case's `owner_id` (see `list_approved_visits`'s comment on why
+    work-area case's `owner_id` (see `list_visits`'s comment on why
     that distinction matters for name resolution). It shouldn't normally
     happen that two different FLWs submit to the same work area, but if it
     does, the most RECENT submitter wins over one just seen more often, on
@@ -149,6 +172,11 @@ def aggregate_visits_by_wa(visits: list[dict], wa_ids: set[str] | None = None) -
         if not wa_id:
             continue
         if wa_ids is not None and wa_id not in wa_ids:
+            continue
+        # NCF counts at any review status; everything else needs approval.
+        # Skipped before touching `agg` or the submitter pick, so an
+        # unapproved HSD/Inaccessible visit leaves no trace at all.
+        if v["form_name"] != NCF_FORM_NAME and v.get("status", "approved") != "approved":
             continue
         row = agg.setdefault(
             wa_id,

@@ -46,7 +46,7 @@ class TestListWorkAreas:
     def test_sets_pipeline_id_for_raw_cache_isolation(self):
         # Real production bug, found live this session: leaving pipeline_id
         # unset makes every ad-hoc config in this app (this one,
-        # list_approved_visits, fetch_work_area_geometry) share ONE raw-visit
+        # list_visits, fetch_work_area_geometry) share ONE raw-visit
         # -cache slot per opportunity, so each one's wholesale DELETE+INSERT
         # clobbers whatever the others just wrote — exactly the
         # AnalysisPipelineConfig.pipeline_id docstring's documented "issue
