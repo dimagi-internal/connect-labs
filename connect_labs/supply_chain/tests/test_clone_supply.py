@@ -172,7 +172,9 @@ def test_with_no_balance_in_the_visits_each_worker_counts_weekly_and_it_says_so(
     # Each count is the ledger's balance that day, off by no more than a real count is.
     item = Item.objects.select_related("commodity").get(scope_key=f"prog:{opp}", sku=clone_supply.SKU)
     offsets = clone_supply.count_offsets(set(WORKERS))
-    assert any(offset <= -5 for offset in offsets.values())  # somebody's count is well under the ledger
+    # Somebody's count is well under the ledger; most match it, so only real gaps are flagged.
+    assert any(offset <= -5 for offset in offsets.values())
+    assert sum(1 for offset in offsets.values() if offset == 0) > len(offsets) / 2
     for count in counts.select_related("supply_point")[:40]:
         held = ledger.balance(opp, count.supply_point, item=item, unit="sachet", on_date=count.counted_on)
         expected = max(Decimal(0), held.amount + offsets[count.supply_point.connect_username])
