@@ -20,7 +20,7 @@ from django.http import HttpRequest
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
-from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
+from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager, filter_computed_visits
 from connect_labs.labs.analysis.backends.sql.query_builder import (
     execute_entity_aggregation,
     execute_flw_aggregation,
@@ -1327,24 +1327,8 @@ class SQLBackend:
 
         # Apply filters at query time (OPTIMIZATION: filters not in cache hash)
         if config.filters:
-            for key, value in config.filters.items():
-                # entity_id is a column, filter directly
-                if key == "entity_id":
-                    computed_qs = computed_qs.filter(entity_id=value)
-                    logger.info(f"[SQL] Applying entity_id filter: {value}")
-                # status is a column on ComputedVisitCache, not in computed_fields JSONB
-                elif key == "status":
-                    if isinstance(value, list):
-                        computed_qs = computed_qs.filter(status__in=value)
-                    else:
-                        computed_qs = computed_qs.filter(status=value)
-                    logger.info(f"[SQL] Applying status filter: {value}")
-                # All other filters are treated as computed field filters
-                # This enables linking by fields like beneficiary_case_id, rutf_case_id, etc.
-                else:
-                    # Use Django's JSONB contains lookup for exact match
-                    computed_qs = computed_qs.filter(computed_fields__contains={key: value})
-                    logger.info(f"[SQL] Applying computed field filter: {key}={value}")
+            computed_qs = filter_computed_visits(computed_qs, config.filters)
+            logger.info(f"[SQL] Applied filters at read time: {list(config.filters)}")
 
         # Build VisitRow objects directly from ComputedVisitCache
         visit_rows = [visit_row_from_cache(cached_row) for cached_row in computed_qs]

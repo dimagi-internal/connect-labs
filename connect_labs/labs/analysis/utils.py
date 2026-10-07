@@ -67,6 +67,8 @@ def get_config_hash(config) -> str:
 
     # OPTIMIZATION: Filters are NOT included in hash - they're applied at query time
     # This allows timeline views to share the same cache and just filter by entity_id
+    # So visit/FLW rows must be built from an UNFILTERED config (AnalysisPipeline does):
+    # a filtered build would be reused by queries with other filters.
     #
     # EXCEPT at entity stage: its cached rows are aggregates, which no read-time
     # filter can narrow, so the aggregation runs WITH the filters and a differently
