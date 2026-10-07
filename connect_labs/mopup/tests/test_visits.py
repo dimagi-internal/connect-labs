@@ -7,14 +7,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from connect_labs.mopup.core.visits import aggregate_visits_by_wa, build_evaluation_rows, list_approved_visits
+from connect_labs.mopup.core.visits import aggregate_visits_by_wa, build_evaluation_rows, list_visits
 
 
 class _FakeRow:
-    def __init__(self, entity_id, username="", visit_date=None, **computed):
+    def __init__(self, entity_id, username="", visit_date=None, status="approved", **computed):
         self.entity_id = entity_id
         self.username = username
         self.visit_date = visit_date
+        self.status = status
         self.computed = computed
 
 
@@ -33,16 +34,16 @@ class _FakePipeline:
         return _FakeResult(self._rows)
 
 
-class TestListApprovedVisits:
+class TestListVisits:
     def test_requires_request_or_pipeline(self):
         with pytest.raises(ValueError, match="request.*pipeline"):
-            list_approved_visits(1)
+            list_visits(1)
 
     def test_sets_pipeline_id_for_raw_cache_isolation(self):
         # See the identical test/comment in test_work_areas.py — same
         # pipeline_id=None cache-clobbering bug, same fix.
         pipeline = _FakePipeline([])
-        list_approved_visits(1, pipeline=pipeline)
+        list_visits(1, pipeline=pipeline)
         assert pipeline.last_config.pipeline_id == 12968
 
     def test_terminal_stage_is_the_real_enum_not_a_string(self):
@@ -51,7 +52,7 @@ class TestListApprovedVisits:
         from connect_labs.labs.analysis.config import CacheStage
 
         pipeline = _FakePipeline([])
-        list_approved_visits(1, pipeline=pipeline)
+        list_visits(1, pipeline=pipeline)
         assert pipeline.last_config.terminal_stage == CacheStage.VISIT_LEVEL
 
     def test_row_with_none_computed_does_not_crash(self):
@@ -60,7 +61,7 @@ class TestListApprovedVisits:
         # nothing to compute for that visit.
         rows = [SimpleNamespace(entity_id="v1", computed=None)]
         pipeline = _FakePipeline(rows)
-        assert list_approved_visits(1, pipeline=pipeline) == []
+        assert list_visits(1, pipeline=pipeline) == []
 
     def test_filters_to_known_form_types_and_extracts_dq_fields(self):
         rows = [
@@ -79,12 +80,13 @@ class TestListApprovedVisits:
             _FakeRow("v4", form_name="Some Other Form", wa_case_id="wa-4"),  # excluded
         ]
         pipeline = _FakePipeline(rows)
-        visits = list_approved_visits(1, pipeline=pipeline)
+        visits = list_visits(1, pipeline=pipeline)
         assert len(visits) == 3
         hsd = visits[0]
         assert hsd == {
             "wa_case_id": "wa-1",
             "form_name": "Health Service Delivery",
+            "status": "approved",
             "deworming_given": True,
             "muac_recorded": True,
             "vaccination_given": True,
@@ -92,10 +94,27 @@ class TestListApprovedVisits:
             "visit_date": "2026-01-05",
         }
 
+    def test_pull_is_not_filtered_to_approved_and_carries_each_visits_status(self):
+        # NCF counts at any review status, so the pull itself must not drop
+        # unapproved visits -- the approved-only rule for HSD/Inaccessible is
+        # applied per form in aggregate_visits_by_wa. A rejected NCF row has
+        # to come through with its real status attached.
+        rows = [
+            _FakeRow("v1", status="rejected", form_name="No Children Found", wa_case_id="wa-1"),
+            _FakeRow("v2", status="pending", form_name="Health Service Delivery", wa_case_id="wa-2"),
+        ]
+        pipeline = _FakePipeline(rows)
+        visits = list_visits(1, pipeline=pipeline)
+        assert not pipeline.last_config.filters.get("status")
+        assert [(v["form_name"], v["status"]) for v in visits] == [
+            ("No Children Found", "rejected"),
+            ("Health Service Delivery", "pending"),
+        ]
+
     def test_missing_dq_fields_are_falsy_not_crashed(self):
         rows = [_FakeRow("v1", form_name="Health Service Delivery", wa_case_id="wa-1")]
         pipeline = _FakePipeline(rows)
-        visits = list_approved_visits(1, pipeline=pipeline)
+        visits = list_visits(1, pipeline=pipeline)
         assert visits[0]["deworming_given"] is False
         assert visits[0]["muac_recorded"] is False
         assert visits[0]["vaccination_given"] is False
@@ -133,6 +152,72 @@ class TestAggregateVisitsByWa:
             "flw_username": "",
         }
         assert agg["wa-2"]["approved_hsd_count"] == 1
+
+    def test_ncf_counts_at_any_review_status(self):
+        # Real case (opp 2156, WAG DABGW-group-18): every NCF visit there was
+        # REJECTED in Connect, so the approved-only pull saw nothing and the
+        # work areas never became NCF candidates.
+        visits = [
+            {"wa_case_id": "wa-1", "form_name": "No Children Found", "status": "rejected"},
+            {"wa_case_id": "wa-2", "form_name": "No Children Found", "status": "pending"},
+            {"wa_case_id": "wa-3", "form_name": "No Children Found", "status": "approved"},
+            {"wa_case_id": "wa-4", "form_name": "No Children Found", "status": "over_limit"},
+        ]
+        agg = aggregate_visits_by_wa(visits)
+        assert {wa: agg[wa]["approved_ncf_count"] for wa in agg} == {"wa-1": 1, "wa-2": 1, "wa-3": 1, "wa-4": 1}
+
+    def test_hsd_and_inaccessible_still_need_approval(self):
+        visits = [
+            {
+                "wa_case_id": "wa-1",
+                "form_name": "Health Service Delivery",
+                "status": "approved",
+                "deworming_given": True,
+            },
+            {
+                "wa_case_id": "wa-1",
+                "form_name": "Health Service Delivery",
+                "status": "rejected",
+                "deworming_given": True,
+            },
+            {"wa_case_id": "wa-1", "form_name": "Health Service Delivery", "status": "pending", "muac_recorded": True},
+            {"wa_case_id": "wa-2", "form_name": "Inaccessible WA", "status": "approved"},
+            {"wa_case_id": "wa-3", "form_name": "Inaccessible WA", "status": "rejected"},
+        ]
+        agg = aggregate_visits_by_wa(visits)
+        # Only the one approved HSD visit counts, along with its own DQ fields.
+        assert agg["wa-1"]["approved_hsd_count"] == 1
+        assert agg["wa-1"]["deworming_given"] == 1
+        assert agg["wa-1"]["muac_given"] == 0
+        assert agg["wa-2"]["approved_inaccessible_count"] == 1
+        # A WA whose only visit is an unapproved Inaccessible/HSD never enters
+        # the aggregate at all (build_evaluation_rows zero-fills it).
+        assert "wa-3" not in agg
+
+    def test_unapproved_non_ncf_visit_does_not_set_the_submitter_but_an_unapproved_ncf_does(self):
+        visits = [
+            {"wa_case_id": "wa-1", "form_name": "Health Service Delivery", "status": "rejected", "username": "flw-x"},
+            {"wa_case_id": "wa-2", "form_name": "No Children Found", "status": "rejected", "username": "flw-y"},
+        ]
+        agg = aggregate_visits_by_wa(visits)
+        assert "wa-1" not in agg
+        assert agg["wa-2"]["flw_username"] == "flw-y"
+
+    def test_a_visit_with_no_status_key_is_treated_as_approved(self):
+        # Hand-built dicts (never from list_visits, which always sets one).
+        agg = aggregate_visits_by_wa([{"wa_case_id": "wa-1", "form_name": "Health Service Delivery"}])
+        assert agg["wa-1"]["approved_hsd_count"] == 1
+
+    def test_a_blank_status_is_not_approved(self):
+        # list_visits reports a missing status as "" -- that must not pass the
+        # approved-only rule for HSD, though NCF still counts.
+        visits = [
+            {"wa_case_id": "wa-1", "form_name": "Health Service Delivery", "status": ""},
+            {"wa_case_id": "wa-2", "form_name": "No Children Found", "status": ""},
+        ]
+        agg = aggregate_visits_by_wa(visits)
+        assert "wa-1" not in agg
+        assert agg["wa-2"]["approved_ncf_count"] == 1
 
     def test_restricts_to_given_wa_ids(self):
         visits = [

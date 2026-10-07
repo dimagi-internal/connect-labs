@@ -29,7 +29,7 @@ from collections.abc import Callable
 from django.http import HttpRequest
 
 from connect_labs.mopup.core.geometry import fetch_work_area_geometry
-from connect_labs.mopup.core.visits import aggregate_visits_by_wa, build_evaluation_rows, list_approved_visits
+from connect_labs.mopup.core.visits import aggregate_visits_by_wa, build_evaluation_rows, list_visits
 from connect_labs.mopup.core.work_areas import list_work_areas
 
 
@@ -82,7 +82,7 @@ def build_evaluation_input(
     wa_ids = {wa["case_id"] for wa in scoped}
 
     stage("Fetching visit data…")
-    visits = list_approved_visits(opportunity_id, request=request, pipeline=pipeline)
+    visits = list_visits(opportunity_id, request=request, pipeline=pipeline)
     aggregates = aggregate_visits_by_wa(visits, wa_ids=wa_ids)
 
     rows = build_evaluation_rows(scoped, aggregates)
