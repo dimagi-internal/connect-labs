@@ -1055,6 +1055,18 @@ export interface WorkflowActionPreview {
     /** A coaching briefing's fixed first message: what the worker receives first
      * (the briefing itself goes into the conversation's state, not to the worker). */
     opening?: string;
+    /** A coaching briefing in plain words for the person confirming (display only;
+     * `prompt` is the exact text the bot receives). */
+    briefing?: {
+      topics: Array<{
+        label: string;
+        figure: string;
+        band: string;
+        /** "off target" (red), "on watch" (yellow). */
+        status: string;
+      }>;
+      note?: string;
+    };
     /** Indicator keys the conversation covers (a coaching briefing's topics). */
     indicators?: string[];
   }>;

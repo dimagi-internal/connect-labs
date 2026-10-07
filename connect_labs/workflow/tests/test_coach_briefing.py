@@ -79,6 +79,27 @@ def test_the_briefing_has_the_shape_the_coach_bot_parses():
     )
 
 
+def test_the_briefing_summary_is_plain_words_for_the_supervisor():
+    topics = coach_briefing.coachable_topics(GRADED, GRADED["byFLW"][0]["ind"])
+    text = coach_briefing.render_briefing(
+        programme="Spark Facilitators", worker="Tiyamike Kalinde", topics=topics, note="Be warm.\nAsk about rain."
+    )
+    assert coach_briefing.briefing_summary(text) == {
+        "topics": [
+            {"label": "Meetings held", "figure": "5 of 12 (42%)", "band": "red", "status": "off target"},
+            {"label": "Visits per week", "figure": "1.5 visits", "band": "red", "status": "off target"},
+            {"label": "Attendance recorded", "figure": "14 of 20 (70%)", "band": "yellow", "status": "on watch"},
+        ],
+        "note": "Be warm.\nAsk about rain.",
+    }
+    # No ids, no band codes, no instructions to the bot.
+    shown = " ".join(
+        f"{t['label']} {t['figure']} {t['status']}" for t in coach_briefing.briefing_summary(text)["topics"]
+    )
+    assert "MTG_RATE" not in shown and "band" not in shown and "Follow your" not in shown
+    assert "note" not in coach_briefing.briefing_summary(text.split("\nProgramme team's note:")[0])
+
+
 def test_a_long_briefing_drops_its_least_important_topics_to_fit():
     topics = [{"key": f"K{i}", "label": "x" * 50, "band": "red", "value": 1} for i in range(200)]
     text, kept = coach_briefing.fit_briefing(programme="P", worker="W", topics=topics, note=None, limit=1000)
@@ -181,6 +202,9 @@ def test_the_preview_shows_each_workers_own_briefing_and_skips_nothing_to_coach(
         "Hello Tiyamike! This is a short, friendly check-in about how your work has been going. "
         "Is now a good time to talk for a few minutes?"
     )
+    # ...and the person confirming reads the briefing in plain words.
+    assert w["briefing"] == coach_briefing.briefing_summary(w["prompt"])
+    assert [t["status"] for t in w["briefing"]["topics"]] == ["off target", "off target", "on watch"]
     assert out["arguments"]["workers"][0]["indicators"] == ["MTG_RATE", "VISITS", "ATT_RATE"]
     assert out["skipped"] == [
         {"key": "10::b10", "name": "Binta", "reason": "nothing off target"},
@@ -292,4 +316,4 @@ def test_only_dimagi_staff_are_offered_the_qa_redirect_for_one_worker(user):
         key="initiate_ai_coach",
         arguments={**args, "deliver_to": "tester_pid"},
     )
-    assert out["workers"][0]["sending_to"] == "sending to: tester_pid (QA, on behalf of a10)"
+    assert out["workers"][0]["sending_to"] == "sending to tester_pid — a test, on behalf of Asha"

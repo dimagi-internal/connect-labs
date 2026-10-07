@@ -169,6 +169,36 @@ def opening_message(briefing: str) -> str:
     return OPENING.format(hello=hello)
 
 
+#: How the confirm dialog names each band to the supervisor reading it.
+BAND_WORDS = {"red": "off target", "yellow": "on watch"}
+
+_TOPIC_LINE = re.compile(r"^\d+\.\s+(?P<label>.*?)\s+\[[^\]]+\]\s+—\s+(?P<figure>.*),\s+band\s+(?P<band>\S+)\s*$")
+
+
+def briefing_summary(briefing: str) -> dict:
+    """A briefing as the person confirming it reads it: one line per topic, in plain
+    words (no indicator ids, no band codes, no instructions to the bot), plus the
+    programme team's note. Display only -- the text sent to the bot is unchanged."""
+    topics, note, in_note = [], [], False
+    for line in briefing.splitlines():
+        if in_note:
+            note.append(line)
+            continue
+        if line.strip() == NOTE_HEADER:
+            in_note = True
+            continue
+        m = _TOPIC_LINE.match(line.strip())
+        if m:
+            band = m["band"]
+            topics.append(
+                {"label": m["label"], "figure": m["figure"], "band": band, "status": BAND_WORDS.get(band, band)}
+            )
+    out: dict[str, Any] = {"topics": topics}
+    if "\n".join(note).strip():
+        out["note"] = "\n".join(note).strip()
+    return out
+
+
 def programme_name(payload: dict, definition) -> str:
     """What the briefing calls the programme: the registry's display title, else the
     workflow's own name."""
