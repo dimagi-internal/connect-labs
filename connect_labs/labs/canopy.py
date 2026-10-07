@@ -68,6 +68,7 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
             "targeting_research",
             "targeting_compare_criteria",
             "targeting_cost_effectiveness",
+            "targeting_pmc_schedules",
         }
     ),
     # A tender and its quotes, read as the visitor through the supply operations, which
@@ -107,6 +108,7 @@ PAGE_SCOPES: dict[str, tuple[str, ...]] = {
     "marketplace:round": ("marketplace:read",),
     "labs:workflow:run": ("workflow:read", "workflow:act"),
     "targeting:index": ("targeting:read",),
+    "targeting:pmc": ("targeting:read",),
     "supply_chain:procurement_tender_detail": ("supply:read",),
     "supply_chain:procurement_comparison": ("supply:read",),
 }
