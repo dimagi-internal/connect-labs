@@ -164,10 +164,9 @@ class TestTheComparison:
         body = client_in_program.get(url).content.decode()
         if 'data-testid="waiver-pending"' not in body:
             pytest.skip("this world's quote does not leave the import to us")
-        assert "duty exemption not on file · ours to attach" in body
-        # The quote's header chip names it, or counts them:
-        # "duty exemption · ours to attach" / "2 facts · ours to fill".
-        assert re.search(r'data-testid="grid-status">[^<]+ · ours to (attach|fill)<', body)
+        assert re.search(r'data-testid="waiver-pending">duty exemption not on file<', body)
+        # The tender's document, said on the duty line and the duty cell -- not as a chip on the quote.
+        assert not re.search(r'data-testid="grid-status">[^<]*duty exemption[^<]*<', body)
         assert 'data-testid="duty-exemption-attach"' in body
         # Award may still be offered, but never as the filled button while the fact is open.
         assert 'primary-dark" data-testid="grid-action"' not in body
