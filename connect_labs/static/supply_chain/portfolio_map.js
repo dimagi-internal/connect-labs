@@ -19,6 +19,10 @@
  */
 (function () {
   'use strict';
+  // How close the map may zoom when it frames what is selected. Field workers
+  // are drawn where their visits are, a few km apart, so a programme can fill
+  // a town; at the old cap of 9 twenty workers were one clump.
+  var FIT_MAX_ZOOM = 13;
 
   var el = document.getElementById('pm-data');
   if (!el) return;
@@ -2667,7 +2671,7 @@
       near.forEach(function (n) {
         mb.extend([n.pt._x, n.pt._y]);
       });
-      map.fitBounds(mb, { padding: 90, maxZoom: 9, duration: 700 });
+      map.fitBounds(mb, { padding: 90, maxZoom: FIT_MAX_ZOOM, duration: 700 });
       fit = false;
     }
     if (fit) {
@@ -2691,7 +2695,7 @@
         target.forEach(function (o) {
           b.extend([o._x, o._y]);
         });
-        map.fitBounds(b, { padding: 70, maxZoom: 9, duration: 700 });
+        map.fitBounds(b, { padding: 70, maxZoom: FIT_MAX_ZOOM, duration: 700 });
       }
     }
   }
