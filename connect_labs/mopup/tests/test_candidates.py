@@ -103,6 +103,57 @@ class TestBuildEvaluationInput:
         assert rows[0]["lon"] == 11.18
         assert rows[0]["boundary"]["type"] == "Polygon"
 
+    def test_flags_inaccessible_from_connects_work_area_status(self, monkeypatch):
+        # Inaccessible is a Connect work-area STATUS, never a visit (see
+        # core/geometry.py). INACCESSIBLE and a still-pending
+        # REQUEST_FOR_INACCESSIBLE both count; everything else -- including
+        # EXCLUDED, a denied request's NOT_VISITED, and a WA Connect has no
+        # row for -- does not.
+        import connect_labs.mopup.core.candidates as candidates_module
+
+        statuses = {
+            "wa-1": "INACCESSIBLE",
+            "wa-2": "REQUEST_FOR_INACCESSIBLE",
+            "wa-3": "NOT_VISITED",
+            "wa-4": "EXCLUDED",
+            "wa-5": "VISITED",
+        }
+        monkeypatch.setattr(
+            candidates_module,
+            "list_work_areas",
+            lambda opportunity_id, request=None, pipeline=None: [
+                {
+                    "case_id": wa,
+                    "ward": "Sabon Gari",
+                    "lga": "Rano",
+                    "state": "Kano",
+                    "building_count": 3,
+                    "expected_visit_count": 4,
+                    "status": "",
+                    "owner_id": "flw-1",
+                }
+                for wa in [*statuses, "wa-6"]  # wa-6: no geometry/status row at all
+            ],
+        )
+        monkeypatch.setattr(candidates_module, "list_visits", lambda *a, **k: [])
+        monkeypatch.setattr(
+            candidates_module,
+            "fetch_work_area_geometry",
+            lambda opportunity_id, request=None, pipeline=None: {
+                wa: {"lat": None, "lon": None, "boundary": None, "wag_name": "", "connect_status": s}
+                for wa, s in statuses.items()
+            },
+        )
+        rows = build_evaluation_input(1, [], request=object())
+        assert {r["wa_id"]: r["connect_inaccessible"] for r in rows} == {
+            "wa-1": 1,
+            "wa-2": 1,
+            "wa-3": 0,
+            "wa-4": 0,
+            "wa-5": 0,
+            "wa-6": 0,
+        }
+
     def _stub_work_area_and_geometry(self, monkeypatch, candidates_module, owner_id="flw-1"):
         monkeypatch.setattr(
             candidates_module,
@@ -215,7 +266,7 @@ class TestSummarizeCandidatesByWard:
                 "expected_visit_count": 5,
                 "approved_hsd_count": 4,
                 "approved_ncf_count": 1,
-                "approved_inaccessible_count": 0,
+                "connect_inaccessible": 0,
             },
             {
                 "ward": "Sabon Gari",
@@ -225,7 +276,7 @@ class TestSummarizeCandidatesByWard:
                 "expected_visit_count": 8,
                 "approved_hsd_count": 6,
                 "approved_ncf_count": 0,
-                "approved_inaccessible_count": 1,
+                "connect_inaccessible": 1,
             },
             {
                 "ward": "Sabon Gari",
@@ -235,7 +286,7 @@ class TestSummarizeCandidatesByWard:
                 "expected_visit_count": 12,
                 "approved_hsd_count": 9,
                 "approved_ncf_count": 0,
-                "approved_inaccessible_count": 0,
+                "connect_inaccessible": 0,
             },
         ]
         candidates = [
