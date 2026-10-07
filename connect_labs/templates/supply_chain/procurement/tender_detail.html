@@ -509,3 +509,9 @@ next action on anyone (design doc section 22).
 <p class="text-gray-600">Tender not found.</p>
 {% endif %}
 {% endblock %}
+
+{% comment %}Ask an AI about these quotes: the canopy agent panel, reading the tables' data as the visitor (procurement/views.py _quotes_panel).{% endcomment %}
+{% block inline_javascript %}
+  {{ block.super }}
+  {% if canopy_panel %}{% include "canopy_host/panel.html" %}{% endif %}
+{% endblock %}

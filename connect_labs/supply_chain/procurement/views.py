@@ -553,6 +553,7 @@ class TenderDetailView(_Base):
             "drafts": len((context["drafts"] or {}).get("drafts") or []),
             "invited": len(outreach),
         }
+        context["canopy_panel"] = _quotes_panel(self.request, tender_id, [q.get("id") for q in current])
         return context
 
 
@@ -934,6 +935,32 @@ def _spec_sources(comparison, corrections) -> None:
         ]
 
 
+def _quotes_panel(request, tender_id, quote_ids, *, commodity=None):
+    """The agent panel for a tender's quotes: ask an AI about what the tables show.
+
+    The product shows the data; analysis is the person's to ask for (ruling
+    2026-10-07), so the panel carries only what is on screen -- the tender and its
+    quote ids -- and the agent reads the figures itself through the supply read
+    tools (`canopy.SCOPE_TOOLS["supply:read"]`), as the visitor. Signed-in visitors
+    on today's record only: a page showing the past is not a place to ask about now.
+    """
+    if not request.user.is_authenticated or getattr(request, "supply_as_of", None):
+        return None
+    from canopy_sdk.django.pages import panel_context
+
+    filters = {"tender_id": tender_id, "program_id": _access(request).program_id}
+    if commodity:
+        filters["commodity_slug"] = commodity
+    return panel_context(
+        request,
+        resource=f"labs-supply://tenders/{tender_id}",
+        backing_tool="supply_chain_tender_compare",
+        visible_ids=[str(q) for q in quote_ids if q],
+        filters=filters,
+        path=request.get_full_path(),
+    )
+
+
 class ComparisonView(_Base):
     template_name = "supply_chain/procurement/comparison.html"
 
@@ -1173,6 +1200,13 @@ class ComparisonView(_Base):
             context["award_choice_id"] = requested if requested in awardable else next(iter(awardable), None)
             if requested in awardable:
                 context["award_step"] = True
+        rows = (comparison or {}).get("all_rows") or [
+            *((comparison or {}).get("comparable") or []),
+            *((comparison or {}).get("blocked") or []),
+        ]
+        context["canopy_panel"] = _quotes_panel(
+            self.request, tender_id, [r.get("quote_id") for r in rows], commodity=commodity
+        )
         return context
 
     def post(self, request, tender_id, *args, **kwargs):
