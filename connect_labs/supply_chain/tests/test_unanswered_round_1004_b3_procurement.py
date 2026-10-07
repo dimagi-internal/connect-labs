@@ -92,7 +92,9 @@ def test_the_grid_marks_the_landed_figure_unconfirmed_as_the_order_does(da, worl
     assert cell.get("unconfirmed") is True
     assert cell["v"].startswith("USD ")
     (column,) = grid["quotes"]
-    assert column["chips"][0]["label"] == "Comparable"
+    # Its figure is shown and it can be awarded; no chip passes a verdict on it.
+    assert column["awardable"] is True
+    assert not any("omparable" in chip["label"] for chip in column["chips"])
     source = get_template("supply_chain/procurement/comparison.html").template.source
     assert 'data-testid="landed-unconfirmed"' in source
 

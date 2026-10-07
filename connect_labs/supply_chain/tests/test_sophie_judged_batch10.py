@@ -130,5 +130,9 @@ def test_the_hooks_stay(da, base, ace, client_in_program):
     quote = _quote_with(da, tender_id, base["supplier"]["id"], AUG_20, _ALL_BUT_PACK)
     _correct_pack(da, quote, ace)
     body = _page(client_in_program, tender_id)
-    for hook in ("comparison-grid", "grid-quote", "grid-status", "award-start", "award-form"):
+    for hook in ("comparison-grid", "grid-quote", "award-start", "award-form"):
         assert f'data-testid="{hook}"' in body
+    # grid-status is a quote's first status chip; with every fact stated and no verdict chip
+    # (2026-10-07), a quote with nothing open wears none -- the recipe hovers it only on quotes
+    # that still lack facts.
+    assert ">Comparable<" not in body

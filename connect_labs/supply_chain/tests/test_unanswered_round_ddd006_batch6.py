@@ -29,10 +29,13 @@ def test_dot_parts_splits_on_the_separator():
     assert dot_parts("") == []
 
 
-def test_overview_gaps_are_fact_chips_and_the_comparable_chip_leads():
+def test_overview_gaps_are_fact_chips_and_the_quote_count_is_a_neutral_chip():
     from django.template.loader import get_template
 
     source = get_template("supply_chain/home.html").template.source
     chip = get_template("supply_chain/_fact_chip.html").template.source
-    assert '"supply_chain/_fact_chip.html"' in source and "gap_tone" in chip and "%}lead{%" in source
+    assert '"supply_chain/_fact_chip.html"' in source and "gap_tone" in chip
+    # The quote count is data: one neutral tone, never a "lead" tone for a verdict.
+    assert re.search(r'class="status-chip status-chip--neutral self-start" data-testid="row-quotes"', source)
+    assert "%}lead{%" not in source and "row-comparable" not in source
     assert 'data-testid="row-missing"' in source.split('data-testid="next-move"', 1)[1]

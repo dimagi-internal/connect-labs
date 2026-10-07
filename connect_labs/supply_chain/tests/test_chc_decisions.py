@@ -549,18 +549,30 @@ class TestATenderStatesTheContentsItBuys:
         questions = op(da, "tender_outstanding_questions", tender_id=tender.pk, commodity_slug="ors-zinc-copack")
         assert all(entry["quote_id"] != comparison["not_comparable"][0]["quote_id"] for entry in questions)
 
-    def test_the_comparison_page_files_it_as_not_comparable(self, client_in_programme, da, chain):
+    def test_the_comparison_page_lists_it_under_its_different_contents(self, client_in_programme, da, chain):
         tender = self._tender_with_a_four_sachet_offer(da, chain)
         url = reverse("supply_chain:procurement_comparison", args=[tender.pk]) + "?commodity=ors-zinc-copack"
         body = client_in_programme.get(url).content.decode()
-        assert "Not comparable — different contents" in body
-        section = body[body.index("Not comparable — different contents") :]
+        # The difference is said as a fact about the offer, never as a verdict on it.
+        assert "Different contents from the tender" in body
+        assert "Not comparable" not in body
+        section = body[body.index("Different contents from the tender") :]
         assert "Four-sachet co-pack" in section
         assert "4 sachets ors" in section
         assert "2 sachets ors" in section
         assert "Ask the supplier" not in section
         assert "Needs info" not in body
         assert "PROVISIONAL" not in body
+
+    def test_an_offer_with_different_contents_can_still_be_awarded(self, client_in_programme, da, chain):
+        from connect_labs.supply_chain.models import Quote
+
+        tender = self._tender_with_a_four_sachet_offer(da, chain)
+        four = Quote.objects.get(tender=tender, item__sku="four")
+        url = reverse("supply_chain:procurement_comparison", args=[tender.pk]) + "?commodity=ors-zinc-copack"
+        body = client_in_programme.get(url).content.decode()
+        select = re.search(r'<select id="award-quote".*?</select>', body, re.S).group(0)
+        assert re.search(rf'<option value="{four.pk}"[^>]*>[^<]*Four-sachet co-pack', select)
 
     def _tender_with_a_four_sachet_offer(self, da, chain):
         from connect_labs.supply_chain.models import Tender

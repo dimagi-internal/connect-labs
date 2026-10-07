@@ -4,7 +4,9 @@
    each other quote's difference from it in a column beside Landed; the quote's
    specification check and next moves ride in its own cell, not three columns of
    their own; ONE award block states the tender's open state once, and each
-   comparable quote's Award link opens it with that quote chosen.
+   quote's Award link opens it with that quote chosen -- every live quote can be
+   awarded, whatever facts it still lacks (2026-10-07: the system shows data, the
+   buyer judges it).
 2. The procurements overview gives a tender row its deadline under the stage.
 3. The tender page's Missing column has room for its chips, which wrap.
 """
@@ -55,7 +57,8 @@ def _quote(da, world, name, price, **extra):
 
 @pytest.fixture
 def three(da, world):
-    """Three quotes: two comparable, the cheaper one alphabetically last, and one not comparable."""
+    """Three quotes: two with a landed price, the cheaper one alphabetically last, and one whose
+    freight is not stated, so its landed price cannot be computed."""
     op(da, "quote_void", quote_id=world["quote"]["id"], reason="re-quoted")
     return {
         "alpha": _quote(da, world, "Alpha chemicals", "4.60", incoterm="DDP Kano"),
@@ -78,9 +81,9 @@ def _cell(grid, quote_id, fact):
 
 
 class TestCheapestFirst:
-    def test_comparable_quotes_lead_lowest_landed_first_then_the_rest(self, client_in_programme, three):
+    def test_landed_prices_lead_lowest_first_then_the_rest(self, client_in_programme, three):
         grid = _grid(client_in_programme.get(_compare_url(three["world"])).content.decode())
-        # Zulu (4.10) before Alpha (4.60) though Alpha comes first by name; Mid is not comparable, last.
+        # Zulu (4.10) before Alpha (4.60) though Alpha comes first by name; Mid has no landed price, last.
         assert _row_ids(grid) == [three["zulu"]["id"], three["alpha"]["id"], three["mid"]["id"]]
 
     def test_the_lowest_is_marked_and_the_others_say_how_far_above(self, client_in_programme, three):
@@ -88,6 +91,8 @@ class TestCheapestFirst:
         assert 'data-testid="landed-lowest"' in _cell(grid, three["zulu"]["id"], "landed")
         assert "landed-lowest" not in _cell(grid, three["alpha"]["id"], "landed")
         assert re.search(r'<th scope="col" data-fact="vs_lowest"[^>]*>Above lowest<span[^>]*>per jerry can<', grid)
+        # The difference sorts as a figure: Alpha's is 0.50 above, the lowest's empty (sorts last).
+        assert 'data-sort-value="0.50"' in _cell(grid, three["alpha"]["id"], "vs_lowest")
         assert re.search(
             r">\s*\+ USD 0\.50\s*<", _cell(grid, three["alpha"]["id"], "vs_lowest").replace("</span>", "")
         )
@@ -97,7 +102,7 @@ class TestCheapestFirst:
         heads = re.findall(r'<th scope="col" data-fact="(\w+)"', grid)
         assert heads[:2] == ["landed", "vs_lowest"]
 
-    def test_one_comparable_quote_is_not_a_ranking(self, client_in_programme, da, world):
+    def test_one_landed_price_is_not_a_ranking(self, client_in_programme, da, world):
         op(da, "quote_void", quote_id=world["quote"]["id"], reason="re-quoted")
         only = _quote(da, world, "Alpha chemicals", "4.60")
         grid = _grid(client_in_programme.get(_compare_url(world)).content.decode())
@@ -110,10 +115,12 @@ class TestTheQuoteCellCarriesItsMoves:
         grid = _grid(client_in_programme.get(_compare_url(three["world"])).content.decode())
         heads = re.findall(r"<th scope=\"col\"[^>]*>([^<]+)", re.search(r"<thead>.*?</thead>", grid, re.S).group(0))
         assert "Specification" not in heads and "To do" not in heads and "Waiting on supplier" not in heads
-        # The not-comparable quote's moves sit in its own (pinned) cell, as chips by whose they are.
+        # The quote missing a fact carries its moves in its own (pinned) cell, as chips by whose they
+        # are -- and its Award link, like every live quote's: the buyer decides what is enough.
         pinned = re.search(rf'<th scope="row" data-quote-id="{three["mid"]["id"]}".*?</th>', grid, re.S).group(0)
         assert 'data-testid="grid-action"' in pinned
-        assert 'data-testid="grid-award"' not in pinned
+        assert 'data-testid="grid-award"' in pinned
+        assert "Comparable" not in pinned and "comparable" not in pinned
 
 
 class TestTheGridIsAsNarrowAsItsFigures:
@@ -135,17 +142,19 @@ class TestOneAwardBlock:
         body = client_in_programme.get(_compare_url(three["world"])).content.decode()
         assert body.count('data-testid="award-start"') == 1
         assert body.count('data-testid="award-open"') == 1
-        assert body.count("data-anyway") == 1
-        # It offers both comparable quotes, cheapest first, and starts on the cheapest.
+        # No verdict on the other quotes in the award's summary.
+        summary = re.search(r'<summary data-testid="award-open".*?</summary>', body, re.S).group(0)
+        assert "comparable" not in summary
+        # It offers every live quote, cheapest landed price first, and starts on the cheapest.
         form = re.search(r'<form [^>]*data-testid="award-form".*?</form>', body, re.S).group(0)
         options = re.findall(r'<option value="(\d+)"( selected)?>([^<]*)</option>', form)
-        assert [int(v) for v, _, _ in options] == [three["zulu"]["id"], three["alpha"]["id"]]
+        assert [int(v) for v, _, _ in options] == [three["zulu"]["id"], three["alpha"]["id"], three["mid"]["id"]]
         assert options[0][1] == " selected" and "USD 4.10" in options[0][2]
 
-    def test_each_comparable_row_links_to_the_block_with_its_quote(self, client_in_programme, three):
+    def test_each_row_links_to_the_block_with_its_quote(self, client_in_programme, three):
         grid = _grid(client_in_programme.get(_compare_url(three["world"])).content.decode())
         links = re.findall(r'data-testid="grid-award" data-quote-id="(\d+)" href="([^"]+)"', grid)
-        assert [int(q) for q, _ in links] == [three["zulu"]["id"], three["alpha"]["id"]]
+        assert [int(q) for q, _ in links] == [three["zulu"]["id"], three["alpha"]["id"], three["mid"]["id"]]
         assert all(href.endswith(f"award={q}#award") for q, href in links)
 
     def test_the_link_opens_the_block_on_that_quote(self, client_in_programme, three):
@@ -155,11 +164,28 @@ class TestOneAwardBlock:
         assert f'<option value="{three["alpha"]["id"]}" selected>' in body
         assert f'<option value="{three["zulu"]["id"]}" selected>' not in body
 
-    def test_a_quote_that_cannot_be_awarded_is_not_chosen(self, client_in_programme, three):
+    def test_a_quote_missing_facts_can_be_chosen(self, client_in_programme, three):
         url = _compare_url(three["world"]) + f"&award={three['mid']['id']}"
         body = client_in_programme.get(url).content.decode()
-        assert f'<option value="{three["mid"]["id"]}"' not in body
-        assert f'<option value="{three["zulu"]["id"]}" selected>' in body
+        assert f'<option value="{three["mid"]["id"]}" selected>' in body
+        assert f'<option value="{three["zulu"]["id"]}" selected>' not in body
+
+    def test_a_quote_missing_facts_is_awarded(self, client_in_programme, three):
+        client_in_programme.post(
+            _compare_url(three["world"]),
+            {"quote_id": three["mid"]["id"], "rationale": "fastest to deliver", "decided_on": TODAY.isoformat()},
+        )
+        assert Award.objects.filter(quote_id=three["mid"]["id"]).exists()
+
+    def test_an_awarded_quote_is_not_offered_again(self, client_in_programme, three):
+        client_in_programme.post(
+            _compare_url(three["world"]),
+            {"quote_id": three["mid"]["id"], "rationale": "fastest to deliver", "decided_on": TODAY.isoformat()},
+        )
+        body = client_in_programme.get(_compare_url(three["world"])).content.decode()
+        form = re.search(r'<form [^>]*data-testid="award-form".*?</form>', body, re.S).group(0)
+        offered = [int(v) for v in re.findall(r'<option value="(\d+)"', form)]
+        assert offered == [three["zulu"]["id"], three["alpha"]["id"]]
 
     def test_the_chosen_quote_is_awarded(self, client_in_programme, three):
         client_in_programme.post(
@@ -230,7 +256,7 @@ def test_the_missing_column_has_a_min_width_and_its_chips_wrap():
     from django.template.loader import get_template
 
     source = get_template("supply_chain/procurement/tender_detail.html").template.source
-    assert '<th scope="col" class="min-w-[15rem]">Missing</th>' in source
+    assert '<th scope="col" class="min-w-[15rem]" data-sort>Missing</th>' in source
     cell = re.search(
         r'<td class="min-w-\[15rem\]" data-testid="supplier-missing-cell">.*?data-testid="supplier-missing"',
         source,
@@ -246,7 +272,7 @@ def test_the_landed_price_and_its_difference_are_pinned_beside_the_supplier(clie
     """Editing a fact far right scrolls the grid; the landed price must not slide under the supplier."""
     grid = _grid(client_in_programme.get(_compare_url(three["world"])).content.decode())
     head = re.search(r"<thead>.*?</thead>", grid, re.S).group(0)
-    assert re.search(r'<th scope="col" class="sheet-pin">Supplier</th>', head)
+    assert re.search(r'<th scope="col" class="sheet-pin" data-sort>Supplier</th>', head)
     assert re.search(r'<th scope="col" data-fact="landed" class="[^"]*\bsheet-pin-2\b', head)
     assert re.search(r'<th scope="col" data-fact="vs_lowest" class="[^"]*\bsheet-pin-3\b', head)
     for quote in ("zulu", "alpha", "mid"):
@@ -271,3 +297,28 @@ def test_without_a_ranking_only_the_landed_price_is_pinned(client_in_programme, 
     grid = _grid(client_in_programme.get(_compare_url(world)).content.decode())
     assert re.search(r'data-fact="landed" class="[^"]*\bsheet-pin-2\b', grid)
     assert "sheet-pin-3" not in grid
+
+
+# ---- 5. data, not verdicts (2026-10-07) ------------------------------------------
+
+
+class TestLandedIsData:
+    def test_a_quote_without_a_landed_price_names_what_the_figure_needs(self, client_in_programme, three):
+        grid = _grid(client_in_programme.get(_compare_url(three["world"])).content.decode())
+        cell = _cell(grid, three["mid"]["id"], "landed")
+        needs = re.search(r'data-testid="landed-needs">([^<]*)<', cell)
+        assert needs is not None and needs.group(1) == "needs freight"
+        # Missing sorts last whichever way round: no figure to sort by.
+        assert 'data-sort-value=""' in cell
+        assert "comparable" not in grid.lower().replace("comparison-grid", "")
+
+    def test_the_landed_cell_sorts_by_its_figure(self, client_in_programme, three):
+        grid = _grid(client_in_programme.get(_compare_url(three["world"])).content.decode())
+        assert re.search(r'data-sort-value="4\.10"', _cell(grid, three["zulu"]["id"], "landed"))
+        assert re.search(r'data-sort-value="4\.60*"', _cell(grid, three["alpha"]["id"], "price"))
+
+    def test_the_count_is_data(self, client_in_programme, three):
+        body = client_in_programme.get(_compare_url(three["world"])).content.decode()
+        count = re.search(r'data-testid="quote-count"[^>]*>([^<]*)<', body)
+        assert count is not None and " ".join(count.group(1).split()) == "3 quotes · 2 with a landed price"
+        assert 'data-testid="comparable-count"' not in body

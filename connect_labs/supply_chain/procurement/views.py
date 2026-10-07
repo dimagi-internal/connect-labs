@@ -788,27 +788,6 @@ def missing_item(row) -> str:
     return f"{row.get('supplier_name') or 'A supplier'}: {', '.join(words)}"
 
 
-def award_anyway(comparison) -> str:
-    """ "2 other quotes can't be compared yet", while any quote is blocked on a fact; else "".
-
-    The award button sits on a comparable quote's row, so it names that
-    quote's own award and why it is early -- not another supplier's gaps,
-    which read as if THEY blocked this award. The gaps themselves stay in
-    the banner (and the button's tooltip, `award_anyway_detail`).
-    """
-    blocked = [row for row in (comparison or {}).get("blocked") or [] if row.get("blockers")]
-    if not blocked:
-        return ""
-    n = len(blocked)
-    return f"{n} other quote{'s' if n != 1 else ''} can't be compared yet"
-
-
-def award_anyway_detail(comparison) -> str:
-    """The blocked quotes' gaps, one sentence each: the award button's tooltip."""
-    blocked = [row for row in (comparison or {}).get("blocked") or [] if row.get("blockers")]
-    return ". ".join(sentence for sentence in (not_stated(row) for row in blocked) if sentence)
-
-
 # What the ranking compares, in words, for the banner: "can be compared on cost per course".
 _COMPARED_ON = {
     "usd_per_course": "cost per course",
@@ -1125,15 +1104,10 @@ class ComparisonView(_Base):
         context["ranked_in_table"] = any(c.get("key") == context["ranked_by_key"] for c in context["table_columns"])
         # One comparable offer is not a ranking: no "#", no "ranked by".
         context["single_offer"] = len((comparison or {}).get("comparable") or []) == 1
-        context["award_anyway"] = award_anyway(comparison)
-        context["award_anyway_detail"] = award_anyway_detail(comparison)
-        context["award_incomplete_count"] = len(
-            [row for row in (comparison or {}).get("blocked") or [] if row.get("blockers")]
-        )
         # What is still open on the tender, as chips on the award form: an early award is
         # allowed, and these are recorded with it (moves.open_at_decision).
         context["award_open_chips"] = []
-        if comparison and comparison.get("comparable") and not getattr(self.request, "supply_as_of", None):
+        if comparison and comparison.get("all_rows") and not getattr(self.request, "supply_as_of", None):
             from connect_labs.supply_chain.models import Tender as _Tender
             from connect_labs.supply_chain.moves import open_at_decision, open_at_decision_chips
 
@@ -1189,9 +1163,24 @@ class ComparisonView(_Base):
                 waiver_on_file=context.get("waiver_on_file", True),
             )
             context["grid_blocked_by_terms"] = [q["name"] for q in context["grid"]["quotes"] if q["blocked_by_terms"]]
-            # ONE award block for the tender: a quote's Award link (?award=<id>) opens it with that
-            # quote chosen; otherwise it starts on the cheapest quote that can be awarded.
-            awardable = [q["quote_id"] for q in context["grid"]["quotes"] if q["awardable"]]
+            # ONE award block for the tender, offering every live quote not already awarded: the grid's,
+            # cheapest landed price first, then any offer holding different contents, listed below the
+            # grid. Whether a quote's facts are enough to award on is the buyer's call, not a gate here.
+            # A quote's Award link (?award=<id>) opens it with that quote chosen; otherwise the first.
+            context["award_options"] = [
+                {"quote_id": q["quote_id"], "name": q["name"], "item": q["item"], "landed": q.get("landed", "")}
+                for q in context["grid"]["quotes"]
+                if q["awardable"]
+            ] + [
+                {
+                    "quote_id": row["quote_id"],
+                    "name": row.get("supplier_name") or "",
+                    "item": row.get("item_name") or "",
+                }
+                for row in comparison.get("not_comparable") or []
+                if row.get("quote_id") not in context["awarded_quote_ids"]
+            ]
+            awardable = [q["quote_id"] for q in context["award_options"]]
             requested = self.request.POST.get("quote_id") or self.request.GET.get("award")
             try:
                 requested = int(requested)

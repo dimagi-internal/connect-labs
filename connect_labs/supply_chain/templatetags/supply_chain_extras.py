@@ -154,7 +154,7 @@ def plain_reason(reason, row):
 # point of section 22 is that the domain states facts and a client words them.
 # A label is the mildest possible wording, and even that belongs to a client.
 CHECK_LABELS = {
-    "quote_not_comparable": "Quote cannot be compared",
+    "quote_not_comparable": "Quote missing facts",
     "contract_cost_unconfirmed": "Landed cost cannot be computed",
     "contract_reference_unknown": "No purchase-order reference",
     "duty_relief_unevidenced": "Duty relief claimed, not evidenced",
@@ -248,6 +248,23 @@ def money(value):
     different per-unit prices never read the same.
     """
     return money_digits(value)
+
+
+@register.filter
+def sort_key(value) -> str:
+    """What a sheet's cell sorts by (data-sort-value, read by sheet_sort.js): a date as ISO, a
+    figure as its digits, "" for nothing -- which sorts last. A date may come as a date, a datetime
+    or the ISO string an operation hands a screen; all three sort the same.
+    """
+    from datetime import date, datetime
+
+    if value in (None, ""):
+        return ""
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value)
 
 
 @register.filter
@@ -851,34 +868,37 @@ def _open_and_awarded(evaluation):
 
 
 def evaluation_value(evaluation):
-    """The Evaluation headline: quotes comparable of quotes received, on rounds still being evaluated.
+    """The Evaluation headline: quotes with a landed price of quotes received, on rounds still being evaluated.
 
-    An awarded tender is not added in: "1 of 4" mixed one open tender's
-    comparable count with another tender's awarded quote, and matched neither
-    tender's own comparison page. With one open tender this is that page's "1 of 3".
+    A count of a computed figure, not a verdict on which quotes may be compared. An awarded
+    tender is not added in: "1 of 4" mixed one open tender's count with another tender's awarded
+    quote, and matched neither tender's own comparison page.
     """
     open_rounds, awarded = _open_and_awarded(evaluation)
     if not open_rounds and not awarded:
-        return f"{evaluation.get('comparable', 0)} of {evaluation.get('of', 0)}"
+        return f"{evaluation.get('priced', 0)} of {evaluation.get('of', 0)}"
     if not open_rounds:
         return 0
-    return f"{sum(p['comparable'] for p in open_rounds)} of {sum(p['of'] for p in open_rounds)}"
+    return f"{sum(p.get('priced', 0) for p in open_rounds)} of {sum(p['of'] for p in open_rounds)}"
 
 
 def evaluation_words(evaluation) -> str:
     """The Evaluation cell's caption: what the headline counts, round by round, and awarded tenders apart.
 
-    "quotes comparable on RUTF round 2 · awarded: RUTF round 1". Several open
-    rounds are broken down one by one ("RUTF round 3: 0 of 2 · RUTF round 2:
-    1 of 3 quotes comparable"), each reading back to its own comparison page.
+    "quotes with a landed price on RUTF round 2 · awarded: RUTF round 1". Several open
+    rounds are broken down one by one ("RUTF round 3: 0 of 2 · RUTF round 2: 1 of 3
+    quotes with a landed price"), each reading back to its own comparison page.
     """
     open_rounds, awarded = _open_and_awarded(evaluation)
     if not open_rounds and not awarded:
-        return "quotes comparable"
+        return "quotes with a landed price"
     if len(open_rounds) == 1:
-        head = f"quotes comparable on {open_rounds[0]['label']}"
+        head = f"quotes with a landed price on {open_rounds[0]['label']}"
     elif open_rounds:
-        head = " · ".join(f"{p['label']}: {p['comparable']} of {p['of']}" for p in open_rounds) + " quotes comparable"
+        head = (
+            " · ".join(f"{p['label']}: {p.get('priced', 0)} of {p['of']}" for p in open_rounds)
+            + " quotes with a landed price"
+        )
     else:
         head = "no tender open for evaluation"
     if awarded:
@@ -924,7 +944,7 @@ def source_stages(source):
             "Award",
             source["award"]["count"],
             (
-                f"{source['award']['provisional']} provisional — chosen before every quote could be compared"
+                f"{source['award']['provisional']} provisional — chosen while quotes still lacked facts"
                 if source["award"]["provisional"]
                 else None
             ),

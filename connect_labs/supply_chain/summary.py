@@ -46,13 +46,15 @@ def _source(access, commodity=None):
     if commodity is not None:
         quotes = quotes.filter(commodity=commodity)
 
-    comparable = total = 0
+    # `comparable` is the comparison service's own partition, kept for API callers; the screens
+    # count `priced` -- quotes a landed price could be computed for -- which is data, not a verdict.
+    comparable = total = priced = 0
     provisional = False
     # Which tenders the evaluation counts across, so "2 of 4 comparable" can
     # say it is the program's total and not one tender's.
     evaluated = set()
     # Each tender's own count, so the program's total can be read back to the
-    # "1 of 3" one tender's comparison page says: {tender_pk: [label, comparable, of, awarded]}.
+    # count one tender's comparison page says: {tender_pk: [label, comparable, of, awarded, priced]}.
     by_tender = {}
     contracted = set(tenders.filter(contracts__isnull=False).values_list("pk", flat=True))
     # An awarded tender was still evaluated: leaving it out read "Evaluation 0
@@ -76,13 +78,15 @@ def _source(access, commodity=None):
                 items_by_id=access.items_by_id(),
             )
             comparable += comparison.comparable_count
+            priced += comparison.priced_count
             total += comparison.total_count
             evaluated.add(tender.pk)
             entry = by_tender.setdefault(
-                tender.pk, [tender.label or f"tender {tender.pk}", 0, 0, tender.status == "awarded"]
+                tender.pk, [tender.label or f"tender {tender.pk}", 0, 0, tender.status == "awarded", 0]
             )
             entry[1] += comparison.comparable_count
             entry[2] += comparison.total_count
+            entry[4] += comparison.priced_count
             # An award that was ordered (a contract signed on it) is no longer
             # provisional, as the overview's own tender row says.
             provisional = provisional or (comparison.provisional and tender.pk not in contracted)
@@ -115,13 +119,14 @@ def _source(access, commodity=None):
         },
         "evaluation": {
             "comparable": comparable,
+            "priced": priced,
             "of": total,
             "provisional": provisional,
             "tenders": len(evaluated),
             # Newest tender first: "RUTF round 2: 1 of 3 · RUTF round 1: awarded".
             "by_tender": [
-                {"label": label, "comparable": c, "of": of, "awarded": awarded}
-                for _, (label, c, of, awarded) in sorted(by_tender.items(), reverse=True)
+                {"label": label, "comparable": c, "of": of, "awarded": awarded, "priced": p}
+                for _, (label, c, of, awarded, p) in sorted(by_tender.items(), reverse=True)
             ],
         },
         "award": {

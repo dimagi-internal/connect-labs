@@ -30,35 +30,44 @@ class TestTheOrderRow:
 
 class TestTheEvaluationCaption:
     """Finding #3/#19 (DDD unanswered-round 2026-10-03): the headline counts open rounds only,
-    says what it counts, and lists awarded rounds apart."""
+    says what it counts, and lists awarded rounds apart. Since 2026-10-07 it counts quotes with a
+    landed price -- data -- not the comparison's verdict on which are comparable: each round below
+    carries a different `comparable`, so reading it instead would change every figure."""
 
     def test_one_open_round_reads_as_its_own_comparison_page(self):
-        evaluation = {"provisional": True, "by_tender": [{"label": "R", "comparable": 1, "of": 3, "awarded": False}]}
-        assert evaluation_value(evaluation) == "1 of 3"
-        assert evaluation_words(evaluation) == "quotes comparable on R"
+        evaluation = {
+            "provisional": True,
+            "by_tender": [{"label": "R", "comparable": 0, "priced": 2, "of": 3, "awarded": False}],
+        }
+        assert evaluation_value(evaluation) == "2 of 3"
+        assert evaluation_words(evaluation) == "quotes with a landed price on R"
 
     def test_an_awarded_round_is_listed_apart_not_added_in(self):
         evaluation = {
             "provisional": True,
             "by_tender": [
-                {"label": "RUTF round 2", "comparable": 1, "of": 3, "awarded": False},
-                {"label": "RUTF round 1", "comparable": 1, "of": 1, "awarded": True},
+                {"label": "RUTF round 2", "comparable": 0, "priced": 2, "of": 3, "awarded": False},
+                {"label": "RUTF round 1", "comparable": 1, "priced": 1, "of": 1, "awarded": True},
             ],
         }
-        assert evaluation_value(evaluation) == "1 of 3"
+        assert evaluation_value(evaluation) == "2 of 3"
         words = evaluation_words(evaluation)
-        assert words == "quotes comparable on RUTF round 2 · awarded: RUTF round 1"
+        assert words == "quotes with a landed price on RUTF round 2 · awarded: RUTF round 1"
         assert "provisional" not in words
 
     def test_several_open_rounds_read_one_by_one(self):
         evaluation = {
             "by_tender": [
-                {"label": "R3", "comparable": 0, "of": 2, "awarded": False},
-                {"label": "R2", "comparable": 1, "of": 3, "awarded": False},
+                {"label": "R3", "comparable": 0, "priced": 1, "of": 2, "awarded": False},
+                {"label": "R2", "comparable": 0, "priced": 3, "of": 3, "awarded": False},
             ]
         }
-        assert evaluation_value(evaluation) == "1 of 5"
-        assert evaluation_words(evaluation) == "R3: 0 of 2 · R2: 1 of 3 quotes comparable"
+        assert evaluation_value(evaluation) == "4 of 5"
+        assert evaluation_words(evaluation) == "R3: 1 of 2 · R2: 3 of 3 quotes with a landed price"
+
+    def test_no_round_yet_reads_the_program_totals(self):
+        assert evaluation_value({"comparable": 0, "priced": 2, "of": 4}) == "2 of 4"
+        assert evaluation_words({"comparable": 0, "priced": 2, "of": 4}) == "quotes with a landed price"
 
 
 class TestTheQuotationCaption:
