@@ -215,3 +215,9 @@
 {% endif %}
 </div>
 {% endblock %}
+
+{% comment %}Ask an AI about these quotes: the canopy agent panel, reading the tables' data as the visitor (procurement/views.py _quotes_panel).{% endcomment %}
+{% block inline_javascript %}
+  {{ block.super }}
+  {% if canopy_panel %}{% include "canopy_host/panel.html" %}{% endif %}
+{% endblock %}
