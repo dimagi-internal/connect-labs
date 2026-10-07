@@ -300,6 +300,74 @@ def test_generate_target_opportunity_id_leaves_existing_twin_untouched(tmp_path,
     assert untouched.program_id == 10110
 
 
+def test_clone_this_makes_a_new_clone_even_when_the_source_has_one(settings, monkeypatch):
+    """ "Clone 2230" when 2230 already had a clone came back with an empty program and no clone.
+
+    MUTATED: new_opportunities dropped from generate_cohort's call -- the old clone came back
+    skipped and nothing was generated -- red.
+    """
+    from connect_labs.labs.synthetic.bundle import GDriveBundleStore
+    from connect_labs.labs.synthetic.cohort import CohortSpec
+    from connect_labs.labs.synthetic.tests.test_bundle import _FakeDrive
+
+    settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent"
+    monkeypatch.setattr(clone_from_prod, "_fetch_endpoint", lambda *a, **k: None)
+    SyntheticOpportunity.objects.create(
+        opportunity_id=10501, program_id=10500, labs_only=True, enabled=True, cloned_from_opportunity_id=523
+    )
+    drive = _FakeDrive()
+    run_folder = drive.create_folder("run", "parent")
+    GDriveBundleStore(drive, run_folder).write(
+        523,
+        manifest_yaml=_manifest(523),
+        app_structure={"learn_app": None, "deliver_app": {"modules": []}},
+        opportunity={"id": 523, "name": "KMC-523"},
+    )
+    spec = CohortSpec(
+        opportunity_ids=[523],
+        program_id=10600,
+        program_name="A new clone",
+        org_name="Labs Synthetic",
+        bundle_root=f"gdrive:{run_folder}",
+    )
+
+    _, results = clone_from_prod.generate_cohort(spec, drive=drive, new_opportunities=True)
+
+    assert [r.skipped for r in results] == [False]
+    fresh = SyntheticOpportunity.objects.get(opportunity_id=results[0].opportunity_id)
+    assert fresh.opportunity_id not in (10501, 10600) and fresh.program_id == 10600
+    assert fresh.cloned_from_opportunity_id == 523
+    assert SyntheticOpportunity.objects.get(opportunity_id=10501).program_id == 10500
+
+
+def test_the_clone_job_always_asks_for_new_opportunities(monkeypatch, django_user_model):
+    from connect_labs.labs.synthetic import clone_from_prod as module
+    from connect_labs.labs.synthetic import tasks
+
+    seen = {}
+
+    def _generate(spec, **kwargs):
+        seen.update(kwargs)
+        return spec, []
+
+    monkeypatch.setattr(module, "profile_cohort", lambda spec, **k: spec)
+    monkeypatch.setattr(module, "generate_cohort", _generate)
+    monkeypatch.setattr("connect_labs.labs.synthetic.gdrive.DriveClient", lambda: object())
+    monkeypatch.setattr(tasks, "_progress_reporter", lambda task, **k: (lambda *a, **kw: None))
+    user = django_user_model.objects.create_user(username="cloner", password="x")
+
+    tasks.run_synthetic_clone_opp.run(
+        source_opportunity_ids=[523],
+        program_name="A new clone",
+        case_timelines=True,
+        oauth_token="placeholder",
+        user_id=user.pk,
+        restricted=False,
+    )
+
+    assert seen["new_opportunities"] is True
+
+
 def test_generate_cohort_uses_spec_program_id(settings, monkeypatch):
     """generate_cohort registers all opps under the spec's program_id (not auto-allocated)."""
     from connect_labs.labs.synthetic.bundle import GDriveBundleStore
