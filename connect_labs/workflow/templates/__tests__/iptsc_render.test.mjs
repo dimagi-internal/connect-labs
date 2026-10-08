@@ -528,42 +528,90 @@ test('a worker flag names each check with its value', () => {
   );
 });
 
-test('duplicates: same name, same age, at the same school', () => {
-  const dupsOf = (extra) => {
+test('three duplicate checks: name; name + age; name + age + phone, all at one school', () => {
+  const run = (extra) => {
     const b = M.iptBuildChildren(ROWS.concat(extra), [], OPTS);
     const s = M.iptClusterSchools(b.children, 250);
-    return M.iptAuthenticity(
-      b.children,
-      OPTS,
-      s.byChild,
-    ).duplicates.extra.childIds.sort();
+    return M.iptAuthenticity(b.children, OPTS, s.byChild);
   };
-  // Same name, same age (9), same school, differently cased: one child twice
-  assert.deepEqual(dupsOf([day1('A2', MON, { child_name: 'child a' })]), [
-    'A',
-    'A2',
+  const ids = (a, id) => a[id].extra.childIds.slice().sort();
+  // A2: same name (other case) and age as A, same phone -> all three checks
+  // A3: same name as A, different age, same phone       -> name only
+  const a = run([
+    day1('A2', MON, { child_name: 'child a', caregiver_phone: '08031234567' }),
+    day1('A3', MON, {
+      child_name: 'Child A',
+      age_years: '11',
+      caregiver_phone: '08031234567',
+    }),
+    day1('A4', MON, {
+      child_name: 'CHILD A',
+      caregiver_phone: '+234 803 123 4567',
+    }),
   ]);
-  // Same name and school, different age: two classmates
-  assert.deepEqual(
-    dupsOf([day1('A2', MON, { child_name: 'Child A', age_years: '11' })]),
-    [],
+  assert.deepEqual(ids(a, 'dup_name'), ['A', 'A2', 'A3', 'A4']);
+  assert.deepEqual(ids(a, 'dup_name_age'), ['A', 'A2', 'A4']);
+  // A has no phone, so only A2 and A4 (+234 normalised to 0...) match on phone
+  assert.deepEqual(ids(a, 'dup_name_age_phone'), ['A2', 'A4']);
+  // total flagged, and in brackets the unique suspected children (groups)
+  assert.equal(a.dup_name.value, 4);
+  assert.equal(a.dup_name.extra.groups, 1);
+  const spec = M.IPT_AUTH_CHECKS.find((c) => c.id === 'dup_name');
+  assert.equal(M.iptCheckValueText(spec, a.dup_name), '4 (1 unique)');
+  // another school never matches; no recorded age is not compared on age
+  const other = run([
+    day1('A2', MON, {
+      child_name: 'Child A',
+      school: 'Other Primary',
+      gps_raw: '10.2500 11.3500 300 6',
+    }),
+    day1('A5', MON, { child_name: 'Child A', age_years: '' }),
+  ]);
+  assert.deepEqual(ids(other, 'dup_name'), ['A', 'A5']);
+  assert.deepEqual(ids(other, 'dup_name_age'), []);
+  // two separate pairs are two unique children
+  const two = run([
+    day1('A2', MON, { child_name: 'Child A' }),
+    day1('C2', MON, { child_name: 'Child C' }),
+  ]);
+  assert.equal(two.dup_name_age.value, 4);
+  assert.equal(two.dup_name_age.extra.groups, 2);
+  // name-only never raises a worker's flag; name+age does
+  assert.equal(
+    M.IPT_AUTH_CHECKS.find((c) => c.id === 'dup_name').contributes,
+    false,
   );
-  // Same name and age, another school
-  assert.deepEqual(
-    dupsOf([
-      day1('A2', MON, {
-        child_name: 'Child A',
-        school: 'Other Primary',
-        gps_raw: '10.2500 11.3500 300 6',
-      }),
-    ]),
-    [],
+  assert.ok(
+    M.iptAuthFlag(two).reasons.some((r) =>
+      r.startsWith(
+        'Possible duplicates: same name, age and school: 4 (2 unique)',
+      ),
+    ),
   );
-  // No recorded age: cannot be compared
-  assert.deepEqual(
-    dupsOf([day1('A2', MON, { child_name: 'Child A', age_years: '' })]),
-    [],
+});
+
+test('the consent photo is found by filename, else by question id', () => {
+  const images = [
+    { blob_id: 'b-dose', name: 'dose.jpg', question_id: 'dosing/dose_photo' },
+    {
+      blob_id: 'b-consent',
+      name: 'consent.jpg',
+      question_id: 'consent/consent_photo',
+    },
+  ];
+  assert.equal(M.iptConsentBlob(images, 'consent.jpg'), 'b-consent');
+  assert.equal(M.iptConsentBlob(images, 'renamed.jpg'), 'b-consent');
+  assert.equal(M.iptConsentBlob([images[0]], 'consent.jpg'), null);
+  assert.equal(M.iptConsentBlob(undefined, 'x'), null);
+});
+
+test('the Connect visit link needs every piece', () => {
+  assert.equal(
+    M.iptConnectVisitUrl('org-slug', 2307, 'u1', 'v9'),
+    'https://connect.dimagi.com/a/org-slug/opportunity/2307/user_visits/?user=u1&visit_id=v9',
   );
+  assert.equal(M.iptConnectVisitUrl('', 2307, 'u1', 'v9'), null);
+  assert.equal(M.iptConnectVisitUrl('org-slug', 2307, '', 'v9'), null);
 });
 
 test('compliance rows', () => {
@@ -624,6 +672,7 @@ test('every tab renders, with data and with none', () => {
     'safety',
     'protocol',
     'authenticity',
+    'duplicates',
     'workers',
     'definitions',
   ];
@@ -668,5 +717,66 @@ test('the child timeline renders for every child', () => {
       onClose() {},
     });
     assert.ok(renderTree(el) > 10);
+  }
+});
+
+test('the duplicate review renders rows of photo cards in every photo state', () => {
+  const m = load('?tab=duplicates&dup=dup_name');
+  const rows = ROWS.concat([
+    day1('A2', MON, { child_name: 'child a', id: 'v-a2' }),
+  ]);
+  const props = {
+    definition: { name: 'IPTsc', config: {} },
+    instance: { id: 1, opportunity_id: 2307, state: {} },
+    workers: [{ username: 'flw_a', name: 'Worker A' }],
+    pipelines: {
+      doses: { rows, metadata: {} },
+      child_cases: { rows: [], metadata: {} },
+      ae_log: { rows: [], metadata: {} },
+    },
+    links: {},
+    actions: {},
+    onUpdateState: () => {},
+  };
+  const tree = m.WorkflowUI(props);
+  const text = [];
+  (function walk(n) {
+    if (n === null || n === undefined || typeof n === 'boolean') return;
+    if (Array.isArray(n)) return n.forEach(walk);
+    if (typeof n !== 'object') return text.push(String(n));
+    if (typeof n.type === 'function') return walk(n.type(n.props));
+    if (n.type === 'img') text.push('[img]');
+    walk(n.props && n.props.children);
+  })(tree);
+  const flat = text.join('');
+  assert.ok(flat.includes('2 registrations'), 'one group of two registrations');
+  assert.ok(
+    flat.includes('Open visit in Connect'),
+    'each card links to its visit',
+  );
+  assert.ok(
+    flat.includes('Loading photo'),
+    'photos show as loading until fetched',
+  );
+  const b = m.iptBuildChildren(rows, [], OPTS);
+  const child = b.children.find((c) => c.id === 'A2');
+  assert.equal(child.visitId, 'v-a2');
+  for (const photo of [
+    undefined,
+    { status: 'loading' },
+    { status: 'ok', blob: 'b1' },
+    { status: 'none' },
+    { status: 'error' },
+  ]) {
+    const el = m.React.createElement(m.DupPhotoCard, {
+      child,
+      photo,
+      oppId: 2307,
+      schoolLabel: 'Deba CPS',
+      workerName: 'Worker A',
+      visitUrl: '/audit/visits/v-a2/',
+      onOpenChild() {},
+    });
+    assert.ok(renderTree(el) > 5);
   }
 });
