@@ -8,7 +8,9 @@ cannot be altered, and the PNG is drawn when the link is fetched. Nothing is sto
 
 The link expires after ``MAX_AGE`` (a worker may reply days later) and is fetched by
 Open Chat Studio with a ``coach-images`` token (``mcp/token_scopes.COACH_IMAGES``),
-checked by ``coach_image_views.coach_image``.
+checked by ``coach_image_views.coach_image``. A signed-in Labs user may also open it
+in a browser -- to see the picture before it is sent -- when the link names an
+opportunity they can see.
 
 The topics are the briefing's own, after ``fit_briefing`` dropped what did not fit:
 ``payload_from_briefing`` reads them back from the briefing text the coach receives,
@@ -148,12 +150,19 @@ def caption(payload: dict) -> str:
     return f"A bar chart of {whose} figures for: {labels}."
 
 
-def attachment(briefing: str) -> dict | None:
+def attachment(briefing: str, opportunity_id: int | None = None) -> dict | None:
     """``{"url", "caption"}`` for a briefing's picture, or None when there is none
-    to give (not a briefing, no topics, or no public origin to link from)."""
+    to give (not a briefing, no topics, or no public origin to link from).
+
+    ``opportunity_id`` is the worker's opportunity. Signed into the link, it is what
+    lets a signed-in Labs user who can see that opportunity open the picture in a
+    browser (``coach_image_views``); a link without one opens for Open Chat Studio's
+    token only."""
     payload = payload_from_briefing(briefing)
     if payload is None:
         return None
+    if opportunity_id is not None:
+        payload["opportunity_id"] = int(opportunity_id)
     url = image_url(payload)
     if url is None:
         return None
