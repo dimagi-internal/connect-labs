@@ -34,7 +34,7 @@ tutorials' manifest points at (`emod_malaria.bootstrap`) on first run.
 ```bash
 git clone --depth 1 https://github.com/EMOD-Hub/emodpy-malaria.git
 cd emodpy-malaria && python3 -m venv .venv && . .venv/bin/activate && pip install -e .
-docker pull --platform linux/amd64 ghcr.io/emod-hub/emod-ubuntu-runtime:latest
+docker pull --platform linux/amd64 ghcr.io/emod-hub/emod-ubuntu-runtime@sha256:91933ca254ac9c0dd49deb6ba9b48c59b312c2baae2970e547b6a6f5b896fbbd   # the digest the grid ran on
 cp /path/to/connect-labs/tools/pmc_emod/pmc_sweep.py tutorials/
 cd tutorials   # pmc_sweep.py imports the tutorials' manifest.py
 PMC_POP=5000 PMC_SEEDS=0,1,2,3,4,5 python pmc_sweep.py
