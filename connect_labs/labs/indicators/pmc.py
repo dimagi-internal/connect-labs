@@ -49,18 +49,32 @@ FIT_TOLERANCE_PTS = 10.0
 SEASONALITY_TOLERANCE_PTS = 8.0
 
 #: The indicators the state table shows, in column order.
-STATE_INDICATORS = ("malaria_prevalence", "rain_wettest_quarter", "zero_dose", "dpt3_vaccination", "pop_u5")
+STATE_INDICATORS = (
+    "malaria_prevalence",
+    "malaria_incidence",
+    "rain_wettest_quarter",
+    "zero_dose",
+    "dpt3_vaccination",
+    "pop_u5",
+)
+
+#: Fits whose states are ranked. A state more (or less) seasonal than the modelled
+#: setting is the wrong intervention or the wrong model, so it is never ranked; a
+#: state whose prevalence differs is ranked at lower confidence.
+RANKED_FITS = ("near", "prevalence_differs")
 
 CAVEATS = (
     "One simulated setting, fitted to no real state: treat every figure as illustrative.",
     "State prevalence is DHS 2021 (rapid test, children 6-59 months); the model's is PfPR in 2-5 year olds. "
     "They are close but not the same measure.",
-    "Per-state projections assume the state behaves like the modelled setting, and are shown only where its "
-    "prevalence is within 10 points and its rainfall seasonality within 8 points of the model's. Only a "
+    "States are projected only where their rainfall seasonality is within 8 points of the model's; where "
+    "prevalence also differs by more than 10 points the projection is lower confidence. Only a "
     "state-calibrated EMOD run can say how a schedule performs there.",
     "The Sahel north is far more seasonal than the modelled setting; there seasonal malaria chemoprevention "
     "(SMC), not PMC, is the standard.",
     "Children 3-24 months are estimated as 21/60 of the under-5 population.",
+    "States are ranked by applying each schedule's EMOD effect to the state's own malaria incidence (MAP 2024), "
+    "relative to the states that match the model. An approximation until EMOD is fitted per state.",
 )
 
 
@@ -165,16 +179,38 @@ def approx(n: float, figures: int = 2) -> int:
     return int(float(f"{n:.{figures}g}"))
 
 
-def project(children: float | None, schedule: dict, per_dose: float) -> dict | None:
-    """One year of a schedule in a population of this size, IF it behaved like the modelled setting."""
+def project(children: float | None, schedule: dict, per_dose: float, burden: float = 1.0) -> dict | None:
+    """One year of a schedule in a population of this size.
+
+    ``burden`` scales the modelled setting's malaria to this state's own: the
+    state's MAP incidence over the reference incidence (see ``reference_incidence``).
+    The schedule's RELATIVE effect is EMOD's; the absolute number of cases it
+    averts follows the state's burden, and so does the cost per case averted.
+    Doses do not depend on malaria, so they do not scale.
+    """
     if not children:
         return None
     doses = children * schedule["doses_per_child_per_year"]
+    cases = children * schedule["cases_averted_per_1000_children_per_year"] / 1000 * burden
+    spend = doses * per_dose
     return {
-        "cases_averted_per_year": approx(children * schedule["cases_averted_per_1000_children_per_year"] / 1000),
+        "cases_averted_per_year": approx(cases),
         "doses_per_year": approx(doses),
-        "spend_per_year": approx(doses * per_dose),
+        "spend_per_year": approx(spend),
+        "cost_per_case_averted": round(spend / cases, 2) if cases else None,
     }
+
+
+def reference_incidence(rows: list[dict]) -> float | None:
+    """The malaria incidence the modelled setting stands for.
+
+    EMOD's setting is fitted to no state, so its burden is pinned to the states
+    that match it in both prevalence and seasonality: their mean MAP incidence.
+    A state's burden factor is then its own incidence over this. Recomputed from
+    live data, never hand-maintained.
+    """
+    near = [r["malaria_incidence"] for r in rows if r["fit"] == "near" and r["malaria_incidence"]]
+    return sum(near) / len(near) if near else None
 
 
 def state_rows(schedule_code: str, costs: dict) -> list[dict]:
@@ -190,7 +226,7 @@ def state_rows(schedule_code: str, costs: dict) -> list[dict]:
 
     units = list(boundary_set.owned().filter(iso_code=ISO, admin_level=1).order_by("name"))
     bulk = BulkResolver(units)
-    rows = []
+    rows, children_of = [], {}
     for b in units:
         values, sources = {}, {}
         for code in STATE_INDICATORS:
@@ -207,14 +243,38 @@ def state_rows(schedule_code: str, costs: dict) -> list[dict]:
                 "pop_u5": round(values["pop_u5"]) if values["pop_u5"] else None,
                 "children_3_24m": round(children) if children else None,
                 "fit": fit,
-                # Only where the state looks like the modelled setting. Projecting a 44%
-                # setting's incidence onto a 4% state would invent most of the cases.
-                "projection": project(children, schedule, per_dose) if fit == "near" else None,
                 "sources": sources,
             }
         )
-    # Highest burden first: the shortlist a proposal starts from.
-    rows.sort(key=lambda r: -(r["malaria_prevalence"] or -1))
+        children_of[b.pk] = children
+
+    ref = reference_incidence(rows)
+    for r in rows:
+        r["burden_factor"] = None
+        r["projection"] = None
+        r["confidence"] = None
+        if r["fit"] not in RANKED_FITS or not ref:
+            continue
+        # No incidence of its own: the model's burden as is, at lower confidence.
+        factor = (r["malaria_incidence"] / ref) if r["malaria_incidence"] else 1.0
+        r["burden_factor"] = round(factor, 2)
+        r["projection"] = project(children_of[r["pk"]], schedule, per_dose, factor)
+        r["confidence"] = "model fit" if r["fit"] == "near" and r["malaria_incidence"] else "lower"
+
+    # Most cost-effective first; the states the model cannot rank follow, highest
+    # prevalence first, so the shortlist and the exclusions read top to bottom.
+    def order(r):
+        cost = (r["projection"] or {}).get("cost_per_case_averted")
+        return (0, cost) if cost is not None else (1, -(r["malaria_prevalence"] or -1))
+
+    rows.sort(key=order)
+    rank = 0
+    for r in rows:
+        if r["projection"] and r["projection"]["cost_per_case_averted"] is not None:
+            rank += 1
+            r["rank"] = rank
+        else:
+            r["rank"] = None
     return rows
 
 
