@@ -360,11 +360,11 @@ class TestResupply:
 
     def test_a_short_history_refuses_to_project_a_monthly_rate(self, rutf, specified_item, store, worker):
         _move("distribution", rutf, 50, "carton", item=specified_item, frm=store, to=worker)
-        self._dispense_daily(rutf, specified_item, worker, days=14, per_day=20)
+        self._dispense_daily(rutf, specified_item, worker, days=5, per_day=20)
 
         amc = resupply.average_monthly_consumption(PROGRAM, worker, item=specified_item, as_of=TODAY)
         assert isinstance(amc, Unconfirmed)
-        assert "14 days" in amc.reasons[0]
+        assert "5 days" in amc.reasons[0]
 
     def test_ninety_days_of_dispensing_gives_a_rate_and_a_plan(self, rutf, specified_item, store, worker):
         _move(

@@ -34,8 +34,10 @@ paragraphs of method above a one-row table.{% endcomment %}
 <details class="text-xs text-gray-600 mb-4">
 <summary class="cursor-pointer text-gray-700">How cover is measured</summary>
 <p class="mt-1">
-  Cover is measured against each point's own minimum and maximum months of
-  stock, so "below its band" means below what this programme set. Goods in
+  Cover is days of stock: what is on hand, at the rate this point has been
+  using it (from {{ min_rate_days }} days of use on). It is measured against each
+  point's own minimum and maximum, so "below its band" means below what this
+  programme set. Goods in
   transit are excluded: they are real, but they are not cover.
   Each point is topped up to its maximum; below its minimum it is overdue.
   A point with none above it in the network is restocked by reordering from its supplier.
@@ -95,10 +97,10 @@ paragraphs of method above a one-row table.{% endcomment %}
         <th class="text-left px-4 py-2">Supply point</th>
         <th class="text-left px-4 py-2">Ledger says</th>
         <th class="text-left px-4 py-2" title="What somebody counted on the shelf, kept beside the ledger">Last count</th>
-        <th class="text-left px-4 py-2" title="What a store dispenses; for a store that only releases to others, what it releases">Demand / month</th>
-        <th class="text-left px-4 py-2">Months of stock</th>
+        <th class="text-left px-4 py-2" title="What a store dispenses; for a store that only releases to others, what it releases">Demand / day</th>
+        <th class="text-left px-4 py-2">Days of stock</th>
         <th class="text-left px-4 py-2">To reach its maximum</th>
-        <th class="text-left px-4 py-2" title="Against the minimum and maximum months of stock this programme set for the point">Enough stock?</th>
+        <th class="text-left px-4 py-2" title="Against the minimum and maximum days of stock this programme set for the point">Enough stock?</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-gray-100">
@@ -175,8 +177,8 @@ paragraphs of method above a one-row table.{% endcomment %}
           <td colspan="4" class="px-4 py-2.5 text-gray-600">{% if point.stocked_out %}<span class="font-semibold text-orange-700">Stocked out</span> — nothing on hand; no consumption yet to measure cover against{% else %}No consumption yet — cover can't be computed{% endif %}</td>
           {% else %}
           <td class="px-4 py-2.5 tabular-nums text-gray-600">
-            {{ point.amc|demand_text }}{% if point.amc.amount %} <span class="text-xs text-gray-600">{% if point.amc_basis == "releases" %}releases{% else %}dispensed{% endif %} a month</span>{% endif %}
-            {% if point.amc_in_display_unit %}<div class="text-xs text-gray-600">(= {{ point.amc_in_display_unit|demand_text }})</div>{% endif %}
+            {{ point.amc|per_day }}{% if point.amc.amount %} <span class="text-xs text-gray-600">{% if point.amc_basis == "releases" %}released{% else %}dispensed{% endif %} a day</span>{% endif %}
+            {% if point.amc_in_display_unit %}<div class="text-xs text-gray-600">(= {{ point.amc_in_display_unit|demand_text }} a month)</div>{% endif %}
           </td>
           {% comment %}Durable equipment: said once, in the demand column. Repeating
           "durable — not forecast" in every forecast column read as three findings.{% endcomment %}
@@ -185,20 +187,20 @@ paragraphs of method above a one-row table.{% endcomment %}
           <td class="px-4 py-2.5 text-gray-600">—</td>
           {% else %}
           <td class="px-4 py-2.5 tabular-nums text-gray-600">
-            {{ point.months_of_stock|derived_text }}
+            {{ point.months_of_stock|months_as_days }}
             {% for reason in point.months_of_stock|unconfirmed_reasons %}
               <div class="text-xs text-gray-600 mt-0.5">{{ reason }}</div>
             {% endfor %}
             {% if point.min_months_of_stock %}
               <span class="text-xs text-gray-600">
-                (min {{ point.min_months_of_stock }} / max {{ point.max_months_of_stock }})
+                (min {{ point.min_months_of_stock|months_as_days }} / max {{ point.max_months_of_stock|months_as_days }})
               </span>
             {% endif %}
             {% comment %}Cover before the latest receipt, so a restock reads as a change and not as a
             number the reader has to remember from last time.{% endcomment %}
             {% if point.last_receipt %}
               <div class="text-xs text-gray-600 mt-0.5" data-cover-before="{{ point.supply_point_id }}">
-                was {{ point.last_receipt.months_before }} before
+                was {{ point.last_receipt.months_before|months_as_days }} before
                 {% if point.last_receipt.reference %}{{ point.last_receipt.reference }}{% else %}the last receipt{% endif %}
                 (+{{ point.last_receipt.added|figure_text }}, {{ point.last_receipt.received_on|day }})
               </div>
