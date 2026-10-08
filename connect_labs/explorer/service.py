@@ -14,6 +14,7 @@ import logging
 from connect_labs.audit_trail.models import Action, Outcome
 from connect_labs.audit_trail.service import record
 from connect_labs.labs.access.scopes import Caller
+from connect_labs.labs.synthetic.provenance import all_generated
 
 from . import engine, fields, guidance, scope
 from .validator import DEFAULT_MAX_ROWS, HARD_MAX_ROWS
@@ -93,6 +94,25 @@ def related_registries(caller: Caller, opps: list[scope.Opportunity]) -> list[di
     return out
 
 
+class RealDataRefused(Exception):
+    """An agent asked for real rows. It may write SQL; only the person sees results."""
+
+    code = "real_data_stays_in_labs"
+    message = (
+        "Real visit data never leaves Labs for an agent. Validate the SQL with explorer_validate, try it on "
+        "a synthetic opportunity, then hand it to the page with page_explorer_set_query -- the person runs "
+        "it there and sees the result."
+    )
+
+
+#: Field-index keys computed from real answers. An agent gets structure only.
+_DATA_DERIVED_FIELD_KEYS = ("values", "filled_pct", "distinct_in_sample")
+
+
+def _structure_only(field: dict) -> dict:
+    return {k: v for k, v in field.items() if k not in _DATA_DERIVED_FIELD_KEYS}
+
+
 def describe(
     caller: Caller,
     opportunity_ids,
@@ -100,12 +120,28 @@ def describe(
     field_search: str | None = None,
     load_missing: bool = False,
     include_registries: bool = True,
+    for_agent: bool = False,
 ) -> dict:
+    """What can be queried, and how to answer from it.
+
+    ``for_agent`` (a canopy call): STRUCTURE only -- form paths, types, the SQL that
+    reads each, the registries -- with no answer values, fill rates or row counts,
+    unless every opportunity is synthetic. The person on the page gets everything.
+    """
     opps = scope.resolve(caller, opportunity_ids)
-    loaded = warm(caller, opps) if load_missing else []
+    real = for_agent and not all_generated([o.id for o in opps])
+    loaded = warm(caller, opps) if load_missing and not real else []
     described = fields.search_fields(fields.describe_fields(opps), field_search)
+    status = fields.cache_status(opps)
+    if real:
+        described["fields"] = [_structure_only(f) for f in described["fields"]]
+        status = [
+            {"opportunity_id": s["opportunity_id"], "opportunity_name": s["opportunity_name"], "llo": s["llo"]}
+            for s in status
+        ]
     return {
-        "opportunities": fields.cache_status(opps),
+        "opportunities": status,
+        "real_data_visible_to_you": not real,
         "loaded": loaded,
         "relations": {
             "visits": {
@@ -114,17 +150,28 @@ def describe(
             }
         },
         "fields": described["fields"],
-        "sampled_visits": described["sampled_visits"],
+        "sampled_visits": None if real else described["sampled_visits"],
         "field_search": field_search,
         "registries": related_registries(caller, opps) if include_registries else [],
-        "answering_rules": guidance.ANSWERING_RULES,
+        "answering_rules": guidance.AGENT_RULES if real else guidance.ANSWERING_RULES,
         "sql_notes": guidance.SQL_NOTES,
         "max_rows": {"default": DEFAULT_MAX_ROWS, "max": HARD_MAX_ROWS},
     }
 
 
-def query(caller: Caller, opportunity_ids, sql: str, max_rows: int = DEFAULT_MAX_ROWS) -> dict:
+def validate(sql: str) -> dict:
+    """Check SQL end to end over zero rows. Touches no data, so it needs no scope."""
+    return engine.validate_query(sql)
+
+
+def query(
+    caller: Caller, opportunity_ids, sql: str, max_rows: int = DEFAULT_MAX_ROWS, *, for_agent: bool = False
+) -> dict:
+    """Run SQL. ``for_agent`` (a canopy call) runs only over synthetic opportunities:
+    real rows go to the person's browser, never back through canopy."""
     opps = scope.resolve(caller, opportunity_ids)
+    if for_agent and not all_generated([o.id for o in opps]):
+        raise RealDataRefused()
     # Never the SQL itself: the audit log carries no PHI content (docs/AUDIT_LOGGING.md),
     # and a query can hold a name or an answer as a literal. The hash still ties an
     # event to a query the caller can produce.

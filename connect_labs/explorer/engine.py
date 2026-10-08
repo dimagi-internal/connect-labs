@@ -187,7 +187,9 @@ def run_query(opps: list[Opportunity], sql: str, max_rows: int = DEFAULT_MAX_ROW
     except DatabaseError as e:
         raise _classify(e) from e
 
-    truncated = len(rows) >= check.max_limit or (requested_limit is not None and requested_limit > check.max_limit)
+    truncated = bool(rows) and (
+        len(rows) >= check.max_limit or (requested_limit is not None and requested_limit > check.max_limit)
+    )
     return QueryResult(
         columns=columns,
         rows=rows,
@@ -196,3 +198,20 @@ def run_query(opps: list[Opportunity], sql: str, max_rows: int = DEFAULT_MAX_ROW
         sql_executed=user_sql,
         elapsed_ms=int((time.monotonic() - started) * 1000),
     )
+
+
+#: An opportunity id no real or synthetic opportunity has, so ``visits`` over it is empty.
+NO_DATA = Opportunity(id=-1, name="(no data)", llo="(no data)")
+
+
+def validate_query(sql: str) -> dict:
+    """Check ``sql`` completely -- validator, then Postgres -- WITHOUT touching data.
+
+    It runs through the same path as a real query, over a ``visits`` relation that
+    holds zero rows, so Postgres still resolves every column, type and function and
+    reports what is wrong; the only thing that comes back is the result's column
+    names. This is how an agent that may not see real data can still write SQL that
+    will run.
+    """
+    result = run_query([NO_DATA], sql)
+    return {"valid": True, "columns": result.columns, "sql_executed": result.sql_executed}
