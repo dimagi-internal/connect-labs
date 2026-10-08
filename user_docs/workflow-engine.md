@@ -195,6 +195,33 @@ Select which check to review using the picker at the top of the tab. Each suspec
 
 Rows where more than one field worker submitted a matching registration are clearly marked.
 
+### MUAC/Age Plausibility Report
+
+The **MUAC/Age Plausibility** report is available for CHC programmes (currently built for Program 217, CHC - NG - RCT). It shows what share of approved MUAC readings are implausible for the child's age, broken down by LLO, ward, and field worker (FLW). Every percentage shows its numerator and denominator so you always know the basis for each figure.
+
+The report refreshes on a schedule (daily is recommended) rather than on page load.
+
+#### What counts as implausible
+
+A reading is flagged as implausible — and counted in the headline percentage — if it is below 9 cm, or above an age-banded ceiling. The ceilings range from 17.5 cm to 21 cm, with a higher ceiling for girls aged 48–59 months. These readings are near-certain data entry errors.
+
+The following are tracked separately and are never added to the implausible headline:
+
+- Readings below the WHO −2SD threshold (possible genuine malnutrition rather than an error)
+- Apparent millimetre/centimetre mix-ups — for example, 145 entered where 14.5 was meant
+- Records with no age recorded or no MUAC recorded
+
+#### Colour coding
+
+Colours are driven by the same one-sided 95% statistical test used by the audit indicators, so a field worker with only a handful of readings is not flagged red simply by chance. Units with fewer than 20 readings are shown in grey. A fixed-percentage colour scheme is also available as a toggle if you prefer a simpler threshold view. The page always states which colour scheme is active.
+
+#### Filters and drill-down
+
+- Filter by week range, LLO, ward, or age band.
+- Switch between the age-banded ceiling and a flat 9–20 cm ceiling.
+- Click an LLO to drill down to its wards; click a ward to drill down to its FLWs.
+- A weekly trend chart shows whether a problem is a one-off batch or a recurring pattern.
+
 ---
 
 ## Indicator Registries
@@ -215,22 +242,4 @@ Before deleting, the system checks whether any reports are still bound to the re
 
 Once no reports are bound to it, the registry can be deleted without further steps.
 
-### How workers and cases are named in indicator reports
-
-Indicator reports previously showed raw system identifiers in place of readable names. Worker tables displayed internal usernames (such as a short code on test programmes or a long string of characters on live ones), and case tables were headed by a truncated system ID. Reports now display human-readable names instead.
-
-**Workers are shown by name.** The worker table and the worker review page both show each field worker's name. This applies to the generic indicator report family and the KMC reports, which share the same builder. If a worker's name is not available, the report falls back to their username.
-
-**Cases can be shown by name.** A registry can be configured with a field that holds the case's display name — for example, the field where Connect stores a beneficiary's name. When that field is set, the first column of the case table and the heading in the worker review both show the case's name rather than its ID. If a particular case has no name value, the ID is shown as a fallback.
-
-**Test (synthetic) programmes are also covered.** Programmes used for testing already had display names defined for their simulated workers, and those names now appear in reports. Generated test cases previously appeared as "Beneficiary 1", "Beneficiary 2", and so on; they can now be given real names in the programme's configuration, which will appear in reports instead.
-
-If you work with an indicator report and still see raw IDs where you would expect names, check with your program administrator that the registry has the case name field configured.
-
-### What indicator reports look like on new programmes
-
-The generic indicator reports — the programme report, the opportunity/partner report, and the worker review — now start every new programme with a consistent set of display improvements. These were previously applied one at a time to individual programme copies during review sessions; they are now part of the standard template so every new programme gets them from the beginning.
-
-**Readable text throughout.** All text that was previously too light to read comfortably — secondary labels, footnotes, chart axis labels, and sort arrows — now uses sufficient contrast to meet accessibility standards.
-
-**Colour-coded status labels explain themselves.** Hovering over a **Watch**
+### How
