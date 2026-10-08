@@ -145,13 +145,15 @@ def fit_for(prevalence: float | None, wettest_quarter: float | None = None) -> s
     setting = load_sweep()["setting"]
     if prevalence is None or wettest_quarter is None:
         return "unknown"
-    if abs(prevalence - setting["pfpr_2_5y"] * 100) > FIT_TOLERANCE_PTS:
-        return "prevalence_differs"
+    # Seasonality first: a Sahel state is the wrong intervention (SMC, not PMC)
+    # whatever its prevalence, and that is the reason worth showing.
     gap = wettest_quarter - setting["wettest_quarter_pct"]
     if gap > SEASONALITY_TOLERANCE_PTS:
         return "more_seasonal"
     if gap < -SEASONALITY_TOLERANCE_PTS:
         return "less_seasonal"
+    if abs(prevalence - setting["pfpr_2_5y"] * 100) > FIT_TOLERANCE_PTS:
+        return "prevalence_differs"
     return "near"
 
 
