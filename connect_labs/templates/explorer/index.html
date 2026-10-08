@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}SQL explorer · Connect Labs{% endblock %}
+
+{% block css %}
+  {{ block.super }}
+  <style>
+    .ex-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
+    @media (max-width: 900px) { .ex-grid { grid-template-columns: 1fr; } }
+    .ex-card { background: #fff; border: 1px solid #e7e5e4; border-radius: 10px; }
+    .ex-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #78716c; }
+    .ex-opps { max-height: 260px; overflow: auto; }
+    .ex-opp { display: flex; gap: 8px; align-items: flex-start; padding: 5px 12px; font-size: 13px; color: #1c1917; cursor: pointer; }
+    .ex-opp:hover { background: #fafaf9; }
+    .ex-opp small { display: block; color: #78716c; font-size: 11px; }
+    .ex-fields { max-height: 420px; overflow: auto; }
+    .ex-field { padding: 6px 12px; border-top: 1px solid #f5f5f4; cursor: pointer; font-size: 12px; }
+    .ex-field:hover { background: #eef2ff; }
+    .ex-field code { font-size: 12px; color: #16006d; word-break: break-all; }
+    .ex-field .meta { color: #78716c; font-size: 11px; }
+    .ex-chip { display: inline-block; font-size: 11px; padding: 0 6px; margin: 2px 3px 0 0; border-radius: 999px; background: #f5f5f4; color: #44403c; }
+    .ex-editor { width: 100%; min-height: 170px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; border: 0; padding: 12px 14px; resize: vertical; border-radius: 10px 10px 0 0; }
+    .ex-editor:focus { outline: none; }
+    .ex-bar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 8px 12px; border-top: 1px solid #f5f5f4; font-size: 13px; color: #57534e; }
+    .ex-btn { background: #16006d; color: #fff; font-weight: 600; font-size: 13px; padding: 6px 14px; border-radius: 6px; }
+    .ex-btn:disabled { opacity: .5; }
+    .ex-btn.ghost { background: #fff; color: #16006d; border: 1px solid #c7d2fe; }
+    .ex-table-wrap { overflow: auto; max-height: 60vh; }
+    table.ex-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    .ex-table th { position: sticky; top: 0; background: #fafaf9; text-align: left; font-weight: 600; color: #44403c; padding: 6px 10px; border-bottom: 1px solid #e7e5e4; white-space: nowrap; }
+    .ex-table td { padding: 5px 10px; border-bottom: 1px solid #f5f5f4; font-variant-numeric: tabular-nums; vertical-align: top; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ex-error { color: #991b1b; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+    .ex-muted { color: #a8a29e; }
+    .ex-status { font-size: 12px; color: #57534e; padding: 8px 12px; border-top: 1px solid #f5f5f4; }
+    .ex-status b { color: #1c1917; }
+    .ex-search { box-sizing: border-box; width: 100%; font-size: 13px; border: 1px solid #d6d3d1; border-radius: 6px; padding: 5px 8px; }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="px-6 py-5 max-w-[1500px] mx-auto">
+  <div class="flex items-baseline justify-between mb-4">
+    <div>
+      <h1 class="text-2xl font-semibold text-stone-900">SQL explorer</h1>
+      <p class="text-sm text-stone-500">Query live visit data for the opportunities you hold. Read-only, audit-logged. Ask the agent (bottom right) to write the SQL for you.</p>
+    </div>
+  </div>
+
+  <div class="ex-grid">
+    <aside class="flex flex-col gap-4">
+      <div class="ex-card">
+        <div class="px-3 pt-3 pb-2 flex items-center justify-between">
+          <span class="ex-label">Opportunities</span>
+          <input id="ex-opp-filter" class="ex-search" style="width: 140px" placeholder="filter">
+        </div>
+        <div class="ex-opps" id="ex-opps">
+          {% for o in opportunities %}
+            <label class="ex-opp" data-text="{{ o.name|lower }} {{ o.llo|lower }} {{ o.id }}">
+              <input type="checkbox" value="{{ o.id }}" {% if o.id in selected %}checked{% endif %}>
+              <span>{{ o.name }}<small>{{ o.llo|default:"—" }} · #{{ o.id }}</small></span>
+            </label>
+          {% empty %}
+            <p class="px-3 pb-3 text-sm ex-muted">You hold no opportunities.</p>
+          {% endfor %}
+        </div>
+        <div class="ex-status" id="ex-cache">Pick opportunities to load their fields.</div>
+      </div>
+
+      <div class="ex-card">
+        <div class="px-3 pt-3 pb-2">
+          <div class="ex-label mb-2">Form fields <span id="ex-sampled" class="ex-muted normal-case tracking-normal font-normal"></span></div>
+          <input id="ex-field-search" class="ex-search" placeholder="search fields or values, e.g. birth">
+        </div>
+        <div class="ex-fields" id="ex-fields"><p class="px-3 pb-3 text-sm ex-muted">—</p></div>
+      </div>
+    </aside>
+
+    <section class="flex flex-col gap-4">
+      <div class="ex-card">
+        <textarea id="ex-sql" class="ex-editor" spellcheck="false">{{ example_sql }}</textarea>
+        <div class="ex-bar">
+          <button class="ex-btn" id="ex-run">Run ⌘↵</button>
+          <label>max rows <input id="ex-max" type="number" min="1" max="5000" value="{{ default_max_rows }}" class="ex-search" style="width: 80px"></label>
+          <span class="ex-muted">The only table is <code>visits</code>. Click a field to insert it.</span>
+          <span class="flex-1"></span>
+          <button class="ex-btn ghost" id="ex-csv" disabled>Download CSV</button>
+        </div>
+      </div>
+      <div id="ex-result"></div>
+    </section>
+  </div>
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+  {{ block.super }}
+  <script>
+    window.EXPLORER = {
+      describeUrl: "{% url 'explorer:describe' %}",
+      queryUrl: "{% url 'explorer:query' %}",
+      csrf: "{{ csrf_token }}",
+    };
+  </script>
+  <script src="{% static 'explorer/explorer.js' %}"></script>
+  {% if canopy_panel %}{% include "canopy_host/panel.html" %}{% endif %}
+{% endblock %}

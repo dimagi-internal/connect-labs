@@ -8,6 +8,7 @@ from . import apps  # noqa: F401
 from . import benchmarks  # noqa: F401  -- registers benchmarks_cohort_*
 from . import campaign  # noqa: F401  -- registers campaign_build_national
 from . import custom_analysis_run  # noqa: F401  -- registers custom_analysis_run
+from . import explorer  # noqa: F401  -- registers explorer_describe, explorer_query
 from . import funds  # noqa: F401
 from . import labs_context  # noqa: F401
 from . import marketplace  # noqa: F401  -- registers marketplace_orgs_get, marketplace_rounds_list
