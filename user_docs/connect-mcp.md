@@ -173,7 +173,7 @@ Select one or more opportunities from the list, then use the two panels on the p
 - **Field browser.** Lists every question in the submitted forms for the opportunities you selected, shows how often each field is filled in, and displays the answer choices for multiple-choice questions. Use the search box to find fields quickly (for example, type "birth" to find all birth-related questions). Click any field to insert it directly into your query.
 - **SQL editor.** Write a query against the `visits` table — one row per visit — which contains the opportunity, its LLO, the worker, the case, the visit status, and the full form data. Run your query and view results as a table. Download results as a CSV file.
 
-You can also click **Ask an agent** on the page to have the AI assistant write and run queries for you based on a plain-English question (for example, "hospital vs home births by LLO").
+You can also click **Ask an agent** on the page to have the AI assistant write a query for you based on a plain-English question (for example, "hospital vs home births by LLO"). The agent writes the SQL and places it in the editor for you to review and run. **The agent itself never receives your program's real visit data** — it only learns whether the query was valid, not what the results contain. This means you stay in control of your data at all times. On synthetic (demo) opportunities, the agent can run queries and read results in order to test and refine its SQL.
 
 ### Using the SQL explorer through MCP
 
@@ -187,7 +187,7 @@ The same two tools are available to Claude Desktop and Claude Code through the M
 This means you can ask Claude questions like "show me hospital vs home births broken down by LLO" and it will use these tools to query your data and return an answer directly.
 
 !!! note "Access and safety"
-    The SQL explorer is read-only. It is limited to opportunities you hold, and every query is recorded in the audit trail. The explorer tools are not available on the `mcp/no_user_visit/` restricted address — they require the full `/mcp/` address.
+    The SQL explorer is read-only. It is limited to opportunities you hold, and every query is recorded in the audit trail. The explorer tools are not available on the `mcp/no_user_visit/` restricted address — they require the full `/mcp/` address. When you use **Ask an agent** on the page, the agent writes and can run the query in your browser but never receives real visit data in its context — results from real opportunities stay in your browser only.
 
 ---
 
@@ -238,8 +238,4 @@ When a program-scoped source is used:
 - **Access is limited to the managing organization.** Only people whose organization manages the program can see that data. People whose organization runs one of the program's opportunities (partner network organizations) cannot — so one cohort's partner never sees another cohort's raw data.
 - **The Drive data is read once for the whole program.** Before, a program dashboard that spanned many opportunities would have read the same rows once per opportunity. Now the data is fetched a single time regardless of how many opportunities the program contains.
 
-You can build a program-scoped pipeline through MCP: create the pipeline in the program, preview it, create a program-owned dashboard, and attach the pipeline (including "load on demand" if the dataset is large).
-
-### On-demand pipelines
-
-A pipeline source can be marked **on demand** using `workflow_add_pipeline_source(..., load="on_demand")`. When the run page opens, an on-demand pipeline does **not** download all of its rows to the browser. Instead, the report asks the server for only the rows it needs — filtered, searched, and paged on the server — so
+You can build a program-
