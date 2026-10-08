@@ -26,8 +26,8 @@ window.MopupAnalysis = (function () {
 
   const INDICATOR_TOOLTIPS = {
     evc_shortfall:
-      'How far the number of children actually served (approved Health Service Delivery visits) falls short of the expected number for this work area. A low ratio can mean the area was under-delivered — or that the expected-count estimate itself was too high for this specific cell. Only scored for work areas that have had at least one approved HSD visit — a work area with zero is excluded entirely (it’s already covered by NCF/inaccessible), not counted as a 0% rate.',
-    ncf: "This work area has at least one visit that came back 'No Children Found' instead of a completed service visit. Unlike every other indicator, NCF counts a visit whether or not it has been approved — a rejected or pending NCF still means nobody was found there. A work area logs at most one NCF-or-Inaccessible visit ever, so this and Inaccessible are mutually exclusive.",
+      'How far the number of children actually served (Health Service Delivery visits, whether or not they have been approved — duplicate and trial submissions are not counted) falls short of the expected number for this work area. A low ratio can mean the area was under-delivered — or that the expected-count estimate itself was too high for this specific cell. Only scored for work areas that have had at least one HSD visit — a work area with zero is excluded entirely (it’s already covered by NCF/inaccessible), not counted as a 0% rate.',
+    ncf: "This work area has at least one visit that came back 'No Children Found' instead of a completed service visit. A visit counts whether or not it has been approved — a rejected or pending NCF still means nobody was found there. A work area logs at most one NCF-or-Inaccessible visit ever, so this and Inaccessible are mutually exclusive.",
     inaccessible:
       "Connect has this work area marked Inaccessible, or an FLW's inaccessibility request for it is still awaiting review. This comes from the work area's own status in Connect, not from a visit. A denied request puts the area back to Not Visited, so it drops out. A work area is either NCF or Inaccessible, never both.",
     deworming:
@@ -231,7 +231,7 @@ window.MopupAnalysis = (function () {
             <span class="inline-flex items-center gap-1">
               WA min HSD-visits
               <input type="number" id="cfg-min-hsd" class="base-input" style="width:5rem" min="0">
-              <span class="info-icon" tabindex="0" data-tip="The fewest approved Health Service Delivery visits a work area needs before its deworming/MUAC/vaccination rate is trusted at all.">ⓘ</span>
+              <span class="info-icon" tabindex="0" data-tip="The fewest Health Service Delivery visits (approved or not, excluding duplicate and trial submissions) a work area needs before its deworming/MUAC/vaccination rate is trusted at all.">ⓘ</span>
             </span>`,
             `border-l-2 border-r-2 border-b-2 ${GROUP_BORDER}`,
           ),
