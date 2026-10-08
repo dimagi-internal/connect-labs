@@ -111,7 +111,8 @@ def _topic(ind: str, meta: dict, cell: dict) -> dict:
     return topic
 
 
-def _figure(t: dict) -> str:
+def topic_figure(t: dict) -> str:
+    """A topic's figure as the briefing words it: ``5 of 12 (42%)``, ``1.5 visits``."""
     if "numerator" in t:
         fig = f"{t['numerator']} of {t['denominator']}"
         return fig + (f" ({round(t['pct'])}%)" if "pct" in t else "")
@@ -120,6 +121,9 @@ def _figure(t: dict) -> str:
         shown = str(int(round(v))) if abs(v - round(v)) < 1e-9 else f"{v:.1f}"
         unit = t.get("unit") or ""
         return shown + ("" if unit in ("", "n") else unit if unit == "%" else f" {unit}")
+    if t.get("figure"):
+        # A topic read back from a briefing (``topics_from_briefing``) keeps its words.
+        return t["figure"]
     return "figure not given"
 
 
@@ -127,7 +131,7 @@ def render_briefing(*, programme: str, worker: str, topics: list[dict], note: st
     """The briefing text, in the shape the coaching bot parses."""
     lines = [HEADER, f"Programme: {programme}", f"Worker: {worker}", "Topics, most important first:"]
     for i, t in enumerate(topics, 1):
-        lines.append(f"{i}. {t['label']} [{t['key']}] — {_figure(t)}, band {t['band']}")
+        lines.append(f"{i}. {t['label']} [{t['key']}] — {topic_figure(t)}, band {t['band']}")
     lines.append(FOOTER)
     if note and note.strip():
         lines += [NOTE_HEADER, note.strip()]
@@ -158,21 +162,69 @@ def _briefing_worker(text: str) -> str:
     return ""
 
 
+def first_name(worker: str | None) -> str:
+    """What to call a worker: the first word of their name, or "" when the name is a
+    username or code (one word with a digit or an underscore) rather than a person's."""
+    worker = (worker or "").strip()
+    looks_like_code = bool(worker) and " " not in worker and bool(re.search(r"[\d_]", worker))
+    return "" if not worker or looks_like_code else worker.split()[0]
+
+
 def opening_message(briefing: str) -> str:
     """The fixed first message for a briefed worker: greeted by first name, or with
-    no name when the ``Worker:`` line is a username or code (one word with a digit
-    or an underscore) rather than a person's name."""
-    worker = _briefing_worker(briefing)
-    first = worker.split()[0] if worker else ""
-    looks_like_code = bool(worker) and " " not in worker and bool(re.search(r"[\d_]", worker))
-    hello = f"Hello {first}!" if first and not looks_like_code else "Hello!"
+    no name when the ``Worker:`` line is a username or code (``first_name``)."""
+    first = first_name(_briefing_worker(briefing))
+    hello = f"Hello {first}!" if first else "Hello!"
     return OPENING.format(hello=hello)
+
+
+def briefing_worker(briefing: str) -> str:
+    """The ``Worker:`` line of a briefing: the name the briefing calls the worker."""
+    return _briefing_worker(briefing)
 
 
 #: How the confirm dialog names each band to the supervisor reading it.
 BAND_WORDS = {"red": "off target", "yellow": "on watch"}
 
-_TOPIC_LINE = re.compile(r"^\d+\.\s+(?P<label>.*?)\s+\[[^\]]+\]\s+—\s+(?P<figure>.*),\s+band\s+(?P<band>\S+)\s*$")
+_TOPIC_LINE = re.compile(
+    r"^\d+\.\s+(?P<label>.*?)\s+\[(?P<key>[^\]]+)\]\s+—\s+(?P<figure>.*),\s+band\s+(?P<band>\S+)\s*$"
+)
+_COUNT_FIGURE = re.compile(r"^(?P<num>\d+) of (?P<den>\d+)(?: \((?P<pct>\d+)%\))?$")
+_TOPICS_HEADER = "Topics, most important first:"
+
+
+def topics_from_briefing(briefing: str) -> list[dict]:
+    """The topics a briefing names, read back from its text, in the shape
+    ``coachable_topics`` gives them (``key``, ``label``, ``band``, and ``numerator`` /
+    ``denominator`` / ``pct`` when the figure is a count, else ``figure``).
+
+    The briefing text is what the coach receives, after ``fit_briefing`` dropped what
+    did not fit, so reading the topics from it is how anything shown beside the
+    conversation (``coach_image.py``) is guaranteed to cover exactly those topics.
+    Only the topic section is read: a programme note cannot add one."""
+    topics, inside = [], False
+    for line in (briefing or "").splitlines():
+        line = line.strip()
+        if line == _TOPICS_HEADER:
+            inside = True
+            continue
+        if not inside:
+            continue
+        if line == FOOTER or line == NOTE_HEADER:
+            break
+        m = _TOPIC_LINE.match(line)
+        if not m:
+            continue
+        topic: dict[str, Any] = {"key": m["key"], "label": m["label"], "band": m["band"]}
+        count = _COUNT_FIGURE.match(m["figure"].strip())
+        if count:
+            topic["numerator"], topic["denominator"] = int(count["num"]), int(count["den"])
+            if count["pct"] is not None:
+                topic["pct"] = float(count["pct"])
+        else:
+            topic["figure"] = m["figure"].strip()
+        topics.append(topic)
+    return topics
 
 
 def briefing_summary(briefing: str) -> dict:

@@ -53,7 +53,9 @@ def _connected_mcp_clients(user):
     return sorted(connected.values(), key=lambda row: row["signed_in_at"], reverse=True)
 
 
-def _render_index(request, *, raw_token: str | None = None, raw_token_name: str | None = None):
+def _render_index(
+    request, *, raw_token: str | None = None, raw_token_name: str | None = None, raw_token_scope: str | None = None
+):
     tokens = MCPAccessToken.objects.filter(user=request.user, is_active=True).order_by("-created_at")
     now = timezone.now()
     context = {
@@ -62,9 +64,15 @@ def _render_index(request, *, raw_token: str | None = None, raw_token_name: str 
         "now": now,
         "raw_token": raw_token,
         "raw_token_name": raw_token_name,
-        "mcp_json_snippet": build_mcp_json_snippet(raw_token) if raw_token else None,
+        # A coaching-pictures token does not work with MCP, so it gets no MCP config.
+        "mcp_json_snippet": (
+            build_mcp_json_snippet(raw_token)
+            if raw_token and raw_token_scope not in token_scopes.NOT_MCP_SCOPES
+            else None
+        ),
         "scope_choices": token_scopes.SCOPE_CHOICES,
         "no_uservisit_data_scope": token_scopes.NO_USERVISIT_DATA,
+        "coach_images_scope": token_scopes.COACH_IMAGES,
     }
     return render(request, "mcp/tokens.html", context)
 
@@ -109,7 +117,7 @@ def tokens_create(request):
 
     ttl_days = _parse_ttl(request.POST.get("ttl_days"))
     _, raw = MCPAccessToken.create_token(request.user, name=name, ttl_days=ttl_days, scope=scope)
-    return _render_index(request, raw_token=raw, raw_token_name=name)
+    return _render_index(request, raw_token=raw, raw_token_name=name, raw_token_scope=scope)
 
 
 @login_required
@@ -163,4 +171,4 @@ def tokens_rotate(request, pk: int):
             old.is_active = False
             old.save(update_fields=["is_active"])
         _, raw = MCPAccessToken.create_token(request.user, name=name, ttl_days=90, scope=old.scope)
-    return _render_index(request, raw_token=raw, raw_token_name=name)
+    return _render_index(request, raw_token=raw, raw_token_name=name, raw_token_scope=old.scope)

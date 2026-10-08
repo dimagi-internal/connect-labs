@@ -139,7 +139,9 @@ def _verify_pat_sync(raw: str):
     old ``auth.authenticate_request`` did.
     """
     token = MCPAccessToken.verify(raw)
-    if token is None:
+    if token is None or token.scope in token_scopes.NOT_MCP_SCOPES:
+        # A PAT that is not for MCP at all (a coaching-pictures token) is refused,
+        # not mapped to a tool set; no OAuth or delegated token matches it either.
         return None
     token.touch()
     return token

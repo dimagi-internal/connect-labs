@@ -62,11 +62,23 @@ from __future__ import annotations
 
 FULL = "full"
 NO_USERVISIT_DATA = "no-uservisit-data"
+#: Not an MCP scope at all: a token an Open Chat Studio team holds to fetch the
+#: coaching pictures a coaching session links to (``workflow/coach_image.py``). It
+#: reaches that one view and nothing else -- the MCP server refuses it outright
+#: (``NOT_MCP_SCOPES``), and so do the shared PAT verifier and the export API, which
+#: accept only ``FULL``.
+COACH_IMAGES = "coach-images"
 
 SCOPE_CHOICES = [
     (FULL, "Full access"),
     (NO_USERVISIT_DATA, "No user visit data"),
+    (COACH_IMAGES, "Coaching pictures only"),
 ]
+
+#: Token scopes the MCP server must refuse rather than map to a tool set. A scope it
+#: does not know at all still fails closed to the restricted tool set; these are known
+#: and reach no tool.
+NOT_MCP_SCOPES = frozenset({COACH_IMAGES})
 
 #: The scope string stamped on a resolved PAT, which is what the tool gate reads.
 TOKEN_SCOPE_STRINGS = {

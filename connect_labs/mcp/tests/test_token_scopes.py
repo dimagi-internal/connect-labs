@@ -248,3 +248,80 @@ def test_the_shared_pat_verifier_refuses_a_restricted_token(db, rf):
     assert failure.status_code == 403
     assert allowed_user == user
     assert no_failure is None
+
+
+# ---------------------------------------------------------------------------
+# A coaching-pictures token reaches the coaching picture view and nothing else
+# ---------------------------------------------------------------------------
+
+
+def test_the_tokens_page_mints_a_coaching_pictures_token_without_mcp_config(client, alice):
+    page = client.get(reverse("labs:mcp_tokens_index"))
+    assert b"Lets an Open Chat Studio team fetch coaching pictures. Nothing else." in page.content
+
+    resp = client.post(reverse("labs:mcp_tokens_create"), {"name": "ocs-coach", "scope": "coach-images"})
+
+    assert MCPAccessToken.objects.get(user=alice, name="ocs-coach").scope == token_scopes.COACH_IMAGES
+    # It does not work with MCP, so no MCP client config is offered for it.
+    assert resp.context["mcp_json_snippet"] is None
+    assert resp.context["raw_token"]
+
+
+def test_rotating_a_coaching_pictures_token_keeps_its_scope(client, alice):
+    old, _ = MCPAccessToken.create_token(alice, name="ocs-coach", scope=token_scopes.COACH_IMAGES)
+
+    resp = client.post(reverse("labs:mcp_tokens_rotate", args=[old.pk]))
+
+    assert MCPAccessToken.objects.get(user=alice, name="ocs-coach", is_active=True).scope == token_scopes.COACH_IMAGES
+    assert resp.context["mcp_json_snippet"] is None
+
+
+@pytest.mark.django_db
+def test_the_mcp_server_refuses_a_coaching_pictures_token():
+    """Not mapped to the restricted tool set like an unknown scope: refused outright."""
+    user = User.objects.create(username="ocs-team")
+    token, raw = MCPAccessToken.create_token(user, name="ocs-coach", scope=token_scopes.COACH_IMAGES)
+
+    assert _verify_bearer_sync(raw) is None
+    token.refresh_from_db()
+    assert token.last_used_at is None  # refused, so never counted as a use
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("path", ["/mcp/", "/mcp/no_user_visit/"])
+def test_a_coaching_pictures_token_gets_a_401_from_the_mcp_endpoint(path):
+    import anyio
+    import httpx
+
+    from config.asgi import build_application
+
+    user = User.objects.create(username=f"ocs-team-e2e{path.count('/')}")
+    _, raw = MCPAccessToken.create_token(user, name="ocs-coach", scope=token_scopes.COACH_IMAGES)
+    application = build_application()
+    headers = {
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {raw}",
+    }
+    payload = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+
+    async def _run():
+        async with application.router.lifespan_context(application):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=application), base_url="http://testserver"
+            ) as c:
+                return await c.post(path, headers=headers, json=payload)
+
+    assert anyio.run(_run).status_code == 401
+
+
+def test_the_shared_pat_verifier_refuses_a_coaching_pictures_token(db, rf):
+    from connect_labs.mcp.auth import authenticate_request
+
+    user = User.objects.create(username="ocs-team-shared")
+    _, raw = MCPAccessToken.create_token(user, name="ocs-coach", scope=token_scopes.COACH_IMAGES)
+
+    denied_user, failure = authenticate_request(rf.post("/", HTTP_AUTHORIZATION=f"Bearer {raw}"))
+
+    assert denied_user is None
+    assert failure.status_code == 403
