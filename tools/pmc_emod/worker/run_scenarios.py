@@ -137,13 +137,19 @@ def ensure_binary(manifest):
         dtk.setup(exe_dir)
 
 
+# The EMOD runtime image the grid and the deployed worker ran on 2026-10-08, pinned by
+# digest so a rebuilt box (or a re-pull of :latest) runs the same model. EMOD_IMAGE overrides.
+EMOD_IMAGE_DIGEST = "sha256:91933ca254ac9c0dd49deb6ba9b48c59b312c2baae2970e547b6a6f5b896fbbd"
+EMOD_IMAGE = f"ghcr.io/emod-hub/emod-ubuntu-runtime@{EMOD_IMAGE_DIGEST}"
+
+
 def make_platform(manifest, job_dir):
     from idmtools.core.platform_factory import Platform
 
     return Platform(
         "Container",
         job_directory=str(job_dir),
-        docker_image=manifest.plat_image,
+        docker_image=os.environ.get("EMOD_IMAGE", EMOD_IMAGE),
         sym_link=False,
         max_job=os.cpu_count() or 1,
     )

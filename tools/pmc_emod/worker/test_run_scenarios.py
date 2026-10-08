@@ -186,3 +186,13 @@ def test_burnin_and_pickups_share_one_request_deadline(tmp_path, monkeypatch):
     run_scenarios.run_request(small_request(500, [0], ["none"]), tmp_path, heartbeat_s=60)
     assert seen["burnin"] == seen["pickups"]
     assert before + 2100 <= seen["burnin"] <= time.monotonic() + 2100
+
+
+def test_emod_image_is_pinned_by_digest_and_matches_bootstrap():
+    import pathlib
+    import re
+
+    assert "@sha256:" in run_scenarios.EMOD_IMAGE
+    boot = (pathlib.Path(run_scenarios.__file__).parent / "bootstrap.sh").read_text()
+    m = re.search(r"^EMOD_IMAGE=(\S+)$", boot, re.M)
+    assert m and m.group(1) == run_scenarios.EMOD_IMAGE

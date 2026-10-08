@@ -13,7 +13,8 @@ set -euxo pipefail
 
 # The emodpy-malaria commit the sweep and burn-in were validated against on 2026-10-08.
 EMODPY_COMMIT=62d9aa6699502d0391c2535c3a510c97fe800e04
-EMOD_IMAGE=ghcr.io/emod-hub/emod-ubuntu-runtime:latest
+# Pinned by digest; keep equal to EMOD_IMAGE in run_scenarios.py (a test checks).
+EMOD_IMAGE=ghcr.io/emod-hub/emod-ubuntu-runtime@sha256:91933ca254ac9c0dd49deb6ba9b48c59b312c2baae2970e547b6a6f5b896fbbd
 OPT=/opt/emod
 CACHE=/var/cache/emod
 ACTIVITY_FILE=/var/run/emod/last-activity
