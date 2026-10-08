@@ -283,11 +283,20 @@
             totals.doses += p.doses_per_year || 0;
             totals.spend += p.spend_per_year || 0;
           }
-          var fit = {
-            near: 'near model',
-            outside: 'outside range',
-            unknown: 'no data',
-          }[r.fit];
+          var fit =
+            {
+              near: 'near model',
+              prevalence_differs: 'prevalence differs',
+              more_seasonal: 'more seasonal',
+              less_seasonal: 'less seasonal',
+              unknown: 'no data',
+            }[r.fit] || r.fit;
+          var fitClass =
+            r.fit === 'near'
+              ? 'near'
+              : r.fit === 'unknown'
+                ? 'unknown'
+                : 'outside';
           return (
             '<tr class="' +
             (on ? 'on' : '') +
@@ -308,7 +317,7 @@
             pct(r.malaria_prevalence) +
             '</td>' +
             '<td class="l"><span class="pmc-chip ' +
-            esc(r.fit) +
+            fitClass +
             '">' +
             fit +
             '</span></td>' +
