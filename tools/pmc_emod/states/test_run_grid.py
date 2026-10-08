@@ -116,7 +116,7 @@ def test_one_state_end_to_end_writes_the_schema(tmp_path):
     assert failed == []
     on_disk = json.loads(out.read_text())
     assert on_disk == grid
-    assert set(on_disk) == {"version", "runtime", "states"} and on_disk["version"] == 1
+    assert set(on_disk) == {"version", "generated", "runtime", "states"} and on_disk["version"] == 1
     assert on_disk["runtime"] == RUNTIME
     assert list(on_disk["states"]) == ["Kano"]
     k = on_disk["states"]["Kano"]
@@ -240,3 +240,81 @@ def test_effects_on_a_tiny_fixture():
 
 def test_request_hash_is_key_order_independent():
     assert run_grid.request_hash({"a": 1, "b": 2}) == run_grid.request_hash({"b": 2, "a": 1})
+
+
+def test_runtime_is_read_from_the_real_worker_files():
+    rt = run_grid.worker_runtime()
+    assert rt["image"].startswith("sha256:") and len(rt["image"]) == 71
+    assert len(rt["emodpy_commit"]) == 40
+    assert rt["image"] in (REPO / "tools/pmc_emod/worker/run_scenarios.py").read_text()
+    assert rt["emodpy_commit"] in (REPO / "tools/pmc_emod/worker/bootstrap.sh").read_text()
+
+
+def test_resume_on_a_different_runtime_is_refused_unless_forced(tmp_path):
+    out = tmp_path / "grid.json"
+    box, inst = make_box()
+    run_grid.run_grid(box, STATES, out, RUNTIME, only=["Kano"])
+    other = {**RUNTIME, "emodpy_commit": "def"}
+    with pytest.raises(RuntimeError, match="force-runtime"):
+        run_grid.run_grid(box, STATES, out, other, only=["Ondo"])
+    assert set(json.loads(out.read_text())["states"]) == {"Kano"}
+    run_grid.run_grid(box, STATES, out, other, only=["Ondo"], force_runtime=True)
+    assert set(json.loads(out.read_text())["states"]) == {"Kano", "Ondo"}
+
+
+def test_generated_timestamp_is_written_and_refreshed(tmp_path):
+    out = tmp_path / "grid.json"
+    box, _ = make_box()
+    run_grid.run_grid(box, STATES, out, RUNTIME, only=["Kano"])
+    first = json.loads(out.read_text())["generated"]
+    assert first.endswith("+00:00") and first[:2] == "20"
+    run_grid.run_grid(box, STATES, out, RUNTIME, only=["Ondo"])
+    assert json.loads(out.read_text())["generated"] >= first
+
+
+def test_box_is_ensured_running_before_each_state(tmp_path):
+    box, inst = make_box()
+    run_grid.run_grid(box, STATES, tmp_path / "g.json", RUNTIME, only=["Kano", "Ondo"])
+    assert inst.started == 2
+
+
+def test_aborts_after_three_consecutive_failures(tmp_path):
+    box, inst = make_box()
+    inst.run = lambda *a, **k: SimpleNamespace(ok=False, exit_code=1, status="Failed", stdout="", stderr="boom")
+    _, failed = run_grid.run_grid(
+        box, STATES, tmp_path / "g.json", RUNTIME, only=["Kano", "Ondo", "Lagos", "Abia", "Edo"]
+    )
+    assert len(failed) == 3
+
+
+def test_calibrate_and_grid_requests_use_their_own_timeouts(tmp_path):
+    box, inst = make_box()
+    run_grid.run_grid(box, STATES, tmp_path / "g.json", RUNTIME, only=["Kano"])
+    assert [t for _, t in inst.commands] == [run_grid.CALIBRATE_SSM_TIMEOUT_S, run_grid.GRID_SSM_TIMEOUT_S]
+    assert f"EMOD_REQUEST_TIMEOUT_S={run_grid.CALIBRATE_REQUEST_TIMEOUT_S}" in inst.commands[0][0]
+    assert run_grid.GRID_SSM_TIMEOUT_S > run_grid.GRID_REQUEST_TIMEOUT_S
+
+
+def test_warns_when_a_design_has_fewer_seeds_than_requested(caplog):
+    def run(code, seed):
+        return {
+            "code": code,
+            "seed": seed,
+            "cases_u5": 10,
+            "cases_3_24m": 5,
+            "kids_u5": 100,
+            "kids_3_24m": 30,
+            "doses": 5,
+        }
+
+    result = {"runs": [run("none", 0), run("none", 1), run("d", 0)]}
+    design = {"code": "d", "label": "L", "kind": "pmc", "drug": "SP", "target_pop_fraction": 0.35}
+    with caplog.at_level("WARNING", logger="pmc_run_grid"):
+        run_grid.design_effect(result, design)
+    assert "1 of 3 seeds" in caplog.text
+
+
+def test_out_is_required_with_states(capsys):
+    with pytest.raises(SystemExit):
+        run_grid.main(["--states", "Kano", "--instance-id", "i-x", "--bucket", "b"])
+    assert "--out is required" in capsys.readouterr().err
