@@ -68,6 +68,12 @@
     if (n >= 1e3) return '$' + Math.round(n / 1e3) + 'k';
     return usd(n);
   }
+  // Two significant figures, matching the server's rounding of projections:
+  // an estimate summed from estimates should not read as a census count.
+  function approx(n) {
+    return n ? Number(Number(n).toPrecision(2)) : 0;
+  }
+
   function pct(n) {
     return n === null || n === undefined ? '—' : num(n, 1) + '%';
   }
@@ -352,7 +358,7 @@
 
     el('pmc-total').innerHTML = totals.states
       ? stat('States', totals.states) +
-        stat('Children 3–24 mo (projected)', num(totals.children)) +
+        stat('Children 3–24 mo (projected)', num(approx(totals.children))) +
         stat('Cases averted / yr', num(totals.cases)) +
         stat('Doses / yr', num(totals.doses)) +
         stat('Cost / yr', usd(totals.spend)) +
