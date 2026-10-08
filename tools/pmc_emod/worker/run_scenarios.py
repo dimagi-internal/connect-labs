@@ -19,6 +19,9 @@ Environment:
                        /opt/emod/emodpy-malaria/tutorials)
   EMOD_CACHE_DIR       burn-in + job directory (default /var/cache/emod)
   EMOD_RUN_TIMEOUT_S   longest wait for one experiment, seconds (default 1800)
+  EMOD_REQUEST_TIMEOUT_S  deadline for the whole request -- burn-in plus pick-ups -- in seconds (default
+                       2100). Each experiment waits at most what is left of it, so a cold request cannot
+                       take burn-in 1800 + pick-ups 1800; the caller's SSM limit (2400) sits above it.
   EMOD_ACTIVITY_FILE   liveness marker touched while working (default /var/run/emod/last-activity)
 """
 
@@ -40,6 +43,7 @@ DEFAULT_TUTORIALS_DIR = "/opt/emod/emodpy-malaria/tutorials"
 DEFAULT_CACHE_DIR = "/var/cache/emod"
 DEFAULT_ACTIVITY_FILE = "/var/run/emod/last-activity"
 DEFAULT_RUN_TIMEOUT_S = 1800
+DEFAULT_REQUEST_TIMEOUT_S = 2100
 BURNIN_DAYS = 730
 BURNIN_FILE = "state-00730.dtk"
 # Bump when the model code changes in a way that invalidates stored burn-ins.
@@ -158,17 +162,37 @@ def make_task(manifest, sweep, config_builder, campaign_builder, demographics_bu
     )
 
 
-def run_experiment(exp, platform):
-    """Run an idmtools experiment and wait at most EMOD_RUN_TIMEOUT_S (default 1800) seconds for it.
+def request_deadline(t0):
+    """Monotonic time by which the whole request (burn-in plus pick-ups) must be done."""
+    return t0 + float(os.environ.get("EMOD_REQUEST_TIMEOUT_S", DEFAULT_REQUEST_TIMEOUT_S))
+
+
+def experiment_timeout(deadline=None):
+    """Seconds one experiment may wait: EMOD_RUN_TIMEOUT_S, cut to what is left before `deadline`.
+
+    Raises TimeoutError when the request deadline has already passed (nothing would be worth starting).
+    """
+    timeout = float(os.environ.get("EMOD_RUN_TIMEOUT_S", DEFAULT_RUN_TIMEOUT_S))
+    if deadline is not None:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise TimeoutError("request deadline (EMOD_REQUEST_TIMEOUT_S) passed before the next experiment")
+        timeout = min(timeout, left)
+    return int(max(1, timeout))
+
+
+def run_experiment(exp, platform, deadline=None):
+    """Run an idmtools experiment and wait at most EMOD_RUN_TIMEOUT_S (default 1800) seconds for it,
+    and never past the request's `deadline` (monotonic).
 
     Raises TimeoutError past that; the SSM command timeout is a second, outer bound.
     """
-    timeout = int(os.environ.get("EMOD_RUN_TIMEOUT_S", DEFAULT_RUN_TIMEOUT_S))
+    timeout = experiment_timeout(deadline)
     exp.run(wait_until_done=False, platform=platform)
     platform.wait_till_done_progress(exp, timeout=timeout, refresh_interval=5)
 
 
-def build_burnin(manifest, sweep, setting, dest_dir, job_dir):
+def build_burnin(manifest, sweep, setting, dest_dir, job_dir, deadline=None):
     """Run the 2-year burn-in once and copy its serialized population to dest_dir."""
     from idmtools.builders import SimulationBuilder
     from idmtools.entities.experiment import Experiment
@@ -187,7 +211,7 @@ def build_burnin(manifest, sweep, setting, dest_dir, job_dir):
     builder = SimulationBuilder()
     builder.add_sweep_definition(sweep.set_seed, [0])
     exp = Experiment.from_builder(builder, task, name="pmc_burnin")
-    run_experiment(exp, platform)
+    run_experiment(exp, platform, deadline)
     if not exp.succeeded:
         raise RuntimeError(f"burn-in experiment {exp.id} failed")
     found = sorted(pathlib.Path(exp.simulations[0].get_directory()).rglob(BURNIN_FILE))
@@ -201,7 +225,7 @@ def build_burnin(manifest, sweep, setting, dest_dir, job_dir):
     shutil.rmtree(exp.get_directory(), ignore_errors=True)
 
 
-def run_pickups(manifest, sweep, setting, schedules, seeds, years, burnin_dir, job_dir):
+def run_pickups(manifest, sweep, setting, schedules, seeds, years, burnin_dir, job_dir, deadline=None):
     from idmtools.builders import SimulationBuilder
     from idmtools.entities.experiment import Experiment
     from idmtools_platform_container.utils.general import map_container_path
@@ -230,7 +254,7 @@ def run_pickups(manifest, sweep, setting, schedules, seeds, years, burnin_dir, j
     )
     builder.add_sweep_definition(sweep.set_seed, list(seeds))
     exp = Experiment.from_builder(builder, task, name="pmc_pickup")
-    run_experiment(exp, platform)
+    run_experiment(exp, platform, deadline)
     if not exp.succeeded:
         raise RuntimeError(f"pickup experiment {exp.id} failed")
     out = tempfile.mkdtemp(prefix="results-", dir=job_dir)
@@ -326,6 +350,7 @@ def run_request(req, cache_dir, heartbeat_s=60, fetch_burnin=None, publish_burni
     for a remote burn-in store (S3); without them the burn-in cache is just `cache_dir`.
     """
     t0 = time.time()
+    deadline = request_deadline(time.monotonic())
     validate_request(req)
     cache_dir = pathlib.Path(cache_dir).resolve()
     setting = req["setting"]
@@ -343,11 +368,13 @@ def run_request(req, cache_dir, heartbeat_s=60, fetch_burnin=None, publish_burni
             cached = bool(fetch_burnin(key, burnin_dir / BURNIN_FILE))
         if not cached:
             b0 = time.time()
-            build_burnin(manifest, sweep, setting, burnin_dir, cache_dir)
+            build_burnin(manifest, sweep, setting, burnin_dir, cache_dir, deadline)
             burnin_seconds = time.time() - b0
             if publish_burnin is not None:
                 publish_burnin(key, burnin_dir / BURNIN_FILE)
-        runs = run_pickups(manifest, sweep, setting, req["schedules"], req["seeds"], years, burnin_dir, cache_dir)
+        runs = run_pickups(
+            manifest, sweep, setting, req["schedules"], req["seeds"], years, burnin_dir, cache_dir, deadline
+        )
     runs.sort(key=lambda r: (r["code"], r["seed"]))
     return {
         "hash": request_hash(req),
