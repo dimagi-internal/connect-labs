@@ -241,6 +241,23 @@ def test_the_query_endpoint_refuses_an_opportunity_the_workflow_does_not_span(si
     assert response.status_code == 200 and [r["name"] for r in response.json()["rows"]] == ["worker-acacia"]
 
 
+def test_the_query_endpoint_takes_as_of_from_its_url_when_the_body_has_none(signed_in, world, monkeypatch):
+    # A page showing a past day (a pinned supply tab with ?as_of=) puts the date on the endpoint's URL.
+    from django.urls import reverse
+
+    seen = []
+    monkeypatch.setattr(
+        "connect_labs.workflow.supply_views.supply_sources.run",
+        lambda request, definition, spec, **kw: seen.append(kw["as_of"]) or {"rows": []},
+    )
+    url = reverse("labs:workflow:api_supply_query", args=[1])
+    signed_in.post(url + "?as_of=2026-09-01", data={"alias": "stock"}, content_type="application/json")
+    signed_in.post(
+        url + "?as_of=2026-09-01", data={"alias": "stock", "as_of": "2026-08-01"}, content_type="application/json"
+    )
+    assert [d.isoformat() for d in seen] == ["2026-09-01", "2026-08-01"]
+
+
 def test_the_stock_review_template_declares_valid_sources():
     from connect_labs.workflow.templates import TEMPLATES
 

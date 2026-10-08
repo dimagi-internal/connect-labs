@@ -5,12 +5,21 @@ supply base: `WorkflowRunView` builds the page data, as the viewer, for the
 workflow's current open run -- the newest one still in progress, or a new one
 started for today, so a supply tab simply shows what is current. The supply page
 gives the run its context and two ways out: the workflow's editor, and the tab's own page if it replaced one.
+
+`?as_of=` is the supply pages' own date. The page is not rewound (the runner reads live
+records of its own); instead the date rides on the runner's supply endpoints, so every
+supply source that can read a past day reads that one, and the supply header shows the
+date and carries it on its links as it does on any rewound page.
 """
 
-from django.http import Http404
+from urllib.parse import urlencode
+
+from django.http import Http404, HttpResponseBadRequest
 from django.urls import reverse
+from django.utils import timezone
 from django.views.generic import TemplateView
 
+from connect_labs.supply_chain.history.as_of import parse_as_of
 from connect_labs.supply_chain.workflow_views.models import SupplyWorkflowView
 from connect_labs.supply_chain.workflow_views.runs import current_run_id
 from connect_labs.workflow.views import WorkflowRunView
@@ -20,6 +29,13 @@ class SupplyWorkflowPageView(WorkflowRunView):
     template_name = "supply_chain/workflow_view.html"
 
     def get(self, request, *args, **kwargs):
+        try:
+            as_of = parse_as_of(request.GET.get("as_of"))
+        except ValueError:
+            return HttpResponseBadRequest("as_of must be a date written YYYY-MM-DD.")
+        if as_of and as_of > timezone.localdate():
+            return HttpResponseBadRequest("as_of cannot be after today.")
+        request.supply_as_of = as_of
         context = getattr(request, "labs_context", None) or {}
         program_id = context.get("program_id")
         pin = None
@@ -54,6 +70,12 @@ class SupplyWorkflowPageView(WorkflowRunView):
 
         context = super().get_context_data(**kwargs)
         self.request.labs_context = self.supply_context
+        as_of = self.request.supply_as_of
+        endpoints = (context.get("workflow_data") or {}).get("apiEndpoints") or {}
+        if as_of:
+            for key in ("getSupplyData", "querySupply"):
+                if endpoints.get(key):
+                    endpoints[key] += "?" + urlencode({"as_of": as_of.isoformat()})
         pin = self.pin
         run_id = self.request.GET.get("run_id")
         scope = f"opportunity_id={pin.opportunity_id}" if pin.opportunity_id else ""
