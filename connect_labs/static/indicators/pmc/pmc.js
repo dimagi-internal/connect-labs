@@ -1,8 +1,14 @@
 /* PMC schedule explorer. One plain script, no modules (see targeting.html on why).
 
-   State lives in the URL query (schedule, states, prices), so a link reopens the
-   same view and the agent panel is told the same thing the visitor sees. The
-   numbers all come from /labs/targeting/api/pmc/ -- this file only draws them. */
+   Two answers, in the order a programme is designed:
+     How   -- which delivery schedule is the best value (IDM's EMOD comparison);
+     Where -- the states considered, ranked by cost per case averted under it.
+   The states considered come from the URL (`states=`), which is how a targeting
+   selection arrives -- usually via the agent panel; with none, all states.
+
+   State lives in the URL (schedule, states, prices), so a link reopens the same
+   view and the agent panel is told what the visitor sees. Every number comes
+   from /labs/targeting/api/pmc/ -- this file only draws them. */
 (function () {
   'use strict';
 
@@ -61,19 +67,18 @@
   function usd(n, digits) {
     return n === null || n === undefined ? '—' : '$' + num(n, digits);
   }
-  // Large sums in a table cell: $1.33M, $808k. Totals keep the full figure.
+  // Large sums: $1.33M, $808k.
   function usdShort(n) {
     if (n === null || n === undefined) return '—';
     if (n >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'M';
     if (n >= 1e3) return '$' + Math.round(n / 1e3) + 'k';
     return usd(n);
   }
-  // Two significant figures, matching the server's rounding of projections:
-  // an estimate summed from estimates should not read as a census count.
+  // Two significant figures, as the server rounds projections: an estimate
+  // summed from estimates should not read as a census count.
   function approx(n) {
     return n ? Number(Number(n).toPrecision(2)) : 0;
   }
-
   function pct(n) {
     return n === null || n === undefined ? '—' : num(n, 1) + '%';
   }
@@ -100,15 +105,19 @@
 
   /* ---- fetch + render -------------------------------------------------- */
 
-  function load() {
-    if (inflight) inflight.abort();
-    var ctrl = new AbortController();
-    inflight = ctrl;
+  function syncUrl() {
     history.replaceState(
       null,
       '',
       window.location.pathname + '?' + params().toString(),
     );
+  }
+
+  function load() {
+    if (inflight) inflight.abort();
+    var ctrl = new AbortController();
+    inflight = ctrl;
+    syncUrl();
     fetch(cfg.url + '?' + params().toString(), {
       signal: ctrl.signal,
       credentials: 'same-origin',
@@ -120,18 +129,14 @@
       .then(function (d) {
         data = d;
         state.schedule = d.schedule;
-        history.replaceState(
-          null,
-          '',
-          window.location.pathname + '?' + params().toString(),
-        );
+        syncUrl();
         render();
         shareWithAgent();
       })
       .catch(function (err) {
         if (err && err.name === 'AbortError') return;
         el('pmc-states').innerHTML =
-          '<tr><td class="l" colspan="11">Could not load: ' +
+          '<tr><td class="l" colspan="8">Could not load: ' +
           esc(err.message) +
           '</td></tr>';
       });
@@ -139,93 +144,17 @@
 
   function render() {
     el('pmc-per-dose').textContent = usd(data.costs.cost_per_dose, 2);
-    renderSchedules();
-    renderStates();
+    renderHow();
+    renderWhere();
   }
 
-  function renderSchedules() {
-    var max = 0;
-    data.schedules.forEach(function (s) {
-      max = Math.max(max, s.averted_pct + s.averted_ci);
-    });
-    max = Math.max(max, 1);
-    el('pmc-schedules').innerHTML = data.schedules
-      .map(function (s) {
-        var on = s.code === data.schedule;
-        var best = s.code === data.best_schedule;
-        var w = (Math.max(0, s.averted_pct) / max) * 100;
-        var lo = (Math.max(0, s.averted_pct - s.averted_ci) / max) * 100;
-        var hi = ((s.averted_pct + s.averted_ci) / max) * 100;
-        var cls =
-          'pmc-bar' +
-          (s.channel === 'connect' ? ' connect' : '') +
-          (best ? ' best' : '');
-        var cost =
-          s.cost_per_case_averted === null
-            ? '<div class="pmc-cost muted">' +
-              (s.too_noisy ? 'too noisy' : '—') +
-              '</div>'
-            : '<div class="pmc-cost">' +
-              usd(s.cost_per_case_averted, 2) +
-              '</div>';
-        return (
-          '<div class="pmc-sched' +
-          (on ? ' on' : '') +
-          '" data-code="' +
-          esc(s.code) +
-          '" role="radio" aria-checked="' +
-          on +
-          '" tabindex="0">' +
-          '<input type="radio" name="pmc-schedule" ' +
-          (on ? 'checked' : '') +
-          ' tabindex="-1">' +
-          '<div><div class="name">' +
-          esc(s.label) +
-          (best ? ' <span class="pmc-chip best">best value</span>' : '') +
-          '</div>' +
-          '<div class="sub">' +
-          esc(s.detail) +
-          '</div></div>' +
-          '<div style="display:flex; align-items:center; gap:10px">' +
-          '<div class="pmc-track" style="flex:1"><div class="' +
-          cls +
-          '" style="width:' +
-          w +
-          '%"></div>' +
-          '<div class="pmc-ci" style="left:' +
-          lo +
-          '%; width:' +
-          Math.max(0, hi - lo) +
-          '%"></div></div>' +
-          '<div class="pmc-pct pmc-num' +
-          (s.too_noisy ? ' muted' : '') +
-          '" style="width:92px">' +
-          (s.code === 'none'
-            ? '<span style="font-weight:500; color:#a8a29e; font-size:13px">baseline</span>'
-            : pct(s.averted_pct) +
-              ' <span style="font-weight:400; color:#78716c; font-size:12px">±' +
-              num(s.averted_ci, 1) +
-              '</span>') +
-          '</div>' +
-          '</div>' +
-          '<div class="pmc-num" style="text-align:right">' +
-          num(s.doses) +
-          '</div>' +
-          cost +
-          '</div>'
-        );
-      })
-      .join('');
-    var chosen = data.schedules.filter(function (s) {
+  function chosen() {
+    return data.schedules.filter(function (s) {
       return s.code === data.schedule;
     })[0];
-    el('pmc-chosen').textContent = chosen ? chosen.label : '';
-    renderTakeaway();
   }
 
-  // The answer in one sentence, built from the numbers on screen, so a reader who
-  // has never seen the page does not have to decode the bars to get it.
-  function renderTakeaway() {
+  function renderHow() {
     var costed = data.schedules
       .filter(function (s) {
         return s.cost_per_case_averted !== null;
@@ -233,155 +162,205 @@
       .sort(function (a, b) {
         return a.cost_per_case_averted - b.cost_per_case_averted;
       });
-    if (!costed.length) {
-      el('pmc-takeaway').textContent = '';
-      return;
-    }
     var best = costed[0];
-    var most = data.schedules.reduce(function (m, s) {
-      return s.averted_pct > m.averted_pct ? s : m;
+    var next = costed[1];
+    el('pmc-how').innerHTML = best
+      ? 'Best value: <b>' +
+        esc(best.label) +
+        '</b>, averting ' +
+        pct(best.averted_pct) +
+        ' of cases at ' +
+        usd(best.cost_per_case_averted, 2) +
+        ' each' +
+        (next
+          ? '. Next: ' +
+            esc(next.label) +
+            ', ' +
+            pct(next.averted_pct) +
+            ' at ' +
+            usd(next.cost_per_case_averted, 2) +
+            '.'
+          : '.')
+      : '';
+
+    var max = 1;
+    data.schedules.forEach(function (s) {
+      max = Math.max(max, s.averted_pct + s.averted_ci);
     });
-    var html =
-      'In this modelled setting, <b>' +
-      esc(best.label) +
-      '</b> is the best value: it averts ' +
-      pct(best.averted_pct) +
-      ' of cases in children 3–24 months, at ' +
-      usd(best.cost_per_case_averted, 2) +
-      ' per case averted' +
-      (most.code === best.code ? ', and the most cases of any schedule.' : '.');
-    if (costed[1]) {
-      html +=
-        ' The next best value, ' +
-        esc(costed[1].label) +
-        ', averts ' +
-        pct(costed[1].averted_pct) +
-        ' at ' +
-        usd(costed[1].cost_per_case_averted, 2) +
-        '.';
-    }
-    el('pmc-takeaway').innerHTML = html;
+    el('pmc-schedules').innerHTML = data.schedules
+      .map(function (s) {
+        var on = s.code === data.schedule;
+        var isBest = best && s.code === best.code;
+        var w = (Math.max(0, s.averted_pct) / max) * 100;
+        var lo = (Math.max(0, s.averted_pct - s.averted_ci) / max) * 100;
+        var hi = ((s.averted_pct + s.averted_ci) / max) * 100;
+        var bar =
+          'pmc-bar' +
+          (s.channel === 'connect' ? ' connect' : '') +
+          (isBest ? ' best' : '');
+        var share =
+          s.code === 'none'
+            ? '<span class="pmc-muted">baseline</span>'
+            : pct(s.averted_pct);
+        var cost =
+          s.cost_per_case_averted === null
+            ? '<span class="pmc-muted">' +
+              (s.too_noisy ? 'too noisy' : '—') +
+              '</span>'
+            : usd(s.cost_per_case_averted, 2);
+        return (
+          '<div class="pmc-sched' +
+          (on ? ' on' : '') +
+          '" data-code="' +
+          esc(s.code) +
+          '" title="' +
+          esc(s.detail + ' Range across seeds: ±' + s.averted_ci + ' points.') +
+          '" role="radio" aria-checked="' +
+          on +
+          '" tabindex="0">' +
+          '<input type="radio" name="pmc-schedule" ' +
+          (on ? 'checked' : '') +
+          ' tabindex="-1">' +
+          '<div class="name">' +
+          esc(s.label) +
+          (isBest ? ' <span class="pmc-chip best">best value</span>' : '') +
+          '</div>' +
+          '<div class="pmc-track"><div class="' +
+          bar +
+          '" style="width:' +
+          w +
+          '%"></div><div class="pmc-ci" style="left:' +
+          lo +
+          '%; width:' +
+          Math.max(0, hi - lo) +
+          '%"></div></div>' +
+          '<div class="pmc-r pmc-num">' +
+          share +
+          '</div>' +
+          '<div class="pmc-r pmc-num">' +
+          cost +
+          '</div>' +
+          '</div>'
+        );
+      })
+      .join('');
   }
 
-  function renderStates() {
-    var picked = {};
+  // The states considered: the ones handed over (from a targeting selection),
+  // else every state.
+  function considered() {
+    if (!state.states.length) return data.states;
+    var want = {};
     state.states.forEach(function (n) {
-      picked[n.toLowerCase()] = true;
+      want[n.toLowerCase()] = true;
     });
-    var rows = data.states;
-    var totals = {
-      states: 0,
-      children: 0,
-      cases: 0,
-      doses: 0,
-      spend: 0,
-      unprojected: 0,
-    };
+    return data.states.filter(function (r) {
+      return want[r.name.toLowerCase()];
+    });
+  }
+
+  var FIT = {
+    near: ['near', 'matches'],
+    prevalence_differs: ['lower', 'prevalence differs'],
+    more_seasonal: ['out', 'more seasonal: SMC, not PMC'],
+    less_seasonal: ['out', 'less seasonal'],
+    unknown: ['unknown', 'no data'],
+  };
+
+  function renderWhere() {
+    var rows = considered();
+    var ranked = rows.filter(function (r) {
+      return r.rank;
+    });
+    var s = chosen();
+    el('pmc-scope').textContent = state.states.length
+      ? rows.length + ' states from your selection'
+      : 'All ' + rows.length + ' states';
+    el('pmc-all').classList.toggle('hidden', !state.states.length);
+
+    var top = ranked.slice(0, 3).map(function (r) {
+      return esc(r.name);
+    });
+    el('pmc-where').innerHTML = ranked.length
+      ? 'Most cost-effective under ' +
+        esc(s ? s.label : 'this schedule') +
+        ': <b>' +
+        top.join(', ') +
+        '</b>. ' +
+        ranked.length +
+        ' of ' +
+        rows.length +
+        ' can be ranked' +
+        (rows.length > ranked.length
+          ? '; the rest are too seasonal for this model.'
+          : '.')
+      : 'None of these states matches the modelled setting.';
+
+    var t = { cases: 0, spend: 0, children: 0 };
+    ranked.forEach(function (r) {
+      t.cases += r.projection.cases_averted_per_year || 0;
+      t.spend += r.projection.spend_per_year || 0;
+      t.children += r.children_3_24m || 0;
+    });
+    el('pmc-total').innerHTML = ranked.length
+      ? stat('States ranked', ranked.length) +
+        stat('Children 3–24 mo', '≈' + num(approx(t.children))) +
+        stat('Cases averted / yr', '≈' + num(approx(t.cases))) +
+        stat('Cost / yr', '≈' + usdShort(approx(t.spend))) +
+        stat('Per case averted', t.cases ? usd(t.spend / t.cases, 2) : '—')
+      : '';
+    el('pmc-total').classList.toggle('hidden', !ranked.length);
+
     el('pmc-states').innerHTML =
       rows
         .map(function (r) {
-          var on = !!picked[r.name.toLowerCase()];
-          var p = r.projection || {};
-          if (on) {
-            totals.states += 1;
-            // A state the model cannot speak for is counted, never totalled:
-            // its children with no cases averted would flatter the cost.
-            if (!r.projection) totals.unprojected += 1;
-            else totals.children += r.children_3_24m || 0;
-            totals.cases += p.cases_averted_per_year || 0;
-            totals.doses += p.doses_per_year || 0;
-            totals.spend += p.spend_per_year || 0;
-          }
-          var fit =
-            {
-              near: 'near model',
-              prevalence_differs: 'prevalence differs',
-              more_seasonal: 'more seasonal',
-              less_seasonal: 'less seasonal',
-              unknown: 'no data',
-            }[r.fit] || r.fit;
-          var fitClass =
-            r.fit === 'near'
-              ? 'near'
-              : r.fit === 'unknown'
-                ? 'unknown'
-                : 'outside';
+          var f = FIT[r.fit] || FIT.unknown;
+          var p = r.projection;
+          var tip =
+            'Prevalence ' +
+            pct(r.malaria_prevalence) +
+            ' · rain in wettest quarter ' +
+            pct(r.rain_wettest_quarter) +
+            ' (model: ' +
+            data.setting.wettest_quarter_pct +
+            '%)';
           return (
             '<tr class="' +
-            (on ? 'on' : '') +
-            '" data-name="' +
-            esc(r.name) +
-            '" style="cursor:pointer">' +
-            '<td class="l"><input type="checkbox" ' +
-            (on ? 'checked' : '') +
-            ' tabindex="-1" aria-label="Select ' +
-            esc(r.name) +
-            '"></td>' +
-            '<td class="l" style="font-weight:500; white-space:nowrap">' +
+            (r.rank ? '' : 'unranked') +
+            '">' +
+            '<td class="l pmc-num">' +
+            (r.rank || '') +
+            '</td>' +
+            '<td class="l" style="font-weight:500">' +
             esc(r.name) +
             '</td>' +
-            '<td class="pmc-num" title="' +
-            esc(r.sources.malaria_prevalence) +
-            '">' +
-            pct(r.malaria_prevalence) +
+            '<td class="pmc-num">' +
+            num(r.malaria_incidence) +
             '</td>' +
             '<td class="l"><span class="pmc-chip ' +
-            fitClass +
+            f[0] +
+            '" title="' +
+            esc(tip) +
             '">' +
-            fit +
+            esc(f[1]) +
             '</span></td>' +
-            '<td class="pmc-num">' +
-            pct(r.rain_wettest_quarter) +
-            '</td>' +
-            '<td class="pmc-num">' +
-            pct(r.zero_dose) +
-            '</td>' +
-            '<td class="pmc-num">' +
-            pct(r.dpt3_vaccination) +
-            '</td>' +
-            '<td class="pmc-num">' +
+            '<td class="pmc-num pmc-hide-sm">' +
             num(r.children_3_24m) +
             '</td>' +
-            (r.projection
-              ? '<td class="pmc-num">' +
-                num(p.cases_averted_per_year) +
-                '</td>' +
-                '<td class="pmc-num">' +
-                num(p.doses_per_year) +
-                '</td>' +
-                '<td class="pmc-num">' +
-                usdShort(p.spend_per_year) +
-                '</td>'
-              : '<td class="l pmc-muted" colspan="3">needs its own model run</td>') +
+            '<td class="pmc-num">' +
+            (p ? num(p.cases_averted_per_year) : '—') +
+            '</td>' +
+            '<td class="pmc-num pmc-hide-sm">' +
+            (p ? usdShort(p.spend_per_year) : '—') +
+            '</td>' +
+            '<td class="pmc-num" style="font-weight:600">' +
+            (p ? usd(p.cost_per_case_averted, 2) : '—') +
+            '</td>' +
             '</tr>'
           );
         })
         .join('') ||
-      '<tr><td class="l" colspan="11">No Nigerian states are loaded in this environment.</td></tr>';
-
-    el('pmc-total').innerHTML = totals.states
-      ? stat('States', totals.states) +
-        stat('Children 3–24 mo (projected)', num(approx(totals.children))) +
-        stat('Cases averted / yr', '≈' + num(approx(totals.cases))) +
-        stat('Doses / yr', '≈' + num(approx(totals.doses))) +
-        stat('Cost / yr', '≈' + usdShort(approx(totals.spend))) +
-        // Cost per case does not depend on population, so it is the schedule's
-        // own figure -- dividing rounded totals would disagree with the row above.
-        stat('Per case averted', chosenCost()) +
-        (totals.unprojected
-          ? stat('Need their own run', totals.unprojected)
-          : '')
-      : '<div class="v" style="font-size:14px; font-weight:500">Select states to total a programme. ' +
-        'Projections assume each state behaves like the modelled setting.</div>';
-  }
-
-  function chosenCost() {
-    var s = data.schedules.filter(function (x) {
-      return x.code === data.schedule;
-    })[0];
-    return s && s.cost_per_case_averted !== null
-      ? usd(s.cost_per_case_averted, 2)
-      : '—';
+      '<tr><td class="l" colspan="8">No Nigerian states are loaded in this environment.</td></tr>';
   }
 
   function stat(k, v) {
@@ -402,7 +381,6 @@
       load();
     }
   }
-
   el('pmc-schedules').addEventListener('click', function (e) {
     var row = e.target.closest('.pmc-sched[data-code]');
     if (row) choose(row.getAttribute('data-code'));
@@ -415,34 +393,10 @@
       choose(row.getAttribute('data-code'));
     }
   });
-
-  el('pmc-states').addEventListener('click', function (e) {
-    var row = e.target.closest('tr[data-name]');
-    if (!row) return;
-    var name = row.getAttribute('data-name');
-    var i = state.states
-      .map(function (s) {
-        return s.toLowerCase();
-      })
-      .indexOf(name.toLowerCase());
-    if (i >= 0) state.states.splice(i, 1);
-    else state.states.push(name);
-    history.replaceState(
-      null,
-      '',
-      window.location.pathname + '?' + params().toString(),
-    );
-    renderStates();
-    shareWithAgent();
-  });
-  el('pmc-clear').addEventListener('click', function () {
+  el('pmc-all').addEventListener('click', function () {
     state.states = [];
-    history.replaceState(
-      null,
-      '',
-      window.location.pathname + '?' + params().toString(),
-    );
-    renderStates();
+    syncUrl();
+    renderWhere();
     shareWithAgent();
   });
 
