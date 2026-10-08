@@ -6,9 +6,9 @@
 #
 # Inputs (environment, set by whatever renders the user-data):
 #   WORKER_SRC               directory or s3:// prefix holding run_scenarios.py and pmc_sweep.py (required)
-#   CANOPY_WATCHDOG_INSTALL  command that installs the canopy watchdog units; it is run with CAPABILITY=emod
-#                            and told the activity file via ACTIVITY_FILE (optional, but without it nothing
-#                            stops an idle box)
+#                            Also holds watchdog/{idle-shutdown.sh,ondemand-idle-shutdown.service,
+#                            ondemand-idle-shutdown.timer} (the canopy SDK on-demand assets; the box cannot
+#                            fetch the SDK wheel itself). A missing watchdog is fatal: no ready file.
 set -euxo pipefail
 
 # The emodpy-malaria commit the sweep and burn-in were validated against on 2026-10-08.
@@ -22,7 +22,7 @@ ACTIVITY_FILE=/var/run/emod/last-activity
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y docker.io git python3-venv python3-pip awscli
+apt-get install -y docker.io git python3-venv python3-pip
 systemctl enable --now docker
 
 # EMOD's runtime image is amd64-only.
@@ -47,25 +47,44 @@ import emod_malaria.bootstrap as dtk
 dtk.setup(pathlib.Path(manifest.eradication_path).parent)
 ')
 
-case "$WORKER_SRC" in
-  s3://*)
-    aws s3 cp "${WORKER_SRC%/}/run_scenarios.py" "$OPT/run_scenarios.py"
-    aws s3 cp "${WORKER_SRC%/}/pmc_sweep.py" "$OPT/pmc_sweep.py"
-    ;;
-  *)
-    cp "$WORKER_SRC/run_scenarios.py" "$WORKER_SRC/pmc_sweep.py" "$OPT/"
-    ;;
-esac
+# Fetch one file from WORKER_SRC (a directory or an s3:// prefix). S3 goes through boto3 in the venv, so the
+# box needs no AWS CLI.
+fetch() { # fetch <relative-name> <dest>
+  case "$WORKER_SRC" in
+    s3://*)
+      "$OPT/.venv/bin/python" - "${WORKER_SRC%/}/$1" "$2" <<'PY'
+import sys
+import boto3
+
+bucket, _, key = sys.argv[1][len("s3://"):].partition("/")
+boto3.client("s3").download_file(bucket, key, sys.argv[2])
+PY
+      ;;
+    *) cp "$WORKER_SRC/$1" "$2" ;;
+  esac
+}
+
+fetch run_scenarios.py "$OPT/run_scenarios.py"
+fetch pmc_sweep.py "$OPT/pmc_sweep.py"
 
 # Smoke test before declaring ready: imports, binary, one tiny run.
 EMOD_CACHE_DIR="$CACHE" EMOD_TUTORIALS_DIR="$OPT/emodpy-malaria/tutorials" EMOD_ACTIVITY_FILE="$ACTIVITY_FILE" \
   "$OPT/.venv/bin/python" "$OPT/run_scenarios.py" --self-test
 
-if [ -n "${CANOPY_WATCHDOG_INSTALL:-}" ]; then
-  CAPABILITY=emod ACTIVITY_FILE="$ACTIVITY_FILE" bash -c "$CANOPY_WATCHDOG_INSTALL"
-else
-  echo "WARNING: CANOPY_WATCHDOG_INSTALL not set; no idle watchdog installed" >&2
-fi
+# Idle watchdog (canopy SDK on-demand assets). Any failure here aborts the script (set -e), so the box never
+# reports ready without a way to stop itself.
+fetch watchdog/idle-shutdown.sh /usr/local/bin/ondemand-idle-shutdown
+fetch watchdog/ondemand-idle-shutdown.service /etc/systemd/system/ondemand-idle-shutdown.service
+fetch watchdog/ondemand-idle-shutdown.timer /etc/systemd/system/ondemand-idle-shutdown.timer
+chmod 0755 /usr/local/bin/ondemand-idle-shutdown
+# The script's own default for CAPABILITY=emod is /var/run/emod/last-activity; it is set explicitly anyway.
+cat > /etc/default/ondemand-idle-shutdown <<DEFAULTS
+CAPABILITY=emod
+ACTIVITY_FILE=$ACTIVITY_FILE
+DEFAULTS
+systemctl daemon-reload
+systemctl enable --now ondemand-idle-shutdown.timer
+systemctl is-active --quiet ondemand-idle-shutdown.timer
 
 # /run is tmpfs, so readiness and the activity directory vanish on every reboot. A oneshot unit recreates them.
 cat > /etc/systemd/system/emod-ready.service <<'UNIT'

@@ -5,6 +5,10 @@
 The Django test config is not involved; this directory carries its own pytest.ini.
 """
 
+import copy
+import json
+import time
+
 import pytest
 import run_scenarios
 
@@ -28,7 +32,7 @@ def small_request(pop, seeds, schedules, years=2):
     }
     return {
         "setting": setting,
-        "schedules": [{"code": c, "rounds": ROUNDS[c]} for c in schedules],
+        "schedules": [{"code": c, "rounds": copy.deepcopy(ROUNDS[c])} for c in schedules],
         "seeds": seeds,
         "intervention_years": years,
     }
@@ -50,16 +54,92 @@ def test_missing_burnin_is_built_and_reported(tmp_path):
     assert out2["runs"] == out["runs"]  # same seed, same serialized state: deterministic
 
 
+def test_setting_hash_ignores_name_and_tracks_model_inputs():
+    a = small_request(500, [0], ["none"])["setting"]
+    b = dict(a, name="other")
+    c = dict(a, pop=501)
+    assert run_scenarios.setting_hash(a) == run_scenarios.setting_hash(b) != run_scenarios.setting_hash(c)
+
+
 @emod
-def test_runner_touches_activity_every_minute(tmp_path, monkeypatch):
+def test_run_with_heartbeat_touches_activity(tmp_path, monkeypatch):
     touched = []
     monkeypatch.setattr("run_scenarios.touch_activity", lambda: touched.append(1))
     run_local(small_request(pop=500, seeds=[0], schedules=["none"]), cache_dir=tmp_path, heartbeat_s=1)
     assert len(touched) >= 2
 
 
-def test_setting_hash_ignores_name_and_tracks_model_inputs():
-    a = small_request(500, [0], ["none"])["setting"]
-    b = dict(a, name="other")
-    c = dict(a, pop=501)
-    assert run_scenarios.setting_hash(a) == run_scenarios.setting_hash(b) != run_scenarios.setting_hash(c)
+def test_heartbeat_ticks(monkeypatch):
+    touched = []
+    monkeypatch.setattr("run_scenarios.touch_activity", lambda: touched.append(1))
+    with run_scenarios.Heartbeat(0.05):
+        time.sleep(0.4)
+    assert len(touched) >= 3
+
+
+def test_touch_activity_failure_is_loud_not_fatal(tmp_path, monkeypatch, capsys):
+    blocker = tmp_path / "file"
+    blocker.write_text("x")
+    monkeypatch.setenv("EMOD_ACTIVITY_FILE", str(blocker / "sub" / "last-activity"))
+    run_scenarios.touch_activity()
+    assert "WARNING" in capsys.readouterr().err
+
+
+def test_valid_request_passes():
+    run_scenarios.validate_request(small_request(500, [0, 1], ["none", "connect_monthly_in_season_3_24"]))
+
+
+def _bad(mutate):
+    req = small_request(500, [0], ["connect_monthly_in_season_3_24"])
+    mutate(req)
+    return req
+
+
+@pytest.mark.parametrize(
+    "mutate, fragment",
+    [
+        (lambda r: r["setting"].pop("larval_capacity"), "larval_capacity"),
+        (lambda r: r["setting"].update(pop=0), "pop"),
+        (lambda r: r["setting"].update(pop="500"), "pop"),
+        (lambda r: r.update(schedules=[]), "schedules"),
+        (lambda r: r["schedules"].append(dict(r["schedules"][0])), "unique"),
+        (lambda r: r["schedules"][0]["rounds"][0].pop(), "6 numbers"),
+        (lambda r: r["schedules"][0]["rounds"][0].__setitem__(5, 1.5), "coverage"),
+        (lambda r: r["schedules"][0]["rounds"][0].__setitem__(0, -1), "offset"),
+        (lambda r: r["schedules"][0]["rounds"][0].__setitem__(1, 0), "interval"),
+        (lambda r: r["schedules"][0]["rounds"][0].__setitem__(2, 0), "reps"),
+        (lambda r: r["schedules"][0]["rounds"][0].__setitem__(3, 3.0), "age_min"),
+        (lambda r: r.update(seeds=[]), "seeds"),
+        (lambda r: r.update(seeds=[1, 1]), "unique"),
+        (lambda r: r.update(seeds=["a"]), "integers"),
+        (lambda r: r.update(intervention_years=0), "intervention_years"),
+    ],
+)
+def test_invalid_requests_are_rejected_before_any_run(mutate, fragment):
+    with pytest.raises(run_scenarios.RequestError, match=fragment):
+        run_scenarios.validate_request(_bad(mutate))
+
+
+def test_run_request_validates_before_burnin(tmp_path):
+    with pytest.raises(run_scenarios.RequestError):
+        run_scenarios.run_request(_bad(lambda r: r.update(seeds=[])), tmp_path)
+    assert not (tmp_path / "burnin").exists()
+
+
+def test_cli_exits_nonzero_on_invalid_request(tmp_path, capsys):
+    path = tmp_path / "req.json"
+    path.write_text(json.dumps(_bad(lambda r: r.update(seeds=[]))))
+    assert run_scenarios.main(["--request", str(path), "--out", str(tmp_path / "o.json")]) == 2
+    assert "invalid request" in capsys.readouterr().err
+
+
+def test_only_not_found_is_a_cache_miss():
+    from botocore.exceptions import ClientError
+
+    def err(code, status):
+        return ClientError({"Error": {"Code": code}, "ResponseMetadata": {"HTTPStatusCode": status}}, "GetObject")
+
+    assert run_scenarios.is_missing(err("404", 404))
+    assert run_scenarios.is_missing(err("NoSuchKey", 404))
+    assert not run_scenarios.is_missing(err("403", 403))
+    assert not run_scenarios.is_missing(err("SlowDown", 503))

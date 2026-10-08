@@ -18,6 +18,7 @@ Environment:
   EMOD_TUTORIALS_DIR   directory holding the emodpy-malaria tutorials' manifest.py (default
                        /opt/emod/emodpy-malaria/tutorials)
   EMOD_CACHE_DIR       burn-in + job directory (default /var/cache/emod)
+  EMOD_RUN_TIMEOUT_S   longest wait for one experiment, seconds (default 1800)
   EMOD_ACTIVITY_FILE   liveness marker touched while working (default /var/run/emod/last-activity)
 """
 
@@ -38,6 +39,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 DEFAULT_TUTORIALS_DIR = "/opt/emod/emodpy-malaria/tutorials"
 DEFAULT_CACHE_DIR = "/var/cache/emod"
 DEFAULT_ACTIVITY_FILE = "/var/run/emod/last-activity"
+DEFAULT_RUN_TIMEOUT_S = 1800
 BURNIN_DAYS = 730
 BURNIN_FILE = "state-00730.dtk"
 # Bump when the model code changes in a way that invalidates stored burn-ins.
@@ -55,7 +57,10 @@ def touch_activity():
         os.makedirs(os.path.dirname(path), exist_ok=True)
         pathlib.Path(path).touch()
     except OSError as exc:
-        print(f"warning: cannot touch {path}: {exc}", file=sys.stderr)
+        print(
+            f"WARNING: cannot touch activity marker {path}: {exc}; the idle watchdog may stop this box",
+            file=sys.stderr,
+        )
 
 
 class Heartbeat:
@@ -153,6 +158,16 @@ def make_task(manifest, sweep, config_builder, campaign_builder, demographics_bu
     )
 
 
+def run_experiment(exp, platform):
+    """Run an idmtools experiment and wait at most EMOD_RUN_TIMEOUT_S (default 1800) seconds for it.
+
+    Raises TimeoutError past that; the SSM command timeout is a second, outer bound.
+    """
+    timeout = int(os.environ.get("EMOD_RUN_TIMEOUT_S", DEFAULT_RUN_TIMEOUT_S))
+    exp.run(wait_until_done=False, platform=platform)
+    platform.wait_till_done_progress(exp, timeout=timeout, refresh_interval=5)
+
+
 def build_burnin(manifest, sweep, setting, dest_dir, job_dir):
     """Run the 2-year burn-in once and copy its serialized population to dest_dir."""
     from idmtools.builders import SimulationBuilder
@@ -172,7 +187,7 @@ def build_burnin(manifest, sweep, setting, dest_dir, job_dir):
     builder = SimulationBuilder()
     builder.add_sweep_definition(sweep.set_seed, [0])
     exp = Experiment.from_builder(builder, task, name="pmc_burnin")
-    exp.run(wait_until_done=True, platform=platform)
+    run_experiment(exp, platform)
     if not exp.succeeded:
         raise RuntimeError(f"burn-in experiment {exp.id} failed")
     found = sorted(pathlib.Path(exp.simulations[0].get_directory()).rglob(BURNIN_FILE))
@@ -215,7 +230,7 @@ def run_pickups(manifest, sweep, setting, schedules, seeds, years, burnin_dir, j
     )
     builder.add_sweep_definition(sweep.set_seed, list(seeds))
     exp = Experiment.from_builder(builder, task, name="pmc_pickup")
-    exp.run(wait_until_done=True, platform=platform)
+    run_experiment(exp, platform)
     if not exp.succeeded:
         raise RuntimeError(f"pickup experiment {exp.id} failed")
     out = tempfile.mkdtemp(prefix="results-", dir=job_dir)
@@ -237,6 +252,73 @@ def run_pickups(manifest, sweep, setting, schedules, seeds, years, burnin_dir, j
     ]
 
 
+class RequestError(ValueError):
+    pass
+
+
+def _num(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def validate_request(req):
+    """Raise RequestError with a readable message unless `req` is well-formed. Runs before any burn-in."""
+
+    def need(cond, msg):
+        if not cond:
+            raise RequestError(msg)
+
+    need(isinstance(req, dict), "request must be a JSON object")
+    setting = req.get("setting")
+    need(isinstance(setting, dict), "request.setting must be an object")
+    for key in ("name", "larval_capacity", "habitat_times", "habitat_values", "pop", "case_mgmt", "net_coverage"):
+        need(key in setting, f"setting.{key} is missing")
+    need(isinstance(setting["name"], str) and setting["name"], "setting.name must be a non-empty string")
+    need(_num(setting["larval_capacity"]) and setting["larval_capacity"] > 0, "setting.larval_capacity must be > 0")
+    need(isinstance(setting["pop"], int) and not isinstance(setting["pop"], bool), "setting.pop must be an integer")
+    need(setting["pop"] > 0, "setting.pop must be > 0")
+    for key in ("case_mgmt", "net_coverage"):
+        need(_num(setting[key]) and 0 <= setting[key] <= 1, f"setting.{key} must be a number in [0, 1]")
+    times, values = setting["habitat_times"], setting["habitat_values"]
+    need(
+        isinstance(times, list) and isinstance(values, list) and len(times) >= 2 and len(times) == len(values),
+        "setting.habitat_times and habitat_values must be lists of the same length (>= 2)",
+    )
+    need(all(_num(x) for x in times + values), "setting.habitat_times/habitat_values must be numbers")
+    need(all(a < b for a, b in zip(times, times[1:])), "setting.habitat_times must be strictly increasing")
+
+    schedules = req.get("schedules")
+    need(isinstance(schedules, list) and schedules, "schedules must be a non-empty list")
+    codes = []
+    for i, sched in enumerate(schedules):
+        need(isinstance(sched, dict), f"schedules[{i}] must be an object")
+        code = sched.get("code")
+        need(isinstance(code, str) and code, f"schedules[{i}].code must be a non-empty string")
+        codes.append(code)
+        rounds = sched.get("rounds")
+        need(isinstance(rounds, list), f"schedule {code}: rounds must be a list")
+        for j, rnd in enumerate(rounds):
+            where = f"schedule {code} round {j}"
+            need(isinstance(rnd, (list, tuple)) and len(rnd) == 6, f"{where}: needs 6 numbers")
+            need(all(_num(x) for x in rnd), f"{where}: all 6 values must be numbers")
+            offset, interval, reps, age_min, age_max, coverage = rnd
+            need(offset >= 0, f"{where}: offset must be >= 0")
+            need(interval > 0, f"{where}: interval must be > 0")
+            need(reps >= 1 and reps == int(reps), f"{where}: reps must be an integer >= 1")
+            need(0 <= age_min < age_max, f"{where}: need 0 <= age_min < age_max")
+            need(0 <= coverage <= 1, f"{where}: coverage must be in [0, 1]")
+    need(len(set(codes)) == len(codes), "schedule codes must be unique")
+
+    seeds = req.get("seeds")
+    need(isinstance(seeds, list) and seeds, "seeds must be a non-empty list")
+    need(all(isinstance(x, int) and not isinstance(x, bool) for x in seeds), "seeds must be integers")
+    need(len(set(seeds)) == len(seeds), "seeds must be unique")
+    years = req.get("intervention_years", 2)
+    need(
+        isinstance(years, int) and not isinstance(years, bool) and years > 0,
+        "intervention_years must be an integer > 0",
+    )
+
+
 def run_request(req, cache_dir, heartbeat_s=60, fetch_burnin=None, publish_burnin=None):
     """Run a request against local paths. Returns the result dict.
 
@@ -244,6 +326,7 @@ def run_request(req, cache_dir, heartbeat_s=60, fetch_burnin=None, publish_burni
     for a remote burn-in store (S3); without them the burn-in cache is just `cache_dir`.
     """
     t0 = time.time()
+    validate_request(req)
     cache_dir = pathlib.Path(cache_dir).resolve()
     setting = req["setting"]
     years = int(req.get("intervention_years", 2))
@@ -303,6 +386,13 @@ def write_text(uri, text):
         path.write_text(text)
 
 
+def is_missing(exc):
+    """True only for a 404 / NoSuchKey / NotFound; anything else (403, 5xx, throttling) is a real failure."""
+    err = exc.response.get("Error", {})
+    status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+    return status == 404 or str(err.get("Code")) in ("404", "NoSuchKey", "NotFound")
+
+
 def s3_burnin_hooks(request_uri):
     import boto3
     from botocore.exceptions import ClientError
@@ -314,8 +404,10 @@ def s3_burnin_hooks(request_uri):
         try:
             client.download_file(bucket, f"burnin/{key}.dtk", str(dest))
             return True
-        except ClientError:
-            return False
+        except ClientError as exc:
+            if is_missing(exc):
+                return False
+            raise
 
     def publish(key, src):
         client.upload_file(str(src), bucket, f"burnin/{key}.dtk")
@@ -361,6 +453,11 @@ def main(argv=None):
     if not (args.request and args.out):
         ap.error("--request and --out are required")
     req = json.loads(read_text(args.request))
+    try:
+        validate_request(req)
+    except RequestError as exc:
+        print(f"invalid request: {exc}", file=sys.stderr)
+        return 2
     fetch = publish = None
     if args.request.startswith("s3://"):
         fetch, publish = s3_burnin_hooks(args.request)
@@ -370,4 +467,4 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
