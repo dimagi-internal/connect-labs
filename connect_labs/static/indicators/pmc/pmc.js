@@ -458,9 +458,11 @@
   var liveTimer = null;
   var tickTimer = null;
 
+  // The token is in the page's form (base.html), not a cookie: the cookie is
+  // not readable here (sessions hold the token and the cookie is HttpOnly).
   function csrfToken() {
-    var m = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/);
-    return m ? decodeURIComponent(m[1]) : '';
+    var input = document.querySelector('[name=csrfmiddlewaretoken]');
+    return (input && input.value) || cfg.csrf || '';
   }
 
   function fillLiveControls() {
@@ -541,15 +543,31 @@
     el('pmc-live-run').disabled = false;
   }
 
+  var RUN_CAP_MS = 8 * 60 * 1000;
+  var liveSeq = 0;
+
   function startLive() {
+    // Nothing from an earlier run may fire into this one.
+    clearTimeout(liveTimer);
+    clearInterval(tickTimer);
     var stateName = el('pmc-live-state').value;
     var started = Date.now();
     var etaS = null;
     var failures = 0;
+    var finished = false;
+    if (
+      liveRows.some(function (r) {
+        return r.state !== stateName;
+      })
+    ) {
+      liveRows = [];
+      renderHow();
+    }
     el('pmc-live-run').disabled = true;
     liveMsg('Starting…');
 
     function showRunning() {
+      if (finished) return;
       liveMsg(
         'Running IDM’s EMOD model… ' +
           mmss((Date.now() - started) / 1000) +
@@ -558,61 +576,85 @@
             : ''),
       );
     }
-    function fail(text) {
+    function end() {
+      finished = true;
       stopLive();
+    }
+    function fail(text) {
+      end();
       liveMsg(text, true);
     }
     function done(payload) {
-      stopLive();
-      if (!payload.result) return fail('The model returned no result.');
+      end();
+      if (!payload.result)
+        return liveMsg('The model returned no result.', true);
       addLiveResult(payload.result, stateName);
     }
+    function later(id) {
+      if (finished) return;
+      if (Date.now() - started > RUN_CAP_MS)
+        return fail(
+          'The model is taking longer than expected; try again in a few minutes.',
+        );
+      liveTimer = setTimeout(function () {
+        poll(id);
+      }, POLL_MS);
+    }
+    // Transport (fetch + JSON) is handled apart from what the response says,
+    // so a bug in rendering a result can never read as a lost connection.
+    function request(url, opts) {
+      return fetch(
+        url,
+        Object.assign({ credentials: 'same-origin' }, opts || {}),
+      ).then(function (r) {
+        return r.json().then(function (j) {
+          return { status: r.status, body: j };
+        });
+      });
+    }
+    function guarded(fn) {
+      return function (r) {
+        if (finished) return;
+        try {
+          fn(r);
+        } catch (e) {
+          fail('The result could not be shown: ' + e.message);
+        }
+      };
+    }
     function poll(id) {
-      fetch(
+      if (finished) return;
+      request(
         cfg.statusUrl.replace('{id}', id) +
           '?state=' +
           encodeURIComponent(stateName),
-        { credentials: 'same-origin' },
-      )
-        .then(function (r) {
-          return r.json().then(function (j) {
-            return { ok: r.ok, body: j };
-          });
-        })
-        .then(function (r) {
+      ).then(
+        guarded(function (r) {
           failures = 0;
           var b = r.body;
           if (b.status === 'completed') return done(b);
-          if (b.status === 'failed' || !r.ok)
+          if (b.status === 'failed' || r.status >= 400)
             return fail(b.error || 'The model run failed.');
           etaS = b.eta_s;
-          liveTimer = setTimeout(function () {
-            poll(id);
-          }, POLL_MS);
-        })
-        .catch(function () {
+          later(id);
+        }),
+        function () {
+          if (finished) return;
           if (++failures >= 5) return fail('Lost contact with the server.');
-          liveTimer = setTimeout(function () {
-            poll(id);
-          }, POLL_MS);
-        });
+          later(id);
+        },
+      );
     }
 
-    fetch(cfg.runUrl, {
+    request(cfg.runUrl, {
       method: 'POST',
-      credentials: 'same-origin',
       headers: {
         'Content-Type': 'application/json',
         'X-CSRFToken': csrfToken(),
       },
       body: JSON.stringify({ state: stateName, schedule: liveSpec() }),
-    })
-      .then(function (r) {
-        return r.json().then(function (j) {
-          return { status: r.status, body: j };
-        });
-      })
-      .then(function (r) {
+    }).then(
+      guarded(function (r) {
         var b = r.body;
         if (r.status === 200) return done(b);
         if (r.status === 202) {
@@ -627,10 +669,11 @@
               ? 'The live model is busy with other runs; try again in a few minutes.'
               : 'The model could not be started.'),
         );
-      })
-      .catch(function () {
+      }),
+      function () {
         fail('Could not reach the server.');
-      });
+      },
+    );
   }
 
   // One finished run: a row in the schedules list (same rendering as the
@@ -640,9 +683,10 @@
     var proj = res.projection;
     var precomputed = /precomputed/.test(res.label || '');
     liveRows.push({
-      code: 'live_' + liveRows.length,
+      code: 'live_' + ++liveSeq,
+      state: stateName,
       live: true,
-      tag: precomputed ? 'precomputed' : 'live run',
+      tag: (precomputed ? 'precomputed' : 'live run') + ' · ' + stateName,
       label: (res.schedule && res.schedule.description) || 'Custom schedule',
       detail: (res.label || '') + ' · costed at ' + stateName + '.',
       channel: 'connect',
@@ -651,6 +695,7 @@
       too_noisy: !!eff.too_noisy,
       cost_per_case_averted: proj ? proj.cost_per_case_averted : null,
     });
+    liveRows = liveRows.slice(-3);
     renderHow();
     liveMsg(
       stateName +

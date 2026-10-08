@@ -158,6 +158,7 @@
   <script>
     window.PMC = {
       url: "{% url 'targeting:pmc_data' %}",
+      csrf: "{{ csrf_token }}",
       runUrl: "{% url 'targeting:pmc_run' %}",
       statusUrl: "{% url 'targeting:pmc_run_status' 0 %}".replace(/0\/$/, '{id}/'),
       defaults: {
