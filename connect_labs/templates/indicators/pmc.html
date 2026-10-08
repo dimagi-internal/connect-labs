@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% load static %}
 
+{% block title %}PMC schedule explorer · Connect Labs{% endblock %}
+
 {% block css %}
   {{ block.super }}
   <style>
@@ -46,6 +48,21 @@
     .pmc-total .k { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; opacity: .75; }
     .pmc-total .v { font-size: 20px; font-weight: 700; }
     .pmc-muted { color: #a8a29e; font-style: italic; }
+    .pmc-takeaway { padding: 4px 16px 12px; font-size: 15px; line-height: 1.5; color: #1c1917; }
+    /* Phone: each schedule stacks -- name, then its bar, then doses and cost -- so the
+       answer is on screen instead of off its right edge. */
+    /* In the stacked (narrow) layout the column must not shrink to fit its widest
+       child -- the states table -- or every card becomes as wide as the table. And the
+       answer comes before the inputs. Plain CSS so it does not depend on the utility build. */
+    .pmc-main { width: 100%; }
+    @media (max-width: 1023px) { .pmc-main { order: 1; } .pmc-side { order: 2; } }
+    @media (max-width: 640px) {
+      .pmc-sched { grid-template-columns: 22px 1fr 1fr; row-gap: 6px; }
+      .pmc-sched > :nth-child(2), .pmc-sched > :nth-child(3) { grid-column: 2 / 4; }
+      .pmc-sched > :nth-child(4) { grid-column: 2; text-align: left !important; }
+      .pmc-sched-head { display: none !important; }
+      .pmc-sched > :nth-child(4)::after { content: " doses"; color: #78716c; font-size: 12px; }
+    }
     .pmc-input { width: 100%; font-size: 14px; border: 1px solid #d6d3d1; border-radius: 6px; padding: 5px 8px; }
   </style>
 {% endblock %}
@@ -67,13 +84,14 @@
   </div>
 
   <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
-    <b>Illustrative.</b> {{ sweep.setting.label }} setting (PfPR 2–5y ≈ {% widthratio sweep.setting.pfpr_2_5y 1 100 %}%),
-    {{ sweep.setting.seeds }} seeds, run {{ sweep.run_date }}. Not a calibrated estimate for any state.
+    <b>Illustrative.</b> {{ sweep.setting.label }} setting (malaria prevalence in 2–5 year olds ≈ {% widthratio sweep.setting.pfpr_2_5y 1 100 %}%),
+    {{ sweep.setting.seeds }} random seeds, run {{ sweep.run_date }}. Not a calibrated estimate for any state.
   </div>
 
   <div class="flex flex-col lg:flex-row gap-5 items-start">
 
-    <aside class="w-full lg:w-[300px] lg:shrink-0 space-y-4">
+    {% comment %}The answer before the inputs on a phone; inputs on the left on a desktop.{% endcomment %}
+    <aside class="pmc-side w-full lg:w-[300px] lg:shrink-0 space-y-4">
       <div class="pmc-card p-4 space-y-3">
         <div class="pmc-label">Price</div>
         <label class="block text-sm text-stone-700">Cost per verified visit (USD)
@@ -100,14 +118,15 @@
       </div>
     </aside>
 
-    <main class="flex-1 min-w-0 space-y-5">
+    <main class="pmc-main flex-1 min-w-0 space-y-5">
 
       <section class="pmc-card">
         <div class="flex items-baseline gap-3 px-4 pt-3 pb-2">
           <div class="pmc-label">Schedules · cases averted in children 3–24 months</div>
           <div class="ml-auto text-xs text-stone-500">bar ± range across seeds · click to choose</div>
         </div>
-        <div class="pmc-sched" style="cursor:default; padding-top:2px; padding-bottom:2px">
+        <p id="pmc-takeaway" class="pmc-takeaway"></p>
+        <div class="pmc-sched pmc-sched-head" style="cursor:default; padding-top:2px; padding-bottom:2px">
           <span></span><span class="sub">Schedule</span><span class="sub">Cases averted</span>
           <span class="sub" style="text-align:right">Doses</span><span class="sub" style="text-align:right">Per case averted</span>
         </div>
