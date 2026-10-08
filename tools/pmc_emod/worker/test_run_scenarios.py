@@ -244,10 +244,41 @@ def test_calibrate_refines_around_the_crossing_and_picks_the_nearest_evaluated_v
     assert len(fit["candidates"]) == 12
 
 
-def test_calibrate_reports_an_unreachable_target_after_one_round():
-    fit = run_scenarios.calibrate(lambda r, xs: [fake_pfpr(x) for x in xs], 0.99)
-    assert fit["fit"] == "unreachable" and fit["iterations"] == 1
-    assert fit["larval_capacity"] == 1e9 and fit["fit_error"] < -0.03
+def test_calibrate_extends_then_reports_an_unreachable_target():
+    rounds = []
+
+    def evaluate(round_no, larvals):
+        rounds.append(list(larvals))
+        return [fake_pfpr(x) for x in larvals]
+
+    fit = run_scenarios.calibrate(evaluate, 0.99)
+    assert fit["fit"] == "unreachable" and fit["iterations"] == 2 and fit["extended"] is True
+    assert rounds[1] == run_scenarios.extension_grid() == [3.162e9, 1e10, 3.162e10, 1e11]
+    assert fit["larval_capacity"] == 1e11 and fit["fit_error"] < -0.03
+
+
+def test_extension_round_finds_a_target_above_the_grid_and_refines_it():
+    import math
+
+    def late(x):  # a curve that only rises past 1e9: 0.2 at 1e9, 0.9 at 1e11
+        return 0.9 / (1 + math.exp(-2.5 * (math.log10(x) - 9.5)))
+
+    rounds = []
+
+    def evaluate(round_no, larvals):
+        rounds.append((round_no, list(larvals)))
+        return [{"pfpr_2_5y": late(x), "pfpr_2_5y_annual": late(x) / 2} for x in larvals]
+
+    fit = run_scenarios.calibrate(evaluate, 0.6)
+    assert [r for r, _ in rounds] == [1, 2, 3] and fit["extended"] is True
+    assert all(x > 1e9 for x in rounds[1][1])
+    assert fit["fit"] == "ok" and fit["iterations"] == 3 and fit["larval_capacity"] > 1e9
+    assert fit["pfpr_2_5y_annual"] == pytest.approx(fit["pfpr_2_5y"] / 2)  # extra keys ride along
+
+
+def test_no_extension_when_round_1_reaches_the_target():
+    fit = run_scenarios.calibrate(lambda r, xs: [fake_pfpr(x) for x in xs], 0.5)
+    assert fit["extended"] is False and fit["iterations"] == 2
 
 
 def test_calibrate_is_loose_when_reachable_but_not_hit():
@@ -277,6 +308,7 @@ def test_run_calibration_caches_the_chosen_burnin_where_a_run_request_finds_it(t
     out = run_scenarios.run_request(req, tmp_path, publish_burnin=lambda k, f: published.append((k, f.read_text())))
     assert batches == [8, 4]
     assert out["fit"] == "ok" and [r["round"] for r in out["rounds"]] == [1, 2]
+    assert out["pfpr_basis"] == "Oct-Dec mean, 2-5y"
     chosen = dict(req["setting"], larval_capacity=out["larval_capacity"])
     key = run_scenarios.setting_hash(chosen)
     assert out["burnin_hash"] == key
@@ -444,12 +476,16 @@ def test_larval_setter_gives_the_config_a_direct_build_of_that_setting_gets(tmp_
 
 @emod
 def test_calibrate_to_a_mid_target(tmp_path):
-    req = calibrate_request(0.3, tolerance=0.05)
+    # On the Oct-Dec basis the default setting's curve is near-vertical below ~2e6 (0 at 1e6, 0.35 at 1.6e6 at pop
+    # 500), so a mid target sits on its flatter stretch. A 3-month window of one pop-500 seed is noisy (+/-0.1
+    # between neighbouring capacities), hence the wide tolerance here; at pop 5000 the noise is ~3x smaller.
+    req = calibrate_request(0.55, tolerance=0.08)
     out = run_scenarios.run_request(req, tmp_path)
     print(json.dumps({k: v for k, v in out.items() if k != "candidates"}, indent=1))
     print(json.dumps(out["candidates"]))
-    assert out["fit"] == "ok" and abs(out["fit_error"]) <= 0.05
-    assert out["iterations"] == 2 and len(out["candidates"]) == 12
+    assert out["fit"] == "ok" and abs(out["fit_error"]) <= 0.08
+    assert out["iterations"] == 2 and len(out["candidates"]) == 12 and out["extended"] is False
+    assert out["pfpr_basis"] == "Oct-Dec mean, 2-5y" and 0 < out["pfpr_2_5y_annual"] < 1
     # The fitted value's burn-in is the cache entry a run request with it hits.
     chosen = dict(req["setting"], larval_capacity=out["larval_capacity"])
     run_req = dict(small_request(500, [0], ["none"], years=1), setting=chosen)
@@ -458,12 +494,33 @@ def test_calibrate_to_a_mid_target(tmp_path):
     assert abs(run["runs"][0]["pfpr_2_5y"] - out["pfpr_2_5y"]) < 0.25  # same population, one year on
 
 
+# Kano-like: dry Nov-May, rains Jun-Oct peaking Aug-Sep.
+SEASONAL_HABITAT = [0.05, 0.05, 0.05, 0.1, 0.3, 1.0, 3.0, 6.0, 6.0, 3.0, 0.5, 0.1, 0.05]
+
+
 @emod
-def test_unreachable_target_is_reported(tmp_path):
-    out = run_scenarios.run_request(calibrate_request(0.99), tmp_path)
+def test_survey_window_pfpr_exceeds_the_annual_mean_in_a_seasonal_setting(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    manifest, sweep = run_scenarios.load_pmc_sweep()
+    setting = dict(small_request(500, [0], ["none"])["setting"], habitat_values=SEASONAL_HABITAT, larval_capacity=1e8)
+    (res,) = run_scenarios.run_burnins(manifest, sweep, [setting], [tmp_path / "b"], tmp_path)
+    print(res)
+    assert res["pfpr_2_5y"] > res["pfpr_2_5y_annual"] + 0.05  # Oct-Dec sits at the end of the high season
+
+
+@emod
+def test_a_high_target_triggers_the_extension_round(tmp_path, monkeypatch):
+    # The real extension tops out at 1e11, whose burn-in takes hours; the mechanics are the same just above 1e9.
+    monkeypatch.setattr(run_scenarios, "CALIBRATE_EXTENSION_LOG10", (9.0, 9.4))
+    req = calibrate_request(0.95)
+    req["setting"]["habitat_values"] = SEASONAL_HABITAT
+    out = run_scenarios.run_request(req, tmp_path)
     print(json.dumps(out["candidates"]))
-    assert out["fit"] == "unreachable" and out["iterations"] == 1
-    assert out["fit_error"] < -0.03 and len(out["candidates"]) == 8
+    assert out["extended"] is True and out["rounds"][1]["n"] == 4
+    assert [c["larval_capacity"] for c in out["candidates"] if c["round"] == 2] == run_scenarios.extension_grid()
+    assert all(c["larval_capacity"] > 1e9 for c in out["candidates"] if c["round"] == 2)
+    assert out["fit"] == "unreachable" and out["pfpr_basis"] == "Oct-Dec mean, 2-5y"
+    assert (tmp_path / "burnin" / out["burnin_hash"] / run_scenarios.BURNIN_FILE).exists()
 
 
 # ---- drug choice -----------------------------------------------------------------------------------------------
