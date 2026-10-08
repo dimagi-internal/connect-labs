@@ -1303,7 +1303,10 @@ def targeting_cost_effectiveness(
 @register(
     name="targeting_pmc_schedules",
     description=(
-        "Perennial malaria chemoprevention (PMC) in Nigeria: WHICH delivery schedule, and WHERE. Returns IDM's "
+        "Perennial malaria chemoprevention (PMC) in Nigeria: WHICH delivery schedule, and WHERE. "
+        "To RANK states and designs together ('most cost-effective state and design', 'which design where', "
+        "'rank the top 10'), call targeting_pmc_rank instead -- it uses each state's own fitted setting. "
+        "Returns IDM's "
         "EMOD model comparison of six PMC schedules (no PMC; SP at vaccine visits at 25% coverage; Connect "
         "quarterly, every two months, or monthly through the six-month high season for children 3-24 months; "
         "Connect quarterly for 12-24 months only) -- cases averted in children 3-24 months with a +/- range "
@@ -1737,3 +1740,92 @@ def targeting_pmc_run_status(user, *, run_id, state, cost_per_visit=None, platfo
         }
     result = _pmc_present(state, effect, costs, live=True, description=description, code=code, run_id=run.pk)
     return {"run_id": run.pk, "status": "completed", "eta_s": 0, "timings": run.timings, "result": result}
+
+
+# ---- Ranking states x designs (per-state EMOD grid) ----------------------------------------------------
+
+
+@register(
+    name="targeting_pmc_rank",
+    description=(
+        "Rank (state, design) pairs for malaria chemoprevention in Nigeria by cost per case averted, at the "
+        "visitor's delivery costs. CALL IT for 'rank states and designs', 'most cost-effective state and "
+        "design', 'which design where', 'rank the top 10' -- any question that compares designs across "
+        "several states. For a single schedule what-if the grid does not hold (other months, rounds, ages or "
+        "coverage in one state) use targeting_pmc_run_model; for the national comparison of the six PMC "
+        "schedules in one modelled setting use targeting_pmc_schedules. "
+        "Each state's results come from IDM's EMOD run in THAT state's own setting -- transmission fitted to "
+        "its DHS prevalence, season from its rainfall -- for PMC (SP, children 3-24 months: 4, 6 or 8 monthly "
+        "rounds from the rain onset, year-round monthly, quarterly, every two months) and, in seasonal states "
+        "only, SMC (SPAQ, 3-59 months, 4 monthly rounds). Cases averted = the design's EMOD reduction in "
+        "under-5 cases x the state's MAP incidence x its under-5 population (a floor); spend = doses x the "
+        "targeted children x cost per dose; cost per case is a ceiling. Returns 'ranked' (cheapest per case "
+        "first, ties to more cases averted; figures to two significant figures), 'best_per_state' (each "
+        "state's own best design, if asked 'best per state'), 'excluded' (states the model could not fit, "
+        "states not in the grid, states with no design that had a measurable effect -- never silently "
+        "dropped), 'excluded_designs', 'note' (set when fewer pairs exist than asked for), 'costs_line', "
+        "'caveats', 'label' and 'explorer_path'. If 'available' is false the per-state results are not "
+        "computed yet: say so in one line and answer from targeting_pmc_schedules instead. "
+        "FROM A TARGETING SELECTION (the targeting page's state carries filters.selected_areas, e.g. "
+        "'Kano (NGA), Ondo (NGA)', plus the question that produced them): take the NGA names, pass them as "
+        "'states', and give the visitor 'explorer_path' -- the PMC explorer opened on exactly those "
+        "states. If selected_areas is absent, call targeting_select with the page's filters to get the areas. "
+        "Pass the visitor's costs if they gave any (cost_per_visit, platform_fee, dose_rate). "
+        "ANSWER BRIEFLY -- it is read in a narrow (~400px) side panel: one sentence naming the top pair; the "
+        "ranked pairs as a table of AT MOST three columns ('State \u00b7 design' from state_design, '$ per "
+        "case', 'Cases / yr'); if 'note' is set, say it; one line naming the excluded states and why; "
+        "costs_line as one line; one caveat line (the first caveat: one fitted setting per state, not a full "
+        "calibration); then explorer_path as a short markdown link, e.g. [Open these states in the PMC "
+        "explorer](...). Label every result with 'label' -- 'illustrative \u00b7 fitted to each state's "
+        "prevalence and rainfall' -- and never call it calibrated."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "states": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Only these states (case-insensitive; 'Kano (NGA)' is accepted). Default: all.",
+            },
+            "top_n": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 50,
+                "description": "How many pairs to return. Default 10, at most 50.",
+            },
+            **_PMC_COST_PROPS,
+        },
+        "additionalProperties": False,
+    },
+)
+def targeting_pmc_rank(user, *, states=None, top_n=10, cost_per_visit=None, platform_fee=None, dose_rate=None):
+    from urllib.parse import urlencode
+
+    from django.conf import settings
+    from django.urls import reverse
+
+    from connect_labs.labs.indicators import pmc
+    from connect_labs.labs.indicators.emod import rank
+
+    grid = rank.load_grid(getattr(settings, "PMC_STATE_GRID_PATH", None))
+    if grid is None:
+        return {
+            "available": False,
+            "label": rank.LABEL,
+            "message": (
+                "Per-state results are not available yet: the per-state model grid has not been computed. "
+                "Use targeting_pmc_schedules for the national schedule comparison and its state ranking."
+            ),
+        }
+    try:
+        costs = pmc.costs_or_default(cost_per_visit, platform_fee, dose_rate)
+        out = rank.rank_pairs(states, **costs, top_n=min(top_n, rank.MAX_TOP_N), grid=grid)
+    except (ValueError, TypeError) as e:
+        raise MCPToolError("BAD_REQUEST", str(e)) from None
+
+    q = {k: v for k, v in costs.items() if v != pmc.costs_or_default()[k]}
+    if states:
+        # The selection as the grid names it, ranked or not: the explorer shows why a state was excluded.
+        names = [p["state"] for p in out["best_per_state"]] + [e["state"] for e in out["excluded"]]
+        q["states"] = ",".join(n for n in dict.fromkeys(names) if n in grid["states"])
+    return {"available": True, **out, "explorer_path": f"{reverse('targeting:pmc')}?{urlencode(q)}"}
