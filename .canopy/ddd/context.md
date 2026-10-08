@@ -71,8 +71,10 @@ Artifacts publish to the canopy-web `connect` workspace (`.canopy/ddd/config.yam
   chain is seeded by `manage.py supply_seed_clone_supply` (#2254) and topped up every Monday by beat
   (#2270). How much RUTF each worker RECEIVED is invented (every Distribution's note says so); what
   each visit GAVE OUT is the clone's. Narration must never present the deliveries as recorded.
-- **Days to stock-out needs 30 days of dispensing** -- deliberate; say when the estimate arrives and
-  the rate so far, never a bare "unknown". Don't lower the threshold.
+- **Stock is planned in days, from 7 days of use** (2026-10-08, replacing the 2026-10-06 "30 days"
+  rule): a rate needs `resupply.MINIMUM_WINDOW_DAYS` = 7 days of dispensing, every figure says how many
+  days it rests on, and the Stock page reads demand a day and days of stock against the band in days.
+  Before 7 days, say when the estimate arrives and the rate so far, never a bare "unknown".
 - **A clone started over MCP must equal one made with the page's default button** (comment on #2153).
 - **Data, not verdicts (2026-10-07).** "Comparable" is not a feature: no system-decided comparable
   counts, chips or tiles, and nothing (award, ranking) gated on one. The tables make every figure

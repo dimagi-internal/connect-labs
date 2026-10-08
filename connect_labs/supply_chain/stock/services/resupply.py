@@ -3,10 +3,11 @@
 Every one of these returns `Unconfirmed` rather than a number when its inputs
 are not there, and the two that matter most are:
 
-  - an average monthly consumption computed over a window shorter than
-    `MINIMUM_WINDOW_DAYS` is refused. A fortnight of dispensing extrapolated
-    to a month is how a supply chain talks itself into a stockout, in both
-    directions;
+  - a consumption rate averaged over fewer than `MINIMUM_WINDOW_DAYS` days is
+    refused, and every rate says how many days it rests on, so an early one
+    reads as early. A week is enough for a field worker's daily rate; the
+    figure is days of stock, not months, so a short basis is not stretched
+    across a month it never saw;
   - months of stock is computed on on-hand alone. In-transit stock is real
     but it is not cover (design doc section 19.1).
 
@@ -22,7 +23,9 @@ from connect_labs.supply_chain.stock.services import ledger
 from connect_labs.supply_chain.values import NotForecast, Quantity, Unconfirmed, decimal_string, unconfirmed
 
 DAYS_PER_MONTH = Decimal("30")
-MINIMUM_WINDOW_DAYS = 30
+# Below this there is no rate. Was 30 until 2026-10-08 (owner's call: a worker's stock
+# is planned in days, and a month's wait hid every new worker's figures).
+MINIMUM_WINDOW_DAYS = 7
 DEFAULT_WINDOW_DAYS = 90
 
 DURABLE = NotForecast("durable — not forecast: it is held and moved, never consumed")
@@ -127,7 +130,7 @@ def rate_from(total, earliest, end, window_days, basis):
         what = "dispensing" if basis == CONSUMPTION else "releases"
         return unconfirmed(
             f"only {observed_days} days of {what} have been recorded here; "
-            f"at least {MINIMUM_WINDOW_DAYS} are needed before a monthly rate means anything"
+            f"at least {MINIMUM_WINDOW_DAYS} are needed before a daily rate means anything"
         )
     if isinstance(total, Unconfirmed):
         return total
