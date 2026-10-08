@@ -260,6 +260,85 @@ def test_a_revoked_or_expired_token_is_refused(client, owner):
     assert _get(client, _url(), raw=raw).status_code == 401
 
 
+# A signed-in Labs user, in a browser ------------------------------------------
+
+
+def _signed_in(client, owner, *, expires_in=3600):
+    client.force_login(owner)
+    session = client.session
+    session["labs_oauth"] = {"access_token": "t", "expires_at": __import__("time").time() + expires_in}
+    session.save()
+
+
+def _opp_url(opportunity_id=10092):
+    return reverse("labs:coach_image", args=[coach_image.sign({**_payload(1), "opportunity_id": opportunity_id})])
+
+
+@pytest.fixture
+def access():
+    with patch("connect_labs.mcp.tools.synthetic._require_opportunity_access") as check:
+        yield check
+
+
+def test_a_signed_in_user_who_can_see_the_opportunity_gets_the_png(client, owner, access):
+    _signed_in(client, owner)
+    resp = client.get(_opp_url(10092))
+    assert resp.status_code == 200
+    assert resp["Content-Type"] == "image/png"
+    assert resp["Cache-Control"] == "private, no-store"
+    access.assert_called_once_with(owner, 10092)
+
+
+def test_a_signed_in_user_without_access_to_the_opportunity_is_refused(client, owner, access):
+    from connect_labs.mcp.tool_registry import MCPToolError
+
+    access.side_effect = MCPToolError("PERMISSION_DENIED", "no")
+    _signed_in(client, owner)
+    resp = client.get(_opp_url())
+    assert resp.status_code == 403
+    assert resp["Content-Type"] != "image/png"
+
+
+def test_an_unreachable_access_check_is_not_a_grant(client, owner, access):
+    from connect_labs.mcp.tool_registry import MCPToolError
+
+    access.side_effect = MCPToolError("UPSTREAM_ERROR", "down")
+    _signed_in(client, owner)
+    assert client.get(_opp_url()).status_code == 503
+
+
+def test_a_link_that_names_no_opportunity_opens_for_the_token_only(client, owner, access):
+    _signed_in(client, owner)
+    resp = client.get(_url())
+    assert resp.status_code == 403
+    access.assert_not_called()
+
+
+def test_an_expired_labs_sign_in_is_refused_not_renewed(client, owner, access):
+    _signed_in(client, owner, expires_in=-60)
+    assert client.get(_opp_url()).status_code == 401
+    access.assert_not_called()
+
+
+def test_signed_in_to_django_without_a_labs_sign_in_is_refused(client, owner, access):
+    client.force_login(owner)
+    assert client.get(_opp_url()).status_code == 401
+    access.assert_not_called()
+
+
+def test_a_signed_in_user_gets_the_same_404_for_an_altered_link(client, owner, access):
+    _signed_in(client, owner)
+    good = _opp_url()
+    assert client.get(good[:-4] + "xyz/").status_code == 404
+    access.assert_not_called()
+
+
+def test_a_bearer_header_is_judged_as_a_token_even_when_signed_in(client, owner, access):
+    _signed_in(client, owner)
+    assert _get(client, _opp_url(), raw="not-a-real-token").status_code == 401
+    access.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # Through the action
 # ---------------------------------------------------------------------------
@@ -368,6 +447,7 @@ def test_include_image_previews_and_sends_a_picture_of_the_briefings_topics(user
     [sent] = _sent(user, out["arguments"])
     token = sent["coach_image"]["url"].rstrip("/").rsplit("/", 1)[1]
     assert coach_image.unsign(token) == {
+        "opportunity_id": 10,
         "worker": "Tiyamike Kalinde",
         "topics": [
             {"label": "Meetings held", "band": "red", "numerator": 5, "denominator": 12, "pct": 42},
