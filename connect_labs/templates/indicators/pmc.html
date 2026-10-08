@@ -38,6 +38,16 @@
                  border-top: 1px solid #f5f5f4; font-size: 13px; color: #57534e; }
     .pmc-price input { width: 64px; font-size: 13px; border: 1px solid #d6d3d1; border-radius: 6px; padding: 3px 6px; }
 
+    .pmc-live { padding: 10px 16px 12px; border-top: 1px solid #f5f5f4; font-size: 13px; color: #57534e; }
+    .pmc-live-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+    .pmc-live select, .pmc-live input { font-size: 13px; border: 1px solid #d6d3d1; border-radius: 6px; padding: 3px 6px; background: #fff; }
+    .pmc-live input { width: 56px; }
+    .pmc-live button { font-size: 13px; font-weight: 600; color: #fff; background: #16006d; border: 0; border-radius: 6px; padding: 5px 12px; cursor: pointer; }
+    .pmc-live button:disabled { opacity: .55; cursor: default; }
+    .pmc-live-msg { margin-top: 8px; min-height: 18px; }
+    .pmc-live-msg.err { color: #92400e; }
+    .pmc-chip.live { background: #fce7f3; color: #9d174d; }
+
     .pmc-table { width: 100%; font-size: 13px; border-collapse: collapse; }
     .pmc-table th { text-align: right; font-weight: 600; color: #57534e; padding: 8px 10px; background: #fafaf9;
                     border-bottom: 1px solid #e7e5e4; white-space: nowrap; }
@@ -75,6 +85,29 @@
       <span>fee <input id="pmc-fee" class="pmc-num" type="number" min="0" step="1">%</span>
       <span>visits giving a dose <input id="pmc-rate" class="pmc-num" type="number" min="1" max="100" step="1">%</span>
       <span class="ml-auto">= <b id="pmc-per-dose" class="pmc-num"></b> per dose</span>
+    </div>
+    <div class="pmc-live">
+      <div class="pmc-label" style="margin-bottom:6px">Try another schedule</div>
+      <div class="pmc-live-row">
+        <label>State <select id="pmc-live-state"></select></label>
+        <label>Rounds
+          <select id="pmc-live-mode">
+            <option value="months">monthly from</option>
+            <option value="year">per year</option>
+          </select>
+        </label>
+        <span id="pmc-live-months">
+          <select id="pmc-live-start" aria-label="Start month"></select>
+          for <input id="pmc-live-n" class="pmc-num" type="number" min="1" max="12" step="1" value="4"> months
+        </span>
+        <span id="pmc-live-year" class="hidden">
+          <input id="pmc-live-rpy" class="pmc-num" type="number" min="1" max="24" step="1" value="4"> a year
+        </span>
+        <label>Ages <input id="pmc-live-amin" class="pmc-num" type="number" min="0" max="59" step="1" value="3">–<input id="pmc-live-amax" class="pmc-num" type="number" min="1" max="60" step="1" value="24"> months</label>
+        <label>Coverage <input id="pmc-live-cov" class="pmc-num" type="number" min="5" max="100" step="5" value="85">%</label>
+        <button id="pmc-live-run" type="button">Run IDM&rsquo;s model</button>
+      </div>
+      <div id="pmc-live-msg" class="pmc-live-msg" role="status" aria-live="polite"></div>
     </div>
   </section>
 
@@ -125,6 +158,8 @@
   <script>
     window.PMC = {
       url: "{% url 'targeting:pmc_data' %}",
+      runUrl: "{% url 'targeting:pmc_run' %}",
+      statusUrl: "{% url 'targeting:pmc_run_status' 0 %}".replace(/0\/$/, '{id}/'),
       defaults: {
         cost_per_visit: {{ sweep.default_costs.cost_per_visit }},
         platform_fee: {{ sweep.default_costs.platform_fee }},

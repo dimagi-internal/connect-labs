@@ -18,6 +18,7 @@
   };
   var data = null;
   var inflight = null;
+  var liveRows = [];
   var state = readUrl();
 
   function readUrl() {
@@ -127,7 +128,9 @@
         return r.json();
       })
       .then(function (d) {
+        var first = !data;
         data = d;
+        if (first) fillLiveControls();
         state.schedule = d.schedule;
         syncUrl();
         render();
@@ -188,13 +191,14 @@
           : '.')
       : '';
 
+    var shown = data.schedules.concat(liveRows);
     var max = 1;
-    data.schedules.forEach(function (s) {
+    shown.forEach(function (s) {
       max = Math.max(max, s.averted_pct + s.averted_ci);
     });
-    el('pmc-schedules').innerHTML = data.schedules
+    el('pmc-schedules').innerHTML = shown
       .map(function (s) {
-        var on = s.code === data.schedule;
+        var on = !s.live && s.code === data.schedule;
         var isBest = best && s.code === best.code;
         var w = (Math.max(0, s.averted_pct) / max) * 100;
         var lo = (Math.max(0, s.averted_pct - s.averted_ci) / max) * 100;
@@ -216,9 +220,9 @@
         return (
           '<div class="pmc-sched' +
           (on ? ' on' : '') +
-          '" data-code="' +
-          esc(s.code) +
-          '" title="' +
+          '"' +
+          (s.live ? '' : ' data-code="' + esc(s.code) + '"') +
+          ' title="' +
           esc(s.detail + ' Range across seeds: ±' + s.averted_ci + ' points.') +
           '" role="radio" aria-checked="' +
           on +
@@ -229,6 +233,9 @@
           '<div class="name">' +
           esc(s.label) +
           (isBest ? ' <span class="pmc-chip best">best value</span>' : '') +
+          (s.live
+            ? ' <span class="pmc-chip live">' + esc(s.tag) + '</span>'
+            : '') +
           '</div>' +
           '<div class="pmc-track"><div class="' +
           bar +
@@ -430,6 +437,244 @@
   bindPrice('pmc-cost', 'cost_per_visit', 1);
   bindPrice('pmc-fee', 'platform_fee', 100);
   bindPrice('pmc-rate', 'dose_rate', 100);
+
+  /* ---- try another schedule: a live EMOD run ----------------------------- */
+
+  var MONTHS = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+  var POLL_MS = 3000;
+  var liveTimer = null;
+  var tickTimer = null;
+
+  function csrfToken() {
+    var m = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  function fillLiveControls() {
+    el('pmc-live-start').innerHTML = MONTHS.map(function (m, i) {
+      return (
+        '<option value="' +
+        (i + 1) +
+        '"' +
+        (i === 4 ? ' selected' : '') +
+        '>' +
+        m +
+        '</option>'
+      );
+    }).join('');
+    // States the model can speak for: matches first (best-ranked on top), then
+    // lower-confidence fits. Ondo is the default when it is among them.
+    var ok = data.states.filter(function (r) {
+      return r.fit === 'near' || r.fit === 'prevalence_differs';
+    });
+    ok.sort(function (a, b) {
+      return (
+        (a.fit === 'near' ? 0 : 1) - (b.fit === 'near' ? 0 : 1) ||
+        (a.rank || 999) - (b.rank || 999)
+      );
+    });
+    var pick =
+      ok.filter(function (r) {
+        return r.name === 'Ondo';
+      })[0] || ok[0];
+    el('pmc-live-state').innerHTML = ok
+      .map(function (r) {
+        return (
+          '<option' +
+          (pick && r.name === pick.name ? ' selected' : '') +
+          '>' +
+          esc(r.name) +
+          '</option>'
+        );
+      })
+      .join('');
+    el('pmc-live-run').disabled = !ok.length;
+  }
+
+  function liveSpec() {
+    var spec = {};
+    if (el('pmc-live-mode').value === 'year') {
+      spec.rounds_per_year = parseInt(el('pmc-live-rpy').value, 10);
+    } else {
+      var start = parseInt(el('pmc-live-start').value, 10);
+      var n = Math.min(
+        12,
+        Math.max(1, parseInt(el('pmc-live-n').value, 10) || 1),
+      );
+      spec.months = [];
+      for (var i = 0; i < n; i++) spec.months.push(((start - 1 + i) % 12) + 1);
+    }
+    spec.age_min_months = parseInt(el('pmc-live-amin').value, 10);
+    spec.age_max_months = parseInt(el('pmc-live-amax').value, 10);
+    spec.coverage = parseFloat(el('pmc-live-cov').value) / 100;
+    return spec;
+  }
+
+  function liveMsg(text, isError) {
+    var m = el('pmc-live-msg');
+    m.textContent = text;
+    m.classList.toggle('err', !!isError);
+  }
+
+  function mmss(sec) {
+    var s = Math.max(0, Math.round(sec));
+    return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+  }
+
+  function stopLive() {
+    clearTimeout(liveTimer);
+    clearInterval(tickTimer);
+    liveTimer = tickTimer = null;
+    el('pmc-live-run').disabled = false;
+  }
+
+  function startLive() {
+    var stateName = el('pmc-live-state').value;
+    var started = Date.now();
+    var etaS = null;
+    var failures = 0;
+    el('pmc-live-run').disabled = true;
+    liveMsg('Starting…');
+
+    function showRunning() {
+      liveMsg(
+        'Running IDM’s EMOD model… ' +
+          mmss((Date.now() - started) / 1000) +
+          (etaS
+            ? ' (about ' + Math.max(1, Math.round(etaS / 60)) + ' min)'
+            : ''),
+      );
+    }
+    function fail(text) {
+      stopLive();
+      liveMsg(text, true);
+    }
+    function done(payload) {
+      stopLive();
+      if (!payload.result) return fail('The model returned no result.');
+      addLiveResult(payload.result, stateName);
+    }
+    function poll(id) {
+      fetch(
+        cfg.statusUrl.replace('{id}', id) +
+          '?state=' +
+          encodeURIComponent(stateName),
+        { credentials: 'same-origin' },
+      )
+        .then(function (r) {
+          return r.json().then(function (j) {
+            return { ok: r.ok, body: j };
+          });
+        })
+        .then(function (r) {
+          failures = 0;
+          var b = r.body;
+          if (b.status === 'completed') return done(b);
+          if (b.status === 'failed' || !r.ok)
+            return fail(b.error || 'The model run failed.');
+          etaS = b.eta_s;
+          liveTimer = setTimeout(function () {
+            poll(id);
+          }, POLL_MS);
+        })
+        .catch(function () {
+          if (++failures >= 5) return fail('Lost contact with the server.');
+          liveTimer = setTimeout(function () {
+            poll(id);
+          }, POLL_MS);
+        });
+    }
+
+    fetch(cfg.runUrl, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfToken(),
+      },
+      body: JSON.stringify({ state: stateName, schedule: liveSpec() }),
+    })
+      .then(function (r) {
+        return r.json().then(function (j) {
+          return { status: r.status, body: j };
+        });
+      })
+      .then(function (r) {
+        var b = r.body;
+        if (r.status === 200) return done(b);
+        if (r.status === 202) {
+          etaS = b.eta_s;
+          showRunning();
+          tickTimer = setInterval(showRunning, 1000);
+          return poll(b.run_id);
+        }
+        fail(
+          b.error ||
+            (r.status === 429
+              ? 'The live model is busy with other runs; try again in a few minutes.'
+              : 'The model could not be started.'),
+        );
+      })
+      .catch(function () {
+        fail('Could not reach the server.');
+      });
+  }
+
+  // One finished run: a row in the schedules list (same rendering as the
+  // grid's, costed at the chosen state) and a line with its numbers.
+  function addLiveResult(res, stateName) {
+    var eff = res.effect || {};
+    var proj = res.projection;
+    var precomputed = /precomputed/.test(res.label || '');
+    liveRows.push({
+      code: 'live_' + liveRows.length,
+      live: true,
+      tag: precomputed ? 'precomputed' : 'live run',
+      label: (res.schedule && res.schedule.description) || 'Custom schedule',
+      detail: (res.label || '') + ' · costed at ' + stateName + '.',
+      channel: 'connect',
+      averted_pct: eff.averted_pct,
+      averted_ci: eff.averted_ci,
+      too_noisy: !!eff.too_noisy,
+      cost_per_case_averted: proj ? proj.cost_per_case_averted : null,
+    });
+    renderHow();
+    liveMsg(
+      stateName +
+        ': ' +
+        pct(eff.averted_pct) +
+        ' of cases averted' +
+        (proj
+          ? ', ≈' +
+            num(proj.cases_averted_per_year) +
+            ' cases a year at ' +
+            usd(proj.cost_per_case_averted, 2) +
+            ' each'
+          : ', too uncertain to cost') +
+        ' · ' +
+        (res.label || 'illustrative · live model run'),
+    );
+  }
+
+  el('pmc-live-mode').addEventListener('change', function () {
+    var year = this.value === 'year';
+    el('pmc-live-months').classList.toggle('hidden', year);
+    el('pmc-live-year').classList.toggle('hidden', !year);
+  });
+  el('pmc-live-run').addEventListener('click', startLive);
 
   load();
 })();
