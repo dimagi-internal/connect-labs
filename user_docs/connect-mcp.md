@@ -112,6 +112,7 @@ When you create a token you choose an **Access** level:
 | --- | --- |
 | **Standard** | Full access matching your Connect permissions, including reading visit data and making workflow edits. |
 | **No user visit data** | Never sees user visit data. Reads workflow definitions, CommCare app structure, pipeline and indicator definitions, solicitations, funds, the organisation directory, targeting data, and microplan sampling. Can edit workflow and indicator definitions (including a workflow's opportunity list; render code only on synthetic opportunities whose data was generated, because render code runs over the visit data of whoever opens the page) and trigger saved-run generation — snapshots, history rebuilds, cache warms, hand-downs and benchmark publication — where the server computes over visits and the token gets back only ids, versions, dates and counts. Cannot delete workflows or pipelines. Can also profile real opportunities on the server and generate synthetic data from those profiles. Same permissions as the `mcp/no_user_visit/` address. Cannot access individual visit rows or per-visit values — including through the export API and data reseed endpoints — except on synthetic opportunities whose data was generated. Opportunity-level counts and dates, and contact details of people who submitted as an organisation, are allowed. |
+| **Coaching pictures only** | Lets an Open Chat Studio team fetch coaching pictures. Nothing else. Cannot be used for MCP or the export API. |
 
 Tools the token is not allowed to use do not appear to the agent at all, so the agent cannot accidentally attempt a blocked action.
 
@@ -241,6 +242,4 @@ You can build a program-scoped pipeline through MCP: create the pipeline in the 
 
 ### On-demand pipelines
 
-A pipeline source can be marked **on demand** using `workflow_add_pipeline_source(..., load="on_demand")`. When the run page opens, an on-demand pipeline does **not** download all of its rows to the browser. Instead, the report asks the server for only the rows it needs — filtered, searched, and paged on the server — so the browser receives a small result set rather than the full dataset.
-
-This is the right setting for any large pipeline where the page only ever shows a filtered slice of the data
+A pipeline source can be marked **on demand** using `workflow_add_pipeline_source(..., load="on_demand")`. When the run page opens, an on-demand pipeline does **not** download all of its rows to the browser. Instead, the report asks the server for only the rows it needs — filtered, searched, and paged on the server — so
