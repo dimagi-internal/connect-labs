@@ -7,7 +7,6 @@
   const $ = (id) => document.getElementById(id);
   let lastResult = null;
   let described = null;
-  let searchTimer = null;
 
   function selected() {
     return Array.from(document.querySelectorAll('#ex-opps input:checked')).map(
@@ -107,12 +106,24 @@
     ta.selectionStart = ta.selectionEnd = start + text.length;
   }
 
+  // Search filters the index already loaded -- no round trip per keystroke.
+  function matching(fields) {
+    const q = $('ex-field-search').value.trim().toLowerCase();
+    if (!q) return fields;
+    return fields.filter(
+      (f) =>
+        f.path.toLowerCase().includes(q) ||
+        (f.values || []).some((v) => String(v.value).toLowerCase().includes(q)),
+    );
+  }
+
   function renderFields(data) {
     const box = $('ex-fields');
     box.replaceChildren();
     $('ex-sampled').textContent = data.sampled_visits
       ? `· ${data.sampled_visits} visits sampled`
       : '';
+    data = { ...data, fields: matching(data.fields) };
     if (!data.fields.length) {
       box.append(
         el(
@@ -162,7 +173,6 @@
     try {
       described = await post(cfg.describeUrl, {
         opportunity_ids: ids,
-        field_search: $('ex-field-search').value || null,
         load_missing: !!loadMissing,
       });
       renderCache(described.opportunities, described.loaded);
@@ -300,8 +310,7 @@
     });
   });
   $('ex-field-search').addEventListener('input', () => {
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => describe(false), 300);
+    if (described) renderFields(described);
   });
   $('ex-run').addEventListener('click', run);
   $('ex-csv').addEventListener('click', csv);

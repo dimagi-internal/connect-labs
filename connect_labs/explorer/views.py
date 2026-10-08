@@ -93,6 +93,9 @@ class DescribeView(_JsonView):
             body.get("opportunity_ids"),
             field_search=body.get("field_search") or None,
             load_missing=bool(body.get("load_missing")),
+            # The page shows no registries; skip the Connect round trip. The agent's
+            # explorer_describe keeps them -- they are how it finds governed measures.
+            include_registries=False,
         )
 
 
