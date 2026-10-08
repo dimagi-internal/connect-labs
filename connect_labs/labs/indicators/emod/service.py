@@ -29,18 +29,36 @@ PMC_IN_FLIGHT_FRESH_S = 3600
 MAX_SEEDS = 6
 
 
-def run_eta(run) -> int:
-    """Seconds left: the run's expected duration minus time since it was last queued or claimed (floor 10).
+def _own_remaining_s(run) -> float:
+    """Run time a run still needs on the instance (never its queue time): all of it if queued, the rest if running."""
+    from connect_labs.labs.indicators.models import PmcModelRun
 
-    The expected duration is recorded at submit time (``timings["expected_s"]``: warm or cold instance,
-    plus any runs ahead of it); a row without one is estimated at the cold figure.
+    expected = (run.timings or {}).get("expected_s") or PMC_RUN_ETA_COLD_S
+    if run.status == PmcModelRun.RUNNING:
+        return max(0.0, expected - (timezone.now() - run.updated_at).total_seconds())
+    return float(expected)
+
+
+def run_eta(run) -> int:
+    """Seconds left (floor 10).
+
+    Recorded at submit in ``timings``: ``expected_s`` (this run's OWN duration, warm or cold),
+    ``queued_behind_s`` (the run time of the runs ahead of it) and ``submitted_at`` (epoch).
+    A queued row waits ``queued_behind_s`` then runs ``expected_s``, measured from submit; a running
+    row has ``expected_s`` minus the time since it was claimed (the claim resets ``updated_at``).
+    Rows without these fields are estimated at the cold figure from their last touch.
     """
     from connect_labs.labs.indicators.models import PmcModelRun
 
     if run.status in (PmcModelRun.COMPLETED, PmcModelRun.FAILED):
         return 0
-    expected = (run.timings or {}).get("expected_s") or PMC_RUN_ETA_COLD_S
-    elapsed = (timezone.now() - run.updated_at).total_seconds()
+    t = run.timings or {}
+    expected = t.get("expected_s") or PMC_RUN_ETA_COLD_S
+    now = timezone.now()
+    if run.status == PmcModelRun.QUEUED and t.get("submitted_at"):
+        elapsed = now.timestamp() - t["submitted_at"]
+        return max(10, int(t.get("queued_behind_s", 0) + expected - elapsed))
+    elapsed = (now - run.updated_at).total_seconds()
     return max(10, int(expected - elapsed))
 
 
@@ -65,13 +83,13 @@ def _in_flight(exclude_pk=None):
     return qs.exclude(pk=exclude_pk) if exclude_pk else qs
 
 
-def expected_duration_s(exclude_pk=None) -> int:
-    """How long a run submitted now should take: its own run (warm or cold) plus the runs ahead of it."""
+def expected_duration_s(exclude_pk=None) -> tuple[int, int]:
+    """``(own duration, run time of the runs ahead)`` for a run submitted now."""
     ahead = list(_in_flight(exclude_pk))
     # Runs ahead mean the instance is up (or coming up for them), so this one runs warm after them.
     if ahead:
-        return PMC_RUN_EXPECTED_WARM_S + sum(run_eta(r) for r in ahead)
-    return PMC_RUN_EXPECTED_WARM_S if _instance_is_warm() else PMC_RUN_EXPECTED_COLD_S
+        return PMC_RUN_EXPECTED_WARM_S, int(sum(_own_remaining_s(r) for r in ahead))
+    return (PMC_RUN_EXPECTED_WARM_S if _instance_is_warm() else PMC_RUN_EXPECTED_COLD_S), 0
 
 
 def status_payload(run) -> dict:
@@ -140,7 +158,13 @@ def submit_run(state, schedules, seeds=None) -> tuple[int, dict]:
         return 200, _cached_payload(run)
     enqueue = created
     if created or run.status == PmcModelRun.FAILED:
-        run.timings = {**(run.timings or {}), "expected_s": expected_duration_s(run.pk)}
+        own, behind = expected_duration_s(run.pk)
+        run.timings = {
+            **(run.timings or {}),
+            "expected_s": own,
+            "queued_behind_s": behind,
+            "submitted_at": timezone.now().timestamp(),
+        }
         PmcModelRun.objects.filter(pk=run.pk).update(timings=run.timings)
     now = timezone.now()
     # updated_at is set explicitly: queryset.update() skips auto_now. Only the request whose

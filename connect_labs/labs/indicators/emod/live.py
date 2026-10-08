@@ -129,20 +129,28 @@ def to_rounds(spec: dict) -> tuple[list[list[float]], str]:
     return rounds, f"{what}; {who}"
 
 
+def _month_anchored(rounds: list) -> bool:
+    """Built from ``months``: 30-day blocks of at most 12 rounds, each starting on a month start."""
+    starts = {month_offset(m) for m in range(1, 13)}
+    return all(r[1] == 30 and r[2] <= 12 and r[0] % DAYS_PER_YEAR in starts for r in rounds)
+
+
 def describe_rounds(rounds: list) -> str:
     """Plain-English description of worker rounds (what to_rounds' text says), for a run read back from the DB."""
     if not rounds:
         return "a custom schedule"
     offset, interval, reps, a0, a1, cov = rounds[0]
     who = f"children {round(a0 * 12):g}-{round(a1 * 12):g} months, {cov:.0%} coverage"
-    if interval == 30:
+    if interval == 30 and _month_anchored(rounds):
         months = []
         for off, _, n, *_rest in (r for r in rounds if r[0] < DAYS_PER_YEAR):
-            first = min(range(1, 13), key=lambda m: abs(month_offset(m) - off))
+            first = next(m for m in range(1, 13) if month_offset(m) == off)
             months += [MONTH_NAMES[(first - 1 + i) % 12] for i in range(int(n))]
         what = f"monthly rounds in {', '.join(months)} each year"
+    elif interval == 30:
+        what = "a round every 30 days, year-round (12 rounds a year)"
     else:
-        what = f"a round every {interval:g} days (about {DAYS_PER_YEAR / interval:.1f} a year)"
+        what = f"a round every {interval:g} days (about {round(DAYS_PER_YEAR / interval, 1):g} rounds a year)"
     return f"{what}; {who}"
 
 

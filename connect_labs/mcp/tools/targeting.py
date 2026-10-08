@@ -1518,9 +1518,10 @@ _PMC_PRESENT_RULES = (
     "for the same state. If best_grid_schedule.difference_within_noise is true, say the two are not "
     "distinguishable at this precision -- do NOT say one is cheaper or dearer; otherwise say which is cheaper "
     "per case and by how much. Use the wording in result.label (precomputed run vs live run) as the label, "
-    "and quote the caveat that the model is one uncalibrated southern-Nigeria-like setting, never a state's "
-    "calibrated estimate. Keep it short (a narrow side panel): one sentence of result, a two-row comparison "
-    "(this schedule vs the grid's best: cases averted per year, $ per case), one line of caveats."
+    "and state the first caveat in result.caveats (the model is one simulated setting fitted to no real "
+    "state: every figure is illustrative, never a state's calibrated estimate). Keep it short (a narrow side "
+    "panel): one sentence of result, a two-row comparison (this schedule vs the grid's best: cases averted "
+    "per year, $ per case), one line of caveats."
 )
 
 
@@ -1546,7 +1547,7 @@ _PMC_PRESENT_RULES = (
         "give the wait from eta_s: if eta_s is 150 or less, 'this takes about two minutes'; otherwise 'about "
         "five minutes -- the model server is starting up'. When cached is true (a grid schedule, or a run done "
         "before) the result is in this response: say nothing about running a model, just present it. "
-        "HOW TO WAIT -- call targeting_pmc_run_status with the run_id and the SAME state, schedule and prices "
+        "HOW TO WAIT -- call targeting_pmc_run_status with the run_id and the SAME state (and prices) "
         "every 10-15 seconds, for up to 8 minutes, until it says completed or failed. Do not start a second "
         "run for the same question while one is in flight. "
         "status=refused: the model cannot speak for that state (e.g. Kano and the Sahel north, 'more "

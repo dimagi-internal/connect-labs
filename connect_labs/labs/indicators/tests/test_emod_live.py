@@ -110,3 +110,17 @@ def test_summarise_pairs_each_seed_with_its_own_baseline():
 def test_an_effect_inside_its_own_noise_is_flagged():
     got = live.summarise(_result([2000, 2000, 2000], [1990, 2100, 1900]), "x")
     assert got["too_noisy"] is True
+
+
+def test_describe_uses_month_names_only_for_month_anchored_rounds():
+    may_aug, _ = live.to_rounds({"months": [5, 6, 7, 8]})
+    text = live.describe_rounds(may_aug)
+    assert "May, June, July, August" in text
+
+    for spec in ({"interval_days": 30}, {"rounds_per_year": 12}):
+        rounds, _ = live.to_rounds(spec)
+        text = live.describe_rounds(rounds)
+        assert "every 30 days" in text and "12 rounds a year" in text and "January" not in text
+
+    quarterly = live.describe_rounds(live.to_rounds({"rounds_per_year": 4})[0])
+    assert "every 91 days" in quarterly and "May" not in quarterly
