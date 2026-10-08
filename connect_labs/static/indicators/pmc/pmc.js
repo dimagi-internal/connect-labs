@@ -76,8 +76,8 @@
   }
   // Two significant figures, as the server rounds projections: an estimate
   // summed from estimates should not read as a census count.
-  function approx(n) {
-    return n ? Number(Number(n).toPrecision(2)) : 0;
+  function approx(n, figures) {
+    return n ? Number(Number(n).toPrecision(figures || 2)) : 0;
   }
   function pct(n) {
     return n === null || n === undefined ? '—' : num(n, 1) + '%';
@@ -315,9 +315,11 @@
     });
     el('pmc-total').innerHTML = ranked.length
       ? stat('States ranked', ranked.length) +
-        stat('Children 3–24 mo', '≈' + num(approx(t.children))) +
-        stat('Cases averted / yr', '≈' + num(approx(t.cases))) +
-        stat('Cost / yr', '≈' + usdShort(approx(t.spend))) +
+        // Totals of rounded rows, kept to three figures: two would turn a column
+        // that sums to 215,000 into 220,000, and a reader adds the column up.
+        stat('Children 3–24 mo', '≈' + num(approx(t.children, 3))) +
+        stat('Cases averted / yr', '≈' + num(approx(t.cases, 3))) +
+        stat('Cost / yr', '≈' + usdShort(approx(t.spend, 3))) +
         // Blended across the ranked states, so it differs from the schedule's
         // single-setting figure above; the label says so.
         stat('Blended per case', t.cases ? usd(t.spend / t.cases, 2) : '—')
