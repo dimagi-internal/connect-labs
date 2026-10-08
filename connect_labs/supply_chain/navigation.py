@@ -159,9 +159,6 @@ VIEWS_WITHOUT_TABS = frozenset(
         "supply_chain:portfolio_map",
         # JSON behind the map's Stock mode, not a page.
         "supply_chain:portfolio_map_cover",
-        # A programme's own map is that same full-screen page; its breadcrumb
-        # leads back to the programme's Network. It has a tab, and no tab bar.
-        "supply_chain:programme_map",
         "supply_chain:programme_map_cover",
         # The supplier marketplace: its own shell, for suppliers, who have no
         # programs and so no program tabs to be on. It spans programs too.
