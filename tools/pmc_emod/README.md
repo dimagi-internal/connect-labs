@@ -61,8 +61,17 @@ update those figures in the same commit.
 
 `worker/run_scenarios.py` is the on-box runner behind the live model: one request (a setting, schedules,
 seeds) in, one result out, with the 2-year burn-in serialized once per setting and reused. See its docstring
-for the request/result shapes and `worker/bootstrap.sh` for the instance user-data. Tests run locally under
-Docker (they skip when Docker is absent):
+for the request/result shapes and `worker/bootstrap.sh` for the instance user-data. Each run reports under-5
+outcomes (`cases_u5`, `kids_u5`) alongside the 3-24-month ones, and a schedule may give `"drug": "SPAQ"`
+(SMC: the same SP drug entry plus a 3-day amodiaquine course) instead of the default SP.
+
+A request with `"mode": "calibrate"` and a `target_pfpr` fits the setting's `larval_capacity` instead: 8
+log-spaced burn-ins over 1e6-1e9 run side by side, then 4 around the interpolated crossing. The nearest is
+returned with `fit` `ok` (within 0.03 of the target), `unreachable` or `loose`, and its burn-in is cached under
+its setting hash, so a run request with that value starts warm. Burn-ins get slower as larval capacity rises
+(about 7x at 1e10 against 6e7), which is why the grid stops at 1e9, where PfPR 2-5y has already plateaued.
+
+Tests run locally under Docker (they skip when Docker is absent):
 
 ```bash
 EMOD_TUTORIALS_DIR=/path/to/emodpy-malaria/tutorials /path/to/emodpy-venv/bin/python -m pytest tools/pmc_emod/worker -v
