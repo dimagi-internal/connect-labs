@@ -57,8 +57,13 @@ user data. So:
 - `bootstrap.sh` installs `emod-ready.service`, which recreates `/run/emod/ready` and the activity marker
   on every boot (`/run` is tmpfs), so readiness survives stop/start and reboot.
 
-Install log on the box: `/var/log/emod-bootstrap.log`. A first boot to ready takes about a quarter of an
-hour (apt, Docker image pull, emodpy-malaria venv, EMOD binary, a self-test run).
+Install log on the box: `/var/log/emod-bootstrap.log`. Measured 2026-10-08 on c7i.4xlarge: first boot
+to ready about 2.5 min (apt, Docker image pull, emodpy-malaria venv, EMOD binary, a self-test run); a later
+cold start (stopped to ready) about 2 min, nearly all of it EC2 start to status-ok (119-124 s). That is close
+to the SDK 0.7.0 default `boot_timeout_s=180`, so consumers pass `boot_timeout_s=600`.
+
+Timing gate (6 schedules x 1 seed, pop 5000, 2 intervention years): cold (burn-in built) 188.5 s, of which
+burn-in 81 s; warm (burn-in cached) 106.5 s.
 
 Bucket objects expire after 7 days (SDK lifecycle rule), `worker/` included. That only matters if the box
 has to install again (a replacement instance, or a first boot that never finished); re-upload first.
@@ -100,7 +105,7 @@ is the venv at `/opt/emod/.venv`, not the system `python3`:
 ```python
 from canopy_sdk.ondemand import OnDemandInstance
 i = OnDemandInstance("<InstanceId>", "us-east-1", "emod")
-print(i.ensure_running(ready_timeout_s=1800))   # first boot runs the install
+print(i.ensure_running(boot_timeout_s=600, ready_timeout_s=1800))   # first boot runs the install
 print(i.run(["/opt/emod/.venv/bin/python /opt/emod/run_scenarios.py --self-test"]).stdout)  # OK (..s)
 i.stop()
 ```
