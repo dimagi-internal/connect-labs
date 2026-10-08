@@ -1441,13 +1441,25 @@ def _pmc_state_fit_error(state: str) -> str | None:
     from connect_labs.labs.indicators import pmc
     from connect_labs.labs.indicators.emod import runner
 
+    if runner.fitted_setting(state) is not None:  # the state's own fitted model speaks for it, seasonal or not
+        return None
     fit = runner.state_fit(state)
     if fit in pmc.RANKED_FITS:
         return None
     return f"{state} cannot be modelled: {runner.FIT_REASONS.get(fit, fit)}"
 
 
-def _pmc_present(state: str, row: dict, costs: dict, *, live: bool, description: str, code: str, run_id=None) -> dict:
+def _pmc_present(
+    state: str,
+    row: dict,
+    costs: dict,
+    *,
+    live: bool,
+    description: str,
+    code: str,
+    run_id=None,
+    fitted_to: str | None = None,
+) -> dict:
     """A schedule's EMOD effect costed at one state's MAP incidence, beside the grid's best schedule.
 
     ``row`` has the relative effect (``averted_pct`` ...) and ``doses_per_child_per_year``. The costing
@@ -1482,8 +1494,11 @@ def _pmc_present(state: str, row: dict, costs: dict, *, live: bool, description:
         }
         if best_code == code:
             best["difference_within_noise"] = True
+    from connect_labs.labs.indicators.emod import live as live_mod
+
+    label = GRID_LABEL if not live else live_mod.fitted_label(fitted_to) if fitted_to else LIVE_LABEL
     out = {
-        "label": LIVE_LABEL if live else GRID_LABEL,
+        "label": label,
         "schedule": {"description": description},
         "effect": {
             "averted_pct": row["averted_pct"],
@@ -1491,6 +1506,7 @@ def _pmc_present(state: str, row: dict, costs: dict, *, live: bool, description:
             "too_noisy": noisy,
             "doses_per_child_per_year": row["doses_per_child_per_year"],
             "basis": "EMOD relative effect against no PMC, across seeds",
+            **{k: row[k] for k in ("averted_u5_pct", "averted_u5_ci", "kids_u5") if k in row},
         },
         "state": {
             "name": mine["name"],
@@ -1529,8 +1545,10 @@ _PMC_PRESENT_RULES = (
     "for the same state. If best_grid_schedule.difference_within_noise is true, say the two are not "
     "distinguishable at this precision -- do NOT say one is cheaper or dearer; otherwise say which is cheaper "
     "per case and by how much. Use the wording in result.label (precomputed run vs live run) as the label, "
-    "and state the first caveat in result.caveats (the model is one simulated setting fitted to no real "
-    "state: every figure is illustrative, never a state's calibrated estimate). Keep it short (a narrow side "
+    "and state the first caveat in result.caveats (a default-setting run is one simulated setting fitted to no real "
+    "state; a run whose label says 'fitted to <State>' used that state's own fitted setting, which is still not "
+    "a full "
+    "calibration: every figure is illustrative, never a state's calibrated estimate). Keep it short (a narrow side "
     "panel): one sentence of result, a two-row comparison (this schedule vs the grid's best: cases averted "
     "per year, $ per case), one line of caveats."
 )
@@ -1539,9 +1557,12 @@ _PMC_PRESENT_RULES = (
 @register(
     name="targeting_pmc_run_model",
     description=(
-        "Run IDM's EMOD malaria model LIVE for a perennial malaria chemoprevention (PMC) schedule that the "
+        "Live runs now use the state's own fitted model (its prevalence and rainfall) when it has one -- say so in "
+        "the answer. Run IDM's EMOD malaria model LIVE for a perennial malaria chemoprevention (PMC) schedule "
+        "that the "
         "precomputed grid does not have: a different number of rounds, specific calendar months, another age "
-        "band or another coverage (e.g. 'what if we only did four monthly rounds from May, ages 3-24 months, "
+        "band (up to 59 months, e.g. SMC-style) or another coverage "
+        "(e.g. 'what if we only did four monthly rounds from May, ages 3-24 months, "
         "in Ondo?'). The grid already holds six schedules: no PMC; SP at vaccine visits at 25% coverage; "
         "Connect quarterly, every two months, or monthly April-September for children 3-24 months at 85% "
         "coverage; Connect quarterly for 12-24 months only. If the ask matches one of those, call "
@@ -1564,8 +1585,8 @@ _PMC_PRESENT_RULES = (
         "HOW TO WAIT -- call targeting_pmc_run_status with the run_id and the SAME state (and prices) "
         "every 10-15 seconds, for up to 8 minutes, until it says completed or failed. Do not start a second "
         "run for the same question while one is in flight. "
-        "status=refused: the model cannot speak for that state (e.g. Kano and the Sahel north, 'more "
-        "seasonal: SMC, not PMC'); nothing was started. Say why, do not work around it. "
+        "status=refused: the model cannot speak for that state (a seasonal state with no fitted setting, "
+        "'more seasonal: SMC, not PMC'); nothing was started. Say why, do not work around it. "
         "status=busy: the model is occupied with other runs; say so, offer to try again in a few minutes, and "
         "meanwhile answer from targeting_pmc_schedules. "
         "status=failed: say what 'error' says (that the live model is unavailable right now) in one line, add "
@@ -1579,7 +1600,7 @@ _PMC_PRESENT_RULES = (
                 "description": (
                     "A grid schedule code, or an object: exactly one of rounds_per_year (1-24), months (list of "
                     "calendar months 1-12) or interval_days (7-730); plus optional age_min_months (default 3), "
-                    "age_max_months (default 24), coverage (0-1, default 0.85)."
+                    "age_max_months (default 24, up to 59), coverage (0-1, default 0.85)."
                 ),
                 "oneOf": [
                     {"type": "string"},
@@ -1594,7 +1615,7 @@ _PMC_PRESENT_RULES = (
                             },
                             "interval_days": {"type": "number"},
                             "age_min_months": {"type": "number"},
-                            "age_max_months": {"type": "number"},
+                            "age_max_months": {"type": "number", "maximum": 59},
                             "coverage": {"type": "number"},
                         },
                         "additionalProperties": False,
@@ -1615,7 +1636,7 @@ _PMC_PRESENT_RULES = (
 )
 def targeting_pmc_run_model(user, *, state, schedule, seeds=3, cost_per_visit=None, platform_fee=None, dose_rate=None):
     from connect_labs.labs.indicators import pmc
-    from connect_labs.labs.indicators.emod import live, service
+    from connect_labs.labs.indicators.emod import live, runner, service
     from connect_labs.labs.indicators.models import PmcModelRun
 
     costs = _pmc_costs(cost_per_visit, platform_fee, dose_rate)
@@ -1648,6 +1669,7 @@ def targeting_pmc_run_model(user, *, state, schedule, seeds=3, cost_per_visit=No
         return {"run_id": None, "status": "completed", "cached": True, "eta_s": 0, "result": result}
 
     code = live.schedule_code(rounds)
+    fitted_to = runner.fitted_state_name(runner.fitted_setting(state) or {})
     http_status, payload = service.submit_run(state, [{"code": code, "rounds": rounds}], seeds)
     if http_status == 400:
         raise MCPToolError("BAD_REQUEST", payload["error"])
@@ -1659,7 +1681,9 @@ def targeting_pmc_run_model(user, *, state, schedule, seeds=3, cost_per_visit=No
     base = {"run_id": run.pk, "schedule": description}
     if payload["cached"]:
         row = live.summarise(run.result, code)
-        result = _pmc_present(state, row, costs, live=True, description=description, code=code, run_id=run.pk)
+        result = _pmc_present(
+            state, row, costs, live=True, description=description, code=code, run_id=run.pk, fitted_to=fitted_to
+        )
         return {**base, "status": "completed", "cached": True, "eta_s": 0, "result": result}
     return {
         **base,
@@ -1700,7 +1724,7 @@ def targeting_pmc_run_model(user, *, state, schedule, seeds=3, cost_per_visit=No
     },
 )
 def targeting_pmc_run_status(user, *, run_id, state, cost_per_visit=None, platform_fee=None, dose_rate=None):
-    from connect_labs.labs.indicators.emod import live, service
+    from connect_labs.labs.indicators.emod import live, runner, service
     from connect_labs.labs.indicators.models import PmcModelRun
 
     costs = _pmc_costs(cost_per_visit, platform_fee, dose_rate)
@@ -1738,7 +1762,16 @@ def targeting_pmc_run_status(user, *, run_id, state, cost_per_visit=None, platfo
             "eta_s": 0,
             "error": _pmc_unavailable(None),
         }
-    result = _pmc_present(state, effect, costs, live=True, description=description, code=code, run_id=run.pk)
+    result = _pmc_present(
+        state,
+        effect,
+        costs,
+        live=True,
+        description=description,
+        code=code,
+        run_id=run.pk,
+        fitted_to=runner.fitted_state_name(run.request.get("setting")),
+    )
     return {"run_id": run.pk, "status": "completed", "eta_s": 0, "timings": run.timings, "result": result}
 
 

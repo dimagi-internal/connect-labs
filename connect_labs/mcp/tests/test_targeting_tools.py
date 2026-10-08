@@ -764,6 +764,7 @@ class TestPmcLiveModel:
         settings.LABS_EMOD_INSTANCE_ID = "i-test"
         settings.LABS_EMOD_REGION = "test-region-1"
         settings.LABS_EMOD_BUCKET = "test-bucket"
+        settings.PMC_STATE_GRID_PATH = "/nonexistent/pmc_state_grid.json"  # no fitted states unless a test opts in
         self.delays = []
         monkeypatch.setattr(tasks.run_pmc_model, "delay", lambda pk: self.delays.append(pk))
         make_boundary("NGA", 0, "Nigeria", "NGA-0", x=0)
@@ -925,6 +926,57 @@ class TestPmcLiveModel:
         from connect_labs.labs.indicators.models import PmcModelRun
 
         assert PmcModelRun.objects.count() == 0
+
+    def test_a_seasonal_state_with_a_fitted_setting_is_accepted_and_labelled(self, settings):
+        from connect_labs.labs.indicators.models import PmcModelRun
+        from connect_labs.labs.indicators.tests.test_emod_rank import FIXTURE
+
+        settings.PMC_STATE_GRID_PATH = str(FIXTURE)
+        got = targeting.targeting_pmc_run_model(None, state="Kano", schedule=self.DEMO)
+
+        assert got["status"] in ("queued", "running") and got["run_id"]
+        run = PmcModelRun.objects.get(pk=got["run_id"])
+        assert run.request["setting"]["name"] == "Kano fitted"
+        # The worker also returns under-5 figures: they are reported beside the 3-24 month ones.
+        code = next(x["code"] for x in run.request["schedules"] if x["code"] != "none")
+        rows = []
+        for seed in (0, 1, 2):
+            rows.append(
+                {
+                    "code": "none",
+                    "seed": seed,
+                    "cases_3_24m": 2000,
+                    "kids_3_24m": 370,
+                    "cases_u5": 4000,
+                    "kids_u5": 1000,
+                    "doses": 0,
+                }
+            )
+            rows.append(
+                {
+                    "code": code,
+                    "seed": seed,
+                    "cases_3_24m": 1500,
+                    "kids_3_24m": 370,
+                    "cases_u5": 3000,
+                    "kids_u5": 1000,
+                    "doses": 900,
+                }
+            )
+        run.status, run.result = PmcModelRun.COMPLETED, {"runs": rows}
+        run.save(update_fields=["status", "result"])
+
+        polled = targeting.targeting_pmc_run_status(None, run_id=run.pk, state="Kano")
+
+        assert polled["status"] == "completed"
+        assert polled["result"]["label"] == "illustrative · live model run · fitted to Kano's prevalence and rainfall"
+        assert polled["result"]["effect"]["averted_u5_pct"] == 25.0 and polled["result"]["effect"]["kids_u5"] == 1000
+
+    def test_ages_up_to_59_months_are_accepted_and_60_is_not(self):
+        ok = targeting.targeting_pmc_run_model(None, state="Ondo", schedule={"months": [5, 6], "age_max_months": 59})
+        assert ok["status"] in ("queued", "running")
+        with pytest.raises(MCPToolError):
+            targeting.targeting_pmc_run_model(None, state="Ondo", schedule={"months": [5, 6], "age_max_months": 60})
 
     def test_a_grid_schedule_is_refused_for_such_a_state_too(self):
         got = targeting.targeting_pmc_run_model(None, state="Kano", schedule="connect_quarterly_3_24")

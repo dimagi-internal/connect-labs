@@ -22,6 +22,8 @@ DAYS_PER_YEAR = 365
 #: Connect's coverage in every grid schedule.
 DEFAULT_COVERAGE = 0.85
 DEFAULT_AGE_MONTHS = (3, 24)
+#: SMC-style asks go up to 59 months (the grid's SMC design is 3-59).
+MAX_AGE_MONTHS = 59
 MONTH_NAMES = (
     "January",
     "February",
@@ -37,6 +39,12 @@ MONTH_NAMES = (
     "December",
 )
 LABEL = "illustrative · live model run"
+
+
+def fitted_label(state: str) -> str:
+    return f"{LABEL} · fitted to {state}'s prevalence and rainfall"
+
+
 GRID_LABEL = "illustrative · precomputed model run"
 
 #: Two-sided 95% t-values by degrees of freedom: three seeds is too few for 1.96.
@@ -85,15 +93,15 @@ def to_rounds(spec: dict) -> tuple[list[list[float]], str]:
     age_min = spec.get("age_min_months", DEFAULT_AGE_MONTHS[0])
     age_max = spec.get("age_max_months", DEFAULT_AGE_MONTHS[1])
     coverage = spec.get("coverage", DEFAULT_COVERAGE)
-    if not (_is_num(age_min) and _is_num(age_max) and 0 <= age_min and age_max <= 60):
-        raise ValueError("age_min_months and age_max_months must satisfy 0 <= min < max <= 60")
+    if not (_is_num(age_min) and _is_num(age_max) and 0 <= age_min and age_max <= MAX_AGE_MONTHS):
+        raise ValueError("age_min_months and age_max_months must satisfy 0 <= min < max <= 59")
     if not (_is_num(coverage) and 0 < coverage <= 1):
         raise ValueError("coverage must be a share above 0 and up to 1")
     # Near-identical asks share a run: ages to whole months, coverage to 5-point steps.
     age_min, age_max = round(age_min), round(age_max)
     coverage = max(0.05, round(round(coverage * 20) / 20, 2))
     if not age_min < age_max:
-        raise ValueError("age_min_months and age_max_months must satisfy 0 <= min < max <= 60")
+        raise ValueError("age_min_months and age_max_months must satisfy 0 <= min < max <= 59")
     ages = (age_min / 12, age_max / 12)
     who = f"children {age_min:g}-{age_max:g} months, {coverage:.0%} coverage"
 
@@ -179,6 +187,25 @@ GRID_ROUNDS = {
 }
 
 
+def _under5_effect(base: dict, mine: dict, seeds: list) -> dict:
+    """Under-5 figures when the worker returned them for every paired run; {} otherwise (additive)."""
+    try:
+        pcts = [(1 - mine[s]["cases_u5"] / base[s]["cases_u5"]) * 100 for s in seeds if base[s]["cases_u5"]]
+        kids = [mine[s]["kids_u5"] for s in seeds]
+    except (KeyError, TypeError):
+        return {}
+    if not pcts or not all(_is_num(k) for k in kids):
+        return {}
+    half = 0.0
+    if len(pcts) > 1:
+        half = _T95.get(len(pcts) - 1, 1.96) * statistics.stdev(pcts) / math.sqrt(len(pcts))
+    return {
+        "averted_u5_pct": round(statistics.fmean(pcts), 1),
+        "averted_u5_ci": round(half, 1),
+        "kids_u5": round(statistics.fmean(kids)),
+    }
+
+
 def summarise(result: dict, code: str) -> dict:
     """Relative effect of schedule ``code`` from a worker result: percent of cases averted against
     the same seed's no-PMC run, mean and 95% half-range across seeds, and doses per child per year."""
@@ -197,7 +224,9 @@ def summarise(result: dict, code: str) -> dict:
         half = _T95.get(len(pcts) - 1, 1.96) * statistics.stdev(pcts) / math.sqrt(len(pcts))
     kids = statistics.fmean(mine[s]["kids_3_24m"] for s in seeds)
     doses = statistics.fmean(mine[s]["doses"] for s in seeds)
+    out_u5 = _under5_effect(base, mine, seeds)
     return {
+        **out_u5,
         "averted_pct": round(mean, 1),
         "averted_ci": round(half, 1),
         "seeds": len(pcts),
