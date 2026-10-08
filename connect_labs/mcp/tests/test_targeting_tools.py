@@ -967,14 +967,37 @@ class TestPmcLiveModel:
         monkeypatch.setattr(self.runner, "default_instance", lambda: type("I", (), {"_state": staticmethod(boom)})())
         assert service._instance_is_warm() is False
 
-    def test_a_run_queued_behind_another_adds_its_remaining_time(self, monkeypatch):
+    def test_a_run_queued_behind_two_others_waits_for_their_run_time_not_their_queue_time(self, monkeypatch):
         from connect_labs.labs.indicators.emod import service
 
         monkeypatch.setattr(service, "_instance_is_warm", lambda: False)
-        first = targeting.targeting_pmc_run_model(None, state="Ondo", schedule=self.DEMO)
-        second = targeting.targeting_pmc_run_model(None, state="Ondo", schedule={"months": [6, 7]})
+        a = targeting.targeting_pmc_run_model(None, state="Ondo", schedule={"months": [1]})
+        b = targeting.targeting_pmc_run_model(None, state="Ondo", schedule={"months": [2]})
+        c = targeting.targeting_pmc_run_model(None, state="Ondo", schedule={"months": [3]})
 
-        assert second["eta_s"] >= first["eta_s"] + 100
+        # A cold (300) + B warm (120), then C's own 120.
+        assert 290 <= a["eta_s"] <= 300 and 410 <= b["eta_s"] <= 420 and 530 <= c["eta_s"] <= 540
+        from connect_labs.labs.indicators.models import PmcModelRun
+
+        assert PmcModelRun.objects.get(pk=c["run_id"]).timings["queued_behind_s"] == 420
+
+    def test_a_running_rows_eta_counts_from_its_claim(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from connect_labs.labs.indicators.emod import service
+        from connect_labs.labs.indicators.models import PmcModelRun
+
+        first = targeting.targeting_pmc_run_model(None, state="Ondo", schedule=self.DEMO)
+        PmcModelRun.objects.filter(pk=first["run_id"]).update(
+            status=PmcModelRun.RUNNING,
+            timings={"expected_s": 300, "queued_behind_s": 900, "submitted_at": 0},
+            updated_at=timezone.now() - timedelta(seconds=100),
+        )
+        run = PmcModelRun.objects.get(pk=first["run_id"])
+
+        assert 195 <= service.run_eta(run) <= 200
 
     def test_new_work_is_refused_as_busy_past_three_in_flight_but_joining_is_allowed(self):
         asks = [{"months": [m]} for m in (1, 2, 3)]
