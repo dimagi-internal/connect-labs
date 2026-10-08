@@ -171,6 +171,8 @@ A programme's supply pages can show a workflow as one of their tabs. A workflow 
 
 When you open a workflow tab inside the supply pages, the supply header and tab bar remain visible and the workflow's current review loads in place. Each person sees it with their own access level, exactly as they would if they opened the workflow directly.
 
+A workflow shown as a supply tab — such as the **Stock review** — follows the supply pages' **"as of" date**. Pick a past day using the date control in the supply header and the workflow's supply figures update to show that day: the stock held by workers, the stores, and each worker's history all reflect the date you selected. The header shows the chosen date, just as it does on every other supply tab, and switching to another tab keeps the date in place. The workflow's own saved review, and anything it reads other than supply figures, continues to show today's data.
+
 Three links appear on the page:
 
 | Link | What it does |
@@ -230,13 +232,4 @@ The following are tracked separately and are never added to the implausible head
 
 #### Colour coding
 
-Colours are driven by the same one-sided 95% statistical test used by the audit indicators, so a field worker with only a handful of readings is not flagged red simply by chance. Units with fewer than 20 readings are shown in grey. A fixed-percentage colour scheme is also available as a toggle if you prefer a simpler threshold view. The page always states which colour scheme is active.
-
-#### Filters and drill-down
-
-- Filter by week range, LLO, ward, or age band.
-- Switch between the age-banded ceiling and a flat 9–20 cm ceiling.
-- Click an LLO to drill down to its wards; click a ward to drill down to its FLWs.
-- A weekly trend chart shows whether a problem is a one-off batch or a recurring pattern.
-
-### GPS Map and UA
+Colours are driven by the same one-sided 95% statistical test used by the audit indicators, so a field worker with only a handful of readings is not flagged red simply by chance. Units with fewer than 20 readings are shown in grey. A fixed-percentage colour scheme
