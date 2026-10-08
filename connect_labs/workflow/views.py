@@ -5821,21 +5821,73 @@ def worker_tasks_api(request):
         task_access.close()
 
         by_username: dict = {}
+        skipped = 0
+        non_coaching = 0
         for task in all_tasks:
-            username = (task.data.get("username") or "").lower()
-            if not username:
+            # ONE malformed record must not cost the whole opportunity its index. task.data is
+            # free-form JSON with no schema, written by several versions of this code and
+            # editable by hand, so a single bad row is a question of when, not if. Before
+            # this, any exception in here returned 500 for every worker -- and a dashboard
+            # reading that 500 could only fall back to open-tasks/, which drops closed tasks
+            # and carries no verdict, so a reviewer saw their saved verdicts simply not appear.
+            try:
+                username = (task.data.get("username") or "").lower()
+                if not username:
+                    continue
+
+                created_at = ""
+                updated_at = ""
+                updated_by = ""
+                last_change = ""
+                session_ids = []
+                # Explicitly null, a dict, a number: all legal JSON, none of them iterable as
+                # a list of events. `or []` also covers the null case, which the two-argument
+                # get() does NOT -- its default applies only to a MISSING key.
+                events = task.data.get("events") or []
+                if not isinstance(events, list):
+                    events = []
+                for event in events:
+                    if not isinstance(event, dict):
+                        continue
+                    event_type = event.get("event_type")
+                    stamp = event.get("timestamp") or ""
+                    if event_type == "created" and not created_at:
+                        created_at = stamp
+                    elif event_type == "ai_session":
+                        session_id = event.get("session_id")
+                        if session_id and session_id not in session_ids:
+                            session_ids.append(session_id)
+                    # Who last CHANGED this task, and when. Only "updated" events count: a
+                    # chatbot session opening, or the task being created, is activity but
+                    # nobody editing the record, and reporting "changed by system" for an
+                    # ai_session would be worse than reporting nothing. This deliberately
+                    # matches what the dashboard derives from the per-task event log, so the
+                    # two routes to the same fact cannot disagree.
+                    #
+                    # Timestamps are compared as strings, which is correct for ISO-8601 and
+                    # avoids parsing a field that several versions of this code have written
+                    # in slightly different shapes.
+                    if event_type == "updated" and stamp >= updated_at:
+                        updated_at = stamp
+                        updated_by = event.get("actor") or ""
+                        last_change = event.get("description") or ""
+            except Exception:
+                # By id, so the offending record can be found and repaired rather than counted.
+                logger.exception(
+                    "Skipping malformed task %s while building the worker index",
+                    getattr(task, "id", "?"),
+                )
+                skipped += 1
                 continue
 
-            created_at = ""
-            session_ids = []
-            for event in task.data.get("events", []):
-                event_type = event.get("event_type")
-                if event_type == "created" and not created_at:
-                    created_at = event.get("timestamp") or ""
-                elif event_type == "ai_session":
-                    session_id = event.get("session_id")
-                    if session_id and session_id not in session_ids:
-                        session_ids.append(session_id)
+            indicators = _coaching_indicators(task.data)
+            # A coaching task is one THIS dashboard made. Everything else -- tasks from the
+            # Tasks app, from older features -- is returned anyway and labelled, never
+            # dropped: a task that vanishes with no explanation is worse than one shown in
+            # the wrong place, and the client needs the count to say what it set aside.
+            is_coaching = bool(task.data.get("source") == "kmc_audit_dashboard" or indicators)
+            if not is_coaching:
+                non_coaching += 1
 
             by_username.setdefault(username, []).append(
                 {
@@ -5843,15 +5895,23 @@ def worker_tasks_api(request):
                     "status": task.data.get("status", "investigating"),
                     "title": task.data.get("title", ""),
                     "created_at": created_at,
+                    "updated_at": updated_at,
+                    "updated_by": updated_by,
+                    "last_change": last_change,
                     "review": task.data.get("review"),
                     "session_ids": session_ids,
                     "workflow_run_id": task.data.get("workflow_run_id"),
+                    # From task.data, like every other field here. Reading the attribute
+                    # off the record wrapper was the one value in this dict that was not
+                    # plain JSON, and create_task writes opportunity_id into data anyway.
+                    "opportunity_id": task.data.get("opportunity_id"),
+                    "coaching": is_coaching,
                     # What the dashboard asked the chatbot to cover, written at creation and
                     # never touched afterwards. This is the DENOMINATOR for coaching progress:
                     # the chatbot reports which topics it finished, but it cannot change how
                     # many there were, so a conversation that closes early can be recognised
                     # rather than taken at its word.
-                    "coaching_indicators": _coaching_indicators(task.data),
+                    "coaching_indicators": indicators,
                 }
             )
 
@@ -5861,7 +5921,17 @@ def worker_tasks_api(request):
         for tasks in by_username.values():
             tasks.sort(key=lambda t: t["task_id"], reverse=True)
 
-        return JsonResponse({"tasks": by_username, "total_fetched": len(all_tasks)})
+        # `skipped` is reported rather than swallowed: a caller that sees tasks AND a
+        # non-zero count knows the answer is incomplete, which is a different thing from an
+        # opportunity that genuinely has none.
+        return JsonResponse(
+            {
+                "tasks": by_username,
+                "total_fetched": len(all_tasks),
+                "skipped": skipped,
+                "non_coaching": non_coaching,
+            }
+        )
     except Exception:
         logger.exception("Failed to fetch worker tasks for opportunity")
         return JsonResponse({"error": "An internal error occurred"}, status=500)
