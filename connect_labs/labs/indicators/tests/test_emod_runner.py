@@ -82,6 +82,59 @@ def _run():
     return PmcModelRun.objects.create(inputs_hash=runner.request_hash(req), request=req)
 
 
+@pytest.fixture(autouse=True)
+def _no_fitted_grid(settings):
+    """Default: no per-state grid, so build_request keeps the default setting unless a test opts in."""
+    settings.PMC_STATE_GRID_PATH = "/nonexistent/pmc_state_grid.json"
+
+
+class TestFittedSetting:
+    @pytest.fixture
+    def grid(self, settings):
+        from connect_labs.labs.indicators.tests.test_emod_rank import FIXTURE
+
+        settings.PMC_STATE_GRID_PATH = str(FIXTURE)
+        return json.loads(FIXTURE.read_text())
+
+    def test_a_fitted_state_runs_in_its_own_setting_and_passes_worker_validation(self, grid, worker_module):
+        req = runner.build_request("ondo", [SCHEDULE])
+        own = grid["states"]["Ondo"]["setting"]
+        assert req["setting"]["name"] == "Ondo fitted"
+        for key in ("larval_capacity", "habitat_times", "habitat_values"):
+            assert req["setting"][key] == own[key]
+        assert req["setting"]["larval_capacity"] != runner.DEFAULT_SETTING["larval_capacity"]
+        for key in ("pop", "case_mgmt", "net_coverage"):
+            assert req["setting"][key] == runner.DEFAULT_SETTING[key]
+        worker_module.validate_request(req)
+
+    def test_the_burn_in_key_is_the_grids_own_values_not_a_recomputation(self, grid, worker_module):
+        req = runner.build_request("Ondo", [SCHEDULE])
+        expected = {**runner.DEFAULT_SETTING, **grid["states"]["Ondo"]["setting"]}
+        assert worker_module.setting_hash(req["setting"]) == worker_module.setting_hash(expected)
+
+    def test_a_seasonal_state_is_refused_without_a_fit_and_accepted_with_one(self, settings):
+        with pytest.raises(ValueError, match="SMC, not PMC"):
+            runner.build_request("Kano", [SCHEDULE], fit="more_seasonal")
+        from connect_labs.labs.indicators.tests.test_emod_rank import FIXTURE
+
+        settings.PMC_STATE_GRID_PATH = str(FIXTURE)
+        assert runner.build_request("Kano", [SCHEDULE], fit="more_seasonal")["setting"]["name"] == "Kano fitted"
+
+    def test_a_state_whose_fit_failed_keeps_the_default_gating(self, grid):
+        assert runner.fitted_setting("Lagos") is None
+        with pytest.raises(ValueError, match="Lagos cannot be modelled"):
+            runner.build_request("Lagos", [SCHEDULE], fit="more_seasonal")
+        assert runner.build_request("Lagos", [SCHEDULE], fit="near")["setting"]["name"] == "SW_Nigeria_like"
+
+    def test_an_unfitted_state_uses_the_default_setting(self, grid):
+        req = runner.build_request("Ekiti", [SCHEDULE], fit="near")
+        assert req["setting"] == runner.DEFAULT_SETTING
+
+    def test_state_name_round_trips_from_the_setting(self):
+        assert runner.fitted_state_name({"name": "Kano fitted"}) == "Kano"
+        assert runner.fitted_state_name(runner.DEFAULT_SETTING) is None
+
+
 class TestBuildRequest:
     def test_default_setting_is_the_setting_the_grid_was_run_with(self):
         # The grid's own record is the truth: a live run must start from the grid's burn-in.
