@@ -130,6 +130,10 @@ TAB_FOR_VIEW = {
     "supply_chain:supplier_market_invite": "supply_chain:suppliers",
 }
 
+# Addresses whose tab is decided per programme, not here: a workflow pinned into the
+# supply navigation (workflow_views/) highlights its own tab, whichever it is.
+VIEWS_WITH_PINNED_TABS = frozenset({"supply_chain:workflow_view"})
+
 # Addresses that render no supply nav at all, so there is no tab to keep
 # current. Held as a named set rather than left out, so the test that closes
 # the set above can tell "deliberately has no nav" from "forgotten".
@@ -178,7 +182,43 @@ VIEWS_WITHOUT_TABS = frozenset(
 )
 
 
+def _pinned(request) -> list:
+    """The workflows pinned into the programme in view (workflow_views/models.py), in tab order."""
+    from connect_labs.supply_chain.workflow_views.models import SupplyWorkflowView
+
+    program_id = (getattr(request, "labs_context", None) or {}).get("program_id")
+    if not program_id:
+        return []
+    try:
+        return list(SupplyWorkflowView.objects.filter(program_id=int(program_id)))
+    except (TypeError, ValueError):
+        return []
+
+
 def supply_tabs(request) -> list[dict]:
-    current = request.resolver_match.view_name if request.resolver_match else ""
+    match = request.resolver_match
+    current = match.view_name if match else ""
     current = TAB_FOR_VIEW.get(current, current)
-    return [{"url": reverse(name), "label": label, "active": name == current} for name, label in SUPPLY_TABS]
+    current_slug = (match.kwargs or {}).get("slug") if match and current == "supply_chain:workflow_view" else None
+    pins = _pinned(request)
+    replacing = {p.replaces: p for p in pins if p.replaces}
+
+    def pin_tab(pin, also_active=False):
+        return {
+            "url": reverse("supply_chain:workflow_view", args=[pin.slug]),
+            "label": pin.label,
+            "active": current_slug == pin.slug or also_active,
+        }
+
+    tabs = []
+    for name, label in SUPPLY_TABS:
+        pin = replacing.get(name)
+        if pin is not None:
+            # The pinned workflow stands in for this tab; its own page ("classic view") still counts as here.
+            tabs.append(pin_tab(pin, also_active=current == name))
+        else:
+            tabs.append({"url": reverse(name), "label": label, "active": name == current})
+        if name == "supply_chain:flow":
+            # Pins that ADD a tab sit with the stock pages.
+            tabs.extend(pin_tab(p) for p in pins if not p.replaces)
+    return tabs

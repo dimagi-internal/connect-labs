@@ -11,7 +11,7 @@ from pathlib import Path
 
 from django.urls import get_resolver
 
-from connect_labs.supply_chain.navigation import SUPPLY_TABS, TAB_FOR_VIEW, VIEWS_WITHOUT_TABS
+from connect_labs.supply_chain.navigation import SUPPLY_TABS, TAB_FOR_VIEW, VIEWS_WITH_PINNED_TABS, VIEWS_WITHOUT_TABS
 
 TABS = {name for name, _ in SUPPLY_TABS}
 
@@ -24,7 +24,7 @@ def _view_names() -> set[str]:
 
 
 def test_every_supply_view_lands_under_a_tab():
-    unaccounted = sorted(_view_names() - TABS - set(TAB_FOR_VIEW) - VIEWS_WITHOUT_TABS)
+    unaccounted = sorted(_view_names() - TABS - set(TAB_FOR_VIEW) - VIEWS_WITHOUT_TABS - VIEWS_WITH_PINNED_TABS)
     assert not unaccounted, (
         "these supply views highlight no nav tab, so the nav reads as if you had left "
         f"the domain: {unaccounted}. Add each to TAB_FOR_VIEW, or to VIEWS_WITHOUT_TABS "
