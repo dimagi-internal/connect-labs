@@ -214,6 +214,8 @@ def design_effect(result: dict, design: dict) -> dict | None:
 class Box:
     """The on-demand instance + artifacts bucket: put a request, run the worker over SSM, read the result."""
 
+    abort_after: int | None = MAX_CONSECUTIVE_FAILURES
+
     def __init__(self, instance, s3, bucket: str):
         self.instance, self.s3, self.bucket = instance, s3, bucket
 
@@ -243,6 +245,30 @@ class Box:
             tail = (res.stderr or res.stdout or "").strip()[-1500:]
             raise RuntimeError(f"worker exited {res.exit_code} ({res.status}): {tail}")
         return json.loads(self.s3.get_object(Bucket=self.bucket, Key=result_key)["Body"].read())
+
+
+class CachedBox(Box):
+    """Rebuild a grid from results a previous batch already left in S3: no box, no compute.
+
+    Requests are content-hashed, so the same inputs + driver code name the same ``results/<hash>.json``. A
+    missing result raises, which ``run_grid`` records as a failed state (left out of the file).
+    """
+
+    #: A missing result costs nothing, so a run of them is not a sick box: keep reading the rest.
+    abort_after = None
+
+    def __init__(self, s3, bucket: str):
+        super().__init__(None, s3, bucket)
+
+    def start(self) -> None:
+        pass
+
+    def call(self, req: dict) -> dict:
+        result_key = f"results/{request_hash(req)}.json"
+        try:
+            return json.loads(self.s3.get_object(Bucket=self.bucket, Key=result_key)["Body"].read())
+        except Exception as exc:  # noqa: BLE001 - botocore NoSuchKey and friends
+            raise RuntimeError(f"no cached result at s3://{self.bucket}/{result_key}: {exc}") from exc
 
 
 # --- per state ----------------------------------------------------------------------------------------
@@ -299,6 +325,7 @@ def write_atomic(path: Path, grid: dict) -> None:
     grid["generated"] = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds")
     fd, tmp = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
     try:
+        os.chmod(tmp, 0o644)  # mkstemp makes it 0600; the grid is a committed data file other accounts read
         with os.fdopen(fd, "w") as f:
             json.dump(grid, f, indent=2)
             f.write("\n")
@@ -362,7 +389,7 @@ def run_grid(
             with lock:
                 failed.append(state["name"])
                 streak[0] += 1
-                if streak[0] >= MAX_CONSECUTIVE_FAILURES:
+                if box.abort_after is not None and streak[0] >= box.abort_after:
                     aborted.set()
                     logger.error("%d states failed in a row; aborting the batch", streak[0])
             return
@@ -402,9 +429,12 @@ def main(argv=None) -> int:
     ap.add_argument("--image", default=os.environ.get("LABS_EMOD_IMAGE"), help="override the worker image digest")
     ap.add_argument("--emodpy-commit", default=os.environ.get("LABS_EMOD_EMODPY_COMMIT"), help="override the commit")
     ap.add_argument("--force-runtime", action="store_true", help="continue a file built on a different runtime")
+    ap.add_argument(
+        "--from-s3", action="store_true", help="rebuild from results already in the bucket; never touches the box"
+    )
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    if not args.instance_id or not args.bucket:
+    if not args.bucket or not (args.instance_id or args.from_s3):
         ap.error("set LABS_EMOD_INSTANCE_ID and LABS_EMOD_BUCKET (or --instance-id / --bucket)")
     if args.out is None:
         if args.states:
@@ -418,12 +448,15 @@ def main(argv=None) -> int:
     if args.profile:
         os.environ["AWS_PROFILE"] = args.profile
     import boto3
-    from canopy_sdk.ondemand import OnDemandInstance
 
-    box = Box(
-        OnDemandInstance(args.instance_id, args.region, "emod"),
-        boto3.client("s3", region_name=args.region),
-        args.bucket,
+    if not args.from_s3:
+        from canopy_sdk.ondemand import OnDemandInstance
+
+    s3 = boto3.client("s3", region_name=args.region)
+    box = (
+        CachedBox(s3, args.bucket)
+        if args.from_s3
+        else Box(OnDemandInstance(args.instance_id, args.region, "emod"), s3, args.bucket)
     )
     states = json.loads(args.inputs.read_text())["states"]
     _, failed = run_grid(
