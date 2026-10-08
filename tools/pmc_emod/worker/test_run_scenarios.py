@@ -143,3 +143,46 @@ def test_only_not_found_is_a_cache_miss():
     assert run_scenarios.is_missing(err("NoSuchKey", 404))
     assert not run_scenarios.is_missing(err("403", 403))
     assert not run_scenarios.is_missing(err("SlowDown", 503))
+
+
+def test_one_experiment_waits_at_most_what_is_left_of_the_request(monkeypatch):
+    monkeypatch.setenv("EMOD_RUN_TIMEOUT_S", "1800")
+    assert run_scenarios.experiment_timeout() == 1800
+    assert run_scenarios.experiment_timeout(time.monotonic() + 300) in (299, 300)
+    with pytest.raises(TimeoutError, match="EMOD_REQUEST_TIMEOUT_S"):
+        run_scenarios.experiment_timeout(time.monotonic() - 1)
+
+
+def test_the_request_deadline_defaults_to_2100s_and_reads_the_environment(monkeypatch):
+    monkeypatch.delenv("EMOD_REQUEST_TIMEOUT_S", raising=False)
+    assert run_scenarios.request_deadline(100.0) == 2200.0
+    monkeypatch.setenv("EMOD_REQUEST_TIMEOUT_S", "60")
+    assert run_scenarios.request_deadline(100.0) == 160.0
+
+
+def test_burnin_and_pickups_share_one_request_deadline(tmp_path, monkeypatch):
+    """A cold request is bounded as a whole: both experiments get the same deadline, not 1800 s each."""
+    seen = {}
+
+    class Manifest:
+        eradication_path = str(tmp_path / "bin" / "Eradication")
+
+    monkeypatch.setenv("EMOD_REQUEST_TIMEOUT_S", "2100")
+    monkeypatch.setattr(run_scenarios, "load_pmc_sweep", lambda: (Manifest, object()))
+    monkeypatch.setattr(run_scenarios, "ensure_binary", lambda m: None)
+
+    def burnin(manifest, sweep, setting, dest_dir, job_dir, deadline=None):
+        seen["burnin"] = deadline
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        (dest_dir / run_scenarios.BURNIN_FILE).write_text("x")
+
+    def pickups(manifest, sweep, setting, schedules, seeds, years, burnin_dir, job_dir, deadline=None):
+        seen["pickups"] = deadline
+        return []
+
+    monkeypatch.setattr(run_scenarios, "build_burnin", burnin)
+    monkeypatch.setattr(run_scenarios, "run_pickups", pickups)
+    before = time.monotonic()
+    run_scenarios.run_request(small_request(500, [0], ["none"]), tmp_path, heartbeat_s=60)
+    assert seen["burnin"] == seen["pickups"]
+    assert before + 2100 <= seen["burnin"] <= time.monotonic() + 2100
