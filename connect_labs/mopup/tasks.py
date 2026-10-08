@@ -1,7 +1,8 @@
 """Celery tasks for the CHC mop-up feature.
 
 The one expensive job: pulling a whole opportunity's work-area case data,
-approved visit-form data, and work-area geometry, then assembling it into
+visit-form data (at the review statuses core/visits.py counts), and work-area
+geometry, then assembling it into
 the per-WA row list `core.indicators.evaluate_run` evaluates against.
 Offloaded to Celery because a synchronous web request doing this for a real
 production opportunity (tens of thousands of visits) reliably hits the

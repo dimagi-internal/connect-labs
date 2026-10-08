@@ -18,12 +18,12 @@ layers are responsible for populating these — this module only computes):
                                        # REQUEST_FOR_INACCESSIBLE/INACCESSIBLE
         "building_count": int,
         "expected_visit_count": int,
-        "approved_hsd_count": int,
+        "approved_hsd_count": int,    # HSD visits except duplicate/trial (name is historical; core/visits.py)
         "approved_ncf_count": int,    # NCF visits at ANY review status (name is historical; see core/visits.py)
         "connect_inaccessible": int,  # 1 if Connect's work-area status is INACCESSIBLE or
                                        # REQUEST_FOR_INACCESSIBLE, else 0 (a status, not a visit
                                        # -- see core/geometry.py's INACCESSIBLE_CONNECT_STATUSES)
-        "deworming_given": int,       # of approved_hsd_count visits
+        "deworming_given": int,       # of the visits counted in approved_hsd_count
         "muac_given": int,
         "vaccination_given": int,
         "boundary": dict | None,      # optional — GeoJSON, carried through onto
@@ -166,9 +166,11 @@ def wa_numerator_denominator(wa: dict, indicator_key: str, global_config: dict) 
         # even after real HSD/NCF visit forms were submitted for it (the
         # case property and the visit-form record don't reliably move
         # together -- same finding `gaps.py`'s `ward_visits_per_building`
-        # already documented and worked around). `approved_hsd_count` is a
-        # strictly more reliable signal for real delivery, and it already
-        # subsumes what the status gate was trying to do.
+        # already documented and worked around). `approved_hsd_count` (name
+        # is historical: it counts rejected/pending visits too, see
+        # core/visits.py) is a strictly more reliable signal for real
+        # delivery, and it already subsumes what the status gate was trying
+        # to do.
         if hsd_count == 0:
             return None
         return hsd_count, wa.get("expected_visit_count", 0)
