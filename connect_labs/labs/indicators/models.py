@@ -273,6 +273,7 @@ class PmcModelRun(models.Model):
     error = models.TextField(blank=True)
     timings = models.JSONField(default=dict, blank=True, help_text="Seconds spent booting, waiting and simulating")
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True, help_text="Last claim or save; judges a stuck 'running' row")
     completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
