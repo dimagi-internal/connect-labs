@@ -9,8 +9,6 @@ worker and an onset month for the delivery rounds.
 
 from __future__ import annotations
 
-from datetime import date
-
 MONTHS = 12
 LAG_MONTHS = 1  # mosquito habitat follows rain by about a month (larval development)
 HABITAT_FLOOR = 0.1  # dry months keep low perennial transmission
@@ -33,14 +31,20 @@ def _check_rain(rain_monthly) -> list[float]:
 def habitat_curve(rain_monthly) -> tuple[list[int], list[float]]:
     """(times, values) for ``setting['habitat_times'/'habitat_values']``.
 
-    Knots sit at mid-month day of year. Each month's value is the PREVIOUS month's rain (the larval
+    Knots sit at mid-month day of year, plus periodic endpoints at day 0 and 365.
+    Each month's value is the PREVIOUS month's rain (the larval
     lag), scaled so the maximum is 1.0, then floored at 0.1. All-zero rain gives a flat floor curve.
     """
     rain = _check_rain(rain_monthly)
     lagged = [rain[(m - LAG_MONTHS) % MONTHS] for m in range(MONTHS)]
     peak = max(lagged)
     scaled = [v / peak if peak > 0 else 0.0 for v in lagged]
-    return list(MID_MONTH_DOY), [round(max(v, HABITAT_FLOOR), 4) for v in scaled]
+    vals = [round(max(v, HABITAT_FLOOR), 4) for v in scaled]
+    # Periodic endpoints, as in pmc_sweep's default habitat: day 0 and day 365 are the same point on
+    # the Dec -> Jan line (Dec 15 to Jan 15 spans 31 days; the year boundary is 16 days in).
+    span = MID_MONTH_DOY[0] + 365 - MID_MONTH_DOY[-1]
+    v0 = round(vals[-1] + (vals[0] - vals[-1]) * (365 - MID_MONTH_DOY[-1]) / span, 4)
+    return [0, *MID_MONTH_DOY, 365], [v0, *vals, v0]
 
 
 def onset_month(rain_monthly) -> int:
@@ -87,7 +91,7 @@ def state_inputs(names: list[str] | None = None) -> tuple[list[dict], list[dict]
             skipped.append({"name": b.name, "reason": "no value for " + ", ".join(missing)})
             continue
         rain_row = got["rain_peak_month"]
-        if rain_row.measured_at is not None and rain_row.measured_at.pk != b.pk:
+        if rain_row.inherited:
             skipped.append({"name": b.name, "reason": "rainfall inherited from a coarser unit, not measured here"})
             continue
         monthly = (rain_row.extra or {}).get("monthly_mm")
@@ -113,7 +117,6 @@ def state_inputs(names: list[str] | None = None) -> tuple[list[dict], list[dict]
 def build_document(states: list[dict], skipped: list[dict]) -> dict:
     return {
         "version": 1,
-        "generated": date.today().isoformat(),
         "sources": "CHIRPS rainfall, MAP prevalence and incidence, DHS, WorldPop under-5 population",
         "states": states,
         "skipped": skipped,
