@@ -222,24 +222,18 @@ Colours are driven by the same one-sided 95% statistical test used by the audit 
 - Click an LLO to drill down to its wards; click a ward to drill down to its FLWs.
 - A weekly trend chart shows whether a problem is a one-off batch or a recurring pattern.
 
----
+### GPS Map and UAT Comparison: location filters
 
-## Indicator Registries
+Dashboards that include a **GPS Map** tab or a **UAT Comparison** tab now have controls for filtering visits by the location type the field worker recorded on the form — **Home**, **Health facility**, or **Other**.
 
-An **indicator registry** is a shared list of named indicators that multiple reports can read from a single place. Rather than defining the same indicator separately in each report, you define it once in a registry and reports refer to it by name.
+#### GPS Map tab
 
-### Creating a registry
+Hovering over any visit point on the map now shows the location type the field worker selected for that visit, alongside the other visit details already displayed.
 
-When creating a registry you must say where it lives — an **organisation**, a **programme**, or an **opportunity**. This scope determines who can see and use the registry, and it is how the system knows where to find it when a report loads.
+A **Hide visits not at mother's home** checkbox sits above the map. It is **off by default**, so the map shows all visit points exactly as before. Ticking it removes non-home visit points from the map — health facility and other visits disappear — while keeping each mother's registration point and all home visits in view. This makes it easier to focus on the pattern of home visits without other location types cluttering the map.
 
-A registry created without a scope cannot be opened, edited, or deleted, so the system now requires a scope before saving. If you are asked to set up a registry and are unsure which scope to use, check with your program administrator.
+#### UAT Comparison tab
 
-### Deleting a registry
+An **Exclude visits not at mother's home** checkbox sits above the comparison metrics. It is **on by default**. When checked, visits the field worker marked as taking place at a health facility or another non-home location are removed from both GPS metrics — **Revisit Dist** and **Metres/Visit** — on both the UAT and pre-UAT sides of the comparison.
 
-You can delete a registry you no longer need from the same organisation, programme, or opportunity page where it lives.
-
-Before deleting, the system checks whether any reports are still bound to the registry. If they are, the deletion is blocked and you will see a list of the affected report IDs. You must either rebind those reports to a different registry or remove the registry from them before the deletion can go ahead. This prevents reports from silently losing their indicator definitions.
-
-Once no reports are bound to it, the registry can be deleted without further steps.
-
-### How
+The reason for this default: a health
