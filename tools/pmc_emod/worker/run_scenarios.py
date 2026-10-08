@@ -13,11 +13,14 @@ Calibrate mode fits the setting's larval capacity to a measured PfPR 2-5y:
 Request:  {"mode": "calibrate", "setting": {... without larval_capacity}, "target_pfpr": 0.27,
           "tolerance": 0.03 (optional)}
 Result:   {"mode", "hash", "target_pfpr", "tolerance", "larval_capacity", "pfpr_2_5y", "fit_error" (pfpr - target),
-          "fit": "ok" | "unreachable" | "loose", "iterations" (rounds run), "burnin_hash",
-          "candidates": [{"round", "larval_capacity", "pfpr_2_5y"}], "rounds": [{"round", "n", "seconds"}],
-          "seconds"}
-          Round 1 burns in 8 log-spaced capacities (1e6-1e9) side by side, round 2 four around the interpolated
-          crossing; PfPR 2-5y is read over each burn-in's year 2. The chosen capacity's burn-in is cached (and
+          "fit": "ok" | "unreachable" | "loose", "iterations" (rounds run), "extended", "burnin_hash",
+          "pfpr_basis": "Oct-Dec mean, 2-5y", "pfpr_2_5y_annual",
+          "candidates": [{"round", "larval_capacity", "pfpr_2_5y", "pfpr_2_5y_annual"}],
+          "rounds": [{"round", "n", "seconds"}], "seconds"}
+          Round 1 burns in 8 log-spaced capacities (1e6-1e9) side by side; if none reaches the target, an extension
+          round tries 4 from 1e9 up to 1e10; then 4 around the interpolated crossing. pfpr_2_5y is the burn-in's
+          last-year Oct-Dec mean (the DHS/MIS survey window, CALIBRATE_SURVEY_DOY); pfpr_2_5y_annual is that year's
+          mean, for reference. The chosen capacity's burn-in is cached (and
           published) under its setting_hash, so a run request with that larval_capacity starts warm. Pass the
           returned larval_capacity on verbatim.
 
@@ -67,8 +70,17 @@ DRUGS = ("SP", "SPAQ")  # keep equal to pmc_sweep.DRUGS (a test checks); a pick-
 # interpolated crossing. The fit is "ok" within CALIBRATE_TOLERANCE of the target PfPR 2-5y (absolute).
 CALIBRATE_LOG10_RANGE = (6.0, 9.0)
 CALIBRATE_GRID_N = 8
-CALIBRATE_REFINE_STEPS = (-0.45, -0.15, 0.15, 0.45)  # round-2 offsets, in units of the round-1 bracket width (log10)
+CALIBRATE_REFINE_STEPS = (-0.45, -0.15, 0.15, 0.45)  # refine offsets, in units of the bracketing width (log10)
 CALIBRATE_TOLERANCE = 0.03
+# When round 1's highest PfPR is still below target - tolerance, one extension round of 4 log-spaced capacities
+# above the grid (up to 1e10; a 1e11 burn-in takes hours) runs before the target is declared unreachable.
+CALIBRATE_EXTENSION_LOG10 = (9.0, 10.0)
+CALIBRATE_EXTENSION_N = 4
+# The model PfPR 2-5y compared with the target: the mean over days of year 274-365 (1 Oct - 31 Dec, 1-based) of
+# the burn-in's last year. DHS/MIS 2021 fieldwork ran Oct-Dec, near the end of the high season; in a seasonal
+# state the annual mean sits well below what that survey measured.
+CALIBRATE_SURVEY_DOY = (274, 365)
+PFPR_BASIS = "Oct-Dec mean, 2-5y"
 
 
 def activity_path():
@@ -254,7 +266,7 @@ def run_experiment(exp, platform, deadline=None):
 
 
 def build_burnin(manifest, sweep, setting, dest_dir, job_dir, deadline=None):
-    """Run the 2-year burn-in once and copy its serialized population to dest_dir. Returns its year-2 PfPR 2-5y."""
+    """Run the 2-year burn-in once and copy its serialized population to dest_dir. Returns its PfPR (run_burnins)."""
     return run_burnins(manifest, sweep, [setting], [dest_dir], job_dir, deadline)[0]
 
 
@@ -274,8 +286,10 @@ def larval_setter(sweep, settings):
 
 def run_burnins(manifest, sweep, settings, dest_dirs, job_dir, deadline=None):
     """Burn in each of `settings` (differing only in larval_capacity) as ONE experiment, so they run side by side
-    (max_job = cpu count). Copies each serialized population to dest_dirs[i] and returns each one's year-2
-    PfPR 2-5y, from a summary report of the burn-in itself (reports do not touch the serialized state).
+    (max_job = cpu count). Copies each serialized population to dest_dirs[i] and returns, per setting,
+    {"pfpr_2_5y": the survey-window (CALIBRATE_SURVEY_DOY) mean of the last year, "pfpr_2_5y_annual": the last
+    year's mean}, from summary reports of the burn-in itself. Reports are outputs: the population chunks of the
+    .dtk are unchanged by them, and pick-ups from it give identical results.
     """
     from idmtools.builders import SimulationBuilder
     from idmtools.entities.experiment import Experiment
@@ -293,7 +307,7 @@ def run_burnins(manifest, sweep, settings, dest_dirs, job_dir, deadline=None):
         partial(sweep.build_config, setting=base, duration_days=BURNIN_DAYS, serialization=("write", [BURNIN_DAYS])),
         partial(sweep.build_campaign, setting=base, rounds=()),
         partial(sweep.build_demographics, base),
-        partial(sweep.build_reports, report_start=0, report_end=BURNIN_DAYS, n_years=BURNIN_DAYS // 365),
+        partial(sweep.build_burnin_reports, burnin_days=BURNIN_DAYS, survey_doy=CALIBRATE_SURVEY_DOY),
     )
     builder = SimulationBuilder()
     if len(settings) > 1:
@@ -310,14 +324,11 @@ def run_burnins(manifest, sweep, settings, dest_dirs, job_dir, deadline=None):
         found = sorted(sim_dir.rglob(BURNIN_FILE))
         if not found:
             raise RuntimeError(f"burn-in produced no {BURNIN_FILE}")
-        reports = sorted(sim_dir.rglob("MalariaSummaryReport_annual.json"))
-        if not reports:
-            raise RuntimeError("burn-in produced no MalariaSummaryReport_annual.json")
-        msr = json.loads(reports[0].read_text())
-        n_reports = len(msr["DataByTimeAndAgeBins"]["PfPR by Age Bin"])
-        if n_reports != BURNIN_DAYS // 365:
-            raise RuntimeError(f"burn-in summary report has {n_reports} years, expected {BURNIN_DAYS // 365}")
-        pfprs.append(sweep.last_year_pfpr_2_5y(msr))
+        annual = read_summary(sim_dir, "annual", BURNIN_DAYS // 365)
+        survey = read_summary(sim_dir, "survey", 1)
+        pfprs.append(
+            {"pfpr_2_5y": sweep.last_year_pfpr_2_5y(survey), "pfpr_2_5y_annual": sweep.last_year_pfpr_2_5y(annual)}
+        )
         dest_dir = pathlib.Path(dest_dir)
         dest_dir.mkdir(parents=True, exist_ok=True)
         tmp = dest_dir / (BURNIN_FILE + ".part")
@@ -325,6 +336,19 @@ def run_burnins(manifest, sweep, settings, dest_dirs, job_dir, deadline=None):
         os.replace(tmp, dest_dir / BURNIN_FILE)
     shutil.rmtree(exp.get_directory(), ignore_errors=True)
     return pfprs
+
+
+def read_summary(sim_dir, suffix, n_reports):
+    """A simulation's MalariaSummaryReport_<suffix>.json, which must hold exactly n_reports reports."""
+    name = f"MalariaSummaryReport_{suffix}.json"
+    found = sorted(pathlib.Path(sim_dir).rglob(name))
+    if not found:
+        raise RuntimeError(f"burn-in produced no {name}")
+    msr = json.loads(found[0].read_text())
+    got = len(msr["DataByTimeAndAgeBins"]["PfPR by Age Bin"])
+    if got != n_reports:
+        raise RuntimeError(f"{name} has {got} reports, expected {n_reports}")
+    return msr
 
 
 def run_pickups(manifest, sweep, setting, schedules, seeds, years, burnin_dir, job_dir, deadline=None):
@@ -411,36 +435,51 @@ def interpolate_crossing(points, target):
     return None
 
 
+def extension_grid():
+    lo, hi = CALIBRATE_EXTENSION_LOG10
+    return [
+        nice_larval(10 ** (lo + (hi - lo) * k / CALIBRATE_EXTENSION_N)) for k in range(1, CALIBRATE_EXTENSION_N + 1)
+    ]
+
+
 def calibrate(evaluate, target, tolerance=CALIBRATE_TOLERANCE):
-    """Fit larval capacity so PfPR 2-5y matches `target`.
+    """Fit larval capacity so the model's PfPR 2-5y matches `target`.
 
-    evaluate(round_no, [larval, ...]) -> [pfpr, ...] runs one round of burn-ins (in parallel). Round 1 is the
-    log-spaced grid; when the target lies inside the PfPR range it spans, round 2 runs CALIBRATE_REFINE_STEPS
-    around the interpolated crossing. The answer is the evaluated value nearest the target -- never an
-    interpolated one, so its burn-in exists.
+    evaluate(round_no, [larval, ...]) -> [pfpr or {"pfpr_2_5y": pfpr, ...extra}, ...] runs one round of burn-ins
+    (in parallel); extra keys are kept on the candidate. Round 1 is the log-spaced grid (1e6-1e9). If its highest
+    PfPR is below target - tolerance, an extension round tries 4 capacities from 1e9 up to 1e10. Then, when the
+    target lies inside the PfPR range evaluated so far, a refine round runs CALIBRATE_REFINE_STEPS around the
+    interpolated crossing. The answer is the evaluated value nearest the target -- never an interpolated one, so
+    its burn-in exists.
 
-    Returns {larval_capacity, pfpr_2_5y, fit_error (pfpr - target), fit, iterations, candidates}. fit is "ok"
-    within `tolerance`, "unreachable" when the target lies outside round 1's PfPR range by more than
-    `tolerance`, and "loose" when it is inside that range but no evaluated value came within `tolerance`.
+    Returns {larval_capacity, pfpr_2_5y, fit_error (pfpr - target), fit, iterations (rounds run), extended,
+    candidates}, plus the chosen candidate's extra keys. fit is "ok" within `tolerance`, "unreachable" when the
+    target lies outside the evaluated PfPR range by more than `tolerance`, and "loose" when it is inside that
+    range but no evaluated value came within `tolerance`.
     """
     candidates = []
+    rounds_run = []
 
-    def run_round(round_no, larvals):
-        pfprs = evaluate(round_no, larvals)
-        candidates.extend(
-            {"round": round_no, "larval_capacity": lv, "pfpr_2_5y": pf} for lv, pf in zip(larvals, pfprs)
-        )
+    def run_round(larvals):
+        round_no = len(rounds_run) + 1
+        rounds_run.append(round_no)
+        for lv, res in zip(larvals, evaluate(round_no, larvals)):
+            res = res if isinstance(res, dict) else {"pfpr_2_5y": res}
+            candidates.append({"round": round_no, "larval_capacity": lv, **res})
 
-    run_round(1, calibration_grid())
+    run_round(calibration_grid())
+    lo10, hi10 = CALIBRATE_LOG10_RANGE
+    extended = max(c["pfpr_2_5y"] for c in candidates) < target - tolerance
+    if extended:
+        run_round(extension_grid())
+        hi10 = CALIBRATE_EXTENSION_LOG10[1]
     lo = min(c["pfpr_2_5y"] for c in candidates)
     hi = max(c["pfpr_2_5y"] for c in candidates)
     reachable = lo - tolerance <= target <= hi + tolerance
-    iterations = 1
     crossing = interpolate_crossing([(c["larval_capacity"], c["pfpr_2_5y"]) for c in candidates], target)
     if crossing is not None:
         estimate, (xa, xb) = crossing
         width = xb - xa
-        lo10, hi10 = CALIBRATE_LOG10_RANGE
         seen = {c["larval_capacity"] for c in candidates}
         refine = []
         for step in CALIBRATE_REFINE_STEPS:
@@ -449,8 +488,7 @@ def calibrate(evaluate, target, tolerance=CALIBRATE_TOLERANCE):
                 seen.add(lv)
                 refine.append(lv)
         if refine:
-            run_round(2, refine)
-            iterations = 2
+            run_round(refine)
     best = min(candidates, key=lambda c: (abs(c["pfpr_2_5y"] - target), c["round"]))
     err = best["pfpr_2_5y"] - target
     if abs(err) <= tolerance:
@@ -459,12 +497,15 @@ def calibrate(evaluate, target, tolerance=CALIBRATE_TOLERANCE):
         fit = "unreachable"
     else:
         fit = "loose"
+    extra = {k: v for k, v in best.items() if k not in ("round", "larval_capacity", "pfpr_2_5y")}
     return {
         "larval_capacity": best["larval_capacity"],
         "pfpr_2_5y": best["pfpr_2_5y"],
+        **extra,
         "fit_error": round(err, 4),
         "fit": fit,
-        "iterations": iterations,
+        "iterations": len(rounds_run),
+        "extended": extended,
         "candidates": candidates,
     }
 
@@ -515,6 +556,7 @@ def run_calibration(req, cache_dir, heartbeat_s=60, fetch_burnin=None, publish_b
         "hash": request_hash(req),
         "target_pfpr": target,
         "tolerance": tolerance,
+        "pfpr_basis": PFPR_BASIS,
         **fit,
         "burnin_hash": key,
         "rounds": rounds,
