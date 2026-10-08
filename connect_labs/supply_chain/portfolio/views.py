@@ -400,7 +400,12 @@ class ProgrammeMapView(TemplateView):
 
         context = super().get_context_data(**kwargs)
         _, reachable, programme = _programme_in_view(self.request)
+        from connect_labs.supply_chain.banner import program_line
+        from connect_labs.supply_chain.navigation import supply_tabs
+
         context.update(portfolio=programme, programme_map=True, everything=False)
+        context["supply_tabs"] = supply_tabs(self.request)
+        context["supply_program_line"] = program_line(self.request)
         context["map_payload"] = portfolio_map(
             self.request, programme, reachable, cover_url=reverse("supply_chain:programme_map_cover")
         )

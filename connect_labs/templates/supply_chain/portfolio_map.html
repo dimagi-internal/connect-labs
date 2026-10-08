@@ -87,6 +87,11 @@ silently lacks.
 {% endblock %}
 
 {% block content %}
+{% if programme_map %}
+  {% comment %}A programme's own map keeps the supply header and tabs every other supply page has;
+  a portfolio's map spans programmes, so it has none.{% endcomment %}
+  <div class="max-w-7xl mx-auto px-4 pt-6">{% include 'supply_chain/_header.html' %}</div>
+{% endif %}
 <div class="px-4 pt-4 pb-3">
   <div class="flex flex-wrap items-end justify-between gap-3">
     <div>
