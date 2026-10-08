@@ -16,9 +16,9 @@ from django.views.generic import TemplateView
 
 from connect_labs.labs.access.scopes import Caller
 
-from . import service
+from . import scope, service
 from .engine import QueryError
-from .scope import ScopeError, directory
+from .scope import ScopeError
 from .validator import DEFAULT_MAX_ROWS
 
 EXAMPLE_SQL = """SELECT llo, opportunity_name, COUNT(*) AS visits, COUNT(DISTINCT entity_id) AS cases
@@ -42,7 +42,7 @@ class ExplorerView(LoginRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        opps = sorted(directory(_caller(self.request)).values(), key=lambda o: (o.llo.lower(), o.name.lower()))
+        opps = sorted(scope.directory(_caller(self.request)).values(), key=lambda o: (o.llo.lower(), o.name.lower()))
         selected = _selected(self.request)
         ctx.update(
             {
