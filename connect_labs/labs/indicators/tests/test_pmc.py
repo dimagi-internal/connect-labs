@@ -228,7 +228,10 @@ class TestTheAgentTool:
         path = got["explorer_path"]
         assert path.startswith("/labs/targeting/pmc/?")
         assert "states=Ondo%2CKano" in path or "states=Kano%2COndo" in path
-        assert "schedule=connect_monthly_in_season_3_24" in path
+        # Defaults are left out so the link stays readable in a chat panel.
+        assert "schedule=" not in path and "cost_per_visit=" not in path
+        dearer = targeting.targeting_pmc_schedules(None, states=["Ondo"], cost_per_visit=1.2)
+        assert "cost_per_visit=1.2" in dearer["explorer_path"]
 
     def test_it_refuses_an_unknown_schedule(self, nigeria):
         with pytest.raises(MCPToolError):
