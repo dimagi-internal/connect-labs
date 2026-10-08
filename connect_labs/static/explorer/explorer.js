@@ -324,4 +324,69 @@
     }
   });
   if (selected().length) describe(false);
+
+  // The agent's way to hand SQL back to Labs. canopy turns this into the agent tool
+  // `page_explorer_set_query`; the callback runs in THIS tab. It returns only an
+  // acknowledgement -- never rows, counts or answers: real data stays in the
+  // person's browser and never travels back through canopy.
+  function registerAgentActions(host) {
+    if (!host || !host.widget || !host.widget.registerAction) return;
+    host.widget.registerAction(
+      'explorer_set_query',
+      async ({ sql, opportunity_ids, run: runIt }) => {
+        if (typeof sql !== 'string' || !sql.trim())
+          throw new Error('sql is required');
+        if (Array.isArray(opportunity_ids) && opportunity_ids.length) {
+          const wanted = new Set(opportunity_ids.map(Number));
+          document.querySelectorAll('#ex-opps input').forEach((box) => {
+            box.checked = wanted.has(Number(box.value));
+          });
+          await describe(false);
+        }
+        $('ex-sql').value = sql;
+        $('ex-sql').focus();
+        if (!runIt) return { ok: true, placed: true, ran: false };
+        await run();
+        return {
+          ok: true,
+          placed: true,
+          ran: true,
+          outcome: lastResult ? 'shown_to_person' : 'error_shown_to_person',
+        };
+      },
+      {
+        description:
+          'Put a SQL query into the explorer editor for the person (and optionally run it in their browser). ' +
+          'Returns only an acknowledgement: the result is shown to the person, never returned to you.',
+        parameters: {
+          type: 'object',
+          properties: {
+            sql: {
+              type: 'string',
+              description:
+                'One SELECT over `visits`. Validate it with explorer_validate first.',
+            },
+            opportunity_ids: {
+              type: 'array',
+              items: { type: 'integer' },
+              description:
+                'Optional: select these opportunities on the page (only ones it lists).',
+            },
+            run: {
+              type: 'boolean',
+              description: 'Run it now so the person sees the result.',
+            },
+          },
+          required: ['sql'],
+        },
+      },
+    );
+  }
+  if (window.canopyHost) registerAgentActions(window.canopyHost);
+  else
+    document.addEventListener(
+      'canopy:ready',
+      (e) => registerAgentActions(e.detail),
+      { once: true },
+    );
 })();

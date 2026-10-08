@@ -81,12 +81,16 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
     # check program membership on every call. Reads only: the panel analyses what the
     # tables show (ruling 2026-10-07: the product shows the data, the AI judges it on
     # request); every change stays the person's own, made in the tables.
-    # The SQL explorer (connect_labs/explorer): describe what is loaded, then run
-    # read-only SQL over the visitor's own opportunities. The registry tools let
-    # the agent use a governed definition before writing its own.
+    # The SQL explorer (connect_labs/explorer). Canopy's agent WRITES SQL; it never
+    # sees real rows: through canopy, describe returns structure only and query runs
+    # only on synthetic opportunities (service.py, `for_agent`). It validates over
+    # zero rows and hands the SQL to the page (the `explorer_set_query` page action),
+    # where the person runs it and sees the result. The registry tools let it use a
+    # governed definition before writing its own.
     "explorer:read": frozenset(
         {
             "explorer_describe",
+            "explorer_validate",
             "explorer_query",
             "semantic_registry_list",
             "semantic_registry_explain",
