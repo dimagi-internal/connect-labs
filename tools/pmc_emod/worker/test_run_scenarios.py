@@ -212,15 +212,15 @@ def calibrate_request(target=0.3, **extra):
 
 
 def fake_pfpr(larval):
-    """A saturating PfPR 2-5y curve in log10(larval): ~0 at 1e6, ~0.85 at 1e10."""
+    """A saturating PfPR 2-5y curve in log10(larval): ~0 at 1e6, ~0.81 at 1e9."""
     import math
 
     return 0.85 / (1 + math.exp(-2.5 * (math.log10(larval) - 7.8)))
 
 
-def test_calibration_grid_is_8_log_spaced_values_from_1e6_to_1e10():
+def test_calibration_grid_is_8_log_spaced_values_from_1e6_to_1e9():
     grid = run_scenarios.calibration_grid()
-    assert len(grid) == 8 and grid[0] == 1e6 and grid[-1] == 1e10
+    assert len(grid) == 8 and grid[0] == 1e6 and grid[-1] == 1e9
     assert all(isinstance(x, float) for x in grid)
 
 
@@ -247,7 +247,7 @@ def test_calibrate_refines_around_the_crossing_and_picks_the_nearest_evaluated_v
 def test_calibrate_reports_an_unreachable_target_after_one_round():
     fit = run_scenarios.calibrate(lambda r, xs: [fake_pfpr(x) for x in xs], 0.99)
     assert fit["fit"] == "unreachable" and fit["iterations"] == 1
-    assert fit["larval_capacity"] == 1e10 and fit["fit_error"] < -0.03
+    assert fit["larval_capacity"] == 1e9 and fit["fit_error"] < -0.03
 
 
 def test_calibrate_is_loose_when_reachable_but_not_hit():
@@ -330,9 +330,76 @@ def test_setting_hash_treats_an_integer_larval_capacity_as_the_same_float():
     assert run_scenarios.setting_hash(a) == run_scenarios.setting_hash(dict(a, larval_capacity=60000000))
 
 
-@emod
+# The live model's default setting (connect_labs/labs/indicators/emod/runner.py DEFAULT_SETTING), whose burn-in
+# is stored under e894aa5178f45cff; canonicalising numbers must not move it.
+RUNNER_DEFAULT_SETTING = {
+    "name": "SW_Nigeria_like",
+    "larval_capacity": 6e7,
+    "habitat_times": [0, 30, 60, 91, 122, 152, 182, 213, 243, 274, 304, 334, 365],
+    "habitat_values": [1.0, 0.8, 1.0, 2.0, 4.0, 6.0, 6.0, 5.0, 6.0, 5.0, 3.0, 1.5, 1.0],
+    "pop": 5000,
+    "case_mgmt": 0.5,
+    "net_coverage": 0.5,
+}
+
+
+def test_setting_hash_canonicalises_every_number_and_keeps_the_deployed_key():
+    a = RUNNER_DEFAULT_SETTING
+    assert run_scenarios.setting_hash(a) == "e894aa5178f45cff"
+    b = json.loads(json.dumps(a))
+    b["habitat_values"] = [int(v) if v == int(v) else v for v in b["habitat_values"]]  # 1, 2, 4, ... as ints
+    b["habitat_times"] = [float(t) for t in b["habitat_times"]]
+    b["pop"] = 5000.0
+    b["larval_capacity"] = 60000000
+    assert run_scenarios.setting_hash(b) == "e894aa5178f45cff"
+    assert run_scenarios.setting_hash(dict(a, case_mgmt=1)) == run_scenarios.setting_hash(dict(a, case_mgmt=1.0))
+    assert run_scenarios.setting_hash(dict(a, pop=5001)) != "e894aa5178f45cff"
+
+
+def test_each_request_gets_its_own_work_dir_and_it_is_removed(tmp_path, monkeypatch):
+    import os
+
+    class Manifest:
+        eradication_path = str(tmp_path / "bin" / "Eradication")
+
+    monkeypatch.setattr(run_scenarios, "load_pmc_sweep", lambda: (Manifest, object()))
+    monkeypatch.setattr(run_scenarios, "ensure_binary", lambda m: None)
+
+    def burnin(manifest, sweep, setting, dest_dir, job_dir, deadline=None):
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        (dest_dir / run_scenarios.BURNIN_FILE).write_text("x")
+
+    cwds = []
+
+    def pickups(*a, **k):
+        cwds.append(os.getcwd())
+        if len(cwds) == 1:  # a second request starting and finishing while the first is mid-run
+            run_scenarios.run_request(small_request(500, [0], ["none"]), tmp_path, heartbeat_s=60)
+            assert os.path.isdir(cwds[0]), "the other request removed this one's cwd"
+        return []
+
+    monkeypatch.setattr(run_scenarios, "build_burnin", burnin)
+    monkeypatch.setattr(run_scenarios, "run_pickups", pickups)
+    run_scenarios.run_request(small_request(500, [0], ["none"]), tmp_path, heartbeat_s=60)
+    assert len(cwds) == 2 and cwds[0] != cwds[1]
+    root = str(tmp_path.resolve())
+    assert all(c.startswith(root) and os.path.basename(c).startswith("work-") for c in cwds)
+    assert not list(tmp_path.glob("work*"))
+
+
+def import_pmc_sweep():
+    """pmc_sweep without EMOD: its emodpy / manifest imports are inside the functions that need them."""
+    import importlib
+    import sys
+
+    parent = str(run_scenarios.HERE.parent)
+    if parent not in sys.path:
+        sys.path.insert(0, parent)
+    return importlib.import_module("pmc_sweep")
+
+
 def test_outcomes_add_under_5_fields_alongside_3_24_months():
-    _, pmc_sweep_stub = run_scenarios.load_pmc_sweep()
+    pmc_sweep_stub = import_pmc_sweep()
 
     msr = {
         "DataByTimeAndAgeBins": {
@@ -411,10 +478,52 @@ def test_spaq_schedules_validate_and_do_not_change_the_burnin_key():
     )
 
 
-@emod
 def test_worker_drugs_match_pmc_sweep():
-    _, sweep = run_scenarios.load_pmc_sweep()
+    sweep = import_pmc_sweep()
     assert run_scenarios.DRUGS == sweep.DRUGS
+    # SMC is PMC's own SP entry plus amodiaquine, so the two differ only by the amodiaquine
+    assert sweep.DRUG_ENTRIES == {
+        "SP": ["SulfadoxinePyrimethamine"],
+        "SPAQ": ["SulfadoxinePyrimethamine", "Amodiaquine"],
+    }
+
+
+@emod
+def test_spaq_campaign_adds_amodiaquine_to_the_sp_entry(tmp_path, monkeypatch):
+    from functools import partial
+
+    monkeypatch.chdir(tmp_path)
+    manifest, sweep = run_scenarios.load_pmc_sweep()
+    setting = small_request(500, [0], ["none"])["setting"]
+    rounds = [[91, 30, 4, 0.25, 5.0, 0.85]]
+
+    def drugs_given(drug):
+        task = run_scenarios.make_task(
+            manifest,
+            sweep,
+            partial(sweep.build_config, setting=setting, duration_days=365),
+            partial(sweep.build_campaign, setting=setting, rounds=rounds, drug=drug, start_shift=730),
+            partial(sweep.build_demographics, setting),
+            None,
+        )
+        found = []
+
+        def walk(node):
+            if isinstance(node, dict):
+                if node.get("class") == "AntimalarialDrug":
+                    found.append(node["Drug_Type"])
+                for v in node.values():
+                    walk(v)
+            elif isinstance(node, list):
+                for v in node:
+                    walk(v)
+
+        walk(json.loads(task.campaign.json)["Events"])
+        return found
+
+    background = ["Artemether", "Lumefantrine"] * 2
+    assert sorted(drugs_given("SP")) == sorted(background + ["SulfadoxinePyrimethamine"])
+    assert sorted(drugs_given("SPAQ")) == sorted(background + ["SulfadoxinePyrimethamine", "Amodiaquine"])
 
 
 @emod
