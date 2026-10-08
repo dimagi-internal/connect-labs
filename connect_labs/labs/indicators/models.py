@@ -250,3 +250,34 @@ class ResearchNote(models.Model):
 
     def __str__(self):
         return f"{self.indicator or 'general'}/{self.topic}"
+
+
+class PmcModelRun(models.Model):
+    """One live EMOD run of PMC delivery schedules, requested from the on-demand worker.
+
+    The request is content-addressed: ``inputs_hash`` is the sha256 of the canonical
+    request JSON, so asking the same question twice finds the first answer instead of
+    paying for a second run. See ``connect_labs.labs.indicators.emod.runner``.
+    """
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    STATUS_CHOICES = [(QUEUED, "Queued"), (RUNNING, "Running"), (COMPLETED, "Completed"), (FAILED, "Failed")]
+
+    inputs_hash = models.CharField(max_length=64, unique=True)
+    request = models.JSONField(help_text="The exact request sent to the worker")
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=QUEUED)
+    result = models.JSONField(null=True, blank=True, help_text="The worker's result document")
+    error = models.TextField(blank=True)
+    timings = models.JSONField(default=dict, blank=True, help_text="Seconds spent booting, waiting and simulating")
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "labs_pmc_model_run"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.inputs_hash[:12]} ({self.status})"
