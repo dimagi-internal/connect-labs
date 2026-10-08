@@ -751,3 +751,176 @@ class TestCostEffectiveness:
             )
 
         assert "share" in str(err.value)
+
+
+class TestPmcLiveModel:
+    """The agent's way to run EMOD live for a schedule the grid lacks, and to poll for it."""
+
+    @pytest.fixture(autouse=True)
+    def live(self, settings, monkeypatch):
+        from connect_labs.labs.indicators.emod import runner, tasks
+
+        settings.LABS_EMOD_INSTANCE_ID = "i-test"
+        settings.LABS_EMOD_REGION = "test-region-1"
+        settings.LABS_EMOD_BUCKET = "test-bucket"
+        self.delays = []
+        monkeypatch.setattr(tasks.run_pmc_model, "delay", lambda pk: self.delays.append(pk))
+        make_boundary("NGA", 0, "Nigeria", "NGA-0", x=0)
+        ondo = make_boundary("NGA", 1, "Ondo", "NGA-1-28", x=2)
+        kano = make_boundary("NGA", 1, "Kano", "NGA-1-20", x=4)
+        set_value(ondo, "malaria_prevalence", 44.8, year=2021)
+        set_value(ondo, "pop_u5", 600_000)
+        set_value(ondo, "rain_wettest_quarter", 41.5)
+        set_value(ondo, "malaria_incidence", 283.1)
+        set_value(kano, "malaria_prevalence", 40.0, year=2021)
+        set_value(kano, "rain_wettest_quarter", 77.2)
+        set_value(kano, "pop_u5", 3_000_000)
+        set_value(kano, "malaria_incidence", 300.0)
+        self.runner = runner
+
+    DEMO = {"months": [5, 6, 7, 8], "age_min_months": 3, "age_max_months": 24}
+
+    def _complete(self, run_id, per_seed=(2000, 1500)):
+        from connect_labs.labs.indicators.models import PmcModelRun
+
+        run = PmcModelRun.objects.get(pk=run_id)
+        code = next(s["code"] for s in run.request["schedules"] if s["code"] != "none")
+        runs = []
+        for seed in (0, 1, 2):
+            runs.append({"code": "none", "seed": seed, "cases_3_24m": per_seed[0], "kids_3_24m": 370, "doses": 0})
+            runs.append({"code": code, "seed": seed, "cases_3_24m": per_seed[1], "kids_3_24m": 370, "doses": 1000})
+        run.status, run.result = PmcModelRun.COMPLETED, {"runs": runs}
+        run.save(update_fields=["status", "result"])
+
+    def test_a_grid_schedule_is_answered_at_once_from_the_grid(self):
+        got = targeting.targeting_pmc_run_model(None, state="Ondo", schedule="connect_monthly_in_season_3_24")
+
+        assert got["cached"] is True and got["status"] == "completed" and got["eta_s"] == 0
+        assert got["run_id"] is None and self.delays == []
+        assert "precomputed" in got["result"]["label"]
+        assert got["result"]["projection"]["cost_per_case_averted"] > 0
+        assert got["result"]["state"]["name"] == "Ondo"
+
+    def test_a_custom_schedule_equal_to_a_grid_one_is_not_run(self):
+        got = targeting.targeting_pmc_run_model(None, state="Ondo", schedule={"rounds_per_year": 4})
+
+        assert got["cached"] is True and got["run_id"] is None and self.delays == []
+
+    def test_a_new_schedule_is_queued_with_an_eta(self, django_capture_on_commit_callbacks):
+        with django_capture_on_commit_callbacks(execute=True):
+            got = targeting.targeting_pmc_run_model(None, state="Ondo", schedule=self.DEMO)
+
+        assert got["status"] == "queued" and got["cached"] is False
+        assert got["eta_s"] >= 10
+        assert self.delays == [got["run_id"]]
+        assert got["schedule_code"].startswith("custom_")
+
+    def test_asking_again_does_not_start_a_second_run(self, django_capture_on_commit_callbacks):
+        with django_capture_on_commit_callbacks(execute=True):
+            first = targeting.targeting_pmc_run_model(None, state="Ondo", schedule=self.DEMO)
+            again = targeting.targeting_pmc_run_model(None, state="Ondo", schedule=self.DEMO)
+
+        assert again["run_id"] == first["run_id"] and self.delays == [first["run_id"]]
+
+    def test_a_finished_run_is_costed_at_the_states_map_incidence_beside_the_grid_best(self):
+        first = targeting.targeting_pmc_run_model(None, state="Ondo", schedule=self.DEMO)
+        self._complete(first["run_id"])
+
+        polled = targeting.targeting_pmc_run_status(None, run_id=first["run_id"], state="Ondo", schedule=self.DEMO)
+
+        assert polled["status"] == "completed"
+        result = polled["result"]
+        assert result["label"] == "illustrative · live model run"
+        assert result["effect"]["averted_pct"] == 25.0
+        # 210,000 children x 283.1 per 1,000 x 25%, to two figures: a floor on cases averted.
+        assert result["projection"]["cases_averted_per_year"] == 15000
+        assert result["best_grid_schedule"]["code"]
+        assert "May" in result["schedule"]["description"]
+        # Asking for the same schedule again is now served from the cache, no new run.
+        again = targeting.targeting_pmc_run_model(None, state="Ondo", schedule=self.DEMO)
+        assert again["cached"] is True and again["status"] == "completed" and again["result"]["projection"]
+
+    def test_tool_reports_unavailable(self):
+        from canopy_sdk.ondemand import InstanceGone
+
+        from connect_labs.labs.indicators.models import PmcModelRun
+        from connect_labs.labs.indicators.tests.test_emod_runner import FakeInstance, FakeS3
+
+        first = targeting.targeting_pmc_run_model(None, state="Ondo", schedule=self.DEMO)
+        run = PmcModelRun.objects.get(pk=first["run_id"])
+        s3 = FakeS3()
+        self.runner.execute(
+            run, FakeInstance(s3, "bkt", ensure_error=InstanceGone("runner i-x is 'missing'")), "bkt", s3=s3
+        )
+
+        polled = targeting.targeting_pmc_run_status(None, run_id=first["run_id"], state="Ondo")
+
+        assert polled["status"] == "failed"
+        assert "unavailable" in polled["error"]
+        assert "is 'missing'" in polled["error"]
+        assert "targeting_pmc_schedules" in polled["error"]
+
+    def test_a_deploy_without_a_worker_says_unavailable(self, settings):
+        settings.LABS_EMOD_INSTANCE_ID = None
+
+        got = targeting.targeting_pmc_run_model(None, state="Ondo", schedule=self.DEMO)
+
+        assert got["status"] == "failed" and "unavailable" in got["error"] and self.delays == []
+
+    def test_a_running_run_reports_its_eta(self):
+        from connect_labs.labs.indicators.models import PmcModelRun
+
+        first = targeting.targeting_pmc_run_model(None, state="Ondo", schedule=self.DEMO)
+        PmcModelRun.objects.filter(pk=first["run_id"]).update(status=PmcModelRun.RUNNING)
+
+        polled = targeting.targeting_pmc_run_status(None, run_id=first["run_id"])
+
+        assert polled["status"] == "running" and polled["eta_s"] >= 10
+
+    def test_a_state_outside_the_models_fit_is_refused_with_the_reason(self):
+        got = targeting.targeting_pmc_run_model(None, state="Kano", schedule=self.DEMO)
+
+        assert got["status"] == "refused" and got["run_id"] is None
+        assert "SMC, not PMC" in got["error"]
+        assert self.delays == []
+        from connect_labs.labs.indicators.models import PmcModelRun
+
+        assert PmcModelRun.objects.count() == 0
+
+    def test_a_grid_schedule_is_refused_for_such_a_state_too(self):
+        got = targeting.targeting_pmc_run_model(None, state="Kano", schedule="connect_quarterly_3_24")
+
+        assert got["status"] == "refused"
+
+    @pytest.mark.parametrize(
+        "schedule",
+        [{}, {"months": [13]}, {"months": [5], "rounds_per_year": 4}, "no_such_code"],
+    )
+    def test_a_malformed_schedule_is_a_bad_request(self, schedule):
+        with pytest.raises(MCPToolError) as err:
+            targeting.targeting_pmc_run_model(None, state="Ondo", schedule=schedule)
+        assert err.value.code == "BAD_REQUEST"
+
+    def test_an_unknown_state_is_a_bad_request(self):
+        with pytest.raises(MCPToolError) as err:
+            targeting.targeting_pmc_run_model(None, state="Atlantis", schedule=self.DEMO)
+        assert err.value.code == "BAD_REQUEST"
+
+    def test_an_unknown_run_is_not_found(self):
+        with pytest.raises(MCPToolError) as err:
+            targeting.targeting_pmc_run_status(None, run_id=999999)
+        assert err.value.code == "NOT_FOUND"
+
+    def test_descriptions_tell_the_agent_when_what_how_to_wait_and_present(self):
+        from connect_labs.mcp.tool_registry import get_tool
+
+        run = get_tool("targeting_pmc_run_model").description
+        status = get_tool("targeting_pmc_run_status").description
+        for phrase in (
+            "targeting_pmc_schedules",
+            "I'm running IDM's EMOD model now; this takes about a minute",
+            "every 10 seconds",
+            "illustrative · live model run",
+        ):
+            assert phrase in run, phrase
+        assert "every 10 seconds" in status and "targeting_pmc_schedules" in status

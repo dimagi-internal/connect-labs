@@ -224,15 +224,21 @@ def project(children: float | None, schedule: dict, per_dose: float, incidence: 
     }
 
 
-def state_rows(schedule_code: str, costs: dict) -> list[dict]:
-    """Nigeria's states with the live registry values and a projection for one schedule."""
+def state_rows(schedule_code: str, costs: dict, schedule: dict | None = None) -> list[dict]:
+    """Nigeria's states with the live registry values and a projection for one schedule.
+
+    ``schedule`` is a row shaped like ``schedule_rows`` (needs ``averted_pct`` and
+    ``doses_per_child_per_year``) for a schedule that is not in the precomputed grid, such as a
+    live model run; ``schedule_code`` then only labels it.
+    """
     from connect_labs.labs.indicators import boundaries as boundary_set
     from connect_labs.labs.indicators.resolve import BulkResolver
 
-    schedules = {r["code"]: r for r in schedule_rows(costs)}
-    if schedule_code not in schedules:
-        raise ValueError(f"unknown schedule {schedule_code!r}; known: {sorted(schedules)}")
-    schedule = schedules[schedule_code]
+    if schedule is None:
+        schedules = {r["code"]: r for r in schedule_rows(costs)}
+        if schedule_code not in schedules:
+            raise ValueError(f"unknown schedule {schedule_code!r}; known: {sorted(schedules)}")
+        schedule = schedules[schedule_code]
     per_dose = cost_per_dose(**costs)
 
     units = list(boundary_set.owned().filter(iso_code=ISO, admin_level=1).order_by("name"))

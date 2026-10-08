@@ -1387,3 +1387,324 @@ def targeting_pmc_schedules(
         q["states"] = ",".join(r["name"] for r in rows)
     out["explorer_path"] = f"{reverse('targeting:pmc')}?{urlencode(q)}"
     return out
+
+
+# ---- Live EMOD runs (PMC) ----------------------------------------------------------------------------------
+
+LIVE_LABEL = "illustrative \u00b7 live model run"
+GRID_LABEL = "illustrative \u00b7 precomputed model run"
+
+_PMC_COST_PROPS = {
+    "cost_per_visit": {"type": "number", "description": "USD per verified visit. Default 0.80."},
+    "platform_fee": {"type": "number", "description": "Share added on top, e.g. 0.2 for 20% (the default)."},
+    "dose_rate": {"type": "number", "description": "Share of visits that give a dose, 0-1. Default 0.95."},
+}
+
+_PMC_UNAVAILABLE = (
+    "The live model is unavailable right now: {reason}. "
+    "Use the precomputed results from targeting_pmc_schedules instead."
+)
+
+
+def _pmc_unavailable(reason: str) -> str:
+    reason = (reason or "no reason recorded").strip().replace("\n", " ")
+    return _PMC_UNAVAILABLE.format(reason=reason[:300].rstrip(" ."))
+
+
+def _pmc_costs(cost_per_visit, platform_fee, dose_rate) -> dict:
+    from connect_labs.labs.indicators import pmc
+
+    try:
+        costs = pmc.costs_or_default(cost_per_visit, platform_fee, dose_rate)
+        pmc.cost_per_dose(**costs)
+    except ValueError as e:
+        raise MCPToolError("BAD_REQUEST", str(e)) from None
+    return costs
+
+
+def _pmc_state_fit_error(state: str) -> str | None:
+    """The reason the model cannot speak for this state, or None when it can. ValueError for unknown states."""
+    from connect_labs.labs.indicators import pmc
+    from connect_labs.labs.indicators.emod import runner
+
+    fit = runner.state_fit(state)
+    if fit in pmc.RANKED_FITS:
+        return None
+    return f"{state} cannot be modelled: {runner.FIT_REASONS.get(fit, fit)}"
+
+
+def _pmc_present(state: str, row: dict, costs: dict, *, live: bool, description: str, code: str, run_id=None) -> dict:
+    """A schedule's EMOD effect costed at one state's MAP incidence, beside the grid's best schedule.
+
+    ``row`` has the relative effect (``averted_pct`` ...) and ``doses_per_child_per_year``. The costing
+    is the explorer's own (``pmc.state_rows``), so a live result and a grid result are comparable.
+    """
+    from connect_labs.labs.indicators import pmc
+
+    best_code = pmc.summary(costs)["best_schedule"]
+    wanted = state.strip().lower()
+
+    def state_row(rows):
+        return next((r for r in rows if r["name"].lower() == wanted), None)
+
+    grid_rows = {r["code"]: r for r in pmc.schedule_rows(costs)}
+    mine = state_row(pmc.state_rows(code, costs, schedule=row))
+    best = state_row(pmc.state_rows(best_code, costs)) if best_code else None
+    if mine is None:
+        raise MCPToolError("BAD_REQUEST", f"Unknown state {state!r}.")
+    noisy = bool(row.get("too_noisy"))
+    projection = None if noisy else mine["projection"]
+    out = {
+        "label": LIVE_LABEL if live else GRID_LABEL,
+        "schedule": {"code": code, "description": description},
+        "effect": {
+            "averted_pct": row["averted_pct"],
+            "averted_ci": row["averted_ci"],
+            "too_noisy": noisy,
+            "doses_per_child_per_year": row["doses_per_child_per_year"],
+            "basis": "EMOD relative effect against no PMC, across seeds",
+        },
+        "state": {
+            "name": mine["name"],
+            "fit": mine["fit"],
+            "confidence": mine["confidence"],
+            "children_3_24m": mine["children_3_24m"],
+            "malaria_incidence_per_1000": mine["malaria_incidence"],
+        },
+        "projection": projection,
+        "projection_note": (
+            "Per year, rounded to two figures: relative EMOD effect x the state's MAP incidence. Cases averted "
+            "are a floor and cost per case a ceiling."
+            if projection
+            else "Not costed: the effect is smaller than its own uncertainty (or the state has no incidence or "
+            "population figure)."
+        ),
+        "best_grid_schedule": (
+            {
+                "code": best_code,
+                "label": grid_rows[best_code]["label"],
+                "averted_pct": grid_rows[best_code]["averted_pct"],
+                "projection": best["projection"] if best else None,
+            }
+            if best_code
+            else None
+        ),
+        "costs": costs,
+        "caveats": list(pmc.CAVEATS),
+    }
+    if run_id is not None:
+        out["run_id"] = run_id
+    return out
+
+
+def _pmc_grid_row(code: str, costs: dict) -> dict:
+    from connect_labs.labs.indicators import pmc
+
+    return next(r for r in pmc.schedule_rows(costs) if r["code"] == code)
+
+
+@register(
+    name="targeting_pmc_run_model",
+    description=(
+        "Run IDM's EMOD malaria model LIVE for a perennial malaria chemoprevention (PMC) schedule that the "
+        "precomputed grid does not have: a different number of rounds, specific calendar months, another age "
+        "band or another coverage (e.g. 'what if we only did four monthly rounds from May, ages 3-24 months, "
+        "in Ondo?'). If the schedule, coverage, months and age band are ones the grid already holds, use "
+        "targeting_pmc_schedules instead -- it answers instantly. "
+        "Give 'state' (a Nigerian state, as in targeting_pmc_schedules) and 'schedule': EITHER a grid schedule "
+        "code (answered instantly from the grid, cached=true) OR an object with exactly one of "
+        "rounds_per_year (e.g. 4), months (calendar month numbers, e.g. [5,6,7,8] = May to August, repeated in "
+        "both modelled years) or interval_days, plus age_min_months and age_max_months (default 3 and 24) and "
+        "coverage (default 0.85, the grid's Connect coverage). The default demo question maps to "
+        "schedule={months:[5,6,7,8], age_min_months:3, age_max_months:24} for state 'Ondo'. "
+        "Returns {run_id, status, cached, eta_s}. "
+        "WHAT TO SAY FIRST, before anything else: 'I'm running IDM's EMOD model now; this takes about a "
+        "minute.' If eta_s is above about 150, the model server is cold: say it takes about two minutes. "
+        "A schedule that was run before comes back at once (cached=true, status completed, with the result "
+        "in this response). Otherwise status is queued: HOW TO WAIT -- call targeting_pmc_run_status with the "
+        "run_id (and the same state and prices) every 10 seconds, for up to about 6 minutes, until it says "
+        "completed or failed. Do not start a second run for the same question while one is in flight. "
+        "A state the model cannot speak for (e.g. Kano and the Sahel north, 'more seasonal: SMC, not PMC') "
+        "comes back status=refused with the reason and starts nothing: say why, do not work around it. "
+        "If status is failed, say the live model is unavailable, give the reason in one line, and answer from "
+        "targeting_pmc_schedules instead. "
+        "HOW TO PRESENT a completed result: the same MAP-anchored costing as targeting_pmc_schedules -- the "
+        "schedule's relative EMOD effect applied to the state's own malaria incidence: cases averted per year "
+        "(a floor) and cost per case averted (a ceiling), compared against best_grid_schedule, the grid's best "
+        "schedule for the same state (say whether the new schedule is cheaper or dearer per case and by how "
+        "much). Always label it 'illustrative · live model run' and quote the caveat that the model is one "
+        "uncalibrated southern-Nigeria-like setting, never a state's calibrated estimate. Keep it short (a "
+        "narrow side panel): one sentence of result, a two-row comparison (this schedule vs the grid's best: "
+        "cases averted per year, $ per case), one line of caveats."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "state": {"type": "string", "description": "Nigerian state name, e.g. 'Ondo'."},
+            "schedule": {
+                "description": (
+                    "A grid schedule code, or an object: exactly one of rounds_per_year (1-24), months (list of "
+                    "calendar months 1-12) or interval_days (7-730); plus optional age_min_months (default 3), "
+                    "age_max_months (default 24), coverage (0-1, default 0.85)."
+                ),
+                "oneOf": [
+                    {"type": "string"},
+                    {
+                        "type": "object",
+                        "properties": {
+                            "rounds_per_year": {"type": "integer", "minimum": 1, "maximum": 24},
+                            "months": {
+                                "type": "array",
+                                "items": {"type": "integer", "minimum": 1, "maximum": 12},
+                                "minItems": 1,
+                            },
+                            "interval_days": {"type": "number"},
+                            "age_min_months": {"type": "number"},
+                            "age_max_months": {"type": "number"},
+                            "coverage": {"type": "number"},
+                        },
+                        "additionalProperties": False,
+                    },
+                ],
+            },
+            "seeds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 6,
+                "description": "Random-seed replicates averaged for the effect. Default 3.",
+            },
+            **_PMC_COST_PROPS,
+        },
+        "required": ["state", "schedule"],
+        "additionalProperties": False,
+    },
+)
+def targeting_pmc_run_model(user, *, state, schedule, seeds=3, cost_per_visit=None, platform_fee=None, dose_rate=None):
+    from connect_labs.labs.indicators import pmc
+    from connect_labs.labs.indicators.emod import live, service
+    from connect_labs.labs.indicators.models import PmcModelRun
+
+    costs = _pmc_costs(cost_per_visit, platform_fee, dose_rate)
+    if isinstance(schedule, str):
+        grid_codes = {r["code"] for r in pmc.schedule_rows(costs)} - {"none"}
+        if schedule not in grid_codes:
+            raise MCPToolError(
+                "BAD_REQUEST", f"Unknown schedule {schedule!r}. Known: {', '.join(sorted(grid_codes))}."
+            )
+        rounds, description, grid_code = None, None, schedule
+    else:
+        try:
+            rounds, description = live.to_rounds(schedule)
+        except ValueError as e:
+            raise MCPToolError("BAD_REQUEST", str(e)) from None
+        grid_code = live.grid_match(rounds)
+
+    try:
+        refusal = _pmc_state_fit_error(state)
+    except ValueError as e:
+        raise MCPToolError("BAD_REQUEST", str(e)) from None
+    if refusal:
+        return {"status": "refused", "cached": False, "run_id": None, "error": refusal}
+
+    if grid_code:
+        row = _pmc_grid_row(grid_code, costs)
+        grid_desc = row["detail"]
+        result = _pmc_present(state, row, costs, live=False, description=grid_desc, code=grid_code)
+        return {"run_id": None, "status": "completed", "cached": True, "eta_s": 0, "result": result}
+
+    code = live.schedule_code(rounds)
+    code_schedule = {"code": code, "rounds": rounds}
+    http_status, payload = service.submit_run(state, [code_schedule])
+    if http_status == 400:
+        raise MCPToolError("BAD_REQUEST", payload["error"])
+    if http_status == 503:
+        return {"status": "failed", "cached": False, "run_id": None, "error": _pmc_unavailable(payload["error"])}
+    run = PmcModelRun.objects.get(pk=payload["run_id"])
+    base = {"run_id": run.pk, "schedule_code": code, "schedule": description}
+    if payload["cached"]:
+        row = {**live.summarise(run.result, code)}
+        result = _pmc_present(state, row, costs, live=True, description=description, code=code, run_id=run.pk)
+        return {**base, "status": "completed", "cached": True, "eta_s": 0, "result": result}
+    return {**base, "status": run.status, "cached": False, "eta_s": service.run_eta(run)}
+
+
+@register(
+    name="targeting_pmc_run_status",
+    description=(
+        "Check on a live EMOD run started by targeting_pmc_run_model. Call it every 10 seconds, for up to "
+        "about 6 minutes, with the run_id -- and the SAME state, schedule and prices you started the run with "
+        "(so the finished result can be costed at that state). While status is queued or running, say "
+        "nothing new beyond a short 'still running' line every minute or so; eta_s is the seconds left. "
+        "When status is completed the response carries the result, costed exactly as targeting_pmc_run_model "
+        "describes: present it the same way (MAP-anchored cases averted per year, a floor, and cost per case "
+        "averted, a ceiling, against best_grid_schedule; labelled 'illustrative · live model run'; "
+        "caveats in one line). When status is failed, the error already says the live model is unavailable "
+        "and why: tell the user in one line and answer from targeting_pmc_schedules instead. If the poll "
+        "window passes with the run still going, say it is taking longer than expected and offer to check "
+        "again; do not start a second run."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "run_id": {"type": "integer", "description": "The run_id returned by targeting_pmc_run_model."},
+            "state": {
+                "type": "string",
+                "description": "The state the run was started for, to cost the result. Without it only the "
+                "relative effect is returned.",
+            },
+            "schedule": {
+                "type": "object",
+                "description": "The same schedule object given to targeting_pmc_run_model (to label the result).",
+            },
+            **_PMC_COST_PROPS,
+        },
+        "required": ["run_id"],
+        "additionalProperties": False,
+    },
+)
+def targeting_pmc_run_status(
+    user, *, run_id, state=None, schedule=None, cost_per_visit=None, platform_fee=None, dose_rate=None
+):
+    from connect_labs.labs.indicators.emod import live, service
+    from connect_labs.labs.indicators.models import PmcModelRun
+
+    costs = _pmc_costs(cost_per_visit, platform_fee, dose_rate)
+    try:
+        run = PmcModelRun.objects.get(pk=run_id)
+    except PmcModelRun.DoesNotExist:
+        raise MCPToolError("NOT_FOUND", f"No live model run {run_id}.") from None
+    if run.status == PmcModelRun.FAILED:
+        return {
+            "run_id": run.pk,
+            "status": "failed",
+            "eta_s": 0,
+            "error": _pmc_unavailable(run.error),
+            "timings": run.timings,
+        }
+    if run.status != PmcModelRun.COMPLETED:
+        return {"run_id": run.pk, "status": run.status, "eta_s": service.run_eta(run), "timings": run.timings}
+
+    code = next((s["code"] for s in run.request["schedules"] if s["code"] != "none"), None)
+    try:
+        effect = live.summarise(run.result, code)
+    except (ValueError, KeyError, TypeError) as e:
+        return {
+            "run_id": run.pk,
+            "status": "failed",
+            "eta_s": 0,
+            "error": _pmc_unavailable(f"the model result could not be read ({e})"),
+        }
+    description = code
+    if schedule is not None:
+        try:
+            description = live.to_rounds(schedule)[1]
+        except ValueError:
+            pass
+    out = {"run_id": run.pk, "status": "completed", "eta_s": 0, "timings": run.timings}
+    if state:
+        out["result"] = _pmc_present(
+            state, effect, costs, live=True, description=description, code=code, run_id=run.pk
+        )
+    else:
+        out["result"] = {"label": LIVE_LABEL, "schedule": {"code": code, "description": description}, "effect": effect}
+    return out
