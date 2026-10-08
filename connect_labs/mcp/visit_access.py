@@ -44,6 +44,10 @@ def _opportunity_id(user, arguments: dict) -> list[int] | None:
     return _ints([arguments.get("opportunity_id")])
 
 
+def _opportunity_ids(user, arguments: dict) -> list[int] | None:
+    return _ints(arguments.get("opportunity_ids") or []) or None
+
+
 def _pipeline_preview(user, arguments: dict) -> list[int] | None:
     return _ints([arguments.get("opportunity_id"), *(arguments.get("opportunity_ids") or [])])
 
@@ -119,6 +123,8 @@ def _read_definition(user, key: str, arguments: dict, opportunity_id, program_id
 RESOLVERS: dict[str, Resolver] = {
     "pipeline_preview": _pipeline_preview,
     "custom_analysis_run": _opportunity_id,
+    "explorer_describe": _opportunity_ids,
+    "explorer_query": _opportunity_ids,
     "synthetic_local_record_dump": _opportunity_id,
     "synthetic_reload_fixtures": _opportunity_id,
     "synthetic_disable": _opportunity_id,
