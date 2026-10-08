@@ -225,3 +225,45 @@ def test_a_unique_word_match_is_accepted_and_an_ambiguous_one_is_not(grid):
 
 def test_the_caveats_say_one_visit_price_for_pmc_and_smc(grid):
     assert any("same price per visit" in c for c in rank.rank_pairs(None, grid=grid)["caveats"])
+
+
+# --- deaths and the bar -------------------------------------------------------------------------------
+
+
+def test_deaths_rank_by_cost_per_death_and_value_against_the_bar(grid):
+    from connect_labs.labs.indicators.emod import mortality
+
+    deaths = {"Ondo": 4_000.0, "Kano": 200.0}  # Kano cheap per case, but few deaths to avert
+    out = rank.rank_pairs(["Ondo", "Kano"], grid=grid, deaths=deaths)
+
+    assert out["ranked_by"] == "cost per death averted" and out["deaths_basis"] == "prevalence_scaled"
+    assert [r["state"] for r in out["ranked"][:2]] == ["Ondo", "Ondo"]
+    top = out["ranked"][0]
+    d = grid["states"]["Ondo"]["designs"][top["design_code"]]
+    spend = d["doses_per_child_per_year"] * d["target_pop_fraction"] * 1_000_000 * PER_DOSE
+    averted = d["averted_u5_pct"] / 100 * 4_000
+    assert top["deaths_averted_per_year"] == rank.sig(averted)
+    assert top["cost_per_death_averted"] == rank.sig(spend / averted)
+    assert top["multiple_of_benchmark"] == round(113 * averted / spend / 0.003, 1)
+    assert out["bar"] == 6.0
+    assert out["pairs_ranked"] == len(out["ranked"])  # all pairs shown, so the counts can be checked here
+    assert out["pairs_clearing_bar"] == sum(r["clears_bar"] for r in out["ranked"])
+    assert out["states_clearing_bar"] == len({r["state"] for r in out["ranked"] if r["clears_bar"]})
+    assert all(r["clears_bar"] == (r["multiple_of_benchmark"] >= mortality.BAR.value) for r in out["ranked"])
+    assert out["caveats"][-1] == rank.DEATHS_CAVEATS["prevalence_scaled"]
+
+
+def test_a_state_with_no_death_figure_is_excluded_with_the_reason(grid):
+    out = rank.rank_pairs(["Ondo", "Kano"], grid=grid, deaths={"Ondo": 4_000.0})
+    assert {"state": "Kano", "reason": rank.NO_DEATHS} in out["excluded"]
+    assert {r["state"] for r in out["ranked"]} == {"Ondo"}
+
+
+def test_an_unknown_deaths_basis_is_an_error(grid):
+    with pytest.raises(ValueError, match="deaths_basis"):
+        rank.rank_pairs(["Ondo"], grid=grid, deaths={"Ondo": 1.0}, deaths_basis="ihme")
+
+
+def test_without_deaths_it_still_ranks_by_cost_per_case(grid):
+    out = rank.rank_pairs(["Ondo", "Kano"], grid=grid)
+    assert out["ranked_by"] == "cost per case averted" and "multiple_of_benchmark" not in out["ranked"][0]

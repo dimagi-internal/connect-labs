@@ -1781,17 +1781,21 @@ def targeting_pmc_run_status(user, *, run_id, state, cost_per_visit=None, platfo
 @register(
     name="targeting_pmc_rank",
     description=(
-        "Rank (state, design) pairs for malaria chemoprevention in Nigeria by cost per case averted, at the "
-        "visitor's delivery costs. CALL IT for 'rank states and designs', 'most cost-effective state and "
+        "Rank (state, design) pairs for malaria chemoprevention in Nigeria by cost per under-5 death averted, "
+        "at the visitor's delivery costs, each with its multiple of GiveWell's benchmark and whether it clears "
+        "GiveWell's bar ('bar', 6x). CALL IT for 'rank states and designs', 'most cost-effective state and "
         "design', 'which design where', 'rank the top 10' -- any question that compares designs across "
         "several states. For a single schedule what-if the grid does not hold (other months, rounds, ages or "
         "coverage in one state) use targeting_pmc_run_model; for the national comparison of the six PMC "
         "schedules in one modelled setting use targeting_pmc_schedules. "
-        "ANSWER BRIEFLY -- it is read in a narrow (~400px) side panel: one sentence naming the top pair; the "
-        "ranked pairs as a table of AT MOST three columns ('State \u00b7 design' from state_design, '$ per "
-        "case', 'Cases / yr'); if 'note' is set, say it; one line naming the excluded states and why "
-        "(mention excluded designs only if asked); costs_line as one line; one caveat line (the first caveat: "
-        "one fitted setting per state, not a full calibration); then explorer_path as a short markdown link, "
+        "ANSWER BRIEFLY -- it is read in a narrow (~400px) side panel: one sentence naming the top pair and "
+        "how many of the ranked states clear the bar (states_clearing_bar; say plainly when few or none do -- a "
+        "top 10 is not a recommendation if it sits below the bar); the ranked pairs as a table of AT MOST "
+        "three columns ('State \u00b7 design' from state_design, '$ per death' from cost_per_death_averted, "
+        "'x GiveWell' from multiple_of_benchmark); if 'note' is set, say it; one line naming the excluded "
+        "states and why (mention excluded designs only if asked); costs_line as one line; two caveat lines "
+        "(the first caveat: one fitted setting per state, not a full calibration; and the deaths caveat, the "
+        "last: the multiple is a floor counting deaths only); then explorer_path as a short markdown link, "
         "[Open these states in the PMC explorer (national model)](...), with a few words beside it saying the "
         "explorer's figures come from the single national setting and will NOT match this ranking, which uses "
         "each state's own fitted model. Label every result with 'label' -- 'illustrative \u00b7 fitted to "
@@ -1806,8 +1810,12 @@ def targeting_pmc_run_status(user, *, run_id, state, cost_per_visit=None, platfo
         "rounds from the rain onset, year-round monthly, quarterly, every two months) and, in seasonal states "
         "only, SMC (SPAQ, 3-59 months, 4 monthly rounds). Cases averted = the design's EMOD reduction in "
         "under-5 cases x the state's MAP incidence x its under-5 population (a floor); spend = doses x the "
-        "targeted children x cost per dose, the same price per visit for PMC and SMC; cost per case is a "
-        "ceiling. Returns 'ranked' (cheapest per case first, ties to more cases averted; figures to two "
+        "targeted children x cost per dose, the same price per visit for PMC and SMC. Deaths averted = the "
+        "same EMOD reduction x the state's under-5 malaria deaths (deaths_basis), valued at GiveWell's moral "
+        "weight for an under-5 death; only deaths are counted, so the multiple is a floor. If asked whether a "
+        "low-prevalence state is worth it, the multiple and the bar answer it -- cost per case barely varies "
+        "between states because clinical incidence saturates as transmission rises. Returns 'ranked' (cheapest "
+        "per death first, ties to more deaths averted; each pair also carries cases and cost per case; figures to two "
         "significant figures), 'best_per_state' (each state's own best design, if asked 'best per state'), "
         "'excluded' (states the model could not fit, states not in the grid, states with no design that had "
         "a measurable effect -- never silently dropped), 'excluded_designs', 'note' (set when fewer pairs "
@@ -1829,19 +1837,37 @@ def targeting_pmc_run_status(user, *, run_id, state, cost_per_visit=None, platfo
                 "maximum": 50,
                 "description": "How many pairs to return. Default 10, at most 50.",
             },
+            "deaths_basis": {
+                "type": "string",
+                "enum": ["prevalence_scaled", "map"],
+                "description": (
+                    "How each state's under-5 malaria deaths are estimated. Default 'prevalence_scaled' (under-5 "
+                    "deaths x malaria's national share, spread by DHS prevalence); 'map' uses MAP's modelled "
+                    "malaria deaths -- a cross-check, its state pattern does not track DHS prevalence."
+                ),
+            },
             **_PMC_COST_PROPS,
         },
         "additionalProperties": False,
     },
 )
-def targeting_pmc_rank(user, *, states=None, top_n=10, cost_per_visit=None, platform_fee=None, dose_rate=None):
+def targeting_pmc_rank(
+    user,
+    *,
+    states=None,
+    top_n=10,
+    cost_per_visit=None,
+    platform_fee=None,
+    dose_rate=None,
+    deaths_basis="prevalence_scaled",
+):
     from urllib.parse import urlencode
 
     from django.conf import settings
     from django.urls import reverse
 
     from connect_labs.labs.indicators import pmc
-    from connect_labs.labs.indicators.emod import rank
+    from connect_labs.labs.indicators.emod import mortality, rank
 
     grid = rank.load_grid(getattr(settings, "PMC_STATE_GRID_PATH", None))
     if grid is None:
@@ -1855,7 +1881,16 @@ def targeting_pmc_rank(user, *, states=None, top_n=10, cost_per_visit=None, plat
         }
     try:
         costs = pmc.costs_or_default(cost_per_visit, platform_fee, dose_rate)
-        out = rank.rank_pairs(states, **costs, top_n=min(top_n, rank.MAX_TOP_N), grid=grid)
+        # An unloaded registry gives no deaths at all: rank by cost per case and say so, rather than
+        # excluding every state.
+        deaths = mortality.malaria_u5_deaths(mortality.registry_burden(), deaths_basis) or None
+        out = rank.rank_pairs(
+            states, **costs, top_n=min(top_n, rank.MAX_TOP_N), grid=grid, deaths=deaths, deaths_basis=deaths_basis
+        )
+        if deaths is None:
+            out["note"] = " ".join(
+                filter(None, [out["note"], "No mortality figures are loaded, so this is ranked by cost per case."])
+            )
     except (ValueError, TypeError) as e:
         raise MCPToolError("BAD_REQUEST", str(e)) from None
 

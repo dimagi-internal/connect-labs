@@ -1143,6 +1143,26 @@ class TestPmcRank:
         assert [e["state"] for e in got["excluded"]] == ["Lagos"]
         assert "states=Kano%2COndo%2CLagos" in got["explorer_path"]
 
+    def test_with_mortality_loaded_it_ranks_by_cost_per_death(self, monkeypatch):
+        from connect_labs.labs.indicators.emod import mortality
+
+        burden = {
+            "Ondo": {"u5_deaths": 15_000, "map_malaria_deaths": 3_000, "pfpr": 0.45, "pop_u5": 1_000_000},
+            "Kano": {"u5_deaths": 95_000, "map_malaria_deaths": 23_000, "pfpr": 0.54, "pop_u5": 2_000_000},
+        }
+        monkeypatch.setattr(mortality, "registry_burden", lambda: burden)
+        got = targeting.targeting_pmc_rank(None, states=["Kano", "Ondo"], deaths_basis="map")
+
+        assert got["ranked_by"] == "cost per death averted" and got["deaths_basis"] == "map"
+        assert all("multiple_of_benchmark" in r for r in got["ranked"])
+        assert got["note"] is None
+
+    def test_with_no_mortality_loaded_it_falls_back_to_cost_per_case_and_says_so(self):
+        got = targeting.targeting_pmc_rank(None, states=["Kano", "Ondo"])
+
+        assert got["ranked_by"] == "cost per case averted"
+        assert "ranked by cost per case" in got["note"]
+
     def test_smc_rows_only_for_states_with_smc_in_the_grid(self):
         got = targeting.targeting_pmc_rank(None, states=["Kano", "Ondo"])
 
@@ -1188,6 +1208,7 @@ class TestPmcRank:
         assert "Open these states in the PMC explorer (national model)" in rank
         assert "will NOT match this ranking" in rank
         assert "mention excluded designs only if asked" in rank
+        assert "states_clearing_bar" in rank and "a top 10 is not a recommendation if it sits below the bar" in rank
         # The answer shape comes before the reference material.
         assert rank.index("ANSWER BRIEFLY") < rank.index("Each state's results come from")
         assert "targeting_pmc_rank" in get_tool("targeting_pmc_schedules").description

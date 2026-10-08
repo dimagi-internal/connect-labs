@@ -1,4 +1,4 @@
-"""Rank (state, design) pairs for malaria chemoprevention by cost per case averted, at the caller's costs.
+"""Rank (state, design) pairs for malaria chemoprevention by value for money, at the caller's costs.
 
 The answer to "of these states, which state and which design is most cost-effective at my delivery
 costs?". It reads the precomputed per-state design grid (``data/pmc_state_grid.json``, written by
@@ -13,6 +13,12 @@ The costing is the explorer's (``pmc.cost_per_dose``) and the burden is MAP-anch
 * spend = doses per targeted child per year x the targeted children (target_pop_fraction x pop_u5)
   x cost per dose
 * cost per case averted = spend / cases averted
+
+Given each state's under-5 malaria deaths (``mortality.malaria_u5_deaths``), pairs rank by cost per death
+averted instead -- deaths averted = averted_u5_pct / 100 x those deaths -- and carry the multiple of
+GiveWell's 1x benchmark and whether it clears GiveWell's bar. Cost per case alone cannot tell a state
+worth doing from one that is not: clinical incidence saturates as transmission rises, deaths do not.
+Without deaths (the tool always passes them) the ranking falls back to cost per case.
 
 Young children get malaria more often than the all-ages rate, so cases averted are a floor and the
 cost per case a ceiling. Nothing here is silently dropped: a state the fit could not reach, a state
@@ -29,6 +35,8 @@ import os
 from pathlib import Path
 
 from connect_labs.labs.indicators import pmc
+from connect_labs.labs.indicators.cost_effectiveness import BAR
+from connect_labs.labs.indicators.emod import mortality
 
 GRID_PATH = Path(__file__).resolve().parents[1] / "data" / "pmc_state_grid.json"
 
@@ -52,6 +60,20 @@ CAVEATS = (
     "3-59 months (SMC).",
     "The same price per visit is applied to PMC and SMC visits.",
 )
+
+DEATHS_CAVEATS = {
+    "prevalence_scaled": (
+        "Deaths: the state's under-5 deaths x malaria's share of them, set nationally from MAP and spread by DHS "
+        "prevalence. Mortality is assumed to fall with clinical cases, and only deaths are valued (GiveWell's "
+        "moral weight, no income or morbidity benefit, no leverage or funging), so the multiple is a floor."
+    ),
+    "map": (
+        "Deaths: MAP's modelled malaria deaths for the state x 76% under five. MAP's state pattern does not track "
+        "DHS prevalence. Mortality is assumed to fall with clinical cases, and only deaths are valued, so the "
+        "multiple is a floor."
+    ),
+}
+NO_DEATHS = "no under-5 malaria death figure"
 
 
 def sig(n: float | None, figures: int = 2) -> float | None:
@@ -145,14 +167,19 @@ def rank_pairs(
     kinds=KINDS,
     *,
     grid: dict,
+    deaths: dict[str, float] | None = None,
+    deaths_basis: str = mortality.DEFAULT_BASIS,
 ) -> dict:
-    """The top ``top_n`` (state, design) pairs in ``states`` by cost per case averted, cheapest first.
+    """The top ``top_n`` (state, design) pairs in ``states``, best value first.
 
     ``states`` None means every state in the grid. Ties (equal exact cost per case) go to the
-    pair that averts more cases. Raises ValueError for impossible costs (dose_rate <= 0, negative
-    prices), a top_n below 1, or an unknown kind; the tool turns that into a 400.
+    pair that averts more cases. With ``deaths`` ({state: under-5 malaria deaths a year}) the order is
+    cost per death averted, ties to more deaths averted. Raises ValueError for impossible costs (dose_rate <= 0,
+    negative prices), a top_n below 1, an unknown kind or deaths_basis; the tool turns that into a 400.
     """
     per_dose = pmc.cost_per_dose(cost_per_visit, platform_fee, dose_rate)
+    if deaths_basis not in mortality.BASES:
+        raise ValueError(f"deaths_basis must be one of {', '.join(mortality.BASES)}; got {deaths_basis!r}")
     if isinstance(top_n, bool) or not isinstance(top_n, int) or top_n < 1:
         raise ValueError("top_n must be a whole number of at least 1")
     top_n = min(top_n, MAX_TOP_N)
@@ -190,6 +217,12 @@ def rank_pairs(
         if not incidence or not pop_u5:
             excluded.append({"state": name, "reason": "no malaria incidence or under-5 population figure"})
             continue
+        state_deaths = None
+        if deaths is not None:
+            state_deaths = deaths.get(name)
+            if not state_deaths:
+                excluded.append({"state": name, "reason": NO_DEATHS})
+                continue
         note = _fit_note(state)
         mine = 0
         for code, d in (state.get("designs") or {}).items():
@@ -205,8 +238,10 @@ def rank_pairs(
                 continue
             spend = d["doses_per_child_per_year"] * d["target_pop_fraction"] * pop_u5 * per_dose
             mine += 1
+            valued = mortality.value(pct / 100 * state_deaths, spend) if state_deaths else {}
             pairs.append(
                 {
+                    **valued,
                     "state": name,
                     "design_code": code,
                     "design_label": _design_label(d),
@@ -224,7 +259,10 @@ def rank_pairs(
             excluded.append({"state": name, "reason": f"no design with a measurable effect ({NO_EFFECT})"})
 
     # Exact cost per case (rounded only to absorb float noise), then more cases averted. Display rounds.
-    pairs.sort(key=lambda p: (round(p["cost_per_case_averted"], 9), -p["cases_averted_per_year"]))
+    if deaths is not None:
+        pairs.sort(key=lambda p: (round(p["cost_per_death_averted"], 9), -p["deaths_averted_per_year"]))
+    else:
+        pairs.sort(key=lambda p: (round(p["cost_per_case_averted"], 9), -p["cases_averted_per_year"]))
 
     best_per_state, seen = [], set()
     for p in pairs:
@@ -236,6 +274,8 @@ def rank_pairs(
         "cases_averted_per_year": sig(sum(p["cases_averted_per_year"] for p in best_per_state), 3),
         "spend_per_year": sig(sum(p["spend_per_year"] for p in best_per_state), 3),
     }
+    if deaths is not None:
+        totals["deaths_averted_per_year"] = sig(sum(p["deaths_averted_per_year"] for p in best_per_state), 3)
 
     def present(p, rank=None):
         out = {
@@ -245,6 +285,10 @@ def rank_pairs(
             "spend_per_year": sig(p["spend_per_year"]),
             "cost_per_case_averted": sig(p["cost_per_case_averted"]),
         }
+        if "multiple_of_benchmark" in p:
+            out["deaths_averted_per_year"] = sig(p["deaths_averted_per_year"])
+            out["cost_per_death_averted"] = sig(p["cost_per_death_averted"])
+            out["multiple_of_benchmark"] = round(p["multiple_of_benchmark"], 1)
         return {"rank": rank, **out} if rank is not None else out
 
     ranked = [present(p, i + 1) for i, p in enumerate(pairs[:top_n])]
@@ -272,5 +316,16 @@ def rank_pairs(
         "excluded_designs": excluded_designs,
         "costs": costs,
         "costs_line": costs_line(costs),
-        "caveats": list(CAVEATS),
+        "caveats": list(CAVEATS) + ([DEATHS_CAVEATS[deaths_basis]] if deaths is not None else []),
+        **(
+            {
+                "ranked_by": "cost per death averted",
+                "deaths_basis": deaths_basis,
+                "bar": BAR.value,
+                "pairs_clearing_bar": sum(p["clears_bar"] for p in pairs),
+                "states_clearing_bar": len({p["state"] for p in pairs if p["clears_bar"]}),
+            }
+            if deaths is not None
+            else {"ranked_by": "cost per case averted"}
+        ),
     }
