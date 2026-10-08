@@ -122,6 +122,45 @@
     }
   }
 
+  // --- the agent panel ------------------------------------------------------
+  //
+  // The panel is told at render time only what the URL said. Every control on
+  // this page changes the question after that, so the agent was answering
+  // about a selection the visitor had already moved away from. Each new
+  // selection now re-declares the question (the same parameters the URL
+  // carries) and names the areas it selected, so the agent can act on what
+  // is on screen -- e.g. hand the selected Nigerian states to
+  // targeting_pmc_schedules. Names, never rows: the page state is small.
+  var agentBase = null;
+  var lastShared = null;
+
+  function shareWithAgent(data) {
+    lastShared = data;
+    var host = window.canopyHost;
+    if (!host || typeof host.updatePageState !== 'function') return;
+    if (agentBase === null) {
+      agentBase = Object.assign({}, (host.pageState() || {}).filters || {});
+    }
+    var filters = Object.assign({}, agentBase);
+    new URLSearchParams(api.withThreshold().replace(/^\?/, '')).forEach(
+      function (v, k) {
+        filters[k] = v;
+      },
+    );
+    var rows = data.rows || [];
+    var names = rows.map(function (r) {
+      return r.name + (r.iso ? ' (' + r.iso + ')' : '');
+    });
+    var areas = names.join(', ');
+    if (areas.length > 4000) areas = areas.slice(0, 4000) + ', …';
+    filters.selected_count = String(rows.length);
+    filters.selected_areas = areas;
+    host.updatePageState({ filters: filters });
+  }
+  document.addEventListener('canopy:ready', function () {
+    if (lastShared) shareWithAgent(lastShared);
+  });
+
   // --- channels ------------------------------------------------------------
 
   state.register('methods', function (S) {
@@ -220,6 +259,7 @@
         if (!state.isCurrent('selection', mine)) return;
         setDownloadState(!!(data.rows && data.rows.length));
         T.table.render(data);
+        shareWithAgent(data);
         T.map.applySelection(data.selected_pks);
         T.methodology.refresh();
       })

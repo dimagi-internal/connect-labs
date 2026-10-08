@@ -105,6 +105,7 @@ def nigeria(db):
     set_value(ondo, "malaria_prevalence", 44.8, year=2021)
     set_value(ondo, "pop_u5", 600_000)
     set_value(ondo, "rain_wettest_quarter", 41.5)
+    set_value(ondo, "malaria_incidence", 283.1)
     set_value(kano, "malaria_prevalence", 40.0, year=2021)
     set_value(kano, "rain_wettest_quarter", 77.2)
     set_value(kano, "pop_u5", 3_000_000)
@@ -129,6 +130,26 @@ class TestStates:
         # A 15% state projected with a 44% setting's incidence would invent cases.
         assert rows[1]["projection"] is None
 
+    def test_states_are_ranked_by_their_own_burden(self, nigeria):
+        """Same model, different malaria: the higher-incidence state averts more cases
+        per dose, so it ranks as more cost-effective."""
+        cr = make_boundary("NGA", 1, "Cross River", "NGA-1-9", x=6)
+        set_value(cr, "malaria_prevalence", 40.6, year=2021)
+        set_value(cr, "rain_wettest_quarter", 42.4)
+        set_value(cr, "malaria_incidence", 340.0)
+        set_value(cr, "pop_u5", 600_000)
+
+        rows = {r["name"]: r for r in pmc.state_rows("connect_monthly_in_season_3_24", DEFAULTS)}
+
+        assert rows["Cross River"]["rank"] == 1 and rows["Ondo"]["rank"] == 2
+        # Reference = mean incidence of the matching states, so the factors straddle 1.
+        assert rows["Cross River"]["burden_factor"] > 1 > rows["Ondo"]["burden_factor"]
+        assert (
+            rows["Cross River"]["projection"]["cost_per_case_averted"]
+            < rows["Ondo"]["projection"]["cost_per_case_averted"]
+        )
+        assert rows["Kano"]["rank"] is None  # Sahel-seasonal: never ranked
+
     def test_an_unknown_schedule_is_refused(self, nigeria):
         with pytest.raises(ValueError):
             pmc.state_rows("weekly", DEFAULTS)
@@ -146,8 +167,8 @@ class TestThePage:
         assert "Which PMC schedule, and where?" in body
         assert "Illustrative." in body
         assert "indicators/pmc/pmc.js" in body
-        # A dose count means nothing without its population and period.
-        assert "Doses, 2 yrs" in body
+        # Two answers, in the order a programme is designed: how, then where.
+        assert body.index(">How<") < body.index(">Where<")
 
     def test_the_data_endpoint_defaults_to_the_best_schedule(self, client_in, nigeria):
         got = client_in.get(reverse("targeting:pmc_data")).json()
@@ -199,6 +220,15 @@ class TestTheAgentTool:
         got = targeting.targeting_pmc_schedules(None, states=["ondo", "Atlantis"])
         assert [s["name"] for s in got["states"]] == ["Ondo"]
         assert got["states_not_found"] == ["atlantis"]
+
+    def test_it_hands_back_the_explorer_opened_on_those_states(self, nigeria):
+        """The targeting -> model hand-off: the agent passes the selected states and
+        gives the visitor a link to the explorer showing exactly them."""
+        got = targeting.targeting_pmc_schedules(None, states=["Ondo", "Kano"])
+        path = got["explorer_path"]
+        assert path.startswith("/labs/targeting/pmc/?")
+        assert "states=Ondo%2CKano" in path or "states=Kano%2COndo" in path
+        assert "schedule=connect_monthly_in_season_3_24" in path
 
     def test_it_refuses_an_unknown_schedule(self, nigeria):
         with pytest.raises(MCPToolError):
