@@ -402,8 +402,8 @@ if settings.DEBUG:
 # (operations are the write path; an as-of read belongs to the pages), the
 # portfolios (above programs: rewinding the one program in context would show
 # it in the past beside every other one live), the programme map (the same
-# page as a portfolio's), a pinned workflow (its runner reads live), the dev login and the old-URL
-# redirect.
+# page as a portfolio's), a pinned workflow (its runner reads live, and carries
+# as_of to its supply sources itself), the dev login and the old-URL redirect.
 _LIVE_PREFIXES = ("market/", "u/", "api/", "portfolios/", "map/", "views/", "dev-login/")
 
 

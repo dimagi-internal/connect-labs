@@ -130,6 +130,26 @@ def test_the_run_is_read_by_the_pinned_opportunity_alone(client_in_programme, da
     assert "Stock review" in body.split("<nav", 1)[1].split("</nav>", 1)[0]  # the frame still has its programme
 
 
+def test_a_past_day_rides_on_the_runners_supply_endpoints_and_shows_in_the_header(
+    client_in_programme, da, monkeypatch
+):
+    def run_context(self, **kw):
+        endpoints = {"getSupplyData": "/labs/workflow/api/8801/supply-data/", "querySupply": "/q/", "other": "/o/"}
+        return {"has_context": True, "render_code": "x", "workflow_data": {"apiEndpoints": endpoints}}
+
+    monkeypatch.setattr(page_views.WorkflowRunView, "_run_context_data", run_context)
+    _pin(da, replaces="supply_chain:workers", opportunity_id=OPP)
+    url = reverse("supply_chain:workflow_view", args=["stock-review"])
+
+    body = client_in_programme.get(url + "?as_of=2026-09-01").content.decode()
+
+    assert "/labs/workflow/api/8801/supply-data/?as_of=2026-09-01" in body
+    assert "/q/?as_of=2026-09-01" in body and '"/o/"' in body
+    assert 'var asOf = "2026-09-01"' in body  # the supply frame's own past-day handling is on
+    assert "as_of" not in client_in_programme.get(url).content.decode().split('id="workflow-data"', 1)[1]
+    assert client_in_programme.get(url + "?as_of=yesterday").status_code == 400
+
+
 def test_an_unknown_pin_is_not_found(client_in_programme):
     assert client_in_programme.get(reverse("supply_chain:workflow_view", args=["nope"])).status_code == 404
 
