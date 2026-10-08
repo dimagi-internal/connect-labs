@@ -2,7 +2,7 @@ from django.urls import include, path
 
 from connect_labs.labs.synthetic import manager_flow_views
 
-from . import action_views, views
+from . import action_views, supply_views, views
 
 app_name = "workflow"
 
@@ -86,6 +86,9 @@ urlpatterns = [
     # actions.queryPipelineRows: filter/search/order/page one alias IN SQL -- the read
     # path for a `load: "on_demand"` source the run page does not stream.
     path("api/<int:definition_id>/pipeline-query/", views.pipeline_query_api, name="api_pipeline_query"),
+    # Supply sources (supply_sources.py): the `supply` prop, and actions.querySupply.
+    path("api/<int:definition_id>/supply-data/", supply_views.supply_data_api, name="api_supply_data"),
+    path("api/<int:definition_id>/supply-query/", supply_views.supply_query_api, name="api_supply_query"),
     # The same answer with the fetch's own progress in front of it. Progress used
     # to ride the bulk pipeline-data stream, so a page that opted out of the ~30 MB
     # payload lost the percentage too; this carries one without the other.

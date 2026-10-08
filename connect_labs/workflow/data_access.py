@@ -798,6 +798,9 @@ class WorkflowDataAccess(BaseDataAccess):
             data["registry_source"] = kwargs["registry_source"]
         if kwargs.get("render_source"):
             data["render_source"] = kwargs["render_source"]
+        # Supply sources (workflow/supply_sources.py): read beside pipelines, as the viewer.
+        if kwargs.get("supply_sources"):
+            data["supply_sources"] = kwargs["supply_sources"]
 
         record = self.labs_api.create_record(
             experiment=self.EXPERIMENT,
