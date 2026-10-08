@@ -1133,5 +1133,10 @@ class TestPmcRank:
         assert "AT MOST three columns" in rank and "~400px" in rank
         assert "illustrative \u00b7 fitted to each state's prevalence and rainfall" in rank
         assert "never call it calibrated" in rank
+        assert "Open these states in the PMC explorer (national model)" in rank
+        assert "will NOT match this ranking" in rank
+        assert "mention excluded designs only if asked" in rank
+        # The answer shape comes before the reference material.
+        assert rank.index("ANSWER BRIEFLY") < rank.index("Each state's results come from")
         assert "targeting_pmc_rank" in get_tool("targeting_pmc_schedules").description
         assert "targeting_pmc_rank" in canopy.SCOPE_TOOLS["targeting:read"]

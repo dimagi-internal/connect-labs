@@ -185,3 +185,43 @@ def test_significant_figures():
     assert rank.sig(6_413_474) == 6_400_000
     assert rank.sig(288_123, 3) == 288_000
     assert rank.sig(0) == 0
+
+
+def test_ranking_uses_the_exact_cost_not_the_rounded_one(grid):
+    """$44.4 with more cases and $43.6 both display as $44; the cheaper one still ranks first."""
+    designs = grid["states"]["Ondo"]["designs"]
+    cost_for = {"pmc_m4_onset": 43.6, "pmc_m6_onset": 44.4}  # $ per case, set through the doses
+    for code, target in cost_for.items():
+        d = designs[code]
+        cases = d["averted_u5_pct"] / 100 * 300 / 1000 * 1_000_000
+        d["doses_per_child_per_year"] = target * cases / (d["target_pop_fraction"] * 1_000_000 * PER_DOSE)
+    del designs["pmc_m12"]
+    out = rank.rank_pairs(["Ondo"], grid=grid)
+
+    # m6 averts more cases (90,000 vs 60,000) but costs $44.4; m4 costs $43.6.
+    assert [r["design_code"] for r in out["ranked"]] == ["pmc_m4_onset", "pmc_m6_onset"]
+    assert [r["cost_per_case_averted"] for r in out["ranked"]] == [44, 44]
+    assert out["best_per_state"][0]["design_code"] == "pmc_m4_onset"
+
+
+@pytest.mark.parametrize("alias", ["FCT", "Federal Capital Territory", "abuja", "Abuja (NGA)"])
+def test_the_capital_territory_aliases_resolve(grid, alias):
+    grid["states"]["Abuja Federal Capital Territory"] = grid["states"]["Ondo"]
+    out = rank.rank_pairs([alias], grid=grid)
+
+    assert {r["state"] for r in out["ranked"]} == {"Abuja Federal Capital Territory"}
+    assert out["excluded"] == []
+
+
+def test_a_unique_word_match_is_accepted_and_an_ambiguous_one_is_not(grid):
+    grid["states"]["Akwa Ibom"] = grid["states"]["Ondo"]
+    grid["states"]["Cross River"] = grid["states"]["Ondo"]
+    grid["states"]["River North"] = grid["states"]["Ondo"]
+
+    assert {r["state"] for r in rank.rank_pairs(["ibom"], grid=grid)["ranked"]} == {"Akwa Ibom"}
+    vague = rank.rank_pairs(["river"], grid=grid)
+    assert vague["ranked"] == [] and vague["excluded"][0]["reason"] == "not in the per-state model grid"
+
+
+def test_the_caveats_say_one_visit_price_for_pmc_and_smc(grid):
+    assert any("same price per visit" in c for c in rank.rank_pairs(None, grid=grid)["caveats"])
