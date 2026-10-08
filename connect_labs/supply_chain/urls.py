@@ -15,6 +15,7 @@ from connect_labs.supply_chain.reference import views as reference_views
 from connect_labs.supply_chain.stock import views as stock_views
 from connect_labs.supply_chain.stock import visit_views
 from connect_labs.supply_chain.update_links import views as update_link_views
+from connect_labs.supply_chain.workflow_views import views as workflow_page_views
 
 app_name = "supply_chain"
 
@@ -352,6 +353,8 @@ urlpatterns = [
     path("workers/", visit_views.WorkersView.as_view(), name="workers"),
     path("workers/<int:supply_point_id>/", visit_views.WorkerDetailView.as_view(), name="worker_detail"),
     path("flow/", visit_views.StockFlowView.as_view(), name="flow"),
+    # A workflow pinned into this programme's supply navigation (workflow_views/), in the supply frame.
+    path("views/<slug:slug>/", workflow_page_views.SupplyWorkflowPageView.as_view(), name="workflow_view"),
     # Our own stock on the road between two of our places. "new" before the
     # int route, so the literal cannot be read as an id.
     path("stock/consignments/new/", stock_views.ConsignmentDispatchView.as_view(), name="consignment_dispatch"),
@@ -399,9 +402,9 @@ if settings.DEBUG:
 # (operations are the write path; an as-of read belongs to the pages), the
 # portfolios (above programs: rewinding the one program in context would show
 # it in the past beside every other one live), the programme map (the same
-# page as a portfolio's), the dev login and the old-URL
+# page as a portfolio's), a pinned workflow (its runner reads live), the dev login and the old-URL
 # redirect.
-_LIVE_PREFIXES = ("market/", "u/", "api/", "portfolios/", "map/", "dev-login/")
+_LIVE_PREFIXES = ("market/", "u/", "api/", "portfolios/", "map/", "views/", "dev-login/")
 
 
 def _is_live(pattern, prefix="") -> bool:

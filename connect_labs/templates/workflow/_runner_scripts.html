@@ -1,0 +1,31 @@
+{% load static %}{% comment %}
+The workflow runner bundle and the libraries render code may use (charts, maps,
+the shared runner primitives). Included by workflow/run.html and by a workflow
+pinned into the supply navigation (supply_chain/workflow_view.html), so both
+mount the same runner.
+{% endcomment %}
+<!-- Shared runner UI primitive: the FLW audit-breakdown renderer, so a render
+     can draw the "Audit results by field worker" panel identically to the
+     opp-level run. Loaded before the bundle (defer preserves order). See
+     WORKFLOW_REFERENCE.md "Shared runner UI primitives". -->
+<script src="{% static 'js/labs_audit_breakdown.js' %}?v=2" defer></script>
+<script src="{% static 'bundles/js/workflow-runner-bundle.js' %}?v=4" defer></script>
+<!-- Chart.js for workflow visualizations -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<!-- Leaflet for map visualizations -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<!-- Mapbox GL + the shared Connect map module (real admin boundaries, basemap) -->
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.13.0/mapbox-gl.js"></script>
+<script>
+    window.MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";
+    window.BOUNDARY_VIEWPORT_URL = "/microplans/boundaries/viewport/";
+</script>
+<script src="{% static 'maps/connect_map.js' %}"></script>
+<!-- Shared microplan layers (work areas / PSU hulls / sample pins / footprints) so a
+     render can draw a plan identically to the plan editor. See WORKFLOW_REFERENCE.md
+     §4a "Shared map components". -->
+<script src="{% static 'maps/plan_layers.js' %}"></script>
+<!-- Shared microplan map Layers panel (the same toggle UI the plan editor docks on
+     its map) so a render can offer a consistent layer selector. -->
+<script src="{% static 'microplans/map_panel.js' %}"></script>

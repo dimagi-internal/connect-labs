@@ -2273,3 +2273,14 @@ A workflow can read the supply chain's own figures — stock in workers' hands, 
 **Editing without a deploy:** `workflow_update_definition` takes `supply_sources` (checked against `SOURCES`) and `snapshot_inputs.supply`.
 
 **Reference template:** `supply_stock_review` — stock in field workers' hands across the workflow's opportunities: headline, runway (soonest out first), does it add up, a worker's day-by-day history on demand, and the stores behind them.
+
+### Showing a workflow inside the supply pages
+
+A programme's supply navigation can carry a workflow as a tab (`supply_chain/workflow_views/`):
+`supply_chain_view_pin` with `{workflow_definition_id, label, replaces?, opportunity_id?}`
+either stands in for a built-in tab (`replaces: "supply_chain:workers"`) or adds one.
+The tab opens `/supply/views/<slug>/`: the same runner, inside the supply header, on the
+workflow's newest open run (one is started for today if there is none), read as the viewer.
+The page links to the workflow's editor and, when the pin replaced a tab, to that tab's own
+page. A pin is a pointer: editing the workflow changes the tab. `supply_chain_view_unpin`
+restores the built-in tab.
