@@ -108,11 +108,13 @@ def test_invalid_token_returns_401(monkeypatch):
 
 
 @pytest.mark.django_db
-def test_a_no_uservisit_data_token_cannot_read_visits(monkeypatch):
-    """The export API serves visit rows, so a restricted PAT is refused on it."""
+@pytest.mark.parametrize("scope", ["no-uservisit-data", "coach-images"])
+def test_a_token_that_is_not_full_access_cannot_read_visits(monkeypatch, scope):
+    """The export API serves visit rows, so a restricted PAT -- or a coaching-pictures
+    one -- is refused on it."""
     _install(monkeypatch, {"folder-a": {"user_visits.json": [{"id": 1, "form": "sentinel"}]}})
     _make_opp()
-    _, raw = MCPAccessToken.create_token(_user(), name="restricted", scope="no-uservisit-data")
+    _, raw = MCPAccessToken.create_token(_user(), name="restricted", scope=scope)
     client = APIClient()
     client.credentials(HTTP_AUTHORIZATION=f"Bearer {raw}")
 

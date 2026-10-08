@@ -205,3 +205,25 @@ def test_any_other_prompt_keeps_the_prompt_text_path():
     assert sent["prompt_text"] == "Ask how the KMC visits went this week."
     assert "message_text" not in sent
     assert "coach_briefing" not in sent["session_data"]
+
+
+IMAGE = {
+    "url": "https://labs.connect.dimagi.com/labs/coach-image/abc/",
+    "caption": "A bar chart of Tiyamike's figures.",
+}
+
+
+def test_a_briefing_with_a_picture_puts_its_link_and_caption_in_session_state():
+    sent = _trigger(BRIEFING, coach_image=IMAGE)
+    assert sent["session_data"]["coach_image_url"] == IMAGE["url"]
+    assert sent["session_data"]["coach_image_caption"] == IMAGE["caption"]
+
+
+def test_without_a_picture_the_session_state_has_no_picture_keys():
+    sent = _trigger(BRIEFING)
+    assert not [k for k in sent["session_data"] if k.startswith("coach_image")]
+
+
+def test_a_picture_beside_free_text_is_not_attached():
+    sent = _trigger("Talk with them about their week.", coach_image=IMAGE)
+    assert not [k for k in sent["session_data"] if k.startswith("coach_image")]
