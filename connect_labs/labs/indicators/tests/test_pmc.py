@@ -73,6 +73,10 @@ class TestTheSweep:
         assert out["setting"]["calibrated"] is False
         assert any("illustrative" in c for c in out["caveats"])
 
+    @pytest.mark.parametrize("n, want", [(332_465, 330_000), (1_976_741, 2_000_000), (65_709, 66_000), (0, 0)])
+    def test_projections_are_rounded_to_what_an_uncalibrated_model_can_claim(self, n, want):
+        assert pmc.approx(n) == want
+
     @pytest.mark.parametrize("prev, fit", [(44.8, "near"), (35.6, "near"), (20.0, "outside"), (None, "unknown")])
     def test_fit_compares_measured_prevalence_with_the_modelled_setting(self, prev, fit):
         assert pmc.fit_for(prev) == fit
@@ -101,7 +105,7 @@ class TestStates:
         assert ondo["fit"] == "near"
         assert ondo["children_3_24m"] == 210_000  # 21/60 of 600,000 under-5s
         sched = _rows()["connect_monthly_in_season_3_24"]
-        assert ondo["projection"]["cases_averted_per_year"] == round(
+        assert ondo["projection"]["cases_averted_per_year"] == pmc.approx(
             210_000 * sched["cases_averted_per_1000_children_per_year"] / 1000
         )
         assert rows[1]["fit"] == "outside"
