@@ -813,7 +813,7 @@ class TestPmcLiveModel:
         assert got["status"] == "queued" and got["cached"] is False
         assert got["eta_s"] >= 10
         assert self.delays == [got["run_id"]]
-        assert got["schedule_code"].startswith("custom_")
+        assert "custom_" not in str(got)
 
     def test_asking_again_does_not_start_a_second_run(self, django_capture_on_commit_callbacks):
         with django_capture_on_commit_callbacks(execute=True):
@@ -826,7 +826,7 @@ class TestPmcLiveModel:
         first = targeting.targeting_pmc_run_model(None, state="Ondo", schedule=self.DEMO)
         self._complete(first["run_id"])
 
-        polled = targeting.targeting_pmc_run_status(None, run_id=first["run_id"], state="Ondo", schedule=self.DEMO)
+        polled = targeting.targeting_pmc_run_status(None, run_id=first["run_id"], state="Ondo")
 
         assert polled["status"] == "completed"
         result = polled["result"]
@@ -835,7 +835,9 @@ class TestPmcLiveModel:
         # 210,000 children x 283.1 per 1,000 x 25%, to two figures: a floor on cases averted.
         assert result["projection"]["cases_averted_per_year"] == 15000
         assert result["best_grid_schedule"]["code"]
-        assert "May" in result["schedule"]["description"]
+        assert "May" in result["schedule"]["description"] and "custom_" not in str(result["schedule"])
+        best = result["best_grid_schedule"]
+        assert best["averted_ci"] is not None and isinstance(best["difference_within_noise"], bool)
         # Asking for the same schedule again is now served from the cache, no new run.
         again = targeting.targeting_pmc_run_model(None, state="Ondo", schedule=self.DEMO)
         assert again["cached"] is True and again["status"] == "completed" and again["result"]["projection"]
@@ -873,7 +875,7 @@ class TestPmcLiveModel:
         first = targeting.targeting_pmc_run_model(None, state="Ondo", schedule=self.DEMO)
         PmcModelRun.objects.filter(pk=first["run_id"]).update(status=PmcModelRun.RUNNING)
 
-        polled = targeting.targeting_pmc_run_status(None, run_id=first["run_id"])
+        polled = targeting.targeting_pmc_run_status(None, run_id=first["run_id"], state="Ondo")
 
         assert polled["status"] == "running" and polled["eta_s"] >= 10
 
@@ -908,7 +910,7 @@ class TestPmcLiveModel:
 
     def test_an_unknown_run_is_not_found(self):
         with pytest.raises(MCPToolError) as err:
-            targeting.targeting_pmc_run_status(None, run_id=999999)
+            targeting.targeting_pmc_run_status(None, run_id=999999, state="Ondo")
         assert err.value.code == "NOT_FOUND"
 
     def test_descriptions_tell_the_agent_when_what_how_to_wait_and_present(self):
@@ -918,9 +920,89 @@ class TestPmcLiveModel:
         status = get_tool("targeting_pmc_run_status").description
         for phrase in (
             "targeting_pmc_schedules",
-            "I'm running IDM's EMOD model now; this takes about a minute",
-            "every 10 seconds",
-            "illustrative · live model run",
+            "I'm running IDM's EMOD model now",
+            "about two minutes",
+            "the model server is starting up",
+            "every 10-15 seconds",
         ):
             assert phrase in run, phrase
-        assert "every 10 seconds" in status and "targeting_pmc_schedules" in status
+        assert "always say" not in run
+        assert "every 10-15 seconds" in status and "targeting_pmc_schedules" in status
+        assert "result.label" in run and "difference_within_noise" in run
+        assert "ONLY when status is queued or running" in run
+        assert get_tool("targeting_pmc_run_status").input_schema["required"] == ["run_id", "state"]
+
+    def test_seeds_are_passed_through_to_the_request(self):
+        from connect_labs.labs.indicators.models import PmcModelRun
+
+        got = targeting.targeting_pmc_run_model(None, state="Ondo", schedule=self.DEMO, seeds=2)
+
+        assert PmcModelRun.objects.get(pk=got["run_id"]).request["seeds"] == [0, 1]
+
+    def test_seeds_are_bounded(self):
+        for bad in (0, 7):
+            with pytest.raises(MCPToolError):
+                targeting.targeting_pmc_run_model(None, state="Ondo", schedule=self.DEMO, seeds=bad)
+
+    def test_eta_is_short_on_a_warm_instance_and_long_on_a_cold_one(self, monkeypatch):
+        from connect_labs.labs.indicators.emod import service
+
+        monkeypatch.setattr(service, "_instance_is_warm", lambda: True)
+        warm = targeting.targeting_pmc_run_model(None, state="Ondo", schedule=self.DEMO)
+        assert warm["eta_s"] <= 120
+
+    def test_a_cold_instance_gives_the_long_eta(self, monkeypatch):
+        from connect_labs.labs.indicators.emod import service
+
+        monkeypatch.setattr(service, "_instance_is_warm", lambda: False)
+        cold = targeting.targeting_pmc_run_model(None, state="Ondo", schedule=self.DEMO)
+        assert cold["eta_s"] > 250
+
+    def test_a_failing_status_check_reads_as_cold_and_never_fails_the_submit(self, monkeypatch):
+        from connect_labs.labs.indicators.emod import service
+
+        def boom():
+            raise RuntimeError("aws down")
+
+        monkeypatch.setattr(self.runner, "default_instance", lambda: type("I", (), {"_state": staticmethod(boom)})())
+        assert service._instance_is_warm() is False
+
+    def test_a_run_queued_behind_another_adds_its_remaining_time(self, monkeypatch):
+        from connect_labs.labs.indicators.emod import service
+
+        monkeypatch.setattr(service, "_instance_is_warm", lambda: False)
+        first = targeting.targeting_pmc_run_model(None, state="Ondo", schedule=self.DEMO)
+        second = targeting.targeting_pmc_run_model(None, state="Ondo", schedule={"months": [6, 7]})
+
+        assert second["eta_s"] >= first["eta_s"] + 100
+
+    def test_new_work_is_refused_as_busy_past_three_in_flight_but_joining_is_allowed(self):
+        asks = [{"months": [m]} for m in (1, 2, 3)]
+        runs = [targeting.targeting_pmc_run_model(None, state="Ondo", schedule=a) for a in asks]
+        assert all(r["status"] == "queued" for r in runs)
+
+        busy = targeting.targeting_pmc_run_model(None, state="Ondo", schedule={"months": [9]})
+        join = targeting.targeting_pmc_run_model(None, state="Ondo", schedule=asks[0])
+
+        assert busy["status"] == "busy" and "busy" in busy["error"] and "targeting_pmc_schedules" in busy["error"]
+        assert busy["run_id"] is None
+        assert join["run_id"] == runs[0]["run_id"]
+
+    def test_near_identical_asks_share_a_run(self):
+        a = targeting.targeting_pmc_run_model(None, state="Ondo", schedule={**self.DEMO, "coverage": 0.8})
+        b = targeting.targeting_pmc_run_model(
+            None, state="Ondo", schedule={**self.DEMO, "coverage": 0.81, "age_min_months": 3.2}
+        )
+
+        assert a["run_id"] == b["run_id"]
+
+    def test_a_result_inside_the_grid_bests_noise_says_so(self):
+        first = targeting.targeting_pmc_run_model(None, state="Ondo", schedule=self.DEMO)
+        # 31% averted with 3 identical seeds (no spread) vs the grid best's 31.1% +/- 2.8
+        self._complete(first["run_id"], per_seed=(2000, 1380))
+
+        best = targeting.targeting_pmc_run_status(None, run_id=first["run_id"], state="Ondo")["result"][
+            "best_grid_schedule"
+        ]
+
+        assert best["difference_within_noise"] is True

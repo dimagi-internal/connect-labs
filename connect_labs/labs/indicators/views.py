@@ -961,7 +961,7 @@ class PmcRunView(OpenLocallyMixin, View):
             return JsonResponse({"error": "request body must be JSON"}, status=400)
         if not isinstance(body, dict):
             return JsonResponse({"error": "request body must be a JSON object"}, status=400)
-        status, payload = service.submit_run(body.get("state"), body.get("schedules"))
+        status, payload = service.submit_run(body.get("state"), body.get("schedules"), body.get("seeds"))
         return JsonResponse(payload, status=status)
 
 

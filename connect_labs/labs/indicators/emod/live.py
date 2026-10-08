@@ -85,10 +85,15 @@ def to_rounds(spec: dict) -> tuple[list[list[float]], str]:
     age_min = spec.get("age_min_months", DEFAULT_AGE_MONTHS[0])
     age_max = spec.get("age_max_months", DEFAULT_AGE_MONTHS[1])
     coverage = spec.get("coverage", DEFAULT_COVERAGE)
-    if not (_is_num(age_min) and _is_num(age_max) and 0 <= age_min < age_max <= 60):
+    if not (_is_num(age_min) and _is_num(age_max) and 0 <= age_min and age_max <= 60):
         raise ValueError("age_min_months and age_max_months must satisfy 0 <= min < max <= 60")
     if not (_is_num(coverage) and 0 < coverage <= 1):
         raise ValueError("coverage must be a share above 0 and up to 1")
+    # Near-identical asks share a run: ages to whole months, coverage to 5-point steps.
+    age_min, age_max = round(age_min), round(age_max)
+    coverage = max(0.05, round(round(coverage * 20) / 20, 2))
+    if not age_min < age_max:
+        raise ValueError("age_min_months and age_max_months must satisfy 0 <= min < max <= 60")
     ages = (age_min / 12, age_max / 12)
     who = f"children {age_min:g}-{age_max:g} months, {coverage:.0%} coverage"
 
@@ -122,6 +127,23 @@ def to_rounds(spec: dict) -> tuple[list[list[float]], str]:
         names = [MONTH_NAMES[m - 1] for m in months]
         what = f"monthly rounds in {', '.join(names)} each year"
     return rounds, f"{what}; {who}"
+
+
+def describe_rounds(rounds: list) -> str:
+    """Plain-English description of worker rounds (what to_rounds' text says), for a run read back from the DB."""
+    if not rounds:
+        return "a custom schedule"
+    offset, interval, reps, a0, a1, cov = rounds[0]
+    who = f"children {round(a0 * 12):g}-{round(a1 * 12):g} months, {cov:.0%} coverage"
+    if interval == 30:
+        months = []
+        for off, _, n, *_rest in (r for r in rounds if r[0] < DAYS_PER_YEAR):
+            first = min(range(1, 13), key=lambda m: abs(month_offset(m) - off))
+            months += [MONTH_NAMES[(first - 1 + i) % 12] for i in range(int(n))]
+        what = f"monthly rounds in {', '.join(months)} each year"
+    else:
+        what = f"a round every {interval:g} days (about {DAYS_PER_YEAR / interval:.1f} a year)"
+    return f"{what}; {who}"
 
 
 def schedule_code(rounds: list) -> str:
