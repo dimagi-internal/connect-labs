@@ -1297,6 +1297,35 @@ def demand_text(value):
     return quantity_text(value)
 
 
+def _months(value):
+    if isinstance(value, dict):
+        value = value.get("amount")
+    number = _as_decimal(value) if value not in (None, "") else None
+    return number if number is not None and number.is_finite() else None
+
+
+@register.filter
+def months_as_days(value):
+    """Months of cover read as days ("23 days"): stock is planned in days. Anything else as it is."""
+    from connect_labs.supply_chain.stock.services.resupply import DAYS_PER_MONTH
+
+    months = _months(value)
+    if months is None:
+        return derived_text(value)
+    days = (months * DAYS_PER_MONTH).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    return f"{quantity_digits(days)} day{'' if days == 1 else 's'}"
+
+
+@register.filter
+def per_day(value):
+    """A monthly demand rate read per day ("11 sachets"), with no more precision than demand_text gives."""
+    from connect_labs.supply_chain.stock.services.resupply import DAYS_PER_MONTH
+
+    if isinstance(value, dict) and _months(value) is not None:
+        return demand_text({**value, "amount": str(_months(value) / DAYS_PER_MONTH)})
+    return demand_text(value)
+
+
 @register.filter
 def send_text(value):
     """What to send or reorder, rounded UP to a whole unit wherever the unit is counted.

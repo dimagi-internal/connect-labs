@@ -561,28 +561,28 @@ def test_a_rejected_visit_reads_its_dispense_and_the_put_back(client_in_program,
 
 
 def test_too_few_days_say_when_an_estimate_comes_and_the_rate_so_far(client_in_program, world):
-    """77 given out over 11 days: no rate yet. Each screen gives the day one comes, and ~7 a day so far."""
+    """77 given out over 4 days: no rate yet. Each screen gives the day one comes, and ~19 a day so far."""
     with recorded(60):
         cedar = _issue(world, "worker-cedar")
     with recorded(10):
-        _visit(world, cedar, "worker-cedar", dispensed=77, status="approved", estimated=False, days_ago=10)
-    # The first dispensing day counts as one of the thirty.
-    on = TODAY - timedelta(days=10) + timedelta(days=29)
+        _visit(world, cedar, "worker-cedar", dispensed=77, status="approved", estimated=False, days_ago=3)
+    # The first dispensing day counts as one of the seven.
+    on = TODAY - timedelta(days=3) + timedelta(days=6)
     when = f"{on.day} {on.strftime('%b')}" + ("" if on.year == TODAY.year else f" {on.year}")
 
     detail = get(client_in_program, "worker_detail", cedar.pk)
     figure = re.search(r'data-testid="stockout-figure">(.*?)</dd>', detail, re.S).group(1)
     assert text_of(figure).strip() == f"estimate from {when}"
     notes = [text_of(n).strip() for n in re.findall(r'data-testid="stockout-note">(.*?)</dd>', detail, re.S)]
-    assert notes == ["after 30 days of dispensing", "~7 a day so far"]
+    assert notes == ["after 7 days of dispensing", "~19 a day so far"]
     card = detail.split("Days to stock-out", 1)[1].split("</div>", 1)[0]
     assert "unknown" not in text_of(card)
-    assert "monthly rate means anything" not in detail
+    assert "daily rate means anything" not in detail
 
     listing = get(client_in_program, "workers")
     assert f"estimate from {when}" in text_of(listing)
-    assert "~7 a day so far" in text_of(listing)
-    assert "monthly rate means anything" not in listing
+    assert "~19 a day so far" in text_of(listing)
+    assert "daily rate means anything" not in listing
 
     network = get(client_in_program, "network")
     node = network.split(">worker-cedar<", 1)[1].split('data-testid="network-node"', 1)[0]
