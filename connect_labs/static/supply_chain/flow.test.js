@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 // The file attaches to window rather than exporting, as the page loads it.
 const here = path.dirname(fileURLToPath(import.meta.url));
 new Function(fs.readFileSync(path.join(here, 'flow.js'), 'utf8'))();
-const { layout, tiles, ordered, closeUp } = globalThis.SupplyFlow;
+const { layout, tiles, ordered, closeUp, fit } = globalThis.SupplyFlow;
 
 // Invented: 300 arrive; the store hands 150 to each of two workers in week 1;
 // in week 2 one gives 40 out and the other 30.
@@ -112,5 +112,16 @@ describe('closeUp', () => {
     const whole = layout(DATA, 2, { width: 900, height: 600 });
     const near = layout(closeUp(DATA), 2, { width: 900, height: 600 });
     expect(near.boxes.p2.h).toBeGreaterThanOrEqual(whole.boxes.p2.h);
+  });
+});
+
+describe('fit', () => {
+  it('cuts a label to its column and leaves a short one alone', () => {
+    const long = 'Order from Sahel Nutrition Works (PO-RUTF-0001)';
+    expect(fit('Central store', 200, 12)).toBe('Central store');
+    const cut = fit(long, 160, 12);
+    expect(cut.length).toBeLessThan(long.length);
+    expect(cut.endsWith('…')).toBe(true);
+    expect(long.startsWith(cut.slice(0, -1))).toBe(true);
   });
 });
