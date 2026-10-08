@@ -133,6 +133,7 @@ The `mcp/no_user_visit/` address enforces a strict set of rules to prevent real 
 - **Pointing `pipeline_preview` at another opportunity's export or at Open Chat Studio sessions.** This prevents a restricted caller from pulling in visit-level data through a pipeline preview.
 - **Generating from an old mirror-mode profile.** Profiles saved in the old mirror mode (before case timelines were introduced) hold real cases lightly perturbed, so their data never counts as "generated". Profiling with `case_timelines=true` *is* allowed: it models each worker's caseload and each case's timeline and saves only newly sampled cases, which are generated — not copies of real data. Re-profile any old mirror-mode profiles to use this safer approach.
 - **Writing synthetic data onto a real opportunity, wiping a shared demo environment, or reading or writing a profile bundle outside Drive.**
+- **Using the SQL explorer (`explorer_describe`, `explorer_query`).** These tools read live visit data and are not available on the restricted address.
 
 The restricted address offers a simpler set of synthetic tools: `synthetic_clone_opp` (plus status checking, fidelity scoring, demo environments, and visibility) rather than the full set of step-by-step tools available on the full-access address.
 
@@ -157,6 +158,35 @@ If you submit a request that is identical to one already running, Labs returns t
 
 !!! tip "If you hit a limit"
     Wait for a running job to finish before starting a new one, or spread your profiling requests across the day if you are working with a large list of opportunities.
+
+---
+
+## SQL Explorer
+
+The SQL explorer at [labs.connect.dimagi.com/labs/explorer/](https://labs.connect.dimagi.com/labs/explorer/) lets you query live visit data for the opportunities you have access to, without needing a developer to write reports.
+
+### How it works
+
+Select one or more opportunities from the list, then use the two panels on the page:
+
+- **Field browser.** Lists every question in the submitted forms for the opportunities you selected, shows how often each field is filled in, and displays the answer choices for multiple-choice questions. Use the search box to find fields quickly (for example, type "birth" to find all birth-related questions). Click any field to insert it directly into your query.
+- **SQL editor.** Write a query against the `visits` table — one row per visit — which contains the opportunity, its LLO, the worker, the case, the visit status, and the full form data. Run your query and view results as a table. Download results as a CSV file.
+
+You can also click **Ask an agent** on the page to have the AI assistant write and run queries for you based on a plain-English question (for example, "hospital vs home births by LLO").
+
+### Using the SQL explorer through MCP
+
+The same two tools are available to Claude Desktop and Claude Code through the MCP:
+
+| Tool | What it does |
+| --- | --- |
+| `explorer_describe` | Lists available fields for the selected opportunities, with fill rates and answer choices |
+| `explorer_query` | Runs a SQL query against the `visits` table and returns results |
+
+This means you can ask Claude questions like "show me hospital vs home births broken down by LLO" and it will use these tools to query your data and return an answer directly.
+
+!!! note "Access and safety"
+    The SQL explorer is read-only. It is limited to opportunities you hold, and every query is recorded in the audit trail. The explorer tools are not available on the `mcp/no_user_visit/` restricted address — they require the full `/mcp/` address.
 
 ---
 
@@ -213,29 +243,4 @@ You can build a program-scoped pipeline through MCP: create the pipeline in the 
 
 A pipeline source can be marked **on demand** using `workflow_add_pipeline_source(..., load="on_demand")`. When the run page opens, an on-demand pipeline does **not** download all of its rows to the browser. Instead, the report asks the server for only the rows it needs — filtered, searched, and paged on the server — so the browser receives a small result set rather than the full dataset.
 
-This is the right setting for any large pipeline where the page only ever shows a filtered slice of the data (for example, one question's answers searched by keyword). Without it, a large free-text answers pipeline can ship hundreds of thousands of rows to the browser on every page load.
-
-!!! tip "When to use on-demand loading"
-    Use `load="on_demand"` for any pipeline that is large and whose page always queries or filters before displaying results. Leave it off for pipelines that genuinely need all rows in the browser at once (for example, a small lookup table used for client-side joins).
-
-### Summary pipeline fixes
-
-Three correctness issues in entity-level summary pipelines have been fixed:
-
-| Issue | Before | Now |
-| --- | --- | --- |
-| **Entity filters not applied** | A pipeline with `filters` (for example "only Kebbi state" or "only answered_clean") silently counted every row. | Filters now restrict what the pipeline counts. |
-| **`first` / `last` with a filter ignored** | A field using `first` or `last` with a `filter_path` / `filter_value` returned the same value regardless of the filter. | Returns the correct value for the matching rows only. |
-| **Upper-case field names** | A field name with upper-case letters saved successfully but always read back as empty. | Upper-case letters in a field name are now rejected when the pipeline is saved, so the problem is caught immediately. |
-
-If you have an existing summary pipeline that uses filters or `first`/`last` with a filter, check its output — results may change now that the filters are actually applied.
-
-### Multiple named groupings in one pipeline
-
-A summary pipeline can now produce **several breakdowns at once** rather than one breakdown per pipeline.
-
-Previously, if you wanted totals by questionnaire, by question, by state, and by worker type — plus answer types broken down by question and state — you needed a separate pipeline for each. Now you declare all of them as named **groupings** inside a single pipeline, and Labs computes them all in one pass through the data.
-
-A grouping can also group by **several fields at the same time** — for example, question × answer type × state — instead of requiring one pipeline per state.
-
-Every row in the result includes a `row.grouping` field that says which named group
+This is the right setting for any large pipeline where the page only ever shows a filtered slice of the data
