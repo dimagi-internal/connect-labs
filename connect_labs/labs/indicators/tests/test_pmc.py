@@ -146,6 +146,8 @@ class TestThePage:
         assert "Which PMC schedule, and where?" in body
         assert "Illustrative." in body
         assert "indicators/pmc/pmc.js" in body
+        # A dose count means nothing without its population and period.
+        assert "Doses, 2 yrs" in body
 
     def test_the_data_endpoint_defaults_to_the_best_schedule(self, client_in, nigeria):
         got = client_in.get(reverse("targeting:pmc_data")).json()
