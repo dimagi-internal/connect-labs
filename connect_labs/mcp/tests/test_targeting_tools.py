@@ -369,6 +369,7 @@ class TestSchemaMatchesImplementation:
             "targeting_research",
             "targeting_research_write",
             "targeting_compare_criteria",
+            "targeting_pmc_rank",
         ],
     )
     def test_every_accepted_parameter_is_offered_by_the_schema(self, name):
@@ -1069,3 +1070,68 @@ class TestPmcLiveModel:
         ]
 
         assert best["difference_within_noise"] is True
+
+
+class TestPmcRank:
+    """targeting_pmc_rank on the fixture grid (the real grid is computed by a batch, later)."""
+
+    @pytest.fixture(autouse=True)
+    def _grid(self, settings):
+        from connect_labs.labs.indicators.tests.test_emod_rank import FIXTURE
+
+        settings.PMC_STATE_GRID_PATH = str(FIXTURE)
+
+    def test_it_ranks_the_selection_and_opens_the_explorer_on_it(self):
+        got = targeting.targeting_pmc_rank(None, states=["Kano (NGA)", "ondo", "Lagos"])
+
+        assert got["available"] is True
+        assert [r["rank"] for r in got["ranked"]] == [1, 2, 3, 4, 5]
+        assert got["ranked"][0]["state"] == "Kano"
+        assert got["label"] == "illustrative \u00b7 fitted to each state's prevalence and rainfall"
+        assert [e["state"] for e in got["excluded"]] == ["Lagos"]
+        assert "states=Kano%2COndo%2CLagos" in got["explorer_path"]
+
+    def test_smc_rows_only_for_states_with_smc_in_the_grid(self):
+        got = targeting.targeting_pmc_rank(None, states=["Kano", "Ondo"])
+
+        smc = [r for r in got["ranked"] if r["kind"] == "smc"]
+        assert [r["state"] for r in smc] == ["Kano"]
+        assert "(SPAQ)" in smc[0]["design_label"]
+
+    def test_the_visitors_costs_reprice_it_and_reach_the_link(self):
+        got = targeting.targeting_pmc_rank(None, states=["Kano"], cost_per_visit=0.4)
+
+        assert got["costs"]["cost_per_visit"] == 0.4
+        assert "cost_per_visit=0.4" in got["explorer_path"]
+        assert "$0.40 a visit" in got["costs_line"]
+
+    def test_impossible_costs_are_a_bad_request(self):
+        with pytest.raises(MCPToolError) as err:
+            targeting.targeting_pmc_rank(None, states=["Kano"], dose_rate=0)
+        assert err.value.code == "BAD_REQUEST"
+
+    def test_top_n_is_capped_at_fifty(self):
+        assert targeting.targeting_pmc_rank(None, top_n=500)["top_n"] == 50
+
+    def test_a_missing_grid_is_a_graceful_answer(self, settings, tmp_path):
+        settings.PMC_STATE_GRID_PATH = str(tmp_path / "absent.json")
+
+        got = targeting.targeting_pmc_rank(None, states=["Kano"])
+
+        assert got["available"] is False
+        assert "not available yet" in got["message"]
+        assert "targeting_pmc_schedules" in got["message"]
+
+    def test_the_description_routes_and_shapes_the_answer(self):
+        from connect_labs.labs import canopy
+        from connect_labs.mcp.tool_registry import get_tool
+
+        rank = get_tool("targeting_pmc_rank").description
+        assert "filters.selected_areas" in rank and "targeting_select" in rank and "explorer_path" in rank
+        assert "most cost-effective state and design" in rank and "which design where" in rank
+        assert "targeting_pmc_run_model" in rank and "targeting_pmc_schedules" in rank
+        assert "AT MOST three columns" in rank and "~400px" in rank
+        assert "illustrative \u00b7 fitted to each state's prevalence and rainfall" in rank
+        assert "never call it calibrated" in rank
+        assert "targeting_pmc_rank" in get_tool("targeting_pmc_schedules").description
+        assert "targeting_pmc_rank" in canopy.SCOPE_TOOLS["targeting:read"]
