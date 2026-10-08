@@ -211,12 +211,12 @@ def _execute_ocs_outreach(ctx: WorkerContext) -> None:
         experiment=ctx.arguments["bot"],
         prompt_text=prompt_text,
         start_new_session=True,
-        coach_image=_image_for(ctx.arguments, prompt_text),
+        coach_image=_image_for(ctx.arguments, prompt_text, ctx.opportunity_id),
     )
     ctx.record["session_id"] = started.get("session_id")
 
 
-def _image_for(arguments: dict, prompt: str | None) -> dict | None:
+def _image_for(arguments: dict, prompt: str | None, opportunity_id: int | None = None) -> dict | None:
     """The picture to attach to one worker's conversation: ``{"url", "caption"}`` when
     the action asked for pictures and the worker's text is a Labs briefing, else None.
     Drawn from the briefing text itself, so it shows exactly the topics the coach is
@@ -225,7 +225,7 @@ def _image_for(arguments: dict, prompt: str | None) -> dict | None:
 
     if not arguments.get(INCLUDE_IMAGE):
         return None
-    return coach_image.attachment(prompt or "")
+    return coach_image.attachment(prompt or "", opportunity_id)
 
 
 ACTION_TYPES: dict[str, ActionType] = {
@@ -676,7 +676,7 @@ def preview(user, *, wda, run, definition, key: str, arguments: Any, request=Non
                     # What the worker actually receives first (the briefing itself goes
                     # into the session state, never to the worker -- tasks/ai_sessions.py).
                     row["opening"] = coach_briefing.opening_message(row["prompt"])
-                image = _image_for(args, row["prompt"])
+                image = _image_for(args, row["prompt"], who["opportunity_id"])
                 if image is not None:
                     # Shown before confirming, so the person knows a picture goes too.
                     row["image"] = image
