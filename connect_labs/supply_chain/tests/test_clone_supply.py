@@ -243,3 +243,21 @@ def test_the_clones_stock_arrives_on_an_order_from_a_tender(clone):
     item = Item.objects.get(scope_key=f"prog:{opp}", sku=clone_supply.SKU)
     sources = [n["name"] for n in flow(opp, item, on_date=TODAY)["nodes"] if n["kind"] == "source"]
     assert sources == ["Order from Sahel Nutrition Works (PO-RUTF-0001)"]
+
+
+def test_the_complete_quotes_can_be_landed(clone):
+    """A first-use review found every quote reading 'needs freight' / 'duty exemption, ours to attach'.
+
+    CPT means the supplier pays carriage (freight included), and the programme's duty exemption is
+    on file, so the complete quotes carry no freight or duty gap.
+    """
+    from connect_labs.supply_chain.models import Document, Quote
+    from connect_labs.supply_chain.procurement.services.pricing import basis_gaps
+
+    opp = clone["opp"]
+    with patch(FETCH, return_value=clone["world"].visits):
+        clone_supply.seed(program_id=opp, opportunity_id=opp, today=TODAY)
+
+    assert Document.objects.filter(program_id=opp, kind="duty_exemption").exists()
+    cpt = Quote.objects.filter(tender__program_id=opp, incoterm="CPT Maiduguri")
+    assert cpt.count() == 2 and all(basis_gaps(q) == [] for q in cpt)
