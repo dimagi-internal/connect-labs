@@ -135,15 +135,23 @@ def fit_for(prevalence: float | None) -> str:
     return "near" if abs(prevalence - modelled) <= FIT_TOLERANCE_PTS else "outside"
 
 
+def approx(n: float, figures: int = 2) -> int:
+    """Round to significant figures. A projection from an uncalibrated model quoted to
+    the unit (332,465 cases) reads as a measurement; 330,000 reads as what it is."""
+    if not n:
+        return 0
+    return int(float(f"{n:.{figures}g}"))
+
+
 def project(children: float | None, schedule: dict, per_dose: float) -> dict | None:
     """One year of a schedule in a population of this size, IF it behaved like the modelled setting."""
     if not children:
         return None
     doses = children * schedule["doses_per_child_per_year"]
     return {
-        "cases_averted_per_year": round(children * schedule["cases_averted_per_1000_children_per_year"] / 1000),
-        "doses_per_year": round(doses),
-        "spend_per_year": round(doses * per_dose),
+        "cases_averted_per_year": approx(children * schedule["cases_averted_per_1000_children_per_year"] / 1000),
+        "doses_per_year": approx(doses),
+        "spend_per_year": approx(doses * per_dose),
     }
 
 

@@ -211,6 +211,47 @@
       return s.code === data.schedule;
     })[0];
     el('pmc-chosen').textContent = chosen ? chosen.label : '';
+    renderTakeaway();
+  }
+
+  // The answer in one sentence, built from the numbers on screen, so a reader who
+  // has never seen the page does not have to decode the bars to get it.
+  function renderTakeaway() {
+    var costed = data.schedules
+      .filter(function (s) {
+        return s.cost_per_case_averted !== null;
+      })
+      .sort(function (a, b) {
+        return a.cost_per_case_averted - b.cost_per_case_averted;
+      });
+    if (!costed.length) {
+      el('pmc-takeaway').textContent = '';
+      return;
+    }
+    var best = costed[0];
+    var most = data.schedules.reduce(function (m, s) {
+      return s.averted_pct > m.averted_pct ? s : m;
+    });
+    var html =
+      'In this modelled setting, <b>' +
+      esc(best.label) +
+      '</b> is the best value: it averts ' +
+      pct(best.averted_pct) +
+      ' of cases in children 3–24 months, at ' +
+      usd(best.cost_per_case_averted, 2) +
+      ' per case averted' +
+      (most.code === best.code ? ', and the most cases of any schedule.' : '.');
+    if (costed[1]) {
+      html +=
+        ' The next best value, ' +
+        esc(costed[1].label) +
+        ', averts ' +
+        pct(costed[1].averted_pct) +
+        ' at ' +
+        usd(costed[1].cost_per_case_averted, 2) +
+        '.';
+    }
+    el('pmc-takeaway').innerHTML = html;
   }
 
   function renderStates() {
