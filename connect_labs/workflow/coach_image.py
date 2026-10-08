@@ -31,10 +31,11 @@ from connect_labs.workflow import coach_briefing
 SALT = "coach-image"
 MAX_AGE = timedelta(days=7)
 
-#: The picture's width and its minimum height (portrait). More topics than fit make
-#: it taller, never more cramped.
+#: The picture's width. Its height follows the content -- a phone shows the card in a
+#: chat bubble about 930 px wide, so empty space below the last topic only shrinks
+#: the type -- with a floor so a single topic is not a sliver.
 WIDTH = 1080
-MIN_HEIGHT = 1350
+MIN_HEIGHT = 480
 
 BAND_COLOURS = {
     "red": (214, 69, 69),
@@ -48,17 +49,23 @@ MUTED = (96, 108, 118)
 TRACK = (234, 236, 240)
 WHITE = (255, 255, 255)
 
+# Sizes chosen for a phone, where the card is shown at about 0.85x.
 _MARGIN = 80
 _TITLE_SIZE = 72
-_NAME_SIZE = 44
-_LABEL_SIZE = 40
-_FIGURE_SIZE = 38
-_LABEL_LINE = 48
-_GAP = 14
-_FIGURE_LINE = 44
-_BLOCK_GAP = 28
-_BAR_HEIGHT = 52
+_TITLE_LINE = 88
+_NAME_SIZE = 40
+_NAME_LINE = 52
+_HEADER_GAP = 56
+_LABEL_SIZE = 44
+_LABEL_LINE = 56
+_FIGURE_SIZE = 44
+_FIGURE_LINE = 58
+_BAR_GAP = 24
+_BAR_HEIGHT = 44
+_BLOCK_GAP = 44
 _MAX_LABEL_LINES = 3
+#: A stroke in the text's own colour: the bundled font has no bold weight.
+_BOLD_STROKE = 1
 
 
 class BadImageLink(Exception):
@@ -198,41 +205,47 @@ def _wrap(text: str, font, width: int, max_lines: int) -> list[str]:
 def _figure_text(topic: dict) -> str:
     if "numerator" in topic and "denominator" in topic:
         text = f"{topic['numerator']} of {topic['denominator']}"
-        return text + (f" ({topic['pct']}%)" if topic.get("pct") is not None else "")
+        return text + (f" · {topic['pct']}%" if topic.get("pct") is not None else "")
     return str(topic.get("figure") or "")
 
 
+def _layout(payload: dict, label_font) -> tuple[list, int]:
+    """Each topic's wrapped label and whether it has a bar, and the card's height:
+    padding + title block + the topic blocks + padding, never under ``MIN_HEIGHT``."""
+    inner = WIDTH - 2 * _MARGIN
+    blocks = []
+    for topic in payload.get("topics") or []:
+        label_lines = _wrap(str(topic.get("label") or ""), label_font, inner, _MAX_LABEL_LINES)
+        has_bar = "numerator" in topic and "denominator" in topic
+        height = len(label_lines) * _LABEL_LINE + _FIGURE_LINE + (_BAR_GAP + _BAR_HEIGHT if has_bar else 0)
+        blocks.append((topic, label_lines, has_bar, height))
+    header = _MARGIN + _TITLE_LINE + (_NAME_LINE if coach_briefing.first_name(payload.get("worker")) else 0)
+    body = sum(b[3] for b in blocks) + _BLOCK_GAP * max(len(blocks) - 1, 0)
+    return blocks, max(MIN_HEIGHT, header + _HEADER_GAP + body + _MARGIN)
+
+
 def render_png(payload: dict) -> bytes:
-    """The picture: a title, then one block per topic -- its label, a bar of
-    numerator over denominator in the band's colour (grey when the band is unknown),
-    and the figure in words. Deterministic: the same payload draws the same bytes."""
+    """The picture: a title, then one block per topic -- its label, the figure in
+    bold directly under it, and a bar of numerator over denominator in the band's
+    colour (grey when the band is unknown). The card is as tall as its content.
+    Deterministic: the same payload draws the same bytes."""
     from PIL import Image, ImageDraw
 
     title_font, name_font = _font(_TITLE_SIZE), _font(_NAME_SIZE)
     label_font, figure_font = _font(_LABEL_SIZE), _font(_FIGURE_SIZE)
     inner = WIDTH - 2 * _MARGIN
-
-    blocks = []
-    for topic in payload.get("topics") or []:
-        label_lines = _wrap(str(topic.get("label") or ""), label_font, inner, _MAX_LABEL_LINES)
-        has_bar = "numerator" in topic and "denominator" in topic
-        height = (
-            len(label_lines) * _LABEL_LINE + _GAP + (_BAR_HEIGHT + _GAP if has_bar else 0) + _FIGURE_LINE + _BLOCK_GAP
-        )
-        blocks.append((topic, label_lines, has_bar, height))
-
-    header = _MARGIN + _TITLE_SIZE + 24 + _NAME_SIZE + 48
-    height = max(MIN_HEIGHT, header + sum(b[3] for b in blocks) + _MARGIN)
+    blocks, height = _layout(payload, label_font)
     image = Image.new("RGB", (WIDTH, height), WHITE)
     draw = ImageDraw.Draw(image)
 
     y = _MARGIN
-    draw.text((_MARGIN, y), "Your figures", font=title_font, fill=INK)
-    y += _TITLE_SIZE + 24
+    draw.text((_MARGIN, y), "Your figures", font=title_font, fill=INK, stroke_width=_BOLD_STROKE, stroke_fill=INK)
+    y += _TITLE_LINE
     first = coach_briefing.first_name(payload.get("worker"))
     if first:
         draw.text((_MARGIN, y), first, font=name_font, fill=MUTED)
-    y = header
+        y += _NAME_LINE
+    y += _HEADER_GAP
 
     for topic, label_lines, has_bar, block_height in blocks:
         top = y
@@ -240,10 +253,13 @@ def render_png(payload: dict) -> bytes:
         for line in label_lines:
             draw.text((_MARGIN, y), line, font=label_font, fill=INK)
             y += _LABEL_LINE
-        y += _GAP
+        draw.text(
+            (_MARGIN, y), _figure_text(topic), font=figure_font, fill=INK, stroke_width=_BOLD_STROKE, stroke_fill=INK
+        )
+        y += _FIGURE_LINE
         if has_bar:
-            box = (_MARGIN, y, _MARGIN + inner, y + _BAR_HEIGHT)
-            draw.rounded_rectangle(box, radius=_BAR_HEIGHT // 2, fill=TRACK)
+            y += _BAR_GAP
+            draw.rounded_rectangle((_MARGIN, y, _MARGIN + inner, y + _BAR_HEIGHT), radius=_BAR_HEIGHT // 2, fill=TRACK)
             num, den = topic["numerator"], topic["denominator"]
             share = min(max(num / den, 0.0), 1.0) if den else 0.0
             filled = int(round(inner * share))
@@ -253,9 +269,7 @@ def render_png(payload: dict) -> bytes:
                 draw.rounded_rectangle(
                     (_MARGIN, y, _MARGIN + filled, y + _BAR_HEIGHT), radius=_BAR_HEIGHT // 2, fill=colour
                 )
-            y += _BAR_HEIGHT + _GAP
-        draw.text((_MARGIN, y), _figure_text(topic), font=figure_font, fill=INK)
-        y = top + block_height
+        y = top + block_height + _BLOCK_GAP
 
     out = io.BytesIO()
     image.save(out, format="PNG", optimize=True)
