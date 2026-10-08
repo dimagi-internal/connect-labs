@@ -165,6 +165,36 @@ Click any worker to open a day-by-day view of their stock movements and counts.
 **The stores behind them**
 Stock held in the stores that supply the workers, shown in sachets with cartons alongside.
 
+### IPTsc School Delivery Dashboard
+
+The **IPTsc School Delivery Dashboard** includes an **Authenticity** tab and a **Duplicates** tab for identifying possible duplicate child registrations.
+
+#### Duplicate checks on the Authenticity tab
+
+Three checks run automatically against the registrations in the dashboard:
+
+| Check | What is matched | Raises a flag on the field worker? |
+|---|---|---|
+| Same name, same school | Name only | No — shown for information only, because common names make this check loose |
+| Same name, same age, same school | Name and age | Yes |
+| Same name, same age, same caregiver phone, same school | Name, age, and caregiver phone | Yes |
+
+Each check shows a count of flagged registrations, with the number of **unique** suspected children in brackets — for example, **6 (3 unique)**. Children who are missing a matched attribute (age, or caregiver phone for the third check) are not compared on that check. Caregiver phone numbers are matched with or without the +234 country prefix.
+
+Clicking any check on the Authenticity tab takes you straight to that check's review in the Duplicates tab.
+
+#### The Duplicates tab
+
+Select which check to review using the picker at the top of the tab. Each suspected child appears as one row. Every registration that matches that child is shown side by side, with:
+
+- The consent photo (click to open full size)
+- Name, school, age and sex, and caregiver phone
+- Who registered the child and when
+- An **Open visit in Connect** link to the registration visit
+- The child's visit timeline
+
+Rows where more than one field worker submitted a matching registration are clearly marked.
+
 ---
 
 ## Indicator Registries
@@ -203,12 +233,4 @@ The generic indicator reports — the programme report, the opportunity/partner 
 
 **Readable text throughout.** All text that was previously too light to read comfortably — secondary labels, footnotes, chart axis labels, and sort arrows — now uses sufficient contrast to meet accessibility standards.
 
-**Colour-coded status labels explain themselves.** Hovering over a **Watch** or **Off target** badge in any legend, scorecard, or worker review now shows the rule behind the colour — for example, "Meeting regularity 60%–80% (target ≥ 80%)". You no longer need to remember or look up what each threshold means.
-
-**Columns that repeated one value on every row are removed.** If every worker in a table has the same caseload size, the same visit status, or the same benchmark coverage, that value is stated once in a heading or caption rather than filling an entire column with identical text.
-
-**Worker review improvements.** The visit reading chart fills its card fully, shows a date label under each visit, starts from zero, and shades each gap between visits individually — including the gap's length. Status flags appear as clearly labelled pills with an explanation. When peer medians across indicators are identical, they are merged into a single column. The review also distinguishes clearly between "no target set", "no eligible cases", and "no data available" — previously these could appear identical.
-
-**Programme report drill-down improvements.** When you drill into a single partner or opportunity, a caption names it, shows its size, and identifies which indicator it is flagged on. That indicator's trend chart displays at full width with its data points labelled. Headline tiles for indicators that have no target say "no target" explicitly rather than leaving the tile blank or ambiguous.
-
-**Opportunity report — Benchmarks tab improvements.** Bar charts are drawn on a true zero-based scale with a clearly labelled dashed line at the target value. Your own organisation is shown in a distinct colour with its status as a pill. A **See workers →** shortcut link opens the worker list sorted worst-first. Indicators that have no better-or-worse direction (for example
+**Colour-coded status labels explain themselves.** Hovering over a **Watch**
