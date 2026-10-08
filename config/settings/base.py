@@ -707,15 +707,17 @@ CANOPY_HOST = "connect_labs.labs.canopy.host_settings"
 # S3 bucket for the immutable long-term archive (Object Lock, 6-year
 # retention). When None, the nightly archive task is a no-op.
 AUDIT_TRAIL_ARCHIVE_BUCKET = env("AUDIT_TRAIL_ARCHIVE_BUCKET", default=None)
+# Days audit events stay hot in Postgres before the prune task removes rows
+# whose day has a verified S3 archive object.
+AUDIT_TRAIL_HOT_RETENTION_DAYS = env.int("AUDIT_TRAIL_HOT_RETENTION_DAYS", default=400)
 
-# On-demand EMOD worker for live PMC scenario runs (connect_labs.labs.indicators.emod).
+# On-demand EMOD worker
+# ------------------------------------------------------------------------------
+# For live PMC scenario runs (connect_labs.labs.indicators.emod).
 # All three are unset locally; the runner refuses to execute without them.
 LABS_EMOD_INSTANCE_ID = env("LABS_EMOD_INSTANCE_ID", default=None)
 LABS_EMOD_BUCKET = env("LABS_EMOD_BUCKET", default=None)
 LABS_EMOD_REGION = env("LABS_EMOD_REGION", default=None)
-# Days audit events stay hot in Postgres before the prune task removes rows
-# whose day has a verified S3 archive object.
-AUDIT_TRAIL_HOT_RETENTION_DAYS = env.int("AUDIT_TRAIL_HOT_RETENTION_DAYS", default=400)
 
 # Prior-audit projection: may a STALE projection be served while its full rebuild
 # runs on a worker, instead of the reader rebuilding it inline?

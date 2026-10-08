@@ -12,9 +12,12 @@ import copy
 import hashlib
 import json
 import logging
+import shlex
 import time
+from datetime import timedelta
 
 from django.conf import settings
+from django.db.models import Q
 from django.utils import timezone
 
 from connect_labs.labs.indicators import pmc
@@ -47,7 +50,8 @@ WORKER_SCRIPT = "/opt/emod/run_scenarios.py"
 
 BOOT_TIMEOUT_S = 600
 READY_TIMEOUT_S = 900
-RUN_TIMEOUT_S = 1800
+# Longer than the worker's own 1800 s cap, so the worker reports its own timeout first.
+RUN_TIMEOUT_S = 2400
 
 FIT_REASONS = {
     "more_seasonal": "more seasonal than the modelled setting: SMC, not PMC",
@@ -116,26 +120,55 @@ def default_instance():
     return OnDemandInstance(instance_id, region, "emod")
 
 
+def default_bucket() -> str:
+    bucket = getattr(settings, "LABS_EMOD_BUCKET", None)
+    if not bucket:
+        raise RuntimeError("LABS_EMOD_BUCKET must be set to run EMOD")
+    return bucket
+
+
 def default_s3():
     import boto3
 
     return boto3.client("s3", region_name=getattr(settings, "LABS_EMOD_REGION", None))
 
 
-def execute(run: PmcModelRun, instance, bucket: str, s3=None) -> None:
+def _claim(run: PmcModelRun, reclaim_stale_after_s: float | None) -> bool:
+    """Atomically move the row to running. False when another worker owns it."""
+    now = timezone.now()
+    claimable = ~Q(status=PmcModelRun.RUNNING)
+    if reclaim_stale_after_s is not None:
+        claimable |= Q(updated_at__lt=now - timedelta(seconds=reclaim_stale_after_s))
+    claimed = (
+        PmcModelRun.objects.filter(pk=run.pk)
+        .filter(claimable)
+        .update(status=PmcModelRun.RUNNING, error="", result=None, completed_at=None, updated_at=now)
+    )
+    if claimed:
+        run.refresh_from_db()
+    return bool(claimed)
+
+
+def execute(run: PmcModelRun, instance, bucket: str, s3=None, reclaim_stale_after_s: float | None = None) -> None:
     """Run ``run.request`` on the worker and store the outcome on ``run``.
 
-    Never raises for a failed run: the failure is recorded on the row (status ``failed`` with
-    the message) so a Celery task can finish cleanly and the caller can read it.
+    The row is claimed atomically first: a run another worker holds (status ``running``) is left
+    alone and this returns at once, unless ``reclaim_stale_after_s`` is given and the row has not
+    been touched for that long (its worker died). A failed run can be re-executed.
+
+    A failed run does not raise: the failure is recorded on the row (status ``failed`` with the
+    message) so a Celery task can finish cleanly and the caller can read it.
     """
     from canopy_sdk.ondemand import OnDemandError
 
+    if not bucket:
+        raise RuntimeError("LABS_EMOD_BUCKET must be set to run EMOD")
+    if not _claim(run, reclaim_stale_after_s):
+        logger.info("EMOD run %s is already running; leaving it", run.inputs_hash[:12])
+        return
     s3 = s3 or default_s3()
     key = run.inputs_hash
     request_key, result_key = f"requests/{key}.json", f"results/{key}.json"
-    run.status = PmcModelRun.RUNNING
-    run.error = ""
-    run.save(update_fields=["status", "error"])
     timings: dict[str, float] = {}
     started = time.monotonic()
     try:
@@ -151,7 +184,8 @@ def execute(run: PmcModelRun, instance, bucket: str, s3=None) -> None:
         t = time.monotonic()
         command = (
             f"{WORKER_PYTHON} {WORKER_SCRIPT} "
-            f"--request s3://{bucket}/{request_key} --out s3://{bucket}/{result_key}"
+            f"--request {shlex.quote(f's3://{bucket}/{request_key}')} "
+            f"--out {shlex.quote(f's3://{bucket}/{result_key}')}"
         )
         res = instance.run(
             [command],

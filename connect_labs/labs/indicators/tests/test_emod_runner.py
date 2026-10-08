@@ -6,10 +6,12 @@ import importlib.util
 import json
 import pathlib
 import sys
+from datetime import timedelta
 from unittest.mock import MagicMock
 
 import pytest
 from canopy_sdk.ondemand import InstanceGone, OnDemandError
+from django.utils import timezone
 
 from connect_labs.labs.indicators.emod import runner
 from connect_labs.labs.indicators.models import PmcModelRun
@@ -216,3 +218,71 @@ class TestExecute:
         runner.execute(run, inst, "bkt", s3=s3)
         run.refresh_from_db()
         assert run.status == "failed" and run.error
+
+
+@pytest.mark.django_db
+class TestRetryAndConcurrency:
+    def test_a_failed_run_can_be_re_executed_to_completion(self):
+        s3, run = FakeS3(), _run()
+        runner.execute(run, FakeInstance(s3, "bkt", ensure_error=InstanceGone("gone")), "bkt", s3=s3)
+        run.refresh_from_db()
+        assert run.status == "failed" and run.error
+        runner.execute(run, FakeInstance(s3, "bkt"), "bkt", s3=s3)
+        run.refresh_from_db()
+        assert run.status == "completed" and run.error == ""
+        assert run.result["runs"] and run.completed_at is not None
+
+    def test_a_second_execute_on_a_running_row_is_a_no_op(self):
+        s3, run = FakeS3(), _run()
+        PmcModelRun.objects.filter(pk=run.pk).update(status="running")
+        inst = FakeInstance(s3, "bkt")
+        runner.execute(run, inst, "bkt", s3=s3)
+        assert inst.calls == [] and s3.objects == {}
+        run.refresh_from_db()
+        assert run.status == "running"
+
+    def test_a_fresh_running_row_is_not_reclaimed_even_when_allowed(self):
+        s3, run = FakeS3(), _run()
+        PmcModelRun.objects.filter(pk=run.pk).update(status="running")
+        inst = FakeInstance(s3, "bkt")
+        runner.execute(run, inst, "bkt", s3=s3, reclaim_stale_after_s=3600)
+        assert inst.calls == []
+
+    def test_a_stale_running_row_is_reclaimed_when_asked(self):
+        s3, run = FakeS3(), _run()
+        old = timezone.now() - timedelta(hours=2)
+        PmcModelRun.objects.filter(pk=run.pk).update(status="running", updated_at=old)
+        runner.execute(run, FakeInstance(s3, "bkt"), "bkt", s3=s3, reclaim_stale_after_s=3600)
+        run.refresh_from_db()
+        assert run.status == "completed"
+
+    def test_a_stale_running_row_is_left_alone_without_the_option(self):
+        s3, run = FakeS3(), _run()
+        old = timezone.now() - timedelta(hours=2)
+        PmcModelRun.objects.filter(pk=run.pk).update(status="running", updated_at=old)
+        inst = FakeInstance(s3, "bkt")
+        runner.execute(run, inst, "bkt", s3=s3)
+        assert inst.calls == []
+
+
+@pytest.mark.django_db
+class TestConfiguration:
+    def test_a_missing_bucket_is_a_clear_configuration_error(self):
+        with pytest.raises(RuntimeError, match="LABS_EMOD_BUCKET"):
+            runner.execute(_run(), FakeInstance(FakeS3(), ""), "", s3=FakeS3())
+
+    def test_default_bucket_names_the_missing_setting(self, settings):
+        settings.LABS_EMOD_BUCKET = None
+        with pytest.raises(RuntimeError, match="LABS_EMOD_BUCKET"):
+            runner.default_bucket()
+
+    def test_the_s3_uris_are_shell_quoted(self):
+        s3, run = FakeS3(), _run()
+        inst = FakeInstance(s3, "bkt")
+        runner.execute(run, inst, "bkt", s3=s3)
+        assert runner.RUN_TIMEOUT_S == 2400 and inst.calls[1][2] == 2400
+        s3b = FakeS3()
+        weird = FakeInstance(s3b, "b k t")
+        run2 = PmcModelRun.objects.create(inputs_hash="x" * 64, request={})
+        runner.execute(run2, weird, "b k t", s3=s3b)
+        assert "'s3://b k t/requests/" in weird.calls[1][1][0]
