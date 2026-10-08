@@ -325,3 +325,19 @@ class TestTheRunControl:
         assert got["result"]["projection"]["cost_per_case_averted"] > 0
         # Without a state it is the plain status, as before.
         assert client_in.get(url).json()["result"] == {"runs": runs}
+
+    def test_the_run_endpoint_accepts_the_token_the_page_renders(self, django_user_model, client_in):
+        import re
+
+        from django.test import Client
+
+        strict = Client(enforce_csrf_checks=True)
+        strict.force_login(django_user_model.objects.get(username="pm3"))
+        body = strict.get(reverse("targeting:pmc")).content.decode()
+        token = re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"', body).group(1)
+        url = reverse("targeting:pmc_run")
+        payload = {"state": "Ondo", "schedule": self.SPEC}
+
+        assert strict.post(url, payload, content_type="application/json").status_code == 403
+        ok = strict.post(url, payload, content_type="application/json", headers={"X-CSRFToken": token})
+        assert ok.status_code == 202
