@@ -36,12 +36,20 @@ class TestHabitat:
         rain = [0.0] * 12
         rain[4] = 300.0  # May only
         times, values = states.habitat_curve(rain)
-        assert times[:2] == [15, 46] and len(times) == len(values) == 12
+        assert times[:3] == [0, 15, 46] and times[-1] == 365 and len(times) == len(values) == 14
         assert all(a < b for a, b in zip(times, times[1:]))
-        assert values.index(max(values)) == 5  # June: one month after the May rain
+        assert values.index(max(values)) == 6  # June (index 6 after the day-0 knot): one month after the May rain
         assert max(values) == 1.0
         assert min(values) == 0.1  # dry months floored, not zero
-        assert values[4] == 0.1  # May itself carries April's (zero) rain
+        assert values[5] == 0.1  # May itself carries April's (zero) rain
+
+    def test_curve_is_periodic(self):
+        times, values = states.habitat_curve(_rain(9))
+        assert times[0] == 0 and times[-1] == 365
+        assert all(a < b for a, b in zip(times, times[1:]))
+        assert values[0] == values[-1]
+        dec, jan = values[-2], values[1]
+        assert min(dec, jan) <= values[0] <= max(dec, jan)
 
     def test_all_dry_year_is_a_flat_floor(self):
         _, values = states.habitat_curve([0.0] * 12)
@@ -121,6 +129,15 @@ class TestStateInputs:
         assert "rain_peak_month" in reasons["Kano"]
         assert "monthly_mm" in reasons["Lagos"]
 
+    def test_inherited_rain_is_skipped(self):
+        country = make_boundary("NGA", 0, "Nigeria", "NGA-0", x=0)
+        row = set_value(country, "rain_peak_month", 9.0)
+        IndicatorValue.objects.filter(pk=row.pk).update(extra={"monthly_mm": _rain(9)})
+        _state("Ondo", "NGA-1-28", 2, rain=None)
+        out, skipped = states.state_inputs(None)
+        assert out == []
+        assert "inherited" in skipped[0]["reason"]
+
     def test_names_filter_and_unknown_name(self):
         make_boundary("NGA", 0, "Nigeria", "NGA-0", x=0)
         _state("Ondo", "NGA-1-28", 2, rain=_rain(9))
@@ -142,5 +159,6 @@ def test_command_writes_the_inputs_file(tmp_path):
     out = tmp_path / "inputs.json"
     call_command("export_pmc_state_inputs", out=str(out))
     doc = json.loads(out.read_text())
+    assert "generated" not in doc
     assert [s["name"] for s in doc["states"]] == ["Ondo"]
     assert doc["skipped"][0]["name"] == "Kano"
