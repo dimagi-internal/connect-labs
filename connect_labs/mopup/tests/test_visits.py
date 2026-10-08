@@ -98,10 +98,9 @@ class TestListVisits:
         }
 
     def test_pull_is_not_filtered_to_approved_and_carries_each_visits_status(self):
-        # NCF counts at any review status, so the pull itself must not drop
-        # unapproved visits -- the approved-only rule for HSD is
-        # applied per form in aggregate_visits_by_wa. A rejected NCF row has
-        # to come through with its real status attached.
+        # Which statuses count is decided per form in aggregate_visits_by_wa,
+        # so the pull itself must not drop unapproved visits. A rejected NCF
+        # row has to come through with its real status attached.
         rows = [
             _FakeRow("v1", status="rejected", form_name="No Children Found", wa_case_id="wa-1"),
             _FakeRow("v2", status="pending", form_name="Health Service Delivery", wa_case_id="wa-2"),
@@ -167,49 +166,55 @@ class TestAggregateVisitsByWa:
         agg = aggregate_visits_by_wa(visits)
         assert {wa: agg[wa]["approved_ncf_count"] for wa in agg} == {"wa-1": 1, "wa-2": 1, "wa-3": 1, "wa-4": 1}
 
-    def test_hsd_still_needs_approval(self):
+    def test_hsd_counts_at_every_status_except_duplicate_and_trial(self):
+        # Product call (colleague review): a rejected HSD visit still means the
+        # FLW went to the work area, so it must count -- otherwise an area
+        # whose visits were all rejected looks untouched and is skipped by
+        # every indicator.
         visits = [
+            {"wa_case_id": "wa-1", "form_name": "Health Service Delivery", "status": s, "deworming_given": True}
+            for s in ("approved", "rejected", "pending", "over_limit")
+        ] + [
             {
                 "wa_case_id": "wa-1",
                 "form_name": "Health Service Delivery",
-                "status": "approved",
-                "deworming_given": True,
+                "status": "duplicate",
+                "muac_recorded": True,
             },
-            {
-                "wa_case_id": "wa-1",
-                "form_name": "Health Service Delivery",
-                "status": "rejected",
-                "deworming_given": True,
-            },
-            {"wa_case_id": "wa-1", "form_name": "Health Service Delivery", "status": "pending", "muac_recorded": True},
+            {"wa_case_id": "wa-1", "form_name": "Health Service Delivery", "status": "trial", "muac_recorded": True},
             {"wa_case_id": "wa-2", "form_name": "Health Service Delivery", "status": "rejected"},
+            {"wa_case_id": "wa-3", "form_name": "Health Service Delivery", "status": "duplicate"},
         ]
         agg = aggregate_visits_by_wa(visits)
-        # Only the one approved HSD visit counts, along with its own DQ fields.
-        assert agg["wa-1"]["approved_hsd_count"] == 1
-        assert agg["wa-1"]["deworming_given"] == 1
+        # The four real submissions count, with their own DQ fields; the
+        # duplicate and the trial visit contribute nothing (not even their muac).
+        assert agg["wa-1"]["approved_hsd_count"] == 4
+        assert agg["wa-1"]["deworming_given"] == 4
         assert agg["wa-1"]["muac_given"] == 0
-        # A WA whose only visit is an unapproved HSD never enters the
-        # aggregate at all (build_evaluation_rows zero-fills it).
-        assert "wa-2" not in agg
+        # A WA whose only visit is rejected is now visible to the indicators...
+        assert agg["wa-2"]["approved_hsd_count"] == 1
+        # ...but one whose only visit is a duplicate never enters the aggregate.
+        assert "wa-3" not in agg
 
-    def test_unapproved_non_ncf_visit_does_not_set_the_submitter_but_an_unapproved_ncf_does(self):
+    def test_a_rejected_visit_sets_the_submitter_but_an_uncounted_one_does_not(self):
         visits = [
             {"wa_case_id": "wa-1", "form_name": "Health Service Delivery", "status": "rejected", "username": "flw-x"},
             {"wa_case_id": "wa-2", "form_name": "No Children Found", "status": "rejected", "username": "flw-y"},
+            {"wa_case_id": "wa-3", "form_name": "Health Service Delivery", "status": "trial", "username": "flw-z"},
         ]
         agg = aggregate_visits_by_wa(visits)
-        assert "wa-1" not in agg
+        assert agg["wa-1"]["flw_username"] == "flw-x"
         assert agg["wa-2"]["flw_username"] == "flw-y"
+        assert "wa-3" not in agg
 
     def test_a_visit_with_no_status_key_is_treated_as_approved(self):
         # Hand-built dicts (never from list_visits, which always sets one).
         agg = aggregate_visits_by_wa([{"wa_case_id": "wa-1", "form_name": "Health Service Delivery"}])
         assert agg["wa-1"]["approved_hsd_count"] == 1
 
-    def test_a_blank_status_is_not_approved(self):
-        # list_visits reports a missing status as "" -- that must not pass the
-        # approved-only rule for HSD, though NCF still counts.
+    def test_a_blank_status_is_unknown_so_it_does_not_count_for_hsd(self):
+        # list_visits reports a missing status as "" -- an unknown status is not
+        # one of the counted HSD statuses, though NCF counts at any status.
         visits = [
             {"wa_case_id": "wa-1", "form_name": "Health Service Delivery", "status": ""},
             {"wa_case_id": "wa-2", "form_name": "No Children Found", "status": ""},

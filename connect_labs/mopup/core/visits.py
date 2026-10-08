@@ -5,11 +5,17 @@ session against `core/areas.py`'s `ward_children_per_building` (which already
 pulls HSD visits the same way) — re-verify again before relying on them, per
 the brief's own caveat: these evolve.
 
-Review status: HSD visits count only once APPROVED, but an NCF ("No Children
-Found") visit counts at ANY review status. A rejected or still-pending NCF is
-still a real report that nobody was home to serve, and reviewers were losing
-work areas from the plan because of the rejection (confirmed on opp 2156: a
-whole work-area group of rejected NCF visits was invisible to the indicator).
+Review status: neither form is limited to APPROVED visits. A rejected or
+still-pending visit is still a real report of what happened at the work area,
+and ignoring it made the area look untouched, so it dropped out of the plan
+(confirmed on opp 2156: a whole work-area group of rejected NCF visits was
+invisible to the indicator). An NCF ("No Children Found") visit counts at ANY
+status. An HSD visit counts at any status EXCEPT `duplicate` (the same
+delivery already counted once) and `trial` (a practice submission) -- see
+`HSD_COUNTED_STATUSES`. The cost of counting rejected HSD visits is that they
+also feed the rates (deworming/MUAC/vaccination) and the EVC ratio; that was a
+deliberate product call, made so that a work area an FLW did visit is not
+sent back just because review rejected the submission.
 
 Inaccessible is deliberately NOT here: it is not a visit. An FLW's
 inaccessibility request changes the work area's own Connect status and
@@ -26,6 +32,13 @@ from django.http import HttpRequest
 from connect_labs.mopup.core.areas import HSD_FORM_NAME, WA_CASE_ID_PATHS
 
 NCF_FORM_NAME = "No Children Found"
+
+# Connect's visit review statuses (`VisitValidationStatus` in commcare-connect):
+# pending, approved, rejected, over_limit, duplicate, trial. An HSD visit counts
+# unless it is a duplicate of one already counted or a trial/practice
+# submission; everything else -- including rejected -- is a real delivery
+# record. NCF is not limited at all (a presence signal, see the module docstring).
+HSD_COUNTED_STATUSES = frozenset({"approved", "pending", "rejected", "over_limit"})
 
 _FORM_NAME_PATH = "form.@name"
 _DEWORMING_PATH = "form.case.update.dw_meds_delivery_status"
@@ -76,11 +89,11 @@ def list_visits(
         # an enum comparison, and a bare string here silently falls through
         # to FLW aggregation on a cache miss.
         terminal_stage=CacheStage.VISIT_LEVEL,
-        # No status filter: NCF counts at any review status (see the module
-        # docstring), so the approved-only rule for HSD is applied
-        # per form in `aggregate_visits_by_wa` instead. Visit-level filters are
-        # applied at read time and are not part of the computed-cache hash
-        # (`get_config_hash`), so this reads the very same cached rows.
+        # No status filter: which statuses count is decided per form in
+        # `aggregate_visits_by_wa` (see the module docstring). Visit-level
+        # filters are applied at read time and are not part of the
+        # computed-cache hash (`get_config_hash`), so this reads the very same
+        # cached rows.
         fields=[
             FieldComputation(name="form_name", path=_FORM_NAME_PATH, aggregation="first"),
             FieldComputation(name="wa_case_id", paths=WA_CASE_ID_PATHS, aggregation="first"),
@@ -142,14 +155,17 @@ def aggregate_visits_by_wa(visits: list[dict], wa_ids: set[str] | None = None) -
     which come from `core/work_areas.py` instead. (Inaccessible is not a visit
     count at all -- see this module's docstring.)
 
-    Review status: HSD visits are counted only when
-    `status == "approved"`; an NCF visit is counted at ANY status (see this
-    module's docstring). `approved_ncf_count` keeps its name even though it is
-    no longer approved-only: it is the key every saved run's cached rows and
-    `core.indicators` already read, and renaming it would zero NCF on any
-    run whose rows were fetched before the change. A visit dict with no
-    `status` key at all (hand-built, never from `list_visits`, which always
-    sets one) is treated as approved.
+    Review status: an HSD visit is counted when its status is in
+    `HSD_COUNTED_STATUSES` (everything but `duplicate` and `trial`, so
+    rejected visits count); an NCF visit is counted at ANY status (see this
+    module's docstring). `approved_hsd_count` and `approved_ncf_count` keep
+    their names even though neither is approved-only any more: they are the
+    keys every saved run's cached rows and `core.indicators` already read, and
+    renaming them would zero those counts on any run whose rows were fetched
+    before the change. A visit dict with no `status` key at all (hand-built,
+    never from `list_visits`, which always sets one) is treated as approved;
+    an empty-string status (what `list_visits` reports for a missing one) is
+    an unknown status and does not count for HSD.
 
     `flw_username` is the Connect username of the work area's LAST
     submitter — its own visits' `username`, ordered by `visit_date`, not the
@@ -178,10 +194,10 @@ def aggregate_visits_by_wa(visits: list[dict], wa_ids: set[str] | None = None) -
             continue
         if wa_ids is not None and wa_id not in wa_ids:
             continue
-        # NCF counts at any review status; everything else needs approval.
-        # Skipped before touching `agg` or the submitter pick, so an
-        # unapproved HSD visit leaves no trace at all.
-        if v["form_name"] != NCF_FORM_NAME and v.get("status", "approved") != "approved":
+        # NCF counts at any review status; an HSD visit counts unless it is a
+        # duplicate/trial one. Skipped before touching `agg` or the submitter
+        # pick, so an uncounted visit leaves no trace at all.
+        if v["form_name"] != NCF_FORM_NAME and v.get("status", "approved") not in HSD_COUNTED_STATUSES:
             continue
         row = agg.setdefault(
             wa_id,
@@ -230,7 +246,7 @@ def build_evaluation_rows(work_areas: list[dict], visit_aggregates: dict[str, di
     `labs.analysis.data_access.fetch_flw_names()` can actually resolve to a
     display name) and falls back to the work-area case's own `owner_id`
     (a raw CommCare HQ user UUID, never resolvable to a name) only for a WA
-    with no approved visits to derive a submitter from."""
+    with no counted visits to derive a submitter from."""
     zero_agg = {
         "approved_hsd_count": 0,
         "approved_ncf_count": 0,
