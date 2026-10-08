@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+from datetime import timedelta
 
 import markdown
 from django.conf import settings
@@ -12,6 +13,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
 from django.db.models import Count
 from django.http import HttpResponse, JsonResponse
+from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
 
@@ -953,17 +955,19 @@ class PmcDataView(OpenLocallyMixin, View):
 # simulation) measured about 300 s, a warm instance about 110 s. Per-run cold/warm is only known
 # once a run finishes, so a run in flight is estimated at the cold figure.
 PMC_RUN_ETA_COLD_S = 300
+# A run still 'queued' this long after its last touch is assumed to have lost its enqueue.
+PMC_RUN_REQUEUE_AFTER_S = 120
 
 
 def _pmc_run_eta(run) -> int:
-    """Seconds left, from the cold estimate minus time since the request (never below 10 while unfinished)."""
+    """Seconds left: the cold estimate minus time since the run was last queued or claimed (floor 10)."""
     from django.utils import timezone
 
     from connect_labs.labs.indicators.models import PmcModelRun
 
     if run.status in (PmcModelRun.COMPLETED, PmcModelRun.FAILED):
         return 0
-    elapsed = (timezone.now() - run.created_at).total_seconds()
+    elapsed = (timezone.now() - run.updated_at).total_seconds()
     return max(10, int(PMC_RUN_ETA_COLD_S - elapsed))
 
 
@@ -991,6 +995,18 @@ class PmcRunView(OpenLocallyMixin, View):
             return JsonResponse({"error": str(exc)}, status=400)
         except (TypeError, KeyError, AttributeError) as exc:
             return JsonResponse({"error": f"malformed schedules: {exc}"}, status=400)
+        # A finished answer is served even if this deploy has no worker configured.
+        done = PmcModelRun.objects.filter(inputs_hash=runner.request_hash(req), status=PmcModelRun.COMPLETED).first()
+        if done is not None:
+            return JsonResponse(
+                {
+                    "run_id": done.pk,
+                    "status": done.status,
+                    "cached": True,
+                    "result": done.result,
+                    "timings": done.timings,
+                }
+            )
         try:
             runner.default_instance()
             runner.default_bucket()
@@ -998,19 +1014,31 @@ class PmcRunView(OpenLocallyMixin, View):
             return JsonResponse({"error": f"live model unavailable: {exc}"}, status=503)
 
         run, created = runner.get_or_create_run(req)
-        if run.status == PmcModelRun.COMPLETED:
+        if run.status == PmcModelRun.COMPLETED:  # finished between the lookup and here
             return JsonResponse(
                 {"run_id": run.pk, "status": run.status, "cached": True, "result": run.result, "timings": run.timings}
             )
         enqueue = created
+        now = timezone.now()
+        # updated_at is set explicitly: queryset.update() skips auto_now. Only the request whose
+        # filtered update matches enqueues.
         if run.status == PmcModelRun.FAILED:
-            # Failures are not cached: re-queue the same row. Only the request that flips it enqueues.
+            # Failures are not cached: re-queue the same row.
             enqueue = bool(
                 PmcModelRun.objects.filter(pk=run.pk, status=PmcModelRun.FAILED).update(
-                    status=PmcModelRun.QUEUED, error=""
+                    status=PmcModelRun.QUEUED, error="", updated_at=now
                 )
             )
             run.status = PmcModelRun.QUEUED
+        elif run.status == PmcModelRun.QUEUED and not created:
+            # Queued but untouched for a while: the enqueue was probably lost (broker blip). Retry it.
+            enqueue = bool(
+                PmcModelRun.objects.filter(
+                    pk=run.pk,
+                    status=PmcModelRun.QUEUED,
+                    updated_at__lt=now - timedelta(seconds=PMC_RUN_REQUEUE_AFTER_S),
+                ).update(updated_at=now)
+            )
         if enqueue:
             transaction.on_commit(lambda pk=run.pk: tasks.run_pmc_model.delay(pk))
         return JsonResponse({"run_id": run.pk, "status": run.status, "cached": False}, status=202)
