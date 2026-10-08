@@ -273,6 +273,12 @@
       return r.rank;
     });
     var s = chosen();
+    // Rank within the states considered, not among all of Nigeria's: a
+    // selection of 22 reads 1 to 9, not 2, 3, 5, ... .
+    var localRank = {};
+    ranked.forEach(function (r, i) {
+      localRank[r.name] = i + 1;
+    });
     el('pmc-scope').textContent = state.states.length
       ? rows.length + ' states from your selection'
       : 'All ' + rows.length + ' states';
@@ -329,7 +335,7 @@
             (r.rank ? '' : 'unranked') +
             '">' +
             '<td class="l pmc-num">' +
-            (r.rank || '') +
+            (localRank[r.name] || '') +
             '</td>' +
             '<td class="l" style="font-weight:500">' +
             esc(r.name) +
