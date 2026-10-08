@@ -205,6 +205,7 @@
       height: height,
       k: k,
       cols: cols,
+      span: span,
     };
   }
 
@@ -262,12 +263,21 @@
     };
   }
 
+  // A label cut to the room it has, so a long name never runs into the next
+  // column; the place's tooltip still carries it whole. Widths are estimated
+  // from the font size (Work Sans averages a little over half an em).
+  function fit(text, room, fontSize) {
+    var most = Math.max(4, Math.floor(room / (fontSize * 0.56)));
+    return text.length <= most ? text : text.slice(0, most - 1) + '…';
+  }
+
   root.SupplyFlow = {
     layout: layout,
     tiles: tiles,
     throughput: throughput,
     ordered: ordered,
     closeUp: closeUp,
+    fit: fit,
   };
 
   // ---- the page ------------------------------------------------------------
@@ -532,6 +542,7 @@
           'paint-order': 'stroke',
           'stroke-linejoin': 'round',
         };
+        var room = L.span - BAR - 14;
         if (n.kind === 'worker' && b.h < 24) {
           var one = el(
             'text',
@@ -546,8 +557,11 @@
               halo,
             ),
           );
-          one.appendChild(el('tspan', {}, n.name));
-          one.appendChild(el('tspan', { fill: '#4b5563' }, '  ' + detail));
+          var line = fit(n.name + '  ' + detail, room, 10.5);
+          one.appendChild(el('tspan', {}, line.slice(0, n.name.length)));
+          one.appendChild(
+            el('tspan', { fill: '#4b5563' }, line.slice(n.name.length)),
+          );
           g.appendChild(one);
         } else {
           var top = b.y + 12;
@@ -565,7 +579,7 @@
                 },
                 halo,
               ),
-              n.name,
+              fit(n.name, room, 12),
             ),
           );
           g.appendChild(
@@ -581,7 +595,7 @@
                 },
                 halo,
               ),
-              n.cropped ? detail : detail + ' ' + unit,
+              fit(n.cropped ? detail : detail + ' ' + unit, room, 11),
             ),
           );
         }
