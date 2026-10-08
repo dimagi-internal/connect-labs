@@ -64,6 +64,7 @@ restocks them, then by name, never by how they are doing.
       <input type="range" id="flow-week" min="0" value="0" step="1" class="flex-1 min-w-[12rem] accent-indigo-600">
       <span id="flow-week-label" class="text-sm text-gray-700 tabular-nums min-w-[10rem]" aria-live="polite"></span>
     </div>
+    <p id="flow-scroll-hint" class="text-xs text-gray-600 mb-1" hidden>Scroll sideways to follow it to the workers and the visits →</p>
     <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Flow diagram, scrolls sideways">
       <svg id="flow-svg" role="img" aria-labelledby="flow-svg-title" class="block"><title id="flow-svg-title">Where {{ item.name }} went</title></svg>
     </div>

@@ -135,12 +135,15 @@
     var k =
       opts && opts.k !== undefined ? opts.k : scaleFor(data, cols, height);
     var t = throughput(data, week);
+    // Room for the first column's labels and the last's; less of it on a phone, so every
+    // column fits the screen instead of the drawing running off to the right.
+    var margin = Math.min(170, Math.max(56, width * 0.16));
     var span =
-      cols.length > 1 ? (width - 2 * 170 - BAR) / (cols.length - 1) : 0;
+      cols.length > 1 ? (width - 2 * margin - BAR) / (cols.length - 1) : 0;
     var boxes = {};
     cols.forEach(function (col, ci) {
       var y = TOP;
-      var x = 170 + ci * span;
+      var x = margin + ci * span;
       col.forEach(function (n) {
         var h = t[n.id].size * k;
         boxes[n.id] = {
@@ -296,7 +299,11 @@
   var tbody = document.querySelector('#flow-table tbody');
   var fmt = new Intl.NumberFormat();
   var unit = full.unit_plural || full.unit || '';
-  var width = Math.max(svg.parentNode.clientWidth || 960, 760);
+  // Too narrow to read below 560 px, so a phone scrolls it sideways -- and is told so.
+  var width = Math.max(svg.parentNode.clientWidth || 960, 560);
+  var scrollHint = document.getElementById('flow-scroll-hint');
+  if (scrollHint)
+    scrollHint.hidden = width <= (svg.parentNode.clientWidth || 0);
   var cols, height, k;
   var highlighted = null;
 

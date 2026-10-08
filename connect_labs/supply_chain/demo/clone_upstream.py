@@ -122,6 +122,17 @@ def seed_upstream(op, *, program_id: int, central_id: int, item, opening_sachets
     cartons = _cartons(opening_sachets)
     start = setup - timedelta(days=70)
     buyer = _buyer(op, start)
+    # The tenders' duty terms are "we import under the duty waiver": the waiver itself, on file, so
+    # quotes we import can be landed. Invented, and its text says so.
+    import base64
+
+    op(start, 9, "document_attach", data={
+        "kind": "duty_exemption", "title": "Duty exemption certificate (invented for the demo)",
+        "filename": "duty-exemption-demo.txt", "content_type": "text/plain",
+        "content_base64": base64.b64encode(NOTE.encode()).decode(),
+        "valid_from": start.isoformat(), "valid_until": (today + timedelta(days=365)).isoformat(),
+        "source": "we_recorded", "note": NOTE,
+    })  # fmt: skip
     suppliers = {}
     for key, name, country, city, kind, contact, email in SUPPLIERS:
         suppliers[key] = op(start, 9, "supplier_create", data={
@@ -140,7 +151,7 @@ def seed_upstream(op, *, program_id: int, central_id: int, item, opening_sachets
     winner = _quote(
         op, t1_open + timedelta(days=4), tender_id=t1, supplier_id=suppliers["sahel"], price="48.60", cartons=cartons,
         ref="SNW-PFI-0207", pack_spec_source="stated_on_quote", base_per_pack_stated=CARTON,
-        base_unit_grams_stated=92, freight_basis="excluded", freight_amount=str(Decimal(cartons) * Decimal("2.40")),
+        base_unit_grams_stated=92, freight_basis="included",
         duties_basis="excluded", duties_amount="0.00", lead_time_days=35, incoterm="CPT Maiduguri",
         validity_until=(t1_open + timedelta(days=34)).isoformat(), payment_terms="50% with order, 50% on delivery",
     )  # fmt: skip
@@ -246,7 +257,7 @@ def seed_upstream(op, *, program_id: int, central_id: int, item, opening_sachets
     _quote(
         op, q_day, tender_id=t2, supplier_id=suppliers["sahel"], price="49.20", cartons=cartons, ref="SNW-PFI-0311",
         pack_spec_source="stated_on_quote", base_per_pack_stated=CARTON, base_unit_grams_stated=92,
-        freight_basis="excluded", freight_amount=str(Decimal(cartons) * Decimal("2.40")), duties_basis="excluded",
+        freight_basis="included", duties_basis="excluded",
         duties_amount="0.00", lead_time_days=35, incoterm="CPT Maiduguri",
         validity_until=(q_day + timedelta(days=30)).isoformat(), payment_terms="50% with order, 50% on delivery",
     )  # fmt: skip
