@@ -122,19 +122,47 @@ def test_a_link_expires_after_a_week():
 # ---------------------------------------------------------------------------
 
 
+def _size(payload):
+    return Image.open(io.BytesIO(coach_image.render_png(payload))).size
+
+
+def _short(n):
+    """``n`` topics with one-line labels, as a real briefing usually has."""
+    return {
+        "worker": "Tiyamike Kalinde",
+        "topics": [{"label": "Meetings held", "band": "red", "numerator": 31, "denominator": 73, "pct": 42}] * n,
+    }
+
+
 @pytest.mark.parametrize("n", [1, 4])
-def test_one_and_four_topics_draw_a_portrait_png(n):
+def test_one_and_four_topics_draw_a_small_png(n):
     data = coach_image.render_png(_payload(n))
     image = Image.open(io.BytesIO(data))
     assert image.format == "PNG"
-    assert image.size == (coach_image.WIDTH, coach_image.MIN_HEIGHT)
+    assert image.size[0] == coach_image.WIDTH
     assert len(data) < 300 * 1024
 
 
-def test_many_topics_make_the_picture_taller_not_cramped():
-    image = Image.open(io.BytesIO(coach_image.render_png(_payload(12))))
-    assert image.size[0] == coach_image.WIDTH
-    assert image.size[1] > coach_image.MIN_HEIGHT
+def test_one_topic_is_a_short_card_not_a_mostly_empty_portrait():
+    width, height = _size(_short(1))
+    assert width == coach_image.WIDTH
+    assert coach_image.MIN_HEIGHT <= height <= 700  # was 1350, mostly empty white
+
+
+def test_the_card_grows_with_each_topic():
+    heights = [_size(_short(n))[1] for n in (1, 2, 4, 8)]
+    assert heights == sorted(heights) and len(set(heights)) == 4
+    # Each topic adds the same block, so the card is sized by content, not padded.
+    assert heights[1] - heights[0] == (heights[3] - heights[2]) // 4
+
+
+def test_a_card_never_shrinks_below_the_minimum():
+    assert _size({"worker": "", "topics": [{"label": "x", "band": "red", "figure": "1"}]})[1] == coach_image.MIN_HEIGHT
+
+
+def test_the_figure_reads_count_then_percent():
+    assert coach_image._figure_text({"numerator": 31, "denominator": 73, "pct": 42}) == "31 of 73 · 42%"
+    assert coach_image._figure_text({"numerator": 3, "denominator": 9}) == "3 of 9"
 
 
 def test_drawing_is_deterministic():
@@ -212,7 +240,7 @@ def test_a_coaching_pictures_token_gets_the_png(client, owner):
     assert resp["Content-Type"] == "image/png"
     assert resp["Cache-Control"] == "private, no-store"
     assert "noindex" in resp["X-Robots-Tag"]
-    assert Image.open(io.BytesIO(resp.content)).size == (coach_image.WIDTH, coach_image.MIN_HEIGHT)
+    assert Image.open(io.BytesIO(resp.content)).size == _size(_payload(2))
     token.refresh_from_db()
     assert token.last_used_at is not None
 
