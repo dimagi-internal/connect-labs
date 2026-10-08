@@ -174,6 +174,8 @@ GENERATED_ONLY_TOOLS: frozenset[str] = frozenset(
     {
         "pipeline_preview",
         "custom_analysis_run",
+        "explorer_describe",
+        "explorer_query",
         "synthetic_local_record_dump",
         "synthetic_reload_fixtures",
         "synthetic_disable",
@@ -207,6 +209,8 @@ USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         "workflow_preview_as_of",
         "workflow_preview_snapshot",
         "custom_analysis_run",
+        "explorer_describe",
+        "explorer_query",
         "get_sample_ids",
         "synthetic_local_record_dump",
         # Reads a bundle at any server path it is given.

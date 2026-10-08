@@ -81,6 +81,17 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
     # check program membership on every call. Reads only: the panel analyses what the
     # tables show (ruling 2026-10-07: the product shows the data, the AI judges it on
     # request); every change stays the person's own, made in the tables.
+    # The SQL explorer (connect_labs/explorer): describe what is loaded, then run
+    # read-only SQL over the visitor's own opportunities. The registry tools let
+    # the agent use a governed definition before writing its own.
+    "explorer:read": frozenset(
+        {
+            "explorer_describe",
+            "explorer_query",
+            "semantic_registry_list",
+            "semantic_registry_explain",
+        }
+    ),
     "supply:read": frozenset(
         {
             "supply_chain_tender_get",
@@ -115,6 +126,7 @@ PAGE_SCOPES: dict[str, tuple[str, ...]] = {
     "labs:workflow:run": ("workflow:read", "workflow:act"),
     "targeting:index": ("targeting:read",),
     "targeting:pmc": ("targeting:read",),
+    "explorer:index": ("explorer:read",),
     "supply_chain:procurement_tender_detail": ("supply:read",),
     "supply_chain:procurement_comparison": ("supply:read",),
 }
