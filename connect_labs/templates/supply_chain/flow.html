@@ -16,7 +16,12 @@ restocks them, then by name, never by how they are doing.
     <p class="text-sm text-gray-600 mt-1">Every unit that arrived, through the stores to each field worker, to what their visits gave out.</p>
   </div>
   {% if has_program_context %}
-    <a href="{% url 'supply_chain:workers' %}{% if item %}?item_id={{ item.id }}{% endif %}" class="text-sm text-brand-indigo hover:underline">Workers</a>
+    {% pinned_tab "supply_chain:workers" as workers_tab %}
+    {% if workers_tab %}
+      <a href="{{ workers_tab.url }}" class="text-sm text-brand-indigo hover:underline">{{ workers_tab.label }}</a>
+    {% else %}
+      <a href="{% url 'supply_chain:workers' %}{% if item %}?item_id={{ item.id }}{% endif %}" class="text-sm text-brand-indigo hover:underline">Workers</a>
+    {% endif %}
   {% endif %}
 </div>
 {% if not has_program_context %}

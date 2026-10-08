@@ -290,6 +290,29 @@ class TestTheNetworkSaysHowManyKits:
         body = scoped.get(reverse("supply_chain:stock")).content.decode()
         assert "700 co packs" in body
 
+    def test_a_balance_that_is_not_whole_cartons_restates_exactly(self, da, catalogue):
+        """52 in a carton of 150 is 0.3467 cartons; restating that rounded figure
+        printed "52.01" beside a balance of 52."""
+        kit = _kit(da, "B", 10, one_course_is="base_unit", base_per_pack=150)
+        store = op(
+            da,
+            "supply_point_upsert",
+            data={"slug": "store", "name": "District store", "kind": "regional_store", "source": "we_recorded"},
+        )
+        op(
+            da,
+            "receipt_record",
+            data={
+                "commodity_slug": "ors-zinc",
+                "supply_point_id": store["id"],
+                "received_on": "2026-09-01",
+                "source": "we_recorded",
+                "lines": [{"item_id": kit["id"], "quantity_accepted": "52", "quantity_unit": "co_pack"}],
+            },
+        )
+        row = op(da, "network_stock")["points"][0]
+        assert Decimal(row["on_hand_in_base"]["amount"]) == Decimal("52")
+
 
 def _no_ration_table(da):
     return {
