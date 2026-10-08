@@ -322,6 +322,9 @@ class TestEveryWriteOperationHasAScreen:
     # The round's duty terms are set through the answer form (commitment_resolve)
     # and the tender's edit page (tender_update), which both call its setter.
     ALREADY_HAD_SCREENS = {"quote_record", "award_create", "tender_set_duty_terms"}
+    # Pinning a workflow into the supply tabs is done by whoever built the workflow,
+    # through the MCP tool, for now; a screen waits until people pin from the page.
+    NO_SCREEN_YET = {"view_pin", "view_unpin"}
 
     def test_no_write_operation_is_left_without_one(self):
         from django.urls import get_resolver
@@ -342,5 +345,5 @@ class TestEveryWriteOperationHasAScreen:
                 if operation:
                     covered.add(operation)
 
-        missing = writes - covered - self.ALREADY_HAD_SCREENS
+        missing = writes - covered - self.ALREADY_HAD_SCREENS - self.NO_SCREEN_YET
         assert not missing, f"write operations with no screen: {sorted(missing)}"

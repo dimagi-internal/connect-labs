@@ -21,6 +21,7 @@ from connect_labs.supply_chain.procurement import operations as _procurement_ope
 from connect_labs.supply_chain.stock import operations as _stock_operations  # noqa: F401
 from connect_labs.supply_chain.stock import visit_operations as _visit_operations  # noqa: F401
 from connect_labs.supply_chain.update_links import operations as _update_link_operations  # noqa: F401
+from connect_labs.supply_chain.workflow_views import operations as _workflow_view_operations  # noqa: F401
 
 
 def _make_handler(operation):
