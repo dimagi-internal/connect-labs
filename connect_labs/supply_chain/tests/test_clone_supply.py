@@ -210,3 +210,36 @@ def test_when_the_visits_carry_balances_nothing_is_invented(clone):
 
     assert StockCount.objects.filter(program_id=opp).exists()
     assert not StockCount.objects.filter(program_id=opp, note=clone_supply.COUNTED).exists()
+
+
+# ---- upstream: where the clone's stock came from --------------------------------
+
+
+def test_the_clones_stock_arrives_on_an_order_from_a_tender(clone):
+    from connect_labs.supply_chain.demo import clone_upstream
+    from connect_labs.supply_chain.models import Contract, Item, Quote, Shipment, Tender
+    from connect_labs.supply_chain.stock.services.flow import flow
+
+    opp = clone["opp"]
+    with patch(FETCH, return_value=clone["world"].visits):
+        summary = clone_supply.seed(program_id=opp, opportunity_id=opp, today=TODAY)
+
+    up = summary["upstream"]
+    assert up["suppliers"] == 4 and len(up["tenders"]) == 2
+    tenders = Tender.objects.filter(pk__in=up["tenders"]).order_by("pk")
+    assert Quote.objects.filter(tender=tenders[0]).count() == 3  # one supplier never answered
+    assert Quote.objects.filter(tender=tenders[1]).count() == 2  # two silent on the open tender
+    order1 = Contract.objects.get(pk=up["orders"][0])
+    assert order1.award_id is not None and order1.note == clone_upstream.NOTE
+    # Every receipt into the network came on order 1's shipment: nothing arrives unlinked.
+    receipts = Movement.objects.filter(program_id=opp, kind="receipt")
+    assert receipts.exists()
+    assert all(
+        m.receipt_id and m.receipt.shipment_id == up["shipments"][0] for m in receipts.select_related("receipt")
+    )
+    # An order on the road now, not yet received.
+    if len(up["shipments"]) > 1:
+        assert Shipment.objects.get(pk=up["shipments"][1]).status == "in_transit"
+    item = Item.objects.get(scope_key=f"prog:{opp}", sku=clone_supply.SKU)
+    sources = [n["name"] for n in flow(opp, item, on_date=TODAY)["nodes"] if n["kind"] == "source"]
+    assert sources == ["Order from Sahel Nutrition Works (PO-RUTF-0001)"]

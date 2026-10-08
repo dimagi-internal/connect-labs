@@ -207,6 +207,8 @@ def seed(*, program_id: int, opportunity_id: int, reset: bool = False, today: da
 
     op(setup, 9, "commodity_upsert", data={
         "slug": SLUG, "name": NAME, "category": "therapeutic_food",
+        # One carton is one child's course (illustrative), so a quote can be costed per child.
+        "course_definition": {"base_units_per_course": 150, "source": "programme protocol (demo, illustrative)"},
         "base_unit": "sachet", "pack_unit": "carton", "base_per_pack": 150,
     })  # fmt: skip
     item = op(setup, 9, "item_upsert", data={
@@ -258,10 +260,14 @@ def seed(*, program_id: int, opportunity_id: int, reset: bool = False, today: da
     central_monthly = to_partner / max(Decimal((today - setup).days) / 30, Decimal(1))
     opening = _round_up(to_partner + central_monthly * CENTRAL_MONTHS, 150)
     base = {"commodity_slug": SLUG, "item_id": item["id"], "quantity_unit": "sachet", "occurred_on": setup.isoformat()}
-    op(setup, 10, "movement_record", data={
-        **base, "kind": "receipt", "to_supply_point_id": central["id"], "quantity": str(opening),
-        "source": "we_recorded", "note": INVENTED,
-    })  # fmt: skip
+    # The opening stock arrives on an order: the tender, award, shipment and receipt that brought it
+    # (invented, and each says so) -- so Sourcing, Orders and "Where it went" have something upstream.
+    from connect_labs.supply_chain.demo.clone_upstream import seed_upstream
+
+    upstream = seed_upstream(
+        op, program_id=program_id, central_id=central["id"], item=saved.item, opening_sachets=opening,
+        setup=setup, today=today,
+    )  # fmt: skip
     op(setup, 11, "movement_record", data={
         **base, "kind": "transfer", "from_supply_point_id": central["id"], "to_supply_point_id": partner["id"],
         "quantity": str(to_partner), "source": "we_recorded", "note": INVENTED,
@@ -316,6 +322,7 @@ def seed(*, program_id: int, opportunity_id: int, reset: bool = False, today: da
         "sachets_dispensed": str(total_dispensed),
         "sachets_issued": str(total_issued),
         "distributions": len(issues),
+        "upstream": upstream,
         "weeks": weeks,
     }
 
