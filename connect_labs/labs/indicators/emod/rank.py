@@ -50,6 +50,7 @@ CAVEATS = (
     "(at least 60% of the year's rain in the wettest quarter).",
     "Targeted children are estimated from the under-5 population: 21/60 for 3-24 months (PMC), 56/60 for "
     "3-59 months (SMC).",
+    "The same price per visit is applied to PMC and SMC visits.",
 )
 
 
@@ -90,6 +91,27 @@ def _clean_name(name: str) -> str:
     return n.lower()
 
 
+#: Common names for a state that the grid spells differently (keys and values lower-case).
+ALIASES = {
+    "fct": "abuja federal capital territory",
+    "federal capital territory": "abuja federal capital territory",
+    "abuja": "abuja federal capital territory",
+    "abuja fct": "abuja federal capital territory",
+}
+
+
+def _match(key: str, by_lower: dict) -> str | None:
+    """The grid's name for a cleaned selection name: exact, an alias, or the ONE grid name whose words
+    include all of the selection's words ('cross river state' does not, 'akwa ibom' does)."""
+    if key in by_lower:
+        return by_lower[key]
+    if ALIASES.get(key) in by_lower:
+        return by_lower[ALIASES[key]]
+    words = set(key.split())
+    hits = [name for low, name in by_lower.items() if words and words <= set(low.split())]
+    return hits[0] if len(hits) == 1 else None
+
+
 def _pct(v) -> str:
     return f"{v * 100:.0f}%" if v is not None else "unknown"
 
@@ -126,7 +148,7 @@ def rank_pairs(
 ) -> dict:
     """The top ``top_n`` (state, design) pairs in ``states`` by cost per case averted, cheapest first.
 
-    ``states`` None means every state in the grid. Ties (equal cost per case at two figures) go to the
+    ``states`` None means every state in the grid. Ties (equal exact cost per case) go to the
     pair that averts more cases. Raises ValueError for impossible costs (dose_rate <= 0, negative
     prices), a top_n below 1, or an unknown kind; the tool turns that into a 400.
     """
@@ -148,7 +170,7 @@ def rank_pairs(
             key = _clean_name(s)
             if key and key not in seen:
                 seen.add(key)
-                wanted.append(by_lower.get(key, s.strip()))
+                wanted.append(_match(key, by_lower) or s.strip())
 
     pairs, excluded, excluded_designs = [], [], []
     for name in wanted:
@@ -201,7 +223,8 @@ def rank_pairs(
         if not mine:
             excluded.append({"state": name, "reason": f"no design with a measurable effect ({NO_EFFECT})"})
 
-    pairs.sort(key=lambda p: (sig(p["cost_per_case_averted"]), -p["cases_averted_per_year"]))
+    # Exact cost per case (rounded only to absorb float noise), then more cases averted. Display rounds.
+    pairs.sort(key=lambda p: (round(p["cost_per_case_averted"], 9), -p["cases_averted_per_year"]))
 
     best_per_state, seen = [], set()
     for p in pairs:
