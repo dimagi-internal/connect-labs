@@ -16,7 +16,7 @@ Result:   {"mode", "hash", "target_pfpr", "tolerance", "larval_capacity", "pfpr_
           "fit": "ok" | "unreachable" | "loose", "iterations" (rounds run), "burnin_hash",
           "candidates": [{"round", "larval_capacity", "pfpr_2_5y"}], "rounds": [{"round", "n", "seconds"}],
           "seconds"}
-          Round 1 burns in 8 log-spaced capacities (1e6-1e10) side by side, round 2 four around the interpolated
+          Round 1 burns in 8 log-spaced capacities (1e6-1e9) side by side, round 2 four around the interpolated
           crossing; PfPR 2-5y is read over each burn-in's year 2. The chosen capacity's burn-in is cached (and
           published) under its setting_hash, so a run request with that larval_capacity starts warm. Pass the
           returned larval_capacity on verbatim.
@@ -63,11 +63,11 @@ BURNIN_FILE = "state-00730.dtk"
 BURNIN_VERSION = "1"
 MODES = ("run", "calibrate")
 DRUGS = ("SP", "SPAQ")  # keep equal to pmc_sweep.DRUGS (a test checks); a pick-up choice, not in setting_hash
-# Calibration: round 1 burns in 8 log-spaced larval capacities over 1e6-1e10; round 2 burns in 4 more around the
+# Calibration: round 1 burns in 8 log-spaced larval capacities over 1e6-1e9; round 2 burns in 4 more around the
 # interpolated crossing. The fit is "ok" within CALIBRATE_TOLERANCE of the target PfPR 2-5y (absolute).
-CALIBRATE_LOG10_RANGE = (6.0, 10.0)
+CALIBRATE_LOG10_RANGE = (6.0, 9.0)
 CALIBRATE_GRID_N = 8
-CALIBRATE_REFINE_STEPS = (-0.3, -0.1, 0.1, 0.3)  # round-2 offsets, in units of the round-1 bracket width (log10)
+CALIBRATE_REFINE_STEPS = (-0.45, -0.15, 0.15, 0.45)  # round-2 offsets, in units of the round-1 bracket width (log10)
 CALIBRATE_TOLERANCE = 0.03
 
 
@@ -113,13 +113,17 @@ class Heartbeat:
 
 
 @contextlib.contextmanager
-def workdir(path):
-    """emodpy drops demographics_<timestamp>/ dirs in the cwd; keep them out of wherever we were started."""
-    path.mkdir(parents=True, exist_ok=True)
+def workdir(cache_dir):
+    """A fresh cwd under cache_dir for one request, removed afterwards.
+
+    emodpy drops demographics_<timestamp>/ dirs in the cwd; this keeps them out of wherever we were started, and
+    a directory of its own per request means two requests on one box never remove each other's cwd.
+    """
+    path = tempfile.mkdtemp(prefix="work-", dir=cache_dir)
     old = os.getcwd()
     os.chdir(path)
     try:
-        yield
+        yield pathlib.Path(path)
     finally:
         os.chdir(old)
         shutil.rmtree(path, ignore_errors=True)
@@ -129,11 +133,39 @@ def canonical_hash(obj):
     return hashlib.sha256(json.dumps(obj, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:16]
 
 
+# How setting_hash spells each numeric field, so equal values hash equal whatever JSON type they arrived as
+# (6e7 vs 60000000, 30 vs 30.0). The spellings are the ones the deployed default setting already had, so its hash
+# (and burn-in) is unchanged: larval/habitat values/coverages as floats, pop and integral day numbers as ints.
+FLOAT_FIELDS = ("larval_capacity", "case_mgmt", "net_coverage")
+
+
+def _canonical_number(v, kind):
+    if not _num(v):
+        return v
+    if kind == "float":
+        return float(v)
+    return int(v) if float(v).is_integer() else float(v)
+
+
+def canonical_setting(setting):
+    out = {}
+    for k, v in setting.items():
+        if k in FLOAT_FIELDS:
+            out[k] = _canonical_number(v, "float")
+        elif k == "habitat_values" and isinstance(v, list):
+            out[k] = [_canonical_number(x, "float") for x in v]
+        elif k == "habitat_times" and isinstance(v, list):
+            out[k] = [_canonical_number(x, "int") for x in v]
+        elif k == "pop":
+            out[k] = _canonical_number(v, "int")
+        else:
+            out[k] = v
+    return out
+
+
 def setting_hash(setting):
     """Identity of a burn-in: everything that shapes the serialized population (not the display name)."""
-    keyed = {k: v for k, v in setting.items() if k != "name"}
-    if _num(keyed.get("larval_capacity")):
-        keyed["larval_capacity"] = float(keyed["larval_capacity"])  # 6e7 and 60000000 are one burn-in
+    keyed = {k: v for k, v in canonical_setting(setting).items() if k != "name"}
     return canonical_hash({"setting": keyed, "version": BURNIN_VERSION, "burnin_days": BURNIN_DAYS})
 
 
@@ -281,7 +313,11 @@ def run_burnins(manifest, sweep, settings, dest_dirs, job_dir, deadline=None):
         reports = sorted(sim_dir.rglob("MalariaSummaryReport_annual.json"))
         if not reports:
             raise RuntimeError("burn-in produced no MalariaSummaryReport_annual.json")
-        pfprs.append(sweep.last_year_pfpr_2_5y(json.loads(reports[0].read_text())))
+        msr = json.loads(reports[0].read_text())
+        n_reports = len(msr["DataByTimeAndAgeBins"]["PfPR by Age Bin"])
+        if n_reports != BURNIN_DAYS // 365:
+            raise RuntimeError(f"burn-in summary report has {n_reports} years, expected {BURNIN_DAYS // 365}")
+        pfprs.append(sweep.last_year_pfpr_2_5y(msr))
         dest_dir = pathlib.Path(dest_dir)
         dest_dir.mkdir(parents=True, exist_ok=True)
         tmp = dest_dir / (BURNIN_FILE + ".part")
@@ -450,7 +486,7 @@ def run_calibration(req, cache_dir, heartbeat_s=60, fetch_burnin=None, publish_b
     ensure_binary(manifest)
     cache_dir.mkdir(parents=True, exist_ok=True)
     rounds = []
-    with Heartbeat(heartbeat_s), workdir(cache_dir / "work"):
+    with Heartbeat(heartbeat_s), workdir(cache_dir):
         scratch = pathlib.Path(tempfile.mkdtemp(prefix="calibrate-", dir=cache_dir))
         try:
             dirs = {}
@@ -594,7 +630,7 @@ def run_request(req, cache_dir, heartbeat_s=60, fetch_burnin=None, publish_burni
     cache_dir.mkdir(parents=True, exist_ok=True)
     key = setting_hash(setting)
     burnin_dir = cache_dir / "burnin" / key
-    with Heartbeat(heartbeat_s), workdir(cache_dir / "work"):
+    with Heartbeat(heartbeat_s), workdir(cache_dir):
         cached = (burnin_dir / BURNIN_FILE).exists()
         burnin_seconds = 0.0
         if not cached and fetch_burnin is not None:
