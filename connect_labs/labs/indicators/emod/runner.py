@@ -1,0 +1,174 @@
+"""Client for the on-demand EMOD worker: build a PMC scenario request, run it, keep the result.
+
+The worker (``tools/pmc_emod/worker/run_scenarios.py``) lives on a stopped-when-idle EC2 box.
+``execute`` writes the request to the artifacts bucket under ``requests/``, starts the box if
+needed, runs the worker over SSM, and reads ``results/<hash>.json`` back. It is synchronous and
+slow (minutes); callers run it from a Celery task.
+"""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+import logging
+import time
+
+from django.conf import settings
+from django.utils import timezone
+
+from connect_labs.labs.indicators import pmc
+from connect_labs.labs.indicators.models import PmcModelRun
+
+logger = logging.getLogger(__name__)
+
+#: The southern-Nigeria-like setting every live run uses until states are calibrated.
+#: Copied from ``default_setting()`` in tools/pmc_emod/pmc_sweep.py (tools/ is not importable
+#: from the app); test_emod_runner.py loads that file and fails if the two drift.
+#: ``pop`` is the gated 5000 (PMC_POP=5000), not the sweep CLI's own default.
+DEFAULT_SETTING = {
+    "name": "SW_Nigeria_like",
+    "larval_capacity": 3e8,
+    "habitat_times": [0, 30, 60, 91, 122, 152, 182, 213, 243, 274, 304, 334, 365],
+    "habitat_values": [1.0, 0.8, 1.0, 2.0, 4.0, 6.0, 6.0, 5.0, 6.0, 5.0, 3.0, 1.5, 1.0],
+    "pop": 5000,
+    "case_mgmt": 0.5,
+    "net_coverage": 0.5,
+}
+
+#: The comparison every live request carries, so effects are always relative to no PMC.
+BASELINE_SCHEDULE = {"code": "none", "rounds": []}
+INTERVENTION_YEARS = 2
+DEFAULT_SEEDS = 3
+
+#: Command that runs the worker on the box (system python3 lacks the libraries).
+WORKER_PYTHON = "/opt/emod/.venv/bin/python"
+WORKER_SCRIPT = "/opt/emod/run_scenarios.py"
+
+BOOT_TIMEOUT_S = 600
+READY_TIMEOUT_S = 900
+RUN_TIMEOUT_S = 1800
+
+FIT_REASONS = {
+    "more_seasonal": "more seasonal than the modelled setting: SMC, not PMC",
+    "less_seasonal": "less seasonal than the modelled setting",
+    "unknown": "no prevalence or rainfall data to check fit against",
+}
+
+
+def state_fit(state: str) -> str:
+    """How well a Nigerian state matches the modelled setting, by the same rule the explorer uses."""
+    from connect_labs.labs.indicators import boundaries as boundary_set
+    from connect_labs.labs.indicators.resolve import BulkResolver
+
+    unit = boundary_set.owned().filter(iso_code=pmc.ISO, admin_level=1, name__iexact=state).first()
+    if unit is None:
+        raise ValueError(f"unknown state {state!r}")
+    bulk = BulkResolver([unit])
+    prevalence = bulk.get("malaria_prevalence", unit)
+    wettest = bulk.get("rain_wettest_quarter", unit)
+    return pmc.fit_for(prevalence.value if prevalence else None, wettest.value if wettest else None)
+
+
+def build_request(state: str, schedules: list[dict], seeds: int = DEFAULT_SEEDS, *, fit: str | None = None) -> dict:
+    """The worker request for ``schedules`` in ``state``.
+
+    Until states are calibrated, a state that matches the modelled setting (``near`` or
+    ``prevalence_differs``, the explorer's ranked fits) runs in the default southern setting;
+    any other raises ValueError naming why. ``fit`` skips the registry lookup (tests).
+    """
+    if not isinstance(seeds, int) or isinstance(seeds, bool) or seeds < 1:
+        raise ValueError("seeds must be an integer >= 1")
+    if not schedules:
+        raise ValueError("at least one schedule is required")
+    fit = state_fit(state) if fit is None else fit
+    if fit not in pmc.RANKED_FITS:
+        raise ValueError(f"{state} cannot be modelled: {FIT_REASONS.get(fit, fit)}")
+    codes = [s.get("code") for s in schedules]
+    if BASELINE_SCHEDULE["code"] in codes:
+        raise ValueError(f"schedule code {BASELINE_SCHEDULE['code']!r} is reserved for the no-PMC baseline")
+    return {
+        "setting": copy.deepcopy(DEFAULT_SETTING),
+        "schedules": [copy.deepcopy(BASELINE_SCHEDULE)] + [copy.deepcopy(s) for s in schedules],
+        "seeds": list(range(seeds)),
+        "intervention_years": INTERVENTION_YEARS,
+    }
+
+
+def request_hash(req: dict) -> str:
+    """sha256 of the canonical JSON (sorted keys, no whitespace)."""
+    canonical = json.dumps(req, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def get_or_create_run(req: dict) -> tuple[PmcModelRun, bool]:
+    return PmcModelRun.objects.get_or_create(inputs_hash=request_hash(req), defaults={"request": req})
+
+
+def default_instance():
+    """The configured on-demand instance, or a clear error when this deploy has none."""
+    from canopy_sdk.ondemand import OnDemandInstance
+
+    instance_id = getattr(settings, "LABS_EMOD_INSTANCE_ID", None)
+    region = getattr(settings, "LABS_EMOD_REGION", None)
+    if not instance_id or not region:
+        raise RuntimeError("LABS_EMOD_INSTANCE_ID and LABS_EMOD_REGION must be set to run EMOD")
+    return OnDemandInstance(instance_id, region, "emod")
+
+
+def default_s3():
+    import boto3
+
+    return boto3.client("s3", region_name=getattr(settings, "LABS_EMOD_REGION", None))
+
+
+def execute(run: PmcModelRun, instance, bucket: str, s3=None) -> None:
+    """Run ``run.request`` on the worker and store the outcome on ``run``.
+
+    Never raises for a failed run: the failure is recorded on the row (status ``failed`` with
+    the message) so a Celery task can finish cleanly and the caller can read it.
+    """
+    from canopy_sdk.ondemand import OnDemandError
+
+    s3 = s3 or default_s3()
+    key = run.inputs_hash
+    request_key, result_key = f"requests/{key}.json", f"results/{key}.json"
+    run.status = PmcModelRun.RUNNING
+    run.error = ""
+    run.save(update_fields=["status", "error"])
+    timings: dict[str, float] = {}
+    started = time.monotonic()
+    try:
+        s3.put_object(
+            Bucket=bucket,
+            Key=request_key,
+            Body=json.dumps(run.request, sort_keys=True).encode(),
+            ContentType="application/json",
+        )
+        up = instance.ensure_running(boot_timeout_s=BOOT_TIMEOUT_S, ready_timeout_s=READY_TIMEOUT_S)
+        timings.update({f"boot_{k}": v for k, v in up.timings.items()})
+        timings["cold_start"] = bool(up.cold)
+        t = time.monotonic()
+        command = (
+            f"{WORKER_PYTHON} {WORKER_SCRIPT} "
+            f"--request s3://{bucket}/{request_key} --out s3://{bucket}/{result_key}"
+        )
+        res = instance.run(
+            [command],
+            timeout_s=RUN_TIMEOUT_S,
+        )
+        timings["worker_s"] = round(time.monotonic() - t, 1)
+        if not res.ok:
+            tail = (res.stderr or res.stdout or "").strip()[-1500:]
+            raise OnDemandError(f"worker exited {res.exit_code} ({res.status}): {tail}")
+        body = s3.get_object(Bucket=bucket, Key=result_key)["Body"].read()
+        run.result = json.loads(body)
+        run.status = PmcModelRun.COMPLETED
+    except Exception as exc:  # noqa: BLE001 - recorded on the row, including SDK errors like InstanceGone
+        logger.warning("EMOD run %s failed: %s", key[:12], exc)
+        run.status = PmcModelRun.FAILED
+        run.error = str(exc) or exc.__class__.__name__
+    timings["total_s"] = round(time.monotonic() - started, 1)
+    run.timings = timings
+    run.completed_at = timezone.now()
+    run.save(update_fields=["status", "result", "error", "timings", "completed_at"])
