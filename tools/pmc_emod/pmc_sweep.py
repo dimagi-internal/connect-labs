@@ -29,6 +29,7 @@ HABITAT = {
     "Values": [1.0, 0.8, 1.0, 2.0, 4.0, 6.0, 6.0, 5.0, 6.0, 5.0, 3.0, 1.5, 1.0],
 }
 SEASON_START = 91  # high season begins ~1 April
+AGE_BINS = [0.25, 2, 5, 115]  # summary-report age bins, years (see BIN_* below)
 SEASON_MONTHS = 6
 
 # Each scenario: list of (start_offset_days, interval_days, repetitions, age_min, age_max, coverage)
@@ -219,7 +220,7 @@ def build_reports(reporters, report_start=BURN_IN_DAYS, report_end=SIM_DAYS, n_y
         MalariaSummaryReport(
             reporters,
             reporting_interval=365,
-            age_bins=[0.25, 2, 5, 115],
+            age_bins=AGE_BINS,
             max_number_reports=n_years,
             pretty_format=True,
             report_filter=ReportFilter(start_day=report_start, end_day=report_end, filename_suffix="annual"),
@@ -231,6 +232,34 @@ def build_reports(reporters, report_start=BURN_IN_DAYS, report_end=SIM_DAYS, n_y
         )
     )
     reporters.add(InsetChart(reporters))
+    return reporters
+
+
+def survey_window(burnin_days, survey_doy):
+    """Simulation days [start, end) of days-of-year survey_doy = (first, last), 1-based, in the burn-in's last year."""
+    last_year = burnin_days - 365
+    return last_year + survey_doy[0] - 1, last_year + survey_doy[1]
+
+
+def build_burnin_reports(reporters, burnin_days, survey_doy):
+    """A burn-in's reports: build_reports' annual set, plus one summary report averaged over the survey window
+    (MalariaSummaryReport_survey.json), which calibration compares with a survey's measured prevalence.
+    Reports are outputs only; they do not change the serialized population.
+    """
+    from emodpy_malaria.reporters.reporters import MalariaSummaryReport, ReportFilter
+
+    build_reports(reporters, report_start=0, report_end=burnin_days, n_years=burnin_days // 365)
+    start, end = survey_window(burnin_days, survey_doy)
+    reporters.add(
+        MalariaSummaryReport(
+            reporters,
+            reporting_interval=end - start,
+            age_bins=AGE_BINS,
+            max_number_reports=1,
+            pretty_format=True,
+            report_filter=ReportFilter(start_day=start, end_day=end, filename_suffix="survey"),
+        )
+    )
     return reporters
 
 
