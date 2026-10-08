@@ -73,8 +73,9 @@ CAVEATS = (
     "The Sahel north is far more seasonal than the modelled setting; there seasonal malaria chemoprevention "
     "(SMC), not PMC, is the standard.",
     "Children 3-24 months are estimated as 21/60 of the under-5 population.",
-    "States are ranked by applying each schedule's EMOD effect to the state's own malaria incidence (MAP 2024), "
-    "relative to the states that match the model. An approximation until EMOD is fitted per state.",
+    "EMOD gives each schedule's relative effect; the absolute burden is MAP 2024 malaria incidence (all ages): "
+    "Nigeria's for the schedule comparison, each state's own for the ranking. Young children get malaria more "
+    "often than the all-ages rate, so cases averted are a floor and cost per case a ceiling.",
 )
 
 
@@ -104,8 +105,17 @@ def costs_or_default(cost_per_visit=None, platform_fee=None, dose_rate=None) -> 
     }
 
 
-def schedule_rows(costs: dict) -> list[dict]:
-    """Every schedule with its outcome and the cost per case averted at these prices."""
+def schedule_rows(costs: dict, incidence: float | None = None) -> list[dict]:
+    """Every schedule with its outcome and the cost per case averted at these prices.
+
+    EMOD supplies each schedule's RELATIVE effect (``averted_pct``). The absolute
+    burden it acts on comes from ``incidence`` -- clinical episodes per 1,000
+    people per year (MAP) -- when given. The uncalibrated setting's own baseline
+    is ~2.7 episodes per child per year, about ten times MAP's all-ages rate for
+    Nigeria, so absolute figures taken from it do not reconcile with any real
+    state. With no incidence the model's own figures are returned (``basis``
+    says which).
+    """
     sweep = load_sweep()
     setting = sweep["setting"]
     baseline = setting["baseline_cases"]
@@ -120,6 +130,15 @@ def schedule_rows(costs: dict) -> list[dict]:
         # An effect smaller than its own uncertainty is not a result to cost.
         # The comparison point itself has nothing to cost.
         noisy = s["code"] != "none" and s["averted_ci"] >= s["averted_pct"]
+        doses_per_child = s["doses"] / children / years
+        model_cost = None if noisy or averted <= 0 else round(spend / averted, 2)
+        if incidence:
+            per_child = incidence / 1000 * s["averted_pct"] / 100
+            cost = None if noisy or per_child <= 0 else round(doses_per_child * per_dose / per_child, 2)
+            per_1000 = round(per_child * 1000, 1)
+        else:
+            cost = model_cost
+            per_1000 = round(averted / children / years * 1000, 1)
         rows.append(
             {
                 "code": s["code"],
@@ -133,12 +152,17 @@ def schedule_rows(costs: dict) -> list[dict]:
                 "averted_ci": s["averted_ci"],
                 "too_noisy": noisy,
                 "doses": s["doses"],
-                "cases_averted": round(averted, 1),
-                "spend": round(spend, 2),
-                "cost_per_case_averted": None if noisy or averted <= 0 else round(spend / averted, 2),
+                "basis": "map_incidence" if incidence else "model_setting",
+                "cost_per_case_averted": cost,
                 # Rates per child per year, for scaling to a real population.
-                "cases_averted_per_1000_children_per_year": round(averted / children / years * 1000, 1),
-                "doses_per_child_per_year": round(s["doses"] / children / years, 2),
+                "cases_averted_per_1000_children_per_year": per_1000,
+                "doses_per_child_per_year": round(doses_per_child, 2),
+                # The uncalibrated setting's own absolute figures, for reference only.
+                "model_setting": {
+                    "cases_averted": round(averted, 1),
+                    "spend": round(spend, 2),
+                    "cost_per_case_averted": model_cost,
+                },
             }
         )
     return rows
@@ -179,19 +203,18 @@ def approx(n: float, figures: int = 2) -> int:
     return int(float(f"{n:.{figures}g}"))
 
 
-def project(children: float | None, schedule: dict, per_dose: float, burden: float = 1.0) -> dict | None:
-    """One year of a schedule in a population of this size.
+def project(children: float | None, schedule: dict, per_dose: float, incidence: float | None) -> dict | None:
+    """One year of a schedule in a state: its children, at its own malaria incidence.
 
-    ``burden`` scales the modelled setting's malaria to this state's own: the
-    state's MAP incidence over the reference incidence (see ``reference_incidence``).
-    The schedule's RELATIVE effect is EMOD's; the absolute number of cases it
-    averts follows the state's burden, and so does the cost per case averted.
-    Doses do not depend on malaria, so they do not scale.
+    Cases averted = children x incidence (per person per year, MAP, all ages) x the
+    schedule's EMOD effect. Young children get malaria more often than the
+    all-ages rate, so this is a floor on cases averted and a ceiling on cost per
+    case. Every figure reconciles from the row's own columns.
     """
-    if not children:
+    if not children or not incidence:
         return None
     doses = children * schedule["doses_per_child_per_year"]
-    cases = children * schedule["cases_averted_per_1000_children_per_year"] / 1000 * burden
+    cases = children * incidence / 1000 * schedule["averted_pct"] / 100
     spend = doses * per_dose
     return {
         "cases_averted_per_year": approx(cases),
@@ -199,18 +222,6 @@ def project(children: float | None, schedule: dict, per_dose: float, burden: flo
         "spend_per_year": approx(spend),
         "cost_per_case_averted": round(spend / cases, 2) if cases else None,
     }
-
-
-def reference_incidence(rows: list[dict]) -> float | None:
-    """The malaria incidence the modelled setting stands for.
-
-    EMOD's setting is fitted to no state, so its burden is pinned to the states
-    that match it in both prevalence and seasonality: their mean MAP incidence.
-    A state's burden factor is then its own incidence over this. Recomputed from
-    live data, never hand-maintained.
-    """
-    near = [r["malaria_incidence"] for r in rows if r["fit"] == "near" and r["malaria_incidence"]]
-    return sum(near) / len(near) if near else None
 
 
 def state_rows(schedule_code: str, costs: dict) -> list[dict]:
@@ -248,18 +259,14 @@ def state_rows(schedule_code: str, costs: dict) -> list[dict]:
         )
         children_of[b.pk] = children
 
-    ref = reference_incidence(rows)
     for r in rows:
-        r["burden_factor"] = None
         r["projection"] = None
         r["confidence"] = None
-        if r["fit"] not in RANKED_FITS or not ref:
+        if r["fit"] not in RANKED_FITS:
             continue
-        # No incidence of its own: the model's burden as is, at lower confidence.
-        factor = (r["malaria_incidence"] / ref) if r["malaria_incidence"] else 1.0
-        r["burden_factor"] = round(factor, 2)
-        r["projection"] = project(children_of[r["pk"]], schedule, per_dose, factor)
-        r["confidence"] = "model fit" if r["fit"] == "near" and r["malaria_incidence"] else "lower"
+        r["projection"] = project(children_of[r["pk"]], schedule, per_dose, r["malaria_incidence"])
+        if r["projection"]:
+            r["confidence"] = "model fit" if r["fit"] == "near" else "lower"
 
     # Most cost-effective first; the states the model cannot rank follow, highest
     # prevalence first, so the shortlist and the exclusions read top to bottom.
@@ -278,10 +285,25 @@ def state_rows(schedule_code: str, costs: dict) -> list[dict]:
     return rows
 
 
+def national_incidence() -> dict | None:
+    """Nigeria's MAP malaria incidence: the burden the schedule comparison is costed at."""
+    from connect_labs.labs.indicators import boundaries as boundary_set
+    from connect_labs.labs.indicators.resolve import BulkResolver
+
+    units = list(boundary_set.owned().filter(iso_code=ISO, admin_level=0)[:1])
+    if not units:
+        return None
+    r = BulkResolver(units).get("malaria_incidence", units[0])
+    if not r:
+        return None
+    return {"value": round(r.value, 1), "year": r.year, "source": r.source_ref or r.source}
+
+
 def summary(costs: dict) -> dict:
     """The sweep's provenance, the schedules at these prices, and the caveats -- everything but the states."""
     sweep = load_sweep()
-    rows = schedule_rows(costs)
+    ref = national_incidence()
+    rows = schedule_rows(costs, ref["value"] if ref else None)
     best = best_schedule(rows)
     return {
         "model": sweep["model"],
@@ -294,6 +316,7 @@ def summary(costs: dict) -> dict:
         },
         "schedules": rows,
         "best_schedule": best["code"] if best else None,
+        "reference_incidence": ref,
         "references": sweep["references"],
         "caveats": list(CAVEATS),
     }
