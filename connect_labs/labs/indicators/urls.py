@@ -19,4 +19,6 @@ urlpatterns = [
     path("download/", views.SelectionDownloadView.as_view(), name="download"),
     path("pmc/", views.PmcView.as_view(), name="pmc"),
     path("api/pmc/", views.PmcDataView.as_view(), name="pmc_data"),
+    path("api/pmc/run/", views.PmcRunView.as_view(), name="pmc_run"),
+    path("api/pmc/run/<int:pk>/", views.PmcRunStatusView.as_view(), name="pmc_run_status"),
 ]

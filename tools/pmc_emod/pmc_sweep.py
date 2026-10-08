@@ -22,7 +22,8 @@ BURN_IN_DAYS = 2 * 365
 INTERVENTION_DAYS = 2 * 365
 SIM_DAYS = BURN_IN_DAYS + INTERVENTION_DAYS
 POP = int(os.environ.get("PMC_POP", 10000))
-LARVAL_CAPACITY = float(os.environ.get("PMC_LARVAL", 3e8))
+# 6e7 (PfPR 2-5y about 44%) is what the committed grid was run with; the live model uses the same.
+LARVAL_CAPACITY = float(os.environ.get("PMC_LARVAL", 6e7))
 SEEDS = [int(s) for s in os.environ.get("PMC_SEEDS", "0,1").split(",")]
 
 # Southern-Nigeria-like: year-round transmission, peak in the long rains
@@ -46,39 +47,68 @@ SCENARIOS = {
 }
 
 
-def build_config(config):
+def default_setting():
+    """The CLI's setting, read from the PMC_* environment (see the module constants)."""
+    return {
+        "name": "SW_Nigeria_like",
+        "larval_capacity": LARVAL_CAPACITY,
+        "habitat_times": list(HABITAT["Times"]),
+        "habitat_values": list(HABITAT["Values"]),
+        "pop": POP,
+        "case_mgmt": 0.5,  # clinical-case treatment coverage; severe cases get case_mgmt + 0.2
+        "net_coverage": 0.5,
+    }
+
+
+def build_config(config, setting=None, duration_days=SIM_DAYS, serialization=None):
+    """`serialization` is None, ("write", [timestep, ...]) or ("read", path, filename)."""
     import emodpy_malaria.malaria_config as malaria_config
     from emodpy_malaria.utils.emod_enum import HabitatType
+    from emodpy_malaria.utils.serialization import configure_serialization_read, configure_serialization_write
 
+    setting = setting or default_setting()
     config = malaria_config.set_team_defaults(config, manifest)
     malaria_config.add_species(config, manifest, ["gambiae", "funestus"])
     config.parameters.Run_Number = 0
-    config.parameters.Simulation_Duration = SIM_DAYS
+    config.parameters.Simulation_Duration = duration_days
     habitat = malaria_config.VectorHabitat(
         habitat_type=HabitatType.LINEAR_SPLINE,
-        max_larval_capacity=LARVAL_CAPACITY,
+        max_larval_capacity=setting["larval_capacity"],
         capacity_distribution_number_of_years=1,
-        capacity_distribution_over_time=HABITAT,
+        capacity_distribution_over_time={"Times": setting["habitat_times"], "Values": setting["habitat_values"]},
     )
     for species in ["gambiae", "funestus"]:
         malaria_config.set_species_param(config, species, "Habitats", habitat, overwrite=True)
     config.parameters.x_Base_Population = manifest.x_Base_Population_scale
+    if serialization and serialization[0] == "write":
+        configure_serialization_write(config, time_steps=list(serialization[1]), mask_node_write=0)
+    elif serialization and serialization[0] == "read":
+        configure_serialization_read(config, path=serialization[1], filenames=[serialization[2]])
     return config
 
 
-def build_demographics():
+def build_demographics(setting=None):
     from emodpy_malaria.demographics import MalariaDemographics as Demographics
     from emodpy_malaria.utils.distributions import UniformDistribution
     from emodpy_malaria.utils.emod_enum import BirthRateDependence
 
-    demog = Demographics.from_template_node(lat=7.25, lon=5.2, pop=POP, name="SW_Nigeria_like")
+    setting = setting or default_setting()
+    demog = Demographics.from_template_node(lat=7.25, lon=5.2, pop=setting["pop"], name=setting["name"])
     demog.set_birth_rate(37, birth_rate_dependence=BirthRateDependence.POPULATION_DEP_RATE)
     demog.set_age_distribution(UniformDistribution(0, 60))
     demog.set_initial_prevalence_distribution(UniformDistribution(0.1, 0.3))
     return demog
 
 
-def build_campaign(campaign, scenario="none"):
+def build_campaign(campaign, setting=None, rounds=(), burn_in_days=BURN_IN_DAYS, start_shift=0):
+    """Background care + nets, then the PMC `rounds` as (offset, interval, reps, age_min_y, age_max_y, coverage).
+
+    A round starts at burn_in_days + offset - start_shift. A run picking up a serialized population passes
+    start_shift=burn_in_days so its clock starts at the end of the burn-in.
+    """
+    setting = setting or default_setting()
+    case_mgmt = setting["case_mgmt"]
+    severe_mgmt = min(1.0, case_mgmt + 0.2)
     import emodpy_malaria.campaign.waning_config as waning
     from emodpy.campaign.individual_intervention import BroadcastEvent
     from emodpy_malaria.campaign.common import TargetDemographicsConfig as TDC
@@ -95,7 +125,7 @@ def build_campaign(campaign, scenario="none"):
         ],
         triggers_list=["NewClinicalCase"],
         start_day=1,
-        target_demographics_config=TDC(demographic_coverage=0.5),
+        target_demographics_config=TDC(demographic_coverage=case_mgmt),
     )
     add_intervention_triggered(
         campaign,
@@ -105,7 +135,7 @@ def build_campaign(campaign, scenario="none"):
         ],
         triggers_list=["NewSevereCase"],
         start_day=1,
-        target_demographics_config=TDC(demographic_coverage=0.7),
+        target_demographics_config=TDC(demographic_coverage=severe_mgmt),
     )
     bednet = SimpleBednet(
         campaign,
@@ -113,12 +143,16 @@ def build_campaign(campaign, scenario="none"):
         blocking_config=waning.Exponential(initial_effect=0.9, decay_time_constant=730),
         killing_config=waning.Exponential(initial_effect=0.6, decay_time_constant=1460),
     )
+    net_interval = 3 * 365
+    net_start = 5
+    while net_start - start_shift < 1:  # keep the 3-year net cycle when the clock is shifted
+        net_start += net_interval
     add_intervention_scheduled(
         campaign,
         intervention_list=[bednet],
-        start_day=5,
-        repetition_config=RepetitionConfig(infinite_repetitions=True, timesteps_between_repetitions=3 * 365),
-        target_demographics_config=TDC(demographic_coverage=0.5),
+        start_day=net_start - start_shift,
+        repetition_config=RepetitionConfig(infinite_repetitions=True, timesteps_between_repetitions=net_interval),
+        target_demographics_config=TDC(demographic_coverage=setting["net_coverage"]),
     )
 
     # Declare PMC_Dose in every scenario (no-PMC included) so the event counter
@@ -129,21 +163,23 @@ def build_campaign(campaign, scenario="none"):
         start_day=1,
         target_demographics_config=TDC(target_age_min=150, target_age_max=151),
     )
-    for offset, interval, reps, age_min, age_max, cov in SCENARIOS[scenario]:
+    for offset, interval, reps, age_min, age_max, cov in rounds:
         add_intervention_scheduled(
             campaign,
             intervention_list=[
                 AntimalarialDrug(campaign, drug_type="SulfadoxinePyrimethamine"),
                 BroadcastEvent(campaign, broadcast_event="PMC_Dose"),
             ],
-            start_day=BURN_IN_DAYS + offset,
-            repetition_config=RepetitionConfig(number_repetitions=reps, timesteps_between_repetitions=interval),
+            start_day=burn_in_days + offset - start_shift,
+            repetition_config=RepetitionConfig(
+                number_repetitions=int(reps), timesteps_between_repetitions=int(interval)
+            ),
             target_demographics_config=TDC(demographic_coverage=cov, target_age_min=age_min, target_age_max=age_max),
         )
     return campaign
 
 
-def build_reports(reporters):
+def build_reports(reporters, report_start=BURN_IN_DAYS, report_end=SIM_DAYS, n_years=2):
     from emodpy.reporters.base import ReportFilter as BaseFilter
     from emodpy.reporters.common import ReportEventCounter
     from emodpy_malaria.reporters.reporters import InsetChart, MalariaSummaryReport, ReportFilter
@@ -153,23 +189,34 @@ def build_reports(reporters):
             reporters,
             reporting_interval=365,
             age_bins=[0.25, 2, 5, 115],
-            max_number_reports=2,
+            max_number_reports=n_years,
             pretty_format=True,
-            report_filter=ReportFilter(start_day=BURN_IN_DAYS, end_day=SIM_DAYS, filename_suffix="annual"),
+            report_filter=ReportFilter(start_day=report_start, end_day=report_end, filename_suffix="annual"),
         )
     )
     reporters.add(
         ReportEventCounter(
-            reporters, event_list=["PMC_Dose"], report_filter=BaseFilter(start_day=BURN_IN_DAYS, end_day=SIM_DAYS)
+            reporters, event_list=["PMC_Dose"], report_filter=BaseFilter(start_day=report_start, end_day=report_end)
         )
     )
     reporters.add(InsetChart(reporters))
     return reporters
 
 
-def set_scenario(simulation, value):
-    simulation.task.create_campaign_from_callback(partial(build_campaign, scenario=value))
-    return {"scenario": value}
+def scenario_setter(setting=None, schedules=None, **campaign_kwargs):
+    """A sweep definition (simulation, value) that gives each simulation the campaign for schedule `value`.
+
+    (A closure rather than a partial: idmtools counts a partial's bound keywords as missing arguments.)
+    """
+    schedules = SCENARIOS if schedules is None else schedules
+
+    def set_scenario(simulation, value):
+        simulation.task.create_campaign_from_callback(
+            partial(build_campaign, setting=setting, rounds=schedules[value], **campaign_kwargs)
+        )
+        return {"scenario": value}
+
+    return set_scenario
 
 
 def set_seed(simulation, value):
@@ -217,17 +264,18 @@ def main():
     platform = Platform(
         "Container", job_directory=manifest.job_dir, docker_image=manifest.plat_image, sym_link=False, max_job=6
     )
+    setting = default_setting()
     task = EMODTask.from_defaults(
         eradication_path=manifest.eradication_path,
         schema_path=manifest.schema_path,
-        config_builder=build_config,
-        campaign_builder=build_campaign,
-        demographics_builder=build_demographics,
+        config_builder=partial(build_config, setting=setting),
+        campaign_builder=partial(build_campaign, setting=setting),
+        demographics_builder=partial(build_demographics, setting),
         report_builder=build_reports,
     )
     builder = SimulationBuilder()
     scenarios = sys.argv[1].split(",") if len(sys.argv) > 1 else list(SCENARIOS)
-    builder.add_sweep_definition(set_scenario, scenarios)
+    builder.add_sweep_definition(scenario_setter(setting), scenarios)
     builder.add_sweep_definition(set_seed, SEEDS)
     exp = Experiment.from_builder(builder, task, name="connect_pmc_sweep")
     exp.run(wait_until_done=True, platform=platform)

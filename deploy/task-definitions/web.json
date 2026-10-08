@@ -133,6 +133,18 @@
         {
           "name": "CANOPY_CLIENT_ID",
           "value": "https://canopy.dimagi.com/oauth/client.json"
+        },
+        {
+          "name": "LABS_EMOD_INSTANCE_ID",
+          "value": "i-0271a313a8ffb86e3"
+        },
+        {
+          "name": "LABS_EMOD_BUCKET",
+          "value": "labs-emod-artifactsbucket-pquqtiyyezyy"
+        },
+        {
+          "name": "LABS_EMOD_REGION",
+          "value": "us-east-1"
         }
       ],
       "mountPoints": [],
