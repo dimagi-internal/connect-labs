@@ -341,3 +341,34 @@ class TestTheRunControl:
         assert strict.post(url, payload, content_type="application/json").status_code == 403
         ok = strict.post(url, payload, content_type="application/json", headers={"X-CSRFToken": token})
         assert ok.status_code == 202
+
+    def test_a_failed_run_shows_the_page_one_public_sentence(self, client_in):
+        from connect_labs.labs.indicators.models import PmcModelRun
+
+        run_id = self._post(client_in, state="Ondo", schedule=self.SPEC).json()["run_id"]
+        PmcModelRun.objects.filter(pk=run_id).update(
+            status=PmcModelRun.FAILED, error="runner i-0123456789abcdef0 is 'terminated' (InstanceGone)"
+        )
+
+        r = client_in.get(reverse("targeting:pmc_run_status", args=[run_id]), {"state": "Ondo"})
+
+        assert r.json()["status"] == "failed"
+        assert r.json()["error"] == "The live model is unavailable right now."
+        assert "i-0123" not in r.content.decode() and "targeting_pmc_schedules" not in r.content.decode()
+
+    def test_an_unconfigured_deploy_shows_the_page_one_public_sentence(self, client_in, settings):
+        settings.LABS_EMOD_INSTANCE_ID = None
+
+        r = self._post(client_in, state="Ondo", schedule=self.SPEC)
+
+        assert r.status_code == 503 and r.json()["error"] == "The live model is unavailable right now."
+
+    def test_a_busy_model_shows_the_page_a_plain_busy_sentence(self, client_in, monkeypatch):
+        from connect_labs.labs.indicators.emod import service
+
+        monkeypatch.setattr(service, "PMC_MAX_IN_FLIGHT", 0)
+
+        r = self._post(client_in, state="Ondo", schedule=self.SPEC)
+
+        assert r.status_code == 429
+        assert r.json()["error"] == "The live model is busy with other runs; try again in a few minutes."

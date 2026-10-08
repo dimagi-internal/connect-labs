@@ -10,6 +10,20 @@
   "setting": {
     "label": "Southern-Nigeria-like, uncalibrated",
     "calibrated": false,
+    "model_inputs": {
+      "name": "SW_Nigeria_like",
+      "larval_capacity": 60000000.0,
+      "habitat_times": [
+        0, 30, 60, 91, 122, 152, 182, 213, 243, 274, 304, 334, 365
+      ],
+      "habitat_values": [
+        1.0, 0.8, 1.0, 2.0, 4.0, 6.0, 6.0, 5.0, 6.0, 5.0, 3.0, 1.5, 1.0
+      ],
+      "pop": 5000,
+      "case_mgmt": 0.5,
+      "net_coverage": 0.5
+    },
+    "model_inputs_note": "The setting exactly as the grid was run (PMC_POP=5000 PMC_LARVAL=6e7, seeds 0-5). Live runs use the same values (emod/runner.py DEFAULT_SETTING), so their burn-in is the grid's and their results compare with its rows.",
     "description": "One simulated setting, not a real state: year-round transmission (An. gambiae and An. funestus) with a long-rains peak from about April to October. Background case management (50% of clinical cases, 70% of severe) and bed nets (50% coverage) are the same in every schedule.",
     "pfpr_2_5y": 0.44,
     "wettest_quarter_pct": 41,

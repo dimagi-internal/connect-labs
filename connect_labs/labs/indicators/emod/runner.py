@@ -25,13 +25,14 @@ from connect_labs.labs.indicators.models import PmcModelRun
 
 logger = logging.getLogger(__name__)
 
-#: The southern-Nigeria-like setting every live run uses until states are calibrated.
-#: Copied from ``default_setting()`` in tools/pmc_emod/pmc_sweep.py (tools/ is not importable
-#: from the app); test_emod_runner.py loads that file and fails if the two drift.
-#: ``pop`` is the gated 5000 (PMC_POP=5000), not the sweep CLI's own default.
+#: The southern-Nigeria-like setting every live run uses until states are calibrated: exactly the
+#: setting the precomputed grid was run with (``setting.model_inputs`` in pmc_emod_sweep.json, i.e.
+#: PMC_POP=5000 PMC_LARVAL=6e7), so a live run starts from the grid's own burn-in and its effect is
+#: comparable with the grid's rows. test_emod_runner.py fails if this drifts from the JSON.
+#: ``larval_capacity`` must stay the float 6e7: the worker's burn-in cache key hashes its JSON text.
 DEFAULT_SETTING = {
     "name": "SW_Nigeria_like",
-    "larval_capacity": 3e8,
+    "larval_capacity": 6e7,
     "habitat_times": [0, 30, 60, 91, 122, 152, 182, 213, 243, 274, 304, 334, 365],
     "habitat_values": [1.0, 0.8, 1.0, 2.0, 4.0, 6.0, 6.0, 5.0, 6.0, 5.0, 3.0, 1.5, 1.0],
     "pop": 5000,
@@ -50,8 +51,19 @@ WORKER_SCRIPT = "/opt/emod/run_scenarios.py"
 
 BOOT_TIMEOUT_S = 600
 READY_TIMEOUT_S = 900
-# Longer than the worker's own 1800 s cap, so the worker reports its own timeout first.
+#: The worker's whole-request deadline (burn-in plus pick-ups), passed to it as
+#: EMOD_REQUEST_TIMEOUT_S. Its worst case is a cold burn-in plus the pick-ups, so a single bound
+#: on the request is what keeps a demo wait finite.
+WORKER_REQUEST_TIMEOUT_S = 2100
+# The SSM command limit: longer than the worker's own deadline, so the worker reports its own
+# timeout (with a readable message) before SSM kills it.
 RUN_TIMEOUT_S = 2400
+
+#: While a task owns a row it touches ``updated_at`` this often (emod/tasks.py heartbeat).
+ROW_HEARTBEAT_S = 60
+#: A ``running`` row untouched for three heartbeats belongs to a dead worker (a cold-killed
+#: Celery process): it may be re-queued and re-claimed.
+STALE_RUNNING_AFTER_S = 3 * ROW_HEARTBEAT_S
 
 FIT_REASONS = {
     "more_seasonal": "more seasonal than the modelled setting: SMC, not PMC",
@@ -134,11 +146,17 @@ def default_s3():
 
 
 def _claim(run: PmcModelRun, reclaim_stale_after_s: float | None) -> bool:
-    """Atomically move the row to running. False when another worker owns it."""
+    """Atomically move a ``queued`` row (or, with ``reclaim_stale_after_s``, a ``running`` row
+    untouched that long) to running. False for anything else: another worker owns it, it already
+    completed, or it failed (the service re-queues a failed row before it enqueues a task).
+
+    The claim records ``started_at`` (epoch) in timings: the run-time ETA counts from it, because
+    the heartbeat keeps moving ``updated_at``.
+    """
     now = timezone.now()
-    claimable = ~Q(status=PmcModelRun.RUNNING)
+    claimable = Q(status=PmcModelRun.QUEUED)
     if reclaim_stale_after_s is not None:
-        claimable |= Q(updated_at__lt=now - timedelta(seconds=reclaim_stale_after_s))
+        claimable |= Q(status=PmcModelRun.RUNNING, updated_at__lt=now - timedelta(seconds=reclaim_stale_after_s))
     claimed = (
         PmcModelRun.objects.filter(pk=run.pk)
         .filter(claimable)
@@ -146,15 +164,18 @@ def _claim(run: PmcModelRun, reclaim_stale_after_s: float | None) -> bool:
     )
     if claimed:
         run.refresh_from_db()
+        run.timings = {**(run.timings or {}), "started_at": now.timestamp()}
+        PmcModelRun.objects.filter(pk=run.pk).update(timings=run.timings)
     return bool(claimed)
 
 
 def execute(run: PmcModelRun, instance, bucket: str, s3=None, reclaim_stale_after_s: float | None = None) -> None:
     """Run ``run.request`` on the worker and store the outcome on ``run``.
 
-    The row is claimed atomically first: a run another worker holds (status ``running``) is left
-    alone and this returns at once, unless ``reclaim_stale_after_s`` is given and the row has not
-    been touched for that long (its worker died). A failed run can be re-executed.
+    The row is claimed atomically first and only a ``queued`` row is taken: a run another worker
+    holds (status ``running``) is left alone and this returns at once, unless
+    ``reclaim_stale_after_s`` is given and the row has not been touched for that long (its worker
+    died). A completed or failed row is never re-run here; re-queue a failed one first.
 
     A failed run does not raise: the failure is recorded on the row (status ``failed`` with the
     message) so a Celery task can finish cleanly and the caller can read it.
@@ -183,7 +204,7 @@ def execute(run: PmcModelRun, instance, bucket: str, s3=None, reclaim_stale_afte
         timings["cold_start"] = bool(up.cold)
         t = time.monotonic()
         command = (
-            f"{WORKER_PYTHON} {WORKER_SCRIPT} "
+            f"EMOD_REQUEST_TIMEOUT_S={WORKER_REQUEST_TIMEOUT_S} {WORKER_PYTHON} {WORKER_SCRIPT} "
             f"--request {shlex.quote(f's3://{bucket}/{request_key}')} "
             f"--out {shlex.quote(f's3://{bucket}/{result_key}')}"
         )

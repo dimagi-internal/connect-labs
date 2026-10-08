@@ -22,7 +22,8 @@ BURN_IN_DAYS = 2 * 365
 INTERVENTION_DAYS = 2 * 365
 SIM_DAYS = BURN_IN_DAYS + INTERVENTION_DAYS
 POP = int(os.environ.get("PMC_POP", 10000))
-LARVAL_CAPACITY = float(os.environ.get("PMC_LARVAL", 3e8))
+# 6e7 (PfPR 2-5y about 44%) is what the committed grid was run with; the live model uses the same.
+LARVAL_CAPACITY = float(os.environ.get("PMC_LARVAL", 6e7))
 SEEDS = [int(s) for s in os.environ.get("PMC_SEEDS", "0,1").split(",")]
 
 # Southern-Nigeria-like: year-round transmission, peak in the long rains
@@ -63,7 +64,6 @@ def build_config(config, setting=None, duration_days=SIM_DAYS, serialization=Non
     """`serialization` is None, ("write", [timestep, ...]) or ("read", path, filename)."""
     import emodpy_malaria.malaria_config as malaria_config
     from emodpy_malaria.utils.emod_enum import HabitatType
-
     from emodpy_malaria.utils.serialization import configure_serialization_read, configure_serialization_write
 
     setting = setting or default_setting()

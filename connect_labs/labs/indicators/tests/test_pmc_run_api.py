@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pathlib
 import threading
 import time
 from datetime import timedelta
@@ -11,9 +12,10 @@ from django.db import connection
 from django.urls import reverse
 from django.utils import timezone
 
-from connect_labs.labs.indicators.emod import runner, tasks
+from connect_labs.labs.indicators.emod import runner, service, tasks
 from connect_labs.labs.indicators.models import PmcModelRun
 
+REPO = pathlib.Path(__file__).resolve().parents[4]
 MONTHLY = {"code": "monthly", "rounds": [[0, 91, 8, 0.25, 2.0, 0.85]]}
 CUSTOM = {"code": "custom", "rounds": [[10, 91, 4, 0.5, 2.0, 0.85]]}
 
@@ -97,8 +99,35 @@ class TestRunEndpoint:
         with django_capture_on_commit_callbacks(execute=True):
             r = post(client_in, state="Ondo", schedules=[MONTHLY])
         assert r.status_code == 202
-        assert r.json() == {"run_id": run.pk, "status": status, "cached": False}
+        assert r.json() == {"run_id": run.pk, "status": status, "cached": False, "wait": service.WAIT_COLD}
         assert mock_delay == []
+
+    def test_a_running_row_that_missed_three_heartbeats_is_requeued_once(
+        self, client_in, mock_delay, django_capture_on_commit_callbacks
+    ):
+        run = make_run([MONTHLY], PmcModelRun.RUNNING)
+        dead_since = timezone.now() - timedelta(seconds=runner.STALE_RUNNING_AFTER_S + 30)
+        PmcModelRun.objects.filter(pk=run.pk).update(updated_at=dead_since)
+        with django_capture_on_commit_callbacks(execute=True):
+            r = post(client_in, state="Ondo", schedules=[MONTHLY])
+            assert post(client_in, state="Ondo", schedules=[MONTHLY]).status_code == 202
+        assert r.status_code == 202 and r.json()["status"] == "queued"
+        assert mock_delay == [run.pk]
+        run.refresh_from_db()
+        assert run.status == PmcModelRun.QUEUED and run.updated_at > dead_since
+        assert run.timings["submitted_at"] > dead_since.timestamp()
+
+    def test_a_running_row_inside_three_heartbeats_is_left_alone(
+        self, client_in, mock_delay, django_capture_on_commit_callbacks
+    ):
+        run = make_run([MONTHLY], PmcModelRun.RUNNING)
+        recent = timezone.now() - timedelta(seconds=runner.STALE_RUNNING_AFTER_S - 30)
+        PmcModelRun.objects.filter(pk=run.pk).update(updated_at=recent)
+        with django_capture_on_commit_callbacks(execute=True):
+            post(client_in, state="Ondo", schedules=[MONTHLY])
+        assert mock_delay == []
+        run.refresh_from_db()
+        assert run.status == PmcModelRun.RUNNING
 
     def test_stale_queued_run_is_reenqueued_once(self, client_in, mock_delay, django_capture_on_commit_callbacks):
         run = make_run([MONTHLY], PmcModelRun.QUEUED)
@@ -164,10 +193,11 @@ class TestRunEndpoint:
         r = client_in.post(reverse("targeting:pmc_run"), "{nope", content_type="application/json")
         assert r.status_code == 400
 
-    def test_missing_configuration_is_503(self, client_in, settings, mock_delay):
+    def test_missing_configuration_is_503_with_the_public_sentence(self, client_in, settings, mock_delay):
         settings.LABS_EMOD_BUCKET = None
         r = post(client_in, state="Ondo", schedules=[MONTHLY])
-        assert r.status_code == 503 and r.json()["error"].startswith("live model unavailable: ")
+        assert r.status_code == 503 and r.json()["error"] == "The live model is unavailable right now."
+        assert "LABS_EMOD" not in r.content.decode()
         assert mock_delay == []
 
 
@@ -184,17 +214,41 @@ class TestStatusEndpoint:
         body = client_in.get(reverse("targeting:pmc_run_status", args=[run.pk])).json()
         assert body["result"] == {"a": 1} and body["eta_s"] == 0 and body["timings"] == {"total_s": 5}
 
-    def test_failed_carries_error(self, client_in):
-        run = make_run([MONTHLY], PmcModelRun.FAILED, error="boom")
+    def test_failed_carries_the_public_error_never_the_internal_one(self, client_in):
+        run = make_run([MONTHLY], PmcModelRun.FAILED, error="runner i-0abc123 is 'stopping' (InstanceGone)")
+        r = client_in.get(reverse("targeting:pmc_run_status", args=[run.pk]))
+        body = r.json()
+        assert body["status"] == "failed" and body["result"] is None
+        assert body["error"] == "The live model is unavailable right now."
+        assert "i-0abc123" not in r.content.decode()
+        run.refresh_from_db()
+        assert "i-0abc123" in run.error  # kept for logs and admins
+
+    def test_a_busy_timeout_says_busy(self, client_in):
+        run = make_run([MONTHLY], PmcModelRun.FAILED, error="runner busy: another model run held the worker")
         body = client_in.get(reverse("targeting:pmc_run_status", args=[run.pk])).json()
-        assert body["status"] == "failed" and body["error"] == "boom" and body["result"] is None
+        assert "busy" in body["error"]
+
+    def test_the_payload_carries_the_label_and_caveats(self, client_in):
+        from connect_labs.labs.indicators import pmc
+
+        run = make_run([MONTHLY], PmcModelRun.COMPLETED, result={"a": 1})
+        body = client_in.get(reverse("targeting:pmc_run_status", args=[run.pk])).json()
+        assert body["label"] == "illustrative \u00b7 live model run"
+        assert body["caveats"] == list(pmc.CAVEATS) and body["caveats"]
+
+    def test_a_running_rows_eta_counts_from_its_claim_not_its_last_heartbeat(self, client_in):
+        started = timezone.now().timestamp() - 100
+        run = make_run([MONTHLY], PmcModelRun.RUNNING, timings={"expected_s": 120, "started_at": started})
+        body = client_in.get(reverse("targeting:pmc_run_status", args=[run.pk])).json()
+        assert body["eta_s"] <= 20  # updated_at is fresh (a heartbeat), but 100 s of 120 are gone
 
     def test_unknown_run_is_404(self, client_in):
         assert client_in.get(reverse("targeting:pmc_run_status", args=[999999])).status_code == 404
 
 
 def runner_eta_cold():
-    from connect_labs.labs.indicators.views import PMC_RUN_ETA_COLD_S
+    from connect_labs.labs.indicators.emod.service import PMC_RUN_ETA_COLD_S
 
     return PMC_RUN_ETA_COLD_S
 
@@ -246,7 +300,7 @@ class TestTask:
 
         monkeypatch.setattr(tasks, "execute", fake_execute)
         monkeypatch.setattr(tasks, "_instance", lambda: object())
-        monkeypatch.setattr(tasks.Lease, "acquire_wait", _fast_wait)
+        monkeypatch.setattr(tasks, "LEASE_POLL_S", 0.02)
         a, b = make_run([MONTHLY]), make_run([CUSTOM])
         ts = [threading.Thread(target=self._run, args=(x.pk,)) for x in (a, b)]
         [t.start() for t in ts]
@@ -324,15 +378,205 @@ class TestTask:
         t.join()
         assert len(calls) >= 2
 
+    def test_a_duplicate_task_for_a_completed_row_does_nothing(self, monkeypatch):
+        monkeypatch.setattr(tasks, "_redis", lambda: pytest.fail("must not touch the lease"))
+        monkeypatch.setattr(tasks, "execute", lambda *a, **k: pytest.fail("must not execute"))
+        run = make_run([MONTHLY], PmcModelRun.COMPLETED, result={"kept": 1})
+        tasks.run_pmc_model.run(run.pk)
+        run.refresh_from_db()
+        assert run.status == PmcModelRun.COMPLETED and run.result == {"kept": 1}
 
-def _fast_wait(self, owner, timeout_s, poll_s=2.0):
-    """Poll quickly so the lease test does not sleep 2 s between attempts."""
-    deadline = time.monotonic() + 30
-    while time.monotonic() < deadline:
-        if self.acquire(owner):
-            return True
-        time.sleep(0.02)
-    return False
+    def test_a_duplicate_that_waited_behind_the_finishing_task_does_nothing(self, monkeypatch):
+        r = FakeRedis()
+        monkeypatch.setattr(tasks, "_redis", lambda: r)
+        monkeypatch.setattr(tasks, "_instance", lambda: object())
+        monkeypatch.setattr(tasks, "execute", lambda *a, **k: pytest.fail("must not execute"))
+        run = make_run([MONTHLY])
+
+        def acquire_after_the_other_finished(self, owner):
+            PmcModelRun.objects.filter(pk=run.pk).update(status=PmcModelRun.COMPLETED)
+            return bool(r.set("ondemand:emod:lock", owner, nx=True))
+
+        monkeypatch.setattr(tasks.Lease, "acquire", acquire_after_the_other_finished)
+        tasks.run_pmc_model.run(run.pk)
+        run.refresh_from_db()
+        assert run.status == PmcModelRun.COMPLETED
+        assert r.get("ondemand:emod:lock") is None
+
+    def test_a_double_click_runs_the_model_once(self, monkeypatch):
+        from connect_labs.labs.indicators.tests.test_emod_runner import FakeInstance, FakeS3
+
+        r, s3 = FakeRedis(), FakeS3()
+        inst = FakeInstance(s3, "test-bucket")
+        monkeypatch.setattr(tasks, "_redis", lambda: r)
+        monkeypatch.setattr(tasks, "_instance", lambda: inst)
+        monkeypatch.setattr(tasks, "LEASE_POLL_S", 0.02)
+        real_execute = tasks.execute
+
+        def slow_execute(run, instance, bucket, reclaim_stale_after_s=None):
+            time.sleep(0.2)  # long enough for the second task to be waiting on the lease
+            real_execute(run, instance, bucket, s3=s3, reclaim_stale_after_s=reclaim_stale_after_s)
+
+        monkeypatch.setattr(tasks, "execute", slow_execute)
+        run = make_run([MONTHLY])
+        ts = [threading.Thread(target=self._run, args=(run.pk,)) for _ in range(2)]
+        [t.start() for t in ts]
+        [t.join() for t in ts]
+        assert [c[0] for c in inst.calls].count("run") == 1
+        run.refresh_from_db()
+        assert run.status == PmcModelRun.COMPLETED
+
+    def test_an_unreachable_lease_store_fails_the_run_as_unavailable(self, monkeypatch):
+        import redis
+
+        class DownRedis(FakeRedis):
+            def set(self, *a, **k):
+                raise redis.exceptions.ConnectionError("Error 111 connecting to 10.0.0.5:6379")
+
+        monkeypatch.setattr(tasks, "_redis", lambda: DownRedis())
+        monkeypatch.setattr(tasks, "_instance", lambda: object())
+        monkeypatch.setattr(tasks, "execute", lambda *a, **k: pytest.fail("must not execute"))
+        run = make_run([MONTHLY])
+        tasks.run_pmc_model.run(run.pk)
+        run.refresh_from_db()
+        assert run.status == PmcModelRun.FAILED
+        assert run.error == "live model unavailable: coordination store unreachable"
+        assert service.public_error(run.error) == service.PUBLIC_UNAVAILABLE
+
+    def test_an_unreachable_lease_store_at_construction_also_fails_the_run(self, monkeypatch):
+        import redis
+
+        def boom():
+            raise redis.exceptions.ConnectionError("no route")
+
+        monkeypatch.setattr(tasks, "_redis", boom)
+        monkeypatch.setattr(tasks, "_instance", lambda: object())
+        run = make_run([MONTHLY])
+        tasks.run_pmc_model.run(run.pk)
+        run.refresh_from_db()
+        assert run.status == PmcModelRun.FAILED and "coordination store unreachable" in run.error
+
+    def test_waiting_for_the_lease_keeps_a_queued_row_fresh(self, monkeypatch):
+        r = FakeRedis()
+        r.set("ondemand:emod:lock", "someone-else", nx=True)
+        monkeypatch.setattr(tasks, "_redis", lambda: r)
+        monkeypatch.setattr(tasks, "_instance", lambda: object())
+        monkeypatch.setattr(tasks, "LEASE_WAIT_S", 0.2)
+        monkeypatch.setattr(tasks, "LEASE_POLL_S", 0.02)
+        monkeypatch.setattr(tasks, "_fail", lambda run, message: None)  # keep the row queued to inspect it
+        run = make_run([MONTHLY])
+        old = timezone.now() - timedelta(seconds=service.PMC_RUN_REQUEUE_AFTER_S + 60)
+        PmcModelRun.objects.filter(pk=run.pk).update(updated_at=old)
+        tasks.run_pmc_model.run(run.pk)
+        run.refresh_from_db()
+        # A request now would not mistake it for a lost enqueue.
+        assert run.updated_at > timezone.now() - timedelta(seconds=5)
+
+    def test_waiting_for_the_lease_does_not_touch_a_running_row(self, monkeypatch):
+        """A running row is the lease holder's; if that worker died the row must age so it can be reclaimed."""
+        r = FakeRedis()
+        r.set("ondemand:emod:lock", "dead-worker", nx=True)
+        monkeypatch.setattr(tasks, "_redis", lambda: r)
+        monkeypatch.setattr(tasks, "_instance", lambda: object())
+        monkeypatch.setattr(tasks, "LEASE_WAIT_S", 0.1)
+        monkeypatch.setattr(tasks, "LEASE_POLL_S", 0.02)
+        run = make_run([MONTHLY], PmcModelRun.RUNNING)
+        old = timezone.now() - timedelta(seconds=100)
+        PmcModelRun.objects.filter(pk=run.pk).update(updated_at=old)
+        tasks.run_pmc_model.run(run.pk)
+        run.refresh_from_db()
+        assert run.updated_at == old and run.status == PmcModelRun.RUNNING
+
+    def test_a_dead_workers_running_row_is_taken_over_once_its_lease_expires(self, monkeypatch):
+        from connect_labs.labs.indicators.tests.test_emod_runner import FakeInstance, FakeS3
+
+        r, s3 = FakeRedis(), FakeS3()
+        inst = FakeInstance(s3, "test-bucket")
+        monkeypatch.setattr(tasks, "_redis", lambda: r)
+        monkeypatch.setattr(tasks, "_instance", lambda: inst)
+        real_execute = tasks.execute
+
+        def execute(run, instance, bucket, reclaim_stale_after_s=None):
+            real_execute(run, instance, bucket, s3=s3, reclaim_stale_after_s=reclaim_stale_after_s)
+
+        monkeypatch.setattr(tasks, "execute", execute)
+        run = make_run([MONTHLY], PmcModelRun.RUNNING)  # its worker was killed; the lease has expired
+        PmcModelRun.objects.filter(pk=run.pk).update(
+            updated_at=timezone.now() - timedelta(seconds=runner.STALE_RUNNING_AFTER_S + 60)
+        )
+        tasks.run_pmc_model.run(run.pk)
+        run.refresh_from_db()
+        assert run.status == PmcModelRun.COMPLETED
+
+    def test_the_heartbeat_touches_the_row(self):
+        run = make_run([MONTHLY], PmcModelRun.RUNNING)
+        old = timezone.now() - timedelta(seconds=500)
+        PmcModelRun.objects.filter(pk=run.pk).update(updated_at=old)
+
+        class L:
+            def refresh(self, owner):
+                return True
+
+        stop = threading.Event()
+        t = threading.Thread(target=tasks._heartbeat, args=(L(), "o", stop, 0.01, None, run.pk))
+        t.start()
+        time.sleep(0.1)
+        stop.set()
+        t.join()
+        run.refresh_from_db()
+        assert run.updated_at > old + timedelta(seconds=400)
+
+
+def test_an_orphaned_lease_frees_within_five_minutes_and_is_refreshed_well_inside_that():
+    assert tasks.LEASE_TTL_S <= 300
+    assert tasks.HEARTBEAT_S == runner.ROW_HEARTBEAT_S == 60
+    assert tasks.LEASE_TTL_S >= 3 * tasks.HEARTBEAT_S  # a missed beat or two does not lose the lease
+    assert runner.STALE_RUNNING_AFTER_S == 3 * runner.ROW_HEARTBEAT_S
+
+
+def test_the_celery_worker_registers_the_task():
+    """autodiscover_tasks() imports only <app>.tasks: checked in a fresh interpreter, because this test
+    module has already imported emod.tasks itself."""
+    import os
+    import subprocess
+    import sys
+
+    code = (
+        "import django; django.setup()\n"
+        "from config.celery_app import app\n"
+        "app.loader.import_default_modules()\n"
+        "app.finalize()\n"
+        "print('connect_labs.labs.indicators.emod.tasks.run_pmc_model' in app.tasks)\n"
+    )
+    env = {**os.environ, "DJANGO_SETTINGS_MODULE": "config.settings.test"}
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, env=env, cwd=str(REPO), timeout=120
+    )
+    assert out.returncode == 0, out.stderr[-2000:]
+    assert out.stdout.strip().splitlines()[-1] == "True"
+
+
+class TestWaitPhrase:
+    def _run(self, **timings):
+        return PmcModelRun(status=PmcModelRun.QUEUED, timings=timings)
+
+    def test_warm(self):
+        assert service.wait_phrase(self._run(expected_s=120, queued_behind_s=0)) == "about two minutes"
+
+    def test_cold_says_the_server_is_starting(self):
+        assert service.wait_phrase(self._run(expected_s=300)) == (
+            "about five minutes -- the model server is starting up"
+        )
+
+    def test_behind_another_run(self):
+        assert service.wait_phrase(self._run(expected_s=120, queued_behind_s=200)) == (
+            "about two minutes, after the run ahead finishes"
+        )
+
+    def test_keyed_on_the_instance_state_not_the_countdown(self):
+        # A cold run nearly done still reads as a cold start, not 'two minutes'.
+        run = PmcModelRun(status=PmcModelRun.RUNNING, timings={"expected_s": 300, "queued_behind_s": 100})
+        assert service.wait_phrase(run) == service.WAIT_COLD
 
 
 class TestBusyBound:
