@@ -282,13 +282,16 @@
   function csv() {
     if (!lastResult) return;
     const esc = (v) => {
-      const s =
+      let s =
         v === null || v === undefined
           ? ''
           : typeof v === 'object'
             ? JSON.stringify(v)
             : String(v);
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      // Form answers are typed by field workers; a text cell starting with a formula
+      // character would run when the CSV is opened in Excel or Sheets.
+      if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const lines = [lastResult.columns.map(esc).join(',')].concat(
       lastResult.rows.map((r) => r.map(esc).join(',')),
