@@ -51,3 +51,14 @@ Average each scenario's six seeds into the `schedules` entries of `pmc_emod_swee
 `setting.baseline_cases`, `setting.children_3_24m`, `setting.pfpr_2_5y` and `run_date`.
 `connect_labs/labs/indicators/tests/test_pmc.py` pins the reported cost per case averted, so
 update those figures in the same commit.
+
+## Live worker (`worker/`)
+
+`worker/run_scenarios.py` is the on-box runner behind the live model: one request (a setting, schedules,
+seeds) in, one result out, with the 2-year burn-in serialized once per setting and reused. See its docstring
+for the request/result shapes and `worker/bootstrap.sh` for the instance user-data. Tests run locally under
+Docker (they skip when Docker is absent):
+
+```bash
+EMOD_TUTORIALS_DIR=/path/to/emodpy-malaria/tutorials /path/to/emodpy-venv/bin/python -m pytest tools/pmc_emod/worker -v
+```
