@@ -132,6 +132,15 @@ function WorkflowUI({
   var excludeRegistrationVisits = _excludeRegistrationVisits[0];
   var setExcludeRegistrationVisits = _excludeRegistrationVisits[1];
 
+  // UAT Comparison tab only -- default on ("filtered out"), since a visit
+  // the FLW marked as not at the mother's home isn't comparable GPS
+  // behavior (no fixed reference point to judge "did she travel far" or
+  // "is this suspiciously close to her last stop"). Independent of the
+  // GPS Map tab's own home-only toggle below -- each tab keeps its own.
+  var _uatHomeOnlyFilter = React.useState(true);
+  var uatHomeOnlyFilter = _uatHomeOnlyFilter[0];
+  var setUatHomeOnlyFilter = _uatHomeOnlyFilter[1];
+
   // --- Per-mother expanding-window computations -------------------------
   // visit_number and prior_verification_pass_rate can't be expressed by the
   // pipeline engine's window_fields today (only lag_haversine is supported),
@@ -360,6 +369,17 @@ function WorkflowUI({
     return blankOrNA(row.capture_anc_card_visit_verification);
   }
 
+  // Human-readable version of where_is_the_visit_being_conducted, for the
+  // GPS Map tab's visit tooltip -- the Table tab shows this field's raw
+  // CommCare value ('mothers_home' etc.) directly, but a hover tooltip
+  // reads better in plain words.
+  function locationTypeLabel(value) {
+    if (value === 'mothers_home') return 'Home';
+    if (value === 'health_facility') return 'Health facility';
+    if (value === 'other') return 'Other';
+    return 'Unknown';
+  }
+
   // Shared list of the 5 per-method outcomes -- drives both the "Final
   // verification method(s)" column and the summary chart, so they can never
   // drift apart on what counts as a method.
@@ -509,6 +529,12 @@ function WorkflowUI({
   var _gpsMapFlwDropdownOpen = React.useState(false);
   var gpsMapFlwDropdownOpen = _gpsMapFlwDropdownOpen[0];
   var setGpsMapFlwDropdownOpen = _gpsMapFlwDropdownOpen[1];
+  // Default off ("no filter") -- shows every visit location type (home,
+  // health facility, other) on the map unless the user opts into hiding
+  // the non-home ones.
+  var _gpsMapHomeOnlyFilter = React.useState(false);
+  var gpsMapHomeOnlyFilter = _gpsMapHomeOnlyFilter[0];
+  var setGpsMapHomeOnlyFilter = _gpsMapHomeOnlyFilter[1];
 
   var allFlwUsernames = React.useMemo(
     function () {
@@ -1026,6 +1052,7 @@ function WorkflowUI({
             visitDatetime: row.visit_datetime,
             formName: row.form_name,
             visitNumber: row.visit_number,
+            locationType: row.where_is_the_visit_being_conducted,
           });
         });
 
@@ -1059,14 +1086,34 @@ function WorkflowUI({
   // one FLW identity (flwUsername); narrowing post-chain keeps a mother's
   // registration point and all her visits together as one unit rather than
   // needing to re-derive the chain from a pre-filtered row set.
+  //
+  // The home-only toggle is applied second, WITHIN each surviving chain's
+  // visits array -- it drops individual visit points (not whole chains), so
+  // a mother's registration point and her home visits stay on the map even
+  // when her non-home visits are hidden. flwUsername/color are resolved
+  // upstream in motherGpsChains from the chain's full (unfiltered) visit
+  // list, so a chain's identity and color never change when this toggle
+  // flips, even if it happens to hide her earliest visit.
   var filteredMotherGpsChains = React.useMemo(
     function () {
-      if (gpsMapFlwFilter.length === 0) return motherGpsChains;
-      return motherGpsChains.filter(function (chain) {
-        return gpsMapFlwFilter.indexOf(chain.flwUsername) !== -1;
-      });
+      var chains = motherGpsChains;
+      if (gpsMapFlwFilter.length > 0) {
+        chains = chains.filter(function (chain) {
+          return gpsMapFlwFilter.indexOf(chain.flwUsername) !== -1;
+        });
+      }
+      if (gpsMapHomeOnlyFilter) {
+        chains = chains.map(function (chain) {
+          return Object.assign({}, chain, {
+            visits: chain.visits.filter(function (visit) {
+              return visit.locationType === 'mothers_home';
+            }),
+          });
+        });
+      }
+      return chains;
     },
-    [motherGpsChains, gpsMapFlwFilter],
+    [motherGpsChains, gpsMapFlwFilter, gpsMapHomeOnlyFilter],
   );
 
   // --- UAT Comparison tab: per-FLW GPS metrics, UAT vs. pre-UAT -----------
@@ -1226,6 +1273,11 @@ function WorkflowUI({
       var byFlwMother = {};
       enrichedRows.forEach(function (row) {
         if (!eligibleUsernames[row.username]) return;
+        if (
+          uatHomeOnlyFilter &&
+          row.where_is_the_visit_being_conducted !== 'mothers_home'
+        )
+          return;
         if (row.distance_from_prev_visit_m === null) return;
         if (!row.mother_case_id) return;
         if (!byFlwMother[row.username]) {
@@ -1261,6 +1313,11 @@ function WorkflowUI({
       var rowsByFlwDay = {};
       enrichedRows.forEach(function (row) {
         if (!eligibleUsernames[row.username]) return;
+        if (
+          uatHomeOnlyFilter &&
+          row.where_is_the_visit_being_conducted !== 'mothers_home'
+        )
+          return;
         var point = parseGpsLatLon(row.meta_location);
         if (!point) return;
         var day = (row.visit_datetime || '').slice(0, 10);
@@ -1377,7 +1434,7 @@ function WorkflowUI({
           };
         });
     },
-    [enrichedRows, eligibleUsernames],
+    [enrichedRows, eligibleUsernames, uatHomeOnlyFilter],
   );
 
   // Reference-only count shown alongside the two metrics -- how many
@@ -1818,6 +1875,12 @@ function WorkflowUI({
             'gpsMapFlwFilter state, applied to motherGpsChains to produce filteredMotherGpsChains -- a chain is kept when the filter is empty or includes chain.flwUsername.',
         },
         {
+          name: "Hide visits not at mother's home",
+          def: "Checkbox, off by default (shows every visit location type). When checked, drops just the non-home VISIT points from each mother's chain -- her registration point and any home visits stay on the map, only visits she categorized as 'Health facility' or 'Other' disappear (along with their connecting lines). Does not affect which mothers/chains appear, only which of a chain's visit points are drawn -- a mother whose every visit was non-home still shows her registration circle alone.",
+          field:
+            "gpsMapHomeOnlyFilter state. Applied inside filteredMotherGpsChains, after the FLW filter: each surviving chain's visits array is filtered to locationType === 'mothers_home' (locationType is where_is_the_visit_being_conducted, carried onto each visit object in motherGpsChains). flwUsername/color are resolved upstream from the chain's full, unfiltered visit list, so a chain's color never changes when this toggle flips.",
+        },
+        {
           name: 'Registration point (circle)',
           def: 'The GPS location captured on the Register Mother form itself, at registration time. Hovering shows the mother ID, the registration datetime, and the FLW.',
           field:
@@ -1825,9 +1888,9 @@ function WorkflowUI({
         },
         {
           name: 'Visit points (squares)',
-          def: "Every visit still in the current filter, for this mother. Hovering shows the visit type/number, its datetime, the mother ID, and the FLW. A visit with no parseable GPS plots nothing (not a point at the origin) -- quietly dropped, not shown as an error, since that's governed by the same verification-block-present gate as the rest of the dashboard.",
+          def: "Every visit still in the current filter, for this mother. Hovering shows the visit type/number, its datetime, how the FLW categorized the visit location (Home / Health facility / Other -- see locationTypeLabel()), the mother ID, and the FLW. A visit with no parseable GPS plots nothing (not a point at the origin) -- quietly dropped, not shown as an error, since that's governed by the same verification-block-present gate as the rest of the dashboard.",
           field:
-            'gps_normalized_location per row (same field the GPS Verification scatter plot on the Failed Verification Analysis tab reads for its X-axis companion fields), parsed via parseGpsLatLon. Mother ID in the tooltip is chain.motherCaseId (the same chain the point belongs to), not a per-visit field.',
+            "gps_normalized_location per row (same field the GPS Verification scatter plot on the Failed Verification Analysis tab reads for its X-axis companion fields), parsed via parseGpsLatLon. Location type is where_is_the_visit_being_conducted (same field as the Table tab's 'GPS location' column and gpsOutcome()/gpsDistanceMeters(), carried onto the visit object as locationType), rendered via locationTypeLabel() for a plain-words tooltip rather than the raw CommCare value. Mother ID in the tooltip is chain.motherCaseId (the same chain the point belongs to), not a per-visit field.",
         },
         {
           name: 'Lines',
@@ -1847,6 +1910,12 @@ function WorkflowUI({
       title: 'UAT Comparison Tab',
       body: "Per FLW, compares TWO INDEPENDENT GPS metrics -- different underlying series, each with its own sample-size-matching unit, not the same series' mean vs. median. Built from enrichedRows (domain filter + FLW eligibility, same population as every other tab) rather than displayRows, because displayRows already drops every pre-UAT visit via the verification-block-present gate -- exactly the split this tab compares across. Both metrics gate UAT-vs-pre-UAT by hasVerificationData(row) on the VISIT being measured TO (the later point in a pair), same gate displayRows uses. Neither metric consults the exclude-registration-visits toggle above -- that toggle is about what counts as a distinct follow-up visit for the rest of the dashboard; these two series deliberately use the full physical GPS chain regardless, registration point included.",
       items: [
+        {
+          name: "Exclude visits not at mother's home",
+          def: "Checkbox, ON by default -- a visit the FLW categorized as 'Health facility' or 'Other' isn't comparable GPS behavior for either metric (there's no fixed reference point to judge whether she traveled far or clustered visits suspiciously close together), so both metrics exclude it from BOTH their UAT and pre-UAT sides by default. Unchecking includes every location type in both metrics. Independent of the GPS Map tab's own home-only toggle -- each tab keeps its own state.",
+          field:
+            "uatHomeOnlyFilter state (default true). Applied as an early return (where_is_the_visit_being_conducted !== 'mothers_home') inside BOTH of uatComparisonStats' row-processing passes -- Pass 1 (Revisit Dist, keyed by mother) and Pass 2 (Metres/Visit, keyed by FLW+day) -- before any bucketing, so a filtered-out visit never reaches either period's values OR its sample-size-matching weight. Does not affect uatActiveDaysByFlw (the reference-only 'UAT active days' column), which counts all UAT activity regardless of location type.",
+        },
         {
           name: 'Revisit Dist (mean) -- distance_from_prev_visit_m',
           def: 'The haversine (great-circle) distance, in meters, between a mother\'s visit and the PREVIOUS point in her chain -- and her chain now starts at her REGISTRATION point, not her first visit, so her first visit has a real distance (from registration) rather than always being null. Spans her ENTIRE history and every visit-type form, not reset at the UAT boundary or at a form-type change (her 1 Week Visit\'s "previous point" can be her ANC Visit, or her registration if the ANC Visit was itself her first).',
@@ -2331,6 +2400,8 @@ function WorkflowUI({
               (visit.visitNumber || '?') +
               '\n' +
               formatVisitDateTime(visit.visitDatetime) +
+              '\nLocation: ' +
+              locationTypeLabel(visit.locationType) +
               '\nMother: ' +
               chain.motherCaseId +
               '\nFLW: ' +
@@ -2811,9 +2882,13 @@ function WorkflowUI({
               current filter (square). Colored per FLW -- the same FLW's
               activity across different mothers reads as one color, making it
               easy to spot visits to different mothers happening suspiciously
-              close together in space. Hover a point for details. Respects the
-              domain, eligibility, and exclude-registration-visits filters
-              above, same row set as every other tab.
+              close together in space. Hover a point for details, including how
+              the FLW categorized that visit's location (Home / Health facility
+              / Other). "Hide visits not at mother's home" (off by default)
+              drops just the non-home visit points from the map, keeping each
+              mother's registration point and home visits. Respects the domain,
+              eligibility, and exclude-registration- visits filters above, same
+              row set as every other tab.
             </p>
           </div>
 
@@ -2834,6 +2909,16 @@ function WorkflowUI({
                 {motherGpsChains.length} mother chains
               </span>
             )}
+            <label className="ml-4 flex cursor-pointer items-center gap-2 text-sm font-medium text-gray-700">
+              <input
+                type="checkbox"
+                checked={gpsMapHomeOnlyFilter}
+                onChange={function (e) {
+                  setGpsMapHomeOnlyFilter(e.target.checked);
+                }}
+              />
+              Hide visits not at mother's home
+            </label>
           </div>
 
           {filteredMotherGpsChains.length > 0 ? (
@@ -2924,6 +3009,19 @@ function WorkflowUI({
               exclude-registration-visits toggle, which these two series
               deliberately ignore (see Definitions).
             </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-gray-700">
+              <input
+                type="checkbox"
+                checked={uatHomeOnlyFilter}
+                onChange={function (e) {
+                  setUatHomeOnlyFilter(e.target.checked);
+                }}
+              />
+              Exclude visits not at mother's home from both metrics
+            </label>
           </div>
 
           {uatComparisonStats.length > 0 ? (
