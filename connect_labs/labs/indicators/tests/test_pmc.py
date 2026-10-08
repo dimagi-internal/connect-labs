@@ -7,6 +7,7 @@ from canopy_sdk.keys import generate_private_key, private_pem
 from django.urls import reverse
 
 from connect_labs.labs import canopy
+from connect_labs.labs.admin_boundaries.models import AdminBoundary
 from connect_labs.labs.indicators import pmc
 from connect_labs.labs.indicators.tests.test_resolve import make_boundary, set_value
 from connect_labs.mcp.tool_registry import MCPToolError
@@ -68,6 +69,7 @@ class TestTheSweep:
         with pytest.raises(ValueError):
             pmc.cost_per_dose(**{**DEFAULTS, **bad})
 
+    @pytest.mark.django_db  # the summary reads Nigeria's incidence from the registry
     def test_every_answer_says_it_is_uncalibrated(self):
         out = pmc.summary(DEFAULTS)
         assert out["setting"]["calibrated"] is False
@@ -122,8 +124,9 @@ class TestStates:
         assert ondo["fit"] == "near"
         assert ondo["children_3_24m"] == 210_000  # 21/60 of 600,000 under-5s
         sched = _rows()["connect_monthly_in_season_3_24"]
+        # Reconciles from the row's own columns: children x MAP incidence x EMOD effect.
         assert ondo["projection"]["cases_averted_per_year"] == pmc.approx(
-            210_000 * sched["cases_averted_per_1000_children_per_year"] / 1000
+            210_000 * 283.1 / 1000 * sched["averted_pct"] / 100
         )
         # Near-model prevalence, Sahel seasonality: not the modelled setting.
         assert rows[1]["fit"] == "more_seasonal"
@@ -142,13 +145,23 @@ class TestStates:
         rows = {r["name"]: r for r in pmc.state_rows("connect_monthly_in_season_3_24", DEFAULTS)}
 
         assert rows["Cross River"]["rank"] == 1 and rows["Ondo"]["rank"] == 2
-        # Reference = mean incidence of the matching states, so the factors straddle 1.
-        assert rows["Cross River"]["burden_factor"] > 1 > rows["Ondo"]["burden_factor"]
         assert (
             rows["Cross River"]["projection"]["cost_per_case_averted"]
             < rows["Ondo"]["projection"]["cost_per_case_averted"]
         )
         assert rows["Kano"]["rank"] is None  # Sahel-seasonal: never ranked
+
+    def test_the_schedule_comparison_is_costed_at_national_incidence(self, nigeria):
+        ng = AdminBoundary.objects.get(iso_code="NGA", admin_level=0)
+        set_value(ng, "malaria_incidence", 272.3)
+        out = pmc.summary(DEFAULTS)
+        monthly = {r["code"]: r for r in out["schedules"]}["connect_monthly_in_season_3_24"]
+        assert out["reference_incidence"]["value"] == 272.3
+        assert monthly["basis"] == "map_incidence"
+        # ~4.86 doses/child/yr at $1.01, over 0.2723 x 31.1% cases averted per child.
+        assert monthly["cost_per_case_averted"] == pytest.approx(58.0, abs=1.0)
+        # The uncalibrated setting's own figure is kept, for reference only.
+        assert monthly["model_setting"]["cost_per_case_averted"] == pytest.approx(5.9, abs=0.2)
 
     def test_an_unknown_schedule_is_refused(self, nigeria):
         with pytest.raises(ValueError):
