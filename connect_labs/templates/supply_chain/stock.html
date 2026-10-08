@@ -15,18 +15,31 @@ one of them would destroy the only signal it had.
   </div>
 {% else %}
 
+{% comment %}A past date is read-only: its banner says so, so the record controls go with it.{% endcomment %}
+{% if not supply_as_of %}
 <div class="flex flex-wrap items-center justify-end gap-2 mb-3">
   <a href="{% url 'supply_chain:stock_count_record' %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Record a count</a>
   <a href="{% url 'supply_chain:movement_record' %}" class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
     <i class="fa-solid fa-plus mr-1"></i> Record stock in or out
   </a>
 </div>
+{% endif %}
 
-<div class="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm text-gray-800">
-  Stock in field workers' hands, read as a review — who runs out soonest, whether issued, given out and counted add up —
-  is the <strong>Supply Stock Review</strong> workflow.
-  <a class="text-brand-indigo underline" href="{% url 'labs:workflow:list' %}">Open workflows</a> and create one from that template for this programme's opportunities.
-</div>
+{% comment %}One line, and only where it is news: a programme with the review pinned
+already has it as a tab, and telling it to go and create one sent people looking
+for something they had.{% endcomment %}
+{% pinned_tab "supply_chain:workers" as stock_review_tab %}
+{% if stock_review_tab %}
+<p class="mb-4 text-sm text-gray-700">
+  Who runs out soonest, and whether the figures add up:
+  <a class="text-brand-indigo underline" href="{{ stock_review_tab.url }}">{{ stock_review_tab.label }}</a>.
+</p>
+{% else %}
+<p class="mb-4 text-sm text-gray-700">
+  For who runs out soonest, create a <strong>Supply Stock Review</strong> from the
+  <a class="text-brand-indigo underline" href="{% url 'labs:workflow:list' %}">workflow templates</a>.
+</p>
+{% endif %}
 <div class="flex items-baseline gap-3 mb-1">
   <h2 class="text-lg font-semibold text-brand-indigo">Stock across the network</h2>
   <span class="text-sm text-gray-600">
