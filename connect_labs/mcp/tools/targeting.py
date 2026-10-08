@@ -1324,7 +1324,11 @@ def targeting_cost_effectiveness(
         "FROM A TARGETING SELECTION (the targeting page's state carries filters.selected_areas, e.g. "
         "'Kano (NGA), Ondo (NGA)', plus the question that produced them): take the NGA names, pass them as "
         "'states', and give the visitor 'explorer_path' -- the PMC schedule explorer opened on exactly those "
-        "states. If selected_areas is absent, call targeting_select with the page's filters to get the areas."
+        "states. If selected_areas is absent, call targeting_select with the page's filters to get the areas. "
+        "ANSWER BRIEFLY -- it is read in a narrow side panel: the best approach in one line; a ranked table "
+        "(rank, state, cases averted/yr, $ per case, confidence); one line naming the unranked states and why; "
+        "one line of caveats; then explorer_path as a short markdown link, e.g. [Open these states in the PMC "
+        "explorer](...)."
     ),
     input_schema={
         "type": "object",
@@ -1374,7 +1378,9 @@ def targeting_pmc_schedules(
 
     from django.urls import reverse
 
-    q = {"schedule": chosen, **{k: v for k, v in costs.items()}}
+    # Only what differs from the page's own defaults, so the link stays short.
+    q = {} if chosen == out["best_schedule"] else {"schedule": chosen}
+    q |= {k: v for k, v in costs.items() if v != pmc.costs_or_default()[k]}
     if states:
         q["states"] = ",".join(r["name"] for r in rows)
     out["explorer_path"] = f"{reverse('targeting:pmc')}?{urlencode(q)}"
