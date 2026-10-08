@@ -2242,3 +2242,33 @@ An action is something a workflow lets you **do**, such as "Initiate AI coach". 
 - **The agent reads the run as the visitor.** `workflow_run_context` gives the indicators with their thresholds and the workflow's actions. `workflow_run_indicators(band="red")` gives the graded cells; bands come from the server's grading, `semantic/snapshot.py:band_of`. `workflow_indicator_explain` explains the bound registry.
 - **The agent acts** through the same `workflow_run_action` as everyone else.
 - **Canopy calls** to the `workflow_*` run tools are refused on a workflow that does not share. A person's own agent is not affected.
+
+## 15. Supply sources (supply chain data, beside pipelines)
+
+A workflow can read the supply chain's own figures — stock in workers' hands, the stores, orders, tenders — as **supply sources**, declared next to `pipeline_sources` (`connect_labs/workflow/supply_sources.py`):
+
+```json
+"supply_sources": [
+  {"alias": "stock",  "source": "worker_stock",     "item": "rutf", "params": {"window_days": 14}},
+  {"alias": "stores", "source": "network_stock",    "item": "rutf"},
+  {"alias": "worker", "source": "worker_stock_get", "item": "rutf", "load": "on_demand"}
+]
+```
+
+- **`source`** is one of the supply chain's READ operations, listed in `supply_sources.SOURCES` (worker stock, a worker's timeline, network stock, network tree, the flow, distributions, orders, shipments, tenders, suppliers, checks). A workflow never writes supply data through a source; supply writes become workflow actions (§14).
+- **`item`** is a commodity slug or SKU, resolved per programme (ids differ between programmes). **`params`** are fixed settings the source accepts (`window_days` for the stock sources: how many recent days a pace is averaged over).
+- **Scope** follows the workflow exactly as pipelines do: every opportunity in `opportunity_ids` (or the primary), across programmes if the list spans them. Each opportunity is resolved to its programme from the viewer's org data, and every call runs **as the viewer** through `SupplyDataAccess` — the same access rule as the supply pages. A source scoped to the opportunity (worker stock) runs once per opportunity; one scoped to the programme (stores, orders) runs once per programme, so a store is never counted twice.
+
+**Render code** receives `supply.<alias>` (and `view.supply.<alias>`, which a completed run reads from its snapshot):
+
+- `rows` — tagged with `opportunity_id` (a programme-wide row keeps its own, or `null` for a store) and `program_id`.
+- `rollup` — computed on the server: counts summed, rates recomputed (worker stock: `workers`, `by_unit[unit].{on_hand, issued, dispensed, unapproved, estimated, unapproved_share}`, `runway` counts by band, `never_counted`, `no_answer_visits`).
+- `metadata.per_opp[String(oppId)]` — `{row_count, program_id}` or `{error}`; one opportunity failing never blanks the rest.
+
+`load: "on_demand"` sources are not loaded with the page; ask for them with `actions.querySupply(alias, {args, opportunity_id, as_of})`, e.g. `actions.querySupply('worker', {args: {supply_point_id: 7}, opportunity_id: 10113})`. `args` are the source's per-call arguments (`supply_point_id` for `worker_stock_get`); anything else is refused.
+
+**Saved runs** freeze the aliases `snapshot_inputs.supply` names, loaded as of the run's `period_end`, under `snapshot.supply`. (A completion over the MCP has no viewer request and freezes no supply.)
+
+**Editing without a deploy:** `workflow_update_definition` takes `supply_sources` (checked against `SOURCES`) and `snapshot_inputs.supply`.
+
+**Reference template:** `supply_stock_review` — stock in field workers' hands across the workflow's opportunities: headline, runway (soonest out first), does it add up, a worker's day-by-day history on demand, and the stores behind them.

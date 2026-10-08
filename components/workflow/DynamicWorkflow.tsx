@@ -159,6 +159,7 @@ export function DynamicWorkflow({
   instance,
   workers,
   pipelines,
+  supply,
   links,
   actions,
   onUpdateState,
@@ -242,6 +243,7 @@ export function DynamicWorkflow({
         instance={instance}
         workers={workers}
         pipelines={pipelines}
+        supply={supply || {}}
         links={links}
         actions={actions}
         onUpdateState={onUpdateState}

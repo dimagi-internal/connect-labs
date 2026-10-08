@@ -162,10 +162,25 @@ def build_snapshot_for_run(
         except Exception:  # noqa: BLE001 -- an opp the user cannot enumerate must not block the rest
             logger.exception("Failed to load workers for opp %s", oid)
 
+    # Supply sources the manifest names (`snapshot_inputs.supply`: aliases), loaded as the
+    # viewer AS OF the run's period end so a saved week freezes that week's stock. Needs the
+    # web request (the viewer's access): an MCP completion has none and freezes no supply.
+    supply_aliases = (contract_inputs or {}).get("supply") or []
+    supply = {}
+    if supply_aliases and request is not None:
+        from connect_labs.workflow import supply_sources
+
+        supply = supply_sources.load(
+            request, definition, opportunity_ids=effective_opp_ids, as_of=run.period_end, aliases=supply_aliases
+        )
+    elif supply_aliases:
+        logger.warning("run %s: snapshot_inputs.supply needs a web request; no supply frozen", run.id)
+
     try:
         payload = build_snapshot_for_contract(
             contract,
             pipelines=pipelines,
+            supply=supply,
             state=run.data.get("state", {}),
             opportunity_id=opportunity_id,
             workers=workers,

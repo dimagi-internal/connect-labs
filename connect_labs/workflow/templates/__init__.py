@@ -448,6 +448,8 @@ TEMPLATE_GROUP_OF: dict[str, str] = {
     # Photo audit success rate, per opportunity and pooled per programme,
     # scoped by the context picker and drillable to one opportunity.
     "photo_audit_report": "reports",
+    # Stock in field workers' hands across opportunities (supply sources).
+    "supply_stock_review": "reports",
     # Automatic reports: run themselves on a schedule, no statuses.
     "flw_weekly_audit_report": "automatic",
     "flw_daily_indicator_report": "automatic",
@@ -656,6 +658,12 @@ def _default_snapshot_from_inputs(
 
     if snapshot_inputs.get("workers", True):
         out["workers"] = context.get("workers", [])
+
+    # Supply sources (workflow/supply_sources.py) the manifest names, frozen as loaded.
+    supply_aliases = snapshot_inputs.get("supply") or []
+    if supply_aliases:
+        supply = context.get("supply") or {}
+        out["supply"] = {alias: supply[alias] for alias in supply_aliases if alias in supply}
 
     state_keys = snapshot_inputs.get("state_keys")
     if state_keys is None:
@@ -1385,6 +1393,8 @@ def _create_workflow_from_template_scoped(
         render_source = {"template": template_key}
     if render_source:
         extra_definition_kwargs["render_source"] = dict(render_source)
+    if template_def.get("supply_sources"):
+        extra_definition_kwargs["supply_sources"] = [dict(s) for s in template_def["supply_sources"]]
     if registry_name:
         extra_definition_kwargs["registry_source"] = _bind_registry(
             data_access, registry_name, template_def["name"], registry_source
