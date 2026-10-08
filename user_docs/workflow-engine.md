@@ -165,6 +165,23 @@ Click any worker to open a day-by-day view of their stock movements and counts.
 **The stores behind them**
 Stock held in the stores that supply the workers, shown in sachets with cartons alongside.
 
+#### Workflows pinned to supply tabs
+
+A programme's supply pages can show a workflow as one of their tabs. A workflow tab can either stand in for a built-in tab — the first such tab replaces the **Workers** tab with the **Stock review** — or be added alongside the existing tabs as something new.
+
+When you open a workflow tab inside the supply pages, the supply header and tab bar remain visible and the workflow's current review loads in place. Each person sees it with their own access level, exactly as they would if they opened the workflow directly.
+
+Three links appear on the page:
+
+| Link | What it does |
+|---|---|
+| **Edit workflow** | Opens the workflow's editor. Because the tab only points at the workflow, any change you make there shows up immediately in the tab. |
+| **Open as a workflow** | Opens the workflow on its own full page, outside the supply pages. |
+| **Classic … view** | Opens the original built-in page that this tab replaced. The built-in page still exists and is accessible this way. |
+
+!!! note "Pinning a workflow to a supply tab is an admin task"
+    Setting up which workflow appears on which tab is done through programme configuration. If you need a workflow added to or removed from a supply tab, contact your programme administrator.
+
 ### IPTsc School Delivery Dashboard
 
 The **IPTsc School Delivery Dashboard** includes an **Authenticity** tab and a **Duplicates** tab for identifying possible duplicate child registrations.
@@ -222,18 +239,4 @@ Colours are driven by the same one-sided 95% statistical test used by the audit 
 - Click an LLO to drill down to its wards; click a ward to drill down to its FLWs.
 - A weekly trend chart shows whether a problem is a one-off batch or a recurring pattern.
 
-### GPS Map and UAT Comparison: location filters
-
-Dashboards that include a **GPS Map** tab or a **UAT Comparison** tab now have controls for filtering visits by the location type the field worker recorded on the form — **Home**, **Health facility**, or **Other**.
-
-#### GPS Map tab
-
-Hovering over any visit point on the map now shows the location type the field worker selected for that visit, alongside the other visit details already displayed.
-
-A **Hide visits not at mother's home** checkbox sits above the map. It is **off by default**, so the map shows all visit points exactly as before. Ticking it removes non-home visit points from the map — health facility and other visits disappear — while keeping each mother's registration point and all home visits in view. This makes it easier to focus on the pattern of home visits without other location types cluttering the map.
-
-#### UAT Comparison tab
-
-An **Exclude visits not at mother's home** checkbox sits above the comparison metrics. It is **on by default**. When checked, visits the field worker marked as taking place at a health facility or another non-home location are removed from both GPS metrics — **Revisit Dist** and **Metres/Visit** — on both the UAT and pre-UAT sides of the comparison.
-
-The reason for this default: a health
+### GPS Map and UA
