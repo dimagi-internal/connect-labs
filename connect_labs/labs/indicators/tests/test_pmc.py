@@ -86,6 +86,8 @@ class TestTheSweep:
             # Kano: southern-level prevalence, Sahel seasonality. SMC country.
             (54.0, 77.2, "more_seasonal"),
             (40.3, 79.5, "more_seasonal"),  # Sokoto
+            # Kebbi: Sahel seasonality AND far higher prevalence -- the seasonality is the reason shown.
+            (75.6, 72.1, "more_seasonal"),
             (40.0, 25.0, "less_seasonal"),
             (None, 41.0, "unknown"),
             (44.0, None, "unknown"),
