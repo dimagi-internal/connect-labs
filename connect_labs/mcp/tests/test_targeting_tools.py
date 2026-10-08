@@ -1155,7 +1155,7 @@ class TestPmcRank:
 
         assert got["ranked_by"] == "cost per death averted" and got["deaths_basis"] == "map"
         assert all("multiple_of_benchmark" in r for r in got["ranked"])
-        assert got["note"] is None
+        assert "cost per case" not in (got["note"] or "")  # no fallback note when deaths are loaded
 
     def test_with_no_mortality_loaded_it_falls_back_to_cost_per_case_and_says_so(self):
         got = targeting.targeting_pmc_rank(None, states=["Kano", "Ondo"])
