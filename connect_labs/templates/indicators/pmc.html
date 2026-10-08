@@ -61,7 +61,7 @@
       .pmc-sched > :nth-child(2), .pmc-sched > :nth-child(3) { grid-column: 2 / 4; }
       .pmc-sched > :nth-child(4) { grid-column: 2; text-align: left !important; }
       .pmc-sched-head { display: none !important; }
-      .pmc-sched > :nth-child(4)::after { content: " doses"; color: #78716c; font-size: 12px; }
+      .pmc-sched > :nth-child(4)::after { content: " doses, 2 yrs"; color: #78716c; font-size: 12px; }
     }
     .pmc-input { width: 100%; font-size: 14px; border: 1px solid #d6d3d1; border-radius: 6px; padding: 5px 8px; }
   </style>
@@ -128,7 +128,7 @@
         <p id="pmc-takeaway" class="pmc-takeaway"></p>
         <div class="pmc-sched pmc-sched-head" style="cursor:default; padding-top:2px; padding-bottom:2px">
           <span></span><span class="sub">Schedule</span><span class="sub">Cases averted</span>
-          <span class="sub" style="text-align:right">Doses</span><span class="sub" style="text-align:right">Per case averted</span>
+          <span class="sub" style="text-align:right" title="SP doses given to children 3–24 months in the simulated population of {{ sweep.setting.population }}, over the {{ sweep.setting.intervention_years }} intervention years">Doses, {{ sweep.setting.intervention_years }} yrs</span><span class="sub" style="text-align:right">Per case averted</span>
         </div>
         <div id="pmc-schedules"></div>
       </section>
