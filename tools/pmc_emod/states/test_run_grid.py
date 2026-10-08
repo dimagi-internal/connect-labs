@@ -318,3 +318,25 @@ def test_out_is_required_with_states(capsys):
     with pytest.raises(SystemExit):
         run_grid.main(["--states", "Kano", "--instance-id", "i-x", "--bucket", "b"])
     assert "--out is required" in capsys.readouterr().err
+
+
+def test_rebuild_from_s3_reproduces_the_batch_without_the_box(tmp_path):
+    box, inst = make_box()
+    first, _ = run_grid.run_grid(box, STATES, tmp_path / "a.json", RUNTIME)
+    n_runs = len(inst.requests)
+    rebuilt, failed = run_grid.run_grid(run_grid.CachedBox(box.s3, "bkt"), STATES, tmp_path / "b.json", RUNTIME)
+    assert failed == [] and len(inst.requests) == n_runs  # nothing ran on the box
+    assert rebuilt["states"] == first["states"]
+
+
+def test_rebuild_from_s3_leaves_out_a_state_with_no_cached_result(tmp_path):
+    box, _ = make_box()
+    run_grid.run_grid(box, STATES, tmp_path / "a.json", RUNTIME, only=["Kano"])
+    rebuilt, failed = run_grid.run_grid(run_grid.CachedBox(box.s3, "bkt"), STATES, tmp_path / "b.json", RUNTIME)
+    assert list(rebuilt["states"]) == ["Kano"] and "Kano" not in failed and failed
+
+
+def test_grid_file_is_world_readable(tmp_path):
+    out = tmp_path / "grid.json"
+    run_grid.write_atomic(out, {"states": {}})
+    assert out.stat().st_mode & 0o777 == 0o644
