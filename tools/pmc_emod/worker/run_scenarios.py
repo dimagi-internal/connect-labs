@@ -18,11 +18,11 @@ Result:   {"mode", "hash", "target_pfpr", "tolerance", "larval_capacity", "pfpr_
           "candidates": [{"round", "larval_capacity", "pfpr_2_5y", "pfpr_2_5y_annual"}],
           "rounds": [{"round", "n", "seconds"}], "seconds"}
           Round 1 burns in 8 log-spaced capacities (1e6-1e9) side by side; if none reaches the target, an extension
-          round tries 4 from 1e9 up to 1e10; then 4 around the interpolated crossing. pfpr_2_5y is the burn-in's
-          last-year Oct-Dec mean (the DHS/MIS survey window, CALIBRATE_SURVEY_DOY); pfpr_2_5y_annual is that year's
-          mean, for reference. The chosen capacity's burn-in is cached (and
-          published) under its setting_hash, so a run request with that larval_capacity starts warm. Pass the
-          returned larval_capacity on verbatim.
+          round tries 4 from 1e9 up to 1e10; then 4 around the interpolated crossing, up to 3 times while
+          unfit. pfpr_2_5y is the burn-in's last-year Oct-Dec mean (the DHS/MIS survey window,
+          CALIBRATE_SURVEY_DOY); pfpr_2_5y_annual is that year's mean, for reference. The chosen capacity's
+          burn-in is cached (and published) under its setting_hash, so a run request with that larval_capacity
+          starts warm. Pass the returned larval_capacity on verbatim.
 
 A setting is burned in once (2 years, no PMC) and its population serialized. Each (schedule, seed) run then
 starts from that state and simulates only the intervention years. The burn-in is cached on local disk and,
@@ -72,6 +72,9 @@ CALIBRATE_LOG10_RANGE = (6.0, 9.0)
 CALIBRATE_GRID_N = 8
 CALIBRATE_REFINE_STEPS = (-0.45, -0.15, 0.15, 0.45)  # refine offsets, in units of the bracketing width (log10)
 CALIBRATE_TOLERANCE = 0.03
+# PfPR rises steeply with larval capacity (Delta: 0.10 -> 0.36 over one refine step), so one refine round can
+# straddle the target. Refine again around the new, tighter crossing while nothing is within tolerance.
+CALIBRATE_MAX_REFINE_ROUNDS = 3
 # When round 1's highest PfPR is still below target - tolerance, one extension round of 4 log-spaced capacities
 # above the grid (up to 1e10; a 1e11 burn-in takes hours) runs before the target is declared unreachable.
 CALIBRATE_EXTENSION_LOG10 = (9.0, 10.0)
@@ -449,8 +452,9 @@ def calibrate(evaluate, target, tolerance=CALIBRATE_TOLERANCE):
     (in parallel); extra keys are kept on the candidate. Round 1 is the log-spaced grid (1e6-1e9). If its highest
     PfPR is below target - tolerance, an extension round tries 4 capacities from 1e9 up to 1e10. Then, when the
     target lies inside the PfPR range evaluated so far, a refine round runs CALIBRATE_REFINE_STEPS around the
-    interpolated crossing. The answer is the evaluated value nearest the target -- never an interpolated one, so
-    its burn-in exists.
+    interpolated crossing, repeated (up to CALIBRATE_MAX_REFINE_ROUNDS) around the tighter crossing while no
+    evaluated value is within `tolerance`. The answer is the evaluated value nearest the target -- never an
+    interpolated one, so its burn-in exists.
 
     Returns {larval_capacity, pfpr_2_5y, fit_error (pfpr - target), fit, iterations (rounds run), extended,
     candidates}, plus the chosen candidate's extra keys. fit is "ok" within `tolerance`, "unreachable" when the
@@ -476,19 +480,24 @@ def calibrate(evaluate, target, tolerance=CALIBRATE_TOLERANCE):
     lo = min(c["pfpr_2_5y"] for c in candidates)
     hi = max(c["pfpr_2_5y"] for c in candidates)
     reachable = lo - tolerance <= target <= hi + tolerance
-    crossing = interpolate_crossing([(c["larval_capacity"], c["pfpr_2_5y"]) for c in candidates], target)
-    if crossing is not None:
+    seen = {c["larval_capacity"] for c in candidates}
+    for _ in range(CALIBRATE_MAX_REFINE_ROUNDS):
+        if min(abs(c["pfpr_2_5y"] - target) for c in candidates) <= tolerance and len(rounds_run) > 1 + extended:
+            break
+        crossing = interpolate_crossing([(c["larval_capacity"], c["pfpr_2_5y"]) for c in candidates], target)
+        if crossing is None:
+            break
         estimate, (xa, xb) = crossing
         width = xb - xa
-        seen = {c["larval_capacity"] for c in candidates}
         refine = []
         for step in CALIBRATE_REFINE_STEPS:
             lv = nice_larval(10 ** min(hi10, max(lo10, estimate + step * width)))
             if lv not in seen:
                 seen.add(lv)
                 refine.append(lv)
-        if refine:
-            run_round(refine)
+        if not refine:
+            break
+        run_round(refine)
     best = min(candidates, key=lambda c: (abs(c["pfpr_2_5y"] - target), c["round"]))
     err = best["pfpr_2_5y"] - target
     if abs(err) <= tolerance:

@@ -287,6 +287,23 @@ def test_calibrate_is_loose_when_reachable_but_not_hit():
     assert fit["fit"] == "loose"
 
 
+def test_calibrate_refines_again_when_a_steep_curve_straddles_the_target():
+    import math
+
+    def steep(x):  # Delta-like: PfPR jumps ~0.1 -> ~0.36 within 1e8-1.3e8
+        return 0.75 / (1 + math.exp(-12 * (math.log10(x) - 8.07)))
+
+    rounds = []
+
+    def evaluate(round_no, larvals):
+        rounds.append(round_no)
+        return [steep(x) for x in larvals]
+
+    fit = run_scenarios.calibrate(evaluate, 0.189)
+    assert fit["fit"] == "ok" and abs(fit["fit_error"]) <= 0.03
+    assert 2 < fit["iterations"] <= 1 + run_scenarios.CALIBRATE_MAX_REFINE_ROUNDS
+
+
 def test_run_calibration_caches_the_chosen_burnin_where_a_run_request_finds_it(tmp_path, monkeypatch):
     class Manifest:
         eradication_path = str(tmp_path / "bin" / "Eradication")
