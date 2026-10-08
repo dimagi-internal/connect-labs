@@ -2283,4 +2283,6 @@ The tab opens `/supply/views/<slug>/`: the same runner, inside the supply header
 workflow's newest open run (one is started for today if there is none), read as the viewer.
 The page links to the workflow's editor and, when the pin replaced a tab, to that tab's own
 page. A pin is a pointer: editing the workflow changes the tab. `supply_chain_view_unpin`
-restores the built-in tab.
+restores the built-in tab. The supply header's date (`?as_of=`) reaches the workflow on its
+supply endpoints, so every source that can read a past day reads that one; the run itself,
+and anything the workflow reads besides supply sources, stays live.

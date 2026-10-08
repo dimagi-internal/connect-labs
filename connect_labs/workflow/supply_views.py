@@ -88,7 +88,7 @@ def supply_query_api(request, definition_id):
             definition,
             spec,
             opportunity_ids=spanned,
-            as_of=_as_of(body.get("as_of")),
+            as_of=_as_of(body.get("as_of") or request.GET.get("as_of")),
             args=body.get("args") or {},
         )
     except supply_sources.SupplySourceError as error:
