@@ -333,3 +333,25 @@ def _fast_wait(self, owner, timeout_s, poll_s=2.0):
             return True
         time.sleep(0.02)
     return False
+
+
+class TestBusyBound:
+    def test_the_http_view_refuses_new_work_with_429_past_three_in_flight(self, client_in, mock_delay):
+        for months in (1, 2, 3):
+            make_run([{"code": f"c{months}", "rounds": [[0, 30, months, 0.25, 2.0, 0.85]]}], PmcModelRun.RUNNING)
+        r = post(client_in, state="Ondo", schedules=[CUSTOM])
+        assert r.status_code == 429 and "busy" in r.json()["error"]
+        assert mock_delay == []
+
+    def test_joining_an_in_flight_run_is_still_allowed(self, client_in, mock_delay):
+        for months in (1, 2):
+            make_run([{"code": f"c{months}", "rounds": [[0, 30, months, 0.25, 2.0, 0.85]]}], PmcModelRun.RUNNING)
+        make_run([CUSTOM], PmcModelRun.QUEUED)
+        assert post(client_in, state="Ondo", schedules=[CUSTOM]).status_code == 202
+
+    def test_a_dead_row_does_not_count_as_load(self, client_in, mock_delay, django_capture_on_commit_callbacks):
+        for months in (1, 2, 3):
+            run = make_run([{"code": f"c{months}", "rounds": [[0, 30, months, 0.25, 2.0, 0.85]]}], PmcModelRun.RUNNING)
+            PmcModelRun.objects.filter(pk=run.pk).update(updated_at=timezone.now() - timedelta(hours=3))
+        with django_capture_on_commit_callbacks(execute=True):
+            assert post(client_in, state="Ondo", schedules=[CUSTOM]).status_code == 202
