@@ -83,6 +83,13 @@ DOSES_SCHEMA = {
         # -- identity and timing
         {"name": "child_id", "paths": ["form.child_id", "form.case.@case_id"], "aggregation": "first"},
         {"name": "form_name", "path": "form.@name", "aggregation": "first"},
+        # Base visit columns, not form paths (a `paths` entry naming a column of
+        # the visit cache reads that column): the Connect ids that build the
+        # "open this visit in Connect" link in the duplicate review. Photos are
+        # not in the visit cache; the review fetches them for flagged children
+        # only, from the runner's visit-images endpoint.
+        {"name": "connect_user_id", "paths": ["user_id"], "aggregation": "first"},
+        {"name": "user_visit_id", "paths": ["user_visit_id"], "aggregation": "first"},
         {"name": "time_start", "path": "form.meta.timeStart", "aggregation": "first"},
         {"name": "time_end", "path": "form.meta.timeEnd", "aggregation": "first"},
         {

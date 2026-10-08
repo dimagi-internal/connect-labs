@@ -386,6 +386,10 @@ function iptBuildChildren(doseRows, caseRows, opts) {
       c.phone = iptStr(r.caregiver_phone);
       c.regDate = x.date;
       c.gps = form.gps;
+      c.visitId = iptStr(r.id);
+      c.connectUserId = iptStr(r.connect_user_id);
+      c.userVisitId = iptStr(r.user_visit_id);
+      c.consentPhoto = iptStr(r.consent_photo);
     }
     if (n && n <= 3) {
       c.attempts[n].push(form);
@@ -909,13 +913,34 @@ var IPT_AUTH_CHECKS = [
     hint: 'A high share from one worker is worth a look.',
   },
   {
-    id: 'duplicates',
-    label: 'Possible duplicate children',
+    id: 'dup_name',
+    label: 'Possible duplicates: same name, same school',
     unit: 'children',
+    dup: true,
+    contributes: false,
+    yellow: 1,
+    red: 3,
+    hint: 'Same name at the same school, registered more than once. Common names make this the loosest check, so it is shown but never raises the flag.',
+  },
+  {
+    id: 'dup_name_age',
+    label: 'Possible duplicates: same name, age and school',
+    unit: 'children',
+    dup: true,
     contributes: true,
     yellow: 1,
     red: 3,
-    hint: 'Same name, same age, at the same school, registered more than once. Children with no recorded age are not compared.',
+    hint: 'Same name and same age at the same school, registered more than once. Children with no recorded age are not compared.',
+  },
+  {
+    id: 'dup_name_age_phone',
+    label: 'Possible duplicates: same name, age, caregiver phone and school',
+    unit: 'children',
+    dup: true,
+    contributes: true,
+    yellow: 1,
+    red: 2,
+    hint: 'Same name, same age and same caregiver phone at the same school, registered more than once: the strongest sign of one child registered twice. Children with no recorded age or phone are not compared.',
   },
   {
     id: 'shared_phone',
@@ -936,6 +961,86 @@ var IPT_AUTH_CHECKS = [
     hint: 'At least 30 doses with no refusal, no vomiting, no reaction and every dose on time. Real data has some friction.',
   },
 ];
+
+var IPT_DUP_CHECK_IDS = ['dup_name', 'dup_name_age', 'dup_name_age_phone'];
+
+function iptNormPhone(p) {
+  var d = iptStr(p).replace(/\D/g, '');
+  // 0803... and +234 803... are the same number
+  if (d.indexOf('234') === 0 && d.length === 13) d = '0' + d.slice(3);
+  return d.length >= 10 ? d : '';
+}
+
+// Children registered more than once under one check's matching rule.
+// Returns [{key, childIds}] -- each group is one suspected child -- largest
+// first. Name and school are normalised (case, spacing, spelling variants of
+// a school grouped by iptClusterSchools); a child missing a matched attribute
+// is left out of that check.
+function iptDuplicateGroups(children, checkId, schoolMap) {
+  var seen = {};
+  children.forEach(function (c) {
+    var nm = iptNormName(c.name);
+    if (!nm) return;
+    var parts = [schoolMap ? schoolMap[c.id] : iptNormName(c.school), nm];
+    if (checkId === 'dup_name_age' || checkId === 'dup_name_age_phone') {
+      if (c.age === null || c.age === undefined) return;
+      parts.push(String(c.age));
+    }
+    if (checkId === 'dup_name_age_phone') {
+      var ph = iptNormPhone(c.phone);
+      if (!ph) return;
+      parts.push(ph);
+    }
+    var k = parts.join('|');
+    (seen[k] = seen[k] || []).push(c.id);
+  });
+  return Object.keys(seen)
+    .filter(function (k) {
+      return seen[k].length > 1;
+    })
+    .map(function (k) {
+      return { key: k, childIds: seen[k] };
+    })
+    .sort(function (a, b) {
+      return b.childIds.length - a.childIds.length || (a.key < b.key ? -1 : 1);
+    });
+}
+
+// The blob id of a visit's consent photo, from the visit-images endpoint's
+// list for that visit ({blob_id, name, question_id}). The form stores the
+// photo's filename in consent_photo; match on it, or on the question id.
+function iptConsentBlob(images, filename) {
+  var list = images || [];
+  for (var i = 0; i < list.length; i++) {
+    if (filename && list[i].name === filename) return list[i].blob_id || null;
+  }
+  for (var j = 0; j < list.length; j++) {
+    if (/consent_photo$/.test(iptStr(list[j].question_id)))
+      return list[j].blob_id || null;
+  }
+  return null;
+}
+
+// "Open this visit in Connect", the format the audit grid uses; null when a
+// piece is missing (the caller then falls back to the labs visit page).
+function iptConnectVisitUrl(
+  orgSlug,
+  opportunityId,
+  connectUserId,
+  userVisitId,
+) {
+  if (!orgSlug || !opportunityId || !connectUserId || !userVisitId) return null;
+  return (
+    'https://connect.dimagi.com/a/' +
+    encodeURIComponent(orgSlug) +
+    '/opportunity/' +
+    encodeURIComponent(opportunityId) +
+    '/user_visits/?user=' +
+    encodeURIComponent(connectUserId) +
+    '&visit_id=' +
+    encodeURIComponent(userVisitId)
+  );
+}
 
 function iptBandHigh(value, yellow, red) {
   if (value === null || value === undefined) return null;
@@ -962,7 +1067,7 @@ function iptAuthenticity(children, opts, schoolMap) {
       if (IPT_AUTH_CHECKS[i].id === id) spec = IPT_AUTH_CHECKS[i];
     var enough =
       id === 'throughput' ||
-      id === 'duplicates' ||
+      id.indexOf('dup_') === 0 ||
       id === 'shared_phone' ||
       id === 'too_perfect' ||
       n >= 5;
@@ -1127,26 +1232,20 @@ function iptAuthenticity(children, opts, schoolMap) {
     ),
     asked.length,
   );
-  // Duplicates: same normalised name, same age, at the same school. Two
-  // children who share a name but not an age are classmates, not one child
-  // registered twice; a child with no recorded age cannot be compared.
-  var seen = {};
-  regs.forEach(function (c) {
-    var nm = iptNormName(c.name);
-    if (!nm || c.age === null || c.age === undefined) return;
-    var k =
-      (schoolMap ? schoolMap[c.id] : iptNormName(c.school)) +
-      '|' +
-      nm +
-      '|' +
-      c.age;
-    (seen[k] = seen[k] || []).push(c.id);
+  // Duplicates, three ways. Value: children flagged. extra.groups: how many
+  // distinct children they appear to be (one group per suspected child).
+  IPT_DUP_CHECK_IDS.forEach(function (id) {
+    var groups = iptDuplicateGroups(regs, id, schoolMap);
+    var ids = [];
+    groups.forEach(function (g) {
+      ids = ids.concat(g.childIds);
+    });
+    set(id, ids.length, regs.length, {
+      childIds: ids,
+      groups: groups.length,
+      groupList: groups,
+    });
   });
-  var dupIds = [];
-  Object.keys(seen).forEach(function (k) {
-    if (seen[k].length > 1) dupIds = dupIds.concat(seen[k]);
-  });
-  set('duplicates', dupIds.length, regs.length, { childIds: dupIds });
   var phones = {};
   regs.forEach(function (c) {
     var p = iptStr(c.phone).replace(/\D/g, '');
@@ -1188,6 +1287,13 @@ function iptAuthenticity(children, opts, schoolMap) {
 function iptCheckValueText(spec, r) {
   if (!r || r.value === null || r.value === undefined) return '–';
   if (spec.id === 'too_perfect') return r.value ? 'Yes' : 'No';
+  if (spec.dup)
+    return (
+      Math.round(r.value).toLocaleString() +
+      ' (' +
+      ((r.extra && r.extra.groups) || 0) +
+      ' unique)'
+    );
   if (spec.unit === '%')
     return r.value >= 99.5 && r.value < 100
       ? '>99%'
@@ -2303,6 +2409,107 @@ function SaturationSpark(props) {
   );
 }
 
+// One registration in the duplicate review: its consent photo, and the facts a
+// reviewer compares across the row. Declared at top level (see the header).
+function DupPhotoCard(props) {
+  var c = props.child;
+  var photo = props.photo || { status: 'loading' };
+  var imgUrl =
+    photo.status === 'ok' && props.oppId
+      ? '/labs/workflow/api/image/' +
+        props.oppId +
+        '/' +
+        encodeURIComponent(photo.blob) +
+        '/'
+      : null;
+  var box = {
+    width: '100%',
+    height: 240,
+    borderRadius: 8,
+    background: '#f3f4f6',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  };
+  return (
+    <div
+      style={{
+        width: 240,
+        flex: '0 0 240px',
+        border: '1px solid #e5e7eb',
+        borderRadius: 10,
+        padding: 8,
+        background: '#fff',
+      }}
+    >
+      {imgUrl ? (
+        <a
+          href={imgUrl}
+          target="_blank"
+          rel="noreferrer"
+          title="Open the full-size consent photo"
+        >
+          <div style={box}>
+            <img
+              src={imgUrl}
+              alt={'Consent photo for ' + (c.name || 'child')}
+              loading="lazy"
+              style={{
+                maxWidth: '100%',
+                maxHeight: '100%',
+                objectFit: 'contain',
+              }}
+            />
+          </div>
+        </a>
+      ) : (
+        <div style={box} className="text-xs text-gray-500 text-center">
+          {photo.status === 'loading'
+            ? 'Loading photo…'
+            : photo.status === 'error'
+              ? 'Could not load the photo'
+              : 'No consent photo on this visit'}
+        </div>
+      )}
+      <div className="mt-2 text-sm">
+        <div className="font-semibold text-gray-900 truncate" title={c.name}>
+          {c.name || 'Name not recorded'}
+        </div>
+        <div className="text-xs text-gray-600 mt-0.5">{props.schoolLabel}</div>
+        <div className="text-xs text-gray-600">
+          Age {c.age !== null && c.age !== undefined ? c.age : '–'} ·{' '}
+          {c.sex ? iptTitle(c.sex) : 'sex –'}
+        </div>
+        <div className="text-xs text-gray-600">
+          Caregiver phone: {c.phone || '–'}
+        </div>
+        <div className="text-xs text-gray-600">
+          Registered {fmtDate(c.regDate)} by {props.workerName}
+        </div>
+        <div className="flex flex-wrap gap-3 mt-1">
+          <a
+            href={props.visitUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-indigo-700 hover:underline"
+            title="The Day 1 registration visit"
+          >
+            Open visit in Connect ↗
+          </a>
+          <button
+            type="button"
+            onClick={props.onOpenChild}
+            className="text-xs text-indigo-700 hover:underline"
+          >
+            Timeline
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 var DOSE_CELL = {
   given: { color: '#16a34a', fill: true, label: 'Given on the day' },
   late: { color: '#d97706', fill: true, label: 'Given late (catch-up)' },
@@ -2993,6 +3200,7 @@ var IPT_TABS = [
   { id: 'safety', label: 'Safety' },
   { id: 'protocol', label: 'Protocol' },
   { id: 'authenticity', label: 'Authenticity' },
+  { id: 'duplicates', label: 'Duplicates' },
   { id: 'workers', label: 'Field workers' },
   { id: 'definitions', label: 'Definitions' },
 ];
@@ -3003,6 +3211,27 @@ var DOSE_COLORS = {
   d3: '#16a34a',
   failed: '#f87171',
 };
+
+// The opportunity's organisation slug, for links into Connect: from the
+// opportunity list the labs header embeds on the page (the context picker's
+// #opportunity-data, or the multi-opp editor's #user-opportunities), else
+// config.connect_org_slug.
+function iptOrgSlugFor(oppId, cfg) {
+  var ids = ['opportunity-data', 'user-opportunities'];
+  for (var i = 0; i < ids.length; i++) {
+    try {
+      var el = document.getElementById(ids[i]);
+      var list = el ? JSON.parse(el.textContent || '[]') : [];
+      for (var j = 0; j < list.length; j++) {
+        if (String(list[j].id) === String(oppId) && list[j].organization)
+          return list[j].organization;
+      }
+    } catch (e) {
+      /* malformed or absent: try the next source */
+    }
+  }
+  return (cfg && cfg.connect_org_slug) || '';
+}
 
 function readUrlParam(name) {
   try {
@@ -3120,6 +3349,16 @@ function WorkflowUI(props) {
   var workerOpen = React.useState('');
   var workerSort = useSort('missing', 'desc');
   var authList = React.useState('');
+  var dupCheck = React.useState(function () {
+    var d = readUrlParam('dup');
+    return IPT_DUP_CHECK_IDS.indexOf(d) >= 0 ? d : 'dup_name_age';
+  });
+  function setDupCheck(id) {
+    dupCheck[1](id);
+    writeUrlParam('dup', id);
+  }
+  // visitId -> {status: 'loading' | 'ok' | 'none' | 'error', blob}
+  var photoState = React.useState({});
 
   var nameOf = React.useMemo(
     function () {
@@ -3248,6 +3487,96 @@ function WorkflowUI(props) {
     },
     [children, screenings],
   );
+  // ---- duplicate review: fetch consent photos for the flagged children only
+  var oppId = (props.instance && props.instance.opportunity_id) || null;
+  var childById = React.useMemo(
+    function () {
+      var m = {};
+      allChildren.forEach(function (c) {
+        m[c.id] = c;
+      });
+      return m;
+    },
+    [allChildren],
+  );
+  var dupResult = auth[dupCheck[0]];
+  var dupGroups =
+    (dupResult && dupResult.extra && dupResult.extra.groupList) || [];
+  var dupVisitKey = dupGroups
+    .map(function (g) {
+      return g.childIds.join(',');
+    })
+    .join(';');
+  React.useEffect(
+    function () {
+      if (tab !== 'duplicates' || !oppId) return;
+      var photos = photoState[0];
+      var byVisit = {};
+      dupGroups.forEach(function (g) {
+        g.childIds.forEach(function (id) {
+          var c = childById[id];
+          if (c && c.visitId && !photos[c.visitId]) byVisit[c.visitId] = c;
+        });
+      });
+      var want = Object.keys(byVisit);
+      if (!want.length) return;
+      photoState[1](function (prev) {
+        var next = Object.assign({}, prev);
+        want.forEach(function (v) {
+          next[v] = { status: 'loading' };
+        });
+        return next;
+      });
+      // The endpoint takes at most 100 visits per call.
+      for (var i = 0; i < want.length; i += 100) {
+        (function (batch) {
+          fetch(
+            '/labs/workflow/api/' +
+              oppId +
+              '/visit-images/?visit_ids=' +
+              batch.join(','),
+            {
+              credentials: 'same-origin',
+            },
+          )
+            .then(function (r) {
+              if (!r.ok) throw new Error('HTTP ' + r.status);
+              return r.json();
+            })
+            .then(function (data) {
+              var vi = (data && data.visit_images) || {};
+              photoState[1](function (prev) {
+                var next = Object.assign({}, prev);
+                batch.forEach(function (v) {
+                  var blob = iptConsentBlob(vi[v], byVisit[v].consentPhoto);
+                  next[v] = blob
+                    ? { status: 'ok', blob: blob }
+                    : { status: 'none' };
+                });
+                return next;
+              });
+            })
+            .catch(function () {
+              photoState[1](function (prev) {
+                var next = Object.assign({}, prev);
+                batch.forEach(function (v) {
+                  next[v] = { status: 'error' };
+                });
+                return next;
+              });
+            });
+        })(want.slice(i, i + 100));
+      }
+    },
+    [tab, dupCheck[0], dupVisitKey, oppId],
+  );
+  var orgSlug = React.useMemo(
+    function () {
+      return iptOrgSlugFor(oppId, cfg);
+    },
+    [oppId],
+  );
+
   var highlights = iptHighlights(
     {
       cascade: cascade,
@@ -3473,6 +3802,7 @@ function WorkflowUI(props) {
   else if (tab === 'protocol') body = renderProtocol();
   else if (tab === 'authenticity') body = renderAuthenticity();
   else if (tab === 'workers') body = renderWorkers();
+  else if (tab === 'duplicates') body = renderDuplicates();
   else body = renderDefinitions();
 
   return (
@@ -5204,7 +5534,7 @@ function WorkflowUI(props) {
                 var ids =
                   r && r.extra && r.extra.childIds ? r.extra.childIds : null;
                 var listOpen = authList[0] === spec.id;
-                var shown = ids ? dupList(ids) : [];
+                var shown = ids && !spec.dup ? dupList(ids) : [];
                 return (
                   <tr
                     key={spec.id}
@@ -5230,6 +5560,18 @@ function WorkflowUI(props) {
                       <div className="text-xs text-gray-500 mt-0.5">
                         {spec.hint}
                       </div>
+                      {spec.dup && r && r.value ? (
+                        <button
+                          type="button"
+                          className="text-xs text-indigo-700 hover:underline mt-1"
+                          onClick={function () {
+                            setDupCheck(spec.id);
+                            setTab('duplicates');
+                          }}
+                        >
+                          Review the consent photos side by side →
+                        </button>
+                      ) : null}
                       {spec.id === 'throughput' &&
                       r &&
                       r.extra &&
@@ -5399,6 +5741,145 @@ function WorkflowUI(props) {
             </tbody>
           </table>
         </R.Card>
+      </div>
+    );
+  }
+
+  function renderDuplicates() {
+    var checks = IPT_AUTH_CHECKS.filter(function (c) {
+      return c.dup;
+    });
+    var spec = checks.filter(function (c) {
+      return c.id === dupCheck[0];
+    })[0];
+    var r = auth[dupCheck[0]];
+    var photos = photoState[0];
+    function visitUrlFor(c) {
+      return (
+        iptConnectVisitUrl(orgSlug, oppId, c.connectUserId, c.userVisitId) ||
+        '/audit/visits/' + encodeURIComponent(c.visitId) + '/'
+      );
+    }
+    function groupTitle(list) {
+      var c = list[0];
+      var bits = [c.name || 'Name not recorded', schoolLabelOf(c)];
+      if (dupCheck[0] !== 'dup_name') bits.push('age ' + c.age);
+      if (dupCheck[0] === 'dup_name_age_phone') bits.push(c.phone);
+      return bits.join(' · ');
+    }
+    return (
+      <div className="space-y-4">
+        <R.Card>
+          <div className="flex flex-wrap items-end gap-4">
+            <Select
+              label="Duplicate check"
+              value={dupCheck[0]}
+              minWidth={360}
+              options={checks.map(function (c) {
+                var x = auth[c.id];
+                return {
+                  value: c.id,
+                  label:
+                    c.label.replace('Possible duplicates: ', '') +
+                    ' — ' +
+                    iptCheckValueText(c, x),
+                };
+              })}
+              onChange={setDupCheck}
+            />
+            <div
+              className="text-sm text-gray-600"
+              style={{ flex: 1, minWidth: 260 }}
+            >
+              {spec ? spec.hint : ''}
+            </div>
+          </div>
+          <div className="text-xs text-gray-500 mt-2">
+            Each row is one suspected child: every registration that matches on
+            the check's attributes, side by side. Compare the consent photos and
+            details, then open the visit in Connect.
+            {orgSlug
+              ? ''
+              : ' (The opportunity’s organisation is not known on this page, so visit links open the labs copy of the visit.)'}
+          </div>
+        </R.Card>
+        {!dupGroups.length ? (
+          <R.Notice tone="muted">
+            No children match on this check
+            {filtered ? ' in the current filter' : ''}.
+          </R.Notice>
+        ) : (
+          <div className="text-sm text-gray-700">
+            <b>{r.value}</b> registrations flagged, <b>{r.extra.groups}</b>{' '}
+            unique suspected {r.extra.groups === 1 ? 'child' : 'children'}.
+          </div>
+        )}
+        {dupGroups.map(function (g) {
+          var list = g.childIds
+            .map(function (id) {
+              return childById[id];
+            })
+            .filter(Boolean)
+            .sort(function (a, b) {
+              return (a.regDate || '') < (b.regDate || '') ? -1 : 1;
+            });
+          if (!list.length) return null;
+          var workers = {};
+          list.forEach(function (c) {
+            workers[nameOf(c.username)] = true;
+          });
+          var nWorkers = Object.keys(workers).length;
+          return (
+            <R.Card key={g.key}>
+              <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+                <div className="text-sm font-semibold text-gray-900">
+                  {groupTitle(list)}
+                </div>
+                <div className="text-xs text-gray-500">
+                  {list.length} registrations ·{' '}
+                  {nWorkers === 1
+                    ? 'one field worker'
+                    : nWorkers + ' field workers'}
+                  {nWorkers > 1 ? (
+                    <span className="ml-2">
+                      <Badge
+                        tone="yellow"
+                        title="Registered by more than one field worker"
+                      >
+                        across workers
+                      </Badge>
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 12,
+                  overflowX: 'auto',
+                  paddingBottom: 4,
+                }}
+              >
+                {list.map(function (c) {
+                  return (
+                    <DupPhotoCard
+                      key={c.id}
+                      child={c}
+                      photo={photos[c.visitId]}
+                      oppId={oppId}
+                      schoolLabel={schoolLabelOf(c)}
+                      workerName={nameOf(c.username)}
+                      visitUrl={visitUrlFor(c)}
+                      onOpenChild={function () {
+                        setOpenChildId(c.id);
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            </R.Card>
+          );
+        })}
       </div>
     );
   }
