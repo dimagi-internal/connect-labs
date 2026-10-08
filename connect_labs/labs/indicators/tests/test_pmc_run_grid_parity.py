@@ -65,3 +65,20 @@ def test_effect_and_ci_match_live(run_grid):
     expected = live._under5_effect(base, mine, [0, 1, 2])
     assert row["averted_u5_pct"] == expected["averted_u5_pct"]
     assert row["averted_u5_ci"] == expected["averted_u5_ci"]
+
+
+def test_driver_output_ranks(run_grid, tmp_path):
+    """A grid the driver wrote (fake worker, one state) is one rank_pairs can rank: no silent empty ranking."""
+    from connect_labs.labs.indicators.emod import rank
+
+    spec = importlib.util.spec_from_file_location(
+        "test_run_grid_for_rank", REPO / "tools/pmc_emod/states/test_run_grid.py"
+    )
+    fake = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fake)
+    box, _ = fake.make_box()
+    out = tmp_path / "grid.json"
+    grid, failed = run_grid.run_grid(box, STATES, out, fake.RUNTIME, only=["Kano"])
+    assert failed == []
+    ranked = rank.rank_pairs(grid=json.loads(out.read_text()))
+    assert ranked["pairs_ranked"] > 0

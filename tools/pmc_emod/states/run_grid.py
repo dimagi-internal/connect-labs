@@ -26,12 +26,14 @@ from __future__ import annotations
 
 import argparse
 import copy
+import datetime
 import hashlib
 import importlib.util
 import json
 import logging
 import math
 import os
+import re
 import shlex
 import statistics
 import sys
@@ -74,10 +76,17 @@ WORKER_PYTHON = "/opt/emod/.venv/bin/python"
 WORKER_SCRIPT = "/opt/emod/run_scenarios.py"
 BOOT_TIMEOUT_S = 600
 READY_TIMEOUT_S = 900
-#: Grid and calibrate requests are longer than a live demo run: the worker's own deadline, and the SSM limit
-#: above it so the worker reports its own timeout first.
-WORKER_REQUEST_TIMEOUT_S = 2800
-RUN_TIMEOUT_S = 3000
+#: Grid requests (baseline + designs x 3 seeds) are longer than a live demo run: the worker's own deadline
+#: (EMOD_REQUEST_TIMEOUT_S), and the SSM limit above it so the worker reports its own timeout first.
+GRID_REQUEST_TIMEOUT_S = 2800
+GRID_SSM_TIMEOUT_S = 3000
+#: Calibrate requests (two burn-in rounds) get their own pair of constants; the same values today.
+CALIBRATE_REQUEST_TIMEOUT_S = 2800
+CALIBRATE_SSM_TIMEOUT_S = 3000
+#: Abort the batch after this many states fail in a row (a dead box would otherwise fail all of them).
+MAX_CONSECUTIVE_FAILURES = 3
+
+WORKER_DIR = REPO / "tools/pmc_emod/worker"
 
 #: Two-sided 95% t-values by degrees of freedom (same table as emod/live.py).
 _T95 = {1: 12.71, 2: 4.30, 3: 3.18, 4: 2.78, 5: 2.57, 6: 2.45, 7: 2.36, 8: 2.31, 9: 2.26}
@@ -123,6 +132,17 @@ def grid_request(setting: dict, state_designs: list[dict]) -> dict:
     }
 
 
+def worker_runtime() -> dict:
+    """The runtime the worker is built from, read out of the repo's own deploy files (flags override)."""
+    digest = re.search(r'^EMOD_IMAGE_DIGEST\s*=\s*"([^"]+)"', (WORKER_DIR / "run_scenarios.py").read_text(), re.M)
+    commit = re.search(r"^EMODPY_COMMIT=([0-9a-f]{7,40})\s*$", (WORKER_DIR / "bootstrap.sh").read_text(), re.M)
+    if not digest or not commit:
+        raise RuntimeError(
+            "cannot read EMOD_IMAGE_DIGEST / EMODPY_COMMIT from the worker files; pass --image and --emodpy-commit"
+        )
+    return {"image": digest.group(1), "emodpy_commit": commit.group(1)}
+
+
 def request_hash(req: dict) -> str:
     """sha256 of the canonical JSON, the S3 key the live runner uses (emod/runner.py request_hash)."""
     return hashlib.sha256(json.dumps(req, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
@@ -156,6 +176,13 @@ def design_effect(result: dict, design: dict) -> dict | None:
     m324 = [(1 - mine[s]["cases_3_24m"] / base[s]["cases_3_24m"]) * 100 for s in seeds if base[s]["cases_3_24m"]]
     if not u5 or not m324:
         return None
+    if min(len(u5), len(m324)) < len(SEEDS):
+        logger.warning(
+            "%s: only %d of %d seeds have a usable baseline/design pair; the CI is wider",
+            design["code"],
+            min(len(u5), len(m324)),
+            len(SEEDS),
+        )
     mean_u5, half_u5 = _mean_ci(u5)
     if design["kind"] == "smc":
         kids = statistics.fmean(mine[s]["kids_u5"] for s in seeds) * design["target_pop_fraction"]
@@ -188,6 +215,9 @@ class Box:
         logger.info("box up (cold=%s) %s", up.cold, up.timings)
 
     def call(self, req: dict) -> dict:
+        calibrating = req.get("mode") == "calibrate"
+        deadline = CALIBRATE_REQUEST_TIMEOUT_S if calibrating else GRID_REQUEST_TIMEOUT_S
+        ssm_timeout = CALIBRATE_SSM_TIMEOUT_S if calibrating else GRID_SSM_TIMEOUT_S
         key = request_hash(req)
         request_key, result_key = f"requests/{key}.json", f"results/{key}.json"
         self.s3.put_object(
@@ -197,11 +227,11 @@ class Box:
             ContentType="application/json",
         )
         command = (
-            f"EMOD_REQUEST_TIMEOUT_S={WORKER_REQUEST_TIMEOUT_S} {WORKER_PYTHON} {WORKER_SCRIPT} "
+            f"EMOD_REQUEST_TIMEOUT_S={deadline} {WORKER_PYTHON} {WORKER_SCRIPT} "
             f"--request {shlex.quote(f's3://{self.bucket}/{request_key}')} "
             f"--out {shlex.quote(f's3://{self.bucket}/{result_key}')}"
         )
-        res = self.instance.run([command], timeout_s=RUN_TIMEOUT_S)
+        res = self.instance.run([command], timeout_s=ssm_timeout)
         if not res.ok:
             tail = (res.stderr or res.stdout or "").strip()[-1500:]
             raise RuntimeError(f"worker exited {res.exit_code} ({res.status}): {tail}")
@@ -259,6 +289,7 @@ def run_state(box: Box, state: dict) -> dict:
 
 def write_atomic(path: Path, grid: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    grid["generated"] = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds")
     fd, tmp = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
     try:
         with os.fdopen(fd, "w") as f:
@@ -283,6 +314,7 @@ def run_grid(
     *,
     only: list[str] | None = None,
     concurrency: int = 1,
+    force_runtime: bool = False,
 ) -> tuple[dict, list[str]]:
     """Run every (selected) state not already in ``out_path``; write the file after each.
 
@@ -290,8 +322,14 @@ def run_grid(
     file, so the next run retries it. ``only`` matches names case-insensitively.
     """
     grid = load_existing(out_path) or {"version": 1, "runtime": runtime, "states": {}}
-    if grid.get("runtime") != runtime:
-        logger.warning("runtime differs from the existing file's (%s vs %s)", grid.get("runtime"), runtime)
+    if grid["states"] and grid.get("runtime") != runtime:
+        if not force_runtime:
+            raise RuntimeError(
+                f"{out_path} was built on runtime {grid.get('runtime')} but this run is {runtime}; mixing them "
+                "would put two models in one grid. Use a new --out, or --force-runtime to continue anyway."
+            )
+        logger.warning("runtime differs from the existing file's (%s vs %s); forced", grid.get("runtime"), runtime)
+    grid["runtime"] = runtime if not grid["states"] else grid["runtime"]
     if only:
         wanted = {n.strip().lower() for n in only}
         unknown = wanted - {s["name"].lower() for s in states}
@@ -302,16 +340,27 @@ def run_grid(
     logger.info("%d states selected, %d already done, %d to run", len(states), len(states) - len(todo), len(todo))
     lock = threading.Lock()
     failed: list[str] = []
+    streak = [0]
+    aborted = threading.Event()
 
     def one(state):
+        if aborted.is_set():
+            return
         t = time.monotonic()
         try:
+            box.start()  # the box idles down between states; a no-op when it is up
             entry = run_state(box, state)
         except Exception as exc:  # noqa: BLE001 - one bad state must not lose the others
             logger.error("%s FAILED after %.0fs: %s", state["name"], time.monotonic() - t, exc)
-            failed.append(state["name"])
+            with lock:
+                failed.append(state["name"])
+                streak[0] += 1
+                if streak[0] >= MAX_CONSECUTIVE_FAILURES:
+                    aborted.set()
+                    logger.error("%d states failed in a row; aborting the batch", streak[0])
             return
         with lock:
+            streak[0] = 0
             grid["states"][state["name"]] = entry
             write_atomic(out_path, grid)
         logger.info("%s done in %.0fs (%d/%d)", state["name"], time.monotonic() - t, len(grid["states"]), len(states))
@@ -335,18 +384,30 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--states", help="comma-separated state names to run (default: all in inputs.json)")
     ap.add_argument("--concurrency", type=int, default=1, help="states at once (default 1; see the task report)")
-    ap.add_argument("--out", type=Path, default=GRID_PATH)
+    ap.add_argument(
+        "--out", type=Path, default=None, help=f"output file (default {GRID_PATH.name}; required with --states)"
+    )
     ap.add_argument("--inputs", type=Path, default=INPUTS_PATH)
     ap.add_argument("--instance-id", default=os.environ.get("LABS_EMOD_INSTANCE_ID"))
     ap.add_argument("--bucket", default=os.environ.get("LABS_EMOD_BUCKET"))
     ap.add_argument("--region", default=os.environ.get("LABS_EMOD_REGION", "us-east-1"))
     ap.add_argument("--profile", default=os.environ.get("AWS_PROFILE"))
-    ap.add_argument("--image", default=os.environ.get("LABS_EMOD_IMAGE", "unknown"), help="worker image digest")
-    ap.add_argument("--emodpy-commit", default=os.environ.get("LABS_EMOD_EMODPY_COMMIT", "unknown"))
+    ap.add_argument("--image", default=os.environ.get("LABS_EMOD_IMAGE"), help="override the worker image digest")
+    ap.add_argument("--emodpy-commit", default=os.environ.get("LABS_EMOD_EMODPY_COMMIT"), help="override the commit")
+    ap.add_argument("--force-runtime", action="store_true", help="continue a file built on a different runtime")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     if not args.instance_id or not args.bucket:
         ap.error("set LABS_EMOD_INSTANCE_ID and LABS_EMOD_BUCKET (or --instance-id / --bucket)")
+    if args.out is None:
+        if args.states:
+            ap.error("--out is required with --states (a subset must not land in the committed grid by accident)")
+        args.out = GRID_PATH
+    runtime = worker_runtime()
+    runtime = {
+        "image": args.image or runtime["image"],
+        "emodpy_commit": args.emodpy_commit or runtime["emodpy_commit"],
+    }
     if args.profile:
         os.environ["AWS_PROFILE"] = args.profile
     import boto3
@@ -357,15 +418,15 @@ def main(argv=None) -> int:
         boto3.client("s3", region_name=args.region),
         args.bucket,
     )
-    box.start()
     states = json.loads(args.inputs.read_text())["states"]
     _, failed = run_grid(
         box,
         states,
         args.out,
-        {"image": args.image, "emodpy_commit": args.emodpy_commit},
+        runtime,
         only=args.states.split(",") if args.states else None,
         concurrency=args.concurrency,
+        force_runtime=args.force_runtime,
     )
     return 1 if failed else 0
 
