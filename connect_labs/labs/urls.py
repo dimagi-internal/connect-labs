@@ -7,6 +7,7 @@ from connect_labs.labs.integrations.commcare import oauth_views as commcare_oaut
 from connect_labs.labs.integrations.connect import oauth_views as connect_oauth_views
 from connect_labs.labs.integrations.ocs import oauth_views as ocs_oauth_views
 from connect_labs.mcp import token_views as mcp_token_views
+from connect_labs.workflow import coach_image_views
 
 app_name = "labs"
 
@@ -28,6 +29,8 @@ urlpatterns = [
     path("canopy/probe/", canopy_views.probe_endpoint, name="canopy_probe"),
     path("refresh-org-data/", views.refresh_org_data, name="refresh_org_data"),
     # MCP Personal Access Tokens (self-service)
+    # A coaching picture, fetched by Open Chat Studio with a coach-images token.
+    path("coach-image/<str:token>/", coach_image_views.coach_image, name="coach_image"),
     path("mcp/tokens/", mcp_token_views.tokens_index, name="mcp_tokens_index"),
     path("mcp/tokens/create/", mcp_token_views.tokens_create, name="mcp_tokens_create"),
     path("mcp/tokens/<int:pk>/revoke/", mcp_token_views.tokens_revoke, name="mcp_tokens_revoke"),

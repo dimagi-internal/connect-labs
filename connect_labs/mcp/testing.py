@@ -40,6 +40,7 @@ from unittest.mock import patch
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken
 
+from . import token_scopes
 from .models import MCPAccessToken
 from .server import PAT_SCOPES, _run_registry_tool, _write_audit, current_user
 from .tool_registry import MCPToolError, get_tool
@@ -67,7 +68,7 @@ def _verify(raw: str | None) -> AccessToken | None:
     if not raw:
         return None
     token = MCPAccessToken.verify(raw)
-    if token is None:
+    if token is None or token.scope in token_scopes.NOT_MCP_SCOPES:
         return None
     token.touch()
     user = token.user

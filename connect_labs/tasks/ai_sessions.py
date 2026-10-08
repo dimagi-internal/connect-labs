@@ -32,6 +32,7 @@ def start_ai_session(
     platform: str = "commcare_connect",
     start_new_session: bool = False,
     on_behalf_of: str | None = None,
+    coach_image: dict | None = None,
 ) -> dict:
     """Start (or attach) the conversation as ``user`` and record it on ``task``,
     which is saved.
@@ -45,6 +46,11 @@ def start_ai_session(
     ConnectID username, receiving the conversation meant for that worker. It is
     recorded on the session (``qa_recipient`` / ``on_behalf_of``), and on a synthetic
     opportunity the conversation is REAL -- the point is to QA the actual bot.
+
+    ``coach_image`` (``{"url", "caption"}``, from ``workflow/coach_image.attachment``)
+    puts a picture of the worker's figures in the session state as
+    ``coach_image_url`` / ``coach_image_caption`` -- only beside a briefing, which is
+    what it pictures.
     """
     from connect_labs.labs.synthetic.manager_flow_views import _coaching_conversation
     from connect_labs.labs.synthetic.registry import get_synthetic_opp
@@ -100,6 +106,9 @@ def start_ai_session(
     # `{session_state.coach_briefing}`. Any other prompt keeps the `prompt_text` path.
     if coach_briefing.is_briefing(prompt_text):
         session_data["coach_briefing"] = prompt_text
+        if coach_image and coach_image.get("url"):
+            session_data["coach_image_url"] = coach_image["url"]
+            session_data["coach_image_caption"] = coach_image.get("caption") or ""
         message = {"message_text": coach_briefing.opening_message(prompt_text)}
     else:
         message = {"prompt_text": prompt_text}

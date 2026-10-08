@@ -114,6 +114,11 @@ _BOT_NAME_TTL = 7 * 24 * 3600
 #: username, to receive a worker's conversation instead of the worker.
 DELIVER_TO = "deliver_to"
 
+#: The opt-in argument of ``start_ocs_outreach``: give each briefed worker's session a
+#: picture of their own figures (``coach_image.py``) as ``coach_image_url`` and
+#: ``coach_image_caption``.
+INCLUDE_IMAGE = "include_image"
+
 
 @dataclass(frozen=True)
 class WorkerContext:
@@ -193,6 +198,7 @@ def _execute_ocs_outreach(ctx: WorkerContext) -> None:
         task.data = {**(task.data or {}), "coaching_indicators": list(indicators)}
         ctx.tasks.save_task(task)
     deliver_to = ctx.arguments.get(DELIVER_TO)
+    prompt_text = ctx.item.get("prompt") or ctx.arguments.get("prompt") or ""
     started = start_ai_session(
         ctx.execution.user,
         ctx.tasks,
@@ -203,10 +209,23 @@ def _execute_ocs_outreach(ctx: WorkerContext) -> None:
         identifier=deliver_to or ctx.username,
         on_behalf_of=ctx.username if deliver_to else None,
         experiment=ctx.arguments["bot"],
-        prompt_text=ctx.item.get("prompt") or ctx.arguments.get("prompt") or "",
+        prompt_text=prompt_text,
         start_new_session=True,
+        coach_image=_image_for(ctx.arguments, prompt_text),
     )
     ctx.record["session_id"] = started.get("session_id")
+
+
+def _image_for(arguments: dict, prompt: str | None) -> dict | None:
+    """The picture to attach to one worker's conversation: ``{"url", "caption"}`` when
+    the action asked for pictures and the worker's text is a Labs briefing, else None.
+    Drawn from the briefing text itself, so it shows exactly the topics the coach is
+    briefed on; a worker given their own prompt gets no picture."""
+    from connect_labs.workflow import coach_image
+
+    if not arguments.get(INCLUDE_IMAGE):
+        return None
+    return coach_image.attachment(prompt or "")
 
 
 ACTION_TYPES: dict[str, ActionType] = {
@@ -246,7 +265,9 @@ ACTION_TYPES: dict[str, ActionType] = {
                 "person can use. On synthetic opportunities no message is sent: each task gets a "
                 "sample coaching conversation. `deliver_to` (Dimagi staff only, one worker at a time) "
                 "is a QA redirect: the conversation goes to that ConnectID username instead of the "
-                "worker -- on a synthetic opportunity too, where it is then a real OCS conversation."
+                "worker -- on a synthetic opportunity too, where it is then a real OCS conversation. "
+                "`include_image` (default false) also gives each worker whose briefing Labs writes a "
+                "picture of their own figures for those topics, linked from the session state."
             ),
             parameters={
                 "type": "object",
@@ -267,6 +288,13 @@ ACTION_TYPES: dict[str, ActionType] = {
                     "title": {"type": "string", "maxLength": 200},
                     "bot": {"type": "string"},
                     "priority": _PRIORITY,
+                    INCLUDE_IMAGE: {
+                        "type": "boolean",
+                        "description": (
+                            "Attach a picture of each briefed worker's own figures (bar per topic) to their "
+                            "conversation. Only workers whose briefing Labs writes get one."
+                        ),
+                    },
                     DELIVER_TO: {
                         "type": "string",
                         "minLength": 1,
@@ -648,6 +676,10 @@ def preview(user, *, wda, run, definition, key: str, arguments: Any, request=Non
                     # What the worker actually receives first (the briefing itself goes
                     # into the session state, never to the worker -- tasks/ai_sessions.py).
                     row["opening"] = coach_briefing.opening_message(row["prompt"])
+                image = _image_for(args, row["prompt"])
+                if image is not None:
+                    # Shown before confirming, so the person knows a picture goes too.
+                    row["image"] = image
             if item.get("indicators"):
                 row["indicators"] = item["indicators"]
             if args.get(DELIVER_TO):
