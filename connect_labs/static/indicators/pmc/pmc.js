@@ -313,7 +313,9 @@
         stat('Children 3–24 mo', '≈' + num(approx(t.children))) +
         stat('Cases averted / yr', '≈' + num(approx(t.cases))) +
         stat('Cost / yr', '≈' + usdShort(approx(t.spend))) +
-        stat('Per case averted', t.cases ? usd(t.spend / t.cases, 2) : '—')
+        // Blended across the ranked states, so it differs from the schedule's
+        // single-setting figure above; the label says so.
+        stat('Blended per case', t.cases ? usd(t.spend / t.cases, 2) : '—')
       : '';
     el('pmc-total').classList.toggle('hidden', !ranked.length);
 
