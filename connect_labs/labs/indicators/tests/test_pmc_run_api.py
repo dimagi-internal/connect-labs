@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import threading
 import time
+from datetime import timedelta
 
 import pytest
 from django.db import connection
 from django.urls import reverse
+from django.utils import timezone
 
 from connect_labs.labs.indicators.emod import runner, tasks
 from connect_labs.labs.indicators.models import PmcModelRun
@@ -97,6 +99,40 @@ class TestRunEndpoint:
         assert r.status_code == 202
         assert r.json() == {"run_id": run.pk, "status": status, "cached": False}
         assert mock_delay == []
+
+    def test_stale_queued_run_is_reenqueued_once(self, client_in, mock_delay, django_capture_on_commit_callbacks):
+        run = make_run([MONTHLY], PmcModelRun.QUEUED)
+        PmcModelRun.objects.filter(pk=run.pk).update(updated_at=timezone.now() - timedelta(seconds=300))
+        with django_capture_on_commit_callbacks(execute=True):
+            assert post(client_in, state="Ondo", schedules=[MONTHLY]).status_code == 202
+            assert post(client_in, state="Ondo", schedules=[MONTHLY]).status_code == 202
+        assert mock_delay == [run.pk]
+
+    def test_fresh_queued_run_is_left_alone(self, client_in, mock_delay, django_capture_on_commit_callbacks):
+        make_run([MONTHLY], PmcModelRun.QUEUED)
+        with django_capture_on_commit_callbacks(execute=True):
+            post(client_in, state="Ondo", schedules=[MONTHLY])
+        assert mock_delay == []
+
+    def test_cached_result_served_without_configuration(self, client_in, settings, mock_delay):
+        run = make_run([MONTHLY], PmcModelRun.COMPLETED, result={"ok": 1})
+        settings.LABS_EMOD_BUCKET = None
+        settings.LABS_EMOD_INSTANCE_ID = None
+        r = post(client_in, state="Ondo", schedules=[MONTHLY])
+        assert r.status_code == 200 and r.json()["run_id"] == run.pk and r.json()["cached"] is True
+
+    def test_requeued_failed_run_gets_a_fresh_updated_at_and_eta(
+        self, client_in, mock_delay, django_capture_on_commit_callbacks
+    ):
+        run = make_run([MONTHLY], PmcModelRun.FAILED, error="boom")
+        old = timezone.now() - timedelta(hours=1)
+        PmcModelRun.objects.filter(pk=run.pk).update(updated_at=old)
+        with django_capture_on_commit_callbacks(execute=True):
+            post(client_in, state="Ondo", schedules=[MONTHLY])
+        run.refresh_from_db()
+        assert run.updated_at > old + timedelta(minutes=59)
+        body = client_in.get(reverse("targeting:pmc_run_status", args=[run.pk])).json()
+        assert body["eta_s"] > 250
 
     def test_failed_run_is_requeued_on_the_same_row(self, client_in, mock_delay, django_capture_on_commit_callbacks):
         run = make_run([MONTHLY], PmcModelRun.FAILED, error="boom")
@@ -253,6 +289,24 @@ class TestTask:
         tasks.run_pmc_model.run(run.pk)
         run.refresh_from_db()
         assert run.status == PmcModelRun.FAILED and "LABS_EMOD_BUCKET" in run.error
+
+    def test_lost_lease_is_recorded_in_timings(self, monkeypatch, caplog):
+        r = FakeRedis()
+        monkeypatch.setattr(tasks, "_redis", lambda: r)
+        monkeypatch.setattr(tasks, "_instance", lambda: object())
+        monkeypatch.setattr(tasks, "HEARTBEAT_S", 0.01)
+
+        def slow_execute(run, instance, bucket, reclaim_stale_after_s=None):
+            r._d["ondemand:emod:lock"] = "thief"  # another holder took the lease
+            time.sleep(0.2)
+            PmcModelRun.objects.filter(pk=run.pk).update(status=PmcModelRun.COMPLETED, timings={"total_s": 1})
+
+        monkeypatch.setattr(tasks, "execute", slow_execute)
+        run = make_run([MONTHLY])
+        tasks.run_pmc_model.run(run.pk)
+        run.refresh_from_db()
+        assert run.timings == {"total_s": 1, "lease_lost": True}
+        assert any(rec.levelname == "ERROR" and "lease lost" in rec.message for rec in caplog.records)
 
     def test_heartbeat_refreshes_the_lease(self):
         calls = []
