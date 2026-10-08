@@ -915,7 +915,7 @@ var IPT_AUTH_CHECKS = [
     contributes: true,
     yellow: 1,
     red: 3,
-    hint: 'Same name at the same school registered more than once.',
+    hint: 'Same name, same age, at the same school, registered more than once. Children with no recorded age are not compared.',
   },
   {
     id: 'shared_phone',
@@ -1127,12 +1127,19 @@ function iptAuthenticity(children, opts, schoolMap) {
     ),
     asked.length,
   );
-  // Duplicates: same normalised name at the same school
+  // Duplicates: same normalised name, same age, at the same school. Two
+  // children who share a name but not an age are classmates, not one child
+  // registered twice; a child with no recorded age cannot be compared.
   var seen = {};
   regs.forEach(function (c) {
     var nm = iptNormName(c.name);
-    if (!nm) return;
-    var k = (schoolMap ? schoolMap[c.id] : iptNormName(c.school)) + '|' + nm;
+    if (!nm || c.age === null || c.age === undefined) return;
+    var k =
+      (schoolMap ? schoolMap[c.id] : iptNormName(c.school)) +
+      '|' +
+      nm +
+      '|' +
+      c.age;
     (seen[k] = seen[k] || []).push(c.id);
   });
   var dupIds = [];
