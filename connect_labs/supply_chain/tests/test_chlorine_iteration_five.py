@@ -125,7 +125,9 @@ class TestTheStockPageShowsWhatTheLastReceiptChanged:
     def test_the_page_says_it_beside_months_of_stock(self, client_in_programme, da, store):
         stopgap = store["order"]("HHS-PO-1", "90")
         store["receive"](stopgap, "GRN-KANO-0431", "90", 0)
-        before = _row(da, store["point"])["last_receipt"]["months_before"]
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import months_as_days
+
+        before = months_as_days(_row(da, store["point"])["last_receipt"]["months_before"])
         text = _text(client_in_programme.get(reverse("supply_chain:stock")).content.decode())
         assert f"was {before} before GRN-KANO-0431" in text
         assert "+90 jerry cans" in text

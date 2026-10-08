@@ -243,8 +243,8 @@ def test_the_stock_page_still_refuses_a_rate_across_items(world):
 
 
 def test_a_window_too_short_says_so_as_a_plan_did(world):
-    grouped = network.network_stock(PROGRAM, item=world["rutf"], window_days=14)
-    planned = network.network_stock(PROGRAM, item=world["rutf"], window_days=14, per_point=True)
+    grouped = network.network_stock(PROGRAM, item=world["rutf"], window_days=5)
+    planned = network.network_stock(PROGRAM, item=world["rutf"], window_days=5, per_point=True)
     assert [r["amc"] for r in grouped] == [r["amc"] for r in planned]
     assert "too short" in grouped[-1]["amc"].reasons[0]
 

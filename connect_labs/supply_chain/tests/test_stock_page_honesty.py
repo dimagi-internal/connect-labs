@@ -179,14 +179,14 @@ class TestWholePacksAreSentWhole:
         assert exact != exact.to_integral_value()
 
     def test_demand_per_month_claims_no_false_precision(self, scoped, da, world):
-        """A three-month average of counted cans reads in whole cans ("84", not "83.72")."""
+        """A daily rate of counted cans reads in whole cans ("3", not "2.79"), as the page plans in days."""
         amc = Decimal(_row(da, world)["amc"]["amount"])
         text = _text(_stock_page(scoped))
-        shown = re.search(r"([\d,]+(?:\.\d+)?) jerry cans dispensed a month", text)
+        shown = re.search(r"([\d,]+(?:\.\d+)?) jerry cans? dispensed a day", text)
         assert shown is not None, text
         digits = shown.group(1).replace(",", "")
         assert "." not in digits
-        assert abs(Decimal(digits) - amc) <= Decimal("0.5")
+        assert abs(Decimal(digits) - amc / 30) <= Decimal("0.5")
 
 
 class TestDemandReadsAsTheDataAllows:

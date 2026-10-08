@@ -1065,6 +1065,9 @@ class StockView(OperationBase):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        from connect_labs.supply_chain.stock.services.resupply import MINIMUM_WINDOW_DAYS
+
+        context["min_rate_days"] = MINIMUM_WINDOW_DAYS
         context["has_program_context"] = has_program_context(self.request)
         if not context["has_program_context"]:
             return context

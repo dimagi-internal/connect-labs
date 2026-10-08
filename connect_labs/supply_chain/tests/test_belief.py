@@ -21,7 +21,7 @@ from connect_labs.supply_chain.models import Commodity, Item, Movement, StockCou
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.stock.services import belief, posting, resupply
 from connect_labs.supply_chain.stock.services.visit_reader import outcome_key
-from connect_labs.supply_chain.values import Quantity, Unconfirmed
+from connect_labs.supply_chain.values import Quantity
 
 pytestmark = pytest.mark.django_db
 
@@ -172,7 +172,9 @@ def test_a_workers_figures(item, world):
     assert a.status == "below_min"
     assert a.unmatched_receipts == []
     assert b.on_hand == sachets(90)
-    assert isinstance(b.amc, Unconfirmed) and b.status == "unknown"
+    # 16 days of dispensing is enough for a rate (MINIMUM_WINDOW_DAYS is 7): 10 sachets over 16 days.
+    assert b.amc == Quantity(Decimal("18.7500"), "sachet") and b.rate_days == 16
+    assert b.status != "unknown"
     assert (b.reported, b.variance, b.days_since_checked) == (None, None, None)
 
 

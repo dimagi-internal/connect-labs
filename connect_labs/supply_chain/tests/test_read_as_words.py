@@ -540,7 +540,7 @@ class TestTheStockPageSaysSendOrReorder:
         row = self._row(client_in_programme.get(reverse("supply_chain:stock")).content.decode(), "Child store")
         import re
 
-        demand = re.search(r"([0-9][0-9,.]*) co-packs <span[^>]*>dispensed a month", row)
+        demand = re.search(r"([0-9][0-9,.]*) co-packs <span[^>]*>dispensed a day", row)
         assert demand, row
         assert "." not in demand.group(1)
 

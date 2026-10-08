@@ -479,7 +479,7 @@ class TestReleasesAreDemandAtAStoreThatDoesNotDispense:
     def test_the_stock_page_labels_the_rate(self, client_in_programme, da, chain):
         self._store_with(da, chain, "transfer")
         body = client_in_programme.get(reverse("supply_chain:stock")).content.decode()
-        assert "releases a month" in body
+        assert "released a day" in body
 
 
 class TestATenderStatesTheContentsItBuys:
