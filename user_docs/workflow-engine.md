@@ -81,6 +81,14 @@ This means each workflow appears in exactly one place. If you cannot find a work
 
 Pipelines can pull data from CommCare form submissions or from external files such as Google Drive exports. The two source types work differently and have different access rules.
 
+### Supply data as a pipeline source
+
+Workflows can now use **supply data** as a first-class data source, alongside CommCare form submissions and Drive files. This means stock views — covering what field workers hold, what the stores contain, orders, tenders, and more — can be built into workflows and updated per programme or opportunity without a software deployment.
+
+Supply pipelines read data with the same access rules as the Supply pages elsewhere in Connect Labs. A workflow reading supply data across several opportunities (or even across programmes) works the same way programme-level reports already do — it spans the opportunities you configure it for and shows only what you have permission to see.
+
+The Supply Stock page links directly to any supply workflow that has been set up for your programme or opportunity.
+
 ### Multiple summaries from a single pipeline
 
 A summary pipeline can now produce several different breakdowns in one pass rather than requiring a separate pipeline for each breakdown. For example, instead of one pipeline for totals by questionnaire, another for totals by question, another for totals by state, and so on, a single pipeline can declare all of those as named **groupings** and compute them all together from one read of the data.
@@ -134,6 +142,31 @@ Program-scoped Drive pipelines are built through the labs MCP. The steps are:
 
 ---
 
+## Built-in Workflow Templates
+
+### Supply Stock Review
+
+The **Supply Stock Review** is a ready-made workflow template for monitoring field worker stock. You can enable it for the opportunities you choose without any software deployment. It reads supply data using the same access rules as the Supply pages, and can span several opportunities — or several programmes — the same way a programme-level report does. The Supply Stock page links to it directly once it is set up.
+
+The dashboard is organised into the following views:
+
+**Headline figures**
+A summary of what is currently with field workers, expressed in sachets and in children's courses; how much has been given out (with the share that sits on visits not yet approved broken out separately); and the daily rate at which stock is going out.
+
+**Runway**
+One bar per worker, sorted so the worker who will run out soonest appears first. Each bar shows the worker's projected run-out date based on their own pace over the last 14 days, and their most recent count against the ledger.
+
+**Does it add up?**
+A reconciliation table showing, for each worker: stock issued, stock given out, what the ledger says they hold, what they actually counted, the gap between the ledger and the count, visits that did not record a stock figure, and the share of transactions sitting on unapproved visits.
+
+**A worker's history**
+Click any worker to open a day-by-day view of their stock movements and counts.
+
+**The stores behind them**
+Stock held in the stores that supply the workers, shown in sachets with cartons alongside.
+
+---
+
 ## Indicator Registries
 
 An **indicator registry** is a shared list of named indicators that multiple reports can read from a single place. Rather than defining the same indicator separately in each report, you define it once in a registry and reports refer to it by name.
@@ -178,30 +211,4 @@ The generic indicator reports — the programme report, the opportunity/partner 
 
 **Programme report drill-down improvements.** When you drill into a single partner or opportunity, a caption names it, shows its size, and identifies which indicator it is flagged on. That indicator's trend chart displays at full width with its data points labelled. Headline tiles for indicators that have no target say "no target" explicitly rather than leaving the tile blank or ambiguous.
 
-**Opportunity report — Benchmarks tab improvements.** Bar charts are drawn on a true zero-based scale with a clearly labelled dashed line at the target value. Your own organisation is shown in a distinct colour with its status as a pill. A **See workers →** shortcut link opens the worker list sorted worst-first. Indicators that have no better-or-worse direction (for example, a count with no preferred direction) are grouped separately under "not ranked" rather than being sorted alongside directional indicators.
-
-**Additional improvements now included in the standard template.** A second round of refinements — previously applied only to individual programme copies — is now part of the standard template too. Every new programme will have:
-
-- **Programme report:**
-    - Each rate tile shows a value bar with a tick mark at its target, a "lower is better" chip where that applies, and a label that opens the indicator's definition.
-    - Hovering a rate cell shows the counts behind the percentage — for example, "123 of 124".
-    - A partner or opportunity column that is identical on every row is no longer repeated.
-    - The legend sits above its table rather than below.
-    - When you drill into a partner that runs only one opportunity, the header names that opportunity directly and the one-row Opportunities table is hidden.
-    - The "Report of \<date\>" chip, which duplicated the "figures as of \<date\>" label, is removed.
-
-- **Opportunity report — Benchmarks tab:**
-    - Your organisation's figure shows its signed gap to target — for example, "−8.0 points to target".
-    - Each row has an expand chevron, and the expanded detail panel reads as a continuation of its row.
-    - The header no longer counts partners when the report covers only a single opportunity.
-
-- **Worker review:**
-    - Indicators are grouped under category rows.
-    - A "higher is better" or "lower is better" label appears once per category when all indicators in that category agree on direction.
-    - Each indicator name is a link that opens its registry definition.
-    - The worker's own column is tinted and bold; peer-median column headers show the cohort size.
-    - The visit chart runs to the report's as-of date: silence since the last visit appears as a hatched "still open" band, every gap boundary has a date label, and a legend explains the bands.
-    - The panel header counts gaps — for example, "3 gaps over 7 days".
-    - A "Days since previous" column marks gaps that exceed the threshold.
-    - Opening a case scrolls its visits into view automatically.
-    - The subtitle names the partner rather
+**Opportunity report — Benchmarks tab improvements.** Bar charts are drawn on a true zero-based scale with a clearly labelled dashed line at the target value. Your own organisation is shown in a distinct colour with its status as a pill. A **See workers →** shortcut link opens the worker list sorted worst-first. Indicators that have no better-or-worse direction (for example
