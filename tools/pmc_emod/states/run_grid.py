@@ -112,11 +112,18 @@ def state_setting(rain_monthly, larval_capacity: float | None = None) -> dict:
     return out
 
 
+# Fit tolerance for the batch (absolute PfPR). The model side is a single-seed Oct-Dec mean (about +/-0.03 at
+# pop 5000) and the DHS target carries a similar sampling error, so the worker's 0.03 default would mark many
+# states "loose" and drop them from the ranking.
+CALIBRATE_TOLERANCE = 0.05
+
+
 def calibrate_request(state: dict) -> dict:
     return {
         "mode": "calibrate",
         "setting": state_setting(state["rain_monthly"]),
         "target_pfpr": state["pfpr_target"],
+        "tolerance": CALIBRATE_TOLERANCE,
     }
 
 
