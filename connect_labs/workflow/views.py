@@ -1309,6 +1309,9 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "getPipelineData": f"/labs/workflow/api/{definition_id}/pipeline-data/",
                     # actions.queryPipelineRows -- server-side rows of one alias.
                     "queryPipelineRows": f"/labs/workflow/api/{definition_id}/pipeline-query/",
+                    # Supply sources (supply_sources.py): the `supply` prop and actions.querySupply.
+                    "getSupplyData": f"/labs/workflow/api/{definition_id}/supply-data/",
+                    "querySupply": f"/labs/workflow/api/{definition_id}/supply-query/",
                     # SSE stream for async pipeline data loading
                     "streamPipelineData": f"/labs/workflow/api/{definition_id}/pipeline-data/stream/",
                     # Framework: auth-status for declared auth_requires

@@ -166,7 +166,7 @@ def visit_consumption_ingest(access, opportunity_id, until=None, refresh=False):
     return visit_reader.ingest_visit_consumption(access, opportunity_id=opportunity_id, visits=visits, until=day)
 
 
-_WINDOW = {"type": "integer", "minimum": 30, "maximum": 730}
+_WINDOW = {"type": "integer", "minimum": 7, "maximum": 730}
 
 
 def _on(as_of):
