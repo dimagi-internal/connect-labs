@@ -1315,7 +1315,16 @@ def targeting_cost_effectiveness(
         "one-year projection for the chosen schedule. The model setting is ONE uncalibrated southern-Nigeria-"
         "like setting, precomputed (EMOD is not run by this call): read 'caveats' and quote results as "
         "illustrative, never as a state's calibrated estimate. Use it to propose states and a schedule for a "
-        "PMC proposal, and to show how the answer moves with the price per visit."
+        "PMC proposal, and to show how the answer moves with the price per visit. "
+        "States come back RANKED (rank 1 = lowest cost per case averted for the chosen schedule): each "
+        "schedule's EMOD effect applied to the state's own MAP malaria incidence; 'confidence' is 'model fit' or "
+        "'lower' (prevalence differs). Unranked states are more or less seasonal than the model -- say why, do not "
+        "rank them. To answer 'which approach and where', compare schedules (cost_per_case_averted) and then rank "
+        "states under the best one. "
+        "FROM A TARGETING SELECTION (the targeting page's state carries filters.selected_areas, e.g. "
+        "'Kano (NGA), Ondo (NGA)', plus the question that produced them): take the NGA names, pass them as "
+        "'states', and give the visitor 'explorer_path' -- the PMC schedule explorer opened on exactly those "
+        "states. If selected_areas is absent, call targeting_select with the page's filters to get the areas."
     ),
     input_schema={
         "type": "object",
@@ -1360,4 +1369,13 @@ def targeting_pmc_schedules(
             out["states_not_found"] = missing
     out["schedule"] = chosen
     out["states"] = rows
+    # The explorer opened on this answer: the same states, schedule and price.
+    from urllib.parse import urlencode
+
+    from django.urls import reverse
+
+    q = {"schedule": chosen, **{k: v for k, v in costs.items()}}
+    if states:
+        q["states"] = ",".join(r["name"] for r in rows)
+    out["explorer_path"] = f"{reverse('targeting:pmc')}?{urlencode(q)}"
     return out
