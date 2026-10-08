@@ -58,6 +58,10 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
     "workflow:act": frozenset({"workflow_run_action"}),
     # Public open data (WorldPop, DHS, UN IGME, geoBoundaries) and arithmetic on it:
     # nothing here is specific to the visitor, so the scope adds no exposure.
+    # targeting_pmc_run_model starts a compute job (IDM's EMOD on a shared on-demand box) and
+    # targeting_pmc_run_status polls it. They are read-scope on purpose: they take public inputs,
+    # write no user data (a run is cached by the hash of its inputs and shared by everyone who asks
+    # the same question), and mutate nothing the visitor owns.
     "targeting:read": frozenset(
         {
             "targeting_indicators",
@@ -69,6 +73,8 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
             "targeting_compare_criteria",
             "targeting_cost_effectiveness",
             "targeting_pmc_schedules",
+            "targeting_pmc_run_model",
+            "targeting_pmc_run_status",
         }
     ),
     # A tender and its quotes, read as the visitor through the supply operations, which

@@ -946,3 +946,75 @@ class PmcDataView(OpenLocallyMixin, View):
         out["schedule"] = schedule
         out["states"] = pmc.state_rows(schedule, costs)
         return JsonResponse(out)
+
+
+#: HTTP status for each status the PMC agent tools report.
+_PMC_TOOL_HTTP = {"completed": 200, "queued": 202, "running": 202, "busy": 429, "refused": 400, "failed": 503}
+
+
+def _pmc_tool_response(tool: str, request, **kwargs) -> JsonResponse:
+    """Run a PMC agent tool for the page and return its payload as JSON, with an HTTP status to match.
+
+    The tools hold the one conversion of a friendly schedule into worker rounds and the one MAP-anchored
+    costing of a result, so the page reuses them rather than copying either.
+    """
+    from connect_labs.mcp.tool_registry import MCPToolError
+    from connect_labs.mcp.tools import targeting
+
+    try:
+        payload = getattr(targeting, tool)(request.user, **kwargs)
+    except MCPToolError as exc:
+        status = 404 if exc.code == "NOT_FOUND" else 400
+        return JsonResponse({"error": str(exc)}, status=status)
+    if payload.get("status") in ("failed", "busy") and payload.get("error"):
+        # The tool's error ends with guidance for the agent (which tool to fall back to); the page
+        # shows the public sentence alone.
+        payload = {**payload, "error": targeting.page_error(payload["error"])}
+    if payload.get("status") == "failed" and payload.get("run_id") is not None:
+        # A run that ran and failed is reported by status, not as a service error.
+        return JsonResponse(payload)
+    return JsonResponse(payload, status=_PMC_TOOL_HTTP.get(payload.get("status"), 200))
+
+
+class PmcRunView(OpenLocallyMixin, View):
+    """Start a live EMOD run for a state and schedules, or return the cached result for the same inputs."""
+
+    def post(self, request):
+        from connect_labs.labs.indicators.emod import service
+
+        try:
+            body = json.loads(request.body or b"{}")
+        except ValueError:
+            return JsonResponse({"error": "request body must be JSON"}, status=400)
+        if not isinstance(body, dict):
+            return JsonResponse({"error": "request body must be a JSON object"}, status=400)
+        if "schedule" in body:
+            # The friendly shape the agent tool takes (months / rounds_per_year / interval_days, ages,
+            # coverage); the tool converts it, so the page and the agent run and cost the same way.
+            return _pmc_tool_response(
+                "targeting_pmc_run_model",
+                request,
+                state=body.get("state"),
+                schedule=body.get("schedule"),
+                **({"seeds": body["seeds"]} if "seeds" in body else {}),
+            )
+        status, payload = service.submit_run(body.get("state"), body.get("schedules"), body.get("seeds"))
+        return JsonResponse(payload, status=status)
+
+
+class PmcRunStatusView(OpenLocallyMixin, View):
+    """Status, result and timings of one live EMOD run."""
+
+    def get(self, request, pk):
+        from connect_labs.labs.indicators.emod import service
+        from connect_labs.labs.indicators.models import PmcModelRun
+
+        try:
+            run = PmcModelRun.objects.get(pk=pk)
+        except PmcModelRun.DoesNotExist:
+            return JsonResponse({"error": "no such run"}, status=404)
+        state = request.GET.get("state")
+        if state:
+            # With a state, the finished result is costed at it, as the agent tool does.
+            return _pmc_tool_response("targeting_pmc_run_status", request, run_id=pk, state=state)
+        return JsonResponse(service.status_payload(run))
