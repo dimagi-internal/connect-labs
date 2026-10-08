@@ -101,17 +101,21 @@ def test_validator_refusal_is_a_query_error(cache):
 
 
 def test_session_lock_is_undone_after_the_query(cache):
-    with connection.cursor() as c:
-        c.execute("SHOW search_path")
-        before = c.fetchone()[0]
+    settings = ("search_path", "transaction_read_only", "statement_timeout")
+
+    def read():
+        with connection.cursor() as c:
+            out = {}
+            for name in settings:
+                c.execute(f"SHOW {name}")
+                out[name] = c.fetchone()[0]
+            return out
+
+    before = read()
+    assert before["transaction_read_only"] == "off"
     run_query([HELD], "SELECT COUNT(*) FROM visits")
-    with connection.cursor() as c:
-        c.execute("SHOW search_path")
-        assert c.fetchone()[0] == before
-        c.execute("SHOW transaction_read_only")
-        assert c.fetchone()[0] == "off"
-        c.execute("SHOW statement_timeout")
-        assert c.fetchone()[0] != f"{engine.STATEMENT_TIMEOUT_MS}ms"
+    # Compared to what was there, not to a spelling of 20s: SHOW prints "20s".
+    assert read() == before
 
 
 def test_a_table_the_validator_missed_still_does_not_resolve(cache, monkeypatch):

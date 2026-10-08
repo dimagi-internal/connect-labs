@@ -119,6 +119,7 @@ def describe_fields(opps: list[Opportunity], sample: int = SAMPLE_PER_OPPORTUNIT
             leaves: list = []
             _walk(form_json or {}, (), leaves)
             seen = set()
+            seen_values = set()
             for path, value in leaves:
                 if value in (None, ""):
                     continue
@@ -127,7 +128,13 @@ def describe_fields(opps: list[Opportunity], sample: int = SAMPLE_PER_OPPORTUNIT
                     seen.add(path)
                     if deliver_unit:
                         per_form[path].add(deliver_unit)
-                values[path][value if not isinstance(value, str) else value[:MAX_VALUE_LENGTH]] += 1
+                # Count VISITS per value, not leaves: a repeat group can carry one
+                # visit's value many times, and one submission must never be enough
+                # to clear MIN_VALUE_COUNT.
+                key = (path, value if not isinstance(value, str) else value[:MAX_VALUE_LENGTH])
+                if key not in seen_values:
+                    seen_values.add(key)
+                    values[path][key[1]] += 1
 
     fields = []
     for path, count in filled.items():

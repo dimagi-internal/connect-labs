@@ -1,5 +1,6 @@
 """Field discovery, scoping, the service + audit trail, the MCP gates, the page."""
 
+import hashlib
 import json
 from datetime import date, timedelta
 from unittest import mock
@@ -73,6 +74,17 @@ def test_categorical_values_shown_identifiers_suppressed(forms):
     assert not any(f["path"].startswith("@") for f in d["fields"])
 
 
+def test_one_visit_repeating_a_value_cannot_reveal_it():
+    # Visit 0 repeats a rare value six times in a repeat group; every other visit
+    # carries the common one. Counted per leaf, "Rare" would clear MIN_VALUE_COUNT.
+    rows = [_visit(0, {"form": {"kids": [{"surname": "Rare"}] * 6}})]
+    rows += [_visit(n, {"form": {"kids": [{"surname": "Common"}]}}) for n in range(1, 10)]
+    RawVisitCache.objects.bulk_create(rows)
+    field = _field(fields.describe_fields([OPP]), "form.kids.[].surname")
+    assert "values" not in field
+    assert field["distinct_in_sample"] == 2
+
+
 def test_field_search_matches_paths_and_values(forms):
     d = fields.search_fields(fields.describe_fields([OPP]), "hospital")
     assert [f["path"] for f in d["fields"]] == ["form.birth.place"]
@@ -129,7 +141,9 @@ def test_query_writes_the_audit_trail(forms):
     assert out["rows"] == [[40]]
     event = AuditEvent.objects.filter(resource_type=service.RESOURCE_TYPE).latest("id")
     assert event.opportunity_id == OPP.id and event.record_count == 1
-    assert event.metadata["sql"] == "SELECT COUNT(*) FROM visits"
+    # A hash, never the SQL: a query can hold a name or an answer as a literal.
+    assert "sql" not in event.metadata
+    assert event.metadata["sql_sha256"] == hashlib.sha256(b"SELECT COUNT(*) FROM visits").hexdigest()
 
 
 def test_tools_are_registered_gated_and_resolved():

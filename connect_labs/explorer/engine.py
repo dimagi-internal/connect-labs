@@ -144,8 +144,12 @@ def _classify(exc: DatabaseError) -> QueryError:
     if code == "25006":
         return QueryError("read_only", "The explorer is read-only.")
     if code[:2] in {"42", "22", "21"} or code == "0A000":
-        detail = str(cause).strip().splitlines()[0] if str(cause).strip() else type(cause).__name__
-        return QueryError("invalid_sql", f"Postgres rejected the query: {detail}")
+        # Postgres's primary message only ("column x does not exist") -- it is about the
+        # caller's own SQL. Never str(exc): that carries the LINE/context of the statement
+        # labs wrapped around it.
+        diag = getattr(cause, "diag", None)
+        primary = (getattr(diag, "message_primary", None) or "").strip()
+        return QueryError("invalid_sql", f"Postgres rejected the query: {primary or 'invalid SQL'}")
     logger.warning("explorer query failed", exc_info=exc)
     return QueryError("query_failed", "The query could not be run.")
 

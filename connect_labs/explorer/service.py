@@ -3,11 +3,12 @@
 ``describe`` tells a person or an agent what they can query and how to answer
 from it; ``query`` runs SQL. Both start at ``scope.resolve``, so neither surface
 can forget the access check, and every query is written to the audit trail with
-the opportunities it read and the SQL it ran.
+the opportunities it read and a hash of the SQL it ran.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
 
 from connect_labs.audit_trail.models import Action, Outcome
@@ -124,7 +125,15 @@ def describe(
 
 def query(caller: Caller, opportunity_ids, sql: str, max_rows: int = DEFAULT_MAX_ROWS) -> dict:
     opps = scope.resolve(caller, opportunity_ids)
-    meta = {"opportunity_ids": [o.id for o in opps], "sql": (sql or "")[:4000]}
+    # Never the SQL itself: the audit log carries no PHI content (docs/AUDIT_LOGGING.md),
+    # and a query can hold a name or an answer as a literal. The hash still ties an
+    # event to a query the caller can produce.
+    text = sql or ""
+    meta = {
+        "opportunity_ids": [o.id for o in opps],
+        "sql_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        "sql_length": len(text),
+    }
     try:
         result = engine.run_query(opps, sql, max_rows=max_rows)
     except engine.QueryError as e:
