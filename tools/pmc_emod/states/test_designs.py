@@ -54,40 +54,6 @@ def test_pmc_designs_target_3_to_24_months():
             assert all(r[3:] == [3 / 12, 2.0, 0.85] for r in d["rounds"]), d["code"]
 
 
-def test_offsets_follow_onset():
-    for onset in range(1, 13):
-        d = _by_code(onset)
-        start = designs.month_offset(onset)
-        for code in ("pmc_m4_onset", "pmc_m6_onset", "pmc_m8_onset", "pmc_q4", "pmc_b6", "smc_m4_onset"):
-            dd = _by_code(onset, 80)[code]
-            assert dd["rounds"][0][0] == start, (code, onset)
-            if len(dd["rounds"]) > 1:
-                assert dd["rounds"][1][0] == start + 365
-        assert d["pmc_m12"]["rounds"][0][:3] == [0, 30, 12]
-    a, b = _by_code(5)["pmc_m6_onset"], _by_code(9)["pmc_m6_onset"]
-    assert b["rounds"][0][0] > a["rounds"][0][0]
-
-
-def test_round_shapes():
-    d = _by_code(6)
-    assert d["pmc_m6_onset"]["rounds"][0][:3] == [152, 30, 6]
-    assert d["pmc_q4"]["rounds"][0][:3] == [152, 91, 4]
-    assert d["pmc_b6"]["rounds"][0][:3] == [152, 61, 6]
-    assert d["pmc_m12"]["rounds"][1][:3] == [365, 30, 12]
-
-
-def test_rounds_all_start_inside_the_sim():
-    for s in STATES:
-        for d in designs.designs_for(s):
-            for off, interval, reps, *_ in d["rounds"]:
-                assert 0 <= off + (reps - 1) * interval < 730, (s["name"], d["code"])
-
-
-def test_late_onset_group_is_cut_not_dropped():
-    r = _by_code(12)["pmc_m8_onset"]["rounds"]
-    assert r[0][2] == 8 and r[1][0] == 365 + designs.month_offset(12) and r[1][2] == 1
-
-
 def test_codes_unique_and_labels_have_months():
     for s in STATES:
         ds = designs.designs_for(s)
@@ -98,8 +64,61 @@ def test_codes_unique_and_labels_have_months():
                 assert any(m in d["label"] for m in designs.MONTH_ABBR), d["label"]
     assert _by_code(6)["pmc_m6_onset"]["label"] == "6 monthly rounds, Jun–Nov, 3–24 months"
     assert _by_code(6)["pmc_m12"]["label"] == "Year-round monthly, 3–24 months"
-    assert _by_code(6, 70)["smc_m4_onset"]["label"] == "SMC: 4 monthly rounds, Jun–Sep, 3–59 months"
+    assert _by_code(6, 70)["smc_m4_onset"]["label"] == "SMC (SPAQ): 4 monthly rounds, Jun–Sep, 3–59 months"
     assert _by_code(11)["pmc_m4_onset"]["label"].startswith("4 monthly rounds, Nov–Feb")
+
+
+def _times(d):
+    """(year, start day) of every round, from the groups."""
+    return [(int(off // 365), off + k * iv) for off, iv, reps, *_ in d["rounds"] for k in range(reps)]
+
+
+def _all_designs(wettest=80):
+    return [(o, d) for o in range(1, 13) for d in designs.designs_for(_state(o, wettest))]
+
+
+def test_periodic_every_year_identical():
+    for onset, d in _all_designs():
+        times = _times(d)
+        assert all(0 <= t < 730 for _, t in times), (onset, d["code"])
+        y0 = sorted(t for y, t in times if y == 0)
+        y1 = sorted(t - 365 for y, t in times if y == 1)
+        assert y0 == y1, (onset, d["code"])
+        nominal = {"pmc_m4_onset": 4, "pmc_m6_onset": 6, "pmc_m8_onset": 8, "pmc_m12": 12, "pmc_q4": 4, "pmc_b6": 6}
+        assert len(y0) == nominal.get(d["code"], 4), (onset, d["code"])
+
+
+def test_offsets_follow_onset():
+    for onset in range(1, 13):
+        start = designs.month_offset(onset)
+        for code in ("pmc_m4_onset", "pmc_m6_onset", "pmc_m8_onset", "pmc_q4", "pmc_b6", "smc_m4_onset"):
+            d = {x["code"]: x for x in designs.designs_for(_state(onset, 80))}[code]
+            first = sorted(t for y, t in _times(d) if y == 0)
+            # the head of the season starts exactly at the onset month's day (when it fits in the year)
+            assert start in first, (code, onset)
+        assert min(t for _, t in _times({x["code"]: x for x in designs.designs_for(_state(onset))}["pmc_m12"])) == 0
+    a, b = _by_code(5)["pmc_m6_onset"], _by_code(9)["pmc_m6_onset"]
+    assert b["rounds"][-1][0] > a["rounds"][-1][0]
+
+
+def test_known_shapes():
+    d = _by_code(6)
+    assert d["pmc_m6_onset"]["rounds"][0][:3] == [152, 30, 6]
+    assert d["pmc_m12"]["rounds"][1][:3] == [365, 30, 12]
+    # Jul start, 8 monthly rounds: rounds from day 365 wrap to the start of the year (182+7*30=392 -> 27)
+    r = _by_code(7)["pmc_m8_onset"]["rounds"]
+    assert r[0][:3] == [27, 30, 1] and r[1][:3] == [182, 30, 7]
+
+
+def test_drug_and_smc_label():
+    for d in designs.designs_for(_state(6, 80)):
+        assert d["drug"] == ("SPAQ" if d["kind"] == "smc" else "SP")
+    assert _by_code(6, 70)["smc_m4_onset"]["label"] == "SMC (SPAQ): 4 monthly rounds, Jun\u2013Sep, 3\u201359 months"
+
+
+def test_missing_wettest_quarter_fails_loudly():
+    with pytest.raises(KeyError):
+        designs.designs_for({"onset_month": 6})
 
 
 def test_every_design_passes_worker_validate_request():
@@ -114,7 +133,7 @@ def test_every_design_passes_worker_validate_request():
         "net_coverage": 0.5,
     }
     for s in STATES:
-        schedules = [{"code": d["code"], "rounds": d["rounds"]} for d in designs.designs_for(s)]
+        schedules = [{"code": d["code"], "rounds": d["rounds"], "drug": d["drug"]} for d in designs.designs_for(s)]
         worker.validate_request(
             {"setting": setting, "schedules": schedules, "seeds": [1, 2, 3], "intervention_years": 2}
         )
