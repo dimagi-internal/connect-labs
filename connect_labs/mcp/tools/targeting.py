@@ -1325,10 +1325,12 @@ def targeting_cost_effectiveness(
         "'Kano (NGA), Ondo (NGA)', plus the question that produced them): take the NGA names, pass them as "
         "'states', and give the visitor 'explorer_path' -- the PMC schedule explorer opened on exactly those "
         "states. If selected_areas is absent, call targeting_select with the page's filters to get the areas. "
-        "ANSWER BRIEFLY -- it is read in a narrow side panel: the best approach in one line; a ranked table "
-        "(rank, state, cases averted/yr, $ per case, confidence); one line naming the unranked states and why; "
-        "one line of caveats; then explorer_path as a short markdown link, e.g. [Open these states in the PMC "
-        "explorer](...)."
+        "ANSWER BRIEFLY -- it is read in a narrow (~400px) side panel: the best approach in one sentence that "
+        "also names the runner-up (no schedule table); the ranked states as a table of AT MOST three columns "
+        "(state, $ per case, fit); one line naming the unranked states and why; one line of caveats; then "
+        "explorer_path as a short markdown link, e.g. [Open these states in the PMC explorer](...). Use the "
+        "page's own fit labels so the panel and the page agree: 'matches' (fit=near), 'prevalence differs', "
+        "'more seasonal: SMC, not PMC'."
     ),
     input_schema={
         "type": "object",
