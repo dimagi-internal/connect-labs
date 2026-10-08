@@ -170,15 +170,20 @@
         '</b>, averting ' +
         pct(best.averted_pct) +
         ' of cases at ' +
-        usd(best.cost_per_case_averted, 2) +
+        usd(best.cost_per_case_averted, 0) +
         ' each' +
+        (data.reference_incidence
+          ? ' (at Nigeria\u2019s malaria incidence, ' +
+            num(data.reference_incidence.value) +
+            ' per 1,000)'
+          : '') +
         (next
           ? '. Next: ' +
             esc(next.label) +
             ', ' +
             pct(next.averted_pct) +
             ' at ' +
-            usd(next.cost_per_case_averted, 2) +
+            usd(next.cost_per_case_averted, 0) +
             '.'
           : '.')
       : '';
