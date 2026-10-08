@@ -18,7 +18,7 @@ Result:   {"mode", "hash", "target_pfpr", "tolerance", "larval_capacity", "pfpr_
           "candidates": [{"round", "larval_capacity", "pfpr_2_5y", "pfpr_2_5y_annual"}],
           "rounds": [{"round", "n", "seconds"}], "seconds"}
           Round 1 burns in 8 log-spaced capacities (1e6-1e9) side by side; if none reaches the target, an extension
-          round tries 4 from 1e9 up to 1e11; then 4 around the interpolated crossing. pfpr_2_5y is the burn-in's
+          round tries 4 from 1e9 up to 1e10; then 4 around the interpolated crossing. pfpr_2_5y is the burn-in's
           last-year Oct-Dec mean (the DHS/MIS survey window, CALIBRATE_SURVEY_DOY); pfpr_2_5y_annual is that year's
           mean, for reference. The chosen capacity's burn-in is cached (and
           published) under its setting_hash, so a run request with that larval_capacity starts warm. Pass the
@@ -73,8 +73,8 @@ CALIBRATE_GRID_N = 8
 CALIBRATE_REFINE_STEPS = (-0.45, -0.15, 0.15, 0.45)  # refine offsets, in units of the bracketing width (log10)
 CALIBRATE_TOLERANCE = 0.03
 # When round 1's highest PfPR is still below target - tolerance, one extension round of 4 log-spaced capacities
-# above the grid (3.2e9, 1e10, 3.2e10, 1e11) runs before the target is declared unreachable.
-CALIBRATE_EXTENSION_LOG10 = (9.0, 11.0)
+# above the grid (up to 1e10; a 1e11 burn-in takes hours) runs before the target is declared unreachable.
+CALIBRATE_EXTENSION_LOG10 = (9.0, 10.0)
 CALIBRATE_EXTENSION_N = 4
 # The model PfPR 2-5y compared with the target: the mean over days of year 274-365 (1 Oct - 31 Dec, 1-based) of
 # the burn-in's last year. DHS/MIS 2021 fieldwork ran Oct-Dec, near the end of the high season; in a seasonal
@@ -447,7 +447,7 @@ def calibrate(evaluate, target, tolerance=CALIBRATE_TOLERANCE):
 
     evaluate(round_no, [larval, ...]) -> [pfpr or {"pfpr_2_5y": pfpr, ...extra}, ...] runs one round of burn-ins
     (in parallel); extra keys are kept on the candidate. Round 1 is the log-spaced grid (1e6-1e9). If its highest
-    PfPR is below target - tolerance, an extension round tries 4 capacities from 1e9 up to 1e11. Then, when the
+    PfPR is below target - tolerance, an extension round tries 4 capacities from 1e9 up to 1e10. Then, when the
     target lies inside the PfPR range evaluated so far, a refine round runs CALIBRATE_REFINE_STEPS around the
     interpolated crossing. The answer is the evaluated value nearest the target -- never an interpolated one, so
     its burn-in exists.

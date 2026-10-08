@@ -253,8 +253,8 @@ def test_calibrate_extends_then_reports_an_unreachable_target():
 
     fit = run_scenarios.calibrate(evaluate, 0.99)
     assert fit["fit"] == "unreachable" and fit["iterations"] == 2 and fit["extended"] is True
-    assert rounds[1] == run_scenarios.extension_grid() == [3.162e9, 1e10, 3.162e10, 1e11]
-    assert fit["larval_capacity"] == 1e11 and fit["fit_error"] < -0.03
+    assert rounds[1] == run_scenarios.extension_grid() == [1778000000.0, 3162000000.0, 5623000000.0, 10000000000.0]
+    assert fit["larval_capacity"] == 1e10 and fit["fit_error"] < -0.03
 
 
 def test_extension_round_finds_a_target_above_the_grid_and_refines_it():
@@ -510,7 +510,7 @@ def test_survey_window_pfpr_exceeds_the_annual_mean_in_a_seasonal_setting(tmp_pa
 
 @emod
 def test_a_high_target_triggers_the_extension_round(tmp_path, monkeypatch):
-    # The real extension tops out at 1e11, whose burn-in takes hours; the mechanics are the same just above 1e9.
+    # The real extension tops out at 1e10 (a 1e11 burn-in takes hours); the mechanics are the same just above 1e9.
     monkeypatch.setattr(run_scenarios, "CALIBRATE_EXTENSION_LOG10", (9.0, 9.4))
     req = calibrate_request(0.95)
     req["setting"]["habitat_values"] = SEASONAL_HABITAT

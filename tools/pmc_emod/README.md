@@ -66,7 +66,7 @@ outcomes (`cases_u5`, `kids_u5`) alongside the 3-24-month ones, and a schedule m
 (SMC: the same SP drug entry plus a 3-day amodiaquine course) instead of the default SP.
 
 A request with `"mode": "calibrate"` and a `target_pfpr` fits the setting's `larval_capacity` instead: 8
-log-spaced burn-ins over 1e6-1e9 run side by side; if none reaches the target, 4 more from 1e9 up to 1e11;
+log-spaced burn-ins over 1e6-1e9 run side by side; if none reaches the target, 4 more from 1e9 up to 1e10;
 then 4 around the interpolated crossing. The model PfPR 2-5y compared with the target is the burn-in's last-year
 Oct-Dec mean (`pfpr_basis`), the window of the DHS/MIS 2021 fieldwork; in seasonal states the annual mean sits well
 below it. The nearest is returned with `fit` `ok` (within 0.03 of the target), `unreachable` or `loose`, and its
