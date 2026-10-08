@@ -41,6 +41,13 @@ SHARE_OF_U5_AGED_3_24M = 21 / 60
 #: modelled setting's before its projection is flagged as out of range.
 FIT_TOLERANCE_PTS = 10.0
 
+#: The same for seasonality: the share of a year's rain in the wettest quarter
+#: against the modelled habitat's share in its peak quarter. Prevalence alone
+#: is not enough -- Kano and Sokoto carry southern-level prevalence but take
+#: three-quarters of their rain in one season, which is SMC country, and a
+#: perennial-transmission model says nothing about them.
+SEASONALITY_TOLERANCE_PTS = 8.0
+
 #: The indicators the state table shows, in column order.
 STATE_INDICATORS = ("malaria_prevalence", "rain_wettest_quarter", "zero_dose", "dpt3_vaccination", "pop_u5")
 
@@ -49,8 +56,10 @@ CAVEATS = (
     "State prevalence is DHS 2021 (rapid test, children 6-59 months); the model's is PfPR in 2-5 year olds. "
     "They are close but not the same measure.",
     "Per-state projections assume the state behaves like the modelled setting, and are shown only where its "
-    "prevalence is within 10 points of the model's. Only a state-calibrated EMOD run can say how a schedule "
-    "performs there.",
+    "prevalence is within 10 points and its rainfall seasonality within 8 points of the model's. Only a "
+    "state-calibrated EMOD run can say how a schedule performs there.",
+    "The Sahel north is far more seasonal than the modelled setting; there seasonal malaria chemoprevention "
+    "(SMC), not PMC, is the standard.",
     "Children 3-24 months are estimated as 21/60 of the under-5 population.",
 )
 
@@ -127,12 +136,23 @@ def best_schedule(rows: list[dict]) -> dict | None:
     return min(costed, key=lambda r: r["cost_per_case_averted"]) if costed else None
 
 
-def fit_for(prevalence: float | None) -> str:
-    """Whether a state's measured prevalence is near the modelled setting's."""
-    if prevalence is None:
+def fit_for(prevalence: float | None, wettest_quarter: float | None = None) -> str:
+    """Whether a state looks like the modelled setting -- in burden AND in seasonality.
+
+    Returns ``near``, ``prevalence_differs``, ``more_seasonal``, ``less_seasonal``
+    or ``unknown`` (no prevalence, or no rainfall figure to check seasonality).
+    """
+    setting = load_sweep()["setting"]
+    if prevalence is None or wettest_quarter is None:
         return "unknown"
-    modelled = load_sweep()["setting"]["pfpr_2_5y"] * 100
-    return "near" if abs(prevalence - modelled) <= FIT_TOLERANCE_PTS else "outside"
+    if abs(prevalence - setting["pfpr_2_5y"] * 100) > FIT_TOLERANCE_PTS:
+        return "prevalence_differs"
+    gap = wettest_quarter - setting["wettest_quarter_pct"]
+    if gap > SEASONALITY_TOLERANCE_PTS:
+        return "more_seasonal"
+    if gap < -SEASONALITY_TOLERANCE_PTS:
+        return "less_seasonal"
+    return "near"
 
 
 def approx(n: float, figures: int = 2) -> int:
@@ -176,7 +196,7 @@ def state_rows(schedule_code: str, costs: dict) -> list[dict]:
             values[code] = round(r.value, 1) if r else None
             sources[code] = (r.source_ref or r.source) if r else None
         children = values["pop_u5"] * SHARE_OF_U5_AGED_3_24M if values["pop_u5"] else None
-        fit = fit_for(values["malaria_prevalence"])
+        fit = fit_for(values["malaria_prevalence"], values["rain_wettest_quarter"])
         rows.append(
             {
                 "pk": b.pk,

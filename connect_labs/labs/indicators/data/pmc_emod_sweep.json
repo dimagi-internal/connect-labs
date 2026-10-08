@@ -12,6 +12,8 @@
     "calibrated": false,
     "description": "One simulated setting, not a real state: year-round transmission (An. gambiae and An. funestus) with a long-rains peak from about April to October. Background case management (50% of clinical cases, 70% of severe) and bed nets (50% coverage) are the same in every schedule.",
     "pfpr_2_5y": 0.44,
+    "wettest_quarter_pct": 41,
+    "wettest_quarter_note": "Share of the modelled larval habitat in its peak three months (June-August), the model's analogue of the share of a year's rain falling in the wettest quarter. Southern Nigeria sits at 40-47%; the Sahel north at 63-81%, where seasonal malaria chemoprevention (SMC), not PMC, is the standard.",
     "population": 5000,
     "children_3_24m": 369,
     "seeds": 6,

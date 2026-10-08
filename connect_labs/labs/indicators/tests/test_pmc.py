@@ -77,9 +77,22 @@ class TestTheSweep:
     def test_projections_are_rounded_to_what_an_uncalibrated_model_can_claim(self, n, want):
         assert pmc.approx(n) == want
 
-    @pytest.mark.parametrize("prev, fit", [(44.8, "near"), (35.6, "near"), (20.0, "outside"), (None, "unknown")])
-    def test_fit_compares_measured_prevalence_with_the_modelled_setting(self, prev, fit):
-        assert pmc.fit_for(prev) == fit
+    @pytest.mark.parametrize(
+        "prev, rain, fit",
+        [
+            (44.8, 41.5, "near"),  # Ondo
+            (35.6, 39.8, "near"),  # Ogun
+            (20.0, 42.0, "prevalence_differs"),
+            # Kano: southern-level prevalence, Sahel seasonality. SMC country.
+            (54.0, 77.2, "more_seasonal"),
+            (40.3, 79.5, "more_seasonal"),  # Sokoto
+            (40.0, 25.0, "less_seasonal"),
+            (None, 41.0, "unknown"),
+            (44.0, None, "unknown"),
+        ],
+    )
+    def test_fit_needs_both_burden_and_seasonality_to_match(self, prev, rain, fit):
+        assert pmc.fit_for(prev, rain) == fit
 
 
 @pytest.fixture
@@ -89,8 +102,9 @@ def nigeria(db):
     kano = make_boundary("NGA", 1, "Kano", "NGA-1-20", x=4)
     set_value(ondo, "malaria_prevalence", 44.8, year=2021)
     set_value(ondo, "pop_u5", 600_000)
-    set_value(ondo, "rain_wettest_quarter", 38.0)
-    set_value(kano, "malaria_prevalence", 15.0, year=2021)
+    set_value(ondo, "rain_wettest_quarter", 41.5)
+    set_value(kano, "malaria_prevalence", 40.0, year=2021)
+    set_value(kano, "rain_wettest_quarter", 77.2)
     set_value(kano, "pop_u5", 3_000_000)
     return ondo, kano
 
@@ -108,7 +122,8 @@ class TestStates:
         assert ondo["projection"]["cases_averted_per_year"] == pmc.approx(
             210_000 * sched["cases_averted_per_1000_children_per_year"] / 1000
         )
-        assert rows[1]["fit"] == "outside"
+        # Near-model prevalence, Sahel seasonality: not the modelled setting.
+        assert rows[1]["fit"] == "more_seasonal"
         # A 15% state projected with a 44% setting's incidence would invent cases.
         assert rows[1]["projection"] is None
 
