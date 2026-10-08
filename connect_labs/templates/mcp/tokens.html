@@ -32,6 +32,7 @@
       </div>
     </div>
 
+    {% if mcp_json_snippet %}
     <div>
       <label class="block text-xs font-medium text-amber-900 mb-1">
         ~/.claude/mcp.json snippet
@@ -47,6 +48,12 @@
         </button>
       </div>
     </div>
+    {% else %}
+    <p class="text-sm text-amber-900">
+      This token fetches coaching pictures only. Give it to the Open Chat Studio team that runs the coach;
+      it does not work with the MCP server.
+    </p>
+    {% endif %}
   </div>
   {% endif %}
 
@@ -119,6 +126,10 @@
             <input type="radio" name="scope" value="{{ no_uservisit_data_scope }}" class="mt-1">
             <span><strong>No user visit data.</strong> Never sees real user visit data (raw, or from pipelines, workflow runs and reports); those tools work only on synthetic opportunities whose data was generated. It can read workflow definitions, pipeline and indicator definitions, app structure, solicitations, the org directory and targeting; edit workflow and indicator definitions and trigger saved-run generation; and profile real opportunities and generate synthetic data from the profile. Same reach as the <code>/mcp/no_user_visit/</code> address.</span>
           </label>
+          <label class="flex items-start gap-2 text-sm text-gray-700">
+            <input type="radio" name="scope" value="{{ coach_images_scope }}" class="mt-1">
+            <span><strong>Coaching pictures only.</strong> Lets an Open Chat Studio team fetch coaching pictures. Nothing else.</span>
+          </label>
         </div>
       </fieldset>
       <div>
@@ -153,7 +164,7 @@
           <tr>
             <td class="py-3 pr-4 font-medium text-gray-900">{{ token.name }}</td>
             <td class="py-3 pr-4 text-gray-600">
-              {% if token.scope == no_uservisit_data_scope %}<span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-xs">No user visit data</span>{% else %}Full{% endif %}
+              {% if token.scope == no_uservisit_data_scope %}<span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-xs">No user visit data</span>{% elif token.scope == coach_images_scope %}<span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-800 text-xs">Coaching pictures only</span>{% else %}Full{% endif %}
             </td>
             <td class="py-3 pr-4 text-gray-600">{{ token.created_at|date:"Y-m-d" }}</td>
             <td class="py-3 pr-4 text-gray-600">
