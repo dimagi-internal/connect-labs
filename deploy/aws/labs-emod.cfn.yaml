@@ -1,0 +1,393 @@
+# labs-emod: the EMOD malaria-model runner behind the PMC live model (connect-labs).
+#
+# Copied from dimagi-canopy 0.7.0 canopy_sdk/ondemand/assets/ondemand-capability.cfn.yaml; re-copy on SDK
+# bump. Local edits, each marked `labs-emod edit` below (deploy/aws/README-emod.md explains them):
+#   1. emod values as parameter defaults (Capability, OwnerTag, InstanceType, ConsumerTaskRoleName,
+#      UserData = base64 of deploy/aws/labs-emod-userdata.sh, RootVolumeGb).
+#   2. SecurityGroup: outbound TCP 80, for apt (Ubuntu's EC2 mirrors are http) during the first-boot install.
+#   3. InstanceRole: s3:GetObject on the artifacts bucket (worker scripts, requests, cached burn-ins).
+#   4. LaunchTemplate: InstanceMetadataTags enabled, and 5. Instance: an `artifacts-bucket` tag, so the
+#      user data can find the bucket this same stack creates.
+#   6. ConsumerPolicy: s3:PutObject on requests/* (the consumer uploads each request for the worker).
+#   7. Instance: LaunchTemplate Version is LatestVersionNumber, not "$Latest" (CloudFormation rejects it).
+#
+# One on-demand capability: a dedicated EC2 instance that is stopped when idle
+# and started by its consumer (canopy_sdk.ondemand.OnDemandInstance), plus the
+# IAM policy that lets the consumer drive it. Generalised from ace-web's
+# deploy/aws/ace-mobile.cfn.yaml.
+#
+# One instance, one bucket, one alarm, one role. No SSH key, no inbound
+# security-group rule: the consumer reaches the instance only through SSM.
+#
+# Idle shutdown has three layers:
+#   1. the consumer stops the instance when it is done (OnDemandInstance.stop);
+#   2. the in-VM watchdog (idle-shutdown.sh + ondemand-idle-shutdown.timer,
+#      baked into the AMI) halts it once /var/run/<Capability>/last-activity is
+#      older than IDLE_SECONDS; InstanceInitiatedShutdownBehavior=stop turns that
+#      halt into a stop;
+#   3. IdleStopAlarm below stops it after 5 minutes of <5% max CPU.
+# Nothing here ever terminates the instance.
+#
+# Deploy (needs CAPABILITY_NAMED_IAM, for the named role and policy):
+#   aws cloudformation deploy --stack-name ondemand-<capability> \
+#     --template-file ondemand-capability.cfn.yaml --capabilities CAPABILITY_NAMED_IAM \
+#     --parameter-overrides Capability=<capability> OwnerTag=<owner> AmiId=ami-... \
+#       InstanceType=... VpcId=vpc-... SubnetId=subnet-... ConsumerTaskRoleName=<role>
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  An on-demand capability runner (canopy_sdk.ondemand): a stopped-when-idle EC2
+  instance with an egress-only security group, an SSM-managed instance role, an
+  S3 artifacts bucket, a CloudWatch idle-stop alarm, and the consumer's IAM
+  policy, scoped by the instance's capability tag.
+
+Parameters:
+  Capability:
+    Type: String
+    Description: >
+      The capability's name (e.g. emod, ace-mobile). Tags the instance, names the
+      resources, and must match the consumer's OnDemandInstance(capability=...):
+      the AMI's ready file is /run/<Capability>/ready and the idle marker is
+      /var/run/<Capability>/last-activity.
+    AllowedPattern: '^[a-z0-9][a-z0-9-]{0,30}$'
+    Default: emod # labs-emod edit 1
+    ConstraintDescription: 1-31 lowercase letters, digits or hyphens.
+  OwnerTag:
+    Type: String
+    Description: Value of the `owner` tag on every resource (who to ask about it).
+    MinLength: 1
+    Default: labs-emod # labs-emod edit 1
+  AmiId:
+    Type: AWS::EC2::Image::Id
+    Description: >
+      The capability's AMI, in the stack's region. It must run the SSM agent,
+      install the idle watchdog units, and create the ready file when the
+      capability is up. The root volume is mapped at /dev/sda1 (Ubuntu HVM).
+  InstanceType:
+    Type: String
+    Description: EC2 instance type. Nested virtualization needs an m8i/c8i/r8i-class type.
+    Default: c7i.4xlarge # labs-emod edit 1: 16 vCPU, native x86 (EMOD's runtime image is amd64-only)
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC that owns SubnetId.
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Subnet for the instance. Needs outbound 443 to reach SSM and S3.
+  ConsumerTaskRoleName:
+    Type: String
+    Description: >
+      Name of the consumer's existing IAM role (e.g. its ECS task role). This
+      stack does not own it; it only attaches ConsumerPolicy to it.
+    MinLength: 1
+    Default: labs-jj-ecs-task-role # labs-emod edit 1: the labs web + worker ECS task role
+  UserData:
+    Type: String
+    Description: Base64-encoded EC2 user data for the launch template. Empty for none.
+    # labs-emod edit 1: base64 of deploy/aws/labs-emod-userdata.sh (pinned by test_deploy_userdata.py).
+    Default: 'IyEvYmluL2Jhc2gKIyBVc2VyIGRhdGEgZm9yIHRoZSBsYWJzLWVtb2QgcnVubmVyOiBiYXNlNjQgb2YgdGhpcyBmaWxlIGlzIGxhYnMtZW1vZC5jZm4ueWFtbCdzIFVzZXJEYXRhIGRlZmF1bHQgKGtlcHQKIyBpbiBzdGVwIGJ5IHRvb2xzL3BtY19lbW9kL3dvcmtlci90ZXN0X2RlcGxveV91c2VyZGF0YS5weTsgQ2xvdWRGb3JtYXRpb24gY2FwcyBhIHBhcmFtZXRlciBhdCA0MDk2IGJ5dGVzLAojIHNvIGtlZXAgaXQgc2hvcnQpLiBGaW5kcyB0aGUgc3RhY2sncyBhcnRpZmFjdHMgYnVja2V0IGZyb20gdGhlIGluc3RhbmNlJ3MgYGFydGlmYWN0cy1idWNrZXRgIHRhZyAoSU1EUyksCiMgd2FpdHMgZm9yIHMzOi8vPGJ1Y2tldD4vd29ya2VyL2Jvb3RzdHJhcC5zaCwgYW5kIHJ1bnMgaXQgd2l0aCBXT1JLRVJfU1JDPXMzOi8vPGJ1Y2tldD4vd29ya2VyLiBJbnN0YWxsZWQKIyBhcyBhIHBlci1ib290IHNjcmlwdCBzbyBhIGJveCBzdG9wcGVkIG1pZC1pbnN0YWxsIHJldHJpZXMgb24gaXRzIG5leHQgc3RhcnQ7IGEgbm8tb3Agb25jZSBpdCBzdWNjZWVkZWQuCiMgV2h5IGFuZCBob3c6IGRlcGxveS9hd3MvUkVBRE1FLWVtb2QubWQuCnNldCAtZXVvIHBpcGVmYWlsCgppbnN0YWxsIC1kIC92YXIvbGliL2Nsb3VkL3NjcmlwdHMvcGVyLWJvb3QKY2F0ID4gL3Zhci9saWIvY2xvdWQvc2NyaXB0cy9wZXItYm9vdC81MC1lbW9kLWJvb3RzdHJhcC5zaCA8PCdQRVJCT09UJwojIS9iaW4vYmFzaApzZXQgLWV1byBwaXBlZmFpbApET05FPS92YXIvbGliL2Vtb2QvYm9vdHN0cmFwLmRvbmUKWyAtZSAiJERPTkUiIF0gJiYgZXhpdCAwCmV4ZWMgPj4gL3Zhci9sb2cvZW1vZC1ib290c3RyYXAubG9nIDI+JjEKZWNobyAiWyQoZGF0ZSAtdSArJUZUJVRaKV0gZW1vZCBib290c3RyYXA6IHN0YXJ0aW5nIgoKaW1kcygpIHsKICBsb2NhbCB0b2tlbgogIHRva2VuPSQoY3VybCAtc1NmIC1YIFBVVCBodHRwOi8vMTY5LjI1NC4xNjkuMjU0L2xhdGVzdC9hcGkvdG9rZW4gLUggJ1gtYXdzLWVjMi1tZXRhZGF0YS10b2tlbi10dGwtc2Vjb25kczogMzAwJykKICBjdXJsIC1zU2YgLUggIlgtYXdzLWVjMi1tZXRhZGF0YS10b2tlbjogJHRva2VuIiAiaHR0cDovLzE2OS4yNTQuMTY5LjI1NC9sYXRlc3QvbWV0YS1kYXRhLyQxIgp9CkJVQ0tFVD0kKGltZHMgdGFncy9pbnN0YW5jZS9hcnRpZmFjdHMtYnVja2V0KQpBV1NfREVGQVVMVF9SRUdJT049JChpbWRzIHBsYWNlbWVudC9yZWdpb24pCmV4cG9ydCBBV1NfREVGQVVMVF9SRUdJT04KZWNobyAiYnVja2V0PSRCVUNLRVQgcmVnaW9uPSRBV1NfREVGQVVMVF9SRUdJT04iCgojIGJvdG8zIGZvciB0aGUgd2FpdC9kb3dubG9hZCBiZWxvdyAoYm9vdHN0cmFwLnNoIGJ1aWxkcyBpdHMgb3duIHZlbnYgbGF0ZXIpLgpleHBvcnQgREVCSUFOX0ZST05URU5EPW5vbmludGVyYWN0aXZlCnB5dGhvbjMgLWMgJ2ltcG9ydCBib3RvMycgMj4vZGV2L251bGwgfHwgeyBhcHQtZ2V0IHVwZGF0ZSAmJiBhcHQtZ2V0IGluc3RhbGwgLXkgcHl0aG9uMy1ib3RvMzsgfQoKV09SSz0kKG1rdGVtcCAtZCAvdmFyL3RtcC9lbW9kLWJvb3RzdHJhcC1YWFhYWFgpCnB5dGhvbjMgLSAiJEJVQ0tFVCIgIiRXT1JLL2Jvb3RzdHJhcC5zaCIgPDwnUFknCmltcG9ydCBzeXMKaW1wb3J0IHRpbWUKCmltcG9ydCBib3RvMwpmcm9tIGJvdG9jb3JlLmV4Y2VwdGlvbnMgaW1wb3J0IENsaWVudEVycm9yCgpidWNrZXQsIGRlc3QgPSBzeXMuYXJndlsxOl0KczMgPSBib3RvMy5jbGllbnQoInMzIikKZGVhZGxpbmUgPSB0aW1lLnRpbWUoKSArIDM2MDAKd2hpbGUgVHJ1ZToKICAgIHRyeToKICAgICAgICBzMy5kb3dubG9hZF9maWxlKGJ1Y2tldCwgIndvcmtlci9ib290c3RyYXAuc2giLCBkZXN0KQogICAgICAgIGJyZWFrCiAgICBleGNlcHQgQ2xpZW50RXJyb3IgYXMgZXhjOgogICAgICAgIGlmIHRpbWUudGltZSgpID4gZGVhZGxpbmU6CiAgICAgICAgICAgIHJhaXNlIFN5c3RlbUV4aXQoZiJzMzovL3tidWNrZXR9L3dvcmtlci9ib290c3RyYXAuc2ggbmV2ZXIgYXBwZWFyZWQ6IHtleGN9IikKICAgICAgICBwcmludChmIndhaXRpbmcgZm9yIHMzOi8ve2J1Y2tldH0vd29ya2VyL2Jvb3RzdHJhcC5zaCAoe2V4Yy5yZXNwb25zZVsnRXJyb3InXVsnQ29kZSddfSkiLCBmbHVzaD1UcnVlKQogICAgICAgIHRpbWUuc2xlZXAoMTUpClBZCgpXT1JLRVJfU1JDPSJzMzovLyRCVUNLRVQvd29ya2VyIiBiYXNoICIkV09SSy9ib290c3RyYXAuc2giCm1rZGlyIC1wICIkKGRpcm5hbWUgIiRET05FIikiCmRhdGUgLXUgKyVGVCVUWiA+ICIkRE9ORSIKcm0gLXJmICIkV09SSyIKZWNobyAiWyQoZGF0ZSAtdSArJUZUJVRaKV0gZW1vZCBib290c3RyYXA6IGRvbmUiClBFUkJPT1QKY2htb2QgMDc1NSAvdmFyL2xpYi9jbG91ZC9zY3JpcHRzL3Blci1ib290LzUwLWVtb2QtYm9vdHN0cmFwLnNoCmV4ZWMgL3Zhci9saWIvY2xvdWQvc2NyaXB0cy9wZXItYm9vdC81MC1lbW9kLWJvb3RzdHJhcC5zaAo='
+  NestedVirtualization:
+    Type: String
+    Description: '"true" enables nested virtualization (KVM inside the instance).'
+    AllowedValues: ['true', 'false']
+    Default: 'false'
+  RootVolumeGb:
+    Type: Number
+    Description: Root volume size in GiB (encrypted gp3).
+    MinValue: 8
+    Default: 60 # labs-emod edit 1: Docker image + EMOD + per-setting burn-in cache
+
+Conditions:
+  WantsNestedVirtualization: !Equals [!Ref NestedVirtualization, 'true']
+  HasUserData: !Not [!Equals [!Ref UserData, '']]
+
+Resources:
+  # No ingress rules. Access is via SSM only.
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    # Retained with the instance: deleting it under a retained instance would
+    # fail the stack delete (SG still attached) / strip the instance's SSM
+    # credentials (role, profile).
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      GroupName: !Sub 'ondemand-${Capability}'
+      GroupDescription: !Sub 'Egress-only SG for the ${Capability} on-demand runner. SSM only - no inbound.'
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - Description: 'Outbound HTTPS for SSM, S3, package mirrors.'
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - Description: 'Outbound HTTPS for SSM, S3, package mirrors.'
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIpv6: '::/0'
+        # labs-emod edit 2: apt on Ubuntu's EC2 mirrors (http) during the first-boot install.
+        - Description: 'Outbound HTTP for apt package mirrors.'
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - Description: 'Outbound DNS (UDP) for in-VM lookups.'
+          IpProtocol: udp
+          FromPort: 53
+          ToPort: 53
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - { Key: owner, Value: !Ref OwnerTag }
+        - { Key: capability, Value: !Ref Capability }
+        - { Key: managed-by, Value: cloudformation }
+        - { Key: Name, Value: !Sub 'ondemand-${Capability}' }
+
+  # Attached to the instance: lets the SSM agent register, and lets the
+  # capability upload artifacts to its bucket. Nothing else.
+  InstanceRole:
+    Type: AWS::IAM::Role
+    # Retained with the instance: deleting it under a retained instance would
+    # fail the stack delete (SG still attached) / strip the instance's SSM
+    # credentials (role, profile).
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RoleName: !Sub 'ondemand-${Capability}-instance'
+      Description: !Sub 'EC2 instance role for the ${Capability} on-demand runner.'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore'
+      Policies:
+        - PolicyName: artifacts-put
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ArtifactsPutObject
+                Effect: Allow
+                Action: [s3:PutObject, s3:AbortMultipartUpload]
+                Resource: !Sub '${ArtifactsBucket.Arn}/*'
+              # labs-emod edit 3: the worker reads its scripts, requests and cached burn-ins from the bucket.
+              - Sid: ArtifactsGetObject
+                Effect: Allow
+                Action: [s3:GetObject]
+                Resource: !Sub '${ArtifactsBucket.Arn}/*'
+              - Sid: ArtifactsListBucket
+                Effect: Allow
+                Action: [s3:ListBucket, s3:GetBucketLocation]
+                Resource: !GetAtt ArtifactsBucket.Arn
+      Tags:
+        - { Key: owner, Value: !Ref OwnerTag }
+        - { Key: capability, Value: !Ref Capability }
+        - { Key: managed-by, Value: cloudformation }
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    # Retained with the instance: deleting it under a retained instance would
+    # fail the stack delete (SG still attached) / strip the instance's SSM
+    # credentials (role, profile).
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      InstanceProfileName: !Sub 'ondemand-${Capability}-instance'
+      Roles:
+        - !Ref InstanceRole
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub 'ondemand-${Capability}'
+      # Tags the launch template itself. (AWS::IAM::ManagedPolicy and
+      # AWS::IAM::InstanceProfile have no Tags property in CloudFormation, so
+      # ConsumerPolicy and InstanceProfile are the only untagged resources.)
+      TagSpecifications:
+        - ResourceType: launch-template
+          Tags:
+            - { Key: owner, Value: !Ref OwnerTag }
+            - { Key: capability, Value: !Ref Capability }
+            - { Key: managed-by, Value: cloudformation }
+      VersionDescription: !Sub '${Capability} on-demand runner - SSM-only, stops on shutdown.'
+      LaunchTemplateData:
+        ImageId: !Ref AmiId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: !GetAtt InstanceProfile.Arn
+        SecurityGroupIds:
+          - !GetAtt SecurityGroup.GroupId
+        # A halt (the in-VM watchdog's `shutdown -h now`) STOPS the instance.
+        InstanceInitiatedShutdownBehavior: stop
+        # Detailed (1-minute) monitoring. Basic monitoring publishes CPU only
+        # every 5 minutes, which IdleStopAlarm's 60 s periods would see as
+        # missing data (notBreaching) and never fire on.
+        Monitoring:
+          Enabled: true
+        UserData: !If [HasUserData, !Ref UserData, !Ref 'AWS::NoValue']
+        CpuOptions: !If
+          - WantsNestedVirtualization
+          - NestedVirtualization: enabled
+          - !Ref 'AWS::NoValue'
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1 # root volume on Ubuntu HVM AMIs
+            Ebs:
+              VolumeSize: !Ref RootVolumeGb
+              VolumeType: gp3
+              DeleteOnTermination: true
+              Encrypted: true
+        MetadataOptions:
+          HttpEndpoint: enabled
+          HttpTokens: required # IMDSv2 only
+          HttpPutResponseHopLimit: 2
+          InstanceMetadataTags: enabled # labs-emod edit 4: user data reads the artifacts-bucket tag
+        TagSpecifications:
+          - ResourceType: volume
+            Tags:
+              - { Key: owner, Value: !Ref OwnerTag }
+              - { Key: capability, Value: !Ref Capability }
+              - { Key: managed-by, Value: cloudformation }
+              - { Key: Name, Value: !Sub 'ondemand-${Capability}-root' }
+
+  # Retained: a stack delete must never take the runner (and its disk) with it.
+  Instance:
+    Type: AWS::EC2::Instance
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        # labs-emod edit 7: the SDK's "$Latest" is rejected by CloudFormation ("does not support using
+        # $Latest or $Default for LaunchTemplate version"), so the stack never creates. A pinned version
+        # means a launch-template edit REPLACES the instance (new InstanceId; the old one is retained,
+        # stopped by hand): see README-emod.md "Rolling".
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      SubnetId: !Ref SubnetId
+      # `capability` is what ConsumerPolicy keys on: change it and the consumer
+      # loses the right to start, stop or command this instance.
+      Tags:
+        - { Key: owner, Value: !Ref OwnerTag }
+        - { Key: capability, Value: !Ref Capability }
+        - { Key: managed-by, Value: cloudformation }
+        - { Key: Name, Value: !Sub 'ondemand-${Capability}' }
+        # labs-emod edit 5: where the user data finds WORKER_SRC (s3://<bucket>/worker/).
+        - { Key: artifacts-bucket, Value: !Ref ArtifactsBucket }
+
+  # Captured run artifacts. Objects expire after 7 days; the bucket itself is
+  # retained. Its name is generated, so a redeploy never collides with a
+  # retained bucket; read it from the ArtifactsBucketName output.
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-after-7-days
+            Status: Enabled
+            ExpirationInDays: 7
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+      Tags:
+        - { Key: owner, Value: !Ref OwnerTag }
+        - { Key: capability, Value: !Ref Capability }
+        - { Key: managed-by, Value: cloudformation }
+
+  # Layer 3: stop the instance after 5 consecutive 1-minute periods of max CPU
+  # below 5% (Maximum, so a single spike resets the window). The action is the
+  # AWS-builtin EC2 stop action: no Lambda or SNS in the loop.
+  IdleStopAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'ondemand-${Capability}-idle-stop'
+      AlarmDescription: !Sub 'Stop the ${Capability} on-demand runner after 5 min of <5% CPU.'
+      Namespace: AWS/EC2
+      MetricName: CPUUtilization
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 5
+      Threshold: 5
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref Instance
+      AlarmActions:
+        - !Sub 'arn:aws:automate:${AWS::Region}:ec2:stop'
+      Tags:
+        - { Key: owner, Value: !Ref OwnerTag }
+        - { Key: capability, Value: !Ref Capability }
+        - { Key: managed-by, Value: cloudformation }
+
+  # What the consumer (OnDemandInstance, run_command) needs, attached to the
+  # consumer's own role. Every mutating EC2/SSM statement is scoped by the
+  # instance's `capability` tag, so it reaches this capability's runner and
+  # nothing else. The Describe calls and GetCommandInvocation take no resource
+  # conditions and are read-only; the SSM document carries no tags.
+  ConsumerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub 'ondemand-${Capability}-consumer'
+      Description: !Sub 'Lets the consumer start, stop and command the ${Capability} on-demand runner.'
+      Roles:
+        - !Ref ConsumerTaskRoleName
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EC2LifecycleScopedByCapabilityTag
+            Effect: Allow
+            Action: [ec2:StartInstances, ec2:StopInstances]
+            Resource: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*'
+            Condition:
+              StringEquals: { 'aws:ResourceTag/capability': !Ref Capability }
+          - Sid: EC2Describe
+            Effect: Allow
+            Action: [ec2:DescribeInstances, ec2:DescribeInstanceStatus]
+            Resource: '*'
+          - Sid: SSMSendCommandScopedByCapabilityTag
+            Effect: Allow
+            Action: [ssm:SendCommand]
+            Resource: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*'
+            Condition:
+              StringEquals: { 'aws:ResourceTag/capability': !Ref Capability }
+          - Sid: SSMSendCommandDocument
+            Effect: Allow
+            Action: [ssm:SendCommand]
+            Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}::document/AWS-RunShellScript'
+          - Sid: SSMReadCommandResults
+            Effect: Allow
+            Action: [ssm:GetCommandInvocation]
+            Resource: '*'
+          - Sid: S3ListArtifacts
+            Effect: Allow
+            Action: [s3:ListBucket, s3:GetBucketLocation]
+            Resource: !GetAtt ArtifactsBucket.Arn
+          - Sid: S3GetArtifacts
+            Effect: Allow
+            Action: [s3:GetObject]
+            Resource: !Sub '${ArtifactsBucket.Arn}/*'
+          # labs-emod edit 6: the consumer uploads each model request for the worker to read.
+          - Sid: S3PutRequests
+            Effect: Allow
+            Action: [s3:PutObject]
+            Resource: !Sub '${ArtifactsBucket.Arn}/requests/*'
+
+Outputs:
+  InstanceId:
+    Description: The runner's instance id (the consumer's OnDemandInstance(instance_id=...)).
+    Value: !Ref Instance
+  ArtifactsBucketName:
+    Description: The artifacts bucket the instance uploads to and the consumer reads from.
+    Value: !Ref ArtifactsBucket
