@@ -1,0 +1,58 @@
+{% extends 'supply_chain/base.html' %}
+{% load static %}
+{% comment %}
+A workflow pinned into the supply navigation (supply_chain/workflow_views/):
+the same runner as the workflow's own page, inside the supply header and tabs.
+The page data comes from WorkflowRunView, for the workflow's
+current open run. Two ways out: the workflow's editor, and -- when the pin
+replaced a built-in tab -- that tab's own page ("classic view").
+{% endcomment %}
+
+{% block title %}{{ pin.label }} — Supply{% endblock %}
+
+{% block javascript %}
+  {{ block.super }}
+  {% if has_context and render_code and not error %}
+    {% include "workflow/_runner_scripts.html" %}
+  {% endif %}
+{% endblock %}
+
+{% block supply_content %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+<link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.13.0/mapbox-gl.css"/>
+<div class="flex flex-wrap items-baseline justify-between gap-3 mb-4">
+  <h1 class="text-2xl font-semibold text-gray-900 leading-tight">{{ pin.label }}</h1>
+  <div class="flex flex-wrap items-center gap-3 text-sm">
+    <span class="text-xs text-gray-600">A workflow: {{ definition.name|default:"" }}</span>
+    <a data-testid="workflow-open" href="{{ open_url }}" class="text-brand-indigo hover:underline">Open as a workflow</a>
+    <a data-testid="workflow-edit" href="{{ edit_url }}" class="px-3 py-1.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50 text-gray-700">
+      <i class="fa-solid fa-pen-to-square mr-1"></i>Edit workflow
+    </a>
+    {% if classic_url %}
+      <a data-testid="classic-view" href="{{ classic_url }}" class="text-gray-600 hover:underline">Classic {{ classic_label|lower }} view</a>
+    {% endif %}
+  </div>
+</div>
+
+<div style="overflow-x: clip">
+  {% if error %}
+    <div class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{{ error }}</div>
+  {% elif not has_context %}
+    <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Choose an opportunity above to load this view.</div>
+  {% elif not render_code %}
+    <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">This workflow has no render code yet. <a class="underline" href="{{ edit_url }}">Edit the workflow</a>.</div>
+  {% else %}
+    {{ workflow_data|json_script:"workflow-data" }}
+    <div id="workflow-root" data-csrf-token="{{ csrf_token }}">
+      <div class="flex items-center justify-center py-12 text-gray-600">
+        <i class="fa-solid fa-spinner fa-spin text-2xl text-blue-600 mr-3"></i> Loading…
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+  {{ block.super }}
+  {% if canopy_panel %}{% include "canopy_host/panel.html" %}{% endif %}
+{% endblock %}

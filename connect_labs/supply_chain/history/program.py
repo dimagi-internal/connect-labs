@@ -48,6 +48,7 @@ PATHS = {
     "AlertSubscription": _direct,
     "AlertNotice": _direct,
     "UpdateLink": _direct,
+    "SupplyWorkflowView": _direct,
     # Reference tier: scoped by `scope_key` ("prog:<id>"), not a program_id column.
     "Commodity": _scope,
     "Item": _scope,
