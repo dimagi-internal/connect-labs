@@ -27,6 +27,9 @@ export interface WorkflowProps {
   /** Data from pipeline sources (keyed by alias) */
   pipelines: Record<string, PipelineResult>;
 
+  /** Data from supply sources (keyed by alias; workflow/supply_sources.py) */
+  supply?: Record<string, SupplyResult>;
+
   /** Helper functions for generating URLs to other Labs features */
   links: LinkHelpers;
 
@@ -63,6 +66,9 @@ export interface RunView {
 
   /** Pipelines (keyed by alias) — live or snapshot-frozen. */
   pipelines: Record<string, PipelineResult>;
+
+  /** Supply sources (keyed by alias) — live or snapshot-frozen. */
+  supply?: Record<string, SupplyResult>;
 
   /** State (working area). Live while in_progress; frozen while completed. */
   state: WorkflowState;
@@ -204,6 +210,38 @@ export interface Task {
 // =============================================================================
 // Pipeline Data Types
 // =============================================================================
+
+/**
+ * One supply source over the workflow's opportunities (workflow/supply_sources.py).
+ * `rows` are tagged with opportunity_id (null for a programme-wide row) and
+ * program_id; `rollup` is computed on the server (counts summed, rates recomputed).
+ */
+export interface SupplyResult {
+  rows: Array<Record<string, unknown>>;
+  rollup: Record<string, unknown>;
+  metadata: {
+    source?: string;
+    scope?: 'opportunity' | 'program';
+    item?: string | null;
+    as_of?: string | null;
+    opportunity_ids?: number[];
+    per_opp?: Record<
+      string,
+      { row_count: number; program_id?: number; error?: string }
+    >;
+    error?: string;
+  };
+}
+
+/** Arguments to actions.querySupply. */
+export interface SupplyQuery {
+  /** Further arguments the source takes (e.g. supply_point_id for worker_stock_get). */
+  args?: Record<string, unknown>;
+  /** Narrow to one of the workflow's opportunities. */
+  opportunity_id?: number;
+  /** Read a past day (YYYY-MM-DD). */
+  as_of?: string;
+}
 
 /**
  * Result from a pipeline execution.
@@ -392,6 +430,13 @@ export interface WorkflowDefinition {
 
   /** Pipeline data sources */
   pipeline_sources?: PipelineSource[];
+  /** Supply sources (workflow/supply_sources.py): [{alias, source, item?, load?}]. */
+  supply_sources?: Array<{
+    alias: string;
+    source: string;
+    item?: string;
+    load?: 'eager' | 'on_demand';
+  }>;
 
   /** Whether this workflow is shared with others */
   is_shared?: boolean;
@@ -637,6 +682,9 @@ export interface ActionHandlers {
     alias: string,
     query?: PipelineRowsQuery,
   ): Promise<PipelineRowsQueryResult>;
+
+  /** One supply source on demand (workflow/supply_sources.py), as the viewer. */
+  querySupply?(alias: string, query?: SupplyQuery): Promise<SupplyResult>;
 
   createTask(params: CreateTaskParams): Promise<TaskResult>;
   checkOCSStatus(): Promise<OCSStatusResult>;
@@ -1148,6 +1196,10 @@ export interface WorkflowDataFromDjango {
     streamPipelineData?: string;
     /** POST endpoint behind actions.queryPipelineRows. */
     queryPipelineRows?: string;
+    /** GET endpoint for the eager supply sources (the `supply` prop). */
+    getSupplyData?: string;
+    /** POST endpoint behind actions.querySupply. */
+    querySupply?: string;
     saveWorkerResult?: string;
     completeRun?: string | null;
     getSnapshot?: string | null;

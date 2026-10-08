@@ -51,6 +51,8 @@ import type {
   WorkflowActionExecution,
   WorkflowActionWorker,
   PipelineRowsQuery,
+  SupplyQuery,
+  SupplyResult,
   PipelineRowsQueryResult,
 } from '@/components/workflow/types';
 import {
@@ -802,6 +804,23 @@ function WorkflowRunner({
     (initialData.instance.snapshot as { pipelines?: unknown }).pipelines
   );
 
+  // Supply sources (connect_labs/workflow/supply_sources.py): the `supply` prop.
+  // A COMPLETED run whose snapshot froze them reads `snapshot.supply` instead,
+  // and never loads live supply data.
+  const snapshotSupply =
+    initialData.instance.status === 'completed' && initialData.instance.snapshot
+      ? ((
+          initialData.instance.snapshot as {
+            supply?: Record<string, SupplyResult>;
+          }
+        ).supply ?? null)
+      : null;
+  const [supplyData, setSupplyData] = useState<Record<string, SupplyResult>>(
+    {},
+  );
+  const supplyDataUrl = initialData.apiEndpoints?.getSupplyData;
+  const querySupplyUrl = initialData.apiEndpoints?.querySupply;
+
   // Pipeline loading status - null means loaded/ready, string means loading with message
   const [pipelineLoadingStatus, setPipelineLoadingStatus] = useState<
     string | null
@@ -1256,6 +1275,34 @@ function WorkflowRunner({
     missingAuth.length,
   ]);
 
+  // Load every eager supply source once, as the viewer (the server checks access
+  // per opportunity, exactly as the supply pages do). Errors land per source in
+  // its metadata, so one opportunity failing never blanks the page.
+  useEffect(() => {
+    if (snapshotSupply || !supplyDataUrl) return;
+    const sources = (definition.supply_sources || []) as Array<{
+      load?: string;
+    }>;
+    if (!sources.some((src) => src.load !== 'on_demand')) return;
+    const url = new URL(supplyDataUrl, window.location.origin);
+    applyScopeParams(url.searchParams);
+    let cancelled = false;
+    fetch(url.toString(), { credentials: 'same-origin' })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled && data && data.supply) setSupplyData(data.supply);
+      })
+      .catch((err) => console.error('supply data failed', err));
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    snapshotSupply,
+    supplyDataUrl,
+    definition.supply_sources,
+    applyScopeParams,
+  ]);
+
   // Auto-reconnect to running jobs on page load
   // This allows users to close the browser and return later while the Celery task continues
   useEffect(() => {
@@ -1643,6 +1690,34 @@ function WorkflowRunner({
           };
         }
       },
+      // One supply source on demand (supply_sources.py), e.g. a worker's timeline:
+      // querySupply('timeline', {args: {supply_point_id: 7}, opportunity_id: 10113}).
+      querySupply: async (
+        alias: string,
+        query: SupplyQuery = {},
+      ): Promise<SupplyResult> => {
+        if (!querySupplyUrl) {
+          throw new Error('querySupply is not available on this page.');
+        }
+        const url = new URL(querySupplyUrl, window.location.origin);
+        applyScopeParams(url.searchParams);
+        const response = await fetch(url.toString(), {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken,
+          },
+          body: JSON.stringify({ alias, ...query }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(
+            data.error || `querySupply failed (${response.status})`,
+          );
+        }
+        return data as SupplyResult;
+      },
       runAction: (
         key: string,
         args: { workers: WorkflowActionWorker[]; [k: string]: unknown },
@@ -1661,7 +1736,13 @@ function WorkflowRunner({
         );
       },
     };
-  }, [csrfToken, workflowActions, queryPipelineRowsUrl, applyScopeParams]);
+  }, [
+    csrfToken,
+    workflowActions,
+    queryPipelineRowsUrl,
+    querySupplyUrl,
+    applyScopeParams,
+  ]);
 
   // useRunView: abstracts snapshot-vs-live data reads and exposes view.complete().
   //
@@ -1678,6 +1759,7 @@ function WorkflowRunner({
     const snapshot = (inst.snapshot || null) as {
       workers?: WorkerData[];
       pipelines?: Record<string, PipelineResult>;
+      supply?: Record<string, SupplyResult>;
       state?: WorkflowState;
     } | null;
 
@@ -1843,6 +1925,7 @@ function WorkflowRunner({
         pipelines:
           (snapshot.pipelines as Record<string, PipelineResult>) ??
           pipelineData,
+        supply: (snapshot.supply as Record<string, SupplyResult>) ?? supplyData,
         state: (snapshot.state as WorkflowState) ?? instanceState,
         isCompleted,
         asOf: isCompleted ? (inst.completed_at ?? null) : null,
@@ -1862,6 +1945,7 @@ function WorkflowRunner({
     return {
       workers: initialData.workers,
       pipelines: pipelineData,
+      supply: supplyData,
       state: instanceState,
       isCompleted: false,
       asOf: null,
@@ -1884,6 +1968,7 @@ function WorkflowRunner({
     initialData.tasks,
     initialData.apiEndpoints.completeRun,
     pipelineData,
+    supplyData,
     instanceState,
     actions,
     csrfToken,
@@ -1899,6 +1984,7 @@ function WorkflowRunner({
     },
     workers: initialData.workers,
     pipelines: pipelineData,
+    supply: snapshotSupply ?? supplyData,
     links: createLinkHelpers(initialData.links),
     actions: actions,
     onUpdateState: handleUpdateState,

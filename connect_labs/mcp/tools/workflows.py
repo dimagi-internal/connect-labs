@@ -357,9 +357,10 @@ _DEFINITION_PATCH_ALLOWED = {
     "snapshot_inputs",
     "registry_source",
     "render_source",
+    "supply_sources",
 }
 
-_SNAPSHOT_INPUTS_ALLOWED_KEYS = {"pipelines", "workers", "state_keys"}
+_SNAPSHOT_INPUTS_ALLOWED_KEYS = {"pipelines", "workers", "state_keys", "supply"}
 
 
 def _validate_pipeline_home_scope(home_scope, token: str, pipeline_id: int) -> dict:
@@ -644,6 +645,13 @@ def workflow_update_definition(
         if problems:
             raise MCPToolError("INVALID_SCHEMA", "; ".join(problems))
 
+    if "supply_sources" in patch:
+        from connect_labs.workflow.supply_sources import declaration_problems as supply_problems
+
+        problems = supply_problems(patch["supply_sources"])
+        if problems:
+            raise MCPToolError("INVALID_SCHEMA", "; ".join(problems))
+
     token = require_connect_token(user)
     wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
     try:
@@ -668,6 +676,8 @@ def workflow_update_definition(
             new_data["description"] = patch["description"]
         if "statuses" in patch:
             new_data["statuses"] = patch["statuses"]  # replace wholesale
+        if "supply_sources" in patch:
+            new_data["supply_sources"] = patch["supply_sources"]  # replace wholesale
         if "registry_source" in patch:
             # A workflow built on a semantic template stays on a live record. Unbinding
             # it (null, {}) or binding the on-disk copy ({"name": ...}) would freeze its
