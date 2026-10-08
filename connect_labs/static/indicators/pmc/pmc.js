@@ -163,7 +163,7 @@
         var cost =
           s.cost_per_case_averted === null
             ? '<div class="pmc-cost muted">' +
-              (s.too_noisy ? 'too noisy' : 'baseline') +
+              (s.too_noisy ? 'too noisy' : '—') +
               '</div>'
             : '<div class="pmc-cost">' +
               usd(s.cost_per_case_averted, 2) +
@@ -200,10 +200,13 @@
           '<div class="pmc-pct pmc-num' +
           (s.too_noisy ? ' muted' : '') +
           '" style="width:92px">' +
-          pct(s.averted_pct) +
-          ' <span style="font-weight:400; color:#78716c; font-size:12px">±' +
-          num(s.averted_ci, 1) +
-          '</span></div>' +
+          (s.code === 'none'
+            ? '<span style="font-weight:500; color:#a8a29e; font-size:13px">baseline</span>'
+            : pct(s.averted_pct) +
+              ' <span style="font-weight:400; color:#78716c; font-size:12px">±' +
+              num(s.averted_ci, 1) +
+              '</span>') +
+          '</div>' +
           '</div>' +
           '<div class="pmc-num" style="text-align:right">' +
           num(s.doses) +
@@ -359,18 +362,26 @@
     el('pmc-total').innerHTML = totals.states
       ? stat('States', totals.states) +
         stat('Children 3–24 mo (projected)', num(approx(totals.children))) +
-        stat('Cases averted / yr', num(totals.cases)) +
-        stat('Doses / yr', num(totals.doses)) +
-        stat('Cost / yr', usd(totals.spend)) +
-        stat(
-          'Per case averted',
-          totals.cases ? usd(totals.spend / totals.cases, 2) : '—',
-        ) +
+        stat('Cases averted / yr', '≈' + num(approx(totals.cases))) +
+        stat('Doses / yr', '≈' + num(approx(totals.doses))) +
+        stat('Cost / yr', '≈' + usdShort(approx(totals.spend))) +
+        // Cost per case does not depend on population, so it is the schedule's
+        // own figure -- dividing rounded totals would disagree with the row above.
+        stat('Per case averted', chosenCost()) +
         (totals.unprojected
           ? stat('Need their own run', totals.unprojected)
           : '')
       : '<div class="v" style="font-size:14px; font-weight:500">Select states to total a programme. ' +
         'Projections assume each state behaves like the modelled setting.</div>';
+  }
+
+  function chosenCost() {
+    var s = data.schedules.filter(function (x) {
+      return x.code === data.schedule;
+    })[0];
+    return s && s.cost_per_case_averted !== null
+      ? usd(s.cost_per_case_averted, 2)
+      : '—';
   }
 
   function stat(k, v) {
