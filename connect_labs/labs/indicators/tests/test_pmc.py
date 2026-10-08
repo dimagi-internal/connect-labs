@@ -253,3 +253,75 @@ class TestTheAgentTool:
     def test_it_refuses_an_impossible_price(self, nigeria):
         with pytest.raises(MCPToolError):
             targeting.targeting_pmc_schedules(None, dose_rate=0)
+
+
+@pytest.mark.django_db
+class TestTheRunControl:
+    """The page's "Try another schedule" row: it posts the friendly schedule shape and polls with a state."""
+
+    SPEC = {"months": [5, 6, 7, 8], "age_min_months": 3, "age_max_months": 24, "coverage": 0.85}
+
+    @pytest.fixture
+    def client_in(self, client, django_user_model, settings, monkeypatch, nigeria):
+        from connect_labs.labs.indicators.emod import tasks
+
+        settings.LABS_EMOD_INSTANCE_ID = "i-test"
+        settings.LABS_EMOD_REGION = "test-region-1"
+        settings.LABS_EMOD_BUCKET = "test-bucket"
+        monkeypatch.setattr(tasks.run_pmc_model, "delay", lambda pk: None)
+        client.force_login(django_user_model.objects.create_user(username="pm3", password="x"))
+        return client
+
+    def _post(self, client, **body):
+        return client.post(reverse("targeting:pmc_run"), body, content_type="application/json")
+
+    def test_the_page_carries_the_run_control_and_its_urls(self, client_in):
+        body = client_in.get(reverse("targeting:pmc")).content.decode()
+
+        assert "Run IDM" in body and 'id="pmc-live-run"' in body
+        assert reverse("targeting:pmc_run") in body
+        # The status URL is a template the script fills in with the run id.
+        assert "{id}" in body and "api/pmc/run/" in body
+
+    def test_a_friendly_schedule_is_queued(self, client_in):
+        r = self._post(client_in, state="Ondo", schedule=self.SPEC)
+
+        assert r.status_code == 202
+        assert r.json()["status"] == "queued" and r.json()["run_id"] and r.json()["eta_s"] >= 10
+
+    def test_a_grid_equivalent_schedule_is_answered_at_once(self, client_in):
+        r = self._post(client_in, state="Ondo", schedule={"rounds_per_year": 4})
+
+        assert r.status_code == 200
+        assert "precomputed" in r.json()["result"]["label"]
+
+    def test_a_malformed_schedule_is_a_400_in_plain_words(self, client_in):
+        r = self._post(client_in, state="Ondo", schedule={"months": [13]})
+
+        assert r.status_code == 400 and "month" in r.json()["error"]
+
+    def test_a_state_the_model_cannot_speak_for_is_refused(self, client_in):
+        r = self._post(client_in, state="Kano", schedule=self.SPEC)
+
+        assert r.status_code == 400 and "cannot be modelled" in r.json()["error"]
+
+    def test_a_finished_run_is_costed_at_the_state_when_polled_with_one(self, client_in):
+        from connect_labs.labs.indicators.models import PmcModelRun
+
+        run_id = self._post(client_in, state="Ondo", schedule=self.SPEC).json()["run_id"]
+        run = PmcModelRun.objects.get(pk=run_id)
+        code = next(s["code"] for s in run.request["schedules"] if s["code"] != "none")
+        runs = []
+        for seed in (0, 1, 2):
+            runs.append({"code": "none", "seed": seed, "cases_3_24m": 2000, "kids_3_24m": 370, "doses": 0})
+            runs.append({"code": code, "seed": seed, "cases_3_24m": 1500, "kids_3_24m": 370, "doses": 1000})
+        PmcModelRun.objects.filter(pk=run_id).update(status=PmcModelRun.COMPLETED, result={"runs": runs})
+        url = reverse("targeting:pmc_run_status", args=[run_id])
+
+        got = client_in.get(url, {"state": "Ondo"}).json()
+
+        assert got["status"] == "completed"
+        assert got["result"]["label"] == "illustrative · live model run"
+        assert got["result"]["projection"]["cost_per_case_averted"] > 0
+        # Without a state it is the plain status, as before.
+        assert client_in.get(url).json()["result"] == {"runs": runs}
