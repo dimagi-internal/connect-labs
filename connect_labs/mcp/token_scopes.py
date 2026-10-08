@@ -97,6 +97,8 @@ NO_USER_VISIT_ENDPOINT = "no_user_visit"
 
 NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
     {
+        # Runs SQL over a zero-row relation; returns column names or a validation error.
+        "explorer_validate",
         # Workflow definitions: config, statuses, render code, pipeline wiring.
         "workflow_list",
         "workflow_get",
