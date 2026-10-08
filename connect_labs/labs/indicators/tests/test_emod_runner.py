@@ -83,7 +83,18 @@ def _run():
 
 
 class TestBuildRequest:
-    def test_default_setting_matches_the_sweep_it_is_copied_from(self, monkeypatch):
+    def test_default_setting_is_the_setting_the_grid_was_run_with(self):
+        # The grid's own record is the truth: a live run must start from the grid's burn-in.
+        grid = json.loads((REPO / "connect_labs/labs/indicators/data/pmc_emod_sweep.json").read_text())
+        assert runner.DEFAULT_SETTING == grid["setting"]["model_inputs"]
+        assert isinstance(runner.DEFAULT_SETTING["larval_capacity"], float)
+
+    def test_default_setting_has_the_burn_in_already_cached_on_the_worker(self, worker_module):
+        # The worker keys its burn-in cache on this hash; e894aa5178f45cff is the burn-in stored on the
+        # deployed box by the 6e7 gate request. A different hash means a cold burn-in on the next run.
+        assert worker_module.setting_hash(runner.DEFAULT_SETTING) == "e894aa5178f45cff"
+
+    def test_the_sweep_cli_reproduces_the_grid_setting_by_default(self, monkeypatch):
         # pmc_sweep imports emodpy/idmtools at module level; stub them, we only need default_setting().
         for name in (
             "manifest",
@@ -99,10 +110,11 @@ class TestBuildRequest:
             "idmtools.entities.experiment",
         ):
             monkeypatch.setitem(sys.modules, name, MagicMock())
-        monkeypatch.setenv("PMC_POP", str(runner.DEFAULT_SETTING["pop"]))
+        monkeypatch.setenv("PMC_POP", "5000")  # the README's grid command passes PMC_POP=5000
         monkeypatch.delenv("PMC_LARVAL", raising=False)
         sweep = _load("pmc_sweep_under_test", REPO / "tools/pmc_emod/pmc_sweep.py")
-        assert runner.DEFAULT_SETTING == sweep.default_setting()
+        grid = json.loads((REPO / "connect_labs/labs/indicators/data/pmc_emod_sweep.json").read_text())
+        assert sweep.default_setting() == grid["setting"]["model_inputs"]
 
     def test_request_passes_the_workers_own_validation(self, worker_module):
         req = runner.build_request("Ondo", [SCHEDULE], fit="near")
@@ -185,7 +197,10 @@ class TestExecute:
         _, boot, ready = inst.calls[0]
         assert (boot, ready) == (600, 900)
         _, cmds, timeout = inst.calls[1]
-        assert cmds[0].startswith("/opt/emod/.venv/bin/python /opt/emod/run_scenarios.py --request s3://bkt/requests/")
+        assert cmds[0].startswith(
+            "EMOD_REQUEST_TIMEOUT_S=2100 /opt/emod/.venv/bin/python /opt/emod/run_scenarios.py "
+            "--request s3://bkt/requests/"
+        )
         assert timeout >= 900
 
     def test_a_gone_instance_marks_the_run_failed_with_the_message(self):
@@ -222,11 +237,12 @@ class TestExecute:
 
 @pytest.mark.django_db
 class TestRetryAndConcurrency:
-    def test_a_failed_run_can_be_re_executed_to_completion(self):
+    def test_a_failed_run_re_queued_can_be_re_executed_to_completion(self):
         s3, run = FakeS3(), _run()
         runner.execute(run, FakeInstance(s3, "bkt", ensure_error=InstanceGone("gone")), "bkt", s3=s3)
         run.refresh_from_db()
         assert run.status == "failed" and run.error
+        PmcModelRun.objects.filter(pk=run.pk).update(status="queued")  # what the service does first
         runner.execute(run, FakeInstance(s3, "bkt"), "bkt", s3=s3)
         run.refresh_from_db()
         assert run.status == "completed" and run.error == ""
@@ -240,6 +256,23 @@ class TestRetryAndConcurrency:
         assert inst.calls == [] and s3.objects == {}
         run.refresh_from_db()
         assert run.status == "running"
+
+    @pytest.mark.parametrize("status", ["completed", "failed"])
+    def test_a_finished_row_is_never_claimed(self, status):
+        s3, run = FakeS3(), _run()
+        old = timezone.now() - timedelta(hours=2)
+        PmcModelRun.objects.filter(pk=run.pk).update(status=status, updated_at=old, result={"kept": True})
+        inst = FakeInstance(s3, "bkt")
+        runner.execute(run, inst, "bkt", s3=s3, reclaim_stale_after_s=60)
+        assert inst.calls == [] and s3.objects == {}
+        run.refresh_from_db()
+        assert run.status == status and run.result == {"kept": True}
+
+    def test_the_claim_records_when_the_run_started(self):
+        run = _run()
+        assert runner._claim(run, None)
+        run.refresh_from_db()
+        assert run.status == "running" and abs(run.timings["started_at"] - timezone.now().timestamp()) < 5
 
     def test_a_fresh_running_row_is_not_reclaimed_even_when_allowed(self):
         s3, run = FakeS3(), _run()
@@ -281,6 +314,8 @@ class TestConfiguration:
         inst = FakeInstance(s3, "bkt")
         runner.execute(run, inst, "bkt", s3=s3)
         assert runner.RUN_TIMEOUT_S == 2400 and inst.calls[1][2] == 2400
+        # SSM must outlast the worker's own whole-request deadline, so the worker's message wins.
+        assert runner.RUN_TIMEOUT_S > runner.WORKER_REQUEST_TIMEOUT_S
         s3b = FakeS3()
         weird = FakeInstance(s3b, "b k t")
         run2 = PmcModelRun.objects.create(inputs_hash="x" * 64, request={})

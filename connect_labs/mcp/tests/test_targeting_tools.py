@@ -858,9 +858,44 @@ class TestPmcLiveModel:
         polled = targeting.targeting_pmc_run_status(None, run_id=first["run_id"], state="Ondo")
 
         assert polled["status"] == "failed"
-        assert "unavailable" in polled["error"]
-        assert "is 'missing'" in polled["error"]
+        assert polled["error"].startswith("The live model is unavailable right now.")
         assert "targeting_pmc_schedules" in polled["error"]
+        # The SDK's message names the instance: kept on the row for logs, never shown.
+        assert "i-x" not in str(polled) and "missing" not in str(polled)
+        run.refresh_from_db()
+        assert "i-x" in run.error
+
+    def test_an_ssm_failure_is_reported_in_the_same_public_sentence(self):
+        from connect_labs.labs.indicators.models import PmcModelRun
+
+        first = targeting.targeting_pmc_run_model(None, state="Ondo", schedule=self.DEMO)
+        PmcModelRun.objects.filter(pk=first["run_id"]).update(
+            status=PmcModelRun.FAILED, error="worker exited 1 (Failed): Traceback ... i-0123456789abcdef0"
+        )
+
+        polled = targeting.targeting_pmc_run_status(None, run_id=first["run_id"], state="Ondo")
+
+        assert polled["error"].startswith("The live model is unavailable right now.")
+        assert "i-0123" not in str(polled) and "Traceback" not in str(polled)
+
+    def test_the_wait_is_said_from_the_instance_state(self, monkeypatch):
+        from connect_labs.labs.indicators.emod import service
+
+        monkeypatch.setattr(service, "_instance_is_warm", lambda: True)
+        warm = targeting.targeting_pmc_run_model(None, state="Ondo", schedule={"months": [1]})
+        polled = targeting.targeting_pmc_run_status(None, run_id=warm["run_id"], state="Ondo")
+        behind = targeting.targeting_pmc_run_model(None, state="Ondo", schedule={"months": [2]})
+
+        assert warm["wait"] == polled["wait"] == "about two minutes"
+        assert behind["wait"] == "about two minutes, after the run ahead finishes"
+
+    def test_a_cold_start_says_so(self, monkeypatch):
+        from connect_labs.labs.indicators.emod import service
+
+        monkeypatch.setattr(service, "_instance_is_warm", lambda: False)
+        cold = targeting.targeting_pmc_run_model(None, state="Ondo", schedule=self.DEMO)
+
+        assert cold["wait"] == "about five minutes -- the model server is starting up"
 
     def test_a_deploy_without_a_worker_says_unavailable(self, settings):
         settings.LABS_EMOD_INSTANCE_ID = None
@@ -868,6 +903,7 @@ class TestPmcLiveModel:
         got = targeting.targeting_pmc_run_model(None, state="Ondo", schedule=self.DEMO)
 
         assert got["status"] == "failed" and "unavailable" in got["error"] and self.delays == []
+        assert "LABS_EMOD" not in got["error"]
 
     def test_a_running_run_reports_its_eta(self):
         from connect_labs.labs.indicators.models import PmcModelRun
@@ -923,10 +959,14 @@ class TestPmcLiveModel:
             "I'm running IDM's EMOD model now",
             "about two minutes",
             "the model server is starting up",
+            "after the run ahead finishes",
+            "'wait'",
             "every 10-15 seconds",
         ):
             assert phrase in run, phrase
         assert "always say" not in run
+        assert "if eta_s is 150 or less" not in run  # the wait is keyed on the instance state, not eta_s
+        assert "give the reason" not in run  # failures carry one public sentence; no reason to relay
         assert "every 10-15 seconds" in status and "targeting_pmc_schedules" in status
         assert "result.label" in run and "difference_within_noise" in run
         assert "ONLY when status is queued or running" in run

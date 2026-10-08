@@ -18,7 +18,6 @@ from connect_labs.labs.indicators import availability
 from connect_labs.labs.indicators import boundaries as boundary_set
 from connect_labs.labs.indicators import export, interventions, measures, methods
 from connect_labs.labs.indicators.africa import ISO_CODES, name_for
-from connect_labs.labs.indicators.emod.service import PMC_RUN_ETA_COLD_S, PMC_RUN_REQUEUE_AFTER_S  # noqa: F401
 from connect_labs.labs.indicators.models import IndicatorValue, IngestRun, Source
 from connect_labs.labs.indicators.resolve import BulkResolver, select_above
 
@@ -967,6 +966,10 @@ def _pmc_tool_response(tool: str, request, **kwargs) -> JsonResponse:
     except MCPToolError as exc:
         status = 404 if exc.code == "NOT_FOUND" else 400
         return JsonResponse({"error": str(exc)}, status=status)
+    if payload.get("status") in ("failed", "busy") and payload.get("error"):
+        # The tool's error ends with guidance for the agent (which tool to fall back to); the page
+        # shows the public sentence alone.
+        payload = {**payload, "error": targeting.page_error(payload["error"])}
     if payload.get("status") == "failed" and payload.get("run_id") is not None:
         # A run that ran and failed is reported by status, not as a service error.
         return JsonResponse(payload)

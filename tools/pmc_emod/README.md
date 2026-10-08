@@ -37,10 +37,15 @@ cd emodpy-malaria && python3 -m venv .venv && . .venv/bin/activate && pip instal
 docker pull --platform linux/amd64 ghcr.io/emod-hub/emod-ubuntu-runtime:latest
 cp /path/to/connect-labs/tools/pmc_emod/pmc_sweep.py tutorials/
 cd tutorials   # pmc_sweep.py imports the tutorials' manifest.py
-PMC_POP=5000 PMC_SEEDS=0,1,2,3,4,5 PMC_LARVAL=6e7 python pmc_sweep.py
+PMC_POP=5000 PMC_SEEDS=0,1,2,3,4,5 python pmc_sweep.py
 ```
 
-`PMC_LARVAL=6e7` gives PfPR 2-5y of about 44%. Pass a comma-separated list of scenario codes as
+The larval capacity defaults to 6e7 (`PMC_LARVAL`), which gives PfPR 2-5y of about 44%: the setting the
+committed grid was run with. That setting is recorded in `setting.model_inputs` of `pmc_emod_sweep.json`, and
+the live model (`emod/runner.py` `DEFAULT_SETTING`) must equal it, so a live run reuses the grid's burn-in and
+compares with its rows; `test_emod_runner.py` fails if the two drift. If you re-run the grid in another setting,
+update `model_inputs` and `DEFAULT_SETTING` in the same commit (the worker then builds a new burn-in on the
+first live request, which makes that request slow). Pass a comma-separated list of scenario codes as
 the first argument to run only those. Results land in `tutorials/pmc_results/summary.json`, one
 row per simulation (scenario, seed, cases, children 3-24 months, PfPR 2-5y, doses).
 
@@ -62,3 +67,25 @@ Docker (they skip when Docker is absent):
 ```bash
 EMOD_TUTORIALS_DIR=/path/to/emodpy-malaria/tutorials /path/to/emodpy-venv/bin/python -m pytest tools/pmc_emod/worker -v
 ```
+
+The worker bounds a whole request with `EMOD_REQUEST_TIMEOUT_S` (default 2100 s, burn-in plus pick-ups); labs
+passes it explicitly and gives the SSM command 2400 s, so the worker's own timeout message is what gets
+recorded. A change to `worker/run_scenarios.py` or `pmc_sweep.py` reaches the box only once both are re-staged
+under the bucket's `worker/` prefix (bootstrap fetches them from `WORKER_SRC`).
+
+## Live runs on labs: concurrency
+
+Labs runs each live request as the Celery task `run_pmc_model` (`connect_labs/labs/indicators/emod/tasks.py`)
+on the shared worker pool: one default queue, concurrency 6 (`docker/start_celery`). There is no dedicated
+queue, because the deployed worker (`deploy/task-definitions/worker.json`) consumes only the default one and a
+second worker would be new infrastructure. Instead:
+
+- The instance runs one request at a time, serialised by a Redis lease (TTL 300 s, refreshed every 60 s).
+- A task waiting for the lease polls without blocking every 5 s, for at most 900 s: cheap in CPU, but it holds
+  a pool slot while it waits.
+- At most `PMC_MAX_IN_FLIGHT` (3) runs are queued or running; a fourth request gets "busy" (429). So EMOD
+  holds at most three of the six slots (one running, bounded by the worker's 2100 s request deadline plus instance start-up; two waiting), and the
+  rest of labs keeps at least three.
+- A run killed mid-flight (deploy, OOM) stops touching its row; after three missed 60 s heartbeats the next
+  request for it re-queues it, and the new task takes over once the dead worker's lease expires (at most
+  five minutes).

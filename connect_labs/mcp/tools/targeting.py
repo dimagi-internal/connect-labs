@@ -1400,18 +1400,26 @@ _PMC_COST_PROPS = {
     "dose_rate": {"type": "number", "description": "Share of visits that give a dose, 0-1. Default 0.95."},
 }
 
-_PMC_UNAVAILABLE = (
-    "The live model is unavailable right now: {reason}. "
-    "Use the precomputed results from targeting_pmc_schedules instead."
-)
-
+_PMC_FALLBACK = " Use the precomputed results from targeting_pmc_schedules instead."
 
 _PMC_BUSY = "The live model is busy with other runs; try again in a few minutes, or use targeting_pmc_schedules."
 
 
-def _pmc_unavailable(reason: str) -> str:
-    reason = (reason or "no reason recorded").strip().replace("\n", " ")
-    return _PMC_UNAVAILABLE.format(reason=reason[:300].rstrip(" ."))
+def page_error(tool_error: str) -> str:
+    """A PMC tool's failed/busy error without the agent-only fallback guidance, for the page."""
+    from connect_labs.labs.indicators.emod import service
+
+    if tool_error == _PMC_BUSY:
+        return service.PUBLIC_BUSY
+    return tool_error.removesuffix(_PMC_FALLBACK)
+
+
+def _pmc_unavailable(internal_error: str | None) -> str:
+    """The public sentence for a failed run. The internal error (SDK and SSM messages can name the
+    instance) stays on the row and in the logs; it never reaches the agent or the page."""
+    from connect_labs.labs.indicators.emod import service
+
+    return service.public_error(internal_error) + _PMC_FALLBACK
 
 
 def _pmc_costs(cost_per_visit, platform_fee, dose_rate) -> dict:
@@ -1542,10 +1550,13 @@ _PMC_PRESENT_RULES = (
         "months) and coverage (default 0.85, the grid's Connect coverage; rounded to 5-point steps). "
         "The default demo question maps to schedule={months:[5,6,7,8], age_min_months:3, age_max_months:24} "
         "for state 'Ondo'. 'seeds' (1-6, default 3) is the number of random replicates averaged. "
-        "Returns {run_id, status, cached, eta_s}. "
+        "Returns {run_id, status, cached, eta_s, wait}. "
         "WHAT TO SAY: ONLY when status is queued or running, say first 'I'm running IDM's EMOD model now' and "
-        "give the wait from eta_s: if eta_s is 150 or less, 'this takes about two minutes'; otherwise 'about "
-        "five minutes -- the model server is starting up'. When cached is true (a grid schedule, or a run done "
+        "give the wait in 'wait' word for word: 'this takes ' + wait. 'wait' is set from whether the model "
+        "server was already up when the run was submitted: 'about two minutes' when it was, 'about five minutes "
+        "-- the model server is starting up' when it was not, plus 'after the run ahead finishes' when another "
+        "run is ahead. Do not derive the wait from eta_s, which is only a countdown. When cached is true (a "
+        "grid schedule, or a run done "
         "before) the result is in this response: say nothing about running a model, just present it. "
         "HOW TO WAIT -- call targeting_pmc_run_status with the run_id and the SAME state (and prices) "
         "every 10-15 seconds, for up to 8 minutes, until it says completed or failed. Do not start a second "
@@ -1554,8 +1565,8 @@ _PMC_PRESENT_RULES = (
         "seasonal: SMC, not PMC'); nothing was started. Say why, do not work around it. "
         "status=busy: the model is occupied with other runs; say so, offer to try again in a few minutes, and "
         "meanwhile answer from targeting_pmc_schedules. "
-        "status=failed: say the live model is unavailable, give the reason in one line, and answer from "
-        "targeting_pmc_schedules instead. " + _PMC_PRESENT_RULES
+        "status=failed: say what 'error' says (that the live model is unavailable right now) in one line, add "
+        "no reason of your own, and answer from targeting_pmc_schedules instead. " + _PMC_PRESENT_RULES
     ),
     input_schema={
         "type": "object",
@@ -1640,14 +1651,20 @@ def targeting_pmc_run_model(user, *, state, schedule, seeds=3, cost_per_visit=No
     if http_status == 429:
         return {"status": "busy", "cached": False, "run_id": None, "error": _PMC_BUSY}
     if http_status == 503:
-        return {"status": "failed", "cached": False, "run_id": None, "error": _pmc_unavailable(payload["error"])}
+        return {"status": "failed", "cached": False, "run_id": None, "error": _pmc_unavailable(None)}
     run = PmcModelRun.objects.get(pk=payload["run_id"])
     base = {"run_id": run.pk, "schedule": description}
     if payload["cached"]:
         row = live.summarise(run.result, code)
         result = _pmc_present(state, row, costs, live=True, description=description, code=code, run_id=run.pk)
         return {**base, "status": "completed", "cached": True, "eta_s": 0, "result": result}
-    return {**base, "status": run.status, "cached": False, "eta_s": service.run_eta(run)}
+    return {
+        **base,
+        "status": run.status,
+        "cached": False,
+        "eta_s": service.run_eta(run),
+        "wait": service.wait_phrase(run),
+    }
 
 
 @register(
@@ -1656,10 +1673,12 @@ def targeting_pmc_run_model(user, *, state, schedule, seeds=3, cost_per_visit=No
         "Check on a live EMOD run started by targeting_pmc_run_model. Call it every 10-15 seconds, for up to "
         "8 minutes, with the run_id and the SAME state and prices you started the run with (the state is "
         "required: the finished result is costed at it). While status is queued or running, say nothing new "
-        "beyond a short 'still running' line every minute or so; eta_s is the seconds left. "
+        "beyond a short 'still running' line every minute or so; eta_s is the seconds left and 'wait' the "
+        "phrase for the whole run (do not restate it as a new estimate). "
         "When status is completed the response carries the result, costed exactly as targeting_pmc_run_model "
-        "describes. " + _PMC_PRESENT_RULES + " When status is failed, the error already says the live model is "
-        "unavailable and why: tell the user in one line and answer from targeting_pmc_schedules instead. If the "
+        "describes. " + _PMC_PRESENT_RULES + " When status is failed, 'error' already says the live model is "
+        "unavailable: tell the user that in one line, add no reason of your own, and answer from "
+        "targeting_pmc_schedules instead. If the "
         "8 minutes pass with the run still going, say it is taking longer than expected and offer to check "
         "again; do not start a second run."
     ),
@@ -1695,7 +1714,13 @@ def targeting_pmc_run_status(user, *, run_id, state, cost_per_visit=None, platfo
             "timings": run.timings,
         }
     if run.status != PmcModelRun.COMPLETED:
-        return {"run_id": run.pk, "status": run.status, "eta_s": service.run_eta(run), "timings": run.timings}
+        return {
+            "run_id": run.pk,
+            "status": run.status,
+            "eta_s": service.run_eta(run),
+            "wait": service.wait_phrase(run),
+            "timings": run.timings,
+        }
 
     custom = next((s for s in run.request["schedules"] if s["code"] != "none"), None)
     try:
@@ -1703,11 +1728,12 @@ def targeting_pmc_run_status(user, *, run_id, state, cost_per_visit=None, platfo
         effect = live.summarise(run.result, code)
         description = live.describe_rounds(custom["rounds"])
     except (ValueError, KeyError, TypeError) as e:
+        logger.warning("live EMOD run %s: the result could not be read: %s", run.pk, e)
         return {
             "run_id": run.pk,
             "status": "failed",
             "eta_s": 0,
-            "error": _pmc_unavailable(f"the model result could not be read ({e})"),
+            "error": _pmc_unavailable(None),
         }
     result = _pmc_present(state, effect, costs, live=True, description=description, code=code, run_id=run.pk)
     return {"run_id": run.pk, "status": "completed", "eta_s": 0, "timings": run.timings, "result": result}
