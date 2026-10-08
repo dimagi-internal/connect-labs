@@ -9,6 +9,7 @@ import math
 import markdown
 from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db import transaction
 from django.db.models import Count
 from django.http import HttpResponse, JsonResponse
 from django.views import View
@@ -946,3 +947,93 @@ class PmcDataView(OpenLocallyMixin, View):
         out["schedule"] = schedule
         out["states"] = pmc.state_rows(schedule, costs)
         return JsonResponse(out)
+
+
+# Rough whole-run estimate for the status endpoint: a cold start (instance boot plus the
+# simulation) measured about 300 s, a warm instance about 110 s. Per-run cold/warm is only known
+# once a run finishes, so a run in flight is estimated at the cold figure.
+PMC_RUN_ETA_COLD_S = 300
+
+
+def _pmc_run_eta(run) -> int:
+    """Seconds left, from the cold estimate minus time since the request (never below 10 while unfinished)."""
+    from django.utils import timezone
+
+    from connect_labs.labs.indicators.models import PmcModelRun
+
+    if run.status in (PmcModelRun.COMPLETED, PmcModelRun.FAILED):
+        return 0
+    elapsed = (timezone.now() - run.created_at).total_seconds()
+    return max(10, int(PMC_RUN_ETA_COLD_S - elapsed))
+
+
+class PmcRunView(OpenLocallyMixin, View):
+    """Start a live EMOD run for a state and schedules, or return the cached result for the same inputs."""
+
+    def post(self, request):
+        from connect_labs.labs.indicators.emod import runner, tasks
+        from connect_labs.labs.indicators.models import PmcModelRun
+
+        try:
+            body = json.loads(request.body or b"{}")
+        except ValueError:
+            return JsonResponse({"error": "request body must be JSON"}, status=400)
+        if not isinstance(body, dict):
+            return JsonResponse({"error": "request body must be a JSON object"}, status=400)
+        state, schedules = body.get("state"), body.get("schedules")
+        if not isinstance(state, str) or not state.strip():
+            return JsonResponse({"error": "state is required"}, status=400)
+        if not isinstance(schedules, list) or not all(isinstance(s, dict) for s in schedules):
+            return JsonResponse({"error": "schedules must be a list of objects"}, status=400)
+        try:
+            req = runner.build_request(state.strip(), schedules)
+        except ValueError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+        except (TypeError, KeyError, AttributeError) as exc:
+            return JsonResponse({"error": f"malformed schedules: {exc}"}, status=400)
+        try:
+            runner.default_instance()
+            runner.default_bucket()
+        except RuntimeError as exc:
+            return JsonResponse({"error": f"live model unavailable: {exc}"}, status=503)
+
+        run, created = runner.get_or_create_run(req)
+        if run.status == PmcModelRun.COMPLETED:
+            return JsonResponse(
+                {"run_id": run.pk, "status": run.status, "cached": True, "result": run.result, "timings": run.timings}
+            )
+        enqueue = created
+        if run.status == PmcModelRun.FAILED:
+            # Failures are not cached: re-queue the same row. Only the request that flips it enqueues.
+            enqueue = bool(
+                PmcModelRun.objects.filter(pk=run.pk, status=PmcModelRun.FAILED).update(
+                    status=PmcModelRun.QUEUED, error=""
+                )
+            )
+            run.status = PmcModelRun.QUEUED
+        if enqueue:
+            transaction.on_commit(lambda pk=run.pk: tasks.run_pmc_model.delay(pk))
+        return JsonResponse({"run_id": run.pk, "status": run.status, "cached": False}, status=202)
+
+
+class PmcRunStatusView(OpenLocallyMixin, View):
+    """Status, result and timings of one live EMOD run."""
+
+    def get(self, request, pk):
+        from connect_labs.labs.indicators.models import PmcModelRun
+
+        try:
+            run = PmcModelRun.objects.get(pk=pk)
+        except PmcModelRun.DoesNotExist:
+            return JsonResponse({"error": "no such run"}, status=404)
+        return JsonResponse(
+            {
+                "run_id": run.pk,
+                "status": run.status,
+                "cached": False,
+                "result": run.result if run.status == PmcModelRun.COMPLETED else None,
+                "error": run.error,
+                "timings": run.timings,
+                "eta_s": _pmc_run_eta(run),
+            }
+        )
