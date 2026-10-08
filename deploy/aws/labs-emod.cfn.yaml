@@ -10,6 +10,9 @@
 #      user data can find the bucket this same stack creates.
 #   6. ConsumerPolicy: s3:PutObject on requests/* (the consumer uploads each request for the worker).
 #   7. Instance: LaunchTemplate Version is LatestVersionNumber, not "$Latest" (CloudFormation rejects it).
+#   8. ArtifactsBucket lifecycle: only requests/ and results/ expire (7 days); worker/ and burnin/ never do.
+#   9. IdleStopAlarm: IdleStopMinutes parameter (default 60, matching the 3600 s watchdog) instead of 5.
+#  10. InstanceRole: s3:PutObject narrowed to results/* and burnin/* (the worker's only writes).
 #
 # One on-demand capability: a dedicated EC2 instance that is stopped when idle
 # and started by its consumer (canopy_sdk.ondemand.OnDemandInstance), plus the
@@ -25,7 +28,7 @@
 #      baked into the AMI) halts it once /var/run/<Capability>/last-activity is
 #      older than IDLE_SECONDS; InstanceInitiatedShutdownBehavior=stop turns that
 #      halt into a stop;
-#   3. IdleStopAlarm below stops it after 5 minutes of <5% max CPU.
+#   3. IdleStopAlarm below stops it after IdleStopMinutes (default 60) of <5% max CPU.
 # Nothing here ever terminates the instance.
 #
 # Deploy (needs CAPABILITY_NAMED_IAM, for the named role and policy):
@@ -94,6 +97,13 @@ Parameters:
     Description: Root volume size in GiB (encrypted gp3).
     MinValue: 8
     Default: 60 # labs-emod edit 1: Docker image + EMOD + per-setting burn-in cache
+  # labs-emod edit 9: the CPU backstop's window. The SDK's fixed 5 minutes stopped the box between demo
+  # questions, defeating the watchdog's 3600 s idle threshold; 60 matches it.
+  IdleStopMinutes:
+    Type: Number
+    Description: Minutes of max CPU below 5% before IdleStopAlarm stops the instance.
+    MinValue: 5
+    Default: 60
 
 Conditions:
   WantsNestedVirtualization: !Equals [!Ref NestedVirtualization, 'true']
@@ -166,10 +176,13 @@ Resources:
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
+              # labs-emod edit 10: the worker writes only results (--out) and cached burn-ins.
               - Sid: ArtifactsPutObject
                 Effect: Allow
                 Action: [s3:PutObject, s3:AbortMultipartUpload]
-                Resource: !Sub '${ArtifactsBucket.Arn}/*'
+                Resource:
+                  - !Sub '${ArtifactsBucket.Arn}/results/*'
+                  - !Sub '${ArtifactsBucket.Arn}/burnin/*'
               # labs-emod edit 3: the worker reads its scripts, requests and cached burn-ins from the bucket.
               - Sid: ArtifactsGetObject
                 Effect: Allow
@@ -273,7 +286,7 @@ Resources:
         # labs-emod edit 5: where the user data finds WORKER_SRC (s3://<bucket>/worker/).
         - { Key: artifacts-bucket, Value: !Ref ArtifactsBucket }
 
-  # Captured run artifacts. Objects expire after 7 days; the bucket itself is
+  # Captured run artifacts. requests/ and results/ expire after 7 days; the bucket itself is
   # retained. Its name is generated, so a redeploy never collides with a
   # retained bucket; read it from the ArtifactsBucketName output.
   ArtifactsBucket:
@@ -294,10 +307,19 @@ Resources:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced
       LifecycleConfiguration:
+        # labs-emod edit 8: expire only per-request objects; worker/ (the install source) and burnin/
+        # (the cached burn-ins) must never expire.
         Rules:
-          - Id: expire-after-7-days
+          - Id: expire-requests-after-7-days
             Status: Enabled
+            Prefix: requests/
             ExpirationInDays: 7
+          - Id: expire-results-after-7-days
+            Status: Enabled
+            Prefix: results/
+            ExpirationInDays: 7
+          - Id: abort-incomplete-multipart-after-1-day
+            Status: Enabled
             AbortIncompleteMultipartUpload:
               DaysAfterInitiation: 1
       Tags:
@@ -305,19 +327,19 @@ Resources:
         - { Key: capability, Value: !Ref Capability }
         - { Key: managed-by, Value: cloudformation }
 
-  # Layer 3: stop the instance after 5 consecutive 1-minute periods of max CPU
+  # Layer 3: stop the instance after IdleStopMinutes consecutive 1-minute periods of max CPU
   # below 5% (Maximum, so a single spike resets the window). The action is the
   # AWS-builtin EC2 stop action: no Lambda or SNS in the loop.
   IdleStopAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: !Sub 'ondemand-${Capability}-idle-stop'
-      AlarmDescription: !Sub 'Stop the ${Capability} on-demand runner after 5 min of <5% CPU.'
+      AlarmDescription: !Sub 'Stop the ${Capability} on-demand runner after ${IdleStopMinutes} min of <5% CPU.'
       Namespace: AWS/EC2
       MetricName: CPUUtilization
       Statistic: Maximum
       Period: 60
-      EvaluationPeriods: 5
+      EvaluationPeriods: !Ref IdleStopMinutes # labs-emod edit 9
       Threshold: 5
       ComparisonOperator: LessThanThreshold
       TreatMissingData: notBreaching
