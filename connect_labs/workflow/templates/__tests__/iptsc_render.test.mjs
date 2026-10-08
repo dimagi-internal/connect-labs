@@ -528,12 +528,42 @@ test('a worker flag names each check with its value', () => {
   );
 });
 
-test('duplicates: same name at the same school', () => {
-  const dupRows = ROWS.concat([day1('A2', MON, { child_name: 'Child A' })]);
-  const b = M.iptBuildChildren(dupRows, [], OPTS);
-  const s = M.iptClusterSchools(b.children, 250);
-  const a = M.iptAuthenticity(b.children, OPTS, s.byChild);
-  assert.deepEqual(a.duplicates.extra.childIds.sort(), ['A', 'A2']);
+test('duplicates: same name, same age, at the same school', () => {
+  const dupsOf = (extra) => {
+    const b = M.iptBuildChildren(ROWS.concat(extra), [], OPTS);
+    const s = M.iptClusterSchools(b.children, 250);
+    return M.iptAuthenticity(
+      b.children,
+      OPTS,
+      s.byChild,
+    ).duplicates.extra.childIds.sort();
+  };
+  // Same name, same age (9), same school, differently cased: one child twice
+  assert.deepEqual(dupsOf([day1('A2', MON, { child_name: 'child a' })]), [
+    'A',
+    'A2',
+  ]);
+  // Same name and school, different age: two classmates
+  assert.deepEqual(
+    dupsOf([day1('A2', MON, { child_name: 'Child A', age_years: '11' })]),
+    [],
+  );
+  // Same name and age, another school
+  assert.deepEqual(
+    dupsOf([
+      day1('A2', MON, {
+        child_name: 'Child A',
+        school: 'Other Primary',
+        gps_raw: '10.2500 11.3500 300 6',
+      }),
+    ]),
+    [],
+  );
+  // No recorded age: cannot be compared
+  assert.deepEqual(
+    dupsOf([day1('A2', MON, { child_name: 'Child A', age_years: '' })]),
+    [],
+  );
 });
 
 test('compliance rows', () => {
