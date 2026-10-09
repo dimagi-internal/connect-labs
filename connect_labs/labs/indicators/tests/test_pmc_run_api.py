@@ -36,6 +36,7 @@ def configured(settings, monkeypatch):
     settings.LABS_EMOD_INSTANCE_ID = "i-test"
     settings.LABS_EMOD_REGION = "test-region-1"
     settings.LABS_EMOD_BUCKET = "test-bucket"
+    settings.PMC_STATE_GRID_PATH = "/nonexistent/pmc_state_grid.json"  # no fitted states unless a test opts in
     monkeypatch.setattr(runner, "state_fit", lambda state: "near")
 
 
