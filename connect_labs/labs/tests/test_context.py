@@ -241,3 +241,72 @@ class TestContextRedirect:
         LabsContextMiddleware(lambda r: None).process_request(request)
 
         assert getattr(request, "labs_context", None) is not None
+
+
+class TestSupplyContext:
+    """Supply is scoped by programme alone; its links and its context must say which.
+
+    The bug: any page naming only an opportunity replaced the session's context
+    whole, so it held no programme, and a pinned supply tab clicked next looked
+    for its workflow in no programme and 404'd.
+    """
+
+    PROGRAM, OPP = 4401, 4402
+
+    def _request(self, path, user, session_context=None):
+        request = RequestFactory().get(path)
+        request.user = user
+        request.session = {
+            "labs_oauth": {
+                "organization_data": {
+                    "programs": [{"id": self.PROGRAM, "name": "P"}],
+                    "opportunities": [{"id": self.OPP, "name": "O", "program": self.PROGRAM}],
+                }
+            },
+            "labs_context": session_context or {},
+        }
+        return request
+
+    def _user(self, db):
+        return User.objects.create_user(username="ctx-supply", password="x")
+
+    def test_a_supply_url_naming_only_an_opportunity_reads_that_opportunitys_programme(self, db):
+        request = self._request(f"/supply/views/stock-review/?opportunity_id={self.OPP}", self._user(db))
+
+        assert LabsContextMiddleware(lambda r: None).process_request(request) is None
+        assert request.labs_context["program_id"] == self.PROGRAM
+        assert request.labs_context["opportunity_id"] == self.OPP
+
+    def test_the_programme_comes_from_pulse_when_the_opportunity_is_not_cached(self, db):
+        from connect_labs.pulse.models import PulseOpportunity
+
+        PulseOpportunity.objects.create(opportunity_id=4499, program_id=self.PROGRAM)
+        request = self._request("/supply/stock/?opportunity_id=4499", self._user(db))
+
+        LabsContextMiddleware(lambda r: None).process_request(request)
+
+        assert request.labs_context["program_id"] == self.PROGRAM
+
+    def test_an_opportunity_page_outside_supply_gains_no_programme(self, db):
+        """The LabsRecord API AND-filters every scope it is given: a programme added to an
+        opportunity page's context would hide that opportunity's own records."""
+        request = self._request(f"/labs/workflow/?opportunity_id={self.OPP}", self._user(db))
+
+        LabsContextMiddleware(lambda r: None).process_request(request)
+
+        assert "program_id" not in request.labs_context
+
+    def test_a_bare_supply_url_redirects_to_carry_the_sessions_context(self, db):
+        request = self._request(
+            "/supply/views/stock-review/", self._user(db), session_context={"program_id": self.PROGRAM}
+        )
+
+        response = LabsContextMiddleware(lambda r: None).process_request(request)
+
+        assert response.status_code == 302 and f"program_id={self.PROGRAM}" in response["Location"]
+
+    def test_supplys_operation_endpoint_is_not_redirected(self, db):
+        request = self._request("/supply/api/stock_on_hand/", self._user(db), {"program_id": self.PROGRAM})
+
+        assert LabsContextMiddleware(lambda r: None).process_request(request) is None
+        assert request.labs_context["program_id"] == self.PROGRAM
