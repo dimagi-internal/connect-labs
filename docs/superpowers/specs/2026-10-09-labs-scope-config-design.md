@@ -1,6 +1,9 @@
 # Labs scope config and pages: how an organisation, a programme, an opportunity or a person sets labs up
 
-**Status:** design, revised 2026-10-09 after Jonathan's answers on #2415. Nothing built yet.
+**Status:** approved 2026-10-09; being built in the order below. Decisions A-D were
+approved as recommended. Jonathan's ordering: the new way to make pages is built
+completely, and an organisation's landing page works live, **before** `pages/` is
+retired.
 
 Jonathan decided:
 1. an organisation layer, now;
@@ -400,8 +403,7 @@ its own history and `as_of`.
 3. **No scope means "pick one", not "not found."** A 404 is kept for a slug that is
    genuinely absent from a known scope.
 
-The scoped pinned-tab link and "opportunity implies programme" are shipping
-separately ahead of this work.
+Rules 1 and 3, and rule 2 for `/supply/`, shipped in #2416 (see the build order).
 
 ## 8. What happens to existing things
 
@@ -477,55 +479,65 @@ separately ahead of this work.
   - `workflow_list(kind="page")` works.
   - `pages_*` are gone.
 
-## Open questions for Jonathan
+## Decisions (approved 2026-10-09, as recommended)
 
-- **A. Which organisation is an opportunity's organisation layer?** *Recommend the
-  programme owner's* (section 1). The alternative layers both organisations, which
-  lets an LLO restyle part of a programme it does not run.
-- **B. User pages.** *Recommend deferring them.* The LabsRecord API cannot keep a
-  record private to one person inside a shared scope. When needed, a user page can
-  be a page in a scope the person belongs to, marked `owner_only` and filtered by
-  labs. That filter is labs-enforced, not Connect-enforced, so it should wait for a
-  real need.
-- **C. Sandbox the runner?** Render workflow and page code in a sandboxed iframe on
-  a separate origin, with data over `postMessage`. *Recommend yes, as its own piece
-  of work after pages ship*, because it hardens workflows and pages equally. Until
-  then, pages follow the workflow rule: authors are trusted, and data is authorised
-  on the server.
-- **D. Can an organisation lock a setting** so programmes cannot override it?
-  *Recommend not in v1.*
+- **A.** An opportunity's organisation layer is the **programme owner's** (section 1).
+- **B.** User pages are deferred.
+- **C.** The sandboxed runner is its own later piece of work; until then pages follow
+  the workflow rule (authors trusted, data authorised on the server).
+- **D.** No organisation locks in v1.
 
-(The earlier questions about sharing user pages and which card providers to build
-first no longer apply: there are no cards.)
+## An organisation coming in
+
+"An organisation coming in" means someone arriving **for that organisation**, with it
+named, not merely remembered:
+
+1. **The organisation's own address**, `/labs/p/org/<slug>/`. This is the link to hand
+   an organisation. With no page slug it opens the scope's `home` page (section 5).
+2. **The labs landing page named for it**, `/labs/overview/?organization_id=<slug>` --
+   what the context picker produces when an organisation is chosen, and what a
+   sign-in `next=` carries through OAuth. When that organisation has a `home` page,
+   the overview redirects to it.
+
+A session that only *remembers* an organisation never redirects, so the overview stays
+reachable. A scope with no `home` set behaves exactly as today.
+
+The `home` slot names a page definition **and the scope that owns it**:
+`{"fill": {"workflow": <id>, "program_id": <owner>}}`. A real organisation can own its
+page itself (an organisation-owned LabsRecord); a labs-only organisation, keyed by slug
+with no Connect id, names a page owned by one of its programmes. Either way the page
+renders with the **organisation** as its `scope`.
 
 ## Build order
 
-1. **The rest of the context rule** (section 7): `scoped_url` for every supply
-   header link, `/supply/` on the redirect list, organisation implied from
-   programme, and no-scope → the app's home. The pinned-tab URL fix and
-   "opportunity implies programme" are already shipping separately.
+1. **The rest of the context rule** (section 7). Shipped as #2416: supply links carry
+   their programme, `/supply/` is on the redirect list, and an opportunity implies its
+   programme on `/supply/`. #2416 narrowed rule 2 to `/supply/` deliberately: the
+   LabsRecord API AND-filters every scope it is given, so a programme added to an
+   opportunity page's context everywhere would hide that opportunity's own records.
+   Organisation-from-programme is derived where config resolves, not in the session.
 2. **The config core.** `ScopeConfig`, `ScopeConfigChange`, the resolver with the
    organisation layer, namespace registration, `scopes.py` authorisation, and
    `labs_config_*`.
 3. **The `supply` namespace with slots.** Builtin and workflow fills, hidden tabs,
-   the pin migration and the `view_pin` wrappers.
+   the pin migration and the `view_pin` wrappers. Deploy; verify 10112's tabs live.
 4. **The Settings page**, with the supply section and history/undo.
-5. **Page mode in the runner.**
-   - `kind: "page"`; a page renders with no run and no run endpoints.
-   - Page-kind definitions are skipped in run lists.
-   - Supply page fills render through it.
-   - The `scope` and `config` props.
-6. **Page data and addresses.**
-   - `workflow_sources` + `actions.queryWorkflow`.
-   - Organisation-owned definitions.
-   - `/labs/p/<scope>/<key>/<slug>/` and the old-slug redirect.
-   - The `page_blank` seed template and `workflow_list(kind=…)`.
-7. **Retire `pages/`.** Count the surfaces and rewrite any into page definitions;
-   delete the app's data access, providers, views and `pages_*` tools; update the
-   skills and CLAUDE.md counts.
-8. **The `workflows` namespace.** Roles in slot fills, `workflow_sources` and
-   `links`; the `home` slot.
+5. **Page mode in the runner.** `kind: "page"`; no run, no run endpoints; skipped in
+   run lists; the `scope` and `config` props; supply page fills render through it.
+6. **Page data and addresses.** `workflow_sources` + `actions.queryWorkflow`;
+   organisation-owned definitions; `/labs/p/<scope>/<key>/<slug>/`; the `page_blank`
+   seed template and `workflow_list(kind=…)`; the authoring path in the
+   `workflow-author` skill.
+7. **The `home` slot and the organisation landing page.** An organisation coming in
+   (above) lands on its page. Deploy; verify live with a real example on a
+   synthetic organisation.
+8. **Retire `pages/`** -- only after 7 is verified live. Count the surfaces and rewrite
+   any into page definitions; delete the app's data access, providers, views and
+   `pages_*` tools; old `/labs/p/<slug>` links redirect or explain themselves; update
+   the skills and CLAUDE.md counts. Deploy.
 9. **Later.**
+   - Roles: the `workflows` namespace and roles in slot fills, `workflow_sources` and
+     `links`.
    - The sandboxed runner (decision C).
    - User pages (decision B).
    - Benchmarks and the KMC hand-down reading roles.
