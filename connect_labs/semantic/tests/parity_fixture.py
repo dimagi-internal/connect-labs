@@ -84,6 +84,7 @@ CASE_STATE_COLUMNS = (
     ("danger_signs", "text", "NULL"),
     ("visit_weight_g", "double precision", "weight_g"),
     ("skin_to_skin_h", "double precision", "NULL"),
+    ("referral_text", "text", "NULL"),
     ("entity_name", "text", "NULL"),
 )
 

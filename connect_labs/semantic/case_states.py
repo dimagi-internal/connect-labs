@@ -235,6 +235,15 @@ def case_series_problems(props_doc: dict[str, Any]) -> list[str]:
         return ["case_series: must list up to 12 series"]
     problems: list[str] = []
     seen: set[str] = set()
+    # A series reads a VISIT COLUMN, never a raw pipeline field: a visit column can be
+    # `optional` (NULL until the pipeline carries its field), a raw field just errors.
+    # A record saved before the model existed declares no visit_columns (the legacy
+    # shim supplies them), so there is nothing to check its series against.
+    declared = (
+        {c.get("name") for c in props_doc["visit_columns"] or [] if isinstance(c, dict)}
+        if "visit_columns" in props_doc
+        else None
+    )
     for i, s in enumerate(raw):
         label = f"case_series[{i}]"
         if not isinstance(s, dict):
@@ -243,6 +252,8 @@ def case_series_problems(props_doc: dict[str, Any]) -> list[str]:
         for k in ("name", "column"):
             if not isinstance(s.get(k), str) or not _IDENT.match(s[k]):
                 problems.append(f"{label}.{k}: must be a single column name")
+        if declared is not None and isinstance(s.get("column"), str) and s["column"] not in declared:
+            problems.append(f"{label}.column: {s['column']!r} is not one of this registry's visit_columns")
         if s.get("name") in seen:
             problems.append(f"{label}.name: declared twice")
         seen.add(s.get("name"))

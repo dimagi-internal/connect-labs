@@ -69,6 +69,12 @@ def test_a_malformed_case_state_is_refused(kmc, mutate, expected):
     assert any(expected in p for p in problems), problems
 
 
+def test_a_case_series_reads_a_visit_column_not_a_raw_field(kmc):
+    props, inds = copy.deepcopy(kmc[0]), kmc[1]
+    next(s for s in props["case_series"] if s["name"] == "referred")["column"] = "referral_answer"
+    assert any("'referral_answer' is not one of this registry's visit_columns" in p for p in _problems(props, inds))
+
+
 def test_a_labels_visit_column_compiles_to_the_matching_labels_or_null():
     model = resolve_model(
         {

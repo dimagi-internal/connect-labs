@@ -102,6 +102,11 @@ visit_columns:
   - name: skin_to_skin_h
     optional: true
     column: kmc_hours_total
+  # The referral answer as recorded, for a case's visit lines -- through a visit
+  # column so it reads NULL, not an error, until the pipeline carries the field.
+  - name: referral_text
+    optional: true
+    column: referral_answer
 
 # Layer 1 is generated from the `children` pipeline. The per-visit weight is NOT in
 # it: the dashboard reads the series from a second pipeline ("KMC Weight Series"),
@@ -1024,7 +1029,7 @@ case_series:
     }
   - {
       name: referred,
-      column: referral_answer,
+      column: referral_text,
       label: Referred,
       format: text,
       line: 'referred: {value}',
