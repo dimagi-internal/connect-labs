@@ -212,6 +212,8 @@ def _build_mirror_visits(
         seed=manifest.random_seed,
         no_jitter_paths=computed_paths,
         entity_names=cohort.entity_names,
+        # The source's own first and last day: nothing replays outside them.
+        window=(manifest.timeline.start_date, manifest.timeline.end_date),
     )
     entity_count = max((pv.beneficiary_idx for pv in planned), default=0)
     owners = {pv.beneficiary_idx: pv.owner for pv in planned}
