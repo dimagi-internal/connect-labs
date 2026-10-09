@@ -275,3 +275,23 @@ def test_the_complete_quotes_can_be_landed(clone):
     assert Document.objects.filter(program_id=opp, kind="duty_exemption").exists()
     cpt = Quote.objects.filter(tender__program_id=opp, incoterm="CPT Maiduguri")
     assert cpt.count() == 2 and all(basis_gaps(q) == [] for q in cpt)
+
+
+def test_the_clones_rutf_carries_the_programmes_protocol_for_the_forecast(clone):
+    """2 a day for up to 12 weekly visits: the forecast's course and its ration past what visits measure."""
+    from connect_labs.supply_chain.models import Item
+    from connect_labs.supply_chain.stock.services import forecast
+
+    opp = clone["opp"]
+    with patch(FETCH, return_value=clone["world"].visits):
+        clone_supply.seed(program_id=opp, opportunity_id=opp, today=TODAY)
+
+    item = Item.objects.select_related("commodity").get(scope_key=f"prog:{opp}", sku=clone_supply.SKU)
+    course = item.commodity.course_definition
+    assert course["base_units_per_course"] == 168
+    assert Decimal(str(course["base_units_per_day"])) * 7 == 14
+    assert forecast.course_size([], [], item, None) == {
+        "size": Decimal(168),
+        "basis": "protocol",
+        "completed_cases": 0,
+    }

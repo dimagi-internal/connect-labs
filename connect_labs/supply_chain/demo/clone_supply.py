@@ -230,8 +230,15 @@ def seed(*, program_id: int, opportunity_id: int, reset: bool = False, today: da
 
     op(setup, 9, "commodity_upsert", data={
         "slug": SLUG, "name": NAME, "category": "therapeutic_food",
-        # One carton is one child's course (illustrative), so a quote can be costed per child.
-        "course_definition": {"base_units_per_course": 150, "source": "programme protocol (demo, illustrative)"},
+        # The programme's protocol: 2 sachets a day (14 a week) for up to 12
+        # weekly visits, inside 16 weeks of enrolment -- 168 sachets a full
+        # course, which every child is meant to finish. The stock forecast
+        # reads both: the course size, and the daily figure for the weeks of
+        # treatment the visits cannot yet measure.
+        "course_definition": {
+            "base_units_per_day": "2", "days_per_course": 84, "base_units_per_course": 168,
+            "source": "programme protocol: 2 sachets a day (14 a week), up to 12 weekly visits within 16 weeks",
+        },
         "base_unit": "sachet", "pack_unit": "carton", "base_per_pack": 150,
     })  # fmt: skip
     item = op(setup, 9, "item_upsert", data={
