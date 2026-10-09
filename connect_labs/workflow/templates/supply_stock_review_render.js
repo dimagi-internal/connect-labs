@@ -57,8 +57,16 @@ function WorkflowUI({
     var d = asOf
       ? new Date(String(asOf).slice(0, 10) + 'T00:00:00')
       : new Date();
-    d.setDate(d.getDate() + Math.round(n));
+    d.setDate(d.getDate() + Math.floor(n));
     return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  }
+  // Whole days still in hand, never rounded up: the count Workers, a worker's
+  // page and Stock show (days_text). Rounded here, 9.85 read "10 days left"
+  // beside "9 days" there, and 6.6 read "7 days" under "Under a week".
+  function daysLeft(n) {
+    if (n < 1) return 'under a day left';
+    var whole = Math.floor(n);
+    return whole + (whole === 1 ? ' day left' : ' days left');
   }
 
   if (!stock) {
@@ -88,7 +96,9 @@ function WorkflowUI({
     ['one_to_three_weeks', '1–3 weeks', 'bg-amber-400'],
     ['three_to_six_weeks', '3–6 weeks', 'bg-teal-500'],
     ['over_six_weeks', 'Over 6 weeks', 'bg-sky-500'],
-    ['not_yet', 'Nothing given out lately', 'bg-gray-300'],
+    // No days left to show: too few days given out to measure a rate (a new
+    // worker), or none given out at all. Each row says which.
+    ['not_yet', 'No run-out date yet', 'bg-gray-300'],
   ];
   function bandOf(r) {
     var onHand = amount(r.on_hand);
@@ -113,6 +123,7 @@ function WorkflowUI({
       unapproved: amount(r.unapproved),
       counted: amount(r.reported),
       countedOn: r.reported_on,
+      ledgerOnCount: amount(r.ledger_on_count_day),
       gap: amount(r.variance_reported_minus_ledger),
       noAnswer: r.no_answer_visits || 0,
       perDay: amc !== null ? amc / 30 : amount(r.rate_per_day_so_far),
@@ -421,10 +432,17 @@ function WorkflowUI({
                           ? ' · out of stock'
                           : r.days !== null
                             ? ' · ' +
-                              Math.round(r.days) +
-                              ' days left, runs out ' +
+                              daysLeft(r.days) +
+                              ', runs out ' +
                               addDays(r.days)
-                            : ' · nothing given out lately, so no run-out date'}
+                            : r.rateDays
+                              ? ' · given out on ' +
+                                r.rateDays +
+                                (r.rateDays === 1 ? ' day' : ' days') +
+                                ' so far, ' +
+                                (r.raw.rate_days_needed || 7) +
+                                ' needed for a run-out date'
+                              : ' · nothing given out lately, so no run-out date'}
                         {r.perDay !== null && (
                           <span className={early ? 'text-gray-400' : ''}>
                             {' · ' +
@@ -492,6 +510,7 @@ function WorkflowUI({
                 <th className="text-right px-3 py-2">Given out</th>
                 <th className="text-right px-3 py-2">Ledger says held</th>
                 <th className="text-right px-3 py-2">They counted</th>
+                <th className="text-right px-3 py-2">Ledger that day</th>
                 <th className="text-right px-3 py-2">Gap</th>
                 <th className="text-right px-3 py-2">Visits that didn't say</th>
                 <th className="text-right px-3 py-2">On unapproved visits</th>
@@ -518,6 +537,18 @@ function WorkflowUI({
                       </td>
                       <td className="px-3 py-1.5 text-right tabular-nums">
                         {r.counted !== null ? fmt(r.counted) : '—'}
+                        {r.counted !== null && r.countedOn && (
+                          <div className="text-xs text-gray-500">
+                            {day(r.countedOn)}
+                          </div>
+                        )}
+                      </td>
+                      {/* The gap is against the ledger on the count day, not
+                          the held figure beside it: a delivery after the
+                          count (28 Sep, counted 27 Sep) read 269 held · 97
+                          counted · gap 0 -- a row that did not add up. */}
+                      <td className="px-3 py-1.5 text-right tabular-nums">
+                        {r.ledgerOnCount !== null ? fmt(r.ledgerOnCount) : '—'}
                       </td>
                       <td
                         className={
@@ -549,8 +580,8 @@ function WorkflowUI({
           </table>
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Gap is what they counted minus what the ledger held on the day they
-          counted: negative means fewer in the bag than the records say.
+          Gap is what they counted minus the ledger that day: negative means
+          fewer in the bag than the records say.
         </div>
       </div>
 

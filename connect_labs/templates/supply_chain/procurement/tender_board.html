@@ -14,6 +14,8 @@
 {% else %}
 <div class="flex items-center justify-between mb-4">
   <h1 class="text-xl font-semibold text-gray-900">Quote tenders</h1>
+  {% comment %}A past day is read-only (history/as_of.py); a form opened from it would 405 on save.{% endcomment %}
+  {% if not supply_as_of %}
   <div class="flex items-center gap-2">
     <a href="{% url 'supply_chain:procurement_quote_entry' %}"
        class="px-3 py-2 text-sm border border-brand-indigo text-brand-indigo hover:bg-message-info rounded-md">
@@ -24,6 +26,7 @@
       <i class="fa-solid fa-plus mr-1"></i> New tender
     </a>
   </div>
+  {% endif %}
 </div>
 <div class="bg-white rounded-lg shadow-sm overflow-hidden">
   {% comment %}
