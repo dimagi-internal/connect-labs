@@ -86,16 +86,20 @@ When you ask the canopy agent to coach a field worker from a Labs run page, the 
 - The first message the worker will receive
 - A picture of the worker's figures
 
-The card has three buttons:
+The card has one primary action and a quiet secondary link:
 
-| Button | What it does |
+| Action | What it does |
 |---|---|
 | **Send to \<worker\>** | Sends the coaching message to the field worker |
-| **Send to me (QA test)** | Sends a test copy to yourself to check how it looks (Dimagi staff only — you will be asked for your PersonalID username) |
-| **Not yet** | Dismisses the card without sending anything |
+| **Send a test to me instead** | Switches the card to test mode — enter your PersonalID username, then click **Send test** to preview and send in one step (Dimagi staff only) |
+
+Leaving the card without clicking **Send to \<worker\>** simply means you are not ready yet — there is no separate "Not yet" button.
 
 !!! note "You decide when coaching is sent — the agent never sends it automatically"
-    Sending a coaching message is always your action, triggered by clicking one of the buttons on the card. The agent will show you the briefing and tell you where to click — either **Send** on the card in canopy, or **Start coaching** on the Labs run page itself — but it will never send on your behalf. If you prefer to act from the run page rather than the chat, the **Start coaching** button there works exactly as it always has.
+    Sending a coaching message is always your action, triggered by clicking **Send to \<worker\>** on the card. The agent will show you the briefing and tell you where to click — either **Send to \<worker\>** on the card in canopy, or **Start coaching** on the Labs run page itself — but it will never send on your behalf. If you prefer to act from the run page rather than the chat, the **Start coaching** button there works exactly as it always has.
+
+!!! note "Sending the same coaching twice"
+    If you need to send the same coaching to the same worker again within a short window, this now works. Previously, a repeat send within 15 minutes was refused and the card would loop on "That preview went stale". You can now resend deliberately without hitting that block.
 
 ---
 
@@ -209,11 +213,4 @@ A programme's supply pages can show a workflow as one of their tabs. A workflow 
 
 When you open a workflow tab inside the supply pages, the supply header and tab bar remain visible and the workflow's current review loads in place. Each person sees it with their own access level, exactly as they would if they opened the workflow directly.
 
-A workflow shown as a supply tab — such as the **Stock review** — follows the supply pages' **"as of" date**. Pick a past day using the date control in the supply header and the workflow's supply figures update to show that day: the stock held by workers, the stores, and each worker's history all reflect the date you selected. The header shows the chosen date, just as it does on every other supply tab, and switching to another tab keeps the date in place. The workflow's own saved review, and anything it reads other than supply figures, continues to show today's data.
-
-Three links appear on the page:
-
-| Link | What it does |
-|---|---|
-| **Edit workflow** | Opens the workflow's editor. Because the tab only points at the workflow, any change you make there shows up immediately in the tab. |
-| **Open as a workflow** | Opens the workflow on its own full page
+A workflow shown as a supply tab — such as the **Stock review** — follows the supply pages' **"as of" date**. Pick a past day using the date control in the supply header and the workflow's supply figures update to show that day: the stock held by workers, the stores, and each worker's history all reflect the date you selected. The header shows the chosen date, just as it does on every
