@@ -2529,14 +2529,14 @@ def pipeline_rows_api(request, definition_id):
 
 @login_required
 @require_GET
-def case_story_api(request, definition_id):
-    """ONE case's coaching story (``case_coaching.py``), read as the viewer: what a case
-    panel needs to offer "Coach about this baby". Params: ``rows_opportunity_id`` (the
-    case's opportunity, one the workflow spans) and ``case_id``. Answers ``{story,
-    label, facts, username}``, ``story`` null when the visits tell none (or the workflow
-    has no case coaching)."""
-    from connect_labs.labs.access.scopes import Caller
-    from connect_labs.workflow import case_coaching, case_finder, case_visits
+def case_states_api(request, definition_id):
+    """ONE case's CASE STATES as of today (``semantic/case_states.py``), read as the
+    viewer from the workflow's own registry: what a case panel needs to offer "Coach
+    about this baby". Params: ``rows_opportunity_id`` (an opportunity the workflow
+    spans) and ``case_id``. Answers ``{case_state, label, facts, case_states, username}``
+    -- ``case_state`` the most urgent one the case is in, or null."""
+    from connect_labs.semantic import case_states
+    from connect_labs.workflow.snapshot_builders import case_context, case_rows
 
     opportunity_id = _coerce_int(request.GET.get("rows_opportunity_id"))
     case_id = (request.GET.get("case_id") or "").strip()
@@ -2551,22 +2551,29 @@ def case_story_api(request, definition_id):
         if opportunity_id not in spanned:
             return JsonResponse({"error": "this workflow does not span that opportunity"}, status=403)
         token = (request.session.get("labs_oauth", {}) or {}).get("access_token")
-        config = case_finder.config_for(definition, access_token=token)
-        if config is None:
-            return JsonResponse({"story": None, "reason": "no_case_coaching"})
-        caller = Caller(user=request.user, request=request, access_token=token)
-        rows = case_visits.load_rows(caller, [opportunity_id], config, case_id=case_id)
-        found = [c for c in case_coaching.cases_from_rows(rows, config) if c.case_id == case_id]
-        story = case_coaching.story_of(found[0]) if found else None
-        if story is None:
-            return JsonResponse({"story": None})
+        r = case_context(definition, opportunity_id=opportunity_id, access_token=token, request=request)
+        catalog = case_states.catalog(r["props_doc"])
+        if not catalog:
+            return JsonResponse({"case_state": None, "reason": "no_case_states"})
+        rows = case_rows(r, opportunity_id=opportunity_id, entity_ids=[case_id])
+        if not rows:
+            return JsonResponse({"case_state": None, "reason": "no_such_case"})
+        row = rows[0]
+        held = case_states.true_case_states(row, catalog)
+        if not held:
+            return JsonResponse({"case_state": None, "case_states": [], "username": row.get("username")})
+        state = held[0]
         return JsonResponse(
-            {"story": story.key, "label": story.label, "facts": story.facts, "username": found[0].username}
+            {
+                "case_state": state["name"],
+                "label": state["label"],
+                "facts": case_states.facts(state, row),
+                "case_states": [s["name"] for s in held],
+                "username": row.get("username"),
+            }
         )
-    except case_visits.CaseDataError as e:
-        return JsonResponse({"error": e.public_message}, status=403 if e.code != "read_failed" else 502)
     except Exception:
-        logger.exception("Failed to read the case story for definition %s", definition_id)
+        logger.exception("Failed to read the case states for definition %s", definition_id)
         return JsonResponse({"error": "An internal error occurred"}, status=500)
     finally:
         wf_access.close()

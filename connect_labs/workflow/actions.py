@@ -124,10 +124,10 @@ INCLUDE_IMAGE = "include_image"
 #: spec}``, top-level for every worker or on one worker's item. Implies ``include_image``.
 PICTURE = "picture"
 
-#: A worker item's CASE (``case_coaching.py``): coach the worker about one case --
-#: ``{id, story?, earlier?}`` -- instead of their indicators. Labs reads the case's
-#: visits, picks its story (or checks the one asked for), writes the case briefing and
-#: draws the case's picture.
+#: A worker item's CASE (``case_briefing.py``): coach the worker about one case --
+#: ``{id, case_state?, earlier?}`` -- instead of their indicators. Labs reads the case's
+#: CASE STATE as of the run (registry data, ``semantic/case_states.py``), writes the case
+#: briefing and draws the case state's picture.
 CASE = "case"
 
 #: Server-owned: the frozen chart each worker's preview showed, ``{worker key: chart
@@ -213,8 +213,8 @@ def _execute_ocs_outreach(ctx: WorkerContext) -> None:
     if is_new and (indicators or case_record):
         # The coaching-progress DENOMINATOR (workflow/views.py `_coaching_indicators`):
         # written once, at creation, and never by the chatbot. A case conversation
-        # also records WHICH case and story it was about -- what an agent reads to
-        # plan the next one (case_finder.py: Labs keeps no history of its own).
+        # also records WHICH case and case state it was about -- what an agent reads to
+        # plan the next one (Labs keeps no coaching history of its own).
         extra = {"coaching_indicators": list(indicators)} if indicators else {}
         if case_record:
             extra["case_coaching"] = case_record
@@ -242,16 +242,16 @@ def _case_record(item: dict, deliver_to: str | None) -> dict | None:
     """What a case conversation's task records about its case, or None for a worker one."""
     import datetime as dt
 
-    from connect_labs.workflow import case_coaching
+    from connect_labs.workflow import case_briefing
 
     case = item.get(CASE)
     if not isinstance(case, dict) or not case.get("id"):
         return None
-    summary = case_coaching.case_briefing_summary(item.get("prompt") or "")
+    summary = case_briefing.case_briefing_summary(item.get("prompt") or "")
     return {
         "case_id": case["id"],
         "case_name": summary.get("case") or case["id"],
-        "story": summary.get("story") or case.get("story"),
+        "case_state": summary.get("case_state") or case.get("case_state"),
         "coached_on": dt.date.today().isoformat(),
         # A QA send is a test of the bot, not coaching the worker had.
         "qa_test": bool(deliver_to),
@@ -280,20 +280,19 @@ def _image_for(arguments: dict, prompt: str | None, opportunity_id: int | None =
 
 
 def _case_schema() -> dict:
-    from connect_labs.workflow import case_coaching
-
     return {
         "type": "object",
         "description": (
-            "Coach this worker about ONE case (one baby) instead of their indicators: `id` is the case id "
-            "(workflow_coaching_cases). Labs reads its visits, writes the case briefing and draws its "
-            "picture. `story` (CASE_DANGER_SIGN | CASE_WEIGHT_CHECK | CASE_FALTERING | CASE_THRIVING) must "
-            "be the case's own; omit it to take it. `earlier` -- a follow-up on a case coached before, "
-            "as you read it from earlier runs: {date (YYYY-MM-DD), label (or story key), agreed}."
+            "Coach this worker about ONE case instead of their indicators: `id` is the case's entity id "
+            "(workflow_run_cases). Labs reads the case's CASE STATE as of the run (the registry's case-state "
+            "properties), writes the case briefing and draws the case state's picture. `case_state` (a case "
+            "state property name) must be one the case is in; omit it for its most urgent. `earlier` -- a "
+            "follow-up on a case coached before, as you read it from earlier runs: {date (YYYY-MM-DD), label "
+            "(or case state name), agreed}."
         ),
         "properties": {
             "id": {"type": "string", "minLength": 1, "maxLength": 100},
-            "story": {"type": "string", "enum": list(case_coaching.STORIES)},
+            "case_state": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,99}$"},
             "earlier": {
                 "type": "object",
                 "properties": {
@@ -358,8 +357,8 @@ ACTION_TYPES: dict[str, ActionType] = {
                 "picture of their own figures, linked from the session state; `picture` says what it "
                 "shows -- a chart type and params, or a custom Vega-Lite spec reading Labs' datasets "
                 "(see coach_charts) -- and implies `include_image`. Labs supplies every number. An item's "
-                "`case` coaches that worker about one case instead (case_coaching.py): Labs writes the case "
-                "briefing and draws the case's own picture."
+                "`case` coaches that worker about one case instead (case_briefing.py): Labs writes the case "
+                "briefing from the case's case state as of the run and draws its picture."
             ),
             parameters={
                 "type": "object",
@@ -608,80 +607,82 @@ def _resolve(
 
 
 def _brief_cases(merged: dict, roster: dict[str, dict], cases) -> None:
-    """Give each worker item with a ``case`` its case briefing (``case_coaching.py``):
-    the case's visits, read as the person, its story and the facts. The story is the
-    case's own -- one asked for must be one the visits support -- and becomes the item's
-    ``indicators``. An item already carrying a case briefing (a preview's own arguments,
-    at commit) is kept as it is, so a commit never re-reads the visits."""
-    from connect_labs.workflow import case_coaching as cc
+    """Give each worker item with a ``case`` its case briefing (``case_briefing.py``):
+    the case's row as of the run -- its CASE STATES, registry data -- its visits, and the
+    case state's guidance. The case state asked for must be one the case is in (none
+    asked: its most urgent), and becomes the item's ``indicators``. An item already
+    carrying a case briefing (a preview's own arguments, at commit) is kept as it is,
+    so a commit never re-reads the case."""
+    from connect_labs.semantic import case_states
+    from connect_labs.workflow import case_briefing as cb
+    from connect_labs.workflow.agent_sharing import split_worker_key
 
     for item in merged["workers"]:
         case = item.get(CASE)
         if not case:
             continue
         own = item.get("prompt")
-        if cc.is_case_briefing(own):
-            item.setdefault("indicators", [cc.story_from_briefing(own)])
+        if cb.is_case_briefing(own):
+            item.setdefault("indicators", [cb.case_briefing_summary(own).get("case_state")])
             continue
         if own:
             raise ActionError(
-                "invalid", "a case conversation is briefed by Labs from the case's visits; drop the item's `prompt`"
+                "invalid", "a case conversation is briefed by Labs from the case's state; drop the item's `prompt`"
             )
         if cases is None:
-            raise ActionError("invalid", "this workflow has no case coaching (no `case_coaching` config)")
+            raise ActionError("invalid", "this workflow reads no case states (no semantic registry)")
         who = roster[item["key"]]
-        found = cases(item["key"], case["id"])
-        if found is None:
+        opp, username = split_worker_key(item["key"])
+        try:
+            row = cases.case(opp, case["id"])
+            catalog = cases.catalog(opp)
+        except ActionError:
+            raise
+        except Exception as e:  # noqa: BLE001 -- a person-readable refusal, not a 500
+            logger.warning("case %s: could not read its state", case["id"], exc_info=True)
+            raise ActionError("case_unreadable", f"Could not read case {case['id']}: {type(e).__name__}") from e
+        # The case must be THIS worker's: a conversation about another worker's case
+        # would put a stranger's case in front of them.
+        if row is None or str(row.get("username") or "") != username:
             raise ActionError("invalid", f"no case {case['id']!r} among {who['name']}'s cases")
-        story = cc.story_of(found, case.get("story"))
-        if story is None:
-            supported = [s.key for s in cc.classify(found)]
+        if not catalog:
+            raise ActionError("invalid", "this workflow's registry declares no case states")
+        state = case_states.case_state(row, catalog, case.get("case_state"))
+        if state is None:
+            held = [s["name"] for s in case_states.true_case_states(row, catalog)]
             raise ActionError(
                 "invalid",
-                f"case {found.name or case['id']} has no {case.get('story') or 'coaching'} story in its visits"
-                + (f" (it supports: {', '.join(supported)})" if supported else ""),
+                f"case {case['id']} is not in case state {case.get('case_state') or '(any)'} as of this run"
+                + (f" (it is in: {', '.join(held)})" if held else ""),
             )
-        case["story"] = story.key
-        item["prompt"] = cc.render_case_briefing(
-            programme=cases.programme,
+        missing = cb.guidance_problems(state)
+        if missing:
+            raise ActionError(
+                "invalid",
+                f"case state {state['name']} has no {', '.join(missing)} in the registry; the coach cannot be briefed",
+            )
+        series = cases.series(opp)
+        visits = cases.visits(opp, case["id"])
+        label_field = cases.label_field(opp)
+        case["case_state"] = state["name"]
+        item["prompt"] = cb.render_case_briefing(
+            programme=cases.programme(opp),
             worker=who["name"] or who["username"],
-            case=found,
-            story=story,
-            earlier=case.get("earlier"),
+            case_name=str((row.get(label_field) if label_field else None) or case["id"]),
+            about=case_states.about(cases.props_doc(opp), row),
+            state=state,
+            facts=case_states.facts(state, row),
+            visit_lines=[case_states.visit_line(series, v) for v in visits],
+            earlier=cb.earlier_line(case.get("earlier"), catalog),
         )
-        item["indicators"] = [story.key]
+        item["indicators"] = [state["name"]]
 
 
 def case_source(user, wda, run, definition, *, request=None):
-    """``cases(worker_key, case_id) -> Case | None`` for ``_brief_cases``, reading the
-    case's visits as the person (memoised per call), or None when the workflow has no
-    case coaching. ``.programme`` is what the briefing calls the programme."""
-    from connect_labs.labs.access.scopes import Caller
-    from connect_labs.workflow import case_coaching as cc
-    from connect_labs.workflow import case_finder, case_visits
-    from connect_labs.workflow.agent_sharing import split_worker_key
+    """The run's cases for ``_brief_cases`` and the case pictures (``case_briefing.CaseSource``)."""
+    from connect_labs.workflow.case_briefing import CaseSource
 
-    config = case_finder.config_for(definition, access_token=getattr(wda, "access_token", None))
-    if config is None:
-        return None
-    memo: dict = {}
-
-    def cases(worker_key: str, case_id: str):
-        if (worker_key, case_id) not in memo:
-            opp, username = split_worker_key(worker_key)
-            caller = Caller(user=user, request=request, access_token=getattr(wda, "access_token", None))
-            try:
-                rows = case_visits.load_rows(caller, [opp], config, case_id=case_id)
-            except case_visits.CaseDataError as e:
-                raise ActionError("case_unreadable", f"Could not read case {case_id}: {e.public_message}") from e
-            found = [c for c in cc.cases_from_rows(rows, config) if c.case_id == case_id]
-            # The case must be THIS worker's: a conversation about another worker's baby
-            # would put a stranger's case in front of them.
-            memo[(worker_key, case_id)] = found[0] if found and found[0].username == username else None
-        return memo[(worker_key, case_id)]
-
-    cases.programme = config.get("programme") or (getattr(definition, "name", None) or "this programme")
-    return cases
+    return CaseSource(user, wda, run, definition, request=request)
 
 
 def _check_declared_bot(action: dict, arguments: dict) -> None:
@@ -811,7 +812,7 @@ def _picture_workers(merged: dict, roster: dict[str, dict], pictures, prior_char
         if not coach_briefing.is_briefing(prompt):
             continue
         if item.get(CASE):
-            # The case's own picture (coach_charts.types CASE_TYPES), not the worker's.
+            # The case state's own picture (coach_charts/case_types.py), not the worker's.
             charts[item["key"]] = pictures.case(item, prior_charts.get(item["key"]))
             continue
         who = roster[item["key"]]
@@ -866,26 +867,39 @@ def picture_source(user, wda, run, definition, roster: dict[str, dict], briefing
         return store.save(built, user=user, run=run, worker_key=worker_key, request=req).pk
 
     def case_picture(item: dict, prior_id):
-        """The frozen picture of a worker item's case, for its story."""
-        from connect_labs.workflow import case_coaching as cc
+        """The frozen picture of a worker item's case, for its case state."""
+        from connect_labs.semantic import case_states
+        from connect_labs.workflow import case_briefing as cb
+        from connect_labs.workflow.agent_sharing import split_worker_key
         from connect_labs.workflow.coach_charts import case_chart
 
-        story_key = item[CASE].get("story") or cc.story_from_briefing(item.get("prompt") or "")
-        req = {"type": case_chart.request_type(story_key), "params": {"case": item[CASE]["id"]}}
+        state_name = item[CASE].get("case_state") or cb.case_briefing_summary(item.get("prompt") or "").get(
+            "case_state"
+        )
+        req = {"type": "case_state", "params": {"case": item[CASE]["id"], "case_state": state_name}}
         prior = store.load_bound(prior_id, user=user, run=run, worker_key=item["key"], request=req)
         if prior is not None:
             return prior.pk
         if cases is None:
-            raise ActionError("invalid", "this workflow has no case coaching (no `case_coaching` config)")
-        found = cases(item["key"], item[CASE]["id"])
-        story = cc.story_of(found, story_key) if found is not None else None
-        if story is None:
-            raise ActionError("invalid", f"case {item[CASE]['id']} no longer supports {story_key}; preview again")
+            raise ActionError("invalid", "this workflow reads no case states")
+        opp, _username = split_worker_key(item["key"])
+        row = cases.case(opp, item[CASE]["id"])
+        state = case_states.case_state(row or {}, cases.catalog(opp), state_name)
+        if state is None:
+            raise ActionError("invalid", f"case {item[CASE]['id']} is no longer in {state_name}; preview again")
         others = [(w["name"], w["username"]) for k, w in roster.items() if k != item["key"]]
+        label_field = cases.label_field(opp)
         try:
-            built = case_chart.build_case_chart(found, story, others=others)
+            built = case_chart.build_case_chart(
+                state,
+                row,
+                visits=cases.visits(opp, item[CASE]["id"]),
+                series=cases.series(opp),
+                case_name=str((row.get(label_field) if label_field else None) or ""),
+                others=others,
+            )
         except datasets.ChartError as e:
-            raise ActionError("invalid", f"picture of case {found.name}: {e.public_message}") from e
+            raise ActionError("invalid", f"picture of case {item[CASE]['id']}: {e.public_message}") from e
         return store.save(built, user=user, run=run, worker_key=item["key"], request=req).pk
 
     pictures.case = case_picture
@@ -1051,9 +1065,9 @@ def preview(
                 # exact text the bot receives.
                 row["briefing"] = coach_briefing.briefing_summary(row["prompt"])
                 if item.get(CASE):
-                    from connect_labs.workflow import case_coaching
+                    from connect_labs.workflow import case_briefing
 
-                    row["case"] = {"id": item[CASE]["id"], **case_coaching.case_briefing_summary(row["prompt"])}
+                    row["case"] = {"id": item[CASE]["id"], **case_briefing.case_briefing_summary(row["prompt"])}
                 if args.get("bot") != SYNTHETIC_BOT:
                     # What the worker actually receives first (the briefing itself goes
                     # into the session state, never to the worker -- tasks/ai_sessions.py).

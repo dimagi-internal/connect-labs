@@ -1085,10 +1085,10 @@ export interface WorkflowActionWorker {
   prompt?: string;
   title?: string;
   description?: string;
-  /** Coach this worker about ONE case (workflow/case_coaching.py). */
+  /** Coach this worker about ONE case, in one case state (workflow/case_briefing.py). */
   case?: {
     id: string;
-    story?: string;
+    case_state?: string;
     earlier?: { date: string; label: string; agreed?: string };
   };
 }

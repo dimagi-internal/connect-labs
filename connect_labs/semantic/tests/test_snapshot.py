@@ -572,6 +572,18 @@ class TestDeclaredSchemaMatchesThePayload:
             deployment=DEPLOY,
             cases=cases,
         )
+        # `snapshot_builders.semantic_snapshot` adds the registry's case-state catalog
+        # beside the payload when the template stores case states and the registry
+        # declares any (the KMC registry does).
+        from pathlib import Path
+
+        import yaml
+
+        from connect_labs.semantic import case_states
+
+        props = yaml.safe_load((Path(snap.__file__).parent / "registry" / "kmc" / "properties.yml").read_text())
+        if (SNAPSHOT_INPUTS.get("case_index") or {}).get("case_states") and case_states.catalog(props):
+            payload["caseStateCatalog"] = case_states.catalog(props)
         return set(payload)
 
     def _declared_keys(self) -> set[str]:
