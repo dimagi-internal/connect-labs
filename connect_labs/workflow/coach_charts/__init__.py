@@ -6,5 +6,9 @@ history) and draws it in Connect's theme. See WORKFLOW_REFERENCE.md, "Coaching c
 
 * ``theme.py``  -- Connect's design tokens and the Vega-Lite config every chart gets;
 * ``types.py``  -- the named chart types (the style library);
-* ``render.py`` -- the spec plus its data, themed, as a PNG (vl-convert).
+* ``render.py`` -- the spec plus its data, themed, as a PNG (vl-convert);
+* ``datasets.py`` -- Labs' named datasets (``worker_topics``, ``peers``, ``history``),
+  peers anonymous;
+* ``custom.py`` -- an agent's own spec, stripped to Labs' data and Connect's look;
+* ``chart.py``  -- a request (type + params, or a custom spec) to a frozen chart.
 """
