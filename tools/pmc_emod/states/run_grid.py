@@ -317,6 +317,32 @@ def run_state(box: Box, state: dict) -> dict:
     return entry
 
 
+def add_designs(box: Box, state: dict, entry: dict) -> dict:
+    """``entry`` with the designs ``designs.designs_for`` now lists but the entry lacks, run in the state's
+    STORED setting (no re-calibration). Raises if the rebuilt setting differs from the stored one: a
+    different setting would put two models in one state's row."""
+    name = state["name"]
+    missing = [d for d in designs.designs_for(state) if d["code"] not in entry["designs"]]
+    if not missing or (entry.get("fit") or {}).get("fit") != "ok":
+        return entry
+    setting = state_setting(state["rain_monthly"], entry["setting"]["larval_capacity"])
+    if {k: setting[k] for k in SETTING_KEYS} != entry["setting"]:
+        raise RuntimeError(f"{name}: the rebuilt setting differs from the stored one; re-run the state instead")
+    t0 = time.monotonic()
+    result = box.call(grid_request(setting, missing))
+    out = {**entry, "designs": dict(entry["designs"])}
+    for d in missing:
+        row = design_effect(result, d)
+        if row is None:
+            logger.warning("%s: %s has no seed with a baseline case count; omitted", name, d["code"])
+            continue
+        out["designs"][d["code"]] = row
+    logger.info(
+        "%s: added %d designs in %.0fs", name, len(out["designs"]) - len(entry["designs"]), time.monotonic() - t0
+    )
+    return out
+
+
 # --- the whole grid -----------------------------------------------------------------------------------
 
 
@@ -349,6 +375,7 @@ def run_grid(
     only: list[str] | None = None,
     concurrency: int = 1,
     force_runtime: bool = False,
+    add: bool = False,
 ) -> tuple[dict, list[str]]:
     """Run every (selected) state not already in ``out_path``; write the file after each.
 
@@ -370,7 +397,17 @@ def run_grid(
         if unknown:
             raise ValueError(f"unknown state(s): {', '.join(sorted(unknown))}")
         states = [s for s in states if s["name"].lower() in wanted]
-    todo = [s for s in states if s["name"] not in grid["states"]]
+    if add:
+        # States already in the file that lack a design designs_for now lists (fitted states only).
+        todo = [
+            s
+            for s in states
+            if s["name"] in grid["states"]
+            and grid["states"][s["name"]]["fit"]["fit"] == "ok"
+            and {d["code"] for d in designs.designs_for(s)} - set(grid["states"][s["name"]]["designs"])
+        ]
+    else:
+        todo = [s for s in states if s["name"] not in grid["states"]]
     logger.info("%d states selected, %d already done, %d to run", len(states), len(states) - len(todo), len(todo))
     lock = threading.Lock()
     failed: list[str] = []
@@ -383,7 +420,7 @@ def run_grid(
         t = time.monotonic()
         try:
             box.start()  # the box idles down between states; a no-op when it is up
-            entry = run_state(box, state)
+            entry = add_designs(box, state, grid["states"][state["name"]]) if add else run_state(box, state)
         except Exception as exc:  # noqa: BLE001 - one bad state must not lose the others
             logger.error("%s FAILED after %.0fs: %s", state["name"], time.monotonic() - t, exc)
             with lock:
@@ -432,6 +469,11 @@ def main(argv=None) -> int:
     ap.add_argument(
         "--from-s3", action="store_true", help="rebuild from results already in the bucket; never touches the box"
     )
+    ap.add_argument(
+        "--add-designs",
+        action="store_true",
+        help="run only the designs states in --out lack, in their stored fitted setting (no re-calibration)",
+    )
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     if not args.bucket or not (args.instance_id or args.from_s3):
@@ -467,6 +509,7 @@ def main(argv=None) -> int:
         only=args.states.split(",") if args.states else None,
         concurrency=args.concurrency,
         force_runtime=args.force_runtime,
+        add=args.add_designs,
     )
     return 1 if failed else 0
 

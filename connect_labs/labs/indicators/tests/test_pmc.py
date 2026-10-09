@@ -181,8 +181,9 @@ class TestThePage:
         assert "Which PMC schedule, and where?" in body
         assert "Illustrative. One uncalibrated setting" in body
         assert "indicators/pmc/pmc.js" in body
-        # The ranking leads; the one-setting comparison is folded below it.
-        assert body.index("Rank states &times; designs") < body.index(">How<")
+        # Pick states, get the programme; the own-schedule run and the one-setting comparison are folded below.
+        assert body.index("Pick states; get the programme") < body.index('id="pmc-reco"') < body.index("The evidence")
+        assert body.index("The evidence") < body.index("Advanced: test a schedule of your own") < body.index(">How<")
         assert '<script id="pmc-grid-states" type="application/json">[]</script>' in body
 
     def test_with_the_grid_the_picker_lists_its_states_and_marks_the_year_round_ones(
