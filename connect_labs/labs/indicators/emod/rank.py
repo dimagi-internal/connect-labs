@@ -50,13 +50,17 @@ NO_EFFECT = "no measurable effect"
 
 #: Each design's name across states, for the by-design comparison (a state's own label names its months).
 DESIGN_FAMILIES = {
-    "pmc_q4": "Quarterly",
-    "pmc_b6": "Every two months",
-    "pmc_m4_onset": "4 monthly rounds from the rains",
-    "pmc_m6_onset": "6 monthly rounds from the rains",
-    "pmc_m8_onset": "8 monthly rounds from the rains",
-    "pmc_m12": "Monthly, year-round",
-    "smc_m4_onset": "SMC: 4 monthly rounds from the rains",
+    "pmc_q4": "Quarterly, 3–24 months",
+    "pmc_b6": "Every two months, 3–24 months",
+    "pmc_m4_onset": "4 monthly rounds from the rains, 3–24 months",
+    "pmc_m6_onset": "6 monthly rounds from the rains, 3–24 months",
+    "pmc_m8_onset": "8 monthly rounds from the rains, 3–24 months",
+    "pmc_m12": "Monthly, year-round, 3–24 months",
+    "pmc_q4_y2": "Quarterly, 12–24 months only",
+    "pmc_m6_onset_y2": "6 monthly rounds from the rains, 12–24 months only",
+    "pmc_m8_onset_y2": "8 monthly rounds from the rains, 12–24 months only",
+    "pmc_m12_y2": "Monthly, year-round, 12–24 months only",
+    "smc_m4_onset": "SMC: 4 monthly rounds from the rains, 3–59 months",
 }
 
 CAVEATS = (
