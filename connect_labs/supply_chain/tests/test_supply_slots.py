@@ -125,6 +125,23 @@ def test_view_list_and_unpin_read_and_write_settings(da):
     assert call_operation("view_list", da, {}) == []
 
 
+def test_a_page_filling_a_tab_creates_no_run(client_in_programme, monkeypatch):
+    """A page is a workflow with no runs (workflow/page_mode.py): the tab renders it in page mode."""
+    from connect_labs.supply_chain.workflow_views import views as page_views
+
+    def no_runs(request, pin):
+        raise AssertionError("a page tab must not look up or create a run")
+
+    monkeypatch.setattr(page_views, "current_run_id", no_runs)
+    monkeypatch.setattr(page_views.WorkflowRunView, "_is_page_definition", lambda self, definition_id: True)
+    _set({"ops": {"label": "Operations", "fill": {"workflow": WORKFLOW, "opportunity_id": OPP}}})
+
+    response = client_in_programme.get(reverse("supply_chain:workflow_view", args=["ops"]))
+
+    assert response.status_code == 200
+    assert "run_id=None" not in response.content.decode()
+
+
 # --- the Settings page ---------------------------------------------------------
 
 

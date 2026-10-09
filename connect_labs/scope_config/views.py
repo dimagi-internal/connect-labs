@@ -63,9 +63,13 @@ def _supply_tabs(got) -> list[dict]:
     tabs = got["value"].get("tabs") or {}
     own = (got["data"].get("tabs") or {}) if got["settable_here"] else {}
 
+    own_label = got["scope"]["label"]
+
     def setter(key):
         sources = {v for p, v in got["provenance"].items() if p.startswith(f"tabs.{key}.") or p == f"tabs.{key}"}
-        return ", ".join(sorted(sources)) or "labs default"
+        # This scope's own layer reads "this programme", as the rows elsewhere on the page do.
+        named = {"this " + own_label.split(" ", 1)[0] if s == own_label else s for s in sources}
+        return ", ".join(sorted(named)) or "labs default"
 
     out = []
     for name, label in SUPPLY_TABS:

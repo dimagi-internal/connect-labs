@@ -493,6 +493,36 @@ def test_update_definition_rejects_unknown_patch_keys(client, auth_user):
 
 @pytest.mark.django_db
 @patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_definition_sets_and_removes_page_keys(mock_wda_cls, client, auth_user):
+    """A page's kind, slug and sources (workflow/page_mode.py) are set like any other key; null removes one."""
+    _, raw = auth_user
+    current = MagicMock(id=42, description="d", data={"version": 3, "name": "P", "config_reads": ["supply"]})
+    current.name = "P"
+    mock_wda_cls.return_value.get_definition.return_value = current
+    mock_wda_cls.return_value.update_definition.return_value = MagicMock(data={"version": 4})
+    sources = [{"alias": "review", "workflow": 8481, "read": "latest_run", "opportunity_id": 10113}]
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_definition",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 100,
+            "patch": {"kind": "page", "page": {"slug": "ops"}, "workflow_sources": sources, "config_reads": None},
+            "expected_version": 3,
+        },
+    )
+
+    assert data["result"]["isError"] is False, data
+    call = mock_wda_cls.return_value.update_definition.call_args
+    written = call.kwargs.get("data") or call.args[1]
+    assert written["kind"] == "page" and written["page"] == {"slug": "ops"} and written["workflow_sources"] == sources
+    assert "config_reads" not in written
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
 def test_update_definition_version_conflict(mock_wda_cls, client, auth_user):
     _, raw = auth_user
     mock_wda_cls.return_value.get_definition.return_value = MagicMock(

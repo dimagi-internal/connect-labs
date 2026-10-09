@@ -63,11 +63,20 @@ class SupplyWorkflowPageView(WorkflowRunView):
                 "opportunity_id": pin.opportunity_id,
             }
         self.kwargs["definition_id"] = pin.workflow_definition_id
+        # The tab reads the programme it sits in (its `scope` prop), whichever opportunity
+        # its records are scoped to.
+        from connect_labs.scope_config.scopes import Scope
+
+        self.page_scope = Scope.of("program", program_id)
         params = request.GET.copy()
         if not params.get("run_id"):
-            run_id = current_run_id(request, pin)
-            if run_id:
-                params["run_id"] = str(run_id)
+            if self._is_page_definition(pin.workflow_definition_id):
+                # A page fills the tab with no run at all (workflow/page_mode.py).
+                self.page_mode = True
+            else:
+                run_id = current_run_id(request, pin)
+                if run_id:
+                    params["run_id"] = str(run_id)
         request.GET = params
         # Not WorkflowRunView.get: its redirects re-scope a bare workflow URL, which this is not.
         return TemplateView.get(self, request, *args, **kwargs)
@@ -87,14 +96,15 @@ class SupplyWorkflowPageView(WorkflowRunView):
         pin = self.pin
         run_id = self.request.GET.get("run_id")
         scope = f"opportunity_id={pin.opportunity_id}" if pin.opportunity_id else ""
+        # A page has no run to name.
+        run = f"&run_id={run_id}" if run_id else ""
+        run_url = reverse("labs:workflow:run", args=[pin.workflow_definition_id])
         context.update(
             pin=pin,
             supply_tabs=supply_tabs(self.request),
             supply_program_line=program_line(self.request),
-            edit_url=(
-                reverse("labs:workflow:run", args=[pin.workflow_definition_id]) + f"?{scope}&run_id={run_id}&edit=true"
-            ),
-            open_url=reverse("labs:workflow:run", args=[pin.workflow_definition_id]) + f"?{scope}&run_id={run_id}",
+            edit_url=f"{run_url}?{scope}{run}&edit=true",
+            open_url=f"{run_url}?{scope}{run}",
             builder=builds_the_view(self.request.user, context.get("definition"), pin),
             classic_url=reverse(pin.replaces) if pin.replaces else None,
             classic_label=dict(SUPPLY_TABS).get(pin.replaces, ""),

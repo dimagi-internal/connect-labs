@@ -978,6 +978,14 @@
 
                     <!-- Action Buttons -->
                     <div class="flex items-center gap-2 flex-shrink-0">
+                    {% if workflow.definition.data.kind == "page" %}
+                    {% comment %}A page has no runs (workflow/page_mode.py): it is opened, not started.{% endcomment %}
+                    <a href="{% url 'labs:workflow:run' workflow.definition.id %}?{% if view_mode == "program" %}program_id={{ program_id }}{% else %}opportunity_id={{ workflow.definition.opportunity_id }}{% endif %}"
+                       data-testid="open-page"
+                       class="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                        <i class="fa-solid fa-file mr-1.5"></i>Open page
+                    </a>
+                    {% else %}
                     <form method="POST" action="{% url 'labs:workflow:api_start_run' workflow.definition.id %}" class="m-0"
                           @submit="if (starting) { $event.preventDefault(); return; } starting = true">
                         {% csrf_token %}
@@ -1001,6 +1009,7 @@
                             <span x-text="starting ? 'Creating run...' : 'Create Run'">Create Run</span>
                         </button>
                     </form>
+                    {% endif %}
                     {% if view_mode == "program" %}
                     <a href="{% url 'labs:workflow:run' workflow.definition.id %}?edit=true&program_id={{ program_id }}"
                        class="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 hover:border-gray-400 transition-colors">

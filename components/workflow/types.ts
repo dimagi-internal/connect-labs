@@ -30,6 +30,15 @@ export interface WorkflowProps {
   /** Data from supply sources (keyed by alias; workflow/supply_sources.py) */
   supply?: Record<string, SupplyResult>;
 
+  /** Other workflows' runs (keyed by alias; workflow/workflow_sources.py) */
+  workflows?: Record<string, WorkflowSourceResult>;
+
+  /** The organisation / programme / opportunity in view (workflow/page_mode.py) */
+  scope?: PageScope;
+
+  /** The scope's Settings for each namespace in `config_reads` (scope_config/) */
+  config?: Record<string, Record<string, unknown>>;
+
   /** Helper functions for generating URLs to other Labs features */
   links: LinkHelpers;
 
@@ -231,6 +240,69 @@ export interface SupplyResult {
     >;
     error?: string;
   };
+}
+
+/** A programme in a page's scope (workflow/page_mode.py), with the addresses a page links to. */
+export interface PageScopeProgram {
+  id: number;
+  name: string;
+  organization?: string | null;
+  supply_url: string;
+  workflows_url: string;
+  page_url: string;
+}
+
+/** An opportunity in a page's scope (workflow/page_mode.py). */
+export interface PageScopeOpportunity {
+  id: number;
+  name: string;
+  program?: number | null;
+  organization?: string | null;
+  visit_count?: number | null;
+  workflows_url: string;
+  page_url: string;
+}
+
+/**
+ * The scope in view (workflow/page_mode.py): what a page is about, and what the
+ * viewer can see under it. Built from the viewer's own access, so a page never
+ * lists a scope the viewer is not in.
+ */
+export interface PageScope {
+  type: 'organization' | 'program' | 'opportunity' | 'user' | null;
+  key: string | null;
+  organization: { slug: string; name: string; page_url: string } | null;
+  program: PageScopeProgram | null;
+  opportunity: PageScopeOpportunity | null;
+  user: { username: string; name: string };
+  /** An organisation's programmes. */
+  programs: PageScopeProgram[];
+  /** A programme's (or an organisation's) opportunities. */
+  opportunities: PageScopeOpportunity[];
+  /** The scope's Settings page. */
+  settings_url: string | null;
+}
+
+/** A run of another workflow as a page reads it (workflow/workflow_sources.py). */
+export interface WorkflowSourceRun {
+  id: number;
+  name: string;
+  status: string;
+  period_start: string | null;
+  period_end: string | null;
+  completed_at: string | null;
+  url: string;
+  /** A completed run's snapshot summary, without fetching the snapshot. */
+  summary?: Record<string, unknown> | null;
+}
+
+/** One `workflow_sources` entry's data, or its error. */
+export interface WorkflowSourceResult {
+  workflow?: { id: number; name: string; description: string; url: string };
+  latest_run?: WorkflowSourceRun | null;
+  runs?: WorkflowSourceRun[];
+  run_count?: number;
+  error?: string;
 }
 
 /** Arguments to actions.querySupply. */
@@ -686,6 +758,9 @@ export interface ActionHandlers {
 
   /** One supply source on demand (workflow/supply_sources.py), as the viewer. */
   querySupply?(alias: string, query?: SupplyQuery): Promise<SupplyResult>;
+
+  /** One workflow source on demand (workflow/workflow_sources.py), as the viewer. */
+  queryWorkflow?(alias: string): Promise<WorkflowSourceResult>;
 
   createTask(params: CreateTaskParams): Promise<TaskResult>;
   checkOCSStatus(): Promise<OCSStatusResult>;
@@ -1224,7 +1299,11 @@ export interface WorkflowDataFromDjango {
     getSupplyData?: string;
     /** POST endpoint behind actions.querySupply. */
     querySupply?: string;
-    saveWorkerResult?: string;
+    /** GET endpoint for the workflow sources (the `workflows` prop). */
+    getWorkflowData?: string;
+    /** POST endpoint behind actions.queryWorkflow. */
+    queryWorkflow?: string;
+    saveWorkerResult?: string | null;
     completeRun?: string | null;
     getSnapshot?: string | null;
     /** Base URL of this run's workflow actions (workflow/actions.py). */
