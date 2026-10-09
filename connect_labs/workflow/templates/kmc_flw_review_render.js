@@ -2261,6 +2261,86 @@ function WorkflowUI({
     );
   }
 
+  // ── Case coaching: "Coach about this baby" (workflow/case_coaching.py) ──────
+  // Offered when the workflow declares a coaching action (start_ocs_outreach)
+  // and Labs finds a coaching story in this case's visits. QA only: on these
+  // synthetic opportunities the conversation goes to the viewer's own phone
+  // (`deliver_to`), never to the worker.
+  var coachAction = ((view && view.workflowActions) || []).filter(function (a) {
+    return a.type === 'start_ocs_outreach';
+  })[0];
+  function CaseCoach(props) {
+    var c = props.c;
+    var sStory = React.useState({ status: 'idle', key: null });
+    var story = sStory[0],
+      setStory = sStory[1];
+    var key = c.opportunity_id + '|' + c.entity_id;
+    React.useEffect(
+      function () {
+        if (!coachAction || !actions || !actions.runAction) return;
+        var cancelled = false;
+        setStory({ status: 'loading', key: key });
+        var sp = scopeParams();
+        fetch(
+          '/labs/workflow/api/' +
+            definitionId() +
+            '/case-story/' +
+            sp +
+            (sp ? '&' : '?') +
+            'rows_opportunity_id=' +
+            encodeURIComponent(c.opportunity_id) +
+            '&case_id=' +
+            encodeURIComponent(c.entity_id),
+          { credentials: 'same-origin' },
+        )
+          .then(function (r) {
+            return r.json();
+          })
+          .then(function (j) {
+            if (!cancelled)
+              setStory({ status: 'ready', key: key, data: j || {} });
+          })
+          .catch(function () {
+            if (!cancelled) setStory({ status: 'error', key: key });
+          });
+        return function () {
+          cancelled = true;
+        };
+      },
+      [key],
+    );
+    var data = story.key === key && story.data;
+    if (!data || !data.story) return null;
+    var worker = data.username || (flw && flw.flw);
+    return (
+      <button
+        type="button"
+        className="px-3 py-1 rounded text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700"
+        title={data.label + ': ' + data.facts}
+        onClick={function () {
+          actions
+            .runAction(
+              coachAction.key,
+              {
+                workers: [
+                  {
+                    key: c.opportunity_id + FLW_SEP + worker,
+                    case: { id: String(c.entity_id), story: data.story },
+                  },
+                ],
+              },
+              { qaOnly: true },
+            )
+            .catch(function (e) {
+              window.alert(e && e.message ? e.message : String(e));
+            });
+        }}
+      >
+        Coach about this baby
+      </button>
+    );
+  }
+
   function CaseDetail(props) {
     var c = props.c;
     var built = weighingPoints(caseVisits, c);
@@ -2432,6 +2512,7 @@ function WorkflowUI({
               {oppLabel(c.opportunity_id)}
             </span>
           </div>
+          <CaseCoach c={c} />
           <div className="flex items-center gap-2">
             <button
               type="button"

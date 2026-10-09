@@ -653,7 +653,7 @@ def _faltering(case: Case, ws: list[Weighing]) -> Story | None:
     prev, last = recorded[-2], recorded[-1]
     facts = (
         f"Weight went from {g(a.grams)} g on {day_short(a.date)} to {g(b.grams)} g on {day_short(b.date)}, "
-        f"about {int(round(rate))} g/kg/day; {HEALTHY_TEXT}. Skin-to-skin fell from {hours(prev.skin_to_skin_h)} h "
+        f"about {rate:.1f} g/kg/day; {HEALTHY_TEXT}. Skin-to-skin fell from {hours(prev.skin_to_skin_h)} h "
         f"on {day_short(prev.date)} to {hours(last.skin_to_skin_h)} h on {day_short(last.date)}."
     )
     return Story(FALTERING, facts, max(b.date, last.date), {"from": a.index, "to": b.index, "rate": round(rate, 1)})
