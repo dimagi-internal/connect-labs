@@ -46,6 +46,7 @@ import copy
 import hashlib
 import json
 import logging
+import secrets
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -746,8 +747,13 @@ def preview(user, *, wda, run, definition, key: str, arguments: Any, request=Non
         **out,
     }
     if not needs:
+        # `n` makes each token its own: spending one never blocks a later preview of the
+        # same send (a deliberate resend), which a digest-keyed spend did for 15 minutes
+        # and the View read as "stale" in a loop (2026-10-09).
         result["confirm"] = signing.dumps(
-            {"d": _digest(user.pk, run.id, key, args)}, salt=_CONFIRM_SALT, compress=True
+            {"d": _digest(user.pk, run.id, key, args), "n": secrets.token_urlsafe(9)},
+            salt=_CONFIRM_SALT,
+            compress=True,
         )
         result["confirm_expires_in"] = CONFIRM_MAX_AGE_SECONDS
     return result
@@ -792,8 +798,9 @@ def commit(
             "confirm_mismatch",
             "These arguments are not the ones that were previewed. Preview again and confirm what is shown.",
         )
-    # Single use: a confirmed preview runs once, however many times it is sent.
-    if not cache.add(f"wf-action-confirm:{signed['d']}", 1, CONFIRM_MAX_AGE_SECONDS):
+    # Single use: a confirmed preview runs once, however many times it is sent. Keyed on the
+    # token's own nonce (a token minted before nonces were added falls back to its digest).
+    if not cache.add(f"wf-action-confirm:{signed.get('n') or signed['d']}", 1, CONFIRM_MAX_AGE_SECONDS):
         raise ActionError("confirm_used", "That preview was already confirmed and run.")
 
     execution = WorkflowActionExecution.objects.create(
