@@ -439,7 +439,7 @@ def test_catalog_only_returns_the_display_contract_without_running_anything(clie
     ev.assert_not_called(), "catalog_only must not touch the query path"
 
     inds = {m["indicator"] for m in body["measures"]}
-    assert len(inds) == 30, f"the KMC set is 30 indicators, got {len(inds)}"
+    assert len(inds) == 34, f"the KMC set is 34 indicators, got {len(inds)}"
     assert "pct_growth_computable" in inds and "mortality" in inds
 
     computable = next(m for m in body["measures"] if m["indicator"] == "pct_growth_computable")
@@ -470,7 +470,7 @@ def test_catalog_only_without_a_series_carries_every_indicator(client, django_us
 
     assert everything.status_code == 200
     inds = {m["indicator"] for m in everything.json()["measures"]}
-    assert len(inds) == 30
+    assert len(inds) == 34
     assert inds == {m["indicator"] for m in the_family.json()["measures"]}
 
 

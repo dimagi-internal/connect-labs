@@ -137,7 +137,8 @@ def build_visit_sql(
     problems = model_problems(props_doc)
     if problems:
         raise ValueError("registry model does not validate:\n  " + "\n  ".join(problems))
-    extra = visit_columns_sql([c for c in model.visit_columns if c.kind not in WINDOW_KINDS])
+    available = _produced_columns(pipeline_schema, extra_fields)
+    extra = visit_columns_sql([c for c in model.visit_columns if c.kind not in WINDOW_KINDS], available=available)
     if not model.lookups and not windows:
         # The shape every registry compiled to before lookups and windows existed
         # (with the scan now scoped to its slot).
@@ -160,7 +161,34 @@ FROM (
 ) x"""
 
 
-def visit_columns_sql(columns) -> str:
+#: Columns every Layer-1 row carries whatever the pipeline declares.
+_BASE_COLUMNS = frozenset(
+    {"visit_id", "visit_date", "username", "opportunity_id", "entity_id", "entity_name", "status", "deliver_unit"}
+)
+
+
+def _produced_columns(pipeline_schema, extra_fields: dict) -> frozenset[str] | None:
+    """The columns Layer 1 will carry: the pipeline's fields, the extra fields and the
+    base columns. None when the schema does not say (an `optional` column is then read
+    as written)."""
+    fields = getattr(pipeline_schema, "fields", None)
+    if fields is None:
+        return None
+    names = {getattr(f, "name", None) for f in fields} | set(extra_fields or {})
+    return frozenset(n for n in names if n) | _BASE_COLUMNS
+
+
+def _reads(col) -> set[str]:
+    from connect_labs.semantic.compiler import fragment_columns
+
+    if col.kind == "labels":
+        return {c for c, _w, _l in col.labels}
+    if col.kind == "sql":
+        return set(fragment_columns(col.sql))
+    return {col.column} if col.column else set()
+
+
+def visit_columns_sql(columns, available: frozenset[str] | None = None) -> str:
     """The registry's per-visit derived columns, as comma-led `<expr> AS <name>` terms.
 
     A `word_match` is the pipeline's own `contains_word` test, materialised per
@@ -173,8 +201,23 @@ def visit_columns_sql(columns) -> str:
 
     terms = []
     for col in columns:
+        if col.optional and available is not None and not _reads(col) <= available:
+            # The pipeline does not produce what this column reads (yet): NULL, typed
+            # as the column would be, so everything downstream still compiles.
+            kind = "boolean" if col.kind == "word_match" else "text" if col.kind == "labels" else "numeric"
+            terms.append(f"NULL::{kind} AS {col.name}")
+            continue
         if col.kind == "word_match":
             terms.append(f"(x.{col.column} ~* '\\y{col.word}\\y') AS {col.name}")
+        elif col.kind == "labels":
+            # Each label is validated text (compiler.LABEL_TEXT) written as a literal by
+            # the engine, never a fragment; the column and word are an identifier and a
+            # word, as for `word_match`.
+            parts = ", ".join(
+                f"CASE WHEN (x.{column})::text ~* '\\y{word}\\y' THEN '{label.replace(chr(39), chr(39) * 2)}' END"
+                for column, word, label in col.labels
+            )
+            terms.append(f"NULLIF(CONCAT_WS(', ', {parts}), '') AS {col.name}")
         elif col.kind == "sql":
             terms.append(f"({qualify_columns(col.sql, 'x', fragment_columns(col.sql))}) AS {col.name}")
         else:
