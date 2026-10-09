@@ -240,8 +240,6 @@ After you send or test a coaching session, the chat shows a plain confirmation m
 
 The agent produces one coaching card per request. If you ask to preview coaching for a worker, a single card appears in the chat with the picture the agent intends to use. A second card is not generated for the same request.
 
-### Open Chat Studio connection check
+### How the card builds its preview
 
-Before the card displays anything else, it checks that your Labs account is connected to Open Chat Studio — every coaching send, including test sends on synthetic data, runs on your own OCS connection. If you are not connected, the card shows only:
-
-> **
+The coaching card builds its preview from exactly what the agent asked for — it reads the agent's original request directly, rather than relying on a copy that may have been shortened or summarised in transit. This means the card previews correctly even when the agent
