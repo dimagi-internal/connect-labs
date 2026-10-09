@@ -318,3 +318,89 @@ test('a completed run with no figures offers no button', () => {
   });
   assert.strictEqual(findAll(tree, isButton).length, 0);
 });
+
+test('opportunity level: one row per opportunity, labelled, under its LLO', () => {
+  const units = M.mpUnits(cells, 'opp', cfg, STATE.flw_names);
+  assert.strictEqual(units.length, 3);
+  const one = units.find((u) => u.opp === '1');
+  assert.strictEqual(one.label, 'A · 1');
+  assert.strictEqual(one.parent, 'A');
+  const labelled = M.mpConfig({
+    config: { opportunity_labels: { 2: 'A R1' } },
+  });
+  assert.strictEqual(M.mpOppLabel(labelled, 2), 'A R1');
+  assert.strictEqual(
+    M.mpFilter(cells, Object.assign({}, ALL, { opp: '3' }), cfg).length,
+    2,
+  );
+});
+
+test('every unit carries its counts per age band, and they add up to its total', () => {
+  for (const level of ['llo', 'opp', 'ward', 'flw']) {
+    for (const u of M.mpUnits(cells, level, cfg, STATE.flw_names)) {
+      let valid = 0;
+      let low = 0;
+      for (const b of Object.keys(u.byBand)) {
+        valid += u.byBand[b].valid;
+        low += u.byBand[b].tier_a_low;
+      }
+      assert.strictEqual(valid, u.counts.valid);
+      assert.strictEqual(low, u.counts.tier_a_low);
+    }
+  }
+  const sel = M.mpByBand(cells);
+  assert.strictEqual(sel['12-23'].valid, 300);
+  assert.strictEqual(sel['24-35'].tier_a_high, 14);
+});
+
+test('the age table renders a row per band with readings, plus all ages', () => {
+  const tree = M.MpAgeTable({
+    byBand: M.mpByBand(cells),
+    thresholds: STATE.thresholds,
+    flat: false,
+  });
+  const rows = findAll(tree, (n) => n.type === 'tr');
+  // header + 2 bands + all ages
+  assert.strictEqual(rows.length, 4);
+  assert.strictEqual(
+    M.mpCeilingText(
+      { ceilings: { '48-59': { male: 20, female: 21 } } },
+      '48-59',
+      false,
+    ),
+    '> 20 cm boys, > 21 cm girls',
+  );
+  assert.strictEqual(
+    M.mpCeilingText(
+      { flat_ceiling_cm: 20, ceilings: { '6-11': null } },
+      '6-11',
+      false,
+    ),
+    '> 20 cm (provisional)',
+  );
+  assert.strictEqual(
+    M.mpCeilingText({ flat_ceiling_cm: 20 }, '12-23', true),
+    '> 20 cm',
+  );
+});
+
+test('the page renders at every level', () => {
+  for (const level of ['llo', 'opp', 'ward', 'flw']) {
+    const units = M.mpScore(
+      M.mpUnits(cells, level, cfg, STATE.flw_names),
+      0.01,
+      cfg,
+      'stat',
+      false,
+    );
+    const tree = M.MpUnitTable({
+      level,
+      units,
+      minN: 20,
+      floorCm: 9,
+      thresholds: STATE.thresholds,
+      flat: false,
+    });
+    assert.ok(renderTree(tree) > 20, level);
+  }
+});
