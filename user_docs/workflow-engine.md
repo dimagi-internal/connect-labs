@@ -31,6 +31,8 @@ Each row shows:
 
 Click any workflow to open its dashboard.
 
+On the Workflows list, **pages** (see [Pages](#pages)) appear alongside regular workflows but show an **Open page** button instead of **Start run**.
+
 ### The PERIOD column
 
 The **PERIOD** column in the workflow list shows the date window that was actually audited for each run. Once a run has fired and audited data, this reflects the real window that was processed — which may differ from the date range that was set when the run was first created (for example, when you used the generic **Create Run** button).
@@ -74,6 +76,46 @@ This means each workflow appears in exactly one place. If you cannot find a work
 
 !!! note "Drilling into worker visits from a program-level report"
     When you open a worker's case in the worker review from a programme report created at program level, their visits now load correctly. Previously, this could show a "pipeline not found" error; this has been fixed and visit data loads as expected.
+
+---
+
+## Pages
+
+A **page** is a screen built with the same workflow tools as a regular workflow, but it has no runs. Instead of collecting data over a date range and producing a run to review, a page simply displays what an organisation, programme, or opportunity holds — with links into each — and can show the latest run of any workflow you are able to open.
+
+Pages are useful for landing screens and summary views that you want to keep permanently visible without starting a new run each time.
+
+### How pages are different from workflows
+
+| | Regular workflow | Page |
+|---|---|---|
+| Has runs | Yes | No |
+| Workflows list button | **Start run** | **Open page** |
+| Built with workflow tools | Yes | Yes |
+
+### Addresses for pages
+
+Each level of Labs has its own address for its page:
+
+| Level | Address |
+|---|---|
+| Organisation | `/labs/p/org/<organisation>/` |
+| Programme | `/labs/p/programme/<id>/` |
+| Opportunity | `/labs/p/opportunity/<id>/` |
+
+### Setting an organisation's home page
+
+An organisation can have one page designated as its **home page**. When someone picks that organisation in Labs — or follows a link to `/labs/overview/?organization_id=<organisation>` — they land on the home page instead of the default overview.
+
+To set the home page, go to the organisation's **Settings** and choose the page you want visitors to land on.
+
+### Pages in the Supply tab
+
+A page can also be set to fill a **Supply tab**. When configured this way, the page opens inside the Supply header without starting a run. This lets you show stock summaries, links to supply workflows, or other supply-related content directly from the Supply tab.
+
+### Building a page
+
+Pages are built with the standard workflow tools. To create one, start from the **Page** template in the workflow builder. Once published, the page appears in the Workflows list with an **Open page** button in place of **Start run**.
 
 ---
 
@@ -219,28 +261,3 @@ This is the first stage of coaching pictures that can be shaped further — for 
 ### How peer labels appear on the Week by week chart
 
 In the **Week by week** picture, each peer is shown as a line with a label at its right-hand end. These end labels are arranged so they are always readable:
-
-- **No overlapping labels.** When two or more peers finish the period at the same figure, their names are combined into a single label — for example, **Peer A, B** — rather than stacking on top of one another.
-- **Always spaced apart.** Labels that finish close to each other are nudged up or down so there is always at least one line of space between them.
-- **Always inside the chart.** No label slips below the bottom edge or above the top edge of the plot area.
-- **The worker's own label stays bold.** **You** always appears in bold, as it does elsewhere in the picture, so the worker can immediately pick out their own line.
-
----
-
-## Pipeline Data Sources
-
-Pipelines can pull data from CommCare form submissions or from external files such as Google Drive exports. The two source types work differently and have different access rules.
-
-### Supply data as a pipeline source
-
-Workflows can now use **supply data** as a first-class data source, alongside CommCare form submissions and Drive files. This means stock views — covering what field workers hold, what the stores contain, orders, tenders, and more — can be built into workflows and updated per programme or opportunity without a software deployment.
-
-Supply pipelines read data with the same access rules as the Supply pages elsewhere in Connect Labs. A workflow reading supply data across several opportunities (or even across programmes) works the same way programme-level reports already do — it spans the opportunities you configure it for and shows only what you have permission to see.
-
-The Supply Stock page links directly to any supply workflow that has been set up for your programme or opportunity.
-
-### Multiple summaries from a single pipeline
-
-A summary pipeline can now produce several different breakdowns in one pass rather than requiring a separate pipeline for each breakdown. For example, instead of one pipeline for totals by questionnaire, another for totals by question, another for totals by state, and so on, a single pipeline can declare all of those as named **groupings** and compute them all together from one read of the data.
-
-Each grouping can also break down by several fields at once — for example, question × answer type × state — without needing a separate pipeline per combination.
