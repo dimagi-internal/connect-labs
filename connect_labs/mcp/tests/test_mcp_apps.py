@@ -382,3 +382,13 @@ def test_the_card_carries_nothing_beyond_who_the_picture_the_opening_and_send():
     assert '"Coach: " + p.bot.name' not in script and "Sent with the conversation." not in script
     assert "var items = [];" in script  # no history of earlier sends
     assert '"Coach " + one' in script
+
+
+def test_every_tool_says_whether_it_only_reads():
+    """A host records a person's View call only when it changes something (MCP readOnlyHint)."""
+    from connect_labs.mcp.server import _build_registry_tools
+
+    tools = {t.name: t for t in _build_registry_tools()}
+    assert tools["workflow_action_status"].annotations.readOnlyHint is True
+    assert tools["workflow_action_preview_view"].annotations.readOnlyHint is True
+    assert tools["workflow_run_action"].annotations.readOnlyHint is False
