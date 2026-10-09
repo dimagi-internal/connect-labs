@@ -273,6 +273,10 @@ def test_the_catalog_distinguishes_counts_from_means():
         "registered_cases": "count",
         "started_cases": "count",
         "cumulative_svns_reached": "count",
+        "count_case_state_danger_unreferred": "count",
+        "count_case_state_weight_check": "count",
+        "count_case_state_faltering": "count",
+        "count_case_state_thriving": "count",
         # sum / count, written out: not the indicator's own numerator
         "visits_per_case": None,
     }
@@ -308,7 +312,7 @@ def test_filtering_to_a_series_keeps_the_availability_gates():
     all_gates = {m["name"] for m in reg["measures"] if m.get("gate")}
     assert all_gates, "the registry must mark its gates explicitly, not by name prefix"
 
-    for series, expected_indicators in (("KMC", 30),):
+    for series, expected_indicators in (("KMC", 34),):
         kept = filter_to_series(reg, series)
         names = {m["name"] for m in kept["measures"]}
         assert all_gates <= names, f"series={series} dropped gates: {sorted(all_gates - names)}"

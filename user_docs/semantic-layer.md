@@ -181,6 +181,27 @@ Both are always partitioned by opportunity as well (a case id can repeat across 
 on `order_by` break by visit id. The previous visit can be another worker's, so a report for one worker still
 reads every visit to that worker's cases.
 
+#### Fields a pipeline may not carry yet: `optional`, and `labels` columns
+
+```yaml
+visit_columns:
+  - name: referred_no
+    optional: true                                   # NULL until the pipeline carries referral_answer
+    word_match: { column: referral_answer, word: 'no' }
+  - name: danger_signs
+    optional: true
+    labels:                                          # the labels of every field that holds its word
+      - { column: ds_pus, word: 'yes', label: 'pus in the eyes, skin or belly button' }
+      - { column: dsl_fever, word: 'ok', label: 'fever' }
+```
+
+- `optional: true` makes a column read `NULL` (typed by its kind) while the report's pipeline does not yet
+  produce a field it reads, so a registry can use new fields before the live pipeline record is updated.
+  Add the fields to the pipeline first all the same: until then the column, and everything built on it, is empty.
+- A `case_series` column must be one of these visit columns (never a raw pipeline field), so `optional` guards it.
+- `labels` gives a comma-separated list of the labels whose field contains the word (whole word, any case), or
+  `NULL` when none does. A label is plain words; one that could carry SQL is refused.
+
 Registries saved before these sections existed (the live KMC records) have none of them. For those, and only
 those, Labs supplies KMC's values; a registry that declares `entity:` as a mapping gets nothing it didn't declare.
 
@@ -212,6 +233,58 @@ properties:              # yes/no or numeric facts about each baby
 - **Aggregates** summarise a baby's visits: how many there were, the first visit date, how many recorded a death.
 - **The weight series** (optional — a registry without one has no series steps at all) turns raw readings into one clean value per day, then works out things like "was there an impossible jump between weighings?" and "how fast did the baby gain over the first 21 days?"
 - **Properties** are built from the above and from each other. Labs works out the order: `eligible_28d` needs `started`, so `started` is computed first.
+
+The weight series' steps carry the previous reading and its day (`prev_w`, `prev_day`) and the one before
+(`prev2_w`, `prev2_day`), so a derived column can ask about three readings running.
+
+### Case states
+
+A **case state** is something about one case, as of the report date, that a coach can talk to the worker about
+(KMC: "danger sign recorded, no referral", "a weighing that is hard to believe", "weight has stalled", "growing
+well"). It is an ordinary `bool` property named `case_state_*` with a `case_state:` block; Labs knows nothing
+else about it. `workflow/WORKFLOW_REFERENCE.md` § Case coaching says how a run and a coaching send use it.
+
+```yaml
+case_about:            # the "About this case" line; a template, or a list of {when, text} choices
+  - { when: birth_weight_g, text: 'Birth weight {birth_weight_g|grams} g; registered {reg_date|day}; ...' }
+  - { text: 'Birth weight not recorded; registered {reg_date|day}; ...' }
+case_series:           # what each visit line (and each picture) reads per visit
+  - { name: weight, column: visit_weight_g, label: Weight, format: grams, unit: g,
+      line: 'weight {value} g', missing: 'weight not recorded' }
+properties:
+  - name: case_state_danger_unreferred
+    label: 'Danger sign recorded, no referral'
+    means: 'At a recent visit the worker recorded a danger sign ... and the baby was not referred.'
+    type: bool
+    sql: 'weight_series_believable AND COALESCE(unreferred_danger_date::date >= (:as_of)::date - :STATE_RECENT_DAYS, FALSE)'
+    case_state:
+      tone: urgent                 # celebrate | check | concern | urgent
+      priority: 10                 # lower is more urgent; a case in several states is coached on its most urgent
+      date: unreferred_danger_date # the column dating the evidence
+      evidence: [unreferred_danger_date, unreferred_danger_signs]
+      facts: 'On {unreferred_danger_date|day} the visit recorded {unreferred_danger_signs}, and the baby was not referred.'
+      picture: { type: sign_card, signs: unreferred_danger_signs, date: unreferred_danger_date, ... }
+      coach:
+        approach: '...how a coach should talk about it...'
+        next_steps: '...the step to agree...'
+        limits: '...what the data does not tell...'
+```
+
+- **Templates** fill `{column}` from the case row, with an optional filter: `int`, `1dp`, `abs`, `signed`,
+  `grams` (`1,350`), `date` (`17 May`), `day` (`17 May 2026`), `days`. A missing value reads `not recorded`.
+  A list of `{when, text}` picks the first whose `when` column is truthy (the last may omit `when`).
+- **Pictures** are generic types, each with its own keys: `series_vs_reference`, `series_highlight_step`,
+  `series_with_bars`, `sign_card`. They read `case_series` and the row; no picture is programme code.
+- **Validation** refuses a case state that is not `bool`, a key that is not a `case_state` key, a column a template
+  or `evidence` names that the case row does not have, an unknown filter or picture type, a duplicate priority, and
+  a `coach` without all three of `approach`, `next_steps`, `limits` -- the coach is briefed with them.
+- **Make the states exclusive in their SQL** where a case should be in one at most (KMC: danger and the growth states
+  require a believable weight series; faltering and thriving also require no danger). Use `(:as_of)::date` for
+  "recent": the report date, never today.
+- **Count them** with a `count` indicator per state (`numerator` filtered on `{CUBE}.case_state_*`), so a report
+  shows how many cases each worker has in each.
+- **Saved runs**: a template whose `SNAPSHOT_INPUTS.case_index` sets `case_states: true` stores every case state
+  and the columns its facts and picture read in each case row, and the catalog as `snapshot.caseStateCatalog`.
 
 ### Indicators (Layer 3)
 
