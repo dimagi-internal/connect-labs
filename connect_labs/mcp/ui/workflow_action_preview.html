@@ -755,6 +755,16 @@
           var p = state.preview;
           var notes = el('notes');
           notes.textContent = '';
+          if (
+            p &&
+            p.ocs &&
+            p.ocs.connected === false &&
+            state.canAct &&
+            state.outcome !== 'sent'
+          ) {
+            renderConnectFirst(p);
+            return;
+          }
           var title = el('title'),
             subtitle = el('subtitle');
 
@@ -837,6 +847,41 @@
           renderNeeds(p, notes);
           renderActions(p);
           renderHistory(p);
+          reportSize();
+        }
+
+        // Coaching is sent on the person's own Open Chat Studio connection. Without one,
+        // the card shows only this step -- nothing to read, nothing that cannot be sent.
+        function renderConnectFirst(p) {
+          el('title').textContent = 'Connect Open Chat Studio first';
+          el('subtitle').textContent =
+            'Coaching goes out through Open Chat Studio from your Labs account. Connect it once, then continue.';
+          el('workers').textContent = '';
+          el('qa').classList.add('hidden');
+          el('history').classList.add('hidden');
+          var box = el('actions');
+          box.textContent = '';
+          var url = p.ocs.connect_url || '';
+          var connect = h('button', {
+            type: 'button',
+            class: 'primary',
+            text: 'Connect Open Chat Studio',
+            onclick: function () {
+              if (url.indexOf('https://') === 0) openLink(url);
+            },
+          });
+          connect.disabled = url.indexOf('https://') !== 0;
+          box.appendChild(connect);
+          var again = h('button', {
+            type: 'button',
+            class: 'link',
+            text: "I've connected — continue",
+            onclick: function () {
+              loadPreview();
+            },
+          });
+          again.disabled = !!state.previewing;
+          box.appendChild(again);
           reportSize();
         }
 

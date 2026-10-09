@@ -358,3 +358,10 @@ def test_the_run_context_tells_the_agent_how_to_run_each_action():
     assert "summary of a worker's data to start coaching" in coach["how_to_run"]
     assert "in that same reply" in coach["how_to_run"]
     assert "`confirm`" in task["how_to_run"] and "explicit yes" in task["how_to_run"]
+
+
+def test_the_view_asks_for_open_chat_studio_before_anything_else():
+    """Owner, 2026-10-09: check the OCS connection first, before the card shows anything."""
+    script = _view().script
+    assert "p.ocs.connected === false" in script and "renderConnectFirst(p)" in script
+    assert "Connect Open Chat Studio first" in script
