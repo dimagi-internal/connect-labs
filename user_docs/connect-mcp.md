@@ -211,7 +211,7 @@ The card has up to three buttons:
 | **Not yet** | Dismisses the card without sending anything |
 
 !!! note "You decide when to send — the agent never sends on your behalf"
-    A coaching send always requires your click on one of the buttons. The agent shows you the briefing and tells you where to click; it does not send the message itself. The **Start coaching** button on the Labs run page works the same way and is unchanged. Other action types (such as creating a task) use a separate confirm flow where the agent asks for your approval before acting.
+    A coaching send always requires your click on one of the buttons. The agent shows you the briefing and tells you where to click; it does not send the message itself, and it will not offer to send directly to a worker on your behalf. The **Start coaching** button on the Labs run page works the same way and is unchanged. Other action types (such as creating a task) use a separate confirm flow where the agent asks for your approval before acting.
 
 !!! note "The bot shown on synthetic opportunities"
     When you preview a coaching conversation on a synthetic (demo) opportunity, the card may show Labs' sample stand-in bot rather than your programme's real bot. This is expected — it does not mean there is a configuration problem.
@@ -231,5 +231,4 @@ Each Nigerian state is modelled in its own setting using IDM's EMOD disease mode
 
 Each combination of state and chemoprevention design — PMC (Perennial Malaria Chemoprevention) or SMC (Seasonal Malaria Chemoprevention) — is ranked by **cost per under-5 death averted**. The ranking also shows each combination's multiple of GiveWell's cost-effectiveness benchmark, and the answer notes how many states in the top 10 clear GiveWell's 6× bar.
 
-!!! note "A ranking below the bar is reported as-is"
-    If the top 10
+!!! note "A ranking below
