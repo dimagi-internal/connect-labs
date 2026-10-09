@@ -178,3 +178,24 @@ the header's date.
 2. `forecast.py` and the `stock_forecast` operation and source, with tests.
 3. The `supply_stock_forecast` template; pin it on 10112.
 4. Deploy, check live, then Hal's first-use review of the tab.
+
+## As built (2026-10-09: #2373, #2380, #2381)
+
+Where the build differs from the design above:
+
+- **Forms match by xmlns or name**, as dispensing lines already do. The clone of
+  2230 carries no `@xmlns`, so matching by xmlns alone would have matched nothing.
+  The `cases` block names its enrolment forms under `enrol.forms`, not `form_xmlns`.
+- **The outcome block has `complete`**: the exits that mean a finished course,
+  which the measured course size reads. It must be a subset of `exit`.
+- **Stock is read on the day asked for** (today by default), the same way
+  worker_stock reads it. Only the cases are read at the last visit (`anchor`,
+  `data_to`), so a delivery made since the last visit counts.
+- **A child's first forecast week owes only what it has not had yet** that week.
+- **History covers 8 weeks**, not 6.
+- **The page's stock line is the server's `programme.left_at_top`**: what the top
+  stores hold once their workers' shortfalls are met. It reaches zero on the
+  headline's run-dry date.
+- **Not handled:** one anchor is shared by every opportunity in a programme.
+  An opportunity whose visits stop syncing well before another's would read its
+  children as lost.
