@@ -54,6 +54,30 @@ _REPORTS = obj(
         "receipt": obj({"quantity_paths": _PATHS, "date_paths": _PATHS}, required=("quantity_paths", "date_paths")),
     }
 )
+_ANSWERS = {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+# What a case (a child) is, for the stock forecast: dispensing.validate_cases.
+_CASES = obj(
+    {
+        "enrol": obj(
+            {
+                "forms": _FORMS,
+                "path": {"type": "string", "minLength": 1},
+                "equals": {"type": "string", "minLength": 1},
+            },
+            required=("path", "equals"),
+        ),
+        "outcome": obj(
+            {
+                "path": {"type": "string", "minLength": 1},
+                "open": _ANSWERS,
+                "exit": _ANSWERS,
+                "complete": {"type": "array", "items": {"type": "string", "minLength": 1}},
+            },
+            required=("path", "open", "exit"),
+        ),
+        "lost_after_days": {"type": "integer", "minimum": 1, "maximum": 365},
+    }
+)
 _RULE_DATA = obj(
     {
         "opportunity_id": ID,
@@ -67,6 +91,7 @@ _RULE_DATA = obj(
         },
         "forms": _FORMS,
         "reports": _REPORTS,
+        "cases": _CASES,
         "status": {"enum": ["active", "inactive"]},
     },
     required=("opportunity_id", "item_id", "resupply_point_id", "active_from", "lines"),
@@ -110,7 +135,8 @@ def dispensing_rule_get(access, rule_id):
         "quantity. requires_paths lists further answers that must be present; forms limits a line to named "
         "forms (xmlns or name). Protocol and value_map lines make every figure they feed ESTIMATED. Visits "
         "before active_from are never read. reports names where the worker's own app keeps its balance and "
-        "receipts."
+        "receipts. cases says what a child's case is, for the stock forecast: enrol (forms, path, equals), "
+        "outcome (path; open, exit and complete answers) and lost_after_days."
     ),
     input_schema=obj({"data": _RULE_DATA}, required=("data",)),
     is_write=True,

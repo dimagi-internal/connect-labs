@@ -600,6 +600,7 @@ def dispensing_rule(obj) -> dict:
         "lines": obj.lines,
         "forms": obj.forms,
         "reports": obj.reports,
+        "cases": obj.cases,
         "resupply_supply_point_id": obj.resupply_point_id,
         "active_from": _date(obj.active_from),
         "status": obj.status,

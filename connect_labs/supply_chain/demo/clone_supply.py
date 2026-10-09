@@ -31,7 +31,7 @@ from decimal import ROUND_CEILING, Decimal
 
 from django.utils import timezone
 
-from connect_labs.supply_chain.demo.stock_from_visits import FORM_SCREENING, FORM_VISIT, PATHS
+from connect_labs.supply_chain.demo.stock_from_visits import FORM_SCREENING, FORM_VISIT, PATHS, XMLNS
 
 CADENCE_WEEKS = 2
 # Months of cover each store holds once the issues are out: the middle of its band
@@ -56,6 +56,29 @@ def rule_lines() -> list[dict]:
         stated("rutf_visit", FORM_VISIT),
         stated("appetite_visit", FORM_VISIT),
     ]
+
+
+def rule_cases() -> dict:
+    """A child's case as the released app records it, for the stock forecast.
+
+    Enrolled by the Screening's own answer (the Visit Form repeats it, so the
+    form filter matters); the case state's outcome after that. The clone's
+    forms carry their name but no xmlns, so both are named.
+    """
+    return {
+        "enrol": {
+            "forms": [FORM_SCREENING, XMLNS[FORM_SCREENING]],
+            "path": "form.screening_outcome.rutf_enrollment",
+            "equals": "yes",
+        },
+        "outcome": {
+            "path": "form.case_state.outcome_value",
+            "open": ["enrolled"],
+            "exit": ["recovered", "deceased", "non_response", "lost_for_follow_up", "visit_referred"],
+            "complete": ["recovered"],
+        },
+        "lost_after_days": 21,
+    }
 
 
 def _monday(day: date) -> date:
@@ -232,6 +255,7 @@ def seed(*, program_id: int, opportunity_id: int, reset: bool = False, today: da
             "balance_paths": [PATHS["balance"], PATHS["remaining"]],
             "receipt": {"quantity_paths": [PATHS["received"]], "date_paths": [PATHS["received_on"]]},
         },
+        "cases": rule_cases(),
     })  # fmt: skip
 
     # What each worker's visits gave out, week by week, by the rule just saved.

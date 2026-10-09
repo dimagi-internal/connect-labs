@@ -1544,6 +1544,9 @@ class DispensingRule(TimestampedModel):
     forms = models.JSONField(default=list, blank=True)
     # What the worker's own app says: {"balance_paths": [...], "receipt": {...}}.
     reports = models.JSONField(default=dict, blank=True)
+    # What a case (a child) is on this opportunity, for the stock forecast:
+    # dispensing.validate_cases. Empty: the forecast reads stock alone.
+    cases = models.JSONField(default=dict, blank=True)
     # Where a worker point this rule creates hangs from.
     resupply_point = models.ForeignKey(SupplyPoint, on_delete=models.PROTECT, related_name="dispensing_rules")
     # Visits before this are not read, so switching a rule on mid-programme
@@ -1580,8 +1583,9 @@ class WorkerVisit(TimestampedModel):
     `outcomes` is {"item-<id>": dispensed | nothing_given | no_answer |
     unmapped | unit_refused | skipped | reversed | not_counted}; an item whose
     rule does not read this visit's form has no key at all. `answers` holds
-    only the answers at the rule's own paths (a count, a yes/no, a dose), never
-    the rest of the form.
+    only the answers at the rule's own paths (a count, a yes/no, a dose, and
+    the enrolment and outcome its `cases` block names), never the rest of the
+    form.
     """
 
     program_id = models.IntegerField(db_index=True)
@@ -1593,6 +1597,9 @@ class WorkerVisit(TimestampedModel):
     visit_date = models.DateField(db_index=True)
     status = models.CharField(max_length=32, blank=True, default="")
     form_name = models.CharField(max_length=255, blank=True, default="")
+    form_xmlns = models.CharField(max_length=255, blank=True, default="")
+    # The beneficiary the visit was about (Connect's entity_id): a case, for the forecast.
+    entity_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
     outcomes = models.JSONField(default=dict, blank=True)
     answers = models.JSONField(default=dict, blank=True)
     # Where the phone said the visit happened, rounded to about 100 m. A

@@ -89,6 +89,20 @@ def test_the_clone_is_seeded_end_to_end_and_every_invented_figure_says_so(clone)
     assert on_hand and all(b.on_hand.amount >= 0 for b in on_hand.values()), {u: b.on_hand for u, b in on_hand.items()}
 
 
+def test_the_clones_rule_says_what_a_case_is_and_its_visits_remember_their_child(clone):
+    from connect_labs.supply_chain.models import WorkerVisit
+    from connect_labs.supply_chain.stock.services.dispensing import validate_cases
+
+    opp = clone["opp"]
+    with patch(FETCH, return_value=clone["world"].visits):
+        clone_supply.seed(program_id=opp, opportunity_id=opp, today=TODAY)
+
+    rule = DispensingRule.objects.get(program_id=opp, opportunity_id=opp)
+    assert rule.cases == validate_cases(clone_supply.rule_cases())
+    visits = WorkerVisit.objects.filter(program_id=opp)
+    assert visits.exists() and not visits.filter(entity_id="").exists()
+
+
 def test_a_second_run_changes_nothing_without_reset(clone):
     opp = clone["opp"]
     with patch(FETCH, return_value=clone["world"].visits):
