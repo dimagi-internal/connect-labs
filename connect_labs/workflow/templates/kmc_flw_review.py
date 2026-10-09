@@ -27,7 +27,6 @@ to the newest saved programme report it can find.
 
 from pathlib import Path
 
-from connect_labs.workflow.case_coaching import KMC_CASE_COACHING
 from connect_labs.workflow.templates.kmc_programme_metrics import (
     CASE_PROPERTIES_SCHEMA,
     SCALE_AGENT_BY_LLO,
@@ -84,9 +83,6 @@ DEFINITION = {
         # Restrict the audit to visits that carry a weight photo. Off by default:
         # a cohort with no photos would otherwise audit nothing.
         "audit_images_only": False,
-        # Where this programme's visits keep what a case coaching story reads
-        # (workflow/case_coaching.py). The case panel's "Coach about this baby" uses it.
-        "case_coaching": KMC_CASE_COACHING,
     },
     "pipeline_sources": [],
 }
