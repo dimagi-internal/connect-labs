@@ -128,6 +128,26 @@ function WorkflowUI({
     [registrationRows],
   );
 
+  // Registration location type per mother (GPS Map tab tooltip) --
+  // registration_location_type is the Register Mother form's own "Where is
+  // the registration being conducted?" answer, saved as the same-named case
+  // property. Kept as its own map/label function rather than reusing
+  // locationTypeLabel() below -- this question uses a DIFFERENT value
+  // vocabulary ('home'/'health_facility'/'others') than a visit's own
+  // where_is_the_visit_being_conducted ('mothers_home'/'health_facility'/'other').
+  var motherRegistrationLocationType = React.useMemo(
+    function () {
+      var map = {};
+      registrationRows.forEach(function (row) {
+        if (row.registration_location_type && row.entity_id) {
+          map[row.entity_id] = row.registration_location_type;
+        }
+      });
+      return map;
+    },
+    [registrationRows],
+  );
+
   var _excludeRegistrationVisits = React.useState(true);
   var excludeRegistrationVisits = _excludeRegistrationVisits[0];
   var setExcludeRegistrationVisits = _excludeRegistrationVisits[1];
@@ -391,6 +411,19 @@ function WorkflowUI({
     if (value === 'mothers_home') return 'Home';
     if (value === 'health_facility') return 'Health facility';
     if (value === 'other') return 'Other';
+    return 'Unknown';
+  }
+
+  // Same idea as locationTypeLabel() above, for the Register Mother form's
+  // own "Where is the registration being conducted?" answer -- a DIFFERENT
+  // value vocabulary ('home'/'health_facility'/'others') than a visit's
+  // where_is_the_visit_being_conducted ('mothers_home'/'health_facility'/'other'),
+  // confirmed via commcare_hq_mcp, so this is deliberately a separate
+  // function rather than a shared one with a combined value set.
+  function registrationLocationTypeLabel(value) {
+    if (value === 'home') return 'Home';
+    if (value === 'health_facility') return 'Health facility';
+    if (value === 'others') return 'Other';
     return 'Unknown';
   }
 
@@ -1091,12 +1124,19 @@ function WorkflowUI({
           registration: regPt,
           registrationDatetime:
             motherRegistrationDatetime[motherCaseId] || null,
+          registrationLocationType:
+            motherRegistrationLocationType[motherCaseId] || null,
           visits: visits,
         });
       });
       return chains;
     },
-    [displayRows, motherRegistrationGps, motherRegistrationDatetime],
+    [
+      displayRows,
+      motherRegistrationGps,
+      motherRegistrationDatetime,
+      motherRegistrationLocationType,
+    ],
   );
 
   // GPS Map tab's own FLW filter -- same independent-per-tab pattern as
@@ -1907,9 +1947,9 @@ function WorkflowUI({
         },
         {
           name: 'Registration point (circle)',
-          def: 'The GPS location captured on the Register Mother form itself, at registration time. Hovering shows the mother ID, the registration datetime, and the FLW.',
+          def: 'The GPS location captured on the Register Mother form itself, at registration time. Hovering shows the mother ID, the registration datetime, how the FLW categorized the REGISTRATION location (Home / Health facility / Other), and the FLW.',
           field:
-            'motherRegistrationGps[mother_case_id] -- pipelines mother_registration (test domain) and/or mother_registration_prod (production domain), field home_gps (case.properties.home_gps, same case property the GPS-outcome distance calculations compare against). Raw geopoint string, parsed client-side via parseGpsLatLon (indices 0/1 of "lat lon altitude accuracy" -- same string format as gps_normalized_location, parsed by parseGpsAccuracyMeters for index 3 elsewhere on this dashboard). The tooltip\'s datetime comes from the same pipelines\' registration_datetime field (case.date_opened -- a built-in CommCare Case API v2 attribute, not a custom property). A mother with no home_gps on file (never captured, or registered before the GPS block existed) plots no circle.',
+            "motherRegistrationGps[mother_case_id] -- pipelines mother_registration (test domain) and/or mother_registration_prod (production domain), field home_gps (case.properties.home_gps, same case property the GPS-outcome distance calculations compare against). Raw geopoint string, parsed client-side via parseGpsLatLon (indices 0/1 of \"lat lon altitude accuracy\" -- same string format as gps_normalized_location, parsed by parseGpsAccuracyMeters for index 3 elsewhere on this dashboard). The tooltip's datetime comes from the same pipelines' registration_datetime field (case.date_opened -- a built-in CommCare Case API v2 attribute, not a custom property). The tooltip's location comes from registration_location_type (case.properties.where_is_the_registration_being_conducted -- the Register Mother form's own \"Where is the registration being conducted?\" answer, rendered via registrationLocationTypeLabel() since it uses a DIFFERENT value vocabulary -- home/health_facility/others -- than a visit's own where_is_the_visit_being_conducted). A mother with no home_gps on file (never captured, or registered before the GPS block existed) plots no circle.",
         },
         {
           name: 'Visit points (squares)',
@@ -2387,6 +2427,8 @@ function WorkflowUI({
               chain.motherCaseId +
               '\n' +
               formatVisitDateTime(chain.registrationDatetime) +
+              '\nLocation: ' +
+              registrationLocationTypeLabel(chain.registrationLocationType) +
               '\nFLW: ' +
               (chain.flwUsername || 'unknown');
             markers.push(
