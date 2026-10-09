@@ -103,6 +103,9 @@ Each level of Labs has its own address for its page:
 | Programme | `/labs/p/programme/<id>/` |
 | Opportunity | `/labs/p/opportunity/<id>/` |
 
+!!! note "Old page links"
+    The previous page addresses at `/labs/p/<name>/` no longer exist. If you follow an old link, Labs will take you to the new page at the correct address when your organisation, programme, or opportunity has one. If no matching page is found, you will see a message explaining that pages have moved rather than an error. Update any bookmarks or shared links to use the new addresses shown in the table above.
+
 ### Setting an organisation's home page
 
 An organisation can have one page designated as its **home page**. When someone picks that organisation in Labs — or follows a link to `/labs/overview/?organization_id=<organisation>` — they land on the home page instead of the default overview.
@@ -254,10 +257,4 @@ The **"Your figures"** picture a worker receives as part of a coaching message i
 | Amber | On watch |
 | Green | On target |
 
-The chart uses Connect's typography and deep-purple title styling, so it looks consistent with the rest of the Connect experience rather than a plain data table.
-
-This is the first stage of coaching pictures that can be shaped further — for example, to add anonymous peer comparisons or a trend line. Those capabilities will arrive in later updates.
-
-### How peer labels appear on the Week by week chart
-
-In the **Week by week** picture, each peer is shown as a line with a label at its right-hand end. These end labels are arranged so they are always readable:
+The chart uses Connect's typography and deep-purple title styling, so it looks consistent with the rest
