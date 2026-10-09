@@ -252,7 +252,8 @@ def _deliver(access, commodity=None, item=None, opportunity_id=None, disagreemen
         # From each point's OWN min/max band, so "below minimum" means below
         # what this programme set, not below a number chosen here.
         "cover": statuses,
-        "amc_window_days": resupply.DEFAULT_WINDOW_DAYS,
+        # A field worker's rate looks back 14 days, a store's 90 (resupply.window_for).
+        "amc_window_days": {"user_held": resupply.WORKER_WINDOW_DAYS, "store": resupply.STORE_WINDOW_DAYS},
     }
 
 

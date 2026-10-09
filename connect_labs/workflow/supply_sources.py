@@ -2,7 +2,7 @@
 
 A workflow definition declares `supply_sources`:
 
-    [{"alias": "stock", "source": "worker_stock", "item": "rutf", "params": {"window_days": 14}},
+    [{"alias": "stock", "source": "worker_stock", "item": "rutf"},
      {"alias": "flow",  "source": "stock_flow",   "item": "rutf", "load": "on_demand"}]
 
 and its render code reads `supply.<alias>` -- `{rows, rollup, metadata}` -- or asks

@@ -1327,6 +1327,34 @@ def per_day(value):
 
 
 @register.filter
+def pace_window(row):
+    """The days a point's rate is averaged over, said beside it: "last 14 days", or "" with no rate.
+
+    Every page shows the same rate (resupply.window_for: a field worker's last
+    14 days, a store's last 90), and says which, so two figures can never share
+    an unlabelled "a day" (#2342). Fewer when demand began inside the window.
+    """
+    row = row or {}
+    amc = row.get("amc")
+    if not isinstance(amc, dict) or "amount" not in amc:
+        return ""
+    window = row.get("rate_window_days") or row.get("amc_window_days")
+    days = row.get("rate_days")
+    if days and (not window or days < window):
+        window = days
+    return f"last {window} days" if window else ""
+
+
+@register.filter
+def pace_line(row):
+    """A worker's pace with its window: "11 sachets a day · last 14 days", or "" with no rate."""
+    window = pace_window(row)
+    if not window:
+        return ""
+    return f"{per_day((row or {}).get('amc'))} a day · {window}"
+
+
+@register.filter
 def send_text(value):
     """What to send or reorder, rounded UP to a whole unit wherever the unit is counted.
 

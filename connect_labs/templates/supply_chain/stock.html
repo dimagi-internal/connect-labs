@@ -195,7 +195,7 @@ paragraphs of method above a one-row table.{% endcomment %}
           <td colspan="4" class="phone-lead px-4 py-2.5 text-gray-600" data-label="Enough stock?">{% if point.stocked_out %}<span class="font-semibold text-orange-700">Stocked out</span> — nothing on hand; no consumption yet to measure cover against{% else %}No consumption yet — cover can't be computed{% endif %}</td>
           {% else %}
           <td class="px-4 py-2.5 tabular-nums text-gray-600" data-label="Demand / day">
-            {{ point.amc|per_day }}{% if point.amc.amount %} <span class="text-xs text-gray-600">{% if point.amc_basis == "releases" %}released{% else %}dispensed{% endif %} a day</span>{% endif %}
+            {{ point.amc|per_day }}{% if point.amc.amount %} <span class="text-xs text-gray-600">{% if point.amc_basis == "releases" %}released{% else %}dispensed{% endif %} a day</span><div class="text-xs text-gray-600" data-testid="pace-window">{{ point|pace_window }}</div>{% endif %}
             {% if point.amc_in_display_unit %}<div class="text-xs text-gray-600">(= {{ point.amc_in_display_unit|demand_text }} a month)</div>{% endif %}
           </td>
           {% comment %}Durable equipment: said once, in the demand column. Repeating
