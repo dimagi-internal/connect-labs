@@ -18,13 +18,16 @@ def forward(apps, schema_editor):
     ScopeConfigChange = apps.get_model("scope_config", "ScopeConfigChange")
 
     by_program: dict[int, dict] = {}
-    for pin in SupplyWorkflowView.objects.order_by("program_id", "position", "id"):
+    # The header ordered pins by (position, id); config orders them by (position, slug).
+    # Writing each pin's rank in the old order as its position keeps the tabs where
+    # they were even when two pins shared a position.
+    for rank, pin in enumerate(SupplyWorkflowView.objects.order_by("program_id", "position", "id")):
         key = pin.replaces or pin.slug
         tab = {
             "label": pin.label,
             "slug": pin.slug,
             "fill": {"workflow": pin.workflow_definition_id, "opportunity_id": pin.opportunity_id},
-            "position": pin.position,
+            "position": rank,
         }
         if pin.created_by:
             tab["pinned_by"] = pin.created_by

@@ -107,6 +107,54 @@ def _require(caller, scope: Scope) -> None:
         raise Forbidden(reason)
 
 
+LABS_ONLY_ORG_WRITE = (
+    "a labs-only (synthetic) organisation is shared by every synthetic programme filed under its name, "
+    "whoever made them, so only Dimagi staff change its settings -- set this on your programme instead"
+)
+
+
+def is_labs_only_org(slug: str, tree: dict) -> bool:
+    """A synthetic organisation: keyed by a slug made from a free-text name, with no Connect membership behind it."""
+    from connect_labs.labs.synthetic.org_tree import SYNTHETIC_ORG_PREFIX
+    from connect_labs.scope_config.scopes import organization_entry
+
+    entry = organization_entry(tree, slug)
+    if entry is not None:
+        return bool(entry.get("labs_only"))
+    return slug.startswith(SYNTHETIC_ORG_PREFIX)
+
+
+def write_refusal(caller: access.Caller | None, scope: Scope, tree: dict) -> str | None:
+    """Why `caller` may not CHANGE `scope`'s layer, or None.
+
+    Reading and changing are the same membership rule, with one exception. A
+    labs-only organisation is not a membership: it is the bucket every synthetic
+    opportunity with the same organisation name falls into (labs.synthetic.org_tree),
+    so "can see one opportunity in it" spans other people's programmes. Its layer
+    would restyle all of them, so only Dimagi staff write it.
+    """
+    reason = refusal(caller, scope)
+    if reason:
+        return reason
+    if scope.type == "organization" and not caller.is_system and not _is_staff(caller):
+        if is_labs_only_org(scope.key, tree):
+            return LABS_ONLY_ORG_WRITE
+    return None
+
+
+def _require_owners(namespace: Namespace, before: dict, after: dict, caller, tree: dict) -> None:
+    """Every scope the change newly points records at must be one `caller` may use."""
+    if not namespace.owners or caller.is_system:
+        return
+    existing = set(namespace.owners(before or {}))
+    for owner in namespace.owners(after or {}):
+        if owner in existing:
+            continue
+        reason = refusal(caller, owner)
+        if reason:
+            raise Forbidden(f"{owner.label(tree)}: {reason}")
+
+
 # --- reading -------------------------------------------------------------------
 
 
@@ -118,7 +166,10 @@ def _layer_rows(namespace: Namespace, chain: list[Scope]) -> dict[Scope, ScopeCo
     return {s: row for row in rows if (s := Scope(row.scope_type, row.scope_key)) in wanted}
 
 
-def _resolve(namespace: Namespace, chain: list[Scope], tree: dict) -> tuple[dict, dict, list[dict]]:
+def _resolve(
+    namespace: Namespace, chain: list[Scope], tree: dict, replace: tuple[Scope, dict] | None = None
+) -> tuple[dict, dict, list[dict]]:
+    """Resolve `chain`; `replace` puts (scope, data) in place of that scope's stored layer."""
     rows = _layer_rows(namespace, chain)
     layers, described = [], []
     for scope in chain:
@@ -126,6 +177,8 @@ def _resolve(namespace: Namespace, chain: list[Scope], tree: dict) -> tuple[dict
             continue
         row = rows.get(scope)
         data = row.data if row else {}
+        if replace and replace[0] == scope:
+            data = replace[1]
         label = scope.label(tree)
         layers.append((label, data))
         described.append(
@@ -150,6 +203,14 @@ def get(namespace_key: str, scope: Scope, caller: access.Caller) -> dict:
     chain = chain_for(scope, tree)
     value, provenance, layers = _resolve(namespace, chain, tree)
     own = next((layer for layer in layers if layer["scope"] == {"type": scope.type, "key": scope.key}), None)
+    # A layer the caller is not in (the owning organisation, for a programme member
+    # outside it) shows in effect and by name, never as its raw data or who wrote it.
+    for layer in layers:
+        layer_scope = Scope(layer["scope"]["type"], layer["scope"]["key"])
+        layer["readable"] = layer is own or refusal(caller, layer_scope) is None
+        if not layer["readable"]:
+            for key in ("data", "updated_by", "updated_at"):
+                layer.pop(key, None)
     return {
         "namespace": namespace.key,
         "scope": {"type": scope.type, "key": scope.key, "label": scope.label(tree)},
@@ -168,8 +229,10 @@ def scope_in_view(context: dict) -> Scope | None:
         return Scope.of("opportunity", context["opportunity_id"])
     if context.get("program_id"):
         return Scope.of("program", context["program_id"])
+    # By slug only: the middleware turns a named slug into a Connect id in
+    # `organization_id` and keeps the slug in `organization_slug`.
     org = context.get("organization_slug") or context.get("organization_id")
-    if org:
+    if org and not str(org).isdigit():
         return Scope.of("organization", org)
     return None
 
@@ -225,7 +288,10 @@ def update(
         raise Invalid(f"{namespace.label} cannot be set for a {scope.type}; it can be set for: {allowed}")
     if not isinstance(patch, dict):
         raise Invalid("a change is a JSON object (a merge patch)")
-    _require(caller, scope)
+    tree = tree_for(caller)
+    reason = write_refusal(caller, scope, tree)
+    if reason:
+        raise Forbidden(reason)
     actor = username_of(caller)
     with transaction.atomic():
         row, _ = ScopeConfig.objects.select_for_update().get_or_create(
@@ -237,13 +303,22 @@ def update(
                 "someone else changed it -- read it again and reapply your change"
             )
         new = merge_patch(row.data, patch)
-        try:
-            validate_layer(namespace, new)
-        except ValueError as exc:
-            raise Invalid(str(exc)) from None
+        _validate(namespace, scope, new, tree)
+        _require_owners(namespace, row.data, new, caller, tree)
         if new != row.data:
             _write(row, new, actor, via)
     return get(namespace_key, scope, caller)
+
+
+def _validate(namespace: Namespace, scope: Scope, new: dict, tree: dict) -> None:
+    """`new` is a valid layer, and the value in effect with it in place is valid too."""
+    try:
+        validate_layer(namespace, new)
+        if namespace.check_resolved:
+            value, _, _ = _resolve(namespace, chain_for(scope, tree), tree, replace=(scope, new))
+            namespace.check_resolved(value)
+    except ValueError as exc:
+        raise Invalid(str(exc)) from None
 
 
 def history(namespace_key: str, scope: Scope, caller: access.Caller, limit: int = 50) -> list[dict]:
@@ -274,7 +349,10 @@ def undo(
     Recorded as a new change, so an undo can itself be undone.
     """
     namespace = get_namespace(namespace_key)
-    _require(caller, scope)
+    tree = tree_for(caller)
+    reason = write_refusal(caller, scope, tree)
+    if reason:
+        raise Forbidden(reason)
     actor = username_of(caller)
     with transaction.atomic():
         row = (
@@ -286,5 +364,9 @@ def undo(
         change = changes.filter(pk=change_id).first() if change_id else changes.first()
         if change is None:
             raise Invalid("there is no change to undo" if not change_id else f"no change {change_id} here")
+        # An undo is a write like any other: what it restores must still hold, and
+        # point only at scopes the person undoing it may use.
+        _validate(namespace, scope, change.before, tree)
+        _require_owners(namespace, row.data, change.before, caller, tree)
         _write(row, change.before, actor, via or f"undo:{change.id}")
     return get(namespace_key, scope, caller)

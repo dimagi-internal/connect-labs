@@ -13,8 +13,13 @@ TREE = {
     "organizations": [
         {"id": 1, "slug": "owner-org", "name": "Owner Org"},
         {"id": 2, "slug": "llo-org", "name": "Delivering Org"},
+        # A labs-only bucket: every synthetic opp with this org name, whoever made it.
+        {"id": "labs-synthetic-shared", "slug": "labs-synthetic-shared", "name": "Shared", "labs_only": True},
     ],
-    "programs": [{"id": 7, "name": "Programme Seven", "organization": "owner-org"}],
+    "programs": [
+        {"id": 7, "name": "Programme Seven", "organization": "owner-org"},
+        {"id": 10007, "name": "Synthetic Seven", "organization": "labs-synthetic-shared", "labs_only": True},
+    ],
     "opportunities": [
         {"id": 70, "name": "Opp Seventy", "organization": "llo-org", "program": 7},
         {"id": 80, "name": "Opp Eighty", "organization": "llo-org"},

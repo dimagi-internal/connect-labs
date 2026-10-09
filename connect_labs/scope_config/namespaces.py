@@ -21,9 +21,17 @@ class Namespace:
     schema: dict
     defaults: dict = field(default_factory=dict)
     layers: frozenset = frozenset({"organization", "program", "opportunity"})
-    # Extra rules a schema cannot say (e.g. "Overview cannot be hidden"). Raises
-    # ValueError with a message for the person.
+    # Extra rules a schema cannot say about ONE layer. Raises ValueError with a
+    # message for the person.
     check: Callable[[dict], None] | None = None
+    # Rules about the value in EFFECT once a layer is applied over the ones below it
+    # (e.g. "Overview cannot be hidden", "an added tab needs a fill" -- which a
+    # programme may satisfy by hiding a tab its organisation filled).
+    check_resolved: Callable[[dict], None] | None = None
+    # The scopes a layer's data points records at (a page's owner, a tab's
+    # opportunity). Whoever writes one must be able to use it: otherwise a member
+    # could aim every viewer of their scope at someone else's records.
+    owners: Callable[[dict], list] | None = None
 
 
 _REGISTRY: dict[str, Namespace] = {}

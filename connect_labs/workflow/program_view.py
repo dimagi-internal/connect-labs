@@ -81,7 +81,7 @@ def collect_program_workflows(program_id, opp_ids, *, dao_factory):
         dao = dao_factory(opp_id)
         try:
             for d in dao.list_definitions():
-                if owned_by_program(d, program_id) and d.id not in seen:
+                if owned_by_program(d, program_id) and d.id not in seen and (d.data or {}).get("kind") != "page":
                     seen.add(d.id)
                     out.append(d)
         finally:
