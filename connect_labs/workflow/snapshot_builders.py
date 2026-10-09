@@ -221,7 +221,7 @@ def semantic_snapshot(
         if case_cfg.get("source") == "semantic":
             # The case list from the SAME extraction as the indicators (see
             # `semantic_case_rows`): as of the run, and the same cases the scores counted.
-            case_fields = semantic_case_fields(case_cfg)
+            case_fields = semantic_case_fields(case_cfg, props_doc, full_registry)
             if done_property:
                 case_fields.setdefault(done_property, done_property)
             rows, cases, dropped = evaluate_with_cases(
@@ -325,11 +325,13 @@ def semantic_snapshot(
         worker_names=names,
     )
     clock.stop()
-    if spec.get("case_coaching"):
-        with clock("case_coaching"):
-            payload["caseCoaching"] = _case_coaching(
-                definition, opportunity_ids, as_of_date, names, (props_doc or {}).get("constants")
-            )
+    from connect_labs.semantic import case_states
+
+    catalog = case_states.catalog(props_doc)
+    if catalog:
+        # What each case state means and how to present it, as published: a saved run
+        # keeps the definitions its case index was computed with.
+        payload["caseStateCatalog"] = catalog
     if not embed and context.get("memo") is not None:
         # The cases this run was graded from, for the caller that hands it down to
         # the opportunity reports while they are in memory (history_rebuild, which
@@ -337,25 +339,6 @@ def semantic_snapshot(
         # `case_index.embed`. Without a memo, hand-down computes the week's list.
         context["memo"][LAST_CASE_INDEX] = cases
     return wrap_for_runner(payload, spec.get("state_key"))
-
-
-def _case_coaching(definition, opportunity_ids, as_of_date, names, constants=None) -> dict:
-    """The case finder's per-worker view as of the run (``case_finder.snapshot_view``):
-    which cases were eligible for which coaching story that week -- what an agent reads
-    to plan case coaching, and to see what earlier weeks offered. Never fails the build:
-    a problem is recorded in place of the view."""
-    from connect_labs.workflow import case_finder
-    from connect_labs.workflow.agent_sharing import worker_key
-
-    flat = {worker_key(int(o), u): n for o, by_user in (names or {}).items() for u, n in by_user.items()}
-    try:
-        view = case_finder.snapshot_view(
-            definition, opportunity_ids, as_of=as_of_date, names=flat, constants=constants
-        )
-    except Exception as e:  # noqa: BLE001 -- the indicators must still save
-        logger.warning("case coaching view failed for workflow %s", getattr(definition, "id", None), exc_info=True)
-        return {"error": f"could not build the case coaching view: {type(e).__name__}"}
-    return view if view is not None else {"error": "this workflow has no case_coaching config"}
 
 
 # Reader name -> registry column, for the case-index fields whose names differ
@@ -469,16 +452,39 @@ def stamp_done(cases: list[dict], done_rows: list[dict], done_property: str) -> 
     return cases
 
 
-def semantic_case_fields(case_cfg: dict) -> dict[str, str]:
+def semantic_case_fields(
+    case_cfg: dict, props_doc: dict | None = None, indicators_doc: dict | None = None
+) -> dict[str, str]:
     """`case_index.fields` as {output name: registry column}.
 
     A list names output fields, each read from `_CASE_FIELD_SOURCES` or the column
     of the same name; a mapping states the column for each field outright.
+
+    `case_states: true` adds, from the registry itself, every CASE STATE with the
+    columns its presentation reads (`semantic/case_states.case_fields`) and the
+    entity's display label -- so a saved run holds each case's state as of its week,
+    and no template has to name a programme's states.
     """
     fields = (case_cfg or {}).get("fields") or []
     if isinstance(fields, dict):
-        return {str(k): str(v) for k, v in fields.items()}
-    return {str(f): _CASE_FIELD_SOURCES.get(str(f), str(f)) for f in fields}
+        out = {str(k): str(v) for k, v in fields.items()}
+    else:
+        out = {str(f): _CASE_FIELD_SOURCES.get(str(f), str(f)) for f in fields}
+    if (case_cfg or {}).get("case_states") and props_doc:
+        out.update({k: v for k, v in case_state_fields(props_doc, indicators_doc).items() if k not in out})
+    return out
+
+
+def case_state_fields(props_doc: dict, indicators_doc: dict | None = None) -> dict[str, str]:
+    """The case-index fields case states need: each state and what presents it, and
+    the entity's display label (`display.entity.label_field`)."""
+    from connect_labs.semantic import case_states
+
+    out = dict(case_states.case_fields(props_doc))
+    label = (((indicators_doc or {}).get("display") or {}).get("entity") or {}).get("label_field")
+    if isinstance(label, str) and label:
+        out.setdefault(label, label)
+    return out
 
 
 _ALL_SCOPES = ["programme", "llo", "opportunity", "flw", "month", "llo_month", "opportunity_month"]
@@ -582,7 +588,7 @@ def opportunity_cases(*, opportunity_ids: list[int], period_end, context: dict) 
         r["pipeline_config"],
         [int(o) for o in opportunity_ids],
         scopes=["programme"],
-        case_fields=semantic_case_fields(r["spec"].get("case_index") or {}),
+        case_fields=semantic_case_fields(r["spec"].get("case_index") or {}, r["props_doc"], r["full_registry"]),
         extra_fields=r["extra_fields"],
         registry_documents=(r["props_doc"], r["full_registry"]),
         as_of=f"DATE '{as_of_date}'" if as_of_date else "CURRENT_DATE",
@@ -591,6 +597,73 @@ def opportunity_cases(*, opportunity_ids: list[int], period_end, context: dict) 
         visit_filter={"opportunity_id": int(opportunity_ids[0])} if len(opportunity_ids) == 1 else None,
     )
     return cases
+
+
+def case_context(definition, *, opportunity_id: int, access_token=None, request=None, program_id=None) -> dict:
+    """Everything a case-level read of `definition` needs -- its registry, pipelines and
+    model -- resolved as the person (`_resolve_semantic`, with the definition already in
+    hand). Any registry-bound workflow will do; it need not save runs."""
+    from connect_labs.workflow.templates import resolve_snapshot_contract
+
+    memo = {("builder_definition", definition.id): definition}
+    context = {
+        "definition_id": definition.id,
+        "opportunity_ids": [int(opportunity_id)],
+        "access_token": access_token,
+        "request": request,
+        "program_id": program_id,
+        "memo": memo,
+    }
+    try:
+        spec = (resolve_snapshot_contract(definition).get("snapshot_inputs")) or {}
+    except Exception:  # noqa: BLE001 -- a workflow that saves no runs has no spec
+        spec = {}
+    return _resolve_semantic(spec, int(opportunity_id), context)
+
+
+def case_rows(r: dict, *, opportunity_id: int, entity_ids=None, username=None, as_of=None) -> list[dict]:
+    """Case-index rows -- identity, every case state and what presents it -- for one
+    opportunity, as of `as_of` (ISO date; None = today): one case (`entity_ids`), one
+    worker's (`username`) or all. The same evaluation a saved run's case index is."""
+    from connect_labs.semantic.runtime import evaluate_with_cases
+
+    model = r["model"]
+    visit_filter = {"opportunity_id": int(opportunity_id)}
+    if username:
+        visit_filter["username"] = str(username)
+    ids = [str(e) for e in (entity_ids or [])]
+    if len(ids) == 1:
+        visit_filter[model.key] = ids[0]
+    as_of_date = as_of_iso(as_of) if as_of else None
+    _rows, cases, _dropped = evaluate_with_cases(
+        r["pipeline_config"],
+        [int(opportunity_id)],
+        scopes=["programme"],
+        case_fields=case_state_fields(r["props_doc"], r["full_registry"]),
+        extra_fields=r["extra_fields"],
+        registry_documents=(r["props_doc"], r["full_registry"]),
+        as_of=f"DATE '{as_of_date}'" if as_of_date else "CURRENT_DATE",
+        llo_map=r["llo_map"] or None,
+        settings=r["reg_settings"] or None,
+        visit_filter=visit_filter,
+    )
+    if ids:
+        cases = [c for c in cases if str(c.get("entity_id")) in ids]
+    return cases
+
+
+def case_visit_rows(r: dict, *, opportunity_id: int, entity_id: str, as_of=None) -> list[dict]:
+    """One case's visits up to `as_of`, with the registry's `case_series` columns."""
+    from connect_labs.semantic import case_states
+
+    return case_states.case_visits(
+        r["pipeline_config"],
+        r["props_doc"],
+        opportunity_id=int(opportunity_id),
+        entity_id=str(entity_id),
+        as_of=as_of_iso(as_of) if as_of else None,
+        extra_fields=r["extra_fields"],
+    )
 
 
 def settles_meta(spec: dict, props_doc: dict, indicators_doc: dict) -> dict:
@@ -869,8 +942,5 @@ BUILDER_SPEC_KEYS = {
         "maturity_anchor",
         # {flag: <case-index field>}: registrations by day (semantic/snapshot.py daily_counts)
         "daily",
-        # true: store the case finder's per-worker view as of the run
-        # (`snapshot.caseCoaching`, workflow/case_finder.py)
-        "case_coaching",
     },
 }

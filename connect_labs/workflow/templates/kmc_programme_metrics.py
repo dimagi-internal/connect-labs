@@ -89,6 +89,40 @@ BABY_CASE_ID_FIELD = {
 # babies, off in both directions per organization (PIPN +660, EHA -147), and a
 # case whose entity_id differed lost its weight series in the drill, which joins
 # the two on the baby key.
+# The danger-sign checklist, one Layer-1 field per sign, read where each form keeps
+# it: follow-up visits in `danger_signs_checklist`, the registration form in
+# `child_details.Danger_Signs_Checklist` (the first path present wins). The
+# registry's case states read them (`danger_signs` in semantic/registry/kmc) to say
+# WHICH sign a visit recorded -- `danger_visits` above only counts two of them.
+_DANGER_GROUPS = ("form.danger_signs_checklist", "form.child_details.Danger_Signs_Checklist")
+_DANGER_QUESTIONS = {
+    "ds_pus": ("pus_grp.pus_in_eyes_skin_or_on_belly_button", "pus_in_eyes_skin_or_on_belly_button"),
+    "ds_convulsions": ("conv_grp.Convulsions_or_seizures", "Convulsions_or_seizures"),
+    "ds_jaundice": ("jaundice_grp.jaundice", "jaundice"),
+    "ds_lethargic": ("lethargic_grp.floppy_or_lethargic", "floppy_or_lethargic"),
+    "ds_poor_feeding": ("poor_feed_grp.poor_feeding_not_eating", "poor_feeding_not_eating"),
+    "ds_chest_indrawing": ("chest_indraw_grp.Severe_chest_indrawing", "Severe_chest_indrawing"),
+    "ds_bluish": ("blue_lips_face_grp.Bluish_face_or_lips", "Bluish_face_or_lips"),
+    "ds_noisy_breathing": ("noisy_breathing_grp.Noisy_breathing", "Noisy_breathing"),
+    # Warning labels the form shows when a reading crosses its threshold ("OK" when shown).
+    "dsl_fever": ("danger_sign_label.fever",),
+    "dsl_hypothermia": ("danger_sign_label.hypothermia",),
+    "dsl_hypoxia": ("danger_sign_label.hypoxia",),
+    "dsl_fast_breathing": ("danger_sign_label.high_breath_count",),
+    "dsl_slow_breathing": ("danger_sign_label.low_breath_count",),
+    "dsl_low_heart_rate": ("danger_sign_label.low_heart_rate",),
+}
+DANGER_SIGN_FIELDS = [
+    {
+        "name": name,
+        "paths": [f"{group}.{path}" for group in _DANGER_GROUPS for path in paths],
+        "aggregation": "first",
+        "description": "One danger-sign answer as the visit recorded it (yes/no, or the label's OK).",
+    }
+    for name, paths in _DANGER_QUESTIONS.items()
+]
+
+
 CASE_PROPERTIES_SCHEMA = {
     "fields": [
         {
@@ -351,6 +385,26 @@ CASE_PROPERTIES_SCHEMA = {
             "aggregation": "count",
         },
         BABY_CASE_ID_FIELD,
+        # The visit's referral ANSWER (yes / no), unfiltered: `referral_visits`
+        # counts only the yeses, and "not referred" needs the no.
+        {
+            "name": "referral_answer",
+            "paths": [
+                "form.danger_signs_checklist.child_referred",
+                "form.child_details.Danger_Signs_Checklist.child_referred",
+                "form.child_referred",
+                "form.Danger_Signs_Checklist.child_referred",
+            ],
+            "aggregation": "last",
+        },
+        # Skin-to-skin hours over the last 24 h, all carers (primary + secondary).
+        {
+            "name": "kmc_hours_total",
+            "paths": ["form.kmc_24-hour_recall.total_kmc_hours", "form.KMC_24-Hour_Recall.total_kmc_hours"],
+            "transform": "float",
+            "aggregation": "avg",
+        },
+        *DANGER_SIGN_FIELDS,
         {
             "name": "form_names",
             "path": "form.@name",
@@ -454,6 +508,11 @@ SNAPSHOT_INPUTS = {
     "case_index": {
         "source": "semantic",
         "embed": False,
+        # Every case state the registry declares (properties.yml, "Case states"), with
+        # what presents it, on every case -- as of the run. Stored where the case list
+        # is (the opportunity reports, by hand-down and their own saves), and read by
+        # `workflow_run_cases` and a case conversation (semantic/case_states.py).
+        "case_states": True,
         "fields": {
             "reg_date": "reg_date",
             "dob": "date_of_birth",
@@ -532,6 +591,12 @@ SNAPSHOT_SCHEMA = {
             "design: identity, dates, weights, visit count. The per-visit weight SERIES is "
             "deliberately absent — it would not fit the 5 MB cap, and the longitudinal "
             "workflow fetches it live for the one case a user opens"
+        ),
+        "state.snapshot.caseStateCatalog": (
+            "The registry's CASE STATES as published (semantic/case_states.catalog): per state its "
+            "property name, label, plain meaning, tone, priority, evidence columns, facts template, "
+            "picture and coach guidance. Each case in `cases` carries every state (true/false) and "
+            "its evidence columns, as of the run"
         ),
         "state.snapshot.cMeasures": (
             "The display contract these values were graded with — titles, units, directions, "

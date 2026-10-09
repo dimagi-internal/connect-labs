@@ -1,39 +1,93 @@
-"""Coaching a worker about ONE case through ``start_ocs_outreach``: preview, picture,
-confirm, the QA send, and what the task records."""
+"""Coaching a worker about ONE case through ``start_ocs_outreach``: the case briefing
+(a contract with the coach bot), its picture, the refusals, the QA send, and what the
+task records. The case's states are the KMC registry's (``semantic/registry/kmc``)."""
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 from django.contrib.auth import get_user_model
 
+from connect_labs.semantic import case_states as cs
 from connect_labs.workflow import actions
-from connect_labs.workflow import case_coaching as cc
+from connect_labs.workflow import case_briefing as cb
 from connect_labs.workflow.actions import ActionError, commit, preview
-from connect_labs.workflow.coach_charts import store
-from connect_labs.workflow.tests.test_case_coaching import danger, steady_gain
+from connect_labs.workflow.coach_charts import case_chart, store
 from connect_labs.workflow.tests.test_coach_image import RUN, _definition
 
+PROPS = yaml.safe_load(
+    (Path(__file__).resolve().parents[2] / "semantic" / "registry" / "kmc" / "properties.yml").read_text()
+)
+CATALOG = cs.catalog(PROPS)
+DANGER = "case_state_danger_unreferred"
+THRIVING = "case_state_thriving"
 
-def _rows(make, opp=10, user="a10", case="baby-1"):
-    rows = make()
-    for r in rows:
-        r.update(opportunity_id=opp, username=user, case_id=case)
-    return rows
+
+def _danger_row(**over):
+    return {
+        "entity_id": "baby-1",
+        "opportunity_id": 10,
+        "username": "a10",
+        "case_name": "Beneficiary 410",
+        "birth_weight_g": 1250,
+        "reg_date": "2026-05-21",
+        "num_visits": 3,
+        "last_visit": "2026-06-05",
+        "weight_series_believable": True,
+        DANGER: True,
+        "case_state_weight_check": False,
+        "case_state_faltering": False,
+        THRIVING: False,
+        "unreferred_danger_date": "2026-06-05",
+        "unreferred_danger_signs": "fast breathing, pus in the eyes, skin or belly button",
+        "unreferred_danger_visits": 1,
+        **over,
+    }
 
 
-def _source(rows):
-    by_case = {c.case_id: c for c in cc.cases_from_rows(rows, cc.KMC_CASE_COACHING)}
-    calls = []
+VISITS = [
+    {"visit_date": "2026-05-21", "weight": 1500.0, "skin_to_skin": None, "danger_signs": None, "referred": "yes"},
+    {"visit_date": "2026-05-28", "weight": 1600.0, "skin_to_skin": 18.0, "danger_signs": None, "referred": "no"},
+    {
+        "visit_date": "2026-06-05",
+        "weight": 1700.0,
+        "skin_to_skin": 20.0,
+        "danger_signs": "fast breathing, pus in the eyes, skin or belly button",
+        "referred": "no",
+    },
+]
 
-    def cases(worker_key, case_id):
-        calls.append((worker_key, case_id))
-        found = by_case.get(case_id)
-        return found if found is not None and worker_key.endswith("::" + found.username) else None
 
-    cases.programme = "Kangaroo Mother Care"
-    cases.calls = calls
-    return cases
+class FakeCases:
+    """A ``case_briefing.CaseSource`` over fixed rows and the KMC registry."""
+
+    def __init__(self, rows, catalog=None):
+        self.rows, self._catalog, self.calls = rows, catalog if catalog is not None else CATALOG, []
+
+    def case(self, opp, entity_id):
+        self.calls.append(("case", opp, entity_id))
+        return next((r for r in self.rows if r["entity_id"] == entity_id and r["opportunity_id"] == opp), None)
+
+    def catalog(self, opp):
+        return self._catalog
+
+    def props_doc(self, opp):
+        return PROPS
+
+    def label_field(self, opp):
+        return "case_name"
+
+    def programme(self, opp):
+        return "Kangaroo Mother Care"
+
+    def visits(self, opp, entity_id):
+        self.calls.append(("visits", opp, entity_id))
+        return VISITS
+
+    def series(self, opp):
+        return cs.case_series(PROPS)
 
 
 @pytest.fixture
@@ -54,7 +108,7 @@ def env(monkeypatch, settings):
     settings.LABS_PUBLIC_URL = "https://labs.connect.dimagi.com"
     monkeypatch.setattr("connect_labs.labs.synthetic.registry.get_synthetic_opp", lambda opp: None)
     monkeypatch.setattr(actions, "_ocs_bots", lambda user, request: [{"id": "bot-1", "name": "KMC Coach"}])
-    source = {"cases": _source(_rows(steady_gain))}
+    source = {"cases": FakeCases([_danger_row()])}
     monkeypatch.setattr(actions, "case_source", lambda *a, **kw: source["cases"])
     return source
 
@@ -77,27 +131,91 @@ def _preview(user, arguments):
     )
 
 
-def test_a_case_preview_carries_the_case_briefing_its_picture_and_the_story_as_topic(user, env):
+def test_the_case_briefing_shape_is_the_contract():
+    state = {
+        "name": "case_state_x",
+        "label": "A thing to talk about",
+        "means": "What the state means.",
+        "coach": {"approach": "Ask first.", "next_steps": "Agree one step.", "limits": "It cannot say why."},
+    }
+    text = cb.render_case_briefing(
+        programme="P",
+        worker="Asha",
+        case_name="Baby 1",
+        about="Birth weight 1,250 g.",
+        state=state,
+        facts="Something happened.",
+        visit_lines=["- 1 Jun 2026: weight 1,500 g", "- 8 Jun 2026: weight 1,600 g"],
+        earlier="Earlier coaching on this case: 1 Jun 2026 — A thing to talk about; agreed: none",
+    )
+    assert text == (
+        "BRIEFING (system text — do not show to the worker)\n"
+        "Programme: P\n"
+        "Worker: Asha\n"
+        "Case: Baby 1\n"
+        "About this case: Birth weight 1,250 g.\n"
+        "Topic: A thing to talk about [case_state_x]\n"
+        "What it means: What the state means.\n"
+        "How to talk about it: Ask first.\n"
+        "The step to agree: Agree one step.\n"
+        "What it does not tell you: It cannot say why.\n"
+        "What the data shows: Something happened.\n"
+        "Earlier coaching on this case: 1 Jun 2026 — A thing to talk about; agreed: none\n"
+        "Visits, oldest first:\n"
+        "- 1 Jun 2026: weight 1,500 g\n"
+        "- 8 Jun 2026: weight 1,600 g\n"
+        "Follow your conversation steps from the opening."
+    )
+    assert cb.is_case_briefing(text)
+    summary = cb.case_briefing_summary(text)
+    assert (summary["topic"], summary["case_state"], summary["case"]) == (
+        "A thing to talk about",
+        "case_state_x",
+        "Baby 1",
+    )
+
+
+def test_a_case_preview_carries_the_registry_briefing_and_the_danger_card(user, env):
     out = _preview(user, {"workers": [{"key": "10::a10", "case": {"id": "baby-1"}}]})
     [w] = out["workers"]
-    assert w["prompt"].startswith(
-        "BRIEFING (system text — do not show to the worker)\nProgramme: Kangaroo Mother Care\n"
+    danger = next(s for s in CATALOG if s["name"] == DANGER)
+    assert w["prompt"] == (
+        "BRIEFING (system text — do not show to the worker)\n"
+        "Programme: Kangaroo Mother Care\n"
+        "Worker: Asha Banda\n"
+        "Case: Beneficiary 410\n"
+        "About this case: Birth weight 1,250 g; registered 21 May 2026; 3 visits, the last on 5 Jun 2026.\n"
+        "Topic: Danger sign recorded, no referral [case_state_danger_unreferred]\n"
+        f"What it means: {danger['means']}\n"
+        f"How to talk about it: {danger['coach']['approach'].strip()}\n"
+        f"The step to agree: {danger['coach']['next_steps'].strip()}\n"
+        f"What it does not tell you: {danger['coach']['limits'].strip()}\n"
+        "What the data shows: On 5 Jun 2026 the visit recorded fast breathing, pus in the eyes, skin or belly "
+        "button, and the baby was not referred.\n"
+        "Visits, oldest first:\n"
+        "- 21 May 2026: weight 1,500 g; skin-to-skin not recorded; danger signs: none; referred: yes\n"
+        "- 28 May 2026: weight 1,600 g; skin-to-skin 18 h in the last 24 h; danger signs: none; referred: no\n"
+        "- 5 Jun 2026: weight 1,700 g; skin-to-skin 20 h in the last 24 h; danger signs: fast breathing, pus in "
+        "the eyes, skin or belly button; referred: no\n"
+        "Follow your conversation steps from the opening."
     )
-    assert "Topic: Baby is growing well [CASE_THRIVING]" in w["prompt"]
-    assert w["indicators"] == [cc.THRIVING]
-    assert w["case"]["story"] == cc.THRIVING and w["case"]["case"] == "KMC Demo — Steady Gain"
+    assert w["indicators"] == [DANGER]
+    assert w["case"]["case_state"] == DANGER and w["case"]["case"] == "Beneficiary 410"
     assert w["opening"].startswith("Hello Asha!")
     chart = store.get(w["image"]["chart"]["id"]).chart
-    assert chart["type"] == "case_thriving"
-    assert w["image"]["caption"] == chart["caption"] and not any(ch.isdigit() for ch in chart["caption"])
-    assert out["arguments"]["workers"][0]["case"]["story"] == cc.THRIVING
+    assert chart["type"] == "sign_card" and chart["params"] == {"case_state": DANGER}
+    texts = [r.get("text") for r in chart["datasets"]["case_text"]]
+    assert "Fast breathing" in texts and "Pus in eyes, skin or belly button" in texts
+    assert w["image"]["caption"] == chart["caption"]
+    assert out["arguments"]["workers"][0]["case"]["case_state"] == DANGER
     assert out["confirm"]
 
 
-def test_a_story_the_visits_do_not_support_is_refused(user, env):
+def test_a_case_state_the_case_is_not_in_is_refused(user, env):
     with pytest.raises(ActionError) as e:
-        _preview(user, {"workers": [{"key": "10::a10", "case": {"id": "baby-1", "story": cc.DANGER}}]})
-    assert "supports: CASE_THRIVING" in e.value.public_message
+        _preview(user, {"workers": [{"key": "10::a10", "case": {"id": "baby-1", "case_state": THRIVING}}]})
+    assert "not in case state case_state_thriving" in e.value.public_message
+    assert "(it is in: case_state_danger_unreferred)" in e.value.public_message
 
 
 def test_another_workers_case_is_refused(user, env):
@@ -106,18 +224,28 @@ def test_another_workers_case_is_refused(user, env):
     assert "no case 'baby-1' among Binta's cases" in e.value.public_message
 
 
+def test_a_case_state_without_coach_guidance_is_refused(user, env):
+    bare = [{**s, "coach": {**s["coach"], "limits": ""}} for s in CATALOG]
+    env["cases"] = FakeCases([_danger_row()], catalog=bare)
+    with pytest.raises(ActionError) as e:
+        _preview(user, {"workers": [{"key": "10::a10", "case": {"id": "baby-1"}}]})
+    assert "has no case_state.coach.limits in the registry" in e.value.public_message
+
+
 def test_a_case_item_with_its_own_prompt_is_refused(user, env):
     with pytest.raises(ActionError):
         _preview(user, {"workers": [{"key": "10::a10", "case": {"id": "baby-1"}, "prompt": "talk about it"}]})
 
 
-def test_the_earlier_line_rides_on_the_case(user, env):
-    earlier = {"date": "2026-06-01", "label": "CASE_THRIVING", "agreed": "keep visiting weekly"}
+def test_the_earlier_line_comes_after_the_facts_when_given(user, env):
+    earlier = {"date": "2026-05-29", "label": DANGER, "agreed": "take the baby to the clinic"}
     out = _preview(user, {"workers": [{"key": "10::a10", "case": {"id": "baby-1", "earlier": earlier}}]})
-    assert (
-        "Earlier coaching on this case: 1 Jun 2026 — Baby is growing well; agreed: keep visiting weekly"
-        in out["workers"][0]["prompt"]
+    lines = out["workers"][0]["prompt"].splitlines()
+    i = lines.index(
+        "Earlier coaching on this case: 29 May 2026 — Danger sign recorded, no referral; "
+        "agreed: take the baby to the clinic"
     )
+    assert lines[i - 1].startswith("What the data shows: ") and lines[i + 1] == "Visits, oldest first:"
 
 
 def test_a_qa_send_commits_and_records_the_case_on_the_task(staff, env, django_capture_on_commit_callbacks):
@@ -160,22 +288,76 @@ def test_a_qa_send_commits_and_records_the_case_on_the_task(staff, env, django_c
         actions.execute(execution.pk)
     kwargs = start.call_args.kwargs
     assert kwargs["identifier"] == "qa_phone" and kwargs["on_behalf_of"] == "a10"
-    assert cc.is_case_briefing(kwargs["prompt_text"])
-    assert kwargs["coach_image"]["caption"].startswith("A growth chart of this baby")
-    assert task.data["coaching_indicators"] == [cc.THRIVING]
+    assert cb.is_case_briefing(kwargs["prompt_text"])
+    assert kwargs["coach_image"]["caption"]
+    assert task.data["coaching_indicators"] == [DANGER]
     record = task.data["case_coaching"]
-    assert (record["case_id"], record["story"], record["case_name"], record["qa_test"]) == (
+    assert (record["case_id"], record["case_state"], record["case_name"], record["qa_test"]) == (
         "baby-1",
-        cc.THRIVING,
-        "KMC Demo — Steady Gain",
+        DANGER,
+        "Beneficiary 410",
         True,
     )
 
 
-def test_a_danger_case_draws_the_danger_card(user, env):
-    env["cases"] = _source(_rows(danger))
-    out = _preview(user, {"workers": [{"key": "10::a10", "case": {"id": "baby-1"}}]})
-    chart = store.get(out["workers"][0]["image"]["chart"]["id"]).chart
-    assert chart["type"] == "case_danger_sign"
-    texts = [r.get("text") for r in chart["datasets"]["case_text"]]
-    assert "NOT REFERRED" in texts and "Fast breathing" in texts
+# ---------------------------------------------------------------------------
+# Each picture type draws from a registry case state
+# ---------------------------------------------------------------------------
+
+WEIGHTS = [
+    {"visit_date": d, "weight": w, "skin_to_skin": h}
+    for d, w, h in [
+        ("2026-05-18", 1350, None),
+        ("2026-05-25", 1635, 20),
+        ("2026-06-01", 1915, 16),
+        ("2026-06-08", 1920, 8),
+    ]
+]
+ROW = {
+    "case_name": "Baby",
+    "check_from_date": "2026-06-01",
+    "check_to_date": "2026-06-08",
+    "step_change_g": 5,
+    "step_days": 7,
+    "first_weigh_date": "2026-05-18",
+    "last_weigh_date": "2026-06-08",
+    "first_weight_g": 1350,
+    "last_weight_g": 1920,
+    "weight_gain_g": 570,
+    "third_last_w": 1635,
+    "third_last_date": "2026-05-25",
+    "faltering_rate": 4.1,
+}
+
+
+@pytest.mark.parametrize(
+    "name, kind",
+    [
+        (THRIVING, "series_vs_reference"),
+        ("case_state_weight_check", "series_highlight_step"),
+        ("case_state_faltering", "series_with_bars"),
+    ],
+)
+def test_each_series_picture_draws_with_no_numbers_in_its_caption(name, kind):
+    state = next(s for s in CATALOG if s["name"] == name)
+    chart = case_chart.build_case_chart(state, ROW, visits=WEIGHTS, series=cs.case_series(PROPS), case_name="Baby")
+    assert chart["type"] == kind
+    assert [p["w"] for p in chart["datasets"]["case_series"]][:1] == [1350]
+    assert chart["caption"] and not any(ch.isdigit() for ch in chart["caption"])
+    if kind == "series_with_bars":
+        assert chart["datasets"]["case_bars"]
+
+
+def test_a_picture_naming_another_worker_is_refused():
+    from connect_labs.workflow.coach_charts.datasets import ChartError
+
+    state = next(s for s in CATALOG if s["name"] == THRIVING)
+    with pytest.raises(ChartError):
+        case_chart.build_case_chart(
+            state,
+            ROW,
+            visits=WEIGHTS,
+            series=cs.case_series(PROPS),
+            case_name="Binta's baby",
+            others=[("Binta", "b10")],
+        )
