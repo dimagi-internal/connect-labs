@@ -136,7 +136,7 @@ def test_average_monthly_consumption_nets_reversals_out(item, store, worker):
     rejected = _dispense(item, worker, 60, TODAY - timedelta(days=5), "9002")
     posting.post_visit_reversal(rejected, reason="visit rejected")
 
-    amc = resupply.average_monthly_consumption(PROGRAM, worker, item=item, as_of=TODAY)
+    amc = resupply.average_monthly_consumption(PROGRAM, worker, item=item, as_of=TODAY, window_days=90)
 
     # 30 sachets over the 36 days since the first dispensing that stands, per 30 days.
     assert amc == Quantity(Decimal("25.0000"), "sachet")

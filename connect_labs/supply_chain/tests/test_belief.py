@@ -6,6 +6,10 @@ The world: a central store feeds a partner store, which feeds two workers.
 Worker A dispensed 100 sachets net (one visit rejected and reversed), 20 of
 them on a visit still pending and 20 estimated from a protocol, and last
 counted 190 against a ledger of 200. Worker B has dispensed for 16 days only.
+
+The world's dispensing is spread over 50 days, so the tests about its figures
+name a 90-day window; the default -- a worker's last 14 days -- has its
+own tests at the end.
 """
 
 from datetime import date, timedelta
@@ -161,7 +165,7 @@ def sachets(n):
 
 
 def test_a_workers_figures(item, world):
-    a, b = belief.worker_beliefs(PROGRAM, item, on_date=TODAY)
+    a, b = belief.worker_beliefs(PROGRAM, item, on_date=TODAY, window_days=90)
 
     assert a.point.pk == world["a"].pk
     assert (a.issued, a.dispensed, a.unapproved, a.estimated) == (sachets(300), sachets(100), sachets(20), sachets(20))
@@ -264,7 +268,7 @@ def test_a_store_shows_what_came_in_from_outside_once_never_a_hop_summed_issued(
 
 
 def test_subtree_cover_is_recomputed_from_its_consumption_not_summed(item, world):
-    (central,) = belief.network_tree(PROGRAM, item, on_date=TODAY)
+    (central,) = belief.network_tree(PROGRAM, item, on_date=TODAY, window_days=90)
     (partner,) = central.children
 
     # 110 sachets dispensed below the partner since the first of them, 51 days ago.
@@ -274,7 +278,7 @@ def test_subtree_cover_is_recomputed_from_its_consumption_not_summed(item, world
 
 
 def test_workers_below_their_minimum_are_counted_up_the_tree(item, world):
-    (central,) = belief.network_tree(PROGRAM, item, on_date=TODAY)
+    (central,) = belief.network_tree(PROGRAM, item, on_date=TODAY, window_days=90)
     (partner,) = central.children
     assert (partner.workers, partner.workers_below_min) == (2, 1)
     assert (central.workers, central.workers_below_min) == (2, 1)
@@ -379,8 +383,9 @@ def test_an_unmatched_receipt_after_the_as_of_day_is_not_known_yet(item, world):
 def test_the_operations_put_it_on_the_wire(item, world):
     da = SupplyDataAccess(program_id=PROGRAM, caller=SYSTEM)
 
-    workers = call_operation("worker_stock", da, {"item_id": item.pk, "as_of": TODAY.isoformat()})
-    tree = call_operation("network_tree", da, {"item_id": item.pk, "as_of": TODAY.isoformat()})
+    window = {"item_id": item.pk, "as_of": TODAY.isoformat(), "window_days": 90}
+    workers = call_operation("worker_stock", da, window)
+    tree = call_operation("network_tree", da, window)
 
     first = workers["workers"][0]
     assert (workers["unit"], workers["as_of"]) == ("sachet", TODAY.isoformat())
@@ -433,3 +438,58 @@ def test_the_grouped_count_day_ledger_is_stock_on_hands_own(item, world):
         mine, theirs = found[pt.pk], soh.stock_on_hand(PROGRAM, pt, item=item, unit="sachet", on_date=TODAY)
         assert (mine.ledger_on_count_day, mine.variance) == (theirs["ledger_on_count_day"], theirs["variance"]), name
     assert found[world["a"].pk].variance == sachets(-10)
+
+
+def test_a_worker_is_paced_on_the_last_14_days_of_dispensing_by_default(item, world):
+    """One pace per worker on every page and in every operation (#2342).
+
+    Worker B's 10 sachets, 15 days ago, are outside the last 14 days; a
+    dispense 3 days ago is inside it, averaged over the whole window.
+    """
+    dispense(item, world["b"], 28, ago(3), "v8")
+
+    b = belief.point_belief(PROGRAM, world["b"], item, on_date=TODAY)
+
+    assert (b.rate_window_days, b.rate_days) == (14, 14)
+    assert b.amc == Quantity(Decimal("60.0000"), "sachet")  # 28 over 14 days, a month of 30
+    plan = resupply.plan(PROGRAM, world["b"], item=item, as_of=TODAY)
+    assert (plan["amc"], plan["amc_window_days"]) == (b.amc, 14)
+
+
+def test_a_store_releasing_stock_is_paced_on_90_days(item, world):
+    """A store's demand is lumpy -- a monthly collection -- so its rate looks back 90 days."""
+    central = belief.point_belief(PROGRAM, world["central"], item, on_date=TODAY)
+
+    assert (central.amc_basis, central.rate_window_days, central.rate_days) == (resupply.RELEASES, 90, 71)
+    # 600 released 70 days ago, over the 71 days since: inside 90 days, so still a rate.
+    assert central.amc == Quantity(Decimal("253.5211"), "sachet")
+
+
+def test_the_wire_says_the_window(item, world):
+    da = SupplyDataAccess(program_id=PROGRAM, caller=SYSTEM)
+    dispense(item, world["b"], 28, ago(3), "v8")
+
+    workers = call_operation("worker_stock", da, {"item_id": item.pk, "as_of": TODAY.isoformat()})["workers"]
+
+    assert {w["name"]: w["rate_window_days"] for w in workers} == {"worker-a": 14, "worker-b": 14}
+
+
+def test_a_worker_who_ran_out_weeks_ago_is_out_not_unknown(item, world):
+    """Nothing given out in 14 days because there was nothing to give is a stock-out."""
+    move(item, "transfer", 90, ago(40), frm=world["b"], to=world["partner"])
+
+    b = belief.point_belief(PROGRAM, world["b"], item, on_date=TODAY)
+
+    assert b.on_hand == sachets(0)
+    assert b.status == "stockout"
+
+
+def test_every_screen_says_the_window_a_pace_is_over():
+    from connect_labs.supply_chain.templatetags.supply_chain_extras import pace_line, pace_window
+
+    rate = {"amount": "60", "unit": "sachet"}
+    assert pace_window({"amc": rate, "rate_window_days": 14, "rate_days": 14}) == "last 14 days"
+    # Demand that began inside the window rests on fewer days, and says so.
+    assert pace_window({"amc": rate, "amc_window_days": 14, "rate_days": 9}) == "last 9 days"
+    assert pace_window({"amc": {"unconfirmed": ["no rate"]}, "rate_window_days": 14}) == ""
+    assert pace_line({"amc": rate, "rate_window_days": 14, "rate_days": 14}) == "2 sachets a day · last 14 days"

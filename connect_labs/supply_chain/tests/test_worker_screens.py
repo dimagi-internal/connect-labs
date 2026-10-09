@@ -91,7 +91,8 @@ def recorded(days_ago):
         yield
 
 
-def _worker(world, name, *, dispensed, status, estimated, counted, days_ago=45):
+# Ten days back: inside the 14 days a worker's pace looks back over (resupply.window_for).
+def _worker(world, name, *, dispensed, status, estimated, counted, days_ago=10):
     with recorded(60):
         worker = _issue(world, name)
     with recorded(days_ago):

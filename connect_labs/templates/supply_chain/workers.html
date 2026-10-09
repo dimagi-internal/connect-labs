@@ -83,6 +83,7 @@ the worker reports that no store recorded is said on the worker's own row.
                 <td class="phone-lead px-4 py-2 align-top tabular-nums" data-label="Days to stock-out">
                   {{ row|stockout_text }}
                   {% for note in row|stockout_notes %}<div class="text-xs text-gray-600 mt-0.5" data-testid="stockout-note">{{ note }}</div>{% endfor %}
+                  {% with pace=row|pace_line %}{% if pace %}<div class="text-xs text-gray-600 mt-0.5" data-testid="pace-line">{{ pace }}</div>{% endif %}{% endwith %}
                 </td>
                 <td class="px-4 py-2 align-top tabular-nums" data-label="Count − ledger">
                   {% if row.variance_reported_minus_ledger %}

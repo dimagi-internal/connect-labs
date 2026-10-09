@@ -199,7 +199,7 @@ NOT_ONE_ITEM = "this point holds several items; choose one to see its rate and c
 
 
 def _grouped_rates(program_id, points, resolved, on_date, window_days) -> dict:
-    """{supply point id: (amc, basis)} from belief.py, one grouped pass per item held."""
+    """{supply point id: (amc, basis, rate_days)} from belief.py, one grouped pass per item held."""
     from connect_labs.supply_chain.stock.services import belief
 
     by_item: dict = {}
@@ -210,12 +210,12 @@ def _grouped_rates(program_id, points, resolved, on_date, window_days) -> dict:
     rates = {}
     for held, members in by_item.values():
         for pk, b in belief.beliefs_for(program_id, held, members, on_date=on_date, window_days=window_days).items():
-            rates[pk] = (b.amc, b.amc_basis)
+            rates[pk] = (b.amc, b.amc_basis, b.rate_days)
     return rates
 
 
 def _rates_across_items(program_id, points, on_date, window_days) -> dict:
-    """{supply point id: (amc, basis)} with no one item: `resupply.plan(item=None)`'s rate, grouped.
+    """{supply point id: (amc, basis, rate_days)} with no one item: `resupply.plan(item=None)`'s rate, grouped.
 
     A point holding several items, or stock recorded against the product with
     no trade item, was rated by a plan over every movement it has. This is
@@ -226,8 +226,9 @@ def _rates_across_items(program_id, points, on_date, window_days) -> dict:
     if not points:
         return {}
     end = on_date or date.today()
-    start = end - timedelta(days=window_days)
     ids = [point.pk for point in points]
+    window_of = {point.pk: resupply.window_for(point, window_days) for point in points}
+    windows = sorted(set(window_of.values()))
     moves = Movement.objects.for_program(program_id).filter(from_supply_point_id__in=ids, occurred_on__lte=end)
 
     dispensing = set(moves.filter(kind="consumption").values_list("from_supply_point_id", flat=True).distinct())
@@ -236,13 +237,17 @@ def _rates_across_items(program_id, points, on_date, window_days) -> dict:
         to_supply_point_id=F("from_supply_point_id")
     )
     demand: dict = {}
+    in_windows = {
+        f"w{days}": Sum("quantity", filter=Q(occurred_on__gte=resupply.window_start(end, days))) for days in windows
+    }
     for basis, qs in ((resupply.CONSUMPTION, consumed), (resupply.RELEASES, released)):
         for row in qs.values("from_supply_point_id", "quantity_unit").annotate(
-            window=Sum("quantity", filter=Q(occurred_on__gte=start)), earliest=Min("occurred_on")
+            **in_windows, earliest=Min("occurred_on")
         ):
             units, earliest = demand.get((basis, row["from_supply_point_id"]), ({}, None))
-            if row["window"] is not None:
-                units[row["quantity_unit"]] = row["window"]
+            window = row[f"w{window_of[row['from_supply_point_id']]}"]
+            if window is not None:
+                units[row["quantity_unit"]] = window
             earliest = row["earliest"] if earliest is None else min(earliest, row["earliest"])
             demand[(basis, row["from_supply_point_id"])] = (units, earliest)
 
@@ -250,17 +255,19 @@ def _rates_across_items(program_id, points, on_date, window_days) -> dict:
     for pk in ids:
         basis = resupply.CONSUMPTION if pk in dispensing else resupply.RELEASES
         units, earliest = demand.get((basis, pk), ({}, None))
-        rates[pk] = (resupply.rate_from(ledger.collapse(units, None, None), earliest, end, window_days, basis), basis)
+        window = window_of[pk]
+        rate = resupply.rate_from(ledger.collapse(units, None, None), earliest, end, window, basis)
+        rates[pk] = (rate, basis, resupply.observed(earliest, end, window))
     return rates
 
 
 def _no_single_item(on_hand, item_ids):
-    """The (amc, basis) of a point with no one item: never a rate summed across items."""
+    """The (amc, basis, rate_days) of a point with no one item: never a rate summed across items."""
     if isinstance(on_hand, Unconfirmed):
-        return on_hand, resupply.RELEASES
+        return on_hand, resupply.RELEASES, None
     if not item_ids:
-        return unconfirmed(resupply.NO_CONSUMPTION_YET), resupply.RELEASES
-    return unconfirmed(NOT_ONE_ITEM), resupply.RELEASES
+        return unconfirmed(resupply.NO_CONSUMPTION_YET), resupply.RELEASES, None
+    return unconfirmed(NOT_ONE_ITEM), resupply.RELEASES, None
 
 
 # What a point holding several items is rated on (see network_stock).
@@ -273,7 +280,7 @@ def network_stock(  # noqa: C901
     item=None,
     kind=None,
     on_date=None,
-    window_days=resupply.DEFAULT_WINDOW_DAYS,
+    window_days=None,
     several_items="summed",
     per_point=False,
 ) -> list[dict]:
@@ -384,12 +391,13 @@ def network_stock(  # noqa: C901
         # data at all.
         if per_point:
             plan = resupply.plan(program_id, point, item=for_conversion, as_of=on_date, window_days=window_days)
+            rate_days = plan["rate_days"]
         else:
             # The balance as `plan` reads it (ledger.balance: the unit held, else
             # the pack), so cover and the resupply quantity come out in the same
             # unit and to the same precision as a per-point plan would give.
             held = ledger.collapse(units, for_conversion, None)
-            amc, basis = rates.get(point.pk) or summed.get(point.pk) or _no_single_item(held, item_ids)
+            amc, basis, rate_days = rates.get(point.pk) or summed.get(point.pk) or _no_single_item(held, item_ids)
             if too_short is not None and not resupply._is_durable(for_conversion):
                 amc = too_short
             plan = resupply.cover(held, amc, basis, point, item=for_conversion, window_days=window_days)
@@ -428,6 +436,10 @@ def network_stock(  # noqa: C901
                 "reported_kind": count.kind if count else None,
                 "amc": plan["amc"],
                 "amc_basis": plan["amc_basis"],
+                # The window the rate looks back over, and the days of it that
+                # had demand: a page says "last 14 days", or "last 9 days".
+                "amc_window_days": plan["amc_window_days"],
+                "rate_days": rate_days,
                 # The same rate in the unit the balance is shown in, so "170
                 # carton" and "3,033 co-pack a month" can be compared by eye.
                 "amc_in_display_unit": _restated(plan["amc"], display_unit, for_conversion),

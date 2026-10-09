@@ -8,6 +8,7 @@ Design: docs/superpowers/specs/2026-09-28-supply-stock-from-visits-design.md.
 from django.db.models import Q
 
 from connect_labs.supply_chain.operations import ID, QUANTITY, obj, record, register_operation
+from connect_labs.supply_chain.stock.services import resupply
 
 _DATE = {"type": "string", "format": "date"}
 _PATHS = {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
@@ -166,7 +167,12 @@ def visit_consumption_ingest(access, opportunity_id, until=None, refresh=False):
     return visit_reader.ingest_visit_consumption(access, opportunity_id=opportunity_id, visits=visits, until=day)
 
 
-_WINDOW = {"type": "integer", "minimum": 7, "maximum": 730}
+_WINDOW = {
+    "type": "integer",
+    "minimum": 7,
+    "maximum": 730,
+    "description": resupply.WINDOW_DAYS_HELP,
+}
 
 
 def _on(as_of):
@@ -188,7 +194,7 @@ def _on(as_of):
         {"item_id": ID, "opportunity_id": ID, "as_of": _DATE, "window_days": _WINDOW}, required=("item_id",)
     ),
 )
-def worker_stock(access, item_id, opportunity_id=None, as_of=None, window_days=90):
+def worker_stock(access, item_id, opportunity_id=None, as_of=None, window_days=None):
     from connect_labs.supply_chain.stock.services import belief
 
     item = access._resolve_item(item_id)
@@ -292,7 +298,7 @@ def _moved_by_visits(program_id, point, item, visit_ids, on_date) -> dict:
     ),
     input_schema=obj({"item_id": ID, "as_of": _DATE, "window_days": _WINDOW}, required=("item_id",)),
 )
-def network_tree(access, item_id, as_of=None, window_days=90):
+def network_tree(access, item_id, as_of=None, window_days=None):
     from connect_labs.supply_chain.stock.services import belief
 
     item = access._resolve_item(item_id)
@@ -319,7 +325,7 @@ def network_tree(access, item_id, as_of=None, window_days=90):
         required=("supply_point_id", "item_id"),
     ),
 )
-def worker_stock_get(access, supply_point_id, item_id, as_of=None, window_days=90):
+def worker_stock_get(access, supply_point_id, item_id, as_of=None, window_days=None):
     from connect_labs.supply_chain.models import Movement, WorkerVisit
     from connect_labs.supply_chain.stock.services import belief, timeline
     from connect_labs.supply_chain.stock.services.visit_reader import APPROVED_STATUSES, outcome_key

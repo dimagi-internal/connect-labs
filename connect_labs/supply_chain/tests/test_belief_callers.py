@@ -169,11 +169,12 @@ def add_workers(world, n):
             connect_username=f"worker-{i}",
             parent=partner,
             source="connect_visit",
-            min_months_of_stock=Decimal("1"),
+            # A worker's band is in days at a 14-day pace: about 9 days to two months.
+            min_months_of_stock=Decimal("0.3"),
             max_months_of_stock=Decimal("2"),
         )
         _move(rutf, "distribution", 100 + i if i % 2 == 0 else 50, ago(60), frm=partner, to=worker)
-        for v, days in enumerate((50, 35, 12)):
+        for v, days in enumerate((50, 12, 5)):
             posting.post_visit_consumption(
                 program_id=PROGRAM,
                 opportunity_id=OPP,
