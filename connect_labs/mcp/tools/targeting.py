@@ -1834,6 +1834,8 @@ def targeting_pmc_run_status(user, *, run_id, state, cost_per_visit=None, platfo
         "LEAD WITH 'recommendation' whenever the visitor asks what to do, which approach, or which schedule for a "
         "set of states (they should not have to pick a design themselves): say the approach (recommendation.label), "
         "that each state starts with its own rains, how many states it keeps and which it drops (below the bar), "
+        "and the 'unclear' states (the approach's effect there is within the model's noise: never count them as "
+        "passing or failing; name each one's best clear design and its multiple instead), "
         "deaths averted, cost, $ per death and x GiveWell for the kept states; then versus_quarterly (the "
         "proposal's base, x and the deaths-per-dollar ratio) and step_up (what more money buys at the margin, its "
         "cost per extra death and whether that increment clears the bar). Then say WHY in one or two sentences from "
