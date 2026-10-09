@@ -1826,9 +1826,9 @@ def targeting_pmc_run_status(user, *, run_id, state, cost_per_visit=None, platfo
         "states and why (mention excluded designs only if asked); costs_line as one line; two caveat lines "
         "(the first caveat: one fitted setting per state, not a full calibration; and the deaths caveat, the "
         "last: the multiple is a floor counting deaths only); then explorer_path as a short markdown link, "
-        "[Open these states in the PMC explorer (national model)](...), with a few words beside it saying the "
-        "explorer's figures come from the single national setting and will NOT match this ranking, which uses "
-        "each state's own fitted model. Label every result with 'label' -- 'illustrative \u00b7 fitted to "
+        "[Open this ranking in the PMC explorer](...), with a few words beside it saying the explorer shows the "
+        "same ranking for these states, where the visitor can re-price it, switch the deaths estimate and run a "
+        "custom schedule in one state. Label every result with 'label' -- 'illustrative \u00b7 fitted to "
         "each state's prevalence and rainfall' -- and never call it calibrated. "
         "FROM A TARGETING SELECTION (the targeting page's state carries filters.selected_areas, e.g. "
         "'Kano (NGA), Ondo (NGA)', plus the question that produced them): take the NGA names, pass them as "
@@ -1925,6 +1925,8 @@ def targeting_pmc_rank(
         raise MCPToolError("BAD_REQUEST", str(e)) from None
 
     q = {k: v for k, v in costs.items() if v != pmc.costs_or_default()[k]}
+    if deaths_basis != mortality.DEFAULT_BASIS:
+        q["deaths_basis"] = deaths_basis
     if states:
         # The selection as the grid names it, ranked or not: the explorer shows why a state was excluded.
         names = [p["state"] for p in out["best_per_state"]] + [e["state"] for e in out["excluded"]]
