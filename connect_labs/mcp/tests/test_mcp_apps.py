@@ -176,6 +176,17 @@ def test_the_agents_description_says_coaching_is_sent_by_a_click():
     assert "Start coaching" in text and "Send to me (QA test)" in text
 
 
+def test_the_agents_description_has_it_preview_at_once_and_leave_the_briefing_to_labs():
+    """Seen live (2026-10-09): asked to start coaching, the agent sent the person to the
+    page's button instead of previewing, and when it did preview it wrote each worker's own
+    `prompt` -- which drops the picture and the fixed opening -- then read the synthetic
+    stand-in bot as a mismatch."""
+    text = get_tool("workflow_run_action").description
+    assert "PREVIEW STRAIGHT AWAY" in text
+    assert "do NOT set a worker's own `prompt`" in text and "top-level `prompt`" in text
+    assert "sample stand-in" in text and "not a mismatch" in text
+
+
 def test_the_view_tool_belongs_to_the_act_scope_and_no_read_scope():
     from connect_labs.labs import canopy
 
