@@ -53,6 +53,8 @@ import type {
   PipelineRowsQuery,
   SupplyQuery,
   SupplyResult,
+  PageScope,
+  WorkflowSourceResult,
   PipelineRowsQueryResult,
 } from '@/components/workflow/types';
 import {
@@ -735,6 +737,11 @@ interface ExtendedWorkflowData extends WorkflowDataFromDjango {
   program_scoped?: boolean;
   opportunity_ids?: number[];
   is_edit_mode?: boolean;
+  // A page (workflow/page_mode.py): a workflow with no runs.
+  is_page?: boolean;
+  // The scope in view and the Settings the definition reads (page_mode.py).
+  scope?: PageScope;
+  config?: Record<string, Record<string, unknown>>;
 }
 
 /**
@@ -820,6 +827,12 @@ function WorkflowRunner({
   );
   const supplyDataUrl = initialData.apiEndpoints?.getSupplyData;
   const querySupplyUrl = initialData.apiEndpoints?.querySupply;
+  // Other workflows' runs (workflow/workflow_sources.py): the `workflows` prop.
+  const [workflowSourceData, setWorkflowSourceData] = useState<
+    Record<string, WorkflowSourceResult>
+  >({});
+  const workflowDataUrl = initialData.apiEndpoints?.getWorkflowData;
+  const queryWorkflowUrl = initialData.apiEndpoints?.queryWorkflow;
 
   // Pipeline loading status - null means loaded/ready, string means loading with message
   const [pipelineLoadingStatus, setPipelineLoadingStatus] = useState<
@@ -1303,6 +1316,28 @@ function WorkflowRunner({
     applyScopeParams,
   ]);
 
+  // Load every declared workflow source once, as the viewer: another workflow's
+  // latest run, its saved runs or its summary. A source the viewer cannot read
+  // comes back with its own error, so one never blanks the page.
+  useEffect(() => {
+    if (!workflowDataUrl) return;
+    const sources = (definition.workflow_sources || []) as unknown[];
+    if (!sources.length) return;
+    const url = new URL(workflowDataUrl, window.location.origin);
+    applyScopeParams(url.searchParams);
+    let cancelled = false;
+    fetch(url.toString(), { credentials: 'same-origin' })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled && data && data.workflows)
+          setWorkflowSourceData(data.workflows);
+      })
+      .catch((err) => console.error('workflow sources failed', err));
+    return () => {
+      cancelled = true;
+    };
+  }, [workflowDataUrl, definition.workflow_sources, applyScopeParams]);
+
   // Auto-reconnect to running jobs on page load
   // This allows users to close the browser and return later while the Celery task continues
   useEffect(() => {
@@ -1718,6 +1753,30 @@ function WorkflowRunner({
         }
         return data as SupplyResult;
       },
+      // One workflow source on demand (workflow_sources.py): queryWorkflow('report').
+      queryWorkflow: async (alias: string): Promise<WorkflowSourceResult> => {
+        if (!queryWorkflowUrl) {
+          throw new Error('queryWorkflow is not available on this page.');
+        }
+        const url = new URL(queryWorkflowUrl, window.location.origin);
+        applyScopeParams(url.searchParams);
+        const response = await fetch(url.toString(), {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken,
+          },
+          body: JSON.stringify({ alias }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(
+            data.error || `queryWorkflow failed (${response.status})`,
+          );
+        }
+        return data as WorkflowSourceResult;
+      },
       runAction: (
         key: string,
         args: { workers: WorkflowActionWorker[]; [k: string]: unknown },
@@ -1747,6 +1806,7 @@ function WorkflowRunner({
     workflowActions,
     queryPipelineRowsUrl,
     querySupplyUrl,
+    queryWorkflowUrl,
     applyScopeParams,
   ]);
 
@@ -1991,6 +2051,9 @@ function WorkflowRunner({
     workers: initialData.workers,
     pipelines: pipelineData,
     supply: snapshotSupply ?? supplyData,
+    workflows: workflowSourceData,
+    scope: initialData.scope,
+    config: initialData.config || {},
     links: createLinkHelpers(initialData.links),
     actions: actions,
     onUpdateState: handleUpdateState,

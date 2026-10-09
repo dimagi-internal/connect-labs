@@ -799,6 +799,11 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             from django.urls import reverse
             from django.utils.http import urlencode
 
+            # A page (workflow/page_mode.py) has no runs to pick: it renders here, in page mode.
+            if self._is_page_definition(definition_id):
+                self.page_mode = True
+                return super().get(request, *args, **kwargs)
+
             params = {}
             opp_id = labs_context.get("opportunity_id")
             if opp_id:
@@ -813,6 +818,20 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             anchor = f"#workflow-{definition_id}" if definition_id else ""
             return HttpResponseRedirect(f"{reverse('labs:workflow:list')}{query}{anchor}")
         return super().get(request, *args, **kwargs)
+
+    # Set by the page views (workflow/page_views.py) and the supply tab view: render the
+    # definition with no run (workflow/page_mode.py), with `page_scope` as its `scope` prop.
+    page_mode = False
+    page_scope = None
+
+    def _is_page_definition(self, definition_id) -> bool:
+        from connect_labs.workflow.page_mode import is_page
+
+        try:
+            return is_page(WorkflowDataAccess(request=self.request).get_definition(definition_id))
+        except Exception:
+            logger.warning("Could not read definition %s to see if it is a page", definition_id, exc_info=True)
+            return False
 
     def _recover_opportunity_id(self, definition_id):
         """Best-effort recovery of the opportunity a workflow run belongs to
@@ -982,6 +1001,8 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         # with NO owning opportunity. Its reads go through the (already
         # program-scoped) request DAO.
         program_scoped = bool(program_id) and not opportunity_id
+        # An organisation-owned page (workflow/page_views.py) is read by its organisation alone.
+        org_scoped = self.page_mode and bool(labs_context.get("organization_id")) and not (opportunity_id or program_id)
         context["opportunity_id"] = opportunity_id
         context["program_id"] = program_id
         context["opportunity_name"] = labs_context.get("opportunity_name")
@@ -990,13 +1011,13 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         # below, so an error or no-context page shares the same chrome as the
         # page the recipient was sent to.
         context["present_mode"] = is_present_mode(self.request)
-        context["has_context"] = bool(opportunity_id or program_scoped)
+        context["has_context"] = bool(opportunity_id or program_scoped or org_scoped)
         context["user_opportunities"] = (get_org_data(self.request) or {}).get("opportunities", [])
         # Mapbox token for workflow templates that render maps via the shared
         # ConnectMap module (real admin boundaries + basemap).
         context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
 
-        if not opportunity_id and not program_scoped:
+        if not opportunity_id and not program_scoped and not org_scoped:
             # We get here only when recovery in get() couldn't adopt an opp.
             # get() redirects on any id the user can access (or any id at all
             # when the OAuth opp cache is empty), so if the link still carries a
@@ -1089,8 +1110,19 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             audits_for_run: list[dict] = []
             tasks_for_run: list[dict] = []
 
+            from connect_labs.workflow.page_mode import blank_instance, is_page
+
+            # A page has no runs: opened with no run named (and not being edited), it renders
+            # in page mode -- a blank in-memory instance, and no run endpoints.
+            page = not is_edit_mode and not run_id and (self.page_mode or is_page(definition))
+            context["is_page"] = page
+
             # Get or create run based on mode
-            if is_edit_mode:
+            if page:
+                run_data = blank_instance(definition_id, opportunity_id, program_id, effective_opp_ids)
+                run_data["opportunity_name"] = labs_context.get("opportunity", {}).get("name")
+                context["is_edit_mode"] = False
+            elif is_edit_mode:
                 # Edit mode: create temporary run (not persisted)
                 from datetime import datetime, timedelta, timezone
 
@@ -1337,9 +1369,26 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     ),
                 },
             }
-            # Not in edit mode (no real run), and not on a presentation link: a page
-            # shared with a funder carries no actions and no agent.
-            if not is_edit_mode and not context["present_mode"]:
+            # Every render reads the scope in view and the settings it declares (page_mode.py).
+            from connect_labs.scope_config.service import scope_in_view
+            from connect_labs.workflow.page_mode import RUN_ENDPOINTS, page_config, page_scope
+
+            scope = self.page_scope or scope_in_view(labs_context)
+            workflow_data = context["workflow_data"]
+            workflow_data["is_page"] = page
+            workflow_data["scope"] = page_scope(self.request, scope)
+            workflow_data["config"] = page_config(self.request, definition, scope)
+            # Other workflows' runs (workflow/workflow_sources.py): the `workflows` prop and
+            # actions.queryWorkflow.
+            workflow_data["apiEndpoints"]["getWorkflowData"] = f"/labs/workflow/api/{definition_id}/workflow-data/"
+            workflow_data["apiEndpoints"]["queryWorkflow"] = f"/labs/workflow/api/{definition_id}/workflow-query/"
+            if page:
+                for key in RUN_ENDPOINTS:
+                    workflow_data["apiEndpoints"][key] = None
+
+            # Not in edit mode (no real run), not a page (no run either), and not on a
+            # presentation link: a page shared with a funder carries no actions and no agent.
+            if not is_edit_mode and not page and not context["present_mode"]:
                 self._add_actions_and_agent(context, definition, run_data, workers)
 
         except LabsAPIError as e:
