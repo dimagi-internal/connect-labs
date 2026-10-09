@@ -373,3 +373,12 @@ def test_a_send_tells_the_agent_to_confirm_not_to_look_it_up():
     script = _view().script
     assert "follow it with workflow_action_status" not in script
     assert "do not look it up" in script and "one short line" in script
+
+
+def test_the_card_carries_nothing_beyond_who_the_picture_the_opening_and_send():
+    """Owner, 2026-10-09: the card was busier than it needed to be."""
+    script = _view().script
+    assert "Nothing is sent until you click Send." not in script
+    assert '"Coach: " + p.bot.name' not in script and "Sent with the conversation." not in script
+    assert "var items = [];" in script  # no history of earlier sends
+    assert '"Coach " + one' in script
