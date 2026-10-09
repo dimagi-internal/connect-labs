@@ -440,6 +440,42 @@ function WorkflowUI({
     return value;
   }
 
+  // toLocaleString adds thousands separators (e.g. "1,234 m") -- these are
+  // raw GPS distances in meters and can run into the thousands. Shared by
+  // the UAT Comparison table and the Per-FLW Method Pass Rates table below
+  // it (both show the same underlying uatComparisonStats numbers).
+  function fmtNum(v) {
+    return Math.round(v).toLocaleString();
+  }
+  function fmtM(v) {
+    return v === null || v === undefined ? 'N/A' : fmtNum(v) + ' m';
+  }
+
+  // Shades + arrows a UAT value against BOTH pre-UAT baselines -- only when
+  // they AGREE on direction (both say "UAT is below" or both say "UAT is
+  // above"), so a single noisy baseline can't manufacture a misleading
+  // signal on its own. `lowerIsGood` flips which color goes with which
+  // direction per metric: for Revisit Dist, UAT below both baselines is the
+  // flagged (green) case; for Metres/Visit, UAT above both is.
+  function uatVerdict(uatValue, matched, random, lowerIsGood) {
+    if (uatValue === null || matched === null || random === null) {
+      return { arrow: null, className: '' };
+    }
+    var belowBoth = uatValue < matched && uatValue < random;
+    var aboveBoth = uatValue > matched && uatValue > random;
+    if (belowBoth) {
+      return lowerIsGood
+        ? { arrow: '↓', className: 'bg-green-100 text-green-800' }
+        : { arrow: '↓', className: 'bg-red-100 text-red-800' };
+    }
+    if (aboveBoth) {
+      return lowerIsGood
+        ? { arrow: '↑', className: 'bg-red-100 text-red-800' }
+        : { arrow: '↑', className: 'bg-green-100 text-green-800' };
+    }
+    return { arrow: null, className: '' };
+  }
+
   // Shared list of the 6 per-method outcomes -- drives both the "Final
   // verification method(s)" column and the summary chart, so they can never
   // drift apart on what counts as a method.
@@ -1705,6 +1741,315 @@ function WorkflowUI({
     [failedAnalysisDisplayRows],
   );
 
+  // --- Per-FLW Method Pass Rates (UAT Comparison tab) ---------------------
+  // Ties together every other per-method/per-FLW computation on this
+  // dashboard into one scannable grid: one row per FLW, one column per
+  // verification method, so an FLW who's weak straight across (persistently
+  // suspicious) reads differently at a glance from one who's weak in just
+  // one column (sporadic/isolated issue).
+
+  // Lookup by username into the per-FLW stats uatComparisonStats already
+  // computes, so the Revisit Dist / Metres per Visit columns below can
+  // reuse those numbers directly instead of recomputing them.
+  var uatStatsByUsername = React.useMemo(
+    function () {
+      var map = {};
+      uatComparisonStats.forEach(function (s) {
+        map[s.username] = s;
+      });
+      return map;
+    },
+    [uatComparisonStats],
+  );
+
+  // One program-wide number for the Mother Questions tooltip to compare an
+  // individual FLW against ("this FLW vs. everyone"), derived from the same
+  // per-question stats the Failed Verification Analysis tab's own chart
+  // uses -- not a new computation, just a different rollup of it.
+  var programMotherQStats = React.useMemo(
+    function () {
+      var correct = 0;
+      var incorrect = 0;
+      motherQuestionFailRateStats.forEach(function (s) {
+        correct += s.correct;
+        incorrect += s.incorrect;
+      });
+      var total = correct + incorrect;
+      return {
+        failRate: total > 0 ? Math.round((incorrect / total) * 100) : null,
+      };
+    },
+    [motherQuestionFailRateStats],
+  );
+
+  // Generic per-method tally: attempted = pass+fail+pending (same
+  // "attempted" definition finalVerificationMethods() uses); "other" is
+  // everything that fell through (NA / Not available / ERROR / blank) --
+  // for the Overall column specifically, "other" means this visit's
+  // verification_properties group was never relevant at all, i.e. it never
+  // got scored (see summary memo's verifiedTotal comment above).
+  function tallyOutcomes(rows, getOutcome) {
+    var pass = 0;
+    var fail = 0;
+    var pending = 0;
+    var other = 0;
+    rows.forEach(function (row) {
+      var v = getOutcome(row);
+      if (v === 'Pass') pass += 1;
+      else if (v === 'Fail') fail += 1;
+      else if (typeof v === 'string' && v.indexOf('Pending') !== -1)
+        pending += 1;
+      else other += 1;
+    });
+    var attempted = pass + fail + pending;
+    return {
+      pass: pass,
+      fail: fail,
+      pending: pending,
+      other: other,
+      attempted: attempted,
+      rate: attempted > 0 ? Math.round((pass / attempted) * 100) : null,
+    };
+  }
+
+  function rateColorClass(rate) {
+    if (rate === null) return 'bg-gray-50 text-gray-400';
+    if (rate >= 90) return 'bg-green-100 text-green-800';
+    if (rate >= 70) return 'bg-yellow-100 text-yellow-800';
+    return 'bg-red-100 text-red-800';
+  }
+
+  function fmtRateLine(tally) {
+    return (
+      tally.pass +
+      ' passed, ' +
+      tally.fail +
+      ' failed, ' +
+      tally.pending +
+      ' pending, ' +
+      tally.other +
+      ' NA/not applicable'
+    );
+  }
+
+  var perFlwMethodStats = React.useMemo(
+    function () {
+      var byFlw = {};
+      displayRows.forEach(function (row) {
+        if (!byFlw[row.username]) byFlw[row.username] = [];
+        byFlw[row.username].push(row);
+      });
+
+      var result = Object.keys(byFlw).map(function (username) {
+        var rows = byFlw[username];
+
+        var methodTallies = METHODS.map(function (m) {
+          var t = tallyOutcomes(rows, m.getOutcome);
+          t.label = m.label;
+          return t;
+        });
+
+        // Final verification outcome -- same verifiedTotal-based logic as
+        // the Summary tab's cards (see summary memo above): "other" here
+        // means "never reached an overall outcome", not "failed".
+        var overall = tallyOutcomes(rows, function (row) {
+          return row.visit_verification_outcome;
+        });
+
+        // GPS home vs. health facility split -- same location-type field
+        // gpsOutcome() itself branches on.
+        var gpsHome = tallyOutcomes(
+          rows.filter(function (row) {
+            return row.where_is_the_visit_being_conducted === 'mothers_home';
+          }),
+          gpsOutcome,
+        );
+        var gpsFacility = tallyOutcomes(
+          rows.filter(function (row) {
+            return row.where_is_the_visit_being_conducted === 'health_facility';
+          }),
+          gpsOutcome,
+        );
+
+        // This FLW's single most common home-GPS-mismatch reason (mode),
+        // from the same field the Failed Verification Analysis tab's
+        // "Home GPS mismatch reasons" chart breaks down program-wide.
+        var reasonCounts = {};
+        rows.forEach(function (row) {
+          if (row.home_gps_mismatch_reason) {
+            reasonCounts[row.home_gps_mismatch_reason] =
+              (reasonCounts[row.home_gps_mismatch_reason] || 0) + 1;
+          }
+        });
+        var topReason = null;
+        var topReasonCount = 0;
+        Object.keys(reasonCounts).forEach(function (r) {
+          if (reasonCounts[r] > topReasonCount) {
+            topReason = r;
+            topReasonCount = reasonCounts[r];
+          }
+        });
+
+        return {
+          username: username,
+          visitCount: rows.length,
+          methodTallies: methodTallies,
+          overall: overall,
+          gpsHome: gpsHome,
+          gpsFacility: gpsFacility,
+          topMismatchReason: topReason,
+          topMismatchReasonCount: topReasonCount,
+          uatStats: uatStatsByUsername[username] || null,
+        };
+      });
+
+      // Worst Overall pass rate first -- surfaces the most-suspicious FLWs
+      // at the top. An FLW with no scored visits at all (rate === null)
+      // sorts LAST, since there's nothing to judge them on; ties broken
+      // alphabetically for a stable order.
+      result.sort(function (a, b) {
+        var ar = a.overall.rate;
+        var br = b.overall.rate;
+        if (ar === null && br === null)
+          return a.username.localeCompare(b.username);
+        if (ar === null) return 1;
+        if (br === null) return -1;
+        if (ar !== br) return ar - br;
+        return a.username.localeCompare(b.username);
+      });
+
+      return result;
+    },
+    [displayRows, uatStatsByUsername],
+  );
+
+  function buildOverallTooltip(f) {
+    var base =
+      'Overall Final verification outcome -- ' +
+      (f.overall.rate === null
+        ? 'no scored visits'
+        : f.overall.rate + '% passed') +
+      ' (' +
+      fmtRateLine(f.overall) +
+      ').';
+    if (f.overall.other > 0) {
+      base +=
+        '\n' +
+        f.overall.other +
+        ' of ' +
+        f.visitCount +
+        " visits never reached an overall outcome (CommCare's own eligibility rule excluded them -- see Definitions).";
+    }
+    return base;
+  }
+
+  function buildMethodCellTooltip(flwStat, methodLabel, tally) {
+    var base =
+      methodLabel +
+      ' -- ' +
+      (tally.rate === null ? 'no attempted visits' : tally.rate + '% passed') +
+      ' (' +
+      fmtRateLine(tally) +
+      ').';
+
+    if (methodLabel === 'GPS') {
+      base +=
+        '\nHome checks: ' +
+        (flwStat.gpsHome.rate === null
+          ? 'none'
+          : flwStat.gpsHome.rate + '% passed') +
+        ' (' +
+        fmtRateLine(flwStat.gpsHome) +
+        ').' +
+        '\nHealth facility checks: ' +
+        (flwStat.gpsFacility.rate === null
+          ? 'none'
+          : flwStat.gpsFacility.rate + '% passed') +
+        ' (' +
+        fmtRateLine(flwStat.gpsFacility) +
+        ').';
+      if (flwStat.topMismatchReason) {
+        base +=
+          '\nMost common home mismatch reason: ' +
+          gpsMismatchReasonLabel(flwStat.topMismatchReason) +
+          ' (' +
+          flwStat.topMismatchReasonCount +
+          'x).';
+      }
+      return base;
+    }
+
+    if (methodLabel === 'QR') {
+      return (
+        base +
+        "\n(Not available = mother's QR photo wasn't on hand at the visit -- not counted as a fail.)"
+      );
+    }
+
+    if (methodLabel === 'Mother Questions') {
+      return (
+        base +
+        (programMotherQStats.failRate !== null
+          ? '\nProgram-wide spot-check fail rate (all FLWs, all questions): ' +
+            programMotherQStats.failRate +
+            '%.'
+          : '')
+      );
+    }
+
+    return base;
+  }
+
+  function buildRevisitDistTooltip(flwStat) {
+    var u = flwStat.uatStats;
+    if (!u || u.revisitUatMean === null) {
+      return 'Revisit Dist -- no UAT revisit-distance data for this FLW in the current filter.';
+    }
+    return (
+      "Revisit Dist (mean distance between a visit and the mother's previous point) -- UAT: " +
+      fmtM(u.revisitUatMean) +
+      ' (n=' +
+      u.revisitUatN +
+      ').\nPre-UAT, prior window: ' +
+      fmtM(u.revisitMatchedMean) +
+      ' (n=' +
+      u.revisitMatchedN +
+      ').\nPre-UAT, 20-sample avg: ' +
+      fmtM(u.revisitRandomMean) +
+      ' (n≈' +
+      Math.round(u.revisitRandomN || 0) +
+      ').' +
+      (u.revisitInsufficientHistory
+        ? '\n(* insufficient pre-UAT history -- both pre-UAT columns fall back to all available data.)'
+        : '')
+    );
+  }
+
+  function buildMetresPerVisitTooltip(flwStat) {
+    var u = flwStat.uatStats;
+    if (!u || u.visitUatMedian === null) {
+      return 'Metres/Visit -- no UAT multi-mother-day data for this FLW in the current filter.';
+    }
+    return (
+      'Metres/Visit (median distance between consecutive visits on a multi-mother day) -- UAT: ' +
+      fmtM(u.visitUatMedian) +
+      ' (n=' +
+      u.visitUatN +
+      ').\nPre-UAT, prior window: ' +
+      fmtM(u.visitMatchedMedian) +
+      ' (n=' +
+      u.visitMatchedN +
+      ').\nPre-UAT, 20-sample avg: ' +
+      fmtM(u.visitRandomMedian) +
+      ' (n≈' +
+      Math.round(u.visitRandomN || 0) +
+      ').' +
+      (u.visitInsufficientHistory
+        ? '\n(* insufficient pre-UAT history -- both pre-UAT columns fall back to all available data.)'
+        : '')
+    );
+  }
+
   // --- CSV export -----------------------------------------------------------
   function csvEscape(value) {
     var s = value === null || value === undefined ? '' : String(value);
@@ -2125,6 +2470,30 @@ function WorkflowUI({
           def: "When a FLW's total available pre-UAT weight (mothers, for Revisit Dist; multi-mother-day visits, for Metres/Visit) is SMALLER than her own UAT count for that metric, a same-size sample isn't possible. That metric's two pre-UAT cells fall back to all of her available pre-UAT data instead (becoming identical to each other), flagged with an asterisk after the figure. The two metrics flag independently -- a FLW can be insufficient on one and fully sampled on the other.",
           field:
             "insufficientHistory flag, computed separately per metric: total pre-UAT bucket weight < that metric's targetWeight.",
+        },
+        {
+          name: 'Per-FLW Method Pass Rates -- table',
+          def: "Below the comparison table: one row per FLW, one column per verification method plus Overall, Revisit Dist, and Metres/Visit, meant to be read ACROSS a row -- an FLW who's red straight across is persistently weak everywhere (more suspicious), one who's red in a single column likely has an isolated, sporadic issue there. Sorted worst Overall pass rate first. Color bands: green ≥90%, yellow 70-89%, red <70%, grey = no attempted visits for that method.",
+          field:
+            'perFlwMethodStats -- displayRows (domain + eligibility + exclude-registration-visits, same population as the Verification Summary/Table tabs) grouped by username, tallied per method via the shared tallyOutcomes() helper (same Pass/Fail/Pending/"other" categorization the Summary cards and per-method chart use). Revisit Dist/Metres per Visit columns read directly from uatComparisonStats via a username lookup (uatStatsByUsername), so they are the exact same per-FLW UAT-vs-pre-UAT numbers as the table above, with the same green/red + arrow shading (uatVerdict(), lifted to be shared by both tables).',
+        },
+        {
+          name: 'Per-FLW Method Pass Rates -- Overall column',
+          def: "This FLW's Final verification outcome pass rate, using the SAME fixed verifiedTotal-based logic as the Summary tab's cards (see Verification Summary Tab section above) -- divided by scored visits only, not every visit with the block present. The hover tooltip states how many of this FLW's visits never reached an overall outcome at all.",
+          field:
+            "tallyOutcomes(rows, row => row.visit_verification_outcome) -- 'other' in that tally is exactly the visits CommCare's verification_properties group was never relevant for (see Verification Summary Tab section above for why).",
+        },
+        {
+          name: 'Per-FLW Method Pass Rates -- GPS cell tooltip',
+          def: "Beyond the overall GPS pass rate: a home-vs-health-facility breakdown (the two locations have different reference points, so a problem in one doesn't imply a problem in the other), and this FLW's single most common home-GPS-mismatch reason (from the Failed Verification Analysis tab's own breakdown, just scoped to one FLW instead of the whole program).",
+          field:
+            "gpsHome/gpsFacility (tallyOutcomes() filtered by where_is_the_visit_being_conducted before calling gpsOutcome), topMismatchReason/topMismatchReasonCount (mode of home_gps_mismatch_reason across this FLW's rows).",
+        },
+        {
+          name: 'Per-FLW Method Pass Rates -- Mother Questions cell tooltip',
+          def: "Beyond this FLW's own pass rate: the program-wide spot-check fail rate across all FLWs and all 14 questions, for an at-a-glance 'this FLW vs. everyone' comparison.",
+          field:
+            "programMotherQStats -- correct/incorrect summed across every row of motherQuestionFailRateStats (the same per-question stats the Failed Verification Analysis tab's chart uses), rolled up into one percentage.",
         },
       ],
     },
@@ -3363,17 +3732,6 @@ function WorkflowUI({
                   </thead>
                   <tbody className="divide-y divide-gray-100 bg-white">
                     {uatComparisonStats.map(function (s) {
-                      // toLocaleString adds thousands separators (e.g.
-                      // "1,234 m") -- these are raw GPS distances in
-                      // meters and can run into the thousands.
-                      function fmtNum(v) {
-                        return Math.round(v).toLocaleString();
-                      }
-                      function fmtM(v) {
-                        return v === null || v === undefined
-                          ? 'N/A'
-                          : fmtNum(v) + ' m';
-                      }
                       // Matched-window n is an exact count (mothers, or
                       // achieved visit-count -- can slightly overshoot its
                       // target since a day is never split); the 20-sample n
@@ -3398,53 +3756,6 @@ function WorkflowUI({
                           ')' +
                           (insufficient ? ' *' : '')
                         );
-                      }
-                      // Shades + arrows the UAT cell against BOTH pre-UAT
-                      // baselines -- only when they AGREE on direction (both
-                      // say "UAT is below" or both say "UAT is above"), so a
-                      // single noisy baseline can't manufacture a misleading
-                      // signal on its own. `lowerIsGood` flips which color
-                      // goes with which direction per metric: for Revisit
-                      // Dist, UAT below both baselines is the flagged
-                      // (green) case; for Metres/Visit, UAT above both is.
-                      function uatVerdict(
-                        uatValue,
-                        matched,
-                        random,
-                        lowerIsGood,
-                      ) {
-                        if (
-                          uatValue === null ||
-                          matched === null ||
-                          random === null
-                        ) {
-                          return { arrow: null, className: '' };
-                        }
-                        var belowBoth = uatValue < matched && uatValue < random;
-                        var aboveBoth = uatValue > matched && uatValue > random;
-                        if (belowBoth) {
-                          return lowerIsGood
-                            ? {
-                                arrow: '↓',
-                                className: 'bg-green-100 text-green-800',
-                              }
-                            : {
-                                arrow: '↓',
-                                className: 'bg-red-100 text-red-800',
-                              };
-                        }
-                        if (aboveBoth) {
-                          return lowerIsGood
-                            ? {
-                                arrow: '↑',
-                                className: 'bg-red-100 text-red-800',
-                              }
-                            : {
-                                arrow: '↑',
-                                className: 'bg-green-100 text-green-800',
-                              };
-                        }
-                        return { arrow: null, className: '' };
                       }
                       var revisitVerdict = uatVerdict(
                         s.revisitUatMean,
@@ -3552,6 +3863,168 @@ function WorkflowUI({
               <p className="text-sm text-gray-500">
                 No FLWs with revisit-distance or multi-mother-day data in the
                 current filter.
+              </p>
+            </div>
+          )}
+
+          <div>
+            <h3 className="text-base font-semibold text-gray-900">
+              Per-FLW Method Pass Rates
+            </h3>
+            <p className="text-xs text-gray-500">
+              One row per FLW, one column per verification method -- pass rate
+              is Pass / (Pass + Fail + Pending) among that FLW's attempted
+              visits for that method (NA / Not available / blank don't count
+              toward the rate, same "attempted" definition the Final
+              verification method(s) column uses). Sorted worst Overall pass
+              rate first, so an FLW who's weak straight across every column
+              (persistently suspicious) stands out from one who's weak in just
+              one (likely a sporadic, isolated issue). Hover any cell for detail
+              pulled from elsewhere on this dashboard. Same domain + eligibility
+              + exclude-registration-visits population as the Verification
+              Summary and Table tabs (displayRows).
+            </p>
+          </div>
+          {perFlwMethodStats.length > 0 ? (
+            <div className="overflow-x-auto rounded border border-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="whitespace-nowrap border-r border-gray-200 px-3 py-2 text-left font-medium text-gray-700">
+                      FLW
+                    </th>
+                    <th className="whitespace-nowrap border-r border-gray-200 px-3 py-2 text-right font-medium text-gray-700">
+                      Visits
+                    </th>
+                    <th className="whitespace-nowrap border-r border-gray-200 px-3 py-2 text-right font-medium text-gray-700">
+                      Overall
+                    </th>
+                    <th className="whitespace-nowrap px-3 py-2 text-right font-medium text-gray-700">
+                      GPS
+                    </th>
+                    <th className="whitespace-nowrap px-3 py-2 text-right font-medium text-gray-700">
+                      Revisit Dist
+                    </th>
+                    <th className="whitespace-nowrap border-r border-gray-200 px-3 py-2 text-right font-medium text-gray-700">
+                      Metres/Visit
+                    </th>
+                    {METHODS.slice(1).map(function (m) {
+                      return (
+                        <th
+                          key={m.label}
+                          className="whitespace-nowrap px-3 py-2 text-right font-medium text-gray-700"
+                        >
+                          {m.label}
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {perFlwMethodStats.map(function (f) {
+                    var u = f.uatStats;
+                    var revisitVerdict = u
+                      ? uatVerdict(
+                          u.revisitUatMean,
+                          u.revisitMatchedMean,
+                          u.revisitRandomMean,
+                          true,
+                        )
+                      : { arrow: null, className: '' };
+                    var visitVerdict = u
+                      ? uatVerdict(
+                          u.visitUatMedian,
+                          u.visitMatchedMedian,
+                          u.visitRandomMedian,
+                          false,
+                        )
+                      : { arrow: null, className: '' };
+                    return (
+                      <tr key={f.username}>
+                        <td className="whitespace-nowrap border-r border-gray-200 px-3 py-2 font-medium text-gray-900">
+                          {f.username}
+                        </td>
+                        <td className="whitespace-nowrap border-r border-gray-200 px-3 py-2 text-right text-gray-700">
+                          {f.visitCount}
+                        </td>
+                        <td
+                          className={
+                            'whitespace-nowrap border-r border-gray-200 px-3 py-2 text-right ' +
+                            rateColorClass(f.overall.rate)
+                          }
+                          title={buildOverallTooltip(f)}
+                        >
+                          {f.overall.rate === null
+                            ? 'NA'
+                            : f.overall.rate + '%'}
+                        </td>
+                        <td
+                          className={
+                            'whitespace-nowrap px-3 py-2 text-right ' +
+                            rateColorClass(f.methodTallies[0].rate)
+                          }
+                          title={buildMethodCellTooltip(
+                            f,
+                            f.methodTallies[0].label,
+                            f.methodTallies[0],
+                          )}
+                        >
+                          {f.methodTallies[0].rate === null
+                            ? 'NA'
+                            : f.methodTallies[0].rate + '%'}
+                        </td>
+                        <td
+                          className={
+                            'whitespace-nowrap px-3 py-2 text-right ' +
+                            (revisitVerdict.className || 'text-gray-800')
+                          }
+                          title={buildRevisitDistTooltip(f)}
+                        >
+                          {u && u.revisitUatMean !== null
+                            ? fmtM(u.revisitUatMean)
+                            : 'N/A'}
+                          {revisitVerdict.arrow && (
+                            <span className="ml-1">{revisitVerdict.arrow}</span>
+                          )}
+                        </td>
+                        <td
+                          className={
+                            'whitespace-nowrap border-r border-gray-200 px-3 py-2 text-right ' +
+                            (visitVerdict.className || 'text-gray-800')
+                          }
+                          title={buildMetresPerVisitTooltip(f)}
+                        >
+                          {u && u.visitUatMedian !== null
+                            ? fmtM(u.visitUatMedian)
+                            : 'N/A'}
+                          {visitVerdict.arrow && (
+                            <span className="ml-1">{visitVerdict.arrow}</span>
+                          )}
+                        </td>
+                        {f.methodTallies.slice(1).map(function (mt) {
+                          return (
+                            <td
+                              key={mt.label}
+                              className={
+                                'whitespace-nowrap px-3 py-2 text-right ' +
+                                rateColorClass(mt.rate)
+                              }
+                              title={buildMethodCellTooltip(f, mt.label, mt)}
+                            >
+                              {mt.rate === null ? 'NA' : mt.rate + '%'}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+              <p className="text-sm text-gray-500">
+                No visits in the current filter.
               </p>
             </div>
           )}
