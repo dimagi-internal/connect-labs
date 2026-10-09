@@ -235,16 +235,9 @@ A **page** is a screen in Labs that is written the same way as a workflow but ha
 
 An organisation's **home page** is chosen in its Settings. Once set, selecting that organisation in Labs (or following a link to `/labs/overview/?organization_id=<organisation>`) lands directly on its page rather than the default overview. A page can also fill a Supply tab, in which case it opens inside the Supply header without starting a run.
 
+!!! note "Old page links"
+    The old card-style pages that lived at `/labs/p/<name>/` have been retired. If you follow an old link, Labs will forward you to the new page at the correct address when the organisation, programme, or opportunity you are in has one. If there is no matching page, Labs shows a message explaining that pages have moved rather than an error. Update any saved bookmarks or shared links to use the new addresses in the table above.
+
 ### How pages differ from workflows
 
-On the Workflows list, a page shows **Open page** instead of **Start run**. Pages do not appear in the run history and do not count against any run limits.
-
-### Building a page
-
-Use the workflow tools you already know. When creating a new workflow, start from the **Page** template. The same MCP instructions that edit workflow definitions work for pages — describe the change in plain English and Claude updates the page definition for you.
-
----
-
-## Supply Settings
-
-Each programme (and each organisation or opportunity) now has a **Settings**
+On the Workflows list, a page shows **Open
