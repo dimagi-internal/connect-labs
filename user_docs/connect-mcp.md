@@ -207,6 +207,10 @@ Select the states you are considering. The page immediately shows you:
 
 You no longer choose a schedule yourself — the page derives the recommendation from your state selection automatically.
 
+### Unclear results
+
+For some states, the model cannot confidently determine whether the recommended approach has a meaningful effect — the result falls within the model's noise. When this happens, the page does **not** count that state as passing. Instead, it tells you the result is unclear for that state and names the best design that does produce a clear result there. Previously, the page showed a multiple for such states as if the result were solid.
+
 ### Testing your own schedule
 
 If you want to explore a schedule that differs from the recommendation, expand the **Advanced** section at the bottom of the page. This is where manual schedule testing has moved.
@@ -238,8 +242,4 @@ The synthetic note, shown when you are working on a demo opportunity, is kept br
 
 After you send or test a coaching session, the chat shows a plain confirmation message — for example, "Sent a test to Ibrahim." — as your message. The card's internal instructions to the agent are never shown in the chat.
 
-The agent produces one coaching card per request. If you ask to preview coaching for a worker, a single card appears in the chat with the picture the agent intends to use. A second card is not generated for the same request.
-
-### How the card builds its preview
-
-The coaching card builds its preview from exactly what the agent asked for — it reads the agent's original request directly, rather than relying on a copy that may have been shortened or summarised in transit. This means the card previews correctly even when the agent
+The agent produces one coaching card per request. If you ask to preview coaching for
