@@ -182,7 +182,7 @@ def test_without_confirm_the_tool_only_previews(user, actionable):
         action="initiate_ai_coach",
         arguments={"workers": [{"key": "10::asha", "prompt": "Weighing is red for you."}]},
     )
-    assert out["confirm"] and out["needs"] == []
+    assert out["needs"] == []
     assert out["workers"] == [
         {
             "key": "10::asha",
@@ -201,8 +201,9 @@ def test_the_confirmed_call_queues_the_previewed_action_as_the_caller(
 ):
     from unittest.mock import patch
 
+    # The coaching token comes only from the View's own preview (as the viewer).
     previewed = _call(
-        "workflow_run_action",
+        "workflow_action_preview_view",
         user,
         run_id=70,
         program_id=25,
@@ -232,7 +233,7 @@ def test_a_canopy_call_is_recorded_as_canopy(user, actionable, monkeypatch):
     monkeypatch.setattr(wa, "_delegated_token", lambda: MagicMock(client_id="canopy"))
     monkeypatch.setattr(wa, "_caller_actor", lambda: "ace")
     previewed = _call(
-        "workflow_run_action",
+        "workflow_action_preview_view",
         user,
         run_id=70,
         program_id=25,
@@ -357,3 +358,139 @@ def test_a_coaching_preview_briefs_each_worker_from_the_runs_grading(user, actio
     assert "1. Followed up [fu] — 18 of 22 (80%), band yellow" in binta["prompt"]
     assert asha["prompt"].endswith("Programme team's note:\nTalk with them.")
     assert asha["indicators"] == ["wt"]
+
+
+# ---------------------------------------------------------------------------
+# MCP Apps: a coaching send is the person's click, never the agent's call
+# ---------------------------------------------------------------------------
+
+
+def _coach_preview(user, tool="workflow_run_action", **extra):
+    return _call(
+        tool,
+        user,
+        run_id=70,
+        program_id=25,
+        action="initiate_ai_coach",
+        arguments={"workers": [{"key": "10::asha"}]},
+        **extra,
+    )
+
+
+def test_the_agents_coaching_preview_carries_no_confirm(user, actionable):
+    out = _coach_preview(user)
+    assert "confirm" not in out and "confirm_expires_in" not in out
+    assert out["sent_by"] == "click"
+    assert "Nothing has been done" in out["next"]
+    # It says where the person sends it from, and that the agent cannot.
+    assert "Send on the card" in out["next"] and "Start coaching" in out["next"]
+    assert "no `confirm` for you" in out["next"]
+    assert out["page_url"] == "/labs/workflow/7/run/?run_id=70&program_id=25"
+    # Everything else the person needs to see is still there.
+    assert out["workers"][0]["briefing"]["topics"]
+    assert out["workers"][0]["opening"].startswith("Hello")
+
+
+def test_the_agent_cannot_turn_its_preview_into_a_send(user, actionable):
+    """Calling again with its preview's own arguments just previews again: still no token."""
+    out = _coach_preview(user)
+    again = _call(
+        "workflow_run_action",
+        user,
+        run_id=70,
+        program_id=25,
+        action="initiate_ai_coach",
+        arguments=out["arguments"],
+    )
+    assert "confirm" not in again and "execution" not in again
+    assert not WorkflowActionExecution.objects.exists()
+
+
+def test_a_non_coaching_preview_still_gives_the_agent_its_token(user, actionable):
+    task = {"key": "follow_up", "type": "create_task", "label": "Follow up", "defaults": {"title": "Follow up"}}
+    definition = _definition_with_opps()
+    definition.data["config"]["actions"] = [COACH, task]
+    actionable.get_definition.return_value = definition
+    out = _call(
+        "workflow_run_action",
+        user,
+        run_id=70,
+        program_id=25,
+        action="follow_up",
+        arguments={"workers": [{"key": "10::asha"}]},
+    )
+    assert out["confirm"] and "sent_by" not in out
+
+
+def test_the_view_preview_has_the_picture_inline_and_the_viewers_token(user, actionable):
+    import base64
+
+    out = _coach_preview(user, tool="workflow_action_preview_view")
+    assert out["confirm"] and out["confirm_expires_in"] > 0
+    assert out["sent_by"] == "click"
+    # The picture goes with the conversation the View sends.
+    assert out["arguments"]["include_image"] is True
+    image = out["workers"][0]["image"]
+    assert image["data_uri"].startswith("data:image/png;base64,")
+    png = base64.b64decode(image["data_uri"].split(",", 1)[1])
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    assert len(png) == image["bytes"] <= wa.VIEW_IMAGE_MAX_BYTES
+    assert image["caption"].startswith("A bar chart of")
+    assert out["executions"] == []
+
+
+def test_the_view_previews_text_leaves_out_the_picture_and_the_token(user, actionable):
+    from connect_labs.mcp.tool_registry import get_tool as registry_tool
+
+    out = _coach_preview(user, tool="workflow_action_preview_view")
+    text = registry_tool("workflow_action_preview_view").text(out)
+    assert "data:image" not in text and out["confirm"] not in text
+    assert "inline_png_bytes" in text
+
+
+def test_the_view_sends_what_it_showed(user, actionable, django_capture_on_commit_callbacks):
+    from unittest.mock import patch
+
+    shown = _coach_preview(user, tool="workflow_action_preview_view")
+    with patch("connect_labs.workflow.tasks.execute_workflow_action.delay"):
+        with django_capture_on_commit_callbacks(execute=True):
+            sent = _call(
+                "workflow_run_action",
+                user,
+                run_id=70,
+                program_id=25,
+                action="initiate_ai_coach",
+                arguments=shown["arguments"],
+                confirm=shown["confirm"],
+            )
+    execution = WorkflowActionExecution.objects.get()
+    assert sent["execution"]["id"] == execution.pk
+    assert execution.arguments["include_image"] is True
+    # A reload of the View shows it was sent.
+    again = _coach_preview(user, tool="workflow_action_preview_view")
+    assert [e["id"] for e in again["executions"]] == [execution.pk]
+
+
+def test_the_views_qa_send_is_refused_to_anyone_not_dimagi_staff(user, actionable):
+    with pytest.raises(MCPToolError, match="only available to Dimagi staff") as e:
+        _coach_preview(user, tool="workflow_action_preview_view", deliver_to="someone.qa")
+    assert e.value.code == "PERMISSION_DENIED"
+
+
+def test_the_views_qa_send_previews_to_the_staff_member(actionable):
+    staff = get_user_model().objects.create_user(username="jo", email="jo@dimagi.com", password="p")
+    out = _coach_preview(staff, tool="workflow_action_preview_view", deliver_to="  jo.qa ")
+    assert out["arguments"]["deliver_to"] == "jo.qa"
+    assert out["deliver_to"] == "jo.qa" and out["confirm"]
+    assert out["workers"][0]["sending_to"].startswith("sending to jo.qa")
+    # An empty deliver_to clears one the agent's arguments carried.
+    cleared = _call(
+        "workflow_action_preview_view",
+        staff,
+        run_id=70,
+        program_id=25,
+        action="initiate_ai_coach",
+        arguments={"workers": [{"key": "10::asha"}], "deliver_to": "jo.qa"},
+        deliver_to="",
+    )
+    assert "deliver_to" not in cleared["arguments"]

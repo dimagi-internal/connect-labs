@@ -17,6 +17,14 @@ class Tool:
     handler: Callable[..., Any]
     is_write: bool = False
     wants_progress: bool = False
+    #: The tool's ``_meta`` on ``tools/list`` -- e.g. ``{"ui": {...}}`` for an MCP Apps
+    #: tool (``connect_labs/mcp/ui``). None for most tools.
+    meta: dict | None = None
+    #: Renders the text ``content`` block from the result dict. None (most tools): the
+    #: result as JSON. A tool whose result carries something bulky for a View (an
+    #: inline picture) gives a short description here, so the text a non-UI client
+    #: reads stays readable and small.
+    text: Callable[[dict], str] | None = None
 
 
 _REGISTRY: dict[str, Tool] = {}
@@ -29,6 +37,8 @@ def register(
     input_schema: dict,
     is_write: bool = False,
     wants_progress: bool = False,
+    meta: dict | None = None,
+    text: Callable[[dict], str] | None = None,
 ) -> Callable[[Callable], Callable]:
     """Decorator that registers a tool handler.
 
@@ -44,6 +54,10 @@ def register(
     ``progress`` is passed OUT OF BAND, never through ``input_schema``: it is
     not a caller-supplied argument and must not appear in the advertised schema
     or the audit log.
+
+    ``meta`` is the tool's ``_meta`` as ``tools/list`` advertises it (MCP Apps:
+    ``{"ui": {"resourceUri": ..., "visibility": [...]}}``); ``text`` renders the
+    result's text content when the JSON dump is not what a reader should get.
     """
 
     def decorator(fn: Callable) -> Callable:
@@ -56,6 +70,8 @@ def register(
             handler=fn,
             is_write=is_write,
             wants_progress=wants_progress,
+            meta=meta,
+            text=text,
         )
         return fn
 
@@ -64,14 +80,13 @@ def register(
 
 def list_tools() -> list[dict]:
     """Return tool catalog in MCP tools/list shape."""
-    return [
-        {
-            "name": t.name,
-            "description": t.description,
-            "inputSchema": t.input_schema,
-        }
-        for t in _REGISTRY.values()
-    ]
+    out = []
+    for t in _REGISTRY.values():
+        entry = {"name": t.name, "description": t.description, "inputSchema": t.input_schema}
+        if t.meta:
+            entry["_meta"] = t.meta
+        out.append(entry)
+    return out
 
 
 def get_tool(name: str) -> Tool | None:
