@@ -2235,6 +2235,19 @@ An action is something a workflow lets you **do**, such as "Initiate AI coach". 
   - `WorkflowActionExecution` records who ran the action, through which entry point (`page`, `mcp` or `canopy`), for which workers, and the outcome per worker.
 - **Off by default, and never inherited from a template that says nothing.** Set it per workflow with `workflow_update_definition`.
 
+### Coaching charts (`workflow/coach_charts/`)
+
+The picture a coaching conversation sends is a CHART: an agent (or a person) decides **what** it shows; Labs supplies **every number** and draws it in **Connect's style**. Owner requirements, 2026-10-09.
+
+- **Web-native specs.** A chart is a Vega-Lite spec plus Labs' named datasets. Today Labs renders it server-side to PNG (`coach_charts/render.py`, `vl-convert-python`, exact-pinned) for Open Chat Studio and the phone; later the same spec and resolved data can render live in a phone webview. Sizes are CSS pixels for a phone: 540 wide, drawn at 2x, so the PNG is 1080 px (a chat bubble shows ~930 px). The smallest themed text is 20 CSS px (40 px in the PNG); a chart taller than 2400 px or over 1 MB is refused.
+- **One theme, forced.** `coach_charts/theme.py` holds Connect's design tokens -- Work Sans, brand deep purple titles, the brand band colours (sunset / marigold / green-600), border-light tracks, `rounded-lg` radii -- each with its source in `dimagi/commcare-connect` recorded beside it. `render.themed` drops a spec's own `config`, `background`, `padding`, `autosize` and `datasets` and installs `THEME` as the whole config, so no chart can restyle itself. Nothing loads from outside: `allowed_base_urls` is empty. Work Sans ships in `coach_charts/fonts/` (SIL OFL).
+- **A style library.** Named types in `coach_charts/types.py`, each a function from params to a spec that reads only Labs' named datasets:
+  - `topic_bars` -- today's card: per topic the label (wrapped to three lines), the figure in bold (`31 of 73 · 42%`) and a bar of numerator over denominator in the band's colour. The default, and what every link signed before charts existed still draws (`coach_image.render_png`).
+  - `peer_comparison` and `trend` -- the worker beside anonymous peers, and the worker's weekly series. _(Planned: next stage.)_
+  - A **custom** spec, for when no type fits: the agent's own Vega-Lite, referencing only Labs' datasets by name, drawn in the same forced theme. _(Planned.)_
+- **Every value comes from Labs.** Datasets (`worker_topics`, `peers`, `history`) are resolved from the run's grading and saved runs, never from the request; inline `data.values`, URLs and constant data in a request are stripped. _(Planned.)_
+- **Peers are anonymous, per user.** Each peer is its own series labelled `Peer A`, `Peer B`, ... (stable within a chart), never a name, username or team average, and only peers on the same run and scope the viewer can see. Nothing a worker can see -- caption, alt text, briefing note, `coach_image_caption` -- may name a peer. _(Planned.)_
+
 ### Sharing a run with the embedded agent (`config.agent.share`)
 
 `{"agent": {"share": true}}` puts the canopy SDK's agent panel on the run page (`workflow/agent_sharing.py`). It is off by default and set per workflow.

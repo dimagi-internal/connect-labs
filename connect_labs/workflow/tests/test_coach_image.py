@@ -15,6 +15,7 @@ from connect_labs.mcp import token_scopes
 from connect_labs.mcp.models import MCPAccessToken
 from connect_labs.workflow import actions, coach_briefing, coach_image
 from connect_labs.workflow.actions import ActionError, preview
+from connect_labs.workflow.coach_charts import theme
 
 TOPICS = [
     {"key": "MTG_RATE", "label": "Meetings held", "band": "red", "unit": "%", "numerator": 5, "denominator": 12,
@@ -157,16 +158,32 @@ def test_the_card_grows_with_each_topic():
 
 
 def test_a_card_never_shrinks_below_the_minimum():
-    assert _size({"worker": "", "topics": [{"label": "x", "band": "red", "figure": "1"}]})[1] == coach_image.MIN_HEIGHT
+    assert (
+        coach_image.MIN_HEIGHT
+        <= _size({"worker": "", "topics": [{"label": "x", "band": "red", "figure": "1"}]})[1]
+        < 600
+    )
 
 
 def test_the_figure_reads_count_then_percent():
-    assert coach_image._figure_text({"numerator": 31, "denominator": 73, "pct": 42}) == "31 of 73 · 42%"
-    assert coach_image._figure_text({"numerator": 3, "denominator": 9}) == "3 of 9"
+    from connect_labs.workflow.coach_charts.types import topic_rows
+
+    [a, b] = topic_rows(
+        [
+            {"label": "x", "numerator": 31, "denominator": 73, "pct": 42},
+            {"label": "y", "numerator": 3, "denominator": 9},
+        ]
+    )
+    assert a["figure_text"] == "31 of 73 · 42%"
+    assert b["figure_text"] == "3 of 9 · 33%"
 
 
 def test_drawing_is_deterministic():
     assert coach_image.render_png(_payload(3)) == coach_image.render_png(_payload(3))
+
+
+def _rgb(hex_colour):
+    return tuple(int(hex_colour[i : i + 2], 16) for i in (1, 3, 5))
 
 
 def _colours(payload):
@@ -175,15 +192,15 @@ def _colours(payload):
 
 
 def test_the_bar_is_the_bands_colour_and_an_unknown_band_is_grey():
-    assert coach_image.BAND_COLOURS["red"] in _colours(_payload(1, band="red"))
+    assert _rgb(theme.BAND_COLOURS["red"]) in _colours(_payload(1, band="red"))
     unknown = _colours(_payload(1, band="unbanded"))
-    assert coach_image.NEUTRAL in unknown
-    assert not {coach_image.BAND_COLOURS[b] for b in ("red", "yellow", "green")} & unknown
+    assert _rgb(theme.NEUTRAL) in unknown
+    assert not {_rgb(theme.BAND_COLOURS[b]) for b in ("red", "yellow", "green")} & unknown
 
 
 def test_a_figure_without_counts_draws_without_a_bar():
     payload = {"worker": "W", "topics": [{"label": "Visits per week", "band": "red", "figure": "1.5 visits"}]}
-    assert coach_image.BAND_COLOURS["red"] not in _colours(payload)
+    assert _rgb(theme.BAND_COLOURS["red"]) not in _colours(payload)
 
 
 # ---------------------------------------------------------------------------
