@@ -1762,6 +1762,7 @@ def targeting_pmc_run_status(user, *, run_id, state, cost_per_visit=None, platfo
         run = PmcModelRun.objects.get(pk=run_id)
     except PmcModelRun.DoesNotExist:
         raise MCPToolError("NOT_FOUND", f"No live model run {run_id}.") from None
+    run = service.heal(run)
     if run.status == PmcModelRun.FAILED:
         return {
             "run_id": run.pk,
