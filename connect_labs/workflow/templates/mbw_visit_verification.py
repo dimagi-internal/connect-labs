@@ -101,6 +101,22 @@ _VISIT_FIELDS = [
         "aggregation": "first",
     },
     {
+        # The FLW's own single-select explanation for why a HOME GPS check
+        # failed -- only relevant (per the form's own CommCare `relevant`
+        # condition) when where_is_the_visit_being_conducted == 'mothers_home',
+        # gps_visit_verification_matches == 'no', and a prior home_gps existed,
+        # confirmed via commcare_hq_mcp's get_form_questions. Four options:
+        # previously_saved_location_was_incorrect, mother_has_moved_to_a_new_home,
+        # app_or_gps_issue, other_specify (with a companion free-text field,
+        # home_gps_mismatch_reason_other, not pulled here). No health-facility
+        # equivalent question exists on this form.
+        "name": "home_gps_mismatch_reason",
+        "path": (
+            "form.gps_verification.location_check." "select_the_reason_that_may_have_caused_the_home_location_mismatch"
+        ),
+        "aggregation": "first",
+    },
+    {
         # CommCare's own distance() XPath result (meters) between this visit's
         # captured GPS and the mother's registered home_gps case property.
         # Only relevant/populated when where_is_the_visit_being_conducted ==
