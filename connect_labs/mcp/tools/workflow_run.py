@@ -382,6 +382,33 @@ def workflow_indicator_explain(
         return {"registry": source, "scope": scope, "indicators": out, "compiled_sql": compiled_sql}
 
 
+def _preview_choices(out: dict) -> list[dict] | None:
+    """What the person can do with a ONE-worker coaching preview, for an agent to offer as
+    buttons: send to the worker, send to themselves as a QA test (Dimagi staff --
+    ``qa_redirect``), or not yet. Labs owns this list so every agent offers the same
+    choices; None for anything else, or while ``needs`` are open."""
+    if out.get("type") != "start_ocs_outreach" or out.get("needs") or len(out.get("workers") or []) != 1:
+        return None
+    if (out.get("arguments") or {}).get("deliver_to"):
+        return None  # already a QA preview: the person chose; send it or not
+    name = out["workers"][0].get("name") or "the worker"
+    send = "Call again with this preview's `arguments` and `confirm`."
+    if out.get("synthetic"):
+        send += " Synthetic data: the task gets a sample conversation and no message is sent."
+    choices = [{"label": f"Send to {name}", "do": send}]
+    if out.get("qa_redirect"):
+        choices.append(
+            {
+                "label": "Send to me (QA test)",
+                "do": "Ask the person for their own PersonalID username, preview again with it as "
+                "`arguments.deliver_to`, and send THAT preview's `confirm`. The conversation reaches "
+                f"their Connect app, on {name}'s behalf.",
+            }
+        )
+    choices.append({"label": "Not yet", "do": "Do nothing."})
+    return choices
+
+
 @register(
     name="workflow_run_action",
     description=(
@@ -395,6 +422,12 @@ def workflow_indicator_explain(
         "invalidates the token. If the preview lists `needs`, settle them first: `bot` -- ask "
         "which of `bot_choices` to use, then preview again with `bot`; `connect_ocs` -- the "
         "person must connect Open Chat Studio at `connect_url` first.\n\n"
+        "SHOWING A PREVIEW: give each worker's `briefing` topics and `opening` (the worker's first "
+        "message, verbatim), and a worker's `image` inline as markdown `![<caption>](<url>)` -- it "
+        "opens for a signed-in Labs user who can see that opportunity. When the preview carries "
+        "`choices`, offer exactly those -- as buttons if your client can (a multiple-choice "
+        "question) -- and do what the chosen one's `do` says; never pick for the person. A "
+        "`synthetic: true` preview sends no message (`synthetic_note`); say so.\n\n"
         "`arguments.workers[].key` are worker keys from workflow_run_indicators; an item's own "
         "`prompt` is how to address that worker's own red indicators."
     ),
@@ -448,11 +481,19 @@ def workflow_run_action(
                     arguments=arguments,
                     briefing=briefing,
                 )
+                choices = _preview_choices(out)
+                if choices:
+                    out["choices"] = choices
                 out["next"] = (
                     "Nothing has been done. Settle `needs`, then preview again."
                     if out["needs"]
-                    else "Nothing has been done. Show this to the person; on their yes, call again with "
-                    "these `arguments` and `confirm`."
+                    else (
+                        "Nothing has been done. Show this to the person and offer `choices`; act only on "
+                        "the one they pick."
+                        if choices
+                        else "Nothing has been done. Show this to the person; on their yes, call again with "
+                        "these `arguments` and `confirm`."
+                    )
                 )
                 return out
             execution = commit(
