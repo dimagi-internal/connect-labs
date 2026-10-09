@@ -248,9 +248,14 @@ else about it. `workflow/WORKFLOW_REFERENCE.md` § Case coaching says how a run 
 case_about:            # the "About this case" line; a template, or a list of {when, text} choices
   - { when: birth_weight_g, text: 'Birth weight {birth_weight_g|grams} g; registered {reg_date|day}; ...' }
   - { text: 'Birth weight not recorded; registered {reg_date|day}; ...' }
+case_name:             # what the case is called (briefing, picture, case lists); else its label field
+  - { when: [child_name, mother_name], text: 'Baby {child_name} · mother {mother_name}' }
+  - { when: mother_name, text: 'Baby of {mother_name}' }
 case_series:           # what each visit line (and each picture) reads per visit
   - { name: weight, column: visit_weight_g, label: Weight, format: grams, unit: g,
       line: 'weight {value} g', missing: 'weight not recorded' }
+  - { name: timeliness, column: visit_timeliness, label: Timing, format: text,
+      brief: false }   # drawn on a picture, left out of the briefing's visit lines
 properties:
   - name: case_state_danger_unreferred
     label: 'Danger sign recorded, no referral'
@@ -263,7 +268,16 @@ properties:
       date: unreferred_danger_date # the column dating the evidence
       evidence: [unreferred_danger_date, unreferred_danger_signs]
       facts: 'On {unreferred_danger_date|day} the visit recorded {unreferred_danger_signs}, and the baby was not referred.'
-      picture: { type: sign_card, signs: unreferred_danger_signs, date: unreferred_danger_date, ... }
+      picture:
+        type: case_summary         # a title, the case's name, a banner of facts, up to 4 panels (2x2)
+        title: 'Danger sign, not referred'
+        banner: ['{child_sex}', '{age_days|int} days', 'KMC: {kmc_providers|list}']
+        panels:
+          - { kind: signs, title: 'Danger signs', signs: unreferred_danger_signs, date: unreferred_danger_date }
+          - { kind: list, title: 'What to do', tone: sunset, items: ['See the baby today', ...] }
+          - { kind: visits, timeliness: timeliness, on_time: 'On-time', danger: danger_check, danger_yes: 'yes',
+              due_from: next_visit_start, due_to: next_visit_end, overdue_days: next_visit_overdue_days }
+          - { kind: series, series: feeds, title: 'Daily feeds', floor: { value: 12, label: 'danger < 12' } }
       coach:
         approach: '...how a coach should talk about it...'
         next_steps: '...the step to agree...'
@@ -271,10 +285,17 @@ properties:
 ```
 
 - **Templates** fill `{column}` from the case row, with an optional filter: `int`, `1dp`, `abs`, `signed`,
-  `grams` (`1,350`), `date` (`17 May`), `day` (`17 May 2026`), `days`. A missing value reads `not recorded`.
-  A list of `{when, text}` picks the first whose `when` column is truthy (the last may omit `when`).
-- **Pictures** are generic types, each with its own keys: `series_vs_reference`, `series_highlight_step`,
-  `series_with_bars`, `sign_card`. They read `case_series` and the row; no picture is programme code.
+  `grams` (`1,350`), `date` (`17 May`), `day` (`17 May 2026`), `days`, `words` (`Direct_breastfeed` ->
+  `Direct breastfeed`), `list` (`mother father` -> `mother & father`). A missing value reads `not recorded`.
+  A list of `{when, text}` picks the first whose `when` column -- or every column of a `when` list -- is set
+  (the last may omit `when`). A banner chip, a panel line and `case_name` are left out, never "not recorded",
+  when a column they name is unset.
+- **Pictures** are generic types, each with its own keys: `case_summary` (the EMR-style summary, its panels
+  `series`, `bars`, `visits`, `list`, `signs`, `facts` -- `case_states.PANEL_KINDS`), and the single-chart
+  `series_vs_reference`, `series_highlight_step`, `series_with_bars`, `sign_card`. They read `case_series` and the
+  row; no picture is programme code. A case summary is drawn 600 x 450 (4:3); the rest 600 x 400 (3:2).
+- **Optional visit columns** read NULL until the pipeline carries their field; `null_as: text|numeric|date|boolean`
+  says what type that NULL is (default numeric), so a text column compared with `''` still compiles.
 - **Validation** refuses a case state that is not `bool`, a key that is not a `case_state` key, a column a template
   or `evidence` names that the case row does not have, an unknown filter or picture type, a duplicate priority, and
   a `coach` without all three of `approach`, `next_steps`, `limits` -- the coach is briefed with them.

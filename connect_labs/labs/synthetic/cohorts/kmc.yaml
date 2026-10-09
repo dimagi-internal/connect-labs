@@ -29,6 +29,29 @@ curate: true
 case_timelines: true
 # 2166 (PIPN) was in the LLO map from the start but never in the clone list, so
 # the programme had eleven synthetic sites for twelve real ones (Jon, 2026-09-10).
+# Invented names for each clone's cases (Phase 2, generator/fixtures/person_names.py):
+# the mother's name and the baby's, written at the KMC app's own questions,
+# deterministic per case id so a regenerated clone keeps them. Never a real name --
+# the profiler refuses identifier paths, so without this a clone has none and every
+# case reads "Beneficiary 694". Locale by the source's country (and Kano for EHA).
+person_names:
+  paths:
+    mother: [form.mothers_details.mother_name]
+    child: [form.child_details.child_name]
+    sex: [form.child_details.child_gender, form.case.update.child_gender]
+  locale_by_source:
+    1236: ng_hausa # EHA, Kano
+    1790: ng # BERI
+    523: ug # NAMA
+    938: ug
+    1488: ug
+    524: ug # PIPN
+    874: ug
+    1487: ug
+    2166: ug
+    675: ke # GHI
+    1234: ke
+    1739: ke # Kikapu
 opportunity_ids:
   [523, 524, 675, 874, 938, 1234, 1236, 1487, 1488, 1739, 1790, 2166]
 # Phase-2 image behaviour. Applied at replay time, never baked into a bundle:

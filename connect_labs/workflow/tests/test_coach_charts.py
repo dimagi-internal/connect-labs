@@ -59,7 +59,7 @@ def test_every_theme_colour_is_a_connect_token():
 def test_no_themed_text_is_too_small_for_a_phone():
     sizes = list(_font_sizes(theme.THEME))
     assert sizes and min(sizes) >= theme.MIN_FONT_SIZE
-    # Drawn at 2x and shown at ~0.86x in a ~930 px bubble: the smallest text is ~34 px on screen.
+    # Drawn at 2x; a 1200 px picture shows ~340 dp wide on a phone, so 20 CSS px is ~11 dp.
     assert theme.MIN_FONT_SIZE * theme.SCALE >= 40
 
 
@@ -102,10 +102,9 @@ def test_nothing_is_loaded_from_outside():
 # ---------------------------------------------------------------------------
 
 
-def test_topic_bars_is_1080_wide_and_as_tall_as_its_content():
+def test_topic_bars_fills_the_landscape_frame_for_one_topic_or_two():
     one, two = _png(*_bars(TOPICS[:1])), _png(*_bars())
-    assert one.size[0] == two.size[0] == render.PNG_WIDTH == 1080
-    assert 480 <= one.size[1] < two.size[1] <= render.MAX_HEIGHT
+    assert one.size == two.size == (render.PNG_WIDTH, render.PNG_HEIGHT) == (1200, 800)
 
 
 def test_topic_bars_draws_in_the_band_colours_and_the_track_token():
@@ -137,7 +136,7 @@ def test_a_sliver_is_drawn_as_a_round_cap_and_zero_as_no_bar():
 
 
 def test_a_chart_too_tall_for_a_phone_is_refused():
-    rows = types.topic_rows([{"label": "x " * 40, "numerator": 1, "denominator": 2}] * 20)
+    rows = types.topic_rows([{"label": "x " * 40, "numerator": 1, "denominator": 2}] * 40)
     with pytest.raises(render.RenderError, match="fits a phone"):
         render.render_png(types.topic_bars(rows), {"worker_topics": rows})
 
@@ -201,4 +200,4 @@ def test_a_trend_with_tied_peers_draws_at_phone_width():
     ]
     ds = {"worker_topics": D.worker_topics(graded, "me", ["X1"])}
     ds["history"] = D.history(runs, graded, "me", ["X1"], {"a": "Peer A", "b": "Peer B"})
-    assert _png(types.trend(ds, first_name="Ibrahim"), ds).size[0] == render.PNG_WIDTH
+    assert _png(types.trend(ds, first_name="Ibrahim"), ds).size == (render.PNG_WIDTH, render.PNG_HEIGHT)

@@ -86,6 +86,23 @@ CASE_STATE_COLUMNS = (
     ("skin_to_skin_h", "double precision", "NULL"),
     ("referral_text", "text", "NULL"),
     ("entity_name", "text", "NULL"),
+    # The case summary's visit columns (registry visit_columns `visit_*`).
+    ("visit_child_name", "text", "NULL"),
+    ("visit_mother_name", "text", "NULL"),
+    ("visit_child_sex", "text", "NULL"),
+    ("visit_child_dob", "date", "NULL"),
+    ("visit_kmc_providers", "text", "NULL"),
+    ("visit_feeding_method", "text", "NULL"),
+    ("visit_cup_feeding", "text", "NULL"),
+    ("visit_feeds", "double precision", "NULL"),
+    ("visit_timeliness", "text", "NULL"),
+    ("visit_danger_answer", "text", "NULL"),
+    ("visit_next_start", "date", "NULL"),
+    ("visit_next_end", "date", "NULL"),
+    ("visit_temperature", "double precision", "NULL"),
+    ("visit_heart_rate", "double precision", "NULL"),
+    ("visit_breathing", "double precision", "NULL"),
+    ("visit_spo2", "double precision", "NULL"),
 )
 
 

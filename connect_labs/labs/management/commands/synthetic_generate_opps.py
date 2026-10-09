@@ -69,6 +69,7 @@ class Command(BaseCommand):
                 bundle_root,
                 drive=DriveClient(),
                 image_config=spec.image_config if spec else None,
+                person_names=spec.person_names if spec else None,
                 # A spec that names opportunity_ids means them here too. Ignoring
                 # them replayed every bundle under bundle_root through the spec's
                 # single image_config (#1604). Bare --bundles has no spec and so

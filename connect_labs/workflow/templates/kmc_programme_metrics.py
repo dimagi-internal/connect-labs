@@ -123,6 +123,94 @@ DANGER_SIGN_FIELDS = [
 ]
 
 
+# What a case summary picture reads (registry visit_columns `visit_*`, read by the
+# case_summary pictures): who the case is, and how each visit went. (Its sex and date
+# of birth are the `gender` and `dob` fields below.) Paths are the
+# union across the KMC app generations, newest first; on a follow-up visit the
+# `danger_signs_checklist` group is THIS visit's, the `child_details` copy repeats
+# registration, so it is the fallback.
+CASE_SUMMARY_FIELDS = [
+    {
+        "name": "child_name",
+        "paths": [
+            "form.child_details.child_name",
+            "form.mothers_details.child_name",
+            "form.grp_kmc_beneficiary.child_name",
+            "form.grp_beneficiary_details.child_name",
+            "form.svn_name",
+            "form.case.update.child_name",
+        ],
+        "aggregation": "last",
+    },
+    {
+        "name": "mother_name",
+        "paths": [
+            "form.mothers_details.mother_name",
+            "form.grp_beneficiary_details.mother_name",
+            "form.mother_name",
+            "form.kmc_beneficiary_name",
+            "form.case.update.mother_name",
+        ],
+        "aggregation": "last",
+    },
+    {
+        "name": "kmc_providers",
+        "paths": ["form.kmc_24-hour_recall.kmc_providers", "form.KMC_24-Hour_Recall.kmc_providers"],
+        "aggregation": "last",
+    },
+    {
+        "name": "feeding_method",
+        "paths": ["form.kmc_24-hour_recall.feeding_provided", "form.KMC_24-Hour_Recall.feeding_provided"],
+        "aggregation": "last",
+    },
+    {"name": "cup_feeding", "paths": ["form.feeding_checklist.cup_feeding"], "aggregation": "last"},
+    {
+        "name": "feeds_24h",
+        "paths": [
+            "form.danger_signs_checklist.successful_feeds_in_last_24_hours",
+            "form.child_details.Danger_Signs_Checklist.successful_feeds_in_last_24_hours",
+        ],
+        "transform": "float",
+        "aggregation": "last",
+    },
+    {"name": "visit_timeliness", "paths": ["form.grp_kmc_visit.visit_timeliness"], "aggregation": "last"},
+    {
+        "name": "danger_answer",
+        "paths": [
+            "form.danger_signs_checklist.danger_sign_positive",
+            "form.child_details.Danger_Signs_Checklist.danger_sign_positive",
+        ],
+        "aggregation": "last",
+    },
+    {
+        "name": "next_visit_start",
+        "paths": ["form.grp_kmc_beneficiary.next_kmc_visit_start_date", "form.case.update.next_kmc_visit_start_date"],
+        "aggregation": "last",
+    },
+    {
+        "name": "next_visit_end",
+        "paths": ["form.grp_kmc_beneficiary.next_kmc_visit_end_date", "form.case.update.next_kmc_visit_end_date"],
+        "aggregation": "last",
+    },
+    *(
+        {
+            "name": name,
+            "paths": [
+                f"form.danger_signs_checklist.{leaf}",
+                f"form.child_details.Danger_Signs_Checklist.{leaf}",
+            ],
+            "transform": "float",
+            "aggregation": "last",
+        }
+        for name, leaf in (
+            ("temperature_c", "svn_temperature"),
+            ("heart_rate", "child_heart_rate"),
+            ("breath_rate", "child_breath_count"),
+            ("spo2", "spo2_level"),
+        )
+    ),
+]
+
 CASE_PROPERTIES_SCHEMA = {
     "fields": [
         {
@@ -405,6 +493,7 @@ CASE_PROPERTIES_SCHEMA = {
             "aggregation": "avg",
         },
         *DANGER_SIGN_FIELDS,
+        *CASE_SUMMARY_FIELDS,
         {
             "name": "form_names",
             "path": "form.@name",

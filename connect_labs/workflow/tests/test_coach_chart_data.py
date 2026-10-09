@@ -252,10 +252,9 @@ def _png_size(c):
         {"type": "custom", "spec": _bar(), "params": {"topics": ["X1", "X2", "Q1"]}},
     ],
 )
-def test_every_kind_of_chart_draws_at_phone_width(request_):
+def test_every_kind_of_chart_draws_in_the_landscape_frame(request_):
     c = _build(request_)
-    width, height = _png_size(c)
-    assert width == render.PNG_WIDTH and 300 <= height <= render.MAX_HEIGHT
+    assert _png_size(c) == (render.PNG_WIDTH, render.PNG_HEIGHT)
 
 
 def test_peer_comparison_shows_peers_only_as_letters_everywhere_a_worker_could_see():

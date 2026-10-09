@@ -663,12 +663,11 @@ def _brief_cases(merged: dict, roster: dict[str, dict], cases) -> None:
             )
         series = cases.series(opp)
         visits = cases.visits(opp, case["id"])
-        label_field = cases.label_field(opp)
         case["case_state"] = state["name"]
         item["prompt"] = cb.render_case_briefing(
             programme=cases.programme(opp),
             worker=who["name"] or who["username"],
-            case_name=str((row.get(label_field) if label_field else None) or case["id"]),
+            case_name=cases.case_name(opp, row, str(case["id"])),
             about=case_states.about(cases.props_doc(opp), row),
             state=state,
             facts=case_states.facts(state, row),
@@ -888,14 +887,13 @@ def picture_source(user, wda, run, definition, roster: dict[str, dict], briefing
         if state is None:
             raise ActionError("invalid", f"case {item[CASE]['id']} is no longer in {state_name}; preview again")
         others = [(w["name"], w["username"]) for k, w in roster.items() if k != item["key"]]
-        label_field = cases.label_field(opp)
         try:
             built = case_chart.build_case_chart(
                 state,
                 row,
                 visits=cases.visits(opp, item[CASE]["id"]),
                 series=cases.series(opp),
-                case_name=str((row.get(label_field) if label_field else None) or ""),
+                case_name=cases.case_name(opp, row),
                 others=others,
             )
         except datasets.ChartError as e:
