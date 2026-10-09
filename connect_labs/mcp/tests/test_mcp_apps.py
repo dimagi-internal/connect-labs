@@ -392,3 +392,12 @@ def test_every_tool_says_whether_it_only_reads():
     assert tools["workflow_action_status"].annotations.readOnlyHint is True
     assert tools["workflow_action_preview_view"].annotations.readOnlyHint is True
     assert tools["workflow_run_action"].annotations.readOnlyHint is False
+
+
+def test_the_chat_shows_what_the_person_did_not_the_agents_instructions():
+    """Live 2026-10-09: the card's instructions to the agent appeared in the chat as the
+    person's own message. ui/message now carries a plain line; the instructions go only
+    to ui/update-model-context."""
+    script = _view().script
+    assert "function tell(structured, forAgent, forChat)" in script
+    assert '"Sent a test to " + who : "Sent to " + who' in script
