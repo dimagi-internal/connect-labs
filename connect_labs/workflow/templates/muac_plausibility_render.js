@@ -632,6 +632,105 @@ function MpMethod(props) {
   );
 }
 
+// A run created by hand starts empty: the figures are classified on the server.
+// This starts that job (job_handlers/muac_plausibility.py) for THIS run and
+// reloads when it is done. A completed run with no figures cannot be filled.
+function MpEmpty(props) {
+  var instance = props.instance || {};
+  var actions = props.actions || {};
+  var _status = React.useState('idle'); // idle | running | error
+  var status = _status[0];
+  var setStatus = _status[1];
+  var _message = React.useState(null);
+  var message = _message[0];
+  var setMessage = _message[1];
+  var canCompute = !props.isCompleted && instance.id && actions.startJob;
+
+  function compute() {
+    if (!canCompute || status === 'running') return;
+    setStatus('running');
+    setMessage('Starting…');
+    actions
+      .startJob(instance.id, {
+        job_type: 'muac_plausibility_compute',
+        run_id: instance.id,
+        program_id: instance.program_id,
+        opportunity_id: instance.program_id ? null : instance.opportunity_id,
+      })
+      .then(function (resp) {
+        if (!resp || !resp.success || !resp.task_id) {
+          setStatus('error');
+          setMessage(
+            (resp && resp.error) || 'Could not start the computation.',
+          );
+          return;
+        }
+        setMessage(
+          'Reading and classifying approved visits — this takes a few minutes…',
+        );
+        actions.streamJobProgress(
+          resp.task_id,
+          function (data) {
+            if (data && data.message) setMessage(data.message);
+          },
+          null,
+          function () {
+            setMessage('Done — loading the report…');
+            window.location.reload();
+          },
+          function (err) {
+            setStatus('error');
+            setMessage(err || 'The computation failed.');
+          },
+        );
+      })
+      .catch(function () {
+        setStatus('error');
+        setMessage('Could not start the computation.');
+      });
+  }
+
+  return (
+    <div className="p-6 text-gray-700 space-y-3">
+      <p className="font-medium">This run has no figures yet.</p>
+      {canCompute ? (
+        <div className="space-y-2">
+          <p className="text-sm">
+            The figures are worked out on the server from every approved visit.
+            Compute them for this run now, or open the latest scheduled run from
+            the workflow list.
+          </p>
+          <button
+            type="button"
+            className="px-3 py-1.5 rounded text-sm"
+            style={{
+              background: status === 'running' ? '#9ca3af' : '#1f2937',
+              color: '#ffffff',
+            }}
+            disabled={status === 'running'}
+            onClick={compute}
+          >
+            {status === 'running' ? 'Computing…' : 'Compute this report'}
+          </button>
+          {message && (
+            <p
+              className="text-sm"
+              style={{ color: status === 'error' ? '#991b1b' : '#4b5563' }}
+            >
+              {message}
+            </p>
+          )}
+        </div>
+      ) : (
+        <p className="text-sm">
+          This run was completed without figures. Open the latest scheduled run
+          from the workflow list, or create a new run and compute it.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ===========================================================================
 // 3. Page
 // ===========================================================================
@@ -683,13 +782,11 @@ function WorkflowUI(props) {
 
   if (!state) {
     return (
-      <div className="p-6 text-gray-600">
-        <p className="font-medium">No saved report yet.</p>
-        <p className="text-sm mt-1">
-          This report is computed by a scheduled run, not in the browser.
-          Schedule it from the workflow list, or ask for a run to be started.
-        </p>
-      </div>
+      <MpEmpty
+        instance={props.instance}
+        actions={props.actions}
+        isCompleted={!!view.isCompleted}
+      />
     );
   }
 
