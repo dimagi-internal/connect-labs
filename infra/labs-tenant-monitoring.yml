@@ -85,8 +85,13 @@ Resources:
         — the application itself returned an error. Its database is on
         labs-jj-postgres, so check the RDS alarms first: on 2026-09-08 a full
         disk showed up here as ~1,200 5xx in 45 minutes while labs' own web
-        tier stayed under 20 per bucket. If RDS is healthy, read
-        /ecs/labs-jj-canopy-web.
+        tier stayed under 20 per bucket. A SINGLE breaching bucket is usually
+        a deploy instead: canopy-web migrates before cutover and its CLAUDE.md
+        accepts destructive migrations with a brief error window, so old tasks
+        5xx until the rollout lands (2026-10-09: 62 in one bucket, #1370 dropped
+        a column). Check `gh run list -R dimagi-internal/canopy-web -w "Deploy to
+        Labs (AWS)"` for a "Run database migrations" step inside the bucket. If
+        neither, read /ecs/labs-jj-canopy-web.
       Namespace: AWS/ApplicationELB
       MetricName: HTTPCode_Target_5XX_Count
       Dimensions:
