@@ -101,6 +101,20 @@ Leaving the card without clicking **Send to \<worker\>** simply means you are no
 !!! note "Sending the same coaching twice"
     If you need to send the same coaching to the same worker again within a short window, this now works. Previously, a repeat send within 15 minutes was refused and the card would loop on "That preview went stale". You can now resend deliberately without hitting that block.
 
+### How the worker's figures picture looks
+
+The **"Your figures"** picture a worker receives as part of a coaching message is now drawn as a proper chart in Connect's own style. Each topic is shown with its label, its figure, and a bar. The bars are coloured to match Connect's standard status colours:
+
+| Bar colour | Meaning |
+|---|---|
+| Red | Off target |
+| Amber | On watch |
+| Green | On target |
+
+The chart uses Connect's typography and deep-purple title styling, so it looks consistent with the rest of the Connect experience rather than a plain data table.
+
+This is the first stage of coaching pictures that can be shaped further — for example, to add anonymous peer comparisons or a trend line. Those capabilities will arrive in later updates.
+
 ---
 
 ## Pipeline Data Sources
@@ -209,8 +223,4 @@ Previously, a visit made before the chosen date but synced after it could be lef
 
 #### Workflows pinned to supply tabs
 
-A programme's supply pages can show a workflow as one of their tabs. A workflow tab can either stand in for a built-in tab — the first such tab replaces the **Workers** tab with the **Stock review** — or be added alongside the existing tabs as something new.
-
-When you open a workflow tab inside the supply pages, the supply header and tab bar remain visible and the workflow's current review loads in place. Each person sees it with their own access level, exactly as they would if they opened the workflow directly.
-
-A workflow shown as a supply tab — such as the **Stock review** — follows the supply pages' **"as of" date**. Pick a past day using the date control in the supply header and the workflow's supply figures update to show that day: the stock held by workers, the stores, and each worker's history all reflect the date you selected. The header shows the chosen date, just as it does on every
+A programme's supply pages can show a workflow as one of their tabs. A workflow tab can either stand in for a built-
