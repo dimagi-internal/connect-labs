@@ -151,12 +151,13 @@ def _enrols(rule_cases, visit) -> bool:
 def read_cases(program_id, item, rules, anchor, unit) -> list[Case]:
     """Every case on these rules' opportunities as of the anchor, from the visits the reader kept."""
     by_opp = {rule.opportunity_id: rule.cases for rule in rules}
-    visits = list(
+    kept = (
         WorkerVisit.objects.filter(program_id=program_id, opportunity_id__in=list(by_opp), visit_date__lte=anchor)
         .exclude(entity_id="")
         .exclude(status__in=REVERSING_STATUSES)
-        .order_by("visit_date", "id")
-        .values(
+    )
+    visits = list(
+        kept.order_by("visit_date", "id").values(
             "visit_id",
             "entity_id",
             "opportunity_id",
@@ -167,7 +168,8 @@ def read_cases(program_id, item, rules, anchor, unit) -> list[Case]:
             "form_xmlns",
         )
     )
-    sachets = _sachets_by_visit(program_id, item, [v["visit_id"] for v in visits], unit, anchor)
+    # A subquery, not a list: the sachets join the visits kept in the database.
+    sachets = _sachets_by_visit(program_id, item, kept.values("visit_id"), unit, anchor)
     grouped: dict[tuple, list] = {}
     for v in visits:
         grouped.setdefault((v["opportunity_id"], v["entity_id"]), []).append(v)
@@ -282,11 +284,18 @@ def delivery_profile(cases, anchor, course, per_day_protocol) -> Profile:
     return Profile(measured, None, UNKNOWN)
 
 
-def _lay(profile, course, left, first_week, weeks) -> list[Decimal]:
-    """`left` sachets of a course laid along the profile from treatment week `first_week`, one figure a week."""
+def _lay(profile, course, left, first_week, weeks, already=ZERO) -> list[Decimal]:
+    """`left` sachets of a course laid along the profile from treatment week `first_week`, one figure a week.
+
+    `already` is what the child was given earlier in that first week (a child
+    enrolled on the anchor day has had its first ration): it comes off that
+    week's ration, never off a later one.
+    """
     out = []
     for i in range(weeks):
         per = profile.week(first_week + i)
+        if per is not None and i == 0:
+            per = max(per - already, ZERO)
         if per is None or left <= 0:
             out.append(ZERO)
             continue
@@ -373,7 +382,8 @@ def forecast(
     scenario = Decimal(str(scenario))
     unit = belief.unit_of(item)
     requested = on_date or date.today()
-    scope = {int(o) for o in opportunity_ids} if opportunity_ids else None
+    # An empty list is an empty scope, never "everything".
+    scope = {int(o) for o in opportunity_ids} if opportunity_ids is not None else None
 
     rules = list(DispensingRule.objects.filter(program_id=program_id, item=item, status="active").exclude(cases={}))
     if scope is not None:
@@ -391,8 +401,10 @@ def forecast(
     )
     anchor = min(requested, last_visit) if last_visit else requested
     # The ledger read on the same day the cases are: today reads as worker_stock does with no date.
-    ledger_day = None if on_date is None and anchor == requested else anchor
-    roots = belief.network_tree(program_id, item, on_date=ledger_day)
+    # Stock is read on the day asked for, exactly as worker_stock reads it (today
+    # when no day is given): there are no visits after the anchor, so anything
+    # the ledger holds since is a delivery or a correction, and it is real.
+    roots = belief.network_tree(program_id, item, on_date=on_date)
     nodes = _flatten(roots)
 
     cases = read_cases(program_id, item, rules, anchor, unit) if rules else []
@@ -421,7 +433,10 @@ def forecast(
         if not case.carry_over and case.enrol_point_id is not None:
             enrolled_by_point.setdefault(case.enrol_point_id, []).append(case)
 
-    history = _history(program_id, item, unit, [n.point.pk for n in nodes if n.point.kind == "user_held"], anchor)
+    in_scope = [
+        n.point.pk for n in nodes if n.point.kind == "user_held" and (scope is None or n.point.opportunity_id in scope)
+    ]
+    history = _history(program_id, item, unit, in_scope, anchor)
 
     workers = []
     worker_figures: dict[int, dict] = {}
@@ -431,7 +446,10 @@ def forecast(
             continue
         if scope is not None and point.opportunity_id not in scope:
             continue
-        on_hand = _amount(node.on_hand)
+        # A balance below zero is records that ran ahead of deliveries: nothing to
+        # give out, at every level. One that cannot be read is said, not guessed.
+        known = _amount(node.on_hand)
+        on_hand = max(known, ZERO) if known is not None else None
         rule = rule_by_opp.get(point.opportunity_id)
         committed = [ZERO] * horizon_weeks
         new = [ZERO] * horizon_weeks
@@ -444,7 +462,8 @@ def forecast(
                 left = max(size - case.received, ZERO)
                 owed += left
                 first = (anchor + timedelta(days=1) - case.enrolled_on).days // 7
-                for i, given in enumerate(_lay(profile, size, left, first, horizon_weeks)):
+                already = sum((given for on, given in case.visits if (on - case.enrolled_on).days // 7 == first), ZERO)
+                for i, given in enumerate(_lay(profile, size, left, first, horizon_weeks, already)):
                     committed[i] += given
             rate, rate_weeks = enrolment_rate(enrolled_by_point.get(point.pk, []), rule.active_from, anchor)
             if rate is not None and one_child is not None:
@@ -468,6 +487,7 @@ def forecast(
             "rate": rate,
             "owed": owed,
         }
+        wired = belief.wire(node)
         workers.append(
             {
                 "supply_point_id": point.pk,
@@ -476,8 +496,9 @@ def forecast(
                 "opportunity_id": point.opportunity_id,
                 "parent_supply_point_id": point.parent_id,
                 "basis": basis,
-                "on_hand": belief.wire(node)["on_hand"],
-                "dispensed": belief.wire(node)["dispensed"],
+                "on_hand": wired["on_hand"],
+                "stock_known": on_hand is not None,
+                "dispensed": wired["dispensed"],
                 "open_cases": len(open_here),
                 "carry_over_cases": sum(1 for c in open_here if c.carry_over),
                 "owed": _wire(owed) if basis == "cases" else None,
@@ -503,6 +524,10 @@ def forecast(
     programme["owed"] = _wire(sum((f["owed"] for f in worker_figures.values()), ZERO)) if rules else None
     rates = [f["rate"] for f in worker_figures.values() if f["rate"] is not None]
     programme["enrolled_per_week"] = _wire(sum(rates, ZERO)) if rates else None
+    # Workers projected nothing for want of history: the enrolment figure leaves them out, and says so.
+    programme["workers_without_enrolment_rate"] = (
+        sum(1 for w in workers if w["basis"] == "cases" and w["enrolled_per_week"] is None) if rules else 0
+    )
 
     return {
         "item_id": item.pk,
@@ -573,33 +598,41 @@ def _history(program_id, item, unit, worker_ids, anchor) -> dict:
     return {"windows": windows, "by_point": by_point, "total": total}
 
 
+def _own(node) -> Decimal:
+    """A point's own stock for covering others: below zero is nothing, unknown is nothing to count on."""
+    return max(_amount(node.on_hand) or ZERO, ZERO)
+
+
 def _stores(nodes, worker_figures, horizon_weeks, anchor):
     """Each store: what the workers (and stores) below it cannot cover, against its own stock."""
     children: dict[int, list] = {}
     for node in nodes:
         children.setdefault(node.point.parent_id, []).append(node)
+    present = {node.point.pk for node in nodes}
     demand_of: dict[int, list[Decimal]] = {}
     need_of: dict[int, list[Decimal]] = {}
+    workers_of: dict[int, int] = {}
 
     def roll(node):
-        """(cumulative demand it passes up, weekly need of the workers below), filling `demand_of`."""
+        """(cumulative demand it passes up, weekly need below, forecast workers below); fills the maps."""
         point = node.point
         if point.kind == "user_held":
             figures = worker_figures.get(point.pk)
             if figures is None:
-                return [ZERO] * horizon_weeks, [ZERO] * horizon_weeks
-            return figures["shortfall"], figures["need"]
-        demand, need = [ZERO] * horizon_weeks, [ZERO] * horizon_weeks
+                return [ZERO] * horizon_weeks, [ZERO] * horizon_weeks, 0
+            return figures["shortfall"], figures["need"], 1
+        demand, need, workers = [ZERO] * horizon_weeks, [ZERO] * horizon_weeks, 0
         for child in children.get(point.pk, []):
-            passed, child_need = roll(child)
+            passed, child_need, child_workers = roll(child)
             demand = [a + b for a, b in zip(demand, passed)]
             need = [a + b for a, b in zip(need, child_need)]
-        demand_of[point.pk], need_of[point.pk] = demand, need
-        own = _amount(node.on_hand) or ZERO
-        return [max(ZERO, total - own) for total in demand], need
+            workers += child_workers
+        demand_of[point.pk], need_of[point.pk], workers_of[point.pk] = demand, need, workers
+        own = _own(node)
+        return [max(ZERO, total - own) for total in demand], need, workers
 
     for node in nodes:
-        if node.point.parent_id is None or node.point.parent_id not in {n.point.pk for n in nodes}:
+        if node.point.parent_id is None or node.point.parent_id not in present:
             roll(node)
 
     stores = []
@@ -607,25 +640,26 @@ def _stores(nodes, worker_figures, horizon_weeks, anchor):
         point = node.point
         if point.kind == "user_held" or point.pk not in demand_of:
             continue
-        own = _amount(node.on_hand)
         demand = demand_of[point.pk]
-        increments = [b - a for a, b in zip([ZERO] + demand[:-1], demand)]
-        workers_below = node.workers
-        if not workers_below and not any(demand):
+        if not workers_of[point.pk] and not any(demand):
             continue
+        own = _own(node)
+        increments = [b - a for a, b in zip([ZERO] + demand[:-1], demand)]
+        wired = belief.wire(node)
         stores.append(
             {
                 "supply_point_id": point.pk,
                 "name": point.name,
                 "kind": point.kind,
                 "parent_supply_point_id": point.parent_id,
-                "own_on_hand": belief.wire(node)["on_hand"],
-                "subtree_on_hand": (belief.wire(node)["subtree"] or {}).get("on_hand"),
-                "workers": workers_below,
+                "own_on_hand": wired["on_hand"],
+                "subtree_on_hand": (wired["subtree"] or {}).get("on_hand"),
+                # Only the workers this forecast covers (its opportunities), not every worker below.
+                "workers": workers_of[point.pk],
                 "need": [_wire(v) for v in need_of[point.pk]],
                 "demand_from_below": [_wire(v) for v in demand],
                 "runs_dry_on": _iso(runs_dry(own, increments, anchor)) if any(demand) else None,
-                "shortfall_by_end": _wire(max(ZERO, demand[-1] - (own or ZERO))),
+                "shortfall_by_end": _wire(max(ZERO, demand[-1] - own)),
             }
         )
     return stores, demand_of
@@ -649,7 +683,7 @@ def _programme(
         else:
             passed = demand_of.get(point.pk, [ZERO] * horizon_weeks)
         wanted = [a + b for a, b in zip(wanted, passed)]
-        held += max(_amount(root.on_hand) or ZERO, ZERO)
+        held += _own(root)
 
     end = anchor + timedelta(days=7 * horizon_weeks)
     arriving = [ZERO] * horizon_weeks
@@ -692,6 +726,9 @@ def _programme(
         "need_total": _wire(sum(committed, ZERO) + sum(new, ZERO)),
         "wanted_from_top": [_wire(v) for v in wanted],
         "top_on_hand": _wire(held),
+        # What the top stores hold at the end of each week once their workers'
+        # shortfalls are met: the line a page draws, and zero is `runs_dry_on`.
+        "left_at_top": [_wire(a - w) for a, w in zip(available, wanted)],
         "inbound": inbound,
         "inbound_by_week": [_wire(v) for v in arriving],
         "runs_dry_on": _iso(gap_opens(wanted, available, anchor)),

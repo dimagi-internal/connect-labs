@@ -169,8 +169,9 @@ def test_committed_follows_the_profile_and_stops_at_the_course(world):
     out = _run(world)
 
     committed = [Decimal(week["committed"]) for week in _worker(out, "worker-acacia")["weeks"]]
-    # child-a has 112 left, child-d 136, both at 15 a week: child-a's runs out in week 8.
-    assert committed == [Decimal(30)] * 7 + [Decimal(22)]
+    # child-a has 112 left, child-d 136, both at 15 a week: child-a's runs out in week 8. child-d had
+    # 14 of this week's 15 on 25 Sep, so the first week owes it 1.
+    assert committed == [Decimal(16)] + [Decimal(30)] * 6 + [Decimal(22)]
     assert out["basis"]["course"] == {"size": "150", "basis": "default", "completed_cases": 1}
     assert {p["basis"] for p in out["basis"]["profile"]} == {"default"}
 
@@ -196,29 +197,32 @@ def test_too_little_history_projects_no_new_children(world):
 
 def test_a_scenario_of_nothing_leaves_only_what_is_committed(world):
     acacia = _worker(_run(world, scenario=0), "worker-acacia")
-    assert acacia["need_total"] == "232"
+    assert acacia["need_total"] == "218"
 
 
 def test_a_worker_runs_dry_the_day_their_need_passes_their_stock(world):
     out = _run(world)
 
-    # acacia: 35 then 40 against 72 -- 37 of the second week's 40 last 7 of its days.
-    assert _worker(out, "worker-acacia")["runs_dry_on"] == "2026-10-12"
-    # baobab: 20 then 25 against 40.
-    assert _worker(out, "worker-baobab")["runs_dry_on"] == "2026-10-11"
-    assert [w["name"] for w in out["workers"]] == ["worker-baobab", "worker-acacia"]  # soonest first
-    assert _worker(out, "worker-acacia")["shortfall_by_end"] == "340"
+    # acacia: 21, 40, then 45 against 72 -- 11 of the third week's 45 last 2 of its days.
+    assert _worker(out, "worker-acacia")["runs_dry_on"] == "2026-10-14"
+    # baobab: child-f had 10 of its first 15 on the anchor day, so 10, 25, then 30 against 40.
+    assert _worker(out, "worker-baobab")["runs_dry_on"] == "2026-10-14"
+    assert [w["name"] for w in out["workers"]] == ["worker-acacia", "worker-baobab"]  # soonest, then by name
+    assert _worker(out, "worker-acacia")["shortfall_by_end"] == "326"
 
 
 def test_a_store_runs_dry_when_what_its_workers_cannot_cover_passes_its_own_stock(world):
     out = _run(world)
 
     partner = _store(out, world)
-    assert [Decimal(v) for v in partner["demand_from_below"]] == [0, 8, 83, 168, 263, 368, 483, 600]
-    assert (partner["runs_dry_on"], partner["shortfall_by_end"]) == ("2026-11-02", "350")
+    assert [Decimal(v) for v in partner["demand_from_below"]] == [0, 0, 59, 144, 239, 344, 459, 576]
+    assert (partner["runs_dry_on"], partner["shortfall_by_end"]) == ("2026-11-03", "326")
+    assert partner["workers"] == 2
     assert Decimal(partner["own_on_hand"]["amount"]) == Decimal(250)
     # With one store at the top, the programme runs dry the same day.
-    assert (out["programme"]["runs_dry_on"], out["programme"]["shortfall_by_end"]) == ("2026-11-02", "350")
+    assert (out["programme"]["runs_dry_on"], out["programme"]["shortfall_by_end"]) == ("2026-11-03", "326")
+    # The line a page draws: what the store has left once its workers' shortfalls are met.
+    assert [Decimal(v) for v in out["programme"]["left_at_top"]][:6] == [250, 250, 191, 106, 11, -94]
 
 
 def test_an_order_on_its_way_counts_at_the_programme_only(world, monkeypatch):
@@ -237,19 +241,19 @@ def test_an_order_on_its_way_counts_at_the_programme_only(world, monkeypatch):
     monkeypatch.setattr(network, "_expected_inbound", inbound)
     out = _run(world)
 
-    assert _store(out, world)["runs_dry_on"] == "2026-11-02"  # a store's own stock is what it holds
+    assert _store(out, world)["runs_dry_on"] == "2026-11-03"  # a store's own stock is what it holds
     programme = out["programme"]
     assert [Decimal(v) for v in programme["inbound_by_week"]] == [0, 0, 0, 300, 0, 0, 0, 0]
     assert [(o["reference"], o["counted"]) for o in programme["inbound"]] == [("PO-1", True), ("PO-2", False)]
-    # 550 available from week 4: the last week's 600 passes it.
-    assert (programme["runs_dry_on"], programme["shortfall_by_end"]) == ("2026-11-21", "50")
+    # 550 available from week 4: the last week's 576 passes it.
+    assert (programme["runs_dry_on"], programme["shortfall_by_end"]) == ("2026-11-22", "26")
 
 
 def test_visits_that_stop_early_move_the_anchor_back_and_say_so(world):
     out = _run(world, on_date=TODAY + timedelta(days=5))
 
     assert (out["as_of"], out["anchor"], out["data_to"]) == ("2026-10-03", "2026-09-28", "2026-09-28")
-    assert _worker(out, "worker-acacia")["runs_dry_on"] == "2026-10-12"
+    assert _worker(out, "worker-acacia")["runs_dry_on"] == "2026-10-14"
 
 
 def test_without_a_case_rule_the_forecast_is_the_workers_pace(world):
@@ -292,8 +296,45 @@ def test_the_operation_is_a_read_on_the_mcp_catalogue_and_returns_the_forecast(w
         "stock_forecast", da, {"item_id": world["item"].pk, "as_of": TODAY.isoformat(), "course_size": 150}
     )
 
-    assert _worker(out, "worker-acacia")["runs_dry_on"] == "2026-10-12"
+    assert _worker(out, "worker-acacia")["runs_dry_on"] == "2026-10-14"
     assert out["basis"]["course"]["basis"] == "default"
+
+
+def test_with_no_day_given_stock_is_read_today_and_a_delivery_since_the_last_visit_counts(world):
+    _move(world["item"], "distribution", 100, TODAY + timedelta(days=3), frm=world["store"], to=world["acacia"])
+
+    out = forecast.forecast(PROGRAM, world["item"], course_size_fallback=COURSE)
+
+    acacia = _worker(out, "worker-acacia")
+    today = belief.wire(belief.point_belief(PROGRAM, world["acacia"], world["item"]))
+    assert acacia["on_hand"] == today["on_hand"]
+    assert Decimal(acacia["on_hand"]["amount"]) == Decimal(172)
+    assert out["anchor"] == "2026-09-28"  # the cases are still read at the last visit
+
+
+def test_an_empty_scope_is_nobody_not_everybody(world):
+    out = _run(world, opportunity_ids=[])
+
+    assert out["workers"] == []
+    assert {week["given_out"] for week in out["history"]} == {"0"}
+
+
+def test_a_worker_below_zero_has_nothing_and_passes_all_their_need_up(world):
+    _move(world["item"], "loss", 100, TODAY, frm=world["acacia"])  # 72 - 100: the records ran ahead
+
+    out = _run(world)
+
+    acacia = _worker(out, "worker-acacia")
+    assert (acacia["runs_dry_on"], acacia["stock_known"]) == ("2026-09-28", True)
+    # Week one: acacia's whole 21 (nothing held to set against it); baobab is still covered.
+    assert Decimal(_store(out, world)["demand_from_below"][0]) == Decimal(21)
+
+
+def test_workers_with_too_little_history_are_counted_not_hidden(world):
+    world["rule"].active_from = date(2026, 9, 20)
+    world["rule"].save()
+
+    assert _run(world)["programme"]["workers_without_enrolment_rate"] == 2
 
 
 def test_the_profile_is_measured_once_enough_children_were_in_treatment_all_week():
