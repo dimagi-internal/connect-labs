@@ -305,8 +305,11 @@ def test_the_forecast_template_declares_one_valid_forecast_source():
     assert template["multi_opp"] is True
     assert supply_sources.declaration_problems(sources) == []
     assert [(s["alias"], s["source"]) for s in sources] == [("forecast", "stock_forecast")]
-    # The render asks for a new scenario through the one argument the source takes.
-    assert "querySupply('forecast', { args: { scenario: value } })" in template["render_code"]
+    # The render asks for a new scenario through the one argument the source takes, on the page's own day.
+    render = template["render_code"]
+    assert "querySupply('forecast', {" in render
+    assert "args: { scenario: value }" in render
+    assert "as_of: f.as_of || undefined" in render
 
 
 def test_the_stock_review_template_declares_valid_sources():

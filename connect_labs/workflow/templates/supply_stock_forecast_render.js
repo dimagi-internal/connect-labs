@@ -32,6 +32,13 @@ function WorkflowUI({
   var sOpen = React.useState(null);
   var open = sOpen[0];
   var setOpen = sOpen[1];
+  React.useEffect(
+    function () {
+      setOverride(null);
+      setScenario(1);
+    },
+    [loaded],
+  );
 
   var COMMITTED = '#4f46e5';
   var NEW = '#f59e0b';
@@ -92,7 +99,10 @@ function WorkflowUI({
     if (!actions || !actions.querySupply) return;
     setBusy(true);
     actions
-      .querySupply('forecast', { args: { scenario: value } })
+      .querySupply('forecast', {
+        args: { scenario: value },
+        as_of: f.as_of || undefined,
+      })
       .then(function (res) {
         setOverride(res);
         setBusy(false);
@@ -127,6 +137,15 @@ function WorkflowUI({
             ' weeks'
         : 'enrolment · not enough history',
     );
+    if (programme.workers_without_enrolment_rate)
+      chips.push(
+        programme.workers_without_enrolment_rate +
+          ' workers too new to project',
+      );
+    var carried = (f.cohorts || []).reduce(function (n, c) {
+      return n + (c.carry_over || 0);
+    }, 0);
+    if (carried) chips.push(carried + ' in treatment before the data');
     if ((basis.lost_after_days || []).length)
       chips.push('lost after ' + basis.lost_after_days.join('/') + ' days');
   }
@@ -144,14 +163,9 @@ function WorkflowUI({
   var future = (programme.weeks || []).map(function (w) {
     return { committed: num(w.committed) || 0, fresh: num(w.new) || 0 };
   });
-  var inboundBy = (programme.inbound_by_week || []).map(function (v) {
+  var startLeft = num(programme.top_on_hand) || 0;
+  var left = (programme.left_at_top || []).map(function (v) {
     return num(v) || 0;
-  });
-  var left = [];
-  var stock = num(programme.on_hand) || 0;
-  future.forEach(function (w, i) {
-    stock = stock - w.committed - w.fresh + (inboundBy[i] || 0);
-    left.push(stock);
   });
   var top = 1;
   past.forEach(function (v) {
@@ -160,7 +174,7 @@ function WorkflowUI({
   future.forEach(function (w) {
     top = Math.max(top, w.committed + w.fresh);
   });
-  var stockTop = Math.max(num(programme.on_hand) || 0, 1);
+  var stockTop = Math.max(startLeft, 1);
   left.forEach(function (v) {
     stockTop = Math.max(stockTop, v);
   });
@@ -183,7 +197,7 @@ function WorkflowUI({
     var ticks = [0, top / 2, top];
     var path = '';
     var x0 = P + past.length * slot;
-    path += 'M' + x0 + ',' + ys(num(programme.on_hand) || 0);
+    path += 'M' + x0 + ',' + ys(startLeft);
     left.forEach(function (v, i) {
       path += 'L' + (x0 + (i + 1) * slot) + ',' + ys(v);
     });
@@ -288,7 +302,7 @@ function WorkflowUI({
       [PAST, 'given out'],
       [COMMITTED, 'children in treatment'],
       [NEW, 'new children'],
-      [STOCK, 'stock in the network (right scale)'],
+      [STOCK, 'left at the stores (right scale)'],
     ];
     return (
       <div className="flex flex-wrap items-center gap-2 mt-1">
@@ -580,7 +594,11 @@ function WorkflowUI({
                         (dry ? 'text-red-700' : 'text-gray-900')
                       }
                     >
-                      {dry ? 'dry ' + day(dry) : 'not in ' + H + ' weeks'}
+                      {!w.stock_known
+                        ? 'stock unknown'
+                        : dry
+                          ? 'dry ' + day(dry)
+                          : 'not in ' + H + ' weeks'}
                     </div>
                     <div className="flex-1 min-w-0 text-xs text-gray-600 tabular-nums">
                       {fmt(num(w.on_hand)) +
