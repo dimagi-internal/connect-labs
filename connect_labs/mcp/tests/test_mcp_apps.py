@@ -296,13 +296,25 @@ def test_the_view_speaks_the_mcp_apps_protocol():
     assert "hostCapabilities.serverTools" in script
 
 
-def test_the_view_offers_the_three_choices_and_asks_for_a_personalid_username():
+def test_the_view_has_one_send_and_a_one_click_test_send():
+    """Owner, 2026-10-09: too many buttons to tell how to send. One primary Send to the
+    worker, a quiet link to send a test instead, and in test mode only the username box,
+    Send test (preview + send in one click) and Cancel."""
     html = _html()
     assert '"Send to " + workerName(p)' in html
-    assert "Send to me (QA test)" in html
-    assert '"Not yet"' in html
+    assert "Send a test to me instead" in html
+    assert 'id="qa-send"' in html and ">Send test<" in html
+    assert "Not yet" not in html and "Preview my test send" not in html
+    assert "state.autoSend" in html
     assert "PersonalID username" in html
     assert "deliver_to" in html
+
+
+def test_a_spent_token_reads_as_already_sent_not_stale():
+    """A double click must not loop through 'went stale' refreshes (2026-10-09)."""
+    script = _view().script
+    assert "/already confirmed/i.test(err.message)" in script
+    assert "already confirmed|" not in script
 
 
 def test_the_view_uses_the_hosts_theme_variables():
