@@ -295,6 +295,25 @@ def test_status_reports_only_the_callers_runs_on_this_run(user, wda):
     assert [e["id"] for e in out["executions"]] == [mine.pk]
 
 
+def test_dimagi_staff_see_everyones_runs_on_this_run_with_who_ran_them(wda):
+    """ACE, debugging the owner's send, could not see it (2026-10-09, execution 13)."""
+    staff = get_user_model().objects.create_user(username="ace", email="ace@dimagi-ai.com", password="p")
+    other = get_user_model().objects.create_user(username="jj", email="jj@dimagi.com", password="p")
+    theirs = WorkflowActionExecution.objects.create(
+        user=other,
+        via="canopy",
+        definition_id=7,
+        run_id=70,
+        action_key="k",
+        action_type="create_task",
+        arguments={"workers": []},
+    )
+    out = _call("workflow_action_status", staff, run_id=70, program_id=25)
+    assert [(e["id"], e["by"]) for e in out["executions"]] == [(theirs.pk, "jj@dimagi.com")]
+    by_id = _call("workflow_action_status", staff, run_id=70, program_id=25, execution_id=theirs.pk)
+    assert by_id["executions"][0]["id"] == theirs.pk
+
+
 def test_a_live_run_is_graded_now_and_reread_from_a_short_cache(user, wda, monkeypatch):
     from django.core.cache import cache
 

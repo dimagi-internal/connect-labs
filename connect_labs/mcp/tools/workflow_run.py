@@ -787,7 +787,9 @@ def workflow_action_preview_view(
     description=(
         "How an action run is going: status (queued, running, completed, "
         "completed_with_errors, failed), progress, and per-worker results (task_id, "
-        "session_id, or error). Give execution_id, or none for your recent runs on this run."
+        "session_id, or error). Give execution_id, or none for your recent runs on this run. "
+        "Dimagi staff see every person's runs on this run, each with `by` (who ran it), so a "
+        "send someone else made can be debugged."
     ),
     input_schema={
         "type": "object",
@@ -802,9 +804,17 @@ def workflow_action_status(
     from connect_labs.workflow.models import WorkflowActionExecution
 
     with _Run(user, run_id, opportunity_id, program_id) as r:
+        from connect_labs.utils.dimagi_user import is_dimagi_user
+
         from ..visit_access import caller_restricted
 
-        qs = WorkflowActionExecution.objects.filter(user=user, run_id=r.run.id)
+        # Dimagi staff (people, and ACE as the support agent) see everyone's runs on a run
+        # they can open, to debug a send another person made (2026-10-09: ACE could not
+        # see the owner's execution 13). Everyone else sees only their own.
+        staff = is_dimagi_user(user)
+        qs = WorkflowActionExecution.objects.filter(run_id=r.run.id)
+        if not staff:
+            qs = qs.filter(user=user)
         if caller_restricted():
             # Labs-local and production run ids are separate sequences and overlap, so
             # without visit access an execution must also match the run's own
@@ -813,4 +823,10 @@ def workflow_action_status(
             qs = qs.filter(opportunity_id=r.run.opportunity_id, program_id=getattr(r.run, "program_id", None))
         if execution_id is not None:
             qs = qs.filter(pk=execution_id)
-        return {"run_id": r.run.id, "executions": [e.as_dict() for e in qs[:20]]}
+        executions = []
+        for e in qs.select_related("user")[:20]:
+            row = e.as_dict()
+            if staff:
+                row["by"] = getattr(e.user, "email", "") or getattr(e.user, "username", "")
+            executions.append(row)
+        return {"run_id": r.run.id, "executions": executions}
