@@ -221,24 +221,30 @@ The ACE agent leads with the same recommendation the page shows and explains why
 
 ---
 
-## Supply Settings
+## Pages
 
-Each programme (and each organisation or opportunity) now has a **Settings** page that shows how Labs has been configured for that scope, who changed each setting, and lets authorised members update settings and view or undo the history of changes.
+A **page** is a screen in Labs that is written the same way as a workflow but has no runs. Instead of processing visit data to produce a report, a page shows what an organisation, programme, or opportunity holds — with links into each — and can display the latest run of any workflow you have access to.
 
-### Supply tab visibility
+### Where pages appear
 
-The first thing managed through Settings is which Supply tabs are shown. By default all tabs are visible. Programme members who can change settings can hide any tab their programme does not use — except **Overview**, which is always shown.
+| Scope | Address |
+| --- | --- |
+| Organisation | `/labs/p/org/<organisation>/` |
+| Programme | `/labs/p/programme/<id>/` |
+| Opportunity | `/labs/p/opportunity/<id>/` |
 
-- **Workflow tabs (Stock review, Forecast)** are now managed through the programme's Settings page rather than a separate list. Their addresses are unchanged.
-- An **organisation** can set Supply tab visibility once and have it apply to every programme it owns.
-- If a tab has been turned off, visiting its page shows a message saying it is disabled and links to Settings — it does not error.
-- A **Settings** link appears at the end of the Supply tab bar for anyone who has permission to change the configuration.
+An organisation's **home page** is chosen in its Settings. Once set, selecting that organisation in Labs (or following a link to `/labs/overview/?organization_id=<organisation>`) lands directly on its page rather than the default overview. A page can also fill a Supply tab, in which case it opens inside the Supply header without starting a run.
 
-!!! note "No visible change if nothing is configured"
-    A programme that has not changed any settings continues to look exactly as before — all tabs remain visible and no Settings link appears in the tab bar unless you have permission to change them.
+### How pages differ from workflows
+
+On the Workflows list, a page shows **Open page** instead of **Start run**. Pages do not appear in the run history and do not count against any run limits.
+
+### Building a page
+
+Use the workflow tools you already know. When creating a new workflow, start from the **Page** template. The same MCP instructions that edit workflow definitions work for pages — describe the change in plain English and Claude updates the page definition for you.
 
 ---
 
-## Coaching Workers from a Run Page
+## Supply Settings
 
-When you ask the canopy agent to coach a worker from a Labs run page, the agent shows you a coaching card in the same reply as the worker's data summary — you do not need to send a second message to trigger the card. After previ
+Each programme (and each organisation or opportunity) now has a **Settings**
