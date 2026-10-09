@@ -66,6 +66,16 @@ SOURCES: dict[str, Source] = {
     "network_stock": Source("network_stock", PROGRAM, "points", item=True, as_of=True, params=("window_days",)),
     "network_tree": Source("network_tree", PROGRAM, "roots", item=True, as_of=True, params=("window_days",)),
     "stock_flow": Source("stock_flow", PROGRAM, "*", item=True, as_of=True),
+    # One forecast per programme, over the workflow's opportunities in it.
+    "stock_forecast": Source(
+        "stock_forecast",
+        PROGRAM,
+        "*",
+        item=True,
+        as_of=True,
+        args=("scenario", "horizon_weeks"),
+        params=("course_size", "horizon_weeks", "scenario"),
+    ),
     "distribution_list": Source("distribution_list", OPPORTUNITY, None),
     "contract_list": Source("contract_list", PROGRAM, None),
     "shipment_list": Source("shipment_list", PROGRAM, None),
@@ -211,6 +221,9 @@ def run(request, definition, spec: dict, *, opportunity_ids, as_of: date | None 
                 payload["as_of"] = as_of.isoformat()
             if source.scope == OPPORTUNITY and spec["source"] in ("worker_stock", "distribution_list"):
                 payload["opportunity_id"] = opp
+            if spec["source"] == "stock_forecast":
+                # Run once for the programme, over the workflow's own opportunities in it.
+                payload["opportunity_ids"] = [o for o, p in programs.items() if p == program]
             result = call_operation(source.operation, access, payload)
         except Exception as error:  # noqa: BLE001 -- one opportunity's failure must not sink the rest
             logger.info("supply source %s failed for opportunity %s: %s", spec.get("alias"), opp, error)
