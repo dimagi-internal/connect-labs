@@ -501,7 +501,65 @@ function WorkflowUI({
         <div className="text-sm font-semibold text-gray-900 mb-2">
           Does it add up?
         </div>
-        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+        {/* On a phone, one card per worker with the count and its gap first:
+            the table scrolled sideways and hid both off the right edge (#2350
+            made the supply pages' own tables cards; this one is the review's). */}
+        <div className="sm:hidden rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
+          {rows
+            .slice()
+            .sort(function (a, b) {
+              return String(a.name).localeCompare(String(b.name));
+            })
+            .map(function (r) {
+              return (
+                <div key={r.key} className="px-3 py-2 text-sm">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="font-medium text-gray-900">{r.name}</span>
+                    <span
+                      className={
+                        'tabular-nums ' +
+                        (r.gap
+                          ? r.gap < 0
+                            ? 'text-red-700 font-medium'
+                            : 'text-gray-900 font-medium'
+                          : 'text-gray-500')
+                      }
+                    >
+                      {r.gap !== null
+                        ? 'gap ' + (r.gap > 0 ? '+' : '') + fmt(r.gap)
+                        : 'never counted'}
+                    </span>
+                  </div>
+                  {r.counted !== null && (
+                    <div className="text-xs text-gray-700 tabular-nums">
+                      {'counted ' +
+                        fmt(r.counted) +
+                        (r.countedOn ? ' on ' + day(r.countedOn) : '') +
+                        ' · ledger that day ' +
+                        fmt(r.ledgerOnCount)}
+                    </div>
+                  )}
+                  <div className="text-xs text-gray-500 tabular-nums">
+                    {'issued ' +
+                      fmt(r.issued) +
+                      ' · given out ' +
+                      fmt(r.given) +
+                      ' · held ' +
+                      fmt(r.onHand)}
+                    {r.noAnswer
+                      ? ' · ' + r.noAnswer + " visits didn't say"
+                      : ''}
+                    {r.given && r.unapproved
+                      ? ' · ' +
+                        Math.round(((r.unapproved || 0) / r.given) * 100) +
+                        '% on unapproved visits'
+                      : ''}
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+        <div className="hidden sm:block overflow-x-auto rounded-lg border border-gray-200 bg-white">
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
               <tr>
