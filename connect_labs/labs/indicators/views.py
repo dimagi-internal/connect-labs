@@ -885,7 +885,7 @@ class CoverageView(OpenLocallyMixin, View):
 
 
 #: What the PMC page tells the agent the visitor is looking at.
-PMC_PANEL_FILTER_KEYS = ("schedule", "states", "cost_per_visit", "platform_fee", "dose_rate")
+PMC_PANEL_FILTER_KEYS = ("schedule", "states", "cost_per_visit", "platform_fee", "dose_rate", "deaths_basis")
 
 
 def _pmc_costs(request) -> dict:
@@ -912,10 +912,13 @@ class PmcView(OpenLocallyMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         from connect_labs.labs.indicators import pmc
+        from connect_labs.labs.indicators.emod import rank
 
         ctx = super().get_context_data(**kwargs)
         ctx["sweep"] = pmc.load_sweep()
         ctx["caveats"] = pmc.CAVEATS
+        # The per-state grid's states for the ranking's picker; empty until the grid is computed.
+        ctx["grid_states"] = rank.state_index(rank.load_grid(getattr(settings, "PMC_STATE_GRID_PATH", None)))
         # Same rule as the map page: the panel only for a signed-in visitor, and
         # it carries what the visitor chose, never the rows.
         if self.request.user.is_authenticated:
@@ -930,6 +933,25 @@ class PmcView(OpenLocallyMixin, TemplateView):
                 path=self.request.path,
             )
         return ctx
+
+
+class PmcRankView(OpenLocallyMixin, View):
+    """The (state, design) ranking at the visitor's prices and deaths basis: the agent's targeting_pmc_rank."""
+
+    def get(self, request):
+        states = [s for s in (request.GET.get("states") or "").split(",") if s.strip()] or None
+        try:
+            top_n = int(request.GET.get("top_n") or 10)
+        except ValueError:
+            return JsonResponse({"error": "top_n must be a whole number"}, status=400)
+        return _pmc_tool_response(
+            "targeting_pmc_rank",
+            request,
+            states=states,
+            top_n=top_n,
+            deaths_basis=request.GET.get("deaths_basis") or "prevalence_scaled",
+            **_pmc_costs(request),
+        )
 
 
 class PmcDataView(OpenLocallyMixin, View):

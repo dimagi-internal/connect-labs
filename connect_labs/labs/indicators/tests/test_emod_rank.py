@@ -267,3 +267,12 @@ def test_an_unknown_deaths_basis_is_an_error(grid):
 def test_without_deaths_it_still_ranks_by_cost_per_case(grid):
     out = rank.rank_pairs(["Ondo", "Kano"], grid=grid)
     assert out["ranked_by"] == "cost per case averted" and "multiple_of_benchmark" not in out["ranked"][0]
+
+
+def test_the_state_index_marks_year_round_transmission_by_season_and_prevalence(grid):
+    got = {s["name"]: s for s in rank.state_index(grid)}
+
+    # Ondo: 40% of the rain in the wettest quarter, 30% prevalence. Kano is seasonal; Lagos has 3% prevalence.
+    assert {n: s["perennial"] for n, s in got.items()} == {"Kano": False, "Lagos": False, "Ondo": True}
+    assert got["Ondo"]["pfpr"] == 0.3 and got["Ondo"]["rain_wettest_quarter"] == 40.0
+    assert rank.state_index(None) == []
