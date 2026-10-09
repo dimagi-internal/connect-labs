@@ -86,6 +86,13 @@
     .pmc-legend { font-size: 13px; line-height: 1.5; color: #57534e; padding: 0 16px 4px; }
     .pmc-legend b { color: #1c1917; }
     .pmc-h { font-size: 13px; font-weight: 600; color: #1c1917; padding: 4px 16px 6px; }
+    .pmc-reco { margin: 12px 16px; padding: 16px 18px; background: #eef2ff; border-left: 4px solid #16006d; border-radius: 8px; }
+    .pmc-reco .lead { font-size: 18px; line-height: 1.5; color: #1c1917; margin-top: 4px; }
+    .pmc-reco .lead b { color: #16006d; }
+    .pmc-reco ul { list-style: disc; padding-left: 20px; margin-top: 8px; font-size: 14px; line-height: 1.55; color: #292524; }
+    .pmc-reco details { margin-top: 8px; font-size: 13px; }
+    .pmc-reco summary { cursor: pointer; color: #3730a3; }
+    .pmc-evidence { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #78716c; padding: 14px 16px 0; }
     .pmc-caveats { margin-top: 6px; }
     .pmc-caveats summary { cursor: pointer; color: #3730a3; }
     .pmc-caveats ul { list-style: disc; padding-left: 18px; margin-top: 4px; }
@@ -119,11 +126,10 @@
 
   <section class="pmc-card" id="pmc-rank-card">
     <div class="flex items-baseline gap-3 px-4 pt-3">
-      <div class="pmc-label">Rank states &times; designs</div>
+      <div class="pmc-label">Pick states; get the programme</div>
       <span id="pmc-rank-scope" class="text-sm text-stone-500"></span>
     </div>
-    <p id="pmc-rank-answer" class="pmc-answer px-4 pt-1 pb-3">Loading…</p>
-    <div class="pmc-pick">
+    <div class="pmc-pick" style="padding-top:8px">
       <div class="pmc-pick-head">
         <span>States</span>
         <button type="button" class="pmc-link" data-preset="perennial" title="Under half the year's rain in the wettest quarter, and child malaria prevalence of at least 10%">Year-round transmission</button>
@@ -148,7 +154,10 @@
       </span>
       <label>Top <select id="pmc-topn"><option>10</option><option>20</option><option>50</option></select></label>
     </div>
-    <p class="pmc-legend" style="padding-top:10px"><b>&times; GiveWell</b>: how many times as cost-effective as GiveWell's benchmark, counting under-5 deaths only; GiveWell funds at about <b>6&times;</b> and above. <b>Deaths</b>: two estimates of each state's under-5 malaria deaths, spread by DHS survey prevalence or taken from MAP's model. They disagree in the south, so check both.</p>
+    <div id="pmc-reco" class="pmc-reco">Loading…</div>
+    <div class="pmc-evidence">The evidence</div>
+    <p id="pmc-rank-answer" class="pmc-legend" style="padding-top:6px"></p>
+    <p class="pmc-legend"><b>&times; GiveWell</b>: how many times as cost-effective as GiveWell's benchmark, counting under-5 deaths only; GiveWell funds at about <b>6&times;</b> and above. <b>Deaths</b>: two estimates of each state's under-5 malaria deaths, spread by DHS survey prevalence or taken from MAP's model. They disagree in the south, so check both.</p>
     <div id="pmc-rank-total" class="pmc-total hidden" style="margin:12px 16px"></div>
     <div id="pmc-design-card" class="hidden">
       <div class="pmc-h">Which schedule: each one across all the states picked</div>
@@ -187,8 +196,9 @@
     <p id="pmc-rank-note" class="pmc-note"></p>
   </section>
 
-  <section class="pmc-card">
-    <div class="pmc-live" style="border-top:0">
+  <details class="pmc-card" id="pmc-advanced">
+    <summary class="cursor-pointer px-4 py-3 text-sm text-indigo-700">Advanced: test a schedule of your own in one state</summary>
+    <div class="pmc-live">
       <div class="pmc-label" style="margin-bottom:4px">Try another schedule in one state</div>
       <p style="margin-bottom:8px">Runs IDM's model live for one state on its own fitted setting, with a schedule of your own: other months, a narrower age range, a different coverage. It takes about five minutes, or is instant if someone has run the same thing before. The result is valued like the ranking and shown beside that state's best design.</p>
       <div class="pmc-live-row">
@@ -213,7 +223,7 @@
       <div id="pmc-live-msg" class="pmc-live-msg" role="status" aria-live="polite"></div>
       <div id="pmc-live-results" class="pmc-live-results overflow-x-auto"></div>
     </div>
-  </section>
+  </details>
 
   <details class="pmc-card">
     <summary class="cursor-pointer px-4 py-3 text-sm text-indigo-700">The schedules in one illustrative setting (before per-state fitting)</summary>

@@ -25,6 +25,8 @@ DAYS_PER_YEAR = 365
 INTERVENTION_YEARS = 2
 COVERAGE = 0.85
 PMC_AGES_Y = (3 / 12, 24 / 12)
+#: Second-year-only PMC: the doses EPI-linked PMC misses (the proposal's "augmenting EPI" configuration).
+PMC_Y2_AGES_Y = (12 / 12, 24 / 12)
 SMC_AGES_Y = (3 / 12, 59 / 12)
 #: Shares of the under-5 population (in 60 months) each target age band makes up.
 PMC_TARGET_FRACTION = 21 / 60
@@ -114,6 +116,31 @@ def designs_for(state_inputs: dict) -> list[dict]:
             6,
             PMC_AGES_Y,
             PMC_TARGET_FRACTION,
+        )
+    )
+    # Second-year-only variants of the strongest schedules and the proposal's base. target_pop_fraction stays
+    # 21/60: the worker counts doses per 3-24-month child, so spend = doses per child x the 3-24-month children.
+    y2 = "12–24 months"
+    for n in (6, 8):
+        out.append(
+            _design(
+                f"pmc_m{n}_onset_y2",
+                f"{n} monthly rounds, {_span(onset, n)}, {y2}",
+                "pmc",
+                "SP",
+                start,
+                30,
+                n,
+                PMC_Y2_AGES_Y,
+                PMC_TARGET_FRACTION,
+            )
+        )
+    out.append(
+        _design("pmc_m12_y2", f"Year-round monthly, {y2}", "pmc", "SP", 0, 30, 12, PMC_Y2_AGES_Y, PMC_TARGET_FRACTION)
+    )
+    out.append(
+        _design(
+            "pmc_q4_y2", f"Quarterly from {mon}, {y2}", "pmc", "SP", start, 91, 4, PMC_Y2_AGES_Y, PMC_TARGET_FRACTION
         )
     )
     if state_inputs["rain_wettest_quarter"] >= SMC_MIN_WETTEST_QUARTER:
