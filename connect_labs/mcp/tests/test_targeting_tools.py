@@ -1194,6 +1194,8 @@ class TestPmcRank:
         assert got["ranked_by"] == "cost per death averted" and got["deaths_basis"] == "map"
         assert all("multiple_of_benchmark" in r for r in got["ranked"])
         assert "cost per case" not in (got["note"] or "")  # no fallback note when deaths are loaded
+        # The explorer link opens the page on the same deaths estimate.
+        assert "deaths_basis=map" in got["explorer_path"]
 
     def test_with_no_mortality_loaded_it_falls_back_to_cost_per_case_and_says_so(self):
         got = targeting.targeting_pmc_rank(None, states=["Kano", "Ondo"])
@@ -1243,8 +1245,8 @@ class TestPmcRank:
         assert "AT MOST three columns" in rank and "~400px" in rank
         assert "illustrative \u00b7 fitted to each state's prevalence and rainfall" in rank
         assert "never call it calibrated" in rank
-        assert "Open these states in the PMC explorer (national model)" in rank
-        assert "will NOT match this ranking" in rank
+        assert "Open this ranking in the PMC explorer" in rank
+        assert "same ranking for these states" in rank
         assert "mention excluded designs only if asked" in rank
         assert "states_clearing_bar" in rank and "a top 10 is not a recommendation if it sits below the bar" in rank
         # The answer shape comes before the reference material.
