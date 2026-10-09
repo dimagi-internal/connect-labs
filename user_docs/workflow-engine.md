@@ -187,6 +187,19 @@ Click any worker to open a day-by-day view of their stock movements and counts.
 **The stores behind them**
 Stock held in the stores that supply the workers, shown in sachets with cartons alongside.
 
+#### Viewing past dates in the Supply Stock Review
+
+When you pick a past date using the **View as of** control in the supply header, the Stock review and all related pages — Stock, Movements, Workers, individual worker, Network, and "Where it went" — show the stock as it actually stood on that day. This includes visits that were made on or before the chosen date, even if they were synced to the system afterwards. The **stores** section also reflects the chosen day, so the stock held in stores and the stock held by workers are consistent with each other at that point in time.
+
+A yellow banner at the top of the page tells you what kind of past data you are seeing:
+
+| Page type | Banner wording |
+|---|---|
+| Stock pages (Stock, Movements, Workers, worker, Network, "Where it went") | "Stock is what had happened by that day; places are as they are today." |
+| Record pages (Tenders, Orders, Overview) | "Records as they stood that evening." |
+
+Previously, a visit made before the chosen date but synced after it could be left out of the past-date view, causing the Stock and Stock review tabs to show different totals for the same day. This is now fixed — both tabs draw from the same cutoff and will agree.
+
 #### Workflows pinned to supply tabs
 
 A programme's supply pages can show a workflow as one of their tabs. A workflow tab can either stand in for a built-in tab — the first such tab replaces the **Workers** tab with the **Stock review** — or be added alongside the existing tabs as something new.
@@ -220,22 +233,4 @@ Three checks run automatically against the registrations in the dashboard:
 | Same name, same age, same school | Name and age | Yes |
 | Same name, same age, same caregiver phone, same school | Name, age, and caregiver phone | Yes |
 
-Each check shows a count of flagged registrations, with the number of **unique** suspected children in brackets — for example, **6 (3 unique)**. Children who are missing a matched attribute (age, or caregiver phone for the third check) are not compared on that check. Caregiver phone numbers are matched with or without the +234 country prefix.
-
-Clicking any check on the Authenticity tab takes you straight to that check's review in the Duplicates tab.
-
-#### The Duplicates tab
-
-Select which check to review using the picker at the top of the tab. Each suspected child appears as one row. Every registration that matches that child is shown side by side, with:
-
-- The consent photo (click to open full size)
-- Name, school, age and sex, and caregiver phone
-- Who registered the child and when
-- An **Open visit in Connect** link to the registration visit
-- The child's visit timeline
-
-Rows where more than one field worker submitted a matching registration are clearly marked.
-
-### MUAC/Age Plausibility Report
-
-The **MUAC/Age Plausibility** report is available for CHC programmes (currently built for Program 217, CHC - NG - RCT). It shows what share of approved MUAC readings are
+Each
