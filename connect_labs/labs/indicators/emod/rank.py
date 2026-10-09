@@ -105,6 +105,32 @@ def load_grid(path: str | os.PathLike | None = None) -> dict | None:
     return grid
 
 
+#: Year-round transmission, the page's state preset: under half the year's rain in the wettest quarter
+#: (SMC is for 60% or more), and DHS PfPR 2-5y of at least 10% (GiveWell's PMC topic excludes low transmission).
+PERENNIAL_MAX_WETTEST_PCT = 50
+PERENNIAL_MIN_PFPR = 0.10
+
+
+def state_index(grid: dict | None) -> list[dict]:
+    """Every state in the grid, by name, for the page's picker: its prevalence, season and whether it is perennial."""
+    out = []
+    for name, entry in sorted((grid or {}).get("states", {}).items()):
+        inputs = entry.get("inputs") or {}
+        pfpr, wettest = inputs.get("pfpr_target"), inputs.get("rain_wettest_quarter")
+        out.append(
+            {
+                "name": name,
+                "pfpr": pfpr,
+                "rain_wettest_quarter": wettest,
+                "perennial": pfpr is not None
+                and wettest is not None
+                and wettest < PERENNIAL_MAX_WETTEST_PCT
+                and pfpr >= PERENNIAL_MIN_PFPR,
+            }
+        )
+    return out
+
+
 def _clean_name(name: str) -> str:
     """A selection name as the Targeting page writes it ('Kano (NGA)') or as typed ('kano') -> 'kano'."""
     n = name.strip()

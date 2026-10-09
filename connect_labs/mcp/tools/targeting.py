@@ -1516,6 +1516,7 @@ def _pmc_present(
             "malaria_incidence_per_1000": mine["malaria_incidence"],
         },
         "projection": projection,
+        "value": _pmc_value(mine["name"], row, projection),
         "projection_note": (
             "Per year, rounded to two figures: relative EMOD effect x the state's MAP incidence. Cases averted "
             "are a floor and cost per case a ceiling."
@@ -1530,6 +1531,29 @@ def _pmc_present(
     if run_id is not None:
         out["run_id"] = run_id
     return out
+
+
+def _pmc_value(state: str, row: dict, projection: dict | None) -> dict | None:
+    """A costed result's under-5 deaths averted and multiple of GiveWell's benchmark, as targeting_pmc_rank values
+    a grid design: EMOD's under-5 effect x the state's under-5 malaria deaths (the default basis). None when the run
+    has no under-5 effect, it was not costed, or no mortality figures are loaded."""
+    from connect_labs.labs.indicators.cost_effectiveness import BAR
+    from connect_labs.labs.indicators.emod import mortality, rank
+
+    if not projection or not projection.get("spend_per_year") or row.get("averted_u5_pct") is None:
+        return None
+    deaths = mortality.malaria_u5_deaths(mortality.registry_burden()).get(state)
+    if not deaths:
+        return None
+    v = mortality.value(row["averted_u5_pct"] / 100 * deaths, projection["spend_per_year"])
+    return {
+        "deaths_averted_per_year": rank.sig(v["deaths_averted_per_year"]),
+        "cost_per_death_averted": rank.sig(v["cost_per_death_averted"]),
+        "multiple_of_benchmark": round(v["multiple_of_benchmark"], 1),
+        "clears_bar": v["clears_bar"],
+        "bar": BAR.value,
+        "deaths_basis": mortality.DEFAULT_BASIS,
+    }
 
 
 def _pmc_grid_row(code: str, costs: dict) -> dict:
@@ -1550,7 +1574,9 @@ _PMC_PRESENT_RULES = (
     "a full "
     "calibration: every figure is illustrative, never a state's calibrated estimate). Keep it short (a narrow side "
     "panel): one sentence of result, a two-row comparison (this schedule vs the grid's best: cases averted "
-    "per year, $ per case), one line of caveats."
+    "per year, $ per case), one line of caveats. When result.value is present, lead with it instead, as "
+    "targeting_pmc_rank does: under-5 deaths averted per year, $ per death averted and the multiple of GiveWell's "
+    "benchmark against the bar (value.bar, 6x)."
 )
 
 
