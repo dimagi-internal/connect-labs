@@ -221,25 +221,24 @@ The ACE agent leads with the same recommendation the page shows and explains why
 
 ---
 
+## Supply Settings
+
+Each programme (and each organisation or opportunity) now has a **Settings** page that shows how Labs has been configured for that scope, who changed each setting, and lets authorised members update settings and view or undo the history of changes.
+
+### Supply tab visibility
+
+The first thing managed through Settings is which Supply tabs are shown. By default all tabs are visible. Programme members who can change settings can hide any tab their programme does not use — except **Overview**, which is always shown.
+
+- **Workflow tabs (Stock review, Forecast)** are now managed through the programme's Settings page rather than a separate list. Their addresses are unchanged.
+- An **organisation** can set Supply tab visibility once and have it apply to every programme it owns.
+- If a tab has been turned off, visiting its page shows a message saying it is disabled and links to Settings — it does not error.
+- A **Settings** link appears at the end of the Supply tab bar for anyone who has permission to change the configuration.
+
+!!! note "No visible change if nothing is configured"
+    A programme that has not changed any settings continues to look exactly as before — all tabs remain visible and no Settings link appears in the tab bar unless you have permission to change them.
+
+---
+
 ## Coaching Workers from a Run Page
 
-When you ask the canopy agent to coach a worker from a Labs run page, the agent shows you a coaching card in the same reply as the worker's data summary — you do not need to send a second message to trigger the card. After previewing coaching, the agent replies in a single short line (for example, "Here's the coaching card for Ibrahim.") and does not restate the topic, coach, synthetic note, or button options, which the card already shows.
-
-### What the coaching card shows
-
-The card is designed to show only what you need to make the decision to send:
-
-- **Coach \<worker\>** — the worker's name in the card heading.
-- Their picture.
-- The first message the worker will receive.
-- A **Send** button (plus a quieter test link).
-
-The card does not show a subtitle, a coach line, a topic list, a "Sent with the conversation" caption, or a list of earlier sends — that information is either already visible in the picture or not needed to decide whether to send.
-
-The synthetic note, shown when you are working on a demo opportunity, is kept brief.
-
-### What appears in the chat after a send
-
-After you send or test a coaching session, the chat shows a plain confirmation message — for example, "Sent a test to Ibrahim." — as your message. The card's internal instructions to the agent are never shown in the chat.
-
-The agent produces one coaching card per request. If you ask to preview coaching for
+When you ask the canopy agent to coach a worker from a Labs run page, the agent shows you a coaching card in the same reply as the worker's data summary — you do not need to send a second message to trigger the card. After previ
