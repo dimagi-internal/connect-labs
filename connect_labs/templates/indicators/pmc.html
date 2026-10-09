@@ -91,6 +91,8 @@
     .pmc-reco .lead b { color: #16006d; }
     .pmc-reco ul { list-style: disc; padding-left: 20px; margin-top: 8px; font-size: 14px; line-height: 1.55; color: #292524; }
     .pmc-reco details { margin-top: 8px; font-size: 13px; }
+    .pmc-reco .pmc-budgets { margin-top: 12px; }
+    .pmc-reco .pmc-budgets .states { white-space: normal; font-size: 12px; color: #57534e; }
     .pmc-reco summary { cursor: pointer; color: #3730a3; }
     .pmc-evidence { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #78716c; padding: 14px 16px 0; }
     .pmc-caveats { margin-top: 6px; }
@@ -150,6 +152,12 @@
         <span class="pmc-seg" role="group" aria-label="Deaths estimate">
           <button type="button" data-basis="prevalence_scaled" title="All-cause under-5 deaths x malaria's national share, spread by DHS prevalence">DHS-scaled</button>
           <button type="button" data-basis="map" title="MAP's modelled malaria deaths x 76% under five">MAP</button>
+        </span>
+      </span>
+      <span>Children
+        <span class="pmc-seg" role="group" aria-label="Children targeted">
+          <button type="button" data-ages="3_24" title="Our proposal: children 3 to 24 months">3–24 months</button>
+          <button type="button" data-ages="12_24" title="The second year of life only">12–24 only</button>
         </span>
       </span>
       <label>Top <select id="pmc-topn"><option>10</option><option>20</option><option>50</option></select></label>

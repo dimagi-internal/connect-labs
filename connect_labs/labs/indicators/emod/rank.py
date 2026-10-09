@@ -126,11 +126,93 @@ PERENNIAL_MAX_WETTEST_PCT = 50
 PERENNIAL_MIN_PFPR = 0.10
 
 
-def recommend(pooled: dict[str, dict], considered: list[str], best_by_state: dict | None = None) -> dict | None:
+#: The children each PMC design reaches, from its code: our proposal's approach is 3-24 months; the ``_y2`` designs
+#: reach the second year of life only.
+AGES = ("3_24", "12_24", "any")
+DEFAULT_AGES = "3_24"
+AGES_LABEL = {"3_24": "children 3–24 months", "12_24": "children 12–24 months only", "any": "any age band"}
+
+#: The annual budgets the page plans for when the caller names none.
+DEFAULT_BUDGETS = (10_000_000, 20_000_000, 30_000_000)
+
+
+def design_ages(code: str, kind: str | None) -> str | None:
+    """'3_24' or '12_24' for a PMC design, None for SMC (3-59 months, a different programme)."""
+    if kind == "smc":
+        return None
+    return "12_24" if code.endswith("_y2") else "3_24"
+
+
+def _in_ages(code: str, kind: str | None, ages: str) -> bool:
+    return ages == "any" or design_ages(code, kind) == ages
+
+
+def budget_plans(pooled: dict[str, dict], considered: list[str], budgets, ages: str = DEFAULT_AGES) -> list[dict]:
+    """For each annual budget: the one schedule, and the states to run it in, that avert the most under-5 deaths.
+
+    Only states where the schedule's effect is clear and clears GiveWell's bar are funded (an unclear state is
+    never bought). A state is funded whole: for each schedule (among those for ``ages`` that can run in every state
+    considered), states are added best value first while the budget lasts, skipping any that no longer fits; the
+    schedule whose states avert the most deaths wins (ties to the cheaper). Spend is what those states cost, which
+    can be under the budget -- the rest is better left unspent than spent below the bar.
+    """
+    n = len(considered)
+    cands = {
+        c: p
+        for c, p in pooled.items()
+        if n and len(p.get("per_state") or []) == n and _in_ages(c, p.get("kind"), ages)
+    }
+    out = []
+    for budget in budgets:
+        best = None
+        for code, p in cands.items():
+            worth = []
+            for r in p["per_state"]:
+                if r["deaths"] > 0 and r.get("clear", True) and r["spend"] > 0:
+                    v = mortality.value(r["deaths"], r["spend"])
+                    if v["clears_bar"]:
+                        worth.append((v["multiple_of_benchmark"], r))
+            worth.sort(key=lambda t: -t[0])
+            chosen, spend, deaths = [], 0.0, 0.0
+            for _, r in worth:
+                if spend + r["spend"] <= budget:
+                    chosen.append(r)
+                    spend += r["spend"]
+                    deaths += r["deaths"]
+            if chosen and (best is None or (deaths, -spend) > (best[2], -best[3])):
+                best = (code, chosen, deaths, spend, len(worth))
+        if best is None:
+            out.append({"budget": budget, "design_code": None, "label": None, "states": []})
+            continue
+        code, chosen, deaths, spend, worth_n = best
+        v = mortality.value(deaths, spend)
+        out.append(
+            {
+                "budget": budget,
+                "design_code": code,
+                "label": cands[code]["label"],
+                "states": [r["state"] for r in chosen],
+                "states_worth_funding": worth_n,
+                "deaths_averted_per_year": sig(deaths, 3),
+                "spend_per_year": sig(spend, 3),
+                "cost_per_death_averted": sig(v["cost_per_death_averted"]),
+                "multiple_of_benchmark": round(v["multiple_of_benchmark"], 1),
+            }
+        )
+    return out
+
+
+def recommend(
+    pooled: dict[str, dict],
+    considered: list[str],
+    best_by_state: dict | None = None,
+    ages: str = DEFAULT_AGES,
+) -> dict | None:
     """One programme approach for the states considered, from each design pooled across them.
 
     The rule is a fixed budget's: the approach that averts the most under-5 deaths per dollar across the
-    states, among the designs that can run in every one of them (so SMC only when every state is seasonal).
+    states, among the designs for ``ages`` (our proposal's 3-24 months by default) that can run in every one of
+    them (so SMC, a 3-59-month programme, only with ``ages='any'`` and when every state is seasonal).
     Each state runs it from its own rain onset (the design's per-state label). The choice pools every state,
     noise included; each STATE is then judged on its own result: kept when the approach's effect there is clear
     (outside its seed-to-seed noise) and clears GiveWell's bar, dropped when it is clear and below the bar, and
@@ -149,7 +231,11 @@ def recommend(pooled: dict[str, dict], considered: list[str], best_by_state: dic
         return mortality.value(d, s) if d > 0 and s > 0 else None
 
     n = len(considered)
-    cands = {c: p for c, p in pooled.items() if n and len(p.get("per_state") or []) == n and p.get("deaths", 0) > 0}
+    cands = {
+        c: p
+        for c, p in pooled.items()
+        if n and len(p.get("per_state") or []) == n and p.get("deaths", 0) > 0 and _in_ages(c, p.get("kind"), ages)
+    }
     if not cands:
         return None
     best_code = min(cands, key=lambda c: 1 / pooled_value(cands[c]["per_state"])["multiple_of_benchmark"])
@@ -184,6 +270,8 @@ def recommend(pooled: dict[str, dict], considered: list[str], best_by_state: dic
     out = {
         "design_code": best_code,
         "label": best["label"],
+        "ages": ages,
+        "ages_label": AGES_LABEL[ages],
         "states": sorted(per_state, key=lambda r: -r["multiple_of_benchmark"]),
         "keep": keep,
         "drop": [r["state"] for r in per_state if r["clear_effect"] and not r["clears_bar"]],
@@ -314,6 +402,8 @@ def rank_pairs(
     grid: dict,
     deaths: dict[str, float] | None = None,
     deaths_basis: str = mortality.DEFAULT_BASIS,
+    ages: str = DEFAULT_AGES,
+    budgets=DEFAULT_BUDGETS,
 ) -> dict:
     """The top ``top_n`` (state, design) pairs in ``states``, best value first.
 
@@ -325,6 +415,11 @@ def rank_pairs(
     per_dose = pmc.cost_per_dose(cost_per_visit, platform_fee, dose_rate)
     if deaths_basis not in mortality.BASES:
         raise ValueError(f"deaths_basis must be one of {', '.join(mortality.BASES)}; got {deaths_basis!r}")
+    if ages not in AGES:
+        raise ValueError(f"ages must be one of {', '.join(AGES)}; got {ages!r}")
+    budgets = tuple(budgets or ())
+    if any(isinstance(b, bool) or not isinstance(b, (int, float)) or not b > 0 for b in budgets) or len(budgets) > 6:
+        raise ValueError("budgets must be up to six positive amounts in dollars a year")
     if isinstance(top_n, bool) or not isinstance(top_n, int) or top_n < 1:
         raise ValueError("top_n must be a whole number of at least 1")
     top_n = min(top_n, MAX_TOP_N)
@@ -476,22 +571,37 @@ def rank_pairs(
     sort_key = "cost_per_death_averted" if deaths is not None else "cost_per_case_averted"
     by_design.sort(key=lambda r: (r.get(sort_key) is None, r.get(sort_key) or 0))
 
-    recommendation = (
-        recommend(
-            pooled,
-            considered,
-            {
-                p["state"]: {
-                    "design_label": p["design_label"],
-                    "multiple_of_benchmark": round(p["multiple_of_benchmark"], 1),
-                    "clears_bar": p["clears_bar"],
+    recommendation = alternative = None
+    plans = []
+    if deaths is not None:
+        best_by_state = {
+            p["state"]: {
+                "design_label": p["design_label"],
+                "multiple_of_benchmark": round(p["multiple_of_benchmark"], 1),
+                "clears_bar": p["clears_bar"],
+            }
+            for p in best_per_state
+        }
+        recommendation = recommend(pooled, considered, best_by_state, ages)
+        plans = budget_plans(pooled, considered, budgets, ages)
+        if recommendation and ages == "3_24":
+            # The second year alone, beside the proposal's band: the same doses avert more where the risk is.
+            alt = recommend(pooled, considered, best_by_state, "12_24")
+            if alt and alt["keep"] and alt["multiple_of_benchmark"] > recommendation["multiple_of_benchmark"]:
+                alternative = {
+                    k: alt[k]
+                    for k in (
+                        "design_code",
+                        "label",
+                        "ages",
+                        "keep",
+                        "deaths_averted_per_year",
+                        "spend_per_year",
+                        "multiple_of_benchmark",
+                    )
                 }
-                for p in best_per_state
-            },
-        )
-        if deaths is not None
-        else None
-    )
+        if recommendation:
+            recommendation["second_year_only"] = alternative
 
     def present(p, rank=None):
         out = {
@@ -530,6 +640,8 @@ def rank_pairs(
         "best_per_state_totals": totals,
         "by_design": by_design,
         "recommendation": recommendation,
+        "budget_plans": plans,
+        "ages": ages,
         "excluded": excluded,
         "excluded_designs": excluded_designs,
         "costs": costs,
