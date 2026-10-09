@@ -54,6 +54,17 @@ CLICK_TO_SEND = (
     "is no `confirm` for you."
 )
 
+#: What the agent says after previewing a click-to-send action. The card carries the
+#: content; a chat that restates it buries the card (owner, 2026-10-09: "extremely
+#: minimal beyond the card").
+CHAT_AFTER_PREVIEW = (
+    "In canopy the card shows everything -- picture, topics, opening, coach, the synthetic note "
+    "and the Send buttons -- so after previewing reply in ONE short line (e.g. 'Here's the "
+    "coaching card for Ibrahim.') and do not restate anything the card shows. Only outside "
+    "canopy, where there is no card, give the topics briefly and point to Start coaching on "
+    "the Labs page (`page_url`)."
+)
+
 #: How an agent runs each kind of action, given beside the action in workflow_run_context --
 #: the tool an agent reads first. (A tool's own description is not enough: clients that
 #: load tool schemas on demand never show it until the agent has already chosen the tool.
@@ -66,7 +77,7 @@ HOW_TO_RUN_CLICK_TO_SEND = (
     "`arguments.workers: [{key}]`, and no `confirm`. Never end on 'say so and I'll start it'. "
     "In canopy that preview appears to them as a card with the worker's picture, "
     "the briefing and the opening message, and the buttons Send to <worker>, Send to me (QA "
-    "test) and Not yet; tell them to click Send on the card. Don't ask for a yes in chat and "
+    "test) and Not yet. " + CHAT_AFTER_PREVIEW + " Don't ask for a yes in chat and "
     "don't offer to send it. Labs writes the briefing and always sends it to this workflow's "
     "coach; to change what the coach is told, add text in a worker's `prompt` (or the "
     "top-level `prompt` for all) -- it stays inside the briefing as a note."
@@ -450,10 +461,7 @@ def _for_the_agent(out: dict, r: _Run) -> dict:
     if out["needs"]:
         out["next"] = "Nothing has been done. Settle `needs`, then preview again."
     else:
-        out["next"] = (
-            "Nothing has been done. Show the person each worker's briefing topics and opening "
-            "message, and tell them where to send it. " + CLICK_TO_SEND
-        )
+        out["next"] = "Nothing has been done. " + CHAT_AFTER_PREVIEW + " " + CLICK_TO_SEND
     return out
 
 
@@ -519,9 +527,9 @@ def _view_text(out: dict) -> str:
         "and the buttons Send to <worker>, Send to me (QA test) -- Dimagi staff, who type their "
         "own PersonalID username -- and Not yet. On the Labs run page the same send is its Start "
         "coaching button. So when the person wants to coach or start coaching someone, PREVIEW "
-        "STRAIGHT AWAY -- the preview is what puts the card in front of them -- then give each "
-        "worker's `briefing` topics and `opening` (the worker's first message, verbatim) in a "
-        "sentence or two and tell them to click Send on the card. Never ask them to confirm in "
+        "STRAIGHT AWAY -- the preview is what puts the card in front of them. "
+        + CHAT_AFTER_PREVIEW
+        + " Never ask them to confirm in "
         "chat, and never offer to send it yourself. Once they have sent it, "
         "workflow_action_status shows how it is going.\n"
         "Labs writes each worker's briefing from this run's grading (topics: the worker's "
@@ -533,7 +541,7 @@ def _view_text(out: dict) -> str:
         "preview's `arguments.bot` is Labs' sample stand-in (no message goes out) while `bot` "
         "names the coach a real run uses: that is expected, not a mismatch. A synthetic preview "
         "also has no `opening`, because no message goes to the worker; a QA send (Send to me) "
-        "opens with Labs' fixed opening, which the card shows. Say that, not that it is missing.\n\n"
+        "opens with Labs' fixed opening, which the card shows. The card explains all this: don't.\n\n"
         "OTHER ACTIONS (e.g. create_task): the preview carries a single-use `confirm`. Show the "
         "preview, get the person's explicit yes, then call again with the preview's `arguments` "
         "and its `confirm`; the action is queued and an execution id returned. Changing anything "
