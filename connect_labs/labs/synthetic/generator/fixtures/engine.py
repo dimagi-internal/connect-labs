@@ -552,6 +552,12 @@ def _assemble(
             # and no photo; the stat is photographed visits, as it reads.
             image_stats["showcase_visits"] = sum(1 for v in showcase_visits if v.get("images"))
 
+    if manifest.person_names:
+        # After the showcase cases are appended, so they are named too.
+        from connect_labs.labs.synthetic.generator.fixtures.person_names import apply_person_names
+
+        apply_person_names(visits, manifest.person_names)
+
     persona_names = {p.id: p.display_name or p.id for p in personas}
     task_records = build_task_records(
         opportunity_id=manifest.opportunity_id,

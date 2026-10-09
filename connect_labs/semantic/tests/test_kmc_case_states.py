@@ -41,6 +41,23 @@ COLUMNS = [
     ("referral_visits", "text"),
     ("self_referral_visits", "text"),
     ("ebf_visits", "text"),
+    # what the case summary pictures read (the registry's visit_* columns)
+    ("child_name", "text"),
+    ("mother_name", "text"),
+    ("gender", "text"),
+    ("dob", "text"),
+    ("kmc_providers", "text"),
+    ("feeding_method", "text"),
+    ("cup_feeding", "text"),
+    ("feeds_24h", "double precision"),
+    ("visit_timeliness", "text"),
+    ("danger_answer", "text"),
+    ("next_visit_start", "text"),
+    ("next_visit_end", "text"),
+    ("temperature_c", "double precision"),
+    ("heart_rate", "double precision"),
+    ("breath_rate", "double precision"),
+    ("spo2", "double precision"),
 ]
 # The danger-sign fields the registry reads that this fixture leaves out entirely.
 ABSENT_SIGNS = (
@@ -71,6 +88,7 @@ def V(
     pus=None,
     fever=None,
     user="flw_001",
+    **more,
 ):
     return {
         "baby_case_id": case,
@@ -88,6 +106,7 @@ def V(
         "ds_pus": pus,
         "dsl_fever": fever,
         "reg_date": f"{day} 00:00" if form == REG else None,
+        **more,
     }
 
 
@@ -104,9 +123,36 @@ VISITS = [
     V("te", "KMC Demo — Transcription Error", "2026-05-18", weight=1910.25, referred="no", user="flw_007"),
     V("te", "KMC Demo — Transcription Error", "2026-05-25", weight=2504.25, hours=22, user="flw_007"),
     # Faltering (Beneficiary 694 of 10016): enrolment 2,000 g, then 2,200, 2,200; hours 16 -> 8.
-    V("fa", "Beneficiary 694", "2026-05-19", reg_weight=2000, form=REG, user="flw_005"),
-    V("fa", "Beneficiary 694", "2026-06-02", weight=2200, hours=16, user="flw_005"),
-    V("fa", "Beneficiary 694", "2026-06-09", weight=2200, hours=8, user="flw_005"),
+    # Named on its later visits (the names the summary reads), and its next visit due 12-16 Jun.
+    V("fa", "Beneficiary 694", "2026-05-19", reg_weight=2000, form=REG, user="flw_005", dob="2026-04-21"),
+    V(
+        "fa",
+        "Beneficiary 694",
+        "2026-06-02",
+        weight=2200,
+        hours=16,
+        user="flw_005",
+        child_name="Abubakar",
+        mother_name="Hauwa Musa",
+        feeds_24h=24.0,
+        visit_timeliness="Late",
+        danger_answer="no",
+    ),
+    V(
+        "fa",
+        "Beneficiary 694",
+        "2026-06-09",
+        weight=2200,
+        hours=8,
+        user="flw_005",
+        mother_name="Hauwa Musa",
+        gender="Male",
+        feeds_24h=22.0,
+        visit_timeliness="On-time",
+        danger_answer="no",
+        next_visit_start="2026-06-12",
+        next_visit_end="2026-06-16",
+    ),
     # Danger sign, not referred: pus on 5 Jun, referred: no. Believable weights.
     V("dg", "Beneficiary 410", "2026-05-21", reg_weight=1500, form=REG, referred="yes", user="flw_015"),
     V("dg", "Beneficiary 410", "2026-05-28", weight=1600, referred="no", user="flw_015"),
@@ -207,3 +253,17 @@ def test_a_state_is_as_of_the_run(evaluated):
     late, _ = run("2026-08-30")
     assert _state(props, late["sg"])[0] is None  # last weighed 8 Jun: no longer recent
     assert _state(props, late["te"])[0] is None
+
+
+def test_a_named_case_is_called_by_its_names_and_an_unnamed_one_by_its_label(evaluated):
+    """``case_name``: the names the visits give (the latest that recorded each), else the
+    label field. The banner's age and the overdue next visit are as of the run."""
+    props, run = evaluated
+    cases, _rows = run(as_of="2026-06-20")
+    fa, sg = cases["fa"], cases["sg"]
+    assert (fa["child_name"], fa["mother_name"], fa["child_sex"]) == ("Abubakar", "Hauwa Musa", "Male")
+    assert cs.case_display_name(props, fa, fa["case_name"]) == "Baby Abubakar · mother Hauwa Musa"
+    assert cs.case_display_name(props, sg, sg["case_name"]) == "KMC Demo — Steady Gain"
+    assert fa["age_days"] == 60
+    assert fa["next_visit_overdue_days"] == 4
+    assert cases["dg"]["next_visit_overdue_days"] is None

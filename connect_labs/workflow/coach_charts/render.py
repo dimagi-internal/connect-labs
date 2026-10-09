@@ -31,10 +31,13 @@ VL_SCHEMA = "https://vega.github.io/schema/vega-lite/v6.json"
 FONTS_DIR = Path(__file__).parent / "fonts"
 
 #: Bounds on what is drawn. The frame is fixed by the theme (3:2); a drawing taller
-#: than ``MAX_HEIGHT`` px (at scale) is refused rather than shrunk past reading.
+#: than ``MAX_HEIGHT`` px (at scale) is refused rather than shrunk past reading. A
+#: picture may be as tall as 4:3 (``MIN_ASPECT``, the case summary) -- still landscape,
+#: so the messenger's width cap binds -- and is padded out to no wider than 3:2.
 PNG_WIDTH = theme.WIDTH * theme.SCALE
 PNG_HEIGHT = theme.HEIGHT * theme.SCALE
 ASPECT = theme.WIDTH / theme.HEIGHT
+MIN_ASPECT = 4 / 3
 MAX_HEIGHT = 2 * PNG_HEIGHT
 MAX_PNG_BYTES = 1024 * 1024
 #: The smallest scale a too-wide chart is redrawn at to fit (its 20 px text then
@@ -66,13 +69,16 @@ def _register_fonts(vlc) -> None:
 
 def themed(spec: dict, datasets: dict | None = None) -> dict:
     """The complete spec that is drawn: ``spec`` without anything the theme owns,
-    its ``datasets`` replaced by ``datasets``, a single view fitted to the frame, and
-    ``theme.THEME`` as its config."""
+    its ``datasets`` replaced by ``datasets``, a single view fitted to the frame (unless
+    it is sized already -- a named type laid out to its own frame), and ``theme.THEME``
+    as its config. (An agent's own spec cannot size itself: ``custom.sanitize`` strips
+    ``width`` and ``height``.)"""
     out = {k: copy.deepcopy(v) for k, v in spec.items() if k not in _THEME_OWNED and k != "datasets"}
     out["$schema"] = VL_SCHEMA
     if datasets is not None:
         out["datasets"] = copy.deepcopy(datasets)
-    if not any(k in out for k in ("vconcat", "hconcat", "concat", "facet", "repeat")):
+    sized = isinstance(spec.get("width"), (int, float)) and isinstance(spec.get("height"), (int, float))
+    if not sized and not any(k in out for k in ("vconcat", "hconcat", "concat", "facet", "repeat")):
         # A single or layered view is FITTED to the landscape frame, title, axes and
         # legends included -- so a spec whose axis labels are long still fits.
         out["width"] = theme.WIDTH
@@ -123,16 +129,17 @@ def _draw(vlc, drawn: dict, scale: float) -> bytes:
 
 def landscape(png: bytes) -> bytes:
     """``png`` centred on a canvas of the theme's background at least ``PNG_WIDTH`` x
-    ``PNG_HEIGHT`` and exactly ``ASPECT`` (3:2); ``png`` itself when it already is."""
+    ``PNG_HEIGHT`` and from ``MIN_ASPECT`` (4:3) to ``ASPECT`` (3:2) -- a drawing too tall
+    for that is widened to 4:3; ``png`` itself when it already fits."""
     import io
 
     from PIL import Image, ImageColor
 
     image = Image.open(io.BytesIO(png))
     width, height = image.size
-    out_w = max(width, PNG_WIDTH, round(height * ASPECT))
+    out_w = max(width, PNG_WIDTH)
     out_h = max(height, PNG_HEIGHT, round(out_w / ASPECT))
-    out_w = max(out_w, round(out_h * ASPECT))
+    out_w = max(out_w, round(out_h * MIN_ASPECT))
     if (out_w, out_h) == (width, height):
         return png
     canvas = Image.new(image.mode, (out_w, out_h), ImageColor.getcolor(theme.BACKGROUND, image.mode))

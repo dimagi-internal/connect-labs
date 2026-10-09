@@ -24,6 +24,8 @@ from pydantic import (
     model_validator,
 )
 
+from connect_labs.labs.synthetic.generator.fixtures.person_names import PersonNamesConfig
+
 from . import corpus_manifest as cm
 
 
@@ -695,6 +697,9 @@ class Manifest(BaseModel):
     coaching_arcs: list[CoachingArc] = Field(default_factory=list)
     tasks: list[TaskSpec] = Field(default_factory=list)
     image_config: ImageConfig | None = None
+    # Invented mother and baby names written at the app's name questions, keyed by
+    # case id (person_names.py). A replay-time CHOICE layered on like image_config.
+    person_names: PersonNamesConfig | None = None
     # Optional: place visit GPS across a real area (renders on the delivery overlay).
     geography: Geography | None = None
     temporal: TemporalProfile | None = None

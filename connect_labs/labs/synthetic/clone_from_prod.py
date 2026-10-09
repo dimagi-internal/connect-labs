@@ -270,6 +270,7 @@ def generate_opp_from_bundle(
     fresh: bool = False,
     target_opportunity_id: int | None = None,
     image_config: dict | None = None,
+    person_names: dict | None = None,
     authorize=None,
     created_by=None,
 ) -> CloneResult:
@@ -326,9 +327,19 @@ def generate_opp_from_bundle(
         fresh=fresh,
         target_opportunity_id=target_opportunity_id,
         image_config=image_config,
+        person_names=person_names,
         authorize=authorize,
         created_by=created_by,
     )
+
+
+def _with_person_names(manifest, person_names: dict | None, source_opportunity_id: int):
+    """The manifest with the cohort spec's ``person_names`` for this source layered on
+    (a replay-time choice, like ``image_config``); unchanged when there is none."""
+    from connect_labs.labs.synthetic.generator.fixtures.person_names import config_for_source
+
+    config = config_for_source(person_names, source_opportunity_id)
+    return manifest.model_copy(update={"person_names": config}) if config else manifest
 
 
 def _generate_one(
@@ -343,6 +354,7 @@ def _generate_one(
     fresh: bool = False,
     target_opportunity_id: int | None = None,
     image_config: dict | None = None,
+    person_names: dict | None = None,
     authorize=None,
     created_by=None,
 ) -> CloneResult:
@@ -392,6 +404,7 @@ def _generate_one(
         # Applied here so an existing bundle gains images without re-profiling
         # production.
         manifest = manifest.model_copy(update={"image_config": ImageConfig(**image_config)})
+    manifest = _with_person_names(manifest, person_names, bundle.source_opp_id)
     form_schema = parse_form_schema_from_app_json(bundle.app_structure, app_type="deliver")
     fixtures = _generate(
         manifest=manifest,
@@ -476,6 +489,7 @@ def generate_opps_bulk(
     only_source_ids=None,
     progress=NULL_PROGRESS,
     image_config: dict | None = None,
+    person_names: dict | None = None,
     authorize=None,
     created_by=None,
     new_opportunities: bool = False,
@@ -535,6 +549,7 @@ def generate_opps_bulk(
                     org_name=org_name,
                     fresh=fresh,
                     image_config=image_config,
+                    person_names=person_names,
                     authorize=authorize,
                     created_by=created_by,
                     target_opportunity_id=(
@@ -590,6 +605,7 @@ def generate_fixtures_only(
     *,
     drive,
     image_config: dict | None = None,
+    person_names: dict | None = None,
     opportunity_ids: list[int] | None = None,
 ) -> list[dict]:
     """Generate fixtures for the selected bundles and upload them to GDrive,
@@ -625,6 +641,7 @@ def generate_fixtures_only(
                 # demo cases to stage. Applied here so an existing bundle gains
                 # images without re-profiling production.
                 manifest = manifest.model_copy(update={"image_config": ImageConfig(**image_config)})
+            manifest = _with_person_names(manifest, person_names, bundle.source_opp_id)
             form_schema = parse_form_schema_from_app_json(bundle.app_structure, app_type="deliver")
             fixtures = _generate(
                 manifest=manifest,
@@ -707,6 +724,7 @@ def generate_cohort(
         only_source_ids=spec.opportunity_ids,
         progress=progress,
         image_config=spec.image_config,
+        person_names=spec.person_names,
         authorize=authorize,
         created_by=created_by,
         new_opportunities=new_opportunities,

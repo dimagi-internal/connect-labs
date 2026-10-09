@@ -39,6 +39,12 @@ CAPTIONS = {
     ),
     "sign_card": "A card with what was recorded for this case, and what to do next.",
 }
+#: What each case_summary panel shows, in a caption (never a number).
+PANEL_WORDS = {
+    "visits": "its visits and when the next is due",
+    "signs": "the danger signs recorded",
+    "facts": "its milestones",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +193,10 @@ def build_datasets(
     """``(datasets, meta)`` for the case state's picture; meta is layout the spec needs."""
     pic = state.get("picture") or {}
     kind = pic.get("type")
+    if kind == "case_summary":
+        from connect_labs.workflow.coach_charts import case_summary
+
+        return case_summary.build(state, row, visits, series, case_name)
     spec = _series_spec(series, pic.get("series"))
     meta: dict = {
         "kind": kind,
@@ -383,8 +393,26 @@ def _sign_card(panels: dict[str, _Panel], pic: dict, row: dict):
     right.y += actions.y
 
 
+def _summary_caption(pic: dict, series: list[dict]) -> str:
+    parts = []
+    for panel in pic.get("panels") or []:
+        kind = panel.get("kind")
+        if kind in ("series", "bars"):
+            label = (_series_spec(series, panel.get("series")).get("label") or "readings").lower()
+            parts.append(f"its {label}" + (" against the danger line" if panel.get("floor") else ""))
+        elif kind == "list":
+            title = str(panel.get("title") or "").strip()
+            parts.append(title.lower() if title and not any(c.isdigit() for c in title) else "what to do")
+        elif kind in PANEL_WORDS:
+            parts.append(PANEL_WORDS[kind])
+    shown = ", ".join(parts[:-1]) + (f" and {parts[-1]}" if len(parts) > 1 else parts[-1] if parts else "")
+    return f"A summary of this case: {shown}." if shown else "A summary of this case."
+
+
 def caption(state: dict, series: list[dict]) -> str:
     pic = state.get("picture") or {}
+    if pic.get("type") == "case_summary":
+        return _summary_caption(pic, series)
     words = {
         "series": (_series_spec(series, pic.get("series")).get("label") or "readings").lower(),
         "reference": str((pic.get("reference") or {}).get("label") or "reference"),
@@ -412,7 +440,7 @@ def build_case_chart(
     if kind not in case_types.CASE_TYPES:
         raise ChartError("no_picture", f"case state {state.get('name')} names no picture type Labs draws")
     ds, meta = build_datasets(state, row, visits, series, case_name)
-    if kind != "sign_card" and not ds["case_series"]:
+    if kind not in ("sign_card", "case_summary") and not ds["case_series"]:
         raise ChartError("no_readings", "this case has no readings to draw")
     spec = case_types.CASE_TYPES[kind](meta)
     text = caption(state, series)
