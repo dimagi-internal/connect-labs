@@ -325,6 +325,11 @@ def semantic_snapshot(
         worker_names=names,
     )
     clock.stop()
+    if spec.get("case_coaching"):
+        with clock("case_coaching"):
+            payload["caseCoaching"] = _case_coaching(
+                definition, opportunity_ids, as_of_date, names, (props_doc or {}).get("constants")
+            )
     if not embed and context.get("memo") is not None:
         # The cases this run was graded from, for the caller that hands it down to
         # the opportunity reports while they are in memory (history_rebuild, which
@@ -332,6 +337,25 @@ def semantic_snapshot(
         # `case_index.embed`. Without a memo, hand-down computes the week's list.
         context["memo"][LAST_CASE_INDEX] = cases
     return wrap_for_runner(payload, spec.get("state_key"))
+
+
+def _case_coaching(definition, opportunity_ids, as_of_date, names, constants=None) -> dict:
+    """The case finder's per-worker view as of the run (``case_finder.snapshot_view``):
+    which cases were eligible for which coaching story that week -- what an agent reads
+    to plan case coaching, and to see what earlier weeks offered. Never fails the build:
+    a problem is recorded in place of the view."""
+    from connect_labs.workflow import case_finder
+    from connect_labs.workflow.agent_sharing import worker_key
+
+    flat = {worker_key(int(o), u): n for o, by_user in (names or {}).items() for u, n in by_user.items()}
+    try:
+        view = case_finder.snapshot_view(
+            definition, opportunity_ids, as_of=as_of_date, names=flat, constants=constants
+        )
+    except Exception as e:  # noqa: BLE001 -- the indicators must still save
+        logger.warning("case coaching view failed for workflow %s", getattr(definition, "id", None), exc_info=True)
+        return {"error": f"could not build the case coaching view: {type(e).__name__}"}
+    return view if view is not None else {"error": "this workflow has no case_coaching config"}
 
 
 # Reader name -> registry column, for the case-index fields whose names differ
@@ -845,5 +869,8 @@ BUILDER_SPEC_KEYS = {
         "maturity_anchor",
         # {flag: <case-index field>}: registrations by day (semantic/snapshot.py daily_counts)
         "daily",
+        # true: store the case finder's per-worker view as of the run
+        # (`snapshot.caseCoaching`, workflow/case_finder.py)
+        "case_coaching",
     },
 }

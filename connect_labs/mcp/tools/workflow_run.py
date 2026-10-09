@@ -9,6 +9,7 @@ its scope, the worker keys on screen); these read the substance live, as the cal
                                    and the actions the workflow offers;
 * ``workflow_run_indicators``   — the graded cells, filterable by band ("red");
 * ``workflow_indicator_explain``— how an indicator is computed, from the run's registry;
+* ``workflow_coaching_cases``   — per worker, the cases with a coaching story (case_finder.py);
 * ``workflow_run_action``       — run one of the workflow's OWN actions (the same one
                                    its button runs): a preview first, then the call
                                    that acts, carrying the preview's confirm token;
@@ -500,6 +501,79 @@ def workflow_indicator_explain(
         return {"registry": source, "scope": scope, "indicators": out, "compiled_sql": compiled_sql}
 
 
+@register(
+    name="workflow_coaching_cases",
+    description=(
+        "Case coaching: which of the run's workers have a CASE (one baby) worth a coaching conversation "
+        "about, by story -- CASE_DANGER_SIGN (danger sign recorded, not referred), CASE_WEIGHT_CHECK (a "
+        "weighing hard to believe), CASE_FALTERING (weight stalled, skin-to-skin falling), CASE_THRIVING "
+        "(growing well). Labs decides eligibility deterministically from the visits; each case has one "
+        "story, counted when its evidence falls within `window_days` (default 30) of the opportunity's "
+        "latest visit. Per worker: each story's count and best cases (case id and name, the facts, the "
+        "date), most urgent story first. Use it to PLAN: propose one session per worker (one case, one "
+        "story) with your reason, then preview it with workflow_run_action, worker item `case: {id, "
+        "story}`. Earlier weeks: workflow_history_runs with snapshots carries this same view per saved run "
+        "(snapshot.caseCoaching); case sends record `case_coaching: {case_id, story}` on their tasks. "
+        "Through canopy it runs only on synthetic opportunities."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            **_SCOPE,
+            "worker_keys": {
+                "type": "array",
+                "items": {"type": "string"},
+                "maxItems": 50,
+                "description": "Only these workers ('<opportunity_id>::<username>').",
+            },
+            "window_days": {"type": "integer", "minimum": 1, "maximum": 365},
+            "per_story": {"type": "integer", "minimum": 1, "maximum": 10},
+        },
+        "required": ["run_id"],
+        "additionalProperties": False,
+    },
+)
+def workflow_coaching_cases(
+    user,
+    *,
+    run_id: int,
+    opportunity_id=None,
+    program_id=None,
+    worker_keys: list[str] | None = None,
+    window_days: int = 30,
+    per_story: int = 3,
+) -> dict[str, Any]:
+    from connect_labs.labs.synthetic.provenance import all_generated
+    from connect_labs.workflow import case_finder
+
+    with _Run(user, run_id, opportunity_id, program_id) as r:
+        opps = case_finder.data_opportunities(r.definition, r.run)
+        if r.delegated and not all_generated(opps):
+            # Case-level rows (a baby's name, their visits) never go back through canopy
+            # on real data -- the explorer's rule (explorer/service.py, `for_agent`).
+            raise MCPToolError(
+                "PERMISSION_DENIED",
+                "Through canopy, case coaching runs only on synthetic opportunities.",
+            )
+        try:
+            view = case_finder.coaching_cases(
+                user,
+                wda=r.wda,
+                run=r.run,
+                definition=r.definition,
+                access_token=r.wda.access_token,
+                worker_keys=worker_keys,
+                window_days=window_days,
+                per_story=per_story,
+            )
+        except case_finder.FinderError as e:
+            code = "INVALID_SCHEMA" if e.code == "no_case_coaching" else "PERMISSION_DENIED"
+            if e.code in ("read_failed",):
+                code = "UPSTREAM_ERROR"
+            raise MCPToolError(code, e.public_message, {"reason": e.code}) from e
+        return {"run_id": r.run.id, "page_url": r.page_url, **view}
+
+
 def _for_the_agent(out: dict, r: _Run) -> dict:
     """A click-to-send preview as the agent may see it: everything it shows, minus the
     token that would let the agent send it."""
@@ -644,7 +718,12 @@ def _view_text(out: dict) -> str:
         "and its `confirm`; the action is queued and an execution id returned. Changing anything "
         "between the two calls invalidates the token.\n\n"
         "`arguments.workers[].key` are worker keys from workflow_run_indicators; an item's own "
-        "`prompt` is how to address that worker's own red indicators."
+        "`prompt` is how to address that worker's own red indicators.\n\n"
+        "CASE COACHING (one baby, one story): give the worker's item `case: {id, story}` from "
+        "workflow_coaching_cases -- no `prompt`; Labs writes the case briefing and draws the case's own "
+        "picture. For a follow-up on a case coached before, add `case.earlier: {date, label, agreed}` "
+        "as you read it from earlier runs. One worker per preview. On a synthetic opportunity the card "
+        "offers only Send to me (QA test)."
     ),
     input_schema={
         "type": "object",
