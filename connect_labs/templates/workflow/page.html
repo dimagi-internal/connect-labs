@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% comment %}
+A page (workflow/page_views.py): a workflow with no runs, drawn by the same runner in
+page mode. The render code draws the page; around it only where you are and two ways
+out -- the scope's Settings (for whoever can change them) and the rest of labs.
+{% endcomment %}
+
+{% block title %}{{ definition.name|default:"Page" }}{% endblock %}
+
+{% block javascript %}
+{{ block.super }}
+{% if has_context and render_code and not error %}
+{% include "workflow/_runner_scripts.html" %}
+{% endif %}
+{% endblock javascript %}
+
+{% block content %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+<link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.13.0/mapbox-gl.css"/>
+<div class="max-w-full mx-auto px-4 py-6" style="overflow-x: clip" data-testid="labs-page">
+  {% if not present_mode %}
+  <nav class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-600">
+    <a href="{% url 'labs:overview' %}" class="hover:text-gray-700">Labs</a>
+    <i class="fa-solid fa-chevron-right text-xs"></i>
+    <span class="text-gray-900" data-testid="labs-page-scope">{{ page_scope_label }}</span>
+    <span class="ml-auto flex items-center gap-3">
+      {% if page_settings_url %}<a data-testid="labs-page-settings" href="{{ page_settings_url }}" class="text-brand-indigo hover:underline">Settings</a>{% endif %}
+      {% if page_edit_url %}<a data-testid="labs-page-edit" href="{{ page_edit_url }}" class="text-brand-indigo hover:underline">Edit page</a>{% endif %}
+    </span>
+  </nav>
+  {% endif %}
+
+  {% if render_source.warning %}
+  <div class="mb-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900">{{ render_source.warning }}</div>
+  {% endif %}
+
+  {% if error %}
+  <div class="bg-red-50 border-l-4 border-red-400 p-4 mb-6 text-sm text-red-700" data-testid="labs-page-error">{{ error }}</div>
+  {% elif not has_context %}
+  <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 text-sm text-yellow-700">This page could not be opened here.</div>
+  {% elif not render_code %}
+  <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 text-sm text-yellow-700">This page has nothing to draw yet.</div>
+  {% else %}
+  {{ workflow_data|json_script:"workflow-data" }}
+  <div id="workflow-root" data-csrf-token="{{ csrf_token }}">
+    <div class="flex items-center justify-center py-12">
+      <div class="text-center">
+        <i class="fa-solid fa-spinner fa-spin text-3xl text-blue-600 mb-4"></i>
+        <p class="text-gray-600">Loading…</p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock content %}

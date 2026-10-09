@@ -74,6 +74,18 @@ User: "Create a new workflow from the performance_review template".
 - `workflow_create_from_template(template_key="performance_review", opportunity_id=..., name=optional)`.
 - Seed templates live in the repo at `connect_labs/workflow/templates/*.py`. `template_key` is the module name (e.g. `performance_review`, `kmc_longitudinal`).
 
+### Build a page (an organisation's or programme's home, a screen of its own)
+
+User: "Make a landing page for org X", "Build a home page for programme Y", "Add an operations page to Supply".
+
+A page is a workflow with no runs (`kind: "page"`, `connect_labs/workflow/page_mode.py`). Same loop as any workflow:
+
+1. **Create** -- `workflow_create_from_template(template_key="page_blank", program_id=…)` (or `opportunity_id=…`; a real Connect organisation can own one with `organization_id=<int>`; a labs-only organisation's page is owned by one of its programmes).
+2. **Declare what it reads** -- `workflow_update_definition(patch={...})` with `page: {slug}`, `workflow_sources` (other workflows' runs: `[{alias, workflow, read: latest_run|saved_runs|summary, <owner scope>}]`), `supply_sources`, `config_reads` (Settings namespaces, e.g. `["supply"]`).
+3. **Write the JSX** -- render code gets `scope` (the org / programme / opportunity in view with names, its `programs` / `opportunities` and their `page_url` / `supply_url` / `workflows_url`), `config`, `workflows`, `supply`, plus everything a workflow gets. There is no run: `instance.state` is in-memory only.
+4. **Put it where people land** -- its own address is `/labs/p/<org|programme|opportunity>/<key>/<slug>/`. Make it a scope's home with `labs_config_set(namespace="labs", scope_type="organization", scope_key="<slug>", patch={"home": {"fill": {"workflow": <id>, "program_id": <owner>}}}, expected_version=…)`; `/labs/p/org/<slug>/` and `/labs/overview/?organization_id=<slug>` then open it. To make it a Supply tab: `labs_config_set(namespace="supply", scope_type="program", …, patch={"tabs": {"ops": {"label": "Operations", "fill": {"workflow": <id>}}}})`.
+5. `workflow_list(kind="page")` lists pages. Full contract: `WORKFLOW_REFERENCE.md` §16.
+
 ### Editing a run-shaped template's render code
 
 When `workflow_get` returns `saved_runs.supports_saved_runs: true`:

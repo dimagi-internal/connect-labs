@@ -2351,3 +2351,32 @@ supply endpoints, so every source that can read a past day reads that one; the r
 and anything the workflow reads besides supply sources, stays live. A stock source's past
 day means what had happened by then (dated by when each thing occurred), the same meaning
 the Stock, Workers, Network and flow tabs give it (`supply_chain/history/as_of.py`).
+
+## 16. Pages, the scope prop, and settings
+
+A **page** is a workflow definition whose data says `"kind": "page"` (`workflow/page_mode.py`). It is drawn by the same runner, with the same render contract, in **page mode**: no run is created or read, `instance` is a blank in-memory one (`id: 0`, `state: {}`), and the run-only endpoints (`updateState`, `completeRun`, `renameRun`, `getSnapshot`, `saveWorkerResult`, actions) are `null`. `onUpdateState` keeps state in the browser only. A page is the way to build a screen that is not a built-in one -- an organisation's landing page, a programme's home, a supply tab. Start one from the `page_blank` template.
+
+**Where a page is reached.** `/labs/p/org/<slug>/<page.slug>/`, `/labs/p/programme/<id>/<page.slug>/`, `/labs/p/opportunity/<id>/<page.slug>/` (`workflow/page_views.py`). With no page slug, the scope's **home**: the `labs` settings namespace's `home.fill` (`{"workflow": <id>, "program_id" | "opportunity_id" | "organization_id": <owner>}`). The scope in the address is checked before anything is read. `/labs/overview/?organization_id=<slug>` -- an organisation coming in -- lands on that organisation's home when one is set. A page can also fill a Supply tab (the `supply` namespace's `tabs.<key>.fill`); the tab then renders it with no run.
+
+**Who owns a page's record.** Like any workflow: an opportunity, a programme, or (pages only) a real Connect organisation (`workflow_create_from_template(template_key="page_blank", organization_id=<id>)`). A labs-only organisation has no Connect id to own records with, so its home is a page owned by one of its programmes; the page still renders with the organisation as its `scope`.
+
+**Props every render gets, page or workflow:**
+
+- `scope` -- the organisation / programme / opportunity in view, with names (`{type, key, organization, program, opportunity, user, programs, opportunities, settings_url}`); an organisation's `programs` and a programme's `opportunities` each carry `page_url`, `supply_url` / `workflows_url`. Built from the viewer's own access.
+- `config` -- the resolved Settings (`scope_config/`) for each namespace the definition lists in `config_reads`, e.g. `"config_reads": ["supply"]` gives `config.supply.tabs`.
+- `workflows` -- other workflows' runs, from `workflow_sources` (below).
+
+**`workflow_sources`** (`workflow/workflow_sources.py`) -- another workflow's runs, read as the viewer through that workflow's own access:
+
+```json
+"workflow_sources": [
+  {"alias": "review", "workflow": 8481, "read": "latest_run", "opportunity_id": 10113},
+  {"alias": "report", "workflow": 8301, "read": "saved_runs", "program_id": 10112}
+]
+```
+
+`read` is `latest_run`, `saved_runs` (completed, newest first) or `summary`. Each run carries `url` and, when completed, its `snapshot_summary` -- never the snapshot. An unreadable source arrives as `{error}` under its alias. `actions.queryWorkflow(alias)` reads one on demand. An undeclared alias is refused.
+
+**What "safe" means.** As for every workflow: the code is written by people who can write the definition, a crash is contained by the error boundary, and all data comes through endpoints keyed by the definition that read only what it declares, as the viewer. Render code is not sandboxed (it runs in the labs origin; see the scope-config spec, decision C).
+
+**Authoring** is the workflow-author loop: `workflow_create_from_template(template_key="page_blank", program_id=…)`, then `workflow_get` / `workflow_update_render_code` / `workflow_update_definition` (to declare `workflow_sources`, `supply_sources`, `config_reads`, `page.slug`). `workflow_list(kind="page")` lists pages. Making a page a template workflow gives it draft / preview / publish / rollback, and pages that follow it update on publish.

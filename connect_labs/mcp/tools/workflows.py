@@ -70,7 +70,8 @@ def _data_access(user, opportunity_id=None, program_id=None, organization_id=Non
     description=(
         "List workflows visible to the calling user. "
         "Scope by exactly one of: opportunity_id, program_id, organization_id. "
-        "Returns minimal metadata; use workflow_get to fetch the full workflow."
+        "kind='page' lists only pages (workflows with no runs, workflow/page_mode.py); kind='workflow' "
+        "only the rest. Returns minimal metadata; use workflow_get to fetch the full workflow."
     ),
     input_schema={
         "type": "object",
@@ -78,11 +79,12 @@ def _data_access(user, opportunity_id=None, program_id=None, organization_id=Non
             "opportunity_id": {"type": "integer"},
             "program_id": {"type": "integer"},
             "organization_id": {"type": "integer"},
+            "kind": {"type": "string", "enum": ["page", "workflow"]},
         },
         "additionalProperties": False,
     },
 )
-def workflow_list(user, opportunity_id=None, program_id=None, organization_id=None):
+def workflow_list(user, opportunity_id=None, program_id=None, organization_id=None, kind=None):
     scope_count = sum(1 for x in (opportunity_id, program_id, organization_id) if x is not None)
     if scope_count != 1:
         raise MCPToolError(
@@ -102,6 +104,10 @@ def workflow_list(user, opportunity_id=None, program_id=None, organization_id=No
         definitions = da.list_definitions()
     finally:
         da.close()
+    if kind is not None:
+        from connect_labs.workflow.page_mode import is_page
+
+        definitions = [d for d in definitions if is_page(d) == (kind == "page")]
 
     return {
         "workflows": [
@@ -110,6 +116,7 @@ def workflow_list(user, opportunity_id=None, program_id=None, organization_id=No
                 "name": d.name,
                 "description": d.description,
                 "template_type": d.template_type,
+                "kind": "page" if (d.data or {}).get("kind") == "page" else "workflow",
                 # updated_at is not on LocalLabsRecord; omit rather than error
                 "updated_at": None,
                 "pipeline_source_count": len(d.pipeline_sources),
@@ -358,6 +365,11 @@ _DEFINITION_PATCH_ALLOWED = {
     "registry_source",
     "render_source",
     "supply_sources",
+    # Pages (workflow/page_mode.py) and the sources any render may read.
+    "kind",
+    "page",
+    "workflow_sources",
+    "config_reads",
 }
 
 _SNAPSHOT_INPUTS_ALLOWED_KEYS = {"pipelines", "workers", "state_keys", "supply"}
@@ -580,7 +592,10 @@ def _validate_snapshot_inputs(value) -> None:
     description=(
         "Update fields on a workflow definition. Accepts a patch dict. "
         "Allowed keys: name, description, statuses, config, snapshot_inputs, registry_source, "
-        "render_source. FASTER: to change a report that several workflows show without a deploy, make them "
+        "render_source, supply_sources, and for pages (workflow/page_mode.py) kind ('page' or null), page "
+        "({slug}), workflow_sources ([{alias, workflow, read: latest_run|saved_runs|summary, <owner scope>}]) "
+        "and config_reads ([settings namespaces]) -- each replaced wholesale, null removes. "
+        "FASTER: to change a report that several workflows show without a deploy, make them "
         "follow a template workflow (workflow_template_create + workflow_follow_template) and edit/publish that. "
         "`render_source: {template: <this workflow's template key>}` makes the "
         "workflow FOLLOW the deployed template -- a deploy updates it, nothing to sync, and "
@@ -678,6 +693,12 @@ def workflow_update_definition(
             new_data["statuses"] = patch["statuses"]  # replace wholesale
         if "supply_sources" in patch:
             new_data["supply_sources"] = patch["supply_sources"]  # replace wholesale
+        for key in ("kind", "page", "workflow_sources", "config_reads"):
+            if key in patch:
+                if patch[key] is None:
+                    new_data.pop(key, None)
+                else:
+                    new_data[key] = patch[key]  # replace wholesale
         if "registry_source" in patch:
             # A workflow built on a semantic template stays on a live record. Unbinding
             # it (null, {}) or binding the on-disk copy ({"name": ...}) would freeze its
@@ -1118,6 +1139,14 @@ def _binding_or_none(definition):
                     "Provide this OR opportunity_id, not both."
                 ),
             },
+            "organization_id": {
+                "type": "integer",
+                "description": (
+                    "Pages only (a template whose kind is 'page', e.g. page_blank): own the page at an "
+                    "organisation's level, by its Connect organisation id. A labs-only organisation has "
+                    "no id to own records with -- give its page to one of its programmes instead."
+                ),
+            },
             "name": {
                 "type": "string",
                 "description": "Optional override for the workflow name.",
@@ -1165,9 +1194,21 @@ def workflow_create_from_template(
     registry_source: dict = None,
     pipelines_from: dict = None,
     config: dict = None,
+    organization_id: int = None,
 ):
-    # Record ownership is exactly one of opportunity / program.
-    if (opportunity_id is None) == (program_id is None):
+    # Record ownership is exactly one of opportunity / program -- or, for a page, organisation.
+    if organization_id is not None:
+        from connect_labs.workflow.templates import get_template
+
+        if opportunity_id is not None or program_id is not None:
+            raise MCPToolError(
+                "INVALID_SCHEMA", "organization_id owns the page alone: drop opportunity_id / program_id."
+            )
+        if (get_template(template_key) or {}).get("kind") != "page":
+            raise MCPToolError(
+                "INVALID_SCHEMA", "only a page (e.g. template_key 'page_blank') can be owned by an organisation."
+            )
+    elif (opportunity_id is None) == (program_id is None):
         raise MCPToolError(
             "INVALID_SCHEMA",
             "workflow_create_from_template requires exactly one of opportunity_id / program_id.",
@@ -1208,6 +1249,7 @@ def workflow_create_from_template(
         access_token=token,
         opportunity_id=opportunity_id,
         program_id=program_id,
+        organization_id=organization_id,
     )
     try:
         if registry_source is not None:

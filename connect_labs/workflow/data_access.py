@@ -801,6 +801,11 @@ class WorkflowDataAccess(BaseDataAccess):
         # Supply sources (workflow/supply_sources.py): read beside pipelines, as the viewer.
         if kwargs.get("supply_sources"):
             data["supply_sources"] = kwargs["supply_sources"]
+        # A page is a workflow with no runs (workflow/page_mode.py): its kind, its slug,
+        # and the page-or-workflow sources (other workflows' runs, the scope's settings).
+        for key in ("kind", "page", "workflow_sources", "config_reads"):
+            if kwargs.get(key) is not None:
+                data[key] = kwargs[key]
 
         record = self.labs_api.create_record(
             experiment=self.EXPERIMENT,

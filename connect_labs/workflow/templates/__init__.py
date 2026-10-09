@@ -424,6 +424,7 @@ TEMPLATE_GROUPS: list[dict] = [
     {"key": "audits", "label": "Audits", "blurb": "decide on photos and records, or create the audits"},
     {"key": "tracking", "label": "Beneficiary tracking", "blurb": "one child across follow-up visits"},
     {"key": "other", "label": "Outreach & demos", "blurb": "talk to workers, or show the platform"},
+    {"key": "pages", "label": "Pages", "blurb": "a screen of your own, with no runs: an organisation's or programme's home"},
 ]
 
 TEMPLATE_GROUP_OF: dict[str, str] = {
@@ -485,6 +486,8 @@ TEMPLATE_GROUP_OF: dict[str, str] = {
     "ocs_outreach": "other",
     "interviews_reporting_v2": "other",
     "jakusko_chlorine_dispenser": "other",
+    # Pages: workflows with no runs (workflow/page_mode.py).
+    "page_blank": "pages",
 }
 
 
@@ -1142,6 +1145,23 @@ def create_workflow_from_template(
     dao_program_id = getattr(data_access, "program_id", None)
     effective_program_id = program_id if program_id is not None else dao_program_id
     effective_opp_id = None if effective_program_id is not None else dao_opp_id
+    if (
+        effective_program_id is None
+        and effective_opp_id is None
+        and isinstance(getattr(data_access, "organization_id", None), int)
+        and template.get("kind") == "page"
+    ):
+        # A page an organisation owns (workflow/page_mode.py): no programme or
+        # opportunity, so no pipelines and no runs -- only the definition and render.
+        return _create_workflow_from_template_scoped(
+            data_access=data_access,
+            template=template,
+            template_key=template_key,
+            request=request,
+            opportunity_ids=opportunity_ids,
+            config_overrides=config_overrides,
+            render_source=render_source,
+        )
     if (effective_program_id is None) == (effective_opp_id is None):
         raise ValueError(
             "create_workflow_from_template requires exactly one of opportunity_id / program_id ownership."
@@ -1398,6 +1418,11 @@ def _create_workflow_from_template_scoped(
         extra_definition_kwargs["render_source"] = dict(render_source)
     if template_def.get("supply_sources"):
         extra_definition_kwargs["supply_sources"] = [dict(s) for s in template_def["supply_sources"]]
+    # A page (workflow/page_mode.py): a workflow with no runs, and the sources only a
+    # page-or-workflow reads -- other workflows' runs, and the scope's settings.
+    for key in ("kind", "page", "workflow_sources", "config_reads"):
+        if template_def.get(key) is not None:
+            extra_definition_kwargs[key] = copy.deepcopy(template_def[key])
     if registry_name:
         extra_definition_kwargs["registry_source"] = _bind_registry(
             data_access, registry_name, template_def["name"], registry_source

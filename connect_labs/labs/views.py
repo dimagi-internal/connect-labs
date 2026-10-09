@@ -178,6 +178,26 @@ class LabsOverviewView(LoginRequiredMixin, TemplateView):
 
     template_name = "labs/overview.html"
 
+    def get(self, request, *args, **kwargs):
+        # An organisation coming in -- this page with the organisation NAMED in its
+        # address (the context picker, a sign-in `next=`) -- lands on the page its
+        # Settings name as home. Only when named: a session that merely remembers an
+        # organisation still reaches the overview. Design: the scope-config spec,
+        # "An organisation coming in".
+        slug = request.GET.get("organization_id")
+        if slug and (getattr(request, "labs_context", None) or {}).get("organization_slug") == slug:
+            from connect_labs.scope_config import service
+            from connect_labs.scope_config.scopes import Scope
+
+            try:
+                scope = Scope.of("organization", slug)
+                home = (service.resolved_for_request(request, "labs", scope).get("home") or {}).get("fill")
+            except ValueError:
+                home = None
+            if home:
+                return HttpResponseRedirect(f"/labs/p/org/{slug}/")
+        return super().get(request, *args, **kwargs)
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
 
