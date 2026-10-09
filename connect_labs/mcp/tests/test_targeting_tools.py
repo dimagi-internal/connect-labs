@@ -971,6 +971,10 @@ class TestPmcLiveModel:
         assert polled["status"] == "completed"
         assert polled["result"]["label"] == "illustrative · live model run · fitted to Kano's prevalence and rainfall"
         assert polled["result"]["effect"]["averted_u5_pct"] == 25.0 and polled["result"]["effect"]["kids_u5"] == 1000
+        # Kano is too seasonal for the explorer's one setting, but this run used Kano's own: it is costed.
+        # 3,000,000 under-5 x 21/60 aged 3-24 months x 300 cases per 1,000 x 25% averted = 78,750.
+        assert polled["result"]["projection"]["cases_averted_per_year"] == 79_000
+        assert polled["result"]["projection"]["cost_per_case_averted"] > 0
 
     def test_ages_up_to_59_months_are_accepted_and_60_is_not(self):
         ok = targeting.targeting_pmc_run_model(None, state="Ondo", schedule={"months": [5, 6], "age_max_months": 59})
