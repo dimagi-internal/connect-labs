@@ -340,3 +340,47 @@ def test_grid_file_is_world_readable(tmp_path):
     out = tmp_path / "grid.json"
     run_grid.write_atomic(out, {"states": {}})
     assert out.stat().st_mode & 0o777 == 0o644
+
+
+def test_add_designs_runs_only_the_missing_designs_in_the_stored_setting(tmp_path):
+    out = tmp_path / "grid.json"
+    box, inst = make_box()
+    run_grid.run_grid(box, STATES, out, RUNTIME, only=["Kano", "Ondo"])
+    # As if the grid predates the second-year designs.
+    grid = json.loads(out.read_text())
+    for entry in grid["states"].values():
+        for code in [c for c in entry["designs"] if c.endswith("_y2")]:
+            del entry["designs"][code]
+    before = {n: dict(e["designs"]) for n, e in grid["states"].items()}
+    run_grid.write_atomic(out, grid)
+    inst.requests.clear()
+
+    added, failed = run_grid.run_grid(box, STATES, out, RUNTIME, add=True)
+
+    assert failed == []
+    # No calibration: one grid request per state, carrying the baseline and the four missing designs only.
+    assert [r.get("mode") for r in inst.requests] == [None, None]
+    y2 = ["pmc_m6_onset_y2", "pmc_m8_onset_y2", "pmc_m12_y2", "pmc_q4_y2"]
+    assert all([s["code"] for s in r["schedules"]] == ["none", *y2] for r in inst.requests)
+    for name, entry in added["states"].items():
+        assert {k: v for k, v in entry["designs"].items() if k in before[name]} == before[name]  # kept as they were
+        assert set(y2) <= set(entry["designs"])
+        assert inst.requests[0]["setting"]["larval_capacity"] == entry["setting"]["larval_capacity"]
+    # A second pass has nothing left to add.
+    inst.requests.clear()
+    run_grid.run_grid(box, STATES, out, RUNTIME, add=True)
+    assert inst.requests == []
+
+
+def test_add_designs_refuses_a_state_whose_setting_would_change(tmp_path):
+    out = tmp_path / "grid.json"
+    box, _ = make_box()
+    run_grid.run_grid(box, STATES, out, RUNTIME, only=["Ondo"])
+    grid = json.loads(out.read_text())
+    grid["states"]["Ondo"]["setting"]["habitat_values"][0] += 0.5  # not what the inputs rebuild
+    del grid["states"]["Ondo"]["designs"]["pmc_q4_y2"]
+    run_grid.write_atomic(out, grid)
+
+    _, failed = run_grid.run_grid(box, STATES, out, RUNTIME, add=True)
+
+    assert failed == ["Ondo"]

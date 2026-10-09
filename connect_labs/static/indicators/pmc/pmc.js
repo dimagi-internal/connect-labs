@@ -418,7 +418,8 @@
     var d = rankData;
     var total = el('pmc-rank-total');
     if (!d.available) {
-      el('pmc-rank-answer').textContent = d.message;
+      el('pmc-reco').textContent = d.message;
+      el('pmc-rank-answer').textContent = '';
       el('pmc-rank-rows').innerHTML = '';
       total.classList.add('hidden');
       el('pmc-rank-note').textContent = '';
@@ -485,6 +486,7 @@
     total.classList.toggle('hidden', !considered);
 
     renderByDesign(d, byDeath);
+    renderRecommendation(d);
 
     el('pmc-rank-rows').innerHTML =
       rows
@@ -559,6 +561,119 @@
             .join('') +
           '</ul></details>'
         : '');
+  }
+
+  function names(list) {
+    if (list.length <= 1) return list.join('');
+    return list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1];
+  }
+
+  // The answer: one programme approach for the states picked (rank.recommend),
+  // in words, with what to drop, what it buys over our quarterly base, and
+  // whether spending more is worth it at the margin.
+  function renderRecommendation(d) {
+    var r = d.recommendation;
+    var box = el('pmc-reco');
+    var picked = d.best_per_state.length + (d.excluded || []).length;
+    if (!r) {
+      box.innerHTML =
+        '<div class="pmc-label">Recommended programme</div><p class="lead">' +
+        (d.ranked_by === 'cost per death averted'
+          ? 'No single approach can run in every state picked (SMC needs seasonal rain everywhere). See the evidence below.'
+          : 'No mortality figures are loaded, so no programme can be recommended; the evidence below ranks by cost per case.') +
+        '</p>';
+      return;
+    }
+    var keep = r.keep.length;
+    var lead = keep
+      ? 'Run <b>' +
+        esc(r.label.toLowerCase()) +
+        '</b> in <b>' +
+        keep +
+        ' of the ' +
+        picked +
+        '</b> states, each starting with its own rainy season. That averts about <b>' +
+        num(r.deaths_averted_per_year) +
+        '</b> under-5 deaths a year for <b>' +
+        usdShort(r.spend_per_year) +
+        '</b>: ' +
+        usd(r.cost_per_death_averted) +
+        ' per death, <b>' +
+        times(r.multiple_of_benchmark) +
+        '</b> GiveWell’s benchmark.'
+      : 'Even the best approach, <b>' +
+        esc(r.label.toLowerCase()) +
+        '</b>, falls below GiveWell’s ' +
+        num(d.bar) +
+        '× bar in every state picked.';
+    var points = [];
+    if (r.drop.length && keep)
+      points.push(
+        'Leave out ' +
+          esc(names(r.drop)) +
+          ': below GiveWell’s ' +
+          num(d.bar) +
+          '× bar with this approach.',
+      );
+    if (r.versus_quarterly)
+      points.push(
+        'Our proposal’s quarterly design gets ' +
+          times(r.versus_quarterly.multiple_of_benchmark) +
+          ' in the same states; this averts ' +
+          num(r.versus_quarterly.deaths_per_dollar_ratio, 1) +
+          '× the deaths per dollar.',
+      );
+    if (r.step_up)
+      points.push(
+        'More money? <b>' +
+          esc(r.step_up.label) +
+          '</b> adds about ' +
+          num(r.step_up.extra_deaths_averted_per_year) +
+          ' deaths a year for ' +
+          usdShort(r.step_up.extra_spend_per_year) +
+          ' more: ' +
+          usd(r.step_up.cost_per_extra_death) +
+          ' per extra death, ' +
+          times(r.step_up.multiple_of_benchmark) +
+          (r.step_up.clears_bar
+            ? ', still above the bar.'
+            : ', below the bar, so not worth it.'),
+      );
+    var rows = r.states
+      .map(function (x) {
+        return (
+          '<tr' +
+          (x.clears_bar ? '' : ' class="unranked"') +
+          '><td class="l">' +
+          esc(x.state) +
+          '</td><td class="design">' +
+          esc(x.design_label) +
+          '</td><td class="pmc-num">' +
+          times(x.multiple_of_benchmark) +
+          barChip(x, d.bar) +
+          '</td></tr>'
+        );
+      })
+      .join('');
+    box.innerHTML =
+      '<div class="pmc-label">Recommended programme for these ' +
+      picked +
+      ' states</div><p class="lead">' +
+      lead +
+      '</p>' +
+      (points.length
+        ? '<ul>' +
+          points
+            .map(function (x) {
+              return '<li>' + x + '</li>';
+            })
+            .join('') +
+          '</ul>'
+        : '') +
+      '<details><summary>When each state runs it</summary><table class="pmc-table">' +
+      '<thead><tr><th class="l">State</th><th class="l">Rounds</th><th>&times; GiveWell</th></tr></thead><tbody>' +
+      rows +
+      '</tbody></table></details>';
   }
 
   // Each schedule pooled across the states picked: the schedule half of the

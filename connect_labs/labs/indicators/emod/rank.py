@@ -122,6 +122,92 @@ PERENNIAL_MAX_WETTEST_PCT = 50
 PERENNIAL_MIN_PFPR = 0.10
 
 
+def recommend(pooled: dict[str, dict], considered: list[str]) -> dict | None:
+    """One programme approach for the states considered, from each design pooled across them.
+
+    The rule is a fixed budget's: the approach that averts the most under-5 deaths per dollar across the
+    states, among the designs that can run in every one of them (so SMC only when every state is seasonal).
+    Each state runs it from its own rain onset (the design's per-state label). States where it falls below
+    GiveWell's bar are named to drop, and the programme's figures are for the rest. Beside it:
+
+    * ``step_up``: the design that averts more deaths for the least extra cost per extra death, valued on
+      that increment, so "is spending more worth it?" is answered at the margin, not on averages;
+    * ``versus_quarterly``: the proposal's quarterly base, pooled over the same states.
+
+    None when no design runs in every state with a death figure.
+    """
+
+    def pooled_value(rows):
+        d, s = sum(r["deaths"] for r in rows), sum(r["spend"] for r in rows)
+        return mortality.value(d, s) if d > 0 and s > 0 else None
+
+    n = len(considered)
+    cands = {c: p for c, p in pooled.items() if n and len(p.get("per_state") or []) == n and p.get("deaths", 0) > 0}
+    if not cands:
+        return None
+    best_code = min(cands, key=lambda c: 1 / pooled_value(cands[c]["per_state"])["multiple_of_benchmark"])
+    best = cands[best_code]
+    per_state = []
+    for r in best["per_state"]:
+        v = mortality.value(r["deaths"], r["spend"]) if r["deaths"] > 0 else None
+        per_state.append(
+            {
+                "state": r["state"],
+                "design_label": r["design_label"],
+                "multiple_of_benchmark": round(v["multiple_of_benchmark"], 1) if v else 0.0,
+                "clears_bar": bool(v and v["clears_bar"]),
+            }
+        )
+    keep = [r["state"] for r in per_state if r["clears_bar"]]
+    kept_rows = [r for r in best["per_state"] if r["state"] in keep]
+    programme = pooled_value(kept_rows)
+    out = {
+        "design_code": best_code,
+        "label": best["label"],
+        "states": sorted(per_state, key=lambda r: -r["multiple_of_benchmark"]),
+        "keep": keep,
+        "drop": [r["state"] for r in per_state if not r["clears_bar"]],
+        "deaths_averted_per_year": sig(programme["deaths_averted_per_year"], 3) if programme else 0,
+        "spend_per_year": sig(sum(r["spend"] for r in kept_rows), 3),
+        "cost_per_death_averted": sig(programme["cost_per_death_averted"]) if programme else None,
+        "multiple_of_benchmark": round(programme["multiple_of_benchmark"], 1) if programme else 0.0,
+        "step_up": None,
+        "versus_quarterly": None,
+    }
+    if programme and keep:
+        base_d = sum(r["deaths"] for r in kept_rows)
+        base_s = sum(r["spend"] for r in kept_rows)
+        steps = []
+        for code, p in cands.items():
+            rows = [r for r in p["per_state"] if r["state"] in keep]
+            d, s = sum(r["deaths"] for r in rows), sum(r["spend"] for r in rows)
+            if code != best_code and d > base_d and s > base_s:
+                steps.append((code, p, d - base_d, s - base_s))
+        if steps:
+            code, p, extra_d, extra_s = min(steps, key=lambda t: t[3] / t[2])
+            v = mortality.value(extra_d, extra_s)
+            out["step_up"] = {
+                "design_code": code,
+                "label": p["label"],
+                "extra_deaths_averted_per_year": sig(extra_d, 2),
+                "extra_spend_per_year": sig(extra_s, 2),
+                "cost_per_extra_death": sig(v["cost_per_death_averted"]),
+                "multiple_of_benchmark": round(v["multiple_of_benchmark"], 1),
+                "clears_bar": v["clears_bar"],
+            }
+    q = pooled.get("pmc_q4")
+    if q and best_code != "pmc_q4" and len(q.get("per_state") or []) == n:  # over the same states only
+        v = pooled_value(q["per_state"])
+        whole = pooled_value(best["per_state"])
+        if v and whole:
+            out["versus_quarterly"] = {
+                "multiple_of_benchmark": round(v["multiple_of_benchmark"], 1),
+                "cost_per_death_averted": sig(v["cost_per_death_averted"]),
+                "deaths_per_dollar_ratio": round(whole["multiple_of_benchmark"] / v["multiple_of_benchmark"], 1),
+            }
+    return out
+
+
 def state_index(grid: dict | None) -> list[dict]:
     """Every state in the grid, by name, for the page's picker: its prevalence, season and whether it is perennial."""
     out = []
@@ -239,6 +325,7 @@ def rank_pairs(
 
     pairs, excluded, excluded_designs = [], [], []
     pooled: dict[str, dict] = {}
+    considered: list[str] = []
     for name in wanted:
         state = grid["states"].get(name)
         if state is None:
@@ -263,6 +350,7 @@ def rank_pairs(
                 excluded.append({"state": name, "reason": NO_DEATHS})
                 continue
         note = _fit_note(state)
+        considered.append(name)
         mine = 0
         for code, d in (state.get("designs") or {}).items():
             if d.get("kind") not in kinds:
@@ -284,6 +372,14 @@ def rank_pairs(
                 pool["cases"] = pool.get("cases", 0) + cases
                 if state_deaths:
                     pool["deaths"] = pool.get("deaths", 0) + pct / 100 * state_deaths
+                    pool.setdefault("per_state", []).append(
+                        {
+                            "state": name,
+                            "design_label": _design_label(d),
+                            "deaths": pct / 100 * state_deaths,
+                            "spend": d["doses_per_child_per_year"] * d["target_pop_fraction"] * pop_u5 * per_dose,
+                        }
+                    )
             # An effect smaller than its own uncertainty is not a result to cost.
             if pct is None or pct <= 0 or (ci is not None and ci >= pct) or cases <= 0:
                 excluded_designs.append(
@@ -357,6 +453,8 @@ def rank_pairs(
     sort_key = "cost_per_death_averted" if deaths is not None else "cost_per_case_averted"
     by_design.sort(key=lambda r: (r.get(sort_key) is None, r.get(sort_key) or 0))
 
+    recommendation = recommend(pooled, considered) if deaths is not None else None
+
     def present(p, rank=None):
         out = {
             **p,
@@ -393,6 +491,7 @@ def rank_pairs(
         "best_per_state": [present(p) for p in best_per_state],
         "best_per_state_totals": totals,
         "by_design": by_design,
+        "recommendation": recommendation,
         "excluded": excluded,
         "excluded_designs": excluded_designs,
         "costs": costs,
