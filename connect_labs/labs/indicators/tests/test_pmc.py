@@ -268,6 +268,7 @@ class TestTheRunControl:
         settings.LABS_EMOD_INSTANCE_ID = "i-test"
         settings.LABS_EMOD_REGION = "test-region-1"
         settings.LABS_EMOD_BUCKET = "test-bucket"
+        settings.PMC_STATE_GRID_PATH = "/nonexistent/pmc_state_grid.json"  # no fitted states unless a test opts in
         monkeypatch.setattr(tasks.run_pmc_model, "delay", lambda pk: None)
         client.force_login(django_user_model.objects.create_user(username="pm3", password="x"))
         return client
