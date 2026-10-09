@@ -2286,4 +2286,6 @@ The page links to the workflow's editor and, when the pin replaced a tab, to tha
 page. A pin is a pointer: editing the workflow changes the tab. `supply_chain_view_unpin`
 restores the built-in tab. The supply header's date (`?as_of=`) reaches the workflow on its
 supply endpoints, so every source that can read a past day reads that one; the run itself,
-and anything the workflow reads besides supply sources, stays live.
+and anything the workflow reads besides supply sources, stays live. A stock source's past
+day means what had happened by then (dated by when each thing occurred), the same meaning
+the Stock, Workers, Network and flow tabs give it (`supply_chain/history/as_of.py`).

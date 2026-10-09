@@ -97,7 +97,7 @@ class StockRepositoryMixin:
 
     # ---- the ledger ------------------------------------------------------
 
-    def list_movements(self, supply_point_id=None, item_id=None, kind=None, since=None, limit=500):
+    def list_movements(self, supply_point_id=None, item_id=None, kind=None, since=None, until=None, limit=500):
         qs = Movement.objects.for_program(self._require_program()).select_related("commodity")
         if supply_point_id is not None:
             qs = qs.touching(self._require_supply_point(supply_point_id))
@@ -107,6 +107,8 @@ class StockRepositoryMixin:
             qs = qs.filter(kind=kind)
         if since is not None:
             qs = qs.filter(occurred_on__gte=since)
+        if until is not None:
+            qs = qs.filter(occurred_on__lte=until)
         return list(qs[:limit])
 
     def record_movement(self, data):

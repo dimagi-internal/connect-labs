@@ -63,7 +63,7 @@ SOURCES: dict[str, Source] = {
         args=("supply_point_id",),
         params=("window_days",),
     ),
-    "network_stock": Source("network_stock", PROGRAM, "points", item=True, params=("window_days",)),
+    "network_stock": Source("network_stock", PROGRAM, "points", item=True, as_of=True, params=("window_days",)),
     "network_tree": Source("network_tree", PROGRAM, "roots", item=True, as_of=True, params=("window_days",)),
     "stock_flow": Source("stock_flow", PROGRAM, "*", item=True, as_of=True),
     "distribution_list": Source("distribution_list", OPPORTUNITY, None),

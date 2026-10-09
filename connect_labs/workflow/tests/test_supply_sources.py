@@ -141,6 +141,18 @@ def test_a_programme_source_runs_once_however_many_of_its_opportunities_the_work
     assert all(r["opportunity_id"] is None for r in stores)
 
 
+def test_the_stores_read_as_of_a_past_day(world):
+    """#2343: the review's "Behind them: the stores" follows the header's day, like the workers above it."""
+
+    def partner(**kw):
+        rows = supply_sources.load(_request(), _definition(STORES), opportunity_ids=[OPP_A], **kw)["stores"]["rows"]
+        return float(next(r for r in rows if r["name"] == "Partner store")["on_hand"]["amount"])
+
+    # Today: 600 received less 300 + 200 handed to the workers. 20 days ago: before either
+    # hand-out, all 600 -- six times as much, in whichever unit the store is shown.
+    assert partner(as_of=TODAY - timedelta(days=20)) == pytest.approx(6 * partner(), rel=1e-3)  # cartons round
+
+
 def test_an_opportunity_the_viewer_does_not_hold_gets_an_error_not_rows(world):
     out = supply_sources.load(_request(opps=(OPP_A,)), _definition(STOCK), opportunity_ids=[OPP_A, OPP_ELSEWHERE])
 

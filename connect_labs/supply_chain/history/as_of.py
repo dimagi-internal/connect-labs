@@ -9,6 +9,18 @@ unmodified.
 `as_of_view` is applied to the program-scoped routes by post-processing
 `urlpatterns` in supply_chain/urls.py; the market, the login-free update link
 and the API are left live.
+
+Two meanings of a past day, one per kind of page (#2343):
+
+- RECORDED (the default): a page of records -- tenders, orders, quotes, who
+  said what -- shows what the records said at the end of that day, by
+  rewinding every revision recorded after it.
+- HAPPENED (`rewind=False`): a page of stock shows what had happened by that
+  day. Stock is a ledger dated by when each thing occurred (`occurred_on`,
+  `counted_on`), and a visit made on the 24th is often recorded on the 27th;
+  a rewind by `recorded_at` would drop it and show a figure nobody held. These
+  pages run live and pass the day to every stock read, the same reads the
+  MCP and a pinned workflow make, so every surface agrees on the past.
 """
 
 import datetime
@@ -58,11 +70,19 @@ def end_of_day(d: datetime.date) -> datetime.datetime:
     return timezone.make_aware(datetime.datetime.combine(d, datetime.time.max))
 
 
-def as_of_view(view_func):
+RECORDED = "recorded"
+HAPPENED = "happened"
+
+
+def as_of_view(view_func, *, rewind=True):
     """Serve `view_func` as of `?as_of=`, or live without it.
 
-    Sets `request.supply_as_of` (a date, or None) on every request it wraps,
-    so a view or template can read it unconditionally.
+    Sets `request.supply_as_of` (a date, or None) and `request.supply_as_of_basis`
+    (RECORDED, or HAPPENED when `rewind=False`) on every request it wraps, so a
+    view or template can read them unconditionally.
+
+    With `rewind=False` every check below still applies (GET only, signed in,
+    authorised), but the view runs live: it reads stock as of the day itself.
 
     - No `as_of`: the view runs live.
     - Malformed, or after today: 400.
@@ -98,6 +118,7 @@ def as_of_view(view_func):
         except ValueError:
             return HttpResponseBadRequest("as_of must be a date written YYYY-MM-DD.")
         request.supply_as_of = as_of
+        request.supply_as_of_basis = RECORDED if rewind else HAPPENED
         if as_of is None:
             return view_func(request, *args, **kwargs)
         if as_of > timezone.localdate():
@@ -113,6 +134,8 @@ def as_of_view(view_func):
             request.supply_as_of = None
             return view_func(request, *args, **kwargs)
         authorise(request)
+        if not rewind:
+            return view_func(request, *args, **kwargs)
         # The header's pinned tabs are navigation, not the programme's past: read
         # them live, before the rewind removes a pin made after `as_of`.
         from connect_labs.supply_chain.navigation import _pinned
@@ -181,6 +204,7 @@ def as_of_context(request):
         return {}
     return {
         "supply_as_of": request.supply_as_of,
+        "supply_as_of_basis": getattr(request, "supply_as_of_basis", RECORDED),
         "supply_as_of_available": True,
         "today": timezone.localdate().isoformat(),
         "today_label": f"{timezone.localdate():%-d %b %Y}",
