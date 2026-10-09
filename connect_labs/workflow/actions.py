@@ -1150,7 +1150,15 @@ def _plain_error(e: Exception) -> str:
     from connect_labs.labs.integrations.ocs.api_client import OCSAPIError
 
     if isinstance(e, OCSAPIError):
-        return "Open Chat Studio refused the request"
+        # OCS's own reason, written to be shown (e.g. "Failed to create channel: Participant
+        # not found in CommCare Connect") -- the person and the agent need it to act; the
+        # generic line alone hid it (2026-10-09, execution 13).
+        detail = (getattr(e, "detail", "") or "").strip()
+        return (
+            f"Open Chat Studio refused the request: {detail[:200]}"
+            if detail
+            else "Open Chat Studio refused the request"
+        )
     if getattr(e, "status_code", None) == 404:
         return "Not found, or no access to this opportunity"
     return type(e).__name__

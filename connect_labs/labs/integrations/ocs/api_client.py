@@ -15,9 +15,12 @@ logger = logging.getLogger(__name__)
 
 
 class OCSAPIError(Exception):
-    """Exception raised for OCS API errors."""
+    """Exception raised for OCS API errors. ``detail`` is OCS's own user-safe reason
+    (the ``detail`` of its JSON error body), when it gave one."""
 
-    pass
+    def __init__(self, message: str = "", detail: str = ""):
+        super().__init__(message)
+        self.detail = detail
 
 
 class OCSDataAccess:
@@ -318,7 +321,10 @@ class OCSDataAccess:
                 error_detail = e.response.json()
             except ValueError:
                 error_detail = e.response.text
-            raise OCSAPIError(f"Failed to trigger bot: {error_detail}") from e
+            detail = error_detail.get("detail") if isinstance(error_detail, dict) else ""
+            raise OCSAPIError(
+                f"Failed to trigger bot: {error_detail}", detail=detail if isinstance(detail, str) else ""
+            ) from e
         except httpx.HTTPError as e:
             raise OCSAPIError(f"Failed to trigger bot: {e}") from e
 
