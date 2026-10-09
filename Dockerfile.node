@@ -6,7 +6,10 @@
 #   docker build -f Dockerfile.node -t labs-node .
 # Or trigger via .github/workflows/build-node.yml
 
-FROM node:24-bookworm
+# The same Docker Official Image, pulled from AWS's public mirror: Docker Hub's
+# anonymous pull limit (429 Too Many Requests) failed this build twice in a row
+# on 2026-10-09, and every frontend change waits on it.
+FROM public.ecr.aws/docker/library/node:24-bookworm
 WORKDIR /app
 
 # Install npm deps first (layer cache on package files)
