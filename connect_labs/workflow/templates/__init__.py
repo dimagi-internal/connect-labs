@@ -424,7 +424,11 @@ TEMPLATE_GROUPS: list[dict] = [
     {"key": "audits", "label": "Audits", "blurb": "decide on photos and records, or create the audits"},
     {"key": "tracking", "label": "Beneficiary tracking", "blurb": "one child across follow-up visits"},
     {"key": "other", "label": "Outreach & demos", "blurb": "talk to workers, or show the platform"},
-    {"key": "pages", "label": "Pages", "blurb": "a screen of your own, with no runs: an organisation's or programme's home"},
+    {
+        "key": "pages",
+        "label": "Pages",
+        "blurb": "a screen of your own, with no runs: an organisation's or programme's home",
+    },
 ]
 
 TEMPLATE_GROUP_OF: dict[str, str] = {

@@ -1002,7 +1002,9 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         # program-scoped) request DAO.
         program_scoped = bool(program_id) and not opportunity_id
         # An organisation-owned page (workflow/page_views.py) is read by its organisation alone.
-        org_scoped = self.page_mode and bool(labs_context.get("organization_id")) and not (opportunity_id or program_id)
+        org_scoped = (
+            self.page_mode and bool(labs_context.get("organization_id")) and not (opportunity_id or program_id)
+        )
         context["opportunity_id"] = opportunity_id
         context["program_id"] = program_id
         context["opportunity_name"] = labs_context.get("opportunity_name")
