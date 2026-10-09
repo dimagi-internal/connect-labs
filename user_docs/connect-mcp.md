@@ -211,6 +211,9 @@ The card has up to three buttons:
 !!! note "You decide when to send — the agent never sends on your behalf"
     A coaching send always requires your click on one of the buttons. The agent shows you the briefing and tells you where to click; it does not send the message itself. The **Start coaching** button on the Labs run page works the same way and is unchanged. Other action types (such as creating a task) use a separate confirm flow where the agent asks for your approval before acting.
 
+!!! warning "Sending to a real worker requires canopy"
+    An agent operating outside canopy — for example, Claude Code or Claude Desktop connected through MCP — cannot send a coaching conversation to a real worker, even if it has the right tools available. A real worker is only reached when a person clicks **Send** on canopy's coaching card, or clicks **Start coaching** on the Labs run page. Outside canopy, an agent can still preview a coaching conversation and send a QA test message to itself using `deliver_to` — this is how ACE records itself on its own test phone.
+
 ---
 
 ## Targeting: Nigerian State Cost-Effectiveness Rankings
@@ -228,16 +231,4 @@ Each combination of state and chemoprevention design — PMC (Perennial Malaria 
 
 ### Changing costs
 
-Entering a different price per visit re-prices the entire ranking instantly, without re-running the models. This lets you explore how your programme's delivery costs affect which states and designs are most attractive.
-
-For a one-off "what if" question about a single state, the agent runs the scenario against that state's own fitted model.
-
-!!! note "Per-state results grid"
-    The full per-state results grid will appear once the model batch finishes computing. Until then, the tool will tell you that per-state results are not yet available.
-
----
-
-## Pipeline Export Names
-
-!!! note "Change for all callers"
-    When naming a pipeline export, the name must now be a **single plain word** — no spaces, punctuation, or special characters. This
+Entering a different price per visit re-prices the entire ranking instantly, without re-running the models. This lets you explore how your programme's delivery costs affect which states and designs are
