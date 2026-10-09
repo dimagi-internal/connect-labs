@@ -253,6 +253,48 @@ def stock_flow(access, item_id, as_of=None):
     return flow(access._require_program(), access._resolve_item(item_id), on_date=_on(as_of))
 
 
+@register_operation(
+    name="stock_forecast",
+    summary=(
+        "Where one item's stock is heading, week by week, for every field worker, every store and the "
+        "programme: what the children already in treatment are still owed (their course less what their visits "
+        "gave them), plus what the children each worker is expected to enrol will need (their last three weeks "
+        "of enrolment, times scenario), against what is on hand there -- and the day each runs dry. Children "
+        "come from the visits, read by the dispensing rule's cases block; without one the forecast is each "
+        "worker's own pace. Every assumption is returned under `basis` with where it came from (measured, "
+        "protocol, default). Orders still to arrive count at the programme only, by their expected day. "
+        "as_of reads a past day; when the visits stop earlier the forecast starts from the last visit "
+        "(`anchor`, `data_to`). course_size is the course to assume when neither the visits nor the "
+        "commodity give one. Read-only."
+    ),
+    input_schema=obj(
+        {
+            "item_id": ID,
+            "opportunity_ids": {"type": "array", "items": ID},
+            "as_of": _DATE,
+            "horizon_weeks": {"type": "integer", "minimum": 1, "maximum": 26},
+            "scenario": {"type": "number", "minimum": 0, "maximum": 3},
+            "course_size": {"type": "number", "exclusiveMinimum": 0},
+        },
+        required=("item_id",),
+    ),
+)
+def stock_forecast(access, item_id, opportunity_ids=None, as_of=None, horizon_weeks=8, scenario=1, course_size=None):
+    from decimal import Decimal
+
+    from connect_labs.supply_chain.stock.services import forecast
+
+    return forecast.forecast(
+        access._require_program(),
+        access._resolve_item(item_id),
+        opportunity_ids=opportunity_ids,
+        on_date=_on(as_of),
+        horizon_weeks=horizon_weeks,
+        scenario=Decimal(str(scenario)),
+        course_size_fallback=Decimal(str(course_size)) if course_size else None,
+    )
+
+
 def _reported_on_visits(program_id, point, item, visit_ids) -> dict:
     """{"item": {visit_id: [count, ...]}, "any": {visit_id, ...}} -- the counts these visits recorded.
 
