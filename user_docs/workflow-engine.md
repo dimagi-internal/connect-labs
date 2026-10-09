@@ -101,6 +101,19 @@ In addition to coaching on indicator scores, the agent can now coach a field wor
 
 Each baby gets one story, and Labs only surfaces babies whose story happened recently — within 30 days of the baby's latest visit.
 
+#### How the briefing is built
+
+When the agent prepares a case coaching conversation, the briefing it shows you comes directly from the **case state** recorded in the registry for that baby. Each case state carries its own coaching guidance, which appears in the briefing immediately after the topic name:
+
+- **What it means** — a plain-language description of the baby's situation
+- **How to talk about it** — suggested language and tone for the conversation
+- **The step to agree** — the specific action the worker and coach should agree on
+- **What it does not tell you** — important caveats to keep in mind
+
+This means the briefing reflects whatever guidance has been configured for that case state in the registry, rather than fixed text. If the guidance for a state is updated in the registry, future briefings will pick up the change automatically.
+
+The picture the worker receives is drawn using the picture type that the case state names — so different states can produce different picture styles without any further configuration in Labs.
+
 #### How the agent suggests a case coaching conversation
 
 For each worker on an opportunity, Labs lists — per story — the babies that are currently eligible. The canopy agent panel uses this list to suggest one conversation per worker. You review the suggestion and approve it before anything is sent.
@@ -115,7 +128,7 @@ The KMC Worker Review's case panel includes a **Coach about this baby** button. 
 The button appears when two things are true:
 
 - The workflow has a coaching action set up.
-- Labs finds a coaching story in that baby's visits — one of the four stories listed above.
+- The baby's case is in a recognised case state in the registry.
 
 Clicking the button opens the coaching dialog, which shows:
 
@@ -128,7 +141,7 @@ Clicking the button opens the coaching dialog, which shows:
 
 #### Case coaching pictures
 
-Each story has its own picture designed to be read on a phone:
+Each story has its own picture designed to be read on a phone. The picture type is determined by the case state recorded in the registry for that baby:
 
 | Story | Picture |
 |---|---|
@@ -231,19 +244,3 @@ The Supply Stock page links directly to any supply workflow that has been set up
 A summary pipeline can now produce several different breakdowns in one pass rather than requiring a separate pipeline for each breakdown. For example, instead of one pipeline for totals by questionnaire, another for totals by question, another for totals by state, and so on, a single pipeline can declare all of those as named **groupings** and compute them all together from one read of the data.
 
 Each grouping can also break down by several fields at once — for example, question × answer type × state — without needing a separate pipeline per combination.
-
-When a dashboard reads a pipeline that uses this feature, it receives all the summaries together as a single list of rows. Each row identifies which grouping it belongs to, so the dashboard can separate them and display each breakdown in the right place.
-
-**What this means in practice:**
-
-- Dashboards that previously required many pipelines to cover different breakdowns can now be powered by far fewer.
-- Figures are computed consistently because all breakdowns come from the same single read of the underlying data.
-- Existing pipelines are unaffected — this is an optional capability available to new and updated pipeline configurations.
-
-### Google Drive pipelines scoped to a whole program
-
-A pipeline can be configured to read a Google Drive file that covers an **entire program** rather than one opportunity. The Connect Interviews dashboard — whose interview exports span every cohort — is the first dashboard to use this.
-
-**How access works**
-
-Only staff in the organisation that **manages the program** can see data from a program-scoped Drive pipeline. Staff whose organisation runs one of the program's opportunities
