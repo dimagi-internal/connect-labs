@@ -138,7 +138,9 @@ def workflow_run_default(
             raise MCPToolError("NOT_FOUND", f"workflow definition {definition_id} not found")
         if (definition.data or {}).get("kind") == "page":
             # A page has no runs (workflow/page_mode.py): it is opened, never run.
-            raise MCPToolError("INVALID_SCHEMA", f"workflow {definition_id} is a page: it has no runs to open or start.")
+            raise MCPToolError(
+                "INVALID_SCHEMA", f"workflow {definition_id} is a page: it has no runs to open or start."
+            )
 
         run_kwargs: dict[str, Any] = {}
         if window_start and window_end:
