@@ -234,18 +234,14 @@ The card does not show a subtitle, a coach line, a topic list, a "Sent with the 
 
 The synthetic note, shown when you are working on a demo opportunity, is kept brief.
 
+### What appears in the chat after a send
+
+After you send or test a coaching session, the chat shows a plain confirmation message — for example, "Sent a test to Ibrahim." — as your message. The card's internal instructions to the agent are never shown in the chat.
+
+The agent produces one coaching card per request. If you ask to preview coaching for a worker, a single card appears in the chat with the picture the agent intends to use. A second card is not generated for the same request.
+
 ### Open Chat Studio connection check
 
 Before the card displays anything else, it checks that your Labs account is connected to Open Chat Studio — every coaching send, including test sends on synthetic data, runs on your own OCS connection. If you are not connected, the card shows only:
 
-> **Connect Open Chat Studio first**
-
-with a **Connect Open Chat Studio** button and an "I've connected — continue" link that rechecks the connection. The rest of the card appears once the check passes.
-
-### Choosing what picture the worker sees
-
-When preparing a coaching session, you can choose what the worker's picture shows. The options are:
-
-| Picture option | What the worker sees |
-| --- | --- |
-| **Their own figures** | The worker's own data, as displayed on
+> **
