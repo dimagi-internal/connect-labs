@@ -31,7 +31,7 @@ uses, so nothing ships purged.
 
 <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
   <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
-  <table class="min-w-[44rem] w-full text-sm">
+  <table class="phone-cards min-w-[44rem] w-full text-sm" data-testid="movements-table">
     <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
       <tr>
         <th class="text-left px-4 py-2">Date</th>
@@ -46,8 +46,8 @@ uses, so nothing ships purged.
     <tbody class="divide-y divide-gray-100">
       {% for movement in movements %}
         <tr>
-          <td class="px-4 py-2.5 text-gray-600">{{ movement.occurred_on }}</td>
-          <td class="px-4 py-2.5">
+          <td class="px-4 py-2.5 text-gray-600" data-label="Date">{{ movement.occurred_on }}</td>
+          <td class="phone-title px-4 py-2.5">
             {% comment %}A reversal is consumption INTO the worker: a rejected visit's
             stock put back. Said as what it is, never as a consumption or a
             delivery arriving.{% endcomment %}
@@ -72,17 +72,17 @@ uses, so nothing ships purged.
             {% endwith %}
             {% endif %}
           </td>
-          <td class="px-4 py-2.5 text-gray-600">
+          <td class="px-4 py-2.5 text-gray-600" data-label="From">
             {% with receipt=receipts|dictkey:movement.caused_by.receipt_id %}
               {% if movement.from_supply_point_id %}{{ points|dictkey:movement.from_supply_point_id }}
               {% elif receipt and receipt.contract_id and received_from|dictkey:receipt.contract_id %}{{ received_from|dictkey:receipt.contract_id }} <span class="text-xs text-gray-600">(supplier)</span>
               {% else %}—{% endif %}
             {% endwith %}
           </td>
-          <td class="px-4 py-2.5 text-gray-600">{{ points|dictkey:movement.to_supply_point_id|default:"—" }}</td>
-          <td class="px-4 py-2.5 text-gray-600">{{ movement.batch|default:"—" }}</td>
-          <td class="px-4 py-2.5 tabular-nums">{{ movement.quantity|qty:movement.quantity_unit }}</td>
-          <td class="px-4 py-2.5 text-xs text-gray-600">{{ movement.source|source_label }}</td>
+          <td class="px-4 py-2.5 text-gray-600" data-label="To">{{ points|dictkey:movement.to_supply_point_id|default:"—" }}</td>
+          <td class="px-4 py-2.5 text-gray-600" data-label="Batch">{{ movement.batch|default:"—" }}</td>
+          <td class="phone-lead px-4 py-2.5 tabular-nums font-medium" data-label="Quantity">{{ movement.quantity|qty:movement.quantity_unit }}</td>
+          <td class="px-4 py-2.5 text-xs text-gray-600" data-label="Told by">{{ movement.source|source_label }}</td>
         </tr>
       {% empty %}
         <tr><td colspan="7" class="px-4 py-6 text-center text-gray-600">Nothing has moved here yet.</td></tr>
@@ -91,8 +91,8 @@ uses, so nothing ships purged.
     {% if balance %}
       <tfoot class="border-t border-gray-200 bg-gray-50">
         <tr data-balance>
-          <td colspan="5" class="px-4 py-2.5 text-right font-semibold text-gray-900">Balance at {{ point.name }}</td>
-          <td class="px-4 py-2.5 tabular-nums font-semibold text-brand-indigo">{{ balance|figure_text }}</td>
+          <td colspan="5" class="phone-title px-4 py-2.5 text-right font-semibold text-gray-900">Balance at {{ point.name }}</td>
+          <td class="phone-title px-4 py-2.5 tabular-nums font-semibold text-brand-indigo">{{ balance|figure_text }}</td>
           <td></td>
         </tr>
       </tfoot>

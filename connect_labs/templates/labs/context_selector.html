@@ -10,14 +10,31 @@ multi-select opportunity picker).
 {{ user_opportunities|json_script:"opportunity-data" }}
 <script src="{% static 'labs/context_picker.js' %}"></script>
 
+{% comment %}On a phone the full "Program: … | Opp: … (id … visits …)" wrapped into a six-line
+column and clipped; there the button shows only the narrowest name chosen (programme, else
+opportunity, else organisation), cut with an ellipsis, and the menu opens across the screen.
+Desktop is unchanged. Plain CSS, so the header does not wait on a stylesheet rebuild.{% endcomment %}
+<style>
+  .ctx-short { display: none; }
+  @media (max-width: 639px) {
+    .ctx-full, .ctx-chevron { display: none !important; }
+    .ctx-short { display: block; max-width: 7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ctx-button { padding: 0.375rem 0.625rem !important; white-space: nowrap; }
+    .ctx-menu { position: fixed !important; top: 4.25rem !important; left: 0.5rem !important; right: 0.5rem !important; width: auto !important; max-width: none !important; }
+  }
+</style>
 {# Button only - no wrapper #}
-<div x-data="labsContextSelector()" class="relative">
+<div x-data="labsContextSelector()" class="relative min-w-0">
   {% if request.labs_context.organization or request.labs_context.program or request.labs_context.opportunity %}
     {# Context is selected - show in order: org, program, opp #}
     <button @click="open = !open"
-            class="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition"
-            type="button">
-      <div class="flex items-center space-x-2 text-sm">
+            class="ctx-button flex items-center space-x-2 px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition"
+            type="button" data-testid="context-button">
+      {% with ctx=request.labs_context %}
+        {% firstof ctx.program.name ctx.opportunity.name ctx.organization.name as short_name %}
+        <span class="ctx-short text-sm text-gray-900" title="{{ short_name }}" data-testid="context-short">{{ short_name }}</span>
+      {% endwith %}
+      <div class="ctx-full flex items-center space-x-2 text-sm">
         {% if request.labs_context.organization %}
           <span class="font-medium text-gray-700">Org:</span>
           <span class="text-gray-900">{{ request.labs_context.organization.name }}</span>
@@ -33,19 +50,19 @@ multi-select opportunity picker).
           <span class="text-gray-900">{{ request.labs_context.opportunity.name }} <span class="text-gray-500">(id: {{ request.labs_context.opportunity.id }} visits: {{ request.labs_context.opportunity.visit_count|default:0 }})</span></span>
         {% endif %}
       </div>
-      <svg class="w-4 h-4 text-gray-500" :class="{'rotate-180': open}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg class="ctx-chevron w-4 h-4 text-gray-500" :class="{'rotate-180': open}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
       </svg>
     </button>
   {% else %}
     {# No context selected - show selection button #}
     <button @click="open = !open"
-            class="flex items-center space-x-2 px-4 py-2 bg-yellow-500 text-white rounded-lg shadow-sm hover:bg-yellow-600 transition"
+            class="ctx-button flex items-center space-x-2 px-4 py-2 bg-yellow-500 text-white rounded-lg shadow-sm hover:bg-yellow-600 transition"
             type="button">
       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
       </svg>
-      <span class="font-medium">Select Context</span>
+      <span class="font-medium"><span class="ctx-full">Select Context</span><span class="ctx-short">Context</span></span>
     </button>
   {% endif %}
 
@@ -58,7 +75,7 @@ multi-select opportunity picker).
        x-transition:leave-start="transform opacity-100 translate-y-0"
        x-transition:leave-end="transform opacity-0 -translate-y-2"
        @click.away="open = false"
-       class="absolute top-full right-0 mt-2 w-[960px] max-w-[calc(100vw-2rem)] max-h-[80vh] overflow-y-auto bg-white shadow-2xl border border-gray-200 rounded-xl z-50"
+       class="ctx-menu absolute top-full right-0 mt-2 w-[960px] max-w-[calc(100vw-2rem)] max-h-[80vh] overflow-y-auto bg-white shadow-2xl border border-gray-200 rounded-xl z-50"
        style="display: none;">
 
     <div class="p-4">

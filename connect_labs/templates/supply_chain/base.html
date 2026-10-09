@@ -20,6 +20,29 @@ or by a recorder aiming at an element with no id (the stage bar) -- clears the f
 anything else landed under the bar, slicing through the tender's title above it.{% endcomment %}
 {% comment %}A table row a link lands on (#outreach-N) clears the bar and its table's header row too, so the row arrives under the column names that say what it holds.{% endcomment %}
 <style>.supply-page, .supply-page * { scroll-margin-top: 5rem; } .supply-page tr[id] { scroll-margin-top: 7.5rem; }</style>
+{% comment %}Below sm a table marked `phone-cards` stops scrolling sideways (where the column a reader came
+for fell off the screen) and becomes one card per row: the `phone-title` cell first, then the
+`phone-lead` cell -- the decision the table exists for -- then the rest, each labelled by its
+`data-label`. A `phone-wide` cell puts its label above it, for content too wide to sit beside one.
+Plain CSS rather than utilities, so nothing waits on the stylesheet being rebuilt.{% endcomment %}
+<style>
+  @media (max-width: 639px) {
+    .supply-page table.phone-cards { min-width: 0 !important; table-layout: auto !important; }
+    .supply-page table.phone-cards > thead { display: none; }
+    .supply-page table.phone-cards, .supply-page table.phone-cards > tbody, .supply-page table.phone-cards > tfoot { display: block; width: 100%; }
+    .supply-page table.phone-cards > * > tr { display: flex; flex-direction: column; gap: 0.375rem; padding: 0.75rem 1rem; }
+    .supply-page table.phone-cards > * > tr > td { display: flow-root; width: auto !important; padding: 0 0 0 7.5rem !important; text-align: left !important; white-space: normal !important; }
+    .supply-page table.phone-cards > * > tr > td::before { content: attr(data-label); float: left; margin-left: -7.5rem; width: 7rem; padding-top: 0.1em; font-size: 0.75rem; line-height: 1.25; color: #4b5563; }
+    .supply-page table.phone-cards > * > tr > td.phone-title,
+    .supply-page table.phone-cards > * > tr > td.phone-wide,
+    .supply-page table.phone-cards > * > tr > td:not([data-label]) { padding-left: 0 !important; }
+    .supply-page table.phone-cards > * > tr > td.phone-wide::before { float: none; display: block; width: auto; margin: 0 0 0.125rem; }
+    .supply-page table.phone-cards > * > tr > td:not([data-label])::before { content: none; }
+    .supply-page table.phone-cards > * > tr > td.phone-title { order: -2; }
+    .supply-page table.phone-cards > * > tr > td.phone-lead { order: -1; }
+    .supply-page table.phone-cards > * > tr > td:empty { display: none; }
+  }
+</style>
 <div class="supply-page max-w-7xl mx-auto px-4 py-6">
   {% include 'supply_chain/_header.html' %}
 
