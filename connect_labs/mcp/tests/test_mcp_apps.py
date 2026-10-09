@@ -321,6 +321,15 @@ def test_the_view_has_one_send_and_a_one_click_test_send():
     assert "deliver_to" in html
 
 
+def test_a_test_send_that_cannot_go_says_why_and_never_sticks_on_sending():
+    """Live 2026-10-09: a test send by someone whose Labs account had no Open Chat Studio
+    connection sat on "Sending…" -- the preview came back with `needs` and no token, and the
+    card cleared its auto-send without redrawing; the reason was at the top, out of view."""
+    script = _view().script
+    assert "var wanted = state.autoSend;" in script
+    assert "Connect Open Chat Studio in Labs first, then Send test again." in script
+
+
 def test_a_spent_token_reads_as_already_sent_not_stale():
     """A double click must not loop through 'went stale' refreshes (2026-10-09)."""
     script = _view().script
@@ -349,3 +358,10 @@ def test_the_run_context_tells_the_agent_how_to_run_each_action():
     assert "summary of a worker's data to start coaching" in coach["how_to_run"]
     assert "in that same reply" in coach["how_to_run"]
     assert "`confirm`" in task["how_to_run"] and "explicit yes" in task["how_to_run"]
+
+
+def test_the_view_asks_for_open_chat_studio_before_anything_else():
+    """Owner, 2026-10-09: check the OCS connection first, before the card shows anything."""
+    script = _view().script
+    assert "p.ocs.connected === false" in script and "renderConnectFirst(p)" in script
+    assert "Connect Open Chat Studio first" in script
