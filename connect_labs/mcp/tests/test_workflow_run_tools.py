@@ -163,6 +163,7 @@ def actionable(wda, monkeypatch):
     ]
     wda.get_definition.return_value = _definition_with_opps()
     monkeypatch.setattr(actions, "_ocs_bots", lambda user, request: [{"id": "bot-1", "name": "Coach"}])
+    monkeypatch.setattr(actions, "ocs_connected", lambda user: True)
     monkeypatch.setattr("connect_labs.labs.synthetic.registry.get_synthetic_opp", lambda opp: None)
     return wda
 
@@ -512,3 +513,13 @@ def test_off_canopy_the_views_preview_still_previews_a_qa_send(actionable):
     staff = get_user_model().objects.create_user(username="ace", email="ace@dimagi.com", password="p")
     out = _coach_preview(staff, tool="workflow_action_preview_view", deliver_to="ace.test")
     assert out["arguments"]["deliver_to"] == "ace.test" and out["confirm"]
+
+
+def test_the_view_preview_says_whether_the_viewer_has_connected_ocs(user, actionable, canopy, monkeypatch):
+    from connect_labs.workflow import actions
+
+    out = _coach_preview(user, tool="workflow_action_preview_view")
+    assert out["ocs"]["connected"] is True
+    assert out["ocs"]["connect_url"].endswith("/labs/ocs/initiate/")
+    monkeypatch.setattr(actions, "ocs_connected", lambda user: False)
+    assert _coach_preview(user, tool="workflow_action_preview_view")["ocs"]["connected"] is False

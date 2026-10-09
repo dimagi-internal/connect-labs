@@ -819,6 +819,22 @@ def commit(
     return execution
 
 
+def ocs_connected(user) -> bool:
+    """Whether this person's Labs account holds a working Open Chat Studio connection --
+    what every coaching send needs (Labs starts the conversation with it). Checked up
+    front by the coaching View, so a person is asked to connect before anything else."""
+    from connect_labs.labs.integrations.ocs.api_client import OCSDataAccess
+
+    client = OCSDataAccess(user=user)
+    try:
+        return bool(client.check_token_valid())
+    except Exception:  # noqa: BLE001 -- an unreachable OCS reads as "connect again"
+        logger.warning("Could not check the OCS connection for user %s", user.pk, exc_info=True)
+        return False
+    finally:
+        client.close()
+
+
 def _ocs_bots(user, request) -> list[dict] | None:
     """The OCS bots this person can use, or None when they have not connected OCS."""
     from connect_labs.labs.integrations.ocs.api_client import OCSDataAccess

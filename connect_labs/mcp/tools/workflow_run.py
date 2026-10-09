@@ -735,6 +735,16 @@ def workflow_action_preview_view(
                 if image is not None:
                     worker["image"] = image
         out["page_url"] = _absolute(r.page_url) or r.page_url
+        if out["type"] in CLICK_TO_SEND_TYPES:
+            # Every coaching send runs on the sender's own OCS connection -- on synthetic
+            # data too, for a test send -- so the View checks it FIRST and asks for it
+            # before showing anything else.
+            from connect_labs.workflow.actions import ocs_connected
+
+            out["ocs"] = {
+                "connected": ocs_connected(user),
+                "connect_url": _absolute("/labs/ocs/initiate/") or "/labs/ocs/initiate/",
+            }
         if out.get("connect_url"):
             out["connect_url"] = _absolute(out["connect_url"]) or out["connect_url"]
         out["executions"] = [
