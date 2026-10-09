@@ -193,7 +193,7 @@ This means you can ask Claude questions like "show me hospital vs home births br
 
 ## Coaching Workers from a Run Page
 
-When you ask the canopy agent to coach a worker from a Labs run page, the agent shows you a coaching card in the same reply as the worker's data summary — you do not need to send a second message to trigger the card. The card includes the worker's picture and the opening message already filled in.
+When you ask the canopy agent to coach a worker from a Labs run page, the agent shows you a coaching card in the same reply as the worker's data summary — you do not need to send a second message to trigger the card. After previewing coaching, the agent replies in a single short line (for example, "Here's the coaching card for Ibrahim.") and does not restate the topic, coach, synthetic note, or button options, which the card already shows.
 
 The card displays:
 
@@ -229,4 +229,4 @@ On the Targeting page, the agent can answer questions like "of these Nigerian st
 
 Each Nigerian state is modelled in its own setting using IDM's EMOD disease model. Transmission intensity is fitted to the state's malaria prevalence from DHS survey data, and the seasonal pattern comes from the state's rainfall. This means results reflect the actual epidemiological conditions of each state rather than a national average.
 
-Each combination of state and chemoprevention design — PMC (Perennial Malaria Chemoprevention) or SMC (Seasonal Malaria Chemoprevention) — is ranked by **cost per under-5
+Each combination of state and chemoprevention design — PMC (Perennial
