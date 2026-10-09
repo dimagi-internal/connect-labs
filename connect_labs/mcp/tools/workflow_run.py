@@ -58,7 +58,8 @@ CLICK_TO_SEND = (
 #: content; a chat that restates it buries the card (owner, 2026-10-09: "extremely
 #: minimal beyond the card").
 CHAT_AFTER_PREVIEW = (
-    "In canopy the card shows everything -- picture, topics, opening, coach, the synthetic note "
+    "Say nothing before the preview (no narration of who the worker is or what you are "
+    "looking up). In canopy the card shows everything -- picture, topics, opening, coach, the synthetic note "
     "and the Send buttons -- so after previewing reply in ONE short line (e.g. 'Here's the "
     "coaching card for Ibrahim.') and do not restate anything the card shows. Only outside "
     "canopy, where there is no card, give the topics briefly and point to Start coaching on "

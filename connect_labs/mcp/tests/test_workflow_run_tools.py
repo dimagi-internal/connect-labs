@@ -587,3 +587,11 @@ def test_a_peer_comparison_preview_through_the_tool_names_no_peer(user, actionab
     [w] = out["workers"]
     assert w["image"]["chart"]["type"] == "peer_comparison"
     assert "binta" not in json.dumps(out).lower()
+
+
+def test_the_agent_is_told_to_say_nothing_before_the_preview():
+    """Owner, 2026-10-09: the panel opened with 'Ibrahim Lawal is cr_g02.' before the card."""
+    from connect_labs.mcp.tools.workflow_run import CHAT_AFTER_PREVIEW, HOW_TO_RUN_CLICK_TO_SEND
+
+    assert "Say nothing before the preview" in CHAT_AFTER_PREVIEW
+    assert CHAT_AFTER_PREVIEW in HOW_TO_RUN_CLICK_TO_SEND
