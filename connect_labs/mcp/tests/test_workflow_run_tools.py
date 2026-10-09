@@ -544,3 +544,46 @@ def test_the_view_preview_says_whether_the_viewer_has_connected_ocs(user, action
     assert "%2Flabs%2Fworkflow%2F7%2Frun%2F" in out["ocs"]["connect_url"]
     monkeypatch.setattr(actions, "ocs_connected", lambda user: False)
     assert _coach_preview(user, tool="workflow_action_preview_view")["ocs"]["connected"] is False
+
+
+# ---------------------------------------------------------------------------
+# The coaching picture: what the agent is told, where it reads first
+# ---------------------------------------------------------------------------
+
+
+def test_the_context_tells_the_agent_about_the_picture_library(user, wda):
+    [coach] = _call("workflow_run_context", user, run_id=70, program_id=25)["actions"]
+    assert set(coach["picture_types"]["types"]) == {"topic_bars", "peer_comparison", "trend"}
+    assert set(coach["picture_types"]["custom"]["datasets"]) == {"worker_topics", "peers", "history"}
+    guide = coach["picture"]
+    for rule in ("anonymous", "theme", "custom", "stripped", "never name another worker"):
+        assert rule in guide, rule
+    assert "`picture`" in coach["how_to_run"]
+
+
+def test_the_action_tool_description_carries_the_picture_rules():
+    description = get_tool("workflow_run_action").description
+    assert "Peer A" in description and "theme is always applied" in description
+
+
+def test_a_coaching_preview_says_which_picture_it_made_and_how_to_change_it(user, actionable):
+    out = _coach_preview(user)
+    [w] = out["workers"]
+    assert w["image"]["chart"]["type"] == "topic_bars"
+    assert "Picture: topic_bars" in out["next"] and "arguments.picture" in out["next"]
+
+
+def test_a_peer_comparison_preview_through_the_tool_names_no_peer(user, actionable):
+    import json
+
+    out = _call(
+        "workflow_run_action",
+        user,
+        run_id=70,
+        program_id=25,
+        action="initiate_ai_coach",
+        arguments={"workers": [{"key": "10::asha"}], "picture": {"type": "peer_comparison"}},
+    )
+    [w] = out["workers"]
+    assert w["image"]["chart"]["type"] == "peer_comparison"
+    assert "binta" not in json.dumps(out).lower()
