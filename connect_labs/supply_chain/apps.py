@@ -9,6 +9,7 @@ class SupplyChainConfig(AppConfig):
         # Import for side effect: each module registers its operations into
         # the single registry, and the HTTP API and MCP server are both
         # generated from that. A tier not imported here is a tier with no API.
+        from connect_labs.supply_chain import config  # noqa: F401 -- registers the `supply` settings namespace
         from connect_labs.supply_chain.alerts import operations as alert_operations  # noqa: F401
         from connect_labs.supply_chain.fulfilment import operations as fulfilment_operations  # noqa: F401
         from connect_labs.supply_chain.history import capture

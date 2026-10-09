@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+
+{% comment %}Settings for one scope (scope_config/views.py): per namespace, what is in effect and who set it, this scope's own layer, its history with undo.{% endcomment %}
+
+{% block title %}Settings · {{ scope_label }}{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 py-6" data-testid="settings-page">
+  <div class="text-xs text-gray-600 mb-1">Settings</div>
+  <h1 class="text-2xl font-bold text-brand-indigo mb-1">{{ scope_label|capfirst }}</h1>
+  <p class="text-sm text-gray-600 mb-6">What this {{ scope_noun }} has set up in labs. A value set further up (an organisation for its programmes) applies here unless this {{ scope_noun }} sets its own.</p>
+
+  {% for section in sections %}
+  <section id="{{ section.namespace.key }}" data-testid="settings-{{ section.namespace.key }}" class="bg-white border border-gray-200 rounded-lg p-4 mb-6">
+    <h2 class="text-lg font-semibold text-brand-indigo">{{ section.namespace.label }}</h2>
+    <p class="text-sm text-gray-600 mb-3">{{ section.namespace.description }}</p>
+
+    {% if section.supply_tabs %}
+    <table class="w-full text-sm mb-4" data-testid="settings-supply-tabs">
+      <thead><tr class="text-left text-gray-600 border-b border-gray-200">
+        <th class="py-1.5 pr-3">Tab</th><th class="py-1.5 pr-3">Shown</th><th class="py-1.5 pr-3">Opens</th><th class="py-1.5 pr-3">Set by</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for tab in section.supply_tabs %}
+        <tr class="border-b border-gray-100" data-testid="settings-tab-{{ tab.key }}">
+          <td class="py-1.5 pr-3">{{ tab.label }}{% if tab.builtin_label and tab.builtin_label != tab.label %} <span class="text-gray-600">(in place of {{ tab.builtin_label }})</span>{% endif %}</td>
+          <td class="py-1.5 pr-3">{% if tab.shown %}Yes{% else %}<span class="text-gray-600">Hidden</span>{% endif %}</td>
+          <td class="py-1.5 pr-3">{% if tab.fill %}workflow {{ tab.fill.workflow }}{% if tab.fill.opportunity_id %} · opportunity {{ tab.fill.opportunity_id }}{% endif %} · /supply/views/{{ tab.slug }}/{% else %}<span class="text-gray-600">built-in page</span>{% endif %}</td>
+          <td class="py-1.5 pr-3 text-gray-600">{{ tab.set_by }}</td>
+          <td class="py-1.5 text-right">
+            {% if section.got.settable_here and tab.can_hide %}
+            <form method="post" class="inline">{% csrf_token %}
+              <input type="hidden" name="namespace" value="supply"><input type="hidden" name="tab" value="{{ tab.key }}"><input type="hidden" name="version" value="{{ section.got.version }}">
+              {% if tab.shown %}<button name="action" value="hide_tab" class="text-brand-indigo hover:underline">Hide</button>{% else %}<button name="action" value="show_tab" class="text-brand-indigo hover:underline">Show</button>{% endif %}
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% elif section.rows %}
+    <table class="w-full text-sm mb-4">
+      <thead><tr class="text-left text-gray-600 border-b border-gray-200"><th class="py-1.5 pr-3">Setting</th><th class="py-1.5 pr-3">Value</th><th class="py-1.5">Set by</th></tr></thead>
+      <tbody>
+      {% for row in section.rows %}
+        <tr class="border-b border-gray-100"><td class="py-1.5 pr-3 font-mono">{{ row.path }}</td><td class="py-1.5 pr-3 font-mono">{{ row.value }}</td><td class="py-1.5 text-gray-600">{{ row.source }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-sm text-gray-600 mb-4">Nothing set; labs defaults apply.</p>
+    {% endif %}
+
+    {% if section.got.settable_here %}
+    <details class="mb-3">
+      <summary class="text-sm text-brand-indigo cursor-pointer">Edit this {{ scope_noun }}'s {{ section.namespace.label }} settings</summary>
+      <form method="post" class="mt-2">{% csrf_token %}
+        <input type="hidden" name="namespace" value="{{ section.namespace.key }}"><input type="hidden" name="version" value="{{ section.got.version }}">
+        <textarea name="data" rows="10" class="w-full font-mono text-xs border border-gray-300 rounded-md p-2" data-testid="settings-json-{{ section.namespace.key }}">{{ section.own_json }}</textarea>
+        <button name="action" value="save" class="mt-2 px-3 py-1.5 rounded-md bg-brand-indigo text-white text-sm">Save</button>
+      </form>
+    </details>
+    {% if section.history %}
+    <details>
+      <summary class="text-sm text-brand-indigo cursor-pointer">History ({{ section.history|length }})</summary>
+      <ul class="mt-2 text-sm divide-y divide-gray-100">
+      {% for change in section.history %}
+        <li class="py-1.5 flex flex-wrap items-center gap-3" data-testid="settings-change">
+          <span class="text-gray-600">v{{ change.version }} · {{ change.changed_at|slice:":16" }} · {{ change.changed_by|default:"someone" }} · {{ change.via }}</span>
+          <form method="post" class="inline ml-auto">{% csrf_token %}
+            <input type="hidden" name="namespace" value="{{ section.namespace.key }}"><input type="hidden" name="change_id" value="{{ change.id }}">
+            <button name="action" value="undo" class="text-brand-indigo hover:underline">Undo</button>
+          </form>
+        </li>
+      {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+    {% else %}
+    <p class="text-sm text-gray-600">Not set per {{ scope_noun }}.</p>
+    {% endif %}
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}

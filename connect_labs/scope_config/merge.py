@@ -26,6 +26,23 @@ def merge_patch(target, patch):
     return result
 
 
+def diff_patch(old: dict, new: dict) -> dict:
+    """The merge patch that turns `old` into `new` (keys `new` dropped become `null`)."""
+    patch = {}
+    for key in old:
+        if key not in new:
+            patch[key] = None
+    for key, value in new.items():
+        before = old.get(key)
+        if isinstance(value, dict) and isinstance(before, dict):
+            inner = diff_patch(before, value)
+            if inner:
+                patch[key] = inner
+        elif value != before or key not in old:
+            patch[key] = copy.deepcopy(value)
+    return patch
+
+
 def _leaves(value, prefix=""):
     """Dotted paths to every non-map value (an empty map counts as a leaf)."""
     if isinstance(value, dict) and value:

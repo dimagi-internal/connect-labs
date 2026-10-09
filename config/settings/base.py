@@ -248,6 +248,9 @@ MIDDLEWARE = [
     # Report-only to start — see connect_labs/utils/csp.py for why, and for how
     # to tighten it into an enforcing policy (#1032 item H).
     "connect_labs.utils.csp.ContentSecurityPolicyMiddleware",
+    # A supply tab a programme has turned off in Settings explains itself (process_view only,
+    # so it sees the settled labs context whatever its position).
+    "connect_labs.supply_chain.hidden_tabs.HiddenSupplyTabMiddleware",
 ]
 
 # Per-request cost telemetry, prepended so it is the OUTERMOST middleware and
