@@ -792,6 +792,10 @@ def _model_problems(props_doc: dict[str, Any], constants: dict[str, Any]) -> lis
                 problems.append(f"{label}.optional: must be true or false")
             if "null_as" in col and col["null_as"] not in NULL_AS_TYPES:
                 problems.append(f"{label}.null_as: must be one of {', '.join(NULL_AS_TYPES)}")
+            if col.get("column") == name:
+                # Layer 1 selects the pipeline's columns AND this alias, so a read of the
+                # name is ambiguous -- an error only when a visit query names it.
+                problems.append(f"{label}: a column alias may not have the name of the column it reads")
             kinds = [k for k in VISIT_COLUMN_KINDS if k in col]
             if len(kinds) != 1:
                 problems.append(f"{label}: needs exactly one of {', '.join(VISIT_COLUMN_KINDS)}")

@@ -142,7 +142,9 @@ visit_columns:
   - name: visit_feeds
     optional: true
     column: feeds_24h
-  - name: visit_timeliness
+  # Not `visit_timeliness`: that is the pipeline field's own name, and a visit column
+  # named like the field it aliases makes every read of it ambiguous.
+  - name: visit_timing
     optional: true
     null_as: text
     column: visit_timeliness
@@ -1239,7 +1241,7 @@ case_series:
     }
   - {
       name: timeliness,
-      column: visit_timeliness,
+      column: visit_timing,
       label: Timing,
       format: text,
       brief: false,
