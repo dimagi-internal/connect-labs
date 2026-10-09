@@ -52,8 +52,8 @@ Plain CSS rather than utilities, so nothing waits on the stylesheet being rebuil
 
 {% comment %}
 While a past date is on view, every link to another supply page carries it,
-so clicking around stays in the past until "Back to today". The market is
-live by design and is left alone, and so is "Back to today". Here, not in <head>'s javascript block:
+so clicking around stays in the past until "Back to today". The market, the
+map and the portfolios are live by design and are left alone, and so is "Back to today". Here, not in <head>'s javascript block:
 there is no document.body there yet.
 {% endcomment %}
 {% block inline_javascript %}
@@ -68,7 +68,10 @@ there is no document.body there yet.
         var asOf = "{{ supply_as_of|date:'Y-m-d' }}";
         document.querySelectorAll('a[href^="/supply/"]').forEach(function (a) {
           var href = a.getAttribute("href");
-          if (href.indexOf("/supply/market") === 0 || a.hasAttribute("data-as-of-exempt")) return;
+          // Pages that only ever show today (urls.py _LIVE_PREFIXES): handed the date, the
+          // map showed today's blockers under a URL that named a past day, with no banner.
+          var live = ["/supply/market", "/supply/map/", "/supply/portfolios/"];
+          if (live.some(function (p) { return href.indexOf(p) === 0; }) || a.hasAttribute("data-as-of-exempt")) return;
           var url = new URL(href, window.location.origin);
           url.searchParams.set("as_of", asOf);
           a.setAttribute("href", url.pathname + url.search + url.hash);
