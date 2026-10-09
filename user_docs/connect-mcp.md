@@ -221,6 +221,19 @@ The ACE agent leads with the same recommendation the page shows and explains why
 
 When you ask the canopy agent to coach a worker from a Labs run page, the agent shows you a coaching card in the same reply as the worker's data summary — you do not need to send a second message to trigger the card. After previewing coaching, the agent replies in a single short line (for example, "Here's the coaching card for Ibrahim.") and does not restate the topic, coach, synthetic note, or button options, which the card already shows.
 
+### What the coaching card shows
+
+The card is designed to show only what you need to make the decision to send:
+
+- **Coach \<worker\>** — the worker's name in the card heading.
+- Their picture.
+- The first message the worker will receive.
+- A **Send** button (plus a quieter test link).
+
+The card does not show a subtitle, a coach line, a topic list, a "Sent with the conversation" caption, or a list of earlier sends — that information is either already visible in the picture or not needed to decide whether to send.
+
+The synthetic note, shown when you are working on a demo opportunity, is kept brief.
+
 ### Open Chat Studio connection check
 
 Before the card displays anything else, it checks that your Labs account is connected to Open Chat Studio — every coaching send, including test sends on synthetic data, runs on your own OCS connection. If you are not connected, the card shows only:
@@ -235,9 +248,4 @@ When preparing a coaching session, you can choose what the worker's picture show
 
 | Picture option | What the worker sees |
 | --- | --- |
-| **Their own figures** | The worker's own data, as displayed on the run page (the default). |
-| **Comparison with peers** | The worker's figures alongside others on the run, labelled only as "Peer A", "Peer B" and so on — never by name. |
-| **Their figures week by week** | The worker's own data broken down across weeks, showing how their performance has changed over time. |
-| **A custom chart** | A chart of your own design. |
-
-Every number in the picture comes from Labs, and every picture is drawn in Connect's style. The picture the worker receives is exactly the one shown on the card at the time you approved it — it is not recalculated or regenerated
+| **Their own figures** | The worker's own data, as displayed on
