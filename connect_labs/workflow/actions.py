@@ -481,6 +481,7 @@ def _resolve(action: dict, arguments: Any, roster: dict[str, dict], *, user=None
     merged.setdefault("title", action["label"])
     skipped: list[dict] = []
     if action["type"] == "start_ocs_outreach":
+        _check_declared_bot(action, arguments)
         skipped = _brief_workers(merged, roster, briefing)
         missing = sorted(i["key"] for i in merged["workers"] if not (i.get("prompt") or merged.get("prompt")))
         if missing:
@@ -497,22 +498,48 @@ def _resolve(action: dict, arguments: Any, roster: dict[str, dict], *, user=None
     return merged, skipped
 
 
+def _check_declared_bot(action: dict, arguments: dict) -> None:
+    """A workflow that declares its coach (``defaults.bot``) coaches through THAT bot:
+    a call naming another is refused, so which coach a worker meets is the workflow's
+    decision, never the caller's. (The synthetic stand-in is Labs' own substitution
+    for a run that sends nothing, and passes.)"""
+    from connect_labs.tasks.ai_sessions import SYNTHETIC_BOT
+
+    declared = action["defaults"].get("bot")
+    given = arguments.get("bot")
+    if declared and given and given not in (declared, SYNTHETIC_BOT):
+        raise ActionError(
+            "invalid",
+            f"this workflow coaches through its own bot ({declared}); `bot` cannot name another",
+        )
+
+
 #: The longest text one worker's conversation may open with (the item ``prompt`` schema).
 _PROMPT_MAX = 4000
 
 
 def _brief_workers(merged: dict, roster: dict[str, dict], briefing) -> list[dict]:
-    """Give each worker with no text of their own a briefing from the run's grading
-    (``coach_briefing.py``), the action's own ``prompt`` appended as the programme
-    team's note. Workers with nothing red or yellow to raise are taken out of the
-    run and returned, with the reason, for the preview to show.
+    """Give each worker a briefing from the run's grading (``coach_briefing.py``), the
+    action's own ``prompt`` appended as the programme team's note. Workers with nothing
+    red or yellow to raise are taken out of the run and returned, with the reason, for
+    the preview to show.
 
-    Does nothing when every worker already has a prompt (so a commit of a preview's
-    own arguments never re-grades), or when the workflow is not an indicator report.
+    A worker's OWN text (a person or an agent editing what the coach is told) is kept,
+    but always INSIDE a briefing: it becomes that worker's programme-team note under the
+    run's own header and topics. So a coaching conversation always reaches the
+    workflow's coach as a briefing -- the worker gets the fixed opening verbatim, the
+    coach reads the text as instructions in its session state, and the picture and
+    topics come from the grading -- and never through OCS's generic ``prompt_text``
+    path, whatever the text looks like. (Seen 2026-10-09: an agent's own text went to
+    ``prompt_text`` and the worker got "Here is a message for Ibrahim: ---".)
+
+    Does nothing when every worker's text is already a briefing (so a commit of a
+    preview's own arguments never re-grades), or when the workflow is not an indicator
+    report (a plain outreach action, whose bot may want free instructions).
     """
     from connect_labs.workflow import coach_briefing
 
-    if briefing is None or all(i.get("prompt") for i in merged["workers"]):
+    if briefing is None or all(coach_briefing.is_briefing(i.get("prompt")) for i in merged["workers"]):
         return []
     source = briefing()
     if source is None:
@@ -522,21 +549,22 @@ def _brief_workers(merged: dict, roster: dict[str, dict], briefing) -> list[dict
     note = merged.get("prompt")
     kept, skipped = [], []
     for item in merged["workers"]:
-        if item.get("prompt"):
+        own = item.get("prompt")
+        if coach_briefing.is_briefing(own):
             kept.append(item)
             continue
         who = roster[item["key"]]
         row = by_key.get(item["key"])
         topics = coach_briefing.coachable_topics(graded, row.get("ind") or {}) if row else []
-        if not topics:
+        if not topics and not own:
             reason = coach_briefing.SKIP_NOTHING_OFF_TARGET if row else coach_briefing.SKIP_NOT_GRADED
             skipped.append({"key": item["key"], "name": who["name"], "reason": reason})
             continue
         text, used = coach_briefing.fit_briefing(
             programme=programme,
-            worker=(row.get("name") or who["name"] or who["username"]),
+            worker=((row or {}).get("name") or who["name"] or who["username"]),
             topics=topics,
-            note=note,
+            note="\n\n".join(t.strip() for t in (own, note) if t and t.strip()) or None,
             limit=_PROMPT_MAX,
         )
         item["prompt"] = text
@@ -658,7 +686,9 @@ def preview(user, *, wda, run, definition, key: str, arguments: Any, request=Non
                     if args.get("bot"):
                         out["unknown_bot"] = args.pop("bot")
                     needs.append("bot")
-                    out["bot_choices"] = bots
+                    # A workflow that declares its coach offers no other: the person must
+                    # get access to that bot, not pick a different one.
+                    out["bot_choices"] = [] if action["defaults"].get("bot") else bots
                 else:
                     out["bot"] = chosen
 

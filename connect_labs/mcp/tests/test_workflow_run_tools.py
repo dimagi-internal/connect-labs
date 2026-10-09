@@ -183,15 +183,12 @@ def test_without_confirm_the_tool_only_previews(user, actionable):
         arguments={"workers": [{"key": "10::asha", "prompt": "Weighing is red for you."}]},
     )
     assert out["needs"] == []
-    assert out["workers"] == [
-        {
-            "key": "10::asha",
-            "name": "Asha",
-            "opportunity_id": 10,
-            "prompt": "Weighing is red for you.",
-            "title": "Initiate AI coach",
-        }
-    ]
+    [w] = out["workers"]
+    assert (w["key"], w["name"], w["opportunity_id"]) == ("10::asha", "Asha", 10)
+    # The person's own text is what the coach is told, inside the run's briefing.
+    assert w["prompt"].startswith("BRIEFING (system text")
+    assert w["prompt"].endswith("Programme team's note:\nWeighing is red for you.\n\nTalk with them.")
+    assert w["opening"].startswith("Hello")
     assert "Nothing has been done" in out["next"]
     assert not WorkflowActionExecution.objects.exists()
 
