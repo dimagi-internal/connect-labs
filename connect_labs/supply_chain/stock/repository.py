@@ -410,15 +410,19 @@ class StockRepositoryMixin:
 
         Keyed on (opportunity, item) -- and by a database constraint, not only
         here -- because two rules for one item would post the same sachets
-        twice. Omitting `reports`, `forms` or `status` on an edit keeps what
-        is there.
+        twice. Omitting `reports`, `cases`, `forms` or `status` on an edit
+        keeps what is there.
         """
         from django.core.exceptions import PermissionDenied
 
         from connect_labs.labs.access.scopes import may_use
         from connect_labs.supply_chain import scopes
         from connect_labs.supply_chain.data_access import _fresh
-        from connect_labs.supply_chain.stock.services.dispensing import validate_lines, validate_reports
+        from connect_labs.supply_chain.stock.services.dispensing import (
+            validate_cases,
+            validate_lines,
+            validate_reports,
+        )
 
         # The rule's opportunity is where visits are read FROM, so it is a scope
         # in its own right: labs-only and this programme's, before anything else
@@ -452,6 +456,8 @@ class StockRepositoryMixin:
                 defaults[key] = data[key]
         if "reports" in data:
             defaults["reports"] = validate_reports(data["reports"])
+        if "cases" in data:
+            defaults["cases"] = validate_cases(data["cases"])
         rule, _ = DispensingRule.objects.update_or_create(
             program_id=self._require_program(), opportunity_id=data["opportunity_id"], item=item, defaults=defaults
         )

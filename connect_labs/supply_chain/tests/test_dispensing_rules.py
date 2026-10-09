@@ -539,3 +539,25 @@ def test_an_empty_given_values_comes_back_as_an_error_on_the_form(scoped, world)
     )
     assert response.status_code == 200
     assert not DispensingRule.objects.exists()
+
+
+CASES = {
+    "enrol": {"forms": ["Screening"], "path": "form.screening_outcome.rutf_enrollment", "equals": "yes"},
+    "outcome": {"path": "form.case_state.outcome_value", "open": ["enrolled"], "exit": ["recovered"]},
+    "lost_after_days": 28,
+}
+
+
+def test_a_rule_saves_its_case_block_and_keeps_it_when_an_edit_leaves_it_out(da, world):
+    saved = upsert(da, world, cases=CASES)
+    assert saved["cases"]["lost_after_days"] == 28
+    assert saved["cases"]["outcome"]["complete"] == []
+
+    again = upsert(da, world)
+
+    assert again["cases"] == saved["cases"]
+
+
+def test_a_case_block_that_reads_outside_the_form_is_refused(da, world):
+    with pytest.raises(ValueError, match="form_json path"):
+        upsert(da, world, cases={**CASES, "enrol": {**CASES["enrol"], "path": "screening.x"}})
