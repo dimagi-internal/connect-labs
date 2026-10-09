@@ -218,6 +218,21 @@ def _commit(user, definition, key, arguments, confirm):
     )
 
 
+def test_a_fresh_preview_of_the_same_send_can_be_sent_again(user, real_opps, bots, django_capture_on_commit_callbacks):
+    """Each token is spent on its own: sending the same thing twice is two previews and two
+    clicks. Spending was keyed on the content, so a deliberate resend within 15 minutes
+    was refused as 'already confirmed' and the View looped on 'went stale' (2026-10-09)."""
+    definition = _definition(COACH)
+    first = _previewed(user, definition, "initiate_ai_coach", {"workers": [{"key": "10::a10"}]})
+    second = _previewed(user, definition, "initiate_ai_coach", {"workers": [{"key": "10::a10"}]})
+    assert first["confirm"] != second["confirm"]
+    with patch("connect_labs.workflow.tasks.execute_workflow_action.delay"):
+        with django_capture_on_commit_callbacks(execute=True):
+            _commit(user, definition, "initiate_ai_coach", first["arguments"], first["confirm"])
+            _commit(user, definition, "initiate_ai_coach", second["arguments"], second["confirm"])
+    assert WorkflowActionExecution.objects.count() == 2
+
+
 def test_a_confirmed_preview_is_recorded_and_queued_once(user, real_opps, bots, django_capture_on_commit_callbacks):
     definition = _definition(COACH)
     p = _previewed(user, definition, "initiate_ai_coach", {"workers": [{"key": "10::a10"}]})
