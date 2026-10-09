@@ -10,8 +10,10 @@ Datasets (every number in the picture is one of these):
 ``case_band``     the reference band from the first reading: ``picture.reference``'s
                   low and high per 1000 per day, compounded daily (``lo``, ``hi``,
                   ``mid``, and its label on the last row);
-``case_bars``     the ``picture.bars`` series per visit that recorded it;
-``case_text``     the panel's words and shapes, positioned in pixels.
+``case_bars``     the ``picture.bars`` series at the latest visits that recorded it
+                  (``case_types.MAX_BARS``);
+``case_text``     the panels' words and shapes, positioned in pixels; ``panel`` names
+                  which part of the picture each belongs to (``case_types.LAYOUT``).
 
 Every word is the registry's (the picture's texts, filled from the case's row with
 ``case_states.fill``). The caption is Labs' own and has no numbers.
@@ -27,14 +29,13 @@ from connect_labs.workflow.coach_charts import case_types, theme
 from connect_labs.workflow.coach_charts.datasets import ChartError
 
 VERSION = 2
-INNER = case_types.INNER
 
 CAPTIONS = {
     "series_vs_reference": "A chart of this case's {series} at each visit, against the {reference} band.",
     "series_highlight_step": "A chart of this case's {series} at each visit, with one reading circled to check.",
     "series_with_bars": (
         "A chart of this case's {series} at each visit against the {reference} band, "
-        "with the {bars} at each visit underneath."
+        "with the {bars} at each visit beside it."
     ),
     "sign_card": "A card with what was recorded for this case, and what to do next.",
 }
@@ -46,17 +47,27 @@ CAPTIONS = {
 
 
 class _Panel:
-    def __init__(self):
+    """One part of a picture's text, ``width`` px wide; its rows carry its ``name``."""
+
+    def __init__(self, name: str, width: int):
+        self.name, self.width = name, width
         self.rows: list[dict] = []
         self.y = 0
 
-    def text(self, text, *, x=0, size=22, bold=False, color=theme.INK, width=None, line=None) -> int:
+    def add(self, row: dict, *, first: bool = False):
+        row = {**row, "panel": self.name}
+        if first:
+            self.rows.insert(0, row)
+        else:
+            self.rows.append(row)
+
+    def text(self, text, *, x=0, size=22, bold=False, color=theme.INK, width=None, line=None, max_lines=6) -> int:
         from connect_labs.workflow.coach_charts.types import wrap
 
         line = line or round(size * 1.3)
-        lines = wrap(text, size=size, width=width or (INNER - x), max_lines=6)
+        lines = wrap(text, size=size, width=width or (self.width - x), max_lines=max_lines)
         for ln in lines:
-            self.rows.append(
+            self.add(
                 {
                     "kind": "text",
                     "x": x,
@@ -71,39 +82,33 @@ class _Panel:
         return len(lines)
 
     def dot(self, *, x, y, diameter, color):
-        self.rows.append({"kind": "dot", "x": x, "y": y, "area": round(math.pi * (diameter / 2) ** 2), "color": color})
+        self.add({"kind": "dot", "x": x, "y": y, "area": round(math.pi * (diameter / 2) ** 2), "color": color})
 
     def ctext(self, text, *, x, y, size=20, color="#ffffff"):
-        self.rows.append({"kind": "ctext", "x": x, "y": y, "text": text, "size": size, "color": color})
+        self.add({"kind": "ctext", "x": x, "y": y, "text": text, "size": size, "color": color})
 
     def rect(self, *, x, y, x2, y2, color, opacity=1.0):
-        self.rows.append({"kind": "rect", "x": x, "y": y, "x2": x2, "y2": y2, "color": color, "opacity": opacity})
+        self.add({"kind": "rect", "x": x, "y": y, "x2": x2, "y2": y2, "color": color, "opacity": opacity})
 
     def gap(self, n):
         self.y += n
 
 
-def _numbered(panel: _Panel, items, *, color=theme.INDIGO, x=0, size=22):
+def _numbered(panel: _Panel, items, *, color=theme.INDIGO, x=0, size=22, dot=34):
     for n, item in enumerate(items, 1):
         top = panel.y
-        lines = panel.text(item, x=x + 46, size=size)
+        lines = panel.text(item, x=x + dot + 10, size=size)
         mid = top + round(size * 1.3) / 2
-        panel.dot(x=x + 17, y=mid, diameter=34, color=color)
-        panel.ctext(str(n), x=x + 17, y=mid, size=20)
-        panel.gap(10 if lines else 0)
+        panel.dot(x=x + dot / 2, y=mid, diameter=dot, color=color)
+        panel.ctext(str(n), x=x + dot / 2, y=mid, size=20)
+        panel.gap(8 if lines else 0)
 
 
 def _checklist(panel: _Panel, title: str, items):
-    top = panel.y
-    panel.gap(18)
     if title:
-        panel.text(title, x=20, size=24, bold=True, color=theme.DEEP_PURPLE)
-        panel.gap(8)
-    _numbered(panel, items, x=20)
-    panel.gap(8)
-    panel.rows.insert(
-        0, {"kind": "rect", "x": 0, "y": top, "x2": INNER, "y2": panel.y, "color": theme.RULE, "opacity": 0.55}
-    )
+        panel.text(title, size=22, bold=True, color=theme.DEEP_PURPLE)
+        panel.gap(6)
+    _numbered(panel, items, size=20, dot=28)
 
 
 # ---------------------------------------------------------------------------
@@ -118,9 +123,9 @@ def _nice_step(span: float) -> int:
     return 10000
 
 
-def _ticks(ts: list[int], max_t: int, min_px: float = 80) -> list[int]:
+def _ticks(ts: list[int], max_t: int, kind: str, min_px: float = 80) -> list[int]:
     """Days to label on the x axis, never closer than ``min_px``; the last always."""
-    lo, hi = case_types.LEFT_ROOM, INNER - case_types.RIGHT_ROOM
+    lo, hi = case_types.plot_range(kind)
     px = lambda t: lo + (hi - lo) * t / max(max_t, 1)  # noqa: E731
     kept: list[int] = []
     for t in sorted(set(ts)):
@@ -132,6 +137,19 @@ def _ticks(ts: list[int], max_t: int, min_px: float = 80) -> list[int]:
             kept.pop()
         kept.append(last)
     return kept
+
+
+def _flag_label_t(kind: str, t: int, max_t: int, label: str) -> float:
+    """Where (in days) to centre the ringed reading's label: over the reading, slid
+    sideways just enough to keep the whole label inside the plot."""
+    from connect_labs.workflow.coach_charts.types import _text_width
+
+    lo, hi = case_types.plot_range(kind)
+    span = max(max_t, 1)
+    half = _text_width(label, size=case_types.FLAG_SIZE, bold=True) / 2 + 4
+    px = lo + (hi - lo) * t / span
+    px = min(max(px, half), case_types.LAYOUT[kind]["plot"] - half)
+    return round((px - lo) / (hi - lo) * span, 3)
 
 
 def _band(w0: float, max_t: int, ref: dict) -> list[dict]:
@@ -171,6 +189,7 @@ def build_datasets(
     kind = pic.get("type")
     spec = _series_spec(series, pic.get("series"))
     meta: dict = {
+        "kind": kind,
         "case_name": case_name or None,
         "title": cs.fill(pic.get("title") or state.get("label") or "", row),
         "unit": spec.get("unit") or "",
@@ -211,11 +230,7 @@ def build_datasets(
         if idx is not None:
             target = ds["case_series"][idx]
             target["flag_label"] = cs.fill(hl.get("label") or "", row) or None
-            meta["flag_right"] = target["t"] > max_t * 0.5
-            # Below a reading that rose (the line runs up and away from the label),
-            # above one that fell.
-            before = ds["case_series"][idx - 1]["w"] if idx > 0 else target["w"]
-            meta["flag_dy"] = 56 if target["w"] >= before else -56
+            target["flag_lx"] = _flag_label_t(kind, target["t"], max_t, target["flag_label"] or "")
     # Segments: dashed between the highlighted step's two ends (from -> to).
     for n in range(len(pts) - 1):
         a, b = ds["case_series"][n], ds["case_series"][n + 1]
@@ -240,8 +255,9 @@ def build_datasets(
     y_hi = math.ceil((hi + pad) / step) * step
     meta["y_domain"] = [y_lo, y_hi]
     meta["y_ticks"] = list(range(int(y_lo), int(y_hi) + 1, step))[1:]
-    meta["ticks"] = _ticks([r["t"] for r in ds["case_series"]] or [0], max_t)
+    meta["ticks"] = _ticks([r["t"] for r in ds["case_series"]] or [0], max_t, kind)
 
+    bar_pts = bar_pts[-case_types.MAX_BARS :]
     for n, (d, h) in enumerate(bar_pts):
         last = n == len(bar_pts) - 1
         ds["case_bars"].append(
@@ -256,20 +272,22 @@ def build_datasets(
         )
     meta["skin_top"] = max([h for _, h in bar_pts] + [1]) * 1.3
 
-    panel = _Panel()
+    widths = case_types.LAYOUT[kind]["panels"] if kind in case_types.LAYOUT else {}
+    panels = {name: _Panel(name, width) for name, width in widths.items()}
     if kind == "series_vs_reference":
+        panel = panels["top"]
         badge = cs.fill(pic.get("badge") or "", row)
         gain = cs.fill(pic.get("gain_label") or "", row)
         if badge:
-            panel.rect(x=0, y=0, x2=228, y2=56, color=case_types.GREEN)
-            panel.ctext(badge, x=114, y=28, size=26)
+            panel.rect(x=0, y=0, x2=228, y2=case_types.BADGE_ROW, color=case_types.GREEN)
+            panel.ctext(badge, x=114, y=case_types.BADGE_ROW / 2, size=26)
         if gain:
             head, _, tail = gain.partition(" since ")
-            panel.rows.append(
+            panel.add(
                 {"kind": "text", "x": 250, "y": 18, "text": head, "size": 30, "bold": True, "color": case_types.GREEN}
             )
             if tail:
-                panel.rows.append(
+                panel.add(
                     {
                         "kind": "text",
                         "x": 250,
@@ -280,26 +298,27 @@ def build_datasets(
                         "color": theme.MUTED,
                     }
                 )
-        panel.y = 56 if (badge or gain) else 1
+        panel.y = case_types.BADGE_ROW if (badge or gain) else 1
     elif kind == "series_highlight_step":
         if pic.get("checklist"):
-            _checklist(panel, cs.fill(pic.get("checklist_title") or "", row), pic["checklist"])
+            _checklist(panels["side"], cs.fill(pic.get("checklist_title") or "", row), pic["checklist"])
     elif kind == "series_with_bars":
-        panel.gap(4)
-        panel.text(
+        panels["bars"].text(
             cs.fill(pic.get("bars_title") or "", row) or (bars_spec or {}).get("label", ""),
             size=22,
             bold=True,
             color=theme.DEEP_PURPLE,
         )
     elif kind == "sign_card":
-        _sign_card(panel, pic, row)
-    meta["text_height"] = max(panel.y, 1)
-    ds["case_text"] = panel.rows
+        _sign_card(panels, pic, row)
+    meta["panel_height"] = {name: max(panel.y, 1) for name, panel in panels.items()}
+    ds["case_text"] = [r for panel in panels.values() for r in panel.rows]
     return ds, meta
 
 
-def _sign_card(panel: _Panel, pic: dict, row: dict):
+def _sign_card(panels: dict[str, _Panel], pic: dict, row: dict):
+    """The badge and visit date across the top; the signs recorded on the left; why it
+    matters and what to do on the right."""
     when = row.get(pic.get("date")) if pic.get("date") else None
     when_d = cs._as_date(when)
     listed = [s.strip() for s in str(row.get(pic.get("signs")) or "").split(",") if s.strip()]
@@ -314,52 +333,54 @@ def _sign_card(panel: _Panel, pic: dict, row: dict):
             buf = ""
     if buf:
         signs.append(buf)
+
+    # Left: the badge, the visit, the signs. A lone sign says why it matters; several
+    # are listed by name.
+    left = panels["left"]
     badge = cs.fill(pic.get("badge") or "", row)
-    x = 0
     if badge:
         from connect_labs.workflow.coach_charts.types import _font
 
         width = int(_font(22).getlength(badge)) + 44
-        panel.rect(x=0, y=0, x2=width, y2=46, color=case_types.SUNSET)
-        panel.ctext(badge, x=width / 2, y=23, size=22)
-        x = width + 16
+        left.rect(x=0, y=0, x2=width, y2=44, color=case_types.SUNSET)
+        left.ctext(badge, x=width / 2, y=22, size=22)
+        left.gap(56)
     if when_d:
-        panel.rows.append(
-            {
-                "kind": "text",
-                "x": x,
-                "y": 23,
-                "text": f"Visit on {cs.day_long(when_d)}",
-                "size": 22,
-                "bold": True,
-                "color": theme.INK,
-            }
-        )
-    panel.y = 66
-    for sign in signs[:3]:
+        left.text(f"Visit on {cs.day_long(when_d)}", size=22, bold=True)
+        left.gap(10)
+    shown = signs[:3]
+    for sign in shown:
         text = known.get(sign) or {"title": sign[:1].upper() + sign[1:], "why": ""}
-        top = panel.y
-        panel.dot(x=14, y=top + 15, diameter=28, color=case_types.SUNSET)
-        panel.ctext("!", x=14, y=top + 15, size=20)
-        panel.text(text["title"], x=40, size=24, bold=True)
-        if text.get("why"):
-            panel.text(text["why"], x=40, size=21, color=theme.MUTED)
-        panel.gap(12)
-    if len(signs) > 3:
-        panel.text("Also recorded: " + ", ".join(signs[3:]), size=21, color=theme.MUTED)
-        panel.gap(12)
-    panel.rect(x=0, y=panel.y, x2=INNER, y2=panel.y + 2, color=theme.RULE)
-    panel.gap(20)
-    why = cs.fill(pic.get("why") or "", row)
-    if why:
-        panel.text(why, size=22, color=theme.INK)
-        panel.gap(18)
+        at = left.y
+        left.dot(x=13, y=at + 14, diameter=26, color=case_types.SUNSET)
+        left.ctext("!", x=13, y=at + 14, size=20)
+        left.text(text["title"], x=36, size=22, bold=True)
+        if text.get("why") and len(signs) == 1:
+            left.gap(2)
+            left.text(text["why"], x=36, size=20, color=theme.MUTED)
+        left.gap(6)
+    if len(signs) > len(shown):
+        left.text("Also recorded: " + ", ".join(signs[len(shown) :]), size=20, color=theme.MUTED)
+
+    # Right: what to do; the card's own "why" above it when the picture has room.
+    right = panels["right"]
+    actions = _Panel("right", right.width)
     if pic.get("actions"):
         title = cs.fill(pic.get("actions_title") or "", row)
         if title:
-            panel.text(title, size=24, bold=True, color=theme.DEEP_PURPLE)
-            panel.gap(8)
-        _numbered(panel, pic["actions"], color=case_types.SUNSET)
+            actions.text(title, size=22, bold=True, color=theme.DEEP_PURPLE)
+            actions.gap(6)
+        _numbered(actions, pic["actions"], color=case_types.SUNSET, size=20, dot=28)
+    why = cs.fill(pic.get("why") or "", row)
+    if why:
+        trial = _Panel("right", right.width)
+        trial.text(why, size=20, color=theme.INK)
+        trial.gap(16)
+        if trial.y + actions.y <= case_types.BODY:
+            right.rows, right.y = trial.rows, trial.y
+    for r in actions.rows:
+        right.add({**r, "y": r["y"] + right.y, **({"y2": r["y2"] + right.y} if "y2" in r else {})})
+    right.y += actions.y
 
 
 def caption(state: dict, series: list[dict]) -> str:

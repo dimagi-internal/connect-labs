@@ -140,28 +140,21 @@ def test_one_and_four_topics_draw_a_small_png(n):
     data = coach_image.render_png(_payload(n))
     image = Image.open(io.BytesIO(data))
     assert image.format == "PNG"
-    assert image.size[0] == coach_image.WIDTH
+    assert image.size == (coach_image.WIDTH, coach_image.HEIGHT)
     assert len(data) < 300 * 1024
 
 
-def test_one_topic_is_a_short_card_not_a_mostly_empty_portrait():
-    width, height = _size(_short(1))
-    assert width == coach_image.WIDTH
-    assert coach_image.MIN_HEIGHT <= height <= 700  # was 1350, mostly empty white
+@pytest.mark.parametrize("n", [1, 2, 3, 4, 5, 8])
+def test_the_card_is_landscape_whatever_the_number_of_topics(n):
+    # Portrait shrank the whole message bubble in Connect's messenger (#2413): every
+    # card fills the same 3:2 frame, its topics side by side.
+    assert _size(_short(n)) == (coach_image.WIDTH, coach_image.HEIGHT)
 
 
-def test_the_card_grows_with_each_topic():
-    heights = [_size(_short(n))[1] for n in (1, 2, 4, 8)]
-    assert heights == sorted(heights) and len(set(heights)) == 4
-    # Each topic adds the same block, so the card is sized by content, not padded.
-    assert heights[1] - heights[0] == (heights[3] - heights[2]) // 4
-
-
-def test_a_card_never_shrinks_below_the_minimum():
-    assert (
-        coach_image.MIN_HEIGHT
-        <= _size({"worker": "", "topics": [{"label": "x", "band": "red", "figure": "1"}]})[1]
-        < 600
+def test_a_card_with_no_name_and_no_counts_is_still_the_frame():
+    assert _size({"worker": "", "topics": [{"label": "x", "band": "red", "figure": "1"}]}) == (
+        coach_image.WIDTH,
+        coach_image.HEIGHT,
     )
 
 

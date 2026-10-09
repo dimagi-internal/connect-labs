@@ -14,7 +14,8 @@ from connect_labs.semantic import case_states as cs
 from connect_labs.workflow import actions
 from connect_labs.workflow import case_briefing as cb
 from connect_labs.workflow.actions import ActionError, commit, preview
-from connect_labs.workflow.coach_charts import case_chart, store
+from connect_labs.workflow.coach_charts import case_chart, case_types, render, store
+from connect_labs.workflow.coach_charts import types as chart_types
 from connect_labs.workflow.tests.test_coach_image import RUN, _definition
 
 PROPS = yaml.safe_load(
@@ -204,8 +205,8 @@ def test_a_case_preview_carries_the_registry_briefing_and_the_danger_card(user, 
     assert w["opening"].startswith("Hello Asha!")
     chart = store.get(w["image"]["chart"]["id"]).chart
     assert chart["type"] == "sign_card" and chart["params"] == {"case_state": DANGER}
-    texts = [r.get("text") for r in chart["datasets"]["case_text"]]
-    assert "Fast breathing" in texts and "Pus in eyes, skin or belly button" in texts
+    text = " ".join(r.get("text") or "" for r in chart["datasets"]["case_text"])  # lines wrap
+    assert "Fast breathing" in text and "Pus in eyes, skin or belly button" in text
     assert w["image"]["caption"] == chart["caption"]
     assert out["arguments"]["workers"][0]["case"]["case_state"] == DANGER
     assert out["confirm"]
@@ -361,3 +362,50 @@ def test_a_picture_naming_another_worker_is_refused():
             case_name="Binta's baby",
             others=[("Binta", "b10")],
         )
+
+
+# ---------------------------------------------------------------------------
+# Every coach picture is landscape
+# ---------------------------------------------------------------------------
+
+#: A drawable example of every picture type: case pictures from a registry case state,
+#: worker charts from a run's grading (test_coach_chart_data).
+CASE_PICTURES = {
+    "series_vs_reference": (THRIVING, ROW, WEIGHTS),
+    "series_highlight_step": ("case_state_weight_check", ROW, WEIGHTS),
+    "series_with_bars": ("case_state_faltering", ROW, WEIGHTS),
+    "sign_card": (DANGER, _danger_row(), VISITS),
+}
+WORKER_PICTURES = {
+    "topic_bars": {"type": "topic_bars"},
+    "peer_comparison": {"type": "peer_comparison", "params": {"topics": ["X1", "X2"]}},
+    "trend": {"type": "trend", "params": {"peers": True}},
+}
+
+
+@pytest.mark.parametrize("kind", sorted(set(case_types.CASE_TYPES) | set(chart_types.TYPES)))
+def test_every_coach_picture_is_landscape(kind):
+    """Connect's messenger caps a picture's height at half the message list and sizes
+    the bubble to the picture's width, so a portrait picture shrinks the whole bubble on
+    a phone (#2413). Every type -- a new one included: it needs an example above --
+    draws wider than tall, about 3:2."""
+    import io
+
+    from django.core.cache import cache
+    from PIL import Image
+
+    from connect_labs.workflow.coach_charts import chart as charts
+    from connect_labs.workflow.tests.test_coach_chart_data import _build
+
+    cache.clear()
+    if kind in CASE_PICTURES:
+        name, row, visits = CASE_PICTURES[kind]
+        state = next(s for s in CATALOG if s["name"] == name)
+        drawn = case_chart.build_case_chart(state, row, visits=visits, series=cs.case_series(PROPS), case_name="Baby")
+    else:
+        drawn = _build(WORKER_PICTURES[kind])
+    assert drawn["type"] == kind
+    width, height = Image.open(io.BytesIO(charts.png(drawn))).size
+    assert width > height and 1.3 <= width / height <= 1.8, (kind, width, height)
+    # Laid out to fill the frame, not a smaller drawing padded out to it.
+    assert (width, height) == (render.PNG_WIDTH, render.PNG_HEIGHT), kind
