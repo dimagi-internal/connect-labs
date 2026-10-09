@@ -44,7 +44,7 @@ def test_selecting_a_series_keeps_the_parts_its_indicators_are_built_from():
     names = {m["name"] for m in kmc["measures"]}
 
     ids = {m["meta"]["indicator"] for m in kmc["measures"] if m.get("meta")}
-    assert len(ids) == 30
+    assert len(ids) == 34
     # the pieces survive
     assert "pct_slow_growth_numerator" in names and "pct_slow_growth_denominator" in names
     assert "anyrec_weights" in names
@@ -112,6 +112,9 @@ def fixture_visits(db):
                 " DATE '2026-01-01', DATE '2026-01-01' - 2, 10042, %s)",
                 (baby, off, w, form, "asha" if baby == "b1" else "ravi"),
             )
+        from connect_labs.semantic.tests.parity_fixture import add_case_state_columns
+
+        add_case_state_columns(cur, "rt_fixture_visits")
     yield "SELECT * FROM rt_fixture_visits"
     with connection.cursor() as cur:
         cur.execute("DROP TABLE IF EXISTS rt_fixture_visits")
@@ -210,7 +213,7 @@ def test_the_measure_catalog_carries_what_a_renderer_needs_to_band_a_value():
 
     _, inds = load_registry("kmc")
     cat = {c["indicator"]: c for c in measure_catalog(filter_to_series(inds, "KMC"))}
-    assert len(cat) == 30
+    assert len(cat) == 34
 
     banded = [c for c in cat.values() if c["bands"]]
     unbanded = {c["indicator"] for c in cat.values() if not c["bands"]}
@@ -233,6 +236,11 @@ def test_the_measure_catalog_carries_what_a_renderer_needs_to_band_a_value():
         "weight_rounding_rate",
         "pct_enrollment_weight_credible",
         "pct_expected_dip",
+        # case-state counts: a number to plan coaching from, never a grade
+        "count_case_state_danger_unreferred",
+        "count_case_state_weight_check",
+        "count_case_state_faltering",
+        "count_case_state_thriving",
     }
     for c in banded:
         assert c["direction"] in {"higher", "lower", "mid2"}, c["indicator"]

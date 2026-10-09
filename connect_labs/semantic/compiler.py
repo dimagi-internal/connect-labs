@@ -553,13 +553,16 @@ _WORD = re.compile(r"[A-Za-z0-9_]+\Z")
 # Columns each series fragment can see. These CTEs are the compiler's own, so the
 # set is exact; see _build_ctes. The internal names (day, w, prev_w, ...) are a
 # contract with the registries that exist, and the entity key and value column are
-# the registry's own.
+# the registry's own. prev2_w / prev2_day are the reading before the previous one,
+# for a rule over three readings in a row (the same weight three times, say).
 def _day_collapse_columns(model: RegistryModel) -> frozenset[str]:  # weight_readings
     return frozenset({model.row_id, "day", model.value_column or "", "is_seed"}) - {""}
 
 
 def _derived_columns(model: RegistryModel) -> frozenset[str]:  # weight_seq
-    return frozenset({model.row_id, "day", "w", "is_seed", "prev_w", "prev_day", "series_day", "age_days"})
+    return frozenset(
+        {model.row_id, "day", "w", "is_seed", "prev_w", "prev_day", "prev2_w", "prev2_day", "series_day", "age_days"}
+    )
 
 
 # What base_m adds beyond the aggregates and series derivations (visit_agg's keys).
@@ -656,6 +659,30 @@ def _window_column_problems(spec: Any, label: str, kind: str) -> list[str]:
         problems.append(f"{label}.skip_null: must be true or false")
     if kind == "distance_from_previous" and "skip_null" in spec:
         problems.append(f"{label}.skip_null: not an option here -- visits without a GPS reading are always skipped")
+    return problems
+
+
+#: The text of a `labels` visit column's label: written into SQL as a literal by
+#: the engine, so plain words and punctuation only.
+LABEL_TEXT = re.compile(r"[A-Za-z0-9 ,.'()/-]{1,80}\Z")
+
+
+def _labels_problems(items: Any, label: str) -> list[str]:
+    if not isinstance(items, list) or not items or len(items) > 40:
+        return [f"{label}: must list 1 to 40 {{column, word, label}} entries"]
+    problems: list[str] = []
+    for i, item in enumerate(items):
+        where = f"{label}[{i}]"
+        if not isinstance(item, dict):
+            problems.append(f"{where}: must be a mapping of column, word and label")
+            continue
+        problems += _identifier_problem(item.get("column"), f"{where}.column")
+        word = item.get("word")
+        if not isinstance(word, str) or not _WORD.match(word):
+            problems.append(f"{where}.word: {word!r} must match ^[A-Za-z0-9_]+$")
+        text = item.get("label")
+        if not isinstance(text, str) or not LABEL_TEXT.match(text):
+            problems.append(f"{where}.label: {text!r} must be 1-80 letters, digits, spaces or ,.'()/-")
     return problems
 
 
@@ -760,6 +787,8 @@ def _model_problems(props_doc: dict[str, Any], constants: dict[str, Any]) -> lis
             if name in seen:
                 problems.append(f"{label}: declared twice")
             seen.add(name)
+            if "optional" in col and not isinstance(col["optional"], bool):
+                problems.append(f"{label}.optional: must be true or false")
             kinds = [k for k in VISIT_COLUMN_KINDS if k in col]
             if len(kinds) != 1:
                 problems.append(f"{label}: needs exactly one of {', '.join(VISIT_COLUMN_KINDS)}")
@@ -777,6 +806,8 @@ def _model_problems(props_doc: dict[str, Any], constants: dict[str, Any]) -> lis
                     problems.append(f"{label}.word_match.word: {word!r} must match ^[A-Za-z0-9_]+$")
             elif kinds == ["column"]:
                 problems += _identifier_problem(col["column"], f"{label}.column")
+            elif kinds == ["labels"]:
+                problems += _labels_problems(col["labels"], f"{label}.labels")
             else:
                 # Layer-1 columns are named by the pipeline, so only the shape can be
                 # checked; and there are no constants at Layer 1.
@@ -928,6 +959,12 @@ def validate_properties_doc(props_doc: dict[str, Any], llo_map: dict[Any, str] |
         problems.extend(
             _check_layer2_fragment(p.get("sql"), f"properties.{p['name']}", constants, columns=frozenset(visible))
         )
+
+    # Case states (a bool property's `case_state:` meta) and the per-visit case series.
+    from connect_labs.semantic import case_states
+
+    problems.extend(case_states.case_state_problems(props_doc, frozenset(visible)))
+    problems.extend(case_states.case_series_problems(props_doc))
     return problems
 
 
@@ -1257,6 +1294,8 @@ weight_seq AS (
     SELECT wd.{rid}, wd.day, wd.w, wd.is_seed,
            LAG(wd.w) OVER (PARTITION BY wd.{rid}, wd.is_seed ORDER BY wd.day) AS prev_w,
            LAG(wd.day) OVER (PARTITION BY wd.{rid}, wd.is_seed ORDER BY wd.day) AS prev_day,
+           LAG(wd.w, 2) OVER (PARTITION BY wd.{rid}, wd.is_seed ORDER BY wd.day) AS prev2_w,
+           LAG(wd.day, 2) OVER (PARTITION BY wd.{rid}, wd.is_seed ORDER BY wd.day) AS prev2_day,
            (wd.day - MIN(wd.day) FILTER (WHERE NOT wd.is_seed) OVER (PARTITION BY wd.{rid}))::int AS series_day,
            (wd.day - bf.first_visit_day)::int AS age_days
     FROM weight_days wd

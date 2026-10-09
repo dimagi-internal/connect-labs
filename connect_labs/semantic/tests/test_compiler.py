@@ -81,11 +81,16 @@ KMC_INDICATORS = {
     "pct_inconsistent",
     "pct_enrollment_weight_credible",
     "pct_expected_dip",
+    # case coaching: one count per case state (properties.yml, "Case states")
+    "count_case_state_danger_unreferred",
+    "count_case_state_weight_check",
+    "count_case_state_faltering",
+    "count_case_state_thriving",
 }
 
 
 def test_the_kmc_indicator_set_is_exactly_the_agreed_one(registry):
-    """All 30, and nothing else. Adding an indicator means adding it here too."""
+    """All 34, and nothing else. Adding an indicator means adding it here too."""
     ids = {m["meta"]["indicator"] for m in registry["measures"] if m.get("meta")}
     assert ids == KMC_INDICATORS
 

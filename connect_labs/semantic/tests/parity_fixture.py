@@ -76,6 +76,27 @@ CREATE TEMP TABLE {TABLE} (
 """
 
 
+#: The visit columns the KMC registry's case states read (properties.yml, "Case
+#: states"). A fixture that hands the compiler its own Layer 1 must carry every
+#: registry visit column; these are added to each fixture table after it loads.
+CASE_STATE_COLUMNS = (
+    ("referred_no", "boolean", "NULL"),
+    ("danger_signs", "text", "NULL"),
+    ("visit_weight_g", "double precision", "weight_g"),
+    ("skin_to_skin_h", "double precision", "NULL"),
+    ("referral_text", "text", "NULL"),
+    ("entity_name", "text", "NULL"),
+)
+
+
+def add_case_state_columns(cur, table: str) -> None:
+    """Add the case-state visit columns to a loaded fixture table."""
+    for name, kind, value in CASE_STATE_COLUMNS:
+        cur.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {name} {kind}")
+        if value != "NULL":
+            cur.execute(f"UPDATE {table} SET {name} = {value}")
+
+
 def fixture_rows() -> list[tuple]:
     base = dt.date(2026, 1, 1)
     rows = []
@@ -138,6 +159,7 @@ def load(conn) -> str:
     cur.execute(DDL)
     placeholders = ", ".join(["%s"] * 18)
     cur.executemany(f"INSERT INTO {TABLE} VALUES ({placeholders})", fixture_rows())
+    add_case_state_columns(cur, TABLE)
     conn.commit()
     return f"SELECT * FROM {TABLE}"
 
