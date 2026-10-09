@@ -50,6 +50,7 @@ from fastmcp.server.auth import AccessToken, TokenVerifier
 from fastmcp.server.dependencies import get_access_token, get_context, get_http_headers
 from fastmcp.server.middleware import Middleware
 from fastmcp.tools import Tool, ToolResult
+from mcp.types import ToolAnnotations
 
 from connect_labs.audit_trail.context import audit_context, get_audit_context
 from connect_labs.labs.integrations.connect.api_client import LabsAPIError
@@ -616,6 +617,9 @@ def _build_registry_tools() -> list[RegistryTool]:
                 description=spec.description,
                 parameters=spec.input_schema,
                 meta=spec.meta,
+                # MCP's standard read-only hint, from the registry's own write flag: a host
+                # (canopy) records a person's call from a View only when it changes something.
+                annotations=ToolAnnotations(readOnlyHint=not spec.is_write),
                 spec=spec,
             )
         )
