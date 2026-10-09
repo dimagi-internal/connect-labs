@@ -12,7 +12,8 @@ a block inside an include cannot fill the parent's.
 {% if supply_as_of_available %}
   {% if supply_as_of and as_of_part != "form" %}
     <div class="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex flex-wrap items-center gap-x-4 gap-y-1" data-as-of-banner data-testid="as-of-banner">
-      <span><strong>Viewing as of {{ supply_as_of|date:'j M Y' }} — read-only.</strong> Nothing here can be changed while you look at the past.</span>
+      <span><strong>Viewing as of {{ supply_as_of|date:'j M Y' }} — read-only.</strong>
+        {% if supply_as_of_basis == "happened" %}<span data-testid="as-of-basis">Stock is what had happened by that day; places are as they are today.</span>{% else %}<span data-testid="as-of-basis">Records as they stood that evening.</span>{% endif %}</span>
       <a data-as-of-exempt class="font-medium underline underline-offset-2 hover:text-amber-950" href="{{ request.path }}">Back to today</a>
     </div>
   {% endif %}

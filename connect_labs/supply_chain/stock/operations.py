@@ -28,6 +28,16 @@ from connect_labs.supply_chain.stock.services import ledger, network, resupply, 
 
 _DATE = {"type": "string", "format": "date"}
 
+
+def _day(value):
+    """An `as_of` argument -- an ISO string from a caller, or a date from a page -- as a date, or None."""
+    from datetime import date
+
+    if value is None or isinstance(value, date):
+        return value
+    return date.fromisoformat(value)
+
+
 _SUPPLY_POINT_DATA = _data_with(
     ("slug", "name", "kind", "source"),
     slug={"type": "string", "minLength": 1},
@@ -183,15 +193,16 @@ def supply_point_upsert(access, data):
             "item_id": ID,
             "kind": {"enum": list(records.MOVEMENT_KINDS)},
             "since": _DATE,
+            "as_of": _DATE,
             "limit": {"type": "integer", "minimum": 1, "maximum": 2000},
         }
     ),
 )
-def movement_list(access, supply_point_id=None, item_id=None, kind=None, since=None, limit=500):
+def movement_list(access, supply_point_id=None, item_id=None, kind=None, since=None, as_of=None, limit=500):
     rows = [
         record(m)
         for m in access.list_movements(
-            supply_point_id=supply_point_id, item_id=item_id, kind=kind, since=since, limit=limit
+            supply_point_id=supply_point_id, item_id=item_id, kind=kind, since=since, until=as_of, limit=limit
         )
     ]
     # A visit's movement is described by the form it came from, which a person recognises;
@@ -396,13 +407,14 @@ def distribution_record(access, data):
         "unconfirmed."
     ),
     input_schema=obj(
-        {"supply_point_id": ID, "item_id": ID, "unit": {"type": "string"}}, required=("supply_point_id",)
+        {"supply_point_id": ID, "item_id": ID, "unit": {"type": "string"}, "as_of": _DATE},
+        required=("supply_point_id",),
     ),
 )
-def stock_on_hand(access, supply_point_id, item_id=None, unit=None):
+def stock_on_hand(access, supply_point_id, item_id=None, unit=None, as_of=None):
     point = access._require_supply_point(supply_point_id)
     item = access._resolve_item(item_id)
-    result = soh.stock_on_hand(access.program_id, point, item=item, unit=unit)
+    result = soh.stock_on_hand(access.program_id, point, item=item, unit=unit, on_date=_day(as_of))
     return {
         "supply_point_id": point.pk,
         "ledger": figure(result["ledger"]),
@@ -507,13 +519,16 @@ def resupply_plan(access, supply_point_id, item_id=None, window_days=resupply.DE
             "opportunity_id": ID,
             "item_id": ID,
             "kind": {"enum": list(records.SUPPLY_POINT_KINDS)},
+            "as_of": _DATE,
             "window_days": {"type": "integer", "minimum": 1, "maximum": 730},
         }
     ),
 )
-def network_stock(access, opportunity_id=None, item_id=None, kind=None, window_days=resupply.DEFAULT_WINDOW_DAYS):
+def network_stock(
+    access, opportunity_id=None, item_id=None, kind=None, as_of=None, window_days=resupply.DEFAULT_WINDOW_DAYS
+):
     return network_stock_payload(
-        access, opportunity_id=opportunity_id, item_id=item_id, kind=kind, window_days=window_days
+        access, opportunity_id=opportunity_id, item_id=item_id, kind=kind, as_of=_day(as_of), window_days=window_days
     )
 
 
@@ -525,6 +540,7 @@ def network_stock_payload(
     window_days=resupply.DEFAULT_WINDOW_DAYS,
     several_items="summed",
     per_point=False,
+    as_of=None,
 ):
     """The network_stock operation's answer. `several_items="refuse"` is the Stock page's (network.network_stock)."""
     item = access._resolve_item(item_id)
@@ -533,6 +549,7 @@ def network_stock_payload(
         opportunity_id=opportunity_id,
         item=item,
         kind=kind,
+        on_date=as_of,
         window_days=window_days,
         several_items=several_items,
         per_point=per_point,

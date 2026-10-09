@@ -551,11 +551,6 @@ function WorkflowUI({
         <div>
           <div className="text-sm font-semibold text-gray-900 mb-2">
             Behind them: the stores
-            {asOf && (
-              <span className="ml-1 font-normal text-gray-500">
-                {'— today, not ' + day(asOf)}
-              </span>
-            )}
           </div>
           <div className="rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
             {storeRows.map(function (s) {

@@ -406,6 +406,19 @@ if settings.DEBUG:
 # as_of to its supply sources itself), the dev login and the old-URL redirect.
 _LIVE_PREFIXES = ("market/", "u/", "api/", "portfolios/", "map/", "views/", "dev-login/")
 
+# The stock pages: a past day means what had HAPPENED by then, read live with
+# the day passed to every stock read, not what the records said that evening
+# (history/as_of.py, #2343). Exact routes: the forms and dispensing rules under
+# stock/ are records, and rewind like every other record.
+_HAPPENED_ROUTES = {
+    "network/",
+    "stock/",
+    "stock/movements/",
+    "workers/",
+    "workers/<int:supply_point_id>/",
+    "flow/",
+}
+
 
 def _is_live(pattern, prefix="") -> bool:
     route = prefix + str(pattern.pattern).lstrip("^")
@@ -421,7 +434,8 @@ def _wrap(pattern, prefix=""):
             _wrap(child, prefix + str(pattern.pattern).lstrip("^"))
         return pattern
     if not _is_live(pattern, prefix):
-        pattern.callback = as_of_view(pattern.callback)
+        route = prefix + str(pattern.pattern).lstrip("^")
+        pattern.callback = as_of_view(pattern.callback, rewind=route not in _HAPPENED_ROUTES)
     return pattern
 
 

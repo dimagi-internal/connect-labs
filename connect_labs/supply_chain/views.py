@@ -1086,6 +1086,8 @@ class StockView(OperationBase):
             opportunity_id=int(opportunity_id) if opportunity_id else None,
             item_id=context["item_id"],
             several_items="refuse",
+            # Live, as of the header's day: stock is dated by when it happened (history/as_of.py).
+            as_of=getattr(self.request, "supply_as_of", None),
         )
         from connect_labs.supply_chain.stock.services.resupply import NO_CONSUMPTION_YET
 
@@ -1179,9 +1181,13 @@ class MovementsView(OperationBase):
         context["point"] = points.get(point_id)
         context["points"] = {pk: p["name"] for pk, p in points.items()}
         context["item"] = next((i for i in self.op("item_list") if i["id"] == item_id), None) if item_id else None
+        # Live, as of the header's day: the movements that had happened by then (history/as_of.py).
+        as_of = getattr(self.request, "supply_as_of", None)
+        day = {"as_of": as_of.isoformat()} if as_of else {}
         context["movements"] = self.op(
             "movement_list",
             **{k: v for k, v in (("supply_point_id", point_id), ("item_id", item_id)) if v is not None},
+            **day,
         )
         # Each receipt by the note number people use for it, and its order.
         receipts = self.op("receipt_list", supply_point_id=point_id) if point_id is not None else []
@@ -1201,7 +1207,7 @@ class MovementsView(OperationBase):
         if point_id is not None and item_id is not None and context["movements"]:
             units = {m.get("quantity_unit") for m in context["movements"]}
             unit = units.pop() if len(units) == 1 else None
-            on_hand = self.op("stock_on_hand", supply_point_id=point_id, item_id=item_id, unit=unit)
+            on_hand = self.op("stock_on_hand", supply_point_id=point_id, item_id=item_id, unit=unit, **day)
             context["balance"] = on_hand.get("ledger")
         return context
 
