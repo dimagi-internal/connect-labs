@@ -270,7 +270,7 @@
   <body>
     <main id="app" aria-live="polite">
       <h1 id="title">Preparing the preview…</h1>
-      <p class="sub" id="subtitle">Nothing is sent until you click Send.</p>
+      <p class="sub" id="subtitle"></p>
       <div id="notes"></div>
       <div id="workers"></div>
       <div id="qa" class="qa hidden">
@@ -706,7 +706,14 @@
 
         function workerCard(w) {
           var text = [];
-          if (w.briefing && w.briefing.topics && w.briefing.topics.length) {
+          var pictured = !!(w.image && w.image.data_uri);
+          // The picture shows the topics; listing them again only makes the card busier.
+          if (
+            !pictured &&
+            w.briefing &&
+            w.briefing.topics &&
+            w.briefing.topics.length
+          ) {
             text.push(h('div', { class: 'label', text: 'The coach raises' }));
             text.push(topicList(w.briefing.topics));
           }
@@ -736,7 +743,6 @@
                 src: w.image.data_uri,
                 alt: w.image.caption || "A picture of the worker's figures",
               }),
-              h('figcaption', { text: 'Sent with the conversation.' }),
             ]);
           } else if (w.image && w.image.omitted) {
             side = h('div', {
@@ -772,16 +778,19 @@
             subtitle = el('subtitle');
 
           if (state.previewing && !p) {
-            title.textContent = 'Preparing the preview…';
-            subtitle.textContent = 'Nothing is sent until you click Send.';
+            title.textContent = 'Preparing…';
+            subtitle.textContent = '';
           } else if (p) {
-            title.textContent = p.summary || p.label || 'Preview';
+            var one =
+              p.workers && p.workers.length === 1 ? p.workers[0].name : '';
+            title.textContent =
+              p.sent_by === 'click' && one
+                ? 'Coach ' + one
+                : p.summary || p.label || 'Preview';
             subtitle.textContent =
-              state.outcome === 'sent'
+              p.sent_by === 'click'
                 ? ''
-                : p.sent_by === 'click'
-                  ? 'Nothing is sent until you click Send.'
-                  : 'The agent confirms this one with you in the chat.';
+                : 'The agent confirms this one with you in the chat.';
           }
 
           if (errorText) {
@@ -803,11 +812,11 @@
                 text: 'You can see this preview but cannot send it from here.',
               }),
             );
-          if (p && p.synthetic)
+          if (p && p.synthetic && !p.deliver_to)
             notes.appendChild(
               h('div', {
                 class: 'note',
-                text: p.synthetic_note || 'Synthetic data: no message is sent.',
+                text: 'Synthetic data: sending to the worker only attaches a sample conversation.',
               }),
             );
           if (p && p.deliver_to)
@@ -819,10 +828,6 @@
                   p.deliver_to +
                   ', not to the worker.',
               }),
-            );
-          if (p && p.bot && p.bot.name)
-            notes.appendChild(
-              h('div', { class: 'note', text: 'Coach: ' + p.bot.name }),
             );
           if (p && p.skipped && p.skipped.length)
             notes.appendChild(
@@ -1063,7 +1068,8 @@
         function renderHistory(p) {
           var list = el('history');
           list.textContent = '';
-          var items = (p && p.executions) || [];
+          // Earlier sends are not this card's business: the run page lists them.
+          var items = [];
           if (!items.length || state.outcome === 'sent') {
             list.classList.add('hidden');
             return;
