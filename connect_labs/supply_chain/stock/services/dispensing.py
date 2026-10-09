@@ -135,6 +135,85 @@ def validate_reports(reports) -> dict:
     return clean
 
 
+LOST_AFTER_DAYS = 21
+
+
+def _values(values, what) -> list[str]:
+    if not isinstance(values, list | tuple) or not values:
+        raise ValueError(f"{what} needs at least one answer")
+    clean = [str(value).strip() for value in values]
+    if not all(clean):
+        raise ValueError(f"{what}: an answer cannot be blank")
+    return clean
+
+
+def validate_cases(cases) -> dict:
+    """What a CASE is on this opportunity, as it will be stored; {} for none.
+
+    A case is the visit's `entity_id`. It is ENROLLED by a visit on one of
+    `enrol.forms` whose answer at `enrol.path` is `enrol.equals`; its latest
+    answer at `outcome.path` says whether it is still `open` or has made an
+    `exit`, and the exits that mean the course was finished are `complete`
+    (what a measured course length is read from). A case not seen for
+    `lost_after_days` is lost, whatever it last said. Read by the stock
+    forecast; nothing here changes what the ledger posts.
+    """
+    if not cases:
+        return {}
+    enrol, outcome = cases.get("enrol") or {}, cases.get("outcome") or {}
+    if not enrol or not outcome:
+        raise ValueError("a case rule needs both `enrol` and `outcome`")
+    if not str(enrol.get("equals") or "").strip():
+        raise ValueError("enrol.equals is the answer that enrols a case, and cannot be blank")
+    clean_enrol = {
+        "forms": _forms(enrol.get("forms") or [], "enrol.forms"),
+        "path": _paths([enrol.get("path")], "enrol.path")[0],
+        "equals": str(enrol["equals"]).strip(),
+    }
+    open_, exits = _values(outcome.get("open"), "outcome.open"), _values(outcome.get("exit"), "outcome.exit")
+    both = sorted(set(open_) & set(exits))
+    if both:
+        raise ValueError(f"outcome {', '.join(both)} cannot be both open and an exit")
+    complete = [str(value).strip() for value in outcome.get("complete") or []]
+    stray = sorted(set(complete) - set(exits))
+    if stray:
+        raise ValueError(f"outcome.complete must be exits; {', '.join(stray)} is not one")
+    lost = cases.get("lost_after_days", LOST_AFTER_DAYS)
+    if isinstance(lost, bool) or not isinstance(lost, int) or not 1 <= lost <= 365:
+        raise ValueError("lost_after_days must be a whole number of days from 1 to 365")
+    return {
+        "enrol": clean_enrol,
+        "outcome": {
+            "path": _paths([outcome.get("path")], "outcome.path")[0],
+            "open": open_,
+            "exit": exits,
+            "complete": complete,
+        },
+        "lost_after_days": lost,
+    }
+
+
+def form_matches(forms, form_json) -> bool:
+    """Whether this visit's form is one of `forms` (xmlns or name, as a line's `forms`); no filter is every form."""
+    return not forms or bool(_form_identity(form_json) & set(forms))
+
+
+def case_answers(cases, form_json) -> dict:
+    """{path: raw answer} a case rule reads off one visit: the enrolment (on its own forms only) and the outcome."""
+    if not cases:
+        return {}
+    found = {}
+    enrol = cases["enrol"]
+    if form_matches(enrol["forms"], form_json):
+        value = _answer(form_json, enrol["path"])
+        if value is not None:
+            found[enrol["path"]] = value
+    value = _answer(form_json, cases["outcome"]["path"])
+    if value is not None:
+        found[cases["outcome"]["path"]] = value
+    return found
+
+
 DISPENSED = "dispensed"
 NOTHING_GIVEN = "nothing_given"
 NO_ANSWER = "no_answer"
