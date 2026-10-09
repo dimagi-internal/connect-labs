@@ -176,16 +176,19 @@ The dashboard is organised into the following views:
 A summary of what is currently with field workers, expressed in sachets and in children's courses; how much has been given out (with the share that sits on visits not yet approved broken out separately); and the daily rate at which stock is going out.
 
 **Runway**
-One bar per worker, sorted so the worker who will run out soonest appears first. Each bar shows the worker's projected run-out date based on their own pace over the last 14 days, and their most recent count against the ledger.
+One bar per worker, sorted so the worker who will run out soonest appears first. Each bar shows the worker's projected run-out date based on their own pace over the **last 14 days**, their most recent count against the ledger, and a short label confirming the window used — for example, "last 14 days" or "last 9 days" for a worker who started recently. A worker who has nothing left and has given nothing out in the last 14 days is shown as stocked out rather than as unknown.
 
 **Does it add up?**
 A reconciliation table showing, for each worker: stock issued, stock given out, what the ledger says they hold, what they actually counted, the gap between the ledger and the count, visits that did not record a stock figure, and the share of transactions sitting on unapproved visits.
 
 **A worker's history**
-Click any worker to open a day-by-day view of their stock movements and counts.
+Click any worker to open a day-by-day view of their stock movements and counts. The pace shown here — days to stock-out and sachets per day — is based on the **last 14 days** and is labelled accordingly, for example "5 sachets a day · last 14 days".
 
 **The stores behind them**
-Stock held in the stores that supply the workers, shown in sachets with cartons alongside.
+Stock held in the stores that supply the workers, shown in sachets with cartons alongside. Store pace figures use the **last 90 days**, because store demand arrives in larger, less frequent collections such as monthly distributions. Their labels read "last 90 days".
+
+!!! note "One pace figure per worker, everywhere"
+    Every page in the Supply Stock Review — the Runway view, the Workers list, and an individual worker's page — now uses the same 14-day window to calculate a field worker's pace. Previously, the Stock review used 14 days while the Workers list and a worker's page used up to 90, so the same worker could show different "days left" figures depending on which tab you were on. The figures are now consistent across all views.
 
 #### Viewing past dates in the Supply Stock Review
 
@@ -213,24 +216,4 @@ Three links appear on the page:
 | Link | What it does |
 |---|---|
 | **Edit workflow** | Opens the workflow's editor. Because the tab only points at the workflow, any change you make there shows up immediately in the tab. |
-| **Open as a workflow** | Opens the workflow on its own full page, outside the supply pages. |
-| **Classic … view** | Opens the original built-in page that this tab replaced. The built-in page still exists and is accessible this way. |
-
-!!! note "Pinning a workflow to a supply tab is an admin task"
-    Setting up which workflow appears on which tab is done through programme configuration. If you need a workflow added to or removed from a supply tab, contact your programme administrator.
-
-### IPTsc School Delivery Dashboard
-
-The **IPTsc School Delivery Dashboard** includes an **Authenticity** tab and a **Duplicates** tab for identifying possible duplicate child registrations.
-
-#### Duplicate checks on the Authenticity tab
-
-Three checks run automatically against the registrations in the dashboard:
-
-| Check | What is matched | Raises a flag on the field worker? |
-|---|---|---|
-| Same name, same school | Name only | No — shown for information only, because common names make this check loose |
-| Same name, same age, same school | Name and age | Yes |
-| Same name, same age, same caregiver phone, same school | Name, age, and caregiver phone | Yes |
-
-Each
+| **Open as a workflow** | Opens the workflow on its own full page
