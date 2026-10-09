@@ -189,11 +189,21 @@ function WorkflowUI({
   // visit" -- extracted as a named function since the UAT Comparison tab
   // also needs it (to split a FLW's full history into UAT vs. pre-UAT),
   // not just the displayRows filter below.
+  //
+  // Gates on where_is_the_visit_being_conducted -- a required, unconditional
+  // question on any form version with the block, present no matter which
+  // location the FLW picked. visit_location_has_prev_home_gps was used here
+  // previously, but its own CommCare `relevant` condition is
+  // where_is_the_visit_being_conducted = 'mothers_home' -- it's blank for
+  // EVERY health-facility/other visit even when that visit's other methods
+  // (QR, signature, ANC card, birth certificate, mother questions) were
+  // fully captured, which silently dropped every non-home visit from the
+  // whole dashboard and miscounted it as pre-UAT on the UAT Comparison tab.
   function hasVerificationData(row) {
     return (
-      row.visit_location_has_prev_home_gps !== null &&
-      row.visit_location_has_prev_home_gps !== undefined &&
-      row.visit_location_has_prev_home_gps !== ''
+      row.where_is_the_visit_being_conducted !== null &&
+      row.where_is_the_visit_being_conducted !== undefined &&
+      row.where_is_the_visit_being_conducted !== ''
     );
   }
 
@@ -1616,7 +1626,7 @@ function WorkflowUI({
   var DEFINITION_SECTIONS = [
     {
       title: 'Which visits appear in this report',
-      body: "A visit only shows up if ALL are true: (1) it's from the CommCare domain(s) selected in the \"CommCare domain\" toggle at the top (Production only by default), (2) the FLW who conducted it is a commcare-user case with the property visit_verification set to 'yes' in that same domain, (3) the visit's form has the verification block at all, detected via visit_location_has_prev_home_gps being present/non-blank, and (4) if the \"Exclude visits that happened with registration\" checkbox is on (the default), it is not that mother's first visit AND conducted immediately at registration. Visits from FLWs not flagged for verification, from a domain not selected in the toggle, or submitted before the verification questions existed on that form, are excluded entirely -- not shown as blank rows. This gate applies dashboard-wide -- every tab (Verification Summary, Per FLW Verification View, Failed Verification Analysis) reads from the same filtered set, same as the domain and eligibility gates.",
+      body: "A visit only shows up if ALL are true: (1) it's from the CommCare domain(s) selected in the \"CommCare domain\" toggle at the top (Production only by default), (2) the FLW who conducted it is a commcare-user case with the property visit_verification set to 'yes' in that same domain, (3) the visit's form has the verification block at all, detected via where_is_the_visit_being_conducted being present/non-blank (a required, unconditional question on any form version with the block, present regardless of which location was chosen -- NOT visit_location_has_prev_home_gps, which is blank for every health-facility/other visit by the form's own design), and (4) if the \"Exclude visits that happened with registration\" checkbox is on (the default), it is not that mother's first visit AND conducted immediately at registration. Visits from FLWs not flagged for verification, from a domain not selected in the toggle, or submitted before the verification questions existed on that form, are excluded entirely -- not shown as blank rows. This gate applies dashboard-wide -- every tab (Verification Summary, Per FLW Verification View, Failed Verification Analysis) reads from the same filtered set, same as the domain and eligibility gates.",
       items: [
         {
           name: 'Domain filter',
