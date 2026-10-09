@@ -684,17 +684,17 @@
     var y2 = r.second_year_only;
     if (y2)
       points.push(
-        'Aimed at 12–24-month-olds only, the same money does better: <b>' +
+        'Aimed at 12–24-month-olds only, each dollar does a little more: <b>' +
           esc(y2.label.toLowerCase()) +
           '</b> in ' +
           y2.keep.length +
           ' states gets ' +
           times(y2.multiple_of_benchmark) +
-          ' (' +
+          ', ' +
           num(y2.deaths_averted_per_year) +
           ' deaths for ' +
           usdShort(y2.spend_per_year) +
-          '). Babies under one would then rely on clinic-based PMC.',
+          '. Babies under one would then rely on clinic-based PMC.',
       );
     var rows = r.states
       .map(function (x) {
