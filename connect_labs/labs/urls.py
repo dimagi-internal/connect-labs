@@ -7,7 +7,7 @@ from connect_labs.labs.integrations.commcare import oauth_views as commcare_oaut
 from connect_labs.labs.integrations.connect import oauth_views as connect_oauth_views
 from connect_labs.labs.integrations.ocs import oauth_views as ocs_oauth_views
 from connect_labs.mcp import token_views as mcp_token_views
-from connect_labs.workflow import coach_image_views
+from connect_labs.workflow import coach_image_views, page_views
 
 app_name = "labs"
 
@@ -85,6 +85,10 @@ urlpatterns = [
     path("api/analysis/flw/", analysis_views.FLWAnalysisAPIView.as_view(), name="api_flw_analysis"),
     # Workflow (includes pipeline functionality)
     path("workflow/", include("connect_labs.workflow.urls", namespace="workflow")),
+    # Pages: workflows with no runs, at addresses naming their scope (workflow/page_views.py).
+    # Before the old card pages below, whose `p/<slug>/` would otherwise never see these.
+    path("p/<str:scope_type>/<str:scope_key>/", page_views.PageView.as_view(), name="page_home"),
+    path("p/<str:scope_type>/<str:scope_key>/<slug:page>/", page_views.PageView.as_view(), name="page"),
     # Pages (configurable card landing pages)
     path("p/", include("connect_labs.pages.urls", namespace="pages")),
     # Settings: how an organisation, programme or opportunity has set labs up (scope_config/)

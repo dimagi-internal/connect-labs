@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+
+{% comment %}A scope with no home page set (workflow/page_views.py): say so, and where to set one.{% endcomment %}
+
+{% block title %}{{ scope_label|capfirst }}{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto px-4 py-10" data-testid="labs-page-none">
+  <h1 class="text-2xl font-bold text-brand-indigo mb-2">{{ scope_label|capfirst }}</h1>
+  <p class="text-sm text-gray-600">No home page is set here yet. A home page is a page workflow chosen in Settings.</p>
+  <div class="flex flex-wrap gap-3 mt-4 text-sm">
+    <a href="{% url 'labs:overview' %}" class="px-3 py-1.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50 text-gray-700">Labs overview</a>
+    <a href="{{ settings_url }}" class="px-3 py-1.5 rounded-md border border-brand-indigo text-brand-indigo hover:bg-gray-50">Settings</a>
+  </div>
+</div>
+{% endblock %}
