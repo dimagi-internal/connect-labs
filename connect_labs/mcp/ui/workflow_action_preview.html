@@ -512,18 +512,21 @@
             function (p) {
               state.previewing = false;
               state.preview = p;
-              render();
               // "Send test" is one click: preview to that username, then send what came back.
+              // When it cannot send (e.g. Open Chat Studio is not connected), stop and redraw,
+              // so the button never sits on "Sending…" and the reason shows beside it.
+              var wanted = state.autoSend;
+              state.autoSend = false;
               if (
-                state.autoSend &&
+                wanted &&
                 p &&
                 p.deliver_to === state.deliverTo &&
                 p.confirm
               ) {
-                state.autoSend = false;
                 send();
+                return;
               }
-              state.autoSend = false;
+              render();
             },
             function (err) {
               state.previewing = false;
@@ -940,8 +943,41 @@
           var ready = !!p.confirm && !(p.needs && p.needs.length);
           var idle = state.canAct && !state.busy && !state.previewing;
           if (state.qaMode) {
-            // One thing to do here: type a username and Send test. Nothing else shows.
+            // One thing to do here: type a username and Send test. Nothing else shows --
+            // except what stops it sending, beside the button rather than at the top.
             qa.classList.remove('hidden');
+            if (p.deliver_to && p.needs && p.needs.length) {
+              var ocs = p.needs.indexOf('connect_ocs') >= 0;
+              var why = h('div', { class: 'note warn', role: 'alert' }, [
+                ocs
+                  ? 'Connect Open Chat Studio in Labs first, then Send test again. '
+                  : 'This test send needs a choice of coach first (see above). ',
+              ]);
+              if (
+                ocs &&
+                p.connect_url &&
+                p.connect_url.indexOf('https://') === 0
+              )
+                why.appendChild(
+                  h('a', {
+                    class: 'link',
+                    tabindex: '0',
+                    text: 'Connect it',
+                    onclick: function () {
+                      openLink(p.connect_url);
+                    },
+                  }),
+                );
+              box.appendChild(why);
+            } else if (p.deliver_to && !p.confirm && !state.previewing) {
+              box.appendChild(
+                h('div', {
+                  class: 'note warn',
+                  role: 'alert',
+                  text: 'Labs could not prepare this test send. Check the notes above, or try again.',
+                }),
+              );
+            }
             var qaSend = el('qa-send');
             qaSend.textContent =
               state.busy || state.autoSend || state.previewing
