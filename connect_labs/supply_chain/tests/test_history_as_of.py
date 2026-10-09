@@ -515,3 +515,81 @@ class TestUnwrappedRoutes:
             assert name in wrapped, name
         for name in ("market", "market_tender", "market_bid", "update_link_public", "api_operation"):
             assert name in by_name and name not in wrapped, name
+
+    def test_every_route_named_as_reading_what_happened_exists(self):
+        from connect_labs.supply_chain.urls import _HAPPENED_ROUTES, urlpatterns
+
+        assert _HAPPENED_ROUTES <= {str(p.pattern) for p in urlpatterns}
+        assert "stock/dispensing/" not in _HAPPENED_ROUTES  # rules are records, and rewind
+
+
+@pytest.fixture
+def ledger(da, world):
+    """A store with 100 sachets from 1 Jan, then two consumptions recorded on 1 Mar:
+    30 that happened on 10 Jan (a late sync) and 20 that happened on 10 Feb."""
+    store = op(
+        da,
+        "supply_point_upsert",
+        T0,
+        data={"slug": "asof-store", "name": "Asof store", "kind": "central_store", "source": "we_recorded"},
+    )
+    lines = (
+        (T0, "adjustment", "2026-01-01", "to_supply_point_id", "100"),
+        (T2, "consumption", "2026-01-10", "from_supply_point_id", "30"),
+        (T2, "consumption", "2026-02-10", "from_supply_point_id", "20"),
+    )
+    for when, kind, occurred_on, side, quantity in lines:
+        op(
+            da,
+            "movement_record",
+            when,
+            data={
+                "kind": kind,
+                "occurred_on": occurred_on,
+                side: store["id"],
+                "commodity_slug": "rutf",
+                "quantity": quantity,
+                "quantity_unit": "sachet",
+                "source": "we_recorded",
+            },
+        )
+    return store
+
+
+@pytest.mark.django_db
+class TestStockPagesCountWhatHappened:
+    """#2343: a stock page on a past day shows what had HAPPENED by then, not what
+    had been recorded -- a visit made before the day but synced after it counts."""
+
+    @staticmethod
+    def _on_hand(response, store):
+        point = next(p for p in response.context["network"]["points"] if p["supply_point_id"] == store["id"])
+        return float(point["on_hand"]["amount"])
+
+    def test_stock_counts_a_movement_that_happened_before_the_day_but_was_recorded_after(
+        self, client_in_program, ledger
+    ):
+        with mock.patch("connect_labs.supply_chain.history.as_of.rewind") as rewind:
+            past = client_in_program.get(reverse("supply_chain:stock"), {"as_of": BETWEEN_T0_T1})
+        assert past.status_code == 200
+        assert rewind.call_count == 0  # read live, dated by when things happened
+        assert self._on_hand(past, ledger) == 70  # 100 less the 10 Jan visit, not the 10 Feb one
+        assert self._on_hand(client_in_program.get(reverse("supply_chain:stock")), ledger) == 50
+
+    def test_movements_lists_only_what_had_happened_by_the_day(self, client_in_program, ledger):
+        past = client_in_program.get(
+            reverse("supply_chain:movements"), {"as_of": BETWEEN_T0_T1, "supply_point_id": ledger["id"]}
+        )
+        assert sorted(m["occurred_on"] for m in past.context["movements"]) == ["2026-01-01", "2026-01-10"]
+
+    def test_each_page_says_which_past_it_shows(self, client_in_program, ledger, world):
+        stock = client_in_program.get(reverse("supply_chain:stock"), {"as_of": BETWEEN_T0_T1})
+        order = client_in_program.get(
+            reverse("supply_chain:order_detail", args=[world["order"]["id"]]), {"as_of": BETWEEN_T0_T1}
+        )
+        assert "Stock is what had happened by that day" in stock.content.decode()
+        assert "Records as they stood that evening" in order.content.decode()
+
+    def test_a_write_to_a_stock_page_under_as_of_is_still_refused(self, client_in_program, ledger):
+        response = client_in_program.post(f"{reverse('supply_chain:stock')}?as_of={BETWEEN_T0_T1}")
+        assert response.status_code == 405
