@@ -647,6 +647,17 @@ def workflow_action_preview_view(
             from connect_labs.workflow.actions import find_action
 
             kind = find_action(r.definition, action)["type"]
+            if kind in CLICK_TO_SEND_TYPES and not r.delegated and not args.get(DELIVER_TO):
+                # Hosts hide this tool from the agent, but a client on a person's own token
+                # (an agent's direct MCP connection) can name it anyway. Off canopy it may only
+                # preview a QA send: reaching a WORKER takes a click, on canopy's card or the
+                # Labs page's own button.
+                raise MCPToolError(
+                    "PERMISSION_DENIED",
+                    "A coaching conversation reaches a worker only by a person's click: the Send "
+                    "button on canopy's card, or Start coaching on the Labs page. Off canopy, this "
+                    "tool previews a QA send only (`deliver_to`).",
+                )
             if kind in CLICK_TO_SEND_TYPES:
                 # What the View shows is what is sent: the picture goes with the conversation.
                 args[INCLUDE_IMAGE] = True
