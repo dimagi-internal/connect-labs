@@ -2527,6 +2527,51 @@ def pipeline_rows_api(request, definition_id):
             wf_access.close()
 
 
+@login_required
+@require_GET
+def case_story_api(request, definition_id):
+    """ONE case's coaching story (``case_coaching.py``), read as the viewer: what a case
+    panel needs to offer "Coach about this baby". Params: ``rows_opportunity_id`` (the
+    case's opportunity, one the workflow spans) and ``case_id``. Answers ``{story,
+    label, facts, username}``, ``story`` null when the visits tell none (or the workflow
+    has no case coaching)."""
+    from connect_labs.labs.access.scopes import Caller
+    from connect_labs.workflow import case_coaching, case_finder, case_visits
+
+    opportunity_id = _coerce_int(request.GET.get("rows_opportunity_id"))
+    case_id = (request.GET.get("case_id") or "").strip()
+    if not opportunity_id or not case_id:
+        return JsonResponse({"error": "rows_opportunity_id and case_id are required"}, status=400)
+    wf_access = WorkflowDataAccess(request=request)
+    try:
+        definition = wf_access.get_definition(definition_id)
+        if not definition:
+            return JsonResponse({"error": "Workflow not found"}, status=404)
+        spanned = [int(o) for o in (definition.opportunity_ids or [])] or [opportunity_id]
+        if opportunity_id not in spanned:
+            return JsonResponse({"error": "this workflow does not span that opportunity"}, status=403)
+        token = (request.session.get("labs_oauth", {}) or {}).get("access_token")
+        config = case_finder.config_for(definition, access_token=token)
+        if config is None:
+            return JsonResponse({"story": None, "reason": "no_case_coaching"})
+        caller = Caller(user=request.user, request=request, access_token=token)
+        rows = case_visits.load_rows(caller, [opportunity_id], config, case_id=case_id)
+        found = [c for c in case_coaching.cases_from_rows(rows, config) if c.case_id == case_id]
+        story = case_coaching.story_of(found[0]) if found else None
+        if story is None:
+            return JsonResponse({"story": None})
+        return JsonResponse(
+            {"story": story.key, "label": story.label, "facts": story.facts, "username": found[0].username}
+        )
+    except case_visits.CaseDataError as e:
+        return JsonResponse({"error": e.public_message}, status=403 if e.code != "read_failed" else 502)
+    except Exception:
+        logger.exception("Failed to read the case story for definition %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
+    finally:
+        wf_access.close()
+
+
 class PipelineRowsStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
     """`pipeline_rows_api`'s answer, with the fetch's own progress in front of it.
 

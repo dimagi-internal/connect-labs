@@ -668,6 +668,7 @@ export interface ActionHandlers {
   runAction?(
     key: string,
     args: { workers: WorkflowActionWorker[]; [key: string]: unknown },
+    options?: WorkflowActionOptions,
   ): Promise<WorkflowActionExecution | null>;
 
   /**
@@ -1084,6 +1085,19 @@ export interface WorkflowActionWorker {
   prompt?: string;
   title?: string;
   description?: string;
+  /** Coach this worker about ONE case (workflow/case_coaching.py). */
+  case?: {
+    id: string;
+    story?: string;
+    earlier?: { date: string; label: string; agreed?: string };
+  };
+}
+
+/** How the run page's dialog offers an action (`actions.runAction`'s third argument). */
+export interface WorkflowActionOptions {
+  /** Offer only "Send to me (QA test)": the viewer's own PersonalID username as
+   * `deliver_to`, and no send to the worker. */
+  qaOnly?: boolean;
 }
 
 /** What running an action would do (POST .../actions/<key>/preview/). */
@@ -1117,6 +1131,16 @@ export interface WorkflowActionPreview {
     };
     /** Indicator keys the conversation covers (a coaching briefing's topics). */
     indicators?: string[];
+    /** A case conversation: the case, its story and the facts behind it. */
+    case?: {
+      id: string;
+      case?: string;
+      topic?: string;
+      story?: string;
+      facts?: string;
+    };
+    /** The picture sent with the conversation: a signed Labs link and its caption. */
+    image?: { url?: string; caption?: string };
   }>;
   /** Workers asked for but left out, and why (e.g. "nothing off target"). */
   skipped?: Array<{ key: string; name: string; reason: string }>;

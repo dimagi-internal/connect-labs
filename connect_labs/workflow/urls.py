@@ -83,6 +83,9 @@ urlpatterns = [
     # API endpoints - Pipeline data
     path("api/<int:definition_id>/pipeline-data/", views.get_pipeline_data_api, name="api_pipeline_data"),
     path("api/<int:definition_id>/pipeline-rows/", views.pipeline_rows_api, name="api_pipeline_rows"),
+    # One case's coaching story (case_coaching.py): whether a case panel offers
+    # "Coach about this baby".
+    path("api/<int:definition_id>/case-story/", views.case_story_api, name="api_case_story"),
     # actions.queryPipelineRows: filter/search/order/page one alias IN SQL -- the read
     # path for a `load: "on_demand"` source the run page does not stream.
     path("api/<int:definition_id>/pipeline-query/", views.pipeline_query_api, name="api_pipeline_query"),
