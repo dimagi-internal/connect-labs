@@ -54,6 +54,7 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
             "workflow_run_context",
             "workflow_run_indicators",
             "workflow_indicator_explain",
+            "workflow_coaching_cases",
             "workflow_action_status",
         }
     ),

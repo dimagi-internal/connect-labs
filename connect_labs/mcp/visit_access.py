@@ -133,6 +133,7 @@ RESOLVERS: dict[str, Resolver] = {
     "workflow_run_context": _workflow("run_id"),
     "workflow_run_indicators": _workflow("run_id"),
     "workflow_indicator_explain": _workflow("run_id"),
+    "workflow_coaching_cases": _workflow("run_id"),
     "workflow_action_status": _workflow("run_id"),
     "workflow_preview_snapshot": _workflow("run_id"),
     "workflow_history_runs": _workflow("definition_id"),

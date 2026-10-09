@@ -20,14 +20,17 @@ def test_the_template_is_registered_as_a_saved_runs_report():
 def test_a_saved_run_is_graded_exactly_like_the_programme_reports():
     """A handed-down slice and a run saved here must be the same shape, or the
     page reads the two differently. Same builder, same spec -- a copy, so an
-    edit to one is a deliberate edit to both -- with ONE difference: where the case
-    list is stored. The programme grades every case and stores none; the
-    opportunity report stores its own."""
+    edit to one is a deliberate edit to both -- with TWO differences: where the case
+    list is stored (the programme grades every case and stores none; the
+    opportunity report stores its own), and case coaching, which is per opportunity:
+    only a run saved HERE stores `caseCoaching` (a handed-down week has none)."""
     import copy
 
     expected = copy.deepcopy(PROGRAMME_SNAPSHOT_INPUTS)
     assert expected["case_index"]["embed"] is False
     expected["case_index"]["embed"] = True
+    assert "case_coaching" not in expected
+    expected["case_coaching"] = True
     assert TEMPLATE["snapshot_inputs"] == expected
     assert TEMPLATE["snapshot_inputs"] is not PROGRAMME_SNAPSHOT_INPUTS
     assert DEFINITION["snapshot_inputs"] is TEMPLATE["snapshot_inputs"]
