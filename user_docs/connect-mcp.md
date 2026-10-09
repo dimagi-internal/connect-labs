@@ -191,6 +191,30 @@ This means you can ask Claude questions like "show me hospital vs home births br
 
 ---
 
+## Targeting: Nigerian State Cost-Effectiveness Rankings
+
+On the Targeting page, the agent can answer questions like "of these Nigerian states, which state and which malaria chemoprevention design is most cost-effective at my delivery costs? Rank the top 10."
+
+### How it works
+
+Each Nigerian state is modelled in its own setting using IDM's EMOD disease model. Transmission intensity is fitted to the state's malaria prevalence from DHS survey data, and the seasonal pattern comes from the state's rainfall. This means results reflect the actual epidemiological conditions of each state rather than a national average.
+
+Each combination of state and chemoprevention design — PMC (Perennial Malaria Chemoprevention) or SMC (Seasonal Malaria Chemoprevention) — is ranked by **cost per under-5 death averted**. The ranking also shows each combination's multiple of GiveWell's cost-effectiveness benchmark, and the answer notes how many states in the top 10 clear GiveWell's 6× bar.
+
+!!! note "A ranking below the bar is reported as-is"
+    If the top 10 combinations all sit above the 6× threshold (meaning they cost more per death averted than GiveWell's bar), the agent reports that result clearly. It does not present any combination as a recommendation simply because it ranked highest.
+
+### Changing costs
+
+Entering a different price per visit re-prices the entire ranking instantly, without re-running the models. This lets you explore how your programme's delivery costs affect which states and designs are most attractive.
+
+For a one-off "what if" question about a single state, the agent runs the scenario against that state's own fitted model.
+
+!!! note "Per-state results grid"
+    The full per-state results grid will appear once the model batch finishes computing. Until then, the tool will tell you that per-state results are not yet available.
+
+---
+
 ## Pipeline Export Names
 
 !!! note "Change for all callers"
@@ -215,27 +239,4 @@ Workflows that read data from Google Drive have received several improvements to
 
 ### Shared reads across pipelines
 
-If a workflow page has several pipelines that all point at the same Drive source (same folder or file, file pattern, null markers, username column, and date column), Labs now reads that source **once** and shares the result between them. Previously each pipeline fetched its own copy, which multiplied load time and browser memory for every extra pipeline on the page.
-
-### Column filtering
-
-A Drive pipeline's data source can now declare a **`columns` list** — the specific columns it actually uses. When a columns list is present, Labs keeps only those cells for each row and discards the rest. For a wide export where the dashboard reads only a handful of columns, this can reduce load time and memory use to a small fraction of what the full file would require.
-
-Leaving `columns` out keeps every column, exactly as before.
-
-!!! note "Missing columns are caught at save time"
-    If a pipeline reads a column that is not in its `columns` list, Labs refuses to save it and tells you exactly which columns are missing and which fields reference them. This means the problem is caught immediately — before the dashboard ever runs — rather than the dashboard silently showing empty values.
-
-!!! tip "When to use a columns list"
-    Add a `columns` list whenever your pipeline reads from a wide export but only uses a small number of those columns. Leave it out only if the pipeline genuinely needs every column in the file.
-
-### Program-scoped pipeline sources
-
-A pipeline source can cover an **entire program** rather than a single opportunity. This is useful when your Drive exports span every cohort in a program — for example, an interview export that covers all cohorts at once rather than one file per cohort.
-
-When a program-scoped source is used:
-
-- **Access is limited to the managing organization.** Only people whose organization manages the program can see that data. People whose organization runs one of the program's opportunities (partner network organizations) cannot — so one cohort's partner never sees another cohort's raw data.
-- **The Drive data is read once for the whole program.** Before, a program dashboard that spanned many opportunities would have read the same rows once per opportunity. Now the data is fetched a single time regardless of how many opportunities the program contains.
-
-You can build a program-
+If a workflow page has several pipelines that all point at the same Drive source (same folder or file, file pattern, null markers, username column, and date column), Labs now reads that source **once** and shares the result between them. Previously each pipeline fetched its own
