@@ -183,6 +183,41 @@ def default_s3():
     return boto3.client("s3", region_name=getattr(settings, "LABS_EMOD_REGION", None))
 
 
+def recover_from_s3(run: PmcModelRun, bucket: str | None = None, s3=None) -> bool:
+    """Finish a ``running`` row whose task died, from the result the instance already wrote to S3.
+
+    The simulation runs on the EMOD instance; the Celery task only waits on the SSM command and then
+    copies ``results/<hash>.json`` onto the row. A deploy hard-kills every task with no drain, so a run
+    can finish on the instance with nobody left to record it. The result key is the hash of the
+    inputs, so a result there is this run's answer. True when the row was completed from it; False
+    when there is no result yet (the run may still be going, or never started), or the row is no
+    longer ``running``.
+    """
+    from botocore.exceptions import ClientError
+
+    s3 = s3 or default_s3()
+    bucket = bucket or default_bucket()
+    try:
+        body = s3.get_object(Bucket=bucket, Key=f"results/{run.inputs_hash}.json")["Body"].read()
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") in ("NoSuchKey", "404", "NotFound"):
+            return False
+        raise
+    timings = {**(run.timings or {}), "recovered_from_s3": True}
+    done = PmcModelRun.objects.filter(pk=run.pk, status=PmcModelRun.RUNNING).update(
+        status=PmcModelRun.COMPLETED,
+        result=json.loads(body),
+        error="",
+        timings=timings,
+        completed_at=timezone.now(),
+        updated_at=timezone.now(),
+    )
+    if done:
+        logger.info("EMOD run %s recovered from S3 after its task died", run.inputs_hash[:12])
+        run.refresh_from_db()
+    return bool(done)
+
+
 def _claim(run: PmcModelRun, reclaim_stale_after_s: float | None) -> bool:
     """Atomically move a ``queued`` row (or, with ``reclaim_stale_after_s``, a ``running`` row
     untouched that long) to running. False for anything else: another worker owns it, it already

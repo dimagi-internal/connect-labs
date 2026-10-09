@@ -1035,6 +1035,8 @@ class PmcRunStatusView(OpenLocallyMixin, View):
             run = PmcModelRun.objects.get(pk=pk)
         except PmcModelRun.DoesNotExist:
             return JsonResponse({"error": "no such run"}, status=404)
+        # A run whose task a deploy killed is finished from S3 (or re-queued) as it is polled.
+        run = service.heal(run)
         state = request.GET.get("state")
         if state:
             # With a state, the finished result is costed at it, as the agent tool does.
