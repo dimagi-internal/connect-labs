@@ -87,6 +87,8 @@ urlpatterns = [
     path("workflow/", include("connect_labs.workflow.urls", namespace="workflow")),
     # Pages (configurable card landing pages)
     path("p/", include("connect_labs.pages.urls", namespace="pages")),
+    # Settings: how an organisation, programme or opportunity has set labs up (scope_config/)
+    path("", include("connect_labs.scope_config.urls")),
     # Synthetic sample data
     path("synthetic/", include("connect_labs.labs.synthetic.urls", namespace="synthetic")),
     # Dashboard Prototypes

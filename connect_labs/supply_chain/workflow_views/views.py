@@ -22,7 +22,7 @@ from django.utils import timezone
 from django.views.generic import TemplateView
 
 from connect_labs.supply_chain.history.as_of import HAPPENED, parse_as_of
-from connect_labs.supply_chain.workflow_views.models import SupplyWorkflowView
+from connect_labs.supply_chain.navigation import _pinned
 from connect_labs.supply_chain.workflow_views.runs import current_run_id
 from connect_labs.workflow.views import WorkflowRunView
 
@@ -43,9 +43,9 @@ class SupplyWorkflowPageView(WorkflowRunView):
         request.supply_as_of_basis = HAPPENED
         context = getattr(request, "labs_context", None) or {}
         program_id = context.get("program_id")
-        pin = None
-        if program_id:
-            pin = SupplyWorkflowView.objects.filter(program_id=int(program_id), slug=kwargs.get("slug")).first()
+        # The tab comes from the programme's Settings (supply_chain/config.py), the same
+        # read the header made, so a tab the header offers is a tab this page finds.
+        pin = next((p for p in _pinned(request) if p.slug == kwargs.get("slug")), None) if program_id else None
         if pin is None:
             if not program_id:
                 # No programme in view: Supply's home asks for one, rather than a bare 404.
@@ -102,7 +102,7 @@ class SupplyWorkflowPageView(WorkflowRunView):
         return context
 
 
-def builds_the_view(user, definition, pin: SupplyWorkflowView) -> bool:
+def builds_the_view(user, definition, pin) -> bool:
     """Whether to offer this viewer the workflow's editor: its author, whoever pinned it, or staff.
 
     Anyone in the programme may be ABLE to edit the workflow (write access to its scope is all

@@ -398,8 +398,12 @@ its own history and `as_of`.
 1. **A link to something scoped names its scope.** App header links carry their
    scope through one helper (`scoped_url`), `/supply/` joins the middleware's
    redirect list, and pages carry their scope in the path.
-2. **An opportunity implies its programme**, and a programme or opportunity implies
-   its organisation, from `org_data`, falling back to `PulseOpportunity`.
+2. **An opportunity implies its programme -- on `/supply/` only** (#2416), from
+   `org_data`, falling back to `PulseOpportunity`. Not everywhere: the LabsRecord API
+   AND-filters every scope it is given (see `BaseDataAccess.__init__`), so a programme
+   added to an opportunity page's session context would hide that opportunity's own
+   records. **A programme or opportunity implies its organisation** only where config
+   resolves (`scope_config/scopes.chain_for`), never in the session context.
 3. **No scope means "pick one", not "not found."** A 404 is kept for a slug that is
    genuinely absent from a known scope.
 
