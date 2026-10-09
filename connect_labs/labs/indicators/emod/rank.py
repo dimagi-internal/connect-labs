@@ -48,6 +48,17 @@ KINDS = ("pmc", "smc")
 
 NO_EFFECT = "no measurable effect"
 
+#: Each design's name across states, for the by-design comparison (a state's own label names its months).
+DESIGN_FAMILIES = {
+    "pmc_q4": "Quarterly",
+    "pmc_b6": "Every two months",
+    "pmc_m4_onset": "4 monthly rounds from the rains",
+    "pmc_m6_onset": "6 monthly rounds from the rains",
+    "pmc_m8_onset": "8 monthly rounds from the rains",
+    "pmc_m12": "Monthly, year-round",
+    "smc_m4_onset": "SMC: 4 monthly rounds from the rains",
+}
+
 CAVEATS = (
     "One fitted setting per state: EMOD's transmission is fitted to the state's DHS malaria prevalence and its "
     "season to CHIRPS monthly rainfall. That is not a full calibration, so every figure is illustrative.",
@@ -122,6 +133,7 @@ def state_index(grid: dict | None) -> list[dict]:
                 "name": name,
                 "pfpr": pfpr,
                 "rain_wettest_quarter": wettest,
+                "onset_month": inputs.get("onset_month"),
                 "perennial": pfpr is not None
                 and wettest is not None
                 and wettest < PERENNIAL_MAX_WETTEST_PCT
@@ -226,6 +238,7 @@ def rank_pairs(
                 wanted.append(_match(key, by_lower) or s.strip())
 
     pairs, excluded, excluded_designs = [], [], []
+    pooled: dict[str, dict] = {}
     for name in wanted:
         state = grid["states"].get(name)
         if state is None:
@@ -256,6 +269,21 @@ def rank_pairs(
                 continue
             pct, ci = d.get("averted_u5_pct"), d.get("averted_u5_ci")
             cases = (pct or 0) / 100 * incidence / 1000 * pop_u5
+            if pct is not None:
+                # Pooled with its noise, not filtered: dropping the states where one design's effect alone is not
+                # measurable would keep only the lucky draws and flatter the weakest designs.
+                pool = pooled.setdefault(
+                    code, {"label": DESIGN_FAMILIES.get(code) or _design_label(d), "kind": d.get("kind")}
+                )
+                pool["states"] = pool.get("states", 0) + 1
+                pool["no_effect"] = pool.get("no_effect", 0) + (pct <= 0 or (ci is not None and ci >= pct))
+                pool["children"] = pool.get("children", 0) + d["target_pop_fraction"] * pop_u5
+                pool["doses"] = (
+                    pool.get("doses", 0) + d["doses_per_child_per_year"] * d["target_pop_fraction"] * pop_u5
+                )
+                pool["cases"] = pool.get("cases", 0) + cases
+                if state_deaths:
+                    pool["deaths"] = pool.get("deaths", 0) + pct / 100 * state_deaths
             # An effect smaller than its own uncertainty is not a result to cost.
             if pct is None or pct <= 0 or (ci is not None and ci >= pct) or cases <= 0:
                 excluded_designs.append(
@@ -303,6 +331,32 @@ def rank_pairs(
     if deaths is not None:
         totals["deaths_averted_per_year"] = sig(sum(p["deaths_averted_per_year"] for p in best_per_state), 3)
 
+    by_design = []
+    for code, pool in pooled.items():
+        spend = pool["doses"] * per_dose
+        row = {
+            "design_code": code,
+            "label": pool["label"],
+            "kind": pool["kind"],
+            "states": pool["states"],
+            "states_no_effect": pool["no_effect"],
+            "doses_per_child_per_year": round(pool["doses"] / pool["children"], 1),
+            "cases_averted_per_year": sig(pool["cases"], 3),
+            "spend_per_year": sig(spend, 3),
+            "cost_per_case_averted": sig(spend / pool["cases"]) if pool["cases"] > 0 else None,
+        }
+        if deaths is not None and pool.get("deaths", 0) > 0:
+            valued = mortality.value(pool["deaths"], spend)
+            row.update(
+                deaths_averted_per_year=sig(valued["deaths_averted_per_year"], 3),
+                cost_per_death_averted=sig(valued["cost_per_death_averted"]),
+                multiple_of_benchmark=round(valued["multiple_of_benchmark"], 1),
+                clears_bar=valued["clears_bar"],
+            )
+        by_design.append(row)
+    sort_key = "cost_per_death_averted" if deaths is not None else "cost_per_case_averted"
+    by_design.sort(key=lambda r: (r.get(sort_key) is None, r.get(sort_key) or 0))
+
     def present(p, rank=None):
         out = {
             **p,
@@ -338,6 +392,7 @@ def rank_pairs(
         "note": note,
         "best_per_state": [present(p) for p in best_per_state],
         "best_per_state_totals": totals,
+        "by_design": by_design,
         "excluded": excluded,
         "excluded_designs": excluded_designs,
         "costs": costs,

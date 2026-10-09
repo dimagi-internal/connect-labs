@@ -406,8 +406,12 @@
   function barChip(p, bar) {
     if (p.multiple_of_benchmark === undefined) return '';
     return p.clears_bar
-      ? ' <span class="pmc-chip clears">clears ' + num(bar) + '×</span>'
-      : ' <span class="pmc-chip below">below ' + num(bar) + '×</span>';
+      ? ' <span class="pmc-chip clears pmc-hide-sm">clears ' +
+          num(bar) +
+          '×</span>'
+      : ' <span class="pmc-chip below pmc-hide-sm">below ' +
+          num(bar) +
+          '×</span>';
   }
 
   function renderRank() {
@@ -458,7 +462,8 @@
 
     var t = d.best_per_state_totals || {};
     total.innerHTML = considered
-      ? stat('States ranked', considered) +
+      ? '<div class="cap">If each of these states ran its own best design</div>' +
+        stat('States ranked', considered) +
         (byDeath
           ? stat('Clear the ' + num(d.bar) + '× bar', d.states_clearing_bar) +
             stat(
@@ -478,8 +483,8 @@
           : '')
       : '';
     total.classList.toggle('hidden', !considered);
-    // The totals are each state's best design, not the rows below.
-    total.title = 'Each ranked state at its own best design';
+
+    renderByDesign(d, byDeath);
 
     el('pmc-rank-rows').innerHTML =
       rows
@@ -493,12 +498,14 @@
             '</td>' +
             '<td class="l" style="font-weight:500">' +
             esc(p.state) +
-            '</td>' +
-            '<td class="design">' +
+            '<div class="pmc-sm-only pmc-sub">' +
+            esc(p.design_label) +
+            '</div></td>' +
+            '<td class="design pmc-hide-sm">' +
             esc(p.design_label) +
             (p.kind === 'smc' ? ' <span class="pmc-chip smc">SMC</span>' : '') +
             '</td>' +
-            '<td class="pmc-num">' +
+            '<td class="pmc-num pmc-hide-sm">' +
             (byDeath
               ? num(p.deaths_averted_per_year)
               : num(p.cases_averted_per_year) + ' cases') +
@@ -534,12 +541,64 @@
           '.',
       );
     notes.push(d.costs_line);
-    notes = notes.concat(d.caveats || []);
-    el('pmc-rank-note').innerHTML = notes
-      .map(function (n) {
-        return esc(n);
+    var caveats = d.caveats || [];
+    el('pmc-rank-note').innerHTML =
+      notes
+        .map(function (n) {
+          return esc(n);
+        })
+        .join('<br>') +
+      (caveats.length
+        ? '<details class="pmc-caveats"><summary>How these figures are made (' +
+          caveats.length +
+          ' notes)</summary><ul>' +
+          caveats
+            .map(function (c) {
+              return '<li>' + esc(c) + '</li>';
+            })
+            .join('') +
+          '</ul></details>'
+        : '');
+  }
+
+  // Each schedule pooled across the states picked: the schedule half of the
+  // page's question, and where the proposal's own design shows up even when
+  // it is too weak to reach the top pairs.
+  function renderByDesign(d, byDeath) {
+    var rows = d.by_design || [];
+    el('pmc-design-card').classList.toggle('hidden', !rows.length);
+    el('pmc-design-rows').innerHTML = rows
+      .map(function (r) {
+        var weak = r.states_no_effect
+          ? '<div class="pmc-sub">no clear effect on its own in ' +
+            r.states_no_effect +
+            ' of ' +
+            r.states +
+            ' states</div>'
+          : '';
+        return (
+          '<tr><td class="l" style="font-weight:500">' +
+          esc(r.label) +
+          (r.kind === 'smc' ? ' <span class="pmc-chip smc">SMC</span>' : '') +
+          weak +
+          '</td><td class="pmc-num pmc-hide-sm">' +
+          num(r.doses_per_child_per_year, 1) +
+          '</td><td class="pmc-num pmc-hide-sm">' +
+          (byDeath
+            ? num(r.deaths_averted_per_year)
+            : num(r.cases_averted_per_year) + ' cases') +
+          '</td><td class="pmc-num" style="font-weight:600">' +
+          (byDeath
+            ? usd(r.cost_per_death_averted)
+            : usd(r.cost_per_case_averted, 2) + ' / case') +
+          '</td><td class="pmc-num" style="white-space:nowrap">' +
+          (byDeath && r.multiple_of_benchmark !== undefined
+            ? times(r.multiple_of_benchmark) + barChip(r, d.bar)
+            : '—') +
+          '</td></tr>'
+        );
       })
-      .join('<br>');
+      .join('');
   }
 
   function stat(k, v) {
@@ -629,6 +688,8 @@
       );
     }).join('');
     if (!gridStates.length) fillLiveStatesFromSweep();
+    // The ranking may have picked the state before the months existed.
+    startAtTheRains();
   }
 
   // Before the per-state grid: the states matching the one modelled setting,
@@ -682,10 +743,22 @@
       })
       .join('');
     el('pmc-live-run').disabled = !names.length;
+    startAtTheRains();
   }
   el('pmc-live-state').addEventListener('change', function () {
     liveStateTouched = true;
+    startAtTheRains();
   });
+
+  // A monthly schedule starts where the chosen state's rains start, the way
+  // the ranked designs do; the visitor can still move it.
+  function startAtTheRains() {
+    var name = el('pmc-live-state').value;
+    var s = gridStates.filter(function (g) {
+      return g.name === name;
+    })[0];
+    if (s && s.onset_month) el('pmc-live-start').value = String(s.onset_month);
+  }
 
   function liveSpec() {
     var spec = {};
