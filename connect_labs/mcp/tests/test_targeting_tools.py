@@ -1124,6 +1124,40 @@ class TestPmcLiveModel:
         assert best["difference_within_noise"] is True
 
 
+class TestPmcLiveValue:
+    """A live result is valued in deaths the way the ranking values a grid design."""
+
+    ROW = {"averted_u5_pct": 20.0}
+    PROJECTION = {"spend_per_year": 1_000_000, "cases_averted_per_year": 50_000}
+
+    def test_it_is_deaths_averted_and_the_multiple_of_the_benchmark(self, monkeypatch):
+        from connect_labs.labs.indicators.emod import mortality
+
+        monkeypatch.setattr(mortality, "malaria_u5_deaths", lambda burden, basis="prevalence_scaled": {"Benue": 5_000})
+        monkeypatch.setattr(mortality, "registry_burden", lambda: {})
+
+        got = targeting._pmc_value("Benue", self.ROW, self.PROJECTION)
+
+        # 20% of 5,000 deaths = 1,000 a year for $1M: $1,000 each; 113 x 1,000 / 1M / 0.003 = 37.7x.
+        assert got == {
+            "deaths_averted_per_year": 1000,
+            "cost_per_death_averted": 1000,
+            "multiple_of_benchmark": 37.7,
+            "clears_bar": True,
+            "bar": 6.0,
+            "deaths_basis": "prevalence_scaled",
+        }
+
+    def test_nothing_without_an_under5_effect_a_cost_or_a_death_figure(self, monkeypatch):
+        from connect_labs.labs.indicators.emod import mortality
+
+        monkeypatch.setattr(mortality, "registry_burden", lambda: {})
+
+        assert targeting._pmc_value("Benue", {}, self.PROJECTION) is None
+        assert targeting._pmc_value("Benue", self.ROW, None) is None
+        assert targeting._pmc_value("Benue", self.ROW, self.PROJECTION) is None  # no mortality loaded
+
+
 class TestPmcRank:
     """targeting_pmc_rank on the fixture grid (the real grid is computed by a batch, later)."""
 

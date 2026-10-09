@@ -175,13 +175,75 @@ class TestThePage:
         client.force_login(django_user_model.objects.create_user(username="pm", password="x"))
         return client
 
-    def test_the_page_renders(self, client_in, nigeria):
+    def test_the_page_renders(self, client_in, nigeria, settings):
+        settings.PMC_STATE_GRID_PATH = "/nonexistent/pmc_state_grid.json"
         body = client_in.get(reverse("targeting:pmc")).content.decode()
         assert "Which PMC schedule, and where?" in body
-        assert "Illustrative." in body
+        assert "Illustrative. One uncalibrated setting" in body
         assert "indicators/pmc/pmc.js" in body
-        # Two answers, in the order a programme is designed: how, then where.
-        assert body.index(">How<") < body.index(">Where<")
+        # The ranking leads; the one-setting comparison is folded below it.
+        assert body.index("Rank states &times; designs") < body.index(">How<")
+        assert '<script id="pmc-grid-states" type="application/json">[]</script>' in body
+
+    def test_with_the_grid_the_picker_lists_its_states_and_marks_the_year_round_ones(
+        self, client_in, nigeria, settings
+    ):
+        from connect_labs.labs.indicators.tests.test_emod_rank import FIXTURE
+
+        settings.PMC_STATE_GRID_PATH = str(FIXTURE)
+        resp = client_in.get(reverse("targeting:pmc"))
+        body = resp.content.decode()
+
+        assert "Fitted per state. Illustrative" in body
+        picker = {s["name"]: s["perennial"] for s in resp.context["grid_states"]}
+        # Kano is seasonal, Lagos is too low in transmission; Ondo is year-round.
+        assert picker == {"Kano": False, "Lagos": False, "Ondo": True}
+
+    def test_the_rank_endpoint_is_the_agents_ranking_at_the_visitors_prices(
+        self, client_in, nigeria, settings, monkeypatch
+    ):
+        from connect_labs.labs.indicators.emod import mortality
+        from connect_labs.labs.indicators.tests.test_emod_rank import FIXTURE
+
+        settings.PMC_STATE_GRID_PATH = str(FIXTURE)
+        burden = {
+            "Ondo": {"u5_deaths": 15_000, "map_malaria_deaths": 3_000, "pfpr": 0.45, "pop_u5": 1_000_000},
+            "Kano": {"u5_deaths": 95_000, "map_malaria_deaths": 23_000, "pfpr": 0.54, "pop_u5": 2_000_000},
+        }
+        monkeypatch.setattr(mortality, "registry_burden", lambda: burden)
+        url = reverse("targeting:pmc_rank")
+        params = {"states": "Kano,Ondo", "deaths_basis": "map", "cost_per_visit": 0.5, "top_n": 3}
+
+        got = client_in.get(url, params).json()
+
+        assert got == targeting.targeting_pmc_rank(
+            None,
+            states=["Kano", "Ondo"],
+            deaths_basis="map",
+            top_n=3,
+            cost_per_visit=0.5,
+            platform_fee=DEFAULTS["platform_fee"],
+            dose_rate=DEFAULTS["dose_rate"],
+        )
+        assert got["ranked_by"] == "cost per death averted" and len(got["ranked"]) == 3
+        assert got["costs"]["cost_per_visit"] == 0.5
+
+    def test_the_rank_endpoint_refuses_a_bad_request_with_a_reason(self, client_in, nigeria, settings):
+        from connect_labs.labs.indicators.tests.test_emod_rank import FIXTURE
+
+        settings.PMC_STATE_GRID_PATH = str(FIXTURE)
+        url = reverse("targeting:pmc_rank")
+
+        assert client_in.get(url, {"top_n": "ten"}).status_code == 400
+        bad = client_in.get(url, {"deaths_basis": "guess"})
+        assert bad.status_code == 400 and "deaths_basis" in bad.json()["error"]
+
+    def test_the_rank_endpoint_says_when_the_grid_is_not_computed(self, client_in, nigeria, settings):
+        settings.PMC_STATE_GRID_PATH = "/nonexistent/pmc_state_grid.json"
+
+        got = client_in.get(reverse("targeting:pmc_rank")).json()
+
+        assert got["available"] is False and "not available yet" in got["message"]
 
     def test_the_data_endpoint_defaults_to_the_best_schedule(self, client_in, nigeria):
         got = client_in.get(reverse("targeting:pmc_data")).json()
