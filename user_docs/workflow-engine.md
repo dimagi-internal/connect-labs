@@ -149,6 +149,15 @@ The chart uses Connect's typography and deep-purple title styling, so it looks c
 
 This is the first stage of coaching pictures that can be shaped further — for example, to add anonymous peer comparisons or a trend line. Those capabilities will arrive in later updates.
 
+### How peer labels appear on the Week by week chart
+
+In the **Week by week** picture, each peer is shown as a line with a label at its right-hand end. These end labels are arranged so they are always readable:
+
+- **No overlapping labels.** When two or more peers finish the period at the same figure, their names are combined into a single label — for example, **Peer A, B** — rather than stacking on top of one another.
+- **Always spaced apart.** Labels that finish close to each other are nudged up or down so there is always at least one line of space between them.
+- **Always inside the chart.** No label slips below the bottom edge or above the top edge of the plot area.
+- **The worker's own label stays bold.** **You** always appears in bold, as it does elsewhere in the picture, so the worker can immediately pick out their own line.
+
 ---
 
 ## Pipeline Data Sources
@@ -220,12 +229,4 @@ Program-scoped Drive pipelines are built through the labs MCP. The steps are:
 
 ### Supply Stock Review
 
-The **Supply Stock Review** is a ready-made workflow template for monitoring field worker stock. You can enable it for the opportunities you choose without any software deployment. It reads supply data using the same access rules as the Supply pages, and can span several opportunities — or several programmes — the same way a programme-level report does. The Supply Stock page links to it directly once it is set up.
-
-The dashboard is organised into the following views:
-
-**Headline figures**
-A summary of what is currently with field workers, expressed in sachets and in children's courses; how much has been given out (with the share that sits on visits not yet approved broken out separately); and the daily rate at which stock is going out.
-
-**Runway**
-One bar per worker, sorted so the worker who will run out soonest appears first. Each bar shows the worker's projected run-out date based on their own pace over the **last 14 days**, their most recent count against the ledger, and a short label confirming the window used — for example, "last 14 days" or "last 9 days" for a worker who started recently. A worker who has nothing left and has given nothing out in the last 14 days is shown as stocked out rather
+The **Supply Stock Review** is a ready-made workflow template for monitoring field worker stock. You can enable it for the opportunities you choose without any software deployment. It reads supply data using the same access rules as the Supply pages, and can span several opportunities — or several programmes — the same way a programme-level report does
