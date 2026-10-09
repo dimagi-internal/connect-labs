@@ -310,3 +310,13 @@ def test_the_view_uses_the_hosts_theme_variables():
     assert "light-dark(" in html
     # Legible at a ~380px panel and on a full page.
     assert 'name="viewport"' in html and "@media (min-width: 560px)" in html
+
+
+def test_the_run_context_tells_the_agent_how_to_run_each_action():
+    """The context is what an agent reads first; it must carry the click-to-send rule itself."""
+    from connect_labs.mcp.tools.workflow_run import _with_how_to_run
+
+    coach, task = _with_how_to_run([{"key": "c", "type": "start_ocs_outreach"}, {"key": "t", "type": "create_task"}])
+    assert "PREVIEW it" in coach["how_to_run"] and "click Send on the card" in coach["how_to_run"]
+    assert "never set a worker's own `prompt`" in coach["how_to_run"]
+    assert "`confirm`" in task["how_to_run"] and "explicit yes" in task["how_to_run"]

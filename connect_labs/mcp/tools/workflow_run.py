@@ -54,6 +54,35 @@ CLICK_TO_SEND = (
     "is no `confirm` for you."
 )
 
+#: How an agent runs each kind of action, given beside the action in workflow_run_context --
+#: the tool an agent reads first. (A tool's own description is not enough: clients that
+#: load tool schemas on demand never show it until the agent has already chosen the tool.
+#: Seen live 2026-10-09: asked to start coaching, the agent read the context, never opened
+#: workflow_run_action, and sent the person to the page's button instead of previewing.)
+HOW_TO_RUN_CLICK_TO_SEND = (
+    "Sent only by the person's click, never by you. As soon as they want to coach someone, "
+    "PREVIEW it: workflow_run_action with this action's key, `arguments.workers: [{key}]`, and "
+    "no `confirm`. In canopy that preview appears to them as a card with the worker's picture, "
+    "the briefing and the opening message, and the buttons Send to <worker>, Send to me (QA "
+    "test) and Not yet; tell them to click Send on the card. Don't ask for a yes in chat and "
+    "don't offer to send it. Leave each worker's briefing to Labs -- never set a worker's own "
+    "`prompt` (it drops the picture and the fixed opening); add your own context in the "
+    "top-level `prompt`."
+)
+HOW_TO_RUN_CONFIRMED = (
+    "Preview with workflow_run_action (no `confirm`), show the person exactly what it will do, "
+    "and on their explicit yes call again with the preview's `arguments` and `confirm`."
+)
+
+
+def _with_how_to_run(actions: list[dict]) -> list[dict]:
+    for action in actions:
+        action["how_to_run"] = (
+            HOW_TO_RUN_CLICK_TO_SEND if action.get("type") in CLICK_TO_SEND_TYPES else HOW_TO_RUN_CONFIRMED
+        )
+    return actions
+
+
 _SCOPE = {
     "run_id": {"type": "integer", "description": "The workflow run (on a run page: the page state's filters.run_id)."},
     "opportunity_id": {
@@ -241,7 +270,7 @@ def workflow_run_context(user, *, run_id: int, opportunity_id=None, program_id=N
             "indicators": indicators,
             "bands": BAND_MEANING,
             "grading": grading,
-            "actions": definition_actions(r.definition),
+            "actions": _with_how_to_run(definition_actions(r.definition)),
         }
 
 
