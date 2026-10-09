@@ -885,7 +885,7 @@ class CoverageView(OpenLocallyMixin, View):
 
 
 #: What the PMC page tells the agent the visitor is looking at.
-PMC_PANEL_FILTER_KEYS = ("schedule", "states", "cost_per_visit", "platform_fee", "dose_rate", "deaths_basis")
+PMC_PANEL_FILTER_KEYS = ("schedule", "states", "cost_per_visit", "platform_fee", "dose_rate", "deaths_basis", "ages")
 
 
 def _pmc_costs(request) -> dict:
@@ -944,12 +944,20 @@ class PmcRankView(OpenLocallyMixin, View):
             top_n = int(request.GET.get("top_n") or 10)
         except ValueError:
             return JsonResponse({"error": "top_n must be a whole number"}, status=400)
+        budgets = None
+        if request.GET.get("budgets"):
+            try:
+                budgets = [float(b) for b in request.GET["budgets"].split(",") if b.strip()]
+            except ValueError:
+                return JsonResponse({"error": "budgets must be amounts in dollars, separated by commas"}, status=400)
         return _pmc_tool_response(
             "targeting_pmc_rank",
             request,
             states=states,
             top_n=top_n,
             deaths_basis=request.GET.get("deaths_basis") or "prevalence_scaled",
+            ages=request.GET.get("ages") or "3_24",
+            budgets=budgets,
             **_pmc_costs(request),
         )
 
