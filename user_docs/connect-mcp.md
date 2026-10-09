@@ -193,7 +193,7 @@ This means you can ask Claude questions like "show me hospital vs home births br
 
 ## Coaching Workers from a Run Page
 
-When you ask the canopy agent to coach a worker from a Labs run page, the agent shows you a coaching card straight away — with the worker's picture and the opening message already filled in. You do not need to use the page's own **Start coaching** button to see a preview first.
+When you ask the canopy agent to coach a worker from a Labs run page, the agent shows you a coaching card in the same reply as the worker's data summary — you do not need to send a second message to trigger the card. The card includes the worker's picture and the opening message already filled in.
 
 The card displays:
 
@@ -213,8 +213,8 @@ The card has up to three buttons:
 !!! note "You decide when to send — the agent never sends on your behalf"
     A coaching send always requires your click on one of the buttons. The agent shows you the briefing and tells you where to click; it does not send the message itself, and it will not offer to send directly to a worker on your behalf. The **Start coaching** button on the Labs run page works the same way and is unchanged. Other action types (such as creating a task) use a separate confirm flow where the agent asks for your approval before acting.
 
-!!! note "The bot shown on synthetic opportunities"
-    When you preview a coaching conversation on a synthetic (demo) opportunity, the card may show Labs' sample stand-in bot rather than your programme's real bot. This is expected — it does not mean there is a configuration problem.
+!!! note "No opening message on synthetic opportunities"
+    When you preview a coaching conversation on a synthetic (demo) opportunity, the card does not show an opening message. This is expected — a synthetic preview does not send anything to a worker, so there is no opening message to display. If you send a QA test to yourself, the card shows Labs' fixed opening message for that send. The card may also show Labs' sample stand-in bot rather than your programme's real bot; this is normal and does not indicate a configuration problem.
 
 !!! warning "Sending to a real worker requires canopy"
     An agent operating outside canopy — for example, Claude Code or Claude Desktop connected through MCP — cannot send a coaching conversation to a real worker, even if it has the right tools available. A real worker is only reached when a person clicks **Send** on canopy's coaching card, or clicks **Start coaching** on the Labs run page. Outside canopy, an agent can still preview a coaching conversation and send a QA test message to itself using `deliver_to` — this is how ACE records itself on its own test phone.
@@ -229,6 +229,4 @@ On the Targeting page, the agent can answer questions like "of these Nigerian st
 
 Each Nigerian state is modelled in its own setting using IDM's EMOD disease model. Transmission intensity is fitted to the state's malaria prevalence from DHS survey data, and the seasonal pattern comes from the state's rainfall. This means results reflect the actual epidemiological conditions of each state rather than a national average.
 
-Each combination of state and chemoprevention design — PMC (Perennial Malaria Chemoprevention) or SMC (Seasonal Malaria Chemoprevention) — is ranked by **cost per under-5 death averted**. The ranking also shows each combination's multiple of GiveWell's cost-effectiveness benchmark, and the answer notes how many states in the top 10 clear GiveWell's 6× bar.
-
-!!! note "A ranking below
+Each combination of state and chemoprevention design — PMC (Perennial Malaria Chemoprevention) or SMC (Seasonal Malaria Chemoprevention) — is ranked by **cost per under-5
