@@ -853,11 +853,24 @@ function WorkflowUI({
         });
         if (failedAnyMethod) anyMethodFailCount += 1;
       });
+      // verifiedTotal -- NOT the same denominator as `total` above. A visit
+      // can have the verification block present (counted in `total`) but
+      // still never get an overall Final verification outcome, because
+      // CommCare's own verification_properties group (which computes
+      // visit_verification_outcome) has ITS OWN separate `relevant`
+      // condition -- mother_reg_for_visit_verification == 'yes' AND a
+      // same-day registration/1-week-visit edge case is excluded -- on top
+      // of (and independent from) where_is_the_visit_being_conducted's own
+      // gate. Percentages below are of verifiedTotal (so they sum to 100%),
+      // not of `total` -- using `total` here undercounts a real population
+      // of "exempted" visits as if they were "Fail", which is wrong.
+      var verifiedTotal = passCount + failCount + pendingCount;
       function pct(n) {
-        return total > 0 ? Math.round((n / total) * 100) : 0;
+        return verifiedTotal > 0 ? Math.round((n / verifiedTotal) * 100) : 0;
       }
       return {
         total: total,
+        verifiedTotal: verifiedTotal,
         passCount: passCount,
         failCount: failCount,
         pendingCount: pendingCount,
@@ -1393,8 +1406,18 @@ function WorkflowUI({
       var byFlwMother = {};
       enrichedRows.forEach(function (row) {
         if (!eligibleUsernames[row.username]) return;
+        // where_is_the_visit_being_conducted is part of the verification
+        // block -- it's simply ABSENT (not just blank) on every pre-UAT
+        // submission, since that question didn't exist on the old form
+        // version (the same reason hasVerificationData() uses this exact
+        // field to tell UAT and pre-UAT apart in the first place). So this
+        // only excludes a row when the FLW gave an explicit non-home
+        // answer -- never a pre-UAT row, which has no answer to check at
+        // all. Filtering on "!== 'mothers_home'" alone would silently drop
+        // 100% of pre-UAT history whenever this toggle is on (its default).
         if (
           uatHomeOnlyFilter &&
+          row.where_is_the_visit_being_conducted &&
           row.where_is_the_visit_being_conducted !== 'mothers_home'
         )
           return;
@@ -1433,8 +1456,12 @@ function WorkflowUI({
       var rowsByFlwDay = {};
       enrichedRows.forEach(function (row) {
         if (!eligibleUsernames[row.username]) return;
+        // See the identical guard + comment in Pass 1 above -- pre-UAT rows
+        // have no where_is_the_visit_being_conducted answer at all, so only
+        // an explicit non-home answer excludes a row here.
         if (
           uatHomeOnlyFilter &&
+          row.where_is_the_visit_being_conducted &&
           row.where_is_the_visit_being_conducted !== 'mothers_home'
         )
           return;
@@ -1906,22 +1933,25 @@ function WorkflowUI({
     },
     {
       title: 'Verification Summary Tab',
-      body: 'The three percentages and the "n=" counts are computed over the domain+eligibility-filtered visit set (see "Which visits appear" above), further narrowed by this tab\'s own FLW filter if any FLWs are selected (summaryDisplayRows), using each visit\'s Final verification outcome:',
+      body: "The three percentages and the \"n=\" counts are computed over the domain+eligibility-filtered visit set (see \"Which visits appear\" above), further narrowed by this tab's own FLW filter if any FLWs are selected (summaryDisplayRows), using each visit's Final verification outcome. IMPORTANT: the percentages' denominator is summary.verifiedTotal (passCount + failCount + pendingCount) -- the count of visits that actually got a Final verification outcome -- NOT summary.total (every visit with the verification block present, summaryDisplayRows.length). The two differ because visit_verification_outcome lives in CommCare's own verification_properties form group, which has ITS OWN separate `relevant` condition on top of (and independent from) where_is_the_visit_being_conducted's gate: mother_reg_for_visit_verification (a mother case property) must be 'yes', AND the visit must not be CommCare's own same-day registration/1-week-visit form-linking edge case (reg_date_equal_to_one_week_date == 1). A visit can have real GPS/QR/signature/ANC-card/birth-certificate/mother-question data (showing correctly in the per-method breakdown below and the Table tab) while still having a BLANK visit_verification_outcome, because that group was never evaluated for it -- this is CommCare's own business rule, not a dashboard bug. Using summary.total as the percentages' denominator would silently count every such visit as if it had failed, which is wrong -- confirmed via commcare_hq_mcp's get_form_questions. The tab's caption states the exact count of visits excluded this way.",
       items: [
         {
           name: '% Passed Verification',
-          def: 'Share of visits with Final verification outcome = Pass.',
-          field: 'visit_verification_outcome === "Pass"',
+          def: 'Share of visits-that-reached-an-outcome (verifiedTotal) with Final verification outcome = Pass.',
+          field:
+            'visit_verification_outcome === "Pass", divided by verifiedTotal (not total).',
         },
         {
           name: '% Pending Audit',
-          def: 'Share of visits with Final verification outcome = Pending Audit.',
-          field: 'visit_verification_outcome === "Pending Audit"',
+          def: 'Share of visits-that-reached-an-outcome (verifiedTotal) with Final verification outcome = Pending Audit.',
+          field:
+            'visit_verification_outcome === "Pending Audit", divided by verifiedTotal (not total).',
         },
         {
           name: '% Failed Verification',
-          def: 'Share of visits with Final verification outcome = Fail.',
-          field: 'visit_verification_outcome === "Fail"',
+          def: 'Share of visits-that-reached-an-outcome (verifiedTotal) with Final verification outcome = Fail.',
+          field:
+            'visit_verification_outcome === "Fail", divided by verifiedTotal (not total).',
         },
         {
           name: 'Stacked bar chart',
@@ -2050,9 +2080,9 @@ function WorkflowUI({
       items: [
         {
           name: "Exclude visits not at mother's home",
-          def: "Checkbox, ON by default -- a visit the FLW categorized as 'Health facility' or 'Other' isn't comparable GPS behavior for either metric (there's no fixed reference point to judge whether she traveled far or clustered visits suspiciously close together), so both metrics exclude it from BOTH their UAT and pre-UAT sides by default. Unchecking includes every location type in both metrics. Independent of the GPS Map tab's own home-only toggle -- each tab keeps its own state.",
+          def: "Checkbox, ON by default -- a visit the FLW categorized as 'Health facility' or 'Other' isn't comparable GPS behavior for either metric (there's no fixed reference point to judge whether she traveled far or clustered visits suspiciously close together), so both metrics exclude it from the UAT side by default. Pre-UAT visits are NEVER excluded by this toggle, even when it's on -- where_is_the_visit_being_conducted is part of the verification block and simply doesn't exist on pre-UAT submissions, so there's no location-type answer to check; only a visit with an EXPLICIT non-home answer gets excluded. Unchecking includes every UAT location type too. Independent of the GPS Map tab's own home-only toggle -- each tab keeps its own state.",
           field:
-            "uatHomeOnlyFilter state (default true). Applied as an early return (where_is_the_visit_being_conducted !== 'mothers_home') inside BOTH of uatComparisonStats' row-processing passes -- Pass 1 (Revisit Dist, keyed by mother) and Pass 2 (Metres/Visit, keyed by FLW+day) -- before any bucketing, so a filtered-out visit never reaches either period's values OR its sample-size-matching weight. Does not affect uatActiveDaysByFlw (the reference-only 'UAT active days' column), which counts all UAT activity regardless of location type.",
+            "uatHomeOnlyFilter state (default true). Applied as an early return inside BOTH of uatComparisonStats' row-processing passes -- Pass 1 (Revisit Dist, keyed by mother) and Pass 2 (Metres/Visit, keyed by FLW+day) -- guarded as `row.where_is_the_visit_being_conducted && row.where_is_the_visit_being_conducted !== 'mothers_home'` (the truthy check is load-bearing: without it, every pre-UAT row -- where this field is undefined -- would satisfy `!== 'mothers_home'` and get silently dropped, emptying every pre-UAT column). Does not affect uatActiveDaysByFlw (the reference-only 'UAT active days' column), which counts all UAT activity regardless of location type.",
         },
         {
           name: 'Revisit Dist (mean) -- distance_from_prev_visit_m',
@@ -2175,7 +2205,31 @@ function WorkflowUI({
             x: { stacked: true, beginAtZero: true, ticks: { precision: 0 } },
             y: { stacked: true },
           },
-          plugins: { legend: { position: 'bottom' } },
+          plugins: {
+            legend: { position: 'bottom' },
+            tooltip: {
+              callbacks: {
+                // % is of summary.total (every visit in the current filter
+                // with the verification block present) -- the SAME
+                // denominator for every segment of every method's bar, so
+                // percentages are comparable across methods. Deliberately
+                // NOT a per-method denominator (e.g. excluding that
+                // method's own NA/blank rows), since methods differ in
+                // which "not counted" segments they track (GPS has
+                // "No location to match on", QR has "Not available",
+                // others have neither) -- a shared denominator avoids
+                // introducing yet another silently-different % base.
+                label: function (context) {
+                  var n = context.raw;
+                  var pct =
+                    summary.total > 0
+                      ? Math.round((n / summary.total) * 100)
+                      : 0;
+                  return context.dataset.label + ': ' + n + ' (' + pct + '%)';
+                },
+              },
+            },
+          },
         },
       });
 
@@ -2183,7 +2237,7 @@ function WorkflowUI({
         if (chartInstance.current) chartInstance.current.destroy();
       };
     },
-    [methodStats, activeTab],
+    [methodStats, activeTab, summary.total],
   );
 
   // --- By-FLW failed-visit chart (Failed Verification Analysis tab) ------
@@ -2769,7 +2823,19 @@ function WorkflowUI({
               Overall Verification Outcome (per visit)
             </h3>
             <p className="text-xs text-gray-500">
-              Based on each visit's single Final verification outcome.
+              Based on each visit's single Final verification outcome. The three
+              percentages below are of visits that actually reached an outcome
+              (so they sum to 100%) --{' '}
+              {summary.total > summary.verifiedTotal ? (
+                <span className="font-medium text-gray-700">
+                  {summary.total - summary.verifiedTotal} of {summary.total}{' '}
+                  visits in the current filter never reached one
+                </span>
+              ) : (
+                'every visit in the current filter reached one'
+              )}{' '}
+              -- CommCare's own rule for who gets an overall verdict (not a
+              dashboard filter) excluded them; see Definitions.
             </p>
           </div>
           {summaryCards}
