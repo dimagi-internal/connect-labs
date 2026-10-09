@@ -475,19 +475,24 @@ def stock_by_batch(access, supply_point_id, item_id=None):
         "Consumption rate and cover for one supply point: average monthly consumption, months of "
         "stock, days to stockout, reorder point, and how much to send. restocked_from says who acts "
         "on it: supply_point -- sent from the point above; supplier -- reordered, the top of the "
-        "network. An AMC over a window shorter than 30 days is refused as unconfirmed. `status` "
+        "network. An AMC over a window shorter than 7 days is refused as unconfirmed. `status` "
         "classifies against the point's own band and recommends nothing."
     ),
     input_schema=obj(
         {
             "supply_point_id": ID,
             "item_id": ID,
-            "window_days": {"type": "integer", "minimum": 1, "maximum": 730},
+            "window_days": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 730,
+                "description": resupply.WINDOW_DAYS_HELP,
+            },
         },
         required=("supply_point_id",),
     ),
 )
-def resupply_plan(access, supply_point_id, item_id=None, window_days=resupply.DEFAULT_WINDOW_DAYS):
+def resupply_plan(access, supply_point_id, item_id=None, window_days=None):
     point = access._require_supply_point(supply_point_id)
     item = access._resolve_item(item_id)
     plan = resupply.plan(access.program_id, point, item=item, window_days=window_days)
@@ -520,13 +525,16 @@ def resupply_plan(access, supply_point_id, item_id=None, window_days=resupply.DE
             "item_id": ID,
             "kind": {"enum": list(records.SUPPLY_POINT_KINDS)},
             "as_of": _DATE,
-            "window_days": {"type": "integer", "minimum": 1, "maximum": 730},
+            "window_days": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 730,
+                "description": resupply.WINDOW_DAYS_HELP,
+            },
         }
     ),
 )
-def network_stock(
-    access, opportunity_id=None, item_id=None, kind=None, as_of=None, window_days=resupply.DEFAULT_WINDOW_DAYS
-):
+def network_stock(access, opportunity_id=None, item_id=None, kind=None, as_of=None, window_days=None):
     return network_stock_payload(
         access, opportunity_id=opportunity_id, item_id=item_id, kind=kind, as_of=_day(as_of), window_days=window_days
     )
@@ -537,7 +545,7 @@ def network_stock_payload(
     opportunity_id=None,
     item_id=None,
     kind=None,
-    window_days=resupply.DEFAULT_WINDOW_DAYS,
+    window_days=None,
     several_items="summed",
     per_point=False,
     as_of=None,
@@ -574,6 +582,8 @@ def network_stock_payload(
                 "reported_on": row["reported_on"].isoformat() if row["reported_on"] else None,
                 "reported_kind": row["reported_kind"],
                 "amc_basis": row["amc_basis"],
+                "amc_window_days": row["amc_window_days"],
+                "rate_days": row["rate_days"],
                 "item_id": row["item_id"],
                 "counted_in_base": row["counted_in_base"],
                 "expected_inbound": [

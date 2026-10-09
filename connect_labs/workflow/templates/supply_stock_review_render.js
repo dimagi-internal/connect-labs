@@ -117,6 +117,7 @@ function WorkflowUI({
       noAnswer: r.no_answer_visits || 0,
       perDay: amc !== null ? amc / 30 : amount(r.rate_per_day_so_far),
       rateDays: r.rate_days,
+      rateWindow: r.rate_window_days,
       days: amount(r.days_to_stockout),
       band: bandOf(r),
     };
@@ -134,6 +135,12 @@ function WorkflowUI({
   var perDayTotal = rows.reduce(function (s, r) {
     return s + (r.perDay || 0);
   }, 0);
+  // The window every worker's pace is averaged over (resupply.window_for), as the
+  // supply pages say it: one pace per worker, everywhere (#2342).
+  var paceWindow =
+    rows.reduce(function (w, r) {
+      return Math.max(w, r.rateWindow || 0);
+    }, 0) || 14;
   var maxDays = 60;
 
   function openWorker(r) {
@@ -307,7 +314,7 @@ function WorkflowUI({
             <span className="text-sm font-normal text-gray-500">{units}</span>
           </div>
           <div className="text-xs text-gray-500">
-            each worker's own recent pace, added
+            {"each worker's last " + paceWindow + ' days, added'}
           </div>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-3">

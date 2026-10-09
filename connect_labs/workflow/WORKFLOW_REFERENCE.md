@@ -2251,14 +2251,14 @@ A workflow can read the supply chain's own figures — stock in workers' hands, 
 
 ```json
 "supply_sources": [
-  {"alias": "stock",  "source": "worker_stock",     "item": "rutf", "params": {"window_days": 14}},
+  {"alias": "stock",  "source": "worker_stock",     "item": "rutf"},
   {"alias": "stores", "source": "network_stock",    "item": "rutf"},
   {"alias": "worker", "source": "worker_stock_get", "item": "rutf", "load": "on_demand"}
 ]
 ```
 
 - **`source`** is one of the supply chain's READ operations, listed in `supply_sources.SOURCES` (worker stock, a worker's timeline, network stock, network tree, the flow, distributions, orders, shipments, tenders, suppliers, checks). A workflow never writes supply data through a source; supply writes become workflow actions (§14).
-- **`item`** is a commodity slug or SKU, resolved per programme (ids differ between programmes). **`params`** are fixed settings the source accepts (`window_days` for the stock sources: how many recent days a pace is averaged over).
+- **`item`** is a commodity slug or SKU, resolved per programme (ids differ between programmes). **`params`** are fixed settings the source accepts (`window_days` for the stock sources: how many recent days a pace is averaged over). Leave it out to show the pace every supply page shows -- a field worker's last 14 days, a store's last 90 (`resupply.window_for`) -- so a worker never has one run-out date here and another on the Stock page.
 - **Scope** follows the workflow exactly as pipelines do: every opportunity in `opportunity_ids` (or the primary), across programmes if the list spans them. Each opportunity is resolved to its programme from the viewer's org data, and every call runs **as the viewer** through `SupplyDataAccess` — the same access rule as the supply pages. A source scoped to the opportunity (worker stock) runs once per opportunity; one scoped to the programme (stores, orders) runs once per programme, so a store is never counted twice.
 
 **Render code** receives `supply.<alias>` (and `view.supply.<alias>`, which a completed run reads from its snapshot):

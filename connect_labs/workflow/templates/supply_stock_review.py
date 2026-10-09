@@ -43,15 +43,15 @@ DEFINITION = {
     },
     "pipeline_sources": [],
     "supply_sources": [
-        # Pace is each worker's own last fortnight: recent, not a 90-day average.
-        {"alias": "stock", "source": "worker_stock", "item": "rutf", "params": {"window_days": 14}},
+        # No window_days: the pace is the one every supply page shows -- each worker's
+        # last 14 days (resupply.window_for) -- so a worker has one run-out date (#2342).
+        {"alias": "stock", "source": "worker_stock", "item": "rutf"},
         {"alias": "stores", "source": "network_stock", "item": "rutf"},
         {
             "alias": "worker",
             "source": "worker_stock_get",
             "item": "rutf",
             "load": "on_demand",
-            "params": {"window_days": 14},
         },
     ],
 }
