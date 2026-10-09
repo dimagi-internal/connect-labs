@@ -89,8 +89,8 @@ urlpatterns = [
     # Before the old card pages below, whose `p/<slug>/` would otherwise never see these.
     path("p/<str:scope_type>/<str:scope_key>/", page_views.PageView.as_view(), name="page_home"),
     path("p/<str:scope_type>/<str:scope_key>/<slug:page>/", page_views.PageView.as_view(), name="page"),
-    # Pages (configurable card landing pages)
-    path("p/", include("connect_labs.pages.urls", namespace="pages")),
+    # An address from before pages named their scope: redirect, or explain.
+    path("p/<slug:slug>/", page_views.old_page, name="page_old"),
     # Settings: how an organisation, programme or opportunity has set labs up (scope_config/)
     path("", include("connect_labs.scope_config.urls")),
     # Synthetic sample data

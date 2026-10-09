@@ -1,30 +1,17 @@
 ---
 name: pages-author
-description: Use when composing or editing a labs "surface" — a card landing page at /labs/p/<slug> — via the connect_labs MCP. Triggers on "build a program hub", "make a landing page for program/opp X", "add an audit card", "create a pages surface".
+description: Use when building a labs page -- an organisation's or programme's landing page, a home page, a screen of its own at /labs/p/... Triggers on "build a program hub", "make a landing page for org/program/opp X", "set the org's home page".
 ---
 
-# Authoring pages surfaces
+# Authoring pages
 
-A **surface** is a card landing page served at `/labs/p/<slug>`. It is a
-`LabsRecord` (`type="surface"`, `public=True`) whose `data` holds
-`{slug, title, cards, options}`.
+A page is a **workflow with no runs** (`kind: "page"`, `connect_labs/workflow/page_mode.py`), written and edited with the workflow tools. The old card "surfaces" (`pages_*` tools, `type="surface"` records) were retired on 2026-10-09.
 
-## Workflow
+Follow the **workflow-author** skill, section "Build a page":
 
-1. `pages_list_providers` — see available card providers and their `target_kind`.
-2. Build the `cards` list. Each card is:
-   `{ "provider": "<key>", "target": {<provider target_kind fields>}, "options": {"title"?: str} }`
-   - `audit` → `target = {"opportunity_id": <int>, "opportunity_name"?: str}`
-   - `workflow` → `target = {"definition_id": <int>}`
-3. `pages_create` with a unique `slug`, a `title`, the `cards` list, and a scope
-   (`program_id` for a program hub, `opportunity_id` for a task landing).
-4. Share `/labs/p/<slug>`. Each card self-guards: a viewer only sees cards whose
-   provider `entitled()` passes for them.
+1. `workflow_create_from_template(template_key="page_blank", program_id=…)` (or `opportunity_id`; a real Connect organisation can own one with `organization_id=<int>`).
+2. `workflow_update_definition` to set `page: {slug}` and declare `workflow_sources` / `supply_sources` / `config_reads`.
+3. Edit the JSX with `workflow_update_render_code`. It receives `scope`, `config`, `workflows`, `supply` and the usual workflow props.
+4. Open it at `/labs/p/<org|programme|opportunity>/<key>/<slug>/`, or make it a scope's home with `labs_config_set(namespace="labs", …, patch={"home": {"fill": {"workflow": <id>, "program_id": <owner>}}})`.
 
-## Rules
-
-- Slugs are lowercase, hyphenated, unique (e.g. `prog-25-hub`).
-- Surfaces are public records; never put sensitive literals in `title`/`options`.
-  Sensitive data lives behind per-card entitlement, not in the surface config.
-- To edit, `pages_get` the slug, change `cards`, then `pages_update` with the
-  returned record id.
+Contract: `connect_labs/workflow/WORKFLOW_REFERENCE.md` §16. Design: `docs/superpowers/specs/2026-10-09-labs-scope-config-design.md`.
