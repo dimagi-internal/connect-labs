@@ -56,6 +56,10 @@ THIN_MIN_DAYS = 3
 INCONSISTENT_RATIO = 0.6
 IMPOSSIBLE = (-20, 45)  # g/kg/day, per kg of the MEAN of the pair
 IMPOSSIBLE_GAP = (1, 90)
+# Case states (properties.yml, "Case states").
+STATE_RECENT = 30
+CASE_WEIGHT = (800, 5000)
+THRIVING_GAIN, THRIVING_GAP, THRIVING_RISE = 15, 3, 0.2
 GA_RANGE = (20, 45)
 BANDS = [  # (upper bound exclusive, name, plausible lo, plausible hi)
     (1000, "<1000", 9, 30),
@@ -242,6 +246,9 @@ def _load(conn):
                 DISCHARGE_TO_REG.get(baby),
             ),
         )
+    from connect_labs.semantic.tests.parity_fixture import add_case_state_columns
+
+    add_case_state_columns(cur, "fixture_visits")
     conn.commit()
 
 
@@ -363,8 +370,56 @@ def _properties(as_of=AS_OF):
         p["expected_dip"] = p["enrollment_credible"] and DIP_RANGE[0] * bw <= ew <= DIP_RANGE[1] * bw
         raw = [r[1] for r in rows if r[1] is not None]
         p["readings"], p["round_readings"] = len(raw), sum(1 for w in raw if w % 100 == 0)
+        p.update(_case_states(rows, measured, as_of))
         out[name] = p
     return out
+
+
+def _case_states(rows, measured, as_of):
+    """The case states, written independently of the registry's SQL. The fixture
+    carries no danger signs or skin-to-skin hours, so only the weight check and
+    thriving can hold; the other two are counted (as zero) all the same."""
+
+    def rate(d0, w0, d1, w1):
+        return (w1 - w0) / (((w1 + w0) / 2) / 1000) / (d1 - d0)
+
+    bad = [
+        (d1, rate(d0, w0, d1, w1))
+        for (d0, w0), (d1, w1) in zip(measured, measured[1:])
+        if IMPOSSIBLE_GAP[0] <= d1 - d0 <= IMPOSSIBLE_GAP[1]
+        and w0 > 0
+        and not IMPOSSIBLE[0] <= rate(d0, w0, d1, w1) <= IMPOSSIBLE[1]
+    ]
+    out_of_range = [r[0] for r in rows if r[1] is not None and not CASE_WEIGHT[0] <= r[1] <= CASE_WEIGHT[1]]
+    same3 = [
+        c[0]
+        for a, b, c in zip(measured, measured[1:], measured[2:])
+        if abs(c[1] - b[1]) < 0.5 and abs(b[1] - a[1]) < 0.5
+    ]
+    believable = not bad and not out_of_range and not same3
+    if bad:
+        check = max(bad, key=lambda x: (max(x[1] - IMPOSSIBLE[1], IMPOSSIBLE[0] - x[1]), x[0]))[0]
+    else:
+        check = max(out_of_range) if out_of_range else (max(same3) if same3 else None)
+    recent = as_of - STATE_RECENT
+    gaps = [
+        rate(d0, w0, d1, w1)
+        for (d0, w0), (d1, w1) in zip(measured, measured[1:])
+        if d1 - d0 >= THRIVING_GAP and w0 > 0
+    ]
+    thriving = (
+        believable
+        and bool(gaps)
+        and min(gaps) >= THRIVING_GAIN
+        and round(measured[-1][1]) >= round(measured[0][1]) * (1 + THRIVING_RISE)
+        and measured[-1][0] >= recent
+    )
+    return {
+        "case_state_weight_check": (not believable) and check is not None and check >= recent,
+        "case_state_danger_unreferred": False,
+        "case_state_faltering": False,
+        "case_state_thriving": thriving,
+    }
 
 
 def _indicators(props):
@@ -427,6 +482,11 @@ def _indicators(props):
         "pct_enrollment_weight_credible": pct(lambda r: r["enrollment_credible"], computable),
         "pct_expected_dip": pct(lambda r: r["expected_dip"], lambda r: r["enrollment_credible"]),
         "birth_copy_rate": pct(lambda r: r["birth_copy"], lambda r: r["birth_copy"] is not None),
+        # case coaching: one count per case state, every case
+        "count_case_state_danger_unreferred": count(lambda r: r["case_state_danger_unreferred"]),
+        "count_case_state_weight_check": count(lambda r: r["case_state_weight_check"]),
+        "count_case_state_faltering": count(lambda r: r["case_state_faltering"]),
+        "count_case_state_thriving": count(lambda r: r["case_state_thriving"]),
     }
 
 

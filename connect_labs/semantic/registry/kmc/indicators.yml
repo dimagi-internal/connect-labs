@@ -61,10 +61,19 @@ series: [KMC]
 # `credibility` keys above are the same five tiles the KMC report hand-codes.
 display:
   title: Kangaroo Mother Care programme
-  entity: { name: baby, plural: babies }
+  entity: { name: baby, plural: babies, label_field: case_name }
   organisation: { name: organisation, plural: organisations }
   categories:
-    [Scale, Case mix, Follow-up, Growth quality, Outcome, Care, Data quality]
+    [
+      Scale,
+      Case mix,
+      Follow-up,
+      Growth quality,
+      Outcome,
+      Care,
+      Data quality,
+      Case coaching,
+    ]
   case_fields:
     - { field: reg_date, label: Registered, format: date }
     - { field: first_visit_date, label: First visit, format: date }
@@ -574,6 +583,94 @@ measures:
   - name: mortality_denominator
     type: count
     filters: [{ sql: '{CUBE}.eligible_28d AND {CUBE}.outcome_known' }]
+
+  # ── Case coaching ────────────────────────────────────────────────────────
+  # One count per case state (properties.yml, "Case states"), per worker: how many
+  # of a worker's babies are in each state as of the run. Unbanded -- a count to
+  # plan coaching from, never a grade.
+  - name: count_case_state_danger_unreferred
+    title: Babies with a danger sign, not referred
+    type: number
+    sql: '{count_case_state_danger_unreferred_numerator}'
+    meta:
+      {
+        indicator: count_case_state_danger_unreferred,
+        plain: 'Babies whose latest danger sign in the last 30 days was recorded without a referral (case state case_state_danger_unreferred).',
+        inputs: [case_state_danger_unreferred],
+        category: Case coaching,
+        prominence: Lower,
+        unit: n,
+        direction: none,
+        flw_applicable: true,
+      }
+  - name: count_case_state_danger_unreferred_numerator
+    type: count
+    filters: [{ sql: '{CUBE}.case_state_danger_unreferred' }]
+  - name: count_case_state_danger_unreferred_denominator
+    type: count
+
+  - name: count_case_state_weight_check
+    title: Babies with a weighing to check
+    type: number
+    sql: '{count_case_state_weight_check_numerator}'
+    meta:
+      {
+        indicator: count_case_state_weight_check,
+        plain: 'Babies with a weighing that is hard to believe in the last 30 days (case state case_state_weight_check).',
+        inputs: [case_state_weight_check],
+        category: Case coaching,
+        prominence: Lower,
+        unit: n,
+        direction: none,
+        flw_applicable: true,
+      }
+  - name: count_case_state_weight_check_numerator
+    type: count
+    filters: [{ sql: '{CUBE}.case_state_weight_check' }]
+  - name: count_case_state_weight_check_denominator
+    type: count
+
+  - name: count_case_state_faltering
+    title: Babies whose weight has stalled
+    type: number
+    sql: '{count_case_state_faltering_numerator}'
+    meta:
+      {
+        indicator: count_case_state_faltering,
+        plain: 'Babies whose weight has stalled while skin-to-skin time fell, in the last 30 days (case state case_state_faltering).',
+        inputs: [case_state_faltering],
+        category: Case coaching,
+        prominence: Lower,
+        unit: n,
+        direction: none,
+        flw_applicable: true,
+      }
+  - name: count_case_state_faltering_numerator
+    type: count
+    filters: [{ sql: '{CUBE}.case_state_faltering' }]
+  - name: count_case_state_faltering_denominator
+    type: count
+
+  - name: count_case_state_thriving
+    title: Babies growing well
+    type: number
+    sql: '{count_case_state_thriving_numerator}'
+    meta:
+      {
+        indicator: count_case_state_thriving,
+        plain: 'Babies gaining weight at a healthy rate at every weighing, weighed in the last 30 days (case state case_state_thriving).',
+        inputs: [case_state_thriving],
+        category: Case coaching,
+        prominence: Lower,
+        unit: n,
+        direction: none,
+        flw_applicable: true,
+      }
+  - name: count_case_state_thriving_numerator
+    type: count
+    filters: [{ sql: '{CUBE}.case_state_thriving' }]
+  - name: count_case_state_thriving_denominator
+    type: count
 
   # ── Care ─────────────────────────────────────────────────────────────────
   - name: danger_sign_incidence

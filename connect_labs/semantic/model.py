@@ -17,6 +17,9 @@ engine with a registry attached. A registry now declares it, in `properties_doc`
       - {name: child_alive_no, word_match: {column: death_visits, word: 'no'}}
       - {name: ebf_recorded, sql: 'ebf_visits IS NOT NULL'}
       - {name: form_name, column: form_names}
+      - {name: danger_signs, labels: [{column: ds_fever, word: 'yes', label: 'fever'}, ...]}
+                                  # the labels of the listed columns that match their word,
+                                  # comma-joined (NULL when none): which signs a visit recorded
       - {name: prev_visit_date, previous: {column: visit_date, partition_by: [mother_case_id],
                                            order_by: visit_date}}
       - {name: metres_from_prev, distance_from_previous: {lat: latitude, lon: longitude,
@@ -82,7 +85,7 @@ DEFAULT_WORKER_ATTRIBUTION = "alphabetical"
 # They are computed over Layer 1's own rows before the row-level kinds, so a `sql`
 # column may read them.
 WINDOW_KINDS = ("previous", "distance_from_previous")
-VISIT_COLUMN_KINDS = ("word_match", "sql", "column", *WINDOW_KINDS)
+VISIT_COLUMN_KINDS = ("word_match", "labels", "sql", "column", *WINDOW_KINDS)
 
 LOOKUP_PICKS = ("latest", "earliest", "max", "min", "count")
 
@@ -102,6 +105,13 @@ class VisitColumn:
     skip_null: bool = False
     lat: str | None = None
     lon: str | None = None
+    # `labels`: (column, word, label) -- the label is listed when the column matches
+    # the word, as `word_match` tests it.
+    labels: tuple[tuple[str, str, str], ...] = ()
+    # `optional: true`: when the entity pipeline does not (yet) produce a column this
+    # one reads, it is NULL instead of an error. Lets a registry declare columns
+    # ahead of the pipeline fields that feed them, and an older pipeline keep working.
+    optional: bool = False
 
 
 @dataclass(frozen=True)
@@ -171,7 +181,14 @@ def _names(value: Any) -> tuple[str, ...]:
 
 
 def _visit_column(item: Any) -> VisitColumn:
+    import dataclasses
+
     item = item if isinstance(item, dict) else {}
+    col = _visit_column_kind(item)
+    return dataclasses.replace(col, optional=bool(item.get("optional"))) if item.get("optional") else col
+
+
+def _visit_column_kind(item: dict) -> VisitColumn:
     name = str(item.get("name") or "")
     if isinstance(item.get("word_match"), dict):
         wm = item["word_match"]
@@ -195,6 +212,16 @@ def _visit_column(item: Any) -> VisitColumn:
             lon=w.get("lon"),
             partition_by=_names(w.get("partition_by")),
             order_by=w.get("order_by"),
+        )
+    if isinstance(item.get("labels"), list):
+        return VisitColumn(
+            name,
+            "labels",
+            labels=tuple(
+                (str(x.get("column") or ""), str(x.get("word") or ""), str(x.get("label") or ""))
+                for x in item["labels"]
+                if isinstance(x, dict)
+            ),
         )
     if "sql" in item:
         return VisitColumn(name, "sql", sql=item.get("sql"))
