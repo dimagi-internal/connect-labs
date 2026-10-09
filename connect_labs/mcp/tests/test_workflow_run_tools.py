@@ -520,6 +520,8 @@ def test_the_view_preview_says_whether_the_viewer_has_connected_ocs(user, action
 
     out = _coach_preview(user, tool="workflow_action_preview_view")
     assert out["ocs"]["connected"] is True
-    assert out["ocs"]["connect_url"].endswith("/labs/ocs/initiate/")
+    # It brings the person back to this run page once OCS is connected.
+    assert "/labs/ocs/initiate/?next=" in out["ocs"]["connect_url"]
+    assert "%2Flabs%2Fworkflow%2F7%2Frun%2F" in out["ocs"]["connect_url"]
     monkeypatch.setattr(actions, "ocs_connected", lambda user: False)
     assert _coach_preview(user, tool="workflow_action_preview_view")["ocs"]["connected"] is False
