@@ -51,6 +51,9 @@ def test_missing_burnin_is_built_and_reported(tmp_path):
     assert out2["burnin"]["cached"] is True and out2["seconds"] < out["seconds"]
     by = {r["code"]: r for r in out["runs"]}
     assert by["none"]["doses"] == 0 and by["connect_monthly_in_season_3_24"]["doses"] > 0
+    assert {r["drug"] for r in out["runs"]} == {"SP"}  # schedules without "drug" give SP, as before
+    for r in out["runs"]:  # under-5 outcomes ride alongside the 3-24-month ones
+        assert r["kids_u5"] > r["kids_3_24m"] > 0 and r["cases_u5"] >= r["cases_3_24m"] >= 0
     assert out2["runs"] == out["runs"]  # same seed, same serialized state: deterministic
 
 
@@ -113,6 +116,7 @@ def _bad(mutate):
         (lambda r: r.update(seeds=[1, 1]), "unique"),
         (lambda r: r.update(seeds=["a"]), "integers"),
         (lambda r: r.update(intervention_years=0), "intervention_years"),
+        (lambda r: r["schedules"][0].update(drug="AQ"), "drug"),
     ],
 )
 def test_invalid_requests_are_rejected_before_any_run(mutate, fragment):
@@ -196,3 +200,415 @@ def test_emod_image_is_pinned_by_digest_and_matches_bootstrap():
     boot = (pathlib.Path(run_scenarios.__file__).parent / "bootstrap.sh").read_text()
     m = re.search(r"^EMOD_IMAGE=(\S+)$", boot, re.M)
     assert m and m.group(1) == run_scenarios.EMOD_IMAGE
+
+
+# ---- calibrate mode ------------------------------------------------------------------------------------------
+
+
+def calibrate_request(target=0.3, **extra):
+    setting = small_request(500, [0], ["none"])["setting"]
+    setting.pop("larval_capacity")
+    return dict({"mode": "calibrate", "setting": setting, "target_pfpr": target}, **extra)
+
+
+def fake_pfpr(larval):
+    """A saturating PfPR 2-5y curve in log10(larval): ~0 at 1e6, ~0.81 at 1e9."""
+    import math
+
+    return 0.85 / (1 + math.exp(-2.5 * (math.log10(larval) - 7.8)))
+
+
+def test_calibration_grid_is_8_log_spaced_values_from_1e6_to_1e9():
+    grid = run_scenarios.calibration_grid()
+    assert len(grid) == 8 and grid[0] == 1e6 and grid[-1] == 1e9
+    assert all(isinstance(x, float) for x in grid)
+
+
+def test_calibrate_refines_around_the_crossing_and_picks_the_nearest_evaluated_value():
+    rounds = []
+
+    def evaluate(round_no, larvals):
+        rounds.append((round_no, list(larvals)))
+        return [fake_pfpr(x) for x in larvals]
+
+    fit = run_scenarios.calibrate(evaluate, 0.27)
+    assert [r for r, _ in rounds] == [1, 2] and len(rounds[1][1]) == 4
+    est = run_scenarios.interpolate_crossing([(x, fake_pfpr(x)) for x in rounds[0][1]], 0.27)[0]
+    import math
+
+    logs = sorted(math.log10(x) for x in rounds[1][1])
+    assert logs[0] < est < logs[-1]  # round 2 brackets the estimate
+    assert fit["fit"] == "ok" and abs(fit["fit_error"]) <= 0.03 and fit["iterations"] == 2
+    assert fit["larval_capacity"] in rounds[0][1] + rounds[1][1]
+    assert abs(fit["pfpr_2_5y"] - fake_pfpr(fit["larval_capacity"])) < 1e-12
+    assert len(fit["candidates"]) == 12
+
+
+def test_calibrate_extends_then_reports_an_unreachable_target():
+    rounds = []
+
+    def evaluate(round_no, larvals):
+        rounds.append(list(larvals))
+        return [fake_pfpr(x) for x in larvals]
+
+    fit = run_scenarios.calibrate(evaluate, 0.99)
+    assert fit["fit"] == "unreachable" and fit["iterations"] == 2 and fit["extended"] is True
+    assert rounds[1] == run_scenarios.extension_grid() == [1778000000.0, 3162000000.0, 5623000000.0, 10000000000.0]
+    assert fit["larval_capacity"] == 1e10 and fit["fit_error"] < -0.03
+
+
+def test_extension_round_finds_a_target_above_the_grid_and_refines_it():
+    import math
+
+    def late(x):  # a curve that only rises past 1e9: 0.2 at 1e9, 0.9 at 1e11
+        return 0.9 / (1 + math.exp(-2.5 * (math.log10(x) - 9.5)))
+
+    rounds = []
+
+    def evaluate(round_no, larvals):
+        rounds.append((round_no, list(larvals)))
+        return [{"pfpr_2_5y": late(x), "pfpr_2_5y_annual": late(x) / 2} for x in larvals]
+
+    fit = run_scenarios.calibrate(evaluate, 0.6)
+    assert [r for r, _ in rounds] == [1, 2, 3] and fit["extended"] is True
+    assert all(x > 1e9 for x in rounds[1][1])
+    assert fit["fit"] == "ok" and fit["iterations"] == 3 and fit["larval_capacity"] > 1e9
+    assert fit["pfpr_2_5y_annual"] == pytest.approx(fit["pfpr_2_5y"] / 2)  # extra keys ride along
+
+
+def test_no_extension_when_round_1_reaches_the_target():
+    fit = run_scenarios.calibrate(lambda r, xs: [fake_pfpr(x) for x in xs], 0.5)
+    assert fit["extended"] is False and fit["iterations"] == 2
+
+
+def test_calibrate_is_loose_when_reachable_but_not_hit():
+    # a step: nothing between 0.1 and 0.8, so 0.45 is inside the range but never within 0.03
+    fit = run_scenarios.calibrate(lambda r, xs: [0.1 if x < 1e8 else 0.8 for x in xs], 0.45)
+    assert fit["fit"] == "loose"
+
+
+def test_calibrate_refines_again_when_a_steep_curve_straddles_the_target():
+    import math
+
+    def steep(x):  # Delta-like: PfPR jumps ~0.1 -> ~0.36 within 1e8-1.3e8
+        return 0.75 / (1 + math.exp(-12 * (math.log10(x) - 8.07)))
+
+    rounds = []
+
+    def evaluate(round_no, larvals):
+        rounds.append(round_no)
+        return [steep(x) for x in larvals]
+
+    fit = run_scenarios.calibrate(evaluate, 0.189)
+    assert fit["fit"] == "ok" and abs(fit["fit_error"]) <= 0.03
+    assert 2 < fit["iterations"] <= 1 + run_scenarios.CALIBRATE_MAX_REFINE_ROUNDS
+
+
+def test_run_calibration_caches_the_chosen_burnin_where_a_run_request_finds_it(tmp_path, monkeypatch):
+    class Manifest:
+        eradication_path = str(tmp_path / "bin" / "Eradication")
+
+    monkeypatch.setattr(run_scenarios, "load_pmc_sweep", lambda: (Manifest, object()))
+    monkeypatch.setattr(run_scenarios, "ensure_binary", lambda m: None)
+    batches = []
+
+    def burnins(manifest, sweep, settings, dest_dirs, job_dir, deadline=None):
+        batches.append(len(settings))
+        for s, d in zip(settings, dest_dirs):
+            d.mkdir(parents=True, exist_ok=True)
+            (d / run_scenarios.BURNIN_FILE).write_text(repr(s["larval_capacity"]))
+        return [fake_pfpr(s["larval_capacity"]) for s in settings]
+
+    published = []
+    monkeypatch.setattr(run_scenarios, "run_burnins", burnins)
+    req = calibrate_request(0.27)
+    out = run_scenarios.run_request(req, tmp_path, publish_burnin=lambda k, f: published.append((k, f.read_text())))
+    assert batches == [8, 4]
+    assert out["fit"] == "ok" and [r["round"] for r in out["rounds"]] == [1, 2]
+    assert out["pfpr_basis"] == "Oct-Dec mean, 2-5y"
+    chosen = dict(req["setting"], larval_capacity=out["larval_capacity"])
+    key = run_scenarios.setting_hash(chosen)
+    assert out["burnin_hash"] == key
+    dtk = tmp_path / "burnin" / key / run_scenarios.BURNIN_FILE
+    assert dtk.read_text() == repr(out["larval_capacity"])  # the chosen candidate's own population
+    assert published == [(key, repr(out["larval_capacity"]))]
+    assert not list(tmp_path.glob("calibrate-*"))  # scratch candidates removed
+
+    # A run request with the fitted value (round-tripped through JSON) starts from that burn-in.
+    monkeypatch.setattr(run_scenarios, "run_pickups", lambda *a, **k: [])
+    run_req = json.loads(json.dumps(dict(small_request(500, [0], ["none"]), setting=chosen)))
+    assert run_scenarios.run_request(run_req, tmp_path)["burnin"]["cached"] is True
+
+
+def test_valid_calibrate_request_passes():
+    run_scenarios.validate_request(calibrate_request(0.27))
+    run_scenarios.validate_request(calibrate_request(0.27, tolerance=0.05))
+
+
+@pytest.mark.parametrize(
+    "mutate, fragment",
+    [
+        (lambda r: r["setting"].update(larval_capacity=6e7), "omitted"),
+        (lambda r: r.pop("target_pfpr"), "target_pfpr"),
+        (lambda r: r.update(target_pfpr=0), "target_pfpr"),
+        (lambda r: r.update(target_pfpr=1), "target_pfpr"),
+        (lambda r: r.update(target_pfpr="0.3"), "target_pfpr"),
+        (lambda r: r.update(tolerance=0), "tolerance"),
+        (lambda r: r.update(mode="fit"), "mode"),
+        (lambda r: r["setting"].pop("habitat_values"), "habitat_values"),
+        (lambda r: r["setting"].update(pop=0), "pop"),
+    ],
+)
+def test_invalid_calibrate_requests_are_rejected(mutate, fragment):
+    req = calibrate_request(0.27)
+    mutate(req)
+    with pytest.raises(run_scenarios.RequestError, match=fragment):
+        run_scenarios.validate_request(req)
+
+
+def test_a_run_request_still_needs_larval_capacity_and_ignores_no_mode():
+    req = small_request(500, [0], ["none"])
+    run_scenarios.validate_request(dict(req, mode="run"))
+    req["setting"].pop("larval_capacity")
+    with pytest.raises(run_scenarios.RequestError, match="larval_capacity"):
+        run_scenarios.validate_request(req)
+
+
+def test_setting_hash_treats_an_integer_larval_capacity_as_the_same_float():
+    a = small_request(500, [0], ["none"])["setting"]
+    assert run_scenarios.setting_hash(a) == run_scenarios.setting_hash(dict(a, larval_capacity=60000000))
+
+
+# The live model's default setting (connect_labs/labs/indicators/emod/runner.py DEFAULT_SETTING), whose burn-in
+# is stored under e894aa5178f45cff; canonicalising numbers must not move it.
+RUNNER_DEFAULT_SETTING = {
+    "name": "SW_Nigeria_like",
+    "larval_capacity": 6e7,
+    "habitat_times": [0, 30, 60, 91, 122, 152, 182, 213, 243, 274, 304, 334, 365],
+    "habitat_values": [1.0, 0.8, 1.0, 2.0, 4.0, 6.0, 6.0, 5.0, 6.0, 5.0, 3.0, 1.5, 1.0],
+    "pop": 5000,
+    "case_mgmt": 0.5,
+    "net_coverage": 0.5,
+}
+
+
+def test_setting_hash_canonicalises_every_number_and_keeps_the_deployed_key():
+    a = RUNNER_DEFAULT_SETTING
+    assert run_scenarios.setting_hash(a) == "e894aa5178f45cff"
+    b = json.loads(json.dumps(a))
+    b["habitat_values"] = [int(v) if v == int(v) else v for v in b["habitat_values"]]  # 1, 2, 4, ... as ints
+    b["habitat_times"] = [float(t) for t in b["habitat_times"]]
+    b["pop"] = 5000.0
+    b["larval_capacity"] = 60000000
+    assert run_scenarios.setting_hash(b) == "e894aa5178f45cff"
+    assert run_scenarios.setting_hash(dict(a, case_mgmt=1)) == run_scenarios.setting_hash(dict(a, case_mgmt=1.0))
+    assert run_scenarios.setting_hash(dict(a, pop=5001)) != "e894aa5178f45cff"
+
+
+def test_each_request_gets_its_own_work_dir_and_it_is_removed(tmp_path, monkeypatch):
+    import os
+
+    class Manifest:
+        eradication_path = str(tmp_path / "bin" / "Eradication")
+
+    monkeypatch.setattr(run_scenarios, "load_pmc_sweep", lambda: (Manifest, object()))
+    monkeypatch.setattr(run_scenarios, "ensure_binary", lambda m: None)
+
+    def burnin(manifest, sweep, setting, dest_dir, job_dir, deadline=None):
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        (dest_dir / run_scenarios.BURNIN_FILE).write_text("x")
+
+    cwds = []
+
+    def pickups(*a, **k):
+        cwds.append(os.getcwd())
+        if len(cwds) == 1:  # a second request starting and finishing while the first is mid-run
+            run_scenarios.run_request(small_request(500, [0], ["none"]), tmp_path, heartbeat_s=60)
+            assert os.path.isdir(cwds[0]), "the other request removed this one's cwd"
+        return []
+
+    monkeypatch.setattr(run_scenarios, "build_burnin", burnin)
+    monkeypatch.setattr(run_scenarios, "run_pickups", pickups)
+    run_scenarios.run_request(small_request(500, [0], ["none"]), tmp_path, heartbeat_s=60)
+    assert len(cwds) == 2 and cwds[0] != cwds[1]
+    root = str(tmp_path.resolve())
+    assert all(c.startswith(root) and os.path.basename(c).startswith("work-") for c in cwds)
+    assert not list(tmp_path.glob("work*"))
+
+
+def import_pmc_sweep():
+    """pmc_sweep without EMOD: its emodpy / manifest imports are inside the functions that need them."""
+    import importlib
+    import sys
+
+    parent = str(run_scenarios.HERE.parent)
+    if parent not in sys.path:
+        sys.path.insert(0, parent)
+    return importlib.import_module("pmc_sweep")
+
+
+def test_outcomes_add_under_5_fields_alongside_3_24_months():
+    pmc_sweep_stub = import_pmc_sweep()
+
+    msr = {
+        "DataByTimeAndAgeBins": {
+            "Annual Clinical Incidence by Age Bin": [[1.0, 2.0, 3.0, 0.5], [1.0, 1.0, 1.0, 0.5]],
+            "Average Population by Age Bin": [[10, 20, 30, 100], [10, 20, 30, 100]],
+            "PfPR by Age Bin": [[0.1, 0.2, 0.3, 0.4], [0.1, 0.2, 0.5, 0.4]],
+        }
+    }
+    ec = {"Channels": {"PMC_Dose": {"Data": [1, 2, 3]}}}
+    out = pmc_sweep_stub.outcomes(msr, ec)
+    assert out["cases_3_24m"] == 40 + 20 and out["kids_3_24m"] == 20
+    assert out["cases_u5"] == (10 + 40 + 90) + (10 + 20 + 30) and out["kids_u5"] == 60
+    assert out["pfpr_2_5y"] == pytest.approx(0.4) and out["doses"] == 6
+    assert pmc_sweep_stub.last_year_pfpr_2_5y(msr) == 0.5
+
+
+@emod
+def test_larval_setter_gives_the_config_a_direct_build_of_that_setting_gets(tmp_path, monkeypatch):
+    from functools import partial
+
+    monkeypatch.chdir(tmp_path)  # emodpy drops demographics_<timestamp>/ dirs in the cwd
+
+    manifest, sweep = run_scenarios.load_pmc_sweep()
+    a = small_request(500, [0], ["none"])["setting"]
+    b = dict(a, larval_capacity=3.162e8)
+
+    def task_for(setting):
+        return run_scenarios.make_task(
+            manifest,
+            sweep,
+            partial(sweep.build_config, setting=setting, duration_days=730, serialization=("write", [730])),
+            partial(sweep.build_campaign, setting=setting, rounds=()),
+            partial(sweep.build_demographics, setting),
+            partial(sweep.build_reports, report_start=0, report_end=730, n_years=2),
+        )
+
+    swept = task_for(a)
+    sweep.set_habitats(swept.config, b)
+    assert json.dumps(swept.config, sort_keys=True) == json.dumps(task_for(b).config, sort_keys=True)
+    assert json.dumps(swept.config, sort_keys=True) != json.dumps(task_for(a).config, sort_keys=True)
+
+
+@emod
+def test_calibrate_to_a_mid_target(tmp_path):
+    # On the Oct-Dec basis the default setting's curve is near-vertical below ~2e6 (0 at 1e6, 0.35 at 1.6e6 at pop
+    # 500), so a mid target sits on its flatter stretch. A 3-month window of one pop-500 seed is noisy (+/-0.1
+    # between neighbouring capacities), hence the wide tolerance here; at pop 5000 the noise is ~3x smaller.
+    req = calibrate_request(0.55, tolerance=0.08)
+    out = run_scenarios.run_request(req, tmp_path)
+    print(json.dumps({k: v for k, v in out.items() if k != "candidates"}, indent=1))
+    print(json.dumps(out["candidates"]))
+    assert out["fit"] == "ok" and abs(out["fit_error"]) <= 0.08
+    assert out["iterations"] == 2 and len(out["candidates"]) == 12 and out["extended"] is False
+    assert out["pfpr_basis"] == "Oct-Dec mean, 2-5y" and 0 < out["pfpr_2_5y_annual"] < 1
+    # The fitted value's burn-in is the cache entry a run request with it hits.
+    chosen = dict(req["setting"], larval_capacity=out["larval_capacity"])
+    run_req = dict(small_request(500, [0], ["none"], years=1), setting=chosen)
+    run = run_scenarios.run_request(json.loads(json.dumps(run_req)), tmp_path)
+    assert run["burnin"]["cached"] is True
+    assert abs(run["runs"][0]["pfpr_2_5y"] - out["pfpr_2_5y"]) < 0.25  # same population, one year on
+
+
+# Kano-like: dry Nov-May, rains Jun-Oct peaking Aug-Sep.
+SEASONAL_HABITAT = [0.05, 0.05, 0.05, 0.1, 0.3, 1.0, 3.0, 6.0, 6.0, 3.0, 0.5, 0.1, 0.05]
+
+
+@emod
+def test_survey_window_pfpr_exceeds_the_annual_mean_in_a_seasonal_setting(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    manifest, sweep = run_scenarios.load_pmc_sweep()
+    setting = dict(small_request(500, [0], ["none"])["setting"], habitat_values=SEASONAL_HABITAT, larval_capacity=1e8)
+    (res,) = run_scenarios.run_burnins(manifest, sweep, [setting], [tmp_path / "b"], tmp_path)
+    print(res)
+    assert res["pfpr_2_5y"] > res["pfpr_2_5y_annual"] + 0.05  # Oct-Dec sits at the end of the high season
+
+
+@emod
+def test_a_high_target_triggers_the_extension_round(tmp_path, monkeypatch):
+    # The real extension tops out at 1e10 (a 1e11 burn-in takes hours); the mechanics are the same just above 1e9.
+    monkeypatch.setattr(run_scenarios, "CALIBRATE_EXTENSION_LOG10", (9.0, 9.4))
+    req = calibrate_request(0.95)
+    req["setting"]["habitat_values"] = SEASONAL_HABITAT
+    out = run_scenarios.run_request(req, tmp_path)
+    print(json.dumps(out["candidates"]))
+    assert out["extended"] is True and out["rounds"][1]["n"] == 4
+    assert [c["larval_capacity"] for c in out["candidates"] if c["round"] == 2] == run_scenarios.extension_grid()
+    assert all(c["larval_capacity"] > 1e9 for c in out["candidates"] if c["round"] == 2)
+    assert out["fit"] == "unreachable" and out["pfpr_basis"] == "Oct-Dec mean, 2-5y"
+    assert (tmp_path / "burnin" / out["burnin_hash"] / run_scenarios.BURNIN_FILE).exists()
+
+
+# ---- drug choice -----------------------------------------------------------------------------------------------
+
+
+def test_spaq_schedules_validate_and_do_not_change_the_burnin_key():
+    req = small_request(500, [0], ["none", "connect_monthly_in_season_3_24"])
+    req["schedules"][1]["drug"] = "SPAQ"
+    run_scenarios.validate_request(req)
+    assert run_scenarios.setting_hash(req["setting"]) == run_scenarios.setting_hash(
+        small_request(500, [0], ["none"])["setting"]
+    )
+
+
+def test_worker_drugs_match_pmc_sweep():
+    sweep = import_pmc_sweep()
+    assert run_scenarios.DRUGS == sweep.DRUGS
+    # SMC is PMC's own SP entry plus amodiaquine, so the two differ only by the amodiaquine
+    assert sweep.DRUG_ENTRIES == {
+        "SP": ["SulfadoxinePyrimethamine"],
+        "SPAQ": ["SulfadoxinePyrimethamine", "Amodiaquine"],
+    }
+
+
+@emod
+def test_spaq_campaign_adds_amodiaquine_to_the_sp_entry(tmp_path, monkeypatch):
+    from functools import partial
+
+    monkeypatch.chdir(tmp_path)
+    manifest, sweep = run_scenarios.load_pmc_sweep()
+    setting = small_request(500, [0], ["none"])["setting"]
+    rounds = [[91, 30, 4, 0.25, 5.0, 0.85]]
+
+    def drugs_given(drug):
+        task = run_scenarios.make_task(
+            manifest,
+            sweep,
+            partial(sweep.build_config, setting=setting, duration_days=365),
+            partial(sweep.build_campaign, setting=setting, rounds=rounds, drug=drug, start_shift=730),
+            partial(sweep.build_demographics, setting),
+            None,
+        )
+        found = []
+
+        def walk(node):
+            if isinstance(node, dict):
+                if node.get("class") == "AntimalarialDrug":
+                    found.append(node["Drug_Type"])
+                for v in node.values():
+                    walk(v)
+            elif isinstance(node, list):
+                for v in node:
+                    walk(v)
+
+        walk(json.loads(task.campaign.json)["Events"])
+        return found
+
+    background = ["Artemether", "Lumefantrine"] * 2
+    assert sorted(drugs_given("SP")) == sorted(background + ["SulfadoxinePyrimethamine"])
+    assert sorted(drugs_given("SPAQ")) == sorted(background + ["SulfadoxinePyrimethamine", "Amodiaquine"])
+
+
+@emod
+def test_spaq_schedule_runs_and_reports_doses(tmp_path):
+    req = small_request(pop=500, seeds=[0], schedules=["none", "connect_monthly_in_season_3_24"], years=1)
+    req["schedules"][0]["rounds"] = []
+    req["schedules"][1]["rounds"] = [[91, 30, 4, 0.25, 5.0, 0.85]]
+    req["schedules"][1]["drug"] = "SPAQ"
+    out = run_local(req, cache_dir=tmp_path)
+    by = {r["code"]: r for r in out["runs"]}
+    smc = by["connect_monthly_in_season_3_24"]
+    assert smc["drug"] == "SPAQ" and by["none"]["drug"] == "SP"
+    assert smc["doses"] > 0 and by["none"]["doses"] == 0
+    assert smc["cases_u5"] < by["none"]["cases_u5"]
