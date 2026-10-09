@@ -197,6 +197,15 @@
         border-color: var(--color-background-inverse);
         font-weight: var(--font-weight-medium);
       }
+      button.link {
+        border: none;
+        background: none;
+        padding: 7px 4px;
+        min-height: 0;
+        color: var(--color-text-secondary);
+        text-decoration: underline;
+        font-size: var(--font-text-sm-size);
+      }
       button:disabled {
         opacity: 0.5;
         cursor: not-allowed;
@@ -266,7 +275,7 @@
       <div id="workers"></div>
       <div id="qa" class="qa hidden">
         <label for="qa-user"
-          >Send to me instead (QA test) — your PersonalID username</label
+          >Send a test to your own phone — your PersonalID username</label
         >
         <div class="row">
           <input
@@ -276,8 +285,10 @@
             spellcheck="false"
             placeholder="PersonalID username"
           />
-          <button id="qa-preview" type="button">Preview my test send</button>
-          <button id="qa-cancel" type="button">Cancel</button>
+        </div>
+        <div class="row actions">
+          <button id="qa-send" type="button" class="primary">Send test</button>
+          <button id="qa-cancel" type="button" class="link">Cancel</button>
         </div>
       </div>
       <div id="actions" class="actions"></div>
@@ -502,9 +513,21 @@
               state.previewing = false;
               state.preview = p;
               render();
+              // "Send test" is one click: preview to that username, then send what came back.
+              if (
+                state.autoSend &&
+                p &&
+                p.deliver_to === state.deliverTo &&
+                p.confirm
+              ) {
+                state.autoSend = false;
+                send();
+              }
+              state.autoSend = false;
             },
             function (err) {
               state.previewing = false;
+              state.autoSend = false;
               state.preview = readOnly(state.agentResult);
               showError(err.message);
             },
@@ -570,10 +593,14 @@
             },
             function (err) {
               state.busy = false;
+              if (/already confirmed/i.test(err.message)) {
+                state.outcome = 'sent';
+                state.execution = null;
+                render();
+                return;
+              }
               if (
-                /expired|already confirmed|not the ones that were previewed/i.test(
-                  err.message,
-                )
+                /expired|not the ones that were previewed/i.test(err.message)
               ) {
                 loadPreview().then(function () {
                   showNote(
@@ -589,23 +616,6 @@
           );
         }
 
-        function decline() {
-          if (state.busy) return;
-          state.outcome = 'declined';
-          state.preview = null;
-          request('ui/update-model-context', {
-            content: [
-              {
-                type: 'text',
-                text: 'The person chose Not yet: nothing was sent.',
-              },
-            ],
-            structuredContent: { outcome: 'declined' },
-          }).catch(function () {});
-          render();
-        }
-
-        // ui/update-model-context then ui/message: the host learns what was picked.
         function tell(structured, text) {
           request('ui/update-model-context', {
             content: [{ type: 'text', text: text }],
@@ -929,52 +939,41 @@
           }
           var ready = !!p.confirm && !(p.needs && p.needs.length);
           var idle = state.canAct && !state.busy && !state.previewing;
-          var sendLabel = p.deliver_to
-            ? 'Send to ' + p.deliver_to + ' (QA test)'
-            : 'Send to ' + workerName(p);
+          if (state.qaMode) {
+            // One thing to do here: type a username and Send test. Nothing else shows.
+            qa.classList.remove('hidden');
+            var qaSend = el('qa-send');
+            qaSend.textContent =
+              state.busy || state.autoSend || state.previewing
+                ? 'Sending…'
+                : 'Send test';
+            qaSend.disabled = !idle;
+            return;
+          }
+          qa.classList.add('hidden');
           var sendBtn = h('button', {
             type: 'button',
             class: 'primary',
-            text: state.busy ? 'Sending…' : sendLabel,
+            text: state.busy ? 'Sending…' : 'Send to ' + workerName(p),
             onclick: send,
           });
           sendBtn.disabled = !(idle && ready);
           box.appendChild(sendBtn);
-          if (p.qa_redirect && !p.deliver_to) {
-            var qaBtn = h('button', {
+          if (p.qa_redirect) {
+            var qaLink = h('button', {
               type: 'button',
-              text: 'Send to me (QA test)',
+              class: 'link',
+              text: 'Send a test to me instead',
               onclick: function () {
-                qa.classList.remove('hidden');
+                state.qaMode = true;
+                render();
                 el('qa-user').focus();
                 reportSize();
               },
             });
-            qaBtn.disabled = !idle;
-            box.appendChild(qaBtn);
+            qaLink.disabled = !idle;
+            box.appendChild(qaLink);
           }
-          if (p.deliver_to) {
-            var back = h('button', {
-              type: 'button',
-              text: 'Send to ' + workerName(p) + ' instead',
-              onclick: function () {
-                state.deliverTo = '';
-                el('qa-user').value = '';
-                loadPreview();
-              },
-            });
-            back.disabled = !idle;
-            box.appendChild(back);
-          }
-          var notYet = h('button', {
-            type: 'button',
-            text: 'Not yet',
-            onclick: decline,
-          });
-          notYet.disabled = state.busy || !state.canAct;
-          box.appendChild(notYet);
-          el('qa-preview').disabled = !idle;
-          if (!p.qa_redirect || p.deliver_to) qa.classList.add('hidden');
         }
 
         function renderHistory(p) {
@@ -1006,20 +1005,36 @@
           });
         }
 
-        el('qa-preview').addEventListener('click', function () {
+        el('qa-send').addEventListener('click', function () {
           var v = el('qa-user').value.trim();
           if (!v) {
             el('qa-user').focus();
             return;
           }
+          if (
+            state.preview &&
+            state.preview.deliver_to === v &&
+            state.preview.confirm
+          ) {
+            send();
+            return;
+          }
           state.deliverTo = v;
+          state.autoSend = true;
           loadPreview();
         });
         el('qa-user').addEventListener('keydown', function (e) {
-          if (e.key === 'Enter') el('qa-preview').click();
+          if (e.key === 'Enter') el('qa-send').click();
         });
         el('qa-cancel').addEventListener('click', function () {
-          el('qa').classList.add('hidden');
+          state.qaMode = false;
+          el('qa-user').value = '';
+          if (state.deliverTo) {
+            state.deliverTo = '';
+            loadPreview(); // back to the worker's own preview
+          } else {
+            render();
+          }
           reportSize();
         });
 
