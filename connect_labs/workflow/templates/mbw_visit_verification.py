@@ -442,7 +442,14 @@ PROD_ELIGIBLE_FLW_SCHEMA = {
 # attribute, NOT a custom case property -- same "case.<attr>" dot-notation
 # as "case.properties.<prop>", just without the properties segment; see
 # normalize_cchq_case_to_visit_dict in cchq_cases_fetcher.py), shown in the
-# GPS Map tab's registration-point tooltip.
+# GPS Map tab's registration-point tooltip. registration_location_type is
+# the Register Mother form's own "Where is the registration being
+# conducted?" question (form.address_details.where_is_the_registration_being_conducted,
+# saved as the same-named case property, same convention as conduct_visit_now
+# and home_gps above) -- the registration-time analog of a visit's own
+# where_is_the_visit_being_conducted, with a DIFFERENT value vocabulary
+# (home / health_facility / others, vs. a visit's mothers_home / health_facility
+# / other) -- confirmed via commcare_hq_mcp's get_form_questions.
 # ---------------------------------------------------------------------------
 
 MOTHER_REGISTRATION_SCHEMA = {
@@ -453,6 +460,11 @@ MOTHER_REGISTRATION_SCHEMA = {
         {"name": "conduct_visit_now", "path": "case.properties.conduct_visit_now", "aggregation": "first"},
         {"name": "home_gps", "path": "case.properties.home_gps", "aggregation": "first"},
         {"name": "registration_datetime", "path": "case.date_opened", "aggregation": "first"},
+        {
+            "name": "registration_location_type",
+            "path": "case.properties.where_is_the_registration_being_conducted",
+            "aggregation": "first",
+        },
     ],
 }
 
@@ -464,6 +476,11 @@ PROD_MOTHER_REGISTRATION_SCHEMA = {
         {"name": "conduct_visit_now", "path": "case.properties.conduct_visit_now", "aggregation": "first"},
         {"name": "home_gps", "path": "case.properties.home_gps", "aggregation": "first"},
         {"name": "registration_datetime", "path": "case.date_opened", "aggregation": "first"},
+        {
+            "name": "registration_location_type",
+            "path": "case.properties.where_is_the_registration_being_conducted",
+            "aggregation": "first",
+        },
     ],
 }
 
@@ -569,9 +586,10 @@ PIPELINE_SCHEMAS = [
         "name": "MBW Visit Verification — Mother Registration (test)",
         "description": (
             "Mother cases with the conduct_visit_now registration-time property, home_gps "
-            "registration GPS point, and registration_datetime (test domain) -- used to detect "
-            "first visits that happened immediately at registration, and to plot the registration "
-            "point (with its timestamp) on the GPS Map tab."
+            "registration GPS point, registration_datetime, and registration_location_type "
+            "(test domain) -- used to detect first visits that happened immediately at "
+            "registration, and to plot the registration point (with its timestamp and location) "
+            "on the GPS Map tab."
         ),
         "schema": MOTHER_REGISTRATION_SCHEMA,
     },
@@ -580,9 +598,10 @@ PIPELINE_SCHEMAS = [
         "name": "MBW Visit Verification — Mother Registration (production)",
         "description": (
             "Mother cases with the conduct_visit_now registration-time property, home_gps "
-            "registration GPS point, and registration_datetime (opp 765's real production domain) "
-            "-- used to detect first visits that happened immediately at registration, and to plot "
-            "the registration point (with its timestamp) on the GPS Map tab."
+            "registration GPS point, registration_datetime, and registration_location_type "
+            "(opp 765's real production domain) -- used to detect first visits that happened "
+            "immediately at registration, and to plot the registration point (with its timestamp "
+            "and location) on the GPS Map tab."
         ),
         "schema": PROD_MOTHER_REGISTRATION_SCHEMA,
     },
