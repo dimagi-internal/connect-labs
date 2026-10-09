@@ -1832,13 +1832,21 @@ def targeting_pmc_run_status(user, *, run_id, state, cost_per_visit=None, platfo
         "custom schedule in one state. Label every result with 'label' -- 'illustrative \u00b7 fitted to "
         "each state's prevalence and rainfall' -- and never call it calibrated. "
         "LEAD WITH 'recommendation' whenever the visitor asks what to do, which approach, or which schedule for a "
-        "set of states (they should not have to pick a design themselves): say the approach (recommendation.label), "
+        "set of states (they should not have to pick a design themselves). It is for our proposal's age band, "
+        "children 3-24 months, unless the visitor asks for another ('ages': '12_24' for the second year only, 'any'); "
+        "say the approach (recommendation.label), "
         "that each state starts with its own rains, how many states it keeps and which it drops (below the bar), "
         "and the 'unclear' states (the approach's effect there is within the model's noise: never count them as "
         "passing or failing; name each one's best clear design and its multiple instead), "
         "deaths averted, cost, $ per death and x GiveWell for the kept states; then versus_quarterly (the "
         "proposal's base, x and the deaths-per-dollar ratio) and step_up (what more money buys at the margin, its "
-        "cost per extra death and whether that increment clears the bar). Then say WHY in one or two sentences from "
+        "cost per extra death and whether that increment clears the bar). If recommendation.second_year_only is set, "
+        "one line: the same budget aimed at 12-24-month-olds only does better (its label, states, x GiveWell) -- an "
+        "option to raise, not the proposal. For 'what does $X buy', 'best plan for a budget', or any budget figure: "
+        "answer from 'budget_plans' (pass 'budgets', dollars a year; the default is 10M, 20M and 30M): for each, "
+        "the schedule, the states it funds (whole states, best value first, only where the effect is clear and "
+        "clears the bar), deaths averted, spend and x GiveWell; spend under the budget means the rest would fall "
+        "below the bar. Then say WHY in one or two sentences from "
         "the evidence (by_design: how the approaches compare; SP protects about a month, so doses in the rainy "
         "months count most). If recommendation is null, say why (no approach runs in every state, or no deaths "
         "loaded). "
@@ -1891,6 +1899,20 @@ def targeting_pmc_run_status(user, *, run_id, state, cost_per_visit=None, platfo
                     "malaria deaths -- a cross-check, its state pattern does not track DHS prevalence."
                 ),
             },
+            "ages": {
+                "type": "string",
+                "enum": ["3_24", "12_24", "any"],
+                "description": (
+                    "The children the recommendation and budget plans may target. Default '3_24', our proposal's "
+                    "3-24 months; '12_24' the second year of life only; 'any' every design, SMC included."
+                ),
+            },
+            "budgets": {
+                "type": "array",
+                "items": {"type": "number", "exclusiveMinimum": 0},
+                "maxItems": 6,
+                "description": "Annual budgets in dollars for 'budget_plans'. Default [10000000, 20000000, 30000000].",
+            },
             **_PMC_COST_PROPS,
         },
         "additionalProperties": False,
@@ -1905,6 +1927,8 @@ def targeting_pmc_rank(
     platform_fee=None,
     dose_rate=None,
     deaths_basis="prevalence_scaled",
+    ages="3_24",
+    budgets=None,
 ):
     from urllib.parse import urlencode
 
@@ -1930,7 +1954,14 @@ def targeting_pmc_rank(
         # excluding every state.
         deaths = mortality.malaria_u5_deaths(mortality.registry_burden(), deaths_basis) or None
         out = rank.rank_pairs(
-            states, **costs, top_n=min(top_n, rank.MAX_TOP_N), grid=grid, deaths=deaths, deaths_basis=deaths_basis
+            states,
+            **costs,
+            top_n=min(top_n, rank.MAX_TOP_N),
+            grid=grid,
+            deaths=deaths,
+            deaths_basis=deaths_basis,
+            ages=ages,
+            budgets=rank.DEFAULT_BUDGETS if budgets is None else budgets,
         )
         if deaths is None:
             out["note"] = " ".join(
@@ -1942,6 +1973,8 @@ def targeting_pmc_rank(
     q = {k: v for k, v in costs.items() if v != pmc.costs_or_default()[k]}
     if deaths_basis != mortality.DEFAULT_BASIS:
         q["deaths_basis"] = deaths_basis
+    if ages != rank.DEFAULT_AGES:
+        q["ages"] = ages
     if states:
         # The selection as the grid names it, ranked or not: the explorer shows why a state was excluded.
         names = [p["state"] for p in out["best_per_state"]] + [e["state"] for e in out["excluded"]]
