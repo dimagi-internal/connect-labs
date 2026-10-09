@@ -57,7 +57,10 @@ def _state_prop(props, name):
         (lambda p: p["case_state"].update(facts="Rose {nope} g"), "{nope} is not a column"),
         (lambda p: p["case_state"].update(facts="Rose {last_weight_g|cubits} g"), "|cubits is not a filter"),
         (lambda p: p["case_state"]["picture"].update(type="pie"), "picture: must be a mapping whose type"),
-        (lambda p: p["case_state"]["picture"].update(series="height"), "is not one of this registry's case_series"),
+        (
+            lambda p: p["case_state"]["picture"]["panels"][0].update(series="height"),
+            "is not one of this registry's case_series",
+        ),
         (lambda p: p["case_state"]["coach"].pop("limits"), "coach.limits: must be text"),
         (lambda p: p["case_state"].update(priority=10), "priority: 10 is also case_state_danger_unreferred's"),
     ],
@@ -156,9 +159,13 @@ def test_about_and_visit_lines(kmc):
         "skin_to_skin": 20.0,
         "danger_signs": None,
         "referred": "no",
+        "feeds": 24.0,
+        "timeliness": "Late",  # drawn on the picture, not told (brief: false)
+        "temperature": 36.9,
     }
     assert cs.visit_line(series, visit) == (
-        "- 25 May 2026: weight 1,635 g; skin-to-skin 20 h in the last 24 h; danger signs: none; referred: no"
+        "- 25 May 2026: weight 1,635 g; skin-to-skin 20 h in the last 24 h; danger signs: none; referred: no; "
+        "24 successful feeds in the last 24 h"
     )
 
 
@@ -176,3 +183,69 @@ def test_the_case_state_of_a_row_is_its_most_urgent():
     assert cs.case_state({"a": True, "b": True}, cat)["name"] == "a"
     assert cs.case_state({"a": True, "b": True}, cat, "b")["name"] == "b"
     assert cs.case_state({"a": False, "b": False}, cat) is None
+
+
+# ---------------------------------------------------------------------------
+# What a case is called, and the case summary picture's panels
+# ---------------------------------------------------------------------------
+
+
+def test_a_case_is_called_by_the_first_name_choice_whose_columns_are_all_set(kmc):
+    props, _ = kmc
+    both = {"child_name": "Abubakar", "mother_name": "Hauwa Musa", "case_name": "Beneficiary 694"}
+    assert cs.case_display_name(props, both, "Beneficiary 694") == "Baby Abubakar · mother Hauwa Musa"
+    assert cs.case_display_name(props, {**both, "child_name": None}, "x") == "Baby of Hauwa Musa"
+    assert cs.case_display_name(props, {**both, "mother_name": ""}, "x") == "Baby Abubakar"
+    # No name recorded: the label field, never "Baby not recorded".
+    assert cs.case_display_name(props, {"child_name": None, "mother_name": None}, "Beneficiary 694") == (
+        "Beneficiary 694"
+    )
+    assert cs.case_display_name({}, both, "Beneficiary 694") == "Beneficiary 694"  # no case_name declared
+
+
+def test_a_chip_or_line_naming_an_unset_column_is_left_out():
+    assert cs.fill_if_set("{age_days|int} days old", {"age_days": 80}) == "80 days old"
+    assert cs.fill_if_set("{age_days|int} days old", {"age_days": None}) is None
+    assert cs.fill_if_set("KMC: {p|list}", {"p": "mother father"}) == "KMC: mother & father"
+    assert cs.fill_if_set("{f|words}", {"f": "Direct_breastfeed"}) == "Direct breastfeed"
+
+
+def test_every_kmc_case_state_is_a_case_summary_of_up_to_four_panels(kmc):
+    props, _ = kmc
+    for s in cs.catalog(props):
+        pic = s["picture"]
+        assert pic["type"] == "case_summary", s["name"]
+        assert 1 <= len(pic["panels"]) <= cs.MAX_PANELS
+        assert all(p["kind"] in cs.PANEL_KINDS for p in pic["panels"])
+    kinds = {s["name"]: [p["kind"] for p in s["picture"]["panels"]] for s in cs.catalog(props)}
+    assert kinds["case_state_faltering"] == ["series", "bars", "series", "visits"]
+    assert kinds["case_state_danger_unreferred"][0] == "signs"
+
+
+@pytest.mark.parametrize(
+    "mutate, expected",
+    [
+        (lambda pic: pic["panels"].append({"kind": "list", "items": ["x"]}), "panels: must list 1 to 4 panels"),
+        (lambda pic: pic["panels"][0].update(kind="pie"), "kind is one of"),
+        (lambda pic: pic["panels"][0].update(colour="red"), "not a key of a series panel"),
+        (lambda pic: pic["panels"][1].update(last=9), "last: must be a whole number from 1 to 6"),
+        (lambda pic: pic["panels"][2].update(floor={"value": "twelve"}), "floor: must be a mapping of value"),
+        (lambda pic: pic["panels"][3].update(due_to="no_such_column"), "due_to: must name a column"),
+        (lambda pic: pic["panels"][3]["vitals"].__setitem__(0, {"series": "height", "label": "H"}), "'height' is not"),
+        (lambda pic: pic["banner"].append("{nope} kg"), "{nope} is not a column"),
+        (lambda pic: pic.update(banner=["x"] * 9), "banner: must list up to 8 chips"),
+    ],
+)
+def test_a_malformed_case_summary_is_refused(kmc, mutate, expected):
+    props, inds = copy.deepcopy(kmc[0]), kmc[1]
+    pic = _state_prop(props, "case_state_faltering")["case_state"]["picture"]
+    mutate(pic)
+    problems = _problems(props, inds)
+    assert any(expected in p for p in problems), problems
+
+
+def test_a_name_choice_may_require_several_columns(kmc):
+    props, inds = copy.deepcopy(kmc[0]), kmc[1]
+    assert _problems(props, inds) == []
+    props["case_name"][0]["when"] = ["child_name", "no_such_column"]
+    assert any("'no_such_column' is not a column" in p for p in _problems(props, inds))

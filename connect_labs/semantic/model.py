@@ -86,6 +86,9 @@ DEFAULT_WORKER_ATTRIBUTION = "alphabetical"
 # column may read them.
 WINDOW_KINDS = ("previous", "distance_from_previous")
 VISIT_COLUMN_KINDS = ("word_match", "labels", "sql", "column", *WINDOW_KINDS)
+#: What an `optional` visit column reads as while the pipeline lacks its field
+#: (`null_as`); without it a plain column reads as numeric.
+NULL_AS_TYPES = ("text", "numeric", "date", "boolean")
 
 LOOKUP_PICKS = ("latest", "earliest", "max", "min", "count")
 
@@ -112,6 +115,9 @@ class VisitColumn:
     # one reads, it is NULL instead of an error. Lets a registry declare columns
     # ahead of the pipeline fields that feed them, and an older pipeline keep working.
     optional: bool = False
+    # What an `optional` column reads as while the pipeline lacks its field (NULL_AS_TYPES;
+    # None: by its kind, numeric for a plain column).
+    null_as: str | None = None
 
 
 @dataclass(frozen=True)
@@ -185,7 +191,10 @@ def _visit_column(item: Any) -> VisitColumn:
 
     item = item if isinstance(item, dict) else {}
     col = _visit_column_kind(item)
-    return dataclasses.replace(col, optional=bool(item.get("optional"))) if item.get("optional") else col
+    if not item.get("optional"):
+        return col
+    null_as = item.get("null_as") if isinstance(item.get("null_as"), str) else None
+    return dataclasses.replace(col, optional=True, null_as=null_as)
 
 
 def _visit_column_kind(item: dict) -> VisitColumn:

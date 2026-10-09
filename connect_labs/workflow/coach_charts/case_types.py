@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from connect_labs.workflow.coach_charts import theme
+from connect_labs.workflow.coach_charts import case_summary, theme
 
 INNER = theme.WIDTH - 2 * theme.PADDING
 GREEN = theme.BAND_COLOURS["green"]
@@ -468,4 +468,5 @@ CASE_TYPES = {
     "series_highlight_step": series_highlight_step,
     "series_with_bars": series_with_bars,
     "sign_card": sign_card,
+    "case_summary": case_summary.spec,
 }

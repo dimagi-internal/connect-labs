@@ -204,7 +204,9 @@ def visit_columns_sql(columns, available: frozenset[str] | None = None) -> str:
         if col.optional and available is not None and not _reads(col) <= available:
             # The pipeline does not produce what this column reads (yet): NULL, typed
             # as the column would be, so everything downstream still compiles.
-            kind = "boolean" if col.kind == "word_match" else "text" if col.kind == "labels" else "numeric"
+            kind = col.null_as or (
+                "boolean" if col.kind == "word_match" else "text" if col.kind == "labels" else "numeric"
+            )
             terms.append(f"NULL::{kind} AS {col.name}")
             continue
         if col.kind == "word_match":
