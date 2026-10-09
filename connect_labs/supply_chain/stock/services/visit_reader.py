@@ -47,6 +47,7 @@ from connect_labs.supply_chain.stock.services.dispensing import (
     UNMAPPED,
     Dispensed,
     base_unit,
+    case_answers,
     evaluate,
     read_date,
     read_reports,
@@ -263,6 +264,9 @@ def ingest_visit_consumption(access, *, opportunity_id, visits, until=None, toda
                     posted[key] = movement
             if outcome is not None:
                 outcomes[outcome_key(rule.item_id)] = outcome
+            # Read on EVERY read, posted or not, so a case rule added later
+            # reaches visits already read (the forecast's input, not the ledger's).
+            answers.update(case_answers(rule.cases, form_json))
 
         if _remember(
             seen, program_id, opportunity_id, visit, visit_id, point, on, status, form_name, outcomes, answers
@@ -466,6 +470,12 @@ def _remember(seen, program_id, opportunity_id, visit, visit_id, point, on, stat
         "visit_date": on,
         "status": status[:32],
         "form_name": form_name[:255],
+        "form_xmlns": (
+            str((form_json.get("form") or {}).get("@xmlns") or "")[:255]
+            if isinstance(form_json.get("form"), dict)
+            else ""
+        ),
+        "entity_id": str(visit.get("entity_id") or "")[:255],
         "latitude": latitude,
         "longitude": longitude,
     }
