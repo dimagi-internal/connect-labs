@@ -466,7 +466,12 @@ def seed(*, drive, reset: bool = False, today: date | None = None) -> dict:
     from connect_labs.supply_chain.stock.services.workers import worker_slug
 
     today = today or timezone.localdate()
-    start = _monday_on_or_before(today - timedelta(weeks=WEEKS))
+    # The last week's visits (Tuesday, Thursday, Saturday) all fall on or before
+    # today, as close to it as they can: a worker's pace is their last 14 days
+    # (resupply.window_for), and seeded on a Sunday the last visit used to be
+    # eight days back, which left one week of visits in the window and half the
+    # network reading overstocked.
+    start = _monday_on_or_before(today - timedelta(days=5)) - timedelta(weeks=WEEKS - 1)
     world = build_world(start)
 
     opp_id = _registered().opportunity_id

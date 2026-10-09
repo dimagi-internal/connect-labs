@@ -485,7 +485,7 @@ class TestTheStockPageSaysSendOrReorder:
             data={
                 "kind": "transfer",
                 # Relative to today, not fixed: the page judges a point over the
-                # 90-day window back from today (resupply.DEFAULT_WINDOW_DAYS), so a
+                # 90-day window back from today (resupply.STORE_WINDOW_DAYS), so a
                 # fixed July date fell out of it on 30 Sep and the warehouse became
                 # "cannot be assessed".
                 "occurred_on": _days_ago(75),

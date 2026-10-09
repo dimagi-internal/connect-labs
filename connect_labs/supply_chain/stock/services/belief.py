@@ -96,6 +96,9 @@ class Belief:
     unmatched_receipts: list = field(default_factory=list)
     # The days the rate is averaged over (resupply.observed); None with no demand yet.
     rate_days: int | None = None
+    # The window the rate looks back over (resupply.window_for): a field
+    # worker's last 14 days, a store's last 90. rate_days is fewer when demand began inside it.
+    rate_window_days: int | None = None
     # While those days are too few for a rate: the day one becomes possible
     # (resupply.estimate_from) and demand per day so far (resupply.per_day_so_far).
     rate_estimate_from: date | None = None
@@ -107,7 +110,7 @@ class Belief:
 
 
 # Per-unit sums that add up the hierarchy as they are.
-_SUMMED = ("in", "out", "issued", "dispensed", "unapproved", "estimated", "c_window")
+_SUMMED = ("in", "out", "issued", "dispensed", "unapproved", "estimated")
 
 
 def _raw():
@@ -116,7 +119,10 @@ def _raw():
         "in_after_count": {},
         "out_after_count": {},
         "issued_from": {},
-        "r_window": {},
+        # {window days: {unit: total}}: demand inside each window a point here
+        # is rated over (resupply.window_for) -- a worker's 14 days, a store's 90.
+        "c_by": {},
+        "r_by": {},
         "c_earliest": None,
         "r_earliest": None,
         "dispenses": False,
@@ -154,17 +160,25 @@ def _counted_later(program_id, item, on_date, side):
     return Exists(counts)
 
 
-def _raw_by_point(program_id, item, ids, on_date, start, end) -> dict:  # noqa: C901
+def _raw_by_point(program_id, item, ids, on_date, windows, end) -> dict:  # noqa: C901
     """Every per-point sum, in five grouped queries whatever the number of points.
 
     Balances are as of `on_date` (all of the ledger when it is None, as
     `ledger.balance` reads it); rates and dispensing stop at `end`, as
-    `resupply.average_monthly_consumption` does.
+    `resupply.average_monthly_consumption` does. Demand is summed once for
+    each of `windows` (days), in the same query.
     """
     raw = {pid: _raw() for pid in ids}
     moves = Movement.objects.for_program(program_id).as_of(on_date).filter(item=item)
     by_end = Q(occurred_on__lte=end)
-    in_window = Q(occurred_on__gte=start, occurred_on__lte=end)
+    in_windows = {
+        f"w{days}": Sum("quantity", filter=Q(occurred_on__gte=resupply.window_start(end, days), occurred_on__lte=end))
+        for days in windows
+    }
+
+    def add_windows(by, unit, row):
+        for days in windows:
+            _add(by.setdefault(days, {}), unit, row[f"w{days}"])
 
     inbound = (
         moves.filter(to_supply_point_id__in=ids)
@@ -203,10 +217,10 @@ def _raw_by_point(program_id, item, ids, on_date, start, end) -> dict:  # noqa: 
         .filter(by_end)
     )
     for row in releases.values("from_supply_point_id", "quantity_unit").annotate(
-        window=Sum("quantity", filter=in_window), earliest=Min("occurred_on")
+        **in_windows, earliest=Min("occurred_on")
     ):
         bucket = raw[row["from_supply_point_id"]]
-        _add(bucket["r_window"], row["quantity_unit"], row["window"])
+        add_windows(bucket["r_by"], row["quantity_unit"], row)
         bucket["r_earliest"] = _earlier(bucket["r_earliest"], row["earliest"])
 
     # "Of which unapproved" is the visit's status as it stands now; the as-of
@@ -223,11 +237,11 @@ def _raw_by_point(program_id, item, ids, on_date, start, end) -> dict:  # noqa: 
         .annotate(unapproved=unapproved)
     )
     for row in standing.values("from_supply_point_id", "quantity_unit", "estimated", "unapproved").annotate(
-        total=Sum("quantity"), window=Sum("quantity", filter=in_window), earliest=Min("occurred_on")
+        total=Sum("quantity"), **in_windows, earliest=Min("occurred_on")
     ):
         bucket, unit = raw[row["from_supply_point_id"]], row["quantity_unit"]
         _add(bucket["dispensed"], unit, row["total"])
-        _add(bucket["c_window"], unit, row["window"])
+        add_windows(bucket["c_by"], unit, row)
         bucket["c_earliest"] = _earlier(bucket["c_earliest"], row["earliest"])
         if row["estimated"]:
             _add(bucket["estimated"], unit, row["total"])
@@ -296,10 +310,12 @@ def _rate(item, unit, total, earliest, end, window_days, basis):
 
 def _belief(point, raw, count, unmatched, item, unit, end, window_days) -> Belief:
     on_hand = ledger.collapse(_balance(raw["in"], raw["out"]), item, unit)
+    window_days = resupply.window_for(point, window_days)
     if raw["dispenses"]:
-        basis, total, earliest = resupply.CONSUMPTION, raw["c_window"], raw["c_earliest"]
+        basis, by, earliest = resupply.CONSUMPTION, raw["c_by"], raw["c_earliest"]
     else:
-        basis, total, earliest = resupply.RELEASES, raw["r_window"], raw["r_earliest"]
+        basis, by, earliest = resupply.RELEASES, raw["r_by"], raw["r_earliest"]
+    total = by.get(window_days, {})
     amc = _rate(item, unit, total, earliest, end, window_days, basis)
     plan = resupply.cover(on_hand, amc, basis, point, item=item, window_days=window_days)
     estimate_on, so_far = _waiting(item, unit, total, earliest, end, window_days)
@@ -335,6 +351,7 @@ def _belief(point, raw, count, unmatched, item, unit, end, window_days) -> Belie
         status=plan["status"],
         unmatched_receipts=unmatched,
         rate_days=resupply.observed(earliest, end, window_days),
+        rate_window_days=window_days,
         rate_estimate_from=estimate_on,
         rate_per_day_so_far=so_far,
     )
@@ -353,16 +370,12 @@ def _waiting(item, unit, total, earliest, end, window_days):
     return estimate_on, resupply.per_day_so_far(ledger.collapse(total, item, unit), earliest, end)
 
 
-def _window(on_date, window_days):
-    end = on_date or date.today()
-    return end - timedelta(days=window_days), end
-
-
 def _compute(program_id, item, points, on_date, window_days):
-    start, end = _window(on_date, window_days)
+    end = on_date or date.today()
+    windows = sorted({resupply.window_for(p, window_days) for p in points})
     unit = unit_of(item)
     ids = [p.pk for p in points]
-    raw = _raw_by_point(program_id, item, ids, on_date, start, end)
+    raw = _raw_by_point(program_id, item, ids, on_date, windows, end)
     counts = _latest_counts(program_id, points, item=item, on_date=on_date)
     unmatched = _unmatched_by_point(program_id, item, ids, on_date)
     beliefs = {
@@ -372,7 +385,7 @@ def _compute(program_id, item, points, on_date, window_days):
     return raw, beliefs, unit, end
 
 
-def beliefs_for(program_id, item, points, *, on_date=None, window_days=resupply.DEFAULT_WINDOW_DAYS) -> dict:
+def beliefs_for(program_id, item, points, *, on_date=None, window_days=None) -> dict:
     """{supply point id: Belief} for these points, in a fixed number of queries."""
     points = list(points)
     if not points:
@@ -380,7 +393,7 @@ def beliefs_for(program_id, item, points, *, on_date=None, window_days=resupply.
     return _compute(program_id, item, points, on_date, window_days)[1]
 
 
-def worker_beliefs(program_id, item, *, opportunity_id=None, on_date=None, window_days=resupply.DEFAULT_WINDOW_DAYS):
+def worker_beliefs(program_id, item, *, opportunity_id=None, on_date=None, window_days=None):
     """Every active worker point, by name. No other order: nothing here ranks workers (§22)."""
     points = SupplyPoint.objects.filter(program_id=program_id, status="active", kind="user_held")
     if opportunity_id is not None:
@@ -390,7 +403,7 @@ def worker_beliefs(program_id, item, *, opportunity_id=None, on_date=None, windo
     return [found[p.pk] for p in points]
 
 
-def point_belief(program_id, point, item, *, on_date=None, window_days=resupply.DEFAULT_WINDOW_DAYS) -> Belief:
+def point_belief(program_id, point, item, *, on_date=None, window_days=None) -> Belief:
     return beliefs_for(program_id, item, [point], on_date=on_date, window_days=window_days)[point.pk]
 
 
@@ -406,6 +419,9 @@ def _merge(total, raw):
     for sender, units in raw["issued_from"].items():
         for unit, amount in units.items():
             _add(total["issued_from"].setdefault(sender, {}), unit, amount)
+    for days, units in raw["c_by"].items():
+        for unit, amount in units.items():
+            _add(total["c_by"].setdefault(days, {}), unit, amount)
     total["c_earliest"] = _earlier(total["c_earliest"], raw["c_earliest"])
     total["no_answer"] += raw["no_answer"]
 
@@ -427,9 +443,11 @@ def _subtree_figures(point, total, members, item, unit, end, window_days) -> dic
         if sender not in members:
             for u, amount in units.items():
                 _add(outside, u, amount)
-    amc = _rate(item, unit, total["c_window"], total["c_earliest"], end, window_days, resupply.CONSUMPTION)
+    window_days = resupply.window_for(point, window_days)
+    consumed = total["c_by"].get(window_days, {})
+    amc = _rate(item, unit, consumed, total["c_earliest"], end, window_days, resupply.CONSUMPTION)
     plan = resupply.cover(on_hand, amc, resupply.CONSUMPTION, point, item=item, window_days=window_days)
-    estimate_on, so_far = _waiting(item, unit, total["c_window"], total["c_earliest"], end, window_days)
+    estimate_on, so_far = _waiting(item, unit, consumed, total["c_earliest"], end, window_days)
     return {
         "on_hand": on_hand,
         "received_from_outside": ledger.collapse(outside, item, unit),
@@ -447,7 +465,7 @@ def _subtree_figures(point, total, members, item, unit, end, window_days) -> dic
     }
 
 
-def network_tree(program_id, item, *, on_date=None, window_days=resupply.DEFAULT_WINDOW_DAYS) -> list[Belief]:
+def network_tree(program_id, item, *, on_date=None, window_days=None) -> list[Belief]:
     """The network from its top points down, each store carrying its subtree's figures.
 
     Every active point appears exactly once. A point whose parent is not
@@ -546,6 +564,7 @@ def wire(b: Belief) -> dict:
         # days to stock-out has no figure, and a page says when it will and what
         # the days so far show: "estimate from 9 Oct", "~7 a day so far".
         "rate_days": b.rate_days,
+        "rate_window_days": b.rate_window_days,
         "rate_days_needed": resupply.MINIMUM_WINDOW_DAYS,
         "rate_estimate_from": b.rate_estimate_from.isoformat() if b.rate_estimate_from else None,
         "rate_per_day_so_far": maybe(b.rate_per_day_so_far),
