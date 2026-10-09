@@ -95,7 +95,7 @@ CASE_STATE_COLUMNS = (
     ("visit_feeding_method", "text", "NULL"),
     ("visit_cup_feeding", "text", "NULL"),
     ("visit_feeds", "double precision", "NULL"),
-    ("visit_timeliness", "text", "NULL"),
+    ("visit_timing", "text", "NULL"),
     ("visit_danger_answer", "text", "NULL"),
     ("visit_next_start", "date", "NULL"),
     ("visit_next_end", "date", "NULL"),

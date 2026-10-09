@@ -192,6 +192,7 @@ def evaluated(db):
         assert not dropped
         return {c["entity_id"]: c for c in cases}, rows
 
+    run.visit_sql = visit_sql
     yield props, run
     with connection.cursor() as cur:
         cur.execute("DROP TABLE IF EXISTS kmc_cs_visits")
@@ -267,3 +268,13 @@ def test_a_named_case_is_called_by_its_names_and_an_unnamed_one_by_its_label(eva
     assert fa["age_days"] == 60
     assert fa["next_visit_overdue_days"] == 4
     assert cases["dg"]["next_visit_overdue_days"] is None
+
+
+def test_every_case_series_reads_unambiguously_from_the_visit_rows(evaluated):
+    """What `case_states.case_visits` does: name each series' column on the Layer-1 rows.
+    A visit column named like the pipeline field it aliases is ambiguous here."""
+    props, run = evaluated
+    cols = ", ".join(f"v.{s['column']} AS {s['name']}" for s in cs.case_series(props))
+    with connection.cursor() as cur:
+        cur.execute(f"SELECT v.visit_date, {cols} FROM ({run.visit_sql}) v LIMIT 1")
+        assert cur.fetchall()
