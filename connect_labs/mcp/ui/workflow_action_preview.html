@@ -581,15 +581,18 @@
                   recipient: who,
                   synthetic: !!p.synthetic,
                 },
-                'Sent the coaching preview to ' +
-                  who +
-                  (toQa ? ' (a QA test)' : '') +
-                  (p.synthetic ? ' (synthetic: no message goes out)' : '') +
-                  (id
-                    ? '. Execution ' +
-                      id +
-                      '; follow it with workflow_action_status.'
-                    : '.'),
+                // The agent is woken with this. It must not go looking the run up: the
+                // send ran under the VIEWER's Labs account, which the agent's own
+                // connection may not be (2026-10-09: it could not see execution 13 and
+                // wrote two paragraphs of guesses). The card follows the status itself.
+                'The person sent it from the card: ' +
+                  (toQa ? 'a QA test to ' + who : 'to ' + who) +
+                  (p.synthetic && !toQa
+                    ? ' (synthetic: no message goes out)'
+                    : '') +
+                  (id ? ' (execution ' + id + ')' : '') +
+                  '. The card shows its progress. Reply in one short line confirming it was sent; ' +
+                  'do not look it up -- it ran under their Labs account, which may not be the one you use.',
               );
               render();
               followStatus();
