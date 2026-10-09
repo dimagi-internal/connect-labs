@@ -28,7 +28,7 @@
           <td class="py-1.5 pr-3">{% if tab.fill %}workflow {{ tab.fill.workflow }}{% if tab.fill.opportunity_id %} · opportunity {{ tab.fill.opportunity_id }}{% endif %} · /supply/views/{{ tab.slug }}/{% else %}<span class="text-gray-600">built-in page</span>{% endif %}</td>
           <td class="py-1.5 pr-3 text-gray-600">{{ tab.set_by }}</td>
           <td class="py-1.5 text-right">
-            {% if section.got.settable_here and tab.can_hide %}
+            {% if section.can_write and tab.can_hide %}
             <form method="post" class="inline">{% csrf_token %}
               <input type="hidden" name="namespace" value="supply"><input type="hidden" name="tab" value="{{ tab.key }}"><input type="hidden" name="version" value="{{ section.got.version }}">
               {% if tab.shown %}<button name="action" value="hide_tab" class="text-brand-indigo hover:underline">Hide</button>{% else %}<button name="action" value="show_tab" class="text-brand-indigo hover:underline">Show</button>{% endif %}
@@ -52,7 +52,7 @@
     <p class="text-sm text-gray-600 mb-4">Nothing set; labs defaults apply.</p>
     {% endif %}
 
-    {% if section.got.settable_here %}
+    {% if section.can_write %}
     <details class="mb-3">
       <summary class="text-sm text-brand-indigo cursor-pointer">Edit this {{ scope_noun }}'s {{ section.namespace.label }} settings</summary>
       <form method="post" class="mt-2">{% csrf_token %}
@@ -77,6 +77,8 @@
       </ul>
     </details>
     {% endif %}
+    {% elif section.got.settable_here %}
+    <p class="text-sm text-gray-600" data-testid="settings-read-only">{{ section.write_note }}</p>
     {% else %}
     <p class="text-sm text-gray-600">Not set per {{ scope_noun }}.</p>
     {% endif %}

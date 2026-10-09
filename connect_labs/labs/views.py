@@ -7,7 +7,7 @@ from django.http import HttpResponseRedirect
 from django.views.decorators.http import require_http_methods
 from django.views.generic import TemplateView
 
-from connect_labs.labs.context import clear_context_from_session
+from connect_labs.labs.context import AUTO_SELECTED_KEY, clear_context_from_session
 from connect_labs.labs.integrations.commcare.api_client import is_cchq_oauth_active
 from connect_labs.labs.integrations.connect.oauth import fetch_user_organization_data, is_connect_oauth_active
 from connect_labs.labs.integrations.ocs.api_client import is_ocs_oauth_active
@@ -185,15 +185,21 @@ class LabsOverviewView(LoginRequiredMixin, TemplateView):
         # organisation still reaches the overview. Design: the scope-config spec,
         # "An organisation coming in".
         slug = request.GET.get("organization_id")
-        if slug and (getattr(request, "labs_context", None) or {}).get("organization_slug") == slug:
-            from connect_labs.scope_config import service
+        auto = (getattr(request, "session", None) or {}).get(AUTO_SELECTED_KEY)
+        if (
+            slug
+            and (getattr(request, "labs_context", None) or {}).get("organization_slug") == slug
+            # Chosen FOR the person (they hold only this one): not them coming in for it.
+            and auto != {"organization_id": slug}
+        ):
             from connect_labs.scope_config.scopes import Scope
+            from connect_labs.workflow.page_views import resolve_home
 
             try:
-                scope = Scope.of("organization", slug)
-                home = (service.resolved_for_request(request, "labs", scope).get("home") or {}).get("fill")
+                home = resolve_home(request, Scope.of("organization", slug))
             except ValueError:
                 home = None
+            # Only to a home that would open: a fill whose owner this person may use.
             if home:
                 return HttpResponseRedirect(f"/labs/p/org/{slug}/")
         return super().get(request, *args, **kwargs)

@@ -58,6 +58,14 @@ class SupplyWorkflowPageView(WorkflowRunView):
         # Records scoped to an opportunity carry no programme, so a programme in the scope too
         # finds none of them. The supply frame gets the programme back in get_context_data.
         if pin.opportunity_id:
+            # The tab's opportunity comes from Settings, which a member wrote: validate it
+            # as a URL naming it would be, before any run is read or created there.
+            from connect_labs.labs.context import validate_context_access
+
+            if validate_context_access(request, {"opportunity_id": int(pin.opportunity_id)}).get(
+                "opportunity_id"
+            ) != int(pin.opportunity_id):
+                raise Http404("this tab's opportunity is not one you can use")
             request.labs_context = {
                 **{k: v for k, v in context.items() if k != "program_id"},
                 "opportunity_id": pin.opportunity_id,

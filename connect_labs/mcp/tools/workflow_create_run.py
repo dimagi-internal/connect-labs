@@ -94,6 +94,9 @@ def workflow_create_run(
                 "NOT_FOUND",
                 f"workflow definition {definition_id} not found",
             )
+        if (definition.data or {}).get("kind") == "page":
+            # A page has no runs (workflow/page_mode.py).
+            raise MCPToolError("INVALID_SCHEMA", f"workflow {definition_id} is a page: it has no runs to create.")
 
         run = wda.create_run(
             definition_id=definition_id,
