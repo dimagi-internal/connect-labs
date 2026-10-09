@@ -79,7 +79,7 @@ def test_a_pin_that_replaces_workers_takes_its_place_in_the_nav(client_in_progra
     tabs = [(href, label.strip()) for href, _, label in _tabs(client_in_programme)]
     labels = [label for _, label in tabs]
     assert "Workers" not in labels
-    assert ("/supply/views/stock-review/", "Stock review") in tabs
+    assert (f"/supply/views/stock-review/?program_id={PROGRAM}", "Stock review") in tabs
     assert labels.index("Stock review") == labels.index("Stock") + 1
 
 
@@ -110,7 +110,7 @@ def test_stock_points_to_the_pinned_review_and_drops_its_controls_on_a_past_day(
 
     _pin(da, replaces="supply_chain:workers")
     body = client_in_programme.get(reverse("supply_chain:stock")).content.decode()
-    assert 'href="/supply/views/stock-review/">Stock review</a>' in body
+    assert f'href="/supply/views/stock-review/?program_id={PROGRAM}">Stock review</a>' in body
     assert "create one from that template" not in body
     assert "Record stock in or out" in body
 
@@ -241,3 +241,47 @@ def test_pinning_the_same_slug_again_updates_it(da):
 
     views = call_operation("view_list", da, {})
     assert len(views) == 1 and views[0]["replaces"] == "supply_chain:workers"
+
+
+def test_a_pinned_tab_opens_its_programme_whatever_the_session_holds(client_in_programme, da, settings):
+    """The pill names its programme: a session switched to another one (in another browser
+    tab) found no pin under the slug and 404'd the tab the header had just offered."""
+    _pin(da, replaces="supply_chain:workers", opportunity_id=OPP)
+    href = next(href for href, _, label in _tabs(client_in_programme) if label.strip() == "Stock review")
+
+    settings.MIDDLEWARE = [m for m in settings.MIDDLEWARE if not m.endswith("._InProgramme")] + [
+        f"{__name__}._FromQuery"
+    ]
+    assert client_in_programme.get(href).status_code == 200
+
+
+def test_every_supply_header_link_names_its_programme(client_in_programme, da):
+    _pin(da, replaces="supply_chain:workers", opportunity_id=OPP)
+    _pin(da, label="Forecast", slug="forecast")
+
+    hrefs = [href for href, _, _ in _tabs(client_in_programme)]
+
+    assert hrefs and all(href.endswith(f"?program_id={PROGRAM}") for href in hrefs), hrefs
+
+
+def test_a_pinned_tab_with_no_programme_in_view_goes_to_supply_home(client_in_programme, da, settings):
+    _pin(da, replaces="supply_chain:workers", opportunity_id=OPP)
+    settings.MIDDLEWARE = [m for m in settings.MIDDLEWARE if not m.endswith("._InProgramme")] + [
+        f"{__name__}._FromQuery"
+    ]
+
+    response = client_in_programme.get(reverse("supply_chain:workflow_view", args=["stock-review"]))
+
+    assert response.status_code == 302 and response["Location"] == reverse("supply_chain:home")
+
+
+class _FromQuery:
+    """The labs context as the middleware builds it: the URL's programme, else none."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        program = request.GET.get("program_id")
+        request.labs_context = {"program_id": int(program)} if program else {}
+        return self.get_response(request)
