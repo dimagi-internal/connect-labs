@@ -203,6 +203,22 @@ Before the card displays anything else, it checks that your Labs account is conn
 
 with a **Connect Open Chat Studio** button and an "I've connected — continue" link that rechecks the connection. The rest of the card appears once the check passes.
 
+### Choosing what picture the worker sees
+
+When preparing a coaching session, you can choose what the worker's picture shows. The options are:
+
+| Picture option | What the worker sees |
+| --- | --- |
+| **Their own figures** | The worker's own data, as displayed on the run page (the default). |
+| **Comparison with peers** | The worker's figures alongside others on the run, labelled only as "Peer A", "Peer B" and so on — never by name. |
+| **Their figures week by week** | The worker's own data broken down across weeks, showing how their performance has changed over time. |
+| **A custom chart** | A chart of your own design. |
+
+Every number in the picture comes from Labs, and every picture is drawn in Connect's style. The picture the worker receives is exactly the one shown on the card at the time you approved it — it is not recalculated or regraded later.
+
+!!! note "Peers are always anonymous"
+    A coaching note that names another worker is refused. Workers only ever see peers identified as "Peer A", "Peer B" and so on — never by their real name.
+
 ### The coaching card
 
 The card displays:
@@ -223,13 +239,4 @@ Clicking **Send a test to me instead** replaces the card with a compact test pan
 
 If a test send cannot go through, the card shows a reason beneath the button rather than leaving the button stuck on "Sending…". The most common reason is that your Labs account is not connected to Open Chat Studio — in that case the card shows "Connect Open Chat Studio in Labs first, then Send test again" with a **Connect it** link.
 
-If you leave a card unsent and come back to it later, that already means "not yet" — there is no separate dismiss button.
-
-!!! note "Resending coaching works"
-    You can send the same coaching to the same worker more than once. If you send again within 15 minutes, Labs sends it without any "preview went stale" error.
-
-!!! note "You decide when to send — the agent never sends on your behalf"
-    A coaching send always requires your click on the **Send to &lt;worker&gt;** button. The agent shows you the briefing and tells you where to click; it does not send the message itself, and it will not offer to send directly to a worker on your behalf. The **Start coaching** button on the Labs run page works the same way and is unchanged. Other action types (such as creating a task) use a separate confirm flow where the agent asks for your approval before acting.
-
-!!! note "No opening message on synthetic opportunities"
-    When you preview a coaching conversation on a synthetic (demo) opportunity, the card does not show an opening message. This is expected — a synthetic preview does not send anything to a worker, so there is no opening message to display. If you send a QA test to yourself, the card shows Labs' fixed opening message
+If you leave a card unsent and come back to it later, that already means "not yet

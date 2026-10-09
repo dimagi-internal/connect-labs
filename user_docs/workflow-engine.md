@@ -114,6 +114,24 @@ Leaving the card without clicking **Send to \<worker\>** simply means you are no
 !!! note "If a test send can't go through"
     If **Send test** cannot complete, the card now tells you why underneath the button instead of leaving the button stuck on "Sending…" indefinitely. The most common reason is that your Labs account is not connected to Open Chat Studio. In that case the card shows "Connect Open Chat Studio in Labs first, then Send test again" with a **Connect it** link. Follow that link, connect your account, then return to the card and try **Send test** again.
 
+### Choosing what the worker's picture shows
+
+When preparing coaching — either through the canopy agent card or via **Start coaching** on the run page — you can now choose what chart the worker receives in their picture. The options are:
+
+| Picture option | What the worker sees |
+|---|---|
+| **Their own figures** | The worker's results for the topics being coached — the same chart style as today |
+| **Peer comparison** | How the worker's figures compare with others on the same run; other workers appear only as "Peer A", "Peer B", and so on — never by name |
+| **Week by week** | The worker's figures broken down week by week, so they can see how their performance has changed over time |
+| **Custom chart** | A chart of your own design |
+
+Every number in the picture comes from Labs, and every picture is drawn in Connect's style regardless of which option you choose.
+
+The picture shown on the card is exactly what the worker will receive — it is not recalculated or regraded after you approve it. What you see is what they get.
+
+!!! note "Worker names must not appear in coaching notes"
+    A coaching note that names another worker will be refused. Workers must only ever see peers anonymously. If your note includes another worker's name, remove it and try again.
+
 ### How the worker's figures picture looks
 
 The **"Your figures"** picture a worker receives as part of a coaching message is now drawn as a proper chart in Connect's own style. Each topic is shown with its label, its figure, and a bar. The bars are coloured to match Connect's standard status colours:
@@ -213,14 +231,4 @@ One bar per worker, sorted so the worker who will run out soonest appears first.
 A reconciliation table showing, for each worker: stock issued, stock given out, what the ledger says they hold, what they actually counted, the gap between the ledger and the count, visits that did not record a stock figure, and the share of transactions sitting on unapproved visits.
 
 **A worker's history**
-Click any worker to open a day-by-day view of their stock movements and counts. The pace shown here — days to stock-out and sachets per day — is based on the **last 14 days** and is labelled accordingly, for example "5 sachets a day · last 14 days".
-
-**The stores behind them**
-Stock held in the stores that supply the workers, shown in sachets with cartons alongside. Store pace figures use the **last 90 days**, because store demand arrives in larger, less frequent collections such as monthly distributions. Their labels read "last 90 days".
-
-!!! note "One pace figure per worker, everywhere"
-    Every page in the Supply Stock Review — the Runway view, the Workers list, and an individual worker's page — now uses the same 14-day window to calculate a field worker's pace. Previously, the Stock review used 14 days while the Workers list and a worker's page used up to 90, so the same worker could show different "days left" figures depending on which tab you were on. The figures are now consistent across all views.
-
-#### Viewing past dates in the Supply Stock Review
-
-When you pick a past date using the **View as of** control in the supply header, the Stock review and all related pages — Stock, Movements, Workers, individual worker, Network, and "Where it went" — show the stock as it actually stood on that day. This includes visits that were made on or before the chosen date, even if they were synced to the
+Click any worker to open a day-by-day view of their stock movements and counts. The pace shown here — days to stock-out and sachets per day — is based on the
