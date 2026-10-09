@@ -165,6 +165,41 @@ test('LLO rolls its opportunities together; flat ceiling changes the count', () 
   assert.strictEqual(M.mpTierA(a.counts, true), 1);
 });
 
+test('too low and too high are shown apart and add up to implausible', () => {
+  const p = M.mpBaseline(cells, ALL, cfg, false);
+  for (const flat of [false, true]) {
+    const units = M.mpScore(
+      M.mpUnits(cells, 'ward', cfg, STATE.flw_names),
+      p,
+      cfg,
+      'stat',
+      flat,
+    );
+    for (const u of units) assert.strictEqual(u.tooLow + u.tooHigh, u.tierA);
+  }
+  const medu = M.mpScore(
+    M.mpUnits(cells, 'ward', cfg, STATE.flw_names),
+    p,
+    cfg,
+    'stat',
+    false,
+  ).find((u) => u.ward === 'Medu');
+  assert.strictEqual(medu.tooLow, 1);
+  assert.strictEqual(medu.tooHigh, 1);
+  const week = M.mpWeekly(cells, true)[0];
+  assert.strictEqual(week.low + week.high, week.num);
+});
+
+test('"most implausible" sorts by total count, not by rate', () => {
+  const p = M.mpBaseline(cells, ALL, cfg, false);
+  const units = M.mpUnits(cells, 'flw', cfg, STATE.flw_names);
+  const byTotal = M.mpScore(units, p, cfg, 'stat', false, 'total');
+  for (let i = 1; i < byTotal.length; i++)
+    assert.ok(byTotal[i - 1].tierA >= byTotal[i].tierA);
+  // u3 has the highest RATE (2/5) but is grey; u2 has the most readings flagged.
+  assert.strictEqual(byTotal[0].username, 'u2');
+});
+
 test('baseline is program-wide, not narrowed by the LLO filter', () => {
   const p = M.mpBaseline(
     cells,
@@ -229,4 +264,57 @@ test('the page renders with a run, and without one', () => {
     renderTree(M.WorkflowUI({ definition: DEFINITION, view: { state: {} } })) >
       0,
   );
+});
+
+// Walk a rendered tree and collect every element whose props match.
+function findAll(node, pred, out = []) {
+  if (node === null || node === undefined || typeof node !== 'object')
+    return out;
+  if (Array.isArray(node)) {
+    node.forEach((c) => findAll(c, pred, out));
+    return out;
+  }
+  if (typeof node.type === 'function')
+    return findAll(node.type(node.props), pred, out);
+  if (pred(node)) out.push(node);
+  return findAll(node.props && node.props.children, pred, out);
+}
+
+const isButton = (n) => n.type === 'button';
+
+test('an empty in-progress run offers to compute itself, for its own run and program', async () => {
+  const calls = [];
+  const actions = {
+    startJob: (runId, cfg) => {
+      calls.push([runId, cfg]);
+      return Promise.resolve({ success: true, task_id: 't1' });
+    },
+    streamJobProgress: () => () => {},
+  };
+  const tree = M.WorkflowUI({
+    definition: DEFINITION,
+    instance: { id: 99, program_id: 217, opportunity_id: null },
+    actions,
+    view: { state: {}, isCompleted: false },
+  });
+  const buttons = findAll(tree, isButton);
+  assert.strictEqual(buttons.length, 1);
+  buttons[0].props.onClick();
+  await new Promise((r) => setImmediate(r));
+  assert.strictEqual(calls.length, 1);
+  assert.strictEqual(calls[0][0], 99);
+  assert.strictEqual(calls[0][1].job_type, 'muac_plausibility_compute');
+  assert.strictEqual(calls[0][1].run_id, 99);
+  assert.strictEqual(calls[0][1].program_id, 217);
+  assert.strictEqual(calls[0][1].opportunity_id, null);
+});
+
+test('a completed run with no figures offers no button', () => {
+  const tree = M.WorkflowUI({
+    definition: DEFINITION,
+    instance: { id: 99, program_id: 217 },
+    actions: { startJob: () => Promise.resolve({}) },
+    view: { state: {}, isCompleted: true },
+  });
+  assert.strictEqual(findAll(tree, isButton).length, 0);
 });

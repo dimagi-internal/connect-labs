@@ -97,11 +97,14 @@ function mpSum(cells) {
   return cells.reduce(mpAdd, mpZero());
 }
 
-// Tier A count under the chosen ceiling. The floor is the same in both modes.
+// Readings above the chosen ceiling. The floor is the same in both modes.
+function mpTierAHigh(counts, flat) {
+  return flat ? counts.tier_a_high_flat : counts.tier_a_high;
+}
+
+// Tier A count: below the floor plus above the chosen ceiling.
 function mpTierA(counts, flat) {
-  return (
-    counts.tier_a_low + (flat ? counts.tier_a_high_flat : counts.tier_a_high)
-  );
+  return counts.tier_a_low + mpTierAHigh(counts, flat);
 }
 
 function mpRate(num, den) {
@@ -204,13 +207,16 @@ function mpUnits(cells, level, cfg, names) {
   });
 }
 
-// Score and sort: statistically elevated first, then highest Tier A rate.
-function mpScore(units, p, cfg, method, flat) {
+// Score and sort. sortBy 'flagged' (default): statistically elevated first, then
+// highest Tier A rate. 'total': most implausible readings first, whatever the rate.
+function mpScore(units, p, cfg, method, flat, sortBy) {
   var scored = units.map(function (u) {
     var num = mpTierA(u.counts, flat);
     var res = mpColour(num, u.counts.valid, p, cfg, method);
     return Object.assign({}, u, {
       tierA: num,
+      tooLow: u.counts.tier_a_low,
+      tooHigh: mpTierAHigh(u.counts, flat),
       n: u.counts.valid,
       rate: res.rate,
       ub: res.ub,
@@ -219,6 +225,7 @@ function mpScore(units, p, cfg, method, flat) {
     });
   });
   scored.sort(function (a, b) {
+    if (sortBy === 'total' && b.tierA !== a.tierA) return b.tierA - a.tierA;
     if (a.elevated !== b.elevated) return a.elevated ? -1 : 1;
     var ra = a.rate === null ? -1 : a.rate;
     var rb = b.rate === null ? -1 : b.rate;
@@ -238,7 +245,14 @@ function mpWeekly(cells, flat) {
     .map(function (w) {
       var t = byWeek[w];
       var num = mpTierA(t, flat);
-      return { week: w, num: num, n: t.valid, rate: mpRate(num, t.valid) };
+      return {
+        week: w,
+        num: num,
+        low: t.tier_a_low,
+        high: mpTierAHigh(t, flat),
+        n: t.valid,
+        rate: mpRate(num, t.valid),
+      };
     });
 }
 
@@ -370,7 +384,21 @@ function MpUnitTable(props) {
             {level === 'flw' && (
               <th className="px-3 py-2 text-left font-semibold">Ward(s)</th>
             )}
-            <th className="px-3 py-2 text-right font-semibold">Implausible</th>
+            <th
+              className="px-3 py-2 text-right font-semibold"
+              title={'Below the ' + props.floorCm + ' cm floor'}
+            >
+              Too low
+            </th>
+            <th
+              className="px-3 py-2 text-right font-semibold"
+              title="Above the ceiling for the child's age and sex"
+            >
+              Too high
+            </th>
+            <th className="px-3 py-2 text-right font-semibold">
+              Implausible (total)
+            </th>
             <th className="px-3 py-2 text-right font-semibold">
               Valid readings
             </th>
@@ -411,7 +439,11 @@ function MpUnitTable(props) {
                     {Object.keys(u.wards).sort().join(', ')}
                   </td>
                 )}
-                <td className="px-3 py-2 text-right">{u.tierA}</td>
+                <td className="px-3 py-2 text-right">{u.tooLow}</td>
+                <td className="px-3 py-2 text-right">{u.tooHigh}</td>
+                <td className="px-3 py-2 text-right font-semibold">
+                  {u.tierA}
+                </td>
                 <td className="px-3 py-2 text-right">{u.n}</td>
                 <td className="px-3 py-2 text-right">
                   <MpChip colour={u.colour}>{mpPct(u.rate)}</MpChip>
@@ -450,7 +482,7 @@ function MpUnitTable(props) {
           })}
           {props.units.length === 0 && (
             <tr>
-              <td className="px-3 py-4 text-gray-500" colSpan={11}>
+              <td className="px-3 py-4 text-gray-500" colSpan={13}>
                 No readings match these filters.
               </td>
             </tr>
@@ -479,7 +511,18 @@ function MpTrend(props) {
               key={w.week}
               className="flex flex-col items-center justify-end"
               style={{ flex: '1 1 0', minWidth: '36px', height: '100%' }}
-              title={w.week + ': ' + w.num + '/' + w.n}
+              title={
+                w.week +
+                ': ' +
+                w.num +
+                '/' +
+                w.n +
+                ' (' +
+                w.low +
+                ' too low, ' +
+                w.high +
+                ' too high)'
+              }
             >
               <div className="text-xs text-gray-600">{mpPct(w.rate)}</div>
               <div
@@ -589,6 +632,105 @@ function MpMethod(props) {
   );
 }
 
+// A run created by hand starts empty: the figures are classified on the server.
+// This starts that job (job_handlers/muac_plausibility.py) for THIS run and
+// reloads when it is done. A completed run with no figures cannot be filled.
+function MpEmpty(props) {
+  var instance = props.instance || {};
+  var actions = props.actions || {};
+  var _status = React.useState('idle'); // idle | running | error
+  var status = _status[0];
+  var setStatus = _status[1];
+  var _message = React.useState(null);
+  var message = _message[0];
+  var setMessage = _message[1];
+  var canCompute = !props.isCompleted && instance.id && actions.startJob;
+
+  function compute() {
+    if (!canCompute || status === 'running') return;
+    setStatus('running');
+    setMessage('Starting…');
+    actions
+      .startJob(instance.id, {
+        job_type: 'muac_plausibility_compute',
+        run_id: instance.id,
+        program_id: instance.program_id,
+        opportunity_id: instance.program_id ? null : instance.opportunity_id,
+      })
+      .then(function (resp) {
+        if (!resp || !resp.success || !resp.task_id) {
+          setStatus('error');
+          setMessage(
+            (resp && resp.error) || 'Could not start the computation.',
+          );
+          return;
+        }
+        setMessage(
+          'Reading and classifying approved visits — this takes a few minutes…',
+        );
+        actions.streamJobProgress(
+          resp.task_id,
+          function (data) {
+            if (data && data.message) setMessage(data.message);
+          },
+          null,
+          function () {
+            setMessage('Done — loading the report…');
+            window.location.reload();
+          },
+          function (err) {
+            setStatus('error');
+            setMessage(err || 'The computation failed.');
+          },
+        );
+      })
+      .catch(function () {
+        setStatus('error');
+        setMessage('Could not start the computation.');
+      });
+  }
+
+  return (
+    <div className="p-6 text-gray-700 space-y-3">
+      <p className="font-medium">This run has no figures yet.</p>
+      {canCompute ? (
+        <div className="space-y-2">
+          <p className="text-sm">
+            The figures are worked out on the server from every approved visit.
+            Compute them for this run now, or open the latest scheduled run from
+            the workflow list.
+          </p>
+          <button
+            type="button"
+            className="px-3 py-1.5 rounded text-sm"
+            style={{
+              background: status === 'running' ? '#9ca3af' : '#1f2937',
+              color: '#ffffff',
+            }}
+            disabled={status === 'running'}
+            onClick={compute}
+          >
+            {status === 'running' ? 'Computing…' : 'Compute this report'}
+          </button>
+          {message && (
+            <p
+              className="text-sm"
+              style={{ color: status === 'error' ? '#991b1b' : '#4b5563' }}
+            >
+              {message}
+            </p>
+          )}
+        </div>
+      ) : (
+        <p className="text-sm">
+          This run was completed without figures. Open the latest scheduled run
+          from the workflow list, or create a new run and compute it.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ===========================================================================
 // 3. Page
 // ===========================================================================
@@ -634,16 +776,17 @@ function WorkflowUI(props) {
   var _method = React.useState('stat');
   var method = _method[0];
   var setMethod = _method[1];
+  var _sortBy = React.useState('flagged');
+  var sortBy = _sortBy[0];
+  var setSortBy = _sortBy[1];
 
   if (!state) {
     return (
-      <div className="p-6 text-gray-600">
-        <p className="font-medium">No saved report yet.</p>
-        <p className="text-sm mt-1">
-          This report is computed by a scheduled run, not in the browser.
-          Schedule it from the workflow list, or ask for a run to be started.
-        </p>
-      </div>
+      <MpEmpty
+        instance={props.instance}
+        actions={props.actions}
+        isCompleted={!!view.isCompleted}
+      />
     );
   }
 
@@ -679,6 +822,7 @@ function WorkflowUI(props) {
     cfg,
     method,
     flat,
+    sortBy,
   );
   var weekly = mpWeekly(selected, flat);
   var baselineLabel =
@@ -804,7 +948,16 @@ function WorkflowUI(props) {
           value={
             <MpChip colour={headline.colour}>{mpPct(headline.rate, 2)}</MpChip>
           }
-          sub={tierA + ' of ' + totals.valid + ' valid readings'}
+          sub={
+            tierA +
+            ' of ' +
+            totals.valid +
+            ' valid readings: ' +
+            totals.tier_a_low +
+            ' too low, ' +
+            mpTierAHigh(totals, flat) +
+            ' too high'
+          }
         />
         <MpTile
           label="Below WHO -2SD (context, not an error)"
@@ -899,12 +1052,23 @@ function WorkflowUI(props) {
         <span className="text-xs text-gray-500">
           {level !== 'flw' ? 'Click a row to drill down.' : ''}
         </span>
+        <span className="text-xs text-gray-600 ml-auto">Sort by</span>
+        <MpToggle
+          label=""
+          value={sortBy}
+          options={[
+            { value: 'flagged', label: 'Flagged first' },
+            { value: 'total', label: 'Most implausible' },
+          ]}
+          onChange={setSortBy}
+        />
       </div>
 
       <MpUnitTable
         level={level}
         units={units}
         minN={cfg.minN}
+        floorCm={(state.thresholds || {}).floor_cm || 9}
         onPick={level === 'flw' ? null : pick}
       />
 
