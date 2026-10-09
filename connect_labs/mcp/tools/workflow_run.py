@@ -465,6 +465,17 @@ def _for_the_agent(out: dict, r: _Run) -> dict:
     return out
 
 
+def _connect_ocs_url(page_url: str | None) -> str:
+    """Labs' Open Chat Studio OAuth start, returning the person to the run page when it
+    is done (the callback accepts only a relative ``next``) rather than to the overview."""
+    from urllib.parse import urlencode
+
+    path = "/labs/ocs/initiate/"
+    if page_url and page_url.startswith("/"):
+        path += "?" + urlencode({"next": page_url})
+    return _absolute(path) or path
+
+
 def _absolute(path: str | None) -> str | None:
     """A Labs path as a link a View can open (``ui/open-link`` takes https only)."""
     from django.conf import settings
@@ -760,10 +771,10 @@ def workflow_action_preview_view(
 
             out["ocs"] = {
                 "connected": ocs_connected(user),
-                "connect_url": _absolute("/labs/ocs/initiate/") or "/labs/ocs/initiate/",
+                "connect_url": _connect_ocs_url(r.page_url),
             }
         if out.get("connect_url"):
-            out["connect_url"] = _absolute(out["connect_url"]) or out["connect_url"]
+            out["connect_url"] = _connect_ocs_url(r.page_url)
         out["executions"] = [
             e.as_dict()
             for e in WorkflowActionExecution.objects.filter(user=user, run_id=r.run.id, action_key=action)[:5]
