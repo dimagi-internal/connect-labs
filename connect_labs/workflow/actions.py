@@ -120,6 +120,15 @@ DELIVER_TO = "deliver_to"
 #: ``coach_image_caption``.
 INCLUDE_IMAGE = "include_image"
 
+#: What that picture shows (``coach_charts``): ``{type, params}`` or ``{type: custom,
+#: spec}``, top-level for every worker or on one worker's item. Implies ``include_image``.
+PICTURE = "picture"
+
+#: Server-owned: the frozen chart each worker's preview showed, ``{worker key: chart
+#: id}`` (``coach_charts/store.py``). Labs writes it; a caller's own is only ever a
+#: reference back to a chart this person previewed, re-checked before it is used.
+CHARTS = "charts"
+
 
 @dataclass(frozen=True)
 class WorkerContext:
@@ -212,21 +221,36 @@ def _execute_ocs_outreach(ctx: WorkerContext) -> None:
         experiment=ctx.arguments["bot"],
         prompt_text=prompt_text,
         start_new_session=True,
-        coach_image=_image_for(ctx.arguments, prompt_text, ctx.opportunity_id),
+        coach_image=_image_for(ctx.arguments, prompt_text, ctx.opportunity_id, ctx.item["key"]),
     )
     ctx.record["session_id"] = started.get("session_id")
 
 
-def _image_for(arguments: dict, prompt: str | None, opportunity_id: int | None = None) -> dict | None:
+def _image_for(arguments: dict, prompt: str | None, opportunity_id: int | None = None, worker_key=None) -> dict | None:
     """The picture to attach to one worker's conversation: ``{"url", "caption"}`` when
     the action asked for pictures and the worker's text is a Labs briefing, else None.
-    Drawn from the briefing text itself, so it shows exactly the topics the coach is
-    briefed on; a worker given their own prompt gets no picture."""
+
+    The frozen chart the preview showed for this worker (``arguments["charts"]``) when
+    there is one -- what the person approved, not drawn again from the run. An
+    execution queued before charts existed has none, and gets the briefing's own
+    figures as before. A worker given their own prompt gets no picture."""
     from connect_labs.workflow import coach_image
 
     if not arguments.get(INCLUDE_IMAGE):
         return None
+    chart_id = (arguments.get(CHARTS) or {}).get(worker_key) if worker_key else None
+    if chart_id:
+        from connect_labs.workflow.coach_charts import store
+
+        record = store.get(chart_id)
+        return coach_image.chart_attachment(record, opportunity_id) if record is not None else None
     return coach_image.attachment(prompt or "", opportunity_id)
+
+
+def _picture_schema() -> dict:
+    from connect_labs.workflow.coach_charts.chart import PICTURE_SCHEMA
+
+    return PICTURE_SCHEMA
 
 
 ACTION_TYPES: dict[str, ActionType] = {
@@ -268,7 +292,9 @@ ACTION_TYPES: dict[str, ActionType] = {
                 "is a QA redirect: the conversation goes to that ConnectID username instead of the "
                 "worker -- on a synthetic opportunity too, where it is then a real OCS conversation. "
                 "`include_image` (default false) also gives each worker whose briefing Labs writes a "
-                "picture of their own figures for those topics, linked from the session state."
+                "picture of their own figures, linked from the session state; `picture` says what it "
+                "shows -- a chart type and params, or a custom Vega-Lite spec reading Labs' datasets "
+                "(see coach_charts) -- and implies `include_image`. Labs supplies every number."
             ),
             parameters={
                 "type": "object",
@@ -283,6 +309,7 @@ ACTION_TYPES: dict[str, ActionType] = {
                                 "items": {"type": "string", "minLength": 1, "maxLength": 100},
                                 "description": "Indicator keys (e.g. 'SF_P1') this worker is coached on, worst first.",
                             },
+                            PICTURE: _picture_schema(),
                         }
                     ),
                     "prompt": {"type": "string", "maxLength": 4000},
@@ -292,10 +319,11 @@ ACTION_TYPES: dict[str, ActionType] = {
                     INCLUDE_IMAGE: {
                         "type": "boolean",
                         "description": (
-                            "Attach a picture of each briefed worker's own figures (bar per topic) to their "
-                            "conversation. Only workers whose briefing Labs writes get one."
+                            "Attach a picture of each briefed worker's own figures to their conversation "
+                            "(`picture`, default topic_bars). Only workers whose briefing Labs writes get one."
                         ),
                     },
+                    PICTURE: _picture_schema(),
                     DELIVER_TO: {
                         "type": "string",
                         "minLength": 1,
@@ -398,6 +426,8 @@ def declaration_problems(raw: Any) -> list[str]:
             problems.append(f"{where}.defaults cannot name workers; the button or caller does")
         if DELIVER_TO in defaults:
             problems.append(f"{where}.defaults cannot set {DELIVER_TO}; it is a QA choice made per run")
+        if CHARTS in defaults:
+            problems.append(f"{where}.defaults cannot set {CHARTS}; Labs writes it")
     return problems
 
 
@@ -441,16 +471,21 @@ def run_roster(wda, run, definition) -> dict[str, dict]:
     return roster
 
 
-def resolve_arguments(action: dict, arguments: Any, roster: dict[str, dict], *, user=None, briefing=None) -> dict:
+def resolve_arguments(
+    action: dict, arguments: Any, roster: dict[str, dict], *, user=None, briefing=None, pictures=None
+) -> dict:
     """The action's defaults under the caller's arguments, validated against the
     type's schema and the run's roster, in canonical form. ``user`` is the person
     the action runs for; ``deliver_to`` is refused unless they are Dimagi staff.
     ``briefing`` (see ``briefing_source``) lets a coaching action brief each worker
-    from the run's grading."""
-    return _resolve(action, arguments, roster, user=user, briefing=briefing)[0]
+    from the run's grading; ``pictures`` (see ``picture_source``) draws each briefed
+    worker's chart."""
+    return _resolve(action, arguments, roster, user=user, briefing=briefing, pictures=pictures)[0]
 
 
-def _resolve(action: dict, arguments: Any, roster: dict[str, dict], *, user=None, briefing=None) -> tuple[dict, list]:
+def _resolve(
+    action: dict, arguments: Any, roster: dict[str, dict], *, user=None, briefing=None, pictures=None
+) -> tuple[dict, list]:
     """``resolve_arguments``, plus the workers it left out: ``[{key, name, reason}]``."""
     import jsonschema
 
@@ -459,6 +494,10 @@ def _resolve(action: dict, arguments: Any, roster: dict[str, dict], *, user=None
     if not isinstance(arguments, dict):
         raise ActionError("invalid", "arguments must be an object")
     merged = {**copy.deepcopy(action["defaults"]), **copy.deepcopy(arguments)}
+    # Labs' own record of the charts a preview showed: never validated as an argument,
+    # only ever re-checked as a reference to a chart this person previewed.
+    prior_charts = merged.pop(CHARTS, None)
+    prior_charts = prior_charts if isinstance(prior_charts, dict) else {}
     try:
         jsonschema.validate(merged, action["parameters"])
     except jsonschema.ValidationError as e:
@@ -487,6 +526,8 @@ def _resolve(action: dict, arguments: Any, roster: dict[str, dict], *, user=None
         missing = sorted(i["key"] for i in merged["workers"] if not (i.get("prompt") or merged.get("prompt")))
         if missing:
             raise ActionError("invalid", f"no prompt for {missing[:10]}: give `prompt`, or one on each item")
+        _check_notes(merged, roster)
+        _picture_workers(merged, roster, pictures, prior_charts)
         if merged.get(DELIVER_TO):
             _check_deliver_to(user, merged)
         elif _all_synthetic(merged):
@@ -575,6 +616,106 @@ def _brief_workers(merged: dict, roster: dict[str, dict], briefing) -> list[dict
     return skipped
 
 
+def _check_notes(merged: dict, roster: dict[str, dict]) -> None:
+    """No worker-facing text may name another worker. A briefing's programme-team note
+    goes to the coach, which talks to the worker, so a note naming a colleague is
+    refused -- peers are only ever anonymous (``coach_charts/datasets.py``)."""
+    from connect_labs.workflow import coach_briefing
+    from connect_labs.workflow.coach_charts.chart import identity_leaks, identity_terms
+
+    for item in merged["workers"]:
+        prompt = item.get("prompt") or merged.get("prompt")
+        if not coach_briefing.is_briefing(prompt):
+            continue
+        note = coach_briefing.briefing_summary(prompt).get("note")
+        if not note:
+            continue
+        me = roster.get(item["key"]) or {}
+        others = [(w["name"], w["username"]) for k, w in roster.items() if k != item["key"]]
+        if identity_leaks(note, identity_terms(others, me.get("name") or "")):
+            raise ActionError(
+                "peer_identity",
+                f"the note for {me.get('name') or item['key']} names another worker; a worker may only "
+                "ever see peers anonymously (Peer A, Peer B, ...). Reword the note without their name.",
+            )
+
+
+def _picture_workers(merged: dict, roster: dict[str, dict], pictures, prior_charts: dict) -> None:
+    """Give each briefed worker the chart their ``picture`` asks for (default
+    ``topic_bars``), frozen and stored, as ``merged["charts"][key]``: the id is what the
+    preview shows, the confirm token covers and the conversation links to.
+
+    A chart id the caller hands back (a preview's own arguments, at commit) is reused
+    only if it is this person's chart for this run, worker and request; otherwise the
+    chart is built afresh -- which, at commit, makes a different id and so a refused
+    confirm. Nothing happens without ``include_image`` or a ``picture``."""
+    from connect_labs.workflow import coach_briefing
+
+    wants = merged.get(INCLUDE_IMAGE) or merged.get(PICTURE) or any(i.get(PICTURE) for i in merged["workers"])
+    if not wants:
+        return
+    merged[INCLUDE_IMAGE] = True
+    if pictures is None:
+        return
+    charts = {}
+    for item in merged["workers"]:
+        prompt = item.get("prompt") or merged.get("prompt")
+        if not coach_briefing.is_briefing(prompt):
+            continue
+        who = roster[item["key"]]
+        default_topics = [t["key"] for t in coach_briefing.topics_from_briefing(prompt)]
+        request = item.get(PICTURE) or merged.get(PICTURE)
+        if not default_topics and not ((request or {}).get("params") or {}).get("topics"):
+            continue  # a briefing with no topics (only a note): nothing to picture
+        name = coach_briefing.briefing_worker(prompt) or who["name"]
+        charts[item["key"]] = pictures(item["key"], name, request, default_topics, prior_charts.get(item["key"]))
+    if charts:
+        merged[CHARTS] = charts
+
+
+def picture_source(user, wda, run, definition, roster: dict[str, dict], briefing, *, restricted=False):
+    """``pictures(worker_key, worker_name, request, default_topics, prior_id) -> chart
+    id`` for ``_picture_workers``: builds the chart from the run's grading (read once,
+    through ``briefing``) and its saved runs, as the person, and stores it. Saved runs
+    are not read for a restricted caller (their stored snapshots are not vouched for
+    as provenance is now), so a trend is refused there."""
+    from connect_labs.workflow.coach_charts import chart as charts
+    from connect_labs.workflow.coach_charts import datasets, store
+
+    def history_loader(keys, weeks):
+        return datasets.load_history(wda, run, definition, keys, weeks=weeks, user_id=user.pk)
+
+    def pictures(worker_key, worker_name, request, default_topics, prior_id):
+        try:
+            req = charts.normalise_request(request)
+        except datasets.ChartError as e:
+            raise ActionError("invalid", f"{worker_name}: {e.public_message}") from e
+        prior = store.load_bound(prior_id, user=user, run=run, worker_key=worker_key, request=req)
+        if prior is not None:
+            return prior.pk
+        source = briefing() if briefing is not None else None
+        if source is None:
+            raise ActionError("invalid", "a picture is drawn from an indicator report's grading; this run has none")
+        graded = source[0]
+        others = [(w["name"], w["username"]) for k, w in roster.items() if k != worker_key]
+        try:
+            built = charts.build_chart(
+                req,
+                graded=graded,
+                worker_key=worker_key,
+                worker_name=worker_name,
+                default_topics=default_topics,
+                others=others,
+                salt=str(run.id),
+                history_loader=None if restricted else history_loader,
+            )
+        except datasets.ChartError as e:
+            raise ActionError("invalid", f"picture for {worker_name}: {e.public_message}") from e
+        return store.save(built, user=user, run=run, worker_key=worker_key, request=req).pk
+
+    return pictures
+
+
 def briefing_source(user, wda, run, definition, *, opportunity_id=None, program_id=None, restricted=False):
     """A lazy reader of the run's grading for ``_brief_workers``: ``(graded, programme
     name)``, or None when the workflow is not an indicator report. Read only when a
@@ -585,7 +726,14 @@ def briefing_source(user, wda, run, definition, *, opportunity_id=None, program_
         opportunity_id = getattr(run, "opportunity_id", None) or None
         program_id = None if opportunity_id else getattr(run, "program_id", None)
 
+    memo: list = []
+
     def load():
+        if not memo:
+            memo.append(_load())
+        return memo[0]
+
+    def _load():
         if not run_grading.is_semantic_report(definition):
             return None
         try:
@@ -646,7 +794,28 @@ def _digest(user_id: int, run_id: int, key: str, arguments: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
-def preview(user, *, wda, run, definition, key: str, arguments: Any, request=None, briefing=None) -> dict:
+def _preview_image(args: dict, prompt: str, opportunity_id, worker_key: str) -> dict | None:
+    """What the preview says of a worker's picture: the link and Labs' caption, and for
+    a chart its id, type and what was stripped from its request (``notes``)."""
+    chart_id = (args.get(CHARTS) or {}).get(worker_key)
+    if not chart_id:
+        return _image_for(args, prompt, opportunity_id)
+    from connect_labs.workflow import coach_image
+    from connect_labs.workflow.coach_charts import store
+
+    record = store.get(chart_id)
+    if record is None:
+        return None
+    image = coach_image.chart_attachment(record, opportunity_id) or {"caption": record.chart.get("caption") or ""}
+    image["chart"] = {"id": record.pk, "type": record.chart.get("type")}
+    if record.chart.get("notes"):
+        image["chart"]["notes"] = record.chart["notes"]
+    return image
+
+
+def preview(
+    user, *, wda, run, definition, key: str, arguments: Any, request=None, briefing=None, restricted=False
+) -> dict:
     """What running ``key`` with ``arguments`` would do, and the token to confirm it.
 
     ``needs`` names what must be settled first — ``bot`` (choose one of
@@ -660,7 +829,8 @@ def preview(user, *, wda, run, definition, key: str, arguments: Any, request=Non
     roster = run_roster(wda, run, definition)
     if briefing is None:
         briefing = briefing_source(user, wda, run, definition)
-    args, skipped = _resolve(action, arguments, roster, user=user, briefing=briefing)
+    pictures = picture_source(user, wda, run, definition, roster, briefing, restricted=restricted)
+    args, skipped = _resolve(action, arguments, roster, user=user, briefing=briefing, pictures=pictures)
 
     needs: list[str] = []
     out: dict[str, Any] = {}
@@ -707,7 +877,7 @@ def preview(user, *, wda, run, definition, key: str, arguments: Any, request=Non
                     # What the worker actually receives first (the briefing itself goes
                     # into the session state, never to the worker -- tasks/ai_sessions.py).
                     row["opening"] = coach_briefing.opening_message(row["prompt"])
-                image = _image_for(args, row["prompt"], who["opportunity_id"])
+                image = _preview_image(args, row["prompt"], who["opportunity_id"], item["key"])
                 if image is not None:
                     # Shown before confirming, so the person knows a picture goes too.
                     row["image"] = image
@@ -772,6 +942,7 @@ def commit(
     actor: str = "",
     request=None,
     briefing=None,
+    restricted=False,
 ):
     """Record and queue the action a preview described. ``arguments`` must be what
     that preview returned as ``arguments`` (or resolve to it); ``confirm`` is its
@@ -784,7 +955,9 @@ def commit(
     action = find_action(definition, key)
     if briefing is None:
         briefing = briefing_source(user, wda, run, definition)
-    args = resolve_arguments(action, arguments, run_roster(wda, run, definition), user=user, briefing=briefing)
+    roster = run_roster(wda, run, definition)
+    pictures = picture_source(user, wda, run, definition, roster, briefing, restricted=restricted)
+    args = resolve_arguments(action, arguments, roster, user=user, briefing=briefing, pictures=pictures)
     if not args["workers"]:
         raise ActionError("nothing_to_do", "None of these workers has an indicator off target or on watch.")
     try:
