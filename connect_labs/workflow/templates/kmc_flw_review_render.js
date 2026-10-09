@@ -2261,9 +2261,9 @@ function WorkflowUI({
     );
   }
 
-  // ── Case coaching: "Coach about this baby" (workflow/case_coaching.py) ──────
+  // ── Case coaching: "Coach about this baby" (workflow/case_briefing.py) ──────
   // Offered when the workflow declares a coaching action (start_ocs_outreach)
-  // and Labs finds a coaching story in this case's visits. QA only: on these
+  // and the case is in a CASE STATE (the registry's, semantic/case_states.py). QA only: on these
   // synthetic opportunities the conversation goes to the viewer's own phone
   // (`deliver_to`), never to the worker.
   var coachAction = ((view && view.workflowActions) || []).filter(function (a) {
@@ -2284,7 +2284,7 @@ function WorkflowUI({
         fetch(
           '/labs/workflow/api/' +
             definitionId() +
-            '/case-story/' +
+            '/case-states/' +
             sp +
             (sp ? '&' : '?') +
             'rows_opportunity_id=' +
@@ -2310,7 +2310,7 @@ function WorkflowUI({
       [key],
     );
     var data = story.key === key && story.data;
-    if (!data || !data.story) return null;
+    if (!data || !data.case_state) return null;
     var worker = data.username || (flw && flw.flw);
     return (
       <button
@@ -2325,7 +2325,10 @@ function WorkflowUI({
                 workers: [
                   {
                     key: c.opportunity_id + FLW_SEP + worker,
-                    case: { id: String(c.entity_id), story: data.story },
+                    case: {
+                      id: String(c.entity_id),
+                      case_state: data.case_state,
+                    },
                   },
                 ],
               },

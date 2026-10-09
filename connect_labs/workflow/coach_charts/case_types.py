@@ -1,22 +1,22 @@
-"""The CASE pictures: one Labs-authored chart type per case story (``case_coaching.py``).
+"""CASE pictures: the generic chart types a case state names (``case_state.picture.type``).
 
-A worker chart (``types.py``) pictures a worker's indicators; these picture ONE case --
-one baby -- for the story Labs found in its visits, so a field worker understands it at
-a glance on a phone:
+A worker chart (``types.py``) pictures a worker's indicators; these picture ONE case,
+for the case state it is in (``semantic/case_states.py``), so a field worker reads it
+at a glance on a phone. The type is chosen by the registry, and so is every word on it
+(titles, badges, reference-band label, checklist, sign texts); every NUMBER comes from
+the case's own row and visits (``case_chart.py``):
 
-* ``case_thriving``     the baby's weight climbing above the shaded healthy-growth band,
-                        a star at the latest weighing and a "Great work!" badge;
-* ``case_weight_check`` the growth line with the weighing to check ringed and labelled,
-                        dashed into and out of it, and the four-step weighing checklist;
-* ``case_faltering``    the flat weight line against the healthy-growth band, and the
-                        skin-to-skin hours per visit as bars underneath;
-* ``case_danger_sign``  a card: the sign(s) recorded and when, "Not referred", why it
-                        needs a health facility, and what to do.
+* ``series_vs_reference``   a series climbing above a shaded reference band from its
+                            first reading, a star at the latest reading, and a badge;
+* ``series_highlight_step`` the series with one reading ringed and labelled, dashed into
+                            and out of it, and a checklist;
+* ``series_with_bars``      the series against the reference band, with a second series
+                            as bars underneath;
+* ``sign_card``             a card: the labels a case column lists and when, why each
+                            matters, and what to do.
 
-Labs' own types, so they may carry fixed text and annotations; every NUMBER comes from
-the case's datasets (``case_chart.py``). Positions computed in Python ride in the data
-and are drawn with ``scale: null`` (pixels). Sizes are CSS px (``theme``); no text is
-under ``theme.MIN_FONT_SIZE``.
+Positions computed in Python ride in the data and are drawn with ``scale: null``
+(pixels). Sizes are CSS px (``theme``); no text is under ``theme.MIN_FONT_SIZE``.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ STAR = (
 PLOT_HEIGHT = 290
 #: Room right of the last weighing for its label and the band's.
 RIGHT_ROOM = 112
-#: Room left of the first weighing for the weight labels drawn inside the plot.
+#: Room left of the first reading for the axis labels drawn inside the plot.
 LEFT_ROOM = 100
 
 _PX = {"type": "quantitative", "scale": None}
@@ -70,6 +70,12 @@ def x_encoding(ds_meta: dict) -> dict:
     }
 
 
+def _unit(ds_meta: dict) -> str:
+    """The series' unit for its axis labels: letters only, so it is safe in an expression."""
+    unit = str(ds_meta.get("unit") or "")
+    return unit if unit.isalpha() and len(unit) <= 6 else ""
+
+
 def y_encoding(ds_meta: dict, field: str = "w") -> dict:
     lo, hi = ds_meta["y_domain"]
     return {
@@ -81,7 +87,7 @@ def y_encoding(ds_meta: dict, field: str = "w") -> dict:
         # outside would push the picture past the phone's width.
         "axis": {
             "values": ds_meta["y_ticks"],
-            "labelExpr": "format(datum.value, ',') + ' g'",
+            "labelExpr": "format(datum.value, ',')" + (f" + ' {_unit(ds_meta)}'" if _unit(ds_meta) else ""),
             "grid": True,
             "labelAlign": "left",
             "labelBaseline": "bottom",
@@ -110,13 +116,13 @@ def _band_layers(meta: dict) -> list[dict]:
                 "color": GREEN,
                 "fontWeight": 600,
             },
-            "encoding": {"x": x, "y": {**y, "field": "mid"}, "text": {"value": "healthy"}},
+            "encoding": {"x": x, "y": {**y, "field": "mid"}, "text": {"field": "label_1"}},
         },
         {
             "data": {"name": "case_band"},
             "transform": [{"filter": "datum.end"}],
             "mark": {"type": "text", "align": "left", "baseline": "top", "dx": 8, "dy": 8, "color": GREEN},
-            "encoding": {"x": x, "y": {**y, "field": "mid"}, "text": {"value": "growth"}},
+            "encoding": {"x": x, "y": {**y, "field": "mid"}, "text": {"field": "label_2"}},
         },
     ]
 
@@ -141,12 +147,12 @@ def _weight_line(meta: dict, *, dashed_segments: bool = False) -> list[dict]:
         }
     else:
         line = {
-            "data": {"name": "case_weights"},
+            "data": {"name": "case_series"},
             "mark": {"type": "line", "color": theme.INDIGO, "strokeWidth": 5},
             "encoding": {"x": x, "y": y},
         }
     points = {
-        "data": {"name": "case_weights"},
+        "data": {"name": "case_series"},
         "mark": {
             "type": "point",
             "filled": True,
@@ -163,7 +169,7 @@ def _weight_line(meta: dict, *, dashed_segments: bool = False) -> list[dict]:
 def _weight_labels(meta: dict, which: str, *, color: str = theme.INDIGO, dy: int = -24, size: int = 24) -> dict:
     x, y = x_encoding(meta), y_encoding(meta)
     return {
-        "data": {"name": "case_weights"},
+        "data": {"name": "case_series"},
         "transform": [{"filter": f"datum.{which}"}],
         "mark": {
             "type": "text",
@@ -250,11 +256,11 @@ def _title(text: str, subtitle: str | None) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# The four types
+# The types
 # ---------------------------------------------------------------------------
 
 
-def case_thriving(meta: dict) -> dict:
+def series_vs_reference(meta: dict) -> dict:
     x, y = x_encoding(meta), y_encoding(meta)
     plot = {
         "width": INNER,
@@ -264,7 +270,7 @@ def case_thriving(meta: dict) -> dict:
             *_weight_line(meta),
             {
                 # The milestone: a star at the latest weighing.
-                "data": {"name": "case_weights"},
+                "data": {"name": "case_series"},
                 "transform": [{"filter": "datum.last"}],
                 "mark": {
                     "type": "point",
@@ -282,13 +288,13 @@ def case_thriving(meta: dict) -> dict:
         ],
     }
     return {
-        "title": _title("Growing well", meta.get("case_name")),
+        "title": _title(meta["title"], meta.get("case_name")),
         "spacing": 16,
         "vconcat": [_text_panel("case_text", meta["text_height"]), plot],
     }
 
 
-def case_weight_check(meta: dict) -> dict:
+def series_highlight_step(meta: dict) -> dict:
     x, y = x_encoding(meta), y_encoding(meta)
     flag_label_align = "right" if meta.get("flag_right") else "left"
     plot = {
@@ -298,7 +304,7 @@ def case_weight_check(meta: dict) -> dict:
             *_weight_line(meta, dashed_segments=True),
             {
                 # The weighing to check, ringed.
-                "data": {"name": "case_weights"},
+                "data": {"name": "case_series"},
                 "transform": [{"filter": "datum.flag"}],
                 "mark": {
                     "type": "point",
@@ -311,7 +317,7 @@ def case_weight_check(meta: dict) -> dict:
                 "encoding": {"x": x, "y": y},
             },
             {
-                "data": {"name": "case_weights"},
+                "data": {"name": "case_series"},
                 "transform": [{"filter": "datum.flag_label"}],
                 "mark": {
                     "type": "text",
@@ -328,13 +334,13 @@ def case_weight_check(meta: dict) -> dict:
         ],
     }
     return {
-        "title": _title("Check this weighing", meta.get("case_name")),
+        "title": _title(meta["title"], meta.get("case_name")),
         "spacing": 20,
         "vconcat": [plot, _text_panel("case_text", meta["text_height"])],
     }
 
 
-def case_faltering(meta: dict) -> dict:
+def series_with_bars(meta: dict) -> dict:
     plot = {
         "width": INNER,
         "height": PLOT_HEIGHT - 50,
@@ -348,7 +354,7 @@ def case_faltering(meta: dict) -> dict:
         "axis": None,
     }
     bars = {
-        "data": {"name": "case_skin"},
+        "data": {"name": "case_bars"},
         "width": INNER,
         "height": 150,
         "layer": [
@@ -396,22 +402,23 @@ def case_faltering(meta: dict) -> dict:
         ],
     }
     return {
-        "title": _title("Weight has stalled", meta.get("case_name")),
+        "title": _title(meta["title"], meta.get("case_name")),
         "spacing": 14,
         "vconcat": [plot, _text_panel("case_text", meta["text_height"]), bars],
     }
 
 
-def case_danger_sign(meta: dict) -> dict:
+def sign_card(meta: dict) -> dict:
     return {
-        "title": _title("Danger sign, not referred", meta.get("case_name")),
+        "title": _title(meta["title"], meta.get("case_name")),
         "vconcat": [_text_panel("case_text", meta["text_height"])],
     }
 
 
+#: The picture types a case state may name (``semantic/case_states.PICTURE_TYPES``).
 CASE_TYPES = {
-    "case_thriving": case_thriving,
-    "case_weight_check": case_weight_check,
-    "case_faltering": case_faltering,
-    "case_danger_sign": case_danger_sign,
+    "series_vs_reference": series_vs_reference,
+    "series_highlight_step": series_highlight_step,
+    "series_with_bars": series_with_bars,
+    "sign_card": sign_card,
 }

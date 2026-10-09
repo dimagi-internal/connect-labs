@@ -38,15 +38,13 @@ opportunity.
 import copy
 from pathlib import Path
 
-from connect_labs.workflow.case_coaching import KMC_CASE_COACHING
 from connect_labs.workflow.templates.kmc_programme_metrics import (
     CASE_PROPERTIES_SCHEMA,
     SCORECARD_COLUMNS,
     SCORECARD_GROUPS,
 )
 from connect_labs.workflow.templates.kmc_programme_metrics import SNAPSHOT_INPUTS as PROGRAMME_SNAPSHOT_INPUTS
-from connect_labs.workflow.templates.kmc_programme_metrics import SNAPSHOT_SCHEMA as PROGRAMME_SNAPSHOT_SCHEMA
-from connect_labs.workflow.templates.kmc_programme_metrics import WEIGHT_SERIES_SCHEMA
+from connect_labs.workflow.templates.kmc_programme_metrics import SNAPSHOT_SCHEMA, WEIGHT_SERIES_SCHEMA
 
 _RENDER = (Path(__file__).parent / "kmc_opp_report_render.js").read_text()
 
@@ -58,19 +56,6 @@ SNAPSHOT_INPUTS = copy.deepcopy(PROGRAMME_SNAPSHOT_INPUTS)
 # (one opportunity's cases), and hand-down writes the programme's week into it the
 # same way. The programme report grades the same cases but stores none.
 SNAPSHOT_INPUTS["case_index"]["embed"] = True
-# Case coaching is per opportunity (owner, 2026-10-09), so it is this report that
-# stores, each week, which of its workers' cases were eligible for which coaching
-# story (`snapshot.caseCoaching`, workflow/case_finder.py). An agent planning the
-# week's conversations reads it -- and earlier weeks' -- through the run tools.
-SNAPSHOT_INPUTS["case_coaching"] = True
-
-SNAPSHOT_SCHEMA = copy.deepcopy(PROGRAMME_SNAPSHOT_SCHEMA)
-SNAPSHOT_SCHEMA["keys"]["state.snapshot.caseCoaching"] = (
-    "Case coaching as of the run (workflow/case_finder.py): per worker, each coaching story their "
-    "cases were eligible for -- CASE_DANGER_SIGN, CASE_WEIGHT_CHECK, CASE_FALTERING, CASE_THRIVING -- "
-    "with a count and the best cases (case id and name, the facts, the evidence date), counted when "
-    "the evidence falls within `window_days` of the latest visit. `{error}` when it could not be built"
-)
 
 DEFINITION = {
     "name": "KMC Opportunity Report",
@@ -117,9 +102,6 @@ DEFINITION = {
         # worker table reads column for column like the programme's.
         "scorecard_columns": SCORECARD_COLUMNS,
         "scorecard_groups": SCORECARD_GROUPS,
-        # Where this programme's visits keep what a case coaching story reads
-        # (workflow/case_coaching.py): weights, skin-to-skin, danger signs, referral.
-        "case_coaching": KMC_CASE_COACHING,
     },
     "pipeline_sources": [],
     "snapshot_inputs": SNAPSHOT_INPUTS,
