@@ -816,6 +816,40 @@ class OCSBotsListAPIView(LoginRequiredMixin, View):
 
 # AI Assistant Integration Views
 
+#: Bounds on the optional ``participant_data`` a caller may hand to OCS when starting a
+#: conversation. It lands on a real participant record, so keep it small and flat.
+STARTING_PARTICIPANT_DATA_MAX_KEYS = 20
+STARTING_PARTICIPANT_DATA_MAX_STR = 1000
+STARTING_PARTICIPANT_DATA_MAX_LIST = 50
+
+
+def _starting_participant_data(value):
+    """The caller's ``participant_data``, checked: a flat dict of short scalars or lists of
+    strings. ``None`` when absent. Raises ``ValueError`` with a reason the caller can show."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("participant_data must be an object")
+    if len(value) > STARTING_PARTICIPANT_DATA_MAX_KEYS:
+        raise ValueError(f"participant_data may have at most {STARTING_PARTICIPANT_DATA_MAX_KEYS} keys")
+    for key, item in value.items():
+        if not isinstance(key, str) or not key.strip() or len(key) > 64:
+            raise ValueError("participant_data keys must be non-empty strings of at most 64 characters")
+        if item is None or isinstance(item, (bool, int, float)):
+            continue
+        if isinstance(item, str):
+            if len(item) > STARTING_PARTICIPANT_DATA_MAX_STR:
+                raise ValueError(f"participant_data[{key!r}] is too long")
+            continue
+        if isinstance(item, list):
+            if len(item) > STARTING_PARTICIPANT_DATA_MAX_LIST or not all(
+                isinstance(v, str) and len(v) <= STARTING_PARTICIPANT_DATA_MAX_STR for v in item
+            ):
+                raise ValueError(f"participant_data[{key!r}] must be a short list of strings")
+            continue
+        raise ValueError(f"participant_data[{key!r}] must be a string, number, boolean, null or list of strings")
+    return value
+
 
 @login_required
 @csrf_exempt
@@ -841,6 +875,10 @@ def task_initiate_ai(request, task_id):
         platform = body.get("platform", "commcare_connect")
         prompt_text = body.get("prompt_text", "").strip()
         start_new_session = body.get("start_new_session", False)
+        try:
+            participant_data = _starting_participant_data(body.get("participant_data"))
+        except ValueError as e:
+            return JsonResponse({"error": str(e)}, status=400)
 
         # Validate required fields
         if not identifier:
@@ -862,6 +900,7 @@ def task_initiate_ai(request, task_id):
                 prompt_text=prompt_text,
                 platform=platform,
                 start_new_session=start_new_session,
+                participant_data=participant_data,
             )
         finally:
             ocs_client.close()
