@@ -191,6 +191,32 @@ This means you can ask Claude questions like "show me hospital vs home births br
 
 ---
 
+## PMC Page
+
+The PMC page helps you identify the most cost-effective programme design for a set of states. You pick the states; the page tells you the programme.
+
+### How it works
+
+Select the states you are considering. The page immediately shows you:
+
+- **Recommended programme for these states.** The single approach that averts the most under-5 deaths per dollar across your selected states, with each state starting on its own rainy season.
+    - Which states to leave out, because they fall below GiveWell's 6× bar, and the deaths averted, cost, and × GiveWell figure for the remaining states.
+    - How much better the recommended approach does compared with our proposal's quarterly design applied to the same states.
+    - What more money would buy: the next approach's additional deaths averted, at its cost per additional death, and whether that still clears the bar.
+- **The evidence.** The schedule comparison and the best state × schedule pairs, shown underneath the recommendation.
+
+You no longer choose a schedule yourself — the page derives the recommendation from your state selection automatically.
+
+### Testing your own schedule
+
+If you want to explore a schedule that differs from the recommendation, expand the **Advanced** section at the bottom of the page. This is where manual schedule testing has moved.
+
+### The ACE agent on the page
+
+The ACE agent leads with the same recommendation the page shows and explains why that approach was chosen. Ask it follow-up questions about specific states, cost trade-offs, or what changes if you add or remove a state.
+
+---
+
 ## Coaching Workers from a Run Page
 
 When you ask the canopy agent to coach a worker from a Labs run page, the agent shows you a coaching card in the same reply as the worker's data summary — you do not need to send a second message to trigger the card. After previewing coaching, the agent replies in a single short line (for example, "Here's the coaching card for Ibrahim.") and does not restate the topic, coach, synthetic note, or button options, which the card already shows.
@@ -214,29 +240,4 @@ When preparing a coaching session, you can choose what the worker's picture show
 | **Their figures week by week** | The worker's own data broken down across weeks, showing how their performance has changed over time. |
 | **A custom chart** | A chart of your own design. |
 
-Every number in the picture comes from Labs, and every picture is drawn in Connect's style. The picture the worker receives is exactly the one shown on the card at the time you approved it — it is not recalculated or regraded later.
-
-!!! note "Peers are always anonymous"
-    A coaching note that names another worker is refused. Workers only ever see peers identified as "Peer A", "Peer B" and so on — never by their real name.
-
-### The coaching card
-
-The card displays:
-
-- the worker's name
-- the topics the coach will raise
-- the first message the worker will receive
-- a picture of their figures
-
-The card has one primary button and one quiet link:
-
-| Control | What it does |
-| --- | --- |
-| **Send to &lt;worker&gt;** | Sends the coaching message to the worker |
-| **Send a test to me instead** (link) | Opens a small test panel with a PersonalID username box and a **Send test** button — previews and sends in one click, then closes (Dimagi staff only) |
-
-Clicking **Send a test to me instead** replaces the card with a compact test panel. Enter your PersonalID username, click **Send test** to preview and send in one step, or click **Cancel** to go back to the card.
-
-If a test send cannot go through, the card shows a reason beneath the button rather than leaving the button stuck on "Sending…". The most common reason is that your Labs account is not connected to Open Chat Studio — in that case the card shows "Connect Open Chat Studio in Labs first, then Send test again" with a **Connect it** link.
-
-If you leave a card unsent and come back to it later, that already means "not yet
+Every number in the picture comes from Labs, and every picture is drawn in Connect's style. The picture the worker receives is exactly the one shown on the card at the time you approved it — it is not recalculated or regr
