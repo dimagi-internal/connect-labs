@@ -113,6 +113,11 @@ def as_of_view(view_func):
             request.supply_as_of = None
             return view_func(request, *args, **kwargs)
         authorise(request)
+        # The header's pinned tabs are navigation, not the programme's past: read
+        # them live, before the rewind removes a pin made after `as_of`.
+        from connect_labs.supply_chain.navigation import _pinned
+
+        _pinned(request)
 
         try:
             return _rewound(request, view_func, int(program_id), as_of, args, kwargs)

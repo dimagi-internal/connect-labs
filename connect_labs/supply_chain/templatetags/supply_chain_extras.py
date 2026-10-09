@@ -1914,6 +1914,19 @@ def dot_parts(value):
 
 
 @register.simple_tag(takes_context=True)
+def pinned_tab(context, tab_name):
+    """The pinned workflow standing in for built-in tab `tab_name` ({url, label}), or None.
+
+    `{% pinned_tab "supply_chain:workers" as review %}` -- so a page's own link to a
+    tab goes where the header's does, not to the page the pin replaced.
+    """
+    from connect_labs.supply_chain.navigation import pinned_replacement
+
+    request = context.get("request")
+    return pinned_replacement(request, tab_name) if request is not None else None
+
+
+@register.simple_tag(takes_context=True)
 def edit_cell(context, kind, record_id, name, value=None):
     """The attributes that make a table cell editable in place (cells.py, static/supply_chain/cell_edit.js).
 
