@@ -401,3 +401,15 @@ def test_the_chat_shows_what_the_person_did_not_the_agents_instructions():
     script = _view().script
     assert "function tell(structured, forAgent, forChat)" in script
     assert '"Sent a test to " + who : "Sent to " + who' in script
+
+
+def test_the_card_previews_from_the_agents_result_not_the_hosts_input_copy():
+    """Live 2026-10-09: canopy's transcript held picture.params.topics as ["…","…","…"];
+    the card re-previewed with them and failed ('not per-worker indicators of this run')."""
+    script = _view().script
+    assert "args.arguments = callerArguments() || a.arguments || {};" in script
+    # Only the caller's choices are carried over -- never Labs' resolved bot or briefing.
+    assert "if (w.picture) item.picture = w.picture;" in script
+    assert "out.bot" not in script and "item.prompt" not in script
+    # A failed preview says so at the top instead of sitting on "Preparing…".
+    assert "prepare this card" in script
