@@ -170,16 +170,22 @@ to canopy:
 | Scope | Tools |
 | --- | --- |
 | `workflow:read` | `workflow_run_context`, `workflow_run_indicators`, `workflow_indicator_explain`, `workflow_action_status` |
-| `workflow:act` | `workflow_run_action` |
+| `workflow:act` | `workflow_run_action`, `workflow_action_preview_view` (app-only: the coaching View's own preview) |
 | `targeting:read` | every `targeting_*` read tool, incl. `targeting_cost_effectiveness` |
 
 **The one write scope, and why it is safe to hand to a page.** `workflow_run_action`
 cannot act in one call. Its first call is a preview of exactly what would happen,
 with a single-use token bound to the visitor, the run and those arguments. Only a
 second call carrying that token acts, and changing anything in between refuses it.
-The tool tells the agent to show the preview and get the person's yes in between.
-Labs enforces that a preview came first; it cannot enforce the yes itself, which is
-what a canopy-side confirm (MCP `input_required`) would add. `PREVIEWED_WRITE_SCOPES`
+For most actions the tool tells the agent to show the preview and get the person's
+yes in between; Labs enforces that a preview came first, not the yes itself.
+**Coaching is sent by a click, never by the agent.** A `start_ocs_outreach` preview,
+as the agent gets it, carries no `confirm`. `workflow_run_action` is an MCP Apps tool
+(`_meta.ui.resourceUri = ui://labs/workflow-action-preview`): canopy renders its result
+as a View, which previews again as the person looking at it through the app-only
+`workflow_action_preview_view` (the picture inline, that person's own token) and sends
+on their click. The run page's Start coaching button is the other way to send. See
+`connect_labs/mcp/ui/` and canopy-web's `2026-10-08-mcp-apps-host-design.md`. `PREVIEWED_WRITE_SCOPES`
 names this scope, and `test_every_scoped_tool_exists_and_only_previewed_scopes_write`
 holds any future write scope to the same rule.
 

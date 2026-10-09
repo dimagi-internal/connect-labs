@@ -12,7 +12,15 @@ its scope, the worker keys on screen); these read the substance live, as the cal
 * ``workflow_run_action``       — run one of the workflow's OWN actions (the same one
                                    its button runs): a preview first, then the call
                                    that acts, carrying the preview's confirm token;
-* ``workflow_action_status``    — how an action run is going.
+* ``workflow_action_status``    — how an action run is going;
+* ``workflow_action_preview_view`` — app-only (MCP Apps): the preview the coaching View
+                                   shows, as the VIEWER, with its picture inline and
+                                   the viewer's own confirm token.
+
+A coaching action is sent by a person's click, never by the agent. Its preview, as
+the agent gets it, carries no confirm token; the token goes only to the View canopy
+renders for ``workflow_run_action`` (``ui://labs/workflow-action-preview``), which
+previews again as whoever is looking at it, or to the Labs run page's own button.
 
 A canopy (delegated) call is held to the workflow's opt-in to sharing; a person's
 own agent is not, since it already reaches every tool.
@@ -24,8 +32,27 @@ import logging
 from typing import Any
 
 from ..tool_registry import MCPToolError, register
+from ..ui import WORKFLOW_ACTION_PREVIEW_URI, tool_meta
 
 logger = logging.getLogger(__name__)
+
+#: Action types a person sends by clicking -- the View's Send, or the run page's
+#: button -- and never the agent: the agent's preview of one carries no ``confirm``.
+CLICK_TO_SEND_TYPES = frozenset({"start_ocs_outreach"})
+
+#: The pictures a View preview draws inline, at most: one per worker, for the first
+#: few workers, each well under what a postMessage to a sandboxed frame copes with.
+VIEW_IMAGE_WORKERS = 3
+VIEW_IMAGE_MAX_BYTES = 512 * 1024
+
+#: Where the person sends a coaching preview from, as the agent is told it.
+CLICK_TO_SEND = (
+    "The person sends this themselves, by clicking: in canopy, Send on the card shown "
+    "with this preview (it shows the picture, the briefing and the opening message, and "
+    "offers Send to the worker, Send to me (QA test) for Dimagi staff, and Not yet); on "
+    "the Labs run page (`page_url`), the Start coaching button. You cannot send it: there "
+    "is no `confirm` for you."
+)
 
 _SCOPE = {
     "run_id": {"type": "integer", "description": "The workflow run (on a run page: the page state's filters.run_id)."},
@@ -382,19 +409,93 @@ def workflow_indicator_explain(
         return {"registry": source, "scope": scope, "indicators": out, "compiled_sql": compiled_sql}
 
 
+def _for_the_agent(out: dict, r: _Run) -> dict:
+    """A click-to-send preview as the agent may see it: everything it shows, minus the
+    token that would let the agent send it."""
+    out.pop("confirm", None)
+    out.pop("confirm_expires_in", None)
+    out["sent_by"] = "click"
+    out["page_url"] = r.page_url
+    if out["needs"]:
+        out["next"] = "Nothing has been done. Settle `needs`, then preview again."
+    else:
+        out["next"] = (
+            "Nothing has been done. Show the person each worker's briefing topics and opening "
+            "message, and tell them where to send it. " + CLICK_TO_SEND
+        )
+    return out
+
+
+def _absolute(path: str | None) -> str | None:
+    """A Labs path as a link a View can open (``ui/open-link`` takes https only)."""
+    from django.conf import settings
+
+    base = (getattr(settings, "LABS_PUBLIC_URL", "") or "").rstrip("/")
+    if not path or not base or not path.startswith("/"):
+        return None
+    return base + path
+
+
+def _inline_image(prompt: str | None) -> dict | None:
+    """The worker's picture as a ``data:`` URI, for a View: ``{"data_uri", "caption",
+    "bytes"}``, or None when the text is not a Labs briefing. The same picture the
+    worker's conversation links to (``coach_image``), drawn from the same text."""
+    import base64
+
+    from connect_labs.workflow import coach_image
+
+    payload = coach_image.payload_from_briefing(prompt or "")
+    if payload is None:
+        return None
+    png = coach_image.render_png(payload)
+    if len(png) > VIEW_IMAGE_MAX_BYTES:
+        return {"omitted": f"too large to show inline ({len(png)} bytes)", "caption": coach_image.caption(payload)}
+    return {
+        "data_uri": "data:image/png;base64," + base64.b64encode(png).decode("ascii"),
+        "caption": coach_image.caption(payload),
+        "bytes": len(png),
+    }
+
+
+def _view_text(out: dict) -> str:
+    """The text content of a View preview: what it says, without the inline pictures
+    (they are for the View) and without the viewer's confirm token."""
+    import json
+
+    def strip(worker):
+        image = worker.get("image")
+        if isinstance(image, dict) and image.get("data_uri"):
+            worker = {**worker, "image": {"caption": image.get("caption"), "inline_png_bytes": image.get("bytes")}}
+        return worker
+
+    shown = {k: v for k, v in out.items() if k not in ("confirm", "confirm_expires_in")}
+    shown["workers"] = [strip(w) for w in out.get("workers") or []]
+    return json.dumps(shown, default=str)
+
+
 @register(
     name="workflow_run_action",
     description=(
         "Run one of the workflow's own actions (workflow_run_context -> actions), e.g. "
         "'Initiate AI coach' -- the same action its button runs, as the person you act for.\n\n"
-        "TWO CALLS, ALWAYS. (1) Without `confirm`: a PREVIEW of exactly what would happen -- "
-        "which workers, which bot, which text -- and a single-use `confirm` token; nothing is "
-        "done. SHOW the preview to the person and get their explicit yes. (2) Call again with "
-        "the preview's `arguments` and its `confirm`: the action is queued and an execution id "
-        "returned; follow it with workflow_action_status. Changing anything between the two "
-        "invalidates the token. If the preview lists `needs`, settle them first: `bot` -- ask "
-        "which of `bot_choices` to use, then preview again with `bot`; `connect_ocs` -- the "
-        "person must connect Open Chat Studio at `connect_url` first.\n\n"
+        "PREVIEW FIRST. Without `confirm` you get a PREVIEW of exactly what would happen -- "
+        "which workers, which bot, which text; nothing is done. If it lists `needs`, settle "
+        "them and preview again: `bot` -- ask which of `bot_choices` to use, then preview with "
+        "`bot`; `connect_ocs` -- the person must connect Open Chat Studio at `connect_url`.\n\n"
+        "COACHING ('Initiate AI coach', type start_ocs_outreach) IS SENT BY THE PERSON'S CLICK, "
+        "NEVER BY YOU. Its preview has no `confirm` (`sent_by: click`). In canopy the preview "
+        "is shown to the person as a card with the picture, the briefing and the opening message, "
+        "and the buttons Send to <worker>, Send to me (QA test) -- Dimagi staff, who type their "
+        "own PersonalID username -- and Not yet. On the Labs run page the same send is its Start "
+        "coaching button. So: preview, give each worker's `briefing` topics and `opening` (the "
+        "worker's first message, verbatim) in a sentence or two, and tell the person to click "
+        "Send on the card or Start coaching on the page. Never ask them to confirm in chat, and "
+        "never offer to send it yourself. Once they have sent it, workflow_action_status shows "
+        "how it is going.\n\n"
+        "OTHER ACTIONS (e.g. create_task): the preview carries a single-use `confirm`. Show the "
+        "preview, get the person's explicit yes, then call again with the preview's `arguments` "
+        "and its `confirm`; the action is queued and an execution id returned. Changing anything "
+        "between the two calls invalidates the token.\n\n"
         "`arguments.workers[].key` are worker keys from workflow_run_indicators; an item's own "
         "`prompt` is how to address that worker's own red indicators."
     ),
@@ -410,6 +511,9 @@ def workflow_indicator_explain(
         "additionalProperties": False,
     },
     is_write=True,
+    # Rendered as the coaching View; callable by the View too, which is how its Send
+    # commits (with the confirm only the View's own preview gets).
+    meta=tool_meta(WORKFLOW_ACTION_PREVIEW_URI, "model", "app"),
 )
 def workflow_run_action(
     user,
@@ -448,6 +552,8 @@ def workflow_run_action(
                     arguments=arguments,
                     briefing=briefing,
                 )
+                if out["type"] in CLICK_TO_SEND_TYPES:
+                    return _for_the_agent(out, r)
                 out["next"] = (
                     "Nothing has been done. Settle `needs`, then preview again."
                     if out["needs"]
@@ -474,6 +580,107 @@ def workflow_run_action(
             "page_url": r.page_url,
             "next": "Queued. Follow it with workflow_action_status.",
         }
+
+
+@register(
+    name="workflow_action_preview_view",
+    description=(
+        "For the coaching View only (MCP Apps, app-only): the preview of a workflow action as "
+        "the person LOOKING AT the View, with each worker's picture inline as a data: URI and "
+        "that person's own single-use `confirm`, which the View's Send hands to "
+        "workflow_run_action. `deliver_to` (Dimagi staff only, one worker) previews a QA send "
+        "to that PersonalID username instead of the worker. Hosts hide this tool from the agent."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            **_SCOPE,
+            "action": {"type": "string", "description": "An action key the workflow offers."},
+            "arguments": {"type": "object"},
+            "deliver_to": {
+                "type": "string",
+                "maxLength": 150,
+                "description": "QA only, Dimagi staff only: a PersonalID username to send to "
+                "instead of the worker. Empty clears it.",
+            },
+        },
+        "required": ["run_id", "action", "arguments"],
+        "additionalProperties": False,
+    },
+    meta=tool_meta(WORKFLOW_ACTION_PREVIEW_URI, "app"),
+    text=_view_text,
+)
+def workflow_action_preview_view(
+    user,
+    *,
+    run_id: int,
+    action: str,
+    arguments: dict,
+    opportunity_id=None,
+    program_id=None,
+    deliver_to: str | None = None,
+) -> dict[str, Any]:
+    from connect_labs.workflow.actions import DELIVER_TO, INCLUDE_IMAGE, ActionError, briefing_source, preview
+    from connect_labs.workflow.models import WorkflowActionExecution
+
+    from ..visit_access import caller_restricted
+
+    if not isinstance(arguments, dict):
+        raise MCPToolError("INVALID_SCHEMA", "`arguments` must be an object.")
+    args = dict(arguments)
+    if deliver_to is not None:
+        if deliver_to.strip():
+            args[DELIVER_TO] = deliver_to.strip()
+        else:
+            args.pop(DELIVER_TO, None)
+    with _Run(user, run_id, opportunity_id, program_id) as r:
+        briefing = briefing_source(
+            user,
+            r.wda,
+            r.run,
+            r.definition,
+            opportunity_id=opportunity_id,
+            program_id=program_id,
+            restricted=caller_restricted(),
+        )
+        try:
+            from connect_labs.workflow.actions import find_action
+
+            kind = find_action(r.definition, action)["type"]
+            if kind in CLICK_TO_SEND_TYPES:
+                # What the View shows is what is sent: the picture goes with the conversation.
+                args[INCLUDE_IMAGE] = True
+            out = preview(
+                user,
+                wda=r.wda,
+                run=r.run,
+                definition=r.definition,
+                key=action,
+                arguments=args,
+                briefing=briefing,
+            )
+        except ActionError as e:
+            raise _action_error(e) from e
+        if out["type"] not in CLICK_TO_SEND_TYPES:
+            # The View only sends what is sent by a click; anything else the agent
+            # confirms with the person, so the View gets no token for it.
+            out.pop("confirm", None)
+            out.pop("confirm_expires_in", None)
+        out["sent_by"] = "click" if out["type"] in CLICK_TO_SEND_TYPES else "agent"
+        for i, worker in enumerate(out["workers"]):
+            worker.pop("image", None)  # the Labs link: no use to an opaque-origin View
+            if out["type"] in CLICK_TO_SEND_TYPES and i < VIEW_IMAGE_WORKERS:
+                image = _inline_image(worker.get("prompt"))
+                if image is not None:
+                    worker["image"] = image
+        out["page_url"] = _absolute(r.page_url) or r.page_url
+        if out.get("connect_url"):
+            out["connect_url"] = _absolute(out["connect_url"]) or out["connect_url"]
+        out["executions"] = [
+            e.as_dict()
+            for e in WorkflowActionExecution.objects.filter(user=user, run_id=r.run.id, action_key=action)[:5]
+        ]
+        return out
 
 
 @register(
