@@ -153,6 +153,33 @@ def test_the_stores_read_as_of_a_past_day(world):
     assert partner(as_of=TODAY - timedelta(days=20)) == pytest.approx(6 * partner(), rel=1e-3)  # cartons round
 
 
+FORECAST = {"alias": "forecast", "source": "stock_forecast", "item": "rutf", "params": {"course_size": 150}}
+
+
+def test_a_forecast_runs_once_for_the_programme_over_the_workflows_opportunities(world):
+    out = supply_sources.load(_request(), _definition(FORECAST), opportunity_ids=[OPP_A, OPP_B])["forecast"]
+
+    assert len(out["rows"]) == 1
+    forecast = out["rows"][0]
+    assert {w["opportunity_id"] for w in forecast["workers"]} == {OPP_A, OPP_B}
+    # This world has no case rule: each worker's own pace, and it says so.
+    assert forecast["cases_configured"] is False
+    assert {w["basis"] for w in forecast["workers"]} == {"pace"}
+
+
+def test_a_forecast_leaves_out_the_opportunities_the_workflow_does_not_span(world):
+    forecast = supply_sources.load(_request(), _definition(FORECAST), opportunity_ids=[OPP_A])["forecast"]["rows"][0]
+
+    assert [w["name"] for w in forecast["workers"]] == ["worker-acacia"]
+
+
+def test_a_forecast_takes_a_scenario_when_asked(world):
+    out = supply_sources.run(
+        _request(), _definition(FORECAST), FORECAST, opportunity_ids=[OPP_A], args={"scenario": 1.5}
+    )
+    assert out["rows"][0]["scenario"] == "1.5"
+
+
 def test_an_opportunity_the_viewer_does_not_hold_gets_an_error_not_rows(world):
     out = supply_sources.load(_request(opps=(OPP_A,)), _definition(STOCK), opportunity_ids=[OPP_A, OPP_ELSEWHERE])
 

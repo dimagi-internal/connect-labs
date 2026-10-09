@@ -2294,6 +2294,8 @@ A workflow can read the supply chain's own figures — stock in workers' hands, 
 
 **Reference template:** `supply_stock_review` — stock in field workers' hands across the workflow's opportunities: headline, runway (soonest out first), does it add up, a worker's day-by-day history on demand, and the stores behind them.
 
+**The forecast source:** `stock_forecast` (programme-scoped, one row: the whole forecast, over the workflow's opportunities in that programme) joins the children in treatment, read from the visits by the dispensing rule's `cases` block, to the stock at every worker and store, and lays need forward week by week: committed to open cases, plus new children projected from each worker's last three weeks of enrolment. `params` takes `course_size` (the course to assume when neither the visits nor the commodity give one), `horizon_weeks` and `scenario`; `args` takes `scenario` and `horizon_weeks` per call, so a page's scenario control is `actions.querySupply('forecast', {args: {scenario: 1.2}})`. Every assumption comes back under `basis` with where it came from. Without a `cases` block the forecast is each worker's own pace. Template: `supply_stock_forecast`. Design: `docs/superpowers/specs/2026-10-09-supply-stock-forecast-design.md`.
+
 ### Showing a workflow inside the supply pages
 
 A programme's supply navigation can carry a workflow as a tab (`supply_chain/workflow_views/`):

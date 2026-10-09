@@ -359,11 +359,11 @@ Connect OAuth token (`~/.commcare-connect/token.json`).
 A remote MCP server hosted inside the labs Django app (`connect_labs/mcp/`)
 at `https://labs.connect.dimagi.com/mcp/`. The protocol endpoint is a
 FastMCP 3.x Streamable-HTTP ASGI app mounted in `config/asgi.py`; the catalog
-registers **259 tools** as of 2026-10-08 (write tools are rate-limited and fully argument-logged
-to `MCPAuditLog`) — 112 of them generated from the supply-chain
+registers **270 tools** as of 2026-10-09 (write tools are rate-limited and fully argument-logged
+to `MCPAuditLog`) — 114 of them generated from the supply-chain
 operation registry (`connect_labs/supply_chain/operations.py`), one tool per
 operation, so the count moves whenever that registry does. The registry holds
-116: four are `internal=True` (`catalogue_seed`, `tracker_import`,
+118: four are `internal=True` (`catalogue_seed`, `tracker_import`,
 `stock_report_ingest`, `visit_consumption_ingest`) and are deliberately kept OFF the MCP catalogue —
 seeds, bulk imports and ingests are run by an engineer through a management
 command, the way every other bootstrap in this repo is (`bootstrap_targeting`,
