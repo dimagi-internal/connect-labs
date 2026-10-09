@@ -188,12 +188,28 @@ def supply_point_upsert(access, data):
     ),
 )
 def movement_list(access, supply_point_id=None, item_id=None, kind=None, since=None, limit=500):
-    return [
+    rows = [
         record(m)
         for m in access.list_movements(
             supply_point_id=supply_point_id, item_id=item_id, kind=kind, since=since, limit=limit
         )
     ]
+    # A visit's movement is described by the form it came from, which a person recognises;
+    # its visit id is only something to look up.
+    visit_ids = {r["visit_id"] for r in rows if r.get("visit_id")}
+    forms = {}
+    if visit_ids:
+        from connect_labs.supply_chain.models import WorkerVisit
+
+        forms = dict(
+            WorkerVisit.objects.filter(program_id=access._require_program(), visit_id__in=visit_ids)
+            .exclude(form_name="")
+            .values_list("visit_id", "form_name")
+        )
+    for row in rows:
+        if row.get("visit_id"):
+            row["visit_form"] = forms.get(row["visit_id"], "")
+    return rows
 
 
 @register_operation(

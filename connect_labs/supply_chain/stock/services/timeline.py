@@ -14,9 +14,14 @@ dark card, and each series is also told apart by direction (up, down) or
 shape (a count is a ringed point), never by colour alone. The `<title>` and
 `<desc>` say in words what the chart draws, and the page carries the same
 figures as a table.
+
+It has a scale: gridlines at round numbers labelled down the left, and dates
+along the bottom. An SVG's text shrinks with it, so a phone gets its own
+narrower drawing (`width`) rather than the desktop one squeezed to a thumbnail.
 """
 
-from datetime import date
+import math
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.db.models import Q
@@ -165,8 +170,32 @@ def _description(days, counts, unit) -> str:
     return " ".join(parts)
 
 
-def timeline_svg(line: dict, *, width: int = 720, height: int = 220) -> str:
-    """The timeline as inline SVG, or "" when there is nothing to draw."""
+def _step(span) -> Decimal:
+    """A round gridline interval (1, 2 or 5 times a power of ten) giving about four lines over `span`."""
+    raw = max(float(span) / 4, 1.0)
+    power = 10 ** math.floor(math.log10(raw))
+    for nice in (1, 2, 5, 10):
+        if raw <= nice * power:
+            return Decimal(nice * power)
+    return Decimal(10 * power)
+
+
+def _dates(first, last, count):
+    """`count` evenly spaced days from first to last, without repeats."""
+    span = (last - first).days
+    if span == 0 or count < 2:
+        return [first]
+    picked = [first + timedelta(days=round(span * i / (count - 1))) for i in range(count)]
+    return list(dict.fromkeys(picked))
+
+
+def timeline_svg(
+    line: dict, *, width: int = 720, height: int = 220, date_ticks: int = 5, font: int = 11, key: str = ""
+) -> str:
+    """The timeline as inline SVG, or "" when there is nothing to draw.
+
+    `key` keeps the title and description ids unique when a page carries more than one drawing.
+    """
     days = [{**d, "on": date.fromisoformat(d["on"])} for d in line.get("days") or []]
     counts = [{**c, "on": date.fromisoformat(c["on"])} for c in line.get("counts") or []]
     if not days and not counts:
@@ -177,25 +206,53 @@ def timeline_svg(line: dict, *, width: int = 720, height: int = 220) -> str:
     first, last = min(dates), max(dates)
     span = max((last - first).days, 1)
     levels = [Decimal(d[k]) for d in days for k in ("before", "balance")] + [Decimal(c["quantity"]) for c in counts]
-    top = max([*levels, Decimal(1)])
-    bottom = min([*levels, ZERO])
-    pad = 28
+    highest = max([*levels, Decimal(1)])
+    lowest = min([*levels, ZERO])
+    step = _step(highest - lowest)
+    top = Decimal(math.ceil(highest / step)) * step
+    bottom = Decimal(math.floor(lowest / step)) * step
+    left, right, above, below = 44, 16, 22, 30
 
     def x(on):
-        return pad + (on - first).days / span * (width - 2 * pad)
+        return left + (on - first).days / span * (width - left - right)
 
     def y(value):
-        return pad + float(top - Decimal(value)) / float(top - bottom) * (height - 2 * pad)
+        return above + float(top - Decimal(value)) / float(top - bottom) * (height - above - below)
 
+    title_id, desc_id = f"worker-timeline-title{key}", f"worker-timeline-desc{key}"
+    text = f'font-size="{font}" fill="currentColor"'
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" role="img" '
-        f'aria-labelledby="worker-timeline-title worker-timeline-desc" class="w-full h-auto" '
+        f'aria-labelledby="{title_id} {desc_id}" class="w-full h-auto" '
         f'data-testid="worker-timeline">',
-        f'<title id="worker-timeline-title">Stock held, in {plural}, day by day</title>',
-        f'<desc id="worker-timeline-desc">{_description(days, counts, unit)}</desc>',
-        '<g stroke-opacity="0.35">'
-        f'{_segment(pad, y(ZERO), width - pad, y(ZERO), "axis", "currentColor", width=1)}</g>',
+        f'<title id="{title_id}">Stock held, in {plural}, day by day</title>',
+        f'<desc id="{desc_id}">{_description(days, counts, unit)}</desc>',
     ]
+    # The scale: a faint gridline at each round number, labelled on the left; zero a little firmer.
+    grid = ['<g data-kind="scale">']
+    tick = bottom
+    while tick <= top:
+        opacity = "0.35" if tick == 0 else "0.12"
+        kind = "axis" if tick == 0 else "gridline"
+        line = _segment(left, y(tick), width - right, y(tick), kind, "currentColor", width=1)
+        grid.append(f'<g stroke-opacity="{opacity}">{line}</g>')
+        grid.append(
+            f'<text x="{left - 6}" y="{y(tick) + 4:.1f}" {text} text-anchor="end" data-kind="tick">'
+            f"{escape(quantity_digits(tick))}</text>"
+        )
+        tick += step
+    grid.append(f'<text x="{left}" y="12" {text}>{plural}</text>')
+    for on in _dates(first, last, date_ticks):
+        at = x(on)
+        # The first date reads from its tick, the last up to it, any between centred on it.
+        anchor = "start" if on == first else "end" if on == last else "middle"
+        mark = _segment(at, height - below, at, height - below + 4, "date-tick", "currentColor", width=1)
+        grid.append(f'<g stroke-opacity="0.35">{mark}</g>')
+        grid.append(
+            f'<text x="{at:.1f}" y="{height - 8}" {text} text-anchor="{anchor}" data-kind="date">{day_text(on)}</text>'
+        )
+    grid.append("</g>")
+    parts.extend(grid)
     previous = None
     for d in days:
         at = x(d["on"])
@@ -229,9 +286,5 @@ def timeline_svg(line: dict, *, width: int = 720, height: int = 220) -> str:
             f'stroke="currentColor" stroke-width="1.5" data-kind="count">'
             f"<title>{day_text(c['on'])}: counted {_amount(Decimal(c['quantity']), unit)}</title></circle>"
         )
-    text = 'font-size="11" fill="currentColor"'
-    parts.append(f'<text x="{pad}" y="{height - 8}" {text}>{day_text(first)}</text>')
-    parts.append(f'<text x="{width - pad}" y="{height - 8}" {text} text-anchor="end">{day_text(last)}</text>')
-    parts.append(f'<text x="{pad}" y="{pad - 10}" {text}>{_amount(top, unit)}</text>')
     parts.append("</svg>")
     return "".join(parts)

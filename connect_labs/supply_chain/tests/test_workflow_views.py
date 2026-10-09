@@ -128,7 +128,7 @@ def test_a_pin_that_adds_a_tab_sits_with_the_stock_pages_and_unpinning_restores(
     assert "Coverage" not in [label.strip() for _, _, label in _tabs(client_in_programme)]
 
 
-def test_the_pinned_page_mounts_the_runner_with_the_editor_and_classic_links(client_in_programme, da):
+def test_a_reader_gets_the_runner_and_the_classic_link_but_no_builder_controls(client_in_programme, da):
     _pin(da, replaces="supply_chain:workers", opportunity_id=OPP)
 
     response = client_in_programme.get(reverse("supply_chain:workflow_view", args=["stock-review"]))
@@ -137,9 +137,34 @@ def test_the_pinned_page_mounts_the_runner_with_the_editor_and_classic_links(cli
     assert response.status_code == 200
     assert 'id="workflow-root"' in body and "workflow-runner-bundle.js" in body
     assert 'data-testid="supply-banner"' in body
+    assert 'data-testid="classic-view" href="/supply/workers/"' in body
+    assert 'data-testid="workflow-edit"' not in body and 'data-testid="workflow-open"' not in body
+    assert "A workflow:" not in body
+
+
+@pytest.mark.parametrize("who", ["author", "pinner", "staff"])
+def test_whoever_builds_the_view_gets_the_editor(client_in_programme, da, monkeypatch, django_user_model, who):
+    user = django_user_model.objects.get(username="pm")
+    definition = {"name": "Supply Stock Review", "username": "pm" if who == "author" else "someone-else"}
+    monkeypatch.setattr(
+        page_views.WorkflowRunView,
+        "_run_context_data",
+        lambda self, **kw: {"has_context": True, "render_code": "x", "workflow_data": {}, "definition": definition},
+    )
+    view = _pin(da, replaces="supply_chain:workers", opportunity_id=OPP)
+    if who == "pinner":
+        from connect_labs.supply_chain.workflow_views.models import SupplyWorkflowView
+
+        SupplyWorkflowView.objects.filter(pk=view["id"]).update(created_by="pm")
+    if who == "staff":
+        user.is_staff = True
+        user.save()
+
+    body = client_in_programme.get(reverse("supply_chain:workflow_view", args=["stock-review"])).content.decode()
+
     edit = body.split('data-testid="workflow-edit" href="', 1)[1].split('"', 1)[0]
     assert f"/labs/workflow/{WORKFLOW}/run/" in edit and "edit=true" in edit and "run_id=77" in edit
-    assert 'data-testid="classic-view" href="/supply/workers/"' in body
+    assert 'data-testid="workflow-open"' in body
 
 
 def test_the_run_is_read_by_the_pinned_opportunity_alone(client_in_programme, da, monkeypatch):
