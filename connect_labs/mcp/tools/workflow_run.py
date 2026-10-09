@@ -60,9 +60,11 @@ CLICK_TO_SEND = (
 #: Seen live 2026-10-09: asked to start coaching, the agent read the context, never opened
 #: workflow_run_action, and sent the person to the page's button instead of previewing.)
 HOW_TO_RUN_CLICK_TO_SEND = (
-    "Sent only by the person's click, never by you. As soon as they want to coach someone, "
-    "PREVIEW it: workflow_run_action with this action's key, `arguments.workers: [{key}]`, and "
-    "no `confirm`. In canopy that preview appears to them as a card with the worker's picture, "
+    "Sent only by the person's click, never by you. As soon as they want to coach someone -- "
+    "including when they ask for a summary of a worker's data to start coaching -- PREVIEW it "
+    "in that same reply, beside any summary: workflow_run_action with this action's key, "
+    "`arguments.workers: [{key}]`, and no `confirm`. Never end on 'say so and I'll start it'. "
+    "In canopy that preview appears to them as a card with the worker's picture, "
     "the briefing and the opening message, and the buttons Send to <worker>, Send to me (QA "
     "test) and Not yet; tell them to click Send on the card. Don't ask for a yes in chat and "
     "don't offer to send it. Labs writes the briefing and always sends it to this workflow's "
@@ -529,7 +531,9 @@ def _view_text(out: dict) -> str:
         "inside the briefing as the programme team's note -- the coach, the picture and the "
         "opening stay -- so edit freely. `bot` cannot name another coach. On a synthetic opportunity the "
         "preview's `arguments.bot` is Labs' sample stand-in (no message goes out) while `bot` "
-        "names the coach a real run uses: that is expected, not a mismatch.\n\n"
+        "names the coach a real run uses: that is expected, not a mismatch. A synthetic preview "
+        "also has no `opening`, because no message goes to the worker; a QA send (Send to me) "
+        "opens with Labs' fixed opening, which the card shows. Say that, not that it is missing.\n\n"
         "OTHER ACTIONS (e.g. create_task): the preview carries a single-use `confirm`. Show the "
         "preview, get the person's explicit yes, then call again with the preview's `arguments` "
         "and its `confirm`; the action is queued and an execution id returned. Changing anything "
