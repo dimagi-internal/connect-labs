@@ -57,6 +57,7 @@ function mpConfig(definition) {
         ? c.fixed_pct_bands.map(Number)
         : MP_DEFAULTS.fixedPctBands,
     lloByOpportunity: c.llo_by_opportunity || {},
+    opportunityLabels: c.opportunity_labels || {},
   };
 }
 
@@ -76,6 +77,13 @@ function mpCells(state) {
 function mpLlo(cfg, oppId) {
   var name = cfg.lloByOpportunity[String(oppId)];
   return name || 'Opportunity ' + oppId;
+}
+
+// An opportunity's display name: config.opportunity_labels, else "<LLO> · <id>".
+function mpOppLabel(cfg, oppId) {
+  return (
+    cfg.opportunityLabels[String(oppId)] || mpLlo(cfg, oppId) + ' · ' + oppId
+  );
 }
 
 function mpZero() {
@@ -146,6 +154,7 @@ function mpFilter(cells, f, cfg) {
     if (f.weekTo && c.week > f.weekTo) return false;
     if (f.ageBand && c.age_band !== f.ageBand) return false;
     if (f.llo && mpLlo(cfg, c.opportunity_id) !== f.llo) return false;
+    if (f.opp && String(c.opportunity_id) !== String(f.opp)) return false;
     if (f.ward && (c.ward || '') !== f.ward) return false;
     return true;
   });
@@ -165,8 +174,18 @@ function mpBaseline(cells, f, cfg, flat) {
   return r === null ? cfg.baselineFixed : r;
 }
 
-// Units at one level: 'llo', 'ward' or 'flw'. An FLW is one person within an
-// LLO, added up across wards and the LLO's opportunities.
+// Counts per age band, for one unit or the whole selection.
+function mpByBand(cells) {
+  var out = {};
+  cells.forEach(function (c) {
+    out[c.age_band] = mpAdd(out[c.age_band] || mpZero(), c);
+  });
+  return out;
+}
+
+// Units at one level: 'llo', 'opp', 'ward' or 'flw'. An FLW is one person
+// within an LLO, added up across wards and the LLO's opportunities. Each unit
+// also carries its counts per age band (byBand) for its age breakdown.
 function mpUnits(cells, level, cfg, names) {
   var byKey = {};
   cells.forEach(function (c) {
@@ -176,6 +195,10 @@ function mpUnits(cells, level, cfg, names) {
       key = llo;
       label = llo;
       parent = '';
+    } else if (level === 'opp') {
+      key = String(c.opportunity_id);
+      label = mpOppLabel(cfg, c.opportunity_id);
+      parent = llo;
     } else if (level === 'ward') {
       key = llo + '|' + (c.ward || '');
       label = c.ward || '(no ward)';
@@ -195,12 +218,15 @@ function mpUnits(cells, level, cfg, names) {
         llo: llo,
         ward: level === 'ward' ? c.ward || '' : '',
         username: level === 'flw' ? c.username : '',
+        opp: level === 'opp' ? String(c.opportunity_id) : '',
         wards: {},
         counts: mpZero(),
+        byBand: {},
       };
     }
     if (c.ward) u.wards[c.ward] = true;
     mpAdd(u.counts, c);
+    u.byBand[c.age_band] = mpAdd(u.byBand[c.age_band] || mpZero(), c);
   });
   return Object.keys(byKey).map(function (k) {
     return byKey[k];
@@ -367,16 +393,133 @@ function MpToggle(props) {
   );
 }
 
+var MP_LEVEL_LABELS = {
+  llo: 'LLO',
+  opp: 'Opportunity',
+  ward: 'Ward',
+  flw: 'FLW',
+};
+
+// "7 (0.02%)": a count with its share of the valid readings.
+function MpCountPct(props) {
+  return (
+    <span>
+      {props.n}
+      <span className="text-xs text-gray-500">
+        {' '}
+        ({mpPct(mpRate(props.n, props.of), 2)})
+      </span>
+    </span>
+  );
+}
+
+// The ceiling a band is held to, as text: one value, or boys / girls.
+function mpCeilingText(thresholds, band, flat) {
+  var t = thresholds || {};
+  var flatCm = t.flat_ceiling_cm || 20;
+  if (flat) return '> ' + flatCm + ' cm';
+  var c = (t.ceilings || {})[band];
+  if (!c) return '> ' + flatCm + ' cm (provisional)';
+  if (c.male === c.female) return '> ' + c.male + ' cm';
+  return '> ' + c.male + ' cm boys, > ' + c.female + ' cm girls';
+}
+
+// Too low / too high / total, per age band, with each band's cut-offs. byBand is
+// {band: counts}; used for the whole selection and inside an expanded row.
+function MpAgeTable(props) {
+  var byBand = props.byBand || {};
+  var floorCm = (props.thresholds || {}).floor_cm || 9;
+  var flat = props.flat;
+  var total = mpZero();
+  var rows = MP_AGE_BANDS.filter(function (b) {
+    return byBand[b] && byBand[b].valid > 0;
+  }).map(function (b) {
+    mpAdd(total, byBand[b]);
+    return { band: b, c: byBand[b] };
+  });
+  function cells(c) {
+    return [
+      <td key="lo" className="px-3 py-1.5 text-right">
+        <MpCountPct n={c.tier_a_low} of={c.valid} />
+      </td>,
+      <td key="hi" className="px-3 py-1.5 text-right">
+        <MpCountPct n={mpTierAHigh(c, flat)} of={c.valid} />
+      </td>,
+      <td key="all" className="px-3 py-1.5 text-right font-semibold">
+        <MpCountPct n={mpTierA(c, flat)} of={c.valid} />
+      </td>,
+      <td key="n" className="px-3 py-1.5 text-right">
+        {c.valid}
+      </td>,
+    ];
+  }
+  if (rows.length === 0)
+    return <p className="text-sm text-gray-500 p-2">No valid readings.</p>;
+  return (
+    <div className="overflow-x-auto border rounded-lg bg-white">
+      <table className="min-w-full text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-3 py-1.5 text-left font-semibold">Age</th>
+            <th className="px-3 py-1.5 text-left font-semibold">Too high if</th>
+            <th className="px-3 py-1.5 text-right font-semibold">
+              Too low (&lt; {floorCm} cm)
+            </th>
+            <th className="px-3 py-1.5 text-right font-semibold">Too high</th>
+            <th className="px-3 py-1.5 text-right font-semibold">
+              Implausible (total)
+            </th>
+            <th className="px-3 py-1.5 text-right font-semibold">
+              Valid readings
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          {rows.map(function (r) {
+            return (
+              <tr key={r.band}>
+                <td className="px-3 py-1.5">{r.band} months</td>
+                <td className="px-3 py-1.5 text-xs text-gray-600">
+                  {mpCeilingText(props.thresholds, r.band, flat)}
+                </td>
+                {cells(r.c)}
+              </tr>
+            );
+          })}
+          <tr className="bg-gray-50 font-medium">
+            <td className="px-3 py-1.5">All ages</td>
+            <td className="px-3 py-1.5" />
+            {cells(total)}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function MpUnitTable(props) {
   var level = props.level;
   var showParent = level !== 'llo';
+  var _open = React.useState({});
+  var open = _open[0];
+  var setOpen = _open[1];
+  var colCount = 12 + (showParent ? 1 : 0) + (level === 'flw' ? 1 : 0);
+
+  function toggle(key, e) {
+    if (e && e.stopPropagation) e.stopPropagation();
+    var next = Object.assign({}, open);
+    next[key] = !open[key];
+    setOpen(next);
+  }
+
   return (
     <div className="overflow-x-auto border rounded-lg">
       <table className="min-w-full text-sm">
         <thead className="bg-gray-50">
           <tr>
+            <th className="px-2 py-2" title="Show this row by age range" />
             <th className="px-3 py-2 text-left font-semibold">
-              {level === 'llo' ? 'LLO' : level === 'ward' ? 'Ward' : 'FLW'}
+              {MP_LEVEL_LABELS[level]}
             </th>
             {showParent && (
               <th className="px-3 py-2 text-left font-semibold">LLO</th>
@@ -422,7 +565,8 @@ function MpUnitTable(props) {
           {props.units.map(function (u) {
             var c = u.counts;
             var excluded = c.missing_age + c.missing_muac;
-            return (
+            var isOpen = !!open[u.key];
+            var row = (
               <tr
                 key={u.key}
                 className={
@@ -432,6 +576,18 @@ function MpUnitTable(props) {
                   if (props.onPick) props.onPick(u);
                 }}
               >
+                <td className="px-2 py-2">
+                  <button
+                    type="button"
+                    className="text-xs text-gray-600 px-1"
+                    title="Show by age range"
+                    onClick={function (e) {
+                      toggle(u.key, e);
+                    }}
+                  >
+                    {isOpen ? '▾' : '▸'}
+                  </button>
+                </td>
                 <td className="px-3 py-2">{u.label}</td>
                 {showParent && <td className="px-3 py-2">{u.parent}</td>}
                 {level === 'flw' && (
@@ -439,8 +595,12 @@ function MpUnitTable(props) {
                     {Object.keys(u.wards).sort().join(', ')}
                   </td>
                 )}
-                <td className="px-3 py-2 text-right">{u.tooLow}</td>
-                <td className="px-3 py-2 text-right">{u.tooHigh}</td>
+                <td className="px-3 py-2 text-right">
+                  <MpCountPct n={u.tooLow} of={u.n} />
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <MpCountPct n={u.tooHigh} of={u.n} />
+                </td>
                 <td className="px-3 py-2 text-right font-semibold">
                   {u.tierA}
                 </td>
@@ -479,10 +639,24 @@ function MpUnitTable(props) {
                 </td>
               </tr>
             );
+            if (!isOpen) return row;
+            return [
+              row,
+              <tr key={u.key + ':age'} className="bg-gray-50">
+                <td />
+                <td className="px-3 py-2" colSpan={colCount - 1}>
+                  <MpAgeTable
+                    byBand={u.byBand}
+                    thresholds={props.thresholds}
+                    flat={props.flat}
+                  />
+                </td>
+              </tr>,
+            ];
           })}
           {props.units.length === 0 && (
             <tr>
-              <td className="px-3 py-4 text-gray-500" colSpan={13}>
+              <td className="px-3 py-4 text-gray-500" colSpan={colCount}>
                 No readings match these filters.
               </td>
             </tr>
@@ -762,6 +936,7 @@ function WorkflowUI(props) {
     weekFrom: '',
     weekTo: '',
     llo: '',
+    opp: '',
     ward: '',
     ageBand: '',
   });
@@ -799,10 +974,22 @@ function WorkflowUI(props) {
       return mpLlo(cfg, c.opportunity_id);
     }),
   );
-  var wards = mpUnique(
+  var opps = mpUnique(
     cells
       .filter(function (c) {
         return !f.llo || mpLlo(cfg, c.opportunity_id) === f.llo;
+      })
+      .map(function (c) {
+        return String(c.opportunity_id);
+      }),
+  ).map(function (id) {
+    return { value: id, label: mpOppLabel(cfg, id) };
+  });
+  var wards = mpUnique(
+    cells
+      .filter(function (c) {
+        if (f.llo && mpLlo(cfg, c.opportunity_id) !== f.llo) return false;
+        return !f.opp || String(c.opportunity_id) === String(f.opp);
       })
       .map(function (c) {
         return c.ward;
@@ -825,6 +1012,15 @@ function WorkflowUI(props) {
     sortBy,
   );
   var weekly = mpWeekly(selected, flat);
+  var selectionByBand = mpByBand(selected);
+  var selectionLabel =
+    [
+      f.ward,
+      f.opp ? mpOppLabel(cfg, f.opp) : f.llo,
+      f.ageBand ? f.ageBand + ' months' : '',
+    ]
+      .filter(Boolean)
+      .join(' · ') || 'all LLOs';
   var baselineLabel =
     cfg.baselineMode === 'fixed'
       ? 'a fixed ' + mpPct(cfg.baselineFixed, 2) + ' (program assumption)'
@@ -834,7 +1030,10 @@ function WorkflowUI(props) {
 
   function pick(u) {
     if (level === 'llo') {
-      set({ llo: u.llo, ward: '' });
+      set({ llo: u.llo, opp: '', ward: '' });
+      setLevel('ward');
+    } else if (level === 'opp') {
+      set({ llo: u.llo, opp: u.opp, ward: '' });
       setLevel('ward');
     } else if (level === 'ward') {
       set({ llo: u.llo, ward: u.ward });
@@ -894,7 +1093,16 @@ function WorkflowUI(props) {
           allLabel="All LLOs"
           options={llos}
           onChange={function (v) {
-            set({ llo: v, ward: '' });
+            set({ llo: v, opp: '', ward: '' });
+          }}
+        />
+        <MpSelect
+          label="Opportunity"
+          value={f.opp}
+          allLabel="All opportunities"
+          options={opps}
+          onChange={function (v) {
+            set({ opp: v, ward: '' });
           }}
         />
         <MpSelect
@@ -954,9 +1162,13 @@ function WorkflowUI(props) {
             totals.valid +
             ' valid readings: ' +
             totals.tier_a_low +
-            ' too low, ' +
+            ' too low (' +
+            mpPct(mpRate(totals.tier_a_low, totals.valid), 2) +
+            '), ' +
             mpTierAHigh(totals, flat) +
-            ' too high'
+            ' too high (' +
+            mpPct(mpRate(mpTierAHigh(totals, flat), totals.valid), 2) +
+            ')'
           }
         />
         <MpTile
@@ -1000,6 +1212,17 @@ function WorkflowUI(props) {
         />
       </div>
 
+      <div>
+        <h2 className="text-sm font-semibold mb-2">
+          By age range ({selectionLabel})
+        </h2>
+        <MpAgeTable
+          byBand={selectionByBand}
+          thresholds={state.thresholds}
+          flat={flat}
+        />
+      </div>
+
       <p className="text-xs text-gray-600">
         Colours:{' '}
         {method === 'fixed'
@@ -1017,6 +1240,7 @@ function WorkflowUI(props) {
       <div className="flex gap-2 items-center flex-wrap">
         {[
           { value: 'llo', label: 'By LLO' },
+          { value: 'opp', label: 'By opportunity' },
           { value: 'ward', label: 'By ward' },
           { value: 'flw', label: 'By FLW' },
         ].map(function (t) {
@@ -1038,15 +1262,15 @@ function WorkflowUI(props) {
             </button>
           );
         })}
-        {(f.llo || f.ward) && (
+        {(f.llo || f.opp || f.ward) && (
           <button
             type="button"
             className="px-2 py-1 text-xs text-gray-600 underline"
             onClick={function () {
-              set({ llo: '', ward: '' });
+              set({ llo: '', opp: '', ward: '' });
             }}
           >
-            Clear LLO/ward
+            Clear LLO/opportunity/ward
           </button>
         )}
         <span className="text-xs text-gray-500">
@@ -1069,8 +1293,14 @@ function WorkflowUI(props) {
         units={units}
         minN={cfg.minN}
         floorCm={(state.thresholds || {}).floor_cm || 9}
+        thresholds={state.thresholds}
+        flat={flat}
         onPick={level === 'flw' ? null : pick}
       />
+      <p className="text-xs text-gray-500">
+        ▸ on a row shows that row by age range. Percentages are of the row's
+        valid readings.
+      </p>
 
       <div>
         <h2 className="text-sm font-semibold mb-2">
