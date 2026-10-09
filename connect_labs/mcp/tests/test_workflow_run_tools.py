@@ -196,12 +196,12 @@ def test_without_confirm_the_tool_only_previews(user, actionable):
     assert not WorkflowActionExecution.objects.exists()
 
 
-def test_the_confirmed_call_queues_the_previewed_action_as_the_caller(
-    user, actionable, django_capture_on_commit_callbacks
-):
+def test_the_confirmed_call_queues_the_previewed_action_as_the_caller(actionable, django_capture_on_commit_callbacks):
     from unittest.mock import patch
 
-    # The coaching token comes only from the View's own preview (as the viewer).
+    # The coaching token comes only from the View's own preview (as the viewer); off
+    # canopy, only for a QA send.
+    user = get_user_model().objects.create_user(username="jo", email="jo@dimagi.com", password="p")
     previewed = _call(
         "workflow_action_preview_view",
         user,
@@ -209,6 +209,7 @@ def test_the_confirmed_call_queues_the_previewed_action_as_the_caller(
         program_id=25,
         action="initiate_ai_coach",
         arguments={"workers": [{"key": "10::asha"}]},
+        deliver_to="jo.qa",
     )
     with patch("connect_labs.workflow.tasks.execute_workflow_action.delay") as delay:
         with django_capture_on_commit_callbacks(execute=True):
@@ -365,6 +366,12 @@ def test_a_coaching_preview_briefs_each_worker_from_the_runs_grading(user, actio
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture
+def canopy(monkeypatch):
+    """The call comes through canopy for the person looking at the View (a delegated token)."""
+    monkeypatch.setattr(wa, "_delegated_token", lambda: MagicMock(client_id="canopy"))
+
+
 def _coach_preview(user, tool="workflow_run_action", **extra):
     return _call(
         tool,
@@ -422,7 +429,7 @@ def test_a_non_coaching_preview_still_gives_the_agent_its_token(user, actionable
     assert out["confirm"] and "sent_by" not in out
 
 
-def test_the_view_preview_has_the_picture_inline_and_the_viewers_token(user, actionable):
+def test_the_view_preview_has_the_picture_inline_and_the_viewers_token(user, actionable, canopy):
     import base64
 
     out = _coach_preview(user, tool="workflow_action_preview_view")
@@ -439,7 +446,7 @@ def test_the_view_preview_has_the_picture_inline_and_the_viewers_token(user, act
     assert out["executions"] == []
 
 
-def test_the_view_previews_text_leaves_out_the_picture_and_the_token(user, actionable):
+def test_the_view_previews_text_leaves_out_the_picture_and_the_token(user, actionable, canopy):
     from connect_labs.mcp.tool_registry import get_tool as registry_tool
 
     out = _coach_preview(user, tool="workflow_action_preview_view")
@@ -448,7 +455,7 @@ def test_the_view_previews_text_leaves_out_the_picture_and_the_token(user, actio
     assert "inline_png_bytes" in text
 
 
-def test_the_view_sends_what_it_showed(user, actionable, django_capture_on_commit_callbacks):
+def test_the_view_sends_what_it_showed(user, actionable, django_capture_on_commit_callbacks, canopy):
     from unittest.mock import patch
 
     shown = _coach_preview(user, tool="workflow_action_preview_view")
@@ -477,7 +484,7 @@ def test_the_views_qa_send_is_refused_to_anyone_not_dimagi_staff(user, actionabl
     assert e.value.code == "PERMISSION_DENIED"
 
 
-def test_the_views_qa_send_previews_to_the_staff_member(actionable):
+def test_the_views_qa_send_previews_to_the_staff_member(actionable, canopy):
     staff = get_user_model().objects.create_user(username="jo", email="jo@dimagi.com", password="p")
     out = _coach_preview(staff, tool="workflow_action_preview_view", deliver_to="  jo.qa ")
     assert out["arguments"]["deliver_to"] == "jo.qa"
@@ -494,3 +501,17 @@ def test_the_views_qa_send_previews_to_the_staff_member(actionable):
         deliver_to="",
     )
     assert "deliver_to" not in cleared["arguments"]
+
+
+def test_off_canopy_the_views_preview_reaches_no_worker(user, actionable):
+    """An agent's own MCP connection can name the app-only tool, but gets no token for a
+    worker: that takes a person's click on canopy's card or the Labs page."""
+    with pytest.raises(MCPToolError, match="only by a person's click") as e:
+        _coach_preview(user, tool="workflow_action_preview_view")
+    assert e.value.code == "PERMISSION_DENIED"
+
+
+def test_off_canopy_the_views_preview_still_previews_a_qa_send(actionable):
+    staff = get_user_model().objects.create_user(username="ace", email="ace@dimagi.com", password="p")
+    out = _coach_preview(staff, tool="workflow_action_preview_view", deliver_to="ace.test")
+    assert out["arguments"]["deliver_to"] == "ace.test" and out["confirm"]
