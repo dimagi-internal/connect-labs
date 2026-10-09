@@ -376,3 +376,87 @@ def test_rank_pairs_carries_the_recommendation_only_with_deaths(grid):
     # Only 4 monthly rounds runs in both fixture states.
     assert with_deaths["recommendation"]["design_code"] == "pmc_m4_onset"
     assert rank.rank_pairs(["Ondo", "Kano"], grid=grid)["recommendation"] is None
+
+
+class TestAges:
+    STATES = ["A", "B"]
+
+    def pooled(self):
+        return {
+            "pmc_m8_onset": _pool("8 monthly", {"A": (100, 12), "B": (100, 10)}),
+            "pmc_m8_onset_y2": _pool("8 monthly, second year", {"A": (60, 15), "B": (60, 13)}),
+        }
+
+    def test_the_recommendation_is_for_our_proposals_3_to_24_months_by_default(self):
+        got = rank.recommend(self.pooled(), self.STATES)
+
+        assert got["design_code"] == "pmc_m8_onset" and got["ages"] == "3_24"
+
+    def test_the_second_year_alone_is_chosen_only_when_asked(self):
+        assert rank.recommend(self.pooled(), self.STATES, ages="12_24")["design_code"] == "pmc_m8_onset_y2"
+        assert rank.recommend(self.pooled(), self.STATES, ages="any")["design_code"] == "pmc_m8_onset_y2"
+
+    def test_smc_is_outside_both_pmc_age_bands(self):
+        assert rank.design_ages("smc_m4_onset", "smc") is None
+        assert rank.design_ages("pmc_q4_y2", "pmc") == "12_24" and rank.design_ages("pmc_q4", "pmc") == "3_24"
+
+    def test_an_unknown_age_band_is_refused(self, grid):
+        with pytest.raises(ValueError, match="ages"):
+            rank.rank_pairs(["Ondo"], grid=grid, ages="0_60")
+
+
+class TestBudgetPlans:
+    STATES = ["A", "B", "C", "D"]
+
+    def pooled(self):
+        spend = lambda d, m: 113 * d / (0.003 * m)  # noqa: E731
+        self.spend = spend
+        return {
+            # Cheap per death but small: 8 monthly averts fewer deaths per state than year-round.
+            "pmc_m8_onset": _pool("8 monthly", {"A": (100, 20), "B": (100, 15), "C": (100, 10), "D": (100, 4)}),
+            "pmc_m12": _pool("Year-round", {"A": (150, 16), "B": (150, 12), "C": (150, 8), "D": (150, 3)}),
+        }
+
+    def test_a_small_budget_buys_the_best_states_first(self):
+        pooled = self.pooled()
+        budget = self.spend(100, 20) + self.spend(100, 15) + 1
+
+        (got,) = rank.budget_plans(pooled, self.STATES, [budget])
+
+        # 8 monthly in A and B (200 deaths) beats year-round in A alone (150) for the same money.
+        assert got["design_code"] == "pmc_m8_onset" and got["states"] == ["A", "B"]
+        assert got["deaths_averted_per_year"] == 200
+
+    def test_a_bigger_budget_can_switch_to_the_more_intensive_schedule(self):
+        pooled = self.pooled()
+        budget = sum(self.spend(150, m) for m in (16, 12, 8)) + 1
+
+        (got,) = rank.budget_plans(pooled, self.STATES, [budget])
+
+        assert got["design_code"] == "pmc_m12" and got["states"] == ["A", "B", "C"]
+        assert got["states_worth_funding"] == 3  # D is below the bar with either schedule
+
+    def test_it_never_buys_a_state_below_the_bar_or_with_an_unclear_effect(self):
+        pooled = self.pooled()
+        for p in pooled.values():
+            next(r for r in p["per_state"] if r["state"] == "A")["clear"] = False
+
+        (got,) = rank.budget_plans(pooled, self.STATES, [1e12])
+
+        assert "A" not in got["states"] and "D" not in got["states"]
+
+    def test_the_age_band_limits_the_schedules(self):
+        pooled = {"pmc_m8_onset_y2": _pool("Second year", {"A": (100, 20)})}
+
+        (got,) = rank.budget_plans(pooled, ["A"], [1e9])
+
+        assert got["design_code"] is None and got["states"] == []
+
+    def test_rank_pairs_plans_ten_twenty_and_thirty_million_by_default(self, grid):
+        got = rank.rank_pairs(["Ondo", "Kano"], grid=grid, deaths={"Ondo": 4_000.0, "Kano": 20_000.0})
+
+        assert [p["budget"] for p in got["budget_plans"]] == [10_000_000, 20_000_000, 30_000_000]
+
+    def test_bad_budgets_are_refused(self, grid):
+        with pytest.raises(ValueError, match="budgets"):
+            rank.rank_pairs(["Ondo"], grid=grid, budgets=[-1])

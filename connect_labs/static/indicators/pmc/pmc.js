@@ -26,6 +26,7 @@
     (el('pmc-grid-states') || {}).textContent || '[]',
   );
   var BASES = ['prevalence_scaled', 'map'];
+  var AGES = ['3_24', '12_24'];
   var state = readUrl();
 
   function readUrl() {
@@ -46,6 +47,7 @@
           : BASES[0],
       top_n:
         [10, 20, 50].indexOf(num('top_n', 10)) >= 0 ? num('top_n', 10) : 10,
+      ages: AGES.indexOf(q.get('ages')) >= 0 ? q.get('ages') : AGES[0],
     };
   }
 
@@ -59,6 +61,7 @@
     if (state.deaths_basis !== BASES[0])
       p.set('deaths_basis', state.deaths_basis);
     if (state.top_n !== 10) p.set('top_n', state.top_n);
+    if (state.ages !== AGES[0]) p.set('ages', state.ages);
     return p;
   }
 
@@ -116,6 +119,7 @@
         platform_fee: String(state.platform_fee),
         dose_rate: String(state.dose_rate),
         deaths_basis: state.deaths_basis,
+        ages: state.ages,
       }),
     });
   }
@@ -319,6 +323,12 @@
         String(b.getAttribute('data-basis') === state.deaths_basis),
       );
     });
+    document.querySelectorAll('.pmc-seg [data-ages]').forEach(function (b) {
+      b.setAttribute(
+        'aria-pressed',
+        String(b.getAttribute('data-ages') === state.ages),
+      );
+    });
     el('pmc-topn').value = String(state.top_n);
   }
 
@@ -363,6 +373,12 @@
       rankChanged();
     });
   });
+  document.querySelectorAll('.pmc-seg [data-ages]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      state.ages = b.getAttribute('data-ages');
+      rankChanged();
+    });
+  });
   el('pmc-topn').addEventListener('change', function () {
     state.top_n = parseInt(this.value, 10) || 10;
     rankChanged();
@@ -376,6 +392,7 @@
     p.delete('schedule');
     p.set('deaths_basis', state.deaths_basis);
     p.set('top_n', state.top_n);
+    p.set('ages', state.ages);
     fetch(cfg.rankUrl + '?' + p.toString(), {
       signal: ctrl.signal,
       credentials: 'same-origin',
@@ -664,6 +681,21 @@
             ? ', still above the bar.'
             : ', below the bar, so not worth it.'),
       );
+    var y2 = r.second_year_only;
+    if (y2)
+      points.push(
+        'Aimed at 12–24-month-olds only, the same money does better: <b>' +
+          esc(y2.label.toLowerCase()) +
+          '</b> in ' +
+          y2.keep.length +
+          ' states gets ' +
+          times(y2.multiple_of_benchmark) +
+          ' (' +
+          num(y2.deaths_averted_per_year) +
+          ' deaths for ' +
+          usdShort(y2.spend_per_year) +
+          '). Babies under one would then rely on clinic-based PMC.',
+      );
     var rows = r.states
       .map(function (x) {
         return (
@@ -698,10 +730,57 @@
             .join('') +
           '</ul>'
         : '') +
+      budgetTable(d) +
       '<details><summary>When each state runs it</summary><table class="pmc-table">' +
       '<thead><tr><th class="l">State</th><th class="l">Rounds</th><th>&times; GiveWell</th></tr></thead><tbody>' +
       rows +
       '</tbody></table></details>';
+  }
+
+  // What a fixed annual budget buys: one schedule and the whole states it
+  // funds, best value first, never a state below the bar (rank.budget_plans).
+  function budgetTable(d) {
+    var plans = (d.budget_plans || []).filter(function (p) {
+      return p.design_code;
+    });
+    if (!plans.length) return '';
+    return (
+      '<div class="pmc-budgets"><div class="pmc-label">With a fixed budget</div>' +
+      '<table class="pmc-table"><thead><tr><th class="l">Budget a year</th><th class="l">Schedule and states</th>' +
+      '<th>Deaths / yr</th><th class="pmc-hide-sm">Spend</th><th>&times; GiveWell</th></tr></thead><tbody>' +
+      plans
+        .map(function (p) {
+          // Every state worth funding is funded and money is left over.
+          var under =
+            p.states.length === p.states_worth_funding &&
+            p.spend_per_year < 0.9 * p.budget;
+          return (
+            '<tr><td class="l"><b>' +
+            usdShort(p.budget).replace('.00M', 'M') +
+            '</b></td><td class="l design">' +
+            esc(p.label) +
+            ' in ' +
+            p.states.length +
+            (p.states.length === 1 ? ' state' : ' states') +
+            '<div class="states">' +
+            esc(names(p.states)) +
+            (under
+              ? '. Only ' +
+                usdShort(p.spend_per_year) +
+                ' is worth spending; more states would fall below the bar.'
+              : '') +
+            '</div></td><td class="pmc-num">' +
+            num(p.deaths_averted_per_year) +
+            '</td><td class="pmc-num pmc-hide-sm">' +
+            usdShort(p.spend_per_year) +
+            '</td><td class="pmc-num">' +
+            times(p.multiple_of_benchmark) +
+            '</td></tr>'
+          );
+        })
+        .join('') +
+      '</tbody></table></div>'
+    );
   }
 
   // Each schedule pooled across the states picked: the schedule half of the
