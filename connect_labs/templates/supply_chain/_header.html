@@ -1,3 +1,4 @@
+{% load supply_chain_extras %}
 {% comment %}
 The supply banner, the programme tabs and "view as of": every supply page's header.
 Included by base.html, and by the programme map -- a full-width page on the root
@@ -34,6 +35,8 @@ page rather than a date control above it.{% endcomment %}
        class="px-3 py-1.5 rounded-md border {% if tab.active %}bg-brand-indigo text-white border-brand-indigo{% else %}bg-white border-gray-300 hover:bg-gray-50 text-gray-700{% endif %}">{{ tab.label }}</a>
   {% endfor %}
 </nav>
+{% supply_settings_url as settings_url %}
+{% if settings_url %}<a data-testid="supply-settings" href="{{ settings_url }}" title="Which tabs this programme shows, and what fills them" class="px-3 py-1.5 text-sm rounded-md text-brand-indigo hover:underline">Settings</a>{% endif %}
 <div class="ml-auto" data-testid="as-of-slot">{% include 'supply_chain/_as_of_bar.html' with as_of_part="form" %}</div>
 </div>
 

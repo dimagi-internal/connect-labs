@@ -1,0 +1,14 @@
+{% extends 'supply_chain/base.html' %}
+
+{% comment %}A built-in tab the programme has turned off in Settings (supply_chain/hidden_tabs.py).{% endcomment %}
+
+{% block supply_content %}
+<div data-testid="tab-hidden" class="rounded-lg border border-gray-200 bg-white p-6 max-w-2xl">
+  <h2 class="text-lg font-semibold text-brand-indigo mb-1">{{ tab_label }} is turned off for this programme</h2>
+  <p class="text-sm text-gray-600">This programme's Settings hide the {{ tab_label }} tab.</p>
+  <div class="flex flex-wrap gap-3 mt-4 text-sm">
+    <a href="{{ home_url }}" class="px-3 py-1.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50 text-gray-700">Supply overview</a>
+    {% if settings_url %}<a data-testid="tab-hidden-settings" href="{{ settings_url }}" class="px-3 py-1.5 rounded-md border border-brand-indigo text-brand-indigo hover:bg-gray-50">Settings</a>{% endif %}
+  </div>
+</div>
+{% endblock %}

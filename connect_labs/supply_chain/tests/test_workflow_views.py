@@ -148,7 +148,7 @@ def test_a_pin_that_adds_a_tab_sits_with_the_stock_pages_and_unpinning_restores(
     assert labels.index("Coverage") == labels.index("Where it went") + 1
     assert "Workers" in labels
 
-    call_operation("view_unpin", da, {"view_id": view["id"]})
+    call_operation("view_unpin", da, {"slug": view["slug"]})
     assert "Coverage" not in [label.strip() for _, _, label in _tabs(client_in_programme)]
 
 
@@ -175,11 +175,14 @@ def test_whoever_builds_the_view_gets_the_editor(client_in_programme, da, monkey
         "_run_context_data",
         lambda self, **kw: {"has_context": True, "render_code": "x", "workflow_data": {}, "definition": definition},
     )
-    view = _pin(da, replaces="supply_chain:workers", opportunity_id=OPP)
+    _pin(da, replaces="supply_chain:workers", opportunity_id=OPP)
     if who == "pinner":
-        from connect_labs.supply_chain.workflow_views.models import SupplyWorkflowView
+        # Whoever filled the tab is recorded on it in the programme's Settings.
+        from connect_labs.scope_config.models import ScopeConfig
 
-        SupplyWorkflowView.objects.filter(pk=view["id"]).update(created_by="pm")
+        row = ScopeConfig.objects.get(scope_type="program", scope_key=str(PROGRAM), namespace="supply")
+        row.data["tabs"]["supply_chain:workers"]["pinned_by"] = "pm"
+        row.save()
     if who == "staff":
         user.is_staff = True
         user.save()

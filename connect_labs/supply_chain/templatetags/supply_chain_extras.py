@@ -1955,6 +1955,32 @@ def pinned_tab(context, tab_name):
 
 
 @register.simple_tag(takes_context=True)
+def supply_settings_url(context):
+    """The programme's Settings page, for someone who can change its settings; else "".
+
+    At the end of the supply tabs, for the people who set them up. Readers who cannot
+    change the programme's set-up never see it (spec section 3).
+    """
+    request = context.get("request")
+    program_id = ((getattr(request, "labs_context", None) or {}).get("program_id")) if request else None
+    if not program_id:
+        return ""
+    from django.urls import reverse
+
+    from connect_labs.labs.access.scopes import Caller
+    from connect_labs.scope_config import service
+    from connect_labs.scope_config.scopes import Scope
+
+    try:
+        scope = Scope.of("program", program_id)
+    except ValueError:
+        return ""
+    if service.refusal(Caller(user=request.user, request=request), scope):
+        return ""
+    return reverse("labs:settings", args=["program", scope.key]) + "#supply"
+
+
+@register.simple_tag(takes_context=True)
 def edit_cell(context, kind, record_id, name, value=None):
     """The attributes that make a table cell editable in place (cells.py, static/supply_chain/cell_edit.js).
 

@@ -8,11 +8,11 @@ as opening the workflow's own page with no run does.
 
 from datetime import date
 
-from connect_labs.supply_chain.workflow_views.models import SupplyWorkflowView
 from connect_labs.workflow.data_access import WorkflowDataAccess
 
 
-def current_run_id(request, pin: SupplyWorkflowView) -> int | None:
+def current_run_id(request, pin) -> int | None:
+    """`pin` is a supply_chain.config.Pin."""
     access = WorkflowDataAccess(request=request)
     try:
         runs = [
