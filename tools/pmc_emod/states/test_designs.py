@@ -47,11 +47,20 @@ def test_smc_only_for_seasonal_states():
         assert has == (s["rain_wettest_quarter"] >= 60), s["name"]
 
 
-def test_pmc_designs_target_3_to_24_months():
+def test_pmc_designs_target_3_to_24_months_or_the_second_year():
     for d in designs.designs_for(_state()):
         if d["kind"] == "pmc":
+            # Spend is priced per 3-24-month child for every PMC design: the worker counts doses that way.
             assert d["target_pop_fraction"] == pytest.approx(21 / 60)
-            assert all(r[3:] == [3 / 12, 2.0, 0.85] for r in d["rounds"]), d["code"]
+            ages = [1.0, 2.0, 0.85] if d["code"].endswith("_y2") else [3 / 12, 2.0, 0.85]
+            assert all(r[3:] == ages for r in d["rounds"]), d["code"]
+
+
+def test_second_year_variants_of_the_strongest_schedules_and_the_base():
+    got = _by_code(7)
+    assert {c for c in got if c.endswith("_y2")} == {"pmc_m6_onset_y2", "pmc_m8_onset_y2", "pmc_m12_y2", "pmc_q4_y2"}
+    assert got["pmc_m8_onset_y2"]["label"] == "8 monthly rounds, Jul–Feb, 12–24 months"
+    assert got["pmc_m8_onset_y2"]["rounds"] == [r[:3] + [1.0, 2.0, 0.85] for r in got["pmc_m8_onset"]["rounds"]]
 
 
 def test_codes_unique_and_labels_have_months():
@@ -60,7 +69,7 @@ def test_codes_unique_and_labels_have_months():
         codes = [d["code"] for d in ds]
         assert len(set(codes)) == len(codes)
         for d in ds:
-            if d["code"] != "pmc_m12":
+            if d["code"] not in ("pmc_m12", "pmc_m12_y2"):
                 assert any(m in d["label"] for m in designs.MONTH_ABBR), d["label"]
     assert _by_code(6)["pmc_m6_onset"]["label"] == "6 monthly rounds, Jun–Nov, 3–24 months"
     assert _by_code(6)["pmc_m12"]["label"] == "Year-round monthly, 3–24 months"
@@ -85,7 +94,7 @@ def test_periodic_every_year_identical():
         y1 = sorted(t - 365 for y, t in times if y == 1)
         assert y0 == y1, (onset, d["code"])
         nominal = {"pmc_m4_onset": 4, "pmc_m6_onset": 6, "pmc_m8_onset": 8, "pmc_m12": 12, "pmc_q4": 4, "pmc_b6": 6}
-        assert len(y0) == nominal.get(d["code"], 4), (onset, d["code"])
+        assert len(y0) == nominal.get(d["code"].removesuffix("_y2"), 4), (onset, d["code"])
 
 
 def test_offsets_follow_onset():

@@ -295,3 +295,64 @@ def test_by_design_pools_each_schedule_across_the_states_with_its_noise(grid):
 
 def test_the_state_index_carries_the_rain_onset_for_the_live_run(grid):
     assert {s["name"]: s["onset_month"] for s in rank.state_index(grid)} == {"Kano": 6, "Lagos": 4, "Ondo": 5}
+
+
+def _pool(label, per_state):
+    """A pooled design as rank_pairs builds it; ``per_state`` is {state: (deaths, multiple)}."""
+    rows = [
+        {"state": s, "design_label": f"{label} in {s}", "deaths": d, "spend": 113 * d / (0.003 * m)}
+        for s, (d, m) in per_state.items()
+    ]
+    return {"label": label, "kind": "pmc", "deaths": sum(r["deaths"] for r in rows), "per_state": rows}
+
+
+class TestRecommend:
+    STATES = ["A", "B", "C"]
+
+    def pooled(self):
+        return {
+            # Cheapest per death overall, but it does not run in C: never the recommendation.
+            "partial": _pool("Partial", {"A": (100, 40), "B": (100, 40)}),
+            "pmc_m8_onset": _pool("8 monthly", {"A": (100, 12), "B": (100, 10), "C": (10, 3)}),
+            "pmc_m12": _pool("Year-round", {"A": (130, 10), "B": (130, 9), "C": (12, 3)}),
+            "pmc_q4": _pool("Quarterly", {"A": (40, 5), "B": (40, 4), "C": (4, 1)}),
+        }
+
+    def test_it_is_the_most_deaths_per_dollar_among_designs_that_run_everywhere(self):
+        got = rank.recommend(self.pooled(), self.STATES)
+
+        assert got["design_code"] == "pmc_m8_onset" and got["label"] == "8 monthly"
+
+    def test_states_below_the_bar_are_dropped_and_the_programme_is_the_rest(self):
+        got = rank.recommend(self.pooled(), self.STATES)
+
+        assert got["keep"] == ["A", "B"] and got["drop"] == ["C"]
+        assert got["deaths_averted_per_year"] == 200
+        # A at 12x and B at 10x pooled: 200 deaths for 113*(100/36 + 100/30)/0.003 dollars -> 10.9x.
+        assert got["multiple_of_benchmark"] == 10.9
+        assert [s["state"] for s in got["states"]] == ["A", "B", "C"] and got["states"][2]["clears_bar"] is False
+
+    def test_the_step_up_is_valued_on_the_increment(self):
+        got = rank.recommend(self.pooled(), self.STATES)["step_up"]
+
+        # Year-round over 8 monthly in A and B: 60 more deaths; cost from the two designs' spends.
+        assert got["design_code"] == "pmc_m12" and got["extra_deaths_averted_per_year"] == 60
+        spend = lambda d, m: 113 * d / (0.003 * m)  # noqa: E731
+        extra = spend(130, 10) + spend(130, 9) - spend(100, 12) - spend(100, 10)
+        assert got["multiple_of_benchmark"] == round(113 * 60 / extra / 0.003, 1)
+        assert got["clears_bar"] is (got["multiple_of_benchmark"] >= 6)
+
+    def test_it_compares_with_quarterly_over_the_same_states(self):
+        got = rank.recommend(self.pooled(), self.STATES)["versus_quarterly"]
+
+        assert got["multiple_of_benchmark"] < 6 and got["deaths_per_dollar_ratio"] > 2
+
+    def test_nothing_runs_everywhere_means_no_recommendation(self):
+        assert rank.recommend({"partial": _pool("Partial", {"A": (1, 9)})}, ["A", "B"]) is None
+
+
+def test_rank_pairs_carries_the_recommendation_only_with_deaths(grid):
+    with_deaths = rank.rank_pairs(["Ondo", "Kano"], grid=grid, deaths={"Ondo": 4_000.0, "Kano": 20_000.0})
+    # Only 4 monthly rounds runs in both fixture states.
+    assert with_deaths["recommendation"]["design_code"] == "pmc_m4_onset"
+    assert rank.rank_pairs(["Ondo", "Kano"], grid=grid)["recommendation"] is None
