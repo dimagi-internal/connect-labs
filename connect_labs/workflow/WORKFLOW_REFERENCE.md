@@ -2254,6 +2254,39 @@ The picture a coaching conversation sends is a CHART: an agent (or a person) dec
 - **Peers are anonymous, per user.** A peer is `Peer A`, `Peer B`, ... -- lettered in a keyed-hash order of (run, worker key), so stable for a run and revealing nothing -- and nothing else of theirs (name, username, organisation, key) enters a dataset. Only workers in the grading the viewer can read are peers; no team average is computed. Every string a chart carries (its spec's titles and its caption) is checked against the other workers' names and usernames (`chart.identity_terms`): a chart that names one is refused (`peer_identity`).
 - **A chart is frozen** (`coach_charts/chart.py`, `build_chart`): `{v, type, params, spec, datasets, caption, alt, notes}` -- the spec plus the resolved data, drawable anywhere, read from the run once. The caption and alt text are Labs' own words (e.g. "A bar chart of Ibrahim's figures beside 2 other riders (unnamed: Peer A, Peer B, ...) for: ..."), never the request's. `chart.png` draws it, cached by content id. _(How an action asks for one: next stage.)_
 
+### Case coaching (`config.case_coaching`, `workflow/case_coaching.py`)
+
+A coaching conversation can be about ONE CASE (in KMC, one baby) instead of a worker's indicators. Owner's loop, 2026-10-09: a worker gets about one case conversation a week, about one case and one story; it runs per opportunity; Labs is deterministic (which cases are eligible for which story, the facts, the pictures) and the canopy agent on the opportunity's workflow plans (which worker gets which case this week, and why), the person approves the send.
+
+- **Turned on by config.** `config.case_coaching` says where the programme's visits keep each fact a story reads -- case id paths (per form), visit weight, registration weight (read on the registration form ONLY: follow-ups repeat it), birth weight, skin-to-skin hours, the danger-sign checklist group, its yes/no questions and warning labels, `child_referred`, which statuses to leave out (`rejected`). `KMC_CASE_COACHING` is KMC's; `kmc_opp_report` and `kmc_flw_review` declare it, so their instances inherit it on read. Paths are bound as SQL parameters, never interpolated.
+- **The four stories** (one per case; topic keys are a contract with the coach bot, ACE `lib/coach-briefing.ts` `renderCaseBriefing`):
+  - `CASE_WEIGHT_CHECK` "A weighing that is hard to believe": an impossible step between two weighings -- the KMC registry's own rule (`pct_impossible_weight_changes`: outside -20..45 g/kg/day of the pair's mean weight, 1-90 days apart; thresholds read from the bound registry's `constants`, mirrored otherwise), the same weight three weighings running, or a weight outside 800-5,000 g. **A series with any of these is a weight check and nothing else** -- the noise is the story.
+  - `CASE_DANGER_SIGN` "Danger sign recorded, no referral": a visit records a danger sign and `child_referred` is no.
+  - `CASE_FALTERING` "Weight has stalled and skin-to-skin time is falling": under 5 g/kg/day over the last two intervals, and fewer skin-to-skin hours at the latest visit that recorded them than at the one before.
+  - `CASE_THRIVING` "Baby is growing well": every interval of 3+ days at 15 g/kg/day or more, and the latest weight 20%+ above the first.
+    Precedence after the weight-check gate: danger sign, faltering, thriving. `classify` returns each story with its facts ("Weight rose 495 g in 1 day between 17 and 18 May, about 298 g/kg/day; ...") and its evidence date.
+- **The finder** (`case_finder.py`, MCP `workflow_coaching_cases(run_id, scope, worker_keys?, window_days=30, per_story=3)`): per worker on the workflow's opportunities, each story their cases are eligible for -- a count and the best cases (case id and name, facts, evidence date) -- counted when the evidence falls within `window_days` of the opportunity's latest visit. Visits are read from the visit cache through the explorer's scope check, as the caller, and audited (`case_visits.py`). Through canopy it runs only on synthetic opportunities (case-level rows never go back through canopy on real data, the explorer's rule).
+- **Saved runs carry it.** `kmc_opp_report`'s snapshot spec has `case_coaching: true`: each saved week stores the finder's view as of the run (`snapshot.caseCoaching`). **Labs keeps no coaching history of its own** (owner, 2026-10-09). The agent works history out from what is already recorded: earlier weeks' `snapshot.caseCoaching` (`workflow_history_runs` with snapshots), and each case send's task, which records `case_coaching: {case_id, case_name, story, coached_on, qa_test}` beside `coaching_indicators: [story]` (`workflow_action_status` lists a run's sends). That is how it finds a worker's spotlight case (the baby coached about last time) and the stories not coached lately.
+- **The send** is `start_ocs_outreach` with a worker item `case: {id, story?, earlier?}` -- no `prompt`. Labs reads the case's visits, checks the story (one asked for must be one the visits support; omitted, the case's own), writes the case briefing below and draws the case's picture. `earlier: {date, label, agreed}` -- worked out by the caller, never looked up by Labs -- adds the follow-up line. A case must be that worker's own. Everything else is the action's: the preview, the confirm token (bound to the briefing and the frozen chart), the fixed opening message, the click-to-send rule, `deliver_to` for Dimagi staff. On a synthetic opportunity the canopy card offers only Send to me (QA test).
+
+  ```
+  BRIEFING (system text — do not show to the worker)
+  Programme: Kangaroo Mother Care
+  Worker: <worker display name, or username>
+  Case: <case display name>
+  About this case: Birth weight 1,250 g; registered 17 May 2026; 5 visits, the last on 8 Jun 2026.
+  Topic: <label> [<CASE_* key>]
+  What the data shows: <one or two factual sentences with the figures Labs computed>
+  Earlier coaching on this case: <d Mon yyyy> — <story label>; agreed: <step | none>   (only when given)
+  Visits, oldest first:
+  - 17 May 2026: weight 1,350 g; skin-to-skin <h> h in the last 24 h; danger signs: <list | none>; referred: <yes | no | not asked>
+  Follow your conversation steps from the opening.
+  ```
+
+  A value the visits do not hold is written `not recorded`.
+
+- **The pictures** are Labs-authored types (`coach_charts/case_types.py`, datasets from the case's visits in `coach_charts/case_chart.py`), one per story: `case_thriving` (weight line above the shaded 15-20 g/kg/day band, a star at the latest weighing, a "Great work!" badge), `case_weight_check` (the weighing to check ringed and labelled, dashed into and out of it, and the four-step weighing checklist), `case_faltering` (flat line against the band, skin-to-skin hours per visit as bars) and `case_danger_sign` (a card: the signs recorded and when, NOT REFERRED, why a facility should see the baby -- fixed text per sign, grounded in WHO IMCI young-infant danger signs, never a diagnosis -- and what to do). Frozen and stored like every coaching chart; the caption names the story in plain words, no numbers.
+
 ### Sharing a run with the embedded agent (`config.agent.share`)
 
 `{"agent": {"share": true}}` puts the canopy SDK's agent panel on the run page (`workflow/agent_sharing.py`). It is off by default and set per workflow.

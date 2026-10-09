@@ -512,6 +512,9 @@
               var item = { key: w.key };
               if (w.indicators) item.indicators = w.indicators;
               if (w.picture) item.picture = w.picture;
+              // A case conversation: the case, its story and any follow-up line the
+              // agent supplied -- the caller's choice, which Labs briefs from.
+              if (w.case) item.case = w.case;
               return item;
             }),
           };
@@ -745,6 +748,16 @@
           ) {
             text.push(h('div', { class: 'label', text: 'The coach raises' }));
             text.push(topicList(w.briefing.topics));
+          }
+          if (w.case && w.case.topic) {
+            text.push(
+              h('div', {
+                class: 'label',
+                text: 'About ' + (w.case.case || 'this case'),
+              }),
+            );
+            text.push(h('div', { class: 'topic-label', text: w.case.topic }));
+            if (w.case.facts) text.push(h('p', { text: w.case.facts }));
           }
           if (w.briefing && w.briefing.note) {
             text.push(
@@ -1029,7 +1042,15 @@
           }
           var ready = !!p.confirm && !(p.needs && p.needs.length);
           var idle = state.canAct && !state.busy && !state.previewing;
-          if (state.qaMode) {
+          // A case conversation on synthetic data is a QA test only: there is no real
+          // worker to send it to (owner, 2026-10-09), so the card offers Send test alone.
+          var caseQaOnly =
+            !!(p.synthetic || p.deliver_to) &&
+            !!p.qa_redirect &&
+            (p.workers || []).some(function (w) {
+              return !!w.case;
+            });
+          if (state.qaMode || caseQaOnly) {
             // One thing to do here: type a username and Send test. Nothing else shows --
             // except what stops it sending, beside the button rather than at the top.
             qa.classList.remove('hidden');

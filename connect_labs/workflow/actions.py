@@ -124,6 +124,12 @@ INCLUDE_IMAGE = "include_image"
 #: spec}``, top-level for every worker or on one worker's item. Implies ``include_image``.
 PICTURE = "picture"
 
+#: A worker item's CASE (``case_coaching.py``): coach the worker about one case --
+#: ``{id, story?, earlier?}`` -- instead of their indicators. Labs reads the case's
+#: visits, picks its story (or checks the one asked for), writes the case briefing and
+#: draws the case's picture.
+CASE = "case"
+
 #: Server-owned: the frozen chart each worker's preview showed, ``{worker key: chart
 #: id}`` (``coach_charts/store.py``). Labs writes it; a caller's own is only ever a
 #: reference back to a chart this person previewed, re-checked before it is used.
@@ -202,12 +208,18 @@ def _execute_ocs_outreach(ctx: WorkerContext) -> None:
     is_new = not ctx.prior.get("task_id")
     task = _follow_up_task(ctx)
     indicators = ctx.item.get("indicators")
-    if is_new and indicators:
-        # The coaching-progress DENOMINATOR (workflow/views.py `_coaching_indicators`):
-        # written once, at creation, and never by the chatbot.
-        task.data = {**(task.data or {}), "coaching_indicators": list(indicators)}
-        ctx.tasks.save_task(task)
     deliver_to = ctx.arguments.get(DELIVER_TO)
+    case_record = _case_record(ctx.item, deliver_to)
+    if is_new and (indicators or case_record):
+        # The coaching-progress DENOMINATOR (workflow/views.py `_coaching_indicators`):
+        # written once, at creation, and never by the chatbot. A case conversation
+        # also records WHICH case and story it was about -- what an agent reads to
+        # plan the next one (case_finder.py: Labs keeps no history of its own).
+        extra = {"coaching_indicators": list(indicators)} if indicators else {}
+        if case_record:
+            extra["case_coaching"] = case_record
+        task.data = {**(task.data or {}), **extra}
+        ctx.tasks.save_task(task)
     prompt_text = ctx.item.get("prompt") or ctx.arguments.get("prompt") or ""
     started = start_ai_session(
         ctx.execution.user,
@@ -224,6 +236,26 @@ def _execute_ocs_outreach(ctx: WorkerContext) -> None:
         coach_image=_image_for(ctx.arguments, prompt_text, ctx.opportunity_id, ctx.item["key"]),
     )
     ctx.record["session_id"] = started.get("session_id")
+
+
+def _case_record(item: dict, deliver_to: str | None) -> dict | None:
+    """What a case conversation's task records about its case, or None for a worker one."""
+    import datetime as dt
+
+    from connect_labs.workflow import case_coaching
+
+    case = item.get(CASE)
+    if not isinstance(case, dict) or not case.get("id"):
+        return None
+    summary = case_coaching.case_briefing_summary(item.get("prompt") or "")
+    return {
+        "case_id": case["id"],
+        "case_name": summary.get("case") or case["id"],
+        "story": summary.get("story") or case.get("story"),
+        "coached_on": dt.date.today().isoformat(),
+        # A QA send is a test of the bot, not coaching the worker had.
+        "qa_test": bool(deliver_to),
+    }
 
 
 def _image_for(arguments: dict, prompt: str | None, opportunity_id: int | None = None, worker_key=None) -> dict | None:
@@ -245,6 +277,37 @@ def _image_for(arguments: dict, prompt: str | None, opportunity_id: int | None =
         record = store.get(chart_id)
         return coach_image.chart_attachment(record, opportunity_id) if record is not None else None
     return coach_image.attachment(prompt or "", opportunity_id)
+
+
+def _case_schema() -> dict:
+    from connect_labs.workflow import case_coaching
+
+    return {
+        "type": "object",
+        "description": (
+            "Coach this worker about ONE case (one baby) instead of their indicators: `id` is the case id "
+            "(workflow_coaching_cases). Labs reads its visits, writes the case briefing and draws its "
+            "picture. `story` (CASE_DANGER_SIGN | CASE_WEIGHT_CHECK | CASE_FALTERING | CASE_THRIVING) must "
+            "be the case's own; omit it to take it. `earlier` -- a follow-up on a case coached before, "
+            "as you read it from earlier runs: {date (YYYY-MM-DD), label (or story key), agreed}."
+        ),
+        "properties": {
+            "id": {"type": "string", "minLength": 1, "maxLength": 100},
+            "story": {"type": "string", "enum": list(case_coaching.STORIES)},
+            "earlier": {
+                "type": "object",
+                "properties": {
+                    "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}"},
+                    "label": {"type": "string", "maxLength": 200},
+                    "agreed": {"type": "string", "maxLength": 300},
+                },
+                "required": ["date", "label"],
+                "additionalProperties": False,
+            },
+        },
+        "required": ["id"],
+        "additionalProperties": False,
+    }
 
 
 def _picture_schema() -> dict:
@@ -294,7 +357,9 @@ ACTION_TYPES: dict[str, ActionType] = {
                 "`include_image` (default false) also gives each worker whose briefing Labs writes a "
                 "picture of their own figures, linked from the session state; `picture` says what it "
                 "shows -- a chart type and params, or a custom Vega-Lite spec reading Labs' datasets "
-                "(see coach_charts) -- and implies `include_image`. Labs supplies every number."
+                "(see coach_charts) -- and implies `include_image`. Labs supplies every number. An item's "
+                "`case` coaches that worker about one case instead (case_coaching.py): Labs writes the case "
+                "briefing and draws the case's own picture."
             ),
             parameters={
                 "type": "object",
@@ -310,6 +375,7 @@ ACTION_TYPES: dict[str, ActionType] = {
                                 "description": "Indicator keys (e.g. 'SF_P1') this worker is coached on, worst first.",
                             },
                             PICTURE: _picture_schema(),
+                            CASE: _case_schema(),
                         }
                     ),
                     "prompt": {"type": "string", "maxLength": 4000},
@@ -472,7 +538,7 @@ def run_roster(wda, run, definition) -> dict[str, dict]:
 
 
 def resolve_arguments(
-    action: dict, arguments: Any, roster: dict[str, dict], *, user=None, briefing=None, pictures=None
+    action: dict, arguments: Any, roster: dict[str, dict], *, user=None, briefing=None, pictures=None, cases=None
 ) -> dict:
     """The action's defaults under the caller's arguments, validated against the
     type's schema and the run's roster, in canonical form. ``user`` is the person
@@ -480,11 +546,11 @@ def resolve_arguments(
     ``briefing`` (see ``briefing_source``) lets a coaching action brief each worker
     from the run's grading; ``pictures`` (see ``picture_source``) draws each briefed
     worker's chart."""
-    return _resolve(action, arguments, roster, user=user, briefing=briefing, pictures=pictures)[0]
+    return _resolve(action, arguments, roster, user=user, briefing=briefing, pictures=pictures, cases=cases)[0]
 
 
 def _resolve(
-    action: dict, arguments: Any, roster: dict[str, dict], *, user=None, briefing=None, pictures=None
+    action: dict, arguments: Any, roster: dict[str, dict], *, user=None, briefing=None, pictures=None, cases=None
 ) -> tuple[dict, list]:
     """``resolve_arguments``, plus the workers it left out: ``[{key, name, reason}]``."""
     import jsonschema
@@ -522,6 +588,7 @@ def _resolve(
     skipped: list[dict] = []
     if action["type"] == "start_ocs_outreach":
         _check_declared_bot(action, arguments)
+        _brief_cases(merged, roster, cases)
         skipped = _brief_workers(merged, roster, briefing)
         missing = sorted(i["key"] for i in merged["workers"] if not (i.get("prompt") or merged.get("prompt")))
         if missing:
@@ -538,6 +605,83 @@ def _resolve(
 
             merged["bot"] = SYNTHETIC_BOT
     return merged, skipped
+
+
+def _brief_cases(merged: dict, roster: dict[str, dict], cases) -> None:
+    """Give each worker item with a ``case`` its case briefing (``case_coaching.py``):
+    the case's visits, read as the person, its story and the facts. The story is the
+    case's own -- one asked for must be one the visits support -- and becomes the item's
+    ``indicators``. An item already carrying a case briefing (a preview's own arguments,
+    at commit) is kept as it is, so a commit never re-reads the visits."""
+    from connect_labs.workflow import case_coaching as cc
+
+    for item in merged["workers"]:
+        case = item.get(CASE)
+        if not case:
+            continue
+        own = item.get("prompt")
+        if cc.is_case_briefing(own):
+            item.setdefault("indicators", [cc.story_from_briefing(own)])
+            continue
+        if own:
+            raise ActionError(
+                "invalid", "a case conversation is briefed by Labs from the case's visits; drop the item's `prompt`"
+            )
+        if cases is None:
+            raise ActionError("invalid", "this workflow has no case coaching (no `case_coaching` config)")
+        who = roster[item["key"]]
+        found = cases(item["key"], case["id"])
+        if found is None:
+            raise ActionError("invalid", f"no case {case['id']!r} among {who['name']}'s cases")
+        story = cc.story_of(found, case.get("story"))
+        if story is None:
+            supported = [s.key for s in cc.classify(found)]
+            raise ActionError(
+                "invalid",
+                f"case {found.name or case['id']} has no {case.get('story') or 'coaching'} story in its visits"
+                + (f" (it supports: {', '.join(supported)})" if supported else ""),
+            )
+        case["story"] = story.key
+        item["prompt"] = cc.render_case_briefing(
+            programme=cases.programme,
+            worker=who["name"] or who["username"],
+            case=found,
+            story=story,
+            earlier=case.get("earlier"),
+        )
+        item["indicators"] = [story.key]
+
+
+def case_source(user, wda, run, definition, *, request=None):
+    """``cases(worker_key, case_id) -> Case | None`` for ``_brief_cases``, reading the
+    case's visits as the person (memoised per call), or None when the workflow has no
+    case coaching. ``.programme`` is what the briefing calls the programme."""
+    from connect_labs.labs.access.scopes import Caller
+    from connect_labs.workflow import case_coaching as cc
+    from connect_labs.workflow import case_finder, case_visits
+    from connect_labs.workflow.agent_sharing import split_worker_key
+
+    config = case_finder.config_for(definition, access_token=getattr(wda, "access_token", None))
+    if config is None:
+        return None
+    memo: dict = {}
+
+    def cases(worker_key: str, case_id: str):
+        if (worker_key, case_id) not in memo:
+            opp, username = split_worker_key(worker_key)
+            caller = Caller(user=user, request=request, access_token=getattr(wda, "access_token", None))
+            try:
+                rows = case_visits.load_rows(caller, [opp], config, case_id=case_id)
+            except case_visits.CaseDataError as e:
+                raise ActionError("case_unreadable", f"Could not read case {case_id}: {e.public_message}") from e
+            found = [c for c in cc.cases_from_rows(rows, config) if c.case_id == case_id]
+            # The case must be THIS worker's: a conversation about another worker's baby
+            # would put a stranger's case in front of them.
+            memo[(worker_key, case_id)] = found[0] if found and found[0].username == username else None
+        return memo[(worker_key, case_id)]
+
+    cases.programme = config.get("programme") or (getattr(definition, "name", None) or "this programme")
+    return cases
 
 
 def _check_declared_bot(action: dict, arguments: dict) -> None:
@@ -651,7 +795,11 @@ def _picture_workers(merged: dict, roster: dict[str, dict], pictures, prior_char
     confirm. Nothing happens without ``include_image`` or a ``picture``."""
     from connect_labs.workflow import coach_briefing
 
-    wants = merged.get(INCLUDE_IMAGE) or merged.get(PICTURE) or any(i.get(PICTURE) for i in merged["workers"])
+    wants = (
+        merged.get(INCLUDE_IMAGE)
+        or merged.get(PICTURE)
+        or any(i.get(PICTURE) or i.get(CASE) for i in merged["workers"])
+    )
     if not wants:
         return
     merged[INCLUDE_IMAGE] = True
@@ -661,6 +809,10 @@ def _picture_workers(merged: dict, roster: dict[str, dict], pictures, prior_char
     for item in merged["workers"]:
         prompt = item.get("prompt") or merged.get("prompt")
         if not coach_briefing.is_briefing(prompt):
+            continue
+        if item.get(CASE):
+            # The case's own picture (coach_charts.types CASE_TYPES), not the worker's.
+            charts[item["key"]] = pictures.case(item, prior_charts.get(item["key"]))
             continue
         who = roster[item["key"]]
         default_topics = [t["key"] for t in coach_briefing.topics_from_briefing(prompt)]
@@ -673,7 +825,7 @@ def _picture_workers(merged: dict, roster: dict[str, dict], pictures, prior_char
         merged[CHARTS] = charts
 
 
-def picture_source(user, wda, run, definition, roster: dict[str, dict], briefing, *, restricted=False):
+def picture_source(user, wda, run, definition, roster: dict[str, dict], briefing, *, restricted=False, cases=None):
     """``pictures(worker_key, worker_name, request, default_topics, prior_id) -> chart
     id`` for ``_picture_workers``: builds the chart from the run's grading (read once,
     through ``briefing``) and its saved runs, as the person, and stores it. Saved runs
@@ -713,6 +865,30 @@ def picture_source(user, wda, run, definition, roster: dict[str, dict], briefing
             raise ActionError("invalid", f"picture for {worker_name}: {e.public_message}") from e
         return store.save(built, user=user, run=run, worker_key=worker_key, request=req).pk
 
+    def case_picture(item: dict, prior_id):
+        """The frozen picture of a worker item's case, for its story."""
+        from connect_labs.workflow import case_coaching as cc
+        from connect_labs.workflow.coach_charts import case_chart
+
+        story_key = item[CASE].get("story") or cc.story_from_briefing(item.get("prompt") or "")
+        req = {"type": case_chart.request_type(story_key), "params": {"case": item[CASE]["id"]}}
+        prior = store.load_bound(prior_id, user=user, run=run, worker_key=item["key"], request=req)
+        if prior is not None:
+            return prior.pk
+        if cases is None:
+            raise ActionError("invalid", "this workflow has no case coaching (no `case_coaching` config)")
+        found = cases(item["key"], item[CASE]["id"])
+        story = cc.story_of(found, story_key) if found is not None else None
+        if story is None:
+            raise ActionError("invalid", f"case {item[CASE]['id']} no longer supports {story_key}; preview again")
+        others = [(w["name"], w["username"]) for k, w in roster.items() if k != item["key"]]
+        try:
+            built = case_chart.build_case_chart(found, story, others=others)
+        except datasets.ChartError as e:
+            raise ActionError("invalid", f"picture of case {found.name}: {e.public_message}") from e
+        return store.save(built, user=user, run=run, worker_key=item["key"], request=req).pk
+
+    pictures.case = case_picture
     return pictures
 
 
@@ -829,8 +1005,9 @@ def preview(
     roster = run_roster(wda, run, definition)
     if briefing is None:
         briefing = briefing_source(user, wda, run, definition)
-    pictures = picture_source(user, wda, run, definition, roster, briefing, restricted=restricted)
-    args, skipped = _resolve(action, arguments, roster, user=user, briefing=briefing, pictures=pictures)
+    cases = case_source(user, wda, run, definition, request=request)
+    pictures = picture_source(user, wda, run, definition, roster, briefing, restricted=restricted, cases=cases)
+    args, skipped = _resolve(action, arguments, roster, user=user, briefing=briefing, pictures=pictures, cases=cases)
 
     needs: list[str] = []
     out: dict[str, Any] = {}
@@ -873,6 +1050,10 @@ def preview(
                 # Shown to the person confirming in plain words; ``prompt`` stays the
                 # exact text the bot receives.
                 row["briefing"] = coach_briefing.briefing_summary(row["prompt"])
+                if item.get(CASE):
+                    from connect_labs.workflow import case_coaching
+
+                    row["case"] = {"id": item[CASE]["id"], **case_coaching.case_briefing_summary(row["prompt"])}
                 if args.get("bot") != SYNTHETIC_BOT:
                     # What the worker actually receives first (the briefing itself goes
                     # into the session state, never to the worker -- tasks/ai_sessions.py).
@@ -956,8 +1137,9 @@ def commit(
     if briefing is None:
         briefing = briefing_source(user, wda, run, definition)
     roster = run_roster(wda, run, definition)
-    pictures = picture_source(user, wda, run, definition, roster, briefing, restricted=restricted)
-    args = resolve_arguments(action, arguments, roster, user=user, briefing=briefing, pictures=pictures)
+    cases = case_source(user, wda, run, definition, request=request)
+    pictures = picture_source(user, wda, run, definition, roster, briefing, restricted=restricted, cases=cases)
+    args = resolve_arguments(action, arguments, roster, user=user, briefing=briefing, pictures=pictures, cases=cases)
     if not args["workers"]:
         raise ActionError("nothing_to_do", "None of these workers has an indicator off target or on watch.")
     try:
