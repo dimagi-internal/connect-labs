@@ -253,7 +253,7 @@ jobs:
 
     services:
       redis:
-        image: redis:6
+        image: public.ecr.aws/docker/library/redis:6
         ports:
           - 6379:6379
       postgres:
