@@ -72,24 +72,46 @@ SCHEMA = {
 }
 
 
-def _check(data: dict) -> None:
+def _check_layer(data: dict) -> None:
+    """What one layer may say on its own: keys, and Overview left alone."""
     builtins = set(_builtin_names())
-    slugs: dict[str, str] = {}
     for key, tab in (data.get("tabs") or {}).items():
         if key == HOME and tab.get("hidden"):
             raise ValueError("Overview cannot be hidden: it is where Supply sends you to pick a programme")
         if key == HOME and tab.get("fill"):
             raise ValueError("Overview cannot be replaced by a workflow")
-        if key not in builtins:
-            if not tab.get("fill"):
-                raise ValueError(f"tabs.{key}: a tab Supply does not have needs a fill (a workflow) to show")
-            if not all(c.isalnum() or c == "-" for c in key) or key != key.lower():
-                raise ValueError(f"tabs.{key}: an added tab's key is a lower-case slug")
+        if key not in builtins and (not all(c.isalnum() or c == "-" for c in key) or key != key.lower()):
+            raise ValueError(f"tabs.{key}: an added tab's key is a lower-case slug")
+
+
+def _check_resolved(value: dict) -> None:
+    """The tabs in EFFECT, organisation and programme together.
+
+    Checked on the resolved value, not one layer: a programme hiding or relabelling a
+    tab its organisation added says only {"hidden": true} -- the fill is the
+    organisation's -- and two layers can each pick a slug the other already uses.
+    """
+    builtins = set(_builtin_names())
+    slugs: dict[str, str] = {}
+    for key, tab in (value.get("tabs") or {}).items():
+        if key not in builtins and not tab.get("fill"):
+            raise ValueError(f"tabs.{key}: a tab Supply does not have needs a fill (a workflow) to show")
         if tab.get("fill"):
             slug = slug_of(key, tab)
             if slug in slugs:
                 raise ValueError(f"tabs.{key}: slug {slug!r} is already used by tabs.{slugs[slug]}")
             slugs[slug] = key
+
+
+def _owners(data: dict) -> list:
+    """The opportunities this layer's tabs read their workflows in."""
+    from connect_labs.scope_config.scopes import Scope
+
+    return [
+        Scope.of("opportunity", tab["fill"]["opportunity_id"])
+        for tab in (data.get("tabs") or {}).values()
+        if (tab.get("fill") or {}).get("opportunity_id")
+    ]
 
 
 SUPPLY = register_namespace(
@@ -100,7 +122,9 @@ SUPPLY = register_namespace(
         schema=SCHEMA,
         defaults={"tabs": {}},
         layers=frozenset({"organization", "program"}),
-        check=_check,
+        check=_check_layer,
+        check_resolved=_check_resolved,
+        owners=_owners,
     )
 )
 

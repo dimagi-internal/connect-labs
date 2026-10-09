@@ -103,7 +103,21 @@ def read(request, source: dict) -> dict:
     how = source.get("read") or "latest_run"
     if how not in READS:
         return {"error": f"read must be one of {', '.join(READS)}, not {how!r}"}
-    access = WorkflowDataAccess(request=request, **_owner(source))
+    owner = _owner(source)
+    # The owner comes from the definition's JSON, which its author wrote. A labs-only
+    # scope is served from labs' own database with no Connect check behind it, so the
+    # viewer's access to it is checked here, before anything is read (a real scope is
+    # checked by Connect on the read itself).
+    from connect_labs.labs.synthetic.access import labs_only_scope_denied_reason
+
+    denied = labs_only_scope_denied_reason(
+        getattr(request, "user", None),
+        opportunity_id=owner.get("opportunity_id"),
+        program_id=owner.get("program_id"),
+    )
+    if denied:
+        return {"error": f"workflow {target} is not there, or you cannot open it"}
+    access = WorkflowDataAccess(request=request, **owner)
     try:
         definition = access.get_definition(target)
         if not definition:

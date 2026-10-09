@@ -16,6 +16,10 @@ logger = logging.getLogger(__name__)
 
 CONTEXT_PARAMS = ["organization_id", "program_id", "opportunity_id"]
 
+# The context the middleware picked on its own (the person holds exactly one), kept
+# in the session so a page can tell "they came here for it" from "it was chosen for them".
+AUTO_SELECTED_KEY = "labs_context_auto_selected"
+
 
 def get_org_data(request) -> dict:
     """Get organization data from session, with labs-only synthetic opps merged in.
@@ -544,6 +548,8 @@ class LabsContextMiddleware(MiddlewareMixin):
                 # Update session with current context from URL
                 if url_context:
                     save_context_to_session(request, url_context)
+                    if request.session.get(AUTO_SELECTED_KEY) not in (None, url_context):
+                        request.session.pop(AUTO_SELECTED_KEY, None)
         else:
             # No context set - check for auto-selection
             auto_selected_context = try_auto_select_context(request)
@@ -551,6 +557,9 @@ class LabsContextMiddleware(MiddlewareMixin):
                 # Redirect to add auto-selected context to URL
                 redirect_url = add_context_to_url(request.get_full_path(), auto_selected_context)
                 save_context_to_session(request, auto_selected_context)
+                # Remembered as chosen FOR the person, not by them: the overview's
+                # "organisation coming in" redirect reads this and stands down.
+                request.session[AUTO_SELECTED_KEY] = auto_selected_context
                 logger.info(f"Auto-selected context for user {request.user.username}: {auto_selected_context}")
                 return HttpResponseRedirect(redirect_url)
 

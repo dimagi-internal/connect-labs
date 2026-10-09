@@ -13,7 +13,7 @@ import json
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.http import Http404, HttpResponseRedirect
+from django.http import Http404, HttpResponseBadRequest, HttpResponseRedirect
 from django.views.generic import TemplateView
 
 from connect_labs.labs.access.scopes import Caller
@@ -23,6 +23,17 @@ from connect_labs.scope_config.namespaces import all_namespaces
 from connect_labs.scope_config.scopes import Scope
 
 SOURCE_LABELS = {"default": "labs default"}
+
+
+def _number(post, key: str, default=None) -> int:
+    """A whole number from the form, or ValueError naming the field (the caller answers 400)."""
+    raw = post.get(key)
+    if raw in (None, "") and default is not None:
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"{key} must be a whole number") from None
 
 
 def _caller(request) -> Caller:
@@ -116,6 +127,8 @@ class SettingsView(LoginRequiredMixin, TemplateView):
         if service.refusal(caller, scope):
             raise Http404("not a scope you can use")
         sections = []
+        # Reading and changing differ for a labs-only organisation (service.write_refusal).
+        write_note = service.write_refusal(caller, scope, service.tree_for(caller))
         for namespace in all_namespaces():
             got = service.get(namespace.key, scope, caller)
             own_label = got["scope"]["label"]
@@ -123,6 +136,8 @@ class SettingsView(LoginRequiredMixin, TemplateView):
                 {
                     "namespace": namespace,
                     "got": got,
+                    "can_write": got["settable_here"] and not write_note,
+                    "write_note": (write_note or "")[:1].upper() + (write_note or "")[1:],
                     "rows": _rows(got["value"], got["provenance"], own_label),
                     "own_json": json.dumps(got["data"], indent=2, sort_keys=True),
                     "history": service.history(namespace.key, scope, caller, limit=20) if got["settable_here"] else [],
@@ -142,6 +157,12 @@ class SettingsView(LoginRequiredMixin, TemplateView):
         namespace = request.POST.get("namespace", "")
         action = request.POST.get("action", "")
         try:
+            version = _number(request.POST, "version", default=0)
+            if action == "undo":
+                _number(request.POST, "change_id")
+        except ValueError as exc:
+            return HttpResponseBadRequest(str(exc))
+        try:
             if action == "save":
                 current = service.get(namespace, scope, caller)
                 try:
@@ -155,12 +176,14 @@ class SettingsView(LoginRequiredMixin, TemplateView):
                     scope,
                     diff_patch(current["data"], new),
                     caller,
-                    expected_version=int(request.POST.get("version", "0")),
+                    expected_version=version,
                     via="settings",
                 )
                 messages.success(request, "Saved.")
             elif action == "undo":
-                service.undo(namespace, scope, caller, change_id=int(request.POST["change_id"]), via="settings:undo")
+                service.undo(
+                    namespace, scope, caller, change_id=_number(request.POST, "change_id"), via="settings:undo"
+                )
                 messages.success(request, "Undone.")
             elif action in ("hide_tab", "show_tab"):
                 key = request.POST.get("tab", "")
@@ -175,7 +198,7 @@ class SettingsView(LoginRequiredMixin, TemplateView):
                     scope,
                     {"tabs": patch},
                     caller,
-                    expected_version=int(request.POST.get("version", "0")),
+                    expected_version=version,
                     via="settings",
                 )
                 messages.success(request, "Shown." if action == "show_tab" else "Hidden.")
