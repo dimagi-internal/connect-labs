@@ -140,3 +140,65 @@ def test_a_chart_too_tall_for_a_phone_is_refused():
     rows = types.topic_rows([{"label": "x " * 40, "numerator": 1, "denominator": 2}] * 20)
     with pytest.raises(render.RenderError, match="fits a phone"):
         render.render_png(types.topic_bars(rows), {"worker_topics": rows})
+
+
+# ---------------------------------------------------------------------------
+# trend: end labels never overlap, and stay inside the plot
+# ---------------------------------------------------------------------------
+
+
+def _ends(**last):
+    """History points for lines ending at ``last`` values (one earlier week each)."""
+    points = []
+    for who, value in last.items():
+        name = "You" if who == "you" else "Peer " + who
+        points += [
+            {"week": "2026-09-20", "t": 0, "i": 0, "who": name, "value": 0.5},
+            {"week": "2026-09-27", "t": 1, "i": 0, "who": name, "value": value},
+        ]
+    return points
+
+
+def _assert_spread(labels, top=1.0):
+    gap = top * types._END_LINE / types._TREND_HEIGHT
+    ys = sorted(lab["y"] for lab in labels)
+    assert all(b - a >= gap - 1e-9 for a, b in zip(ys, ys[1:])), ys
+    assert ys[0] >= gap / 2 - 1e-9 and ys[-1] <= top - gap / 2 + 1e-9, ys
+
+
+def test_peers_ending_at_the_same_value_share_one_label_inside_the_plot():
+    labels = types.end_labels(_ends(you=0.42, A=0.0, B=0.0), top=1.0)
+    assert sorted(lab["text"] for lab in labels) == ["Peer A, B", "You"]
+    _assert_spread(labels)
+
+
+def test_labels_that_would_collide_are_a_line_apart():
+    labels = types.end_labels(_ends(you=0.03, A=0.0, B=0.09, C=0.95, D=1.0), top=1.0)
+    assert {lab["text"] for lab in labels} >= {"You", "Peer A", "Peer B"}
+    _assert_spread(labels)
+    assert next(lab for lab in labels if lab["you"])["text"] == "You"
+
+
+def test_more_labels_than_the_plot_holds_still_never_overlap():
+    many = {chr(65 + n): n / 11 for n in range(12)}
+    labels = types.end_labels(_ends(you=0.5, **many), top=1.0)
+    _assert_spread(labels)
+
+
+def test_a_trend_with_tied_peers_draws_at_phone_width():
+    from connect_labs.workflow.coach_charts import datasets as D
+
+    graded = {
+        "cMeasures": [{"indicator": "X1", "label": "Visits held", "unit": "%"}],
+        "byFLW": [{"key": "me", "name": "Ibrahim Lawal", "ind": {"X1": {"band": "yellow", "value": 0.42, "n": 73}}}],
+    }
+    runs = [
+        {
+            "week": f"2026-09-{d:02d}",
+            "cells": {"me": {"X1": {"value": 0.4}}, "a": {"X1": {"value": 0}}, "b": {"X1": {"value": 0}}},
+        }
+        for d in (6, 13, 20, 27)
+    ]
+    ds = {"worker_topics": D.worker_topics(graded, "me", ["X1"])}
+    ds["history"] = D.history(runs, graded, "me", ["X1"], {"a": "Peer A", "b": "Peer B"})
+    assert _png(types.trend(ds, first_name="Ibrahim"), ds).size[0] == render.PNG_WIDTH

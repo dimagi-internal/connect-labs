@@ -215,7 +215,7 @@ _ROW = 40  # one bar row (CSS px)
 _WHO_WIDTH = 96  # room the row labels ("You", "Peer A") take, left of the bars
 _VALUE_ROOM = 64  # room right of the longest bar for its value ("100%")
 _TREND_HEIGHT = 200
-_PEER_LABEL_ROOM = 84
+_PEER_LABEL_ROOM = 112  # fits the widest end label, "Peer A, B"
 _END_LINE = 22  # how far apart stacked end labels are
 
 
@@ -323,6 +323,69 @@ def peer_comparison(datasets: dict, *, first_name: str | None = None, title: str
     return {"title": _title(title, first_name), "spacing": _BLOCK_GAP, "vconcat": blocks}
 
 
+def _nice_top(value: float) -> float:
+    """A round top for a non-rate axis, a little above the largest value."""
+    if value <= 0:
+        return 1.0
+    import math
+
+    step = 10 ** math.floor(math.log10(value * 1.1))
+    return math.ceil(value * 1.1 / step) * step
+
+
+def end_labels(points: list[dict], *, top: float, height: int = _TREND_HEIGHT, line: int = _END_LINE) -> list[dict]:
+    """Where each line's end label goes, in data units on a 0..``top`` axis: ``[{week,
+    text, y, you}]``.
+
+    Peers whose lines end within half a line of each other share one label ("Peer A,
+    B"); then labels are spread so no two are closer than ``line`` px, and all sit at
+    least half a line inside the plot. The worker's "You" is placed with the rest (it
+    is drawn bold, in indigo)."""
+    if not points:
+        return []
+    last_t = max(p["t"] for p in points)
+    week = next(p["week"] for p in points if p["t"] == last_t)
+    ends: dict[str, float] = {}
+    for p in sorted(points, key=lambda p: p["t"]):
+        ends[p["who"]] = p["value"]  # each line's last value
+    gap = top * line / height
+    peers = sorted(((v, w) for w, v in ends.items() if w != "You"), key=lambda vw: (vw[0], len(vw[1]), vw[1]))
+    groups: list[list] = []
+    for value, who in peers:
+        if groups and value - groups[-1][0][0] < gap / 2:
+            groups[-1].append((value, who))
+        else:
+            groups.append([(value, who)])
+    labels = [
+        {"text": _peer_group_text([w for _, w in g]), "want": sum(v for v, _ in g) / len(g), "you": False}
+        for g in groups
+    ]
+    if "You" in ends:
+        labels.append({"text": "You", "want": ends["You"], "you": True})
+    lo, hi = gap / 2, top - gap / 2
+    if len(labels) * gap > hi - lo + gap:
+        # More labels than the plot holds: every peer under one label.
+        labels = [{"text": "Peers", "want": min(v for v, _ in peers), "you": False}] + [
+            lab for lab in labels if lab["you"]
+        ]
+    labels.sort(key=lambda lab: (lab["want"], lab["you"]))
+    ys: list[float] = []
+    for lab in labels:  # upward: each at least a line above the one below
+        ys.append(max(lab["want"], lo, (ys[-1] + gap) if ys else lo))
+    for n in range(len(ys) - 1, -1, -1):  # downward: back inside the top
+        ys[n] = min(ys[n], hi if n == len(ys) - 1 else ys[n + 1] - gap)
+    return [{"week": week, "text": lab["text"], "y": y, "you": lab["you"]} for lab, y in zip(labels, ys)]
+
+
+def _peer_group_text(names: list[str]) -> str:
+    """``Peer A``; ``Peer A, B`` for two peers that share an end; ``3 peers`` for more
+    (so the label fits right of the plot)."""
+    if len(names) > 2:
+        return f"{len(names)} peers"
+    letters = sorted((n.removeprefix("Peer ") for n in names), key=lambda x: (len(x), x))
+    return "Peer " + ", ".join(letters)
+
+
 def trend(datasets: dict, *, first_name: str | None = None, title: str = "Week by week") -> dict:
     """Per topic, the worker's weekly line (one point per saved run) and, when the
     ``history`` dataset carries them, each anonymous peer's own thinner grey line,
@@ -332,6 +395,9 @@ def trend(datasets: dict, *, first_name: str | None = None, title: str = "Week b
     for row in mine:
         i, unit = row["i"], row.get("unit") or ""
         label, label_height = _label_layer(len(row.get("label_lines") or [""]))
+        points = [h for h in datasets.get("history") or [] if h.get("i") == i]
+        top = 1.0 if unit == "%" else _nice_top(max([h["value"] for h in points] or [0]))
+        ends = end_labels(points, top=top)
         y = {
             "field": "value",
             "type": "quantitative",
@@ -347,7 +413,7 @@ def trend(datasets: dict, *, first_name: str | None = None, title: str = "Week b
                 "labelPadding": -2,
                 "labelOffset": -4,
             },
-            "scale": {"domain": [0, 1]} if unit == "%" else {"zero": True},
+            "scale": {"domain": [0, top], "nice": False},
         }
         x = {
             "field": "week",
@@ -372,29 +438,21 @@ def trend(datasets: dict, *, first_name: str | None = None, title: str = "Week b
                     "encoding": {"x": x, "y": y, "detail": {"field": "who", "type": "nominal"}},
                 },
                 {
-                    # Each peer named at its last point; on a rate, peers ending close
-                    # together are stacked a line apart rather than drawn over each other.
-                    "transform": [
-                        {"filter": "datum.who != 'You' && datum.t == datum.last_t"},
-                        {"calculate": "round(datum.value * 100 / 6)", "as": "end_bucket"},
-                        {"window": [{"op": "row_number", "as": "end_rank"}], "groupby": ["end_bucket"]},
-                        {
-                            "calculate": (
-                                "datum.unit == '%' ? "
-                                f"datum.value + (datum.end_rank - 1) * {_END_LINE / _TREND_HEIGHT} : datum.value"
-                            ),
-                            "as": "label_value",
-                        },
-                    ],
+                    # The end labels, placed by Labs (``end_labels``): peers ending together
+                    # share one label ("Peer A, B"), and no two labels are closer than a
+                    # line, all inside the plot.
+                    "data": {"values": ends},
+                    "transform": [{"filter": "!datum.you"}],
                     "mark": {"type": "text", "align": "left", "baseline": "middle", "dx": 6, "color": theme.MUTED},
                     "encoding": {
                         "x": x,
-                        "y": {**y, "field": "label_value"},
-                        "text": {"field": "who", "type": "nominal"},
+                        "y": {**y, "field": "y"},
+                        "text": {"field": "text", "type": "nominal"},
                     },
                 },
                 {
-                    "transform": [{"filter": "datum.who == 'You' && datum.t == datum.last_t"}],
+                    "data": {"values": ends},
+                    "transform": [{"filter": "datum.you"}],
                     "mark": {
                         "type": "text",
                         "align": "left",
@@ -403,7 +461,7 @@ def trend(datasets: dict, *, first_name: str | None = None, title: str = "Week b
                         "fontWeight": 600,
                         "color": theme.INDIGO,
                     },
-                    "encoding": {"x": x, "y": y, "text": {"field": "who", "type": "nominal"}},
+                    "encoding": {"x": x, "y": {**y, "field": "y"}, "text": {"field": "text", "type": "nominal"}},
                 },
                 {
                     "transform": [{"filter": "datum.who == 'You'"}],
