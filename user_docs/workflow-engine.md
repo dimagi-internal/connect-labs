@@ -108,6 +108,24 @@ For each worker on an opportunity, Labs lists — per story — the babies that 
 !!! note "Saved run weeks record eligible cases"
     Each saved week of the KMC Opportunity Report records which babies were eligible for which story. This means the agent can see what earlier weeks offered, so suggestions take previous opportunities into account.
 
+#### Starting a test case coaching conversation from the worker review
+
+The KMC Worker Review's case panel includes a **Coach about this baby** button. This lets you start a test coaching conversation about one specific baby directly from the baby's case panel, without going through the canopy agent.
+
+The button appears when two things are true:
+
+- The workflow has a coaching action set up.
+- Labs finds a coaching story in that baby's visits — one of the four stories listed above.
+
+Clicking the button opens the coaching dialog, which shows:
+
+- The picture the coach will send
+- The baby's story with its supporting facts
+- The first message the worker would receive
+- The exact briefing
+
+**Test sends only.** The only option available from this button is **Send to me (QA test)** — the conversation goes to your own phone. There is no option to send to the worker from this button. Labs remembers your PersonalID username in your browser, so after your first test send, subsequent sends need just one click.
+
 #### Case coaching pictures
 
 Each story has its own picture designed to be read on a phone:
@@ -228,12 +246,4 @@ A pipeline can be configured to read a Google Drive file that covers an **entire
 
 **How access works**
 
-Only staff in the organisation that **manages the program** can see data from a program-scoped Drive pipeline. Staff whose organisation runs one of the program's opportunities (partner network organisations) cannot. This means one cohort's partner never sees another cohort's raw interview answers, even though the underlying file contains data for all cohorts.
-
-**How data is read**
-
-The Drive file is read **once for the whole program**. Before this change, a program dashboard spanning many opportunities would have counted every row in the file once per opportunity — potentially inflating every figure by the number of opportunities. With a program-scoped pipeline the file is processed a single time, so counts and aggregations are correct regardless of how many opportunities the program contains.
-
-**How caching works**
-
-Once a Drive file has been read, Connect Labs keeps the processed data in cache and reuses it until the underlying file in Drive changes — or for up to a week, whichever comes first. Previously, the cache expired every hour regardless of whether the file had changed, so the first person to open the dashboard after an idle hour would wait for a full rebuild. On the interview-classification dashboard that rebuild took around 16 minutes. Now,
+Only staff in the organisation that **manages the program** can see data from a program-scoped Drive pipeline. Staff whose organisation runs one of the program's opportunities
