@@ -227,3 +227,37 @@ def test_without_a_picture_the_session_state_has_no_picture_keys():
 def test_a_picture_beside_free_text_is_not_attached():
     sent = _trigger("Talk with them about their week.", coach_image=IMAGE)
     assert not [k for k in sent["session_data"] if k.startswith("coach_image")]
+
+
+def test_starting_participant_data_reaches_ocs_with_the_trigger():
+    """A dashboard resets what the bot tracks per task by sending participant data with the
+    trigger. OCS writes the opening message outside the bot's pipeline, so without this the
+    worker's record keeps the PREVIOUS task's status until they first reply."""
+    task, tda = _task(), MagicMock()
+    client = MagicMock()
+    client.trigger_bot.return_value = {"session_id": "1"}
+    reset = {"chatbot_task_status": "not_started", "chatbot_topics_done": []}
+    with patch("connect_labs.labs.synthetic.registry.get_synthetic_opp", return_value=None):
+        start_ai_session(
+            _user(),
+            tda,
+            task,
+            ocs=client,
+            identifier="asha",
+            experiment="bot-1",
+            prompt_text="Hi",
+            participant_data=reset,
+        )
+
+    assert client.trigger_bot.call_args.kwargs["participant_data"] == reset
+
+
+def test_without_starting_participant_data_none_is_sent():
+    """Every existing caller omits it, and must keep sending OCS exactly what it did before."""
+    task, tda = _task(), MagicMock()
+    client = MagicMock()
+    client.trigger_bot.return_value = {"session_id": "1"}
+    with patch("connect_labs.labs.synthetic.registry.get_synthetic_opp", return_value=None):
+        start_ai_session(_user(), tda, task, ocs=client, identifier="asha", experiment="bot-1", prompt_text="Hi")
+
+    assert client.trigger_bot.call_args.kwargs["participant_data"] is None

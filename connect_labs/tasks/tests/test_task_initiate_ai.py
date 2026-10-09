@@ -67,3 +67,36 @@ class TestAnOCSFailureIsDiagnosableRatherThanABareFiveHundred:
         assert response.status_code == 502
         assert "connect_labs" in body["error"]
         assert "Open Chat Studio" in body["error"]
+
+
+class TestStartingParticipantData:
+    BASE = {"identifier": "asha", "experiment": "bot-1", "prompt_text": "Hi"}
+
+    def test_it_is_passed_through(self):
+        reset = {"chatbot_task_status": "not_started", "chatbot_topics_done": []}
+        _, started = _post({**self.BASE, "participant_data": reset})
+
+        assert started.call_args.kwargs["participant_data"] == reset
+
+    def test_absent_means_none(self):
+        _, started = _post(self.BASE)
+
+        assert started.call_args.kwargs["participant_data"] is None
+
+    def test_a_non_object_is_refused_before_ocs_is_called(self):
+        response, started = _post({**self.BASE, "participant_data": ["not", "an", "object"]})
+
+        assert response.status_code == 400
+        started.assert_not_called()
+
+    def test_a_nested_object_is_refused(self):
+        response, started = _post({**self.BASE, "participant_data": {"a": {"b": 1}}})
+
+        assert response.status_code == 400
+        started.assert_not_called()
+
+    def test_too_many_keys_are_refused(self):
+        response, started = _post({**self.BASE, "participant_data": {f"k{i}": "v" for i in range(21)}})
+
+        assert response.status_code == 400
+        started.assert_not_called()

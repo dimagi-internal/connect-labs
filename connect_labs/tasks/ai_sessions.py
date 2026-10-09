@@ -33,6 +33,7 @@ def start_ai_session(
     start_new_session: bool = False,
     on_behalf_of: str | None = None,
     coach_image: dict | None = None,
+    participant_data: dict | None = None,
 ) -> dict:
     """Start (or attach) the conversation as ``user`` and record it on ``task``,
     which is saved.
@@ -51,6 +52,12 @@ def start_ai_session(
     puts a picture of the worker's figures in the session state as
     ``coach_image_url`` / ``coach_image_caption`` -- only beside a briefing, which is
     what it pictures.
+
+    ``participant_data`` is merged by OCS into the participant's record for THIS bot when the
+    conversation starts, before the opening message is sent. A dashboard uses it to reset what
+    the bot tracks per task (e.g. ``{"chatbot_task_status": "not_started"}``): OCS writes the
+    opening message outside the bot's pipeline, so without it the record keeps the PREVIOUS
+    task's status until the worker first replies. Ignored on a synthetic opportunity.
     """
     from connect_labs.labs.synthetic.manager_flow_views import _coaching_conversation
     from connect_labs.labs.synthetic.registry import get_synthetic_opp
@@ -120,6 +127,7 @@ def start_ai_session(
             experiment_id=experiment,
             start_new_session=start_new_session,
             session_data=session_data,
+            participant_data=participant_data or None,
             **message,
         )
     finally:
