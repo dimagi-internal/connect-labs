@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+
+{% comment %}An old /labs/p/<slug>/ address with no page behind it any more (workflow/page_views.old_page).{% endcomment %}
+
+{% block title %}Page moved{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto px-4 py-10" data-testid="labs-page-moved">
+  <h1 class="text-2xl font-bold text-brand-indigo mb-2">This page has moved</h1>
+  <p class="text-sm text-gray-600">Labs pages now live at addresses that name their organisation, programme or opportunity, such as <span class="font-mono">/labs/p/programme/&lt;id&gt;/{{ slug }}/</span>.{% if searched %} No page called “{{ slug }}” was found in {{ searched|join:" or " }}.{% else %} No organisation, programme or opportunity is selected, so there was nowhere to look for “{{ slug }}”.{% endif %}</p>
+  <p class="text-sm text-gray-600 mt-2">Ask whoever sent the link for its new address.</p>
+  <div class="mt-4 text-sm">
+    <a href="{% url 'labs:overview' %}" class="px-3 py-1.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50 text-gray-700">Labs overview</a>
+  </div>
+</div>
+{% endblock %}
