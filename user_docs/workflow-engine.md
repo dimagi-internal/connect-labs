@@ -114,6 +114,9 @@ Leaving the card without clicking **Send to \<worker\>** simply means you are no
 !!! note "If a test send can't go through"
     If **Send test** cannot complete, the card now tells you why underneath the button instead of leaving the button stuck on "Sending…" indefinitely. The most common reason is that your Labs account is not connected to Open Chat Studio. In that case the card shows "Connect Open Chat Studio in Labs first, then Send test again" with a **Connect it** link. Follow that link, connect your account, then return to the card and try **Send test** again.
 
+!!! note "If Open Chat Studio refuses a coaching send"
+    When Open Chat Studio refuses to start a coaching conversation, the run now records the specific reason that Open Chat Studio returned, rather than a generic refusal message. The card and the agent will show you that reason directly — for example: "Open Chat Studio refused the request: Failed to create channel: Participant not found in CommCare Connect". This makes it much easier to understand what went wrong and whether you need to take action (such as checking that the worker is registered in CommCare Connect) or contact support.
+
 ### Choosing what the worker's picture shows
 
 When preparing coaching — either through the canopy agent card or via **Start coaching** on the run page — you can now choose what chart the worker receives in their picture. The options are:
@@ -225,10 +228,4 @@ The dashboard is organised into the following views:
 A summary of what is currently with field workers, expressed in sachets and in children's courses; how much has been given out (with the share that sits on visits not yet approved broken out separately); and the daily rate at which stock is going out.
 
 **Runway**
-One bar per worker, sorted so the worker who will run out soonest appears first. Each bar shows the worker's projected run-out date based on their own pace over the **last 14 days**, their most recent count against the ledger, and a short label confirming the window used — for example, "last 14 days" or "last 9 days" for a worker who started recently. A worker who has nothing left and has given nothing out in the last 14 days is shown as stocked out rather than as unknown.
-
-**Does it add up?**
-A reconciliation table showing, for each worker: stock issued, stock given out, what the ledger says they hold, what they actually counted, the gap between the ledger and the count, visits that did not record a stock figure, and the share of transactions sitting on unapproved visits.
-
-**A worker's history**
-Click any worker to open a day-by-day view of their stock movements and counts. The pace shown here — days to stock-out and sachets per day — is based on the
+One bar per worker, sorted so the worker who will run out soonest appears first. Each bar shows the worker's projected run-out date based on their own pace over the **last 14 days**, their most recent count against the ledger, and a short label confirming the window used — for example, "last 14 days" or "last 9 days" for a worker who started recently. A worker who has nothing left and has given nothing out in the last 14 days is shown as stocked out rather
