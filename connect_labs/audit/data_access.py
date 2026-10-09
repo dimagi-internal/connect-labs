@@ -1962,7 +1962,27 @@ class AuditDataAccess(BaseDataAccess):
     IMAGE_DOWNLOAD_BACKOFF_BASE = 0.3  # seconds; 0.3, 0.6, ...
 
     def download_image_from_connect(self, blob_id: str, opportunity_id: int) -> bytes:
-        """Download image from Connect API, retrying transient upstream failures."""
+        """Download image from Connect API, retrying transient upstream failures.
+
+        A synthetic ``synth-*`` blob never exists on Connect -- it lives in the labs
+        stock-image Drive folder -- so it is served from the image server instead.
+        The audit page's image view did this on its own, but the AI reviewer fetches
+        through here, so it asked Connect for every synthetic photo, skipped all of
+        them as ``image_download_failed`` and reported an empty audit (#2393).
+
+        Routed on the blob id alone, not the opp registry: the grammar is checked
+        against the corpora that declare themselves, so no real Connect blob can
+        match it, and the reviewer calls this from a thread pool where a registry
+        lookup would open a DB connection per thread.
+        """
+        from connect_labs.labs.synthetic import image_server
+
+        if image_server.SyntheticImageServer.is_synthetic_blob(blob_id):
+            data = image_server.get_image_server().get_image(blob_id)
+            if not data:
+                raise ImageDownloadError(f"Synthetic image {blob_id} not found", status_code=404)
+            return data
+
         last_exc: Exception | None = None
         for attempt in range(1, self.IMAGE_DOWNLOAD_MAX_ATTEMPTS + 1):
             try:
