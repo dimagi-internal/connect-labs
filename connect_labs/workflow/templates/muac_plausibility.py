@@ -141,14 +141,17 @@ SNAPSHOT_SCHEMA = {
 }
 
 
-def run_default(*, definition, access_token, request=None, window=None, **_):
-    """Classify every approved MUAC reading to date and save one completed,
-    program-owned run.
+def compute_state(definition, access_token, *, window=None) -> dict:
+    """Classify every approved MUAC reading the definition's opportunities hold.
+
+    Returns ``{"state": <the state.muac_plausibility payload>, "visits_read": int,
+    "period_start": iso, "period_end": iso}``. Shared by ``run_default`` (the
+    schedule, which saves a new completed run) and the ``muac_plausibility_compute``
+    job (a manually created run's "Compute" button, which fills that run).
 
     ``window`` (UTC half-open pair) narrows the visits read, for a backfill; by
     default every visit up to now is read, since the page filters by week itself.
-    An opportunity whose pipeline read fails is named in the run's ``errors`` and
-    in the returned ``errors`` (the scheduler shows these as an amber note), never
+    An opportunity whose pipeline read fails is named in ``errors``, never
     silently counted as zero.
     """
     from datetime import datetime, timedelta, timezone
@@ -204,9 +207,6 @@ def run_default(*, definition, access_token, request=None, window=None, **_):
     cells = aggregate(rows, form_name=FORM_NAME, utc_offset=utc_offset)
     now = datetime.now(timezone.utc)
     weeks = sorted({row[3] for row in cells["rows"]})
-    period_start = weeks[0] if weeks else now.date().isoformat()
-    period_end = now.date().isoformat()
-
     state = {
         "generated_at": now.isoformat(),
         "cells": {"columns": cells["columns"], "rows": cells["rows"]},
@@ -215,22 +215,47 @@ def run_default(*, definition, access_token, request=None, window=None, **_):
         "thresholds": thresholds_summary(),
         "errors": errors,
     }
+    return {
+        "state": state,
+        "visits_read": len(rows),
+        "period_start": weeks[0] if weeks else now.date().isoformat(),
+        "period_end": now.date().isoformat(),
+    }
+
+
+def run_default(*, definition, access_token, request=None, window=None, **_):
+    """Classify every approved MUAC reading to date and save one completed,
+    program-owned run. The scheduler's path; see ``compute_state``."""
+    from connect_labs.workflow.data_access import WorkflowDataAccess
+
+    computed = compute_state(definition, access_token, window=window)
+    state = computed["state"]
 
     if definition.program_id:
         run_wda = WorkflowDataAccess(access_token=access_token, program_id=definition.program_id)
         scope = {"program_id": definition.program_id}
     else:
-        run_wda = WorkflowDataAccess(access_token=access_token, opportunity_id=opp_ids[0])
-        scope = {"opportunity_id": opp_ids[0]}
+        opp_id = (definition.opportunity_ids or [definition.opportunity_id])[0]
+        run_wda = WorkflowDataAccess(access_token=access_token, opportunity_id=opp_id)
+        scope = {"opportunity_id": opp_id}
     try:
         run = run_wda.create_run(
-            definition.id, period_start=period_start, period_end=period_end, initial_state={}, **scope
+            definition.id,
+            period_start=computed["period_start"],
+            period_end=computed["period_end"],
+            initial_state={},
+            **scope,
         )
         run_wda.complete_run(run.id, {"pipelines": {}, "workers": [], "state": {STATE_KEY: state}}, run=run)
     finally:
         run_wda.close()
 
-    return {"run_id": run.id, "cells": len(cells["rows"]), "visits_read": len(rows), "errors": errors}
+    return {
+        "run_id": run.id,
+        "cells": len(state["cells"]["rows"]),
+        "visits_read": computed["visits_read"],
+        "errors": state["errors"],
+    }
 
 
 TEMPLATE = {
