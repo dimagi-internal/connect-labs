@@ -2200,6 +2200,7 @@ An action is something a workflow lets you **do**, such as "Initiate AI coach". 
 
 - **A button on the report.** Render code calls `actions.runAction(key, {workers: [{key}]})`. The runner previews the action in its own dialog and runs it only when the person confirms. `view.workflowActions` lists the declared actions so a render can draw their buttons (`indicator_report_render.js` does).
 - **The labs MCP.** An agent calls `workflow_run_action`. That agent can be a person's own, signed in with a PAT, or canopy acting as the visitor on a page that shares its run.
+- **A coaching send is a click, never the agent's call.** A `start_ocs_outreach` preview, as the agent gets it from `workflow_run_action`, carries no `confirm` (`sent_by: "click"`, and `next` says where the person clicks). `workflow_run_action` is an MCP Apps tool (SEP-1865; `_meta.ui.resourceUri = ui://labs/workflow-action-preview`, `connect_labs/mcp/ui/`): a host such as canopy renders its result as a View that previews again AS THE VIEWER through the app-only `workflow_action_preview_view` -- each worker's picture inline as a `data:` PNG, and that viewer's own token -- and commits through `workflow_run_action` on the viewer's click (Send to the worker; Send to me (QA test) with `deliver_to`, staff only; Not yet). The run page's button is the other way to send. Other action types keep the agent's two-call flow.
 
 ```python
 "config": {

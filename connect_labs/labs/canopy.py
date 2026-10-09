@@ -41,8 +41,10 @@ from django.conf import settings
 #: holds ``workflow_run_action``, which runs a workflow's own declared action (the
 #: same one its button runs) and cannot run without a preview first: the call that
 #: acts must carry the single-use token its preview issued, bound to the person,
-#: the run and exactly what was previewed (``workflow/actions.py``). The agent is
-#: told to show that preview and get the person's yes in between. A new write
+#: the run and exactly what was previewed (``workflow/actions.py``). A coaching
+#: action's token never reaches the agent at all: only the View canopy renders gets
+#: one, from ``workflow_action_preview_view`` (app-only, MCP Apps), previewed as the
+#: person looking at it -- so a coaching send is that person's click. A new write
 #: scope must hold to the same rule -- ``PREVIEWED_WRITE_SCOPES`` is the list, and a
 #: test pins it.
 SCOPE_TOOLS: dict[str, frozenset[str]] = {
@@ -55,7 +57,7 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
             "workflow_action_status",
         }
     ),
-    "workflow:act": frozenset({"workflow_run_action"}),
+    "workflow:act": frozenset({"workflow_run_action", "workflow_action_preview_view"}),
     # Public open data (WorldPop, DHS, UN IGME, geoBoundaries) and arithmetic on it:
     # nothing here is specific to the visitor, so the scope adds no exposure.
     # targeting_pmc_run_model starts a compute job (IDM's EMOD on a shared on-demand box) and
