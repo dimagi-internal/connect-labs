@@ -7,8 +7,8 @@
 # For local development without pre-built images, the defaults fall back
 # to plain images — but you'll need to install deps separately.
 
-ARG BASE_IMAGE=python:3.13-slim-bookworm
-ARG NODE_IMAGE=node:24-bookworm
+ARG BASE_IMAGE=public.ecr.aws/docker/library/python:3.13-slim-bookworm
+ARG NODE_IMAGE=public.ecr.aws/docker/library/node:24-bookworm
 
 # ---------------------------------------------------------------------------
 # Stage 1: Build frontend bundles (skipped if pre-built node image has bundles)
@@ -31,7 +31,7 @@ RUN [ -d /app/connect_labs/static/bundles/js ] || npm run build
 # Not --strict here: the docs bot commits straight to main, and a broken doc link
 # must not block a deploy. The strict check runs on PRs (docs-deploy.yml).
 # ---------------------------------------------------------------------------
-FROM python:3.13-slim-bookworm AS build-docs
+FROM public.ecr.aws/docker/library/python:3.13-slim-bookworm AS build-docs
 
 RUN pip install --no-cache-dir mkdocs==1.6.1 mkdocs-material==9.7.7
 WORKDIR /docs
