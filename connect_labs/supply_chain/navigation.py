@@ -182,29 +182,49 @@ VIEWS_WITHOUT_TABS = frozenset(
 )
 
 
+def _program_tabs(request) -> dict:
+    """The programme in view's resolved `tabs` setting (supply_chain/config.py), read once per request."""
+    cached = getattr(request, "_supply_tab_config", None)
+    if cached is not None:
+        return cached
+    from connect_labs.supply_chain.config import tabs_for
+
+    program_id = (getattr(request, "labs_context", None) or {}).get("program_id")
+    tabs = tabs_for(request, program_id)
+    request._supply_tab_config = tabs
+    return tabs
+
+
 def _pinned(request) -> list:
-    """The workflows pinned into the programme in view (workflow_views/models.py), in tab order.
+    """The workflows filling tabs in the programme in view (supply_chain/config.py), in tab order.
 
     Read once per request and kept on it. That matters for a past date: an
     `?as_of=` page renders after history/rewind.py has undone every later
-    revision, the pins included, so a tab pinned after that day vanished from
-    the header and the built-in it replaces came back. The pins are navigation,
-    not the programme's records -- `as_of_view` reads them before it rewinds.
+    revision, and the tabs are navigation, not the programme's records --
+    `as_of_view` reads them before it rewinds. (They now live in Settings,
+    outside the supply records the rewind touches, but the read order stays.)
     """
     cached = getattr(request, "_supply_pins", None)
     if cached is not None:
         return cached
-    from connect_labs.supply_chain.workflow_views.models import SupplyWorkflowView
+    from connect_labs.supply_chain.config import pins_from
 
     program_id = (getattr(request, "labs_context", None) or {}).get("program_id")
     pins = []
     if program_id:
         try:
-            pins = list(SupplyWorkflowView.objects.filter(program_id=int(program_id)))
+            pins = pins_from(_program_tabs(request), int(program_id))
         except (TypeError, ValueError):
             pins = []
     request._supply_pins = pins
     return pins
+
+
+def hidden_tabs(request) -> set[str]:
+    """Built-in tabs the programme in view has turned off in Settings (never Overview)."""
+    from connect_labs.supply_chain.config import hidden_from
+
+    return hidden_from(_program_tabs(request))
 
 
 def scoped_url(request, name: str, args=None, program_id=None) -> str:
@@ -248,15 +268,27 @@ def supply_tabs(request) -> list[dict]:
             "active": current_slug == pin.slug or also_active,
         }
 
+    hidden = hidden_tabs(request)
     tabs = []
+    keys = []
     for name, label in SUPPLY_TABS:
+        if name in hidden:
+            continue
         pin = replacing.get(name)
         if pin is not None:
             # The pinned workflow stands in for this tab; its own page ("classic view") still counts as here.
             tabs.append(pin_tab(pin, also_active=current == name))
         else:
             tabs.append({"url": scoped_url(request, name), "label": label, "active": name == current})
-        if name == "supply_chain:flow":
-            # Pins that ADD a tab sit with the stock pages.
-            tabs.extend(pin_tab(p) for p in pins if not p.replaces)
+        keys.append(name)
+    # Tabs a programme ADDS sit after the tab they name (`after`), by default with
+    # the stock pages; one naming a tab that is not there goes at the end.
+    for pin in (p for p in pins if not p.replaces):
+        anchor = pin.after if pin.after in keys else f"pin:{pin.after}"
+        at = keys.index(anchor) + 1 if anchor in keys else len(tabs)
+        # After any added tab already placed behind the same anchor, so position order holds.
+        while at < len(keys) and keys[at].startswith("pin:"):
+            at += 1
+        tabs.insert(at, pin_tab(pin))
+        keys.insert(at, f"pin:{pin.slug}")
     return tabs

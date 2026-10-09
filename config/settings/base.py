@@ -177,6 +177,7 @@ LOCAL_APPS = [
     "connect_labs.mopup",
     "connect_labs.pages",
     "connect_labs.pulse",
+    "connect_labs.scope_config",
     "connect_labs.solicitations",
     "connect_labs.supply_chain",
     "connect_labs.users",
@@ -247,6 +248,9 @@ MIDDLEWARE = [
     # Report-only to start — see connect_labs/utils/csp.py for why, and for how
     # to tighten it into an enforcing policy (#1032 item H).
     "connect_labs.utils.csp.ContentSecurityPolicyMiddleware",
+    # A supply tab a programme has turned off in Settings explains itself (process_view only,
+    # so it sees the settled labs context whatever its position).
+    "connect_labs.supply_chain.hidden_tabs.HiddenSupplyTabMiddleware",
 ]
 
 # Per-request cost telemetry, prepended so it is the OUTERMOST middleware and
