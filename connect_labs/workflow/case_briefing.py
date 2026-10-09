@@ -185,6 +185,13 @@ class CaseSource:
         display = self.context(opportunity_id)["full_registry"].get("display") or {}
         return ((display.get("entity") or {}).get("label_field")) or None
 
+    def case_name(self, opportunity_id: int, row: dict, fallback: str = "") -> str:
+        """What the case is called: the registry's ``case_name`` (its mother's and baby's
+        names, say), else its label field, else ``fallback``."""
+        label_field = self.label_field(opportunity_id)
+        label = str((row.get(label_field) if label_field else None) or "") or fallback
+        return case_states.case_display_name(self.props_doc(opportunity_id), row, label) or label
+
     def programme(self, opportunity_id: int) -> str:
         display = (
             self._stored["display"]
@@ -247,6 +254,7 @@ def cases_view(
     names: dict[str, str] | None = None,
     label_field: str | None = None,
     per_worker: int = 5,
+    props_doc: dict | None = None,
 ) -> dict:
     """Per worker, the cases in each case state (most urgent first, most recent
     evidence first within one), with each case's facts and evidence as of the run, and
@@ -273,7 +281,9 @@ def cases_view(
         w["cases"].append(
             {
                 "entity_id": c.get("entity_id"),
-                "name": (c.get(label_field) if label_field else None) or c.get("entity_id"),
+                "name": case_states.case_display_name(
+                    props_doc or {}, c, (c.get(label_field) if label_field else None) or c.get("entity_id")
+                ),
                 "case_state": state["name"],
                 "label": state["label"],
                 "facts": case_states.facts(state, c),
@@ -338,5 +348,6 @@ def run_cases(user, wda, run, definition, *, request=None, worker_keys=None, cas
         names={k: w["name"] for k, w in roster.items()},
         label_field=source.label_field(opps[0]),
         per_worker=per_worker,
+        props_doc=source.props_doc(opps[0]),
     )
     return {"as_of": str(source.as_of)[:10] if source.as_of else None, "source": origin, **view}

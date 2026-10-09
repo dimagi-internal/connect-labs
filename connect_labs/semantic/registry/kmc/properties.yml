@@ -107,6 +107,70 @@ visit_columns:
   - name: referral_text
     optional: true
     column: referral_answer
+  # --- read by the case summary pictures (case_summary): who the case is and how its
+  # visits went. All `optional`: NULL until the entity pipeline carries the field.
+  - name: visit_child_name
+    optional: true
+    null_as: text
+    column: child_name
+  - name: visit_mother_name
+    optional: true
+    null_as: text
+    column: mother_name
+  # Sex and date of birth: the pipeline's own `gender` and `dob` fields.
+  - name: visit_child_sex
+    optional: true
+    null_as: text
+    column: gender
+  - name: visit_child_dob
+    optional: true
+    null_as: date
+    column: dob
+  - name: visit_kmc_providers
+    optional: true
+    null_as: text
+    column: kmc_providers
+  - name: visit_feeding_method
+    optional: true
+    null_as: text
+    column: feeding_method
+  - name: visit_cup_feeding
+    optional: true
+    null_as: text
+    column: cup_feeding
+  # Successful feeds in the last 24 h (the app's danger sign is fewer than 12).
+  - name: visit_feeds
+    optional: true
+    column: feeds_24h
+  - name: visit_timeliness
+    optional: true
+    null_as: text
+    column: visit_timeliness
+  # The visit's own danger-sign answer (yes / no): "checked, none" needs the no.
+  - name: visit_danger_answer
+    optional: true
+    null_as: text
+    column: danger_answer
+  - name: visit_next_start
+    optional: true
+    null_as: date
+    column: next_visit_start
+  - name: visit_next_end
+    optional: true
+    null_as: date
+    column: next_visit_end
+  - name: visit_temperature
+    optional: true
+    column: temperature_c
+  - name: visit_heart_rate
+    optional: true
+    column: heart_rate
+  - name: visit_breathing
+    optional: true
+    column: breath_rate
+  - name: visit_spo2
+    optional: true
+    column: spo2
 
 # Layer 1 is generated from the `children` pipeline. The per-visit weight is NOT in
 # it: the dashboard reads the series from a second pipeline ("KMC Weight Series"),
@@ -309,6 +373,43 @@ aggregates:
     label: 'Previous skin-to-skin visit'
     means: 'Date of the visit before that.'
     sql: '(ARRAY_AGG(visit_date ORDER BY visit_date DESC) FILTER (WHERE skin_to_skin_h IS NOT NULL))[2]'
+  # --- who the case is (case_name, and the case summary's banner) ---
+  - name: child_name
+    label: "Baby's name"
+    means: "The baby's name, as the latest visit that recorded one gives it."
+    sql: "(ARRAY_AGG(visit_child_name ORDER BY visit_date DESC) FILTER (WHERE visit_child_name <> ''))[1]"
+  - name: mother_name
+    label: "Mother's name"
+    means: "The mother's name, as the latest visit that recorded one gives it."
+    sql: "(ARRAY_AGG(visit_mother_name ORDER BY visit_date DESC) FILTER (WHERE visit_mother_name <> ''))[1]"
+  - name: child_sex
+    label: 'Sex'
+    means: "The baby's sex as the latest visit recorded it."
+    sql: '(ARRAY_AGG(visit_child_sex ORDER BY visit_date DESC) FILTER (WHERE visit_child_sex IS NOT NULL))[1]'
+  - name: child_dob
+    label: 'Date of birth'
+    means: "The baby's date of birth as the visits record it."
+    sql: 'MIN(visit_child_dob::date) FILTER (WHERE visit_child_dob IS NOT NULL)'
+  - name: kmc_providers
+    label: 'Who gives KMC'
+    means: 'Who gave skin-to-skin care, as the latest visit that asked recorded it.'
+    sql: '(ARRAY_AGG(visit_kmc_providers ORDER BY visit_date DESC) FILTER (WHERE visit_kmc_providers IS NOT NULL))[1]'
+  - name: feeding_method
+    label: 'Feeding'
+    means: 'How the baby is fed, as the latest visit recorded it.'
+    sql: '(ARRAY_AGG(visit_feeding_method ORDER BY visit_date DESC) FILTER (WHERE visit_feeding_method IS NOT NULL))[1]'
+  - name: cup_feeding_date
+    label: 'Last cup feeding'
+    means: 'The latest visit that recorded cup feeding.'
+    sql: 'MAX(visit_date) FILTER (WHERE visit_cup_feeding IS NOT NULL)'
+  - name: next_visit_start
+    label: 'Next visit due from'
+    means: "The start of the next visit's window, as the latest visit set it."
+    sql: '(ARRAY_AGG(visit_next_start::date ORDER BY visit_date DESC) FILTER (WHERE visit_next_start IS NOT NULL))[1]'
+  - name: next_visit_end
+    label: 'Next visit due by'
+    means: "The end of the next visit's window, as the latest visit set it."
+    sql: '(ARRAY_AGG(visit_next_end::date ORDER BY visit_date DESC) FILTER (WHERE visit_next_end IS NOT NULL))[1]'
 
 # ---------------------------------------------------------------------------
 # Weight-series properties. These are the two the browser does with a loop; in
@@ -757,6 +858,19 @@ properties:
            THEN (last_weight_g - third_last_w) / (third_last_w / 1000.0) / (last_weigh_date - third_last_date)
            ELSE NULL END
 
+  # --- the case summary's banner and visit timeline ---
+  - name: age_days
+    label: 'Age (days)'
+    means: "The baby's age in days on the report date."
+    type: int
+    sql: '(:as_of)::date - child_dob'
+
+  - name: next_visit_overdue_days
+    label: 'Next visit overdue (days)'
+    means: "Days past the end of the next visit's window on the report date; empty when it is not overdue."
+    type: int
+    sql: 'CASE WHEN (:as_of)::date > next_visit_end THEN (:as_of)::date - next_visit_end ELSE NULL END'
+
   - name: case_state_weight_check
     label: 'A weighing that is hard to believe'
     means: 'One weight recorded for this baby is hard to believe next to the others: a very large jump or drop in a few days, a weight no baby in KMC has, or exactly the same weight three visits in a row.'
@@ -785,28 +899,66 @@ properties:
           text: 'Weight was recorded as {implausible_weight_g|grams} g on {implausible_weight_date|day}; a baby in KMC weighs 800 to 5,000 g.'
         - text: 'Weight was recorded as exactly {same3_w|grams} g at three weighings in a row, the last on {same3_date|day}.'
       picture:
-        type: series_highlight_step
-        series: weight
+        type: case_summary
         title: 'Check this weighing'
-        highlight:
-          from: check_from_date
-          to: check_to_date
-          label:
-            - {
-                when: any_bad_step,
-                text: '{step_change_g|signed} g in {step_days|days}?',
-              }
-            - {
-                when: implausible_weight_date,
-                text: '{implausible_weight_g|grams} g?',
-              }
-            - { text: '{same3_w|grams} g three times?' }
-        checklist_title: 'Weighing checklist'
-        checklist:
-          - 'Set the scale to zero'
-          - 'Weigh baby without clothes'
-          - 'Read the number when baby is still'
-          - 'Write it down straight away'
+        banner: &case_banner
+          - '{child_sex}'
+          - '{age_days|int} days'
+          - - when: [birth_weight_g, gestational_age_wks]
+              text: 'born {birth_weight_g|grams} g at {gestational_age_wks|int} wk'
+            - { when: birth_weight_g, text: 'born {birth_weight_g|grams} g' }
+          - 'KMC: {kmc_providers|list}'
+        panels:
+          - kind: series
+            series: weight
+            title: 'Weight'
+            highlight:
+              from: check_from_date
+              to: check_to_date
+              label:
+                - {
+                    when: any_bad_step,
+                    text: '{step_change_g|signed} g in {step_days|days}?',
+                  }
+                - {
+                    when: implausible_weight_date,
+                    text: '{implausible_weight_g|grams} g?',
+                  }
+                - { text: '{same3_w|grams} g three times?' }
+          - kind: list
+            title: 'Weighing checklist'
+            items:
+              - 'Scale set to zero'
+              - 'Undress the baby'
+              - 'Read when still'
+          - &visits_panel
+            kind: visits
+            title: 'Visits'
+            timeliness: timeliness
+            on_time: 'On-time'
+            danger: danger_check
+            danger_yes: 'yes'
+            referred: referred
+            referred_yes: 'yes'
+            due_from: next_visit_start
+            due_to: next_visit_end
+            overdue_days: next_visit_overdue_days
+            vitals:
+              - { series: temperature, label: 'T', low: 35.5, high: 37.5 }
+              - { series: heart_rate, label: 'HR', low: 100, high: 160 }
+              - { series: breathing, label: 'RR', low: 30, high: 60 }
+              - { series: spo2, label: 'SpO2', low: 90, high: 100 }
+          - &feeds_panel
+            kind: series
+            series: feeds
+            title: 'Daily feeds'
+            floor: { value: 12, label: 'danger < 12' }
+            note:
+              - when: [feeding_method, cup_feeding_date]
+                text: '{feeding_method|words}; cup feeding {cup_feeding_date|date}'
+              - when: [feeding_method, cup_feeding_date]
+                text: '{feeding_method|words}; cup {cup_feeding_date|date}'
+              - { when: feeding_method, text: '{feeding_method|words}' }
       coach:
         approach: 'This is about how the weighing was done, never about honesty. Say the number looks unusual and ask, without judgement: "Can you walk me through how you weighed baby on this visit?" Listen for the scale not set to zero, clothes or a blanket left on, the baby moving, the number read too early, or the number written down later from memory.'
         next_steps: 'Agree to use the weighing checklist at the next visit: set the scale to zero, weigh baby without clothes, read the number when baby is still, and write it down straight away. If the worker thinks the number was right, agree to weigh carefully next visit to confirm.'
@@ -829,88 +981,94 @@ properties:
         ]
       facts: 'On {unreferred_danger_date|day} the visit recorded {unreferred_danger_signs}, and the baby was not referred.'
       picture:
-        type: sign_card
+        type: case_summary
         title: 'Danger sign, not referred'
-        badge: 'NOT REFERRED'
-        date: unreferred_danger_date
-        signs: unreferred_danger_signs
-        sign_text:
-          'convulsions (fits)':
-            {
-              title: 'Convulsions (fits)',
-              why: 'A baby who has had a fit needs a health facility now.',
-            }
-          'severe chest indrawing':
-            {
-              title: 'Chest pulling in with each breath',
-              why: 'A sign of possible serious illness, such as a chest infection.',
-            }
-          'floppy or unusually sleepy':
-            {
-              title: 'Floppy or hard to wake',
-              why: 'A baby who moves only when touched, or not at all, may be seriously ill.',
-            }
-          'blue lips or face':
-            {
-              title: 'Blue lips or face',
-              why: 'The baby may not be getting enough oxygen.',
-            }
-          'low oxygen':
-            {
-              title: 'Low oxygen',
-              why: 'The baby may not be getting enough oxygen.',
-            }
-          'fever':
-            {
-              title: 'Fever',
-              why: 'In a young baby, fever can be a sign of serious infection.',
-            }
-          'low body temperature':
-            {
-              title: 'Cold body',
-              why: 'A small baby who is too cold can become seriously ill.',
-            }
-          'fast breathing':
-            {
-              title: 'Fast breathing',
-              why: 'Breathing fast can be a sign of a chest infection.',
-            }
-          'slow breathing':
-            {
-              title: 'Slow breathing',
-              why: 'Breathing too slowly is a sign of possible serious illness.',
-            }
-          'noisy breathing':
-            {
-              title: 'Noisy breathing',
-              why: 'Grunting or noisy breathing can mean the baby is struggling.',
-            }
-          'slow heart rate':
-            {
-              title: 'Slow heart rate',
-              why: 'A slow heartbeat in a young baby needs checking at a facility.',
-            }
-          'not feeding well':
-            {
-              title: 'Not feeding well',
-              why: 'A baby who stops feeding well may be seriously ill.',
-            }
-          'pus in the eyes, skin or belly button':
-            {
-              title: 'Pus in eyes, skin or belly button',
-              why: 'Pus is a sign of infection, which can spread quickly in a small baby.',
-            }
-          'yellow skin or eyes':
-            {
-              title: 'Yellow skin or eyes',
-              why: 'Strong yellowing in a young baby needs checking at a facility.',
-            }
-        why: 'Danger signs in a young baby can mean serious illness. A health facility should see the baby.'
-        actions_title: 'What to do'
-        actions:
-          - 'Visit the family as soon as you can'
-          - 'Check the baby for the sign again'
-          - 'If the sign is still there, refer the baby to a health facility'
+        banner: *case_banner
+        panels:
+          - kind: signs
+            title: 'Danger signs'
+            date: unreferred_danger_date
+            signs: unreferred_danger_signs
+            sign_text:
+              'convulsions (fits)':
+                {
+                  title: 'Convulsions (fits)',
+                  why: 'A baby who has had a fit needs a health facility now.',
+                }
+              'severe chest indrawing':
+                {
+                  title: 'Chest pulling in with each breath',
+                  why: 'A sign of possible serious illness, such as a chest infection.',
+                }
+              'floppy or unusually sleepy':
+                {
+                  title: 'Floppy or hard to wake',
+                  why: 'A baby who moves only when touched, or not at all, may be seriously ill.',
+                }
+              'blue lips or face':
+                {
+                  title: 'Blue lips or face',
+                  why: 'The baby may not be getting enough oxygen.',
+                }
+              'low oxygen':
+                {
+                  title: 'Low oxygen',
+                  why: 'The baby may not be getting enough oxygen.',
+                }
+              'fever':
+                {
+                  title: 'Fever',
+                  why: 'In a young baby, fever can be a sign of serious infection.',
+                }
+              'low body temperature':
+                {
+                  title: 'Cold body',
+                  why: 'A small baby who is too cold can become seriously ill.',
+                }
+              'fast breathing':
+                {
+                  title: 'Fast breathing',
+                  why: 'Breathing fast can be a sign of a chest infection.',
+                }
+              'slow breathing':
+                {
+                  title: 'Slow breathing',
+                  why: 'Breathing too slowly is a sign of possible serious illness.',
+                }
+              'noisy breathing':
+                {
+                  title: 'Noisy breathing',
+                  why: 'Grunting or noisy breathing can mean the baby is struggling.',
+                }
+              'slow heart rate':
+                {
+                  title: 'Slow heart rate',
+                  why: 'A slow heartbeat in a young baby needs checking at a facility.',
+                }
+              'not feeding well':
+                {
+                  title: 'Not feeding well',
+                  why: 'A baby who stops feeding well may be seriously ill.',
+                }
+              'pus in the eyes, skin or belly button':
+                {
+                  title: 'Pus in eyes, skin or belly button',
+                  why: 'Pus is a sign of infection, which can spread quickly in a small baby.',
+                }
+              'yellow skin or eyes':
+                {
+                  title: 'Yellow skin or eyes',
+                  why: 'Strong yellowing in a young baby needs checking at a facility.',
+                }
+          - kind: list
+            title: 'What to do'
+            tone: sunset
+            items:
+              - 'See the baby today'
+              - 'Recheck the sign'
+              - 'Refer if it is there'
+          - *visits_panel
+          - *feeds_panel
       coach:
         approach: 'Explain in simple words that this sign can mean the baby is seriously ill and needs care at a health facility, more than a home visit can give. Then ask what happened at that visit and how the baby is now.'
         next_steps: 'Agree that the worker will check in with the family as soon as possible and, if the sign is still there or the baby seems unwell, refer the baby to the health facility the same day.'
@@ -943,12 +1101,20 @@ properties:
         ]
       facts: 'Weight went from {third_last_w|grams} g on {third_last_date|date} to {last_weight_g|grams} g on {last_weigh_date|date}, about {faltering_rate|1dp} g/kg/day; healthy growth is 15-20 g/kg/day. Skin-to-skin fell from {s2s_prev_h} h on {s2s_prev_date|date} to {s2s_last_h} h on {s2s_last_date|date}.'
       picture:
-        type: series_with_bars
-        series: weight
+        type: case_summary
         title: 'Weight has stalled'
-        reference: { low: 15, high: 20, label: 'healthy growth' }
-        bars: skin_to_skin
-        bars_title: 'Skin-to-skin hours each visit'
+        banner: *case_banner
+        panels:
+          - kind: series
+            series: weight
+            title: 'Weight'
+            reference: { low: 15, high: 20, label: 'healthy growth' }
+          - kind: bars
+            series: skin_to_skin
+            title: 'Skin-to-skin hours'
+            last: 3
+          - *feeds_panel
+          - *visits_panel
       coach:
         approach: 'Ask how the family is managing with this baby and what has changed at home. Ask about feeding and about the skin-to-skin hours: what makes long hours hard for this family right now.'
         next_steps: 'Agree a sooner follow-up visit, and one thing the worker will reinforce with the family: more hours of skin-to-skin care (who else in the family can help hold the baby) and frequent breastfeeding. If the baby seems unwell, the family should go to a health facility.'
@@ -979,16 +1145,42 @@ properties:
         ]
       facts: 'Weight rose from {first_weight_g|grams} g on {first_weigh_date|date} to {last_weight_g|grams} g on {last_weigh_date|date}, about {avg_rate_gap3|int} g/kg/day on average; healthy growth is 15-20 g/kg/day.'
       picture:
-        type: series_vs_reference
-        series: weight
+        type: case_summary
         title: 'Growing well'
-        badge: 'Great work!'
-        reference: { low: 15, high: 20, label: 'healthy growth' }
-        gain_label: '{weight_gain_g|signed} g since {first_weigh_date|date}'
+        banner: *case_banner
+        panels:
+          - kind: series
+            series: weight
+            title: 'Weight'
+            reference: { low: 15, high: 20, label: 'healthy growth' }
+            star: true
+          - kind: facts
+            title: 'Milestones'
+            badge: 'Great work!'
+            lines:
+              - '{weight_gain_g|signed} g since {first_weigh_date|date}'
+              - 'about {avg_rate_gap3|int} g/kg a day'
+          - *visits_panel
+          - kind: list
+            title: 'Keep it going'
+            tone: green
+            items:
+              - 'Keep up the visits'
+              - 'Vaccines on time'
+              - 'Only breastmilk'
       coach:
         approach: "This is a celebration. Open by recognising the worker's effort with this family in specific words (name the gain). Then ask what they think worked with this family. Listen, and reflect it back. There is nothing to correct."
         next_steps: 'Agree how the worker will keep it going: keep up the follow-up visits, help the family get vaccines on time, and support exclusive breastfeeding until 6 months.'
         limits: 'Good growth so far does not mean visits can stop. Never call the baby "out of danger" or "healthy" in general.'
+
+# What a case is called -- in the coach's briefing (`Case:`), on its picture and in the
+# case lists: the first choice whose columns are all set, else the visits' own name
+# for the case (display.entity.label_field). semantic/case_states.py `case_display_name`.
+case_name:
+  - when: [child_name, mother_name]
+    text: 'Baby {child_name} · mother {mother_name}'
+  - { when: child_name, text: 'Baby {child_name}' }
+  - { when: mother_name, text: 'Baby of {mother_name}' }
 
 # One line about a case, as a coach is told it (semantic/case_states.py `about`).
 case_about:
@@ -1034,4 +1226,60 @@ case_series:
       format: text,
       line: 'referred: {value}',
       missing: 'referred: not asked',
+    }
+  # Drawn by the case summary pictures. `brief: false`: on the picture, not in the
+  # briefing's visit lines (the danger signs and referral already are).
+  - {
+      name: feeds,
+      column: visit_feeds,
+      label: Feeds,
+      format: number,
+      line: '{value} successful feeds in the last 24 h',
+      missing: 'feeds not recorded',
+    }
+  - {
+      name: timeliness,
+      column: visit_timeliness,
+      label: Timing,
+      format: text,
+      brief: false,
+    }
+  - {
+      name: danger_check,
+      column: visit_danger_answer,
+      label: Danger sign check,
+      format: text,
+      brief: false,
+    }
+  - {
+      name: temperature,
+      column: visit_temperature,
+      label: Temperature,
+      unit: '°C',
+      format: number,
+      brief: false,
+    }
+  - {
+      name: heart_rate,
+      column: visit_heart_rate,
+      label: Heart rate,
+      unit: bpm,
+      format: number,
+      brief: false,
+    }
+  - {
+      name: breathing,
+      column: visit_breathing,
+      label: Breathing,
+      unit: /min,
+      format: number,
+      brief: false,
+    }
+  - {
+      name: spo2,
+      column: visit_spo2,
+      label: SpO2,
+      unit: '%',
+      format: number,
+      brief: false,
     }

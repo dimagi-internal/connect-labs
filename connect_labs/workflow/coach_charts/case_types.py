@@ -9,11 +9,15 @@ the case's own row and visits (``case_chart.py``):
 * ``series_vs_reference``   a series climbing above a shaded reference band from its
                             first reading, a star at the latest reading, and a badge;
 * ``series_highlight_step`` the series with one reading ringed and labelled, dashed into
-                            and out of it, and a checklist;
+                            and out of it, and a checklist beside it;
 * ``series_with_bars``      the series against the reference band, with a second series
-                            as bars underneath;
+                            as bars beside it;
 * ``sign_card``             a card: the labels a case column lists and when, why each
-                            matters, and what to do.
+                            matters, and -- beside them -- what to do.
+
+Every picture is landscape (``theme.WIDTH`` x ``theme.HEIGHT``, 3:2): Connect's messenger
+sizes the bubble to a portrait picture's narrow width (connect-labs#2413). So the parts
+of a picture sit SIDE BY SIDE, each in its own column (``LAYOUT``), under the title.
 
 Positions computed in Python ride in the data and are drawn with ``scale: null``
 (pixels). Sizes are CSS px (``theme``); no text is under ``theme.MIN_FONT_SIZE``.
@@ -23,7 +27,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from connect_labs.workflow.coach_charts import theme
+from connect_labs.workflow.coach_charts import case_summary, theme
 
 INNER = theme.WIDTH - 2 * theme.PADDING
 GREEN = theme.BAND_COLOURS["green"]
@@ -36,11 +40,30 @@ STAR = (
     "L-0.363,0.118L-0.951,-0.309L-0.2245,-0.309Z"
 )
 
-PLOT_HEIGHT = 290
-#: Room right of the last weighing for its label and the band's.
-RIGHT_ROOM = 112
+#: The body under the title and subtitle (CSS px), and the gap between side-by-side parts.
+BODY = theme.body_height(subtitle=True)
+GAP = 24
+#: The x axis's date labels under a plot.
+AXIS_ROOM = 52
 #: Room left of the first reading for the axis labels drawn inside the plot.
-LEFT_ROOM = 100
+LEFT_ROOM = 84
+
+#: Per type: the series plot's width, the room right of its last reading (for the
+#: reading's label and the band's), and each text panel's width. Widths sum to INNER
+#: with ``GAP`` between side-by-side parts.
+LAYOUT: dict[str, dict] = {
+    "series_vs_reference": {"plot": INNER, "right_room": 112, "panels": {"top": INNER}},
+    "series_highlight_step": {"plot": 256, "right_room": 34, "panels": {"side": INNER - GAP - 256}},
+    "series_with_bars": {"plot": 272, "right_room": 92, "panels": {"bars": INNER - GAP - 272}},
+    "sign_card": {"plot": INNER, "right_room": 0, "panels": {"left": 256, "right": INNER - GAP - 256}},
+}
+#: series_highlight_step: the ringed reading's label, in a row of its own over the plot.
+FLAG_SIZE = 24
+FLAG_ROW = 32
+#: series_vs_reference: the badge row above the plot.
+BADGE_ROW = 56
+#: series_with_bars: at most this many bars (the latest visits) fit beside the plot.
+MAX_BARS = 3
 
 _PX = {"type": "quantitative", "scale": None}
 
@@ -49,8 +72,15 @@ def _px(field: str) -> dict:
     return {"field": field, **_PX}
 
 
-def x_scale(max_t: float) -> dict:
-    return {"domain": [0, max(max_t, 1)], "range": [LEFT_ROOM, INNER - RIGHT_ROOM], "nice": False, "zero": False}
+def plot_range(kind: str) -> tuple[int, int]:
+    """Where the readings run, in px across the type's plot."""
+    layout = LAYOUT[kind]
+    return LEFT_ROOM, layout["plot"] - layout["right_room"]
+
+
+def x_scale(ds_meta: dict) -> dict:
+    lo, hi = plot_range(ds_meta["kind"])
+    return {"domain": [0, max(ds_meta["max_t"], 1)], "range": [lo, hi], "nice": False, "zero": False}
 
 
 def x_encoding(ds_meta: dict) -> dict:
@@ -60,7 +90,7 @@ def x_encoding(ds_meta: dict) -> dict:
         "field": "t",
         "type": "quantitative",
         "title": None,
-        "scale": x_scale(ds_meta["max_t"]),
+        "scale": x_scale(ds_meta),
         "axis": {
             "values": ds_meta["ticks"],
             "labelExpr": f"timeFormat(datetime({y}, {m - 1}, {d} + datum.value), '%-d %b')",
@@ -97,7 +127,8 @@ def y_encoding(ds_meta: dict, field: str = "w") -> dict:
     }
 
 
-def _band_layers(meta: dict) -> list[dict]:
+def _band_layers(meta: dict, *, dx: int = 8) -> list[dict]:
+    """The reference band, labelled ``dx`` px right of its end."""
     x, y = x_encoding(meta), y_encoding(meta, "lo")
     return [
         {
@@ -112,7 +143,7 @@ def _band_layers(meta: dict) -> list[dict]:
                 "type": "text",
                 "align": "left",
                 "baseline": "middle",
-                "dx": 8,
+                "dx": dx,
                 "color": GREEN,
                 "fontWeight": 600,
             },
@@ -121,7 +152,7 @@ def _band_layers(meta: dict) -> list[dict]:
         {
             "data": {"name": "case_band"},
             "transform": [{"filter": "datum.end"}],
-            "mark": {"type": "text", "align": "left", "baseline": "top", "dx": 8, "dy": 8, "color": GREEN},
+            "mark": {"type": "text", "align": "left", "baseline": "top", "dx": dx, "dy": 8, "color": GREEN},
             "encoding": {"x": x, "y": {**y, "field": "mid"}, "text": {"field": "label_2"}},
         },
     ]
@@ -166,17 +197,22 @@ def _weight_line(meta: dict, *, dashed_segments: bool = False) -> list[dict]:
     return [line, points]
 
 
-def _weight_labels(meta: dict, which: str, *, color: str = theme.INDIGO, dy: int = -24, size: int = 24) -> dict:
+def _weight_labels(
+    meta: dict, which: str, *, color: str = theme.INDIGO, dy: int = -28, size: int = 24, above: bool = False
+) -> dict:
+    """The ``which`` reading's label: right of it, or ``above`` it (where the band's
+    label needs the room to its right)."""
     x, y = x_encoding(meta), y_encoding(meta)
+    beside = which == "last" and not above
     return {
         "data": {"name": "case_series"},
         "transform": [{"filter": f"datum.{which}"}],
         "mark": {
             "type": "text",
-            "align": "left" if which == "last" else "center",
+            "align": "left" if beside else ("right" if above else "center"),
             "baseline": "middle",
-            "dx": 18 if which == "last" else 0,
-            "dy": dy if which != "last" else 0,
+            "dx": 18 if beside else (12 if above else 0),
+            "dy": 0 if beside else dy,
             "fontWeight": 700,
             "fontSize": size,
             "color": color,
@@ -185,13 +221,15 @@ def _weight_labels(meta: dict, which: str, *, color: str = theme.INDIGO, dy: int
     }
 
 
-def _text_panel(name: str, height: int) -> dict:
-    """Shapes and text from the ``name`` dataset, positioned in pixels by Labs."""
+def _text_panel(meta: dict, panel: str) -> dict:
+    """The ``panel`` part of the ``case_text`` dataset -- shapes and text positioned in
+    pixels by Labs -- as a view its panel's width and height."""
     common = {"x": _px("x"), "y": _px("y")}
     return {
-        "data": {"name": name},
-        "width": INNER,
-        "height": height,
+        "data": {"name": "case_text"},
+        "transform": [{"filter": f"datum.panel == '{panel}'"}],
+        "width": LAYOUT[meta["kind"]]["panels"][panel],
+        "height": meta["panel_height"].get(panel, 1),
         "layer": [
             {
                 "transform": [{"filter": "datum.kind == 'rect'"}],
@@ -255,6 +293,11 @@ def _title(text: str, subtitle: str | None) -> dict:
     return out
 
 
+def _body_height(meta: dict) -> int:
+    """The body's height under the title: taller when there is no subtitle (case name)."""
+    return theme.body_height(subtitle=bool(meta.get("case_name")))
+
+
 # ---------------------------------------------------------------------------
 # The types
 # ---------------------------------------------------------------------------
@@ -262,11 +305,12 @@ def _title(text: str, subtitle: str | None) -> dict:
 
 def series_vs_reference(meta: dict) -> dict:
     x, y = x_encoding(meta), y_encoding(meta)
+    top = meta["panel_height"].get("top", 1)
     plot = {
-        "width": INNER,
-        "height": PLOT_HEIGHT,
+        "width": LAYOUT["series_vs_reference"]["plot"],
+        "height": _body_height(meta) - top - 16 - AXIS_ROOM,
         "layer": [
-            *_band_layers(meta),
+            *_band_layers(meta, dx=28),
             *_weight_line(meta),
             {
                 # The milestone: a star at the latest weighing.
@@ -276,7 +320,7 @@ def series_vs_reference(meta: dict) -> dict:
                     "type": "point",
                     "shape": STAR,
                     "filled": True,
-                    "size": 2200,
+                    "size": 1800,
                     "color": MARIGOLD,
                     "stroke": "#ffffff",
                     "strokeWidth": 2,
@@ -284,22 +328,44 @@ def series_vs_reference(meta: dict) -> dict:
                 },
                 "encoding": {"x": x, "y": y},
             },
-            {**_weight_labels(meta, "last"), "mark": {**_weight_labels(meta, "last")["mark"], "dx": 30}},
+            # The latest weighing's figure above its star; the band's label is to its right.
+            _weight_labels(meta, "last", above=True, dy=-40),
         ],
     }
     return {
         "title": _title(meta["title"], meta.get("case_name")),
         "spacing": 16,
-        "vconcat": [_text_panel("case_text", meta["text_height"]), plot],
+        "vconcat": [_text_panel(meta, "top"), plot],
     }
 
 
 def series_highlight_step(meta: dict) -> dict:
     x, y = x_encoding(meta), y_encoding(meta)
-    flag_label_align = "right" if meta.get("flag_right") else "left"
+    width = LAYOUT["series_highlight_step"]["plot"]
+    # The ringed reading's question sits in its own line over the plot, centred over the
+    # ring as far as the plot allows -- never across the line or the axis labels.
+    label = {
+        "data": {"name": "case_series"},
+        "transform": [{"filter": "datum.flag_label"}],
+        "width": width,
+        "height": FLAG_ROW,
+        "mark": {
+            "type": "text",
+            "align": "center",
+            "baseline": "middle",
+            "fontWeight": 700,
+            "fontSize": FLAG_SIZE,
+            "color": SUNSET,
+        },
+        "encoding": {
+            "x": {**x, "field": "flag_lx", "axis": None},
+            "y": {"value": FLAG_ROW / 2},
+            "text": {"field": "flag_label"},
+        },
+    }
     plot = {
-        "width": INNER,
-        "height": PLOT_HEIGHT - 30,
+        "width": width,
+        "height": _body_height(meta) - AXIS_ROOM - FLAG_ROW - 8,
         "layer": [
             *_weight_line(meta, dashed_segments=True),
             {
@@ -309,66 +375,56 @@ def series_highlight_step(meta: dict) -> dict:
                 "mark": {
                     "type": "point",
                     "filled": False,
-                    "size": 2600,
+                    "size": 2000,
                     "color": SUNSET,
                     "strokeWidth": 5,
                     "opacity": 1,
                 },
                 "encoding": {"x": x, "y": y},
             },
-            {
-                "data": {"name": "case_series"},
-                "transform": [{"filter": "datum.flag_label"}],
-                "mark": {
-                    "type": "text",
-                    "align": flag_label_align,
-                    "baseline": "middle",
-                    "dx": -36 if flag_label_align == "right" else 36,
-                    "dy": meta.get("flag_dy", -10),
-                    "fontWeight": 700,
-                    "fontSize": 26,
-                    "color": SUNSET,
-                },
-                "encoding": {"x": x, "y": y, "text": {"field": "flag_label"}},
-            },
         ],
     }
     return {
         "title": _title(meta["title"], meta.get("case_name")),
-        "spacing": 20,
-        "vconcat": [plot, _text_panel("case_text", meta["text_height"])],
+        "spacing": GAP,
+        "hconcat": [{"spacing": 8, "vconcat": [label, plot]}, _text_panel(meta, "side")],
     }
 
 
 def series_with_bars(meta: dict) -> dict:
+    body = _body_height(meta)
     plot = {
-        "width": INNER,
-        "height": PLOT_HEIGHT - 50,
-        "layer": [*_band_layers(meta), *_weight_line(meta), _weight_labels(meta, "last")],
+        "width": LAYOUT["series_with_bars"]["plot"],
+        "height": body - AXIS_ROOM,
+        "layer": [*_band_layers(meta), *_weight_line(meta), _weight_labels(meta, "last", above=True)],
     }
+    head = meta["panel_height"].get("bars", 1)
+    # One bar per visit (the latest ``MAX_BARS``), in visit order, beside the plot.
     bars_x = {
         "field": "t",
+        "type": "ordinal",
+        "title": None,
+        "axis": None,
+        "scale": {"paddingInner": 0.3, "paddingOuter": 0.05},
+    }
+    bars_y = {
+        "field": "h",
         "type": "quantitative",
         "title": None,
-        "scale": x_scale(meta["max_t"]),
         "axis": None,
+        "scale": {"domain": [0, meta["skin_top"]]},
     }
     bars = {
         "data": {"name": "case_bars"},
-        "width": INNER,
-        "height": 150,
+        "width": LAYOUT["series_with_bars"]["panels"]["bars"],
+        # The bars stand on the same baseline as the plot; their dates sit where its dates do.
+        "height": body - head - 12 - AXIS_ROOM - 4,
         "layer": [
             {
-                "mark": {"type": "bar", "width": 34, "cornerRadiusTopLeft": 6, "cornerRadiusTopRight": 6},
+                "mark": {"type": "bar", "cornerRadiusTopLeft": 6, "cornerRadiusTopRight": 6},
                 "encoding": {
                     "x": bars_x,
-                    "y": {
-                        "field": "h",
-                        "type": "quantitative",
-                        "title": None,
-                        "axis": None,
-                        "scale": {"domain": [0, meta["skin_top"]]},
-                    },
+                    "y": bars_y,
                     "color": {"field": "tone", "type": "nominal", "scale": None},
                 },
             },
@@ -376,26 +432,16 @@ def series_with_bars(meta: dict) -> dict:
                 "mark": {"type": "text", "baseline": "bottom", "dy": -6, "fontWeight": 700},
                 "encoding": {
                     "x": bars_x,
-                    "y": {
-                        "field": "h",
-                        "type": "quantitative",
-                        "scale": {"domain": [0, meta["skin_top"]]},
-                        "axis": None,
-                    },
+                    "y": bars_y,
                     "text": {"field": "h_label"},
                     "color": {"field": "tone", "type": "nominal", "scale": None},
                 },
             },
             {
-                "mark": {"type": "text", "baseline": "top", "dy": 8, "color": theme.MUTED},
+                "mark": {"type": "text", "baseline": "top", "dy": 10, "color": theme.MUTED},
                 "encoding": {
                     "x": bars_x,
-                    "y": {
-                        "datum": 0,
-                        "type": "quantitative",
-                        "scale": {"domain": [0, meta["skin_top"]]},
-                        "axis": None,
-                    },
+                    "y": {k: v for k, v in bars_y.items() if k != "field"} | {"datum": 0},
                     "text": {"field": "date_label"},
                 },
             },
@@ -403,15 +449,16 @@ def series_with_bars(meta: dict) -> dict:
     }
     return {
         "title": _title(meta["title"], meta.get("case_name")),
-        "spacing": 14,
-        "vconcat": [plot, _text_panel("case_text", meta["text_height"]), bars],
+        "spacing": GAP,
+        "hconcat": [plot, {"spacing": 12, "vconcat": [_text_panel(meta, "bars"), bars]}],
     }
 
 
 def sign_card(meta: dict) -> dict:
     return {
         "title": _title(meta["title"], meta.get("case_name")),
-        "vconcat": [_text_panel("case_text", meta["text_height"])],
+        "spacing": GAP,
+        "hconcat": [_text_panel(meta, "left"), _text_panel(meta, "right")],
     }
 
 
@@ -421,4 +468,5 @@ CASE_TYPES = {
     "series_highlight_step": series_highlight_step,
     "series_with_bars": series_with_bars,
     "sign_card": sign_card,
+    "case_summary": case_summary.spec,
 }

@@ -51,6 +51,12 @@ class CohortSpec:
     # are choices — nothing about them is observable in the real opportunity, and
     # baking them into a bundle would freeze a demo decision into a measurement.
     image_config: dict | None = None
+    # Invented mother and baby names for the clones' cases, as a raw ``person_names``
+    # dict: ``paths`` (mother / child / sex: the app's questions) and
+    # ``locale_by_source`` (source opportunity id -> a pool in
+    # generator/fixtures/person_names.LOCALES), with an optional ``default_locale``.
+    # A Phase-2 CHOICE, like image_config: no real name is ever read or copied.
+    person_names: dict | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> CohortSpec:
@@ -67,6 +73,7 @@ class CohortSpec:
             curate=bool(data.get("curate", False)),
             mirror=bool(data.get("case_timelines", False) or data.get("mirror", False)),
             image_config=data.get("image_config") or None,
+            person_names=data.get("person_names") or None,
         )
 
     @classmethod
@@ -88,6 +95,7 @@ class CohortSpec:
                 "curate": self.curate,
                 "case_timelines": self.mirror,
                 **({"image_config": self.image_config} if self.image_config else {}),
+                **({"person_names": self.person_names} if self.person_names else {}),
                 "opportunity_ids": self.opportunity_ids,
             },
             sort_keys=False,

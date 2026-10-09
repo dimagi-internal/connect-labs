@@ -23,10 +23,14 @@ as of its week), and its ``case_state:`` meta says how to present it:
           picture: {type: series_highlight_step, series: weight, ...}
           coach: {approach: '...', next_steps: '...', limits: '...'}
 
-a registry may say what one line about a case reads (``about``, below), and the
-per-visit series a case is read with:
+a registry may say what one line about a case reads (``about``, below), what the case
+is called (``case_name``: the first choice whose columns are all set; when none is,
+the case's label field), and the per-visit series a case is read with:
 
     case_about: 'Birth weight {birth_weight_g|grams} g; registered {reg_date|day}; ...'
+    case_name:
+      - {when: [child_name, mother_name], text: 'Baby {child_name} · mother {mother_name}'}
+      - {when: mother_name, text: 'Baby of {mother_name}'}
 
 
     case_series:
@@ -60,15 +64,54 @@ PICTURE_TYPES: dict[str, frozenset[str]] = {
     "series_with_bars": frozenset({"series", "title", "reference", "bars", "bars_title"}),
     # A card: the labels a case column lists, why each matters, and what to do.
     "sign_card": frozenset({"title", "badge", "date", "signs", "sign_text", "why", "actions_title", "actions"}),
+    # An EMR-style case summary: a banner of facts about the case under the title, and
+    # up to four panels in a 2x2 grid, each a kind from PANEL_KINDS.
+    "case_summary": frozenset({"title", "banner", "panels"}),
 }
 
+#: The panels a ``case_summary`` picture may hold, and the keys each takes.
+PANEL_KINDS: dict[str, frozenset[str]] = {
+    # One case_series as a line: optionally against a reference band from its first
+    # reading, a floor (a danger line), a ringed step, a star at the latest reading.
+    "series": frozenset({"series", "title", "reference", "floor", "highlight", "star", "note"}),
+    # One case_series as bars, one per visit (the latest few).
+    "bars": frozenset({"series", "title", "last"}),
+    # The visits as a timeline: on time or late, the danger-sign check, a referral, the
+    # next visit's window (overdue when its column says so) and the last visit's vitals.
+    "visits": frozenset(
+        {
+            "title",
+            "timeliness",
+            "on_time",
+            "danger",
+            "danger_yes",
+            "referred",
+            "referred_yes",
+            "due_from",
+            "due_to",
+            "overdue_days",
+            "vitals",
+        }
+    ),
+    # A titled numbered list: a checklist, what to do, next steps.
+    "list": frozenset({"title", "items", "tone"}),
+    # The labels a case column lists and when, and why each matters.
+    "signs": frozenset({"title", "badge", "date", "signs", "sign_text"}),
+    # A badge and a few lines worded from the case: milestones, a summary.
+    "facts": frozenset({"title", "badge", "lines"}),
+}
+PANEL_TONES = ("indigo", "sunset", "green")
+
 COACH_KEYS = ("approach", "next_steps", "limits")
+#: How many chips a case_summary banner may hold, and panels it may hold.
+MAX_BANNER = 8
+MAX_PANELS = 4
 CASE_STATE_KEYS = frozenset({"tone", "priority", "date", "evidence", "facts", "picture", "coach"})
 SERIES_FORMATS = ("number", "grams", "hours", "text")
 
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 _PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)((?:\|[a-z0-9]+)*)\}")
-FILTERS = ("int", "1dp", "abs", "signed", "date", "day", "days", "grams")
+FILTERS = ("int", "1dp", "abs", "signed", "date", "day", "days", "grams", "words", "list")
 
 
 def _text_problem(value: Any, label: str, limit: int) -> list[str]:
@@ -90,8 +133,12 @@ def _template_problems(text: Any, label: str, columns: frozenset[str] | None, li
                 problems.append(f"{where}: must be a mapping of when and text")
                 continue
             when = choice.get("when")
-            if when is not None and (columns is not None and when not in columns):
-                problems.append(f"{where}.when: {when!r} is not a column of this registry")
+            names = when if isinstance(when, list) else [when] if when is not None else []
+            if isinstance(when, list) and not 1 <= len(when) <= 4:
+                problems.append(f"{where}.when: must name 1 to 4 columns")
+            for name in names:
+                if columns is not None and name not in columns:
+                    problems.append(f"{where}.when: {name!r} is not a column of this registry")
             problems += _template_problems(choice.get("text"), f"{where}.text", columns, limit)
         return problems
     problems = _text_problem(text, label, limit)
@@ -118,6 +165,8 @@ def _picture_problems(pic: Any, label: str, columns: frozenset[str], series: set
         return [f"{label}: must be a mapping whose type is one of {', '.join(PICTURE_TYPES)}"]
     allowed = PICTURE_TYPES[pic["type"]] | {"type"}
     problems = [f"{label}.{k}: not a key of a {pic['type']} picture" for k in pic if k not in allowed]
+    if pic["type"] == "case_summary":
+        return problems + _summary_problems(pic, label, columns, series)
     for key in ("series",):
         if key in pic and pic[key] not in series:
             problems.append(f"{label}.{key}: {pic[key]!r} is not one of this registry's case_series")
@@ -157,17 +206,147 @@ def _picture_problems(pic: Any, label: str, columns: frozenset[str], series: set
     for key in ("date", "signs"):
         if key in pic and pic[key] not in columns:
             problems.append(f"{label}.{key}: must name a column of this registry")
-    st = pic.get("sign_text")
-    if st is not None:
-        if not isinstance(st, dict) or len(st) > 40:
-            problems.append(f"{label}.sign_text: must map up to 40 labels to {{title, why}}")
-        else:
-            for k, v in st.items():
-                if not isinstance(v, dict):
-                    problems.append(f"{label}.sign_text.{k}: must be a mapping of title and why")
-                    continue
-                problems += _text_problem(v.get("title"), f"{label}.sign_text.{k}.title", 60)
-                problems += _text_problem(v.get("why"), f"{label}.sign_text.{k}.why", 200)
+    problems += _sign_text_problems(pic.get("sign_text"), f"{label}.sign_text")
+    return problems
+
+
+def _reference_problems(ref: Any, label: str) -> list[str]:
+    if not isinstance(ref, dict):
+        return [f"{label}: must be a mapping of low, high (per 1000 per day) and label"]
+    problems = []
+    for k in ("low", "high"):
+        v = ref.get(k)
+        if not isinstance(v, (int, float)) or isinstance(v, bool) or not 0 <= v <= 1000:
+            problems.append(f"{label}.{k}: must be a number from 0 to 1000")
+    return problems + _text_problem(ref.get("label"), f"{label}.label", 40)
+
+
+def _number(v: Any) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _summary_problems(pic: dict, label: str, columns: frozenset[str], series: set[str]) -> list[str]:
+    """A ``case_summary`` picture: its title, banner chips and panels."""
+    problems = _template_problems(pic.get("title"), f"{label}.title", columns, 300)
+    banner = pic.get("banner", [])
+    if not isinstance(banner, list) or len(banner) > MAX_BANNER:
+        problems.append(f"{label}.banner: must list up to {MAX_BANNER} chips")
+    else:
+        for i, chip in enumerate(banner):
+            problems += _template_problems(chip, f"{label}.banner[{i}]", columns, 80)
+    panels = pic.get("panels")
+    if not isinstance(panels, list) or not 1 <= len(panels) <= MAX_PANELS:
+        return problems + [f"{label}.panels: must list 1 to {MAX_PANELS} panels"]
+
+    def series_key(panel: dict, key: str, where: str, required: bool = True) -> list[str]:
+        if key not in panel:
+            return [f"{where}.{key}: required"] if required else []
+        if panel[key] not in series:
+            return [f"{where}.{key}: {panel[key]!r} is not one of this registry's case_series"]
+        return []
+
+    def column_key(panel: dict, key: str, where: str) -> list[str]:
+        if key in panel and panel[key] not in columns:
+            return [f"{where}.{key}: must name a column of this registry"]
+        return []
+
+    for i, panel in enumerate(panels):
+        where = f"{label}.panels[{i}]"
+        if not isinstance(panel, dict) or panel.get("kind") not in PANEL_KINDS:
+            problems.append(f"{where}: must be a mapping whose kind is one of {', '.join(PANEL_KINDS)}")
+            continue
+        kind = panel["kind"]
+        problems += [
+            f"{where}.{k}: not a key of a {kind} panel" for k in panel if k not in PANEL_KINDS[kind] | {"kind"}
+        ]
+        problems += _template_problems(panel.get("title"), f"{where}.title", columns, 60)
+        if kind == "series":
+            problems += series_key(panel, "series", where)
+            if "reference" in panel:
+                problems += _reference_problems(panel["reference"], f"{where}.reference")
+            floor = panel.get("floor")
+            if floor is not None and (not isinstance(floor, dict) or not _number(floor.get("value"))):
+                problems.append(f"{where}.floor: must be a mapping of value (a number) and label")
+            elif floor is not None:
+                problems += _text_problem(floor.get("label"), f"{where}.floor.label", 40)
+            hl = panel.get("highlight")
+            if hl is not None:
+                if not isinstance(hl, dict):
+                    problems.append(f"{where}.highlight: must be a mapping of from, to and label")
+                else:
+                    problems += column_key(hl, "from", f"{where}.highlight") + column_key(
+                        hl, "to", f"{where}.highlight"
+                    )
+                    problems += _template_problems(hl.get("label"), f"{where}.highlight.label", columns, 60)
+            if "star" in panel and not isinstance(panel["star"], bool):
+                problems.append(f"{where}.star: must be true or false")
+            if "note" in panel:
+                problems += _template_problems(panel["note"], f"{where}.note", columns, 80)
+        elif kind == "bars":
+            problems += series_key(panel, "series", where)
+            last = panel.get("last", 3)
+            if not isinstance(last, int) or isinstance(last, bool) or not 1 <= last <= 6:
+                problems.append(f"{where}.last: must be a whole number from 1 to 6")
+        elif kind == "visits":
+            for key in ("timeliness", "danger", "referred"):
+                problems += series_key(panel, key, where, required=False)
+            for key in ("due_from", "due_to", "overdue_days"):
+                problems += column_key(panel, key, where)
+            for key in ("on_time", "danger_yes", "referred_yes"):
+                if key in panel:
+                    problems += _text_problem(panel[key], f"{where}.{key}", 40)
+            vitals = panel.get("vitals", [])
+            if not isinstance(vitals, list) or len(vitals) > 4:
+                problems.append(f"{where}.vitals: must list up to 4 readings")
+            else:
+                for j, v in enumerate(vitals):
+                    w = f"{where}.vitals[{j}]"
+                    if not isinstance(v, dict):
+                        problems.append(f"{w}: must be a mapping of series, label, low and high")
+                        continue
+                    problems += series_key(v, "series", w)
+                    problems += _text_problem(v.get("label"), f"{w}.label", 12)
+                    problems += [f"{w}.{k}: must be a number" for k in ("low", "high") if k in v and not _number(v[k])]
+        elif kind == "list":
+            items = panel.get("items")
+            if not isinstance(items, list) or not 1 <= len(items) <= 6:
+                problems.append(f"{where}.items: must list 1 to 6 steps")
+            else:
+                for j, item in enumerate(items):
+                    problems += _template_problems(item, f"{where}.items[{j}]", columns, 120)
+            if panel.get("tone", "indigo") not in PANEL_TONES:
+                problems.append(f"{where}.tone: must be one of {', '.join(PANEL_TONES)}")
+        elif kind == "signs":
+            problems += column_key(panel, "date", where) + column_key(panel, "signs", where)
+            if "signs" not in panel:
+                problems.append(f"{where}.signs: required")
+            if "badge" in panel:
+                problems += _template_problems(panel["badge"], f"{where}.badge", columns, 40)
+            problems += _sign_text_problems(panel.get("sign_text"), f"{where}.sign_text")
+        elif kind == "facts":
+            if "badge" in panel:
+                problems += _template_problems(panel["badge"], f"{where}.badge", columns, 40)
+            lines = panel.get("lines")
+            if not isinstance(lines, list) or not 1 <= len(lines) <= 5:
+                problems.append(f"{where}.lines: must list 1 to 5 lines")
+            else:
+                for j, line in enumerate(lines):
+                    problems += _template_problems(line, f"{where}.lines[{j}]", columns, 120)
+    return problems
+
+
+def _sign_text_problems(st: Any, label: str) -> list[str]:
+    if st is None:
+        return []
+    if not isinstance(st, dict) or len(st) > 40:
+        return [f"{label}: must map up to 40 labels to {{title, why}}"]
+    problems = []
+    for k, v in st.items():
+        if not isinstance(v, dict):
+            problems.append(f"{label}.{k}: must be a mapping of title and why")
+            continue
+        problems += _text_problem(v.get("title"), f"{label}.{k}.title", 60)
+        problems += _text_problem(v.get("why"), f"{label}.{k}.why", 200)
     return problems
 
 
@@ -177,6 +356,8 @@ def case_state_problems(props_doc: dict[str, Any], columns: frozenset[str]) -> l
     problems: list[str] = []
     if props_doc.get("case_about") is not None:
         problems += _template_problems(props_doc["case_about"], "case_about", columns, 300)
+    if props_doc.get("case_name") is not None:
+        problems += _template_problems(props_doc["case_name"], "case_name", columns, 120)
     series = series_names(props_doc)
     priorities: dict[int, str] = {}
     for p in _properties(props_doc):
@@ -267,6 +448,8 @@ def case_series_problems(props_doc: dict[str, Any]) -> list[str]:
         for k in ("missing", "unit", "empty"):
             if k in s:
                 problems += _text_problem(s[k], f"{label}.{k}", 80)
+        if "brief" in s and not isinstance(s["brief"], bool):
+            problems.append(f"{label}.brief: must be true or false (false: drawn, not in the briefing's visit lines)")
     return problems
 
 
@@ -305,7 +488,7 @@ def catalog(props_doc: dict[str, Any]) -> list[dict]:
 def case_fields(props_doc: dict[str, Any]) -> dict[str, str]:
     """``{output: column}`` a case index needs to carry every state: each state, its
     date and its evidence (the picture's and facts' columns too), under their own names."""
-    names: list[str] = _template_columns(props_doc.get("case_about"))
+    names: list[str] = _template_columns(props_doc.get("case_about")) + _template_columns(props_doc.get("case_name"))
     for s in catalog(props_doc):
         names.append(s["name"])
         if s["date"]:
@@ -315,6 +498,12 @@ def case_fields(props_doc: dict[str, Any]) -> dict[str, str]:
         names += [c for c in (pic.get("date"), pic.get("signs")) if c]
         hl = pic.get("highlight") or {}
         names += [c for c in (hl.get("from"), hl.get("to")) if c]
+        for panel in pic.get("panels") or []:
+            if not isinstance(panel, dict):
+                continue
+            names += [c for c in (panel.get(k) for k in ("date", "signs", "due_from", "due_to", "overdue_days")) if c]
+            phl = panel.get("highlight") or {}
+            names += [c for c in (phl.get("from"), phl.get("to")) if c]
         texts = [s["facts"], *_picture_texts(s)]
         names += [c for t in texts for c in _template_columns(t)]
     return {n: n for n in dict.fromkeys(names)}
@@ -325,8 +514,11 @@ def _template_columns(text: Any) -> list[str]:
         out = []
         for choice in text:
             if isinstance(choice, dict):
-                out += [choice["when"]] if choice.get("when") else []
+                when = choice.get("when")
+                out += list(when) if isinstance(when, list) else [when] if when else []
                 out += _template_columns(choice.get("text"))
+            else:
+                out += _template_columns(choice)
         return out
     return [m.group(1) for m in _PLACEHOLDER.finditer(text or "")] if isinstance(text, str) else []
 
@@ -337,6 +529,14 @@ def _picture_texts(state: dict) -> list:
     hl = pic.get("highlight") or {}
     if hl.get("label"):
         texts.append(hl["label"])
+    texts += list(pic.get("banner") or [])
+    for panel in pic.get("panels") or []:
+        if not isinstance(panel, dict):
+            continue
+        texts += [panel[k] for k in ("title", "badge", "note") if panel.get(k)]
+        texts += list(panel.get("items") or []) + list(panel.get("lines") or [])
+        if (panel.get("highlight") or {}).get("label"):
+            texts.append(panel["highlight"]["label"])
     return texts
 
 
@@ -399,6 +599,12 @@ def format_value(value: Any, filters: list[str]) -> str:
     """A value as a sentence words it, through ``filters``; ``not recorded`` when absent."""
     if value is None or value == "":
         return "not recorded"
+    if "words" in filters or "list" in filters:
+        # A choice value as words: `Direct_breastfeed` -> `Direct breastfeed`; and for
+        # a multi-select (`list`), `mother father` -> `mother & father`.
+        words = str(value).replace("_", " ").split() if "list" in filters else [str(value).replace("_", " ")]
+        words = [w.strip() for w in words if w.strip()]
+        return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " & " + words[-1]
     for f in filters:
         if f in ("date", "day"):
             d = _as_date(value)
@@ -433,7 +639,11 @@ def choose(template: Any, case: dict) -> str:
     whose ``when`` column is set on the case (a choice with no ``when`` always is)."""
     if isinstance(template, list):
         for choice in template:
-            if isinstance(choice, dict) and (not choice.get("when") or _is_set(case.get(choice["when"]))):
+            if not isinstance(choice, dict):
+                continue
+            when = choice.get("when")
+            names = when if isinstance(when, list) else [when] if when else []
+            if all(_is_set(case.get(n)) for n in names):
                 return str(choice.get("text") or "")
         return ""
     return template or ""
@@ -453,6 +663,22 @@ def fill(template: Any, case: dict) -> str:
         return format_value(case.get(m.group(1)), [f for f in m.group(2).split("|") if f])
 
     return _PLACEHOLDER.sub(repl, choose(template, case))
+
+
+def fill_if_set(template: Any, case: dict) -> str | None:
+    """``fill``, or None when the chosen text names a column the case has no value for
+    -- a banner chip or a line is left out rather than reading "not recorded"."""
+    text = choose(template, case)
+    if not text or any(not _is_set(case.get(m.group(1))) for m in _PLACEHOLDER.finditer(text)):
+        return None
+    return fill(text, case).strip() or None
+
+
+def case_display_name(props_doc: dict[str, Any], case: dict, fallback: str | None = None) -> str | None:
+    """What the case is called: the registry's ``case_name`` (the first choice whose
+    columns are all set), else ``fallback`` (the case's label field)."""
+    named = fill_if_set(props_doc.get("case_name"), case) if props_doc.get("case_name") else None
+    return named or fallback
 
 
 def about(props_doc: dict[str, Any], case: dict) -> str:
@@ -490,9 +716,12 @@ def series_value(spec: dict, value: Any) -> str | None:
 
 
 def visit_line(series: list[dict], visit: dict) -> str:
-    """``- 17 May 2026: weight 1,350 g; ...`` -- one visit, every series in order."""
+    """``- 17 May 2026: weight 1,350 g; ...`` -- one visit, every series in order
+    (but those marked ``brief: false``, which are drawn and not told)."""
     parts = []
     for s in series:
+        if s.get("brief") is False:
+            continue
         shown = series_value(s, visit.get(s["name"]))
         if shown is None:
             parts.append(s.get("missing") or f"{s['label'].lower()} not recorded")
