@@ -77,6 +77,28 @@ This means each workflow appears in exactly one place. If you cannot find a work
 
 ---
 
+## Coaching Workers from a Run Page
+
+When you ask the canopy agent to coach a field worker from a Labs run page, the agent can show a **coaching card** directly in the chat. The card displays:
+
+- The worker's name
+- The topics the coach will raise
+- The first message the worker will receive
+- A picture of the worker's figures
+
+The card has three buttons:
+
+| Button | What it does |
+|---|---|
+| **Send to \<worker\>** | Sends the coaching message to the field worker |
+| **Send to me (QA test)** | Sends a test copy to yourself to check how it looks (Dimagi staff only — you will be asked for your PersonalID username) |
+| **Not yet** | Dismisses the card without sending anything |
+
+!!! note "You decide when coaching is sent — the agent never sends it automatically"
+    Sending a coaching message is always your action, triggered by clicking one of the buttons on the card. The agent will show you the briefing and tell you where to click — either **Send** on the card in canopy, or **Start coaching** on the Labs run page itself — but it will never send on your behalf. If you prefer to act from the run page rather than the chat, the **Start coaching** button there works exactly as it always has.
+
+---
+
 ## Pipeline Data Sources
 
 Pipelines can pull data from CommCare form submissions or from external files such as Google Drive exports. The two source types work differently and have different access rules.
@@ -216,20 +238,4 @@ Rows where more than one field worker submitted a matching registration are clea
 
 ### MUAC/Age Plausibility Report
 
-The **MUAC/Age Plausibility** report is available for CHC programmes (currently built for Program 217, CHC - NG - RCT). It shows what share of approved MUAC readings are implausible for the child's age, broken down by LLO, ward, and field worker (FLW). Every percentage shows its numerator and denominator so you always know the basis for each figure.
-
-The report refreshes on a schedule (daily is recommended) rather than on page load.
-
-#### What counts as implausible
-
-A reading is flagged as implausible — and counted in the headline percentage — if it is below 9 cm, or above an age-banded ceiling. The ceilings range from 17.5 cm to 21 cm, with a higher ceiling for girls aged 48–59 months. These readings are near-certain data entry errors.
-
-The following are tracked separately and are never added to the implausible headline:
-
-- Readings below the WHO −2SD threshold (possible genuine malnutrition rather than an error)
-- Apparent millimetre/centimetre mix-ups — for example, 145 entered where 14.5 was meant
-- Records with no age recorded or no MUAC recorded
-
-#### Colour coding
-
-Colours are driven by the same one-sided 95% statistical test used by the audit indicators, so a field worker with only a handful of readings is not flagged red simply by chance. Units with fewer than 20 readings are shown in grey. A fixed-percentage colour scheme
+The **MUAC/Age Plausibility** report is available for CHC programmes (currently built for Program 217, CHC - NG - RCT). It shows what share of approved MUAC readings are

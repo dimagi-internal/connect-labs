@@ -191,6 +191,28 @@ This means you can ask Claude questions like "show me hospital vs home births br
 
 ---
 
+## Coaching Workers from a Run Page
+
+When you ask the canopy agent to coach a worker from a Labs run page, the agent can show you a coaching card directly in the chat. The card displays:
+
+- the worker's name
+- the topics the coach will raise
+- the first message the worker will receive
+- a picture of their figures
+
+The card has up to three buttons:
+
+| Button | What it does |
+| --- | --- |
+| **Send to &lt;worker&gt;** | Sends the coaching message to the worker |
+| **Send to me (QA test)** | Sends the message to your own account so you can check how it looks (Dimagi staff only; you will be asked for your PersonalID username) |
+| **Not yet** | Dismisses the card without sending anything |
+
+!!! note "You decide when to send — the agent never sends on your behalf"
+    A coaching send always requires your click on one of the buttons. The agent shows you the briefing and tells you where to click; it does not send the message itself. The **Start coaching** button on the Labs run page works the same way and is unchanged. Other action types (such as creating a task) use a separate confirm flow where the agent asks for your approval before acting.
+
+---
+
 ## Targeting: Nigerian State Cost-Effectiveness Rankings
 
 On the Targeting page, the agent can answer questions like "of these Nigerian states, which state and which malaria chemoprevention design is most cost-effective at my delivery costs? Rank the top 10."
@@ -218,25 +240,4 @@ For a one-off "what if" question about a single state, the agent runs the scenar
 ## Pipeline Export Names
 
 !!! note "Change for all callers"
-    When naming a pipeline export, the name must now be a **single plain word** — no spaces, punctuation, or special characters. This applies to both the full-access and restricted addresses.
-
----
-
-## Pipeline Reads of Open Chat Studio
-
-When a pipeline reads Open Chat Studio (OCS) chat sessions, it now uses **your own OCS connection** rather than a shared server key. This means the pipeline sees exactly the sessions you can see when you log in to OCS directly — no more and no less.
-
-If you have not connected OCS to your Labs account yet, the pipeline will tell you to connect at [labs.connect.dimagi.com/labs/ocs/initiate/](https://labs.connect.dimagi.com/labs/ocs/initiate/) before it can read your sessions.
-
-!!! note "Web dashboards are unchanged"
-    This change affects only pipelines run through MCP. Web dashboards that read OCS data continue to work as before.
-
----
-
-## Drive-Backed Pipelines
-
-Workflows that read data from Google Drive have received several improvements to speed, memory use, and correctness.
-
-### Shared reads across pipelines
-
-If a workflow page has several pipelines that all point at the same Drive source (same folder or file, file pattern, null markers, username column, and date column), Labs now reads that source **once** and shares the result between them. Previously each pipeline fetched its own
+    When naming a pipeline export, the name must now be a **single plain word** — no spaces, punctuation, or special characters. This
