@@ -450,6 +450,8 @@ TEMPLATE_GROUP_OF: dict[str, str] = {
     "photo_audit_report": "reports",
     # Stock in field workers' hands across opportunities (supply sources).
     "supply_stock_review": "reports",
+    # Where that stock is heading: children in treatment and to come, against it.
+    "supply_stock_forecast": "reports",
     # Automatic reports: run themselves on a schedule, no statuses.
     "flw_weekly_audit_report": "automatic",
     "flw_daily_indicator_report": "automatic",

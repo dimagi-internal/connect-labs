@@ -297,6 +297,21 @@ def test_the_query_endpoint_takes_as_of_from_its_url_when_the_body_has_none(sign
     assert [d.isoformat() for d in seen] == ["2026-09-01", "2026-08-01"]
 
 
+def test_the_forecast_template_declares_one_valid_forecast_source():
+    from connect_labs.workflow.templates import TEMPLATES
+
+    template = TEMPLATES["supply_stock_forecast"]
+    sources = template["definition"]["supply_sources"]
+    assert template["multi_opp"] is True
+    assert supply_sources.declaration_problems(sources) == []
+    assert [(s["alias"], s["source"]) for s in sources] == [("forecast", "stock_forecast")]
+    # The render asks for a new scenario through the one argument the source takes, on the page's own day.
+    render = template["render_code"]
+    assert "querySupply('forecast', {" in render
+    assert "args: { scenario: value }" in render
+    assert "as_of: f.as_of || undefined" in render
+
+
 def test_the_stock_review_template_declares_valid_sources():
     from connect_labs.workflow.templates import TEMPLATES
 
