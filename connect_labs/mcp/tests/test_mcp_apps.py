@@ -365,3 +365,11 @@ def test_the_view_asks_for_open_chat_studio_before_anything_else():
     script = _view().script
     assert "p.ocs.connected === false" in script and "renderConnectFirst(p)" in script
     assert "Connect Open Chat Studio first" in script
+
+
+def test_a_send_tells_the_agent_to_confirm_not_to_look_it_up():
+    """Live 2026-10-09: woken with 'follow it with workflow_action_status', the agent looked
+    up a run made under the viewer's account, could not see it, and wrote paragraphs."""
+    script = _view().script
+    assert "follow it with workflow_action_status" not in script
+    assert "do not look it up" in script and "one short line" in script
