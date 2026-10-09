@@ -207,6 +207,19 @@ def _pinned(request) -> list:
     return pins
 
 
+def scoped_url(request, name: str, args=None, program_id=None) -> str:
+    """`reverse(name)` naming the programme in view (or `program_id`), as `?program_id=`.
+
+    A supply link names its programme rather than trusting the session to still
+    hold it: switching programme in another browser tab, or opening any page that
+    names only an opportunity, replaced the session's programme and the next click
+    on an open supply page landed somewhere else -- or, for a pinned tab, on a 404.
+    """
+    url = reverse(name, args=args)
+    program_id = program_id or (getattr(request, "labs_context", None) or {}).get("program_id")
+    return f"{url}?program_id={program_id}" if program_id else url
+
+
 def pinned_replacement(request, tab_name: str) -> dict | None:
     """The pinned workflow standing in for built-in tab `tab_name`, as {url, label}, or None.
 
@@ -215,7 +228,8 @@ def pinned_replacement(request, tab_name: str) -> dict | None:
     """
     for pin in _pinned(request):
         if pin.replaces == tab_name:
-            return {"url": reverse("supply_chain:workflow_view", args=[pin.slug]), "label": pin.label}
+            url = scoped_url(request, "supply_chain:workflow_view", [pin.slug], pin.program_id)
+            return {"url": url, "label": pin.label}
     return None
 
 
@@ -229,7 +243,7 @@ def supply_tabs(request) -> list[dict]:
 
     def pin_tab(pin, also_active=False):
         return {
-            "url": reverse("supply_chain:workflow_view", args=[pin.slug]),
+            "url": scoped_url(request, "supply_chain:workflow_view", [pin.slug], pin.program_id),
             "label": pin.label,
             "active": current_slug == pin.slug or also_active,
         }
@@ -241,7 +255,7 @@ def supply_tabs(request) -> list[dict]:
             # The pinned workflow stands in for this tab; its own page ("classic view") still counts as here.
             tabs.append(pin_tab(pin, also_active=current == name))
         else:
-            tabs.append({"url": reverse(name), "label": label, "active": name == current})
+            tabs.append({"url": scoped_url(request, name), "label": label, "active": name == current})
         if name == "supply_chain:flow":
             # Pins that ADD a tab sit with the stock pages.
             tabs.extend(pin_tab(p) for p in pins if not p.replaces)

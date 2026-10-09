@@ -416,7 +416,46 @@ def labs_org_data_context(request):
 # Extend this list only for paths that (a) are fetched by a browser as a
 # sub-resource rather than navigated to, and (b) already carry their scope or do
 # not need it. A page a human can land on belongs in the redirect.
-REDIRECT_EXEMPT_PREFIXES = ("/audit/image/",)
+#
+# ``/supply/api/`` is the supply pages' own operation endpoint, fetched by their
+# scripts: it reads its programme from the session's context like any request, and
+# a redirect would only add a round trip to every read.
+REDIRECT_EXEMPT_PREFIXES = ("/audit/image/", "/supply/api/")
+
+# Apps scoped by programme alone, where an opportunity in view implies its
+# programme. Supply's records belong to a programme and an opportunity only narrows
+# them, so a URL (or a session) naming just the opportunity -- left by any
+# opportunity page -- showed no programme at all, and every pinned supply tab 404'd.
+# It is NOT done everywhere: the LabsRecord API AND-filters every scope it is given,
+# so adding a programme to an opportunity page's context would hide that
+# opportunity's own records (see WorkflowDataAccess).
+PROGRAMME_FROM_OPPORTUNITY_PREFIXES = ("/supply/",)
+
+
+def _with_opportunitys_programme(request: HttpRequest, context: dict) -> dict:
+    """The context, plus the programme of the opportunity in it when none is named.
+
+    The programme is read from the cached org data (Connect's opportunities and the
+    synthetic ones both carry ``program``), else from Pulse's register of every
+    visible opportunity. It is validated like any programme, so a labs-only
+    programme stays behind its access check.
+    """
+    if context.get("program_id") or not context.get("opportunity_id"):
+        return context
+    program_id = (context.get("opportunity") or {}).get("program")
+    if not program_id:
+        from connect_labs.pulse.models import PulseOpportunity
+
+        program_id = (
+            PulseOpportunity.objects.filter(opportunity_id=context["opportunity_id"])
+            .values_list("program_id", flat=True)
+            .first()
+        )
+    try:
+        program_id = int(program_id)
+    except (TypeError, ValueError):
+        return context
+    return {**context, **validate_context_access(request, {"program_id": program_id})}
 
 
 def _redirect_is_pointless(path: str) -> bool:
@@ -461,6 +500,9 @@ class LabsContextMiddleware(MiddlewareMixin):
                 "/coverage/",
                 "/custom_analysis/",
                 "/funder/",
+                # Programme-scoped: a bare supply URL picks up the session's programme
+                # and shows it, so the links a supply page offers name their scope.
+                "/supply/",
             ]
             is_whitelisted = any(path.startswith(prefix) for prefix in whitelisted_prefixes)
 
@@ -495,6 +537,8 @@ class LabsContextMiddleware(MiddlewareMixin):
                     )
                     return HttpResponseRedirect(clean_url)
             else:
+                if request.path.startswith(PROGRAMME_FROM_OPPORTUNITY_PREFIXES):
+                    validated_context = _with_opportunitys_programme(request, validated_context)
                 request.labs_context = validated_context
 
                 # Update session with current context from URL
