@@ -13,9 +13,12 @@ def slugify(value: str) -> str:
     return "".join(c if c.isalnum() else "-" for c in (value or "").strip().lower()).strip("-") or "labs"
 
 
+SYNTHETIC_ORG_PREFIX = "labs-synthetic-"
+
+
 def synthetic_org_slug(opp) -> str:
     """Stable org slug for a synthetic opp: ``labs-synthetic-<slugified org name>``."""
-    return f"labs-synthetic-{slugify(opp.org_name or 'Labs Synthetic')}"
+    return f"{SYNTHETIC_ORG_PREFIX}{slugify(opp.org_name or 'Labs Synthetic')}"
 
 
 def synthetic_program_id(opp) -> int:

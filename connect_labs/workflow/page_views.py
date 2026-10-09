@@ -28,7 +28,7 @@ from django.views.generic import TemplateView
 from connect_labs.labs.access.scopes import Caller
 from connect_labs.labs.context import get_org_data, save_context_to_session
 from connect_labs.scope_config import service
-from connect_labs.scope_config.scopes import Scope, organization_entry
+from connect_labs.scope_config.scopes import Scope
 from connect_labs.workflow.page_mode import is_page
 from connect_labs.workflow.views import WorkflowRunView
 
@@ -51,19 +51,46 @@ def _scope(kwargs) -> Scope:
 
 
 def _owner_context(request, owner: dict) -> dict | None:
-    """The labs context to read a definition owned by `owner` in, or None if it cannot be."""
+    """The labs context to read a definition owned by `owner` in, or None if the viewer may not.
+
+    The owner comes from Settings or a page's address, which someone else wrote, so it
+    is validated exactly as the middleware validates a context named in a URL
+    (`validate_context_access`): a labs-only scope the viewer cannot use is refused
+    here, and a real one is passed on for Connect to enforce on the read. An
+    organisation is named by slug and read by its Connect id; a labs-only
+    organisation has none, so it owns no records.
+    """
+    from connect_labs.labs.context import validate_context_access
+
     if owner.get("opportunity_id"):
-        return {"opportunity_id": int(owner["opportunity_id"])}
-    if owner.get("program_id"):
-        return {"program_id": int(owner["program_id"])}
-    org = owner.get("organization_id")
-    if org not in (None, ""):
-        if str(org).isdigit():
-            return {"organization_id": int(org)}
-        entry = organization_entry(get_org_data(request) or {}, org) or {}
-        if isinstance(entry.get("id"), int):
-            return {"organization_id": entry["id"], "organization_slug": org}
-    return None
+        wanted = {"opportunity_id": int(owner["opportunity_id"])}
+    elif owner.get("program_id"):
+        wanted = {"program_id": int(owner["program_id"])}
+    elif owner.get("organization_id") not in (None, "") and not str(owner["organization_id"]).isdigit():
+        wanted = {"organization_id": str(owner["organization_id"])}
+    else:
+        return None
+    validated = validate_context_access(request, wanted)
+    key = next(iter(wanted))
+    if key == "organization_id":
+        if not isinstance(validated.get("organization_id"), int):
+            return None
+        return {"organization_id": validated["organization_id"], "organization_slug": wanted[key]}
+    if validated.get(key) != wanted[key]:
+        return None
+    return {key: wanted[key]}
+
+
+def resolve_home(request, scope: Scope):
+    """(definition_id, owner, owner context) for `scope`'s home page, or None if it has none it can open."""
+    home = (service.resolved_for_request(request, "labs", scope).get("home") or {}).get("fill")
+    if not home:
+        return None
+    owner = {k: home[k] for k in ("organization_id", "program_id", "opportunity_id") if home.get(k)}
+    context = _owner_context(request, owner)
+    if context is None:
+        return None
+    return int(home["workflow"]), owner, context
 
 
 def _scope_owner(scope: Scope, request) -> dict:
@@ -115,6 +142,8 @@ class PageView(WorkflowRunView):
                 )
             definition_id = int(home["workflow"])
             owner = {k: home[k] for k in ("organization_id", "program_id", "opportunity_id") if home.get(k)}
+        # The owner is validated before anything is read in it: a 404 for a scope the
+        # viewer may not use, the same as naming that scope in a URL would give.
         context = _owner_context(request, owner)
         if context is None:
             raise Http404("this page's owner cannot be read here")
@@ -139,7 +168,8 @@ class PageView(WorkflowRunView):
         context["page_settings_url"] = _settings_url(scope)
         definition = context.get("definition")
         user = self.request.user
-        author = (getattr(definition, "data", None) or {}).get("username") if definition else None
+        # Who made the record: the LabsRecord's own username, not anything its data claims.
+        author = getattr(definition, "username", None) if definition else None
         if definition and (user.is_staff or user.username == author):
             owner = "&".join(f"{k}={v}" for k, v in self.page_owner.items())
             context["page_edit_url"] = f"/labs/workflow/{definition.id}/run/?{owner}&edit=true"
@@ -147,6 +177,7 @@ class PageView(WorkflowRunView):
         # where the page lives whatever the session holds by then.
         org = self.page_owner.get("organization_id")
         endpoints = (context.get("workflow_data") or {}).get("apiEndpoints") or {}
+        # (The owner is a slug: the middleware turns `?organization_id=<slug>` into its id.)
         if org and not (self.page_owner.get("program_id") or self.page_owner.get("opportunity_id")):
             for key, url in list(endpoints.items()):
                 if isinstance(url, str) and url.startswith("/labs/workflow/api/"):

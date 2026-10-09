@@ -39,6 +39,9 @@ class Scope:
             raise ValueError(f"a {type_} scope needs a key")
         if type_ in ("program", "opportunity") and not key.isdigit():
             raise ValueError(f"a {type_} is named by its id, not {key!r}")
+        if type_ == "organization" and key.isdigit():
+            # Rows are keyed by slug and read by slug; an id would write a row nothing reads.
+            raise ValueError(f"an organisation is named by its slug, not its id ({key!r})")
         return cls(type_, key)
 
     @property

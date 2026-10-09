@@ -499,7 +499,8 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
         try:
             data_access = WorkflowDataAccess(request=self.request)
             pipeline_access = PipelineDataAccess(request=self.request)
-            definitions = data_access.list_definitions()
+            # Pages have no runs (page_mode.py), so the run list leaves them out.
+            definitions = [d for d in data_access.list_definitions() if (d.data or {}).get("kind") != "page"]
 
             # Program-owned workflows must not appear in an opp view.
             opp_defs = opp_owned_definitions(definitions)
@@ -566,8 +567,9 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
             data_access = WorkflowDataAccess(access_token=token, program_id=program_id)
             pipeline_access = PipelineDataAccess(access_token=token, program_id=program_id)
 
-            # Program-scoped list: records whose program FK == this program.
-            owned_defs = data_access.list_definitions()
+            # Program-scoped list: records whose program FK == this program. Pages have
+            # no runs (page_mode.py), so the run list leaves them out.
+            owned_defs = [d for d in data_access.list_definitions() if (d.data or {}).get("kind") != "page"]
 
             runs_by_def: dict = {}
             for run in data_access.list_runs():
@@ -3215,6 +3217,9 @@ def start_run_api(request, definition_id):
         definition = data_access.get_definition(definition_id)
         if not definition:
             return JsonResponse({"error": "Workflow not found"}, status=404)
+        if (definition.data or {}).get("kind") == "page":
+            # A page has no runs (page_mode.py): it is opened, never started.
+            return JsonResponse({"error": "This is a page: it has no runs to start."}, status=400)
 
         # Default period: current ISO week (Mon–Sun, UTC). Templates that need a
         # different period scheme should override via update_run_state immediately
