@@ -593,6 +593,7 @@
                   (id ? ' (execution ' + id + ')' : '') +
                   '. The card shows its progress. Reply in one short line confirming it was sent; ' +
                   'do not look it up -- it ran under their Labs account, which may not be the one you use.',
+                (toQa ? 'Sent a test to ' + who : 'Sent to ' + who) + '.',
               );
               render();
               followStatus();
@@ -622,16 +623,19 @@
           );
         }
 
-        function tell(structured, text) {
+        // `forAgent` goes to the model only (ui/update-model-context); `forChat` is the
+        // message the host posts in the chat as the person's own (ui/message), so it must
+        // read like something they said -- never instructions to the agent (2026-10-09).
+        function tell(structured, forAgent, forChat) {
           request('ui/update-model-context', {
-            content: [{ type: 'text', text: text }],
+            content: [{ type: 'text', text: forAgent }],
             structuredContent: structured,
           })
             .catch(function () {})
             .then(function () {
               return request('ui/message', {
                 role: 'user',
-                content: { type: 'text', text: text },
+                content: { type: 'text', text: forChat || forAgent },
               });
             })
             .catch(function () {});
