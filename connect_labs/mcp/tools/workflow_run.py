@@ -475,24 +475,37 @@ def _absolute(path: str | None) -> str | None:
     return base + path
 
 
-def _inline_image(prompt: str | None) -> dict | None:
+def _inline_image(prompt: str | None, image: dict | None = None) -> dict | None:
     """The worker's picture as a ``data:`` URI, for a View: ``{"data_uri", "caption",
-    "bytes"}``, or None when the text is not a Labs briefing. The same picture the
-    worker's conversation links to (``coach_image``), drawn from the same text."""
+    "bytes"}`` (plus the chart's ``chart`` info), or None when there is none. The frozen
+    chart the preview built (``image["chart"]["id"]``) -- the same one the worker's
+    conversation links to; else the briefing's own figures."""
     import base64
 
     from connect_labs.workflow import coach_image
 
-    payload = coach_image.payload_from_briefing(prompt or "")
-    if payload is None:
-        return None
-    png = coach_image.render_png(payload)
+    chart_info = (image or {}).get("chart") if isinstance(image, dict) else None
+    if chart_info and chart_info.get("id"):
+        from connect_labs.workflow.coach_charts import chart as charts
+        from connect_labs.workflow.coach_charts import store
+
+        record = store.get(chart_info["id"])
+        if record is None:
+            return None
+        png, caption = charts.png(record.chart), record.chart.get("caption") or ""
+    else:
+        payload = coach_image.payload_from_briefing(prompt or "")
+        if payload is None:
+            return None
+        png, caption = coach_image.render_png(payload), coach_image.caption(payload)
+    extra = {"chart": chart_info} if chart_info else {}
     if len(png) > VIEW_IMAGE_MAX_BYTES:
-        return {"omitted": f"too large to show inline ({len(png)} bytes)", "caption": coach_image.caption(payload)}
+        return {"omitted": f"too large to show inline ({len(png)} bytes)", "caption": caption, **extra}
     return {
         "data_uri": "data:image/png;base64," + base64.b64encode(png).decode("ascii"),
-        "caption": coach_image.caption(payload),
+        "caption": caption,
         "bytes": len(png),
+        **extra,
     }
 
 
@@ -504,7 +517,8 @@ def _view_text(out: dict) -> str:
     def strip(worker):
         image = worker.get("image")
         if isinstance(image, dict) and image.get("data_uri"):
-            worker = {**worker, "image": {"caption": image.get("caption"), "inline_png_bytes": image.get("bytes")}}
+            shown = {"caption": image.get("caption"), "inline_png_bytes": image.get("bytes")}
+            worker = {**worker, "image": {**shown, **({"chart": image["chart"]} if image.get("chart") else {})}}
         return worker
 
     shown = {k: v for k, v in out.items() if k not in ("confirm", "confirm_expires_in")}
@@ -601,6 +615,7 @@ def workflow_run_action(
                     key=action,
                     arguments=arguments,
                     briefing=briefing,
+                    restricted=caller_restricted(),
                 )
                 if out["type"] in CLICK_TO_SEND_TYPES:
                     return _for_the_agent(out, r)
@@ -622,6 +637,7 @@ def workflow_run_action(
                 via="canopy" if r.delegated else "mcp",
                 actor=_caller_actor(),
                 briefing=briefing,
+                restricted=caller_restricted(),
             )
         except ActionError as e:
             raise _action_error(e) from e
@@ -719,6 +735,7 @@ def workflow_action_preview_view(
                 key=action,
                 arguments=args,
                 briefing=briefing,
+                restricted=caller_restricted(),
             )
         except ActionError as e:
             raise _action_error(e) from e
@@ -729,9 +746,9 @@ def workflow_action_preview_view(
             out.pop("confirm_expires_in", None)
         out["sent_by"] = "click" if out["type"] in CLICK_TO_SEND_TYPES else "agent"
         for i, worker in enumerate(out["workers"]):
-            worker.pop("image", None)  # the Labs link: no use to an opaque-origin View
+            linked = worker.pop("image", None)  # the Labs link: no use to an opaque-origin View
             if out["type"] in CLICK_TO_SEND_TYPES and i < VIEW_IMAGE_WORKERS:
-                image = _inline_image(worker.get("prompt"))
+                image = _inline_image(worker.get("prompt"), linked)
                 if image is not None:
                     worker["image"] = image
         out["page_url"] = _absolute(r.page_url) or r.page_url

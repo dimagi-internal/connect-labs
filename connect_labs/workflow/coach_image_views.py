@@ -53,7 +53,11 @@ def _has_live_labs_session(request) -> bool:
 
 
 def _png(payload: dict) -> HttpResponse:
-    response = HttpResponse(images.render_png(payload), content_type="image/png")
+    try:
+        data = images.png_for(payload)
+    except images.BadImageLink:
+        raise Http404("No such picture")
+    response = HttpResponse(data, content_type="image/png")
     response["Cache-Control"] = "private, no-store"
     response["X-Robots-Tag"] = "noindex, nofollow"
     return response

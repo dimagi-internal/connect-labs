@@ -148,6 +148,14 @@ def _caption(kind: str, *, first: str, labels: list[str], peers: int, weeks: int
     return f"A bar chart of {whose} figures for: {shown}."
 
 
+def _worker_noun(graded: dict) -> str:
+    """What the registry calls a worker ("rider"), else "worker"."""
+    noun = (graded.get("display") or {}).get("worker")
+    if isinstance(noun, dict):
+        noun = noun.get("name")
+    return noun.strip() if isinstance(noun, str) and noun.strip() else "worker"
+
+
 def build_chart(
     request: Any,
     *,
@@ -216,7 +224,7 @@ def build_chart(
         {r["who"] for r in ds.get("peers") or []}
         | {r["who"] for r in ds.get("history") or [] if r["who"] != datasets.YOU}
     )
-    noun = ((graded.get("display") or {}).get("worker") or {}).get("name") or "worker"
+    noun = _worker_noun(graded)
     caption = _caption(
         kind, first=first, labels=[r["label"] for r in ds["worker_topics"]], peers=peer_count, weeks=weeks, noun=noun
     )

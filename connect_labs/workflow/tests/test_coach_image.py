@@ -461,16 +461,17 @@ def test_include_image_previews_and_sends_a_picture_of_the_briefings_topics(user
     assert w["image"]["url"].startswith("https://labs.connect.dimagi.com/labs/coach-image/")
     assert out["arguments"]["include_image"] is True  # so the confirm token covers it
 
+    assert w["image"]["chart"]["type"] == "topic_bars"
+    assert out["arguments"]["charts"] == {"10::a10": w["image"]["chart"]["id"]}
+
+    # The conversation links to the frozen chart the preview showed, by id.
     [sent] = _sent(user, out["arguments"])
     token = sent["coach_image"]["url"].rstrip("/").rsplit("/", 1)[1]
-    assert coach_image.unsign(token) == {
-        "opportunity_id": 10,
-        "worker": "Tiyamike Kalinde",
-        "topics": [
-            {"label": "Meetings held", "band": "red", "numerator": 5, "denominator": 12, "pct": 42},
-            {"label": "Attendance recorded", "band": "yellow", "numerator": 14, "denominator": 20, "pct": 70},
-        ],
-    }
+    assert coach_image.unsign(token) == {"chart": w["image"]["chart"]["id"], "opportunity_id": 10}
+    from connect_labs.workflow.coach_charts import store
+
+    rows = store.get(w["image"]["chart"]["id"]).chart["datasets"]["worker_topics"]
+    assert [r["figure_text"] for r in rows] == ["5 of 12 · 42%", "14 of 20 · 70%"]
     assert sent["coach_image"]["caption"] == w["image"]["caption"]
 
 
