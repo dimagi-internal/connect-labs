@@ -495,6 +495,31 @@
           return out;
         }
 
+        // What the caller asked for, read from the agent's own preview RESULT rather than
+        // the host's copy of the tool input: a host may shorten a deep input in its
+        // transcript (2026-10-09: canopy stored picture.params.topics as ["…","…","…"] and
+        // this card re-previewed with them). Only the caller's choices are taken -- each
+        // worker's key, indicators and picture, plus picture/include_image -- never what
+        // Labs resolved (the briefing, chart ids, or the synthetic stand-in bot, which would
+        // turn a test send into a sample conversation).
+        function callerArguments() {
+          var r = state.agentResult;
+          var sc = r && (r.structuredContent || parseText(r));
+          var got = sc && sc.arguments;
+          if (!got || !got.workers || !got.workers.length) return null;
+          var out = {
+            workers: got.workers.map(function (w) {
+              var item = { key: w.key };
+              if (w.indicators) item.indicators = w.indicators;
+              if (w.picture) item.picture = w.picture;
+              return item;
+            }),
+          };
+          if (got.picture) out.picture = got.picture;
+          if (got.include_image) out.include_image = true;
+          return out;
+        }
+
         function loadPreview() {
           var a = state.input;
           if (!a || !a.run_id || !a.action) {
@@ -503,7 +528,7 @@
           }
           var args = scopeArgs();
           args.action = a.action;
-          args.arguments = a.arguments || {};
+          args.arguments = callerArguments() || a.arguments || {};
           if (state.deliverTo) args.deliver_to = state.deliverTo;
           state.previewing = true;
           state.preview = null; // a token is bound to its arguments: never keep an older one live
@@ -781,7 +806,12 @@
           var title = el('title'),
             subtitle = el('subtitle');
 
-          if (state.previewing && !p) {
+          if (!p && !state.previewing && state.input) {
+            // The preview failed and there is nothing to show: say so at the top, not only
+            // in a note at the bottom under a title still reading "Preparing…".
+            title.textContent = "Couldn't prepare this card";
+            subtitle.textContent = '';
+          } else if (state.previewing && !p) {
             title.textContent = 'Preparing…';
             subtitle.textContent = '';
           } else if (p) {
@@ -1146,8 +1176,19 @@
             if (state.canAct) loadPreview();
           },
           'ui/notifications/tool-result': function (params) {
+            var first = !state.agentResult;
             state.agentResult = params || {};
             var sc = params && (params.structuredContent || parseText(params));
+            // The result carries the caller's arguments intact: preview again from them (the
+            // input-based preview may have run on a host-shortened copy).
+            if (
+              first &&
+              state.canAct &&
+              state.input &&
+              !state.input.confirm &&
+              callerArguments()
+            )
+              loadPreview();
             if (state.input && state.input.confirm && sc && sc.execution) {
               state.outcome = 'sent';
               state.execution = sc.execution;
