@@ -179,11 +179,12 @@ def test_the_agents_description_says_coaching_is_sent_by_a_click():
 def test_the_agents_description_has_it_preview_at_once_and_leave_the_briefing_to_labs():
     """Seen live (2026-10-09): asked to start coaching, the agent sent the person to the
     page's button instead of previewing, and when it did preview it wrote each worker's own
-    `prompt` -- which drops the picture and the fixed opening -- then read the synthetic
+    `prompt` -- which then dropped the picture and the fixed opening (no longer: Labs keeps
+    it inside the briefing) -- then read the synthetic
     stand-in bot as a mismatch."""
     text = get_tool("workflow_run_action").description
     assert "PREVIEW STRAIGHT AWAY" in text
-    assert "do NOT set a worker's own `prompt`" in text and "top-level `prompt`" in text
+    assert "always sends it to the workflow's own coach" in text and "edit freely" in text
     assert "sample stand-in" in text and "not a mismatch" in text
 
 
@@ -318,5 +319,5 @@ def test_the_run_context_tells_the_agent_how_to_run_each_action():
 
     coach, task = _with_how_to_run([{"key": "c", "type": "start_ocs_outreach"}, {"key": "t", "type": "create_task"}])
     assert "PREVIEW it" in coach["how_to_run"] and "click Send on the card" in coach["how_to_run"]
-    assert "never set a worker's own `prompt`" in coach["how_to_run"]
+    assert "stays inside the briefing" in coach["how_to_run"]
     assert "`confirm`" in task["how_to_run"] and "explicit yes" in task["how_to_run"]

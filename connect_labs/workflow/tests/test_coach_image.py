@@ -463,7 +463,14 @@ def test_a_workflow_default_can_turn_pictures_on(user, _env):
     assert actions.declaration_problems([_definition({"include_image": True}).data["config"]["actions"][0]]) == []
 
 
-def test_a_worker_with_their_own_prompt_gets_no_picture(user, _env):
+def test_a_workers_own_text_keeps_the_picture_of_their_graded_topics(user, _env):
+    out = _preview(user, {"workers": [{"key": "10::a10", "prompt": "Talk about MUAC."}], "include_image": True})
+    assert "image" in out["workers"][0]
+    [sent] = _sent(user, out["arguments"])
+    assert sent["coach_image"]["url"]
+
+
+def test_own_text_for_a_worker_with_nothing_off_target_has_no_picture(user, _env):
     out = _preview(user, {"workers": [{"key": "10::b10", "prompt": "Talk about MUAC."}], "include_image": True})
     assert "image" not in out["workers"][0]
     [sent] = _sent(user, out["arguments"])

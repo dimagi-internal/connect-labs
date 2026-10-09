@@ -213,10 +213,29 @@ def test_the_preview_shows_each_workers_own_briefing_and_skips_nothing_to_coach(
     assert out["confirm"]
 
 
-def test_a_worker_with_their_own_prompt_keeps_it_and_no_grading_is_read(user):
-    def never():
-        raise AssertionError("grading must not be read")
+def test_a_workers_own_text_is_kept_inside_their_briefing(user):
+    """Edited text (a person's or an agent's) is what the coach is told -- but always as a
+    briefing, so the worker gets the fixed opening and the coach reads the text as
+    instructions, never OCS's generic prompt path (2026-10-09: "Here is a message for
+    Ibrahim: ---")."""
+    out = preview(
+        user,
+        wda=_wda(),
+        run=RUN,
+        definition=_definition(),
+        key="initiate_ai_coach",
+        arguments={"workers": [{"key": "10::a10", "prompt": "Talk about MUAC."}]},
+        briefing=_source(),
+    )
+    [w] = out["workers"]
+    assert coach_briefing.is_briefing(w["prompt"])
+    assert "Worker: Tiyamike Kalinde" in w["prompt"] and "[MTG_RATE]" in w["prompt"]
+    assert w["prompt"].endswith("Programme team's note:\nTalk about MUAC.\n\nBe warm.")
+    assert w["opening"].startswith("Hello Tiyamike!")
+    assert w["indicators"] == ["MTG_RATE", "VISITS", "ATT_RATE"]
 
+
+def test_own_text_for_a_worker_with_nothing_off_target_is_still_a_briefing(user):
     out = preview(
         user,
         wda=_wda(),
@@ -224,9 +243,66 @@ def test_a_worker_with_their_own_prompt_keeps_it_and_no_grading_is_read(user):
         definition=_definition(),
         key="initiate_ai_coach",
         arguments={"workers": [{"key": "10::b10", "prompt": "Talk about MUAC."}]},
+        briefing=_source(),
+    )
+    [w] = out["workers"]
+    assert coach_briefing.is_briefing(w["prompt"]) and "Talk about MUAC." in w["prompt"]
+    assert not out.get("skipped")
+
+
+def test_text_that_is_already_a_briefing_is_kept_and_no_grading_is_read(user):
+    def never():
+        raise AssertionError("grading must not be read")
+
+    text = coach_briefing.render_briefing(programme="P", worker="Binta", topics=[], note="Edited.")
+    out = preview(
+        user,
+        wda=_wda(),
+        run=RUN,
+        definition=_definition(),
+        key="initiate_ai_coach",
+        arguments={"workers": [{"key": "10::b10", "prompt": text}]},
         briefing=never,
     )
-    assert out["workers"][0]["prompt"] == "Talk about MUAC."
+    assert out["workers"][0]["prompt"] == text
+
+
+def test_coaching_goes_through_the_workflows_own_coach(user):
+    with pytest.raises(ActionError, match="its own bot") as e:
+        preview(
+            user,
+            wda=_wda(),
+            run=RUN,
+            definition=_definition(),
+            key="initiate_ai_coach",
+            arguments={"workers": [{"key": "10::a10"}], "bot": "some-other-bot"},
+            briefing=_source(),
+        )
+    assert e.value.code == "invalid"
+    named = preview(
+        user,
+        wda=_wda(),
+        run=RUN,
+        definition=_definition(),
+        key="initiate_ai_coach",
+        arguments={"workers": [{"key": "10::a10"}], "bot": "bot-1"},
+        briefing=_source(),
+    )
+    assert named["bot"]["id"] == "bot-1"
+
+
+def test_a_declared_coach_the_person_cannot_use_offers_no_other(user, monkeypatch):
+    monkeypatch.setattr(actions, "_ocs_bots", lambda user, request: [{"id": "bot-2", "name": "Other"}])
+    out = preview(
+        user,
+        wda=_wda(),
+        run=RUN,
+        definition=_definition(),
+        key="initiate_ai_coach",
+        arguments={"workers": [{"key": "10::a10"}]},
+        briefing=_source(),
+    )
+    assert "bot" in out["needs"] and out["bot_choices"] == [] and out["unknown_bot"] == "bot-1"
 
 
 def test_nothing_off_target_for_everyone_cannot_be_confirmed(user):
