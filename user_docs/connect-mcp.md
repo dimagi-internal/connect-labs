@@ -240,4 +240,4 @@ When preparing a coaching session, you can choose what the worker's picture show
 | **Their figures week by week** | The worker's own data broken down across weeks, showing how their performance has changed over time. |
 | **A custom chart** | A chart of your own design. |
 
-Every number in the picture comes from Labs, and every picture is drawn in Connect's style. The picture the worker receives is exactly the one shown on the card at the time you approved it — it is not recalculated or regr
+Every number in the picture comes from Labs, and every picture is drawn in Connect's style. The picture the worker receives is exactly the one shown on the card at the time you approved it — it is not recalculated or regenerated
