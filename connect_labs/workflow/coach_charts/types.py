@@ -207,6 +207,227 @@ def topic_rows(topics: list[dict]) -> list[dict]:
     return rows
 
 
+# ---------------------------------------------------------------------------
+# peer_comparison and trend
+# ---------------------------------------------------------------------------
+
+_ROW = 40  # one bar row (CSS px)
+_WHO_WIDTH = 96  # room the row labels ("You", "Peer A") take, left of the bars
+_VALUE_ROOM = 64  # room right of the longest bar for its value ("100%")
+_TREND_HEIGHT = 200
+_PEER_LABEL_ROOM = 84
+_END_LINE = 22  # how far apart stacked end labels are
+
+
+def _value_format(unit: str) -> str:
+    return ".0%" if unit == "%" else ",.3~r"
+
+
+def _label_layer(lines: int) -> tuple[dict, int]:
+    """The topic's label as the top of a block, and the height it takes."""
+    return (
+        {
+            "mark": {"type": "text", "align": "left", "baseline": "top", "lineHeight": _LABEL_LINE},
+            "encoding": {"text": {"field": "label_lines", "type": "nominal"}, "x": {"value": 0}, "y": {"value": 0}},
+        },
+        lines * _LABEL_LINE + 10,
+    )
+
+
+def peer_comparison(datasets: dict, *, first_name: str | None = None, title: str = "How you compare") -> dict:
+    """Per topic, the worker's figure beside each anonymous peer's: one bar per person,
+    the worker first and in the band's colour, every peer in the neutral grey and
+    labelled by letter, the value at the end of each bar."""
+    mine = datasets.get("worker_topics") or []
+    others = datasets.get("peers") or []
+    blocks = []
+    for row in mine:
+        i, unit = row["i"], row.get("unit") or ""
+        who = ["You"] + sorted({p["who"] for p in others if p["i"] == i}, key=lambda w: (len(w), w))
+        label, label_height = _label_layer(len(row.get("label_lines") or [""]))
+        rate = unit == "%"  # a rate is a fraction: its scale is 0..1
+        # The row labels are drawn as text inside the plot, left of a bar scale that
+        # starts at _WHO_WIDTH: an axis would shift the plot by its own width, and the
+        # chart must stay exactly the theme's width.
+        scale: dict = {"range": [_WHO_WIDTH, INNER - _VALUE_ROOM]}
+        scale.update({"domain": [0, 1]} if rate else {"zero": True})
+        x = {"field": "value", "type": "quantitative", "axis": None, "scale": scale}
+        y = {"field": "who", "type": "nominal", "sort": who, "scale": {"domain": who}, "axis": None}
+        who_label = {
+            "mark": {"type": "text", "align": "left", "baseline": "middle"},
+            "encoding": {"x": {"value": 0}, "y": y, "text": {"field": "who", "type": "nominal"}},
+        }
+        bars = {
+            "layer": [
+                {
+                    "data": {"name": "worker_topics"},
+                    "transform": [{"filter": f"datum.i == {i} && isValid(datum.value)"}],
+                    "layer": [
+                        {**who_label, "mark": {**who_label["mark"], "fontWeight": 600}},
+                        {
+                            "mark": {"type": "bar", "cornerRadius": 6, "height": 24},
+                            "encoding": {
+                                "x": x,
+                                "y": y,
+                                # The worker's own bar: the band's colour, or the series colour
+                                # when the indicator has no bands -- never the peers' grey.
+                                "color": {
+                                    "field": "band_key",
+                                    "type": "nominal",
+                                    "scale": {"domain": BAND_DOMAIN, "range": BAND_RANGE[:-1] + [theme.INDIGO]},
+                                    "legend": None,
+                                },
+                            },
+                        },
+                        {
+                            "mark": {"type": "text", "align": "left", "dx": 8, "fontWeight": 600},
+                            "encoding": {
+                                "x": x,
+                                "y": y,
+                                "text": {"field": "value", "type": "quantitative", "format": _value_format(unit)},
+                            },
+                        },
+                    ],
+                },
+                {
+                    "data": {"name": "peers"},
+                    "transform": [{"filter": f"datum.i == {i}"}],
+                    "layer": [
+                        who_label,
+                        {
+                            "mark": {"type": "bar", "cornerRadius": 6, "height": 24, "color": theme.NEUTRAL},
+                            "encoding": {"x": x, "y": y},
+                        },
+                        {
+                            "mark": {"type": "text", "align": "left", "dx": 8, "color": theme.MUTED},
+                            "encoding": {
+                                "x": x,
+                                "y": y,
+                                "text": {"field": "value", "type": "quantitative", "format": _value_format(unit)},
+                            },
+                        },
+                    ],
+                },
+            ],
+            "width": INNER,
+            "height": _ROW * len(who),
+        }
+        heading = {
+            "data": {"name": "worker_topics"},
+            "transform": [{"filter": f"datum.i == {i}"}],
+            "width": INNER,
+            "height": label_height,
+            "layer": [label],
+        }
+        blocks.append({"spacing": 6, "vconcat": [heading, bars]})
+    return {"title": _title(title, first_name), "spacing": _BLOCK_GAP, "vconcat": blocks}
+
+
+def trend(datasets: dict, *, first_name: str | None = None, title: str = "Week by week") -> dict:
+    """Per topic, the worker's weekly line (one point per saved run) and, when the
+    ``history`` dataset carries them, each anonymous peer's own thinner grey line,
+    labelled by letter at its last point."""
+    mine = datasets.get("worker_topics") or []
+    blocks = []
+    for row in mine:
+        i, unit = row["i"], row.get("unit") or ""
+        label, label_height = _label_layer(len(row.get("label_lines") or [""]))
+        y = {
+            "field": "value",
+            "type": "quantitative",
+            "title": None,
+            # Labels sit inside the plot, on their gridlines: an axis outside it would push
+            # the chart past the theme's width.
+            "axis": {
+                "format": _value_format(unit),
+                "tickCount": 4,
+                "grid": True,
+                "labelAlign": "left",
+                "labelBaseline": "bottom",
+                "labelPadding": -2,
+                "labelOffset": -4,
+            },
+            "scale": {"domain": [0, 1]} if unit == "%" else {"zero": True},
+        }
+        x = {
+            "field": "week",
+            "type": "temporal",
+            "title": None,
+            # Room right of the last week for the peers' labels ("Peer A").
+            "scale": {"range": [8, INNER - _PEER_LABEL_ROOM]},  # 8: a first point is not clipped
+            "axis": {"format": "%-d %b", "labelOverlap": True, "labelAlign": "left", "tickCount": 4, "grid": False},
+        }
+        lines = {
+            "data": {"name": "history"},
+            "transform": [
+                {"filter": f"datum.i == {i}"},
+                {"joinaggregate": [{"op": "max", "field": "t", "as": "last_t"}], "groupby": ["who"]},
+            ],
+            "width": INNER,
+            "height": _TREND_HEIGHT,
+            "layer": [
+                {
+                    "transform": [{"filter": "datum.who != 'You'"}],
+                    "mark": {"type": "line", "color": theme.NEUTRAL, "strokeWidth": 2},
+                    "encoding": {"x": x, "y": y, "detail": {"field": "who", "type": "nominal"}},
+                },
+                {
+                    # Each peer named at its last point; on a rate, peers ending close
+                    # together are stacked a line apart rather than drawn over each other.
+                    "transform": [
+                        {"filter": "datum.who != 'You' && datum.t == datum.last_t"},
+                        {"calculate": "round(datum.value * 100 / 6)", "as": "end_bucket"},
+                        {"window": [{"op": "row_number", "as": "end_rank"}], "groupby": ["end_bucket"]},
+                        {
+                            "calculate": (
+                                "datum.unit == '%' ? "
+                                f"datum.value + (datum.end_rank - 1) * {_END_LINE / _TREND_HEIGHT} : datum.value"
+                            ),
+                            "as": "label_value",
+                        },
+                    ],
+                    "mark": {"type": "text", "align": "left", "baseline": "middle", "dx": 6, "color": theme.MUTED},
+                    "encoding": {
+                        "x": x,
+                        "y": {**y, "field": "label_value"},
+                        "text": {"field": "who", "type": "nominal"},
+                    },
+                },
+                {
+                    "transform": [{"filter": "datum.who == 'You' && datum.t == datum.last_t"}],
+                    "mark": {
+                        "type": "text",
+                        "align": "left",
+                        "baseline": "middle",
+                        "dx": 10,
+                        "fontWeight": 600,
+                        "color": theme.INDIGO,
+                    },
+                    "encoding": {"x": x, "y": y, "text": {"field": "who", "type": "nominal"}},
+                },
+                {
+                    "transform": [{"filter": "datum.who == 'You'"}],
+                    "mark": {
+                        "type": "line",
+                        "color": theme.INDIGO,
+                        "strokeWidth": 4,
+                        "point": {"color": theme.INDIGO, "size": 90},
+                    },
+                    "encoding": {"x": x, "y": y},
+                },
+            ],
+        }
+        heading = {
+            "data": {"name": "worker_topics"},
+            "transform": [{"filter": f"datum.i == {i}"}],
+            "width": INNER,
+            "height": label_height,
+            "layer": [label],
+        }
+        blocks.append({"spacing": 6, "vconcat": [heading, lines]})
+    return {"title": _title(title, first_name), "spacing": _BLOCK_GAP, "vconcat": blocks}
+
+
 @dataclass(frozen=True)
 class ChartType:
     name: str
@@ -216,6 +437,27 @@ class ChartType:
     build: Callable[..., dict]
 
 
+_TOPICS = {
+    "type": "array",
+    "minItems": 1,
+    "items": {"type": "string", "minLength": 1, "maxLength": 100},
+    "description": (
+        "Indicator keys to show, in order (workflow_run_context -> indicators). Default: the briefing's topics."
+    ),
+}
+_PEERS = {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 12,
+    "description": "At most this many anonymous peers (default 6).",
+}
+_WEEKS = {
+    "type": "integer",
+    "minimum": 2,
+    "maximum": 26,
+    "description": "How many weeks back, ending with this run (default 8).",
+}
+
 TYPES: dict[str, ChartType] = {
     "topic_bars": ChartType(
         name="topic_bars",
@@ -223,19 +465,41 @@ TYPES: dict[str, ChartType] = {
             "The worker's own figures: per topic its label, the figure ('31 of 73 · 42%') and a bar "
             "in the band's colour. The default."
         ),
+        params={"type": "object", "properties": {"topics": {**_TOPICS, "maxItems": 8}}, "additionalProperties": False},
+        datasets=("worker_topics",),
+        build=lambda ds, first_name, params: topic_bars(ds["worker_topics"], first_name=first_name),
+    ),
+    "peer_comparison": ChartType(
+        name="peer_comparison",
+        description=(
+            "Per topic, the worker's figure beside each other worker's on this run -- every peer its "
+            "own bar labelled Peer A, Peer B, ... (never a name, never an average)."
+        ),
+        params={
+            "type": "object",
+            "properties": {"topics": {**_TOPICS, "maxItems": 4}, "max_peers": _PEERS},
+            "additionalProperties": False,
+        },
+        datasets=("worker_topics", "peers"),
+        build=lambda ds, first_name, params: peer_comparison(ds, first_name=first_name),
+    ),
+    "trend": ChartType(
+        name="trend",
+        description=(
+            "Per topic, the worker's figure week by week (one point per saved run, ending with this "
+            "run); with `peers: true`, each anonymous peer's own grey line too."
+        ),
         params={
             "type": "object",
             "properties": {
-                "topics": {
-                    "type": "array",
-                    "maxItems": 8,
-                    "items": {"type": "string", "minLength": 1, "maxLength": 100},
-                    "description": "Indicator keys to show, in order. Default: the briefing's topics.",
-                }
+                "topics": {**_TOPICS, "maxItems": 3},
+                "weeks": _WEEKS,
+                "peers": {"type": "boolean", "description": "Add each anonymous peer's line (default false)."},
+                "max_peers": _PEERS,
             },
             "additionalProperties": False,
         },
-        datasets=("worker_topics",),
-        build=topic_bars,
+        datasets=("worker_topics", "history"),
+        build=lambda ds, first_name, params: trend(ds, first_name=first_name),
     ),
 }
