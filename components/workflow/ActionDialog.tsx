@@ -26,6 +26,28 @@ export interface ActionRequest {
   key: string;
   label: string;
   args: { workers: WorkflowActionWorker[]; [key: string]: unknown };
+  /** Offer only "Send to me (QA test)" -- `deliver_to` the viewer's own PersonalID
+   * username -- and no send to the worker (case coaching on synthetic data). */
+  qaOnly?: boolean;
+}
+
+/** The viewer's own PersonalID username, remembered in this browser for QA sends. */
+const QA_USERNAME_KEY = 'labs.qa_personalid_username';
+
+function rememberedQaUsername(): string {
+  try {
+    return window.localStorage.getItem(QA_USERNAME_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+function rememberQaUsername(value: string) {
+  try {
+    if (value) window.localStorage.setItem(QA_USERNAME_KEY, value);
+  } catch {
+    // A convenience only: the field just starts empty next time.
+  }
 }
 
 interface Props {
@@ -64,7 +86,14 @@ export function ActionDialog({
     /[?&](opportunity_id|program_id)=\d+/,
   );
   const qs = scope ? `?${scope[0].slice(1)}` : '';
-  const [args, setArgs] = useState(request.args);
+  const qaOnly = Boolean(request.qaOnly);
+  const [args, setArgs] = useState(() => {
+    // A QA-only send starts at the viewer's remembered username: one click sends.
+    const remembered = qaOnly ? rememberedQaUsername() : '';
+    return remembered && !request.args.deliver_to
+      ? { ...request.args, deliver_to: remembered }
+      : request.args;
+  });
   const [preview, setPreview] = useState<WorkflowActionPreview | null>(null);
   const [execution, setExecution] = useState<WorkflowActionExecution | null>(
     null,
@@ -76,14 +105,19 @@ export function ActionDialog({
   // their own Connect app. Applying it changes the arguments, so it re-previews --
   // the confirm token is bound to them.
   const [qaTo, setQaTo] = useState(
-    typeof request.args.deliver_to === 'string' ? request.args.deliver_to : '',
+    typeof args.deliver_to === 'string' ? args.deliver_to : '',
   );
   const applyQa = (value: string) => {
     const next = { ...args };
-    if (value.trim()) next.deliver_to = value.trim();
-    else delete next.deliver_to;
+    if (value.trim()) {
+      next.deliver_to = value.trim();
+      if (qaOnly) rememberQaUsername(value.trim());
+    } else delete next.deliver_to;
     setArgs(next);
   };
+  // QA-only: nothing is sent until it goes to the viewer, never to the worker.
+  const canConfirm =
+    Boolean(preview?.confirm) && (!qaOnly || Boolean(preview?.deliver_to));
 
   const load = useCallback(
     async (next: typeof args) => {
@@ -181,15 +215,28 @@ export function ActionDialog({
             </div>
           )}
 
+          {!execution && qaOnly && preview && !preview.qa_redirect && (
+            <div className="rounded bg-amber-50 p-2 text-xs text-amber-900">
+              A test send goes to a Dimagi staff member&rsquo;s own phone, and
+              this account cannot make one.
+            </div>
+          )}
+
           {!execution && Boolean(preview?.qa_redirect || args.deliver_to) && (
             <label className="block text-xs text-gray-700">
-              Send to me instead (QA) — your PersonalID username
+              {qaOnly
+                ? 'Send to me (QA test) — your PersonalID username'
+                : 'Send to me instead (QA) — your PersonalID username'}
               <div className="mt-1 flex gap-2">
                 <input
                   type="text"
                   className="block w-full rounded border border-gray-300 px-2 py-1 text-sm"
                   value={qaTo}
-                  placeholder="Leave empty to send to the worker"
+                  placeholder={
+                    qaOnly
+                      ? 'Your PersonalID username'
+                      : 'Leave empty to send to the worker'
+                  }
                   onChange={(e) => setQaTo(e.target.value)}
                 />
                 <button
@@ -305,6 +352,29 @@ export function ActionDialog({
                         {w.sending_to}
                       </p>
                     )}
+                    {w.case && w.case.topic && (
+                      <div className="mt-1 text-xs text-gray-800">
+                        <div className="font-medium">
+                          About {w.case.case || 'this case'}:{' '}
+                          <span className="font-semibold">{w.case.topic}</span>
+                        </div>
+                        {w.case.facts && (
+                          <p className="mt-0.5 text-gray-700">{w.case.facts}</p>
+                        )}
+                      </div>
+                    )}
+                    {w.image && w.image.url && (
+                      <figure className="mt-2">
+                        <img
+                          src={w.image.url}
+                          alt={
+                            w.image.caption ||
+                            'The picture sent with the conversation'
+                          }
+                          className="w-full max-w-xs rounded border border-gray-200"
+                        />
+                      </figure>
+                    )}
                     {w.opening && (
                       <p className="mt-1 text-xs text-gray-800">
                         <span className="font-medium">
@@ -313,7 +383,7 @@ export function ActionDialog({
                         &ldquo;{w.opening}&rdquo;
                       </p>
                     )}
-                    {w.briefing && w.prompt ? (
+                    {w.briefing && w.prompt && !w.case ? (
                       <div className="mt-2 text-xs text-gray-700">
                         <div className="font-medium text-gray-800">
                           What the coach will raise
@@ -354,11 +424,21 @@ export function ActionDialog({
                         </details>
                       </div>
                     ) : (
-                      w.prompt && (
+                      w.prompt &&
+                      (w.case ? (
+                        <details className="mt-1 text-xs text-gray-500">
+                          <summary className="cursor-pointer">
+                            Show the exact text sent to the coach
+                          </summary>
+                          <pre className="mt-1 whitespace-pre-wrap font-sans text-gray-600">
+                            {w.prompt}
+                          </pre>
+                        </details>
+                      ) : (
                         <p className="mt-1 whitespace-pre-wrap text-xs text-gray-600">
                           {w.prompt}
                         </p>
-                      )
+                      ))
                     )}
                   </li>
                 );
@@ -396,12 +476,14 @@ export function ActionDialog({
               <button
                 type="button"
                 className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-                disabled={busy || !preview?.confirm}
+                disabled={busy || !canConfirm}
                 onClick={confirm}
               >
                 {busy
                   ? 'Working…'
-                  : `Confirm for ${preview?.workers.length ?? ''}`}
+                  : qaOnly
+                    ? 'Send to me (QA test)'
+                    : `Confirm for ${preview?.workers.length ?? ''}`}
               </button>
             </>
           )}

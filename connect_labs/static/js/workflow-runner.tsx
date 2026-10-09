@@ -1721,6 +1721,7 @@ function WorkflowRunner({
       runAction: (
         key: string,
         args: { workers: WorkflowActionWorker[]; [k: string]: unknown },
+        options?: { qaOnly?: boolean },
       ): Promise<WorkflowActionExecution | null> => {
         const spec = workflowActions.find((a) => a.key === key);
         if (!spec) {
@@ -1730,7 +1731,12 @@ function WorkflowRunner({
         }
         return new Promise((resolve) =>
           setActionRequest({
-            request: { key, label: spec.label, args },
+            request: {
+              key,
+              label: spec.label,
+              args,
+              qaOnly: Boolean(options?.qaOnly),
+            },
             resolve,
           }),
         );
