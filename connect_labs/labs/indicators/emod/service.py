@@ -172,6 +172,60 @@ def _cached_payload(run) -> dict:
     return {"run_id": run.pk, "status": run.status, "cached": True, "result": run.result, "timings": run.timings}
 
 
+def is_dead(run, now=None) -> bool:
+    """A ``running`` row that has missed three heartbeats: its task was killed (a deploy, an OOM)."""
+    from connect_labs.labs.indicators.emod import runner
+    from connect_labs.labs.indicators.models import PmcModelRun
+
+    now = now or timezone.now()
+    return run.status == PmcModelRun.RUNNING and run.updated_at < now - timedelta(seconds=runner.STALE_RUNNING_AFTER_S)
+
+
+def _recover(run) -> bool:
+    """``runner.recover_from_s3``, never raising: a status read must not fail because S3 did."""
+    from connect_labs.labs.indicators.emod import runner
+
+    try:
+        return runner.recover_from_s3(run)
+    except Exception:  # noqa: BLE001 - logged; the caller falls back to re-running the model
+        logger.exception("EMOD run %s: could not check S3 for its result", run.pk)
+        return False
+
+
+def heal(run):
+    """A dead run, healed: completed from S3 when the instance finished it, else re-queued exactly as a
+    re-submit would. Anything else is returned untouched. Called when a run is polled and by the sweep,
+    so a run whose task a deploy killed finishes without anyone re-submitting it."""
+    if not is_dead(run):
+        return run
+    if _recover(run):
+        return run
+    _requeue_dead(run)
+    run.refresh_from_db()
+    return run
+
+
+def _requeue_dead(run) -> None:
+    """Re-queue a dead row in place and enqueue it, once, as ``submit_run`` does for a dead row."""
+    from connect_labs.labs.indicators.emod import runner, tasks
+    from connect_labs.labs.indicators.models import PmcModelRun
+
+    try:
+        runner.default_instance()
+        runner.default_bucket()
+    except RuntimeError:
+        return  # this deploy cannot run the model; a re-submit reports that
+    now = timezone.now()
+    # The staleness test in the filter, so a poll and the sweep racing here enqueue once.
+    requeued = PmcModelRun.objects.filter(
+        pk=run.pk,
+        status=PmcModelRun.RUNNING,
+        updated_at__lt=now - timedelta(seconds=runner.STALE_RUNNING_AFTER_S),
+    ).update(status=PmcModelRun.QUEUED, error="", updated_at=now)
+    if requeued:
+        transaction.on_commit(lambda pk=run.pk: tasks.run_pmc_model.delay(pk))
+
+
 def submit_run(state, schedules, seeds=None) -> tuple[int, dict]:
     """Start (or find) the run for ``state`` and ``schedules``. Returns ``(http_status, payload)``.
 
@@ -219,8 +273,11 @@ def submit_run(state, schedules, seeds=None) -> tuple[int, dict]:
         return 200, _cached_payload(run)
     enqueue = created
     now = timezone.now()
-    # A running row that has missed three heartbeats lost its worker (killed mid-flight): re-queue it.
-    dead = run.status == PmcModelRun.RUNNING and run.updated_at < now - timedelta(seconds=runner.STALE_RUNNING_AFTER_S)
+    # A running row that has missed three heartbeats lost its worker (killed mid-flight): re-queue it,
+    # unless the instance finished it anyway and the answer is waiting in S3.
+    dead = is_dead(run, now)
+    if dead and _recover(run):
+        return 200, _cached_payload(run)
     if created or dead or run.status == PmcModelRun.FAILED:
         own, behind = expected_duration_s(run.pk)
         run.timings = {

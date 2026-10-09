@@ -750,6 +750,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "connect_labs.workflow.tasks.sweep_stale_workflow_runs",
         "schedule": crontab(minute="*/10"),
     },
+    # Finish live EMOD runs whose task a deploy killed: the instance writes the result to S3 whether or
+    # not anyone is waiting (connect_labs/labs/indicators/emod/tasks.py, sweep_dead_pmc_runs).
+    "heal-dead-pmc-runs": {
+        "task": "connect_labs.labs.indicators.emod.tasks.sweep_dead_pmc_runs",
+        "schedule": crontab(minute="*/5"),
+    },
     "audit-trail-archive": {
         "task": "connect_labs.audit_trail.tasks.archive_audit_events",
         "schedule": crontab(hour=2, minute=15),

@@ -185,3 +185,18 @@ def run_pmc_model(run_id: int) -> None:
             lease.release(owner)
         except _redis_errors():
             logger.exception("EMOD lease release failed; it expires within %s s", LEASE_TTL_S)
+
+
+@celery_app.task
+def sweep_dead_pmc_runs() -> int:
+    """Heal every live run whose task died (``service.heal``): complete it from S3 when the instance
+    finished it, else re-queue it. Every deploy hard-kills running tasks with no drain, so without this
+    a run finished on the instance stays 'running' until someone polls or re-submits it."""
+    from connect_labs.labs.indicators.emod import service
+
+    healed = 0
+    for run in PmcModelRun.objects.filter(status=PmcModelRun.RUNNING):
+        if service.is_dead(run):
+            service.heal(run)
+            healed += 1
+    return healed
