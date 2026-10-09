@@ -141,10 +141,16 @@ def expected_duration_s(exclude_pk=None) -> tuple[int, int]:
     return (PMC_RUN_EXPECTED_WARM_S if _instance_is_warm() else PMC_RUN_EXPECTED_COLD_S), 0
 
 
+def _label(run) -> str:
+    from connect_labs.labs.indicators.emod import live, runner
+
+    state = runner.fitted_state_name((run.request or {}).get("setting"))
+    return live.fitted_label(state) if state else live.LABEL
+
+
 def status_payload(run) -> dict:
     """The raw status of one run for the HTTP endpoint. ``error`` is the public sentence only."""
     from connect_labs.labs.indicators import pmc
-    from connect_labs.labs.indicators.emod import live
     from connect_labs.labs.indicators.models import PmcModelRun
 
     in_flight = run.status in (PmcModelRun.QUEUED, PmcModelRun.RUNNING)
@@ -152,7 +158,7 @@ def status_payload(run) -> dict:
         "run_id": run.pk,
         "status": run.status,
         "cached": False,
-        "label": live.LABEL,
+        "label": _label(run),
         "result": run.result if run.status == PmcModelRun.COMPLETED else None,
         "error": public_error(run.error) if run.status == PmcModelRun.FAILED else "",
         "timings": run.timings,

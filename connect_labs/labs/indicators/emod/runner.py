@@ -86,25 +86,63 @@ def state_fit(state: str) -> str:
     return pmc.fit_for(prevalence.value if prevalence else None, wettest.value if wettest else None)
 
 
+def fitted_setting(state: str) -> dict | None:
+    """The worker setting fitted to ``state`` in the per-state grid, or None when it has none.
+
+    A state with a grid entry whose fit is ``ok`` runs in its OWN setting: the default overlaid with
+    the grid's stored ``larval_capacity``, ``habitat_times`` and ``habitat_values`` (population, case
+    management and net coverage stay the default's). The values are copied from the grid exactly as
+    stored -- never recomputed -- because the worker's burn-in cache keys on their JSON text and the
+    grid batch built its burn-ins from these very values. ``name`` is excluded from that key.
+    """
+    from connect_labs.labs.indicators.emod import rank
+
+    grid = rank.load_grid(getattr(settings, "PMC_STATE_GRID_PATH", None))
+    if not grid or not isinstance(state, str):
+        return None
+    by_lower = {name.lower(): name for name in grid.get("states", {})}
+    name = rank._match(rank._clean_name(state), by_lower)
+    entry = grid["states"].get(name) if name else None
+    if not entry or (entry.get("fit") or {}).get("fit") != "ok":
+        return None
+    own = entry.get("setting") or {}
+    if not all(k in own for k in ("larval_capacity", "habitat_times", "habitat_values")):
+        return None
+    out = copy.deepcopy(DEFAULT_SETTING)
+    for key in ("larval_capacity", "habitat_times", "habitat_values"):
+        out[key] = copy.deepcopy(own[key])
+    out["name"] = f"{name} fitted"
+    return out
+
+
+def fitted_state_name(setting: dict) -> str | None:
+    """The state a request's setting was fitted to ('Kano' for 'Kano fitted'), or None for the default."""
+    name = (setting or {}).get("name") or ""
+    return name.removesuffix(" fitted") if name.endswith(" fitted") else None
+
+
 def build_request(state: str, schedules: list[dict], seeds: int = DEFAULT_SEEDS, *, fit: str | None = None) -> dict:
     """The worker request for ``schedules`` in ``state``.
 
-    Until states are calibrated, a state that matches the modelled setting (``near`` or
-    ``prevalence_differs``, the explorer's ranked fits) runs in the default southern setting;
-    any other raises ValueError naming why. ``fit`` skips the registry lookup (tests).
+    A state with a fitted setting in the per-state grid runs in it (``fitted_setting``), seasonal
+    or not. Any other state matching the default southern setting (``near`` or
+    ``prevalence_differs``, the explorer's ranked fits) runs in the default; the rest raise
+    ValueError naming why. ``fit`` skips the registry lookup (tests).
     """
     if not isinstance(seeds, int) or isinstance(seeds, bool) or seeds < 1:
         raise ValueError("seeds must be an integer >= 1")
     if not schedules:
         raise ValueError("at least one schedule is required")
-    fit = state_fit(state) if fit is None else fit
-    if fit not in pmc.RANKED_FITS:
-        raise ValueError(f"{state} cannot be modelled: {FIT_REASONS.get(fit, fit)}")
+    own = fitted_setting(state)
+    if own is None:
+        fit = state_fit(state) if fit is None else fit
+        if fit not in pmc.RANKED_FITS:
+            raise ValueError(f"{state} cannot be modelled: {FIT_REASONS.get(fit, fit)}")
     codes = [s.get("code") for s in schedules]
     if BASELINE_SCHEDULE["code"] in codes:
         raise ValueError(f"schedule code {BASELINE_SCHEDULE['code']!r} is reserved for the no-PMC baseline")
     return {
-        "setting": copy.deepcopy(DEFAULT_SETTING),
+        "setting": own if own is not None else copy.deepcopy(DEFAULT_SETTING),
         "schedules": [copy.deepcopy(BASELINE_SCHEDULE)] + [copy.deepcopy(s) for s in schedules],
         "seeds": list(range(seeds)),
         "intervention_years": INTERVENTION_YEARS,

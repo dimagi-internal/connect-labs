@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "runtime": {
+    "image": "example-registry/emod@sha256:fixture",
+    "emodpy_commit": "fixture"
+  },
+  "states": {
+    "Ondo": {
+      "inputs": {
+        "pfpr_target": 0.3,
+        "incidence_per_1000": 300.0,
+        "pop_u5": 1000000,
+        "rain_wettest_quarter": 40.0,
+        "onset_month": 5
+      },
+      "setting": {
+        "larval_capacity": 120000000.0,
+        "habitat_times": [
+          0, 15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349, 365
+        ],
+        "habitat_values": [
+          0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3
+        ]
+      },
+      "fit": {
+        "fit": "ok",
+        "pfpr_2_5y": 0.31,
+        "fit_error": 0.01
+      },
+      "designs": {
+        "pmc_m4_onset": {
+          "label": "4 monthly rounds, May–Aug, 3–24 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 20.0,
+          "averted_u5_ci": 3.0,
+          "doses_per_child_per_year": 3.4,
+          "averted_3_24m_pct": 24.0
+        },
+        "pmc_m6_onset": {
+          "label": "6 monthly rounds, May–Oct, 3–24 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 30.0,
+          "averted_u5_ci": 3.0,
+          "doses_per_child_per_year": 5.1,
+          "averted_3_24m_pct": 36.0
+        },
+        "pmc_m12": {
+          "label": "Year-round monthly, 3–24 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 50.0,
+          "averted_u5_ci": 4.0,
+          "doses_per_child_per_year": 10.2,
+          "averted_3_24m_pct": 60.0
+        },
+        "pmc_q4": {
+          "label": "Quarterly from May, 3–24 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 3.0,
+          "averted_u5_ci": 4.0,
+          "doses_per_child_per_year": 3.4,
+          "averted_3_24m_pct": 3.6
+        }
+      }
+    },
+    "Kano": {
+      "inputs": {
+        "pfpr_target": 0.32,
+        "incidence_per_1000": 400.0,
+        "pop_u5": 2000000,
+        "rain_wettest_quarter": 70.0,
+        "onset_month": 6
+      },
+      "setting": {
+        "larval_capacity": 120000000.0,
+        "habitat_times": [
+          0, 15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349, 365
+        ],
+        "habitat_values": [
+          0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3
+        ]
+      },
+      "fit": {
+        "fit": "ok",
+        "pfpr_2_5y": 0.32,
+        "fit_error": 0.0
+      },
+      "designs": {
+        "pmc_m4_onset": {
+          "label": "4 monthly rounds, Jun–Sep, 3–24 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 25.0,
+          "averted_u5_ci": 2.0,
+          "doses_per_child_per_year": 3.4,
+          "averted_3_24m_pct": 30.0
+        },
+        "smc_m4_onset": {
+          "label": "SMC (SPAQ): 4 monthly rounds, Jun–Sep, 3–59 months",
+          "kind": "smc",
+          "drug": "SPAQ",
+          "target_pop_fraction": 0.9333333333333333,
+          "averted_u5_pct": 60.0,
+          "averted_u5_ci": 3.0,
+          "doses_per_child_per_year": 3.4,
+          "averted_3_24m_pct": 72.0
+        }
+      }
+    },
+    "Lagos": {
+      "inputs": {
+        "pfpr_target": 0.03,
+        "incidence_per_1000": 40.0,
+        "pop_u5": 1500000,
+        "rain_wettest_quarter": 35.0,
+        "onset_month": 4
+      },
+      "setting": {
+        "larval_capacity": 120000000.0,
+        "habitat_times": [
+          0, 15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349, 365
+        ],
+        "habitat_values": [
+          0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3
+        ]
+      },
+      "fit": {
+        "fit": "unreachable",
+        "pfpr_2_5y": 0.06,
+        "fit_error": 0.03
+      },
+      "designs": {}
+    }
+  }
+}
