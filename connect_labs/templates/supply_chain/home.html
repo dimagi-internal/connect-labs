@@ -34,7 +34,7 @@ tenders and orders sit folded below.
 
   <section id="supply-standing" class="border-brand-border-light overflow-hidden rounded-lg border bg-white" aria-label="All procurements">
     <div class="max-w-full overflow-x-auto" tabindex="0" role="region" aria-label="All procurements, scrolls sideways">
-      <table data-testid="standing-table" class="w-full min-w-[960px] table-fixed text-sm">
+      <table data-testid="standing-table" class="phone-cards w-full min-w-[960px] table-fixed text-sm">
         <thead class="border-b border-gray-200 text-left text-xs text-gray-600">
           <tr>
             <th scope="col" class="w-[22%] px-5 pb-2 pt-3.5 font-medium">Procurement</th>
@@ -47,14 +47,14 @@ tenders and orders sit folded below.
         <tbody class="divide-y divide-gray-100">
           {% for row in standing %}
           <tr data-testid="overview-row" data-kind="{{ row.kind }}"{% if row.tender_id %} data-tender-id="{{ row.tender_id }}"{% endif %} class="align-top">
-            <td class="px-5 py-4">
+            <td class="phone-title px-5 py-4">
               <div class="flex flex-col gap-0.5">
                 <span class="text-xs text-gray-600">{% if row.kind == "tender" %}Tender{% else %}Order{% endif %}</span>
                 <a href="{{ row.url }}" class="text-brand-indigo text-[15px] font-semibold hover:underline">{{ row.title }}</a>
                 {% if row.sub %}<span class="text-xs text-gray-600" data-testid="row-sub">{{ row.sub }}</span>{% endif %}
               </div>
             </td>
-            <td class="px-3 py-4">
+            <td class="phone-lead phone-wide px-3 py-4" data-label="Stage">
               <div class="flex flex-col gap-1.5">
                 <div class="stage-minibar" aria-hidden="true">{% for b in row.bars %}<div class="stage-seg stage-seg--{{ b }}"></div>{% endfor %}</div>
                 <span class="flex flex-col text-xs" data-testid="row-stage"><span class="font-semibold text-gray-900" data-testid="row-stage-name">{{ row.stage_name }}</span>{% if row.stage_detail %}<span class="text-gray-600">{{ row.stage_detail }}</span>{% endif %}{% if row.deadline_note %}<span class="text-gray-700" data-testid="row-deadline">{{ row.deadline_note }}</span>{% endif %}</span>
@@ -63,7 +63,7 @@ tenders and orders sit folded below.
                 {% if row.quotes_chip %}{% with parts=row.quotes_chip|dot_parts %}<span class="status-chip status-chip--neutral self-start" data-testid="row-quotes">{{ parts.0 }}</span>{% if parts.1 %}<span class="text-xs text-gray-700" data-testid="row-quotes-priced">{{ parts.1 }}</span>{% endif %}{% endwith %}{% endif %}
               </div>
             </td>
-            <td class="px-3 py-4" data-testid="next-move">
+            <td class="phone-lead phone-wide px-3 py-4" data-label="Next move" data-testid="next-move">
               {% with m=row.next_move %}{% if m %}
                 <div class="flex flex-col gap-2">
                 {% for mv in row.move_lines %}
@@ -78,8 +78,8 @@ tenders and orders sit folded below.
                 </div>
               {% else %}<span class="text-gray-600">—</span>{% endif %}{% endwith %}
             </td>
-            <td class="px-3 py-4">{% if row.whose %}<span class="flex flex-col items-start gap-1" data-testid="whose" data-whose="{{ row.whose }}">{% if row.ours %}<span class="status-chip status-chip--ours" data-testid="whose-us" data-count="{{ row.ours|length }}">To do {{ row.ours|length }}</span>{% endif %}{% if row.theirs %}<span class="status-chip status-chip--theirs" data-testid="whose-suppliers" data-count="{{ row.theirs|length }}">Waiting {{ row.theirs|length }}</span>{% endif %}</span>{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
-            <td class="whitespace-nowrap px-5 py-4 text-gray-600">
+            <td class="px-3 py-4" data-label="To do · waiting">{% if row.whose %}<span class="flex flex-col items-start gap-1" data-testid="whose" data-whose="{{ row.whose }}">{% if row.ours %}<span class="status-chip status-chip--ours" data-testid="whose-us" data-count="{{ row.ours|length }}">To do {{ row.ours|length }}</span>{% endif %}{% if row.theirs %}<span class="status-chip status-chip--theirs" data-testid="whose-suppliers" data-count="{{ row.theirs|length }}">Waiting {{ row.theirs|length }}</span>{% endif %}</span>{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
+            <td class="whitespace-nowrap px-5 py-4 text-gray-600" data-label="Last change">
               {% if row.last_change_at %}
                 {% if supply_as_of %}<span data-testid="last-change" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|date:'j M Y' }}</span>
                 {% else %}<span data-testid="last-change" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|count_back:standing_now }}</span>{% with day=row.last_change_at|short_day:standing_now %}{% if day %}<span data-testid="last-change-day" class="block text-xs">{{ day }}</span>{% endif %}{% endwith %}{% endif %}
