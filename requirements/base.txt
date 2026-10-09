@@ -657,6 +657,8 @@ vine==5.1.0
     #   amqp
     #   celery
     #   kombu
+vl-convert-python==1.9.0.post1
+    # via -r requirements/base.in
 watchfiles==1.2.0
     # via fastmcp-slim
 wcwidth==0.8.3
