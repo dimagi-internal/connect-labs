@@ -16,6 +16,7 @@ date and carries it on its links as it does on any rewound page.
 from urllib.parse import urlencode
 
 from django.http import Http404, HttpResponseBadRequest
+from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import TemplateView
@@ -46,6 +47,9 @@ class SupplyWorkflowPageView(WorkflowRunView):
         if program_id:
             pin = SupplyWorkflowView.objects.filter(program_id=int(program_id), slug=kwargs.get("slug")).first()
         if pin is None:
+            if not program_id:
+                # No programme in view: Supply's home asks for one, rather than a bare 404.
+                return redirect("supply_chain:home")
             raise Http404("no workflow is pinned under that name in this programme")
         self.pin = pin
         self.supply_context = context
