@@ -24,8 +24,18 @@ What the models keep, because analyses depend on it:
 * **The app's own identities.** Computed fields that equal the visit's position, or
   the case's day plus a per-case offset (visit counters, ages), are rebuilt from that
   identity rather than modelled as noise.
-* **Form mix and field presence.** Form sequence is a Markov chain by position; each
-  field appears with the probability its form records it.
+* **What kind of case it is.** A case's whole form sequence is drawn from the source's
+  cases of the same length (a sequence seen in fewer than ``K_MIN`` cases is built
+  form by form from the rarer sequences' own chain), and its answers are drawn from
+  cases of the same SHAPE -- the forms it is made of. So a child followed up was
+  enrolled by its own Screening, exactly as often as in the source; before this, a
+  long case could be a Screening repeated, and a followed-up child's Screening was
+  drawn with no regard to the follow-ups (RUTF clone 10113: 81 of 147 followed
+  children "not enrolled"). Each field appears with the probability its form records it.
+* **The source's window.** No sampled visit falls before the source's first visit day
+  or after its last: a case is moved (and, if longer than the window, squeezed) to
+  fit. Without it, start smoothing and sampled gaps put 10113's visits up to five
+  weeks past the source's last day -- visits that had not happened yet.
 
 What keeps it safe:
 
@@ -57,7 +67,7 @@ import numpy as np
 from scipy.stats import norm
 
 from .copula import nearest_psd
-from .entities import _time_varying_paths
+from .entities import _time_varying_paths, place_in_window
 
 #: An answer or field seen in fewer distinct cases than this is not modelled.
 K_MIN = 5
@@ -127,6 +137,16 @@ class _CatModel:
     # the source's do. ``ending[(tercile, long)]`` counts each terminal value and _NONE.
     terminal: set[str] = field(default_factory=set)
     ending: dict[tuple[int, int], Counter] = field(default_factory=dict)
+    # The same counts again, by the case's SHAPE (the forms it is made of, see _shape)
+    # within its tercile, and by shape alone (tercile -1). An answer depends on what
+    # kind of case it sits in: a child screened and followed up was enrolled by its
+    # Screening, one screened only mostly was not. Drawn with no regard to shape, a
+    # clone followed up children its own Screening had turned away. Order tried:
+    # (shape, tercile), shape, tercile, everything -- so a programme whose cases all
+    # share one shape (KMC) draws exactly as by tercile alone.
+    first_by_shape: dict[tuple[tuple, int], Counter] = field(default_factory=dict)
+    trans_by_shape: dict[tuple[tuple, int, str], Counter] = field(default_factory=dict)
+    ending_by_shape: dict[tuple[tuple, int, int], Counter] = field(default_factory=dict)
 
 
 _NONE = "\x00none"
@@ -142,6 +162,12 @@ class CaseModel:
     gap_ratios: dict[int, np.ndarray]  # bucket -> gap / case mean gap
     form_first: Counter
     form_trans: dict[str, Counter]
+    # n -> whole form sequences of cases that long, kept only when seen in K_MIN cases;
+    # the rest is a ``None`` share, built form by form from the chain the rarer
+    # sequences make (rare_first / rare_trans), so a rare kind of case keeps its kind.
+    form_seqs: dict[int, Counter]
+    rare_first: Counter
+    rare_trans: dict[str, Counter]
     presence: dict[str, dict[str | None, float]]  # path -> form -> P(recorded)
     numeric: dict[str, _PathModel]
     dates: dict[str, _PathModel]
@@ -149,6 +175,10 @@ class CaseModel:
     driver: str | None
     driver_cuts: tuple[float, ...]
     median_n: float = 0.0
+    # The source's first and last visit day (date ordinals). No sampled visit falls
+    # outside it: a source never has a visit after its last day, and a clone dated
+    # weeks past it reads as visits that have not happened yet.
+    window: tuple[int, int] | None = None
     report: dict[str, Any] = field(default_factory=dict)
 
 
@@ -186,12 +216,17 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
     for s in series_list:
         owners[s["owner"]].append(len(s["visits"]))
         owner_starts[s["owner"]].append(dt.date.fromisoformat(s["start_date"]).toordinal())
+    window = (
+        min(min(starts) for starts in owner_starts.values()),
+        max(dt.date.fromisoformat(s["start_date"]).toordinal() + int(s["visits"][-1]["day"]) for s in series_list),
+    )
 
     # Per-case parameter rows: column -> value.
     rows: list[dict[str, float]] = []
     gap_ratios: dict[int, list[float]] = defaultdict(list)
     form_first: Counter = Counter()
     form_trans: dict[str, Counter] = defaultdict(Counter)
+    form_seq_counts: dict[int, Counter] = defaultdict(Counter)
     form_seen: Counter = Counter()
     path_in_form: dict[str, Counter] = defaultdict(Counter)
 
@@ -214,6 +249,7 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
             for i, g in enumerate(gaps, start=1):
                 gap_ratios[_bucket(i)].append(g / mean_gap if mean_gap > 1e-9 else 0.0)
         forms = [v.get("form") for v in visits]
+        form_seq_counts[len(forms)][tuple(forms)] += 1
         if forms and forms[0]:
             form_first[forms[0]] += 1
         for a, b in zip(forms, forms[1:]):
@@ -328,6 +364,18 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
     cats, suppressed = _fit_cats(series_list, rows, driver, cuts, time_varying)
     report["categorical_values_suppressed"] = suppressed
 
+    rare_first: Counter = Counter()
+    rare_trans: dict[str, Counter] = defaultdict(Counter)
+    for seqs in form_seq_counts.values():
+        for seq, c in seqs.items():
+            if c >= K_MIN:
+                continue
+            if seq and seq[0]:
+                rare_first[seq[0]] += c
+            for a, b in zip(seq, seq[1:]):
+                if a and b:
+                    rare_trans[a][b] += c
+
     presence = {}
     for path, by_form in path_in_form.items():
         presence[path] = {f: min(1.0, by_form[f] / form_seen[f]) for f in by_form if form_seen[f]}
@@ -341,6 +389,9 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
         gap_ratios={b: np.array(v) for b, v in gap_ratios.items() if len(v) >= K_MIN} or {1: np.array([1.0])},
         form_first=form_first,
         form_trans=dict(form_trans),
+        form_seqs={n: _kept_sequences(seqs) for n, seqs in form_seq_counts.items()},
+        rare_first=rare_first,
+        rare_trans=dict(rare_trans),
         presence=presence,
         numeric=numeric,
         dates=dates,
@@ -348,8 +399,21 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
         driver=driver,
         driver_cuts=cuts,
         median_n=float(np.median([len(s["visits"]) for s in series_list])),
+        window=window,
         report=report,
     )
+
+
+def _kept_sequences(seqs: Counter) -> Counter:
+    """The form sequences seen in K_MIN cases or more, plus their rarer siblings' share as
+    ``None`` -- drawing ``None`` means "build this one form by form", so a rare kind of
+    case (a child already in treatment when the window opened) keeps its share without
+    any one rare sequence being carried."""
+    kept = Counter({seq: c for seq, c in seqs.items() if c >= K_MIN})
+    rest = sum(seqs.values()) - sum(kept.values())
+    if rest:
+        kept[None] = rest
+    return kept
 
 
 def _whole_col(col: str, numeric: dict[str, _PathModel]) -> bool:
@@ -383,16 +447,27 @@ def _tercile(value: float, cuts: tuple[float, ...]) -> int:
     return int(sum(1 for cut in cuts if value > cut))
 
 
+def _shape(forms) -> tuple:
+    """The forms a case is made of, in the order they first appear: ``("Screening",)`` for a
+    child screened only, ``("Screening", "Visit Form")`` for one screened and followed up."""
+    seen: list = []
+    for form in forms:
+        if form and form not in seen:
+            seen.append(form)
+    return tuple(seen)
+
+
 def _fit_cats(series_list, rows, driver, cuts, time_varying) -> tuple[dict[str, _CatModel], int]:
     cases_with: dict[str, dict[str, set[int]]] = defaultdict(lambda: defaultdict(set))
-    # (tercile, long, seq, value at the case's LAST visit or None)
-    seqs: dict[str, list[tuple[int, int, list[str], str | None]]] = defaultdict(list)
+    # (tercile, long, shape, seq, value at the case's LAST visit or None)
+    seqs: dict[str, list[tuple[int, int, tuple, list[str], str | None]]] = defaultdict(list)
     # value -> [occurrences, occurrences at the case's last visit]
     at_end: dict[str, dict[str, list[int]]] = defaultdict(lambda: defaultdict(lambda: [0, 0]))
     median_n = float(np.median([len(s["visits"]) for s in series_list]))
     for ci, (s, row) in enumerate(zip(series_list, rows)):
         terc = _tercile(row[driver], cuts) if driver in row else 1
         long = int(len(s["visits"]) > median_n)
+        shape = _shape(v.get("form") for v in s["visits"])
         per_path: dict[str, list[str]] = defaultdict(list)
         last = len(s["visits"]) - 1
         last_val: dict[str, str] = {}
@@ -406,7 +481,7 @@ def _fit_cats(series_list, rows, driver, cuts, time_varying) -> tuple[dict[str, 
                     at_end[path][val][1] += 1
                     last_val[path] = val
         for path, seq in per_path.items():
-            seqs[path].append((terc, long, seq, last_val.get(path)))
+            seqs[path].append((terc, long, shape, seq, last_val.get(path)))
 
     out: dict[str, _CatModel] = {}
     suppressed = 0
@@ -428,19 +503,28 @@ def _fit_cats(series_list, rows, driver, cuts, time_varying) -> tuple[dict[str, 
         first: dict[int, Counter] = defaultdict(Counter)
         trans: dict[tuple[int, str], Counter] = defaultdict(Counter)
         ending: dict[tuple[int, int], Counter] = defaultdict(Counter)
-        for terc, long, seq, last_val in seqs[path]:
+        first_by_shape: dict[tuple[tuple, int], Counter] = defaultdict(Counter)
+        trans_by_shape: dict[tuple[tuple, int, str], Counter] = defaultdict(Counter)
+        ending_by_shape: dict[tuple[tuple, int, int], Counter] = defaultdict(Counter)
+        for terc, long, shape, seq, last_val in seqs[path]:
             if terminal:
                 end = last_val if last_val in terminal else _NONE
                 ending[(terc, long)][end] += 1
                 ending[(-1, -1)][end] += 1
+                ending_by_shape[(shape, terc, long)][end] += 1
+                ending_by_shape[(shape, -1, long)][end] += 1
             seq = [x for x in seq if x in allowed and x not in terminal]
             if not seq:
                 continue
             first[terc][seq[0]] += 1
             first[-1][seq[0]] += 1
+            first_by_shape[(shape, terc)][seq[0]] += 1
+            first_by_shape[(shape, -1)][seq[0]] += 1
             for a, b in zip(seq, seq[1:]):
                 trans[(terc, a)][b] += 1
                 trans[(-1, a)][b] += 1
+                trans_by_shape[(shape, terc, a)][b] += 1
+                trans_by_shape[(shape, -1, a)][b] += 1
         out[path] = _CatModel(
             varying=varying,
             first=dict(first),
@@ -448,6 +532,9 @@ def _fit_cats(series_list, rows, driver, cuts, time_varying) -> tuple[dict[str, 
             allowed=allowed,
             terminal=terminal,
             ending=dict(ending),
+            first_by_shape=dict(first_by_shape),
+            trans_by_shape=dict(trans_by_shape),
+            ending_by_shape=dict(ending_by_shape),
         )
     return out, suppressed
 
@@ -469,7 +556,25 @@ def _draw(counter: Counter, rng: random.Random) -> str | None:
     return key
 
 
-def _backoff(model: _CatModel, terc: int, prev: str | None) -> Counter:
+def _draw_sequence(seqs: Counter | None, rng: random.Random) -> tuple | None:
+    """One form sequence from ``seqs`` (see _kept_sequences), or None to build it form by form."""
+    if not seqs:
+        return None
+    items = sorted(seqs.items(), key=lambda kv: repr(kv[0]))
+    r = rng.random() * sum(c for _, c in items)
+    for seq, c in items:
+        r -= c
+        if r <= 0:
+            return seq
+    return items[-1][0]
+
+
+def _backoff(model: _CatModel, terc: int, prev: str | None, shape: tuple | None = None) -> Counter:
+    if shape is not None:
+        for t in (terc, -1):
+            c = model.first_by_shape.get((shape, t)) if prev is None else model.trans_by_shape.get((shape, t, prev))
+            if c and sum(c.values()) >= K_MIN:
+                return c
     if prev is None:
         c = model.first.get(terc)
         return c if c and sum(c.values()) >= K_MIN else model.first.get(-1, Counter())
@@ -504,6 +609,18 @@ def _sample_params(model: CaseModel, n: int, rng: np.random.Generator) -> dict[s
     return params
 
 
+def fit_days(days: list[int], length: int) -> list[int]:
+    """A case's visit days, squeezed to span at most ``length`` days if they span more.
+
+    Sampled gaps can add up to a case longer than the source ever saw (the source's
+    window cut its cases off). Every day is scaled down, so order and relative spacing
+    are kept and the last visit lands on the window's last day."""
+    span = days[-1] if days else 0
+    if span <= length or span <= 0:
+        return days
+    return [d * max(length, 0) // span for d in days]
+
+
 def _round_clamp(value: float, pm: _PathModel) -> float:
     value = float(round(value)) if pm.whole else round(value, pm.places)
     return min(max(value, pm.lo), pm.hi)
@@ -522,13 +639,30 @@ def _sample_case(
             ratios = model.gap_ratios[max(model.gap_ratios)]
         gap = max(0, int(round(mean_gap * float(ratios[int(nrng.integers(len(ratios)))]))))
         days.append(days[-1] + gap)
-    forms: list[str | None] = []
-    for i in range(n):
-        if i == 0:
-            forms.append(_draw(model.form_first, rng))
-        else:
-            prev = forms[-1]
-            forms.append(_draw(model.form_trans.get(prev, Counter()), rng) or prev)
+    if model.window:
+        days = fit_days(days, model.window[1] - model.window[0])
+    # Forms: a whole sequence drawn from the source's cases of this length, so a long
+    # case is a long case's kind (screened, then followed up), not a short case's
+    # Screening repeated. A length whose sequences are too rare to keep falls back to
+    # the position-by-position chain.
+    seqs = model.form_seqs.get(n)
+    seq = _draw_sequence(seqs, rng)
+    if seq is not None:
+        forms: list[str | None] = list(seq)
+    else:
+        # A rare sequence: build it from the rare sequences' own chain when that is what
+        # was drawn, else (a length the source never had) from every case's chain.
+        rare = bool(seqs) and bool(model.rare_first)
+        first = model.rare_first if rare else model.form_first
+        trans = model.rare_trans if rare else model.form_trans
+        forms = []
+        for i in range(n):
+            if i == 0:
+                forms.append(_draw(first, rng))
+            else:
+                prev = forms[-1]
+                forms.append(_draw(trans.get(prev, Counter()), rng) or prev)
+    shape = _shape(forms)
 
     driver_value = params.get(model.driver, params["n"]) if model.driver else params["n"]
     terc = _tercile(driver_value, model.driver_cuts)
@@ -538,10 +672,17 @@ def _sample_case(
     # Each terminal-valued path's ending for this case, decided up front.
     endings: dict[str, str | None] = {}
     for path, cm in model.cats.items():
-        if cm.terminal:
-            counts = cm.ending.get((terc, long))
-            if not counts or sum(counts.values()) < K_MIN:
-                counts = cm.ending.get((-1, -1), Counter())
+        # Only a case whose last form records the path can end on it: a child only
+        # ever screened has no treatment outcome to end with.
+        if cm.terminal and model.presence.get(path, {}).get(forms[-1], 0.0) > 0:
+            for counts in (
+                cm.ending_by_shape.get((shape, terc, long)),
+                cm.ending_by_shape.get((shape, -1, long)),
+                cm.ending.get((terc, long)),
+                cm.ending.get((-1, -1), Counter()),
+            ):
+                if counts and sum(counts.values()) >= K_MIN:
+                    break
             end = _draw(counts, rng)
             endings[path] = None if end in (None, _NONE) else end
     visits = []
@@ -576,10 +717,10 @@ def _sample_case(
                 continue
             if not cm.varying:
                 if path not in const_cat:
-                    const_cat[path] = _draw(_backoff(cm, terc, None), rng)
+                    const_cat[path] = _draw(_backoff(cm, terc, None, shape), rng)
                 val = const_cat[path]
             else:
-                val = _draw(_backoff(cm, terc, prev_cat.get(path)), rng)
+                val = _draw(_backoff(cm, terc, prev_cat.get(path), shape), rng)
                 prev_cat[path] = val
             if val is not None:
                 cats[path] = val
@@ -592,8 +733,10 @@ def _sample_case(
             visit["form"] = form
         visits.append(visit)
     shifts = [d for d in range(-START_SMOOTH_DAYS, START_SMOOTH_DAYS + 1) if d != 0]
-    start = dt.date.fromordinal(start_ordinal + rng.choice(shifts))
-    return {"owner": owner, "start_date": start.isoformat(), "visits": visits}
+    start = start_ordinal + rng.choice(shifts)
+    if model.window:
+        start = place_in_window(start, days[-1], *model.window)
+    return {"owner": owner, "start_date": dt.date.fromordinal(start).isoformat(), "visits": visits}
 
 
 def _distance(a: dict, b: dict) -> float | None:

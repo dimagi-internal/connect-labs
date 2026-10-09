@@ -202,12 +202,20 @@ def _case_shape(design: str, *, entity_id: str, is_registration: bool, rng) -> d
     return shape
 
 
+def place_in_window(start: int, span: int, first: int, last: int) -> int:
+    """The start (a date ordinal) nearest ``start`` at which a case ``span`` days long lies
+    inside [first, last]: on or after the first day, its last visit on or before the last.
+    A case longer than the window starts on the first day."""
+    return max(min(start, last - span), first)
+
+
 def plan_mirror_visits(
     spec: LongitudinalSpec,
     *,
     seed: int,
     no_jitter_paths: set[str] | None = None,
     entity_names: list[str] | None = None,
+    window: tuple[dt.date, dt.date] | None = None,
 ) -> list[PlannedVisit]:
     """Replay each transplanted case as a stable entity.
 
@@ -216,6 +224,12 @@ def plan_mirror_visits(
     numeric value jittered by ``jitter_frac`` of that field's range *within this
     case* and clamped back into that range, so a clone stays physiologically
     plausible per case while not being a verbatim copy.
+
+    ``window`` (the source's first and last visit day) keeps every case inside it: a
+    case that would run past the last day starts earlier, and one longer than the
+    whole window loses the visits that still fall after it. Pools sampled before the
+    case model learned the window (connect-labs RUTF clone 10113, visits dated five
+    weeks past its source's last day) are made safe here as they replay.
     """
     rng = random.Random(seed ^ 0x713C10E)
     # Values the APP computes are replayed exactly. Jitter is meant for measurements;
@@ -234,6 +248,11 @@ def plan_mirror_visits(
         owner = series["owner"]
         start = dt.date.fromisoformat(series["start_date"])
         series_visits = series["visits"]
+        if window and series_visits:
+            span = max(int(v["day"]) for v in series_visits)
+            first, last = (d.toordinal() for d in window)
+            start = dt.date.fromordinal(place_in_window(start.toordinal(), span, first, last))
+            series_visits = [v for v in series_visits if start + dt.timedelta(days=int(v["day"])) <= window[1]]
         ranges = _series_ranges(series_visits)
         series_form_names = [v["form"] for v in series_visits if v.get("form")]
         const_values, const_dates, const_cats = _series_constants(series_visits, time_varying)
