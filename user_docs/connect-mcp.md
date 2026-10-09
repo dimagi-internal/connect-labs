@@ -238,6 +238,6 @@ An organisation's **home page** is chosen in its Settings. Once set, selecting t
 !!! note "Old page links"
     The old card-style pages that lived at `/labs/p/<name>/` have been retired. If you follow an old link, Labs will forward you to the new page at the correct address when the organisation, programme, or opportunity you are in has one. If there is no matching page, Labs shows a message explaining that pages have moved rather than an error. Update any saved bookmarks or shared links to use the new addresses in the table above.
 
-### How pages differ from workflows
+### Access checks on pages
 
-On the Workflows list, a page shows **Open
+Pages respect the same access rules as the content they display:

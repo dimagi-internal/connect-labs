@@ -31,7 +31,7 @@ Each row shows:
 
 Click any workflow to open its dashboard.
 
-On the Workflows list, **pages** (see [Pages](#pages)) appear alongside regular workflows but show an **Open page** button instead of **Start run**.
+On the Workflows list, **pages** (see [Pages](#pages)) appear alongside regular workflows but show an **Open page** button instead of **Start run**. Pages do not appear in the workflow run list.
 
 ### The PERIOD column
 
@@ -93,6 +93,10 @@ Pages are useful for landing screens and summary views that you want to keep per
 | Workflows list button | **Start run** | **Open page** |
 | Built with workflow tools | Yes | Yes |
 
+### Access to workflows shown on a page
+
+A page can display the latest run of other workflows. You will only see a workflow's run on a page if you have access to open that workflow directly — the same check that applies when you open it from the Workflows list. This applies to all workflows, including synthetic (labs-only) ones.
+
 ### Addresses for pages
 
 Each level of Labs has its own address for its page:
@@ -110,15 +114,31 @@ Each level of Labs has its own address for its page:
 
 An organisation can have one page designated as its **home page**. When someone picks that organisation in Labs — or follows a link to `/labs/overview/?organization_id=<organisation>` — they land on the home page instead of the default overview.
 
-To set the home page, go to the organisation's **Settings** and choose the page you want visitors to land on.
+To set the home page, go to the organisation's **Settings** and choose the page you want visitors to land on. You must have access to the programme or opportunity behind the page in order to set it as the home page, and visitors will only be taken to the home page if they have that same access.
 
 ### Pages in the Supply tab
 
 A page can also be set to fill a **Supply tab**. When configured this way, the page opens inside the Supply header without starting a run. This lets you show stock summaries, links to supply workflows, or other supply-related content directly from the Supply tab.
 
+The Supply tab opens only for people who have access to the programme or opportunity it is linked to. Setting up a Supply tab also requires access to that programme or opportunity. A programme can hide or rename a Supply tab that its organisation added — use the **Hide** button in Settings to do this.
+
 ### Building a page
 
 Pages are built with the standard workflow tools. To create one, start from the **Page** template in the workflow builder. Once published, the page appears in the Workflows list with an **Open page** button in place of **Start run**.
+
+!!! note "Pages cannot be started as runs"
+    A page cannot be started as a run. If you need to collect data over a date range and review it, use a regular workflow instead.
+
+---
+
+## Settings
+
+### Synthetic organisations
+
+A synthetic organisation groups every synthetic programme that shares the same organisation name, regardless of who created them. Members of a synthetic organisation can read its Settings, but only **Dimagi staff** can make changes to a synthetic organisation's Settings. Each individual synthetic programme can still set its own Settings independently.
+
+!!! note "Settings forms"
+    If you enter a value that is not a valid number in a Settings form, you will see a clear error message rather than a crash. Correct the value and save again.
 
 ---
 
@@ -235,26 +255,4 @@ When preparing coaching — either through the canopy agent card or via **Start 
 
 | Picture option | What the worker sees |
 |---|---|
-| **Their own figures** | The worker's results for the topics being coached — the same chart style as today |
-| **Peer comparison** | How the worker's figures compare with others on the same run; other workers appear only as "Peer A", "Peer B", and so on — never by name |
-| **Week by week** | The worker's figures broken down week by week, so they can see how their performance has changed over time |
-| **Custom chart** | A chart of your own design |
-
-Every number in the picture comes from Labs, and every picture is drawn in Connect's style regardless of which option you choose.
-
-The picture shown on the card is exactly what the worker will receive — it is not recalculated or regraded after you approve it. What you see is what they get.
-
-!!! note "Worker names must not appear in coaching notes"
-    A coaching note that names another worker will be refused. Workers must only ever see peers anonymously. If your note includes another worker's name, remove it and try again.
-
-### How the worker's figures picture looks
-
-The **"Your figures"** picture a worker receives as part of a coaching message is now drawn as a proper chart in Connect's own style. Each topic is shown with its label, its figure, and a bar. The bars are coloured to match Connect's standard status colours:
-
-| Bar colour | Meaning |
-|---|---|
-| Red | Off target |
-| Amber | On watch |
-| Green | On target |
-
-The chart uses Connect's typography and deep-purple title styling, so it looks consistent with the rest
+| **Their own figures** | The
