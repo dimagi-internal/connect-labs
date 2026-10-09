@@ -347,6 +347,26 @@ class TestRecommend:
 
         assert got["multiple_of_benchmark"] < 6 and got["deaths_per_dollar_ratio"] > 2
 
+    def test_a_state_where_the_effect_is_within_the_noise_is_unclear_not_kept_or_dropped(self):
+        pooled = self.pooled()
+        b_row = next(r for r in pooled["pmc_m8_onset"]["per_state"] if r["state"] == "B")
+        b_row["clear"] = False  # B's 8-monthly effect is inside its own seed noise
+        best = {"B": {"design_label": "Year-round in B", "multiple_of_benchmark": 9.0, "clears_bar": True}}
+
+        got = rank.recommend(pooled, self.STATES, best)
+
+        assert got["keep"] == ["A"] and got["drop"] == ["C"]
+        assert got["unclear"] == [
+            {
+                "state": "B",
+                "best_design_label": "Year-round in B",
+                "best_multiple_of_benchmark": 9.0,
+                "best_clears_bar": True,
+            }
+        ]
+        assert got["deaths_averted_per_year"] == 100  # the programme counts A only
+        assert next(s for s in got["states"] if s["state"] == "B")["clear_effect"] is False
+
     def test_nothing_runs_everywhere_means_no_recommendation(self):
         assert rank.recommend({"partial": _pool("Partial", {"A": (1, 9)})}, ["A", "B"]) is None
 

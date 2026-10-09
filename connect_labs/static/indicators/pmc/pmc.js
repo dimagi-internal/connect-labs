@@ -588,7 +588,7 @@
     var lead = keep
       ? 'Run <b>' +
         esc(r.label.toLowerCase()) +
-        '</b> in <b>' +
+        '</b>, in <b>' +
         keep +
         ' of the ' +
         picked +
@@ -614,6 +614,31 @@
           ': below GiveWell’s ' +
           num(d.bar) +
           '× bar with this approach.',
+      );
+    if (r.unclear && r.unclear.length)
+      points.push(
+        'Not clear with this approach in ' +
+          esc(
+            names(
+              r.unclear.map(function (u) {
+                return u.state;
+              }),
+            ),
+          ) +
+          ' (the model’s effect there is within its own noise). ' +
+          r.unclear
+            .map(function (u) {
+              return u.best_design_label
+                ? esc(u.state) +
+                    '’s best clear design: ' +
+                    esc(u.best_design_label) +
+                    ' (' +
+                    times(u.best_multiple_of_benchmark) +
+                    (u.best_clears_bar ? ')' : ', below the bar)')
+                : esc(u.state) + ' has no design with a clear effect';
+            })
+            .join('; ') +
+          '.',
       );
     if (r.versus_quarterly)
       points.push(
@@ -643,14 +668,17 @@
       .map(function (x) {
         return (
           '<tr' +
-          (x.clears_bar ? '' : ' class="unranked"') +
+          (x.clears_bar && x.clear_effect !== false
+            ? ''
+            : ' class="unranked"') +
           '><td class="l">' +
           esc(x.state) +
           '</td><td class="design">' +
           esc(x.design_label) +
           '</td><td class="pmc-num">' +
-          times(x.multiple_of_benchmark) +
-          barChip(x, d.bar) +
+          (x.clear_effect === false
+            ? '<span class="pmc-muted">effect unclear</span>'
+            : times(x.multiple_of_benchmark) + barChip(x, d.bar)) +
           '</td></tr>'
         );
       })
