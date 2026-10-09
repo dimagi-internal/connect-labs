@@ -271,6 +271,10 @@ class WorkerDetailView(OperationBase):
             data=data,
             worker=data["worker"],
             chart=mark_safe(timeline_svg(data["timeline"])),
+            # A phone's own drawing: the desktop one shrunk to 390 px leaves its text unreadable.
+            chart_narrow=mark_safe(
+                timeline_svg(data["timeline"], width=360, height=240, date_ticks=3, font=13, key="-narrow")
+            ),
             listed_visits=listed,
             gave_none_visits=gave_none,
         )
