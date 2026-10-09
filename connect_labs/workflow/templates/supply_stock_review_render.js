@@ -50,8 +50,13 @@ function WorkflowUI({
     var d = new Date(String(iso).slice(0, 10) + 'T00:00:00');
     return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   }
+  // A run-out date counts from the day being viewed: on a past date, days
+  // left were measured then, so adding them to today moved every date forward.
+  var asOf = (stock && stock.metadata && stock.metadata.as_of) || null;
   function addDays(n) {
-    var d = new Date();
+    var d = asOf
+      ? new Date(String(asOf).slice(0, 10) + 'T00:00:00')
+      : new Date();
     d.setDate(d.getDate() + Math.round(n));
     return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   }
@@ -286,7 +291,9 @@ function WorkflowUI({
           {totals.unapproved_share !== null &&
             totals.unapproved_share !== undefined && (
               <div className="text-xs text-gray-500">
-                {Math.round(totals.unapproved_share) +
+                {(totals.unapproved_share > 0 && totals.unapproved_share < 0.5
+                  ? 'under 1'
+                  : Math.round(totals.unapproved_share)) +
                   '% on visits not yet approved'}
               </div>
             )}
@@ -383,8 +390,8 @@ function WorkflowUI({
                   }}
                   className="w-full text-left px-4 py-2.5 hover:bg-gray-50"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-40 shrink-0">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                    <div className="sm:w-40 shrink-0">
                       <div className="text-sm font-medium text-gray-900">
                         {r.name}
                       </div>
@@ -425,7 +432,7 @@ function WorkflowUI({
                         )}
                       </div>
                     </div>
-                    <div className="w-48 shrink-0 text-right text-xs text-gray-600">
+                    <div className="sm:w-48 shrink-0 sm:text-right text-xs text-gray-600">
                       {r.counted !== null ? (
                         <span>
                           {'counted ' +
@@ -544,6 +551,11 @@ function WorkflowUI({
         <div>
           <div className="text-sm font-semibold text-gray-900 mb-2">
             Behind them: the stores
+            {asOf && (
+              <span className="ml-1 font-normal text-gray-500">
+                {'— today, not ' + day(asOf)}
+              </span>
+            )}
           </div>
           <div className="rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
             {storeRows.map(function (s) {
