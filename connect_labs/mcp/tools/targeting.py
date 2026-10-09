@@ -1477,6 +1477,10 @@ def _pmc_present(
         raise MCPToolError("BAD_REQUEST", f"Unknown state {state!r}.")
     noisy = bool(row.get("too_noisy"))
     projection = None if noisy else mine["projection"]
+    if projection is None and not noisy and fitted_to:
+        # The explorer withholds a projection from a state unlike its one modelled setting; a run in the state's
+        # OWN fitted setting has no such mismatch, so it is costed at the state's incidence like any other.
+        projection = pmc.project(mine["children_3_24m"], row, pmc.cost_per_dose(**costs), mine["malaria_incidence"])
 
     best = None
     if best_code:
