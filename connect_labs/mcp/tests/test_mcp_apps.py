@@ -186,6 +186,7 @@ def test_the_agents_description_has_it_preview_at_once_and_leave_the_briefing_to
     assert "PREVIEW STRAIGHT AWAY" in text
     assert "always sends it to the workflow's own coach" in text and "edit freely" in text
     assert "sample stand-in" in text and "not a mismatch" in text
+    assert "A synthetic preview also has no `opening`" in text
 
 
 def test_the_view_tool_belongs_to_the_act_scope_and_no_read_scope():
@@ -320,4 +321,8 @@ def test_the_run_context_tells_the_agent_how_to_run_each_action():
     coach, task = _with_how_to_run([{"key": "c", "type": "start_ocs_outreach"}, {"key": "t", "type": "create_task"}])
     assert "PREVIEW it" in coach["how_to_run"] and "click Send on the card" in coach["how_to_run"]
     assert "stays inside the briefing" in coach["how_to_run"]
+    # Seen live 2026-10-09: "give me a data summary ... to initiate coaching" got a summary
+    # ending "say so and I'll start it", and no card until a second message.
+    assert "summary of a worker's data to start coaching" in coach["how_to_run"]
+    assert "in that same reply" in coach["how_to_run"]
     assert "`confirm`" in task["how_to_run"] and "explicit yes" in task["how_to_run"]
