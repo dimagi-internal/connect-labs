@@ -1,4 +1,5 @@
-"""The workflow app's one table: a record of each workflow action that was run.
+"""The workflow app's tables: a record of each workflow action that was run, and the
+coaching charts its previews froze.
 
 Everything else a workflow owns lives in Connect's LabsRecord API. An action's
 EFFECTS are written where they always are (tasks as LabsRecords, conversations in
@@ -76,3 +77,33 @@ class WorkflowActionExecution(models.Model):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
         }
+
+
+class CoachChart(models.Model):
+    """A coaching chart as a person previewed it, frozen: the Vega-Lite spec, the data
+    Labs resolved for it, and Labs' caption (``coach_charts/chart.py``).
+
+    Made when a coaching preview pictures a worker, and never changed: the id is a
+    hash of the chart's content and of who previewed it for which run and worker, so
+    the same preview finds the same row. The conversation that is sent links to it
+    (``coach_image``), so the picture Open Chat Studio fetches is the one that was
+    approved -- not re-graded when it is fetched. Holds a worker's own figures and
+    anonymous peers' (``Peer A`` ...) figures, no names but the worker's first name.
+    """
+
+    id = models.CharField(max_length=32, primary_key=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    run_id = models.IntegerField()
+    opportunity_id = models.IntegerField(null=True, blank=True)
+    program_id = models.IntegerField(null=True, blank=True)
+    #: The worker it pictures ('<opportunity_id>::<username>').
+    worker_key = models.CharField(max_length=200)
+    #: What was asked for (``chart.normalise_request``) and the chart that resolved.
+    request = models.JSONField()
+    chart = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["run_id", "worker_key"])]

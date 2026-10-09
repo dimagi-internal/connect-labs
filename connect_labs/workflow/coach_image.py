@@ -1,10 +1,15 @@
 """A picture of a worker's own figures, for the coach to send alongside the briefing.
 
-When "Start coaching" runs with ``include_image``, each briefed worker's session state
-gains ``coach_image_url`` and ``coach_image_caption`` (``tasks/ai_sessions.py``). The
-URL is a SIGNED LINK, not a stored file: the payload -- the worker's name and the
-figures of the topics the briefing raises -- travels inside the link, signed so it
-cannot be altered, and the PNG is drawn when the link is fetched. Nothing is stored.
+When "Start coaching" runs with ``include_image`` (or a ``picture``), each briefed
+worker's session state gains ``coach_image_url`` and ``coach_image_caption``
+(``tasks/ai_sessions.py``). The URL is a SIGNED LINK. Two kinds of payload ride in it:
+
+* a CHART link -- ``{"chart": <id>, "opportunity_id"}`` -- names the frozen chart the
+  person previewed (``coach_charts/store.py``, a ``CoachChart`` row): any type an agent
+  asked for, with the data Labs resolved at preview, drawn on fetch from that row.
+  Every picture sent since generated charts is one of these;
+* a LEGACY link -- ``{"worker", "topics", "opportunity_id"}`` -- carries the figures
+  themselves, drawn as ``topic_bars``. Links issued before charts still work.
 
 The link expires after ``MAX_AGE`` (a worker may reply days later) and is fetched by
 Open Chat Studio with a ``coach-images`` token (``mcp/token_scopes.COACH_IMAGES``),
@@ -91,9 +96,43 @@ def unsign(token: str) -> dict:
         payload = signing.loads(token, salt=SALT, max_age=MAX_AGE)
     except signing.BadSignature as e:  # SignatureExpired is a BadSignature
         raise BadImageLink(str(e)) from e
-    if not _is_payload(payload):
+    if not (_is_payload(payload) or _is_chart_link(payload)):
         raise BadImageLink("not a picture payload")
     return payload
+
+
+def _is_chart_link(payload: Any) -> bool:
+    return isinstance(payload, dict) and isinstance(payload.get("chart"), str) and len(payload["chart"]) == 32
+
+
+def png_for(payload: dict) -> bytes:
+    """The PNG a link names: its stored chart, or a legacy payload's ``topic_bars``.
+    Raises ``BadImageLink`` when the chart it names is gone."""
+    if _is_chart_link(payload):
+        from connect_labs.workflow.coach_charts import chart as charts
+        from connect_labs.workflow.coach_charts import store
+
+        record = store.get(payload["chart"])
+        if record is None:
+            raise BadImageLink("no such chart")
+        return charts.png(record.chart)
+    return render_png(payload)
+
+
+def chart_attachment(record, opportunity_id: int | None = None) -> dict | None:
+    """``{"url", "caption"}`` for a stored chart (``coach_charts/store.py``), or None
+    when the site has no public origin to link from. The caption is Labs' own,
+    written when the chart was built, naming no peer."""
+    payload: dict[str, Any] = {"chart": record.pk}
+    if opportunity_id is not None:
+        payload["opportunity_id"] = int(opportunity_id)
+    base = (getattr(settings, "LABS_PUBLIC_URL", "") or "").rstrip("/")
+    if not base:
+        return None
+    return {
+        "url": base + reverse("labs:coach_image", args=[sign(payload)]),
+        "caption": record.chart.get("caption") or "",
+    }
 
 
 def _is_payload(payload: Any) -> bool:
