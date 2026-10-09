@@ -189,6 +189,17 @@ def test_the_agents_description_has_it_preview_at_once_and_leave_the_briefing_to
     assert "A synthetic preview also has no `opening`" in text
 
 
+def test_after_previewing_the_agent_says_one_line_not_the_card():
+    """Owner, 2026-10-09: the chat restated the card's topic, coach, synthetic note and
+    options; it should be extremely minimal beyond the card."""
+    from connect_labs.mcp.tools.workflow_run import CHAT_AFTER_PREVIEW, HOW_TO_RUN_CLICK_TO_SEND
+
+    assert "ONE short line" in CHAT_AFTER_PREVIEW and "do not restate" in CHAT_AFTER_PREVIEW
+    assert CHAT_AFTER_PREVIEW in get_tool("workflow_run_action").description
+    assert CHAT_AFTER_PREVIEW in HOW_TO_RUN_CLICK_TO_SEND
+    assert "give each worker's `briefing` topics" not in get_tool("workflow_run_action").description
+
+
 def test_the_view_tool_belongs_to_the_act_scope_and_no_read_scope():
     from connect_labs.labs import canopy
 
@@ -319,7 +330,7 @@ def test_the_run_context_tells_the_agent_how_to_run_each_action():
     from connect_labs.mcp.tools.workflow_run import _with_how_to_run
 
     coach, task = _with_how_to_run([{"key": "c", "type": "start_ocs_outreach"}, {"key": "t", "type": "create_task"}])
-    assert "PREVIEW it" in coach["how_to_run"] and "click Send on the card" in coach["how_to_run"]
+    assert "PREVIEW it" in coach["how_to_run"] and "ONE short line" in coach["how_to_run"]
     assert "stays inside the briefing" in coach["how_to_run"]
     # Seen live 2026-10-09: "give me a data summary ... to initiate coaching" got a summary
     # ending "say so and I'll start it", and no card until a second message.
