@@ -28,6 +28,9 @@ FONTS_DIR = Path(__file__).parent / "fonts"
 PNG_WIDTH = theme.WIDTH * theme.SCALE
 MAX_HEIGHT = 2400
 MAX_PNG_BYTES = 1024 * 1024
+#: The smallest scale a too-wide chart is redrawn at to fit (its 20 px text then
+#: reads as 32 px in the PNG); narrower still is refused.
+MIN_SCALE = 1.6
 
 #: Top-level keys a spec may not set: the theme owns its look and size.
 _THEME_OWNED = ("config", "background", "padding", "autosize", "$schema", "usermeta")
@@ -61,30 +64,53 @@ def themed(spec: dict, datasets: dict | None = None) -> dict:
     if datasets is not None:
         out["datasets"] = copy.deepcopy(datasets)
     if not any(k in out for k in ("vconcat", "hconcat", "concat", "facet", "repeat")):
-        out["width"] = theme.WIDTH - 2 * theme.PADDING
+        # A single or layered view is FITTED to the phone's width, axes and legends
+        # included -- so a spec whose axis labels are long still fits.
+        out["width"] = theme.WIDTH
+        out["autosize"] = {"type": "fit-x", "contains": "padding"}
     out["config"] = copy.deepcopy(theme.THEME)
     return out
 
 
 def render_png(spec: dict, datasets: dict | None = None) -> bytes:
     """The chart as PNG bytes, ``PNG_WIDTH`` wide (narrower only if the spec is), in
-    Connect's theme. Deterministic for the same spec and data. Raises
+    Connect's theme. A chart that comes out wider is redrawn at a smaller scale to fit,
+    down to ``MIN_SCALE``. Deterministic for the same spec and data. Raises
     ``RenderError`` when Vega-Lite refuses the spec or the picture is out of bounds."""
     import vl_convert as vlc
-    from PIL import Image
 
     _register_fonts(vlc)
-    try:
-        png = vlc.vegalite_to_png(
-            themed(spec, datasets), vl_version=VL_VERSION, scale=theme.SCALE, allowed_base_urls=[]
-        )
-    except ValueError as e:
-        raise RenderError(f"Vega-Lite could not draw this chart: {str(e)[:300]}") from e
-    import io
-
-    width, height = Image.open(io.BytesIO(png)).size
-    if height > MAX_HEIGHT or width > PNG_WIDTH + 2 * theme.SCALE:
+    drawn = themed(spec, datasets)
+    png = _draw(vlc, drawn, theme.SCALE)
+    width, height = _size(png)
+    if width > PNG_WIDTH + 2 * theme.SCALE:
+        # Wider than a phone (an agent's own spec, say): drawn again at the scale that
+        # fits, so it stays crisp -- unless that would shrink its text too far to read.
+        scale = theme.SCALE * PNG_WIDTH / width
+        if scale < MIN_SCALE:
+            raise RenderError(
+                f"the chart is {width // theme.SCALE} px wide; at most {theme.WIDTH} fits a phone "
+                "(shorter labels, fewer topics, or a legend at the bottom help)"
+            )
+        png = _draw(vlc, drawn, scale)
+        width, height = _size(png)
+    if height > MAX_HEIGHT:
         raise RenderError(f"the chart is {width}x{height} px; at most {PNG_WIDTH}x{MAX_HEIGHT} fits a phone")
     if len(png) > MAX_PNG_BYTES:
         raise RenderError(f"the chart is {len(png)} bytes; at most {MAX_PNG_BYTES}")
     return png
+
+
+def _draw(vlc, drawn: dict, scale: float) -> bytes:
+    try:
+        return vlc.vegalite_to_png(drawn, vl_version=VL_VERSION, scale=scale, allowed_base_urls=[])
+    except ValueError as e:
+        raise RenderError(f"Vega-Lite could not draw this chart: {str(e)[:300]}") from e
+
+
+def _size(png: bytes) -> tuple[int, int]:
+    import io
+
+    from PIL import Image
+
+    return Image.open(io.BytesIO(png)).size
