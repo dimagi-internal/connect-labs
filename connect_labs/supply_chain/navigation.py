@@ -183,16 +183,40 @@ VIEWS_WITHOUT_TABS = frozenset(
 
 
 def _pinned(request) -> list:
-    """The workflows pinned into the programme in view (workflow_views/models.py), in tab order."""
+    """The workflows pinned into the programme in view (workflow_views/models.py), in tab order.
+
+    Read once per request and kept on it. That matters for a past date: an
+    `?as_of=` page renders after history/rewind.py has undone every later
+    revision, the pins included, so a tab pinned after that day vanished from
+    the header and the built-in it replaces came back. The pins are navigation,
+    not the programme's records -- `as_of_view` reads them before it rewinds.
+    """
+    cached = getattr(request, "_supply_pins", None)
+    if cached is not None:
+        return cached
     from connect_labs.supply_chain.workflow_views.models import SupplyWorkflowView
 
     program_id = (getattr(request, "labs_context", None) or {}).get("program_id")
-    if not program_id:
-        return []
-    try:
-        return list(SupplyWorkflowView.objects.filter(program_id=int(program_id)))
-    except (TypeError, ValueError):
-        return []
+    pins = []
+    if program_id:
+        try:
+            pins = list(SupplyWorkflowView.objects.filter(program_id=int(program_id)))
+        except (TypeError, ValueError):
+            pins = []
+    request._supply_pins = pins
+    return pins
+
+
+def pinned_replacement(request, tab_name: str) -> dict | None:
+    """The pinned workflow standing in for built-in tab `tab_name`, as {url, label}, or None.
+
+    For a page that points at that tab in its own words ("see Workers") -- it
+    should point where the header does.
+    """
+    for pin in _pinned(request):
+        if pin.replaces == tab_name:
+            return {"url": reverse("supply_chain:workflow_view", args=[pin.slug]), "label": pin.label}
+    return None
 
 
 def supply_tabs(request) -> list[dict]:

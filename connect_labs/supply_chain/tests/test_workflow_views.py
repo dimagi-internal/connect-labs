@@ -89,6 +89,35 @@ def test_the_classic_page_still_highlights_the_pinned_tab(client_in_programme, d
     assert active == ["Stock review"]
 
 
+def test_a_past_day_keeps_a_pin_made_after_it(client_in_programme, da):
+    """A past page renders after the rewind undoes later revisions -- the pin's own
+    included -- so a pin made today vanished from a past day's header and Workers came back."""
+    import datetime
+
+    _pin(da, replaces="supply_chain:workers")
+    yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+
+    body = client_in_programme.get(reverse("supply_chain:catalogue") + f"?as_of={yesterday}").content.decode()
+    nav = body.split("<nav", 1)[1].split("</nav>", 1)[0]
+
+    assert "Stock review" in nav
+    assert ">Workers<" not in nav
+
+
+def test_stock_points_to_the_pinned_review_and_drops_its_controls_on_a_past_day(client_in_programme, da):
+    import datetime
+
+    _pin(da, replaces="supply_chain:workers")
+    body = client_in_programme.get(reverse("supply_chain:stock")).content.decode()
+    assert 'href="/supply/views/stock-review/">Stock review</a>' in body
+    assert "create one from that template" not in body
+    assert "Record stock in or out" in body
+
+    yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    past = client_in_programme.get(reverse("supply_chain:stock") + f"?as_of={yesterday}").content.decode()
+    assert "Record stock in or out" not in past and "Record a count</a>" not in past
+
+
 def test_a_pin_that_adds_a_tab_sits_with_the_stock_pages_and_unpinning_restores(client_in_programme, da):
     view = _pin(da, label="Coverage", slug="coverage")
     labels = [label.strip() for _, _, label in _tabs(client_in_programme)]

@@ -372,7 +372,10 @@ def network_stock(  # noqa: C901
         on_hand_in_base = None
         _, base_unit, _ = ledger._pack_spec(for_conversion)
         if isinstance(on_hand, Quantity) and base_unit and on_hand.unit != base_unit:
-            restated = ledger.convert(on_hand.amount, on_hand.unit, base_unit, for_conversion)
+            # From the ledger's own holdings, not back from the pack figure: that
+            # figure is rounded (52 sachets is 0.3467 cartons), and multiplying it
+            # back out printed "52.01 sachets" for a worker holding 52.
+            restated = ledger.collapse(units, for_conversion, base_unit)
             on_hand_in_base = restated if isinstance(restated, Quantity) else None
         count = counts.get(point.pk)
         # The RESOLVED item, not the caller's: cover divides a carton balance
