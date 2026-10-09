@@ -260,6 +260,17 @@ _VISIT_FIELDS = [
         "aggregation": "first",
     },
     {
+        # Same shape as capture_anc_card_visit_verification above -- a
+        # DataBindOnly calculate field holding the FLW's verification answer
+        # for a separate Image capture question ("Please capture birth
+        # certificate"), confirmed present under the same
+        # additional_visit_verification_block umbrella on all 6 visit-type
+        # forms via commcare_hq_mcp.
+        "name": "capture_birth_certificate_visit_verification",
+        "path": "form.additional_visit_verification_block.capture_birth_certificate_visit_verification",
+        "aggregation": "first",
+    },
+    {
         # Scanned real submissions: verification_properties is entirely
         # absent on some forms, with visit_verification_outcome sitting at
         # the top level of `form` directly instead (confirmed on 2 of 9
@@ -609,7 +620,7 @@ RENDER_CODE = (Path(__file__).parent / "mbw_visit_verification_render.js").read_
 TEMPLATE = {
     "key": "mbw_visit_verification",
     "name": "MBW Visit Verification",
-    "description": "Single-table visit-verification audit (GPS/QR/signature/ANC-card/mother-questions outcomes).",
+    "description": "Single-table visit-verification audit (GPS/QR/signature/ANC-card/birth-certificate/mother-questions outcomes).",
     "icon": "fa-table",
     "color": "purple",
     "definition": DEFINITION,
