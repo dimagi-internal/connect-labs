@@ -1,0 +1,1090 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Coaching preview</title>
+    <!--
+  ui://labs/workflow-action-preview — an MCP Apps View (SEP-1865, 2026-01-26).
+
+  Rendered by a host (canopy) for a workflow_run_action result. It previews the
+  action again AS THE VIEWER (workflow_action_preview_view, app-only), shows what
+  would be sent, and sends it on the viewer's click: workflow_run_action with the
+  confirm token that preview issued. The agent never holds that token.
+
+  Self-contained on purpose: no network load of any kind. The host's default CSP
+  (connect-src 'none'; img-src 'self' data:) allows exactly this, and the picture
+  arrives as a data: URI. Every call goes to the host over postMessage.
+-->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --color-background-primary: light-dark(#ffffff, #171717);
+        --color-background-secondary: light-dark(#f6f7f9, #222326);
+        --color-background-warning: light-dark(#fff7e0, #3a2f10);
+        --color-background-success: light-dark(#eaf7ef, #12301f);
+        --color-background-danger: light-dark(#fdecec, #3a1717);
+        --color-text-primary: light-dark(#171717, #f2f2f2);
+        --color-text-secondary: light-dark(#5b6470, #a8b0ba);
+        --color-text-warning: light-dark(#7a5300, #f3c969);
+        --color-text-success: light-dark(#1d6b3a, #8fdcaa);
+        --color-text-danger: light-dark(#a12b2b, #f3a3a3);
+        --color-text-inverse: light-dark(#ffffff, #171717);
+        --color-background-inverse: light-dark(#1f2937, #f2f2f2);
+        --color-border-primary: light-dark(#d9dde3, #3a3d42);
+        --color-border-secondary: light-dark(#eceff3, #2c2f33);
+        --color-ring-primary: light-dark(#2563eb, #7aa7ff);
+        --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        --font-text-sm-size: 13px;
+        --font-text-md-size: 14px;
+        --font-heading-sm-size: 15px;
+        --font-weight-medium: 500;
+        --font-weight-semibold: 600;
+        --border-radius-sm: 6px;
+        --border-radius-md: 8px;
+        --border-width-regular: 1px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: var(--font-sans);
+        font-size: var(--font-text-md-size);
+        line-height: 1.45;
+        color: var(--color-text-primary);
+        background: var(--color-background-primary);
+      }
+      main {
+        padding: 14px;
+        max-width: 720px;
+      }
+      h1 {
+        font-size: var(--font-heading-sm-size);
+        font-weight: var(--font-weight-semibold);
+        margin: 0 0 2px;
+      }
+      .sub {
+        color: var(--color-text-secondary);
+        font-size: var(--font-text-sm-size);
+        margin: 0 0 12px;
+      }
+      .note {
+        border-radius: var(--border-radius-sm);
+        padding: 8px 10px;
+        margin: 0 0 10px;
+        font-size: var(--font-text-sm-size);
+        background: var(--color-background-secondary);
+        color: var(--color-text-secondary);
+      }
+      .note.warn {
+        background: var(--color-background-warning);
+        color: var(--color-text-warning);
+      }
+      .note.ok {
+        background: var(--color-background-success);
+        color: var(--color-text-success);
+      }
+      .note.err {
+        background: var(--color-background-danger);
+        color: var(--color-text-danger);
+      }
+      .worker {
+        border: var(--border-width-regular) solid var(--color-border-primary);
+        border-radius: var(--border-radius-md);
+        padding: 12px;
+        margin: 0 0 10px;
+      }
+      .worker-name {
+        font-weight: var(--font-weight-semibold);
+        margin: 0 0 6px;
+      }
+      .label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--color-text-secondary);
+        margin: 10px 0 4px;
+      }
+      ul.topics {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      ul.topics li {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+        padding: 3px 0;
+        font-size: var(--font-text-sm-size);
+      }
+      .dot {
+        flex: none;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #9aa0a6;
+        transform: translateY(-1px);
+      }
+      .dot.red {
+        background: #d64545;
+      }
+      .dot.yellow,
+      .dot.amber {
+        background: #e0a100;
+      }
+      .dot.green {
+        background: #2e9e5b;
+      }
+      .topic-label {
+        flex: 1 1 auto;
+      }
+      .topic-figure {
+        flex: none;
+        color: var(--color-text-secondary);
+        font-variant-numeric: tabular-nums;
+      }
+      blockquote {
+        margin: 0;
+        padding: 8px 10px;
+        white-space: pre-wrap;
+        border-left: 3px solid var(--color-border-primary);
+        background: var(--color-background-secondary);
+        border-radius: 0 var(--border-radius-sm) var(--border-radius-sm) 0;
+        font-size: var(--font-text-sm-size);
+      }
+      figure {
+        margin: 0;
+      }
+      figure img {
+        display: block;
+        width: 100%;
+        max-width: 420px;
+        height: auto;
+        border: var(--border-width-regular) solid var(--color-border-secondary);
+        border-radius: var(--border-radius-sm);
+        background: #fff;
+      }
+      figcaption {
+        font-size: 12px;
+        color: var(--color-text-secondary);
+        margin-top: 4px;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 12px 0 4px;
+      }
+      button {
+        font: inherit;
+        font-size: var(--font-text-md-size);
+        cursor: pointer;
+        border-radius: var(--border-radius-sm);
+        border: var(--border-width-regular) solid var(--color-border-primary);
+        background: var(--color-background-primary);
+        color: var(--color-text-primary);
+        padding: 7px 12px;
+        min-height: 34px;
+      }
+      button.primary {
+        background: var(--color-background-inverse);
+        color: var(--color-text-inverse);
+        border-color: var(--color-background-inverse);
+        font-weight: var(--font-weight-medium);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      a:focus-visible {
+        outline: 2px solid var(--color-ring-primary);
+        outline-offset: 2px;
+      }
+      .qa {
+        margin: 10px 0 0;
+      }
+      .qa label {
+        display: block;
+        font-size: var(--font-text-sm-size);
+        margin-bottom: 4px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      input,
+      select {
+        font: inherit;
+        font-size: var(--font-text-md-size);
+        flex: 1 1 180px;
+        min-width: 0;
+        padding: 6px 8px;
+        border-radius: var(--border-radius-sm);
+        border: var(--border-width-regular) solid var(--color-border-primary);
+        background: var(--color-background-primary);
+        color: var(--color-text-primary);
+      }
+      a.link {
+        color: var(--color-ring-primary);
+        cursor: pointer;
+        text-decoration: underline;
+      }
+      .history {
+        font-size: 12px;
+        color: var(--color-text-secondary);
+        margin: 8px 0 0;
+      }
+      .history li {
+        margin: 2px 0;
+      }
+      .hidden {
+        display: none !important;
+      }
+      @media (min-width: 560px) {
+        .worker-body {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 220px);
+          gap: 14px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main id="app" aria-live="polite">
+      <h1 id="title">Preparing the preview…</h1>
+      <p class="sub" id="subtitle">Nothing is sent until you click Send.</p>
+      <div id="notes"></div>
+      <div id="workers"></div>
+      <div id="qa" class="qa hidden">
+        <label for="qa-user"
+          >Send to me instead (QA test) — your PersonalID username</label
+        >
+        <div class="row">
+          <input
+            id="qa-user"
+            type="text"
+            autocomplete="username"
+            spellcheck="false"
+            placeholder="PersonalID username"
+          />
+          <button id="qa-preview" type="button">Preview my test send</button>
+          <button id="qa-cancel" type="button">Cancel</button>
+        </div>
+      </div>
+      <div id="actions" class="actions"></div>
+      <ul id="history" class="history hidden"></ul>
+    </main>
+    <script>
+      (function () {
+        'use strict';
+
+        var PREVIEW_TOOL = 'workflow_action_preview_view';
+        var COMMIT_TOOL = 'workflow_run_action';
+        var STATUS_TOOL = 'workflow_action_status';
+        var PROTOCOL_VERSION = '2026-01-26';
+
+        // ---------------------------------------------------------------- transport
+        // JSON-RPC 2.0 over postMessage to the host (via its sandbox proxy). Only the
+        // parent window is listened to.
+        var nextId = 1;
+        var pending = {};
+
+        function post(message) {
+          window.parent.postMessage(message, '*');
+        }
+
+        function request(method, params) {
+          var id = nextId++;
+          return new Promise(function (resolve, reject) {
+            pending[id] = { resolve: resolve, reject: reject };
+            post({
+              jsonrpc: '2.0',
+              id: id,
+              method: method,
+              params: params || {},
+            });
+          });
+        }
+
+        function notify(method, params) {
+          post({ jsonrpc: '2.0', method: method, params: params || {} });
+        }
+
+        function respond(id, result) {
+          post({ jsonrpc: '2.0', id: id, result: result || {} });
+        }
+
+        window.addEventListener('message', function (event) {
+          if (event.source !== window.parent) return;
+          var msg = event.data;
+          if (!msg || typeof msg !== 'object' || msg.jsonrpc !== '2.0') return;
+          if (
+            msg.method === undefined &&
+            msg.id !== undefined &&
+            pending[msg.id]
+          ) {
+            var p = pending[msg.id];
+            delete pending[msg.id];
+            if (msg.error)
+              p.reject(
+                new Error((msg.error && msg.error.message) || 'Request failed'),
+              );
+            else p.resolve(msg.result);
+            return;
+          }
+          if (typeof msg.method !== 'string') return;
+          if (msg.id !== undefined) {
+            // Requests from the host.
+            if (msg.method === 'ui/resource-teardown' || msg.method === 'ping')
+              respond(msg.id, {});
+            else
+              post({
+                jsonrpc: '2.0',
+                id: msg.id,
+                error: { code: -32601, message: 'Method not found' },
+              });
+            return;
+          }
+          var handler = notifications[msg.method];
+          if (handler) handler(msg.params || {});
+        });
+
+        // ---------------------------------------------------------------- state
+        var state = {
+          hostContext: {},
+          canAct: false,
+          input: null, // the agent's workflow_run_action arguments
+          agentResult: null, // its result
+          preview: null, // the viewer's own preview
+          deliverTo: '',
+          busy: false,
+          outcome: null, // "sent" | "declined"
+          execution: null,
+          previewing: false,
+        };
+
+        var el = function (id) {
+          return document.getElementById(id);
+        };
+
+        function h(tag, attrs, children) {
+          var node = document.createElement(tag);
+          if (attrs)
+            Object.keys(attrs).forEach(function (k) {
+              if (k === 'text') node.textContent = attrs[k];
+              else if (k === 'class') node.className = attrs[k];
+              else if (k.slice(0, 2) === 'on')
+                node.addEventListener(k.slice(2), attrs[k]);
+              else node.setAttribute(k, attrs[k]);
+            });
+          (children || []).forEach(function (c) {
+            if (c)
+              node.appendChild(
+                typeof c === 'string' ? document.createTextNode(c) : c,
+              );
+          });
+          return node;
+        }
+
+        // ---------------------------------------------------------------- theme
+        function applyHostContext(ctx) {
+          if (!ctx) return;
+          Object.keys(ctx).forEach(function (k) {
+            state.hostContext[k] = ctx[k];
+          });
+          var root = document.documentElement;
+          var vars = ctx.styles && ctx.styles.variables;
+          if (vars)
+            Object.keys(vars).forEach(function (k) {
+              if (
+                vars[k] !== undefined &&
+                vars[k] !== null &&
+                k.indexOf('--') === 0
+              )
+                root.style.setProperty(k, String(vars[k]));
+            });
+          if (ctx.theme === 'light' || ctx.theme === 'dark') {
+            root.style.colorScheme = ctx.theme;
+            root.setAttribute('data-theme', ctx.theme);
+          }
+          var dims = ctx.containerDimensions;
+          if (dims && dims.maxWidth) root.style.maxWidth = dims.maxWidth + 'px';
+        }
+
+        // ---------------------------------------------------------------- size
+        var lastSize = '';
+        var initialized = false; // nothing goes to the host before the handshake completes
+        function reportSize() {
+          if (!initialized) return;
+          var w = Math.ceil(document.documentElement.scrollWidth);
+          var hgt = Math.ceil(document.documentElement.scrollHeight);
+          var key = w + 'x' + hgt;
+          if (key === lastSize) return;
+          lastSize = key;
+          notify('ui/notifications/size-changed', { width: w, height: hgt });
+        }
+        if (typeof ResizeObserver === 'function')
+          new ResizeObserver(reportSize).observe(document.documentElement);
+
+        // ---------------------------------------------------------------- tools
+        function callTool(name, args) {
+          return request('tools/call', { name: name, arguments: args }).then(
+            function (result) {
+              if (!result) throw new Error('No result');
+              if (result.isError) {
+                var text = (result.content || [])
+                  .map(function (c) {
+                    return c && c.text;
+                  })
+                  .filter(Boolean)
+                  .join(' ');
+                throw new Error(firstLine(text) || 'The call failed');
+              }
+              return result.structuredContent || parseText(result);
+            },
+          );
+        }
+
+        function parseText(result) {
+          var text = (result.content || [])
+            .map(function (c) {
+              return c && c.text;
+            })
+            .filter(Boolean)
+            .join('');
+          try {
+            return JSON.parse(text);
+          } catch (e) {
+            return {};
+          }
+        }
+
+        function firstLine(text) {
+          return String(text || '')
+            .split('\n')[0]
+            .slice(0, 400);
+        }
+
+        function scopeArgs() {
+          var a = state.input || {};
+          var out = { run_id: a.run_id };
+          if (a.opportunity_id !== undefined && a.opportunity_id !== null)
+            out.opportunity_id = a.opportunity_id;
+          if (a.program_id !== undefined && a.program_id !== null)
+            out.program_id = a.program_id;
+          return out;
+        }
+
+        function loadPreview() {
+          var a = state.input;
+          if (!a || !a.run_id || !a.action) {
+            showError('This preview is missing its run or action.');
+            return;
+          }
+          var args = scopeArgs();
+          args.action = a.action;
+          args.arguments = a.arguments || {};
+          if (state.deliverTo) args.deliver_to = state.deliverTo;
+          state.previewing = true;
+          state.preview = null; // a token is bound to its arguments: never keep an older one live
+          render();
+          return callTool(PREVIEW_TOOL, args).then(
+            function (p) {
+              state.previewing = false;
+              state.preview = p;
+              render();
+            },
+            function (err) {
+              state.previewing = false;
+              state.preview = readOnly(state.agentResult);
+              showError(err.message);
+            },
+          );
+        }
+
+        // What the agent's own preview showed, with nothing to send: for a viewer the host
+        // will not let act, or when the viewer's preview could not be had.
+        function readOnly(result) {
+          var sc = result && (result.structuredContent || parseText(result));
+          if (!sc || !sc.workers) return null;
+          var copy = {};
+          Object.keys(sc).forEach(function (k) {
+            if (k !== 'confirm' && k !== 'confirm_expires_in') copy[k] = sc[k];
+          });
+          return copy;
+        }
+
+        // ---------------------------------------------------------------- actions
+        function workerName(p) {
+          var w = (p && p.workers) || [];
+          if (w.length === 1) return w[0].name || 'the worker';
+          return w.length + ' workers';
+        }
+
+        function send() {
+          var p = state.preview;
+          if (!p || !p.confirm || state.busy) return;
+          state.busy = true;
+          render();
+          var args = scopeArgs();
+          args.action = state.input.action;
+          args.arguments = p.arguments;
+          args.confirm = p.confirm;
+          var toQa = !!p.deliver_to;
+          var who = toQa ? p.deliver_to : workerName(p);
+          callTool(COMMIT_TOOL, args).then(
+            function (out) {
+              state.busy = false;
+              state.outcome = 'sent';
+              state.execution = (out && out.execution) || null;
+              var id = state.execution && state.execution.id;
+              tell(
+                {
+                  outcome: 'sent',
+                  execution_id: id,
+                  to: toQa ? 'qa' : 'worker',
+                  recipient: who,
+                  synthetic: !!p.synthetic,
+                },
+                'Sent the coaching preview to ' +
+                  who +
+                  (toQa ? ' (a QA test)' : '') +
+                  (p.synthetic ? ' (synthetic: no message goes out)' : '') +
+                  (id
+                    ? '. Execution ' +
+                      id +
+                      '; follow it with workflow_action_status.'
+                    : '.'),
+              );
+              render();
+              followStatus();
+            },
+            function (err) {
+              state.busy = false;
+              if (
+                /expired|already confirmed|not the ones that were previewed/i.test(
+                  err.message,
+                )
+              ) {
+                loadPreview().then(function () {
+                  showNote(
+                    'That preview went stale, so it was refreshed. Click Send again.',
+                    'warn',
+                  );
+                });
+                return;
+              }
+              showError(err.message);
+              render();
+            },
+          );
+        }
+
+        function decline() {
+          if (state.busy) return;
+          state.outcome = 'declined';
+          state.preview = null;
+          request('ui/update-model-context', {
+            content: [
+              {
+                type: 'text',
+                text: 'The person chose Not yet: nothing was sent.',
+              },
+            ],
+            structuredContent: { outcome: 'declined' },
+          }).catch(function () {});
+          render();
+        }
+
+        // ui/update-model-context then ui/message: the host learns what was picked.
+        function tell(structured, text) {
+          request('ui/update-model-context', {
+            content: [{ type: 'text', text: text }],
+            structuredContent: structured,
+          })
+            .catch(function () {})
+            .then(function () {
+              return request('ui/message', {
+                role: 'user',
+                content: { type: 'text', text: text },
+              });
+            })
+            .catch(function () {});
+        }
+
+        var polls = 0;
+        function followStatus() {
+          var ex = state.execution;
+          if (!ex || !ex.id || polls > 15) return;
+          if (
+            ['completed', 'completed_with_errors', 'failed'].indexOf(
+              ex.status,
+            ) >= 0
+          )
+            return;
+          polls += 1;
+          setTimeout(function () {
+            var args = scopeArgs();
+            args.execution_id = ex.id;
+            callTool(STATUS_TOOL, args).then(
+              function (out) {
+                var found = ((out && out.executions) || [])[0];
+                if (found) {
+                  state.execution = found;
+                  render();
+                }
+                followStatus();
+              },
+              function () {
+                /* the host may not offer it: the receipt above stands */
+              },
+            );
+          }, 2000);
+        }
+
+        function openLink(url) {
+          if (!url || url.indexOf('https://') !== 0) return;
+          request('ui/open-link', { url: url }).catch(function () {});
+        }
+
+        // ---------------------------------------------------------------- view
+        var errorText = '';
+        var noteText = null;
+        function showError(text) {
+          errorText = text || 'Something went wrong.';
+          render();
+        }
+        function showNote(text, kind) {
+          noteText = { text: text, kind: kind || '' };
+          render();
+        }
+
+        function topicList(topics) {
+          return h(
+            'ul',
+            { class: 'topics' },
+            (topics || []).map(function (t) {
+              return h('li', null, [
+                h('span', {
+                  class: 'dot ' + String(t.band || '').toLowerCase(),
+                  'aria-hidden': 'true',
+                }),
+                h('span', {
+                  class: 'topic-label',
+                  text: t.label + (t.status ? ' — ' + t.status : ''),
+                }),
+                h('span', { class: 'topic-figure', text: t.figure || '' }),
+              ]);
+            }),
+          );
+        }
+
+        function workerCard(w) {
+          var text = [];
+          if (w.briefing && w.briefing.topics && w.briefing.topics.length) {
+            text.push(h('div', { class: 'label', text: 'The coach raises' }));
+            text.push(topicList(w.briefing.topics));
+          }
+          if (w.briefing && w.briefing.note) {
+            text.push(
+              h('div', { class: 'label', text: "Programme team's note" }),
+            );
+            text.push(h('blockquote', { text: w.briefing.note }));
+          }
+          if (w.opening) {
+            text.push(
+              h('div', { class: 'label', text: 'First message they receive' }),
+            );
+            text.push(h('blockquote', { text: w.opening }));
+          } else if (w.prompt && !(w.briefing && w.briefing.topics)) {
+            text.push(h('div', { class: 'label', text: 'The coach is told' }));
+            text.push(h('blockquote', { text: w.prompt }));
+          }
+          var side = null;
+          if (
+            w.image &&
+            w.image.data_uri &&
+            w.image.data_uri.indexOf('data:image/png;base64,') === 0
+          ) {
+            side = h('figure', null, [
+              h('img', {
+                src: w.image.data_uri,
+                alt: w.image.caption || "A picture of the worker's figures",
+              }),
+              h('figcaption', { text: 'Sent with the conversation.' }),
+            ]);
+          } else if (w.image && w.image.omitted) {
+            side = h('div', {
+              class: 'note',
+              text: 'Picture not shown here: ' + w.image.omitted,
+            });
+          }
+          return h(
+            'section',
+            { class: 'worker', 'aria-label': w.name || w.key },
+            [
+              h('div', { class: 'worker-name', text: w.name || w.key }),
+              h('div', { class: 'worker-body' }, [h('div', null, text), side]),
+            ],
+          );
+        }
+
+        function render() {
+          var p = state.preview;
+          var notes = el('notes');
+          notes.textContent = '';
+          var title = el('title'),
+            subtitle = el('subtitle');
+
+          if (state.previewing && !p) {
+            title.textContent = 'Preparing the preview…';
+            subtitle.textContent = 'Nothing is sent until you click Send.';
+          } else if (p) {
+            title.textContent = p.summary || p.label || 'Preview';
+            subtitle.textContent =
+              state.outcome === 'sent'
+                ? ''
+                : p.sent_by === 'click'
+                  ? 'Nothing is sent until you click Send.'
+                  : 'The agent confirms this one with you in the chat.';
+          }
+
+          if (errorText) {
+            notes.appendChild(
+              h('div', { class: 'note err', role: 'alert', text: errorText }),
+            );
+            errorText = '';
+          }
+          if (noteText) {
+            notes.appendChild(
+              h('div', { class: 'note ' + noteText.kind, text: noteText.text }),
+            );
+            noteText = null;
+          }
+          if (!state.canAct)
+            notes.appendChild(
+              h('div', {
+                class: 'note',
+                text: 'You can see this preview but cannot send it from here.',
+              }),
+            );
+          if (p && p.synthetic)
+            notes.appendChild(
+              h('div', {
+                class: 'note',
+                text: p.synthetic_note || 'Synthetic data: no message is sent.',
+              }),
+            );
+          if (p && p.deliver_to)
+            notes.appendChild(
+              h('div', {
+                class: 'note warn',
+                text:
+                  'QA test: this conversation goes to ' +
+                  p.deliver_to +
+                  ', not to the worker.',
+              }),
+            );
+          if (p && p.bot && p.bot.name)
+            notes.appendChild(
+              h('div', { class: 'note', text: 'Coach: ' + p.bot.name }),
+            );
+          if (p && p.skipped && p.skipped.length)
+            notes.appendChild(
+              h('div', {
+                class: 'note',
+                text:
+                  p.skipped.length +
+                  ' left out: ' +
+                  p.skipped
+                    .map(function (s) {
+                      return s.name;
+                    })
+                    .join(', ') +
+                  ' (nothing to coach).',
+              }),
+            );
+
+          var workers = el('workers');
+          workers.textContent = '';
+          if (p && state.outcome !== 'declined')
+            (p.workers || []).forEach(function (w) {
+              workers.appendChild(workerCard(w));
+            });
+
+          renderNeeds(p, notes);
+          renderActions(p);
+          renderHistory(p);
+          reportSize();
+        }
+
+        function renderNeeds(p, notes) {
+          if (!p || !p.needs || !p.needs.length) return;
+          if (p.needs.indexOf('connect_ocs') >= 0) {
+            var n = h('div', { class: 'note warn' }, [
+              'Connect Open Chat Studio in Labs before sending. ',
+            ]);
+            if (p.connect_url && p.connect_url.indexOf('https://') === 0)
+              n.appendChild(
+                h('a', {
+                  class: 'link',
+                  tabindex: '0',
+                  text: 'Open Labs',
+                  onclick: function () {
+                    openLink(p.connect_url);
+                  },
+                }),
+              );
+            notes.appendChild(n);
+          }
+          if (p.needs.indexOf('bot') >= 0) {
+            var select = h(
+              'select',
+              { 'aria-label': 'Which coach' },
+              [h('option', { value: '', text: 'Choose a coach' })].concat(
+                (p.bot_choices || []).map(function (b) {
+                  return h('option', { value: b.id, text: b.name || b.id });
+                }),
+              ),
+            );
+            var use = h('button', {
+              type: 'button',
+              text: 'Use',
+              onclick: function () {
+                if (!select.value) return;
+                state.input.arguments = Object.assign(
+                  {},
+                  state.input.arguments || {},
+                  { bot: select.value },
+                );
+                loadPreview();
+              },
+            });
+            notes.appendChild(
+              h('div', { class: 'note warn' }, [
+                h('div', { text: 'Which coach should hold the conversation?' }),
+                h('div', { class: 'row' }, [select, use]),
+              ]),
+            );
+          }
+          if (p.needs.indexOf('workers') >= 0)
+            notes.appendChild(
+              h('div', {
+                class: 'note',
+                text: 'Nothing to coach: no indicator is off target or on watch.',
+              }),
+            );
+        }
+
+        function renderActions(p) {
+          var box = el('actions');
+          box.textContent = '';
+          var qa = el('qa');
+          if (state.outcome === 'sent') {
+            qa.classList.add('hidden');
+            var ex = state.execution || {};
+            var status = ex.status ? ' — ' + ex.status.replace(/_/g, ' ') : '';
+            box.appendChild(
+              h('div', {
+                class: 'note ok',
+                role: 'status',
+                text:
+                  'Sent' +
+                  (ex.id ? ' (execution ' + ex.id + ')' : '') +
+                  status +
+                  '.',
+              }),
+            );
+            return;
+          }
+          if (state.outcome === 'declined') {
+            qa.classList.add('hidden');
+            box.appendChild(
+              h('div', { class: 'note', role: 'status', text: 'Not sent.' }),
+            );
+            box.appendChild(
+              h('button', {
+                type: 'button',
+                text: 'Show the preview again',
+                onclick: function () {
+                  state.outcome = null;
+                  loadPreview();
+                },
+              }),
+            );
+            return;
+          }
+          if (!p || p.sent_by !== 'click') {
+            qa.classList.add('hidden');
+            return;
+          }
+          var ready = !!p.confirm && !(p.needs && p.needs.length);
+          var idle = state.canAct && !state.busy && !state.previewing;
+          var sendLabel = p.deliver_to
+            ? 'Send to ' + p.deliver_to + ' (QA test)'
+            : 'Send to ' + workerName(p);
+          var sendBtn = h('button', {
+            type: 'button',
+            class: 'primary',
+            text: state.busy ? 'Sending…' : sendLabel,
+            onclick: send,
+          });
+          sendBtn.disabled = !(idle && ready);
+          box.appendChild(sendBtn);
+          if (p.qa_redirect && !p.deliver_to) {
+            var qaBtn = h('button', {
+              type: 'button',
+              text: 'Send to me (QA test)',
+              onclick: function () {
+                qa.classList.remove('hidden');
+                el('qa-user').focus();
+                reportSize();
+              },
+            });
+            qaBtn.disabled = !idle;
+            box.appendChild(qaBtn);
+          }
+          if (p.deliver_to) {
+            var back = h('button', {
+              type: 'button',
+              text: 'Send to ' + workerName(p) + ' instead',
+              onclick: function () {
+                state.deliverTo = '';
+                el('qa-user').value = '';
+                loadPreview();
+              },
+            });
+            back.disabled = !idle;
+            box.appendChild(back);
+          }
+          var notYet = h('button', {
+            type: 'button',
+            text: 'Not yet',
+            onclick: decline,
+          });
+          notYet.disabled = state.busy || !state.canAct;
+          box.appendChild(notYet);
+          el('qa-preview').disabled = !idle;
+          if (!p.qa_redirect || p.deliver_to) qa.classList.add('hidden');
+        }
+
+        function renderHistory(p) {
+          var list = el('history');
+          list.textContent = '';
+          var items = (p && p.executions) || [];
+          if (!items.length || state.outcome === 'sent') {
+            list.classList.add('hidden');
+            return;
+          }
+          list.classList.remove('hidden');
+          list.appendChild(
+            h('li', { text: 'You already ran this action on this run:' }),
+          );
+          items.forEach(function (e) {
+            var when = e.created_at
+              ? new Date(e.created_at).toLocaleString()
+              : '';
+            list.appendChild(
+              h('li', {
+                text:
+                  'Execution ' +
+                  e.id +
+                  ' — ' +
+                  String(e.status || '').replace(/_/g, ' ') +
+                  (when ? ', ' + when : ''),
+              }),
+            );
+          });
+        }
+
+        el('qa-preview').addEventListener('click', function () {
+          var v = el('qa-user').value.trim();
+          if (!v) {
+            el('qa-user').focus();
+            return;
+          }
+          state.deliverTo = v;
+          loadPreview();
+        });
+        el('qa-user').addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') el('qa-preview').click();
+        });
+        el('qa-cancel').addEventListener('click', function () {
+          el('qa').classList.add('hidden');
+          reportSize();
+        });
+
+        // ---------------------------------------------------------------- lifecycle
+        var notifications = {
+          'ui/notifications/tool-input': function (params) {
+            if (state.input) return; // sent at most once
+            state.input = params.arguments || {};
+            if (state.input.confirm) {
+              // The agent's own commit (an action it confirms in chat): the result shows it.
+              return;
+            }
+            // Previewed again as the viewer -- never the agent's preview, never an old
+            // token -- on every mount, so a reload shows what is true now.
+            if (state.canAct) loadPreview();
+          },
+          'ui/notifications/tool-result': function (params) {
+            state.agentResult = params || {};
+            var sc = params && (params.structuredContent || parseText(params));
+            if (state.input && state.input.confirm && sc && sc.execution) {
+              state.outcome = 'sent';
+              state.execution = sc.execution;
+              render();
+              el('title').textContent = 'Queued by the agent';
+              return;
+            }
+            if (!state.canAct && !state.preview) {
+              state.preview = readOnly(params);
+              render();
+            }
+          },
+          'ui/notifications/tool-cancelled': function () {
+            showNote("The agent's call was cancelled.", 'warn');
+          },
+          'ui/notifications/host-context-changed': function (params) {
+            applyHostContext(params);
+            render();
+          },
+        };
+
+        request('ui/initialize', {
+          protocolVersion: PROTOCOL_VERSION,
+          appCapabilities: { availableDisplayModes: ['inline'] },
+          clientInfo: {
+            name: 'labs-workflow-action-preview',
+            version: '1.0.0',
+          },
+        }).then(
+          function (result) {
+            result = result || {};
+            applyHostContext(result.hostContext || {});
+            // A host that cannot proxy tool calls for this viewer (a read-only participant)
+            // omits serverTools: the buttons are then shown disabled.
+            state.canAct = !!(
+              result.hostCapabilities && result.hostCapabilities.serverTools
+            );
+            notify('ui/notifications/initialized', {});
+            initialized = true;
+            render();
+          },
+          function (err) {
+            showError('Could not start: ' + err.message);
+          },
+        );
+      })();
+    </script>
+  </body>
+</html>

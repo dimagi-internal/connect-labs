@@ -307,7 +307,7 @@ def test_every_scoped_tool_exists_and_only_previewed_scopes_write():
             if scope not in canopy.PREVIEWED_WRITE_SCOPES:
                 assert not spec.is_write, f"{scope} is a read scope but {name} writes"
     assert canopy.PREVIEWED_WRITE_SCOPES == {"workflow:act"}
-    assert canopy.SCOPE_TOOLS["workflow:act"] == {"workflow_run_action"}
+    assert canopy.SCOPE_TOOLS["workflow:act"] == {"workflow_run_action", "workflow_action_preview_view"}
     assert all(scope.endswith(":read") for scope in set(canopy.SCOPE_TOOLS) - canopy.PREVIEWED_WRITE_SCOPES)
 
 

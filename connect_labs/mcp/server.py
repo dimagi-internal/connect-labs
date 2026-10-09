@@ -562,9 +562,11 @@ def _run_registry_tool_inner(
 
     structured = result if isinstance(result, dict) else {"value": result}
     # Mirror the old transport's content block (a JSON text blob) so existing
-    # clients that read content[0].text keep working.
+    # clients that read content[0].text keep working -- unless the tool renders its
+    # own text, because its result carries something bulky meant for a View.
+    text = spec.text(structured) if spec.text is not None else json.dumps(result)
     return ToolResult(
-        content=[{"type": "text", "text": json.dumps(result)}],
+        content=[{"type": "text", "text": text}],
         structured_content=structured,
     )
 
@@ -613,10 +615,77 @@ def _build_registry_tools() -> list[RegistryTool]:
                 name=spec.name,
                 description=spec.description,
                 parameters=spec.input_schema,
+                meta=spec.meta,
                 spec=spec,
             )
         )
     return built
+
+
+# ---------------------------------------------------------------------------
+# MCP Apps (SEP-1865) -- the extension, and the Views this server serves.
+# ---------------------------------------------------------------------------
+
+
+class UIExtensionMiddleware(Middleware):
+    """Declare ``io.modelcontextprotocol/ui`` in this server's capabilities.
+
+    FastMCP advertises the extension, but on a handshake-era (``initialize``)
+    connection the SDK sieves the result through that protocol version's schema,
+    which has no ``capabilities.extensions`` -- so a 2025-era client never sees it.
+    Restored here, after the sieve, with the content type this server serves.
+    ``server/discover`` (2026-era) already carries it; the settings are made the
+    same there.
+
+    Nothing here reads the CLIENT's capability: the server is stateless
+    (``build_http_app``), so a later call cannot know what its connection
+    negotiated. A tool's behaviour therefore never depends on it -- a client
+    without the extension just gets the tool's text.
+    """
+
+    @staticmethod
+    def _declare(capabilities):
+        from .ui import UI_EXTENSION_ID, UI_EXTENSION_SETTINGS
+
+        extensions = dict(getattr(capabilities, "extensions", None) or {})
+        extensions[UI_EXTENSION_ID] = dict(UI_EXTENSION_SETTINGS)
+        return capabilities.model_copy(update={"extensions": extensions})
+
+    async def on_initialize(self, context, call_next):
+        result = await call_next(context)
+        if result is None or getattr(result, "capabilities", None) is None:
+            return result
+        return result.model_copy(update={"capabilities": self._declare(result.capabilities)})
+
+    async def on_discover(self, context, call_next):
+        result = await call_next(context)
+        if isinstance(result, dict) or getattr(result, "capabilities", None) is None:
+            return result
+        return result.model_copy(update={"capabilities": self._declare(result.capabilities)})
+
+
+def _register_ui_resources(server: FastMCP) -> None:
+    """Every View in ``ui.RESOURCES`` as a ``ui://`` resource (``text/html;profile=mcp-app``).
+
+    Static documents with no data in them: what a View shows, it reads by calling a
+    tool as the viewer. Listed in ``resources/list`` as well as readable, so a host can
+    review them (SEP-1865 "Predeclared Resource Review")."""
+    from .ui import MCP_APP_MIME_TYPE, RESOURCES
+
+    def reader(resource):
+        def read() -> str:
+            return resource.html()
+
+        return read
+
+    for resource in RESOURCES:
+        server.resource(
+            resource.uri,
+            name=resource.name,
+            description=resource.description,
+            mime_type=MCP_APP_MIME_TYPE,
+            meta={"ui": dict(resource.meta)},
+        )(reader(resource))
 
 
 class ToolScopeMiddleware(Middleware):
@@ -645,10 +714,11 @@ def _build_server() -> FastMCP:
         "connect_labs",
         instructions=SERVER_INSTRUCTIONS,
         auth=CommCarePATVerifier(),
-        middleware=[ToolScopeMiddleware()],
+        middleware=[ToolScopeMiddleware(), UIExtensionMiddleware()],
     )
     for tool in _build_registry_tools():
         server.add_tool(tool)
+    _register_ui_resources(server)
     return server
 
 
