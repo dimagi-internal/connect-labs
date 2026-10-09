@@ -1,14 +1,17 @@
 /* PMC schedule explorer. One plain script, no modules (see targeting.html on why).
 
-   Two answers, in the order a programme is designed:
-     How   -- which delivery schedule is the best value (IDM's EMOD comparison);
-     Where -- the states considered, ranked by cost per case averted under it.
-   The states considered come from the URL (`states=`), which is how a targeting
+   Rank  -- every (state, design) pair among the states picked, by cost per
+            under-5 death averted against GiveWell's bar, each state modelled
+            in its own fitted setting (/labs/targeting/api/pmc/rank/, the
+            agent's targeting_pmc_rank);
+   Try   -- one custom schedule in one state, a live EMOD run;
+   How   -- the older comparison in one illustrative setting, kept folded.
+   The states picked come from the URL (`states=`), which is how a targeting
    selection arrives -- usually via the agent panel; with none, all states.
 
-   State lives in the URL (schedule, states, prices), so a link reopens the same
-   view and the agent panel is told what the visitor sees. Every number comes
-   from /labs/targeting/api/pmc/ -- this file only draws them. */
+   State lives in the URL (states, prices, deaths basis), so a link reopens the
+   same view and the agent panel is told what the visitor sees. Every number
+   comes from the server -- this file only draws them. */
 (function () {
   'use strict';
 
@@ -19,6 +22,10 @@
   var data = null;
   var inflight = null;
   var liveRows = [];
+  var gridStates = JSON.parse(
+    (el('pmc-grid-states') || {}).textContent || '[]',
+  );
+  var BASES = ['prevalence_scaled', 'map'];
   var state = readUrl();
 
   function readUrl() {
@@ -33,6 +40,12 @@
       cost_per_visit: num('cost_per_visit', cfg.defaults.cost_per_visit),
       platform_fee: num('platform_fee', cfg.defaults.platform_fee),
       dose_rate: num('dose_rate', cfg.defaults.dose_rate),
+      deaths_basis:
+        BASES.indexOf(q.get('deaths_basis')) >= 0
+          ? q.get('deaths_basis')
+          : BASES[0],
+      top_n:
+        [10, 20, 50].indexOf(num('top_n', 10)) >= 0 ? num('top_n', 10) : 10,
     };
   }
 
@@ -43,6 +56,9 @@
     p.set('cost_per_visit', state.cost_per_visit);
     p.set('platform_fee', state.platform_fee);
     p.set('dose_rate', state.dose_rate);
+    if (state.deaths_basis !== BASES[0])
+      p.set('deaths_basis', state.deaths_basis);
+    if (state.top_n !== 10) p.set('top_n', state.top_n);
     return p;
   }
 
@@ -99,6 +115,7 @@
         cost_per_visit: String(state.cost_per_visit),
         platform_fee: String(state.platform_fee),
         dose_rate: String(state.dose_rate),
+        deaths_basis: state.deaths_basis,
       }),
     });
   }
@@ -138,17 +155,14 @@
       })
       .catch(function (err) {
         if (err && err.name === 'AbortError') return;
-        el('pmc-states').innerHTML =
-          '<tr><td class="l" colspan="8">Could not load: ' +
-          esc(err.message) +
-          '</td></tr>';
+        el('pmc-how').textContent = 'Could not load: ' + err.message;
       });
+    loadRank();
   }
 
   function render() {
     el('pmc-per-dose').textContent = usd(data.costs.cost_per_dose, 2);
     renderHow();
-    renderWhere();
   }
 
   function chosen() {
@@ -258,131 +272,274 @@
       .join('');
   }
 
-  // The states considered: the ones handed over (from a targeting selection),
-  // else every state.
-  function considered() {
-    if (!state.states.length) return data.states;
-    var want = {};
-    state.states.forEach(function (n) {
-      want[n.toLowerCase()] = true;
-    });
-    return data.states.filter(function (r) {
-      return want[r.name.toLowerCase()];
+  /* ---- rank: states x designs ------------------------------------------- */
+
+  var rankInflight = null;
+  var rankData = null;
+
+  // The picker's chips: every state the per-state grid holds, the year-round
+  // ones marked. Nothing picked = every state, as the agent tool reads it.
+  function picked(name) {
+    var want = name.toLowerCase();
+    return state.states.some(function (n) {
+      return n.toLowerCase() === want;
     });
   }
 
-  var FIT = {
-    near: ['near', 'matches'],
-    prevalence_differs: ['lower', 'prevalence differs'],
-    more_seasonal: ['out', 'more seasonal: SMC, not PMC'],
-    less_seasonal: ['out', 'less seasonal'],
-    unknown: ['unknown', 'no data'],
-  };
+  function renderPicker() {
+    el('pmc-pick-states').innerHTML = gridStates
+      .map(function (s) {
+        var on = picked(s.name);
+        var tip =
+          'Child malaria prevalence ' +
+          pct(s.pfpr * 100) +
+          ' · ' +
+          pct(s.rain_wettest_quarter) +
+          ' of the rain in the wettest quarter';
+        return (
+          '<button type="button" class="pmc-pill" data-state="' +
+          esc(s.name) +
+          '" aria-pressed="' +
+          on +
+          '" title="' +
+          esc(tip) +
+          '">' +
+          (s.perennial ? '<span class="dot"></span>' : '') +
+          esc(s.name) +
+          '</button>'
+        );
+      })
+      .join('');
+    el('pmc-rank-scope').textContent = state.states.length
+      ? state.states.length + ' states picked'
+      : 'All ' + gridStates.length + ' states';
+    document.querySelectorAll('.pmc-seg [data-basis]').forEach(function (b) {
+      b.setAttribute(
+        'aria-pressed',
+        String(b.getAttribute('data-basis') === state.deaths_basis),
+      );
+    });
+    el('pmc-topn').value = String(state.top_n);
+  }
 
-  function renderWhere() {
-    var rows = considered();
-    var ranked = rows.filter(function (r) {
-      return r.rank;
-    });
-    var s = chosen();
-    // Rank within the states considered, not among all of Nigeria's: a
-    // selection of 22 reads 1 to 9, not 2, 3, 5, ... .
-    var localRank = {};
-    ranked.forEach(function (r, i) {
-      localRank[r.name] = i + 1;
-    });
-    el('pmc-scope').textContent = state.states.length
-      ? rows.length + ' states from your selection'
-      : 'All ' + rows.length + ' states';
-    el('pmc-all').classList.toggle('hidden', !state.states.length);
+  function rankChanged() {
+    syncUrl();
+    renderPicker();
+    shareWithAgent();
+    loadRank();
+  }
 
-    var top = ranked.slice(0, 3).map(function (r) {
-      return esc(r.name);
+  el('pmc-pick-states').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-state]');
+    if (!b) return;
+    var name = b.getAttribute('data-state');
+    // From "every state" (nothing picked), a click starts a pick of one.
+    state.states = picked(name)
+      ? state.states.filter(function (n) {
+          return n.toLowerCase() !== name.toLowerCase();
+        })
+      : state.states.concat([name]);
+    rankChanged();
+  });
+  document.querySelectorAll('[data-preset]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var preset = b.getAttribute('data-preset');
+      state.states =
+        preset === 'perennial'
+          ? gridStates
+              .filter(function (s) {
+                return s.perennial;
+              })
+              .map(function (s) {
+                return s.name;
+              })
+          : [];
+      rankChanged();
     });
-    el('pmc-where').innerHTML = ranked.length
-      ? 'Most cost-effective under ' +
-        esc(s ? s.label : 'this schedule') +
-        ': <b>' +
-        top.join(', ') +
-        '</b>. ' +
-        ranked.length +
+  });
+  document.querySelectorAll('.pmc-seg [data-basis]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      state.deaths_basis = b.getAttribute('data-basis');
+      rankChanged();
+    });
+  });
+  el('pmc-topn').addEventListener('change', function () {
+    state.top_n = parseInt(this.value, 10) || 10;
+    rankChanged();
+  });
+
+  function loadRank() {
+    if (rankInflight) rankInflight.abort();
+    var ctrl = new AbortController();
+    rankInflight = ctrl;
+    var p = params();
+    p.delete('schedule');
+    p.set('deaths_basis', state.deaths_basis);
+    p.set('top_n', state.top_n);
+    fetch(cfg.rankUrl + '?' + p.toString(), {
+      signal: ctrl.signal,
+      credentials: 'same-origin',
+    })
+      .then(function (r) {
+        return r.json().then(function (j) {
+          if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+          return j;
+        });
+      })
+      .then(function (d) {
+        rankData = d;
+        renderRank();
+        fillLiveStates();
+        renderLiveResults();
+      })
+      .catch(function (err) {
+        if (err && err.name === 'AbortError') return;
+        el('pmc-rank-answer').textContent = 'Could not rank: ' + err.message;
+        el('pmc-rank-rows').innerHTML = '';
+      });
+  }
+
+  function times(n) {
+    return n === null || n === undefined ? '—' : num(n, 1) + '×';
+  }
+
+  function barChip(p, bar) {
+    if (p.multiple_of_benchmark === undefined) return '';
+    return p.clears_bar
+      ? ' <span class="pmc-chip clears">clears ' + num(bar) + '×</span>'
+      : ' <span class="pmc-chip below">below ' + num(bar) + '×</span>';
+  }
+
+  function renderRank() {
+    var d = rankData;
+    var total = el('pmc-rank-total');
+    if (!d.available) {
+      el('pmc-rank-answer').textContent = d.message;
+      el('pmc-rank-rows').innerHTML = '';
+      total.classList.add('hidden');
+      el('pmc-rank-note').textContent = '';
+      return;
+    }
+    var byDeath = d.ranked_by === 'cost per death averted';
+    var rows = d.ranked || [];
+    var best = rows[0];
+    var perDose = usd(d.costs.cost_per_dose, 2);
+    var considered = d.best_per_state.length;
+    if (!best) {
+      el('pmc-rank-answer').textContent =
+        'None of these states can be ranked; see why below.';
+    } else if (byDeath) {
+      el('pmc-rank-answer').innerHTML =
+        'At ' +
+        perDose +
+        ' a dose, <b>' +
+        d.states_clearing_bar +
         ' of ' +
-        rows.length +
-        ' can be ranked' +
-        (rows.length > ranked.length
-          ? '; the rest are too seasonal for this model.'
-          : '.')
-      : 'None of these states matches the modelled setting.';
+        considered +
+        '</b> states clear GiveWell’s ' +
+        num(d.bar) +
+        '× bar with their best design. Best value: <b>' +
+        esc(best.state_design) +
+        '</b>, ' +
+        usd(best.cost_per_death_averted) +
+        ' per under-5 death averted, ' +
+        times(best.multiple_of_benchmark) +
+        ' GiveWell’s benchmark.';
+    } else {
+      el('pmc-rank-answer').innerHTML =
+        'At ' +
+        perDose +
+        ' a dose, best value: <b>' +
+        esc(best.state_design) +
+        '</b>, ' +
+        usd(best.cost_per_case_averted, 2) +
+        ' per case averted.';
+    }
 
-    var t = { cases: 0, spend: 0, children: 0 };
-    ranked.forEach(function (r) {
-      t.cases += r.projection.cases_averted_per_year || 0;
-      t.spend += r.projection.spend_per_year || 0;
-      t.children += r.children_3_24m || 0;
-    });
-    el('pmc-total').innerHTML = ranked.length
-      ? stat('States ranked', ranked.length) +
-        // Totals of rounded rows, kept to three figures: two would turn a column
-        // that sums to 215,000 into 220,000, and a reader adds the column up.
-        stat('Children 3–24 mo', '≈' + num(approx(t.children, 3))) +
-        stat('Cases averted / yr', '≈' + num(approx(t.cases, 3))) +
-        stat('Cost / yr', '≈' + usdShort(approx(t.spend, 3))) +
-        // Blended across the ranked states, so it differs from the schedule's
-        // single-setting figure above; the label says so.
-        stat('Blended per case', t.cases ? usd(t.spend / t.cases, 2) : '—')
+    var t = d.best_per_state_totals || {};
+    total.innerHTML = considered
+      ? stat('States ranked', considered) +
+        (byDeath
+          ? stat('Clear the ' + num(d.bar) + '× bar', d.states_clearing_bar) +
+            stat(
+              'Deaths averted / yr',
+              '≈' + num(approx(t.deaths_averted_per_year, 3)),
+            )
+          : stat(
+              'Cases averted / yr',
+              '≈' + num(approx(t.cases_averted_per_year, 3)),
+            )) +
+        stat('Cost / yr', '≈' + usdShort(approx(t.spend_per_year, 3))) +
+        (byDeath && t.deaths_averted_per_year
+          ? stat(
+              'Blended per death',
+              usd(approx(t.spend_per_year / t.deaths_averted_per_year, 2)),
+            )
+          : '')
       : '';
-    el('pmc-total').classList.toggle('hidden', !ranked.length);
+    total.classList.toggle('hidden', !considered);
+    // The totals are each state's best design, not the rows below.
+    total.title = 'Each ranked state at its own best design';
 
-    el('pmc-states').innerHTML =
+    el('pmc-rank-rows').innerHTML =
       rows
-        .map(function (r) {
-          var f = FIT[r.fit] || FIT.unknown;
-          var p = r.projection;
-          var tip =
-            'Prevalence ' +
-            pct(r.malaria_prevalence) +
-            ' · rain in wettest quarter ' +
-            pct(r.rain_wettest_quarter) +
-            ' (model: ' +
-            data.setting.wettest_quarter_pct +
-            '%)';
+        .map(function (p) {
           return (
-            '<tr class="' +
-            (r.rank ? '' : 'unranked') +
+            '<tr title="' +
+            esc(p.fit_note || '') +
             '">' +
             '<td class="l pmc-num">' +
-            (localRank[r.name] || '') +
+            p.rank +
             '</td>' +
             '<td class="l" style="font-weight:500">' +
-            esc(r.name) +
+            esc(p.state) +
+            '</td>' +
+            '<td class="design">' +
+            esc(p.design_label) +
+            (p.kind === 'smc' ? ' <span class="pmc-chip smc">SMC</span>' : '') +
             '</td>' +
             '<td class="pmc-num">' +
-            num(r.malaria_incidence) +
-            '</td>' +
-            '<td class="l"><span class="pmc-chip ' +
-            f[0] +
-            '" title="' +
-            esc(tip) +
-            '">' +
-            esc(f[1]) +
-            '</span></td>' +
-            '<td class="pmc-num pmc-hide-sm">' +
-            num(r.children_3_24m) +
-            '</td>' +
-            '<td class="pmc-num">' +
-            (p ? num(p.cases_averted_per_year) : '—') +
+            (byDeath
+              ? num(p.deaths_averted_per_year)
+              : num(p.cases_averted_per_year) + ' cases') +
             '</td>' +
             '<td class="pmc-num pmc-hide-sm">' +
-            (p ? usdShort(p.spend_per_year) : '—') +
+            usdShort(p.spend_per_year) +
             '</td>' +
             '<td class="pmc-num" style="font-weight:600">' +
-            (p ? usd(p.cost_per_case_averted, 2) : '—') +
+            (byDeath
+              ? usd(p.cost_per_death_averted)
+              : usd(p.cost_per_case_averted, 2) + ' / case') +
+            '</td>' +
+            '<td class="pmc-num" style="white-space:nowrap">' +
+            (byDeath
+              ? times(p.multiple_of_benchmark) + barChip(p, d.bar)
+              : '—') +
             '</td>' +
             '</tr>'
           );
         })
-        .join('') ||
-      '<tr><td class="l" colspan="8">No Nigerian states are loaded in this environment.</td></tr>';
+        .join('') || '<tr><td class="l" colspan="7">Nothing to rank.</td></tr>';
+
+    var notes = [];
+    if (d.note) notes.push(d.note);
+    if (d.excluded && d.excluded.length)
+      notes.push(
+        'Not ranked: ' +
+          d.excluded
+            .map(function (x) {
+              return x.state + ' (' + x.reason + ')';
+            })
+            .join(', ') +
+          '.',
+      );
+    notes.push(d.costs_line);
+    notes = notes.concat(d.caveats || []);
+    el('pmc-rank-note').innerHTML = notes
+      .map(function (n) {
+        return esc(n);
+      })
+      .join('<br>');
   }
 
   function stat(k, v) {
@@ -414,12 +571,6 @@
       e.preventDefault();
       choose(row.getAttribute('data-code'));
     }
-  });
-  el('pmc-all').addEventListener('click', function () {
-    state.states = [];
-    syncUrl();
-    renderWhere();
-    shareWithAgent();
   });
 
   function bindPrice(id, key, scale) {
@@ -477,8 +628,12 @@
         '</option>'
       );
     }).join('');
-    // States the model can speak for: matches first (best-ranked on top), then
-    // lower-confidence fits. Ondo is the default when it is among them.
+    if (!gridStates.length) fillLiveStatesFromSweep();
+  }
+
+  // Before the per-state grid: the states matching the one modelled setting,
+  // matches first (best-ranked on top), then lower-confidence fits; Ondo first.
+  function fillLiveStatesFromSweep() {
     var ok = data.states.filter(function (r) {
       return r.fit === 'near' || r.fit === 'prevalence_differs';
     });
@@ -492,19 +647,45 @@
       ok.filter(function (r) {
         return r.name === 'Ondo';
       })[0] || ok[0];
-    el('pmc-live-state').innerHTML = ok
-      .map(function (r) {
+    setLiveStates(
+      ok.map(function (r) {
+        return r.name;
+      }),
+      pick && pick.name,
+    );
+  }
+
+  // With the grid: every fitted state, each run in its own setting. The
+  // default is the ranking's top state, until the visitor picks one.
+  var liveStateTouched = false;
+  function fillLiveStates() {
+    if (!gridStates.length || liveStateTouched) return;
+    var top = rankData && rankData.ranked && rankData.ranked[0];
+    setLiveStates(
+      gridStates.map(function (s) {
+        return s.name;
+      }),
+      top ? top.state : gridStates[0].name,
+    );
+  }
+
+  function setLiveStates(names, pick) {
+    el('pmc-live-state').innerHTML = names
+      .map(function (n) {
         return (
           '<option' +
-          (pick && r.name === pick.name ? ' selected' : '') +
+          (n === pick ? ' selected' : '') +
           '>' +
-          esc(r.name) +
+          esc(n) +
           '</option>'
         );
       })
       .join('');
-    el('pmc-live-run').disabled = !ok.length;
+    el('pmc-live-run').disabled = !names.length;
   }
+  el('pmc-live-state').addEventListener('change', function () {
+    liveStateTouched = true;
+  });
 
   function liveSpec() {
     var spec = {};
@@ -681,6 +862,7 @@
   function addLiveResult(res, stateName) {
     var eff = res.effect || {};
     var proj = res.projection;
+    var val = res.value;
     var precomputed = /precomputed/.test(res.label || '');
     liveRows.push({
       code: 'live_' + ++liveSeq,
@@ -694,24 +876,91 @@
       averted_ci: eff.averted_ci,
       too_noisy: !!eff.too_noisy,
       cost_per_case_averted: proj ? proj.cost_per_case_averted : null,
+      value: val,
+      spend: proj ? proj.spend_per_year : null,
     });
     liveRows = liveRows.slice(-3);
     renderHow();
+    renderLiveResults();
     liveMsg(
       stateName +
         ': ' +
-        pct(eff.averted_pct) +
-        ' of cases averted' +
-        (proj
-          ? ', ≈' +
-            num(proj.cases_averted_per_year) +
-            ' cases a year at ' +
-            usd(proj.cost_per_case_averted, 2) +
-            ' each'
-          : ', too uncertain to cost') +
+        (val
+          ? '≈' +
+            num(val.deaths_averted_per_year) +
+            ' under-5 deaths averted a year at ' +
+            usd(val.cost_per_death_averted) +
+            ' each, ' +
+            times(val.multiple_of_benchmark) +
+            ' GiveWell’s benchmark (' +
+            (val.clears_bar ? 'clears' : 'below') +
+            ' the ' +
+            num(val.bar) +
+            '× bar)'
+          : pct(eff.averted_pct) +
+            ' of cases averted' +
+            (proj
+              ? ', ≈' +
+                num(proj.cases_averted_per_year) +
+                ' cases a year at ' +
+                usd(proj.cost_per_case_averted, 2) +
+                ' each'
+              : ', too uncertain to cost')) +
         ' · ' +
         (res.label || 'illustrative · live model run'),
     );
+  }
+
+  // The runs so far, each beside its state's best ranked design (when that
+  // state is in the ranking on screen), so a custom schedule reads against it.
+  function renderLiveResults() {
+    var best = {};
+    ((rankData && rankData.best_per_state) || []).forEach(function (p) {
+      best[p.state] = p;
+    });
+    var rows = [];
+    liveRows.forEach(function (r) {
+      var v = r.value;
+      rows.push(
+        '<tr><td class="l" style="font-weight:500">' +
+          esc(r.state) +
+          '</td><td class="design">' +
+          esc(r.label) +
+          ' <span class="pmc-chip live">' +
+          esc(r.tag.split(' · ')[0]) +
+          '</span></td><td class="pmc-num">' +
+          (v ? num(v.deaths_averted_per_year) : '—') +
+          '</td><td class="pmc-num pmc-hide-sm">' +
+          usdShort(r.spend) +
+          '</td><td class="pmc-num" style="font-weight:600">' +
+          (v ? usd(v.cost_per_death_averted) : '—') +
+          '</td><td class="pmc-num" style="white-space:nowrap">' +
+          (v ? times(v.multiple_of_benchmark) + barChip(v, v.bar) : '—') +
+          '</td></tr>',
+      );
+      var b = best[r.state];
+      if (b && b.multiple_of_benchmark !== undefined)
+        rows.push(
+          '<tr class="unranked"><td class="l"></td><td class="design">Best ranked design: ' +
+            esc(b.design_label) +
+            '</td><td class="pmc-num">' +
+            num(b.deaths_averted_per_year) +
+            '</td><td class="pmc-num pmc-hide-sm">' +
+            usdShort(b.spend_per_year) +
+            '</td><td class="pmc-num">' +
+            usd(b.cost_per_death_averted) +
+            '</td><td class="pmc-num">' +
+            times(b.multiple_of_benchmark) +
+            '</td></tr>',
+        );
+    });
+    el('pmc-live-results').innerHTML = rows.length
+      ? '<table class="pmc-table"><thead><tr><th class="l">State</th><th class="l">Schedule</th>' +
+        '<th>Deaths averted / yr</th><th class="pmc-hide-sm">Cost / yr</th><th>Per death averted</th>' +
+        '<th>&times; GiveWell</th></tr></thead><tbody>' +
+        rows.join('') +
+        '</tbody></table>'
+      : '';
   }
 
   el('pmc-live-mode').addEventListener('change', function () {
@@ -721,5 +970,6 @@
   });
   el('pmc-live-run').addEventListener('click', startLive);
 
+  renderPicker();
   load();
 })();

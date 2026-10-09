@@ -58,6 +58,29 @@
     .pmc-total .k { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; opacity: .75; }
     .pmc-total .v { font-size: 20px; font-weight: 700; }
 
+    /* Rank: the state picker, the deaths basis, and the (state, design) table. */
+    .pmc-pick { padding: 4px 16px 12px; }
+    .pmc-pick-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13px; color: #57534e; margin-bottom: 8px; }
+    .pmc-link { font-size: 13px; font-weight: 600; color: #3730a3; background: none; border: 0; padding: 0; cursor: pointer; }
+    .pmc-link:hover { text-decoration: underline; }
+    .pmc-states-pick { display: flex; flex-wrap: wrap; gap: 6px; }
+    .pmc-pill { font-size: 12px; line-height: 1; padding: 6px 10px; border-radius: 999px; border: 1px solid #d6d3d1;
+                background: #fff; color: #44403c; cursor: pointer; }
+    .pmc-pill[aria-pressed="true"] { background: #16006d; border-color: #16006d; color: #fff; }
+    .pmc-pill .dot { display: inline-block; width: 6px; height: 6px; border-radius: 999px; background: #0f766e; margin-right: 5px; vertical-align: 1px; }
+    .pmc-pill[aria-pressed="true"] .dot { background: #99f6e4; }
+    .pmc-seg { display: inline-flex; border: 1px solid #d6d3d1; border-radius: 6px; overflow: hidden; }
+    .pmc-seg button { font-size: 13px; padding: 3px 10px; background: #fff; color: #44403c; border: 0; cursor: pointer; }
+    .pmc-seg button + button { border-left: 1px solid #d6d3d1; }
+    .pmc-seg button[aria-pressed="true"] { background: #16006d; color: #fff; }
+    .pmc-price select { font-size: 13px; border: 1px solid #d6d3d1; border-radius: 6px; padding: 3px 6px; background: #fff; }
+    .pmc-chip.clears { background: #dcfce7; color: #166534; }
+    .pmc-chip.below { background: #fef3c7; color: #92400e; }
+    .pmc-chip.smc { background: #e0f2fe; color: #075985; }
+    .pmc-table td.design { text-align: left; color: #44403c; }
+    .pmc-note { font-size: 12px; line-height: 1.5; color: #78716c; padding: 0 16px 12px; }
+    .pmc-live-results { margin-top: 8px; }
+
     @media (max-width: 640px) {
       .pmc-sched { grid-template-columns: 18px 1fr 70px 80px; }
       .pmc-sched > :nth-child(3) { display: none; }
@@ -71,23 +94,69 @@
 
   <div class="flex flex-wrap items-baseline gap-3">
     <h1 class="text-2xl font-semibold text-stone-900">Which PMC schedule, and where?</h1>
-    <span class="pmc-chip unknown" title="{{ sweep.setting.description }}">Illustrative. One uncalibrated setting</span>
+    {% if grid_states %}
+      <span class="pmc-chip near" title="EMOD's transmission fitted to each state's DHS malaria prevalence, its season to CHIRPS rainfall. Not a full calibration: illustrative.">Fitted per state. Illustrative</span>
+    {% else %}
+      <span class="pmc-chip unknown" title="{{ sweep.setting.description }}">Illustrative. One uncalibrated setting</span>
+    {% endif %}
     <a href="{% url 'targeting:index' %}" class="ml-auto text-sm text-indigo-700 hover:underline">← Targeting</a>
   </div>
-  <p class="text-sm text-stone-600 -mt-3">IDM's EMOD malaria model, run on the ways Connect can deliver PMC in Nigeria.</p>
+  <p class="text-sm text-stone-600 -mt-3">IDM's EMOD malaria model, run in each Nigerian state's own setting, ranked by under-5 deaths averted per dollar against GiveWell's bar.</p>
 
-  <section class="pmc-card">
-    <div class="px-4 pt-3 pmc-label">How</div>
-    <p id="pmc-how" class="pmc-answer px-4 pt-1 pb-3"></p>
-    <div id="pmc-schedules"></div>
+  <section class="pmc-card" id="pmc-rank-card">
+    <div class="flex items-baseline gap-3 px-4 pt-3">
+      <div class="pmc-label">Rank states &times; designs</div>
+      <span id="pmc-rank-scope" class="text-sm text-stone-500"></span>
+    </div>
+    <p id="pmc-rank-answer" class="pmc-answer px-4 pt-1 pb-3">Loading…</p>
+    <div class="pmc-pick">
+      <div class="pmc-pick-head">
+        <span>States</span>
+        <button type="button" class="pmc-link" data-preset="perennial" title="Under half the year's rain in the wettest quarter, and child malaria prevalence of at least 10%">Year-round transmission</button>
+        <span aria-hidden="true">·</span>
+        <button type="button" class="pmc-link" data-preset="all">All states</button>
+        <span aria-hidden="true">·</span>
+        <button type="button" class="pmc-link" data-preset="none">Clear</button>
+        <span class="ml-auto text-xs text-stone-500"><span class="pmc-pill" style="pointer-events:none;padding:2px 6px"><span class="dot"></span>year-round</span></span>
+      </div>
+      <div id="pmc-pick-states" class="pmc-states-pick" role="group" aria-label="States to rank"></div>
+    </div>
     <div class="pmc-price">
       <span>Per verified visit $<input id="pmc-cost" class="pmc-num" type="number" min="0" step="0.05"></span>
       <span>fee <input id="pmc-fee" class="pmc-num" type="number" min="0" step="1">%</span>
       <span>visits giving a dose <input id="pmc-rate" class="pmc-num" type="number" min="1" max="100" step="1">%</span>
-      <span class="ml-auto">= <b id="pmc-per-dose" class="pmc-num"></b> per dose</span>
+      <span>= <b id="pmc-per-dose" class="pmc-num"></b> per dose</span>
+      <span class="ml-auto">Deaths
+        <span class="pmc-seg" role="group" aria-label="Deaths estimate">
+          <button type="button" data-basis="prevalence_scaled" title="All-cause under-5 deaths x malaria's national share, spread by DHS prevalence">DHS-scaled</button>
+          <button type="button" data-basis="map" title="MAP's modelled malaria deaths x 76% under five">MAP</button>
+        </span>
+      </span>
+      <label>Top <select id="pmc-topn"><option>10</option><option>20</option><option>50</option></select></label>
     </div>
-    <div class="pmc-live">
-      <div class="pmc-label" style="margin-bottom:6px">Try another schedule</div>
+    <div id="pmc-rank-total" class="pmc-total hidden" style="margin:12px 16px"></div>
+    <div class="overflow-x-auto px-4 pb-3">
+      <table class="pmc-table">
+        <thead>
+          <tr>
+            <th class="l">#</th>
+            <th class="l">State</th>
+            <th class="l">Design</th>
+            <th>Deaths averted / yr</th>
+            <th class="pmc-hide-sm">Cost / yr</th>
+            <th>Per death averted</th>
+            <th>&times; GiveWell</th>
+          </tr>
+        </thead>
+        <tbody id="pmc-rank-rows"><tr><td class="l" colspan="7">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <p id="pmc-rank-note" class="pmc-note"></p>
+  </section>
+
+  <section class="pmc-card">
+    <div class="pmc-live" style="border-top:0">
+      <div class="pmc-label" style="margin-bottom:6px">Try another schedule in one state</div>
       <div class="pmc-live-row">
         <label>State <select id="pmc-live-state"></select></label>
         <label>Rounds
@@ -108,35 +177,16 @@
         <button id="pmc-live-run" type="button">Run IDM&rsquo;s model</button>
       </div>
       <div id="pmc-live-msg" class="pmc-live-msg" role="status" aria-live="polite"></div>
+      <div id="pmc-live-results" class="pmc-live-results overflow-x-auto"></div>
     </div>
   </section>
 
-  <section class="pmc-card p-4 space-y-3">
-    <div class="flex items-baseline gap-3">
-      <div class="pmc-label">Where</div>
-      <span id="pmc-scope" class="text-sm text-stone-500"></span>
-      <button id="pmc-all" type="button" class="ml-auto text-sm text-indigo-700 hover:underline hidden">Show all states</button>
-    </div>
-    <p id="pmc-where" class="pmc-answer"></p>
-    <div id="pmc-total" class="pmc-total"></div>
-    <div class="overflow-x-auto">
-      <table class="pmc-table">
-        <thead>
-          <tr>
-            <th class="l">#</th>
-            <th class="l">State</th>
-            <th title="Clinical malaria episodes per 1,000 people per year, all ages (MAP 2024)">Malaria cases / 1,000 / yr</th>
-            <th class="l">Fit to model</th>
-            <th class="pmc-hide-sm">Children 3–24 mo</th>
-            <th>Cases averted / yr</th>
-            <th class="pmc-hide-sm">Cost / yr</th>
-            <th>Per case averted</th>
-          </tr>
-        </thead>
-        <tbody id="pmc-states"><tr><td class="l" colspan="8">Loading…</td></tr></tbody>
-      </table>
-    </div>
-  </section>
+  <details class="pmc-card">
+    <summary class="cursor-pointer px-4 py-3 text-sm text-indigo-700">The schedules in one illustrative setting (before per-state fitting)</summary>
+    <div class="px-4 pt-1 pmc-label">How</div>
+    <p id="pmc-how" class="pmc-answer px-4 pt-1 pb-3"></p>
+    <div id="pmc-schedules"></div>
+  </details>
 
   <details class="text-sm text-stone-600">
     <summary class="cursor-pointer text-indigo-700">About the model and these numbers</summary>
@@ -159,6 +209,7 @@
     window.PMC = {
       url: "{% url 'targeting:pmc_data' %}",
       csrf: "{{ csrf_token }}",
+      rankUrl: "{% url 'targeting:pmc_rank' %}",
       runUrl: "{% url 'targeting:pmc_run' %}",
       statusUrl: "{% url 'targeting:pmc_run_status' 0 %}".replace(/0\/$/, '{id}/'),
       defaults: {
@@ -168,6 +219,7 @@
       }
     };
   </script>
+  {{ grid_states|json_script:"pmc-grid-states" }}
   <script src="{% static 'indicators/pmc/pmc.js' %}"></script>
   {% comment %}
     The agent panel: targeting_pmc_schedules plus every targeting_* read tool.
