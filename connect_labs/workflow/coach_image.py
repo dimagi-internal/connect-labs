@@ -20,7 +20,6 @@ no goal lines.
 
 from __future__ import annotations
 
-import io
 from datetime import timedelta
 from typing import Any
 
@@ -33,41 +32,12 @@ from connect_labs.workflow import coach_briefing
 SALT = "coach-image"
 MAX_AGE = timedelta(days=7)
 
-#: The picture's width. Its height follows the content -- a phone shows the card in a
-#: chat bubble about 930 px wide, so empty space below the last topic only shrinks
-#: the type -- with a floor so a single topic is not a sliver.
+#: The picture's width (``coach_charts.theme``: 540 CSS px drawn at 2x). Its height
+#: follows the content -- a phone shows the card in a chat bubble about 930 px wide,
+#: so empty space below the last topic only shrinks the type -- with a floor so a
+#: single topic is not a sliver.
 WIDTH = 1080
 MIN_HEIGHT = 480
-
-BAND_COLOURS = {
-    "red": (214, 69, 69),
-    "yellow": (224, 161, 0),
-    "amber": (224, 161, 0),
-    "green": (46, 158, 91),
-}
-NEUTRAL = (154, 160, 166)
-INK = (31, 41, 51)
-MUTED = (96, 108, 118)
-TRACK = (234, 236, 240)
-WHITE = (255, 255, 255)
-
-# Sizes chosen for a phone, where the card is shown at about 0.85x.
-_MARGIN = 80
-_TITLE_SIZE = 72
-_TITLE_LINE = 88
-_NAME_SIZE = 40
-_NAME_LINE = 52
-_HEADER_GAP = 56
-_LABEL_SIZE = 44
-_LABEL_LINE = 56
-_FIGURE_SIZE = 44
-_FIGURE_LINE = 58
-_BAR_GAP = 24
-_BAR_HEIGHT = 44
-_BLOCK_GAP = 44
-_MAX_LABEL_LINES = 3
-#: A stroke in the text's own colour: the bundled font has no bold weight.
-_BOLD_STROKE = 1
 
 
 class BadImageLink(Exception):
@@ -174,112 +144,15 @@ def attachment(briefing: str, opportunity_id: int | None = None) -> dict | None:
 # ---------------------------------------------------------------------------
 
 
-def _font(size: int):
-    from PIL import ImageFont
-
-    # Pillow >= 10.1 bundles a scalable FreeType font, so no font file ships with labs.
-    return ImageFont.load_default(size=size)
-
-
-def _wrap(text: str, font, width: int, max_lines: int) -> list[str]:
-    """``text`` broken into lines no wider than ``width``; a word too long for a line
-    is broken by character, and anything past ``max_lines`` ends in an ellipsis."""
-    lines: list[str] = []
-    current = ""
-    for word in text.split():
-        candidate = f"{current} {word}".strip()
-        if font.getlength(candidate) <= width:
-            current = candidate
-            continue
-        if current:
-            lines.append(current)
-        while font.getlength(word) > width:
-            cut = len(word)
-            while cut > 1 and font.getlength(word[:cut]) > width:
-                cut -= 1
-            lines.append(word[:cut])
-            word = word[cut:]
-        current = word
-    if current:
-        lines.append(current)
-    if len(lines) > max_lines:
-        lines = lines[:max_lines]
-        last = lines[-1]
-        while last and font.getlength(last + "…") > width:
-            last = last[:-1]
-        lines[-1] = last.rstrip() + "…"
-    return lines or [""]
-
-
-def _figure_text(topic: dict) -> str:
-    if "numerator" in topic and "denominator" in topic:
-        text = f"{topic['numerator']} of {topic['denominator']}"
-        return text + (f" · {topic['pct']}%" if topic.get("pct") is not None else "")
-    return str(topic.get("figure") or "")
-
-
-def _layout(payload: dict, label_font) -> tuple[list, int]:
-    """Each topic's wrapped label and whether it has a bar, and the card's height:
-    padding + title block + the topic blocks + padding, never under ``MIN_HEIGHT``."""
-    inner = WIDTH - 2 * _MARGIN
-    blocks = []
-    for topic in payload.get("topics") or []:
-        label_lines = _wrap(str(topic.get("label") or ""), label_font, inner, _MAX_LABEL_LINES)
-        has_bar = "numerator" in topic and "denominator" in topic
-        height = len(label_lines) * _LABEL_LINE + _FIGURE_LINE + (_BAR_GAP + _BAR_HEIGHT if has_bar else 0)
-        blocks.append((topic, label_lines, has_bar, height))
-    header = _MARGIN + _TITLE_LINE + (_NAME_LINE if coach_briefing.first_name(payload.get("worker")) else 0)
-    body = sum(b[3] for b in blocks) + _BLOCK_GAP * max(len(blocks) - 1, 0)
-    return blocks, max(MIN_HEIGHT, header + _HEADER_GAP + body + _MARGIN)
-
-
 def render_png(payload: dict) -> bytes:
-    """The picture: a title, then one block per topic -- its label, the figure in
-    bold directly under it, and a bar of numerator over denominator in the band's
-    colour (grey when the band is unknown). The card is as tall as its content.
-    Deterministic: the same payload draws the same bytes."""
-    from PIL import Image, ImageDraw
+    """The picture: the ``topic_bars`` chart (``coach_charts``) of the payload's topics --
+    a title, then per topic its label, the figure in bold under it, and a bar of
+    numerator over denominator in the band's colour (grey when the band is unknown) --
+    in Connect's theme. The card is as tall as its content. Deterministic: the same
+    payload draws the same bytes. Every link ever signed carries a payload of this
+    shape, so every one still draws."""
+    from connect_labs.workflow.coach_charts import render, types
 
-    title_font, name_font = _font(_TITLE_SIZE), _font(_NAME_SIZE)
-    label_font, figure_font = _font(_LABEL_SIZE), _font(_FIGURE_SIZE)
-    inner = WIDTH - 2 * _MARGIN
-    blocks, height = _layout(payload, label_font)
-    image = Image.new("RGB", (WIDTH, height), WHITE)
-    draw = ImageDraw.Draw(image)
-
-    y = _MARGIN
-    draw.text((_MARGIN, y), "Your figures", font=title_font, fill=INK, stroke_width=_BOLD_STROKE, stroke_fill=INK)
-    y += _TITLE_LINE
-    first = coach_briefing.first_name(payload.get("worker"))
-    if first:
-        draw.text((_MARGIN, y), first, font=name_font, fill=MUTED)
-        y += _NAME_LINE
-    y += _HEADER_GAP
-
-    for topic, label_lines, has_bar, block_height in blocks:
-        top = y
-        colour = BAND_COLOURS.get(str(topic.get("band") or "").lower(), NEUTRAL)
-        for line in label_lines:
-            draw.text((_MARGIN, y), line, font=label_font, fill=INK)
-            y += _LABEL_LINE
-        draw.text(
-            (_MARGIN, y), _figure_text(topic), font=figure_font, fill=INK, stroke_width=_BOLD_STROKE, stroke_fill=INK
-        )
-        y += _FIGURE_LINE
-        if has_bar:
-            y += _BAR_GAP
-            draw.rounded_rectangle((_MARGIN, y, _MARGIN + inner, y + _BAR_HEIGHT), radius=_BAR_HEIGHT // 2, fill=TRACK)
-            num, den = topic["numerator"], topic["denominator"]
-            share = min(max(num / den, 0.0), 1.0) if den else 0.0
-            filled = int(round(inner * share))
-            if filled > 0:
-                # A sliver narrower than the bar's height is drawn as a full round cap.
-                filled = max(filled, _BAR_HEIGHT)
-                draw.rounded_rectangle(
-                    (_MARGIN, y, _MARGIN + filled, y + _BAR_HEIGHT), radius=_BAR_HEIGHT // 2, fill=colour
-                )
-        y = top + block_height + _BLOCK_GAP
-
-    out = io.BytesIO()
-    image.save(out, format="PNG", optimize=True)
-    return out.getvalue()
+    rows = types.topic_rows(payload.get("topics") or [])
+    spec = types.topic_bars(rows, first_name=coach_briefing.first_name(payload.get("worker")))
+    return render.render_png(spec, {"worker_topics": rows})

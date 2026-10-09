@@ -71,3 +71,9 @@ k_means_constrained>=0.9.1  # balanced k-means for coverage microplans (even FLW
 # Parses the semantic registry's SQL expressions so they can be validated against
 # an allowlist rather than trusted. See compiler.ALLOWED_FUNCTIONS.
 sqlglot
+
+# Draws coaching charts (Vega-Lite specs in Connect's theme) to PNG server-side:
+# connect_labs/workflow/coach_charts/render.py. Exact pin: it bundles Vega-Lite,
+# and a chart's look must not move under a resolver bump. abi3 wheels for
+# manylinux x86_64/aarch64 and macOS.
+vl-convert-python==1.9.0.post1
