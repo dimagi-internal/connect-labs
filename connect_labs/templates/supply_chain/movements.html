@@ -51,11 +51,13 @@ uses, so nothing ships purged.
             {% comment %}A reversal is consumption INTO the worker: a rejected visit's
             stock put back. Said as what it is, never as a consumption or a
             delivery arriving.{% endcomment %}
+            {% comment %}A visit is named by its form, which a person knows; the visit id rides
+            in the title for anyone who has to look it up in Connect.{% endcomment %}
             {% if movement.reverses_movement_id %}
-              Reversed (visit {{ movement.visit_id }})
+              <span title="Connect visit {{ movement.visit_id }}">Reversed · {{ movement.visit_form|default:"a visit" }}</span>
               <div class="text-xs text-gray-600">back into {{ points|dictkey:movement.to_supply_point_id }}, undoing that visit's consumption{% if movement.note %} · {{ movement.note }}{% endif %}</div>
             {% elif movement.visit_id %}
-              {{ movement.kind|words|capfirst }} (visit {{ movement.visit_id }}){% if movement.estimated %} <span class="ml-1 px-1.5 py-0.5 rounded text-xs bg-amber-50 text-amber-900 border border-amber-200">Estimated</span>{% endif %}
+              <span title="Connect visit {{ movement.visit_id }}">{{ movement.kind|words|capfirst }} · {{ movement.visit_form|default:"a visit" }}</span>{% if movement.estimated %} <span class="ml-1 px-1.5 py-0.5 rounded text-xs bg-amber-50 text-amber-900 border border-amber-200">Estimated</span>{% endif %}
             {% else %}
             {{ movement.kind|words|capfirst }}
             {% with receipt=receipts|dictkey:movement.caused_by.receipt_id %}

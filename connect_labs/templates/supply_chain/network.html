@@ -28,8 +28,9 @@ own arithmetic -- so workers sit in the tree under their store, behind one
     <div class="flex items-center gap-4">
       <p class="text-sm text-gray-600">{{ total }} point{{ total|pluralize }}</p>
       {% if not supply_as_of %}
+        {% comment %}Secondary: most people here read stock; adding a point is the directory keeper's job.{% endcomment %}
         <a href="{% url 'supply_chain:supply_point_create' %}"
-           class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+           class="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50 text-gray-700">
           <i class="fa-solid fa-plus mr-1"></i> New supply point
         </a>
       {% endif %}

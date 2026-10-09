@@ -5,12 +5,15 @@ Recursive: a store includes this template for each store below it; its
 workers sit behind a <details>, so a store with two hundred of them stays one
 row until opened.
 
-The node is the directory row -- slug, Connect user, where, the band set on
-it, how it is known, Edit -- and, when an item is chosen, `node.stock`: what
-the point holds (a `network_tree` row). A store's own figures are what is AT
-it; "with everything below it" sums on hand and what came in from outside the
-subtree (each unit once, never a hop-summed "issued"). Cover is recomputed
-for the subtree, never summed.
+Written for someone reading stock, not keeping the directory: the row leads
+with what the point holds (`node.stock`, a `network_tree` row) -- on hand,
+cover and its band -- and a store's next line with the same for everything
+below it plus how many workers are below their minimum. The directory facts
+(slug, Connect user, place, the band set on it, how it is known, what the
+dispensing rests on, what came in from outside) sit behind "Details". A
+store's own figures are what is AT it; "with everything below it" sums on
+hand and what came in from outside the subtree (each unit once, never a
+hop-summed "issued"). Cover is recomputed for the subtree, never summed.
 
 A store that passes stock on (holds nothing itself while the points below it
 hold some -- `passes_stock_on`) says so in grey: its empty shelf is how it
@@ -23,11 +26,10 @@ works, not a stock-out. The red alarm stays for points meant to hold stock.
     {% else %}
       <span data-testid="point-name" class="{% if node.kind != 'user_held' %}font-medium {% endif %}text-gray-900">{{ node.name }}</span>
     {% endif %}
-    <span class="text-xs text-gray-600">{{ node.kind|words }}</span>
+    {% if node.kind != "user_held" %}<span class="text-xs text-gray-600">{{ node.kind|words }}</span>{% endif %}
     {% if node.status != 'active' %}<span class="px-1.5 py-0.5 rounded text-[11px] bg-gray-100 text-gray-600">inactive</span>{% endif %}
     {% if node.stock %}
-      <span class="text-sm text-gray-700 tabular-nums">{% if node.kind != "user_held" %}here: {% endif %}{{ node.stock.on_hand|figure_text }} on hand</span>
-      {% with line=node.stock|given_out_line %}{% if line %}<span class="text-xs text-gray-600 tabular-nums" data-testid="given-out-line">{{ line }}</span>{% endif %}{% endwith %}
+      <span class="text-sm text-gray-900 tabular-nums">{% if node.kind != "user_held" %}here: {% endif %}{{ node.stock.on_hand|figure_text }} on hand</span>
       {% if node.passes_on %}
         <span class="text-xs text-gray-600" data-testid="passes-on">passes stock on</span>
       {% else %}
@@ -35,27 +37,36 @@ works, not a stock-out. The red alarm stays for points meant to hold stock.
         {% for note in node.stock|cover_notes %}<span class="text-xs text-gray-600" data-testid="cover-note">{{ note }}</span>{% endfor %}
         {% include 'supply_chain/_stock_band.html' with status=node.band %}
       {% endif %}
-      <span class="text-xs text-gray-600">{% if node.stock.reported_on %}counted {{ node.stock.reported_on|day }}{% else %}never counted{% endif %}</span>
+      {% if node.kind == "user_held" and not node.stock.reported_on %}<span class="text-xs text-gray-600">never counted</span>{% endif %}
       {% if node.stock.unmatched_receipts %}<span class="text-xs text-amber-900">reports a receipt no store recorded</span>{% endif %}
     {% endif %}
     {% if not supply_as_of %}
       <a href="{% url 'supply_chain:supply_point_edit' node.id %}" class="ml-auto text-sm text-brand-indigo hover:underline">Edit<span class="sr-only"> {{ node.name }}</span></a>
     {% endif %}
   </div>
-  <div class="text-xs text-gray-600 mt-0.5">
-    <code>{{ node.slug }}</code>{% if node.connect_username %} · Connect user {{ node.connect_username }}{% endif %}
-    · {{ node.admin_area|default:"place not recorded" }}
-    · {% if node.min_months_of_stock or node.max_months_of_stock %}band {{ node.min_months_of_stock|floatformat:"-2"|default:"—" }}–{{ node.max_months_of_stock|floatformat:"-2"|default:"—" }} months{% else %}no band set{% endif %}
-    · {{ node.source|source_label }}
-  </div>
   {% if node.stock.subtree %}
     <div class="text-sm text-gray-700 mt-1 flex flex-wrap gap-x-3 gap-y-0.5" data-testid="subtree">
-      <span>With everything below it: <span class="tabular-nums">{{ node.stock.subtree.on_hand|figure_text }} on hand</span>{% with line=node.stock.subtree|given_out_line %}{% if line %} <span class="text-xs text-gray-600 tabular-nums" data-testid="given-out-line">{{ line }}</span>{% endif %}{% endwith %}</span>
-      <span>· {{ node.stock.subtree.received_from_outside|figure_text }} came in from outside</span>
-      <span>· {{ node.stock.subtree|cover_text }}, recomputed for all of it{% for note in node.stock.subtree|cover_notes %} <span class="text-xs text-gray-600" data-testid="cover-note">{{ note }}</span>{% endfor %} {% include 'supply_chain/_stock_band.html' with status=node.stock.subtree.status %}</span>
-      {% if node.stock.workers %}<span>· {{ node.stock.workers }} worker{{ node.stock.workers|pluralize }}{% if node.stock.workers_below_min %}, <span class="text-amber-900">{{ node.stock.workers_below_min }} below minimum</span>{% endif %}</span>{% endif %}
+      <span>With everything below it: <span class="tabular-nums text-gray-900">{{ node.stock.subtree.on_hand|figure_text }} on hand</span></span>
+      <span>· {{ node.stock.subtree|cover_text }}{% for note in node.stock.subtree|cover_notes %} <span class="text-xs text-gray-600" data-testid="cover-note">{{ note }}</span>{% endfor %} {% include 'supply_chain/_stock_band.html' with status=node.stock.subtree.status %}</span>
+      {% if node.stock.workers %}<span>· {{ node.stock.workers }} worker{{ node.stock.workers|pluralize }}{% if node.stock.workers_below_min %}, <span class="text-amber-900 font-medium">{{ node.stock.workers_below_min }} below minimum</span>{% endif %}</span>{% endif %}
     </div>
   {% endif %}
+  <details class="mt-0.5 text-xs text-gray-600" data-testid="point-details">
+    <summary class="cursor-pointer text-brand-indigo">Details</summary>
+    <ul class="mt-1 ml-3 space-y-0.5">
+      <li>{{ node.kind|words|capfirst }}{% if node.connect_username %} · Connect user {{ node.connect_username }}{% endif %}{% if node.admin_area %} · {{ node.admin_area }}{% endif %}</li>
+      <li>{% if node.min_months_of_stock or node.max_months_of_stock %}Kept at {{ node.min_months_of_stock|floatformat:"-2"|default:"—" }}–{{ node.max_months_of_stock|floatformat:"-2"|default:"—" }} months of stock{% else %}No stock level set{% endif %} · {{ node.source|source_label|capfirst }}</li>
+      {% if node.stock %}
+        <li>{% if node.stock.reported_on %}Counted {{ node.stock.reported_on|day }}{% else %}Never counted{% endif %}</li>
+        {% with line=node.stock|given_out_line %}{% if line %}<li class="tabular-nums" data-testid="given-out-line">{{ line|capfirst }}</li>{% endif %}{% endwith %}
+      {% endif %}
+      {% if node.stock.subtree %}
+        <li>With everything below it: {{ node.stock.subtree.received_from_outside|figure_text }} came in from outside</li>
+        {% with line=node.stock.subtree|given_out_line %}{% if line %}<li class="tabular-nums" data-testid="given-out-line">With everything below it, {{ line }}</li>{% endif %}{% endwith %}
+      {% endif %}
+      <li>Record name: {{ node.slug }}</li>
+    </ul>
+  </details>
   {% if node.store_children %}
     <ul class="ml-4 border-l border-gray-200 pl-4">
       {% for child in node.store_children %}{% include 'supply_chain/_network_node.html' with node=child %}{% endfor %}
