@@ -594,4 +594,6 @@ def test_the_agent_is_told_to_say_nothing_before_the_preview():
     from connect_labs.mcp.tools.workflow_run import CHAT_AFTER_PREVIEW, HOW_TO_RUN_CLICK_TO_SEND
 
     assert "Say nothing before the preview" in CHAT_AFTER_PREVIEW
+    # Live 2026-10-09: two previews, two cards in the chat.
+    assert "preview ONCE" in CHAT_AFTER_PREVIEW
     assert CHAT_AFTER_PREVIEW in HOW_TO_RUN_CLICK_TO_SEND
