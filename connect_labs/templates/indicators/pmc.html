@@ -80,11 +80,25 @@
     .pmc-table td.design { text-align: left; color: #44403c; }
     .pmc-note { font-size: 12px; line-height: 1.5; color: #78716c; padding: 0 16px 12px; }
     .pmc-live-results { margin-top: 8px; }
+    .pmc-total .cap { flex-basis: 100%; font-size: 12px; opacity: .8; margin-bottom: -16px; }
+    .pmc-sub { font-size: 12px; font-weight: 400; color: #78716c; margin-top: 2px; }
+    .pmc-sm-only { display: none; }
+    .pmc-legend { font-size: 13px; line-height: 1.5; color: #57534e; padding: 0 16px 4px; }
+    .pmc-legend b { color: #1c1917; }
+    .pmc-h { font-size: 13px; font-weight: 600; color: #1c1917; padding: 4px 16px 6px; }
+    .pmc-caveats { margin-top: 6px; }
+    .pmc-caveats summary { cursor: pointer; color: #3730a3; }
+    .pmc-caveats ul { list-style: disc; padding-left: 18px; margin-top: 4px; }
 
     @media (max-width: 640px) {
       .pmc-sched { grid-template-columns: 18px 1fr 70px 80px; }
       .pmc-sched > :nth-child(3) { display: none; }
       .pmc-hide-sm { display: none; }
+      .pmc-sm-only { display: block; }
+      .pmc-table th { white-space: normal; padding: 6px; }
+      .pmc-table td { padding: 6px; }
+      .pmc-total { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .pmc-total .cap { grid-column: 1 / -1; margin-bottom: 0; }
     }
   </style>
 {% endblock %}
@@ -134,18 +148,37 @@
       </span>
       <label>Top <select id="pmc-topn"><option>10</option><option>20</option><option>50</option></select></label>
     </div>
+    <p class="pmc-legend" style="padding-top:10px"><b>&times; GiveWell</b>: how many times as cost-effective as GiveWell's benchmark, counting under-5 deaths only; GiveWell funds at about <b>6&times;</b> and above. <b>Deaths</b>: two estimates of each state's under-5 malaria deaths, spread by DHS survey prevalence or taken from MAP's model. They disagree in the south, so check both.</p>
     <div id="pmc-rank-total" class="pmc-total hidden" style="margin:12px 16px"></div>
+    <div id="pmc-design-card" class="hidden">
+      <div class="pmc-h">Which schedule: each one across all the states picked</div>
+      <div class="overflow-x-auto px-4 pb-3">
+        <table class="pmc-table">
+          <thead>
+            <tr>
+              <th class="l">Schedule</th>
+              <th class="pmc-hide-sm">Doses / child / yr</th>
+              <th class="pmc-hide-sm">Deaths averted / yr</th>
+              <th title="The schedule's cost across these states divided by the deaths it averts across them">Per death averted</th>
+              <th title="How many times as cost-effective as GiveWell's benchmark; GiveWell's bar is about 6x">&times; GiveWell</th>
+            </tr>
+          </thead>
+          <tbody id="pmc-design-rows"></tbody>
+        </table>
+      </div>
+      <div class="pmc-h">Where: the best state &times; schedule pairs</div>
+    </div>
     <div class="overflow-x-auto px-4 pb-3">
       <table class="pmc-table">
         <thead>
           <tr>
             <th class="l">#</th>
             <th class="l">State</th>
-            <th class="l">Design</th>
-            <th>Deaths averted / yr</th>
+            <th class="l pmc-hide-sm">Design</th>
+            <th class="pmc-hide-sm">Deaths averted / yr</th>
             <th class="pmc-hide-sm">Cost / yr</th>
-            <th>Per death averted</th>
-            <th>&times; GiveWell</th>
+            <th title="Cost per year divided by under-5 deaths averted per year">Per death averted</th>
+            <th title="How many times as cost-effective as GiveWell's benchmark; GiveWell's bar is about 6x">&times; GiveWell</th>
           </tr>
         </thead>
         <tbody id="pmc-rank-rows"><tr><td class="l" colspan="7">Loading…</td></tr></tbody>
@@ -156,7 +189,8 @@
 
   <section class="pmc-card">
     <div class="pmc-live" style="border-top:0">
-      <div class="pmc-label" style="margin-bottom:6px">Try another schedule in one state</div>
+      <div class="pmc-label" style="margin-bottom:4px">Try another schedule in one state</div>
+      <p style="margin-bottom:8px">Runs IDM's model live for one state on its own fitted setting, with a schedule of your own: other months, a narrower age range, a different coverage. It takes about five minutes, or is instant if someone has run the same thing before. The result is valued like the ranking and shown beside that state's best design.</p>
       <div class="pmc-live-row">
         <label>State <select id="pmc-live-state"></select></label>
         <label>Rounds

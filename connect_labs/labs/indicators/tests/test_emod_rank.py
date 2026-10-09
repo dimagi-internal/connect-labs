@@ -276,3 +276,22 @@ def test_the_state_index_marks_year_round_transmission_by_season_and_prevalence(
     assert {n: s["perennial"] for n, s in got.items()} == {"Kano": False, "Lagos": False, "Ondo": True}
     assert got["Ondo"]["pfpr"] == 0.3 and got["Ondo"]["rain_wettest_quarter"] == 40.0
     assert rank.state_index(None) == []
+
+
+def test_by_design_pools_each_schedule_across_the_states_with_its_noise(grid):
+    out = rank.rank_pairs(["Ondo", "Kano"], grid=grid, deaths={"Ondo": 4_000.0, "Kano": 20_000.0})
+    by = {r["design_code"]: r for r in out["by_design"]}
+
+    # 4 monthly rounds ran in both states: 20% of Ondo's 4,000 deaths + 25% of Kano's 20,000 = 5,800.
+    assert by["pmc_m4_onset"]["states"] == 2 and by["pmc_m4_onset"]["deaths_averted_per_year"] == 5800
+    assert by["pmc_m4_onset"]["label"] == "4 monthly rounds from the rains"
+    # Quarterly's 3% +/- 4 in Ondo is not ranked as a pair, but it is pooled (not dropped) and counted as unclear.
+    assert "pmc_q4" not in {r["design_code"] for r in out["ranked"]}
+    assert by["pmc_q4"]["states_no_effect"] == 1 and by["pmc_q4"]["deaths_averted_per_year"] == 120
+    # Cheapest per death first, each with its multiple of the benchmark.
+    costs = [r["cost_per_death_averted"] for r in out["by_design"]]
+    assert costs == sorted(costs) and all("multiple_of_benchmark" in r for r in out["by_design"])
+
+
+def test_the_state_index_carries_the_rain_onset_for_the_live_run(grid):
+    assert {s["name"]: s["onset_month"] for s in rank.state_index(grid)} == {"Kano": 6, "Lagos": 4, "Ondo": 5}
