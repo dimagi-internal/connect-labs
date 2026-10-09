@@ -150,7 +150,7 @@ def test_the_stores_read_as_of_a_past_day(world):
 
     # Today: 600 received less 300 + 200 handed to the workers. 20 days ago: before either
     # hand-out, all 600 -- six times as much, in whichever unit the store is shown.
-    assert partner(as_of=TODAY - timedelta(days=20)) == pytest.approx(6 * partner())
+    assert partner(as_of=TODAY - timedelta(days=20)) == pytest.approx(6 * partner(), rel=1e-3)  # cartons round
 
 
 def test_an_opportunity_the_viewer_does_not_hold_gets_an_error_not_rows(world):
