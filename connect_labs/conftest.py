@@ -1,3 +1,5 @@
+import datetime
+
 import pytest
 from django.core.cache import cache
 from rest_framework.test import APIClient, APIRequestFactory
@@ -15,6 +17,31 @@ django_db_setup = pytest.fixture(scope="session")(django_db_setup_with_template)
 @pytest.fixture(autouse=True)
 def media_storage(settings, tmpdir):
     settings.MEDIA_ROOT = tmpdir.strpath
+
+
+_COLLECTED_ON = datetime.date.today()
+
+
+@pytest.fixture(autouse=True)
+def _today_is_today(request):
+    """Keep a test module's import-time `TODAY` in step with the code's own today.
+
+    Many modules write `TODAY = date.today()` (or `timezone.localdate()`) at import,
+    which is collection time, while the code under test asks for today when the test
+    runs. A run that crosses midnight then builds fixtures for one day and asserts on
+    another: 77 sachets over 4 days became "15 a day" against an expected 19, and
+    connect-labs#2340 and #2341 both went red on it at 00:02 UTC. Shifting by the
+    days elapsed since collection keeps each module's own clock (localdate vs today).
+    """
+    module = request.module
+    collected = getattr(module, "TODAY", None)
+    elapsed = datetime.date.today() - _COLLECTED_ON
+    if not elapsed or type(collected) is not datetime.date:
+        yield
+        return
+    module.TODAY = collected + elapsed
+    yield
+    module.TODAY = collected
 
 
 @pytest.fixture(autouse=True)
