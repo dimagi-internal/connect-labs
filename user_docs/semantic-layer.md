@@ -198,6 +198,7 @@ visit_columns:
 - `optional: true` makes a column read `NULL` (typed by its kind) while the report's pipeline does not yet
   produce a field it reads, so a registry can use new fields before the live pipeline record is updated.
   Add the fields to the pipeline first all the same: until then the column, and everything built on it, is empty.
+- A `case_series` column must be one of these visit columns (never a raw pipeline field), so `optional` guards it.
 - `labels` gives a comma-separated list of the labels whose field contains the word (whole word, any case), or
   `NULL` when none does. A label is plain words; one that could carry SQL is refused.
 
