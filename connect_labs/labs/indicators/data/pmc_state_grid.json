@@ -88,6 +88,46 @@
           "averted_u5_ci": 6.4,
           "doses_per_child_per_year": 5.11,
           "averted_3_24m_pct": 16.5
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 4.4,
+          "averted_u5_ci": 1.4,
+          "doses_per_child_per_year": 2.92,
+          "averted_3_24m_pct": 14.0
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 11.7,
+          "averted_u5_ci": 2.0,
+          "doses_per_child_per_year": 3.95,
+          "averted_3_24m_pct": 30.1
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 17.9,
+          "averted_u5_ci": 4.1,
+          "doses_per_child_per_year": 5.76,
+          "averted_3_24m_pct": 42.6
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 2.2,
+          "averted_u5_ci": 15.3,
+          "doses_per_child_per_year": 1.95,
+          "averted_3_24m_pct": 5.0
         }
       }
     },
@@ -174,6 +214,46 @@
           "averted_u5_ci": 3.2,
           "doses_per_child_per_year": 5.08,
           "averted_3_24m_pct": 25.9
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jul\u2013Dec, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 9.8,
+          "averted_u5_ci": 3.2,
+          "doses_per_child_per_year": 2.8,
+          "averted_3_24m_pct": 23.9
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jul\u2013Feb, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 16.0,
+          "averted_u5_ci": 4.1,
+          "doses_per_child_per_year": 3.81,
+          "averted_3_24m_pct": 35.6
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 18.0,
+          "averted_u5_ci": 4.7,
+          "doses_per_child_per_year": 5.77,
+          "averted_3_24m_pct": 44.1
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jul, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 4.6,
+          "averted_u5_ci": 4.6,
+          "doses_per_child_per_year": 1.93,
+          "averted_3_24m_pct": 8.2
         }
       }
     },
@@ -270,6 +350,46 @@
           "averted_u5_ci": 11.8,
           "doses_per_child_per_year": 3.37,
           "averted_3_24m_pct": 11.4
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 8.2,
+          "averted_u5_ci": 5.3,
+          "doses_per_child_per_year": 2.92,
+          "averted_3_24m_pct": 16.4
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 15.5,
+          "averted_u5_ci": 5.4,
+          "doses_per_child_per_year": 3.93,
+          "averted_3_24m_pct": 34.7
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 16.8,
+          "averted_u5_ci": 8.8,
+          "doses_per_child_per_year": 5.82,
+          "averted_3_24m_pct": 42.3
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 0.6,
+          "averted_u5_ci": 10.9,
+          "doses_per_child_per_year": 1.94,
+          "averted_3_24m_pct": 5.8
         }
       }
     },
@@ -356,6 +476,46 @@
           "averted_u5_ci": 11.0,
           "doses_per_child_per_year": 5.09,
           "averted_3_24m_pct": 18.8
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 8.5,
+          "averted_u5_ci": 10.2,
+          "doses_per_child_per_year": 2.84,
+          "averted_3_24m_pct": 20.1
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 13.2,
+          "averted_u5_ci": 14.4,
+          "doses_per_child_per_year": 3.91,
+          "averted_3_24m_pct": 32.9
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 18.4,
+          "averted_u5_ci": 10.5,
+          "doses_per_child_per_year": 5.67,
+          "averted_3_24m_pct": 44.3
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 5.4,
+          "averted_u5_ci": 14.8,
+          "doses_per_child_per_year": 1.94,
+          "averted_3_24m_pct": 10.9
         }
       }
     },
@@ -442,6 +602,46 @@
           "averted_u5_ci": 6.8,
           "doses_per_child_per_year": 5.08,
           "averted_3_24m_pct": 23.9
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jul\u2013Dec, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 10.4,
+          "averted_u5_ci": 2.4,
+          "doses_per_child_per_year": 2.92,
+          "averted_3_24m_pct": 24.6
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jul\u2013Feb, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 15.9,
+          "averted_u5_ci": 6.2,
+          "doses_per_child_per_year": 3.92,
+          "averted_3_24m_pct": 40.1
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 19.0,
+          "averted_u5_ci": 5.2,
+          "doses_per_child_per_year": 5.75,
+          "averted_3_24m_pct": 45.4
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jul, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 4.7,
+          "averted_u5_ci": 12.2,
+          "doses_per_child_per_year": 1.94,
+          "averted_3_24m_pct": 10.8
         }
       }
     },
@@ -538,6 +738,46 @@
           "averted_u5_ci": 3.6,
           "doses_per_child_per_year": 3.37,
           "averted_3_24m_pct": 20.4
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 11.1,
+          "averted_u5_ci": 6.1,
+          "doses_per_child_per_year": 2.88,
+          "averted_3_24m_pct": 22.6
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 16.9,
+          "averted_u5_ci": 2.9,
+          "doses_per_child_per_year": 3.85,
+          "averted_3_24m_pct": 35.8
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 20.4,
+          "averted_u5_ci": 6.4,
+          "doses_per_child_per_year": 5.64,
+          "averted_3_24m_pct": 41.4
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 4.9,
+          "averted_u5_ci": 1.4,
+          "doses_per_child_per_year": 1.91,
+          "averted_3_24m_pct": 9.4
         }
       }
     },
@@ -624,6 +864,46 @@
           "averted_u5_ci": 9.8,
           "doses_per_child_per_year": 5.08,
           "averted_3_24m_pct": 19.4
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 8.5,
+          "averted_u5_ci": 13.2,
+          "doses_per_child_per_year": 2.87,
+          "averted_3_24m_pct": 17.4
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 12.2,
+          "averted_u5_ci": 9.1,
+          "doses_per_child_per_year": 3.78,
+          "averted_3_24m_pct": 30.9
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 20.7,
+          "averted_u5_ci": 8.2,
+          "doses_per_child_per_year": 5.83,
+          "averted_3_24m_pct": 47.2
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 3.2,
+          "averted_u5_ci": 9.5,
+          "doses_per_child_per_year": 1.89,
+          "averted_3_24m_pct": 6.6
         }
       }
     },
@@ -710,6 +990,46 @@
           "averted_u5_ci": 2.7,
           "doses_per_child_per_year": 5.11,
           "averted_3_24m_pct": 15.6
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jul\u2013Dec, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 10.0,
+          "averted_u5_ci": 4.1,
+          "doses_per_child_per_year": 2.91,
+          "averted_3_24m_pct": 25.4
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jul\u2013Feb, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 14.8,
+          "averted_u5_ci": 3.9,
+          "doses_per_child_per_year": 3.87,
+          "averted_3_24m_pct": 35.8
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 17.1,
+          "averted_u5_ci": 6.0,
+          "doses_per_child_per_year": 5.84,
+          "averted_3_24m_pct": 41.8
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jul, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 1.9,
+          "averted_u5_ci": 7.9,
+          "doses_per_child_per_year": 1.97,
+          "averted_3_24m_pct": 5.8
         }
       }
     },
@@ -796,6 +1116,46 @@
           "averted_u5_ci": 4.0,
           "doses_per_child_per_year": 5.14,
           "averted_3_24m_pct": 23.2
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jul\u2013Dec, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 9.9,
+          "averted_u5_ci": 5.2,
+          "doses_per_child_per_year": 2.96,
+          "averted_3_24m_pct": 25.2
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jul\u2013Feb, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 16.7,
+          "averted_u5_ci": 9.0,
+          "doses_per_child_per_year": 3.96,
+          "averted_3_24m_pct": 37.7
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 19.6,
+          "averted_u5_ci": 3.4,
+          "doses_per_child_per_year": 5.96,
+          "averted_3_24m_pct": 45.2
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jul, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 4.2,
+          "averted_u5_ci": 4.1,
+          "doses_per_child_per_year": 1.96,
+          "averted_3_24m_pct": 10.6
         }
       }
     },
@@ -882,6 +1242,46 @@
           "averted_u5_ci": 13.1,
           "doses_per_child_per_year": 5.06,
           "averted_3_24m_pct": 18.2
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jul\u2013Dec, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 8.1,
+          "averted_u5_ci": 6.7,
+          "doses_per_child_per_year": 2.91,
+          "averted_3_24m_pct": 18.1
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jul\u2013Feb, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 13.8,
+          "averted_u5_ci": 16.0,
+          "doses_per_child_per_year": 3.88,
+          "averted_3_24m_pct": 32.3
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 17.1,
+          "averted_u5_ci": 8.6,
+          "doses_per_child_per_year": 5.71,
+          "averted_3_24m_pct": 41.5
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jul, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 2.1,
+          "averted_u5_ci": 5.8,
+          "doses_per_child_per_year": 1.9,
+          "averted_3_24m_pct": 2.6
         }
       }
     },
@@ -968,6 +1368,46 @@
           "averted_u5_ci": 1.7,
           "doses_per_child_per_year": 5.16,
           "averted_3_24m_pct": 23.4
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jul\u2013Dec, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 12.0,
+          "averted_u5_ci": 8.6,
+          "doses_per_child_per_year": 2.87,
+          "averted_3_24m_pct": 25.8
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jul\u2013Feb, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 19.5,
+          "averted_u5_ci": 3.7,
+          "doses_per_child_per_year": 3.85,
+          "averted_3_24m_pct": 39.6
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 23.0,
+          "averted_u5_ci": 4.0,
+          "doses_per_child_per_year": 5.83,
+          "averted_3_24m_pct": 46.6
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jul, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 4.4,
+          "averted_u5_ci": 4.8,
+          "doses_per_child_per_year": 1.94,
+          "averted_3_24m_pct": 7.7
         }
       }
     },
@@ -1054,6 +1494,46 @@
           "averted_u5_ci": 2.6,
           "doses_per_child_per_year": 5.12,
           "averted_3_24m_pct": 25.3
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jul\u2013Dec, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 11.5,
+          "averted_u5_ci": 6.4,
+          "doses_per_child_per_year": 2.9,
+          "averted_3_24m_pct": 27.1
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jul\u2013Feb, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 16.7,
+          "averted_u5_ci": 9.6,
+          "doses_per_child_per_year": 3.83,
+          "averted_3_24m_pct": 37.3
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 16.0,
+          "averted_u5_ci": 6.0,
+          "doses_per_child_per_year": 5.73,
+          "averted_3_24m_pct": 39.0
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jul, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 3.9,
+          "averted_u5_ci": 10.8,
+          "doses_per_child_per_year": 1.92,
+          "averted_3_24m_pct": 7.4
         }
       }
     },
@@ -1150,6 +1630,46 @@
           "averted_u5_ci": 8.6,
           "doses_per_child_per_year": 3.4,
           "averted_3_24m_pct": 7.6
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 6.6,
+          "averted_u5_ci": 9.5,
+          "doses_per_child_per_year": 2.92,
+          "averted_3_24m_pct": 14.1
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 15.9,
+          "averted_u5_ci": 3.4,
+          "doses_per_child_per_year": 3.9,
+          "averted_3_24m_pct": 35.1
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 17.9,
+          "averted_u5_ci": 12.2,
+          "doses_per_child_per_year": 5.89,
+          "averted_3_24m_pct": 41.3
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 2.3,
+          "averted_u5_ci": 3.7,
+          "doses_per_child_per_year": 1.98,
+          "averted_3_24m_pct": 4.3
         }
       }
     },
@@ -1236,6 +1756,46 @@
           "averted_u5_ci": 1.1,
           "doses_per_child_per_year": 5.11,
           "averted_3_24m_pct": 22.3
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jul\u2013Dec, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 10.3,
+          "averted_u5_ci": 0.5,
+          "doses_per_child_per_year": 2.9,
+          "averted_3_24m_pct": 25.6
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jul\u2013Feb, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 19.5,
+          "averted_u5_ci": 3.8,
+          "doses_per_child_per_year": 3.95,
+          "averted_3_24m_pct": 41.9
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 20.7,
+          "averted_u5_ci": 12.5,
+          "doses_per_child_per_year": 5.91,
+          "averted_3_24m_pct": 44.7
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jul, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 2.8,
+          "averted_u5_ci": 2.3,
+          "doses_per_child_per_year": 1.95,
+          "averted_3_24m_pct": 9.1
         }
       }
     },
@@ -1332,6 +1892,46 @@
           "averted_u5_ci": 8.9,
           "doses_per_child_per_year": 3.36,
           "averted_3_24m_pct": 9.2
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 5.1,
+          "averted_u5_ci": 3.3,
+          "doses_per_child_per_year": 2.87,
+          "averted_3_24m_pct": 14.9
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 11.2,
+          "averted_u5_ci": 2.6,
+          "doses_per_child_per_year": 3.89,
+          "averted_3_24m_pct": 30.8
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 17.8,
+          "averted_u5_ci": 9.1,
+          "doses_per_child_per_year": 5.69,
+          "averted_3_24m_pct": 45.6
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 1.7,
+          "averted_u5_ci": 11.5,
+          "doses_per_child_per_year": 1.89,
+          "averted_3_24m_pct": 4.8
         }
       }
     },
@@ -1418,6 +2018,46 @@
           "averted_u5_ci": 6.1,
           "doses_per_child_per_year": 5.12,
           "averted_3_24m_pct": 26.8
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jul\u2013Dec, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 8.4,
+          "averted_u5_ci": 4.4,
+          "doses_per_child_per_year": 2.91,
+          "averted_3_24m_pct": 21.6
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jul\u2013Feb, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 18.2,
+          "averted_u5_ci": 6.1,
+          "doses_per_child_per_year": 3.88,
+          "averted_3_24m_pct": 39.8
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 19.3,
+          "averted_u5_ci": 8.0,
+          "doses_per_child_per_year": 5.64,
+          "averted_3_24m_pct": 41.7
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jul, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 5.9,
+          "averted_u5_ci": 3.8,
+          "doses_per_child_per_year": 1.93,
+          "averted_3_24m_pct": 11.3
         }
       }
     },
@@ -1504,6 +2144,46 @@
           "averted_u5_ci": 10.5,
           "doses_per_child_per_year": 5.07,
           "averted_3_24m_pct": 23.8
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 8.5,
+          "averted_u5_ci": 3.9,
+          "doses_per_child_per_year": 2.93,
+          "averted_3_24m_pct": 19.4
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 15.5,
+          "averted_u5_ci": 1.9,
+          "doses_per_child_per_year": 3.98,
+          "averted_3_24m_pct": 35.6
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 18.9,
+          "averted_u5_ci": 12.0,
+          "doses_per_child_per_year": 5.84,
+          "averted_3_24m_pct": 46.2
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 5.4,
+          "averted_u5_ci": 16.5,
+          "doses_per_child_per_year": 1.97,
+          "averted_3_24m_pct": 11.1
         }
       }
     },
@@ -1600,6 +2280,46 @@
           "averted_u5_ci": 1.3,
           "doses_per_child_per_year": 3.34,
           "averted_3_24m_pct": 17.2
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 11.3,
+          "averted_u5_ci": 4.2,
+          "doses_per_child_per_year": 2.92,
+          "averted_3_24m_pct": 24.9
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 16.7,
+          "averted_u5_ci": 7.3,
+          "doses_per_child_per_year": 3.83,
+          "averted_3_24m_pct": 38.5
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 17.6,
+          "averted_u5_ci": 5.1,
+          "doses_per_child_per_year": 5.7,
+          "averted_3_24m_pct": 40.7
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 3.2,
+          "averted_u5_ci": 5.1,
+          "doses_per_child_per_year": 1.91,
+          "averted_3_24m_pct": 11.0
         }
       }
     },
@@ -1696,6 +2416,46 @@
           "averted_u5_ci": 7.6,
           "doses_per_child_per_year": 3.38,
           "averted_3_24m_pct": 10.0
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 4.0,
+          "averted_u5_ci": 8.7,
+          "doses_per_child_per_year": 2.87,
+          "averted_3_24m_pct": 11.5
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 11.7,
+          "averted_u5_ci": 4.6,
+          "doses_per_child_per_year": 3.83,
+          "averted_3_24m_pct": 28.5
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 17.0,
+          "averted_u5_ci": 7.9,
+          "doses_per_child_per_year": 5.72,
+          "averted_3_24m_pct": 40.9
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 2.3,
+          "averted_u5_ci": 12.8,
+          "doses_per_child_per_year": 1.91,
+          "averted_3_24m_pct": 4.9
         }
       }
     },
@@ -1792,6 +2552,46 @@
           "averted_u5_ci": 6.2,
           "doses_per_child_per_year": 3.39,
           "averted_3_24m_pct": 16.5
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 12.1,
+          "averted_u5_ci": 3.1,
+          "doses_per_child_per_year": 2.9,
+          "averted_3_24m_pct": 21.1
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 17.1,
+          "averted_u5_ci": 3.6,
+          "doses_per_child_per_year": 3.88,
+          "averted_3_24m_pct": 33.3
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 21.0,
+          "averted_u5_ci": 2.9,
+          "doses_per_child_per_year": 5.72,
+          "averted_3_24m_pct": 42.7
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 9.2,
+          "averted_u5_ci": 4.5,
+          "doses_per_child_per_year": 1.94,
+          "averted_3_24m_pct": 12.1
         }
       }
     },
@@ -1888,6 +2688,46 @@
           "averted_u5_ci": 6.2,
           "doses_per_child_per_year": 3.37,
           "averted_3_24m_pct": 11.4
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 7.6,
+          "averted_u5_ci": 11.8,
+          "doses_per_child_per_year": 2.95,
+          "averted_3_24m_pct": 18.7
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 14.9,
+          "averted_u5_ci": 6.1,
+          "doses_per_child_per_year": 3.92,
+          "averted_3_24m_pct": 34.4
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 17.3,
+          "averted_u5_ci": 14.4,
+          "doses_per_child_per_year": 5.74,
+          "averted_3_24m_pct": 42.7
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 3.0,
+          "averted_u5_ci": 1.9,
+          "doses_per_child_per_year": 1.96,
+          "averted_3_24m_pct": 6.7
         }
       }
     },
@@ -1984,6 +2824,46 @@
           "averted_u5_ci": 6.3,
           "doses_per_child_per_year": 3.39,
           "averted_3_24m_pct": 19.5
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 9.0,
+          "averted_u5_ci": 7.5,
+          "doses_per_child_per_year": 2.91,
+          "averted_3_24m_pct": 18.7
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 13.8,
+          "averted_u5_ci": 11.5,
+          "doses_per_child_per_year": 3.9,
+          "averted_3_24m_pct": 32.2
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 18.3,
+          "averted_u5_ci": 1.8,
+          "doses_per_child_per_year": 5.81,
+          "averted_3_24m_pct": 40.7
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 2.9,
+          "averted_u5_ci": 3.5,
+          "doses_per_child_per_year": 1.94,
+          "averted_3_24m_pct": 5.8
         }
       }
     },
@@ -2070,6 +2950,46 @@
           "averted_u5_ci": 2.1,
           "doses_per_child_per_year": 5.11,
           "averted_3_24m_pct": 17.8
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 7.1,
+          "averted_u5_ci": 9.7,
+          "doses_per_child_per_year": 2.84,
+          "averted_3_24m_pct": 17.1
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 13.6,
+          "averted_u5_ci": 5.3,
+          "doses_per_child_per_year": 3.83,
+          "averted_3_24m_pct": 33.2
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 19.8,
+          "averted_u5_ci": 6.4,
+          "doses_per_child_per_year": 5.64,
+          "averted_3_24m_pct": 46.0
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 3.8,
+          "averted_u5_ci": 0.5,
+          "doses_per_child_per_year": 1.91,
+          "averted_3_24m_pct": 9.0
         }
       }
     },
@@ -2156,6 +3076,46 @@
           "averted_u5_ci": 14.2,
           "doses_per_child_per_year": 5.12,
           "averted_3_24m_pct": 19.9
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 6.2,
+          "averted_u5_ci": 8.4,
+          "doses_per_child_per_year": 2.94,
+          "averted_3_24m_pct": 15.4
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 11.4,
+          "averted_u5_ci": 6.4,
+          "doses_per_child_per_year": 3.89,
+          "averted_3_24m_pct": 29.7
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 18.9,
+          "averted_u5_ci": 4.3,
+          "doses_per_child_per_year": 5.83,
+          "averted_3_24m_pct": 47.4
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 3.1,
+          "averted_u5_ci": 8.3,
+          "doses_per_child_per_year": 1.91,
+          "averted_3_24m_pct": 4.9
         }
       }
     },
@@ -2242,6 +3202,46 @@
           "averted_u5_ci": 4.8,
           "doses_per_child_per_year": 5.09,
           "averted_3_24m_pct": 20.3
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 3.4,
+          "averted_u5_ci": 25.3,
+          "doses_per_child_per_year": 2.96,
+          "averted_3_24m_pct": 12.3
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 11.0,
+          "averted_u5_ci": 15.7,
+          "doses_per_child_per_year": 3.92,
+          "averted_3_24m_pct": 30.5
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 15.6,
+          "averted_u5_ci": 19.4,
+          "doses_per_child_per_year": 5.81,
+          "averted_3_24m_pct": 47.0
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": -1.0,
+          "averted_u5_ci": 17.6,
+          "doses_per_child_per_year": 1.95,
+          "averted_3_24m_pct": 8.3
         }
       }
     },
@@ -2328,6 +3328,46 @@
           "averted_u5_ci": 9.3,
           "doses_per_child_per_year": 5.09,
           "averted_3_24m_pct": 23.6
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jul\u2013Dec, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 10.1,
+          "averted_u5_ci": 5.1,
+          "doses_per_child_per_year": 2.85,
+          "averted_3_24m_pct": 22.3
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jul\u2013Feb, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 18.8,
+          "averted_u5_ci": 6.0,
+          "doses_per_child_per_year": 3.82,
+          "averted_3_24m_pct": 38.2
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 20.3,
+          "averted_u5_ci": 5.7,
+          "doses_per_child_per_year": 5.52,
+          "averted_3_24m_pct": 42.5
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jul, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 4.5,
+          "averted_u5_ci": 2.8,
+          "doses_per_child_per_year": 1.91,
+          "averted_3_24m_pct": 8.4
         }
       }
     },
@@ -2414,6 +3454,46 @@
           "averted_u5_ci": 0.7,
           "doses_per_child_per_year": 5.1,
           "averted_3_24m_pct": 20.2
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 7.1,
+          "averted_u5_ci": 4.5,
+          "doses_per_child_per_year": 2.95,
+          "averted_3_24m_pct": 18.3
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 15.4,
+          "averted_u5_ci": 2.3,
+          "doses_per_child_per_year": 3.97,
+          "averted_3_24m_pct": 34.8
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 20.1,
+          "averted_u5_ci": 4.1,
+          "doses_per_child_per_year": 5.77,
+          "averted_3_24m_pct": 44.5
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 3.5,
+          "averted_u5_ci": 3.8,
+          "doses_per_child_per_year": 1.94,
+          "averted_3_24m_pct": 9.3
         }
       }
     },
@@ -2500,6 +3580,46 @@
           "averted_u5_ci": 4.3,
           "doses_per_child_per_year": 5.1,
           "averted_3_24m_pct": 19.9
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 8.0,
+          "averted_u5_ci": 2.5,
+          "doses_per_child_per_year": 2.86,
+          "averted_3_24m_pct": 16.0
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 14.0,
+          "averted_u5_ci": 3.1,
+          "doses_per_child_per_year": 3.8,
+          "averted_3_24m_pct": 30.4
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 21.2,
+          "averted_u5_ci": 7.1,
+          "doses_per_child_per_year": 5.72,
+          "averted_3_24m_pct": 45.2
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 6.1,
+          "averted_u5_ci": 5.8,
+          "doses_per_child_per_year": 1.87,
+          "averted_3_24m_pct": 10.2
         }
       }
     },
@@ -2586,6 +3706,46 @@
           "averted_u5_ci": 8.4,
           "doses_per_child_per_year": 5.14,
           "averted_3_24m_pct": 18.9
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 10.9,
+          "averted_u5_ci": 1.0,
+          "doses_per_child_per_year": 2.92,
+          "averted_3_24m_pct": 20.6
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 15.9,
+          "averted_u5_ci": 3.3,
+          "doses_per_child_per_year": 3.89,
+          "averted_3_24m_pct": 32.9
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 20.6,
+          "averted_u5_ci": 4.5,
+          "doses_per_child_per_year": 5.78,
+          "averted_3_24m_pct": 44.3
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 3.5,
+          "averted_u5_ci": 4.9,
+          "doses_per_child_per_year": 1.96,
+          "averted_3_24m_pct": 6.2
         }
       }
     },
@@ -2672,6 +3832,46 @@
           "averted_u5_ci": 6.7,
           "doses_per_child_per_year": 5.08,
           "averted_3_24m_pct": 23.5
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jul\u2013Dec, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 8.3,
+          "averted_u5_ci": 6.8,
+          "doses_per_child_per_year": 2.96,
+          "averted_3_24m_pct": 21.7
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jul\u2013Feb, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 13.7,
+          "averted_u5_ci": 5.9,
+          "doses_per_child_per_year": 3.81,
+          "averted_3_24m_pct": 33.4
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 19.4,
+          "averted_u5_ci": 2.7,
+          "doses_per_child_per_year": 5.82,
+          "averted_3_24m_pct": 48.5
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jul, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 1.7,
+          "averted_u5_ci": 10.8,
+          "doses_per_child_per_year": 1.95,
+          "averted_3_24m_pct": 4.3
         }
       }
     },
@@ -2758,6 +3958,46 @@
           "averted_u5_ci": 6.5,
           "doses_per_child_per_year": 5.08,
           "averted_3_24m_pct": 22.4
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jul\u2013Dec, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 6.0,
+          "averted_u5_ci": 2.7,
+          "doses_per_child_per_year": 2.91,
+          "averted_3_24m_pct": 20.5
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jul\u2013Feb, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 10.6,
+          "averted_u5_ci": 1.7,
+          "doses_per_child_per_year": 3.89,
+          "averted_3_24m_pct": 28.1
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 15.9,
+          "averted_u5_ci": 7.7,
+          "doses_per_child_per_year": 5.78,
+          "averted_3_24m_pct": 40.1
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jul, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 0.7,
+          "averted_u5_ci": 2.5,
+          "doses_per_child_per_year": 1.93,
+          "averted_3_24m_pct": 5.3
         }
       }
     },
@@ -2844,6 +4084,46 @@
           "averted_u5_ci": 9.7,
           "doses_per_child_per_year": 5.11,
           "averted_3_24m_pct": 19.2
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 7.9,
+          "averted_u5_ci": 4.8,
+          "doses_per_child_per_year": 2.84,
+          "averted_3_24m_pct": 18.4
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 15.3,
+          "averted_u5_ci": 4.3,
+          "doses_per_child_per_year": 3.87,
+          "averted_3_24m_pct": 35.0
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 19.4,
+          "averted_u5_ci": 15.4,
+          "doses_per_child_per_year": 5.62,
+          "averted_3_24m_pct": 44.0
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 1.6,
+          "averted_u5_ci": 7.4,
+          "doses_per_child_per_year": 1.93,
+          "averted_3_24m_pct": 7.4
         }
       }
     },
@@ -2930,6 +4210,46 @@
           "averted_u5_ci": 3.8,
           "doses_per_child_per_year": 5.1,
           "averted_3_24m_pct": 16.7
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 5.4,
+          "averted_u5_ci": 11.4,
+          "doses_per_child_per_year": 2.94,
+          "averted_3_24m_pct": 15.3
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 11.4,
+          "averted_u5_ci": 10.9,
+          "doses_per_child_per_year": 3.87,
+          "averted_3_24m_pct": 28.2
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 16.4,
+          "averted_u5_ci": 5.2,
+          "doses_per_child_per_year": 5.73,
+          "averted_3_24m_pct": 44.7
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 0.1,
+          "averted_u5_ci": 3.5,
+          "doses_per_child_per_year": 1.9,
+          "averted_3_24m_pct": 8.3
         }
       }
     },
@@ -3026,6 +4346,46 @@
           "averted_u5_ci": 1.2,
           "doses_per_child_per_year": 3.4,
           "averted_3_24m_pct": 14.7
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 11.4,
+          "averted_u5_ci": 4.0,
+          "doses_per_child_per_year": 2.92,
+          "averted_3_24m_pct": 21.9
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 19.3,
+          "averted_u5_ci": 1.5,
+          "doses_per_child_per_year": 3.91,
+          "averted_3_24m_pct": 38.1
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 20.0,
+          "averted_u5_ci": 2.8,
+          "doses_per_child_per_year": 5.86,
+          "averted_3_24m_pct": 44.6
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 7.8,
+          "averted_u5_ci": 3.8,
+          "doses_per_child_per_year": 1.93,
+          "averted_3_24m_pct": 9.9
         }
       }
     },
@@ -3112,6 +4472,46 @@
           "averted_u5_ci": 7.4,
           "doses_per_child_per_year": 5.08,
           "averted_3_24m_pct": 19.8
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 8.2,
+          "averted_u5_ci": 7.5,
+          "doses_per_child_per_year": 3.02,
+          "averted_3_24m_pct": 16.0
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 16.5,
+          "averted_u5_ci": 2.4,
+          "doses_per_child_per_year": 4.0,
+          "averted_3_24m_pct": 33.2
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 20.4,
+          "averted_u5_ci": 5.8,
+          "doses_per_child_per_year": 5.9,
+          "averted_3_24m_pct": 42.4
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 3.1,
+          "averted_u5_ci": 11.6,
+          "doses_per_child_per_year": 1.98,
+          "averted_3_24m_pct": 7.2
         }
       }
     },
@@ -3208,6 +4608,46 @@
           "averted_u5_ci": 2.8,
           "doses_per_child_per_year": 3.39,
           "averted_3_24m_pct": 16.2
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 9.3,
+          "averted_u5_ci": 4.9,
+          "doses_per_child_per_year": 2.86,
+          "averted_3_24m_pct": 20.3
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 15.6,
+          "averted_u5_ci": 2.8,
+          "doses_per_child_per_year": 3.85,
+          "averted_3_24m_pct": 33.7
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 18.8,
+          "averted_u5_ci": 11.1,
+          "doses_per_child_per_year": 5.64,
+          "averted_3_24m_pct": 42.5
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 2.8,
+          "averted_u5_ci": 13.2,
+          "doses_per_child_per_year": 1.87,
+          "averted_3_24m_pct": 7.6
         }
       }
     },
@@ -3304,9 +4744,49 @@
           "averted_u5_ci": 6.5,
           "doses_per_child_per_year": 3.39,
           "averted_3_24m_pct": 14.6
+        },
+        "pmc_m6_onset_y2": {
+          "label": "6 monthly rounds, Jun\u2013Nov, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 9.9,
+          "averted_u5_ci": 8.3,
+          "doses_per_child_per_year": 2.87,
+          "averted_3_24m_pct": 20.3
+        },
+        "pmc_m8_onset_y2": {
+          "label": "8 monthly rounds, Jun\u2013Jan, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 15.5,
+          "averted_u5_ci": 6.5,
+          "doses_per_child_per_year": 3.85,
+          "averted_3_24m_pct": 33.7
+        },
+        "pmc_m12_y2": {
+          "label": "Year-round monthly, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": 13.7,
+          "averted_u5_ci": 9.9,
+          "doses_per_child_per_year": 5.76,
+          "averted_3_24m_pct": 36.9
+        },
+        "pmc_q4_y2": {
+          "label": "Quarterly from Jun, 12\u201324 months",
+          "kind": "pmc",
+          "drug": "SP",
+          "target_pop_fraction": 0.35,
+          "averted_u5_pct": -0.4,
+          "averted_u5_ci": 6.8,
+          "doses_per_child_per_year": 1.91,
+          "averted_3_24m_pct": 2.5
         }
       }
     }
   },
-  "generated": "2026-10-09T03:16:00+00:00"
+  "generated": "2026-10-09T07:09:40+00:00"
 }

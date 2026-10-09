@@ -284,7 +284,7 @@ def test_by_design_pools_each_schedule_across_the_states_with_its_noise(grid):
 
     # 4 monthly rounds ran in both states: 20% of Ondo's 4,000 deaths + 25% of Kano's 20,000 = 5,800.
     assert by["pmc_m4_onset"]["states"] == 2 and by["pmc_m4_onset"]["deaths_averted_per_year"] == 5800
-    assert by["pmc_m4_onset"]["label"] == "4 monthly rounds from the rains"
+    assert by["pmc_m4_onset"]["label"] == "4 monthly rounds from the rains, 3–24 months"
     # Quarterly's 3% +/- 4 in Ondo is not ranked as a pair, but it is pooled (not dropped) and counted as unclear.
     assert "pmc_q4" not in {r["design_code"] for r in out["ranked"]}
     assert by["pmc_q4"]["states_no_effect"] == 1 and by["pmc_q4"]["deaths_averted_per_year"] == 120
