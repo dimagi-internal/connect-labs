@@ -150,10 +150,7 @@ NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         "microplans_list_plans",
         "microplans_plan_work_areas",
         "microplans_coverage_param_schema",
-        # Page and cohort definitions, synthetic env templates.
-        "pages_list_providers",
-        "pages_list",
-        "pages_get",
+        # Cohort definitions, synthetic env templates.
         "benchmarks_cohort_list",
         "synthetic_env_list",
         "synthetic_env_get",
