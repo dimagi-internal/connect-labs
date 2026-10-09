@@ -38,6 +38,32 @@ def configured(settings, monkeypatch):
     settings.LABS_EMOD_BUCKET = "test-bucket"
     settings.PMC_STATE_GRID_PATH = "/nonexistent/pmc_state_grid.json"  # no fitted states unless a test opts in
     monkeypatch.setattr(runner, "state_fit", lambda state: "near")
+    # The instance's results bucket: empty unless a test puts a finished result in it.
+    s3 = S3()
+    monkeypatch.setattr(runner, "default_s3", lambda: s3)
+    return s3
+
+
+class S3:
+    """A results bucket that answers a missing key the way S3 does (ClientError NoSuchKey)."""
+
+    def __init__(self):
+        self.objects = {}
+
+    def get_object(self, Bucket, Key):
+        from unittest.mock import MagicMock
+
+        from botocore.exceptions import ClientError
+
+        if Key not in self.objects:
+            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
+        body = self.objects[Key]
+        return {"Body": MagicMock(read=lambda: body)}
+
+    def finish(self, run, result):
+        import json
+
+        self.objects[f"results/{run.inputs_hash}.json"] = json.dumps(result).encode()
 
 
 @pytest.fixture
@@ -600,3 +626,88 @@ class TestBusyBound:
             PmcModelRun.objects.filter(pk=run.pk).update(updated_at=timezone.now() - timedelta(hours=3))
         with django_capture_on_commit_callbacks(execute=True):
             assert post(client_in, state="Ondo", schedules=[CUSTOM]).status_code == 202
+
+
+def kill(run):
+    """The row as a deploy leaves it: running, its task gone, no heartbeat for over three beats."""
+    dead_since = timezone.now() - timedelta(seconds=runner.STALE_RUNNING_AFTER_S + 30)
+    PmcModelRun.objects.filter(pk=run.pk).update(status=PmcModelRun.RUNNING, updated_at=dead_since)
+    run.refresh_from_db()
+    return run
+
+
+@pytest.mark.django_db
+class TestADeployKillsTheWaitingTask:
+    """The instance finishes and writes S3 whatever happens to the labs task waiting on it."""
+
+    def test_a_poll_completes_it_from_the_result_the_instance_wrote(self, client_in, configured, mock_delay):
+        run = kill(make_run([MONTHLY]))
+        configured.finish(run, {"runs": [{"seed": 0}]})
+
+        body = client_in.get(reverse("targeting:pmc_run_status", args=[run.pk])).json()
+
+        assert body["status"] == "completed" and body["result"] == {"runs": [{"seed": 0}]}
+        assert body["timings"]["recovered_from_s3"] is True
+        assert mock_delay == []  # nothing re-run
+
+    def test_a_resubmit_answers_from_s3_instead_of_running_it_again(self, client_in, configured, mock_delay):
+        run = kill(make_run([MONTHLY]))
+        configured.finish(run, {"runs": []})
+
+        r = post(client_in, state="Ondo", schedules=[MONTHLY])
+
+        assert r.status_code == 200 and r.json()["cached"] is True and r.json()["result"] == {"runs": []}
+        assert mock_delay == []
+
+    def test_with_no_result_yet_a_poll_requeues_it_once(
+        self, client_in, configured, mock_delay, django_capture_on_commit_callbacks
+    ):
+        run = kill(make_run([MONTHLY]))
+        url = reverse("targeting:pmc_run_status", args=[run.pk])
+
+        with django_capture_on_commit_callbacks(execute=True):
+            first = client_in.get(url).json()
+            client_in.get(url)
+
+        assert first["status"] == "queued"
+        assert mock_delay == [run.pk]
+
+    def test_a_live_run_is_left_alone(self, client_in, configured, mock_delay):
+        run = make_run([MONTHLY], PmcModelRun.RUNNING)
+        configured.finish(run, {"runs": []})  # a result already there must not short-cut a live task
+
+        assert client_in.get(reverse("targeting:pmc_run_status", args=[run.pk])).json()["status"] == "running"
+
+    def test_the_sweep_heals_dead_runs_without_anyone_polling(
+        self, configured, mock_delay, django_capture_on_commit_callbacks
+    ):
+        finished = kill(make_run([MONTHLY]))
+        configured.finish(finished, {"runs": []})
+        lost = kill(make_run([CUSTOM]))
+
+        with django_capture_on_commit_callbacks(execute=True):
+            assert tasks.sweep_dead_pmc_runs() == 2
+
+        finished.refresh_from_db()
+        lost.refresh_from_db()
+        assert finished.status == PmcModelRun.COMPLETED and lost.status == PmcModelRun.QUEUED
+        assert mock_delay == [lost.pk]
+
+    def test_an_s3_error_falls_back_to_rerunning(
+        self, client_in, monkeypatch, mock_delay, django_capture_on_commit_callbacks
+    ):
+        run = kill(make_run([MONTHLY]))
+
+        def broken():
+            raise RuntimeError("no credentials")
+
+        monkeypatch.setattr(runner, "default_s3", broken)
+        with django_capture_on_commit_callbacks(execute=True):
+            body = client_in.get(reverse("targeting:pmc_run_status", args=[run.pk])).json()
+
+        assert body["status"] == "queued" and mock_delay == [run.pk]
+
+
+def test_the_sweep_is_on_the_beat_schedule(settings):
+    entry = settings.CELERY_BEAT_SCHEDULE["heal-dead-pmc-runs"]
+    assert entry["task"] == tasks.sweep_dead_pmc_runs.name
