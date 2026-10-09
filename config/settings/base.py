@@ -177,6 +177,7 @@ LOCAL_APPS = [
     "connect_labs.mopup",
     "connect_labs.pages",
     "connect_labs.pulse",
+    "connect_labs.scope_config",
     "connect_labs.solicitations",
     "connect_labs.supply_chain",
     "connect_labs.users",

@@ -20,6 +20,7 @@ from . import pipelines  # noqa: F401
 from . import program_admin_demo  # noqa: F401  -- registers program_admin_demo_seed
 from . import reviews  # noqa: F401
 from . import sample_ids  # noqa: F401
+from . import scope_config  # noqa: F401  -- registers labs_config_*
 from . import semantic  # noqa: F401
 from . import solicitations  # noqa: F401
 from . import supply_chain  # noqa: F401  -- registers supply_* from the operation registry

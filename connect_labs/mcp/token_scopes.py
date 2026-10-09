@@ -116,6 +116,10 @@ NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         "semantic_registry_explain",
         # Who can see what.
         "labs_context",
+        # Settings: ids, labels and switches a scope has set up (scope_config/).
+        "labs_config_namespaces",
+        "labs_config_get",
+        "labs_config_history",
         # Solicitations, responses, reviews and funds.
         "list_solicitations",
         "get_solicitation",
@@ -267,6 +271,10 @@ DEFINITION_WRITE_TOOLS: frozenset[str] = frozenset(
         "workflow_hand_down",
         # Publication id, cohort id, as-of date, value count, withheld indicator ids.
         "benchmarks_publish",
+        # Settings (scope_config/): the resolved value, provenance and layers --
+        # tab fills, labels, switches and workflow ids, never visits.
+        "labs_config_set",
+        "labs_config_undo",
     }
 )
 
