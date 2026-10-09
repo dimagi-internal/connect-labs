@@ -249,3 +249,11 @@ def test_a_name_choice_may_require_several_columns(kmc):
     assert _problems(props, inds) == []
     props["case_name"][0]["when"] = ["child_name", "no_such_column"]
     assert any("'no_such_column' is not a column" in p for p in _problems(props, inds))
+
+
+def test_a_visit_column_may_not_alias_a_column_of_its_own_name(kmc):
+    """Layer 1 selects the pipeline's columns and the alias: `v.<name>` is then ambiguous,
+    and nothing fails until a case's visits are read (the KMC coach_case preview, 2026-10-09)."""
+    props, inds = copy.deepcopy(kmc[0]), kmc[1]
+    props["visit_columns"].append({"name": "visit_timeliness", "optional": True, "column": "visit_timeliness"})
+    assert any("may not have the name of the column it reads" in p for p in _problems(props, inds))
