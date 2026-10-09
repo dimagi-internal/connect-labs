@@ -86,6 +86,16 @@ When you ask the canopy agent to coach a field worker from a Labs run page, the 
 - The first message the worker will receive
 - A picture of the worker's figures
 
+### Connecting Open Chat Studio before the card loads
+
+Every coaching send — including test sends — runs on your own Open Chat Studio (OCS) connection. Because of this, the card checks your OCS connection before showing anything else. If you are not yet connected, the card shows only:
+
+> **Connect Open Chat Studio first**
+
+with a **Connect Open Chat Studio** button and an **I've connected — continue** link that rechecks the connection. The rest of the card appears once your connection is confirmed.
+
+### Sending from the card
+
 The card has one primary action and a quiet secondary link:
 
 | Action | What it does |
@@ -100,6 +110,9 @@ Leaving the card without clicking **Send to \<worker\>** simply means you are no
 
 !!! note "Sending the same coaching twice"
     If you need to send the same coaching to the same worker again within a short window, this now works. Previously, a repeat send within 15 minutes was refused and the card would loop on "That preview went stale". You can now resend deliberately without hitting that block.
+
+!!! note "If a test send can't go through"
+    If **Send test** cannot complete, the card now tells you why underneath the button instead of leaving the button stuck on "Sending…" indefinitely. The most common reason is that your Labs account is not connected to Open Chat Studio. In that case the card shows "Connect Open Chat Studio in Labs first, then Send test again" with a **Connect it** link. Follow that link, connect your account, then return to the card and try **Send test** again.
 
 ### How the worker's figures picture looks
 
@@ -210,17 +223,4 @@ Stock held in the stores that supply the workers, shown in sachets with cartons 
 
 #### Viewing past dates in the Supply Stock Review
 
-When you pick a past date using the **View as of** control in the supply header, the Stock review and all related pages — Stock, Movements, Workers, individual worker, Network, and "Where it went" — show the stock as it actually stood on that day. This includes visits that were made on or before the chosen date, even if they were synced to the system afterwards. The **stores** section also reflects the chosen day, so the stock held in stores and the stock held by workers are consistent with each other at that point in time.
-
-A yellow banner at the top of the page tells you what kind of past data you are seeing:
-
-| Page type | Banner wording |
-|---|---|
-| Stock pages (Stock, Movements, Workers, worker, Network, "Where it went") | "Stock is what had happened by that day; places are as they are today." |
-| Record pages (Tenders, Orders, Overview) | "Records as they stood that evening." |
-
-Previously, a visit made before the chosen date but synced after it could be left out of the past-date view, causing the Stock and Stock review tabs to show different totals for the same day. This is now fixed — both tabs draw from the same cutoff and will agree.
-
-#### Workflows pinned to supply tabs
-
-A programme's supply pages can show a workflow as one of their tabs. A workflow tab can either stand in for a built-
+When you pick a past date using the **View as of** control in the supply header, the Stock review and all related pages — Stock, Movements, Workers, individual worker, Network, and "Where it went" — show the stock as it actually stood on that day. This includes visits that were made on or before the chosen date, even if they were synced to the

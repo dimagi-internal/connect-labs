@@ -195,6 +195,16 @@ This means you can ask Claude questions like "show me hospital vs home births br
 
 When you ask the canopy agent to coach a worker from a Labs run page, the agent shows you a coaching card in the same reply as the worker's data summary — you do not need to send a second message to trigger the card. After previewing coaching, the agent replies in a single short line (for example, "Here's the coaching card for Ibrahim.") and does not restate the topic, coach, synthetic note, or button options, which the card already shows.
 
+### Open Chat Studio connection check
+
+Before the card displays anything else, it checks that your Labs account is connected to Open Chat Studio — every coaching send, including test sends on synthetic data, runs on your own OCS connection. If you are not connected, the card shows only:
+
+> **Connect Open Chat Studio first**
+
+with a **Connect Open Chat Studio** button and an "I've connected — continue" link that rechecks the connection. The rest of the card appears once the check passes.
+
+### The coaching card
+
 The card displays:
 
 - the worker's name
@@ -211,6 +221,8 @@ The card has one primary button and one quiet link:
 
 Clicking **Send a test to me instead** replaces the card with a compact test panel. Enter your PersonalID username, click **Send test** to preview and send in one step, or click **Cancel** to go back to the card.
 
+If a test send cannot go through, the card shows a reason beneath the button rather than leaving the button stuck on "Sending…". The most common reason is that your Labs account is not connected to Open Chat Studio — in that case the card shows "Connect Open Chat Studio in Labs first, then Send test again" with a **Connect it** link.
+
 If you leave a card unsent and come back to it later, that already means "not yet" — there is no separate dismiss button.
 
 !!! note "Resending coaching works"
@@ -220,11 +232,4 @@ If you leave a card unsent and come back to it later, that already means "not ye
     A coaching send always requires your click on the **Send to &lt;worker&gt;** button. The agent shows you the briefing and tells you where to click; it does not send the message itself, and it will not offer to send directly to a worker on your behalf. The **Start coaching** button on the Labs run page works the same way and is unchanged. Other action types (such as creating a task) use a separate confirm flow where the agent asks for your approval before acting.
 
 !!! note "No opening message on synthetic opportunities"
-    When you preview a coaching conversation on a synthetic (demo) opportunity, the card does not show an opening message. This is expected — a synthetic preview does not send anything to a worker, so there is no opening message to display. If you send a QA test to yourself, the card shows Labs' fixed opening message for that send. The card may also show Labs' sample stand-in bot rather than your programme's real bot; this is normal and does not indicate a configuration problem.
-
-!!! warning "Sending to a real worker requires canopy"
-    An agent operating outside canopy — for example, Claude Code or Claude Desktop connected through MCP — cannot send a coaching conversation to a real worker, even if it has the right tools available. A real worker is only reached when a person clicks **Send to &lt;worker&gt;** on canopy's coaching card, or clicks **Start coaching** on the Labs run page. Outside canopy, an agent can still preview a coaching conversation and send a QA test message to itself using `deliver_to` — this is how ACE records itself on its own test phone.
-
----
-
-## Targeting: Nigerian State Cost-
+    When you preview a coaching conversation on a synthetic (demo) opportunity, the card does not show an opening message. This is expected — a synthetic preview does not send anything to a worker, so there is no opening message to display. If you send a QA test to yourself, the card shows Labs' fixed opening message
