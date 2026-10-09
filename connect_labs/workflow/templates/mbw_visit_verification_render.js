@@ -2300,7 +2300,7 @@ function WorkflowUI({
         },
         {
           name: 'Stacked bar chart',
-          def: "One bar per verification method (GPS, QR, Signature, Mother Questions, ANC Card, Birth Certificate), showing how many visits landed Pass (green) / Pending (yellow) / Fail (red) for that specific method -- independent of the overall Final verification outcome above. A single visit can fail one method and pass another (e.g. fail GPS but pass QR), so it's counted in more than one bar. That means these counts are NOT meant to add up to the % Passed/Pending/Failed totals above -- a bar's Fail count can be, and usually is, larger than the overall Failed Verification n= at the top, since one visit's failure can show up in several bars at once. The caption above the chart states the reconciling number directly: how many visits failed at least one method vs. how many are recorded Fail overall.",
+          def: "One bar per verification method (GPS, QR, Signature, Mother Questions, ANC Card, Birth Certificate), showing how many visits landed Pass (green) / Pending (yellow) / Fail (red) for that specific method -- independent of the overall Final verification outcome above. A single visit can fail one method and pass another (e.g. fail GPS but pass QR), so it's counted in more than one bar. That means these counts are NOT meant to add up to the % Passed/Pending/Failed totals above -- a bar's Fail count can be, and usually is, larger than the overall Failed Verification n= at the top, since one visit's failure can show up in several bars at once. The caption above the chart states the reconciling number directly: how many visits failed at least one method vs. how many are recorded Fail overall. Hovering a segment shows a percentage alongside its count -- of THAT METHOD'S OWN row total (its own Pass+Pending+Fail, plus its grey 4th segment if it has one), NOT of the overall visit count in the filter, so a bar's own segments always sum to 100% of each other. GPS and QR have a grey 4th segment counted into their own row total (\"No location to match on\", \"Not available (QR)\"); the other 4 methods don't, so a blank/NA answer for those simply isn't counted in either the numerator or that method's denominator.",
           field:
             'Per row, per method: gpsOutcome() / qrOutcome() / signatureOutcome() / motherQuestionsOutcome() / ancCardOutcome() / birthCertificateOutcome() (same functions and underlying fields as the Outcome Columns section above), tallied into Pass/Pending/Fail counts. The caption reconciling number is summary.anyMethodFailCount (summaryDisplayRows where METHODS.some(m => m.getOutcome(row) === "Fail")) vs. summary.failCount (visit_verification_outcome === "Fail").',
         },
@@ -2578,22 +2578,22 @@ function WorkflowUI({
             legend: { position: 'bottom' },
             tooltip: {
               callbacks: {
-                // % is of summary.total (every visit in the current filter
-                // with the verification block present) -- the SAME
-                // denominator for every segment of every method's bar, so
-                // percentages are comparable across methods. Deliberately
-                // NOT a per-method denominator (e.g. excluding that
-                // method's own NA/blank rows), since methods differ in
-                // which "not counted" segments they track (GPS has
-                // "No location to match on", QR has "Not available",
-                // others have neither) -- a shared denominator avoids
-                // introducing yet another silently-different % base.
+                // % is of THIS METHOD'S OWN row total -- pass+pending+fail,
+                // plus noMatch for GPS or notAvailable for QR (whichever
+                // segments that method's bar actually draws) -- so a bar's
+                // own segments sum to 100% of each other. Using
+                // summary.total (every visit in the filter) here was wrong:
+                // most visits aren't even GPS-applicable (wrong location
+                // type, or no prior point), so they'd pile into "No
+                // location to match on" and make GPS's Pass% look
+                // artificially tiny relative to the whole filter instead of
+                // relative to GPS checks that actually happened.
                 label: function (context) {
                   var n = context.raw;
-                  var pct =
-                    summary.total > 0
-                      ? Math.round((n / summary.total) * 100)
-                      : 0;
+                  var m = methodStats[context.dataIndex];
+                  var rowTotal =
+                    m.pass + m.pending + m.fail + m.noMatch + m.notAvailable;
+                  var pct = rowTotal > 0 ? Math.round((n / rowTotal) * 100) : 0;
                   return context.dataset.label + ': ' + n + ' (' + pct + '%)';
                 },
               },
@@ -2606,7 +2606,7 @@ function WorkflowUI({
         if (chartInstance.current) chartInstance.current.destroy();
       };
     },
-    [methodStats, activeTab, summary.total],
+    [methodStats, activeTab],
   );
 
   // --- By-FLW failed-visit chart (Failed Verification Analysis tab) ------
