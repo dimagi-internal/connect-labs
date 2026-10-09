@@ -86,6 +86,42 @@ When you ask the canopy agent to coach a field worker from a Labs run page, the 
 - The first message the worker will receive
 - A picture of the worker's figures
 
+### Case coaching — talking to a worker about one baby
+
+In addition to coaching on indicator scores, the agent can now coach a field worker about a **specific baby**. Labs reviews each baby's recent visits and identifies one of four stories that best describes their situation. Every figure in the coaching comes from that baby's own visits.
+
+#### The four stories
+
+| Story | What it means |
+|---|---|
+| **Danger sign recorded — not referred** | A danger sign was recorded for the baby but the baby was not referred for follow-up care |
+| **Weighing to check** | A recorded weight is hard to believe and should be verified |
+| **Weight has stalled** | The baby's weight has stopped growing while skin-to-skin time is also falling |
+| **Growing well** | The baby is growing healthily — an opportunity to recognise the worker's good practice |
+
+Each baby gets one story, and Labs only surfaces babies whose story happened recently — within 30 days of the baby's latest visit.
+
+#### How the agent suggests a case coaching conversation
+
+For each worker on an opportunity, Labs lists — per story — the babies that are currently eligible. The canopy agent panel uses this list to suggest one conversation per worker. You review the suggestion and approve it before anything is sent.
+
+!!! note "Saved run weeks record eligible cases"
+    Each saved week of the KMC Opportunity Report records which babies were eligible for which story. This means the agent can see what earlier weeks offered, so suggestions take previous opportunities into account.
+
+#### Case coaching pictures
+
+Each story has its own picture designed to be read on a phone:
+
+| Story | Picture |
+|---|---|
+| **Growing well** | The baby's weight line climbing above the healthy-growth band, with a "Great work!" badge |
+| **Weighing to check** | The doubtful weighing circled on the growth line, with a four-step weighing checklist |
+| **Weight has stalled** | A flat growth line, with skin-to-skin hours per visit shown as bars |
+| **Danger sign** | A card listing the signs recorded, "Not referred", and what to do next |
+
+!!! note "Sending case coaching on synthetic KMC opportunities"
+    On synthetic KMC opportunities used for testing, the coaching card offers only **Send to me (QA test)** — messages cannot be sent to real workers from these opportunities.
+
 ### Connecting Open Chat Studio before the card loads
 
 Every coaching send — including test sends — runs on your own Open Chat Studio (OCS) connection. Because of this, the card checks your OCS connection before showing anything else. If you are not yet connected, the card shows only:
@@ -200,33 +236,4 @@ The Drive file is read **once for the whole program**. Before this change, a pro
 
 **How caching works**
 
-Once a Drive file has been read, Connect Labs keeps the processed data in cache and reuses it until the underlying file in Drive changes — or for up to a week, whichever comes first. Previously, the cache expired every hour regardless of whether the file had changed, so the first person to open the dashboard after an idle hour would wait for a full rebuild. On the interview-classification dashboard that rebuild took around 16 minutes. Now, a cold load only happens when it needs to — when the file genuinely has new content — and subsequent opens are fast for everyone.
-
-**Limiting which columns are read**
-
-A Google Drive pipeline can now declare a list of the specific columns it actually uses. When a column list is present, Connect Labs keeps only those cells from each row and discards the rest before caching. This means a wide export file where the dashboard only reads a handful of columns loads and caches a fraction of the data compared to reading the whole file.
-
-- **If you omit the column list**, every column in the file is kept — exactly as before. Existing pipelines are unaffected.
-- **If a column list is present but a field in the pipeline tries to read a column that is not on the list**, the pipeline cannot be saved. The error message names every missing column and the field that tries to read it, so you know exactly what to add to the list (or correct in the pipeline). This prevents dashboards from silently showing empty values because a column was accidentally left off the list.
-
-If you are setting up or editing a Google Drive pipeline and you want to use this feature, ask your program administrator or the person who configured the pipeline to add the relevant column names to the pipeline's data source settings.
-
-**Setting one up**
-
-Program-scoped Drive pipelines are built through the labs MCP. The steps are:
-
-1. Create the pipeline at the **program** level (not under an individual opportunity).
-2. Preview the pipeline to confirm the data looks correct.
-3. Create a program-owned dashboard and attach the pipeline.
-4. Enable **load on demand** if you want the data to refresh only when a user opens the dashboard, rather than on a fixed schedule.
-
-!!! note "Program-scoped Drive pipelines are separate from opportunity-level Drive pipelines"
-    If your program already has Drive pipelines attached to individual opportunities, those are unaffected. A program-scoped pipeline is a distinct configuration that sits at the program level and is subject to the managing-organisation access restriction described above.
-
----
-
-## Built-in Workflow Templates
-
-### Supply Stock Review
-
-The **Supply Stock Review** is a ready-made workflow template for monitoring field worker stock. You can enable it for the opportunities you choose without any software deployment. It reads supply data using the same access rules as the Supply pages, and can span several opportunities — or several programmes — the same way a programme-level report does
+Once a Drive file has been read, Connect Labs keeps the processed data in cache and reuses it until the underlying file in Drive changes — or for up to a week, whichever comes first. Previously, the cache expired every hour regardless of whether the file had changed, so the first person to open the dashboard after an idle hour would wait for a full rebuild. On the interview-classification dashboard that rebuild took around 16 minutes. Now,
