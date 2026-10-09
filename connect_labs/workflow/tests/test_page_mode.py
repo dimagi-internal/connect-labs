@@ -163,9 +163,15 @@ def test_latest_run_is_the_newest_and_carries_only_its_summary():
     with patch("connect_labs.workflow.workflow_sources.WorkflowDataAccess") as MockWDA:
         wda = MockWDA.return_value
         wda.get_definition.return_value = _definition({"name": "Report"}, id_=99)
-        wda.list_runs.return_value = [run(1, "completed"), run(3, "completed", {"snapshot": {"big": 1}}), run(2, "in_progress")]
+        wda.list_runs.return_value = [
+            run(1, "completed"),
+            run(3, "completed", {"snapshot": {"big": 1}}),
+            run(2, "in_progress"),
+        ]
         out = workflow_sources.read(_request(), {"alias": "r", "workflow": 99, "program_id": 25})
-        saved = workflow_sources.read(_request(), {"alias": "r", "workflow": 99, "read": "saved_runs", "program_id": 25})
+        saved = workflow_sources.read(
+            _request(), {"alias": "r", "workflow": 99, "read": "saved_runs", "program_id": 25}
+        )
     assert out["latest_run"]["id"] == 3 and out["latest_run"]["summary"] == {"n": 3}
     assert "snapshot" not in out["latest_run"]
     assert out["latest_run"]["url"] == "/labs/workflow/99/run/?program_id=25&run_id=3"
@@ -275,7 +281,9 @@ def test_an_org_named_on_the_overview_lands_on_its_home(member_of_acme, client, 
     service.update(
         "labs", Scope.of("organization", "acme"), {"home": {"fill": {"workflow": 47, "program_id": 25}}}, SYSTEM
     )
-    named = _request("/labs/overview/?organization_id=acme", context={"organization_slug": "acme", "organization_id": 5})
+    named = _request(
+        "/labs/overview/?organization_id=acme", context={"organization_slug": "acme", "organization_id": 5}
+    )
     assert LabsOverviewView.as_view()(named)["Location"] == "/labs/p/org/acme/"
 
 
@@ -290,3 +298,37 @@ def test_a_remembered_org_does_not_redirect_the_overview(member_of_acme):
     with patch("connect_labs.labs.views.LabsOverviewView.get_context_data", return_value={}):
         response = LabsOverviewView.as_view()(remembered)
     assert response.status_code == 200
+
+
+# --- the old /labs/p/<slug>/ address --------------------------------------------
+
+
+@pytest.mark.django_db
+def test_an_old_slug_with_a_page_in_the_programme_in_view_redirects_to_its_address(member_of_acme):
+    from connect_labs.workflow import page_views
+
+    request = _request("/labs/p/home/", context={"program_id": 25})
+    with patch.object(page_views, "find_page", return_value=(_definition(PAGE), {"program_id": 25})):
+        response = page_views.old_page(request, slug="home")
+    assert response.status_code == 302 and response["Location"] == "/labs/p/programme/25/home/"
+
+
+@pytest.mark.django_db
+def test_an_old_slug_with_no_page_explains_the_move_rather_than_404(member_of_acme):
+    from connect_labs.workflow import page_views
+
+    request = _request("/labs/p/hub/", context={"opportunity_id": 10, "program_id": 25})
+    with patch.object(page_views, "find_page", return_value=(None, None)) as find:
+        response = page_views.old_page(request, slug="hub")
+    body = response.content.decode()
+    assert response.status_code == 200 and 'data-testid="labs-page-moved"' in body
+    # It looked in the opportunity, then its programme.
+    assert [c.args[1] for c in find.call_args_list] == [Scope.of("opportunity", 10), Scope.of("program", 25)]
+
+
+def test_the_old_card_pages_and_their_tools_are_gone():
+    from connect_labs.mcp import tools  # noqa: F401 -- registers every tool
+    from connect_labs.mcp.tool_registry import get_tool
+
+    assert get_tool("workflow_list") is not None
+    assert all(get_tool(name) is None for name in ("pages_list", "pages_get", "pages_create", "pages_update"))

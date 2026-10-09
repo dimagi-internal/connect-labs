@@ -20,7 +20,8 @@ from __future__ import annotations
 
 import logging
 
-from django.http import Http404
+from django.contrib.auth.decorators import login_required
+from django.http import Http404, HttpResponseRedirect
 from django.shortcuts import render
 from django.views.generic import TemplateView
 
@@ -155,3 +156,30 @@ class PageView(WorkflowRunView):
 
 def _settings_url(scope: Scope) -> str:
     return f"/labs/settings/{scope.type}/{scope.key}/"
+
+
+@login_required
+def old_page(request, slug):
+    """`/labs/p/<slug>/`, an address from before pages named their scope.
+
+    The old card pages it served are gone (the scope-config spec, section 8). If the
+    scope in view -- or its programme, for an opportunity -- has a page with that
+    slug, go there; otherwise say what happened rather than 404 a link someone was sent.
+    """
+    from connect_labs.scope_config.service import scope_in_view
+
+    scope = scope_in_view(getattr(request, "labs_context", None) or {})
+    searched = []
+    while scope is not None and scope not in searched:
+        searched.append(scope)
+        if not service.refusal(Caller(user=request.user, request=request), scope):
+            definition, _ = find_page(request, scope, slug)
+            if definition is not None:
+                return HttpResponseRedirect(page_url(scope, slug))
+        program = (request.labs_context or {}).get("program_id") if scope.type == "opportunity" else None
+        scope = Scope.of("program", program) if program else None
+    return render(
+        request,
+        "workflow/page_moved.html",
+        {"slug": slug, "searched": [s.label(get_org_data(request) or {}) for s in searched]},
+    )
