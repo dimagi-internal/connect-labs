@@ -126,13 +126,16 @@ PERENNIAL_MAX_WETTEST_PCT = 50
 PERENNIAL_MIN_PFPR = 0.10
 
 
-def recommend(pooled: dict[str, dict], considered: list[str]) -> dict | None:
+def recommend(pooled: dict[str, dict], considered: list[str], best_by_state: dict | None = None) -> dict | None:
     """One programme approach for the states considered, from each design pooled across them.
 
     The rule is a fixed budget's: the approach that averts the most under-5 deaths per dollar across the
     states, among the designs that can run in every one of them (so SMC only when every state is seasonal).
-    Each state runs it from its own rain onset (the design's per-state label). States where it falls below
-    GiveWell's bar are named to drop, and the programme's figures are for the rest. Beside it:
+    Each state runs it from its own rain onset (the design's per-state label). The choice pools every state,
+    noise included; each STATE is then judged on its own result: kept when the approach's effect there is clear
+    (outside its seed-to-seed noise) and clears GiveWell's bar, dropped when it is clear and below the bar, and
+    ``unclear`` when the effect there is within the noise -- named with that state's own best clear design
+    (``best_by_state``) rather than counted either way. The programme's figures are for the kept states. Beside it:
 
     * ``step_up``: the design that averts more deaths for the least extra cost per extra death, valued on
       that increment, so "is spending more worth it?" is answered at the margin, not on averages;
@@ -160,9 +163,22 @@ def recommend(pooled: dict[str, dict], considered: list[str]) -> dict | None:
                 "design_label": r["design_label"],
                 "multiple_of_benchmark": round(v["multiple_of_benchmark"], 1) if v else 0.0,
                 "clears_bar": bool(v and v["clears_bar"]),
+                "clear_effect": bool(r.get("clear", True)),
             }
         )
-    keep = [r["state"] for r in per_state if r["clears_bar"]]
+    keep = [r["state"] for r in per_state if r["clears_bar"] and r["clear_effect"]]
+    unclear = []
+    for r in per_state:
+        if not r["clear_effect"]:
+            alt = (best_by_state or {}).get(r["state"])
+            unclear.append(
+                {
+                    "state": r["state"],
+                    "best_design_label": alt["design_label"] if alt else None,
+                    "best_multiple_of_benchmark": alt["multiple_of_benchmark"] if alt else None,
+                    "best_clears_bar": bool(alt and alt["clears_bar"]),
+                }
+            )
     kept_rows = [r for r in best["per_state"] if r["state"] in keep]
     programme = pooled_value(kept_rows)
     out = {
@@ -170,7 +186,8 @@ def recommend(pooled: dict[str, dict], considered: list[str]) -> dict | None:
         "label": best["label"],
         "states": sorted(per_state, key=lambda r: -r["multiple_of_benchmark"]),
         "keep": keep,
-        "drop": [r["state"] for r in per_state if not r["clears_bar"]],
+        "drop": [r["state"] for r in per_state if r["clear_effect"] and not r["clears_bar"]],
+        "unclear": unclear,
         "deaths_averted_per_year": sig(programme["deaths_averted_per_year"], 3) if programme else 0,
         "spend_per_year": sig(sum(r["spend"] for r in kept_rows), 3),
         "cost_per_death_averted": sig(programme["cost_per_death_averted"]) if programme else None,
@@ -381,6 +398,8 @@ def rank_pairs(
                             "state": name,
                             "design_label": _design_label(d),
                             "deaths": pct / 100 * state_deaths,
+                            # The design's effect in THIS state is outside its own seed-to-seed noise.
+                            "clear": pct > 0 and (ci is None or ci < pct),
                             "spend": d["doses_per_child_per_year"] * d["target_pop_fraction"] * pop_u5 * per_dose,
                         }
                     )
@@ -457,7 +476,22 @@ def rank_pairs(
     sort_key = "cost_per_death_averted" if deaths is not None else "cost_per_case_averted"
     by_design.sort(key=lambda r: (r.get(sort_key) is None, r.get(sort_key) or 0))
 
-    recommendation = recommend(pooled, considered) if deaths is not None else None
+    recommendation = (
+        recommend(
+            pooled,
+            considered,
+            {
+                p["state"]: {
+                    "design_label": p["design_label"],
+                    "multiple_of_benchmark": round(p["multiple_of_benchmark"], 1),
+                    "clears_bar": p["clears_bar"],
+                }
+                for p in best_per_state
+            },
+        )
+        if deaths is not None
+        else None
+    )
 
     def present(p, rank=None):
         out = {
