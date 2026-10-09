@@ -80,7 +80,8 @@ HOW_TO_RUN_CLICK_TO_SEND = (
     "test) and Not yet. " + CHAT_AFTER_PREVIEW + " Don't ask for a yes in chat and "
     "don't offer to send it. Labs writes the briefing and always sends it to this workflow's "
     "coach; to change what the coach is told, add text in a worker's `prompt` (or the "
-    "top-level `prompt` for all) -- it stays inside the briefing as a note."
+    "top-level `prompt` for all) -- it stays inside the briefing as a note. To choose what "
+    "the picture shows, see `picture` and `picture_types` beside this."
 )
 HOW_TO_RUN_CONFIRMED = (
     "Preview with workflow_run_action (no `confirm`), show the person exactly what it will do, "
@@ -88,11 +89,56 @@ HOW_TO_RUN_CONFIRMED = (
 )
 
 
+#: What the agent is told about the coaching picture: it chooses WHAT the chart shows,
+#: Labs supplies every number and Connect's look (workflow/coach_charts/).
+PICTURE_GUIDE = (
+    "THE PICTURE is a chart Labs draws for the card and the worker; you choose what it shows "
+    "with `arguments.picture` (top-level, or on one worker's item), default {type: 'topic_bars'}. "
+    "Use a named type (`picture_types`): topic_bars -- the worker's own figures per topic; "
+    "peer_comparison -- beside each other worker on this run; trend -- week by week "
+    "(`params.weeks`; `params.peers: true` adds peers' lines). `params.topics` (indicator ids from "
+    "`indicators`) picks or adds topics, e.g. 'add the unreadable-tests topic'. Only when no type "
+    "fits, use {type: 'custom', spec: <Vega-Lite>} reading Labs' datasets by name -- "
+    "{data: {name: 'worker_topics' | 'peers' | 'history'}} -- with NO numbers of your own (inline "
+    "data is stripped) and NO styling (Connect's theme is always applied; colours outside it are "
+    "dropped). Peers are ALWAYS anonymous -- Peer A, Peer B, ... -- so never name another worker "
+    "in a chart title or a note: Labs refuses it. To change the picture, preview again with a "
+    "new `picture`; the card then shows exactly what will be sent."
+)
+
+
+def _picture_types() -> dict:
+    """The picture catalog an agent reads in workflow_run_context: each named type's
+    description and params, the custom path, and the datasets a custom spec may read."""
+    from connect_labs.workflow.coach_charts import types
+    from connect_labs.workflow.coach_charts.chart import _CUSTOM_PARAMS
+
+    return {
+        "types": {t.name: {"description": t.description, "params": t.params} for t in types.TYPES.values()},
+        "custom": {
+            "use_when": "no named type fits",
+            "shape": {"type": "custom", "spec": "<Vega-Lite reading Labs' datasets by name>", "params": "see below"},
+            "params": _CUSTOM_PARAMS,
+            "datasets": {
+                "worker_topics": "the worker's own figures, one row per topic: i, key, label, unit, band, value "
+                "(a fraction for unit '%'), n, numerator, denominator, pct, figure_text, who ('You')",
+                "peers": "other workers on this run, one row per peer and topic: i, key, label, unit, who "
+                "('Peer A', ...), value, n, band",
+                "history": "week by week up to this run: week (date), t, i, key, label, unit, who, value, n "
+                "(peers' rows only with params.peers)",
+            },
+        },
+    }
+
+
 def _with_how_to_run(actions: list[dict]) -> list[dict]:
     for action in actions:
         action["how_to_run"] = (
             HOW_TO_RUN_CLICK_TO_SEND if action.get("type") in CLICK_TO_SEND_TYPES else HOW_TO_RUN_CONFIRMED
         )
+        if action.get("type") == "start_ocs_outreach":
+            action["picture"] = PICTURE_GUIDE
+            action["picture_types"] = _picture_types()
     return actions
 
 
@@ -461,7 +507,7 @@ def _for_the_agent(out: dict, r: _Run) -> dict:
     if out["needs"]:
         out["next"] = "Nothing has been done. Settle `needs`, then preview again."
     else:
-        out["next"] = "Nothing has been done. " + CHAT_AFTER_PREVIEW + " " + CLICK_TO_SEND
+        out["next"] = "Nothing has been done. " + CHAT_AFTER_PREVIEW + " " + CLICK_TO_SEND + _picture_next(out)
     return out
 
 
@@ -474,6 +520,27 @@ def _connect_ocs_url(page_url: str | None) -> str:
     if page_url and page_url.startswith("/"):
         path += "?" + urlencode({"next": page_url})
     return _absolute(path) or path
+
+
+def _picture_next(out: dict) -> str:
+    """One line on the picture the preview made: which chart, what Labs stripped, and
+    how to change it -- for the agent, not to repeat in chat."""
+    charts = [
+        w["image"]["chart"]
+        for w in out.get("workers") or []
+        if isinstance(w.get("image"), dict) and w["image"].get("chart")
+    ]
+    if not charts:
+        return ""
+    kinds = sorted({c.get("type") for c in charts if c.get("type")})
+    line = f" Picture: {', '.join(kinds)} (Labs' figures, Connect's theme, peers anonymous)."
+    notes = [n for c in charts for n in c.get("notes") or []]
+    if notes:
+        line += " " + notes[0] + "."
+    return (
+        line
+        + " To show something else, preview again with `arguments.picture` (workflow_run_context -> picture_types)."
+    )
 
 
 def _absolute(path: str | None) -> str | None:
@@ -562,7 +629,9 @@ def _view_text(out: dict) -> str:
         "with the fixed opening to the worker. To change what the coach is told, give text: a "
         "worker's own `prompt` for one worker, the top-level `prompt` for all. Labs keeps it "
         "inside the briefing as the programme team's note -- the coach, the picture and the "
-        "opening stay -- so edit freely. `bot` cannot name another coach. On a synthetic opportunity the "
+        "opening stay -- so edit freely. `bot` cannot name another coach. "
+        + PICTURE_GUIDE
+        + " On a synthetic opportunity the "
         "preview's `arguments.bot` is Labs' sample stand-in (no message goes out) while `bot` "
         "names the coach a real run uses: that is expected, not a mismatch. A synthetic preview "
         "also has no `opening`, because no message goes to the worker; a QA send (Send to me) "
@@ -618,6 +687,12 @@ def workflow_run_action(
         )
         try:
             if not confirm:
+                from connect_labs.workflow.actions import INCLUDE_IMAGE, find_action
+
+                if find_action(r.definition, action)["type"] in CLICK_TO_SEND_TYPES and isinstance(arguments, dict):
+                    # The card always sends a picture (workflow_action_preview_view): the
+                    # agent's preview pictures the same, so it can say what is shown.
+                    arguments = {**arguments, INCLUDE_IMAGE: True}
                 out = preview(
                     user,
                     wda=r.wda,
