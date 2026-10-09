@@ -504,7 +504,10 @@ function WorkflowUI({
         {/* On a phone, one card per worker with the count and its gap first:
             the table scrolled sideways and hid both off the right edge (#2350
             made the supply pages' own tables cards; this one is the review's). */}
-        <div className="sm:hidden rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
+        {/* lg, not sm: render code is never scanned by Tailwind, and the built
+            stylesheet has lg:hidden / lg:block but no sm:hidden -- with it the
+            cards showed beside the table on a desktop. */}
+        <div className="lg:hidden rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
           {rows
             .slice()
             .sort(function (a, b) {
@@ -559,7 +562,7 @@ function WorkflowUI({
               );
             })}
         </div>
-        <div className="hidden sm:block overflow-x-auto rounded-lg border border-gray-200 bg-white">
+        <div className="hidden lg:block overflow-x-auto rounded-lg border border-gray-200 bg-white">
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
               <tr>
