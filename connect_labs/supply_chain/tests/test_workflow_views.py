@@ -118,6 +118,29 @@ def test_stock_points_to_the_pinned_review_and_drops_its_controls_on_a_past_day(
     assert "Record stock in or out" not in past and "Record a count</a>" not in past
 
 
+def test_a_past_day_offers_no_new_tender_quote_or_order(client_in_programme, da):
+    import datetime
+
+    yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    for name, controls in (
+        ("supply_chain:procurement_tender_board", ("New tender", "Record a quote")),
+        ("supply_chain:orders", ("New order",)),
+    ):
+        today = client_in_programme.get(reverse(name)).content.decode()
+        past = client_in_programme.get(reverse(name) + f"?as_of={yesterday}").content.decode()
+        for control in controls:
+            assert control in today, (name, control)
+            assert control not in past, (name, control)
+
+
+def test_a_past_day_is_not_carried_to_the_pages_that_only_show_today(client_in_programme):
+    import datetime
+
+    yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    past = client_in_programme.get(reverse("supply_chain:stock") + f"?as_of={yesterday}").content.decode()
+    assert 'var live = ["/supply/market", "/supply/map/", "/supply/portfolios/"]' in past
+
+
 def test_a_pin_that_adds_a_tab_sits_with_the_stock_pages_and_unpinning_restores(client_in_programme, da):
     view = _pin(da, label="Coverage", slug="coverage")
     labels = [label.strip() for _, _, label in _tabs(client_in_programme)]
@@ -200,6 +223,9 @@ def test_a_past_day_rides_on_the_runners_supply_endpoints_and_shows_in_the_heade
     assert "/labs/workflow/api/8801/supply-data/?as_of=2026-09-01" in body
     assert "/q/?as_of=2026-09-01" in body and '"/o/"' in body
     assert 'var asOf = "2026-09-01"' in body  # the supply frame's own past-day handling is on
+    # Its sources read stock as it had happened by that day, so the banner says so (#2343).
+    assert "Stock is what had happened by that day" in body
+    assert "Records as they stood that evening" not in body
     assert "as_of" not in client_in_programme.get(url).content.decode().split('id="workflow-data"', 1)[1]
     assert client_in_programme.get(url + "?as_of=yesterday").status_code == 400
 

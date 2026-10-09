@@ -11,9 +11,11 @@
 
 <div class="flex flex-wrap items-start justify-between gap-4">
   <h2 class="text-lg font-semibold text-brand-indigo mb-1">Orders</h2>
+  {% if not supply_as_of %}{# a past day is read-only #}
   <a href="{% url 'supply_chain:contract_create' %}" class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
     <i class="fa-solid fa-plus mr-1"></i> New order
   </a>
+  {% endif %}
 </div>
 {% comment %}Behind a disclosure, so the table sits directly under its heading.{% endcomment %}
 <details class="text-xs text-gray-600 mb-4">
@@ -69,6 +71,7 @@ shipments (received, due, late) is not a cell anyone types into.
           <td {% edit_cell "contract" contract.id "status" contract.status %}>
             <span class="text-gray-900">{{ contract.status|humanise|capfirst }}</span>
             {% if progress.due_on %}<span class="sub">due {{ progress.due_on|date:"j M Y" }}</span>{% endif %}
+            {% if progress.shipment_status %}<span class="sub" data-testid="order-shipment">{{ progress.shipment_status|humanise }}{% if progress.shipment_expected_on %}, expected {{ progress.shipment_expected_on|date:"j M Y" }}{% endif %}</span>{% endif %}
             {% with overdue=late|dictkey:contract.id %}{% if overdue %}<span class="sub font-semibold text-message-warning-text">{{ overdue.facts.days_late }} day{{ overdue.facts.days_late|pluralize }} past due</span>{% endif %}{% endwith %}
             {% comment %}The two halves of a covered shortfall, named on both rows.{% endcomment %}
             {% with covers=covered_by|dictkey:contract.id %}{% if covers %}<span class="sub text-message-success-text">shortfall covered by {{ covers|join:", " }}</span>{% endif %}{% endwith %}
