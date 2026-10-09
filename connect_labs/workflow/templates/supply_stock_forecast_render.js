@@ -32,10 +32,39 @@ function WorkflowUI({
   var sOpen = React.useState(null);
   var open = sOpen[0];
   var setOpen = sOpen[1];
+  // The chart is drawn in the card's own pixel width, so its labels stay 12px:
+  // a fixed viewBox left half the card empty at 1440 and shrank the text to
+  // ~5px on a phone.
+  var sChartW = React.useState(0);
+  var chartW = sChartW[0];
+  var setChartW = sChartW[1];
+  var chartBox = React.useRef(null);
   React.useEffect(
     function () {
       setOverride(null);
       setScenario(1);
+    },
+    [loaded],
+  );
+  React.useEffect(
+    function () {
+      var el = chartBox.current;
+      if (!el) return undefined;
+      function measure() {
+        setChartW(el.clientWidth);
+      }
+      measure();
+      if (window.ResizeObserver) {
+        var ro = new window.ResizeObserver(measure);
+        ro.observe(el);
+        return function () {
+          ro.disconnect();
+        };
+      }
+      window.addEventListener('resize', measure);
+      return function () {
+        window.removeEventListener('resize', measure);
+      };
     },
     [loaded],
   );
@@ -114,19 +143,33 @@ function WorkflowUI({
 
   // ---- chips: every assumption, where it came from ----
   var chips = [];
+  // A basis in words: "measured, steady" said where the number came from
+  // only to whoever wrote the server.
+  var BASIS_WORDS = {
+    measured: 'from visits',
+    steady: 'then held at the last measured week',
+    protocol: 'protocol',
+    default: 'default',
+  };
   if (!f.cases_configured) {
     chips.push('no case rule · each worker’s own pace');
   } else {
     chips.push(
       course.size !== null && course.size !== undefined
-        ? 'course ' + fmt(num(course.size)) + ' · ' + course.basis
+        ? 'course ' +
+            fmt(num(course.size)) +
+            ' ' +
+            units +
+            ' · ' +
+            (BASIS_WORDS[course.basis] || course.basis)
         : 'course unknown',
     );
-    var profileBases = {};
+    var profileBases = [];
     (basis.profile || []).forEach(function (p) {
-      profileBases[p.basis] = true;
+      var w = BASIS_WORDS[p.basis] || p.basis;
+      if (profileBases.indexOf(w) < 0) profileBases.push(w);
     });
-    chips.push('weekly ration · ' + Object.keys(profileBases).join(', '));
+    chips.push('weekly ration · ' + profileBases.join(', '));
     chips.push(
       programme.enrolled_per_week !== null &&
         programme.enrolled_per_week !== undefined
@@ -145,9 +188,18 @@ function WorkflowUI({
     var carried = (f.cohorts || []).reduce(function (n, c) {
       return n + (c.carry_over || 0);
     }, 0);
-    if (carried) chips.push(carried + ' in treatment before the data');
+    if (carried)
+      chips.push(
+        carried +
+          (carried === 1 ? ' child' : ' children') +
+          ' enrolled before the visits start',
+      );
     if ((basis.lost_after_days || []).length)
-      chips.push('lost after ' + basis.lost_after_days.join('/') + ' days');
+      chips.push(
+        'not seen for ' +
+          basis.lost_after_days.join('/') +
+          ' days = out of treatment',
+      );
   }
   if (f.data_to && f.anchor && (!f.as_of || f.data_to < f.as_of)) {
     chips.push('data to ' + day(f.data_to));
@@ -182,12 +234,14 @@ function WorkflowUI({
   function Chart() {
     var n = past.length + future.length;
     if (!n) return null;
-    var W = 480,
-      Hh = 210,
-      P = 34,
+    // Room either side for the scale labels, so no bar runs under them.
+    var W = Math.max(chartW || 480, 280),
+      Hh = 220,
+      P = 44,
+      PR = 56,
       B = 20;
-    var slot = (W - 2 * P) / n;
-    var bw = Math.max(slot * 0.6, 2);
+    var slot = (W - P - PR) / n;
+    var bw = Math.max(Math.min(slot * 0.6, 48), 2);
     function y(v) {
       return Hh - B - (v / top) * (Hh - B - 24);
     }
@@ -202,15 +256,11 @@ function WorkflowUI({
       path += 'L' + (x0 + (i + 1) * slot) + ',' + ys(v);
     });
     return (
-      <svg
-        viewBox={'0 0 ' + W + ' ' + Hh}
-        className="w-full"
-        style={{ maxWidth: 680 }}
-      >
+      <svg viewBox={'0 0 ' + W + ' ' + Hh} width={W} height={Hh}>
         {ticks.map(function (t, i) {
           return (
             <g key={'t' + i}>
-              <line x1={P} x2={W - P} y1={y(t)} y2={y(t)} stroke="#f3f4f6" />
+              <line x1={P} x2={W - PR} y1={y(t)} y2={y(t)} stroke="#f3f4f6" />
               <text x={2} y={y(t) + 3} fontSize="12" fill="#9ca3af">
                 {fmt(t)}
               </text>
@@ -284,7 +334,7 @@ function WorkflowUI({
         )}
         {H > 0 && (
           <text
-            x={W - P}
+            x={W - PR}
             y={Hh - 4}
             fontSize="12"
             fill="#6b7280"
@@ -302,7 +352,7 @@ function WorkflowUI({
       [PAST, 'given out'],
       [COMMITTED, 'children in treatment'],
       [NEW, 'new children'],
-      [STOCK, 'left at the stores (right scale)'],
+      [STOCK, 'left at ' + topName + ' (right scale)'],
     ];
     return (
       <div className="flex flex-wrap items-center gap-2 mt-1">
@@ -400,6 +450,43 @@ function WorkflowUI({
     cohortTop = Math.max(cohortTop, num(c.owed) || 0);
   });
   var stores = f.stores || [];
+  var storeById = {};
+  stores.forEach(function (s) {
+    storeById[s.supply_point_id] = s;
+  });
+  // The stock line is `left_at_top`: the top store(s) only, not every store.
+  var tops = stores.filter(function (s) {
+    return !s.parent_supply_point_id;
+  });
+  var topName = tops.length === 1 ? tops[0].name : 'the top stores';
+  // Who a store's demand comes from: its own workers, and the shortfall of
+  // any store below it -- "asked for by 20 workers" on the top store was the
+  // Partner store's gap passed up, not twenty workers asking.
+  function askedBy(s) {
+    var direct = (f.workers || []).filter(function (w) {
+      return w.parent_supply_point_id === s.supply_point_id;
+    }).length;
+    var below = stores
+      .filter(function (c) {
+        return c.parent_supply_point_id === s.supply_point_id;
+      })
+      .map(function (c) {
+        return c.name;
+      });
+    var parts = [];
+    if (below.length) parts.push(below.join(', '));
+    if (direct)
+      parts.push('its ' + direct + (direct === 1 ? ' worker' : ' workers'));
+    return parts.length ? parts.join(' and ') : s.workers + ' workers';
+  }
+  function shortText(s) {
+    var short = num(s.shortfall_by_end);
+    if (!short) return 'covered';
+    var parent = storeById[s.parent_supply_point_id];
+    if (parent && !num(parent.shortfall_by_end))
+      return fmt(short) + ' short · ' + parent.name + ' covers it';
+    return fmt(short) + ' short';
+  }
   var multi =
     ((source.metadata && source.metadata.opportunity_ids) || []).length > 1;
 
@@ -513,8 +600,34 @@ function WorkflowUI({
             </span>
           )}
         </div>
-        <Chart />
+        <div ref={chartBox} className="w-full">
+          <Chart />
+        </div>
         <Legend />
+        {(programme.inbound || []).length > 0 && (
+          <div className="mt-1 text-xs text-gray-600">
+            {'Arriving, and counted in the line: ' +
+              programme.inbound
+                .filter(function (o) {
+                  return o.counted !== false;
+                })
+                .map(function (o) {
+                  var at = storeById[o.supply_point_id];
+                  return (
+                    o.reference +
+                    ' · ' +
+                    fmt(num(o.quantity)) +
+                    ' ' +
+                    units +
+                    (at ? ' to ' + at.name : '') +
+                    ' · ' +
+                    (o.overdue ? 'overdue since ' : 'due ') +
+                    day(o.expected_on)
+                  );
+                })
+                .join('; ')}
+          </div>
+        )}
       </div>
 
       {f.cases_configured && cohorts.length > 0 && (
@@ -562,7 +675,10 @@ function WorkflowUI({
 
       <div>
         <div className="text-sm font-semibold text-gray-900 mb-2">
-          Workers, soonest dry first
+          Workers, soonest dry first{' '}
+          <span className="font-normal text-xs text-gray-500">
+            on what each holds now, before any resupply
+          </span>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
           {(f.workers || []).map(function (w) {
@@ -633,7 +749,10 @@ function WorkflowUI({
       {stores.length > 0 && (
         <div>
           <div className="text-sm font-semibold text-gray-900 mb-2">
-            Stores, what their workers cannot cover
+            Stores{' '}
+            <span className="font-normal text-xs text-gray-500">
+              covering what their workers, or the store below, cannot
+            </span>
           </div>
           <div className="rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
             {stores.map(function (s) {
@@ -659,11 +778,9 @@ function WorkflowUI({
                       ' held · ' +
                       fmt(num(demand[demand.length - 1])) +
                       ' asked for by ' +
-                      s.workers +
-                      ' workers · ' +
-                      (num(s.shortfall_by_end)
-                        ? fmt(num(s.shortfall_by_end)) + ' short'
-                        : 'covered')}
+                      askedBy(s) +
+                      ' · ' +
+                      shortText(s)}
                   </div>
                 </div>
               );
