@@ -428,6 +428,18 @@ class OrdersView(OperationBase):
             for line in receipt.get("lines") or []:
                 if line.get("quantity_unit") == units[contract_id] and line.get("quantity_accepted"):
                     received[contract_id] = received.get(contract_id, Decimal(0)) + Decimal(line["quantity_accepted"])
+        # A dispatch still on its way, said beside the order's own status: an order stays
+        # "placed" while its goods travel, and the Overview and the map already say "in
+        # transit, expected 15 Oct" for the same order -- "Placed, due 16 Oct" alone read
+        # as a different answer.
+        moving: dict[int, dict] = {}
+        for shipment in self.op("shipment_list"):
+            contract_id = shipment.get("contract_id")
+            if contract_id not in units or shipment.get("status") in ("delivered", "lost"):
+                continue
+            seen = moving.get(contract_id)
+            if seen is None or (shipment.get("expected_on") or "") > (seen.get("expected_on") or ""):
+                moving[contract_id] = shipment
         progress = {}
         for contract in contracts:
             due_on = None
@@ -438,7 +450,15 @@ class OrdersView(OperationBase):
             got = received.get(contract["id"], Decimal(0))
             # Due only matters while something is still to come.
             waiting = contract.get("quantity") is not None and got < Decimal(contract["quantity"])
-            progress[contract["id"]] = {"received": got, "due_on": due_on if waiting else None}
+            shipment = moving.get(contract["id"]) if waiting else None
+            progress[contract["id"]] = {
+                "received": got,
+                "due_on": due_on if waiting else None,
+                "shipment_status": shipment.get("status") if shipment else None,
+                "shipment_expected_on": (
+                    date.fromisoformat(shipment["expected_on"]) if shipment and shipment.get("expected_on") else None
+                ),
+            }
         return progress
 
     def get_context_data(self, **kwargs):

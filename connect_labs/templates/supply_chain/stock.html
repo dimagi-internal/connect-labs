@@ -43,7 +43,9 @@ for something they had.{% endcomment %}
 <div class="flex items-baseline gap-3 mb-1">
   <h2 class="text-lg font-semibold text-brand-indigo">Stock across the network</h2>
   <span class="text-sm text-gray-600">
-    {{ network.summary.points }} supply point{{ network.summary.points|pluralize }} ·
+    {% comment %}Filtered to one opportunity the table holds only its workers, not the stores --
+    "20 supply points" here beside Network's "22 points" read as two answers.{% endcomment %}
+    {{ network.summary.points }} supply point{{ network.summary.points|pluralize }}{% if opportunity_id %} in opportunity {{ opportunity_id }}{% endif %} ·
     {{ network.summary.never_reported }} {% if network.summary.never_reported == 1 %}has{% else %}have{% endif %} no count yet
   </span>
 </div>
@@ -205,7 +207,10 @@ paragraphs of method above a one-row table.{% endcomment %}
           <td class="px-4 py-2.5 text-gray-600" data-label="To reach its maximum">—</td>
           {% else %}
           <td class="px-4 py-2.5 tabular-nums text-gray-600" data-label="Days of stock">
-            {{ point.months_of_stock|months_as_days }}
+            {% comment %}Days, counted the way Workers, a worker's page and Stock review count them: whole
+            days still in hand, never rounded up. Months-of-cover times 30, rounded, read "10 days" here
+            beside "9 days" there for the same worker on the same day.{% endcomment %}
+            {% if point.months_of_stock|unconfirmed_reasons %}{{ point.months_of_stock|months_as_days }}{% else %}{{ point.days_to_stockout|days_text }}{% endif %}
             {% for reason in point.months_of_stock|unconfirmed_reasons %}
               <div class="text-xs text-gray-600 mt-0.5">{{ reason }}</div>
             {% endfor %}

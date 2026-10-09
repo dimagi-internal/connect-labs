@@ -20,7 +20,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import TemplateView
 
-from connect_labs.supply_chain.history.as_of import parse_as_of
+from connect_labs.supply_chain.history.as_of import HAPPENED, parse_as_of
 from connect_labs.supply_chain.workflow_views.models import SupplyWorkflowView
 from connect_labs.supply_chain.workflow_views.runs import current_run_id
 from connect_labs.workflow.views import WorkflowRunView
@@ -37,6 +37,9 @@ class SupplyWorkflowPageView(WorkflowRunView):
         if as_of and as_of > timezone.localdate():
             return HttpResponseBadRequest("as_of cannot be after today.")
         request.supply_as_of = as_of
+        # Its supply sources read stock as it had happened by that day (worker_stock with
+        # as_of), as the stock pages do; the banner said "records as they stood that evening".
+        request.supply_as_of_basis = HAPPENED
         context = getattr(request, "labs_context", None) or {}
         program_id = context.get("program_id")
         pin = None
