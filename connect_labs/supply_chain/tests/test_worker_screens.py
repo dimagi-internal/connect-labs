@@ -349,8 +349,12 @@ def test_the_network_shows_a_stores_workers_and_their_totals(client_in_program, 
     assert 'data-testid="network-tree"' in body
     text = text_of(body)
     assert "2 workers" in text
-    # 120 + 110 on hand below the partner store; 40 + 30 dispensed there.
-    assert "230 sachets on hand of 70 given out: 30 on unapproved visits · 30 estimated" in text
+    # 120 + 110 on hand below the partner store, led with on the store's second line...
+    subtree = text_of(re.search(r'data-testid="subtree"[^>]*>(.*?)</div>', body, re.S).group(1))
+    assert "With everything below it: 230 sachets on hand" in subtree and "2 workers" in subtree
+    # ...and what its 40 + 30 dispensed rests on is a detail, behind the disclosure.
+    assert "With everything below it, of 70 given out: 30 on unapproved visits · 30 estimated" in text
+    assert "given out" not in subtree and "recomputed" not in text
 
 
 def test_a_store_row_shows_what_came_in_once_never_a_hop_summed_issued(client_in_program, world):
@@ -389,9 +393,14 @@ def test_the_tree_is_the_directory_every_point_once(client_in_program, world):
     assert "<table" not in body
     names = re.findall(r'data-testid="point-name"[^>]*>([^<]+)<', body)
     assert sorted(names) == ["Old depot", "Partner store", "worker-acacia", "worker-baobab"]
-    # What only the old tables said now rides on the node.
+    # What only the old tables said now rides on the node, behind its Details.
     assert "user-worker-acacia" in body
-    assert "band 1–2 months" in text_of(body)
+    assert "Kept at 1–2 months of stock" in text_of(body)
+    assert body.count('data-testid="point-details"') == 4
+    # The row a reader sees carries none of the directory's words.
+    row = own_line(body, "worker-acacia")
+    for jargon in ("user-worker-acacia", "band", "place not recorded", "recomputed", "Connect user"):
+        assert jargon not in row
     assert "inactive" in own_line(body, "Old depot")
     for point in SupplyPoint.objects.filter(program_id=PROGRAM):
         assert reverse("supply_chain:supply_point_edit", args=[point.pk]) in body
@@ -472,7 +481,8 @@ def test_a_worker_page_shows_the_timeline_and_the_visits_behind_it(client_in_pro
     worker = world["worker-acacia"]
     body = get(client_in_program, "worker_detail", worker.pk)
     assert 'data-testid="worker-timeline"' in body
-    assert "xf-worker-acacia" in body
+    assert 'title="Connect visit xf-worker-acacia"' in body  # the id is a tooltip, never the text
+    assert "xf-worker-acacia" not in text_of(body)
     assert "form.x" in body
     assert "Not yet approved" in body
     text = text_of(body)
@@ -549,7 +559,8 @@ def test_each_visit_says_what_it_moved_and_those_that_moved_stock_come_first(cli
     # The screenings are counted on one row, not listed among them.
     count = re.search(r'data-testid="visits-gave-none-count"[^>]*>(.*?)</summary>', body, re.S).group(1)
     assert text_of(count).strip() == "2 visits gave none"
-    assert "xf-v-screen-1" in body.split('data-testid="visits-gave-none"', 1)[1]
+    gave_none = body.split('data-testid="visits-gave-none"', 1)[1]
+    assert 'title="Connect visit xf-v-screen-1"' in gave_none and "xf-v-screen-1" not in text_of(gave_none)
 
 
 def test_a_rejected_visit_reads_its_dispense_and_the_put_back(client_in_program, world):
@@ -704,11 +715,19 @@ def test_the_flow_page_draws_from_the_payload_and_has_its_tab(client_in_program,
 def test_the_movement_list_shows_a_reversal_going_back_in(client_in_program, world):
     worker = world["worker-baobab"]
     text = text_of(get(client_in_program, "movements", supply_point_id=worker.pk, item_id=world["item"].pk))
-    assert "Reversed (visit v-rejected)" in text
+    assert "Reversed · a visit" in text
     assert "back into worker-baobab" in text
-    # The two consumption rows name their visits.
-    assert "Consumption (visit v-rejected)" in text
-    assert "Consumption (visit v-worker-baobab)" in text
+    # The consumption rows say where they came from in words; the visit id is only a tooltip.
+    assert "Consumption · a visit" in text
+    assert "(visit " not in text and "v-rejected" not in text
+
+
+def test_a_visit_movement_is_named_by_its_form(client_in_program, world):
+    WorkerVisit.objects.filter(visit_id="v-worker-baobab").update(form_name="RUTF Distribution")
+    worker = world["worker-baobab"]
+    body = get(client_in_program, "movements", supply_point_id=worker.pk, item_id=world["item"].pk)
+    assert "Consumption · RUTF Distribution" in text_of(body)
+    assert 'title="Connect visit v-worker-baobab"' in body
 
 
 # ---- as of a past day ------------------------------------------------------

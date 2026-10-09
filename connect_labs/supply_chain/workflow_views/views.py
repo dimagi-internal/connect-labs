@@ -5,6 +5,7 @@ supply base: `WorkflowRunView` builds the page data, as the viewer, for the
 workflow's current open run -- the newest one still in progress, or a new one
 started for today, so a supply tab simply shows what is current. The supply page
 gives the run its context and two ways out: the workflow's editor, and the tab's own page if it replaced one.
+The editor links are for the people who build the view (builds_the_view), not for everyone who reads it.
 
 `?as_of=` is the supply pages' own date. The page is not rewound (the runner reads live
 records of its own); instead the date rides on the runner's supply endpoints, so every
@@ -87,7 +88,24 @@ class SupplyWorkflowPageView(WorkflowRunView):
                 reverse("labs:workflow:run", args=[pin.workflow_definition_id]) + f"?{scope}&run_id={run_id}&edit=true"
             ),
             open_url=reverse("labs:workflow:run", args=[pin.workflow_definition_id]) + f"?{scope}&run_id={run_id}",
+            builder=builds_the_view(self.request.user, context.get("definition"), pin),
             classic_url=reverse(pin.replaces) if pin.replaces else None,
             classic_label=dict(SUPPLY_TABS).get(pin.replaces, ""),
         )
         return context
+
+
+def builds_the_view(user, definition, pin: SupplyWorkflowView) -> bool:
+    """Whether to offer this viewer the workflow's editor: its author, whoever pinned it, or staff.
+
+    Anyone in the programme may be ABLE to edit the workflow (write access to its scope is all
+    labs asks), but a programme manager reading a supply tab is not building one, and
+    "Edit workflow" beside the title reads as part of the page. Not a permission check: the
+    workflow's own page still decides who may save.
+    """
+    if not getattr(user, "is_authenticated", False):
+        return False
+    if user.is_staff or user.is_superuser:
+        return True
+    author = definition.get("username") if isinstance(definition, dict) else getattr(definition, "username", None)
+    return user.username in {author, pin.created_by} - {None, ""}

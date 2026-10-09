@@ -3,6 +3,7 @@
 THIS REPOSITORY IS PUBLIC. Every figure here is invented.
 """
 
+import re
 from datetime import date
 from decimal import Decimal
 
@@ -188,3 +189,23 @@ def test_a_day_without_a_reversal_draws_no_reversal_mark(world):
     svg = timeline_svg(worker_timeline(PROGRAM, world["worker"], world["item"], on_date=date(2026, 9, 4)))
     assert 'data-kind="reversed"' not in svg
     assert "put back" not in svg
+
+
+def test_the_chart_has_a_scale_at_round_numbers_and_dates_along_the_bottom(world):
+    svg = timeline_svg(worker_timeline(PROGRAM, world["worker"], world["item"]))
+
+    # 0 to 150 sachets: gridlines every 50, the top one at or above the highest level.
+    assert re.findall(r'data-kind="tick">([^<]+)<', svg) == ["0", "50", "100", "150"]
+    assert svg.count('data-kind="gridline"') == 3
+    assert ">sachets</text>" in svg
+    dates = re.findall(r'data-kind="date">([^<]+)<', svg)
+    assert dates[0] == "1 Sep 2026" and dates[-1] == "6 Sep 2026" and len(dates) == len(set(dates)) >= 3
+
+
+def test_a_phone_gets_its_own_drawing_with_fewer_dates_and_its_own_ids(world):
+    line = worker_timeline(PROGRAM, world["worker"], world["item"])
+    narrow = timeline_svg(line, width=360, height=240, date_ticks=3, key="-narrow")
+
+    assert 'viewBox="0 0 360 240"' in narrow
+    assert len(re.findall(r'data-kind="date"', narrow)) == 3
+    assert 'id="worker-timeline-title-narrow"' in narrow and 'id="worker-timeline-title"' not in narrow
