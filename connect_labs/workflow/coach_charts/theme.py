@@ -36,9 +36,15 @@ Status colours are reserved for bands and never reused as a series colour (the r
 Labs' Pulse palette states, ``static/pulse/pulse.css``). Peers are always the neutral
 colour and labelled directly (``Peer A``), so identity is never colour alone.
 
-Sizes are CSS pixels for a phone: a chart is ``WIDTH`` (540) wide and the PNG is drawn
-at ``SCALE`` 2, so 1080 px -- the picture a chat bubble (~930 px) shows at ~0.86x. A
-webview rendering the same spec at 540 CSS px gets the same proportions.
+Sizes are CSS pixels for a phone. A picture is LANDSCAPE: ``WIDTH`` x ``HEIGHT`` (600 x
+400, 3:2), drawn at ``SCALE`` 2, so 1200 x 800 px. Connect's messenger caps an image's
+height at half the message list and sizes the bubble to the image's width
+(``ConnectMessageMediaSizer.fitImage``, dimagi/commcare-android#3946): a portrait picture
+hits the height cap and shrinks the whole bubble, a 3:2 one is held by the width cap and
+fills it (connect-labs#2413). On a phone the bubble is about 340 dp wide, so 1 CSS px here
+is about 0.57 dp and the smallest text (20 px) about 11 dp -- larger than a portrait
+card's once the height cap had shrunk it. A webview rendering the
+same spec at 600 CSS px gets the same proportions.
 """
 
 from __future__ import annotations
@@ -73,14 +79,15 @@ PALETTE = frozenset(
     {DEEP_PURPLE, INK, MUTED, RULE, BACKGROUND, INDIGO, CORNFLOWER, SKY, NEUTRAL, *BAND_COLOURS.values()}
 )
 
-#: CSS width of a chart, and the factor the PNG is drawn at.
-WIDTH = 540
+#: CSS size of a chart (landscape, 3:2), and the factor the PNG is drawn at.
+WIDTH = 600
+HEIGHT = 400
 SCALE = 2
-#: Space around the chart (CSS px): today's card margin.
-PADDING = 40
+#: Space around the chart (CSS px).
+PADDING = 32
 
-# Type sizes (CSS px; x2 in the PNG). Chosen for a phone, where the card is shown
-# at about 0.86x: the smallest text in the PNG is 40 px.
+# Type sizes (CSS px; x2 in the PNG). Chosen for a phone, where the picture is shown
+# about 340 dp wide: the smallest text in the PNG is 40 px.
 TITLE_SIZE = 36
 SUBTITLE_SIZE = 20
 LABEL_SIZE = 22
@@ -88,6 +95,20 @@ FIGURE_SIZE = 22
 AXIS_SIZE = 20
 #: The smallest font any themed text may use, in CSS px.
 MIN_FONT_SIZE = 20
+
+#: How far the title sits above the chart (CSS px).
+TITLE_OFFSET = 20
+#: The height the title takes, and the subtitle under it, title offset included
+#: (measured from vl-convert with the bundled Work Sans).
+TITLE_BLOCK = 57
+SUBTITLE_BLOCK = 29
+
+
+def body_height(subtitle: bool = True) -> int:
+    """The CSS height left for a chart's body under its title (and subtitle) in a
+    ``WIDTH`` x ``HEIGHT`` picture."""
+    return HEIGHT - 2 * PADDING - TITLE_BLOCK - (SUBTITLE_BLOCK if subtitle else 0)
+
 
 THEME: dict = {
     "font": FONT,
@@ -106,7 +127,7 @@ THEME: dict = {
         "subtitleFontSize": SUBTITLE_SIZE,
         "subtitleColor": MUTED,
         "subtitlePadding": 8,
-        "offset": 28,
+        "offset": TITLE_OFFSET,
     },
     "axis": {
         "labelFont": FONT,

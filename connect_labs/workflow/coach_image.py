@@ -37,12 +37,11 @@ from connect_labs.workflow import coach_briefing
 SALT = "coach-image"
 MAX_AGE = timedelta(days=7)
 
-#: The picture's width (``coach_charts.theme``: 540 CSS px drawn at 2x). Its height
-#: follows the content -- a phone shows the card in a chat bubble about 930 px wide,
-#: so empty space below the last topic only shrinks the type -- with a floor so a
-#: single topic is not a sliver.
-WIDTH = 1080
-MIN_HEIGHT = 480
+#: The picture's size (``coach_charts.theme``: 600 x 400 CSS px drawn at 2x). Landscape,
+#: 3:2, whatever the number of topics: Connect's messenger sizes the bubble to a
+#: portrait picture's narrow width (connect-labs#2413).
+WIDTH = 1200
+HEIGHT = 800
 
 
 class BadImageLink(Exception):

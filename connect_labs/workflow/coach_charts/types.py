@@ -1,10 +1,14 @@
 """The named chart types: each a function from its params (and the worker's first name)
 to a Vega-Lite spec that reads Labs' named datasets (``datasets.py``) and holds no data
-of its own.
+of its own -- except each topic's label, wrapped to the width of its column.
 
 A type is how most charts are asked for -- ``{"type": "topic_bars"}`` -- and how the
 look improves over time: change a type here and every chart of that type changes. A
 chart no type fits is a custom spec (``custom.py``), drawn in the same theme.
+
+Every type fills the landscape frame (``theme.WIDTH`` x ``theme.HEIGHT``, 3:2) that
+Connect's messenger shows at full bubble width (connect-labs#2413): topics sit side by
+side in columns rather than stacked down a portrait card.
 
 Sizes are CSS pixels (``theme.py``): the PNG doubles them.
 """
@@ -19,22 +23,27 @@ from typing import Any
 from connect_labs.workflow.coach_charts import theme
 
 INNER = theme.WIDTH - 2 * theme.PADDING
+#: The gap between side-by-side columns.
+GAP = 24
 
 # topic_bars: today's card, re-expressed. Per topic: the label (wrapped to at most three
 # lines), the figure in bold under it, and a bar of numerator over denominator in the
-# band's colour.
+# band's colour. Topics sit in two columns; from five topics on, each is one line
+# (label and figure) over a thinner bar.
 _LABEL_LINE = 28
-_FIGURE_LINE = 30
-_BAR_GAP = 12
 _BAR_HEIGHT = 22
-_BLOCK_GAP = 22
 _MAX_LABEL_LINES = 3
-#: A card is never shorter than this (CSS px, padding included; 500 px in the PNG):
-#: one short topic is a card, not a sliver. The title block's height is estimated
-#: from the theme's sizes to work out how much body that leaves.
-MIN_CARD = 250
-_TITLE_BLOCK = theme.TITLE_SIZE + 8 + theme.THEME["title"]["offset"]
-_SUBTITLE_BLOCK = theme.SUBTITLE_SIZE + theme.THEME["title"]["subtitlePadding"] + 6
+_COMPACT_BAR = 16
+_COMPACT_GAP = 14
+#: Block sizes by layout: one topic alone has the frame to itself, two share one row,
+#: three or four fill two rows. Label size / line height / max lines, figure size / line
+#: height / weight, and the bar's gap and thickness. A figure too wide for its column
+#: is drawn smaller, never under the theme's label size.
+_SIZES = {
+    "one": {"label": 28, "line": 36, "lines": 2, "figure": 56, "figure_line": 72, "weight": 700, "gap": 12, "bar": 40},
+    "row": {"label": 24, "line": 31, "lines": 3, "figure": 34, "figure_line": 46, "weight": 700, "gap": 12, "bar": 28},
+    "grid": {"label": 22, "line": 28, "lines": 2, "figure": 22, "figure_line": 30, "weight": 600, "gap": 8, "bar": 18},
+}
 
 #: How a band maps to a colour, for every type: unknown bands are the neutral grey.
 BAND_DOMAIN = ["red", "yellow", "amber", "green", "other"]
@@ -82,6 +91,16 @@ def wrap(text: str, size: int = theme.LABEL_SIZE, width: int = INNER, max_lines:
     return lines or [""]
 
 
+def column_width(columns: int) -> int:
+    """The width of each of ``columns`` side-by-side columns, ``GAP`` apart."""
+    return int((INNER - (columns - 1) * GAP) / max(columns, 1))
+
+
+def _text_width(text: str, size: int = theme.LABEL_SIZE, bold: bool = False) -> float:
+    """``text``'s width in the theme font; bold is drawn about 8% wider than regular."""
+    return _font(size).getlength(str(text or "")) * (1.08 if bold else 1.0)
+
+
 def band_colour(band: Any) -> str:
     return theme.BAND_COLOURS.get(str(band or "").lower(), theme.NEUTRAL)
 
@@ -109,68 +128,115 @@ def _band_scale() -> dict:
 
 
 def topic_bars(rows: list[dict], *, first_name: str | None = None, title: str = "Your figures") -> dict:
-    """Today's card as a Vega-Lite spec over the ``worker_topics`` dataset: one block per
-    row (``rows`` are that dataset's rows, needed only for the layout -- each block's
-    height follows its wrapped label)."""
+    """Today's card as a Vega-Lite spec over the ``worker_topics`` dataset, laid out
+    landscape: one topic fills the frame, more sit in two columns (``rows`` are that
+    dataset's rows, needed only for the layout -- each block's height follows its
+    wrapped label). The body is stretched to fill the frame under the title."""
+    n = len(rows)
+    columns = 1 if n <= 1 else 2
+    width = column_width(columns)
+    grid_rows = -(-n // columns) if n else 1
+    compact = grid_rows >= 3
+    sizes = _SIZES["one" if n == 1 else ("row" if grid_rows == 1 else "grid")]
+    label_size, label_line = (theme.LABEL_SIZE, _LABEL_LINE) if compact else (sizes["label"], sizes["line"])
     blocks = []
-    total = 0
     for i, row in enumerate(rows):
-        lines = len(row.get("label_lines") or [""])
-        figure_y = lines * _LABEL_LINE
+        figure = str(row.get("figure_text") or "")
         has_bar = row.get("share") is not None
-        bar_y = figure_y + _FIGURE_LINE + _BAR_GAP
-        height = bar_y + _BAR_HEIGHT if has_bar else figure_y + _FIGURE_LINE
-        layers: list[dict] = [
-            {
-                "mark": {"type": "text", "align": "left", "baseline": "top", "lineHeight": _LABEL_LINE},
+        if compact:
+            room = width - (_text_width(figure, bold=True) + 12 if figure else 0)
+            lines = wrap(row.get("label") or "", width=int(room), max_lines=1)
+            bar_y = _LABEL_LINE + 6
+            height = bar_y + _COMPACT_BAR if has_bar else _LABEL_LINE
+            bar_h, figure_layer = _COMPACT_BAR, {
+                "mark": {"type": "text", "align": "right", "baseline": "top", "fontWeight": 600},
                 "encoding": {
-                    "text": {"field": "label_lines", "type": "nominal"},
-                    "x": {"value": 0},
+                    "text": {"field": "figure_text", "type": "nominal"},
+                    "x": {"value": width},
                     "y": {"value": 0},
                 },
-            },
-            {
-                "mark": {"type": "text", "align": "left", "baseline": "top", "fontWeight": 600},
+            }
+        else:
+            lines = wrap(row.get("label") or "", size=label_size, width=width, max_lines=sizes["lines"])
+            figure_y = len(lines) * label_line
+            bar_y = figure_y + sizes["figure_line"] + sizes["gap"]
+            bar_h = sizes["bar"]
+            height = bar_y + bar_h if has_bar else figure_y + sizes["figure_line"]
+            fits = width / max(_text_width(figure, size=sizes["figure"], bold=True), 1)
+            figure_size = max(theme.LABEL_SIZE, min(sizes["figure"], int(sizes["figure"] * fits)))
+            figure_layer = {
+                "mark": {
+                    "type": "text",
+                    "align": "left",
+                    "baseline": "top",
+                    "fontWeight": sizes["weight"],
+                    "fontSize": figure_size,
+                },
                 "encoding": {
                     "text": {"field": "figure_text", "type": "nominal"},
                     "x": {"value": 0},
-                    "y": {"value": figure_y + 2},
+                    "y": {"value": figure_y + 4},
                 },
+            }
+        layers: list[dict] = [
+            {
+                "mark": {
+                    "type": "text",
+                    "align": "left",
+                    "baseline": "top",
+                    "lineHeight": label_line,
+                    "fontSize": label_size,
+                },
+                "encoding": {"text": {"value": lines}, "x": {"value": 0}, "y": {"value": 0}},
             },
+            figure_layer,
         ]
         if has_bar:
             layers += [
                 {
-                    "mark": {"type": "rect", "color": theme.RULE, "cornerRadius": _BAR_HEIGHT // 2},
+                    "mark": {"type": "rect", "color": theme.RULE, "cornerRadius": bar_h // 2},
                     "encoding": {
                         "x": {"value": 0},
-                        "x2": {"value": INNER},
+                        "x2": {"value": width},
                         "y": {"value": bar_y},
-                        "y2": {"value": bar_y + _BAR_HEIGHT},
+                        "y2": {"value": bar_y + bar_h},
                     },
                 },
                 {
                     "transform": [{"filter": "datum.bar > 0"}],
-                    "mark": {"type": "rect", "cornerRadius": _BAR_HEIGHT // 2},
+                    "mark": {"type": "rect", "cornerRadius": bar_h // 2},
                     "encoding": {
-                        "x": {"datum": 0, "type": "quantitative", "scale": {"domain": [0, 1]}, "axis": None},
+                        "x": {
+                            "datum": 0,
+                            "type": "quantitative",
+                            "scale": {"domain": [0, 1], "range": [0, width]},
+                            "axis": None,
+                        },
                         "x2": {"field": "bar", "type": "quantitative"},
                         "y": {"value": bar_y},
-                        "y2": {"value": bar_y + _BAR_HEIGHT},
+                        "y2": {"value": bar_y + bar_h},
                         "color": {"field": "band_key", "type": "nominal", "scale": _band_scale(), "legend": None},
                     },
                 },
             ]
         blocks.append({"height": height, "transform": [{"filter": f"datum.i == {i}"}], "layer": layers})
-        total += height + (_BLOCK_GAP if i else 0)
-    min_body = MIN_CARD - 2 * theme.PADDING - _TITLE_BLOCK - (_SUBTITLE_BLOCK if first_name else 0)
-    if blocks and total < min_body:
-        blocks[-1]["height"] += min_body - total
+    # Every block in a grid row is as tall as the row's tallest; the last row takes up
+    # what is left of the frame.
+    gap = _COMPACT_GAP if compact else 18
+    heights = (
+        [max(b["height"] for b in blocks[r * columns : (r + 1) * columns]) for r in range(grid_rows)] if blocks else []
+    )
+    spare = theme.body_height(bool(first_name)) - 4 - sum(heights) - gap * (len(heights) - 1)
+    if heights and spare > 0:
+        heights[-1] += spare
+    for k, b in enumerate(blocks):
+        b["height"] = heights[k // columns]
     return {
         "title": _title(title, first_name),
         "data": {"name": "worker_topics"},
-        "spacing": _BLOCK_GAP,
-        "vconcat": [{**b, "width": INNER} for b in blocks],
+        "columns": columns,
+        "spacing": {"row": gap, "column": GAP},
+        "concat": [{**b, "width": width} for b in blocks],
     }
 
 
@@ -211,61 +277,92 @@ def topic_rows(topics: list[dict]) -> list[dict]:
 # peer_comparison and trend
 # ---------------------------------------------------------------------------
 
-_ROW = 40  # one bar row (CSS px)
+_ROW = 40  # the tallest bar row (CSS px)
+_MIN_ROW = 25  # the shortest: a 22 px label still clears its neighbours
 _WHO_WIDTH = 96  # room the row labels ("You", "Peer A") take, left of the bars
 _VALUE_ROOM = 64  # room right of the longest bar for its value ("100%")
+_COLUMN_GAP = 16  # between peer_comparison's topic columns
 _TREND_HEIGHT = 200
 _PEER_LABEL_ROOM = 112  # fits the widest end label, "Peer A, B"
 _END_LINE = 22  # how far apart stacked end labels are
+_AXIS_ROOM = 54  # a trend's week labels under its plot
 
 
 def _value_format(unit: str) -> str:
     return ".0%" if unit == "%" else ",.3~r"
 
 
-def _label_layer(lines: int) -> tuple[dict, int]:
-    """The topic's label as the top of a block, and the height it takes."""
-    return (
-        {
-            "mark": {"type": "text", "align": "left", "baseline": "top", "lineHeight": _LABEL_LINE},
-            "encoding": {"text": {"field": "label_lines", "type": "nominal"}, "x": {"value": 0}, "y": {"value": 0}},
-        },
-        lines * _LABEL_LINE + 10,
-    )
+def _headings(rows: list[dict], width: int, max_lines: int = 3) -> tuple[list[list[str]], int]:
+    """Each topic's label wrapped to ``width``, and the height every heading takes (the
+    tallest's), so the plots under them line up."""
+    lines = [wrap(r.get("label") or "", width=width, max_lines=max_lines) for r in rows]
+    return lines, max([len(ls) for ls in lines] or [1]) * _LABEL_LINE + 10
+
+
+def _heading(i: int, lines: list[str], width: int, height: int) -> dict:
+    return {
+        "data": {"name": "worker_topics"},
+        "transform": [{"filter": f"datum.i == {i}"}],
+        "width": width,
+        "height": height,
+        "mark": {"type": "text", "align": "left", "baseline": "top", "lineHeight": _LABEL_LINE},
+        "encoding": {"text": {"value": lines}, "x": {"value": 0}, "y": {"value": 0}},
+    }
 
 
 def peer_comparison(datasets: dict, *, first_name: str | None = None, title: str = "How you compare") -> dict:
     """Per topic, the worker's figure beside each anonymous peer's: one bar per person,
     the worker first and in the band's colour, every peer in the neutral grey and
-    labelled by letter, the value at the end of each bar."""
+    labelled by letter, the value at the end of each bar. Topics sit side by side, one
+    column each, with the people named once down the left."""
     mine = datasets.get("worker_topics") or []
     others = datasets.get("peers") or []
-    blocks = []
-    for row in mine:
+    n = max(len(mine), 1)
+    width = int((INNER - _WHO_WIDTH - n * _COLUMN_GAP) / n)
+    who = ["You"] + sorted({p["who"] for p in others}, key=lambda w: (len(w), w))
+    headings, heading_height = _headings(mine, width, max_lines=3 if n == 1 else 2)
+    body = theme.body_height(bool(first_name)) - heading_height - 6
+    row_h = max(_MIN_ROW, min(_ROW, body // len(who)))
+    bar_h = min(24, row_h - 8)
+    y = {"field": "who", "type": "nominal", "sort": who, "scale": {"domain": who}, "axis": None}
+    names = {
+        "spacing": 6,
+        "vconcat": [
+            {"width": _WHO_WIDTH, "height": heading_height, "mark": {"type": "text"}, "data": {"values": []}},
+            {
+                "data": {"values": [{"who": w} for w in who]},
+                "width": _WHO_WIDTH,
+                "height": row_h * len(who),
+                "layer": [
+                    {
+                        "transform": [{"filter": "datum.who == 'You'"}],
+                        "mark": {"type": "text", "align": "left", "baseline": "middle", "fontWeight": 600},
+                        "encoding": {"x": {"value": 0}, "y": y, "text": {"field": "who", "type": "nominal"}},
+                    },
+                    {
+                        "transform": [{"filter": "datum.who != 'You'"}],
+                        "mark": {"type": "text", "align": "left", "baseline": "middle"},
+                        "encoding": {"x": {"value": 0}, "y": y, "text": {"field": "who", "type": "nominal"}},
+                    },
+                ],
+            },
+        ],
+    }
+    columns = [names]
+    for row, lines in zip(mine, headings):
         i, unit = row["i"], row.get("unit") or ""
-        who = ["You"] + sorted({p["who"] for p in others if p["i"] == i}, key=lambda w: (len(w), w))
-        label, label_height = _label_layer(len(row.get("label_lines") or [""]))
         rate = unit == "%"  # a rate is a fraction: its scale is 0..1
-        # The row labels are drawn as text inside the plot, left of a bar scale that
-        # starts at _WHO_WIDTH: an axis would shift the plot by its own width, and the
-        # chart must stay exactly the theme's width.
-        scale: dict = {"range": [_WHO_WIDTH, INNER - _VALUE_ROOM]}
+        scale: dict = {"range": [0, width - _VALUE_ROOM]}
         scale.update({"domain": [0, 1]} if rate else {"zero": True})
         x = {"field": "value", "type": "quantitative", "axis": None, "scale": scale}
-        y = {"field": "who", "type": "nominal", "sort": who, "scale": {"domain": who}, "axis": None}
-        who_label = {
-            "mark": {"type": "text", "align": "left", "baseline": "middle"},
-            "encoding": {"x": {"value": 0}, "y": y, "text": {"field": "who", "type": "nominal"}},
-        }
         bars = {
             "layer": [
                 {
                     "data": {"name": "worker_topics"},
                     "transform": [{"filter": f"datum.i == {i} && isValid(datum.value)"}],
                     "layer": [
-                        {**who_label, "mark": {**who_label["mark"], "fontWeight": 600}},
                         {
-                            "mark": {"type": "bar", "cornerRadius": 6, "height": 24},
+                            "mark": {"type": "bar", "cornerRadius": 6, "height": bar_h},
                             "encoding": {
                                 "x": x,
                                 "y": y,
@@ -293,9 +390,8 @@ def peer_comparison(datasets: dict, *, first_name: str | None = None, title: str
                     "data": {"name": "peers"},
                     "transform": [{"filter": f"datum.i == {i}"}],
                     "layer": [
-                        who_label,
                         {
-                            "mark": {"type": "bar", "cornerRadius": 6, "height": 24, "color": theme.NEUTRAL},
+                            "mark": {"type": "bar", "cornerRadius": 6, "height": bar_h, "color": theme.NEUTRAL},
                             "encoding": {"x": x, "y": y},
                         },
                         {
@@ -309,18 +405,11 @@ def peer_comparison(datasets: dict, *, first_name: str | None = None, title: str
                     ],
                 },
             ],
-            "width": INNER,
-            "height": _ROW * len(who),
+            "width": width,
+            "height": row_h * len(who),
         }
-        heading = {
-            "data": {"name": "worker_topics"},
-            "transform": [{"filter": f"datum.i == {i}"}],
-            "width": INNER,
-            "height": label_height,
-            "layer": [label],
-        }
-        blocks.append({"spacing": 6, "vconcat": [heading, bars]})
-    return {"title": _title(title, first_name), "spacing": _BLOCK_GAP, "vconcat": blocks}
+        columns.append({"spacing": 6, "vconcat": [_heading(i, lines, width, heading_height), bars]})
+    return {"title": _title(title, first_name), "spacing": _COLUMN_GAP, "hconcat": columns}
 
 
 def _nice_top(value: float) -> float:
@@ -377,6 +466,17 @@ def end_labels(points: list[dict], *, top: float, height: int = _TREND_HEIGHT, l
     return [{"week": week, "text": lab["text"], "y": y, "you": lab["you"]} for lab, y in zip(labels, ys)]
 
 
+def _first_last_weeks(points: list[dict]) -> list:
+    """The first and last weeks of ``points`` (ISO dates) as axis values: Vega-Lite
+    datetimes in UTC, as Vega parses an ISO date (their labels are formatted in UTC too)."""
+    weeks = sorted({str(p["week"])[:10] for p in points})
+    out = []
+    for w in weeks[:1] + weeks[-1:] if len(weeks) > 1 else weeks:
+        y, m, d = (int(part) for part in w.split("-"))
+        out.append({"year": y, "month": m, "date": d, "utc": True})
+    return out
+
+
 def _peer_group_text(names: list[str]) -> str:
     """``Peer A``; ``Peer A, B`` for two peers that share an end; ``3 peers`` for more
     (so the label fits right of the plot)."""
@@ -389,15 +489,23 @@ def _peer_group_text(names: list[str]) -> str:
 def trend(datasets: dict, *, first_name: str | None = None, title: str = "Week by week") -> dict:
     """Per topic, the worker's weekly line (one point per saved run) and, when the
     ``history`` dataset carries them, each anonymous peer's own thinner grey line,
-    labelled by letter at its last point."""
+    labelled by letter at its last point. Topics sit side by side, one plot each."""
     mine = datasets.get("worker_topics") or []
+    n = max(len(mine), 1)
+    width = column_width(n)
+    # Topics side by side leave no margin for end labels: there, "You" sits over the
+    # worker's last point and the peers' grey lines go unlabelled (the caption says
+    # what they are).
+    narrow = n > 1
+    label_room = 8 if narrow else _PEER_LABEL_ROOM
+    headings, heading_height = _headings(mine, width, max_lines=2)
+    height = theme.body_height(bool(first_name)) - heading_height - 6 - _AXIS_ROOM
     blocks = []
-    for row in mine:
+    for row, lines in zip(mine, headings):
         i, unit = row["i"], row.get("unit") or ""
-        label, label_height = _label_layer(len(row.get("label_lines") or [""]))
         points = [h for h in datasets.get("history") or [] if h.get("i") == i]
         top = 1.0 if unit == "%" else _nice_top(max([h["value"] for h in points] or [0]))
-        ends = end_labels(points, top=top)
+        ends = [] if narrow else end_labels(points, top=top, height=height)
         y = {
             "field": "value",
             "type": "quantitative",
@@ -406,7 +514,7 @@ def trend(datasets: dict, *, first_name: str | None = None, title: str = "Week b
             # the chart past the theme's width.
             "axis": {
                 "format": _value_format(unit),
-                "tickCount": 4,
+                "tickCount": 2 if narrow else 4,
                 "grid": True,
                 "labelAlign": "left",
                 "labelBaseline": "bottom",
@@ -419,18 +527,48 @@ def trend(datasets: dict, *, first_name: str | None = None, title: str = "Week b
             "field": "week",
             "type": "temporal",
             "title": None,
-            # Room right of the last week for the peers' labels ("Peer A").
-            "scale": {"range": [8, INNER - _PEER_LABEL_ROOM]},  # 8: a first point is not clipped
-            "axis": {"format": "%-d %b", "labelOverlap": True, "labelAlign": "left", "tickCount": 4, "grid": False},
+            # Room right of the last week for the end labels ("Peer A").
+            "scale": {"range": [8, width - label_room]},  # 8: a first point is not clipped
+            "axis": (
+                {
+                    "format": "%-d %b",
+                    "labelOverlap": True,
+                    "labelAlign": "left",
+                    "tickCount": 4,
+                    "grid": False,
+                }
+                if not narrow
+                # The first and last weeks only, flush with the plot's ends.
+                else {
+                    "labelExpr": "utcFormat(datum.value, '%-d %b')",
+                    "values": _first_last_weeks(points),
+                    "labelFlush": True,
+                    "labelOverlap": False,
+                    "grid": False,
+                }
+            ),
         }
-        lines = {
+        you_label = {
+            # Narrow: "You" over the worker's last point.
+            "transform": [{"filter": "datum.who == 'You' && datum.t == datum.last_t"}],
+            "mark": {
+                "type": "text",
+                "align": "right",
+                "baseline": "bottom",
+                "dy": -10,
+                "fontWeight": 600,
+                "color": theme.INDIGO,
+            },
+            "encoding": {"x": x, "y": y, "text": {"value": "You"}},
+        }
+        lines_view = {
             "data": {"name": "history"},
             "transform": [
                 {"filter": f"datum.i == {i}"},
                 {"joinaggregate": [{"op": "max", "field": "t", "as": "last_t"}], "groupby": ["who"]},
             ],
-            "width": INNER,
-            "height": _TREND_HEIGHT,
+            "width": width,
+            "height": height,
             "layer": [
                 {
                     "transform": [{"filter": "datum.who != 'You'"}],
@@ -475,15 +613,10 @@ def trend(datasets: dict, *, first_name: str | None = None, title: str = "Week b
                 },
             ],
         }
-        heading = {
-            "data": {"name": "worker_topics"},
-            "transform": [{"filter": f"datum.i == {i}"}],
-            "width": INNER,
-            "height": label_height,
-            "layer": [label],
-        }
-        blocks.append({"spacing": 6, "vconcat": [heading, lines]})
-    return {"title": _title(title, first_name), "spacing": _BLOCK_GAP, "vconcat": blocks}
+        if narrow:
+            lines_view["layer"].append(you_label)
+        blocks.append({"spacing": 6, "vconcat": [_heading(i, lines, width, heading_height), lines_view]})
+    return {"title": _title(title, first_name), "spacing": GAP, "hconcat": blocks}
 
 
 @dataclass(frozen=True)

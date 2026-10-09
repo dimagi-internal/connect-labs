@@ -268,7 +268,9 @@ def png(chart: dict) -> bytes:
     """The chart's PNG, cached by content (``chart_id``)."""
     from django.core.cache import cache
 
-    key = f"coach-chart-png:v1:{chart_id(chart)}"
+    # v2: every picture is drawn landscape (#2413); a chart frozen before then is
+    # redrawn rather than served from a portrait cached under v1.
+    key = f"coach-chart-png:v2:{chart_id(chart)}"
     try:
         hit = cache.get(key)
     except Exception:  # noqa: BLE001 -- a cache outage only costs a redraw
