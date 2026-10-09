@@ -427,6 +427,19 @@ function WorkflowUI({
     return 'Unknown';
   }
 
+  // Human-readable version of home_gps_mismatch_reason's 4 option values,
+  // for the Table tab column and the Failed Verification Analysis tab's
+  // breakdown chart.
+  function gpsMismatchReasonLabel(value) {
+    if (value === 'previously_saved_location_was_incorrect')
+      return 'Previously saved location was incorrect';
+    if (value === 'mother_has_moved_to_a_new_home')
+      return 'Mother has moved to a new home';
+    if (value === 'app_or_gps_issue') return 'App or GPS issue';
+    if (value === 'other_specify') return 'Other (specify)';
+    return value;
+  }
+
   // Shared list of the 6 per-method outcomes -- drives both the "Final
   // verification method(s)" column and the summary chart, so they can never
   // drift apart on what counts as a method.
@@ -491,6 +504,10 @@ function WorkflowUI({
     { key: 'where_is_the_visit_being_conducted', label: 'GPS location' },
     { key: 'gps_outcome', label: 'GPS outcome' },
     { key: 'gps_distance_meters', label: 'Distance from previous point (m)' },
+    {
+      key: 'home_gps_mismatch_reason',
+      label: 'GPS mismatch reason (home)',
+    },
     { key: 'qr_outcome', label: 'QR outcome' },
     { key: 'signature_outcome', label: 'Signature outcome' },
     { key: 'mother_questions_outcome', label: 'Mother questions outcome' },
@@ -512,6 +529,10 @@ function WorkflowUI({
       return formatVisitDateTime(row.visit_datetime);
     if (key === 'gps_outcome') return gpsOutcome(row);
     if (key === 'gps_distance_meters') return gpsDistanceMeters(row);
+    if (key === 'home_gps_mismatch_reason')
+      return row.home_gps_mismatch_reason
+        ? gpsMismatchReasonLabel(row.home_gps_mismatch_reason)
+        : 'NA';
     if (key === 'qr_outcome') return qrOutcome(row);
     if (key === 'signature_outcome') return signatureOutcome(row);
     if (key === 'mother_questions_outcome') return motherQuestionsOutcome(row);
@@ -1039,6 +1060,46 @@ function WorkflowUI({
         failedAnalysisDisplayRows,
         'gps_distance_from_health_facility_meters',
       );
+    },
+    [failedAnalysisDisplayRows],
+  );
+
+  // --- Home GPS mismatch reasons (Failed Verification Analysis) ----------
+  // home_gps_mismatch_reason is only populated by CommCare on exactly the
+  // rows this breaks down -- a home-location visit where the GPS check
+  // failed -- so presence of a value IS the filter, no need to re-derive
+  // "home + fail" from gpsOutcome()/where_is_the_visit_being_conducted.
+  // Known options first in a stable order, then any unrecognized value
+  // (a new option added to the form later) appended rather than dropped.
+  var HOME_GPS_MISMATCH_REASON_ORDER = [
+    'previously_saved_location_was_incorrect',
+    'mother_has_moved_to_a_new_home',
+    'app_or_gps_issue',
+    'other_specify',
+  ];
+  var homeGpsMismatchReasonStats = React.useMemo(
+    function () {
+      var counts = {};
+      failedAnalysisDisplayRows.forEach(function (row) {
+        var v = row.home_gps_mismatch_reason;
+        if (!v) return;
+        counts[v] = (counts[v] || 0) + 1;
+      });
+      var result = HOME_GPS_MISMATCH_REASON_ORDER.filter(function (v) {
+        return counts[v];
+      }).map(function (v) {
+        return { value: v, label: gpsMismatchReasonLabel(v), count: counts[v] };
+      });
+      Object.keys(counts).forEach(function (v) {
+        if (HOME_GPS_MISMATCH_REASON_ORDER.indexOf(v) === -1) {
+          result.push({
+            value: v,
+            label: gpsMismatchReasonLabel(v),
+            count: counts[v],
+          });
+        }
+      });
+      return result;
     },
     [failedAnalysisDisplayRows],
   );
@@ -1775,6 +1836,12 @@ function WorkflowUI({
             "gpsDistanceMeters(row) -- picks gps_distance_from_home_meters or gps_distance_from_health_facility_meters by where_is_the_visit_being_conducted (same fields as the GPS Verification scatter plot's X axis on the Failed Verification Analysis tab).",
         },
         {
+          name: 'GPS mismatch reason (home)',
+          def: "The FLW's own single-select explanation for why a HOME GPS check failed -- NA otherwise. CommCare itself only asks this question for home-location visits where the GPS check failed and a prior point existed, so a non-blank value here already implies that. No equivalent question exists for health-facility mismatches.",
+          field:
+            'home_gps_mismatch_reason (form.gps_verification.location_check.select_the_reason_that_may_have_caused_the_home_location_mismatch), rendered via gpsMismatchReasonLabel() for plain words rather than the raw CommCare value.',
+        },
+        {
           name: 'QR outcome',
           def: "The FLW's direct answer when a value is present. If blank AND the FLW separately indicated the mother didn't have her QR code photo available at this visit, shown as 'Not available' rather than NA (it wasn't skipped -- it genuinely couldn't be done). NA otherwise.",
           field:
@@ -1908,6 +1975,12 @@ function WorkflowUI({
           def: 'Hovering a dot shows the distance, accuracy, and which FLW submitted that visit.',
           field:
             'Each scatter point carries username alongside {x, y}; a custom Chart.js tooltip.callbacks.label reads it back out. Same username field as the FLW ID column.',
+        },
+        {
+          name: 'Home GPS mismatch reasons -- chart',
+          def: 'One bar per answer option the FLW could pick for why a home GPS check mismatched (Previously saved location was incorrect / Mother has moved to a new home / App or GPS issue / Other (specify)), counting how many failed home visits gave that reason. Only shown for home checks -- the form has no equivalent reason question for health-facility mismatches.',
+          field:
+            "homeGpsMismatchReasonStats -- failedAnalysisDisplayRows grouped by home_gps_mismatch_reason (presence of a value already implies 'home location, GPS check failed, prior point existed', per the form's own relevant condition on that question), counted per the 4 known option values in a stable order, with any unrecognized value appended rather than dropped.",
         },
         {
           name: 'Mother question fail rate -- chart',
@@ -2250,6 +2323,55 @@ function WorkflowUI({
       };
     },
     [facilityGpsScatter, activeTab],
+  );
+
+  // --- Home GPS mismatch reasons chart (Failed Verification Analysis) ----
+  var homeGpsMismatchReasonChartRef = React.useRef(null);
+  var homeGpsMismatchReasonChartInstance = React.useRef(null);
+
+  React.useEffect(
+    function () {
+      if (activeTab !== 'failed_analysis') return;
+      if (!homeGpsMismatchReasonChartRef.current || !window.Chart) return;
+      if (homeGpsMismatchReasonChartInstance.current)
+        homeGpsMismatchReasonChartInstance.current.destroy();
+
+      homeGpsMismatchReasonChartInstance.current = new window.Chart(
+        homeGpsMismatchReasonChartRef.current,
+        {
+          type: 'bar',
+          data: {
+            labels: homeGpsMismatchReasonStats.map(function (s) {
+              return s.label;
+            }),
+            datasets: [
+              {
+                label: 'Visits',
+                data: homeGpsMismatchReasonStats.map(function (s) {
+                  return s.count;
+                }),
+                backgroundColor: '#3b82f6',
+              },
+            ],
+          },
+          options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: { beginAtZero: true, ticks: { precision: 0 } },
+              y: {},
+            },
+            plugins: { legend: { display: false } },
+          },
+        },
+      );
+      return function () {
+        if (homeGpsMismatchReasonChartInstance.current)
+          homeGpsMismatchReasonChartInstance.current.destroy();
+      };
+    },
+    [homeGpsMismatchReasonStats, activeTab],
   );
 
   // --- Mother question fail rate chart (Failed Verification Analysis) ----
@@ -2846,8 +2968,11 @@ function WorkflowUI({
                 health facility) -- one dot per visit, X is how far the visit's
                 GPS was from that point, Y is the GPS accuracy of the reading.
                 Pass is ≤200m, Fail is &gt;200m -- that's the form's own
-                threshold. Respects the domain and eligibility filters above,
-                plus this tab's own FLW filter if set.
+                threshold. "Home GPS mismatch reasons" breaks down the FLW's own
+                explanation for why a home GPS check failed -- the form only
+                asks this for home location mismatches, not health facility
+                ones. Respects the domain and eligibility filters above, plus
+                this tab's own FLW filter if set.
               </p>
             </div>
 
@@ -2889,6 +3014,33 @@ function WorkflowUI({
                     <div style={{ height: '320px' }}>
                       <canvas ref={facilityGpsChartRef}></canvas>
                     </div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                    <h4 className="mb-1 text-sm font-medium text-gray-800">
+                      Home GPS mismatch reasons
+                    </h4>
+                    <p className="mb-2 text-xs text-gray-500">
+                      {homeGpsMismatchReasonStats.length > 0
+                        ? 'What the FLW said caused the mismatch, for home GPS checks that failed. n=' +
+                          homeGpsMismatchReasonStats.reduce(function (sum, s) {
+                            return sum + s.count;
+                          }, 0) +
+                          '.'
+                        : 'No home GPS mismatch reasons recorded in the current filter.'}
+                    </p>
+                    {homeGpsMismatchReasonStats.length > 0 && (
+                      <div
+                        style={{
+                          height:
+                            Math.max(
+                              120,
+                              homeGpsMismatchReasonStats.length * 40,
+                            ) + 'px',
+                        }}
+                      >
+                        <canvas ref={homeGpsMismatchReasonChartRef}></canvas>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
