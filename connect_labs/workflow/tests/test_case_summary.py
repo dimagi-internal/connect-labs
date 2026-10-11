@@ -193,3 +193,17 @@ def test_it_draws_at_1200_by_900(panels):
     ds = _build(panels)
     png = render.render_png(summary.spec({}), ds)
     assert Image.open(io.BytesIO(png)).size == (1200, 900)
+
+
+def test_a_short_late_stretch_still_says_late_and_when_the_visit_was_due():
+    """Five days overdue: the late stretch is too narrow for its words, and the due
+    window sits close to today -- both are still drawn, left of today's tick, without
+    overlapping "today"."""
+    row = {"next_visit_start": "2026-10-02", "next_visit_end": "2026-10-06", "next_visit_overdue_days": 5}
+    visits = [{"visit_date": d} for d in ("2026-09-08", "2026-09-22", "2026-09-29")]
+    rows = _build([VISITS_PANEL], row=row, visits=visits, as_of="2026-10-11")["case_text"]
+    by_text = {r["text"]: r for r in rows if r["kind"].startswith("text")}
+    assert "late visit" in by_text and "due 2–6 Oct" in by_text and "today" in by_text
+    due, today = by_text["due 2–6 Oct"], by_text["today"]
+    half = lambda t, w=400: summary._width(t, summary.AXIS_SIZE, w) * summary.S / 2  # noqa: E731
+    assert due["x"] + half("due 2–6 Oct") <= today["x"] - half("today", 600)
