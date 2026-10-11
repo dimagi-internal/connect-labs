@@ -895,6 +895,7 @@ def picture_source(user, wda, run, definition, roster: dict[str, dict], briefing
                 series=cases.series(opp),
                 case_name=cases.case_name(opp, row),
                 others=others,
+                as_of=getattr(cases, "as_of", None),
             )
         except datasets.ChartError as e:
             raise ActionError("invalid", f"picture of case {item[CASE]['id']}: {e.public_message}") from e

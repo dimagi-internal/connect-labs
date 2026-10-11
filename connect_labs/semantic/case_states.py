@@ -72,8 +72,9 @@ PICTURE_TYPES: dict[str, frozenset[str]] = {
 #: The panels a ``case_summary`` picture may hold, and the keys each takes.
 PANEL_KINDS: dict[str, frozenset[str]] = {
     # One case_series as a line: optionally against a reference band from its first
-    # reading, a floor (a danger line), a ringed step, a star at the latest reading.
-    "series": frozenset({"series", "title", "reference", "floor", "highlight", "star", "note"}),
+    # reading, a floor or target line (its value a number or one of the registry's
+    # constants), a ringed step. `status` words the panel's pill ({bad, good}).
+    "series": frozenset({"series", "title", "reference", "floor", "highlight", "star", "note", "status"}),
     # One case_series as bars, one per visit (the latest few).
     "bars": frozenset({"series", "title", "last"}),
     # The visits as a timeline: on time or late, the danger-sign check, a referral, the
@@ -91,6 +92,7 @@ PANEL_KINDS: dict[str, frozenset[str]] = {
             "due_to",
             "overdue_days",
             "vitals",
+            "status",
         }
     ),
     # A titled numbered list: a checklist, what to do, next steps.
@@ -160,13 +162,15 @@ def series_names(props_doc: dict[str, Any]) -> set[str]:
     return {s["name"] for s in props_doc.get("case_series") or [] if isinstance(s, dict) and s.get("name")}
 
 
-def _picture_problems(pic: Any, label: str, columns: frozenset[str], series: set[str]) -> list[str]:
+def _picture_problems(
+    pic: Any, label: str, columns: frozenset[str], series: set[str], constants: dict | None = None
+) -> list[str]:
     if not isinstance(pic, dict) or pic.get("type") not in PICTURE_TYPES:
         return [f"{label}: must be a mapping whose type is one of {', '.join(PICTURE_TYPES)}"]
     allowed = PICTURE_TYPES[pic["type"]] | {"type"}
     problems = [f"{label}.{k}: not a key of a {pic['type']} picture" for k in pic if k not in allowed]
     if pic["type"] == "case_summary":
-        return problems + _summary_problems(pic, label, columns, series)
+        return problems + _summary_problems(pic, label, columns, series, constants or {})
     for key in ("series",):
         if key in pic and pic[key] not in series:
             problems.append(f"{label}.{key}: {pic[key]!r} is not one of this registry's case_series")
@@ -210,6 +214,15 @@ def _picture_problems(pic: Any, label: str, columns: frozenset[str], series: set
     return problems
 
 
+def _status_problems(status: Any, label: str) -> list[str]:
+    """A panel's pill wording: ``{bad, good}``, each optional text."""
+    if status is None:
+        return []
+    if not isinstance(status, dict) or any(k not in ("bad", "good") for k in status):
+        return [f"{label}: must be a mapping of bad and good (the pill's words)"]
+    return [p for k in status for p in _text_problem(status[k], f"{label}.{k}", 40)]
+
+
 def _reference_problems(ref: Any, label: str) -> list[str]:
     if not isinstance(ref, dict):
         return [f"{label}: must be a mapping of low, high (per 1000 per day) and label"]
@@ -225,7 +238,9 @@ def _number(v: Any) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
-def _summary_problems(pic: dict, label: str, columns: frozenset[str], series: set[str]) -> list[str]:
+def _summary_problems(
+    pic: dict, label: str, columns: frozenset[str], series: set[str], constants: dict | None = None
+) -> list[str]:
     """A ``case_summary`` picture: its title, banner chips and panels."""
     problems = _template_problems(pic.get("title"), f"{label}.title", columns, 300)
     banner = pic.get("banner", [])
@@ -265,8 +280,14 @@ def _summary_problems(pic: dict, label: str, columns: frozenset[str], series: se
             if "reference" in panel:
                 problems += _reference_problems(panel["reference"], f"{where}.reference")
             floor = panel.get("floor")
-            if floor is not None and (not isinstance(floor, dict) or not _number(floor.get("value"))):
-                problems.append(f"{where}.floor: must be a mapping of value (a number) and label")
+            value = floor.get("value") if isinstance(floor, dict) else None
+            if isinstance(value, str) and _number((constants or {}).get(value)):
+                value = constants[value]
+            if floor is not None and (not isinstance(floor, dict) or not _number(value)):
+                problems.append(
+                    f"{where}.floor: must be a mapping of value (a number, or the name of one of the "
+                    "registry's constants) and label"
+                )
             elif floor is not None:
                 problems += _text_problem(floor.get("label"), f"{where}.floor.label", 40)
             hl = panel.get("highlight")
@@ -282,6 +303,7 @@ def _summary_problems(pic: dict, label: str, columns: frozenset[str], series: se
                 problems.append(f"{where}.star: must be true or false")
             if "note" in panel:
                 problems += _template_problems(panel["note"], f"{where}.note", columns, 80)
+            problems += _status_problems(panel.get("status"), f"{where}.status")
         elif kind == "bars":
             problems += series_key(panel, "series", where)
             last = panel.get("last", 3)
@@ -307,6 +329,7 @@ def _summary_problems(pic: dict, label: str, columns: frozenset[str], series: se
                     problems += series_key(v, "series", w)
                     problems += _text_problem(v.get("label"), f"{w}.label", 12)
                     problems += [f"{w}.{k}: must be a number" for k in ("low", "high") if k in v and not _number(v[k])]
+            problems += _status_problems(panel.get("status"), f"{where}.status")
         elif kind == "list":
             items = panel.get("items")
             if not isinstance(items, list) or not 1 <= len(items) <= 6:
@@ -359,6 +382,7 @@ def case_state_problems(props_doc: dict[str, Any], columns: frozenset[str]) -> l
     if props_doc.get("case_name") is not None:
         problems += _template_problems(props_doc["case_name"], "case_name", columns, 120)
     series = series_names(props_doc)
+    constants = props_doc.get("constants") if isinstance(props_doc.get("constants"), dict) else {}
     priorities: dict[int, str] = {}
     for p in _properties(props_doc):
         meta = p.get("case_state")
@@ -396,7 +420,7 @@ def case_state_problems(props_doc: dict[str, Any], columns: frozenset[str]) -> l
         if "facts" in meta:
             problems += _template_problems(meta["facts"], f"{label}.facts", columns)
         if "picture" in meta:
-            problems += _picture_problems(meta["picture"], f"{label}.picture", columns, series)
+            problems += _picture_problems(meta["picture"], f"{label}.picture", columns, series, constants)
         coach = meta.get("coach")
         if coach is not None:
             if not isinstance(coach, dict):
@@ -485,11 +509,25 @@ def catalog(props_doc: dict[str, Any]) -> list[dict]:
                 "date": meta.get("date"),
                 "evidence": list(meta.get("evidence") or []),
                 "facts": meta.get("facts") or "",
-                "picture": dict(meta.get("picture") or {}),
+                "picture": _with_constants(meta.get("picture") or {}, props_doc.get("constants")),
                 "coach": dict(meta.get("coach") or {}),
             }
         )
     out.sort(key=lambda s: (s["priority"] if isinstance(s["priority"], int) else 999, s["name"]))
+    return out
+
+
+def _with_constants(pic: dict, constants: Any) -> dict:
+    """``pic`` with each panel's ``floor.value`` that names one of the registry's
+    constants replaced by the constant's value (``S2S_TARGET_HOURS`` -> 8)."""
+    import copy
+
+    out = copy.deepcopy(dict(pic))
+    constants = constants if isinstance(constants, dict) else {}
+    for panel in out.get("panels") or []:
+        floor = panel.get("floor") if isinstance(panel, dict) else None
+        if isinstance(floor, dict) and isinstance(floor.get("value"), str) and floor["value"] in constants:
+            floor["value"] = constants[floor["value"]]
     return out
 
 
