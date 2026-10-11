@@ -1203,6 +1203,7 @@ case_series:
       format: grams,
       line: 'weight {value} g',
       missing: 'weight not recorded',
+      seed: true,
     }
   - {
       name: skin_to_skin,

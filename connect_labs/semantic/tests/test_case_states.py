@@ -257,3 +257,18 @@ def test_a_visit_column_may_not_alias_a_column_of_its_own_name(kmc):
     props, inds = copy.deepcopy(kmc[0]), kmc[1]
     props["visit_columns"].append({"name": "visit_timeliness", "optional": True, "column": "visit_timeliness"})
     assert any("may not have the name of the column it reads" in p for p in _problems(props, inds))
+
+
+def test_a_seeded_series_needs_the_weight_series_seed_reading():
+    """connect-labs#2412: `seed: true` reads the weight series' seed reading, so a
+    registry that declares none cannot claim it, and the flag is a bool."""
+    from connect_labs.semantic.case_states import case_series_problems
+
+    series = [{"name": "weight", "column": "visit_weight_g", "label": "Weight", "seed": True}]
+    assert case_series_problems({"case_series": series}) == [
+        "case_series[0].seed: this registry's weight_series declares no seed_reading"
+    ]
+    seeded = {"case_series": series, "weight_series": {"seed_reading": {"day": "reg_date", "value": "w0"}}}
+    assert case_series_problems(seeded) == []
+    series[0]["seed"] = "yes"
+    assert case_series_problems(seeded)[0].startswith("case_series[0].seed: must be true or false")
