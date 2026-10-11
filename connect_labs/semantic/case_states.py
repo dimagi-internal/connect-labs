@@ -448,6 +448,14 @@ def case_series_problems(props_doc: dict[str, Any]) -> list[str]:
         for k in ("missing", "unit", "empty"):
             if k in s:
                 problems += _text_problem(s[k], f"{label}.{k}", 80)
+        if "seed" in s and not isinstance(s["seed"], bool):
+            problems.append(
+                f"{label}.seed: must be true or false (true: the weight series' seed reading fills its day)"
+            )
+        elif s.get("seed") is True and not (
+            isinstance(props_doc.get("weight_series"), dict) and props_doc["weight_series"].get("seed_reading")
+        ):
+            problems.append(f"{label}.seed: this registry's weight_series declares no seed_reading")
         if "brief" in s and not isinstance(s["brief"], bool):
             problems.append(f"{label}.brief: must be true or false (false: drawn, not in the briefing's visit lines)")
     return problems
@@ -743,13 +751,8 @@ def case_visits(
     """One case's visits up to ``as_of`` (ISO date; None = today), oldest first: the
     visit date and each ``case_series`` column, read through Layer 1 -- the same
     extraction its indicators and states were computed from."""
-    from django.db import connection
-
     from connect_labs.semantic.layer1 import build_visit_sql
-    from connect_labs.semantic.model import resolve_model
 
-    series = case_series(props_doc)
-    model = resolve_model(props_doc)
     visit_sql = build_visit_sql(
         pipeline_config,
         [int(opportunity_id)],
@@ -757,6 +760,29 @@ def case_visits(
         visit_filter={"opportunity_id": int(opportunity_id)},
         props_doc=props_doc,
     )
+    return case_visits_from_sql(visit_sql, props_doc, entity_id=entity_id, as_of=as_of)
+
+
+def case_visits_from_sql(
+    visit_sql: str, props_doc: dict[str, Any], *, entity_id: str, as_of: str | None
+) -> list[dict]:
+    """``case_visits`` over a Layer-1 statement already built.
+
+    A series declared ``seed: true`` reads what the registry's weight series reads on
+    the seed reading's day: a visit that day with no value of its own shows the seed
+    value (the enrolment weight on the registration day), unless another visit that
+    day measured one -- a measured reading wins, as it does in the series. Without
+    it the facts (read from the series) and the visit lines (read from the visits)
+    disagree whenever the registration form is not a row of its own: a pending
+    registration the pipeline filters out, a follow-up filed the same day
+    (connect-labs#2412).
+    """
+    from django.db import connection
+
+    from connect_labs.semantic.model import resolve_model
+
+    series = case_series(props_doc)
+    model = resolve_model(props_doc)
     cols = ", ".join(f"v.{s['column']} AS {s['name']}" for s in series)
     cut = "AND v.visit_date < (%s::date + 1)" if as_of else ""
     sql = (
@@ -767,4 +793,37 @@ def case_visits(
     with connection.cursor() as cursor:
         cursor.execute(sql.replace("%", "%%").replace("%%s", "%s"), params)
         names = [c[0] for c in cursor.description]
-        return [dict(zip(names, row)) for row in cursor.fetchall()]
+        rows = [dict(zip(names, row)) for row in cursor.fetchall()]
+    seeded = [s["name"] for s in series if s.get("seed") is True]
+    if seeded and rows:
+        _fill_seed_reading(rows, seeded, visit_sql, props_doc, model, entity_id=entity_id, as_of=as_of)
+    return rows
+
+
+def _fill_seed_reading(rows, names, visit_sql, props_doc, model, *, entity_id, as_of) -> None:
+    from django.db import connection
+
+    from connect_labs.semantic.compiler import seed_reading_sql
+
+    as_of_iso = str(as_of)[:10] if as_of else None
+    seed_sql = seed_reading_sql(props_doc, as_of_sql=f"DATE '{as_of_iso}'" if as_of_iso else "CURRENT_DATE")
+    if not seed_sql:
+        return
+    cut = "AND v.visit_date < (%s::date + 1)" if as_of_iso else ""
+    sql = (
+        f"WITH visits AS (SELECT v.* FROM ({visit_sql}) v WHERE v.{model.key}::text = %s {cut}) "
+        f"SELECT s.day, s.{model.value_column} FROM ({seed_sql}) s"
+    )
+    params: list[Any] = [str(entity_id)] + ([as_of_iso] if as_of_iso else [])
+    with connection.cursor() as cursor:
+        cursor.execute(sql.replace("%", "%%").replace("%%s", "%s"), params)
+        found = cursor.fetchone()
+    if not found or found[0] is None or found[1] is None:
+        return
+    day, value = _as_date(found[0]), found[1]
+    on_day = [r for r in rows if _as_date(r.get("visit_date")) == day]
+    for name in names:
+        if any(r.get(name) not in (None, "") for r in on_day):
+            continue
+        for r in on_day:
+            r[name] = value

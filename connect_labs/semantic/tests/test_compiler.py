@@ -460,6 +460,8 @@ def test_a_registry_without_a_seed_reading_compiles_as_before(props_doc, registr
 
     plain = copy.deepcopy(props_doc)
     plain["weight_series"].pop("seed_reading")
+    for s in plain.get("case_series") or []:
+        s.pop("seed", None)  # a series can only be seeded by a seed reading
     sql = compile_indicator_sql(plain, registry, "SELECT 1")
     readings = sql[sql.index("weight_readings AS") : sql.index("weight_days AS")]
     assert "UNION ALL" not in readings

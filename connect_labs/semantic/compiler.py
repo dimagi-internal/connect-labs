@@ -1178,9 +1178,30 @@ def _seed_reading_sql(ws: dict[str, Any], C, model: RegistryModel) -> str:
     can read registration fields. A registry without `seed_reading` compiles to the
     same SQL it always did: every reading is is_seed = FALSE.
     """
-    seed = ws.get("seed_reading")
-    if not seed:
+    if not ws.get("seed_reading"):
         return ""
+    return "\n    UNION ALL" + _seed_select_sql(ws, C, model)
+
+
+def seed_reading_sql(props_doc: dict[str, Any], *, as_of_sql: str = "CURRENT_DATE") -> str | None:
+    """The registry's seed reading as one SELECT over a relation named ``visits``
+    (columns ``{row_id}, day, {value_column}, is_seed``), or None when it declares none.
+
+    The weight series' own seed, compiled from the same declaration, so a reader of
+    one case's visits (``case_states.case_visits``) shows the weight the series --
+    and every fact read from it -- puts on the registration day (connect-labs#2412).
+    ``as_of_sql`` is the SQL the ``:as_of`` constant stands for.
+    """
+    ws = props_doc.get("weight_series") or {}
+    if not isinstance(ws, dict) or not ws.get("seed_reading"):
+        return None
+    consts = dict(props_doc.get("constants") or {})
+    consts["as_of"] = as_of_sql
+    return _seed_select_sql(ws, lambda sql: _subst_constants(sql, consts), resolve_model(props_doc))
+
+
+def _seed_select_sql(ws: dict[str, Any], C, model: RegistryModel) -> str:
+    seed = ws["seed_reading"]
     rid, key, vcol = model.row_id, model.key, model.value_column
     day, value = seed["day"], seed["value"]
     exclude = seed.get("exclude") or "FALSE"
@@ -1188,7 +1209,6 @@ def _seed_reading_sql(ws: dict[str, Any], C, model: RegistryModel) -> str:
     extra = sorted(c for c in refs if c not in _SQL_WORDS and c not in {day, value, vcol})
     extra_cols = "".join(f",\n               MIN({c}) AS {c}" for c in extra)
     return f"""
-    UNION ALL
     SELECT {rid}, day, {vcol}, TRUE AS is_seed
     FROM (
         SELECT opportunity_id || '|' || {key} AS {rid},
