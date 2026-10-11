@@ -278,7 +278,7 @@ properties:
           - { kind: list, title: 'What to do', tone: sunset, items: ['See the baby today', ...] }
           - { kind: visits, timeliness: timeliness, on_time: 'On-time', danger: danger_check, danger_yes: 'yes',
               due_from: next_visit_start, due_to: next_visit_end, overdue_days: next_visit_overdue_days }
-          - { kind: series, series: feeds, title: 'Daily feeds', floor: { value: 12, label: 'danger < 12' } }
+          - { kind: series, series: feeds, title: 'Feeds in 24 h', floor: { value: 12, label: 'min' } }
       coach:
         approach: '...how a coach should talk about it...'
         next_steps: '...the step to agree...'
@@ -295,6 +295,12 @@ properties:
   `series`, `bars`, `visits`, `list`, `signs`, `facts` -- `case_states.PANEL_KINDS`), and the single-chart
   `series_vs_reference`, `series_highlight_step`, `series_with_bars`, `sign_card`. They read `case_series` and the
   row; no picture is programme code. A case summary is drawn 600 x 450 (4:3); the rest 600 x 400 (3:2).
+  A case summary's panels are drawn in the order listed (top row first), each with a **status pill**
+  worked out from its own config: a `reference` band -- behind when the measured rate is under its `low`
+  ("Behind · 4.8 g/kg/day"); a `floor` -- below target when the last reading is under it; `visits` -- overdue
+  when the run date is past the due window ("23 days overdue"), else "On schedule". `status: {bad, good}`
+  rewords it (`{rate}`, `{unit}`, `{days}` are filled). A `floor.value` may name one of the registry's
+  `constants` (`floor: { value: S2S_TARGET_HOURS, label: 'target' }`). `bars` panels are drawn as lines.
 - **Optional visit columns** read NULL until the pipeline carries their field; `null_as: text|numeric|date|boolean`
   says what type that NULL is (default numeric), so a text column compared with `''` still compiles.
 - **Validation** refuses a case state that is not `bool`, a key that is not a `case_state` key, a column a template
