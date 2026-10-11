@@ -153,6 +153,24 @@ VISITS = [
         next_visit_start="2026-06-12",
         next_visit_end="2026-06-16",
     ),
+    # Faltering, its registration visit PENDING (the live Beneficiary 694 of 10016 on
+    # 2026-10-11, connect-labs#2412). The pipeline keeps approved visits only, so the
+    # registration form is not a row; an approved follow-up on the registration day
+    # weighs nothing, and every visit repeats reg_date and the enrolment weight as case
+    # properties. The weight series seeds 2,000 g on that day from them.
+    *[
+        V(
+            "fp",
+            "Beneficiary 695",
+            day,
+            weight=w,
+            hours=h,
+            reg_weight=2000,
+            user="flw_006",
+            reg_date="2026-05-19 00:00",
+        )
+        for day, w, h in (("2026-05-19", None, None), ("2026-06-02", 2200, 16), ("2026-06-09", 2200, 8))
+    ],
     # Danger sign, not referred: pus on 5 Jun, referred: no. Believable weights.
     V("dg", "Beneficiary 410", "2026-05-21", reg_weight=1500, form=REG, referred="yes", user="flw_015"),
     V("dg", "Beneficiary 410", "2026-05-28", weight=1600, referred="no", user="flw_015"),
@@ -278,3 +296,27 @@ def test_every_case_series_reads_unambiguously_from_the_visit_rows(evaluated):
     with connection.cursor() as cur:
         cur.execute(f"SELECT v.visit_date, {cols} FROM ({run.visit_sql}) v LIMIT 1")
         assert cur.fetchall()
+
+
+def test_the_visit_series_shows_the_weight_the_weight_series_seeds(evaluated):
+    """connect-labs#2412. The case's facts read the weight series, which seeds the
+    enrolment weight on the registration day; the visit series (the briefing's visit
+    lines, every case picture) must show that same weight on that day, not "weight not
+    recorded" beside a fact that quotes it."""
+    props, run = evaluated
+    cases, _rows = run()
+    assert _state(props, cases["fp"]) == (
+        "case_state_faltering",
+        "Weight went from 2,000 g on 19 May to 2,200 g on 9 Jun, about 4.8 g/kg/day; healthy growth is "
+        "15-20 g/kg/day. Skin-to-skin fell from 16 h on 2 Jun to 8 h on 9 Jun.",
+    )
+    visits = cs.case_visits_from_sql(run.visit_sql, props, entity_id="fp", as_of="2026-06-10")
+    assert [(str(v["visit_date"])[:10], v["weight"]) for v in visits] == [
+        ("2026-05-19", 2000),
+        ("2026-06-02", 2200),
+        ("2026-06-09", 2200),
+    ]
+    assert cs.visit_line(cs.case_series(props), visits[0]).startswith("- 19 May 2026: weight 2,000 g;")
+    # A measured weighing on that day wins over the seed, as it does in the series.
+    sg = cs.case_visits_from_sql(run.visit_sql, props, entity_id="sg", as_of="2026-06-10")
+    assert sg[0]["weight"] == 1350
