@@ -188,7 +188,7 @@ def _num(v):
 
 
 def build_datasets(
-    state: dict, row: dict, visits: list[dict], series: list[dict], case_name: str = ""
+    state: dict, row: dict, visits: list[dict], series: list[dict], case_name: str = "", as_of=None
 ) -> tuple[dict, dict]:
     """``(datasets, meta)`` for the case state's picture; meta is layout the spec needs."""
     pic = state.get("picture") or {}
@@ -196,7 +196,7 @@ def build_datasets(
     if kind == "case_summary":
         from connect_labs.workflow.coach_charts import case_summary
 
-        return case_summary.build(state, row, visits, series, case_name)
+        return case_summary.build(state, row, visits, series, case_name, as_of=as_of)
     spec = _series_spec(series, pic.get("series"))
     meta: dict = {
         "kind": kind,
@@ -399,7 +399,7 @@ def _summary_caption(pic: dict, series: list[dict]) -> str:
         kind = panel.get("kind")
         if kind in ("series", "bars"):
             label = (_series_spec(series, panel.get("series")).get("label") or "readings").lower()
-            parts.append(f"its {label}" + (" against the danger line" if panel.get("floor") else ""))
+            parts.append(f"its {label}" + (" against its target line" if panel.get("floor") else ""))
         elif kind == "list":
             title = str(panel.get("title") or "").strip()
             parts.append(title.lower() if title and not any(c.isdigit() for c in title) else "what to do")
@@ -429,8 +429,9 @@ def build_case_chart(
     series: list[dict],
     case_name: str = "",
     others: list[tuple[str, str]] | None = None,
+    as_of=None,
 ) -> dict:
-    """The frozen chart of ``row`` in ``state``: ``{v, type, params, spec, datasets,
+    """The frozen chart of ``row`` in ``state`` (as of ``as_of``, the run date): ``{v, type, params, spec, datasets,
     caption, alt, notes}``. Raises ``ChartError`` when it cannot be drawn."""
     from connect_labs.workflow.coach_charts import chart as charts
     from connect_labs.workflow.coach_charts import render
@@ -439,7 +440,7 @@ def build_case_chart(
     kind = pic.get("type")
     if kind not in case_types.CASE_TYPES:
         raise ChartError("no_picture", f"case state {state.get('name')} names no picture type Labs draws")
-    ds, meta = build_datasets(state, row, visits, series, case_name)
+    ds, meta = build_datasets(state, row, visits, series, case_name, as_of=as_of)
     if kind not in ("sign_card", "case_summary") and not ds["case_series"]:
         raise ChartError("no_readings", "this case has no readings to draw")
     spec = case_types.CASE_TYPES[kind](meta)

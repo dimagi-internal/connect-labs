@@ -218,6 +218,7 @@ constants:
   THRIVING_MIN_GAP_DAYS: 3 # (shorter intervals are scale noise, not growth)
   THRIVING_MIN_RISE: 0.2 # ... and the latest weight 20% above the first
   FALTERING_MAX_GAIN: 5 # under 5 g/kg/day over the last two intervals
+  S2S_TARGET_HOURS: 8 # skin-to-skin hours a day: the programme owner's target (the case summary's target line)
 
 # ---------------------------------------------------------------------------
 # Per-baby aggregates over the visit series. These replace the JS `series` map
@@ -953,8 +954,8 @@ properties:
           - &feeds_panel
             kind: series
             series: feeds
-            title: 'Daily feeds'
-            floor: { value: 12, label: 'danger < 12' }
+            title: 'Feeds in 24 h'
+            floor: { value: 12, label: 'min' }
             note:
               - when: [feeding_method, cup_feeding_date]
                 text: '{feeding_method|words}; cup feeding {cup_feeding_date|date}'
@@ -1107,16 +1108,17 @@ properties:
         title: 'Weight has stalled'
         banner: *case_banner
         panels:
+          # Top row: the problems -- weight, then the visits.
           - kind: series
             series: weight
             title: 'Weight'
             reference: { low: 15, high: 20, label: 'healthy growth' }
-          - kind: bars
-            series: skin_to_skin
-            title: 'Skin-to-skin hours'
-            last: 3
-          - *feeds_panel
           - *visits_panel
+          - kind: series
+            series: skin_to_skin
+            title: 'Skin-to-skin'
+            floor: { value: S2S_TARGET_HOURS, label: 'target' }
+          - *feeds_panel
       coach:
         approach: 'Ask how the family is managing with this baby and what has changed at home. Ask about feeding and about the skin-to-skin hours: what makes long hours hard for this family right now.'
         next_steps: 'Agree a sooner follow-up visit, and one thing the worker will reinforce with the family: more hours of skin-to-skin care (who else in the family can help hold the baby) and frequent breastfeeding. If the baby seems unwell, the family should go to a health facility.'
