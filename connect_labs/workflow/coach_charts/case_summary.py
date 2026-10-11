@@ -628,8 +628,11 @@ def _visits_panel(cell: _Cell, panel: dict, row: dict, visits: list[dict], by_na
     if overdue and due_to and today and today > due_to:
         x0, x1 = X(due_to), X(today)
         d.rect(*cell.at(x0, 120), *cell.at(x1, BASELINE_Y), LATE)
-        if x1 - x0 >= _width("late visit", AXIS_SIZE) + 8:
-            d.text(*cell.at((x0 + x1) / 2, 166), "late visit", size=AXIS_SIZE, color=LATE_TEXT, align="center")
+        lw = _width("late visit", AXIS_SIZE)
+        # Centred in the late stretch; a stretch too narrow for it has it end just left
+        # of today's tick instead (over the light bands, above the visits' dates).
+        lx = (x0 + x1) / 2 if x1 - x0 >= lw + 8 else max(x1 - 8 - lw / 2, lw / 2)
+        d.text(*cell.at(lx, 166), "late visit", size=AXIS_SIZE, color=LATE_TEXT, align="center")
     if due_from or due_to:
         a, b = due_from or due_to, due_to or due_from
         x0, x1 = X(a), max(X(b), X(a) + 6)
@@ -640,12 +643,14 @@ def _visits_panel(cell: _Cell, panel: dict, row: dict, visits: list[dict], by_na
         tx = X(today)
         d.line([cell.at(tx, 120), cell.at(tx, 218)], INK, width=3)
         top_labels.append((tx, _width("today", AXIS_SIZE, 600), "today", INK, 600))
-    # "today" wins a clash with the due window's words.
-    if (
-        len(top_labels) == 2
-        and abs(top_labels[0][0] - top_labels[1][0]) < (top_labels[0][1] + top_labels[1][1]) / 2 + 8
-    ):
-        top_labels = top_labels[1:]
+    # The due window's words move left of "today" rather than overlap it; they are left
+    # out only when there is no room left of it at all.
+    if len(top_labels) == 2:
+        (dx, dw, *drest), (tx_, tw, *_trest) = top_labels
+        t_left = min(max(tx_, tw / 2), PLOT_W - tw / 2) - tw / 2
+        limit = t_left - 12 - dw / 2
+        if dx > limit:
+            top_labels = [(limit, dw, *drest), top_labels[1]] if limit >= dw / 2 else top_labels[1:]
     for x, w, text, color, weight in top_labels:
         x = min(max(x, w / 2), PLOT_W - w / 2)
         d.text(*cell.at(x, 100), text, size=AXIS_SIZE, weight=weight, color=color, align="center")
