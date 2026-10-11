@@ -253,7 +253,8 @@ case_name:             # what the case is called (briefing, picture, case lists)
   - { when: mother_name, text: 'Baby of {mother_name}' }
 case_series:           # what each visit line (and each picture) reads per visit
   - { name: weight, column: visit_weight_g, label: Weight, format: grams, unit: g,
-      line: 'weight {value} g', missing: 'weight not recorded' }
+      line: 'weight {value} g', missing: 'weight not recorded',
+      seed: true }     # the weight series' seed reading fills its day (registration weight)
   - { name: timeliness, column: visit_timeliness, label: Timing, format: text,
       brief: false }   # drawn on a picture, left out of the briefing's visit lines
 properties:
