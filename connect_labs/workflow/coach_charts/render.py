@@ -85,6 +85,11 @@ def themed(spec: dict, datasets: dict | None = None) -> dict:
         out["height"] = theme.HEIGHT
         out["autosize"] = {"type": "fit", "contains": "padding"}
     out["config"] = copy.deepcopy(theme.THEME)
+    if sized and isinstance(spec.get("padding"), dict):
+        # A named type laid out to its own frame (the case summary) may set its own
+        # padding; its frame plus padding is still the picture's size. An agent's spec
+        # cannot: it is never sized (``custom.sanitize`` strips width and height).
+        out["padding"] = {k: float(v) for k, v in spec["padding"].items() if k in ("top", "left", "right", "bottom")}
     return out
 
 

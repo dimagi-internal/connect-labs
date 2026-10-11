@@ -218,7 +218,8 @@ def test_every_kmc_case_state_is_a_case_summary_of_up_to_four_panels(kmc):
         assert 1 <= len(pic["panels"]) <= cs.MAX_PANELS
         assert all(p["kind"] in cs.PANEL_KINDS for p in pic["panels"])
     kinds = {s["name"]: [p["kind"] for p in s["picture"]["panels"]] for s in cs.catalog(props)}
-    assert kinds["case_state_faltering"] == ["series", "bars", "series", "visits"]
+    # The registry's order is the picture's: the problems (weight, visits) on top.
+    assert kinds["case_state_faltering"] == ["series", "visits", "series", "series"]
     assert kinds["case_state_danger_unreferred"][0] == "signs"
 
 
@@ -228,10 +229,16 @@ def test_every_kmc_case_state_is_a_case_summary_of_up_to_four_panels(kmc):
         (lambda pic: pic["panels"].append({"kind": "list", "items": ["x"]}), "panels: must list 1 to 4 panels"),
         (lambda pic: pic["panels"][0].update(kind="pie"), "kind is one of"),
         (lambda pic: pic["panels"][0].update(colour="red"), "not a key of a series panel"),
-        (lambda pic: pic["panels"][1].update(last=9), "last: must be a whole number from 1 to 6"),
+        (lambda pic: pic["panels"][0].update(kind="bars", last=9), "last: must be a whole number from 1 to 6"),
         (lambda pic: pic["panels"][2].update(floor={"value": "twelve"}), "floor: must be a mapping of value"),
-        (lambda pic: pic["panels"][3].update(due_to="no_such_column"), "due_to: must name a column"),
-        (lambda pic: pic["panels"][3]["vitals"].__setitem__(0, {"series": "height", "label": "H"}), "'height' is not"),
+        (lambda pic: pic["panels"][1].update(due_to="no_such_column"), "due_to: must name a column"),
+        (lambda pic: pic["panels"][1]["vitals"].__setitem__(0, {"series": "height", "label": "H"}), "'height' is not"),
+        (
+            lambda pic: pic["panels"][2].update(floor={"value": "NO_SUCH", "label": "x"}),
+            "floor: must be a mapping of value",
+        ),
+        (lambda pic: pic["panels"][1].update(status={"ugly": "x"}), "status: must be a mapping of bad and good"),
+        (lambda pic: pic["panels"][0].update(status={"bad": ""}), "status.bad: must be text"),
         (lambda pic: pic["banner"].append("{nope} kg"), "{nope} is not a column"),
         (lambda pic: pic.update(banner=["x"] * 9), "banner: must list up to 8 chips"),
     ],
@@ -242,6 +249,18 @@ def test_a_malformed_case_summary_is_refused(kmc, mutate, expected):
     mutate(pic)
     problems = _problems(props, inds)
     assert any(expected in p for p in problems), problems
+
+
+def test_a_floor_may_name_one_of_the_registrys_constants(kmc):
+    """The skin-to-skin target is the registry's S2S_TARGET_HOURS, not a number in the
+    picture: the catalog hands the picture its value."""
+    props = kmc[0]
+    assert props["constants"]["S2S_TARGET_HOURS"] == 8
+    faltering = next(s for s in cs.catalog(props) if s["name"] == "case_state_faltering")
+    s2s = next(p for p in faltering["picture"]["panels"] if p.get("series") == "skin_to_skin")
+    assert s2s["floor"] == {"value": 8, "label": "target"}
+    raw = _state_prop(props, "case_state_faltering")["case_state"]["picture"]
+    assert next(p for p in raw["panels"] if p.get("series") == "skin_to_skin")["floor"]["value"] == "S2S_TARGET_HOURS"
 
 
 def test_a_name_choice_may_require_several_columns(kmc):
