@@ -1819,6 +1819,29 @@ function WorkflowUI({
     return 'bg-red-100 text-red-800';
   }
 
+  // Per-FLW Method Pass Rates table only -- colored on the ABSOLUTE value
+  // itself (not on whether it moved up or down from this FLW's own pre-UAT
+  // baseline, which is what the table above this one does via uatVerdict()).
+  // Thresholds set deliberately, not borrowed from mbw_auditing_v6's
+  // same-named-but-differently-defined metrics (its "Meter/Visit" is the
+  // median of the SAME same-mother revisit-distance series as its own
+  // Revisit Dist, not this dashboard's multi-mother-day clustering metric).
+  function revisitDistColorClass(meters) {
+    if (meters === null || meters === undefined)
+      return 'bg-gray-50 text-gray-400';
+    if (meters >= 1000) return 'bg-red-100 text-red-800';
+    if (meters >= 200) return 'bg-yellow-100 text-yellow-800';
+    return 'bg-green-100 text-green-800';
+  }
+
+  function metresPerVisitColorClass(meters) {
+    if (meters === null || meters === undefined)
+      return 'bg-gray-50 text-gray-400';
+    if (meters < 100) return 'bg-red-100 text-red-800';
+    if (meters <= 500) return 'bg-yellow-100 text-yellow-800';
+    return 'bg-green-100 text-green-800';
+  }
+
   function fmtRateLine(tally) {
     return (
       tally.pass +
@@ -2475,13 +2498,19 @@ function WorkflowUI({
           name: 'Per-FLW Method Pass Rates -- table',
           def: "Below the comparison table: one row per FLW, one column per verification method plus Overall, Revisit Dist, and Metres/Visit, meant to be read ACROSS a row -- an FLW who's red straight across is persistently weak everywhere (more suspicious), one who's red in a single column likely has an isolated, sporadic issue there. Sorted worst Overall pass rate first. Pass-rate color bands: green >75%, yellow 50-75%, red <50%, grey = no attempted visits for that method. QR/Signature/Mother Questions/ANC Card/Birth Certificate cells show their attempted-visit count in parentheses next to the rate (e.g. \"80% (n=10)\") -- not shown when the cell is NA, since there's nothing to count. GPS and Overall don't show n= inline (GPS's home/facility split is in its tooltip instead; Overall's n is just Visits).",
           field:
-            'perFlwMethodStats -- displayRows (domain + eligibility + exclude-registration-visits, same population as the Verification Summary/Table tabs) grouped by username, tallied per method via the shared tallyOutcomes() helper (same Pass/Fail/Pending/"other" categorization the Summary cards and per-method chart use). Revisit Dist/Metres per Visit columns read directly from uatComparisonStats via a username lookup (uatStatsByUsername), so they are the exact same per-FLW UAT-vs-pre-UAT numbers as the table above, with the same green/red + arrow shading (uatVerdict(), lifted to be shared by both tables).',
+            "perFlwMethodStats -- displayRows (domain + eligibility + exclude-registration-visits, same population as the Verification Summary/Table tabs) grouped by username, tallied per method via the shared tallyOutcomes() helper (same Pass/Fail/Pending/\"other\" categorization the Summary cards and per-method chart use). Revisit Dist/Metres per Visit columns read directly from uatComparisonStats via a username lookup (uatStatsByUsername), so they show the same FLW's UAT value as the table above -- but colored on the ABSOLUTE value itself (revisitDistColorClass()/metresPerVisitColorClass()), not on whether it moved up or down from that FLW's own pre-UAT baseline the way the table above does (uatVerdict()). No arrow here, since there's no before/after being compared, just a value against a fixed threshold.",
         },
         {
           name: 'Per-FLW Method Pass Rates -- Overall column',
           def: "This FLW's Final verification outcome pass rate, using the SAME fixed verifiedTotal-based logic as the Summary tab's cards (see Verification Summary Tab section above) -- divided by scored visits only, not every visit with the block present. The hover tooltip states how many of this FLW's visits never reached an overall outcome at all.",
           field:
             "tallyOutcomes(rows, row => row.visit_verification_outcome) -- 'other' in that tally is exactly the visits CommCare's verification_properties group was never relevant for (see Verification Summary Tab section above for why).",
+        },
+        {
+          name: 'Per-FLW Method Pass Rates -- Revisit Dist / Metres per Visit color bands',
+          def: "Revisit Dist: green <200m, yellow 200-999m, red >=1000m (lower is better -- a mother's home doesn't move, so a large distance to her own previous point is the concerning direction). Metres/Visit: red <100m, yellow 100-500m, green >500m (higher is better here -- a small distance between consecutive visits to DIFFERENT mothers on a multi-mother day is the clustering/suspicious direction). Deliberately NOT borrowed from mbw_auditing_v6's thresholds for its similarly-named metrics -- that dashboard's \"Meter/Visit\" is the median of the same same-mother revisit-distance series as its own Revisit Dist, not this dashboard's multi-mother-day clustering metric, so the numbers aren't a valid reference point here.",
+          field:
+            'revisitDistColorClass(u.revisitUatMean) / metresPerVisitColorClass(u.visitUatMedian) -- both read the same UAT value shown in the cell, not any pre-UAT comparison.',
         },
         {
           name: 'Per-FLW Method Pass Rates -- GPS cell tooltip',
@@ -3923,22 +3952,6 @@ function WorkflowUI({
                 <tbody className="divide-y divide-gray-200">
                   {perFlwMethodStats.map(function (f) {
                     var u = f.uatStats;
-                    var revisitVerdict = u
-                      ? uatVerdict(
-                          u.revisitUatMean,
-                          u.revisitMatchedMean,
-                          u.revisitRandomMean,
-                          true,
-                        )
-                      : { arrow: null, className: '' };
-                    var visitVerdict = u
-                      ? uatVerdict(
-                          u.visitUatMedian,
-                          u.visitMatchedMedian,
-                          u.visitRandomMedian,
-                          false,
-                        )
-                      : { arrow: null, className: '' };
                     return (
                       <tr key={f.username}>
                         <td className="whitespace-nowrap border-r border-gray-200 px-3 py-2 font-medium text-gray-900">
@@ -3976,30 +3989,26 @@ function WorkflowUI({
                         <td
                           className={
                             'whitespace-nowrap px-3 py-2 text-right ' +
-                            (revisitVerdict.className || 'text-gray-800')
+                            revisitDistColorClass(u ? u.revisitUatMean : null)
                           }
                           title={buildRevisitDistTooltip(f)}
                         >
                           {u && u.revisitUatMean !== null
                             ? fmtM(u.revisitUatMean)
                             : 'N/A'}
-                          {revisitVerdict.arrow && (
-                            <span className="ml-1">{revisitVerdict.arrow}</span>
-                          )}
                         </td>
                         <td
                           className={
                             'whitespace-nowrap border-r border-gray-200 px-3 py-2 text-right ' +
-                            (visitVerdict.className || 'text-gray-800')
+                            metresPerVisitColorClass(
+                              u ? u.visitUatMedian : null,
+                            )
                           }
                           title={buildMetresPerVisitTooltip(f)}
                         >
                           {u && u.visitUatMedian !== null
                             ? fmtM(u.visitUatMedian)
                             : 'N/A'}
-                          {visitVerdict.arrow && (
-                            <span className="ml-1">{visitVerdict.arrow}</span>
-                          )}
                         </td>
                         {f.methodTallies.slice(1).map(function (mt) {
                           return (
