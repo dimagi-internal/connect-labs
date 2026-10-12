@@ -207,37 +207,33 @@ Select the states you are considering. The page immediately shows you:
 
 You no longer choose a schedule yourself — the page derives the recommendation from your state selection automatically.
 
+### How the page handles the two death estimates
+
+The page uses two estimates of each state's under-5 malaria deaths — DHS-scaled and MAP — which can disagree by more than threefold in some states.
+
+- **Every decision the page makes** (which schedule to recommend, which states clear the bar, what each budget buys) is based on the **lower of the two estimates in each state**, so the recommendation holds whichever estimate turns out to be right.
+- **Both estimates are always shown** alongside the lower-of-two figure: in the recommendation sentence, in the comparison with our proposal's quarterly design, and in separate columns in the budget, schedule, and state tables.
+- **The DHS-scaled / MAP toggle is gone.** A box under the inputs explains both estimates and the rule the page uses.
+
+The numbers are intentionally conservative. For example, for the 17 year-round states at $0.73 a dose:
+
+| | Lower of the two (decides) | DHS-scaled alone | MAP alone |
+|---|---|---|---|
+| Proposal's quarterly design | 4.9× | 6.3× | 9.1× |
+| Recommended: 8 monthly rounds from the rains (16 states) | 11.6× | 14.7× | 20.7× |
+
+### One schedule for a trial arm, or a schedule per state
+
+Next to the single recommended schedule — which is what a trial arm or a single protocol needs — the page also shows what would be possible if each state ran its own best schedule. The **"Each state's own best schedule"** section lists the best schedule for every included state individually.
+
+### Nothing to configure before reading results
+
+A line under the inputs tells you what the answer is based on (states, price per dose, children per household) and notes that the page recalculates automatically whenever you change an input. There is nothing to run.
+
 ### Unclear results
 
-For some states, the model cannot confidently determine whether the recommended approach has a meaningful effect — the result falls within the model's noise. When this happens, the page does **not** count that state as passing. Instead, it tells you the result is unclear for that state and names the best design that does produce a clear result there. Previously, the page showed a multiple for such states as if the result were solid.
+For some states, the model cannot confidently determine whether the recommended approach has a meaningful effect — the result falls within the model's noise. When this happens, the page does **not** count that state as passing. Instead, it tells you the result is unclear for that state and names the best design that does produce a clear result there.
 
 ### Testing your own schedule
 
-If you want to explore a schedule that differs from the recommendation, expand the **Advanced** section at the bottom of the page. This is where manual schedule testing has moved.
-
-### The ACE agent on the page
-
-The ACE agent leads with the same recommendation the page shows and explains why that approach was chosen. Ask it follow-up questions about specific states, cost trade-offs, or what changes if you add or remove a state.
-
----
-
-## Pages
-
-A **page** is a screen in Labs that is written the same way as a workflow but has no runs. Instead of processing visit data to produce a report, a page shows what an organisation, programme, or opportunity holds — with links into each — and can display the latest run of any workflow you have access to.
-
-### Where pages appear
-
-| Scope | Address |
-| --- | --- |
-| Organisation | `/labs/p/org/<organisation>/` |
-| Programme | `/labs/p/programme/<id>/` |
-| Opportunity | `/labs/p/opportunity/<id>/` |
-
-An organisation's **home page** is chosen in its Settings. Once set, selecting that organisation in Labs (or following a link to `/labs/overview/?organization_id=<organisation>`) lands directly on its page rather than the default overview. A page can also fill a Supply tab, in which case it opens inside the Supply header without starting a run.
-
-!!! note "Old page links"
-    The old card-style pages that lived at `/labs/p/<name>/` have been retired. If you follow an old link, Labs will forward you to the new page at the correct address when the organisation, programme, or opportunity you are in has one. If there is no matching page, Labs shows a message explaining that pages have moved rather than an error. Update any saved bookmarks or shared links to use the new addresses in the table above.
-
-### Access checks on pages
-
-Pages respect the same access rules as the content they display:
+If you want to explore a schedule that differs from the recommendation,
