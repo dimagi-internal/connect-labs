@@ -23,9 +23,10 @@ programme whose stock is held in the field opens on its workers' tab (Stock
 review, where a workflow fills it) and every other programme on Overview
 (supply_chain/landing.py). "supply_chain:home" keeps a programme on Overview.
 
-Replaces `SupplyWorkflowView` as where pins live (migration
-scope_config/0002); `Pin` keeps that model's attribute names, so everything
-that read a pin reads one of these unchanged.
+Where pins live. They were rows of a `SupplyWorkflowView` table until migration
+scope_config/0002 moved them here (the table was dropped in supply_chain/0053);
+`Pin` keeps that model's attribute names, so everything that read a pin reads
+one of these unchanged.
 """
 
 from __future__ import annotations
@@ -153,7 +154,7 @@ SUPPLY = register_namespace(
 
 @dataclass(frozen=True)
 class Pin:
-    """A tab filled by a workflow -- `SupplyWorkflowView`'s attribute names, from config."""
+    """A tab filled by a workflow -- the old `SupplyWorkflowView` row's attribute names, from config."""
 
     program_id: int
     slug: str

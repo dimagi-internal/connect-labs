@@ -86,36 +86,6 @@ def test_an_organisation_fills_a_tab_for_every_programme_it_owns(client_in_progr
     assert (f"/supply/views/org-review/?program_id={PROGRAM}", "Org review") in tabs
 
 
-def test_the_migration_turns_pins_into_the_same_tabs(client_in_programme):
-    """Every programme's tabs read the same before and after scope_config/0002."""
-    import importlib
-
-    from django.apps import apps
-
-    from connect_labs.supply_chain.workflow_views.models import SupplyWorkflowView
-
-    SupplyWorkflowView.objects.create(
-        program_id=PROGRAM, slug="stock-review", label="Stock review", workflow_definition_id=WORKFLOW,
-        opportunity_id=OPP, replaces="supply_chain:workers", created_by="pm",
-    )  # fmt: skip
-    SupplyWorkflowView.objects.create(
-        program_id=PROGRAM, slug="forecast", label="Forecast", workflow_definition_id=WORKFLOW + 1,
-        opportunity_id=OPP, position=1,
-    )  # fmt: skip
-    migration = importlib.import_module("connect_labs.scope_config.migrations.0002_supply_pins")
-    migration.forward(apps, None)
-
-    tabs = [(href, label.strip()) for href, _, label in _tabs(client_in_programme)]
-    labels = [label for _, label in tabs]
-    assert "Workers" not in labels
-    assert labels.index("Stock review") == labels.index("Stock") + 1
-    assert labels.index("Forecast") == labels.index("Where it went") + 1
-    assert (f"/supply/views/forecast/?program_id={PROGRAM}", "Forecast") in tabs
-    row = ScopeConfig.objects.get(scope_type="program", scope_key=str(PROGRAM), namespace="supply")
-    assert row.data["tabs"]["supply_chain:workers"]["pinned_by"] == "pm"
-    assert row.changes.get().via == "migration:supply_pins"
-
-
 def test_view_list_and_unpin_read_and_write_settings(da):
     from connect_labs.supply_chain.operations import call_operation
 
@@ -189,3 +159,28 @@ def test_settings_for_a_scope_you_cannot_use_is_not_found(client_in_programme):
 def test_the_supply_header_offers_settings_to_its_members(client_in_programme):
     body = client_in_programme.get(reverse("supply_chain:catalogue")).content.decode()
     assert f'data-testid="supply-settings" href="/labs/settings/program/{PROGRAM}/#supply"' in body
+
+
+def test_the_old_pin_table_is_gone_and_dropped_only_after_its_pins_moved():
+    """Pins live in Settings; the table they came from is dropped after scope_config/0002 copied it."""
+    from django.apps import apps
+    from django.db import connection
+    from django.db.migrations.loader import MigrationLoader
+
+    with pytest.raises(LookupError):
+        apps.get_model("supply_chain", "SupplyWorkflowView")
+    assert "supply_chain_supplyworkflowview" not in connection.introspection.table_names()
+    plan = MigrationLoader(connection).graph.forwards_plan(("supply_chain", "0053_drop_supply_workflow_view"))
+    assert plan.index(("scope_config", "0002_supply_pins")) < plan.index(
+        ("supply_chain", "0053_drop_supply_workflow_view")
+    )
+
+
+def test_unpin_names_the_pin_by_slug_only(da):
+    """The old row id (`view_id`) went with the table; a pin is named by its slug."""
+    from connect_labs.supply_chain.operations import call_operation
+
+    _pin(da, label="Coverage", slug="coverage")
+    with pytest.raises(Exception, match="view_id"):
+        call_operation("view_unpin", da, {"view_id": 1})
+    assert [p["slug"] for p in call_operation("view_list", da, {})] == ["coverage"]
