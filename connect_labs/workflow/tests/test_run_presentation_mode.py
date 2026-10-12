@@ -255,7 +255,11 @@ def test_presentation_mode_is_scoped_to_the_run_page():
 
     view = views_mod.WorkflowRunView()
     view.kwargs = {"definition_id": 5227}
-    with patch.object(views_mod, "get_org_data", return_value={"opportunities": []}):
+    with (
+        patch.object(views_mod, "get_org_data", return_value={"opportunities": []}),
+        # A workflow, not a page (a definition that cannot be read is no longer taken to be one).
+        patch.object(views_mod.WorkflowRunView, "_is_page_definition", return_value=False),
+    ):
         response = view.get(request)
 
     assert response.status_code == 302

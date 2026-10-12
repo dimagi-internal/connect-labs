@@ -55,3 +55,12 @@ out -- the scope's Settings (for whoever can change them) and the rest of labs.
   {% endif %}
 </div>
 {% endblock content %}
+
+{% comment %}
+The canopy agent panel, only when the page shares with the agent (config.agent.share,
+WorkflowRunView._add_page_agent). At the end of the body: `javascript` renders in <head>.
+{% endcomment %}
+{% block inline_javascript %}
+{{ block.super }}
+{% if canopy_panel %}{% include "canopy_host/panel.html" %}{% endif %}
+{% endblock inline_javascript %}

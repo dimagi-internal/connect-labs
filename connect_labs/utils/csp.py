@@ -94,7 +94,15 @@ class ContentSecurityPolicyMiddleware:
         content_type = response.get("Content-Type", "")
         if not content_type.startswith("text/html"):
             return response
+        # The sandboxed page frame (workflow/sandbox.py) carries its own, stricter,
+        # enforced policy and is meant to be framed; this one is not added to it.
+        if getattr(response, "csp_exempt", False):
+            return response
         header = "Content-Security-Policy-Report-Only" if self.report_only else "Content-Security-Policy"
         if header not in response:
             response[header] = self.policy
+        elif getattr(response, "csp_extra_policy", False):
+            # A view added a narrow enforced policy of its own (a page's frame-src). Both
+            # apply: a comma separates two policies in one header.
+            response[header] = f"{response[header]}, {self.policy}"
         return response

@@ -39,7 +39,9 @@ INSTALLED_APPS = INSTALLED_APPS + ["connect_labs.labs", "connect_labs.campaign",
 # behavior is exercised here (local.py/labs_aws.py add it for runtime; base/test
 # do not include the session middlewares).
 MIDDLEWARE = list(MIDDLEWARE)  # noqa: F405
-_auth_idx = MIDDLEWARE.index("django.contrib.auth.middleware.AuthenticationMiddleware")
+# After the sandbox guard (right after auth in base.py), so nothing below runs for a
+# request the guard refuses (connect_labs/utils/sandbox_guard.py).
+_auth_idx = MIDDLEWARE.index("connect_labs.utils.sandbox_guard.SandboxOriginGuardMiddleware")
 MIDDLEWARE.insert(_auth_idx + 1, "connect_labs.campaign.middleware.CampaignOAuthSessionMiddleware")
 
 # MCP sign-in

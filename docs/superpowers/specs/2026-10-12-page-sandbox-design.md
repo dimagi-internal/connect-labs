@@ -246,10 +246,71 @@ that in mind (e.g. limiting a definition's sources to what its author can also r
   `<img src="https://example.com/x">` — every one must fail — and the demo organisation's
   landing page must still draw, link, and narrow the canopy panel.
 
+## As built (phase 1), and where it differs from the above
+
+Built as written, with these differences, each for the reason given:
+
+- **The iframe is created by the host bundle, not written into `page.html`.** Step 3.2
+  needs the listener attached before `src` is set and every `load` counted from the
+  first; a static `<iframe src>` can load before a deferred bundle runs. One component
+  (`components/workflow/sandbox/SandboxFrame.tsx`) draws it on every route that draws a
+  page (page address, workflow URL, edit, present, supply tab), so `page.html`,
+  `run.html` and `supply_chain/workflow_view.html` all get it the same way.
+- **The iframe's `sandbox` attribute is `allow-scripts` only.** The frame document's CSP
+  `sandbox allow-scripts` already strips `allow-modals` and `allow-downloads` (the
+  effective set is the intersection), and confirm and download are bridge methods, so
+  naming them on the iframe changed nothing but invited a reader to think they apply.
+- **`script-src` names the Mapbox GL file, not the whole of `https://api.mapbox.com`**
+  (and `style-src` its CSS path). Tighter, same function.
+- **The shell names its libraries itself.** The frame document loads Babel, Chart.js,
+  Leaflet, Mapbox GL, `connect_map.js` and the sandbox bundle as fixed `<script>`s, so
+  `init` does not carry URLs to load. The shell stays identical for every viewer.
+- **`navigate` also allows `/labs/workflow/` (the workflow list).** `page_blank` links
+  every opportunity card to it; without it the starter page's links would be refused.
+- **The panel's `filters` carry the page's owner** (`program_id`, `opportunity_id` or
+  `organization_id`) beside `definition_id`, scope kind and key: `page_context` needs it
+  to read the definition where it lives. `page:read` is registered on the page routes and
+  also on `labs:workflow:run` and `supply_chain:workflow_view`, where a page is drawn too;
+  it reaches `page_context` only, which refuses anything that is not a sharing page.
+- **`page_context` is not in `RESTRICTED_TOOLS`** (it is in `USERVISIT_DATA_TOOLS`): a
+  workflow source's run summary can carry indicator values computed from visits.
+- **The shared selection's `drilled` lands under `filters.drilled`**, the server's
+  filters kept as they were -- exactly what a run page sends. The frame never sets
+  `filters`, `path`, `resource` or `backing_tool`.
+- **Pages get no workers either**, not just no pipelines (worker names are personal
+  data; the residual-risk rule). `workers` is `[]` and the pipeline and worker endpoints
+  are removed from the page's data, not merely unused.
+- **Fail closed, concretely:** `_is_page_definition` returns `None` ("could not tell"):
+  the bare workflow URL then renders instead of redirecting to the list, and a supply tab
+  starts no run; the render reads the definition itself and decides.
+- **The guard middleware sits straight after `AuthenticationMiddleware` in every settings
+  module** (local, test and labs_aws anchor their labs middleware after it), so nothing
+  session-dependent runs for a request it refuses.
+- **The site-wide report-only CSP is not added to the shell** (its `frame-ancestors
+  'none'` would only be noise on a document meant to be framed); on the page itself both
+  apply, joined into one header if the site policy is ever enforced.
+- **`localStorage` in the live test.** The frame shims storage in memory (component 4),
+  so "must fail" is checked as "the page cannot see labs' storage": a key the host page
+  set is absent in the frame.
+- **The unsandboxed runner gains `view.confirm`, `actions.download` and
+  `actions.copyText` too**, so a page author's code works the same in both places.
+- The webpack entry is in `webpack/base.config.js` (there is no `webpack.config.js`).
+
+Verified in Chromium (gstack browse) against a local server: every attempt on the live
+test list failed (fetch to labs and to another host, `document.cookie`, `parent.document`,
+labs' `localStorage`, an off-site `<img>`, `window.open`, `alert`, `location = ...`, which
+the host caught as "this page tried to leave its frame"), and `page_blank` drew, its links
+navigated on a click, the frame resized, `view.confirm` drew the host dialog, and
+`shareSelection` reached `canopyHost` with the injected `resource` dropped. Firefox and
+Safari by hand, and the same on labs after a deploy, remain to do before a real
+organisation gets a landing page.
+
 ## Phase 2: workflows (not built here)
 
 The same frame and bridge, plus: the phase-2 methods; images that need the session
 (visit photos) fetched by the host and passed in as `blob:` URLs; job progress over the
 bridge; `window.LabsAudit`'s fetch moved behind a method; the 76 direct `fetch(` calls in
 21 seed templates moved onto bridge methods. Every write goes through a method the host
-maps to a known endpoint, with the host's own preview/confirm where one exists.
+maps to a known endpoint, with the host's own preview/confirm where one exists. Also left
+from phase 1: `ConnectMap`'s admin boundaries (fetched from labs, so blocked in the frame;
+a bridge method or host-fetched GeoJSON), and Leaflet tile servers (not in `img-src`).

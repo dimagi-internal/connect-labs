@@ -199,7 +199,9 @@ INSTALLED_APPS.append("connect_labs.supply")
 
 # Add labs middlewares after auth.
 MIDDLEWARE = list(MIDDLEWARE)
-_auth_idx = MIDDLEWARE.index("django.contrib.auth.middleware.AuthenticationMiddleware")
+# After the sandbox guard (right after auth in base.py), so nothing below runs for a
+# request the guard refuses (connect_labs/utils/sandbox_guard.py).
+_auth_idx = MIDDLEWARE.index("connect_labs.utils.sandbox_guard.SandboxOriginGuardMiddleware")
 # OAuth session sync runs first so the rest of the stack sees a fresh
 # session.labs_oauth (or a logged-out user, if refresh failed). See
 # connect_labs/labs/oauth_session.py.

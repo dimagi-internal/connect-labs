@@ -23,6 +23,7 @@ from connect_labs.tasks.ai_sessions import start_ai_session
 from connect_labs.tasks.data_access import TaskDataAccess
 from connect_labs.tasks.models import TASK_REVIEW_VALUES, TaskRecord
 from connect_labs.utils.json_safe import safe_json_for_script
+from connect_labs.utils.sandbox_guard import require_same_origin
 
 logger = logging.getLogger(__name__)
 
@@ -400,6 +401,7 @@ class CompletedModulesAPIView(LoginRequiredMixin, View):
 
 @login_required
 @csrf_exempt
+@require_same_origin
 @require_POST
 def task_bulk_create(request):
     """Create multiple tasks at once (bulk creation)."""
@@ -466,6 +468,7 @@ def task_bulk_create(request):
 
 @login_required
 @csrf_exempt
+@require_same_origin
 @require_POST
 def task_single_create(request):
     """Create a single task for one FLW. Used by combined create/edit page.
@@ -589,6 +592,7 @@ def task_detail_api(request, task_id):
 
 @login_required
 @csrf_exempt
+@require_same_origin
 @require_POST
 def task_update(request, task_id):
     """Update an existing task."""
@@ -705,6 +709,7 @@ def task_update(request, task_id):
 
 @login_required
 @csrf_exempt
+@require_same_origin
 @require_POST
 def task_add_comment(request, task_id):
     """Add a comment to a task."""
@@ -853,6 +858,7 @@ def _starting_participant_data(value):
 
 @login_required
 @csrf_exempt
+@require_same_origin
 @require_POST
 def task_initiate_ai(request, task_id):
     """Initiate an AI assistant conversation for a task via OCS."""
@@ -992,6 +998,7 @@ def task_ai_sessions(request, task_id):
 
 @login_required
 @csrf_exempt
+@require_same_origin
 @require_POST
 def task_add_ai_session(request, task_id):
     """Manually add OCS session ID to a task."""
@@ -1142,6 +1149,7 @@ def task_ai_transcript(request, task_id):
 
 @login_required
 @csrf_exempt
+@require_same_origin
 @require_POST
 def task_ai_save_transcript(request, task_id):
     """Save AI transcript to the task for offline access."""
