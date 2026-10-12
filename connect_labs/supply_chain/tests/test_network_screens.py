@@ -91,7 +91,20 @@ def point_post(**overrides):
     return payload
 
 
+@pytest.fixture
+def curator(user):
+    """Changing or merging an organisation already on file is staff's (or its own
+    people's) to do -- the registry is labs-wide (supply_chain/org_access.py)."""
+    user.is_staff = True
+    user.save(update_fields=["is_staff"])
+    return user
+
+
 class TestOrganisations:
+    @pytest.fixture(autouse=True)
+    def _curating(self, curator):
+        return curator
+
     def test_an_organisation_is_created(self, scoped):
         response = scoped.post(
             reverse("supply_chain:org_create"),
@@ -159,6 +172,10 @@ class TestOrganisations:
 
 
 class TestMergingOrganisations:
+    @pytest.fixture(autouse=True)
+    def _curating(self, curator):
+        return curator
+
     def test_two_rows_become_one_and_the_folded_slug_survives_as_an_alias(self, scoped):
         keep = LabsOrg.objects.create(slug="nutriset", name="Nutriset")
         merge = LabsOrg.objects.create(slug="nutriset-sas", name="Nutriset SAS")
@@ -186,6 +203,30 @@ class TestMergingOrganisations:
         response = scoped.post(reverse("supply_chain:org_merge"), {"keep": keep.pk, "merge": merge.pk})
         assert response.status_code == 200, "a refusal re-renders rather than redirecting"
         assert LabsOrg.objects.filter(pk=merge.pk).exists()
+
+
+class TestWhoMayChangeAnOrganisation:
+    def test_someone_who_neither_administers_nor_belongs_to_it_cannot_edit_it(self, scoped, org):
+        response = scoped.post(
+            reverse("supply_chain:org_edit", args=[org.pk]),
+            {"slug": "nutriset", "name": "Mine now", "short_name": "", "country": "FR"},
+        )
+        assert response.status_code == 403
+        org.refresh_from_db()
+        assert org.name == "Nutriset"
+
+    def test_nor_merge_it_away(self, scoped, org):
+        other = LabsOrg.objects.create(slug="other", name="Other")
+        response = scoped.post(reverse("supply_chain:org_merge"), {"keep": other.pk, "merge": org.pk})
+        assert response.status_code == 403
+        assert LabsOrg.objects.filter(pk=org.pk).exists()
+
+    def test_a_new_organisation_needs_no_one_s_say_so(self, scoped):
+        response = scoped.post(
+            reverse("supply_chain:org_create"),
+            {"slug": "newcomer", "name": "Newcomer", "short_name": "", "country": ""},
+        )
+        assert response.status_code == 302
 
 
 class TestSupplyPoints:

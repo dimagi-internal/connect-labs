@@ -126,14 +126,22 @@ class SyntheticOpportunity(models.Model):
     def save(self, *args, **kwargs):
         # Every labs-only opp is filed under a registry organisation from its first
         # save, so no reader ever has to derive one from the free-text name.
-        if self.labs_only and self.labs_org_id is None:
-            from connect_labs.labs.synthetic.org_tree import assign_labs_org
+        if not (self.labs_only and self.labs_org_id is None):
+            super().save(*args, **kwargs)
+            return
+        from django.db import transaction
 
+        from connect_labs.labs.synthetic.org_tree import assign_labs_org, take_filing_lock
+
+        # Filed and saved under one lock, so a concurrent save filing the same
+        # programme or name sees this opp rather than minting a second organisation.
+        with transaction.atomic():
+            take_filing_lock()
             self.labs_org = assign_labs_org(self)
             update_fields = kwargs.get("update_fields")
             if update_fields is not None and "labs_org" not in update_fields:
                 kwargs["update_fields"] = [*update_fields, "labs_org"]
-        super().save(*args, **kwargs)
+            super().save(*args, **kwargs)
 
     @classmethod
     def next_labs_only_opp_id(cls) -> int:

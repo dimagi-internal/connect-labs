@@ -156,7 +156,7 @@ class OrgMergeForm(forms.Form):
         self.access = access
         super().__init__(*args, **kwargs)
         for name in ("keep", "merge"):
-            self.fields[name].queryset = LabsOrg.objects.order_by("name")
+            self.fields[name].queryset = LabsOrg.objects.real().order_by("name")
             self.fields[name].empty_label = _("Select an organisation…")
         self.helper = FormHelper(self)
         self.helper.form_tag = False
@@ -267,7 +267,7 @@ class SupplyPointForm(ScopedForm):
 
         # Organisations are labs-wide, so this queryset is deliberately not
         # scoped — see the module docstring.
-        self.fields["managed_by_org"].queryset = LabsOrg.objects.order_by("name")
+        self.fields["managed_by_org"].queryset = LabsOrg.objects.real().order_by("name")
         self.fields["managed_by_org"].empty_label = _("Not recorded")
 
         set_choices(

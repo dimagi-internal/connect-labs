@@ -195,6 +195,8 @@ def holdings(caller: Caller) -> Holdings:
 
     Raises `ScopesUnavailable` if that cannot be established.
     """
+    from connect_labs.labs.synthetic.org_tree import is_reserved_key
+
     data = _connect_org_data(caller)
     if data is None:
         raise ScopesUnavailable(UNKNOWABLE)
@@ -212,7 +214,10 @@ def holdings(caller: Caller) -> Holdings:
         # diagnose.
         for key in ("slug", "id"):
             value = o.get(key)
-            if value is not None and value != "":
+            # A reserved labs-only key is held ONLY through the registry
+            # (`labs_only_org_slugs` above). From Connect it is an organisation
+            # that named itself "Labs Synthetic ...", and holds nothing by it.
+            if value is not None and value != "" and not is_reserved_key(value):
                 slugs.add(str(value))
 
     opportunities: set[int] = set(labs_only_opportunity_ids(user))

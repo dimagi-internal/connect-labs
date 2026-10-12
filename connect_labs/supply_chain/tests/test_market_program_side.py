@@ -166,14 +166,14 @@ class TestAProgramCannotTakeOverACompany:
 
     def test_no_invitation_for_a_labs_only_organisation(self):
         """Its first admin would also administer that synthetic organisation's Settings."""
-        org = LabsOrg.objects.create(slug="labs-synthetic-labs-synthetic", name="Labs Synthetic")
+        org = LabsOrg.objects.create(slug="labs-synthetic-labs-synthetic", name="Labs Synthetic", labs_only=True)
         supplier = Supplier.objects.enrol(SCOPE, org=org)
 
         with pytest.raises(ValueError, match="labs-only"):
             op("supplier_market_invite", supplier_id=supplier.pk)
 
     def test_a_supplier_named_like_a_labs_only_organisation_is_not_filed_under_it(self):
-        demo = LabsOrg.objects.create(slug="labs-synthetic-labs-synthetic", name="Labs Synthetic")
+        demo = LabsOrg.objects.create(slug="labs-synthetic-labs-synthetic", name="Labs Synthetic", labs_only=True)
 
         supplier = Supplier.objects.enrol(SCOPE, name="Labs Synthetic")
 

@@ -40,8 +40,8 @@ TWINS = {
 @pytest.fixture(autouse=True)
 def twins(monkeypatch):
     monkeypatch.setattr(service, "tree_for", lambda caller: TWINS)
-    one = LabsOrg.objects.create(slug=ONE, name="Labs Synthetic")
-    two = LabsOrg.objects.create(slug=TWO, name="Labs Synthetic")
+    one = LabsOrg.objects.create(slug=ONE, name="Labs Synthetic", labs_only=True)
+    two = LabsOrg.objects.create(slug=TWO, name="Labs Synthetic", labs_only=True)
     return one, two
 
 

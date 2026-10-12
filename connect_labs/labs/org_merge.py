@@ -95,6 +95,14 @@ def merge_orgs(*, keep_id: int, merge_id: int) -> dict:
 
     moved = {}
     with transaction.atomic():
+        # One membership per person per organisation. Someone who belongs to both
+        # keeps the one they had on `keep` (granted for it); moving the other
+        # across would break that constraint mid-merge.
+        from connect_labs.marketplace.models import OrgMembership
+
+        OrgMembership.objects.filter(
+            org=merge, user_id__in=OrgMembership.objects.filter(org=keep).values("user_id")
+        ).delete()
         for model, field_name in references_to_org():
             n = model.objects.filter(**{field_name: merge}).update(**{field_name: keep})
             if n:

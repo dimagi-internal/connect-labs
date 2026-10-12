@@ -168,7 +168,7 @@ class UpdateLinkIssueForm(forms.Form):
     def __init__(self, *args, access=None, **kwargs):
         self.access = access
         super().__init__(*args, **kwargs)
-        self.fields["org"].queryset = LabsOrg.objects.order_by("name")
+        self.fields["org"].queryset = LabsOrg.objects.real().order_by("name")
         self.fields["org"].empty_label = _("Select an organisation…")
         program_id = getattr(access, "program_id", None) if access else None
         if program_id:
