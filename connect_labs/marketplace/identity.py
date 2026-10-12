@@ -94,7 +94,7 @@ def taken_by(name: str) -> LabsOrg | None:
     registration is rare and a duplicate is expensive to undo.
     """
     key = slug_for(name)
-    for org in LabsOrg.objects.only("pk", "slug", "name", "short_name", "aliases"):
+    for org in LabsOrg.objects.real().only("pk", "slug", "name", "short_name", "aliases"):
         names = [org.name, org.short_name, *(org.aliases or [])]
         if org.slug == key or any(n and slug_for(n) == key for n in names):
             return org

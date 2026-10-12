@@ -388,6 +388,21 @@ class WorkflowSchedule(models.Model):
             self.save(update_fields=["next_run_at"])
 
 
+LABS_ONLY_ORG_PREFIX = "labs-synthetic-"
+
+
+class LabsOrgQuerySet(models.QuerySet):
+    def real(self):
+        """Every organisation except labs-only synthetic ones.
+
+        A labs-only organisation is named after demo data ("Dimagi", a partner's
+        name): matching names against it would link a supplier to a demo bucket,
+        or make a real organisation's name ambiguous in the EOI import. So anything
+        that finds an organisation BY NAME asks for real ones only.
+        """
+        return self.exclude(connect_organization_id__isnull=True, slug__startswith=LABS_ONLY_ORG_PREFIX)
+
+
 class LabsOrg(models.Model):
     """An organisation, as labs knows it — until Connect knows it too.
 
@@ -420,6 +435,13 @@ class LabsOrg(models.Model):
     callers into inventing unlinked local rows for organisations that plainly
     exist.
 
+    **A labs-only organisation IS a row here.** Every labs-only synthetic
+    opportunity is filed under one (`SyntheticOpportunity.labs_org`), and the
+    row's `slug` is that organisation's key in the org tree, Settings and page
+    addresses; its administrators (`marketplace.OrgMembership`) change its
+    settings. It used to be derived from the opportunity's free-text org name,
+    so every opportunity anyone gave the same name was one organisation.
+
     Matching, stated so a reconciliation cannot be improvised later:
 
       * `connect_organization_id` is the identity. It does not change.
@@ -436,6 +458,8 @@ class LabsOrg(models.Model):
     # across labs: this is ONE registry. An organisation is the same
     # organisation in every programme it appears in, which is the whole
     # correction this model exists to make.
+    objects = LabsOrgQuerySet.as_manager()
+
     slug = models.SlugField(max_length=120, unique=True)
     name = models.CharField(max_length=300)
     short_name = models.CharField(max_length=120, blank=True, default="")

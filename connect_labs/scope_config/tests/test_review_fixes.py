@@ -15,21 +15,21 @@ OWNER = Scope.of("organization", "owner-org")
 SHARED = Scope.of("organization", "labs-synthetic-shared")
 
 
-def test_a_labs_only_orgs_layer_is_written_only_by_staff():
-    """S1-3: anyone who can see one synthetic opp in the bucket would otherwise restyle every programme in it."""
+def test_a_labs_only_orgs_layer_is_not_written_by_someone_who_only_sees_it():
+    """S1-3: anyone who can see one synthetic opp in it would otherwise restyle every programme in it."""
     member = caller("m", holds=("organization:labs-synthetic-shared", "program:10007"))
-    with pytest.raises(Forbidden, match="only Dimagi staff"):
+    with pytest.raises(Forbidden, match="administrators"):
         service.update("t", SHARED, {"a": 1}, member)
     assert service.get("t", SHARED, member)["value"]["a"] == 0  # reading is unchanged
     staff = caller("staff", is_staff=True)
     assert service.update("t", SHARED, {"a": 1}, staff)["value"]["a"] == 1
-    with pytest.raises(Forbidden, match="only Dimagi staff"):
+    with pytest.raises(Forbidden, match="administrators"):
         service.undo("t", SHARED, member)
 
 
 def test_a_labs_only_org_unknown_to_the_tree_is_still_labs_only():
     member = caller("m", holds=("organization:labs-synthetic-elsewhere",))
-    with pytest.raises(Forbidden, match="only Dimagi staff"):
+    with pytest.raises(Forbidden, match="administrators"):
         service.update("t", Scope.of("organization", "labs-synthetic-elsewhere"), {"a": 1}, member)
 
 
