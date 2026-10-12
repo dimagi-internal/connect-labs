@@ -466,6 +466,20 @@ PROD_ELIGIBLE_FLW_SCHEMA = {
 # where_is_the_visit_being_conducted, with a DIFFERENT value vocabulary
 # (home / health_facility / others, vs. a visit's mothers_home / health_facility
 # / other) -- confirmed via commcare_hq_mcp's get_form_questions.
+#
+# health_facility_gps is home_gps's sibling field on the SAME form: CommCare
+# only populates home_gps when registration_location_type == 'home', and
+# only populates health_facility_gps when it == 'health_facility' (confirmed
+# via commcare_hq_mcp's get_form_questions -- both fields share the identical
+# capture/calculate logic, gated on mutually exclusive `relevant` conditions).
+# A mother registered at a facility therefore has NO home_gps at all -- her
+# registration GPS lives in health_facility_gps instead. Without this field,
+# the GPS Map tab plotted no registration point, and consequently no lines
+# to any of her visits, for every facility-registered mother. Render code
+# resolves the two into one registration point: home_gps || health_facility_gps
+# (a mother only ever has one of the two populated). A mother registered at
+# "others" still has no GPS captured for registration at all -- a genuine
+# data gap, not something this pipeline can resolve.
 # ---------------------------------------------------------------------------
 
 MOTHER_REGISTRATION_SCHEMA = {
@@ -475,6 +489,7 @@ MOTHER_REGISTRATION_SCHEMA = {
     "fields": [
         {"name": "conduct_visit_now", "path": "case.properties.conduct_visit_now", "aggregation": "first"},
         {"name": "home_gps", "path": "case.properties.home_gps", "aggregation": "first"},
+        {"name": "health_facility_gps", "path": "case.properties.health_facility_gps", "aggregation": "first"},
         {"name": "registration_datetime", "path": "case.date_opened", "aggregation": "first"},
         {
             "name": "registration_location_type",
@@ -491,6 +506,7 @@ PROD_MOTHER_REGISTRATION_SCHEMA = {
     "fields": [
         {"name": "conduct_visit_now", "path": "case.properties.conduct_visit_now", "aggregation": "first"},
         {"name": "home_gps", "path": "case.properties.home_gps", "aggregation": "first"},
+        {"name": "health_facility_gps", "path": "case.properties.health_facility_gps", "aggregation": "first"},
         {"name": "registration_datetime", "path": "case.date_opened", "aggregation": "first"},
         {
             "name": "registration_location_type",
@@ -601,11 +617,11 @@ PIPELINE_SCHEMAS = [
         "alias": "mother_registration",
         "name": "MBW Visit Verification — Mother Registration (test)",
         "description": (
-            "Mother cases with the conduct_visit_now registration-time property, home_gps "
-            "registration GPS point, registration_datetime, and registration_location_type "
-            "(test domain) -- used to detect first visits that happened immediately at "
-            "registration, and to plot the registration point (with its timestamp and location) "
-            "on the GPS Map tab."
+            "Mother cases with the conduct_visit_now registration-time property, home_gps/"
+            "health_facility_gps registration GPS points, registration_datetime, and "
+            "registration_location_type (test domain) -- used to detect first visits that "
+            "happened immediately at registration, and to plot the registration point (with its "
+            "timestamp and location) on the GPS Map tab."
         ),
         "schema": MOTHER_REGISTRATION_SCHEMA,
     },
@@ -613,11 +629,11 @@ PIPELINE_SCHEMAS = [
         "alias": "mother_registration_prod",
         "name": "MBW Visit Verification — Mother Registration (production)",
         "description": (
-            "Mother cases with the conduct_visit_now registration-time property, home_gps "
-            "registration GPS point, registration_datetime, and registration_location_type "
-            "(opp 765's real production domain) -- used to detect first visits that happened "
-            "immediately at registration, and to plot the registration point (with its timestamp "
-            "and location) on the GPS Map tab."
+            "Mother cases with the conduct_visit_now registration-time property, home_gps/"
+            "health_facility_gps registration GPS points, registration_datetime, and "
+            "registration_location_type (opp 765's real production domain) -- used to detect "
+            "first visits that happened immediately at registration, and to plot the registration "
+            "point (with its timestamp and location) on the GPS Map tab."
         ),
         "schema": PROD_MOTHER_REGISTRATION_SCHEMA,
     },
