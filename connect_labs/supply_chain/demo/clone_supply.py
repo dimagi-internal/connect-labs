@@ -10,9 +10,10 @@ out. This seeder supplies that, and says on every record that it is invented:
 - the RUTF dispensing rule, on the released app's own paths
   (`stock_from_visits.PATHS`, design §9), so visits post consumption;
 - a worker supply point for every worker who submitted a visit;
-- every two weeks, a distribution to each active worker of roughly what the
-  clone shows they then gave out over the next two weeks, varied per worker so
-  some run short and some carry spare. The figures are INVENTED, and each
+- every two weeks, a distribution topping each active worker up to a few
+  weeks' cover at the pace their visits gave RUTF out over the last two weeks
+  (the pace the Workers page measures), varied per worker so a few run short
+  and most do not (`plan_distributions`). The figures are INVENTED, and each
   distribution's note says so;
 - the visit reader, run week by week to today, so the ledger, the as-of
   history and the belief views walk forward exactly as a live programme's
@@ -39,10 +40,21 @@ CADENCE_WEEKS = 2
 CENTRAL_MONTHS, PARTNER_MONTHS = Decimal(4), Decimal(2)
 SLUG, SKU = "rutf", "rutf-150"
 NAME = "Ready-to-use therapeutic food (RUTF), 92 g sachet"
+# Every delivery this module invents starts with this; the seeded clones are found by it
+# (deliveries recorded before the sizing below changed say "programme", which it also matches).
+INVENTED_PREFIX = "Invented for the demo: the program"
 INVENTED = (
-    "Invented for the demo: the programme has not yet said how much RUTF each worker received. "
-    "Sized from the RUTF the worker's visits gave out over the next two weeks."
+    "Invented for the demo: the program has not yet said how much RUTF each worker received. "
+    "Sized to top the worker up to a few weeks' cover at the pace their last two weeks of visits gave it out."
 )
+# Days of cover each delivery tops a worker up to, at their measured pace. A worker's
+# band is half a month to a month and a half (15-45 days), and a delivery has to last
+# the fortnight to the next one: most are topped up to 32-42 days, so they still hold
+# over two weeks' cover when the next one comes. About one in six is topped up short
+# (18-25 days), and runs under their minimum in the second week -- the few who need
+# looking at, not the whole network.
+TARGET_DAYS, SHORT_TARGET_DAYS, SHORT_SHARE = (32, 42), (18, 25), 1 / 6
+PACE_DAYS = 14  # the window the Workers page measures a worker's pace over (resupply.WORKER_WINDOW_DAYS)
 
 
 def rule_lines() -> list[dict]:
@@ -162,29 +174,59 @@ def _workers(program_id: int, opportunity_id: int):
     )
 
 
-def plan_distributions(dispensed: dict, *, first: date, last: date, seed: int = 11) -> list[dict]:
-    """{monday: {username: quantity}} every CADENCE_WEEKS, from what each worker then gave out.
-
-    `dispensed` is {username: {monday: sachets}}. Each worker's issue covers the
-    next CADENCE_WEEKS weeks times a factor of their own, between 1.0 and 1.6,
-    so the ledger shows the spread a real network has: some carry spare, some
-    run down to nearly nothing before the next issue -- but none gives out
-    stock it was never given (a factor under 1 left workers below zero, which
-    reads as broken data, not as a network). A worker with nothing to give out
-    in the window gets nothing.
-    """
+def target_days(usernames, *, seed: int = 11) -> dict:
+    """{username: days of cover} each worker's deliveries top them up to. Seeded, so a top-up and a reseed agree."""
     rng = random.Random(seed)
-    factor = {u: Decimal(str(round(rng.uniform(1.0, 1.6), 2))) for u in sorted(dispensed)}
+    targets = {}
+    for username in sorted(usernames):
+        low, high = SHORT_TARGET_DAYS if rng.random() < SHORT_SHARE else TARGET_DAYS
+        targets[username] = rng.randint(low, high)
+    return targets
+
+
+def plan_distributions(dispensed: dict, *, first: date, last: date, seed: int = 11) -> list[dict]:
+    """{monday: {username: quantity}} every CADENCE_WEEKS, topping each worker up at their measured pace.
+
+    `dispensed` is {username: {monday: sachets}}. Each delivery brings a worker up
+    to `target_days` of cover at the pace their visits gave RUTF out over the
+    last PACE_DAYS -- the pace the Workers page measures them against -- less
+    what they still hold. Sized only to the fortnight ahead (as it once was),
+    a delivery left nearly every worker under half a month's cover for most of
+    that fortnight, and the clone read "below minimum" for 19 workers in 20.
+
+    The pace is what they gave out in the fortnight before the delivery, or in
+    the fortnight ahead when that is more (a growing caseload, or a first
+    delivery with nothing behind it). Whatever the pace says, a delivery never
+    leaves a worker with less than the fortnight ahead will take, so no worker
+    gives out stock they were never given (a negative balance reads as broken
+    data, not as a network). A worker with nothing to give out, behind or
+    ahead, gets nothing.
+    """
+    targets = target_days(dispensed, seed=seed)
+    held = defaultdict(Decimal)
     issues = []
     monday = _monday(first)
+    previous = None
     while monday <= last:
         lines = {}
         for username, weeks in dispensed.items():
+            if previous is not None:
+                # What they gave out since the last delivery: what they hold now is the rest.
+                given = sum(q for week, q in weeks.items() if previous <= week < monday)
+                held[username] = max(held[username] - given, Decimal(0))
+            weeks_back = PACE_DAYS // 7
+            behind = sum(weeks.get(monday - timedelta(weeks=k), Decimal(0)) for k in range(1, weeks_back + 1))
             ahead = sum(weeks.get(monday + timedelta(weeks=k), Decimal(0)) for k in range(CADENCE_WEEKS))
-            if ahead > 0:
-                lines[username] = _round_up(ahead * factor[username])
+            # The higher of the two fortnights: a caseload that is growing would otherwise be
+            # sized on last fortnight's smaller one, and read short again by the next delivery.
+            pace = max(behind, ahead) / PACE_DAYS
+            wanted = max(pace * targets[username], ahead) - held[username]
+            if wanted > 0 and (behind > 0 or ahead > 0):
+                lines[username] = _round_up(wanted)
+                held[username] += lines[username]
         if lines:
             issues.append({"on": monday, "lines": lines})
+        previous = monday
         monday += timedelta(weeks=CADENCE_WEEKS)
     return issues
 
@@ -474,5 +516,9 @@ def seeded_clones() -> list[tuple[int, int]]:
     from connect_labs.supply_chain.models import Distribution
 
     return sorted(
-        set(Distribution.objects.filter(note=INVENTED).values_list("program_id", "opportunity_id").distinct())
+        set(
+            Distribution.objects.filter(note__startswith=INVENTED_PREFIX)
+            .values_list("program_id", "opportunity_id")
+            .distinct()
+        )
     )
