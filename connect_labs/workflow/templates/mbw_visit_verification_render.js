@@ -1814,8 +1814,8 @@ function WorkflowUI({
 
   function rateColorClass(rate) {
     if (rate === null) return 'bg-gray-50 text-gray-400';
-    if (rate >= 90) return 'bg-green-100 text-green-800';
-    if (rate >= 70) return 'bg-yellow-100 text-yellow-800';
+    if (rate > 75) return 'bg-green-100 text-green-800';
+    if (rate >= 50) return 'bg-yellow-100 text-yellow-800';
     return 'bg-red-100 text-red-800';
   }
 
@@ -2473,7 +2473,7 @@ function WorkflowUI({
         },
         {
           name: 'Per-FLW Method Pass Rates -- table',
-          def: "Below the comparison table: one row per FLW, one column per verification method plus Overall, Revisit Dist, and Metres/Visit, meant to be read ACROSS a row -- an FLW who's red straight across is persistently weak everywhere (more suspicious), one who's red in a single column likely has an isolated, sporadic issue there. Sorted worst Overall pass rate first. Color bands: green ≥90%, yellow 70-89%, red <70%, grey = no attempted visits for that method.",
+          def: "Below the comparison table: one row per FLW, one column per verification method plus Overall, Revisit Dist, and Metres/Visit, meant to be read ACROSS a row -- an FLW who's red straight across is persistently weak everywhere (more suspicious), one who's red in a single column likely has an isolated, sporadic issue there. Sorted worst Overall pass rate first. Pass-rate color bands: green >75%, yellow 50-75%, red <50%, grey = no attempted visits for that method. QR/Signature/Mother Questions/ANC Card/Birth Certificate cells show their attempted-visit count in parentheses next to the rate (e.g. \"80% (n=10)\") -- not shown when the cell is NA, since there's nothing to count. GPS and Overall don't show n= inline (GPS's home/facility split is in its tooltip instead; Overall's n is just Visits).",
           field:
             'perFlwMethodStats -- displayRows (domain + eligibility + exclude-registration-visits, same population as the Verification Summary/Table tabs) grouped by username, tallied per method via the shared tallyOutcomes() helper (same Pass/Fail/Pending/"other" categorization the Summary cards and per-method chart use). Revisit Dist/Metres per Visit columns read directly from uatComparisonStats via a username lookup (uatStatsByUsername), so they are the exact same per-FLW UAT-vs-pre-UAT numbers as the table above, with the same green/red + arrow shading (uatVerdict(), lifted to be shared by both tables).',
         },
@@ -4011,7 +4011,9 @@ function WorkflowUI({
                               }
                               title={buildMethodCellTooltip(f, mt.label, mt)}
                             >
-                              {mt.rate === null ? 'NA' : mt.rate + '%'}
+                              {mt.rate === null
+                                ? 'NA'
+                                : mt.rate + '% (n=' + mt.attempted + ')'}
                             </td>
                           );
                         })}
