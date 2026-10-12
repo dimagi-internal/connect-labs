@@ -2474,7 +2474,6 @@ function WorkflowRunner({
                   )}
                   {sandbox && sandboxPayload ? (
                     <SandboxFrame
-                      shellUrl={sandbox.src}
                       labsOrigin={sandbox.origin || window.location.origin}
                       payload={sandboxPayload}
                       querySupply={(alias, args) =>

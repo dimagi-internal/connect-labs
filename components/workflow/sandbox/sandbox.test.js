@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+// @vitest-environment-options {"settings": {"disableIframePageLoading": true}}
 // The page sandbox's bridge (host.ts) and frame runtime (frame.tsx).
 // Spec: docs/superpowers/specs/2026-10-12-page-sandbox-design.md.
 import { describe, it, expect, vi } from 'vitest';
@@ -219,6 +220,7 @@ describe('what the host passes on', () => {
 
 describe('the handshake', () => {
   const frameWindow = {};
+  // happy-dom logs that it does not load iframe pages (disableIframePageLoading); harmless.
   it('accepts a hello only from the iframe, from an opaque origin', () => {
     const hello = { type: HELLO };
     expect(
@@ -250,7 +252,6 @@ describe('the handshake', () => {
     const onLeave = vi.fn();
     const host = createSandboxHost({
       container,
-      shellUrl: 'about:blank',
       labsOrigin: LABS,
       payload: {},
       handlers: handlers(),
@@ -261,6 +262,7 @@ describe('the handshake', () => {
     expect(iframe).toBe(host.iframe);
     expect(iframe.getAttribute('sandbox')).toBe('allow-scripts');
     expect(iframe.getAttribute('referrerpolicy')).toBe('strict-origin');
+    expect(iframe.getAttribute('src')).toBe('/labs/sandbox/render/');
     iframe.dispatchEvent(new Event('load'));
     expect(onLeave).not.toHaveBeenCalled();
     iframe.dispatchEvent(new Event('load'));
@@ -274,7 +276,6 @@ describe('the handshake', () => {
     document.body.appendChild(container);
     const host = createSandboxHost({
       container,
-      shellUrl: 'about:blank',
       labsOrigin: LABS,
       payload: {},
       handlers: handlers(),

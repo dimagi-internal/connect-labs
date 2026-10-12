@@ -10,7 +10,6 @@ import { createSandboxHost, type SandboxHost } from './host';
 import type { FramePayload } from './protocol';
 
 export interface SandboxFrameProps {
-  shellUrl: string;
   labsOrigin: string;
   payload: FramePayload;
   querySupply(alias: string, args: Record<string, unknown>): Promise<unknown>;
@@ -50,7 +49,6 @@ export function SandboxFrame(props: SandboxFrameProps) {
     if (!containerRef.current) return;
     const host = createSandboxHost({
       container: containerRef.current,
-      shellUrl: props.shellUrl,
       labsOrigin: props.labsOrigin,
       payload: propsRef.current.payload,
       onLeave: () => setLeft(true),
@@ -91,7 +89,7 @@ export function SandboxFrame(props: SandboxFrameProps) {
       hostRef.current = null;
     };
     // The frame is drawn once per shell; data changes go through update().
-  }, [props.shellUrl, props.labsOrigin]);
+  }, [props.labsOrigin]);
 
   useEffect(() => {
     hostRef.current?.update(props.payload);
