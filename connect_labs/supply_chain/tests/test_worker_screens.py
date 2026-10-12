@@ -343,6 +343,24 @@ def test_a_receipt_no_store_recorded_is_a_fact_on_the_row(client_in_program, wor
     assert f"Reports receiving 50 sachets on {day}; no store recorded a delivery" in text
 
 
+def test_network_and_overview_print_the_same_below_minimum_headline(client_in_program, world):
+    """#2344: one count of workers in trouble, worded once, on every screen; checks are "open checks"."""
+    # Baobab's minimum is far above what it holds at its pace; acacia has none set.
+    SupplyPoint.objects.filter(pk=world["worker-baobab"].pk).update(min_months_of_stock=Decimal("100"))
+    tree_line = re.search(
+        r'data-testid="workers-below-minimum">(.*?)</span></span>', get(client_in_program, "network"), re.S
+    )
+    overview = get(client_in_program, "overview")
+    overview_line = re.search(r'data-testid="workers-below-minimum">(.*?)</div>', overview, re.S)
+
+    assert tree_line and overview_line
+    headline = text_of(tree_line.group(1)).strip().lstrip("· ")
+    assert headline == "1 of 2 workers below minimum at their own 14-day pace"
+    assert text_of(overview_line.group(1)).strip() == headline
+    assert re.search(r'data-testid="open-checks">.*?open check', overview, re.S)
+    assert "Checks <span" not in overview
+
+
 # ---- Network -------------------------------------------------------------
 
 
@@ -356,6 +374,8 @@ def test_the_network_shows_a_stores_workers_and_their_totals(client_in_program, 
     assert "With everything below it: 230 sachets on hand" in subtree and "2 workers" in subtree
     # The cover says what it is paced on: the Stock review's figure, not a 90-day store window (#2375).
     assert "1.2 months of cover at its workers' own 14-day paces, added (6 sachets a day)" in html.unescape(subtree)
+    # The one headline for workers in trouble, in the words every supply screen uses (#2344).
+    assert "0 of 2 workers below minimum at their own 14-day pace" in subtree
     # ...and what its 40 + 30 dispensed rests on is a detail, behind the disclosure.
     assert "With everything below it, of 70 given out: 30 on unapproved visits · 30 estimated" in text
     assert "given out" not in subtree and "recomputed" not in text

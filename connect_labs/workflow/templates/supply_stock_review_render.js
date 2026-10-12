@@ -283,6 +283,23 @@ function WorkflowUI({
         </div>
       )}
 
+      {/* The one headline for workers in trouble, worded by the server
+          (belief.below_minimum_line) so Network, the map and Overview say the
+          same count in the same words (#2344). The bands further down are how
+          long stock lasts, a different measure, and are labelled so. */}
+      {rollup.below_minimum && rollup.below_minimum.workers > 0 && (
+        <div
+          className={
+            'rounded-md border px-4 py-2 text-sm font-medium ' +
+            (rollup.below_minimum.below
+              ? 'border-amber-200 bg-amber-50 text-amber-900'
+              : 'border-gray-200 bg-white text-gray-700')
+          }
+        >
+          {rollup.below_minimum.line}
+        </div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="rounded-lg border border-gray-200 bg-white p-3">
           <div className="text-xs uppercase tracking-wide text-gray-500">

@@ -325,10 +325,14 @@ def _worker_rollup(rows: list[dict]) -> dict:
             **{key: _number(value) for key, value in figures.items()},
             "unapproved_share": _number(figures["unapproved"] / dispensed * 100) if dispensed else None,
         }
+    from connect_labs.supply_chain.stock.services.belief import workers_below_minimum
+
     return {
         "workers": len(rows),
         "by_unit": by_unit,
         "runway": dict(runway),
+        # The one headline for workers in trouble, worded by the server (#2344).
+        "below_minimum": workers_below_minimum(rows),
         "no_answer_visits": sum(int(row.get("no_answer_visits") or 0) for row in rows),
         "never_counted": sum(1 for row in rows if not row.get("reported_on")),
     }

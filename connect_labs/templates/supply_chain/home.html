@@ -24,6 +24,10 @@ tenders and orders sit folded below.
       <h1 class="text-brand-deep-purple text-2xl font-semibold">Procurements</h1>
     </div>
     <div class="flex flex-wrap gap-3">
+      {% comment %}The one headline for workers in trouble, worded by the server so every screen says it the same way (#2344).{% endcomment %}
+      {% with below=summary.deliver.workers_below_minimum %}{% if below.workers %}
+      <div class="stat-tile flex-row items-center gap-2" data-testid="workers-below-minimum"><span class="text-sm{% if below.below %} text-amber-900 font-medium{% else %} text-gray-700{% endif %}">{{ below.line }}</span></div>
+      {% endif %}{% endwith %}
       {% if not supply_as_of %}
       <div class="stat-tile flex-row items-center gap-2" data-testid="standing-our-moves"><span class="stat-tile-value">{{ move_counts.ours }}</span><span class="status-chip status-chip--ours">to do</span></div>
       <div class="stat-tile flex-row items-center gap-2" data-testid="standing-their-moves"><span class="stat-tile-value">{{ move_counts.theirs }}</span><span class="status-chip status-chip--theirs">waiting on suppliers</span></div>
@@ -118,7 +122,8 @@ tenders and orders sit folded below.
   </details>
 
   <details class="fold" data-testid="fold-checks">
-    <summary>Checks <span class="text-sm font-normal tabular-nums text-gray-600">{% if checks.count %}{{ checks.count }}{% else %}0{% endif %}</span> <span class="text-sm font-normal text-gray-600">open</span></summary>
+    {% comment %}"open checks", said as what they are: facts missing or in conflict, not a count of workers in trouble (#2344).{% endcomment %}
+    <summary data-testid="open-checks"><span class="tabular-nums">{% if checks.count %}{{ checks.count }}{% else %}0{% endif %}</span> open check{{ checks.count|pluralize }}</summary>
     <div class="fold-body">
 {% if supply_as_of %}
   {% comment %}

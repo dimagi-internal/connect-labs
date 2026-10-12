@@ -35,7 +35,9 @@
   // check's category, a status against the place's own band, a promised date
   // passed -- never from a judgement about what matters most.
   var ATTN = {
-    blocked: { label: 'Blocked', color: '#ef4444' },
+    // "Has a blocker", not "Blocked": a count of places with a blocker is not a
+    // count of workers in trouble, which is the one headline (#2344).
+    blocked: { label: 'Has a blocker', color: '#ef4444' },
     waiting: { label: 'Waiting on an answer', color: '#f59e0b' },
     clear: { label: 'Nothing open', color: '#94a3b8' },
   };
@@ -1153,8 +1155,8 @@
       ' across ' +
       plural(programs.length, 'program') +
       '. <span style="color:#dc2626">' +
-      count('blocked') +
-      ' blocked</span>, <span style="color:#b45309">' +
+      plural(count('blocked'), 'place') +
+      ' with a blocker</span>, <span style="color:#b45309">' +
       count('waiting') +
       ' waiting on an answer</span>, ' +
       plural(onWay, 'order') +
@@ -1171,8 +1173,9 @@
         esc(p.name) +
         '</span>' +
         '<span class="ml-auto pm-muted">' +
-        (p._open ? plural(p._open, 'thing') + ' in the way' : 'nothing open') +
+        (p._open ? plural(p._open, 'blocker') : 'no blockers') +
         '</span></div>' +
+        belowMinimumLine(p) +
         '<div class="pm-stages">' +
         STAGES.map(function (st) {
           var n =
@@ -1402,6 +1405,21 @@
     );
   }
 
+  // The one headline for workers in trouble, as the server worded it
+  // (belief.below_minimum_line) -- the same count and words as the Stock
+  // review, Network and Overview (#2344). Nothing for a program with no workers.
+  function belowMinimumLine(p) {
+    var b = p.workers_below_minimum;
+    if (!b || !b.workers) return '';
+    return (
+      '<div class="text-xs mt-1" data-testid="pm-below-minimum" style="color:' +
+      (b.below ? '#92400e' : '#4b5563') +
+      '">' +
+      esc(b.line) +
+      '</div>'
+    );
+  }
+
   function programPanel(p) {
     var h = crumbs();
     h +=
@@ -1413,7 +1431,9 @@
       '</span>' +
       '<a class="pm-link text-sm ml-auto" href="' +
       esc(p.home_url) +
-      '">Open this chain →</a></div></div>';
+      '">Open this chain →</a></div>' +
+      belowMinimumLine(p) +
+      '</div>';
     STAGES.forEach(function (st) {
       var cs = stageChecks(p, st.key);
       h +=
@@ -1424,7 +1444,7 @@
         '</span></h4>';
       h += cs.length
         ? checkRows(cs, p)
-        : '<div class="pm-muted">Nothing in the way here.</div>';
+        : '<div class="pm-muted">No blockers here.</div>';
       if (st.key === 'order' && p.orders.length) {
         h +=
           '<div class="pm-muted mt-2" style="font-weight:600">Still to arrive</div>' +
@@ -1729,7 +1749,7 @@
     h += commoditiesSection(pt);
 
     h +=
-      '<div class="pm-sec"><h4><span>In the way here</span></h4>' +
+      '<div class="pm-sec"><h4><span>Blockers here</span></h4>' +
       (pt.checks.length
         ? checkRows(pt.checks, p)
         : '<div class="pm-muted">Nothing open at this place.</div>') +
