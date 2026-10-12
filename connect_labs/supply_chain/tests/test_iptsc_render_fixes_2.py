@@ -109,8 +109,9 @@ class TestTheOrdersList:
 
     def test_the_explanation_is_behind_a_disclosure(self, scoped, played):
         body = _page(scoped, "orders")
-        details = body.split("<details", 1)[1].split("</details>", 1)[0]
-        assert "About orders" in details
+        # Not the header's own <details> (a phone's tab menu, #2375): the one that holds the explanation.
+        details = next(d for d in body.split("<details")[1:] if "About orders" in d.split("</details>", 1)[0])
+        details = details.split("</details>", 1)[0]
         assert "An award is a decision" in details
 
 

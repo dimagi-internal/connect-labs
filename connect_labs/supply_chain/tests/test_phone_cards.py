@@ -79,3 +79,32 @@ def test_the_header_picker_has_a_short_name_for_a_phone(client_in_program, world
     assert short == "Northern clone"  # the programme alone, not "Program: … | Opp: …"
     # Desktop keeps the full line.
     assert re.search(r'class="ctx-full[^"]*"', body) and "Opp seven" in body
+
+
+def _hrefs(html):
+    return re.findall(r'<a href="([^"]*)"', html)
+
+
+def test_on_a_phone_the_tabs_fold_into_one_menu_with_every_tab(client_in_program, world):  # noqa: F811
+    """#2375: fourteen tabs wrapped onto five rows and pushed every number below the fold."""
+    body = get(client_in_program, "stock")
+    wide = re.search(r'<nav data-testid="supply-tabs"[^>]*>(.*?)</nav>', body, re.S).group(1)
+    menu = re.search(r'<details data-testid="supply-tabs-phone"[^>]*>(.*?)</details>', body, re.S).group(1)
+    tabs = _hrefs(wide)
+    assert len(tabs) > 5
+    # The same places, in the same order, each still naming its programme.
+    assert _hrefs(menu)[: len(tabs)] == tabs
+    assert all("program_id=" in href for href in tabs)
+    # The menu says where you are when closed, and marks it when open.
+    summary = re.search(r"<summary[^>]*>(.*?)</summary>", menu, re.S).group(1)
+    assert "Stock" in summary
+    current = re.findall(r'<a href="[^"]*"[^>]*aria-current="page"[^>]*>([^<]*)<', menu)
+    assert [c.strip() for c in current] == ["Stock"]
+
+
+def test_the_phone_rules_live_with_the_header(client_in_program, world):  # noqa: F811
+    """In the header itself, so the programme map -- which includes it outside base.html -- folds too."""
+    from django.template.loader import get_template
+
+    source = get_template("supply_chain/_header.html").template.source
+    assert ".supply-tabs-wide { display: none" in source and ".supply-tabs-phone { display: block" in source
