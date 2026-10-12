@@ -288,3 +288,34 @@ def test_s3_the_audit_command_lists_each_labs_only_org_with_admins_opps_and_doma
     assert victims_org.slug in text
     assert "victim" in text
     assert "opps=1" in text and "domains=1" in text
+
+
+# --- re-review of #2438 -------------------------------------------------------------
+
+
+def test_a_name_never_mints_an_unfiled_key(victim):
+    """`unfiled_key(opp 10502)` is labs-synthetic-unfiled-10502; an org named "Unfiled 10502" must not take it."""
+    made = _opp(10_001, created_by=victim, org_name="Unfiled 10502").labs_org
+
+    assert not made.slug.startswith(f"{org_tree.SYNTHETIC_ORG_PREFIX}unfiled-")
+    assert org_tree._key_taken("labs-synthetic-unfiled-10502")
+
+
+def test_the_backfill_never_files_into_an_unfiled_key(victim):
+    waiting = _opp(10_001, created_by=victim, org_name="Unfiled 10502")
+    SyntheticOpportunity.objects.filter(pk=waiting.pk).update(labs_org=None)
+    LabsOrg.objects.filter(pk=waiting.labs_org_id).delete()
+
+    call_command("labs_only_orgs_backfill", stdout=StringIO())
+
+    waiting.refresh_from_db()
+    assert waiting.labs_org is not None
+    assert not waiting.labs_org.slug.startswith(f"{org_tree.SYNTHETIC_ORG_PREFIX}unfiled-")
+
+
+def test_an_opp_joins_a_programme_whose_id_is_its_first_opps_own(victim):
+    """An opp with no program_id is its own programme (program_id = opportunity_id)."""
+    first = _opp(10_050, created_by=victim, org_name="Baobab Trust")
+    joining = _opp(10_051, created_by=_user("other"), org_name="Elsewhere", program_id=10_050)
+
+    assert joining.labs_org_id == first.labs_org_id
