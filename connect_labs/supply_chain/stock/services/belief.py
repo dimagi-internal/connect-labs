@@ -61,6 +61,48 @@ ZERO = Decimal("0")
 ISSUE_KINDS = ("receipt", "issue", "transfer", "distribution", "return")
 # Statuses that count a worker as under their minimum.
 BELOW = ("stockout", "below_min", "negative")
+
+
+def is_below_minimum(status) -> bool:
+    """Whether a point's status (`resupply.cover`) puts it under its own minimum: out, below it, or negative."""
+    return status in BELOW
+
+
+def below_minimum_line(below: int, workers: int) -> str:
+    """THE headline for workers in trouble, worded once for every screen (#2344).
+
+    "16 of 20 workers below minimum at their own 14-day pace": each worker's
+    cover against the minimum set on them, at their own pace over their last
+    14 days (`resupply.window_for`). Every supply screen prints this string as
+    the server made it, so the count and its words cannot drift apart. Other
+    counts on those screens are named for what they are ("blockers", "open
+    checks"), never "in trouble".
+    """
+    noun = "worker" if workers == 1 else "workers"
+    return f"{below} of {workers} {noun} below minimum at their own {resupply.WORKER_WINDOW_DAYS}-day pace"
+
+
+def workers_below_minimum(rows) -> dict:
+    """{below, workers, line} over field workers -- the one count every screen shows.
+
+    `rows` may be Beliefs or wire rows (worker_stock, network_stock, network
+    tree): anything with a kind (or a point) and a status. Stores are not workers
+    and are left out; a row with no kind is taken to be a worker (worker_stock
+    rows are all workers).
+    """
+    workers = below = 0
+    for row in rows:
+        if isinstance(row, Belief):
+            kind, status = row.point.kind, row.status
+        else:
+            kind, status = row.get("kind", "user_held"), row.get("status")
+        if kind != "user_held":
+            continue
+        workers += 1
+        below += int(is_below_minimum(status))
+    return {"below": below, "workers": workers, "line": below_minimum_line(below, workers)}
+
+
 # A receipt a worker reports is matched to any delivery recorded into the same
 # point from this many days before it to this many days after.
 RECEIPT_MATCH_DAYS_BEFORE = 14
@@ -566,7 +608,7 @@ def network_tree(program_id, item, *, on_date=None, window_days=None) -> list[Be
             node.children.append(below)
             if child.kind == "user_held":
                 node.workers += 1
-                node.workers_below_min += int(below.status in BELOW)
+                node.workers_below_min += int(is_below_minimum(below.status))
             node.workers += below.workers
             node.workers_below_min += below.workers_below_min
         if node.children:
@@ -651,6 +693,8 @@ def wire(b: Belief) -> dict:
         "unmatched_receipts": b.unmatched_receipts,
         "workers": b.workers,
         "workers_below_min": b.workers_below_min,
+        # The headline, worded once (below_minimum_line); None for a point with no workers below it.
+        "below_minimum_line": below_minimum_line(b.workers_below_min, b.workers) if b.workers else None,
         "subtree": subtree,
         "children": [wire(child) for child in b.children],
     }

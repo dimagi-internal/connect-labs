@@ -346,6 +346,38 @@ def test_workers_below_their_minimum_are_counted_up_the_tree(item, world):
     assert (central.workers, central.workers_below_min) == (2, 1)
 
 
+def test_one_below_minimum_headline_from_beliefs_or_wire_rows(item, world):
+    """#2344: one count, one wording, whatever a screen holds -- Beliefs, or the rows an operation returns."""
+    beliefs = belief.worker_beliefs(PROGRAM, item, on_date=TODAY, window_days=90)
+    statuses = sorted(b.status for b in beliefs)
+    expected = sum(1 for s in statuses if s in ("stockout", "below_min", "negative"))
+
+    assert belief.workers_below_minimum(beliefs) == {
+        "below": expected,
+        "workers": 2,
+        "line": f"{expected} of 2 workers below minimum at their own 14-day pace",
+    }
+    rows = [
+        {"kind": "user_held", "status": "below_min"},
+        {"kind": "user_held", "status": "stockout"},
+        {"kind": "user_held", "status": "ok"},
+        {"kind": "central_store", "status": "stockout"},  # a store is not a worker
+    ]
+    assert belief.workers_below_minimum(rows)["line"] == "2 of 3 workers below minimum at their own 14-day pace"
+    assert belief.below_minimum_line(0, 1) == "0 of 1 worker below minimum at their own 14-day pace"
+
+
+def test_the_tree_carries_the_headline_on_every_store_with_workers(item, world):
+    da = SupplyDataAccess(program_id=PROGRAM, caller=SYSTEM)
+    tree = call_operation("network_tree", da, {"item_id": item.pk, "as_of": TODAY.isoformat(), "window_days": 90})
+
+    (central,) = tree["roots"]
+    (partner,) = central["children"]
+    assert partner["below_minimum_line"] == "1 of 2 workers below minimum at their own 14-day pace"
+    assert central["below_minimum_line"] == partner["below_minimum_line"]
+    assert partner["children"][0]["below_minimum_line"] is None  # a worker has no workers below it
+
+
 def test_a_parent_loop_is_still_shown_rather_than_dropped(item, world):
     loop_a = point("loop-a", "facility")
     loop_b = point("loop-b", "facility", parent=loop_a)

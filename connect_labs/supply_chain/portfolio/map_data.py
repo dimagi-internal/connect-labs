@@ -40,6 +40,7 @@ from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain import records
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.operations import call_operation
+from connect_labs.supply_chain.stock.services.belief import workers_below_minimum
 
 # A shipment in one of these has left and has not arrived. The domain's own
 # list, so "moving" on the map means what `position()` means by in transit.
@@ -512,6 +513,9 @@ def program_map(request, program_id, program) -> dict:
             if line["movement_id"] is None
         ],
         "checks": every,
+        # The one headline for workers in trouble, worded by the server (#2344): the
+        # map counts blockers and places with one, and calls them that.
+        "workers_below_minimum": workers_below_minimum(stock.values()),
         "orders": orders,
         "suppliers": located_suppliers,
         "home_url": reverse("supply_chain:home") + scope,
