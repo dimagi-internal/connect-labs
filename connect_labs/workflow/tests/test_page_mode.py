@@ -235,7 +235,7 @@ def test_an_org_lands_on_its_home_page_owned_by_one_of_its_programmes(member_of_
     body = response.content.decode()
     assert response.status_code == 200 and 'id="workflow-root"' in body
     # Read where the page lives, rendered as the organisation's page.
-    assert request.labs_context == {"program_id": 25}
+    assert {k: v for k, v in request.labs_context.items() if k.endswith("_id")} == {"program_id": 25}
     assert '"type": "organization"' in body and "Acme Health" in body
     wda.create_run.assert_not_called()
 
@@ -332,3 +332,30 @@ def test_the_old_card_pages_and_their_tools_are_gone():
 
     assert get_tool("workflow_list") is not None
     assert all(get_tool(name) is None for name in ("pages_list", "pages_get", "pages_create", "pages_update"))
+
+
+def _context_button(body):
+    """The header's context picker button, as rendered."""
+    start = body.index('data-testid="context-button"')
+    return body[start : body.index("</button>", start)]
+
+
+@pytest.mark.django_db
+def test_the_context_picker_names_the_organisation_whose_page_is_open(member_of_acme):
+    """On an organisation's page the header picker shows that organisation, not "Select Context"."""
+    service.update(
+        "labs", Scope.of("organization", "acme"), {"home": {"fill": {"workflow": 47, "program_id": 25}}}, SYSTEM
+    )
+    response, _, _ = _serve("/labs/p/org/acme/", scope_type="org", scope_key="acme")
+    body = response.content.decode()
+    assert "Select Context" not in body
+    button = _context_button(body)
+    assert "Org:" in button and "Acme Health" in button
+
+
+@pytest.mark.django_db
+def test_the_context_picker_names_the_organisation_even_before_it_has_a_home(member_of_acme):
+    response, _, _ = _serve("/labs/p/org/acme/", scope_type="org", scope_key="acme")
+    body = response.content.decode()
+    assert "Select Context" not in body
+    assert "Acme Health" in _context_button(body)
