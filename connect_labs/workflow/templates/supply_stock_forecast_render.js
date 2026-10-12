@@ -143,6 +143,14 @@ function WorkflowUI({
 
   // ---- chips: every assumption, where it came from ----
   var chips = [];
+  // The forecast is laid at the protocol's ration when the commodity states
+  // one (#2386); what children are actually given is said beside it.
+  var rationAtProtocol = (basis.profile || []).length
+    ? (basis.profile || []).every(function (p) {
+        return p.basis === 'protocol';
+      })
+    : false;
+  var delivered = basis.delivered || null;
   // A basis in words: "measured, steady" said where the number came from
   // only to whoever wrote the server.
   var BASIS_WORDS = {
@@ -169,7 +177,14 @@ function WorkflowUI({
       var w = BASIS_WORDS[p.basis] || p.basis;
       if (profileBases.indexOf(w) < 0) profileBases.push(w);
     });
-    chips.push('weekly ration · ' + profileBases.join(', '));
+    var firstWeek = (basis.profile || [])[0];
+    chips.push(
+      'weekly ration · ' +
+        profileBases.join(', ') +
+        (rationAtProtocol && firstWeek
+          ? ', ' + fmt(num(firstWeek.sachets)) + ' a week'
+          : ''),
+    );
     chips.push(
       programme.enrolled_per_week !== null &&
         programme.enrolled_per_week !== undefined
@@ -526,17 +541,31 @@ function WorkflowUI({
           <div className="text-xs text-gray-500">children</div>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-3">
+          {/* The rest of every course, not the next weeks' need: with the
+              horizon's share beside it the two cards read as one story (#2386). */}
           <div className="text-xs uppercase tracking-wide text-gray-500">
-            Still owed to them
+            Rest of each child’s course
           </div>
           <div className="text-2xl font-semibold text-gray-900">
             {fmt(num(programme.owed))}{' '}
             <span className="text-sm font-normal text-gray-500">{units}</span>
           </div>
+          {programme.owed_in_horizon !== null &&
+            programme.owed_in_horizon !== undefined && (
+              <div className="text-xs text-gray-500">
+                {fmt(num(programme.owed_in_horizon)) +
+                  ' of it due in the next ' +
+                  H +
+                  ' weeks'}
+              </div>
+            )}
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-3">
           <div className="text-xs uppercase tracking-wide text-gray-500">
-            {'Needed, next ' + H + ' weeks'}
+            {'Needed, next ' +
+              H +
+              ' weeks' +
+              (rationAtProtocol ? ', at protocol' : '')}
           </div>
           <div className="text-2xl font-semibold text-gray-900">
             {fmt(num(programme.need_total))}{' '}
@@ -567,6 +596,41 @@ function WorkflowUI({
           </div>
         </div>
       </div>
+
+      {/* What is actually delivered, beside the protocol the forecast assumes
+          (#2386): measured over the days between each child's visits. */}
+      {delivered && (
+        <div
+          className="rounded-md border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700"
+          data-testid="delivered-ration"
+        >
+          {'Compared with what is delivered: children are receiving about ' +
+            num(delivered.per_day).toFixed(1) +
+            ' ' +
+            units +
+            ' a day' +
+            (delivered.share_of_protocol !== null &&
+            delivered.share_of_protocol !== undefined
+              ? ', ' +
+                delivered.share_of_protocol +
+                '% of protocol (' +
+                fmt(num(delivered.protocol_per_day)) +
+                ' a day)'
+              : '') +
+            ' — seen about every ' +
+            fmt(num(delivered.days_between_visits)) +
+            ' days, about ' +
+            fmt(num(delivered.sachets_per_visit)) +
+            ' ' +
+            units +
+            ' a visit, across ' +
+            delivered.children +
+            ' children.' +
+            (rationAtProtocol
+              ? ' The forecast above assumes the protocol.'
+              : '')}
+        </div>
+      )}
 
       <div className="rounded-lg border border-gray-200 bg-white p-3">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
@@ -663,7 +727,7 @@ function WorkflowUI({
                           : '') +
                         ' · ' +
                         fmt(owed) +
-                        ' owed'}
+                        ' left of their courses'}
                     </div>
                   </div>
                 </div>
@@ -726,7 +790,7 @@ function WorkflowUI({
                             w.open_cases +
                             ' in treatment · ' +
                             fmt(num(w.owed)) +
-                            ' owed · ' +
+                            ' left of their courses · ' +
                             (w.enrolled_per_week !== null
                               ? num(w.enrolled_per_week).toFixed(1) +
                                 ' new a week'
