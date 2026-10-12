@@ -59,6 +59,10 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
         }
     ),
     "workflow:act": frozenset({"workflow_run_action", "workflow_action_preview_view"}),
+    # A page (workflow/page_mode.py): what it is built from -- its scope, the Settings it
+    # reads and its workflow sources' run summaries -- read as the visitor. The tool
+    # refuses a definition that is not a page, or does not share, whatever the token.
+    "page:read": frozenset({"page_context"}),
     # Public open data (WorldPop, DHS, UN IGME, geoBoundaries) and arithmetic on it:
     # nothing here is specific to the visitor, so the scope adds no exposure.
     # targeting_pmc_run_model starts a compute job (IDM's EMOD on a shared on-demand box) and
@@ -131,7 +135,12 @@ PREVIEWED_WRITE_SCOPES: frozenset[str] = frozenset({"workflow:act"})
 PAGE_SCOPES: dict[str, tuple[str, ...]] = {
     "marketplace:network": ("marketplace:read",),
     "marketplace:round": ("marketplace:read",),
-    "labs:workflow:run": ("workflow:read", "workflow:act"),
+    # A page can be drawn at its workflow URL too, and pinned as a supply tab; the page
+    # scope there reaches page_context only, which refuses anything that is not a page.
+    "labs:workflow:run": ("workflow:read", "workflow:act", "page:read"),
+    "labs:page_home": ("page:read",),
+    "labs:page": ("page:read",),
+    "supply_chain:workflow_view": ("page:read",),
     "targeting:index": ("targeting:read",),
     "targeting:pmc": ("targeting:read",),
     "explorer:index": ("explorer:read",),

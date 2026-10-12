@@ -229,6 +229,9 @@ USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         "explorer_describe",
         "explorer_query",
         "get_sample_ids",
+        # A page's workflow sources: their runs' snapshot summaries can carry indicator
+        # values computed from visits. Deliberately NOT in RESTRICTED_TOOLS.
+        "page_context",
         "synthetic_local_record_dump",
         # Reads a bundle at any server path it is given.
         "synthetic_fidelity_report",

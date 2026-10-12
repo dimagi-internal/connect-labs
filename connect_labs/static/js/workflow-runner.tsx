@@ -13,6 +13,8 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { DynamicWorkflow } from '@/components/workflow/DynamicWorkflow';
+import { SandboxFrame } from '@/components/workflow/sandbox/SandboxFrame';
+import type { FramePayload } from '@/components/workflow/sandbox/protocol';
 import {
   ActionDialog,
   type ActionRequest,
@@ -23,8 +25,6 @@ import { streamTaskProgress } from './task-progress';
 import type {
   WorkflowProps,
   WorkflowDataFromDjango,
-  LinkHelpers,
-  AuditUrlParams,
   TaskUrlParams,
   ActionHandlers,
   CreateTaskParams,
@@ -69,6 +69,7 @@ import {
 } from 'lucide-react';
 import { PipelineEditor } from './pipeline-editor';
 import { LabsReport } from '@/components/workflow/report';
+import { createLinkHelpers } from '@/components/workflow/links';
 
 // The shared report library, for render code to use at runtime (see
 // components/workflow/report/index.ts). Published before any workflow renders,
@@ -680,51 +681,6 @@ function createActionHandlers(csrfToken: string): ActionHandlers {
   };
 }
 
-/**
- * Create link helpers from base URLs.
- */
-function createLinkHelpers(baseUrls: {
-  auditUrlBase: string;
-  taskUrlBase: string;
-}): LinkHelpers {
-  return {
-    auditUrl: (params: AuditUrlParams): string => {
-      const urlParams = new URLSearchParams();
-
-      if (params.username) urlParams.set('usernames', params.username);
-      if (params.usernames) urlParams.set('usernames', params.usernames);
-      if (params.count) urlParams.set('count', String(params.count));
-      urlParams.set('audit_type', params.audit_type || 'last_n_per_flw');
-      urlParams.set('granularity', params.granularity || 'per_flw');
-      if (params.start_date) urlParams.set('start_date', params.start_date);
-      if (params.end_date) urlParams.set('end_date', params.end_date);
-      if (params.title) urlParams.set('title', params.title);
-      if (params.tag) urlParams.set('tag', params.tag);
-      if (params.auto_create) urlParams.set('auto_create', 'true');
-
-      return `${baseUrls.auditUrlBase}?${urlParams.toString()}`;
-    },
-
-    taskUrl: (params: TaskUrlParams): string => {
-      const urlParams = new URLSearchParams();
-
-      if (params.username) urlParams.set('username', params.username);
-      if (params.title) urlParams.set('title', params.title);
-      if (params.description) urlParams.set('description', params.description);
-      if (params.audit_session_id)
-        urlParams.set('audit_session_id', String(params.audit_session_id));
-      if (params.workflow_instance_id)
-        urlParams.set(
-          'workflow_instance_id',
-          String(params.workflow_instance_id),
-        );
-      if (params.priority) urlParams.set('priority', params.priority);
-
-      return `${baseUrls.taskUrlBase}?${urlParams.toString()}`;
-    },
-  };
-}
-
 // Extended data type
 interface ExtendedWorkflowData extends WorkflowDataFromDjango {
   render_code?: string;
@@ -742,6 +698,10 @@ interface ExtendedWorkflowData extends WorkflowDataFromDjango {
   // The scope in view and the Settings the definition reads (page_mode.py).
   scope?: PageScope;
   config?: Record<string, Record<string, unknown>>;
+  // A page runs sandboxed (workflow/sandbox.py): the runner is the HOST -- it draws
+  // the frame at `src` and answers it, and compiles and runs no render code itself.
+  sandbox?: { src: string; origin: string };
+  mapboxToken?: string;
 }
 
 /**
@@ -834,25 +794,31 @@ function WorkflowRunner({
   const workflowDataUrl = initialData.apiEndpoints?.getWorkflowData;
   const queryWorkflowUrl = initialData.apiEndpoints?.queryWorkflow;
 
+  // Host mode (a sandboxed page): the frame gets no visit-level pipelines.
+  const sandbox = initialData.sandbox || null;
+
   // Pipeline loading status - null means loaded/ready, string means loading with message
   const [pipelineLoadingStatus, setPipelineLoadingStatus] = useState<
     string | null
   >(
-    // Already have data from server render?
-    initialData.pipeline_data &&
-      Object.keys(initialData.pipeline_data).length > 0
+    // A sandboxed page streams none.
+    sandbox
       ? null
-      : // No pipelines configured?
-        !initialData.definition.pipeline_sources?.length
+      : // Already have data from server render?
+        initialData.pipeline_data &&
+          Object.keys(initialData.pipeline_data).length > 0
         ? null
-        : // A finished run carries its own; nothing to wait for. Nor does a page
-          // that fetches its own rows (config.noPipelineStream).
-          snapshotCarriesPipelines ||
-            (definition?.config as Record<string, unknown> | undefined)
-              ?.noPipelineStream
+        : // No pipelines configured?
+          !initialData.definition.pipeline_sources?.length
           ? null
-          : // Need to load
-            'Connecting...',
+          : // A finished run carries its own; nothing to wait for. Nor does a page
+            // that fetches its own rows (config.noPipelineStream).
+            snapshotCarriesPipelines ||
+              (definition?.config as Record<string, unknown> | undefined)
+                ?.noPipelineStream
+            ? null
+            : // Need to load
+              'Connecting...',
   );
   // Opt-in per definition (`config.renderWhileLoading`): a drill-style page
   // whose headline comes from a saved report should not sit behind the
@@ -1777,6 +1743,27 @@ function WorkflowRunner({
         }
         return data as WorkflowSourceResult;
       },
+      // The page contract's file and clipboard helpers (what a sandboxed page has
+      // instead of a download link and navigator.clipboard), here done directly.
+      download: async (file: {
+        filename: string;
+        mime?: string;
+        bytes: string | ArrayBuffer | Uint8Array;
+      }): Promise<void> => {
+        const blob = new Blob([file.bytes as BlobPart], {
+          type: file.mime || 'application/octet-stream',
+        });
+        const href = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = href;
+        a.download = file.filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(href), 10_000);
+      },
+      copyText: (text: string): Promise<void> =>
+        navigator.clipboard.writeText(text),
       runAction: (
         key: string,
         args: { workers: WorkflowActionWorker[]; [k: string]: unknown },
@@ -1862,6 +1849,11 @@ function WorkflowRunner({
         return false;
       }
     };
+
+    // The page contract's confirm (a sandboxed page has no window.confirm), here
+    // the browser's own.
+    const confirmText = (text: string): Promise<boolean> =>
+      Promise.resolve(window.confirm(text));
 
     // Flags are always queried live — Flag lifecycle state-of-truth lives
     // on the Flag record, not the run snapshot. Newest-first so render code
@@ -2004,6 +1996,7 @@ function WorkflowRunner({
         tasks: tasksList,
         tasksFor,
         shareSelection,
+        confirm: confirmText,
         workflowActions,
       };
     }
@@ -2024,6 +2017,7 @@ function WorkflowRunner({
       tasks: tasksList,
       tasksFor,
       shareSelection,
+      confirm: confirmText,
       workflowActions,
     };
   }, [
@@ -2059,6 +2053,50 @@ function WorkflowRunner({
     onUpdateState: handleUpdateState,
     view: view,
   };
+
+  // Host mode: the page's props as plain data for the sandboxed frame. Whatever is
+  // in here is readable by the page's author, so it carries no workers and no
+  // pipelines (the spec's residual risk).
+  const sandboxPayload = useMemo<FramePayload | null>(() => {
+    if (!sandbox) return null;
+    return JSON.parse(
+      JSON.stringify({
+        renderCode,
+        definition,
+        instance: { ...initialData.instance, state: instanceState },
+        workers: [],
+        pipelines: {},
+        supply: snapshotSupply ?? supplyData,
+        workflows: workflowSourceData,
+        scope: initialData.scope ?? null,
+        config: initialData.config || {},
+        links: initialData.links,
+        view: {
+          state: instanceState,
+          isCompleted: initialData.instance.status === 'completed',
+          asOf:
+            initialData.instance.status === 'completed'
+              ? (initialData.instance.completed_at ?? null)
+              : null,
+        },
+        today: new Date().toISOString().slice(0, 10),
+        mapboxToken: initialData.mapboxToken || '',
+      }),
+    );
+  }, [
+    sandbox,
+    renderCode,
+    definition,
+    initialData.instance,
+    initialData.scope,
+    initialData.config,
+    initialData.links,
+    initialData.mapboxToken,
+    instanceState,
+    snapshotSupply,
+    supplyData,
+    workflowSourceData,
+  ]);
 
   return (
     <div className="flex h-full">
@@ -2434,39 +2472,51 @@ function WorkflowRunner({
                       )}
                     </div>
                   )}
-                  <DynamicWorkflow
-                    // Remount, rather than re-render, the first time pipeline
-                    // data lands. DynamicWorkflow memoises the compiled
-                    // component on [babelLoaded, renderCode, onError] -- NOT on
-                    // `pipelines` -- so without this key it re-renders in place
-                    // when data arrives after an empty first render.
-                    //
-                    // Render code that early-returns (an "authorization
-                    // needed" or "no data" panel) BEFORE declaring the rest of
-                    // its hooks then runs a different number of hooks on the
-                    // second render, and React throws #310 -- the whole report
-                    // is replaced by "Error rendering workflow". Reproduced on
-                    // workflow 13005 on 2026-09-17 while prototyping the
-                    // fallback below; 13005 is not unusual in having that
-                    // shape.
-                    //
-                    // Costs nothing on the normal path: the runner shows its
-                    // own loading panel instead of the report while
-                    // pipelineLoadingStatus is set (unless a definition opts
-                    // into config.renderWhileLoading), so the report usually
-                    // mounts once, already holding data, and this key never
-                    // changes. It only flips for a definition that renders
-                    // while loading, or after the fallback recovers -- exactly
-                    // the cases that would otherwise break.
-                    key={
-                      Object.keys(pipelineData).length
-                        ? 'pipelines-loaded'
-                        : 'pipelines-empty'
-                    }
-                    {...workflowProps}
-                    renderCode={renderCode}
-                    onError={handleRenderError}
-                  />
+                  {sandbox && sandboxPayload ? (
+                    <SandboxFrame
+                      labsOrigin={sandbox.origin || window.location.origin}
+                      payload={sandboxPayload}
+                      querySupply={(alias, args) =>
+                        actions.querySupply(alias, { args } as SupplyQuery)
+                      }
+                      queryWorkflow={(alias) => actions.queryWorkflow(alias)}
+                      shareSelection={(selection) => shareSelection(selection)}
+                    />
+                  ) : (
+                    <DynamicWorkflow
+                      // Remount, rather than re-render, the first time pipeline
+                      // data lands. DynamicWorkflow memoises the compiled
+                      // component on [babelLoaded, renderCode, onError] -- NOT on
+                      // `pipelines` -- so without this key it re-renders in place
+                      // when data arrives after an empty first render.
+                      //
+                      // Render code that early-returns (an "authorization
+                      // needed" or "no data" panel) BEFORE declaring the rest of
+                      // its hooks then runs a different number of hooks on the
+                      // second render, and React throws #310 -- the whole report
+                      // is replaced by "Error rendering workflow". Reproduced on
+                      // workflow 13005 on 2026-09-17 while prototyping the
+                      // fallback below; 13005 is not unusual in having that
+                      // shape.
+                      //
+                      // Costs nothing on the normal path: the runner shows its
+                      // own loading panel instead of the report while
+                      // pipelineLoadingStatus is set (unless a definition opts
+                      // into config.renderWhileLoading), so the report usually
+                      // mounts once, already holding data, and this key never
+                      // changes. It only flips for a definition that renders
+                      // while loading, or after the fallback recovers -- exactly
+                      // the cases that would otherwise break.
+                      key={
+                        Object.keys(pipelineData).length
+                          ? 'pipelines-loaded'
+                          : 'pipelines-empty'
+                      }
+                      {...workflowProps}
+                      renderCode={renderCode}
+                      onError={handleRenderError}
+                    />
+                  )}
                 </>
               )}
             </div>

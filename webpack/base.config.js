@@ -27,6 +27,12 @@ module.exports = {
       __dirname,
       '../connect_labs/static/js/workflow-runner.tsx',
     ),
+    // The sandboxed page frame (workflow/sandbox.py): runs a page's render code in an
+    // opaque-origin iframe; the runner above draws it in host mode.
+    'workflow-sandbox': path.resolve(
+      __dirname,
+      '../connect_labs/static/js/workflow-sandbox.tsx',
+    ),
     'pipeline-editor': path.resolve(
       __dirname,
       '../connect_labs/static/js/pipeline-editor.tsx',
