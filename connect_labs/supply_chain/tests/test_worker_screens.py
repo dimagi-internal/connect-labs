@@ -11,6 +11,7 @@ against a ledger of 120.
 """
 
 import datetime
+import html
 import re
 from contextlib import contextmanager
 from datetime import timedelta
@@ -353,6 +354,8 @@ def test_the_network_shows_a_stores_workers_and_their_totals(client_in_program, 
     # 120 + 110 on hand below the partner store, led with on the store's second line...
     subtree = text_of(re.search(r'data-testid="subtree"[^>]*>(.*?)</div>', body, re.S).group(1))
     assert "With everything below it: 230 sachets on hand" in subtree and "2 workers" in subtree
+    # The cover says what it is paced on: the Stock review's figure, not a 90-day store window (#2375).
+    assert "1.2 months of cover at its workers' own 14-day paces, added (6 sachets a day)" in html.unescape(subtree)
     # ...and what its 40 + 30 dispensed rests on is a detail, behind the disclosure.
     assert "With everything below it, of 70 given out: 30 on unapproved visits · 30 estimated" in text
     assert "given out" not in subtree and "recomputed" not in text

@@ -225,6 +225,21 @@ def test_a_store_runs_dry_when_what_its_workers_cannot_cover_passes_its_own_stoc
     assert [Decimal(v) for v in out["programme"]["left_at_top"]][:6] == [250, 250, 191, 106, 11, -94]
 
 
+def test_a_store_carries_its_pace_run_out_beside_its_need_run_out(world):
+    """Two different dates under two different labels (#2375).
+
+    At NEED the partner runs dry 3 Nov (above). At PACE -- the Network page's
+    cover, its workers' own 14-day paces added -- everything below it lasts:
+    362 sachets (250 + 72 + 40) at acacia's 70 in the last 14 days (5 a day;
+    baobab has one day of dispensing, so no pace yet) is 72 days.
+    """
+    partner = _store(_run(world), world)
+
+    assert partner["runs_dry_on"] == "2026-11-03"
+    assert partner["runs_out_at_pace_on"] == "2026-12-09"
+    assert partner["pace_window_days"] == 14
+
+
 def test_an_order_on_its_way_counts_at_the_programme_only(world, monkeypatch):
     from connect_labs.supply_chain.stock.services import network
 
