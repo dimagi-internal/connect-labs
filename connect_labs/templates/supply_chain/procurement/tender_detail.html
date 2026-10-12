@@ -11,7 +11,7 @@ is folded away, each fold with its count.
 {% endcomment %}
 <div class="flex flex-col gap-5" data-testid="tender-status">
   <div class="flex flex-wrap items-center justify-between gap-3">
-    <nav class="flex flex-wrap items-center gap-2 text-sm text-gray-600" aria-label="Breadcrumb"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:home' %}">Procurements</a><span aria-hidden="true">›</span><span>{{ tender.label }}</span></nav>
+    <nav class="flex flex-wrap items-center gap-2 text-sm text-gray-600" aria-label="Breadcrumb"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:overview' %}">Procurements</a><span aria-hidden="true">›</span><span>{{ tender.label }}</span></nav>
     {% include "supply_chain/_src_legend.html" %}
   </div>
 

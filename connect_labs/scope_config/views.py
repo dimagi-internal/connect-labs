@@ -117,6 +117,31 @@ def _supply_tabs(got) -> list[dict]:
     return out
 
 
+def _supply_landing(got, scope, tabs: list[dict]) -> str:
+    """The sentence under Supply's tabs saying which one /supply/ opens on, and why."""
+    from connect_labs.supply_chain.landing import FIELD_LANDING, holds_stock_in_the_field
+
+    labels = {tab["key"]: tab["label"] for tab in tabs}
+    landing = got["value"].get("landing")
+    if landing:
+        source = got["provenance"].get("landing", "")
+        source = "this " + source.split(" ", 1)[0] if source == got["scope"]["label"] else source
+        return f"Supply opens on {labels.get(landing, landing)} (set by {source}, as `landing`)."
+    field = labels.get(FIELD_LANDING, "Workers")
+    if scope.type == "program":
+        try:
+            in_field = holds_stock_in_the_field(int(scope.key))
+        except (TypeError, ValueError):
+            in_field = False
+        if in_field:
+            return f"Supply opens on {field}, because this programme's workers hold stock. Set `landing` to change it."
+        return "Supply opens on Overview: no worker in this programme holds stock. Set `landing` to change it."
+    return (
+        f"Each programme opens on {field} if its workers hold stock, otherwise on Overview. "
+        "Set `landing` to choose one tab for them all."
+    )
+
+
 class SettingsView(LoginRequiredMixin, TemplateView):
     template_name = "scope_config/settings.html"
 
@@ -132,6 +157,7 @@ class SettingsView(LoginRequiredMixin, TemplateView):
         for namespace in all_namespaces():
             got = service.get(namespace.key, scope, caller)
             own_label = got["scope"]["label"]
+            supply_tabs = _supply_tabs(got) if namespace.key == "supply" else None
             sections.append(
                 {
                     "namespace": namespace,
@@ -141,7 +167,8 @@ class SettingsView(LoginRequiredMixin, TemplateView):
                     "rows": _rows(got["value"], got["provenance"], own_label),
                     "own_json": json.dumps(got["data"], indent=2, sort_keys=True),
                     "history": service.history(namespace.key, scope, caller, limit=20) if got["settable_here"] else [],
-                    "supply_tabs": _supply_tabs(got) if namespace.key == "supply" else None,
+                    "supply_tabs": supply_tabs,
+                    "supply_landing": _supply_landing(got, scope, supply_tabs) if supply_tabs else "",
                 }
             )
         context.update(scope=scope, scope_label=sections[0]["got"]["scope"]["label"] if sections else str(scope))

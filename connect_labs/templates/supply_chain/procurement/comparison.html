@@ -3,7 +3,7 @@
 {% block supply_content %}
 <div class="flex flex-col gap-4" data-testid="comparison-page" id="comparison-page" data-live>
   <div class="flex flex-wrap items-center justify-between gap-3">
-    <nav class="flex flex-wrap items-center gap-2 text-sm text-gray-600" aria-label="Breadcrumb"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:home' %}">Procurements</a><span aria-hidden="true">›</span><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}">{{ tender.label|default:"Tender" }}</a><span aria-hidden="true">›</span><span>Comparison</span></nav>
+    <nav class="flex flex-wrap items-center gap-2 text-sm text-gray-600" aria-label="Breadcrumb"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:overview' %}">Procurements</a><span aria-hidden="true">›</span><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}">{{ tender.label|default:"Tender" }}</a><span aria-hidden="true">›</span><span>Comparison</span></nav>
     {% if not grid or not grid.quotes %}{% include "supply_chain/_src_legend.html" %}{% endif %}
   </div>
 {% if not commodity_slug %}
