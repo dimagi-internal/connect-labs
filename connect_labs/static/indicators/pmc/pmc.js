@@ -27,6 +27,17 @@
   );
   var BASES = ['prevalence_scaled', 'map'];
   var AGES = ['3_24', '12_24'];
+  // What each choice means, said under its control rather than in a tooltip.
+  var BASIS_HELP = {
+    prevalence_scaled:
+      "Each state's under-5 deaths × malaria's share of them: Nigeria's share (from MAP), raised or lowered by the state's DHS survey malaria prevalence. The main estimate.",
+    map: "MAP's own modelled malaria deaths for each state, 76% of them under five. The cross-check: it ranks the southern states very differently.",
+  };
+  var AGES_HELP = {
+    '3_24': 'Our proposal: every child from 3 to 24 months.',
+    '12_24':
+      'The second year of life only. Cheaper per death, but babies under one would rely on clinic-based PMC.',
+  };
   var state = readUrl();
 
   function readUrl() {
@@ -330,6 +341,8 @@
       );
     });
     el('pmc-topn').value = String(state.top_n);
+    el('pmc-basis-help').textContent = BASIS_HELP[state.deaths_basis] || '';
+    el('pmc-ages-help').textContent = AGES_HELP[state.ages] || '';
   }
 
   function rankChanged() {
