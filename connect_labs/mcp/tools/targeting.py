@@ -1867,7 +1867,11 @@ def targeting_pmc_run_status(user, *, run_id, state, cost_per_visit=None, platfo
         "same EMOD reduction x the state's under-5 malaria deaths (deaths_basis), valued at GiveWell's moral "
         "weight for an under-5 death; only deaths are counted, so the multiple is a floor. If asked whether a "
         "low-prevalence state is worth it, the multiple and the bar answer it -- cost per case barely varies "
-        "between states because clinical incidence saturates as transmission rises. Returns 'ranked' (cheapest "
+        "between states because clinical incidence saturates as transmission rises. 'recommendation' is ONE "
+        "schedule for all the states (what a trial arm or a single protocol needs); its 'tailored' is each state on "
+        "its own best schedule (what varying by state buys) -- offer both. Its 'versus_quarterly' is the proposal's "
+        "quarterly design over the same states. Every valued figure carries 'by_basis': quote the DHS-scaled and MAP "
+        "figures beside the deciding one. Returns 'ranked' (cheapest "
         "per death first, ties to more deaths averted; each pair also carries cases and cost per case; figures to two "
         "significant figures), 'best_per_state' (each state's own best design, if asked 'best per state'), "
         "'excluded' (states the model could not fit, states not in the grid, states with no design that had "
@@ -1892,11 +1896,13 @@ def targeting_pmc_run_status(user, *, run_id, state, cost_per_visit=None, platfo
             },
             "deaths_basis": {
                 "type": "string",
-                "enum": ["prevalence_scaled", "map"],
+                "enum": ["lower", "prevalence_scaled", "map"],
                 "description": (
-                    "How each state's under-5 malaria deaths are estimated. Default 'prevalence_scaled' (under-5 "
-                    "deaths x malaria's national share, spread by DHS prevalence); 'map' uses MAP's modelled "
-                    "malaria deaths -- a cross-check, its state pattern does not track DHS prevalence."
+                    "Which under-5 malaria deaths the DECISIONS use. Default 'lower': in each state the lower of the "
+                    "two estimates, so a pick survives either. 'prevalence_scaled' (under-5 deaths x malaria's "
+                    "national share, spread by DHS prevalence) and 'map' (MAP's modelled deaths) are each estimate "
+                    "alone. Whatever the basis, every figure carries 'by_basis' with both estimates on their own: "
+                    "quote them beside the deciding figure, never one estimate alone."
                 ),
             },
             "ages": {
@@ -1926,7 +1932,7 @@ def targeting_pmc_rank(
     cost_per_visit=None,
     platform_fee=None,
     dose_rate=None,
-    deaths_basis="prevalence_scaled",
+    deaths_basis="lower",
     ages="3_24",
     budgets=None,
 ):
@@ -1952,7 +1958,9 @@ def targeting_pmc_rank(
         costs = pmc.costs_or_default(cost_per_visit, platform_fee, dose_rate)
         # An unloaded registry gives no deaths at all: rank by cost per case and say so, rather than
         # excluding every state.
-        deaths = mortality.malaria_u5_deaths(mortality.registry_burden(), deaths_basis) or None
+        burden = mortality.registry_burden()
+        deaths = mortality.malaria_u5_deaths(burden, deaths_basis) or None
+        deaths_by_basis = {b: mortality.malaria_u5_deaths(burden, b) for b in mortality.ESTIMATES} if deaths else None
         out = rank.rank_pairs(
             states,
             **costs,
@@ -1962,6 +1970,7 @@ def targeting_pmc_rank(
             deaths_basis=deaths_basis,
             ages=ages,
             budgets=rank.DEFAULT_BUDGETS if budgets is None else budgets,
+            deaths_by_basis=deaths_by_basis,
         )
         if deaths is None:
             out["note"] = " ".join(

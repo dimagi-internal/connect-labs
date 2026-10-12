@@ -196,9 +196,13 @@ class TestThePage:
         settings.PMC_STATE_GRID_PATH = "/nonexistent/pmc_state_grid.json"
         body = client_in.get(reverse("targeting:pmc")).content.decode()
         # The four inputs a visitor changes, each labelled; the rest stated, not hidden in a tooltip.
-        for label in ("States", "Price", "Malaria deaths", "Children"):
+        for label in ("States", "Price", "Children"):
             assert f'<div class="pmc-in-k">{label}' in body
         assert "85% of the children reached each round" in body
+        # Deaths are not a choice: decisions use the lower estimate in each state, and both are shown.
+        assert 'data-basis="' not in body
+        assert "lower of the two in each state" in body
+        assert "there is nothing to run" in body
         assert "worth 113 units of value" in body and "0.003 units a dollar" in body
         assert "6&times; bar is about $6,300 per death averted" in body
 

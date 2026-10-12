@@ -15,7 +15,11 @@ high-burden state from a low one is deaths, so the ranking needs deaths averted 
   is proportional to its prevalence.
 * ``map``: MAP's own modelled malaria deaths for the state x the under-5 share. MAP's subnational
   mortality surface does not track DHS prevalence (Imo, 26% prevalence, has more than twice Kebbi's
-  deaths at 76%), which is why it is the cross-check, not the default.
+  deaths at 76%).
+* ``lower`` (the default): in each state, the lower of the two. The estimates disagree state by state, by
+  more than threefold in places, and neither is known to be right, so a decision -- which schedule, which
+  states, what a budget buys -- is made on the figure it would survive either way. The ranking reports each
+  estimate on its own beside it (``deaths_by_basis``), so nothing is hidden by the choice.
 
 **Valuing a death averted.** Deaths averted = the design's EMOD reduction in under-5 cases x the
 state's under-5 malaria deaths: mortality is assumed to fall in proportion to clinical cases. Each death
@@ -30,8 +34,10 @@ from __future__ import annotations
 
 from connect_labs.labs.indicators.cost_effectiveness import BAR, BENCHMARK_UOV_PER_DOLLAR, MORAL_WEIGHT, Parameter
 
-BASES = ("prevalence_scaled", "map")
-DEFAULT_BASIS = "prevalence_scaled"
+#: The two estimates, and the per-state lower of them that decisions are made on.
+ESTIMATES = ("prevalence_scaled", "map")
+BASES = ("lower",) + ESTIMATES
+DEFAULT_BASIS = "lower"
 
 U5_SHARE_OF_MALARIA_DEATHS = Parameter(
     0.76, "WHO World Malaria Report 2023: children under 5 were ~76% of malaria deaths in the African Region"
@@ -50,6 +56,9 @@ def malaria_u5_deaths(states: dict[str, dict], basis: str = DEFAULT_BASIS) -> di
     if basis not in BASES:
         raise ValueError(f"deaths_basis must be one of {', '.join(BASES)}; got {basis!r}")
     share_u5 = U5_SHARE_OF_MALARIA_DEATHS.value
+    if basis == "lower":
+        dhs, map_ = malaria_u5_deaths(states, "prevalence_scaled"), malaria_u5_deaths(states, "map")
+        return {n: min(dhs[n], map_[n]) for n in dhs if n in map_}
     if basis == "map":
         return {n: s["map_malaria_deaths"] * share_u5 for n, s in states.items() if s.get("map_malaria_deaths")}
     full = {n: s for n, s in states.items() if s.get("u5_deaths") and s.get("pfpr") and s.get("pop_u5")}
