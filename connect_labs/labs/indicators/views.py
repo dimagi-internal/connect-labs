@@ -971,7 +971,7 @@ class PmcRankView(OpenLocallyMixin, View):
             request,
             states=states,
             top_n=top_n,
-            deaths_basis=request.GET.get("deaths_basis") or "prevalence_scaled",
+            deaths_basis=request.GET.get("deaths_basis") or "lower",
             ages=request.GET.get("ages") or "3_24",
             budgets=budgets,
             **_pmc_costs(request),
