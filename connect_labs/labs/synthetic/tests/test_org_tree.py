@@ -17,14 +17,17 @@ def test_slugify_empty_falls_back_to_labs():
     assert org_tree.slugify("   ") == "labs"
 
 
-def test_synthetic_org_slug_uses_org_name():
+def test_the_legacy_key_is_made_from_the_org_name():
+    assert org_tree.legacy_org_slug("Baobab Institute") == "labs-synthetic-baobab-institute"
+
+
+def test_the_legacy_key_defaults_when_blank():
+    assert org_tree.legacy_org_slug("") == "labs-synthetic-labs-synthetic"
+
+
+def test_an_unfiled_opp_is_never_keyed_by_its_name():
     opp = SyntheticOpportunity(opportunity_id=10001, org_name="Baobab Institute", labs_only=True)
-    assert org_tree.synthetic_org_slug(opp) == "labs-synthetic-baobab-institute"
-
-
-def test_synthetic_org_slug_defaults_when_blank():
-    opp = SyntheticOpportunity(opportunity_id=10001, org_name="", labs_only=True)
-    assert org_tree.synthetic_org_slug(opp) == "labs-synthetic-labs-synthetic"
+    assert org_tree.synthetic_org_slug(opp) == "labs-synthetic-unfiled-10001"
 
 
 def test_synthetic_program_id_prefers_program_id():

@@ -148,7 +148,7 @@ class TenderForm(ScopedForm):
                 css_class="pt-2",
             ),
         )
-        self.fields["owner_org"].queryset = LabsOrg.objects.order_by("name")
+        self.fields["owner_org"].queryset = LabsOrg.objects.real().order_by("name")
         self.fields["duty_terms"].choices = [
             ("", _("Not settled")),
             ("buyer_waiver", _("We import under the duty waiver")),
@@ -426,7 +426,7 @@ class ApprovalRequestForm(ScopedForm):
         # and the technical partner the buyer means was pages down (the
         # test-kit render). The same correction `buyer_org` already carries;
         # this picker was simply one behind it.
-        self.fields["approver_org"].queryset = _programme_first(LabsOrg.objects.all(), self._orgs_in_this_programme())
+        self.fields["approver_org"].queryset = _programme_first(LabsOrg.objects.real(), self._orgs_in_this_programme())
         self.fields["approver_org"].empty_label = _("Select an organisation…")
         self.fields["requested_on"].initial = date.today()
         set_choices(
@@ -511,7 +511,7 @@ class CommitmentForm(ScopedForm):
         set_choices(
             self, "kind", [("question", _("An answer to their question")), ("promise", _("Something we promised"))]
         )
-        self.fields["owed_to_org"].queryset = LabsOrg.objects.order_by("name")
+        self.fields["owed_to_org"].queryset = LabsOrg.objects.real().order_by("name")
         self.fields["owed_to_org"].empty_label = _("Select an organisation\u2026")
         self.fields["raised_on"].initial = date.today()
         self.helper.layout = Layout(

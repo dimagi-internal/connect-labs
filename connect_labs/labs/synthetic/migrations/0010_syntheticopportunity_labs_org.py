@@ -12,8 +12,10 @@ A bucket several people (or no recorded person) filled is nobody's: its settings
 stay with Dimagi staff until someone is made its administrator.
 
 Opps made after this are filed by `labs.synthetic.org_tree.assign_labs_org`.
-Reversing drops the column; the rows and memberships it made are kept (harmless,
-and a re-run finds them).
+Irreversible, deliberately. The organisation rows and admin memberships it makes
+cannot be told apart from ones made afterwards, and leaving them behind with
+nothing filed under them would leave admins of organisations that no longer
+mean anything. To undo it, take a database snapshot first.
 """
 
 import django.db.models.deletion
@@ -81,5 +83,5 @@ class Migration(migrations.Migration):
             ),
         ),
         # Labs' own data, on the primary database only (multidb/db_router.py).
-        migrations.RunPython(backfill, migrations.RunPython.noop, hints={"run_on_secondary": False}),
+        migrations.RunPython(backfill, hints={"run_on_secondary": False}),
     ]

@@ -165,6 +165,20 @@ does not. Organisations that existed before this (the `labs-synthetic-<name>` bu
 kept their keys (migration `synthetic/0010`); a bucket one person made is theirs, one
 several people filled has no administrator until staff add one.
 
+What makes a row a labs-only organisation is `LabsOrg.labs_only`, set only by this
+filing and by the migrations -- not the `labs-synthetic-` prefix and not the org tree.
+The prefix is reserved: `org_upsert` refuses it, self-registration steers clear of it,
+and a Connect organisation that calls itself "Labs Synthetic ..." holds nothing by it.
+Only Dimagi staff (the Django staff bit) change or merge a labs-only row, and only an
+admin membership granted *for* the organisation counts (`OrgMembership.granted_for_org_id`);
+one a merge carried across does not. An opp with no organisation gets a key of its own
+(`labs-synthetic-unfiled-<opp id>`), never its name's.
+
+After a deploy that runs these migrations:
+
+    python manage.py labs_only_orgs_backfill   # files opps the old code made mid-deploy; idempotent
+    python manage.py labs_only_orgs_report     # read-only: each labs-only org, its admins, opps, domains
+
 ### Human names: workers and cases
 
 A generated opp reads like a real one when its workers and cases have names.
