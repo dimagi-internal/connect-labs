@@ -580,7 +580,8 @@ class SupplyDataAccess(
         fill_profile(org, data, overwrite=True)
 
     def list_orgs(self):
-        return list(LabsOrg.objects.all())
+        # Labs-only organisations are demo data's, not parties supply deals with.
+        return list(LabsOrg.objects.real())
 
     def get_org(self, org_id: int):
         return LabsOrg.objects.filter(pk=org_id).first()

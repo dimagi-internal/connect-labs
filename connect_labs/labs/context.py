@@ -48,10 +48,10 @@ def _merge_labs_only_opps(org_data: dict, user) -> dict:
     """Append visible labs-only synthetic opps to org/program/opportunity lists."""
     # Local import to avoid circular dependency with labs.synthetic.models at module load.
     from connect_labs.labs.synthetic.models import SyntheticOpportunity
-    from connect_labs.labs.synthetic.org_tree import synthetic_org_slug, synthetic_program_id
+    from connect_labs.labs.synthetic.org_tree import synthetic_org_name, synthetic_org_slug, synthetic_program_id
 
     try:
-        candidates = list(SyntheticOpportunity.objects.filter(labs_only=True, enabled=True))
+        candidates = list(SyntheticOpportunity.objects.filter(labs_only=True, enabled=True).select_related("labs_org"))
     except Exception:  # noqa: BLE001 — DB unavailable should never break context
         logger.exception("Failed to query labs-only synthetic opportunities")
         return org_data
@@ -72,12 +72,13 @@ def _merge_labs_only_opps(org_data: dict, user) -> dict:
     for opp in visible:
         if opp.opportunity_id in existing_opp_ids:
             continue
-        org_label = opp.org_name or "Labs Synthetic"
         program_label = opp.program_name or "Labs Synthetic"
-        # Stable synthetic slug/id so the same opp gets the same shell across requests.
-        # Derivation rules are shared with the /api/export/opp_org_program_list endpoint
-        # (labs.synthetic.org_tree) so the two surfaces can't drift.
+        # The organisation is the opp's registry row (SyntheticOpportunity.labs_org), keyed
+        # by that row's slug -- not its free-text org_name, which only labels it. Rules are
+        # shared with the /api/export/opp_org_program_list endpoint (labs.synthetic.org_tree)
+        # so the two surfaces can't drift.
         org_slug = synthetic_org_slug(opp)
+        org_label = synthetic_org_name(opp)
         # Labs-only program id, in the reserved >= 10_000 range so it can't collide with
         # real Connect program PKs. Defaults to the opp's own id (1 opp = 1 program), but
         # several opps can share one program by setting SyntheticOpportunity.program_id —
