@@ -27,7 +27,10 @@ urlpatterns = [
         RedirectView.as_view(url="/supply/%(area)s/tenders/%(rest)s", permanent=True, query_string=True),
     ),
     # the domain shell — sub-components and their state
-    path("", views.DomainHomeView.as_view(), name="home"),
+    # The front door: the tab this programme opens on (landing.py), or Overview
+    # right here. Overview's own tab links to overview/, so it never bounces on.
+    path("", views.supply_front_door, name="home"),
+    path("overview/", views.DomainHomeView.as_view(), name="overview"),
     # The one address here that is NOT programme-scoped. It sits at the top
     # rather than under a sub-component because it is above all of them: one
     # row per programme, each linking down into its own chain. The slug is the
@@ -422,7 +425,8 @@ _HAPPENED_ROUTES = {
 
 def _is_live(pattern, prefix="") -> bool:
     route = prefix + str(pattern.pattern).lstrip("^")
-    if route.startswith(_LIVE_PREFIXES):
+    # The front door wraps the Overview it serves itself (views.supply_front_door).
+    if route == "" or route.startswith(_LIVE_PREFIXES):
         return True
     return getattr(pattern.callback, "view_class", None) is RedirectView
 

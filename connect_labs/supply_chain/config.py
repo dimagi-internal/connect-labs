@@ -9,13 +9,19 @@ programme adds:
                                  "label": "Stock review", "slug": "stock-review"},
         "forecast":             {"fill": {"workflow": 8495, "opportunity_id": 10113},
                                  "label": "Forecast", "after": "supply_chain:flow"},
-        "supply_chain:alerts":  {"hidden": true}}}
+        "supply_chain:alerts":  {"hidden": true}},
+     "landing": "supply_chain:workers"}
 
 A `fill` makes the tab a workflow (or a page, which is a workflow with no runs),
 opened inside the supply header at /supply/views/<slug>/. Set by an
 organisation for every programme it owns, or by a programme; never by a person
 (decision 4). Overview cannot be hidden: it is where "pick a programme" and
 "this tab is turned off" send you.
+
+`landing` is the tab /supply/ opens on, named the way `tabs` names one. Unset, a
+programme whose stock is held in the field opens on its workers' tab (Stock
+review, where a workflow fills it) and every other programme on Overview
+(supply_chain/landing.py). "supply_chain:home" keeps a programme on Overview.
 
 Replaces `SupplyWorkflowView` as where pins live (migration
 scope_config/0002); `Pin` keeps that model's attribute names, so everything
@@ -67,7 +73,10 @@ TAB = {
 
 SCHEMA = {
     "type": "object",
-    "properties": {"tabs": {"type": "object", "additionalProperties": TAB}},
+    "properties": {
+        "tabs": {"type": "object", "additionalProperties": TAB},
+        "landing": {"type": "string", "minLength": 1, "maxLength": 200},
+    },
     "additionalProperties": False,
 }
 
@@ -75,13 +84,20 @@ SCHEMA = {
 def _check_layer(data: dict) -> None:
     """What one layer may say on its own: keys, and Overview left alone."""
     builtins = set(_builtin_names())
+    landing = data.get("landing")
+    if landing and landing not in builtins and not _is_slug(landing):
+        raise ValueError(f"landing: {landing!r} is neither a Supply tab nor an added tab's key")
     for key, tab in (data.get("tabs") or {}).items():
         if key == HOME and tab.get("hidden"):
             raise ValueError("Overview cannot be hidden: it is where Supply sends you to pick a programme")
         if key == HOME and tab.get("fill"):
             raise ValueError("Overview cannot be replaced by a workflow")
-        if key not in builtins and (not all(c.isalnum() or c == "-" for c in key) or key != key.lower()):
+        if key not in builtins and not _is_slug(key):
             raise ValueError(f"tabs.{key}: an added tab's key is a lower-case slug")
+
+
+def _is_slug(key: str) -> bool:
+    return all(c.isalnum() or c == "-" for c in key) and key == key.lower()
 
 
 def _check_resolved(value: dict) -> None:
@@ -101,6 +117,12 @@ def _check_resolved(value: dict) -> None:
             if slug in slugs:
                 raise ValueError(f"tabs.{key}: slug {slug!r} is already used by tabs.{slugs[slug]}")
             slugs[slug] = key
+    # A landing on a tab that is merely hidden is allowed (it opens on Overview
+    # instead): a programme turning off its organisation's landing tab is a
+    # normal thing to do, not a contradiction to refuse.
+    landing = value.get("landing")
+    if landing and landing not in builtins and not ((value.get("tabs") or {}).get(landing) or {}).get("fill"):
+        raise ValueError(f"landing: {landing!r} names a tab this programme does not have")
 
 
 def _owners(data: dict) -> list:
@@ -187,8 +209,8 @@ def hidden_from(tabs: dict) -> set[str]:
     return {key for key, tab in (tabs or {}).items() if tab.get("hidden") and key != HOME}
 
 
-def tabs_for(request, program_id) -> dict:
-    """The programme's resolved `tabs` (organisation layer, then programme)."""
+def resolved_for(request, program_id) -> dict:
+    """The programme's resolved `supply` settings (organisation layer, then programme)."""
     from connect_labs.scope_config import service
     from connect_labs.scope_config.scopes import Scope
 
@@ -198,4 +220,9 @@ def tabs_for(request, program_id) -> dict:
         scope = Scope.of("program", int(program_id))
     except (TypeError, ValueError):
         return {}
-    return service.resolved_for_request(request, SUPPLY.key, scope).get("tabs") or {}
+    return service.resolved_for_request(request, SUPPLY.key, scope)
+
+
+def tabs_for(request, program_id) -> dict:
+    """The programme's resolved `tabs` (organisation layer, then programme)."""
+    return resolved_for(request, program_id).get("tabs") or {}
