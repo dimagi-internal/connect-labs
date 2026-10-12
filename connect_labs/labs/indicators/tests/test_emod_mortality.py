@@ -15,7 +15,7 @@ STATES = {
 
 
 def test_prevalence_scaled_spreads_the_national_share_by_prevalence():
-    got = mortality.malaria_u5_deaths(STATES)
+    got = mortality.malaria_u5_deaths(STATES, "prevalence_scaled")
     national_share = (5_000 + 15_000) * 0.76 / 55_000
     national_pfpr = 0.4
     assert got["High"] == pytest.approx(40_000 * national_share * 0.6 / national_pfpr)
@@ -23,6 +23,16 @@ def test_prevalence_scaled_spreads_the_national_share_by_prevalence():
     assert "Gap" not in got  # no all-cause figure: left out, not guessed
     # Malaria's share of a state's under-5 deaths is proportional to its prevalence.
     assert got["High"] / 40_000 == pytest.approx(3 * got["Low"] / 15_000)
+
+
+def test_the_default_is_the_lower_of_the_two_estimates_in_each_state():
+    dhs = mortality.malaria_u5_deaths(STATES, "prevalence_scaled")
+    map_ = mortality.malaria_u5_deaths(STATES, "map")
+    got = mortality.malaria_u5_deaths(STATES)
+    # High: DHS-scaled is far above MAP's, so MAP's counts; Low is the other way round.
+    assert got["High"] == pytest.approx(map_["High"]) and map_["High"] < dhs["High"]
+    assert got["Low"] == pytest.approx(dhs["Low"]) and dhs["Low"] < map_["Low"]
+    assert "Gap" not in got  # only where both estimates exist
 
 
 def test_the_share_is_capped():

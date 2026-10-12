@@ -236,7 +236,7 @@ def test_deaths_rank_by_cost_per_death_and_value_against_the_bar(grid):
     deaths = {"Ondo": 4_000.0, "Kano": 200.0}  # Kano cheap per case, but few deaths to avert
     out = rank.rank_pairs(["Ondo", "Kano"], grid=grid, deaths=deaths)
 
-    assert out["ranked_by"] == "cost per death averted" and out["deaths_basis"] == "prevalence_scaled"
+    assert out["ranked_by"] == "cost per death averted" and out["deaths_basis"] == "lower"
     assert [r["state"] for r in out["ranked"][:2]] == ["Ondo", "Ondo"]
     top = out["ranked"][0]
     d = grid["states"]["Ondo"]["designs"][top["design_code"]]
@@ -250,7 +250,7 @@ def test_deaths_rank_by_cost_per_death_and_value_against_the_bar(grid):
     assert out["pairs_clearing_bar"] == sum(r["clears_bar"] for r in out["ranked"])
     assert out["states_clearing_bar"] == len({r["state"] for r in out["ranked"] if r["clears_bar"]})
     assert all(r["clears_bar"] == (r["multiple_of_benchmark"] >= mortality.BAR.value) for r in out["ranked"])
-    assert out["caveats"][-1] == rank.DEATHS_CAVEATS["prevalence_scaled"]
+    assert out["caveats"][-1] == rank.DEATHS_CAVEATS["lower"]
 
 
 def test_a_state_with_no_death_figure_is_excluded_with_the_reason(grid):
@@ -460,3 +460,55 @@ class TestBudgetPlans:
     def test_bad_budgets_are_refused(self, grid):
         with pytest.raises(ValueError, match="budgets"):
             rank.rank_pairs(["Ondo"], grid=grid, budgets=[-1])
+
+
+class TestTailored:
+    """Each state on its own best schedule, beside the one schedule for all."""
+
+    STATES = ["A", "B"]
+
+    def pooled(self):
+        return {
+            # 8 monthly is best pooled, but year-round is better in B on its own.
+            "pmc_m8_onset": _pool("8 monthly", {"A": (100, 20), "B": (100, 8)}),
+            "pmc_m12": _pool("Year-round", {"A": (150, 10), "B": (150, 12)}),
+        }
+
+    def test_each_state_gets_its_own_best_schedule(self):
+        got = rank.recommend(self.pooled(), self.STATES)
+
+        assert got["design_code"] == "pmc_m8_onset"
+        tailored = got["tailored"]
+        assert [(s["state"], s["schedule"]) for s in tailored["states"]] == [("A", "8 monthly"), ("B", "Year-round")]
+        assert tailored["schedules_used"] == 2
+        assert tailored["deaths_averted_per_year"] == 250
+        assert tailored["multiple_of_benchmark"] > got["multiple_of_benchmark"]
+
+    def test_a_state_below_the_bar_everywhere_is_not_funded(self):
+        pooled = {"pmc_m8_onset": _pool("8 monthly", {"A": (100, 20), "B": (100, 3)})}
+
+        got = rank.recommend(pooled, self.STATES)["tailored"]
+
+        assert [s["state"] for s in got["states"]] == ["A"]
+
+
+def test_every_figure_carries_each_death_estimate_alone(grid):
+    lower = {"Ondo": 2_000.0, "Kano": 10_000.0}
+    by_basis = {"prevalence_scaled": {"Ondo": 2_000.0, "Kano": 20_000.0}, "map": {"Ondo": 4_000.0, "Kano": 10_000.0}}
+
+    out = rank.rank_pairs(["Ondo", "Kano"], grid=grid, deaths=lower, deaths_by_basis=by_basis)
+
+    reco = out["recommendation"]
+    # Ondo's MAP deaths are twice the lower figure, Kano's DHS-scaled twice: each estimate is at least the lower.
+    assert set(reco["by_basis"]) == {"prevalence_scaled", "map"}
+    for b in ("prevalence_scaled", "map"):
+        assert reco["by_basis"][b]["multiple_of_benchmark"] >= reco["multiple_of_benchmark"]
+    assert all(set(r["by_basis"]) == {"prevalence_scaled", "map"} for r in out["by_design"] if "by_basis" in r)
+    assert all("by_basis" in p for p in out["ranked"])
+    assert all(p["by_basis"] for p in out["budget_plans"] if p["design_code"])
+
+
+def test_without_other_estimates_there_is_no_by_basis(grid):
+    out = rank.rank_pairs(["Ondo", "Kano"], grid=grid, deaths={"Ondo": 4_000.0, "Kano": 20_000.0})
+
+    assert out["recommendation"]["by_basis"] is None and "by_basis" not in out["ranked"][0]

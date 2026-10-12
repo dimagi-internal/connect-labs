@@ -77,6 +77,13 @@ CAVEATS = (
 )
 
 DEATHS_CAVEATS = {
+    "lower": (
+        "Deaths: in each state, the lower of two estimates of its under-5 malaria deaths -- DHS-scaled (the state's "
+        "under-5 deaths x malaria's national share from MAP, spread by DHS prevalence) and MAP's own modelled deaths "
+        "x 76% under five. They disagree by more than threefold in places, so decisions use the figure that "
+        "survives either; 'by_basis' gives each estimate alone. Mortality is assumed to fall with clinical cases, "
+        "and only deaths are valued, so every multiple is a floor."
+    ),
     "prevalence_scaled": (
         "Deaths: the state's under-5 deaths x malaria's share of them, set nationally from MAP and spread by DHS "
         "prevalence. Mortality is assumed to fall with clinical cases, and only deaths are valued (GiveWell's "
@@ -147,6 +154,25 @@ def _in_ages(code: str, kind: str | None, ages: str) -> bool:
     return ages == "any" or design_ages(code, kind) == ages
 
 
+def _by_basis(rows, spend: float) -> dict | None:
+    """Each death estimate's deaths averted and multiple for ``rows`` (dicts carrying ``deaths_by``) at ``spend``.
+
+    None when the rows carry no per-estimate deaths (the caller passed only the deciding basis)."""
+    if not rows or spend <= 0 or any("deaths_by" not in r for r in rows):
+        return None
+    out = {}
+    for basis in rows[0]["deaths_by"]:
+        d = sum(r["deaths_by"][basis] for r in rows)
+        if d > 0:
+            v = mortality.value(d, spend)
+            out[basis] = {
+                "deaths_averted_per_year": sig(d, 3),
+                "multiple_of_benchmark": round(v["multiple_of_benchmark"], 1),
+                "clears_bar": v["clears_bar"],
+            }
+    return out
+
+
 def budget_plans(pooled: dict[str, dict], considered: list[str], budgets, ages: str = DEFAULT_AGES) -> list[dict]:
     """For each annual budget: the one schedule, and the states to run it in, that avert the most under-5 deaths.
 
@@ -197,9 +223,48 @@ def budget_plans(pooled: dict[str, dict], considered: list[str], budgets, ages: 
                 "spend_per_year": sig(spend, 3),
                 "cost_per_death_averted": sig(v["cost_per_death_averted"]),
                 "multiple_of_benchmark": round(v["multiple_of_benchmark"], 1),
+                "by_basis": _by_basis(chosen, spend),
             }
         )
     return out
+
+
+def tailored(cands: dict[str, dict], considered: list[str]) -> dict | None:
+    """Each state its own schedule: the one (among ``cands``, one age band) with the best value there.
+
+    The single-schedule recommendation is what a trial arm or one national protocol needs; this is what letting
+    the schedule vary by state would buy instead. A state is funded only where its best schedule's effect is clear
+    and clears GiveWell's bar, as everywhere else. None when no state qualifies.
+    """
+    chosen = []
+    for name in considered:
+        best = None
+        for p in cands.values():
+            r = next((r for r in p["per_state"] if r["state"] == name), None)
+            if not r or r["deaths"] <= 0 or not r.get("clear", True) or r["spend"] <= 0:
+                continue
+            v = mortality.value(r["deaths"], r["spend"])
+            if v["clears_bar"] and (best is None or v["multiple_of_benchmark"] > best[0]):
+                best = (v["multiple_of_benchmark"], r, p)
+        if best:
+            chosen.append(best)
+    if not chosen:
+        return None
+    rows = [r for _, r, _ in chosen]
+    d, s = sum(r["deaths"] for r in rows), sum(r["spend"] for r in rows)
+    v = mortality.value(d, s)
+    return {
+        "states": [
+            {"state": r["state"], "schedule": p["label"], "multiple_of_benchmark": round(m, 1)}
+            for m, r, p in sorted(chosen, key=lambda t: -t[0])
+        ],
+        "schedules_used": len({p["label"] for _, _, p in chosen}),
+        "deaths_averted_per_year": sig(d, 3),
+        "spend_per_year": sig(s, 3),
+        "cost_per_death_averted": sig(v["cost_per_death_averted"]),
+        "multiple_of_benchmark": round(v["multiple_of_benchmark"], 1),
+        "by_basis": _by_basis(rows, s),
+    }
 
 
 def recommend(
@@ -280,6 +345,8 @@ def recommend(
         "spend_per_year": sig(sum(r["spend"] for r in kept_rows), 3),
         "cost_per_death_averted": sig(programme["cost_per_death_averted"]) if programme else None,
         "multiple_of_benchmark": round(programme["multiple_of_benchmark"], 1) if programme else 0.0,
+        "by_basis": _by_basis(kept_rows, sum(r["spend"] for r in kept_rows)),
+        "tailored": tailored(cands, considered),
         "step_up": None,
         "versus_quarterly": None,
     }
@@ -313,6 +380,7 @@ def recommend(
                 "multiple_of_benchmark": round(v["multiple_of_benchmark"], 1),
                 "cost_per_death_averted": sig(v["cost_per_death_averted"]),
                 "deaths_per_dollar_ratio": round(whole["multiple_of_benchmark"] / v["multiple_of_benchmark"], 1),
+                "by_basis": _by_basis(q["per_state"], sum(r["spend"] for r in q["per_state"])),
             }
     return out
 
@@ -404,6 +472,7 @@ def rank_pairs(
     deaths_basis: str = mortality.DEFAULT_BASIS,
     ages: str = DEFAULT_AGES,
     budgets=DEFAULT_BUDGETS,
+    deaths_by_basis: dict[str, dict[str, float]] | None = None,
 ) -> dict:
     """The top ``top_n`` (state, design) pairs in ``states``, best value first.
 
@@ -411,6 +480,9 @@ def rank_pairs(
     pair that averts more cases. With ``deaths`` ({state: under-5 malaria deaths a year}) the order is
     cost per death averted, ties to more deaths averted. Raises ValueError for impossible costs (dose_rate <= 0,
     negative prices), a top_n below 1, an unknown kind or deaths_basis; the tool turns that into a 400.
+
+    ``deaths_by_basis`` ({basis: {state: deaths}}), when given, is reported beside every figure as ``by_basis``:
+    the decisions are made on ``deaths`` alone, and each other estimate says what the same choice is worth on it.
     """
     per_dose = pmc.cost_per_dose(cost_per_visit, platform_fee, dose_rate)
     if deaths_basis not in mortality.BASES:
@@ -439,6 +511,12 @@ def rank_pairs(
                 seen.add(key)
                 wanted.append(_match(key, by_lower) or s.strip())
 
+    # Each state's deaths on every other estimate, only where it has them all.
+    by_state: dict[str, dict | None] = {}
+    if deaths_by_basis:
+        for n in grid.get("states", {}):
+            got = {b: d.get(n) for b, d in deaths_by_basis.items()}
+            by_state[n] = got if all(got.values()) else None
     pairs, excluded, excluded_designs = [], [], []
     pooled: dict[str, dict] = {}
     considered: list[str] = []
@@ -488,8 +566,12 @@ def rank_pairs(
                 pool["cases"] = pool.get("cases", 0) + cases
                 if state_deaths:
                     pool["deaths"] = pool.get("deaths", 0) + pct / 100 * state_deaths
+                    row_by = {"deaths_by": by_state[name]} if by_state.get(name) is not None else {}
+                    if row_by:
+                        row_by = {"deaths_by": {b: pct / 100 * v for b, v in row_by["deaths_by"].items()}}
                     pool.setdefault("per_state", []).append(
                         {
+                            **row_by,
                             "state": name,
                             "design_label": _design_label(d),
                             "deaths": pct / 100 * state_deaths,
@@ -507,6 +589,10 @@ def rank_pairs(
             spend = d["doses_per_child_per_year"] * d["target_pop_fraction"] * pop_u5 * per_dose
             mine += 1
             valued = mortality.value(pct / 100 * state_deaths, spend) if state_deaths else {}
+            if valued and by_state.get(name):
+                valued["by_basis"] = _by_basis(
+                    [{"deaths_by": {b: pct / 100 * v for b, v in by_state[name].items()}}], spend
+                )
             pairs.append(
                 {
                     **valued,
@@ -566,6 +652,7 @@ def rank_pairs(
                 cost_per_death_averted=sig(valued["cost_per_death_averted"]),
                 multiple_of_benchmark=round(valued["multiple_of_benchmark"], 1),
                 clears_bar=valued["clears_bar"],
+                by_basis=_by_basis(pool.get("per_state") or [], spend),
             )
         by_design.append(row)
     sort_key = "cost_per_death_averted" if deaths is not None else "cost_per_case_averted"
