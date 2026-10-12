@@ -178,6 +178,13 @@ class OrgMembership(models.Model):
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    # The organisation this membership was granted FOR, fixed when it is made.
+    # `org_merge` moves memberships to the row it keeps with a bulk update, so
+    # `org` can change underneath a membership while this cannot: a membership
+    # whose `org` no longer matches came across in a merge, and is not a grant
+    # anyone made for the organisation it now sits on. Labs-only organisations
+    # honour only memberships granted for them (scope_config.service).
+    granted_for_org_id = models.IntegerField(null=True, blank=True, editable=False)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["org", "user"], name="marketplace_one_membership_per_user")]
@@ -185,6 +192,11 @@ class OrgMembership(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user} for {self.org}"
+
+    def save(self, *args, **kwargs):
+        if self.granted_for_org_id is None:
+            self.granted_for_org_id = self.org_id
+        super().save(*args, **kwargs)
 
 
 class OrgInvite(models.Model):

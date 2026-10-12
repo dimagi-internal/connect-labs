@@ -400,7 +400,7 @@ class LabsOrgQuerySet(models.QuerySet):
         or make a real organisation's name ambiguous in the EOI import. So anything
         that finds an organisation BY NAME asks for real ones only.
         """
-        return self.exclude(connect_organization_id__isnull=True, slug__startswith=LABS_ONLY_ORG_PREFIX)
+        return self.exclude(labs_only=True)
 
 
 class LabsOrg(models.Model):
@@ -468,6 +468,14 @@ class LabsOrg(models.Model):
     # The join. Either, neither, or — once reconciled — both.
     connect_organization_id = models.IntegerField(null=True, blank=True, unique=True, db_index=True)
     connect_organization_slug = models.CharField(max_length=200, blank=True, default="", db_index=True)
+
+    # A labs-only (synthetic) organisation: the row labs-only opps are filed under
+    # (`SyntheticOpportunity.labs_org`). Set ONLY by `labs.synthetic.org_tree` when
+    # it files an opp, and by the migrations that filed the old buckets -- never
+    # by a form, an operation or a slug. Whether a key is labs-only is this flag's
+    # answer, not the key's prefix and not the org tree, which carries Connect's
+    # slugs and so whatever an organisation chose to call itself there.
+    labs_only = models.BooleanField(default=False, db_default=False, editable=False, db_index=True)
 
     # Slugs no matcher can reach, pointed here by a person. Pulse learned
     # this the hard way: a wrong parent name is worse than a visible slug.

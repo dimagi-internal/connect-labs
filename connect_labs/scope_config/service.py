@@ -80,6 +80,9 @@ def tree_for(caller: access.Caller) -> dict:
     except Exception:  # noqa: BLE001 -- an unreachable Connect leaves only the labs-only tree
         logger.warning("scope config: could not fetch the caller's org tree", exc_info=True)
         data = {}
+    from connect_labs.labs.synthetic.org_tree import drop_labs_only_keys
+
+    data = drop_labs_only_keys(data)
     user = _user(caller)
     if user is not None and getattr(user, "view_synthetic_opps", False):
         from connect_labs.labs.context import _merge_labs_only_opps
@@ -114,15 +117,20 @@ LABS_ONLY_ORG_WRITE = (
 )
 
 
-def is_labs_only_org(slug: str, tree: dict) -> bool:
-    """A synthetic organisation: keyed by a slug made from a free-text name, with no Connect membership behind it."""
-    from connect_labs.labs.synthetic.org_tree import SYNTHETIC_ORG_PREFIX
-    from connect_labs.scope_config.scopes import organization_entry
+def is_labs_only_org(slug: str, tree: dict | None = None) -> bool:
+    """Whether `slug` is a labs-only (synthetic) organisation's key.
 
-    entry = organization_entry(tree, slug)
-    if entry is not None:
-        return bool(entry.get("labs_only"))
-    return slug.startswith(SYNTHETIC_ORG_PREFIX)
+    The registry decides (`LabsOrg.labs_only`), not the org tree: the tree's
+    organisations come from Connect, where anyone can call an organisation
+    "Labs Synthetic X" and so hold `labs-synthetic-x` with no labs-only flag. A
+    key in the reserved namespace with no registry row (an unfiled opp's own key,
+    an old bucket) counts too, so it falls to staff rather than to whoever holds it.
+    `tree` is accepted and ignored.
+    """
+    from connect_labs.labs.models import LabsOrg
+    from connect_labs.labs.synthetic.org_tree import is_reserved_key
+
+    return is_reserved_key(slug) or LabsOrg.objects.filter(slug=slug, labs_only=True).exists()
 
 
 def administers_labs_only_org(caller: access.Caller, key: str) -> bool:
@@ -132,6 +140,12 @@ def administers_labs_only_org(caller: access.Caller, key: str) -> bool:
     administers it is `marketplace.OrgMembership` -- granted to whoever made it, or
     by invitation. Only an unlinked labs-only row answers: a real organisation's
     administrators get nothing here.
+
+    Only a membership granted FOR this organisation counts. `org_merge` moves
+    every membership of the row it folds away onto the row it keeps, and a
+    membership that arrived that way is no one's grant for this organisation: it
+    is how an admin of their own labs-only organisation would have become an
+    admin of someone else's.
     """
     from connect_labs.labs.models import LabsOrg
     from connect_labs.labs.synthetic.org_tree import is_labs_only_org_row
@@ -143,7 +157,9 @@ def administers_labs_only_org(caller: access.Caller, key: str) -> bool:
     org = LabsOrg.objects.filter(slug=key).first()
     if not is_labs_only_org_row(org):
         return False
-    return OrgMembership.objects.filter(org=org, user__username=user.username, role="admin").exists()
+    return OrgMembership.objects.filter(
+        org=org, granted_for_org_id=org.pk, user__username=user.username, role="admin"
+    ).exists()
 
 
 def write_refusal(caller: access.Caller | None, scope: Scope, tree: dict) -> str | None:
@@ -162,7 +178,7 @@ def write_refusal(caller: access.Caller | None, scope: Scope, tree: dict) -> str
     if reason:
         return reason
     if scope.type == "organization" and not caller.is_system and not _is_staff(caller):
-        if is_labs_only_org(scope.key, tree) and not administers_labs_only_org(caller, scope.key):
+        if is_labs_only_org(scope.key) and not administers_labs_only_org(caller, scope.key):
             return LABS_ONLY_ORG_WRITE
     return None
 

@@ -600,7 +600,10 @@ class SupplyDataAccess(
         here let one body be "the programme" in a way that could not be true
         in a second programme.
         """
-        fields = {k: v for k, v in data.items() if k not in ("slug", "kind", "roles", "contacts")}
+        from connect_labs.supply_chain.org_access import refuse_reserved_keys, require_change
+
+        refuse_reserved_keys(data)
+        fields = {k: v for k, v in data.items() if k not in ("slug", "kind", "roles", "contacts", "labs_only")}
         columns = _columns(LabsOrg, fields)
 
         # Located by the Connect id FIRST where there is one, because that is
@@ -616,6 +619,10 @@ class SupplyDataAccess(
         if existing is None:
             obj = LabsOrg.objects.create(slug=data["slug"], **columns)
             return _fresh(obj)
+        # Changing an organisation that is already on file is its people's (or
+        # staff's) to do: the registry is labs-wide, and re-linking a row to a
+        # Connect id hands it to that organisation's members.
+        require_change(self, existing)
         for key, value in {**columns, "slug": data["slug"]}.items():
             setattr(existing, key, value)
         existing.save()

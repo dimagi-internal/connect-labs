@@ -18,7 +18,7 @@ import hashlib
 import re
 import unicodedata
 
-from connect_labs.labs.models import LabsOrg
+from connect_labs.labs.models import LABS_ONLY_ORG_PREFIX, LabsOrg
 
 SLUG_MAX = 120
 
@@ -42,6 +42,10 @@ def slug_for(name: str) -> str:
         # two such rows do not collide on one shared fallback.
         digest = hashlib.sha1((name or "").encode("utf-8")).hexdigest()[:10]
         return f"org-{digest}"
+    if base.startswith(LABS_ONLY_ORG_PREFIX):
+        # Reserved for labs-only organisations (labs.synthetic.org_tree): a company
+        # registering as "Labs Synthetic X" must not land on a labs-only key.
+        base = f"org-{base}"
     return base[:SLUG_MAX].rstrip("-")
 
 
