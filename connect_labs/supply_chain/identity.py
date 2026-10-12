@@ -359,14 +359,14 @@ def find_or_mint_supplier_org(name: str, *, country: str = "", connect_organizat
     # when it picks out one organisation: "Nutriset" and "Nutriset Nigeria"
     # stay two. When two organisations share the name, the one holding the
     # name's own slug is the one this name has always resolved to.
-    named = list(LabsOrg.objects.filter(name__iexact=name.strip())[:2])
+    named = list(LabsOrg.objects.real().filter(name__iexact=name.strip())[:2])
     org = named[0] if len(named) == 1 else find_org(name)
     if org is None:
         # A name somebody merged away. `org_merge` keeps the merged row's slug
         # as an alias on the survivor precisely so a lookup by that name still
         # finds it -- and a re-run of the tracker import is exactly that
         # lookup. Without this it minted the duplicate straight back.
-        aliased = list(LabsOrg.objects.filter(aliases__contains=[slug_for(name)])[:2])
+        aliased = list(LabsOrg.objects.real().filter(aliases__contains=[slug_for(name)])[:2])
         if len(aliased) == 1:
             org = aliased[0]
     if org is None:

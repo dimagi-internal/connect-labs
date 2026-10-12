@@ -17,7 +17,7 @@ from rest_framework.views import APIView
 from connect_labs.labs.integrations.connect.factory import get_export_client
 from connect_labs.labs.synthetic.client import SyntheticExportClient
 from connect_labs.labs.synthetic.models import SyntheticOpportunity
-from connect_labs.labs.synthetic.org_tree import synthetic_org_slug, synthetic_program_id
+from connect_labs.labs.synthetic.org_tree import synthetic_org_name, synthetic_org_slug, synthetic_program_id
 
 from .authentication import MCPTokenAuthentication
 from .pagination import IdKeysetPagination
@@ -196,11 +196,11 @@ class OppOrgProgramListView(_ExportView):
         programs: dict[int, dict] = {}
         opportunities = []
 
-        for opp in SyntheticOpportunity.objects.filter(labs_only=True, enabled=True):
+        for opp in SyntheticOpportunity.objects.filter(labs_only=True, enabled=True).select_related("labs_org"):
             if not opp.is_visible_to(request.user):
                 continue
             org_slug = synthetic_org_slug(opp)
-            org_name = opp.org_name or "Labs Synthetic"
+            org_name = synthetic_org_name(opp)
             program_id = synthetic_program_id(opp)
             program_name = opp.program_name or "Labs Synthetic"
 

@@ -148,6 +148,23 @@ Opps generated before provenance existed, or generated on a laptop
 `python manage.py synthetic_mark_generated` to list them and `--apply` to mark
 those whose Drive folder has the generator's `-generated` name.
 
+### The organisation a labs-only opp belongs to
+
+A labs-only opp is filed under a `LabsOrg` registry row (`SyntheticOpportunity.labs_org`)
+on its first save, and that row's slug is the organisation's key in the org picker,
+Settings (`/labs/settings/organization/<key>/`) and page addresses
+(`/labs/p/org/<key>/`). `org_name` is only the label it started from: renaming it does
+not move the opp. Filing follows `labs/synthetic/org_tree.assign_labs_org`: the
+programme's organisation if the opp shares a `program_id` with one already filed;
+else the one its creator already used for that organisation name; else a new one,
+administered by its creator (`marketplace.OrgMembership`). Two people who both call
+their organisation "Labs Synthetic" get two organisations.
+
+Its administrators and Dimagi staff change its Settings layer; seeing one of its opps
+does not. Organisations that existed before this (the `labs-synthetic-<name>` buckets)
+kept their keys (migration `synthetic/0010`); a bucket one person made is theirs, one
+several people filled has no administrator until staff add one.
+
 ### Human names: workers and cases
 
 A generated opp reads like a real one when its workers and cases have names.

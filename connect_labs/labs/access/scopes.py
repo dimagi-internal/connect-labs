@@ -117,7 +117,7 @@ def _visible_labs_only_opps(user) -> list:
     from connect_labs.labs.synthetic.models import SyntheticOpportunity
 
     try:
-        candidates = SyntheticOpportunity.objects.filter(labs_only=True, enabled=True)
+        candidates = SyntheticOpportunity.objects.filter(labs_only=True, enabled=True).select_related("labs_org")
         return [opp for opp in candidates if opp.is_visible_to(user)]
     except Exception:  # noqa: BLE001 -- registry trouble must not break validation of real scopes
         return []
