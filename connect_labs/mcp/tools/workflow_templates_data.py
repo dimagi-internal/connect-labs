@@ -753,6 +753,17 @@ def follow_template(user, *, workflow_id, scope, template_workflow_id, template_
         reader = WorkflowDataAccess(access_token=token, **template_scope)
         try:
             template = tw.load_template(reader.labs_api, template_workflow_id, **template_scope)
+            # The template's scope is an argument the MCP gate does not see, and a
+            # labs-only one is read from labs' own database with no Connect check
+            # behind it. Someone outside it reads the template only as shared publicly,
+            # and may not write its follower list.
+            from connect_labs.labs.synthetic.access import labs_only_scope_denied_reason
+
+            if template is not None and labs_only_scope_denied_reason(user, **template_scope):
+                if template.public:
+                    template.in_scope = False
+                else:
+                    template = None
             if template is None:
                 raise MCPToolError(
                     "PERMISSION_DENIED",

@@ -57,6 +57,20 @@ def is_labs_only_program_id(program_id: int | None) -> bool:
     )
 
 
+def program_scope(program_id: int) -> Q:
+    """Records a client scoped to labs-only programme `program_id` (no opportunity) may reach.
+
+    The programme's own records, and those of the labs-only opportunities filed under
+    it -- the same membership `is_labs_only_program_id` and the access gate use. Nothing
+    else: with no Connect check behind this backend, the scope is the tenant boundary.
+    """
+    program_id = int(program_id)
+    members = SyntheticOpportunity.objects.filter(labs_only=True).filter(
+        Q(program_id=program_id) | Q(program_id__isnull=True, opportunity_id=program_id)
+    )
+    return Q(program_id=program_id) | Q(opportunity_id__in=members.values("opportunity_id"))
+
+
 def get_records(
     *,
     opportunity_id: int | None = None,
@@ -105,6 +119,7 @@ def get_record_by_id(
     experiment: str | None = None,
     type: str | None = None,
     model_class: type[LocalLabsRecord] | None = None,
+    within_program: int | None = None,
 ) -> LocalLabsRecord | None:
     # record_id is the global PK; opportunity_id / program_id are optional scoping
     # guards so program-scoped lookups (no opp selected) can still resolve a record,
@@ -114,6 +129,8 @@ def get_record_by_id(
         qs = qs.filter(opportunity_id=opportunity_id)
     if program_id is not None:
         qs = qs.filter(program_id=program_id)
+    if within_program is not None:
+        qs = qs.filter(program_scope(within_program))
     if experiment is not None:
         qs = qs.filter(experiment=experiment)
     if type is not None:
@@ -163,9 +180,15 @@ def update_record(
     organization_id: int | None = None,
     labs_record_id: int | None = None,
     public: bool | None = None,
+    scope_program_id: int | None = None,
 ) -> LocalLabsRecord:
+    # A programme-scoped write (no opportunity) reaches only that programme's own
+    # records; without the programme filter it matched every tenant's.
+    lookup = {"id": record_id, "opportunity_id": opportunity_id}
+    if opportunity_id is None:
+        lookup["program_id"] = scope_program_id
     try:
-        row = LabsLocalRecord.objects.get(id=record_id, opportunity_id=opportunity_id)
+        row = LabsLocalRecord.objects.get(**lookup)
     except LabsLocalRecord.DoesNotExist as exc:
         # Match LabsRecordAPIClient's failure mode shape so callers don't branch
         # on backend identity to interpret an "update on missing record" error.

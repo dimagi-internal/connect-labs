@@ -432,6 +432,9 @@ class LabsRecordAPIClient:
                     experiment=experiment,
                     type=type,
                     model_class=model_class,
+                    # With no opportunity, the programme is the only scope: without it
+                    # the lookup was by global id across every labs-only tenant.
+                    within_program=self.program_id if effective_opportunity_id is None else None,
                 )
             )
         try:
@@ -695,6 +698,7 @@ class LabsRecordAPIClient:
                 organization_id=self.organization_id if isinstance(self.organization_id, int) else None,
                 labs_record_id=labs_record_id,
                 public=public,
+                scope_program_id=self.program_id,
             )
             return self._finish_run_record(record, primed)
         # Use provided record or fetch current to read metadata
