@@ -46,7 +46,9 @@ def test_bare_run_url_redirects_to_list_with_highlight(rf):
 
     view = WorkflowRunView()
     view.kwargs = {"definition_id": 47}
-    resp = view.get(_bare_request(rf, "?opportunity_id=10001"))
+    # A workflow, not a page (a definition that cannot be read is no longer taken to be one).
+    with patch.object(WorkflowRunView, "_is_page_definition", return_value=False):
+        resp = view.get(_bare_request(rf, "?opportunity_id=10001"))
 
     assert isinstance(resp, HttpResponseRedirect)
     assert resp.url == "/labs/workflow/?opportunity_id=10001&highlight=47#workflow-47"

@@ -1,0 +1,33 @@
+{% load static %}<!DOCTYPE html>
+{% comment %}
+The sandboxed page frame (workflow/sandbox.py). Deliberately does NOT extend base.html:
+no CSRF token, no user, no analytics, no navigation. The same bytes for every viewer.
+Everything a page draws arrives over the bridge from the host page around it
+(components/workflow/sandbox/). The libraries are the ones the run page loads
+(workflow/_runner_scripts.html), so render code sees the same globals and classes.
+{% endcomment %}
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Page</title>
+  <link rel="stylesheet" href="{% static 'bundles/css/tailwind.css' %}">
+  <link rel="stylesheet" href="{{ google_fonts_css_url }}">
+  <link rel="stylesheet" href="{{ leaflet_css_url }}">
+  <link rel="stylesheet" href="{{ mapbox_gl_css_url }}">
+  <style>html, body { margin: 0; background: transparent; overflow-x: clip; }</style>
+</head>
+<body class="font-work-sans">
+  <div id="sandbox-root"></div>
+  <script src="{{ babel_url }}"></script>
+  <script src="{{ chart_js_url }}"></script>
+  <script src="{{ chart_adapter_url }}"></script>
+  <script src="{{ leaflet_js_url }}"></script>
+  <script src="{{ mapbox_gl_js_url }}"></script>
+  <script src="{% static 'js/labs_audit_breakdown.js' %}"></script>
+  <script src="{% static 'maps/connect_map.js' %}"></script>
+  <script src="{% static 'maps/plan_layers.js' %}"></script>
+  <script src="{% static 'microplans/map_panel.js' %}"></script>
+  <script src="{% static 'bundles/js/workflow-sandbox-bundle.js' %}"></script>
+</body>
+</html>

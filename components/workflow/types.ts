@@ -110,6 +110,13 @@ export interface RunView {
   }): void;
 
   /**
+   * Ask the person a yes/no question; resolves true on yes. Replaces
+   * `window.confirm`, which a sandboxed page does not have: there the labs page
+   * around it draws the question, labelled as the page's own.
+   */
+  confirm?(text: string): Promise<boolean>;
+
+  /**
    * Flags raised against this run, newest first. Always queried live from
    * the Flag records (not snapshot-frozen). A Flag is a finding derived
    * from the metrics (`source: 'auto'`) or appended by a human
@@ -730,6 +737,18 @@ export interface TaskUrlParams {
  * Action handlers available to workflow components.
  */
 export interface ActionHandlers {
+  /**
+   * Save a file the page made (csv, xlsx, json, png or pdf), on a click. Replaces
+   * building a download link, which a sandboxed page cannot follow.
+   */
+  download?(file: {
+    filename: string;
+    mime?: string;
+    bytes: string | ArrayBuffer | Uint8Array;
+  }): Promise<void>;
+
+  /** Put text on the clipboard, on a click. */
+  copyText?(text: string): Promise<void>;
   /**
    * Run one of this workflow's declared actions (`view.workflowActions`) for some
    * workers -- e.g. "Initiate AI coach". The runner previews it, shows the person

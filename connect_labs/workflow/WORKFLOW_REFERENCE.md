@@ -2377,6 +2377,28 @@ A **page** is a workflow definition whose data says `"kind": "page"` (`workflow/
 
 `read` is `latest_run`, `saved_runs` (completed, newest first) or `summary`. Each run carries `url` and, when completed, its `snapshot_summary` -- never the snapshot. An unreadable source arrives as `{error}` under its alias. `actions.queryWorkflow(alias)` reads one on demand. An undeclared alias is refused.
 
-**What "safe" means.** As for every workflow: the code is written by people who can write the definition, a crash is contained by the error boundary, and all data comes through endpoints keyed by the definition that read only what it declares, as the viewer. Render code is not sandboxed (it runs in the labs origin; see the scope-config spec, decision C).
+**A page's code runs in a sandbox** (`workflow/sandbox.py`, `components/workflow/sandbox/`; spec `docs/superpowers/specs/2026-10-12-page-sandbox-design.md`). On every route that draws a page -- its address, its workflow URL, edit mode, `?present=1`, a supply tab -- the render code runs in an `<iframe sandbox="allow-scripts">` with an opaque origin and an enforced CSP: it has no labs cookies, cannot see the labs page around it, and cannot reach labs or any other host except through a short list of requests the labs page answers, as the viewer. It is compiled exactly as on the run page (`components/workflow/renderCode.tsx`), with the same props and the same globals (`window.LabsReport`, Chart.js, Leaflet, Mapbox GL, `ConnectMap`, Tailwind and Font Awesome classes).
+
+What a page **may** do:
+
+- Draw from its props: `scope`, `config`, `workflows` (other workflows' run summaries), `supply` (supply figures), `definition`, `instance` (blank) and `onUpdateState` (state kept in the frame only).
+- Read on demand: `actions.querySupply(alias, {args})` and `actions.queryWorkflow(alias)` -- always this page's own declared sources; any definition, opportunity or programme id it passes is dropped.
+- Link with plain `<a href>` (same tab, `target="_blank"`, or a modifier-click), on a click, to labs pages: `/labs/p/`, `/supply/`, `/labs/settings/`, `/labs/targeting/`, `/labs/marketplace/`, `/microplans/`, a workflow's `/labs/workflow/<id>/run/` and the list `/labs/workflow/`. A link to a workflow opens that workflow unsandboxed, as any link to it would.
+- Ask a question with `view.confirm(text)` (drawn by labs, labelled as the page's), save a file with `actions.download({filename, bytes})` (`.csv`, `.xlsx`, `.json`, `.png`, `.pdf`), copy with `actions.copyText(text)` -- the last two on a click.
+- Narrow what the canopy agent looks at with `view.shareSelection({visible_ids, drilled})`, when the page shares with the agent (`config.agent.share`; the agent reads the page through `page_context`). It cannot change what the agent may do.
+- Use `localStorage` / `sessionStorage`: they work, in memory, for the life of the frame.
+
+What a page **may not** do (each simply fails in the frame):
+
+- `fetch`, `XMLHttpRequest`, `EventSource` or `WebSocket` to labs or anywhere else; images, scripts or styles from hosts the frame's CSP does not name (only Mapbox's map paths are reachable).
+- Read `document.cookie`, the CSRF token or the labs page around it (`parent.document`, `top`).
+- `alert`, `confirm`, `prompt`, `window.open`, form submission, or `window.location = ...` (a frame that navigates itself is stopped: "this page tried to leave its frame").
+- Have pipelines, workers or `queryPipelineRows`: a page gets no visit-level data in phase 1, because whatever is handed to the frame is readable by its author. `pipeline_sources` on a page are not loaded.
+- Run actions, start jobs, create tasks or audits, or fetch visit images: those are workflow features (phase 2), and reject with "not available on a page yet".
+- Draw admin boundaries with `ConnectMap` (they are fetched from labs; phase 2) or tile a Leaflet map from a tile server.
+
+`LABS_PAGE_SANDBOX=false` is an emergency switch back to the old, unsandboxed render; there is no per-page opt-out.
+
+**What "safe" means.** The sandbox above, plus what holds for every workflow: a crash is contained by the error boundary, and all data comes through endpoints keyed by the definition that read only what it declares, as the viewer.
 
 **Authoring** is the workflow-author loop: `workflow_create_from_template(template_key="page_blank", program_id=…)`, then `workflow_get` / `workflow_update_render_code` / `workflow_update_definition` (to declare `workflow_sources`, `supply_sources`, `config_reads`, `page.slug`). `workflow_list(kind="page")` lists pages. Making a page a template workflow gives it draft / preview / publish / rollback, and pages that follow it update on publish.

@@ -802,7 +802,11 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             from django.utils.http import urlencode
 
             # A page (workflow/page_mode.py) has no runs to pick: it renders here, in page mode.
-            if self._is_page_definition(definition_id):
+            is_page_definition = self._is_page_definition(definition_id)
+            if is_page_definition is None:
+                # Could not tell: render here (never the list redirect), and let the render decide.
+                return super().get(request, *args, **kwargs)
+            if is_page_definition:
                 self.page_mode = True
                 return super().get(request, *args, **kwargs)
 
@@ -832,8 +836,11 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         try:
             return is_page(WorkflowDataAccess(request=self.request).get_definition(definition_id))
         except Exception:
+            # Fail closed: "cannot tell" is not "not a page". The caller renders, and the
+            # render reads the definition itself and decides (sandbox.should_sandbox) --
+            # or shows that it could not be read. It never draws it unsandboxed by default.
             logger.warning("Could not read definition %s to see if it is a page", definition_id, exc_info=True)
-            return False
+            return None
 
     def _recover_opportunity_id(self, definition_id):
         """Best-effort recovery of the opportunity a workflow run belongs to
@@ -974,6 +981,61 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             path=self.request.get_full_path(),
         )
 
+    def _sandbox_workflow_data(self, context, definition, scope, labs_context, page):
+        """A sandboxed page: what the host runner needs to draw the frame, and nothing the
+        frame should not have. Pages get no visit-level pipelines in phase 1 (whatever is
+        handed to the frame can leave it), so the pipeline endpoints are removed, not
+        merely unused. If the page shares with the canopy agent, its panel is set up here."""
+        from connect_labs.workflow.sandbox import host_payload
+
+        workflow_data = context["workflow_data"]
+        workflow_data["sandbox"] = host_payload(self.request)
+        workflow_data["mapboxToken"] = settings.MAPBOX_TOKEN or ""
+        workflow_data["pipeline_data"] = {}
+        for key in ("getWorkers", "getPipelineData", "streamPipelineData", "queryPipelineRows", "saveWorkerResult"):
+            workflow_data["apiEndpoints"][key] = None
+        if page and not context["present_mode"]:
+            self._add_page_agent(context, definition, scope, labs_context)
+
+    def _add_page_agent(self, context, definition, scope, labs_context):
+        """The canopy panel on a page, gated exactly as on a run page (``config.agent.share``).
+
+        The page state names the page and the scope; the agent reads what the page is
+        built from through ``page_context``, as the visitor. The page narrows the view
+        (``view.shareSelection``); it never changes the resource or the tool.
+        """
+        from connect_labs.workflow.agent_sharing import definition_shares_with_agent
+
+        if not definition_shares_with_agent(definition):
+            return
+        from canopy_sdk.django.pages import panel_context
+
+        slug = ((definition.data or {}).get("page") or {}).get("slug") or str(definition.id)
+        scope_type = scope.type if scope else ""
+        scope_key = str(scope.key) if scope else ""
+        owner = {
+            k: labs_context[k] for k in ("opportunity_id", "program_id", "organization_id") if labs_context.get(k)
+        }
+        context["canopy_panel"] = panel_context(
+            self.request,
+            resource=f"labs-page://{scope_type}/{scope_key}/{slug}",
+            backing_tool="page_context",
+            visible_ids=[],
+            filters={"definition_id": definition.id, "scope_type": scope_type, "scope_key": scope_key, **owner},
+            path=self.request.path,
+        )
+
+    def render_to_response(self, context, **response_kwargs):
+        response = super().render_to_response(context, **response_kwargs)
+        if context.get("sandboxed"):
+            # The second, enforced policy: the sandboxed frame may be navigated only to its
+            # shell (and the canopy panel's embed), so it cannot leave with data in a URL.
+            from connect_labs.workflow.sandbox import host_frame_src, labs_origin
+
+            response["Content-Security-Policy"] = host_frame_src(labs_origin(self.request))
+            response.csp_extra_policy = True
+        return response
+
     def get_context_data(self, **kwargs):
         # `?template_draft=1`: someone with write access to a template workflow's scope
         # sees the follower rendered with the template's unpublished draft (render,
@@ -1049,6 +1111,13 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 )
                 return context
             context["definition"] = definition
+            # Whether this render runs in the page sandbox (workflow/sandbox.py): decided
+            # ONCE, here, from the consuming definition's own kind, on every route that
+            # draws it (a page's address, its run URL, edit mode, present mode, a supply tab).
+            from connect_labs.workflow.sandbox import should_sandbox
+
+            sandboxed = should_sandbox(definition)
+            context["sandboxed"] = sandboxed
 
             # Sync render code from template if requested via ?sync=true
             # Supports ?sync=true&template=mbw_monitoring to specify template explicitly
@@ -1098,7 +1167,9 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
 
             # Bound to a local as well: workflow_data below serialises the same list
             # into the runner payload.
-            workers = self._load_workers(data_access, effective_opp_ids)
+            # A sandboxed page is handed no per-worker data: whatever reaches the frame is
+            # readable by the page's author (the spec's residual risk).
+            workers = [] if sandboxed else self._load_workers(data_access, effective_opp_ids)
             context["workers"] = workers
 
             # Hoisted: flags are loaded only on the run-id branch (live
@@ -1389,6 +1460,8 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             if page:
                 for key in RUN_ENDPOINTS:
                     workflow_data["apiEndpoints"][key] = None
+            if sandboxed:
+                self._sandbox_workflow_data(context, definition, scope, labs_context, page)
 
             # Not in edit mode (no real run), not a page (no run either), and not on a
             # presentation link: a page shared with a funder carries no actions and no agent.
