@@ -31,7 +31,12 @@ def _slugify(value):
 
 
 def _legacy_key(org_name):
-    return f"{PREFIX}{_slugify(org_name or 'Labs Synthetic')}"
+    key = f"{PREFIX}{_slugify(org_name or 'Labs Synthetic')}"
+    # `labs-synthetic-unfiled-<opp id>` is each opp's own key when it has no
+    # organisation (org_tree.unfiled_key); a name must never land on one.
+    if key.startswith(f"{PREFIX}unfiled-"):
+        key = f"{PREFIX}org-{key[len(PREFIX):]}"
+    return key
 
 
 def backfill(apps, schema_editor):

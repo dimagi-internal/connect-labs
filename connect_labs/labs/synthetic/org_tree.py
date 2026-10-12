@@ -25,6 +25,7 @@ import logging
 import zlib
 
 from django.db import IntegrityError, connection, transaction
+from django.db.models import Q
 
 from connect_labs.labs.models import LABS_ONLY_ORG_PREFIX as SYNTHETIC_ORG_PREFIX
 
@@ -45,6 +46,22 @@ def legacy_org_slug(org_name: str) -> str:
     return f"{SYNTHETIC_ORG_PREFIX}{slugify(org_name or 'Labs Synthetic')}"
 
 
+UNFILED_PREFIX = f"{SYNTHETIC_ORG_PREFIX}unfiled-"
+
+
+def bucket_key(org_name: str) -> str:
+    """The key an organisation name files under: its legacy key, kept out of `unfiled_key`'s namespace.
+
+    A name like "Unfiled 10502" would otherwise make `labs-synthetic-unfiled-10502`
+    -- opp 10502's own unfiled key -- and put that opp's settings in this
+    organisation's hands. Such a name moves to `labs-synthetic-org-unfiled-...`.
+    """
+    key = legacy_org_slug(org_name)
+    if key.startswith(UNFILED_PREFIX):
+        key = f"{SYNTHETIC_ORG_PREFIX}org-{key[len(SYNTHETIC_ORG_PREFIX):]}"
+    return key
+
+
 def unfiled_key(opp) -> str:
     """The key of an opp not (or no longer) filed under a labs-only organisation.
 
@@ -52,7 +69,7 @@ def unfiled_key(opp) -> str:
     another's organisation. It is in the reserved namespace and has no registry
     row, so it reads as labs-only and only staff change its settings.
     """
-    return f"{SYNTHETIC_ORG_PREFIX}unfiled-{opp.opportunity_id}"
+    return f"{UNFILED_PREFIX}{opp.opportunity_id}"
 
 
 def is_reserved_key(key) -> bool:
@@ -135,6 +152,9 @@ def _key_taken(key: str) -> bool:
     from connect_labs.labs.synthetic.models import SyntheticOpportunity
     from connect_labs.scope_config.models import ScopeConfig
 
+    if key.startswith(UNFILED_PREFIX):
+        # Reserved for `unfiled_key`: every opp has one, filed or not.
+        return True
     if LabsOrg.objects.filter(slug=key).exists() or LabsOrg.objects.filter(aliases__contains=[key]).exists():
         return True
     # Settings written for an organisation that has since gone: a new one under
@@ -145,11 +165,11 @@ def _key_taken(key: str) -> bool:
     # belongs to its name's old bucket; `labs_only_orgs_backfill` will file it
     # under that key, so a new organisation must not take it first.
     unfiled = SyntheticOpportunity.objects.filter(labs_only=True, labs_org__isnull=True)
-    return any(legacy_org_slug(name) == key for name in unfiled.values_list("org_name", flat=True))
+    return any(bucket_key(name) == key for name in unfiled.values_list("org_name", flat=True))
 
 
 def _new_key(name: str) -> str:
-    base = legacy_org_slug(name)[:110]
+    base = bucket_key(name)[:110]
     if not _key_taken(base):
         return base
     n = 2
@@ -200,7 +220,10 @@ def assign_labs_org(opp):
 
     siblings = SyntheticOpportunity.objects.filter(labs_only=True, labs_org__isnull=False).exclude(pk=opp.pk)
     if opp.program_id:
-        sibling = siblings.filter(program_id=opp.program_id).select_related("labs_org").first()
+        # A programme is named by its opps' program_id -- or, for an opp that set
+        # none, by that opp's own id (synthetic_program_id).
+        in_programme = Q(program_id=opp.program_id) | Q(program_id__isnull=True, opportunity_id=opp.program_id)
+        sibling = siblings.filter(in_programme).select_related("labs_org").order_by("pk").first()
         if sibling is not None and is_labs_only_org_row(sibling.labs_org):
             return sibling.labs_org
     same_name = siblings.filter(org_name=opp.org_name or "", created_by_id=opp.created_by_id)
@@ -228,7 +251,7 @@ def file_unfiled_opps() -> dict:
         take_filing_lock()
         buckets: dict[str, list] = {}
         for opp in SyntheticOpportunity.objects.filter(labs_only=True, labs_org__isnull=True).order_by("pk"):
-            buckets.setdefault(legacy_org_slug(opp.org_name), []).append(opp)
+            buckets.setdefault(bucket_key(opp.org_name), []).append(opp)
         for key, opps in buckets.items():
             org = LabsOrg.objects.filter(slug=key).first()
             if org is None:
