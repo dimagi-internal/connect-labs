@@ -99,7 +99,29 @@
     .pmc-caveats summary { cursor: pointer; color: #3730a3; }
     .pmc-caveats ul { list-style: disc; padding-left: 18px; margin-top: 4px; }
 
+    /* The inputs, numbered apart from what the page gives back. */
+    .pmc-step-head { display: flex; gap: 12px; align-items: flex-start; padding: 16px 16px 8px; border-top: 1px solid #e7e5e4; }
+    #pmc-rank-card > .pmc-step-head:first-child { border-top: 0; }
+    .pmc-step-n { flex: none; width: 26px; height: 26px; border-radius: 999px; background: #16006d; color: #fff;
+                  font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+    .pmc-step-title { font-size: 16px; font-weight: 700; color: #1c1917; }
+    .pmc-in { display: grid; grid-template-columns: 150px 1fr; gap: 6px 16px; padding: 10px 16px 10px 54px; border-top: 1px solid #f5f5f4; }
+    .pmc-in-k { font-size: 14px; font-weight: 600; color: #1c1917; padding-top: 3px; }
+    .pmc-in-k .pmc-sub { display: block; }
+    .pmc-in-v .pmc-sub { margin-top: 6px; }
+    .pmc-in-v .pmc-pick-head { margin-bottom: 8px; }
+    .pmc-price-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: 13px; color: #44403c; }
+    .pmc-price-row input { width: 64px; font-size: 13px; border: 1px solid #d6d3d1; border-radius: 6px; padding: 3px 6px; margin-left: 4px; }
+    .pmc-per-dose { font-size: 14px; color: #1c1917; }
+    .pmc-fixed { margin: 0 16px 8px 54px; padding: 10px 12px; font-size: 12px; line-height: 1.55; color: #57534e;
+                 background: #fafaf9; border: 1px dashed #d6d3d1; border-radius: 8px; }
+    .pmc-fixed b { color: #1c1917; }
+    .pmc-h-row { display: flex; align-items: center; gap: 8px; }
+    .pmc-h-row select { font-size: 12px; border: 1px solid #d6d3d1; border-radius: 6px; padding: 2px 4px; background: #fff; }
+
     @media (max-width: 640px) {
+      .pmc-in { grid-template-columns: 1fr; padding-left: 16px; }
+      .pmc-fixed { margin-left: 16px; }
       .pmc-sched { grid-template-columns: 18px 1fr 70px 80px; }
       .pmc-sched > :nth-child(3) { display: none; }
       .pmc-hide-sm { display: none; }
@@ -127,13 +149,18 @@
   <p class="text-sm text-stone-600 -mt-3">IDM's EMOD malaria model, run in each Nigerian state's own setting, ranked by under-5 deaths averted per dollar against GiveWell's bar.</p>
 
   <section class="pmc-card" id="pmc-rank-card">
-    <div class="flex items-baseline gap-3 px-4 pt-3">
-      <div class="pmc-label">Pick states; get the programme</div>
-      <span id="pmc-rank-scope" class="text-sm text-stone-500"></span>
+    <div class="pmc-step-head">
+      <span class="pmc-step-n">1</span>
+      <div>
+        <div class="pmc-step-title">Your inputs</div>
+        <div class="pmc-sub">Four choices. Everything below recomputes from them in about a second, and the page's address keeps them, so a link reopens this view.</div>
+      </div>
     </div>
-    <div class="pmc-pick" style="padding-top:8px">
+    <div class="pmc-in">
+      <div class="pmc-in-k">States<span class="pmc-sub" id="pmc-rank-scope"></span></div>
+      <div class="pmc-in-v">
       <div class="pmc-pick-head">
-        <span>States</span>
+        <span class="pmc-sub" style="margin:0">Where the programme could run. Click states to add or remove them, or start from</span>
         <button type="button" class="pmc-link" data-preset="perennial" title="Under half the year's rain in the wettest quarter, and child malaria prevalence of at least 10%">Year-round transmission</button>
         <span aria-hidden="true">·</span>
         <button type="button" class="pmc-link" data-preset="all">All states</button>
@@ -142,28 +169,60 @@
         <span class="ml-auto text-xs text-stone-500"><span class="pmc-pill" style="pointer-events:none;padding:2px 6px"><span class="dot"></span>year-round</span></span>
       </div>
       <div id="pmc-pick-states" class="pmc-states-pick" role="group" aria-label="States to rank"></div>
+      </div>
     </div>
-    <div class="pmc-price">
-      <span>Per verified visit $<input id="pmc-cost" class="pmc-num" type="number" min="0" step="0.05"></span>
-      <span>fee <input id="pmc-fee" class="pmc-num" type="number" min="0" step="1">%</span>
-      <span>visits giving a dose <input id="pmc-rate" class="pmc-num" type="number" min="1" max="100" step="1">%</span>
-      <span>= <b id="pmc-per-dose" class="pmc-num"></b> per dose</span>
-      <span class="ml-auto">Deaths
+    <div class="pmc-in">
+      <div class="pmc-in-k">Price</div>
+      <div class="pmc-in-v">
+        <div class="pmc-price-row">
+          <label>Paid to the partner per verified visit $<input id="pmc-cost" class="pmc-num" type="number" min="0" step="0.01"></label>
+          <label>+ Dimagi fee <input id="pmc-fee" class="pmc-num" type="number" min="0" step="1">%</label>
+          <label>÷ visits that give a dose <input id="pmc-rate" class="pmc-num" type="number" min="1" max="100" step="1">%</label>
+          <span class="pmc-per-dose">= <b id="pmc-per-dose" class="pmc-num"></b> per dose</span>
+        </div>
+        <div class="pmc-sub">Our proposal: $0.80 a visit at launch ($1.01 a dose), $0.58 at scale ($0.73 a dose). GiveWell judges a pilot at its at-scale cost.</div>
+      </div>
+    </div>
+    <div class="pmc-in">
+      <div class="pmc-in-k">Malaria deaths</div>
+      <div class="pmc-in-v">
         <span class="pmc-seg" role="group" aria-label="Deaths estimate">
-          <button type="button" data-basis="prevalence_scaled" title="All-cause under-5 deaths x malaria's national share, spread by DHS prevalence">DHS-scaled</button>
-          <button type="button" data-basis="map" title="MAP's modelled malaria deaths x 76% under five">MAP</button>
+          <button type="button" data-basis="prevalence_scaled">DHS-scaled</button>
+          <button type="button" data-basis="map">MAP</button>
         </span>
-      </span>
-      <span>Children
+        <div class="pmc-sub" id="pmc-basis-help"></div>
+      </div>
+    </div>
+    <div class="pmc-in">
+      <div class="pmc-in-k">Children</div>
+      <div class="pmc-in-v">
         <span class="pmc-seg" role="group" aria-label="Children targeted">
-          <button type="button" data-ages="3_24" title="Our proposal: children 3 to 24 months">3–24 months</button>
-          <button type="button" data-ages="12_24" title="The second year of life only">12–24 only</button>
+          <button type="button" data-ages="3_24">3–24 months</button>
+          <button type="button" data-ages="12_24">12–24 months only</button>
         </span>
-      </span>
-      <label>Top <select id="pmc-topn"><option>10</option><option>20</option><option>50</option></select></label>
+        <div class="pmc-sub" id="pmc-ages-help"></div>
+      </div>
+    </div>
+    <div class="pmc-fixed">
+      <b>Fixed in the model:</b> SP, one dose a round · {{ pmc_fixed.coverage_pct }}% of the children reached each round · each state's season from its rainfall ·
+      each under-5 death averted is worth {{ pmc_fixed.moral_weight }} units of value, and GiveWell's 1&times; is {{ pmc_fixed.benchmark }} units a dollar,
+      so its {{ pmc_fixed.bar }}&times; bar is about {{ pmc_fixed.per_death_at_bar }} per death averted · only deaths are counted, so every multiple is a floor.
+    </div>
+    <div class="pmc-step-head">
+      <span class="pmc-step-n">2</span>
+      <div>
+        <div class="pmc-step-title">The answer for these inputs</div>
+        <div class="pmc-sub">The schedule that averts the most deaths per dollar across the states picked, and what each budget buys.</div>
+      </div>
     </div>
     <div id="pmc-reco" class="pmc-reco">Loading…</div>
-    <div class="pmc-evidence">The evidence</div>
+    <div class="pmc-step-head">
+      <span class="pmc-step-n">3</span>
+      <div>
+        <div class="pmc-step-title">The evidence</div>
+        <div class="pmc-sub">Every schedule across the states picked, then every state on its own.</div>
+      </div>
+    </div>
     <p id="pmc-rank-answer" class="pmc-legend" style="padding-top:6px"></p>
     <p class="pmc-legend"><b>&times; GiveWell</b>: how many times as cost-effective as GiveWell's benchmark, counting under-5 deaths only; GiveWell funds at about <b>6&times;</b> and above. <b>Deaths</b>: two estimates of each state's under-5 malaria deaths, spread by DHS survey prevalence or taken from MAP's model. They disagree in the south, so check both.</p>
     <div id="pmc-rank-total" class="pmc-total hidden" style="margin:12px 16px"></div>
@@ -183,7 +242,9 @@
           <tbody id="pmc-design-rows"></tbody>
         </table>
       </div>
-      <div class="pmc-h">Where: the best state &times; schedule pairs</div>
+      <div class="pmc-h pmc-h-row">Where: the best state &times; schedule pairs
+        <label class="pmc-sub" style="margin:0 0 0 auto">Show the top <select id="pmc-topn"><option>10</option><option>20</option><option>50</option></select></label>
+      </div>
     </div>
     <div class="overflow-x-auto px-4 pb-3">
       <table class="pmc-table">
