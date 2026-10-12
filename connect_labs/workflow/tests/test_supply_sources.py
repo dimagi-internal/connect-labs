@@ -318,3 +318,25 @@ def test_the_stock_review_template_declares_valid_sources():
     template = TEMPLATES["supply_stock_review"]
     assert template["multi_opp"] is True
     assert supply_sources.declaration_problems(template["definition"]["supply_sources"]) == []
+
+
+def test_a_source_says_which_day_its_figures_count_from(world, monkeypatch):
+    """A run-out date counts from the server's day (or the page's as-of day), never the viewer's browser."""
+    from datetime import date
+
+    server_day = date(2026, 10, 12)
+    monkeypatch.setattr(supply_sources.timezone, "localdate", lambda: server_day)
+    live = supply_sources.load(_request(), _definition(STOCK), opportunity_ids=[OPP_A])["stock"]["metadata"]
+    assert (live["today"], live["as_of"]) == ("2026-10-12", None)
+
+    past = TODAY - timedelta(days=5)
+    rewound = supply_sources.load(_request(), _definition(STOCK), opportunity_ids=[OPP_A], as_of=past)["stock"]
+    assert (rewound["metadata"]["today"], rewound["metadata"]["as_of"]) == ("2026-10-12", past.isoformat())
+
+
+def test_the_stock_reviews_run_out_dates_count_from_the_servers_day_not_the_browsers():
+    from connect_labs.workflow.templates import TEMPLATES
+
+    render = TEMPLATES["supply_stock_review"]["render_code"]
+    assert "new Date()" not in render and "Date.now()" not in render
+    assert "stock.metadata.as_of || stock.metadata.today" in render
