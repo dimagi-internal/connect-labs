@@ -116,6 +116,8 @@
     .pmc-fixed { margin: 0 16px 8px 54px; padding: 10px 12px; font-size: 12px; line-height: 1.55; color: #57534e;
                  background: #fafaf9; border: 1px dashed #d6d3d1; border-radius: 8px; }
     .pmc-fixed b { color: #1c1917; }
+    .pmc-status { margin: 4px 16px 8px 54px; font-size: 13px; color: #166534; }
+    .pmc-table .pmc-est { color: #78716c; font-weight: 400; }
     .pmc-h-row { display: flex; align-items: center; gap: 8px; }
     .pmc-h-row select { font-size: 12px; border: 1px solid #d6d3d1; border-radius: 6px; padding: 2px 4px; background: #fff; }
 
@@ -153,7 +155,7 @@
       <span class="pmc-step-n">1</span>
       <div>
         <div class="pmc-step-title">Your inputs</div>
-        <div class="pmc-sub">Four choices. Everything below recomputes from them in about a second, and the page's address keeps them, so a link reopens this view.</div>
+        <div class="pmc-sub">Three choices. Everything below recalculates from them in about a second; there is nothing to run. The page's address keeps them, so a link reopens this view.</div>
       </div>
     </div>
     <div class="pmc-in">
@@ -184,16 +186,6 @@
       </div>
     </div>
     <div class="pmc-in">
-      <div class="pmc-in-k">Malaria deaths</div>
-      <div class="pmc-in-v">
-        <span class="pmc-seg" role="group" aria-label="Deaths estimate">
-          <button type="button" data-basis="prevalence_scaled">DHS-scaled</button>
-          <button type="button" data-basis="map">MAP</button>
-        </span>
-        <div class="pmc-sub" id="pmc-basis-help"></div>
-      </div>
-    </div>
-    <div class="pmc-in">
       <div class="pmc-in-k">Children</div>
       <div class="pmc-in-v">
         <span class="pmc-seg" role="group" aria-label="Children targeted">
@@ -204,15 +196,22 @@
       </div>
     </div>
     <div class="pmc-fixed">
+      <b>Malaria deaths: both estimates, never one alone.</b> Nobody counts malaria deaths state by state in Nigeria, so the page uses two estimates:
+      <b>DHS-scaled</b> (each state's under-5 deaths &times; malaria's share of them, Nigeria's share from MAP raised or lowered by the state's DHS survey prevalence)
+      and <b>MAP</b> (MAP's own modelled malaria deaths, 76% of them under five). They disagree by more than threefold in places.
+      Every choice below is made on the <b>lower of the two in each state</b>, so it holds whichever is right, and every figure also shows each estimate alone.
+    </div>
+    <div class="pmc-fixed">
       <b>Fixed in the model:</b> SP, one dose a round · {{ pmc_fixed.coverage_pct }}% of the children reached each round · each state's season from its rainfall ·
       each under-5 death averted is worth {{ pmc_fixed.moral_weight }} units of value, and GiveWell's 1&times; is {{ pmc_fixed.benchmark }} units a dollar,
       so its {{ pmc_fixed.bar }}&times; bar is about {{ pmc_fixed.per_death_at_bar }} per death averted · only deaths are counted, so every multiple is a floor.
     </div>
+    <p id="pmc-status" class="pmc-status" role="status" aria-live="polite"></p>
     <div class="pmc-step-head">
       <span class="pmc-step-n">2</span>
       <div>
         <div class="pmc-step-title">The answer for these inputs</div>
-        <div class="pmc-sub">The schedule that averts the most deaths per dollar across the states picked, and what each budget buys.</div>
+        <div class="pmc-sub">The one schedule that averts the most deaths per dollar across the states picked, what letting it vary by state would add, and what each budget buys.</div>
       </div>
     </div>
     <div id="pmc-reco" class="pmc-reco">Loading…</div>
@@ -224,7 +223,7 @@
       </div>
     </div>
     <p id="pmc-rank-answer" class="pmc-legend" style="padding-top:6px"></p>
-    <p class="pmc-legend"><b>&times; GiveWell</b>: how many times as cost-effective as GiveWell's benchmark, counting under-5 deaths only; GiveWell funds at about <b>6&times;</b> and above. <b>Deaths</b>: two estimates of each state's under-5 malaria deaths, spread by DHS survey prevalence or taken from MAP's model. They disagree in the south, so check both.</p>
+    <p class="pmc-legend"><b>&times; GiveWell</b>: how many times as cost-effective as GiveWell's benchmark, counting under-5 deaths only; GiveWell funds at about <b>6&times;</b> and above. The main column counts the lower death estimate in each state; the two grey columns are each estimate alone.</p>
     <div id="pmc-rank-total" class="pmc-total hidden" style="margin:12px 16px"></div>
     <div id="pmc-design-card" class="hidden">
       <div class="pmc-h">Which schedule: each one across all the states picked</div>
@@ -237,6 +236,8 @@
               <th class="pmc-hide-sm">Deaths averted / yr</th>
               <th title="The schedule's cost across these states divided by the deaths it averts across them">Per death averted</th>
               <th title="How many times as cost-effective as GiveWell's benchmark; GiveWell's bar is about 6x">&times; GiveWell</th>
+              <th class="pmc-hide-sm pmc-est">DHS-scaled alone</th>
+              <th class="pmc-hide-sm pmc-est">MAP alone</th>
             </tr>
           </thead>
           <tbody id="pmc-design-rows"></tbody>
@@ -257,9 +258,11 @@
             <th class="pmc-hide-sm">Cost / yr</th>
             <th title="Cost per year divided by under-5 deaths averted per year">Per death averted</th>
             <th title="How many times as cost-effective as GiveWell's benchmark; GiveWell's bar is about 6x">&times; GiveWell</th>
+            <th class="pmc-hide-sm pmc-est">DHS-scaled alone</th>
+            <th class="pmc-hide-sm pmc-est">MAP alone</th>
           </tr>
         </thead>
-        <tbody id="pmc-rank-rows"><tr><td class="l" colspan="7">Loading…</td></tr></tbody>
+        <tbody id="pmc-rank-rows"><tr><td class="l" colspan="9">Loading…</td></tr></tbody>
       </table>
     </div>
     <p id="pmc-rank-note" class="pmc-note"></p>

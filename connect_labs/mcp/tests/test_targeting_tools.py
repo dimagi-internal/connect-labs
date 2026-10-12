@@ -1149,7 +1149,7 @@ class TestPmcLiveValue:
             "multiple_of_benchmark": 37.7,
             "clears_bar": True,
             "bar": 6.0,
-            "deaths_basis": "prevalence_scaled",
+            "deaths_basis": "lower",
         }
 
     def test_nothing_without_an_under5_effect_a_cost_or_a_death_figure(self, monkeypatch):
