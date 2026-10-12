@@ -176,6 +176,22 @@ def test_a_place_with_no_coordinates_is_listed_rather_than_dropped(client, djang
     assert program["unplaced"][0]["links"]["edit"].endswith(f"?program_id={ONE}")
 
 
+def test_each_program_carries_the_one_below_minimum_headline(client, django_user_model):
+    """#2344: the map names its own counts blockers, and carries the workers' headline as the server worded it."""
+    _sign_in(client, django_user_model, [ONE])
+    _store(ONE, slug="a-placeholder-store")
+    _store(ONE, slug="a-placeholder-worker", kind="user_held")
+
+    program = _payload(client.get(_url(_portfolio([ONE]))))["programs"][0]
+
+    # The store is not a worker; the worker holds nothing on record, so is not known to be below.
+    assert program["workers_below_minimum"] == {
+        "below": 0,
+        "workers": 1,
+        "line": "0 of 1 worker below minimum at their own 14-day pace",
+    }
+
+
 def test_coordinates_off_the_globe_are_not_drawn(client, django_user_model):
     _sign_in(client, django_user_model, [ONE])
     _store(ONE, slug="a-mistyped-store", lat=907.0, lng=8.0)

@@ -34,7 +34,7 @@ from connect_labs.supply_chain.models import (
     Tender,
 )
 from connect_labs.supply_chain.procurement.services.comparison import compare_tender
-from connect_labs.supply_chain.stock.services import ledger, network, resupply
+from connect_labs.supply_chain.stock.services import belief, ledger, network, resupply
 from connect_labs.supply_chain.values import unconfirmed
 
 
@@ -252,6 +252,8 @@ def _deliver(access, commodity=None, item=None, opportunity_id=None, disagreemen
         # From each point's OWN min/max band, so "below minimum" means below
         # what this programme set, not below a number chosen here.
         "cover": statuses,
+        # The one headline for workers in trouble, the same count and words on every screen (#2344).
+        "workers_below_minimum": belief.workers_below_minimum(rows),
         # A field worker's rate looks back 14 days, a store's 90 (resupply.window_for).
         "amc_window_days": {"user_held": resupply.WORKER_WINDOW_DAYS, "store": resupply.STORE_WINDOW_DAYS},
     }

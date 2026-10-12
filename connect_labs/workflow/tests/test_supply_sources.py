@@ -131,6 +131,23 @@ def test_the_rollup_sums_counts_and_recomputes_shares(world):
     assert sum(rollup["runway"].values()) == 2
 
 
+def test_the_rollup_carries_the_one_below_minimum_headline(world):
+    """#2344: the Stock review's headline is the count every supply screen shows, in the same words.
+
+    Acacia holds 180 at 10 a day (0.6 months) against a minimum of one month;
+    baobab has no minimum set, so is not below one.
+    """
+    SupplyPoint.objects.filter(pk=world["worker-acacia"].pk).update(min_months_of_stock=Decimal("1"))
+
+    rollup = supply_sources.load(_request(), _definition(STOCK), opportunity_ids=[OPP_A, OPP_B])["stock"]["rollup"]
+
+    assert rollup["below_minimum"] == {
+        "below": 1,
+        "workers": 2,
+        "line": "1 of 2 workers below minimum at their own 14-day pace",
+    }
+
+
 def test_a_programme_source_runs_once_however_many_of_its_opportunities_the_workflow_spans(world):
     rows = supply_sources.load(_request(), _definition(STORES), opportunity_ids=[OPP_A, OPP_B])["stores"]["rows"]
 
