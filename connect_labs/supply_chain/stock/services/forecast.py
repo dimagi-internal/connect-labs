@@ -515,7 +515,7 @@ def forecast(
         )
     workers.sort(key=lambda w: (w["runs_dry_on"] or "9999", w["name"]))
 
-    stores, demand_of = _stores(nodes, worker_figures, horizon_weeks, anchor)
+    stores, demand_of = _stores(nodes, worker_figures, horizon_weeks, anchor, requested)
     programme = _programme(
         program_id, item, unit, roots, nodes, demand_of, worker_figures, horizon_weeks, anchor, _expected_inbound
     )
@@ -603,7 +603,7 @@ def _own(node) -> Decimal:
     return max(_amount(node.on_hand) or ZERO, ZERO)
 
 
-def _stores(nodes, worker_figures, horizon_weeks, anchor):
+def _stores(nodes, worker_figures, horizon_weeks, anchor, stock_day):
     """Each store: what the workers (and stores) below it cannot cover, against its own stock."""
     children: dict[int, list] = {}
     for node in nodes:
@@ -658,11 +658,24 @@ def _stores(nodes, worker_figures, horizon_weeks, anchor):
                 "workers": workers_of[point.pk],
                 "need": [_wire(v) for v in need_of[point.pk]],
                 "demand_from_below": [_wire(v) for v in demand],
+                # At forecast NEED: its own stock against what the workers below cannot cover.
                 "runs_dry_on": _iso(runs_dry(own, increments, anchor)) if any(demand) else None,
+                # At today's PACE: everything below it at its workers' own paces, added -- the
+                # Network page's cover for it. A different measure, so a different label (#2375).
+                "runs_out_at_pace_on": _at_pace(node, stock_day),
+                "pace_window_days": (node.subtree or {}).get("amc_window_days"),
                 "shortfall_by_end": _wire(max(ZERO, demand[-1] - own)),
             }
         )
     return stores, demand_of
+
+
+def _at_pace(node, stock_day) -> str | None:
+    """The day a store's whole subtree runs out at its pace (belief's subtree cover), or None."""
+    days = (node.subtree or {}).get("days_to_stockout")
+    if not isinstance(days, Decimal):
+        return None
+    return _iso(stock_day + timedelta(days=int(days)))
 
 
 def _programme(

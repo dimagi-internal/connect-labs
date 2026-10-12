@@ -29,9 +29,13 @@ Per point, in the item's single unit:
 Stores carry the same figures summed over their subtree, except that what
 came in is `received_from_outside` (each unit once), never a hop-summed
 `issued`, which stays a per-point figure. Counts sum up the hierarchy;
-cover is recomputed at each level from the subtree's own
-consumption and never summed -- two workers at one month each are not a
-store at two months.
+cover is recomputed at each level and never summed -- two workers at one
+month each are not a store at two months. The rate it is recomputed from is
+the SUM of the paces of the points below that give stock out, each over its
+own window (a worker's last 14 days): one pace per worker on every page, so
+a store's cover agrees with the Stock review's "each worker's last 14 days,
+added" (#2375, owner's call 2026-10-12). Only a store with no worker below it
+is paced on the subtree's consumption over its own 90-day window.
 
 A reversal (a rejected visit's consumption put back) is a `consumption` INTO
 the worker. It restores the balance and cancels the dispensing; it is never
@@ -49,7 +53,7 @@ from connect_labs.supply_chain.models import Movement, StockCount, SupplyPoint, 
 from connect_labs.supply_chain.stock.services import ledger, resupply, soh
 from connect_labs.supply_chain.stock.services.network import _latest_counts
 from connect_labs.supply_chain.stock.services.visit_reader import APPROVED_STATUSES, outcome_key
-from connect_labs.supply_chain.values import Quantity
+from connect_labs.supply_chain.values import Quantity, unconfirmed
 
 ZERO = Decimal("0")
 # What arrives at a point: stock somebody sent or brought. Not `consumption`
@@ -426,16 +430,60 @@ def _merge(total, raw):
     total["no_answer"] += raw["no_answer"]
 
 
-def _subtree_figures(point, total, members, item, unit, end, window_days) -> dict:
+# What a store's subtree cover is paced on (`_subtree_figures`).
+PACE_WORKERS_ADDED = "workers_added"  # the workers' (and any dispensing point's) own paces, added
+PACE_WINDOW = "window"  # no worker below: the subtree's consumption over the store's own window
+
+
+def summed_pace(beliefs, item=None):
+    """(the sum of these points' own consumption paces, how many had one, how many had none).
+
+    The one rule for "everyone's pace, added": each point's own rate over its
+    own window (`resupply.window_for` -- a worker's last 14 days), summed. A
+    point that has given nothing out lately has no pace and adds nothing; it
+    is counted so a page can say so. Only consumption is added, never
+    releases: stock moved between points is not used. Unconfirmed when no
+    point has a pace.
+    """
+    amount, unit, paced, unpaced = ZERO, None, 0, 0
+    for b in beliefs:
+        rate = b.amc
+        if isinstance(rate, Quantity) and b.amc_basis == resupply.CONSUMPTION:
+            if unit not in (None, rate.unit):
+                rate = ledger.convert(rate.amount, rate.unit, unit, item)
+            if isinstance(rate, Quantity):
+                amount += rate.amount
+                unit = rate.unit
+                paced += 1
+                continue
+        unpaced += 1
+    if not paced:
+        return (
+            unconfirmed(
+                "nobody below has given stock out lately (each worker's last "
+                f"{resupply.WORKER_WINDOW_DAYS} days), so there is no pace to add up"
+            ),
+            0,
+            unpaced,
+        )
+    return Quantity(amount.quantize(ledger.QUANTITY_SCALE), unit), paced, unpaced
+
+
+def _subtree_figures(point, total, members, item, unit, end, window_days, below=()) -> dict:
     """A store and everything below it.
 
     Counts are summed. What came in is `received_from_outside` -- arrivals
     from beyond the subtree, each sachet once. There is deliberately no
     subtree `issued`: summed hop by hop, a sachet sent central -> partner ->
-    worker would be in it three times and read as intake. The rate is the
-    subtree's CONSUMPTION -- releases between points inside it move stock
-    around, they do not use it -- and cover is recomputed from it by the
-    point's own band, never summed or averaged from the children.
+    worker would be in it three times and read as intake. The rate is
+    CONSUMPTION -- releases between points inside it move stock around, they
+    do not use it -- and cover is recomputed from it by the point's own band,
+    never summed or averaged from the children.
+
+    With workers in `below` (the subtree's Beliefs), the rate is their own
+    paces added (`summed_pace`) -- the figure the Stock review shows, so two
+    pages cannot give the same twenty workers two paces (#2375). With none,
+    it is the subtree's consumption over the store's own window.
     """
     on_hand = ledger.collapse(_balance(total["in"], total["out"]), item, unit)
     outside: dict = {}
@@ -443,12 +491,29 @@ def _subtree_figures(point, total, members, item, unit, end, window_days) -> dic
         if sender not in members:
             for u, amount in units.items():
                 _add(outside, u, amount)
-    window_days = resupply.window_for(point, window_days)
-    consumed = total["c_by"].get(window_days, {})
-    amc = _rate(item, unit, consumed, total["c_earliest"], end, window_days, resupply.CONSUMPTION)
-    plan = resupply.cover(on_hand, amc, resupply.CONSUMPTION, point, item=item, window_days=window_days)
-    estimate_on, so_far = _waiting(item, unit, consumed, total["c_earliest"], end, window_days)
+    workers = [b for b in below if b.point.kind == "user_held"]
+    if workers and not resupply._is_durable(item):
+        # Everyone below who gives stock out: the workers, and any store or
+        # facility that dispenses itself.
+        givers = [b for b in below if b.point.kind == "user_held" or b.amc_basis == resupply.CONSUMPTION]
+        amc = summed_pace(givers, item)[0]
+        plan = resupply.cover(on_hand, amc, resupply.CONSUMPTION, point, item=item, window_days=window_days)
+        pace = {
+            "pace": PACE_WORKERS_ADDED,
+            "amc_window_days": max(resupply.window_for(b.point, window_days) for b in workers),
+            "paced_workers": sum(1 for b in workers if isinstance(b.amc, Quantity)),
+            "unpaced_workers": sum(1 for b in workers if not isinstance(b.amc, Quantity)),
+        }
+        estimate_on = so_far = None
+    else:
+        window_days = resupply.window_for(point, window_days)
+        consumed = total["c_by"].get(window_days, {})
+        amc = _rate(item, unit, consumed, total["c_earliest"], end, window_days, resupply.CONSUMPTION)
+        plan = resupply.cover(on_hand, amc, resupply.CONSUMPTION, point, item=item, window_days=window_days)
+        estimate_on, so_far = _waiting(item, unit, consumed, total["c_earliest"], end, window_days)
+        pace = {"pace": PACE_WINDOW, "amc_window_days": window_days, "paced_workers": 0, "unpaced_workers": 0}
     return {
+        **pace,
         "on_hand": on_hand,
         "received_from_outside": ledger.collapse(outside, item, unit),
         "dispensed": ledger.collapse(total["dispensed"], item, unit),
@@ -505,7 +570,9 @@ def network_tree(program_id, item, *, on_date=None, window_days=None) -> list[Be
             node.workers += below.workers
             node.workers_below_min += below.workers_below_min
         if node.children:
-            node.subtree = _subtree_figures(p, total, members, item, unit, end, window_days)
+            # Every point in the subtree, the store too: a store that dispenses adds its own pace.
+            below = [beliefs[m] for m in members]
+            node.subtree = _subtree_figures(p, total, members, item, unit, end, window_days, below)
         return total, members
 
     present = set(beliefs)
@@ -517,6 +584,19 @@ def network_tree(program_id, item, *, on_date=None, window_days=None) -> list[Be
             roots.append(p)
             roll(p)
     return [beliefs[r.pk] for r in roots]
+
+
+# Subtree fields that go on the wire as they are (the rest are quantities or ratios).
+_SUBTREE_AS_IS = (
+    "status",
+    "amc_basis",
+    "no_answer_visits",
+    "rate_estimate_from",
+    "pace",
+    "amc_window_days",
+    "paced_workers",
+    "unpaced_workers",
+)
 
 
 def wire(b: Belief) -> dict:
@@ -532,10 +612,7 @@ def wire(b: Belief) -> dict:
 
     subtree = None
     if b.subtree:
-        subtree = {
-            key: (value if key in ("status", "amc_basis", "no_answer_visits", "rate_estimate_from") else _plain(value))
-            for key, value in b.subtree.items()
-        }
+        subtree = {key: (value if key in _SUBTREE_AS_IS else _plain(value)) for key, value in b.subtree.items()}
     return {
         "supply_point_id": b.point.pk,
         "name": b.point.name,

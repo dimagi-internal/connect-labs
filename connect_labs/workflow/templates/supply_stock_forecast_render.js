@@ -548,7 +548,7 @@ function WorkflowUI({
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-3">
           <div className="text-xs uppercase tracking-wide text-gray-500">
-            Network runs dry
+            Network runs dry, at forecast need
           </div>
           <div
             className={
@@ -772,6 +772,9 @@ function WorkflowUI({
                     {s.runs_dry_on
                       ? 'dry ' + day(s.runs_dry_on)
                       : 'not in ' + H + ' weeks'}
+                    <div className="text-xs font-normal text-gray-500">
+                      at forecast need
+                    </div>
                   </div>
                   <div className="flex-1 min-w-0 text-xs text-gray-600 tabular-nums">
                     {fmt(num(s.own_on_hand)) +
@@ -781,6 +784,17 @@ function WorkflowUI({
                       askedBy(s) +
                       ' · ' +
                       shortText(s)}
+                    {/* A different measure, with its own label: the Network page's cover
+                        for everything below this store, at its workers' own paces added
+                        (#2375). It is not the need-based date beside it. */}
+                    {s.runs_out_at_pace_on && (
+                      <div className="text-gray-500">
+                        {'With everything below it, at today’s pace (workers’ own ' +
+                          (s.pace_window_days || 14) +
+                          '-day paces, added): runs out ' +
+                          day(s.runs_out_at_pace_on)}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
