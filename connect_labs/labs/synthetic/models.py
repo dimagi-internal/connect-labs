@@ -55,6 +55,17 @@ class SyntheticOpportunity(models.Model):
         blank=True,
         help_text="Display-only program name for labs-only opps. Ignored when labs_only=False.",
     )
+    labs_org = models.ForeignKey(
+        "labs.LabsOrg",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="synthetic_opportunities",
+        help_text="The labs-only organisation this opp is filed under; its slug is the organisation's key "
+        "everywhere (org tree, Settings, page addresses). Assigned on first save "
+        "(labs.synthetic.org_tree.assign_labs_org); org_name is only the label it started from. "
+        "Ignored when labs_only=False.",
+    )
     program_id = models.IntegerField(
         null=True,
         blank=True,
@@ -111,6 +122,18 @@ class SyntheticOpportunity(models.Model):
 
     def __str__(self):
         return f"{self.opportunity_id} — {self.label or '(unlabeled)'}"
+
+    def save(self, *args, **kwargs):
+        # Every labs-only opp is filed under a registry organisation from its first
+        # save, so no reader ever has to derive one from the free-text name.
+        if self.labs_only and self.labs_org_id is None:
+            from connect_labs.labs.synthetic.org_tree import assign_labs_org
+
+            self.labs_org = assign_labs_org(self)
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None and "labs_org" not in update_fields:
+                kwargs["update_fields"] = [*update_fields, "labs_org"]
+        super().save(*args, **kwargs)
 
     @classmethod
     def next_labs_only_opp_id(cls) -> int:

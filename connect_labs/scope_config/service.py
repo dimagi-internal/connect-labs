@@ -108,8 +108,9 @@ def _require(caller, scope: Scope) -> None:
 
 
 LABS_ONLY_ORG_WRITE = (
-    "a labs-only (synthetic) organisation is shared by every synthetic programme filed under its name, "
-    "whoever made them, so only Dimagi staff change its settings -- set this on your programme instead"
+    "a labs-only (synthetic) organisation's settings are changed by its administrators and Dimagi staff, "
+    "and seeing its opportunities does not make you one -- set this on your programme instead, "
+    "or ask an administrator of the organisation"
 )
 
 
@@ -124,20 +125,44 @@ def is_labs_only_org(slug: str, tree: dict) -> bool:
     return slug.startswith(SYNTHETIC_ORG_PREFIX)
 
 
+def administers_labs_only_org(caller: access.Caller, key: str) -> bool:
+    """Whether `caller` is an administrator of the labs-only organisation keyed `key`.
+
+    The organisation is its `LabsOrg` registry row (labs.synthetic.org_tree), and who
+    administers it is `marketplace.OrgMembership` -- granted to whoever made it, or
+    by invitation. Only an unlinked labs-only row answers: a real organisation's
+    administrators get nothing here.
+    """
+    from connect_labs.labs.models import LabsOrg
+    from connect_labs.labs.synthetic.org_tree import is_labs_only_org_row
+    from connect_labs.marketplace.models import OrgMembership
+
+    user = _user(caller)
+    if user is None or not getattr(user, "username", ""):
+        return False
+    org = LabsOrg.objects.filter(slug=key).first()
+    if not is_labs_only_org_row(org):
+        return False
+    return OrgMembership.objects.filter(org=org, user__username=user.username, role="admin").exists()
+
+
 def write_refusal(caller: access.Caller | None, scope: Scope, tree: dict) -> str | None:
     """Why `caller` may not CHANGE `scope`'s layer, or None.
 
-    Reading and changing are the same membership rule, with one exception. A
-    labs-only organisation is not a membership: it is the bucket every synthetic
-    opportunity with the same organisation name falls into (labs.synthetic.org_tree),
-    so "can see one opportunity in it" spans other people's programmes. Its layer
-    would restyle all of them, so only Dimagi staff write it.
+    Reading and changing are the same membership rule, with one exception. For a
+    labs-only organisation, "member" is only "can see one of its opportunities" --
+    and labs-only opportunities are seen across whole email domains, so that
+    spans other people's programmes. Its layer would restyle all of them, so it
+    is written by the people who administer it (`administers_labs_only_org`), and
+    Dimagi staff. That is sound now that the organisation is a registry row with
+    its own administrators; while it was a name every same-named synthetic opp
+    fell into (#2424), nobody could be its administrator and only staff wrote it.
     """
     reason = refusal(caller, scope)
     if reason:
         return reason
     if scope.type == "organization" and not caller.is_system and not _is_staff(caller):
-        if is_labs_only_org(scope.key, tree):
+        if is_labs_only_org(scope.key, tree) and not administers_labs_only_org(caller, scope.key):
             return LABS_ONLY_ORG_WRITE
     return None
 

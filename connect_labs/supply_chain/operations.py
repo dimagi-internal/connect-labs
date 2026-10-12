@@ -976,6 +976,11 @@ def supplier_market_invite(access, supplier_id, email=""):
             f"{org.name} already has people on the supplier marketplace; ask them to invite whoever else "
             "should act for it"
         )
+    from connect_labs.labs.synthetic.org_tree import is_labs_only_org_row
+
+    if is_labs_only_org_row(org):
+        # Its first admin would also administer that synthetic organisation's Settings.
+        raise ValueError(f"{org.name} is a labs-only (synthetic) organisation, not a company to hand over")
     user = access.user if getattr(access.user, "is_authenticated", False) else None
     invite, raw = membership.issue_invite(org, email=email or "", issued_by=user)
     return {

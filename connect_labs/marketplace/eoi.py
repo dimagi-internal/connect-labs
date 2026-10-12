@@ -182,7 +182,7 @@ def ingest_round(round_: Solicitation, rows, human_verdicts=None) -> dict:
 
     by_email = {c.email.lower(): c.org for c in OrgContact.objects.select_related("org")}
     by_name = {}
-    for org in LabsOrg.objects.all():
+    for org in LabsOrg.objects.real():
         key = normalise(org.name)
         # A normalised collision between two real organisations must not resolve
         # to either of them, so drop both rather than pick one.
@@ -212,7 +212,7 @@ def ingest_round(round_: Solicitation, rows, human_verdicts=None) -> dict:
     # than guessed at -- the same rule the rest of the matcher follows.
     resolved_verdicts = {}
     for key, (name, verdict, why) in (human_verdicts or {}).items():
-        org = LabsOrg.objects.filter(name=name).first() if name else None
+        org = LabsOrg.objects.real().filter(name=name).first() if name else None
         if name and org is None:
             continue
         resolved_verdicts[key] = (org, verdict, why)
