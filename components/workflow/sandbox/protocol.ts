@@ -11,6 +11,10 @@
  * After INIT everything rides the port; window messages are ignored.
  */
 
+/** The frame document's path on labs (workflow/sandbox.py SHELL_PATH). Fixed here, never
+ * read from the page: the host draws only this. */
+export const SHELL_PATH = '/labs/sandbox/render/';
+
 export const HELLO = 'labs-sandbox:hello';
 export const INIT = 'labs-sandbox:init';
 export const UPDATE = 'labs-sandbox:update';

@@ -20,6 +20,7 @@ import {
   NOT_ON_A_PAGE,
   PHASE1_METHODS,
   PHASE2_METHODS,
+  SHELL_PATH,
   UPDATE,
   type BridgeRequest,
   type BridgeResponse,
@@ -358,8 +359,6 @@ export function isFrameHello(
 
 export interface SandboxHostOptions {
   container: HTMLElement;
-  /** The shell's path on labs (workflow/sandbox.py SHELL_PATH). */
-  shellUrl: string;
   labsOrigin: string;
   payload: FramePayload;
   handlers: Omit<HostHandlers, 'resize'>;
@@ -458,7 +457,8 @@ export function createSandboxHost(options: SandboxHostOptions): SandboxHost {
 
   win.addEventListener('message', onMessage);
   iframe.addEventListener('load', onLoad);
-  iframe.src = options.shellUrl;
+  // The shell is always labs' own fixed path, whatever the page data says.
+  iframe.src = SHELL_PATH;
   options.container.appendChild(iframe);
 
   return {
