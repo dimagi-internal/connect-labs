@@ -42,8 +42,9 @@ DEFINITION = {
     },
     "pipeline_sources": [],
     "supply_sources": [
-        # course_size is the course to assume when neither the visits (completed
-        # cases) nor the commodity's protocol give one; the forecast says which it used.
+        # course_size is the course to assume when neither the commodity's protocol
+        # nor the visits (completed cases) give one; the forecast says which it used.
+        # The protocol leads (#2386); what children are actually given is `basis.delivered`.
         {"alias": "forecast", "source": "stock_forecast", "item": "rutf", "params": {"course_size": 150}},
     ],
 }

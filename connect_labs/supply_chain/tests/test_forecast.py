@@ -374,6 +374,75 @@ def test_the_profile_is_measured_once_enough_children_were_in_treatment_all_week
     assert (profile.week(5), profile.basis(5)) == (Decimal(14), "steady")
 
 
+def _visited(n, every_days, sachets, visits=4, anchor=date(2026, 9, 28)):
+    start = anchor - timedelta(days=every_days * (visits - 1))
+    case = forecast.Case(
+        key=(1, f"child-{n}"), opportunity_id=1, supply_point_id=1, enrolled_on=start, enrol_point_id=1,
+        carry_over=False, last_seen=anchor, outcome="enrolled",
+    )  # fmt: skip
+    case.visits = [(start + timedelta(days=every_days * i), Decimal(sachets)) for i in range(visits)]
+    return case
+
+
+def test_the_protocol_leads_every_week_even_where_visits_measured_less():
+    """#2386: the forecast is what a child is meant to get -- 14 a week -- not the measured 10."""
+    anchor = date(2026, 9, 28)
+    cases = [_visited(n, 7, 10, anchor=anchor) for n in range(5)]
+
+    profile = forecast.delivery_profile(cases, anchor, Decimal(168), Decimal(2))
+
+    assert [profile.week(k) for k in range(4)] == [Decimal(14)] * 4
+    assert {profile.basis(k) for k in range(4)} == {"protocol"}
+
+
+def test_what_children_are_given_is_measured_over_the_days_between_their_visits():
+    """Seen every 8 days and given 13 each time: 1.6 a day, 81% of a 2-a-day protocol.
+
+    The last visit has no next one, so its 13 are not over any days and are left out.
+    """
+    cases = [_visited(n, 8, 13) for n in range(5)]
+
+    delivered = forecast.delivered_ration(cases, Decimal(2))
+
+    assert delivered == {
+        "per_day": "1.6",
+        "per_week": "11.4",
+        "share_of_protocol": 81,
+        "protocol_per_day": "2",
+        "days_between_visits": "8",
+        "sachets_per_visit": "13",
+        "children": 5,
+        "intervals": 15,
+    }
+    # Too few children with two visits is no figure, never a guess.
+    assert forecast.delivered_ration(cases[:4], Decimal(2)) is None
+
+
+def test_the_course_follows_the_protocol_over_what_completed_cases_measured(world):
+    commodity = world["item"].commodity
+    commodity.course_definition = {"base_units_per_course": 168, "base_units_per_day": 2}
+    commodity.save()
+    cases = [
+        forecast.Case(
+            key=(1, f"child-{n}"), opportunity_id=world["rule"].opportunity_id, supply_point_id=1,
+            enrolled_on=TODAY, enrol_point_id=1, carry_over=False, last_seen=TODAY, outcome="recovered",
+            received=Decimal(received), status="exited",
+        )  # fmt: skip
+        for n, received in enumerate((100, 120, 140, 150, 160))
+    ]
+
+    assert forecast.course_size(cases, [world["rule"]], world["item"], COURSE)["basis"] == "protocol"
+
+
+def test_what_is_owed_says_how_much_of_it_the_horizon_lays_out(world):
+    """ "Still owed" is the rest of every course; the next weeks' share of it is beside it (#2386)."""
+    out = _run(world)
+
+    committed = sum(Decimal(w["committed"]) for w in out["programme"]["weeks"])
+    assert Decimal(out["programme"]["owed_in_horizon"]) == committed
+    assert Decimal(out["programme"]["owed"]) == Decimal(112 + 136 + 140)  # child-a, child-d, child-f
+
+
 def test_the_course_is_measured_from_completed_cases_once_there_are_enough(world):
     cases = [
         forecast.Case(
