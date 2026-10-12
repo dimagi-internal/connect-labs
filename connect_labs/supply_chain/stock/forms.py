@@ -243,7 +243,7 @@ class RequiredDocumentForm(ProvenancedForm):
             [("", "—")] + [(value, label.capitalize()) for value, label in records.DOCUMENT_KIND_LABELS.items()],
         )
         # Organisations are labs-wide, so this picker is deliberately unscoped.
-        self.fields["owed_by_org"].queryset = LabsOrg.objects.order_by("name")
+        self.fields["owed_by_org"].queryset = LabsOrg.objects.real().order_by("name")
         self.fields["owed_by_org"].empty_label = _("Select an organisation…")
         # The list is being edited; who reported the shipment is not. Its
         # `source` is sent back unchanged, as the remove button does.
@@ -329,11 +329,12 @@ class ChargeForm(ProvenancedForm):
         # clearing agent. Whoever this programme has paid to land goods before
         # comes first; the rest stay reachable by typing, never removed.
         payees = _programme_payees(self.access)
-        self.fields["payee_org"].queryset = LabsOrg.objects.order_by("name")
+        self.fields["payee_org"].queryset = LabsOrg.objects.real().order_by("name")
         self.fields["payee_org"].empty_label = _("Type to search organisations…")
         if payees:
             everyone = [
-                (org.pk, org.name) for org in LabsOrg.objects.exclude(pk__in=[p.pk for p in payees]).order_by("name")
+                (org.pk, org.name)
+                for org in LabsOrg.objects.real().exclude(pk__in=[p.pk for p in payees]).order_by("name")
             ]
             self.fields["payee_org"].choices = [
                 ("", self.fields["payee_org"].empty_label),

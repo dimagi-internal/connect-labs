@@ -32,8 +32,13 @@ def get_org_data(request) -> dict:
     auto-select, template context, and registry.accessible_opp_ids without
     needing any real Connect membership.
     """
+    from connect_labs.labs.synthetic.org_tree import drop_labs_only_keys
+
     labs_oauth = getattr(request, "session", {}).get("labs_oauth", {}) if hasattr(request, "session") else {}
-    org_data = dict(labs_oauth.get("organization_data", {}))
+    # A Connect organisation claiming a reserved labs-only key ("Labs Synthetic X")
+    # is dropped before anything reads the tree: it would otherwise stand in for,
+    # and hold, the labs-only organisation with that key.
+    org_data = drop_labs_only_keys(dict(labs_oauth.get("organization_data", {})))
 
     user = getattr(request, "user", None)
     if user is None or not getattr(user, "is_authenticated", False):

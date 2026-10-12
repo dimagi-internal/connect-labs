@@ -226,9 +226,11 @@ class ContractForm(ProvenancedForm):
             | set(self.in_program(Contract).exclude(buyer_org=None).values_list("buyer_org_id", flat=True))
             | set(self.scoped(Supplier).values_list("org_id", flat=True))
         )
-        self.fields["buyer_org"].queryset = LabsOrg.objects.annotate(
-            _in_programme=Case(When(pk__in=in_programme, then=Value(0)), default=Value(1))
-        ).order_by("_in_programme", "name")
+        self.fields["buyer_org"].queryset = (
+            LabsOrg.objects.real()
+            .annotate(_in_programme=Case(When(pk__in=in_programme, then=Value(0)), default=Value(1)))
+            .order_by("_in_programme", "name")
+        )
 
         self.fields["supplier"].empty_label = _("Select a supplier…")
         self.fields["commodity"].empty_label = _("Select a product…")

@@ -54,14 +54,24 @@ _ORG_DATA = _data_with(
     summary=(
         "Merge two organisation rows that turn out to be one organisation: every reference moves to "
         "the one you keep, the merged-away slug is kept as an alias, and the empty row is deleted. "
-        "Refused when the two are linked to different Connect organisations."
+        "Refused when the two are linked to different Connect organisations. Only Dimagi staff, or "
+        "someone who administers BOTH organisations, may merge; a labs-only (synthetic) organisation "
+        "only by staff."
     ),
     input_schema=obj({"keep_id": ID, "merge_id": ID}, required=("keep_id", "merge_id")),
     is_write=True,
 )
 def org_merge(access, keep_id, merge_id):
+    from connect_labs.labs.models import LabsOrg
     from connect_labs.labs.org_merge import merge_orgs
+    from connect_labs.supply_chain.org_access import require_merge
 
+    keep = LabsOrg.objects.filter(pk=keep_id).first()
+    merge = LabsOrg.objects.filter(pk=merge_id).first()
+    if keep is not None and merge is not None:
+        # A merge moves every reference AND every membership onto `keep`, so
+        # merging your own row into someone else's was a takeover (#2435 review, S1).
+        require_merge(access, keep, merge)
     return merge_orgs(keep_id=keep_id, merge_id=merge_id)
 
 
