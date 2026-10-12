@@ -483,6 +483,32 @@ def test_a_programmes_map_draws_that_programme_and_no_other(client, django_user_
     assert re.search(r'bg-brand-indigo text-white[^"]*">Map</a>', body)
 
 
+def test_a_programmes_map_sits_in_the_supply_headers_column(client, django_user_model, in_programme):
+    """The map ran past the header's column at 1440 px; a programme's map now sits inside it.
+
+    And it loads map_frame.js, which frames the programme's places (not the
+    supplier an order comes from) and shows its workers at every zoom.
+    """
+    _sign_in(client, django_user_model, [ONE])
+    _store(ONE, slug="a-store-in-one", lat=9.0, lng=8.0)
+    client.cookies["programme"] = str(ONE)
+
+    body = client.get(reverse("supply_chain:programme_map")).content.decode()
+
+    assert '<div class="pm-col">' in body
+    assert "supply_chain/map_frame.js" in body
+
+
+def test_a_portfolios_map_stays_full_width(client, django_user_model):
+    _sign_in(client, django_user_model, [ONE])
+    portfolio = _portfolio([ONE])
+
+    body = client.get(reverse("supply_chain:portfolio_map", args=[portfolio.slug])).content.decode()
+
+    assert 'class="pm-col"' not in body
+    assert "supply_chain/map_frame.js" in body
+
+
 def test_a_programmes_map_refuses_a_programme_the_viewer_cannot_reach(client, django_user_model, in_programme):
     _sign_in(client, django_user_model, [ONE])
     _store(THREE, slug="a-store-nobody-here-holds", lat=9.0, lng=8.0)

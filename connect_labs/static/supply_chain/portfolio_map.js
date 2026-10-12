@@ -8,7 +8,8 @@
  * What the map draws, and why so little:
  *   - stores, coloured by ONE thing: blocked / waiting on an answer / nothing open;
  *   - the routes supplies are on their way along (supplier → the store owed);
- *   - field workers only once you are zoomed in far enough to tell them apart.
+ *   - field workers where their visits are: one programme's at every zoom,
+ *     several programmes' once zoomed in far enough to tell them apart.
  * Most of what stands in a chain's way is not at a place (a quote that cannot
  * be compared, a product failing its spec), so the PANEL carries the blockers,
  * grouped by stage, and the map shows where the place-bound ones bite.
@@ -1454,18 +1455,19 @@
             pt.kind !== 'user_held'
           );
         });
-        var workers = places.filter(function (pt) {
-          return pt.program_id === p.program_id && pt.kind === 'user_held';
-        }).length;
+        var workers = window.SupplyMapFrame.workersLine(
+          places.filter(function (pt) {
+            return pt.program_id === p.program_id && pt.kind === 'user_held';
+          }),
+          DATA.programs.length,
+        );
         h +=
           '<div class="pm-muted mt-2" style="font-weight:600">Places</div>' +
           (pts.length
             ? pts.map(placeRow).join('')
             : '<div class="pm-muted">None match the filters.</div>') +
           (workers
-            ? '<div class="pm-muted mt-1">' +
-              plural(workers, 'field worker') +
-              ' — zoom in to see them.</div>'
+            ? '<div class="pm-muted mt-1">' + esc(workers) + '</div>'
             : '');
       }
       h += '</div>';
@@ -2064,7 +2066,9 @@
         id: 'pm-workers',
         type: 'circle',
         source: 'pm-workers',
-        minzoom: 9,
+        // One programme's workers show at every zoom; several programmes'
+        // wait until they can be told apart (map_frame.js).
+        minzoom: window.SupplyMapFrame.workerMinZoom(DATA.programs.length),
         paint: {
           // In Stock mode a worker's dot is sized by what they hold.
           'circle-radius': ['get', 'r'],
@@ -2676,10 +2680,12 @@
     }
     if (fit) {
       var sel = state.place && placeByKey[state.place];
+      // The places, not the suppliers their orders come from (map_frame.js).
       var target =
         sel && sel._placed
           ? [sel]
-          : vis.concat(
+          : window.SupplyMapFrame.frameTargets(
+              vis,
               Object.keys(used).map(function (k) {
                 return used[k];
               }),
