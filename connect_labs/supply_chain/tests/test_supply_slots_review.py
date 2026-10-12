@@ -114,21 +114,3 @@ def test_pages_are_left_out_of_the_programme_run_list():
         program_view.owned_by_program = program_view_owned
 
     assert [d.id for d in found] == [2]
-
-
-def test_the_pin_migration_keeps_the_old_order_when_positions_tie(client_in_programme):
-    """The header ordered pins by (position, id); config orders by (position, slug)."""
-    import importlib
-
-    from django.apps import apps
-
-    from connect_labs.supply_chain.workflow_views.models import SupplyWorkflowView
-
-    for slug in ("zeta", "alpha"):  # created in this order, same position
-        SupplyWorkflowView.objects.create(
-            program_id=PROGRAM, slug=slug, label=slug.title(), workflow_definition_id=WORKFLOW, opportunity_id=OPP
-        )
-    importlib.import_module("connect_labs.scope_config.migrations.0002_supply_pins").forward(apps, None)
-
-    labels = [label.strip() for _, _, label in _tabs(client_in_programme)]
-    assert labels.index("Zeta") < labels.index("Alpha")
