@@ -181,10 +181,26 @@ class TestThePage:
         assert "Which PMC schedule, and where?" in body
         assert "Illustrative. One uncalibrated setting" in body
         assert "indicators/pmc/pmc.js" in body
-        # Pick states, get the programme; the own-schedule run and the one-setting comparison are folded below.
-        assert body.index("Pick states; get the programme") < body.index('id="pmc-reco"') < body.index("The evidence")
+        # Inputs, then the answer, then the evidence; the own-schedule run and one-setting comparison fold below.
+        assert (
+            body.index("Your inputs")
+            < body.index("Fixed in the model")
+            < body.index("The answer for these inputs")
+            < body.index('id="pmc-reco"')
+            < body.index("The evidence")
+        )
         assert body.index("The evidence") < body.index("Advanced: test a schedule of your own") < body.index(">How<")
         assert '<script id="pmc-grid-states" type="application/json">[]</script>' in body
+
+    def test_the_inputs_say_what_the_model_holds_fixed(self, client_in, nigeria, settings):
+        settings.PMC_STATE_GRID_PATH = "/nonexistent/pmc_state_grid.json"
+        body = client_in.get(reverse("targeting:pmc")).content.decode()
+        # The four inputs a visitor changes, each labelled; the rest stated, not hidden in a tooltip.
+        for label in ("States", "Price", "Malaria deaths", "Children"):
+            assert f'<div class="pmc-in-k">{label}' in body
+        assert "85% of the children reached each round" in body
+        assert "worth 113 units of value" in body and "0.003 units a dollar" in body
+        assert "6&times; bar is about $6,300 per death averted" in body
 
     def test_with_the_grid_the_picker_lists_its_states_and_marks_the_year_round_ones(
         self, client_in, nigeria, settings

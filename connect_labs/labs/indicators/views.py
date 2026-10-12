@@ -905,6 +905,21 @@ def _pmc_costs(request) -> dict:
     return costs
 
 
+def pmc_fixed_assumptions() -> dict:
+    """What the PMC page holds fixed, said beside the inputs a visitor can change."""
+    from connect_labs.labs.indicators.cost_effectiveness import BAR, BENCHMARK_UOV_PER_DOLLAR, MORAL_WEIGHT
+    from connect_labs.labs.indicators.emod.live import DEFAULT_COVERAGE
+
+    per_death = MORAL_WEIGHT.value / BENCHMARK_UOV_PER_DOLLAR.value / BAR.value
+    return {
+        "coverage_pct": round(DEFAULT_COVERAGE * 100),
+        "moral_weight": f"{MORAL_WEIGHT.value:g}",
+        "benchmark": f"{BENCHMARK_UOV_PER_DOLLAR.value:g}",
+        "bar": f"{BAR.value:g}",
+        "per_death_at_bar": f"${round(per_death, -2):,.0f}",
+    }
+
+
 class PmcView(OpenLocallyMixin, TemplateView):
     """PMC schedule explorer: IDM's EMOD schedule comparison beside Nigeria's states."""
 
@@ -917,6 +932,7 @@ class PmcView(OpenLocallyMixin, TemplateView):
         ctx = super().get_context_data(**kwargs)
         ctx["sweep"] = pmc.load_sweep()
         ctx["caveats"] = pmc.CAVEATS
+        ctx["pmc_fixed"] = pmc_fixed_assumptions()
         # The per-state grid's states for the ranking's picker; empty until the grid is computed.
         ctx["grid_states"] = rank.state_index(rank.load_grid(getattr(settings, "PMC_STATE_GRID_PATH", None)))
         # Same rule as the map page: the panel only for a signed-in visitor, and
