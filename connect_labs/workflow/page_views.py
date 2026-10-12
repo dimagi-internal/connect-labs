@@ -28,7 +28,7 @@ from django.views.generic import TemplateView
 from connect_labs.labs.access.scopes import Caller
 from connect_labs.labs.context import get_org_data, save_context_to_session
 from connect_labs.scope_config import service
-from connect_labs.scope_config.scopes import Scope
+from connect_labs.scope_config.scopes import Scope, opportunity_entry, organization_entry, program_entry
 from connect_labs.workflow.page_mode import is_page
 from connect_labs.workflow.views import WorkflowRunView
 
@@ -99,6 +99,24 @@ def _scope_owner(scope: Scope, request) -> dict:
     return scope.kwargs()
 
 
+def _with_scope_named(request, context: dict, scope: Scope) -> dict:
+    """`context` plus the display entry of the scope in view, for the header's context picker.
+
+    The context a page is read in holds only ids (and, for a home owned by one of an
+    organisation's programmes, not even the organisation's), so the picker had nothing
+    to name and showed "Select Context". Only the display object is added -- never an
+    id -- so what the page reads, and where, is unchanged.
+    """
+    tree = get_org_data(request) or {}
+    key, find = {
+        "organization": ("organization", organization_entry),
+        "program": ("program", program_entry),
+        "opportunity": ("opportunity", opportunity_entry),
+    }[scope.type]
+    entry = find(tree, scope.key)
+    return {**context, key: entry} if entry else context
+
+
 def find_page(request, scope: Scope, slug: str):
     """(definition, owner) for the page `slug` owned by `scope`, or (None, None)."""
     from connect_labs.workflow.data_access import WorkflowDataAccess
@@ -135,6 +153,8 @@ class PageView(WorkflowRunView):
         else:
             home = (service.resolved_for_request(request, "labs", scope).get("home") or {}).get("fill")
             if not home:
+                # Nothing is read here, so the picker names the scope in view and nothing older.
+                request.labs_context = _with_scope_named(request, {}, scope)
                 return render(
                     request,
                     "workflow/page_none.html",
@@ -152,7 +172,7 @@ class PageView(WorkflowRunView):
             request,
             {"organization_id": scope.key} if scope.type == "organization" else scope.kwargs(),
         )
-        request.labs_context = context
+        request.labs_context = _with_scope_named(request, context, scope)
         self.page_mode = True
         self.page_scope = scope
         self.page_owner = owner
