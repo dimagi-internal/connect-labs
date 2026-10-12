@@ -21,14 +21,20 @@ Where each input comes from:
 - **Received** is the standing consumption the visit reader posted for each of
   the child's visits: a rejected visit's sachets were put back, so they are
   not received.
-- **Course size**, in order: measured (the median received by cases that
-  completed, once there are `K_MIN` of them), the commodity's protocol
-  (`course_definition.base_units_per_course`), the caller's `course_size`.
-  Each answer says which it is; with none, nothing is committed or projected.
-- **Delivery profile**: what a child in week k of treatment is given, measured
-  from cases in treatment for all of week k when `K_MIN` of them were, else the
-  protocol's daily figure, else the last week measured, else a tenth of the
-  course a week. A course is laid along it, never past its size.
+- **Course size**, in order: the commodity's protocol
+  (`course_definition.base_units_per_course`), measured (the median received by
+  cases that completed, once there are `K_MIN` of them), the caller's
+  `course_size`. Each answer says which it is; with none, nothing is committed
+  or projected.
+- **Delivery profile**: the protocol's daily figure, every week, when the
+  commodity states one (owner's call 2026-10-12, #2386: the forecast is what
+  children are meant to receive). Otherwise measured from cases in treatment
+  for all of week k when `K_MIN` of them were, else the last week measured,
+  else a tenth of the course a week. A course is laid along it, never past
+  its size.
+- **Delivered** (`basis.delivered`, beside the forecast, never in it): what
+  the visits show a child is actually given a day -- each visit's sachets over
+  the days to the child's next visit -- and its share of the protocol.
 - **Enrolment**: each worker's enrolments over the last `ENROL_WEEKS` seven-day
   windows inside the rule's life; fewer than `MIN_ENROL_WEEKS` such windows is
   "not enough history" (None), never zero.
@@ -224,18 +230,23 @@ def read_cases(program_id, item, rules, anchor, unit) -> list[Case]:
 
 
 def course_size(cases, rules, item, fallback) -> dict:
-    """{size, basis, completed_cases}: measured, else protocol, else the caller's, else unknown."""
+    """{size, basis, completed_cases}: protocol, else measured, else the caller's, else unknown.
+
+    The protocol leads (owner's call, #2386): the forecast is what a child in
+    treatment is meant to receive. What the visits show children actually
+    receive is reported beside it (`delivered_ration`), never folded into it.
+    """
     complete = {rule.opportunity_id: set(rule.cases["outcome"].get("complete") or []) for rule in rules}
     finished = [
         c.received
         for c in cases
         if not c.carry_over and c.status == "exited" and c.outcome in complete.get(c.opportunity_id, ())
     ]
-    if len(finished) >= K_MIN:
-        return {"size": Decimal(median(finished)), "basis": MEASURED, "completed_cases": len(finished)}
     protocol = (item.commodity.course_definition or {}).get("base_units_per_course") if item.commodity_id else None
     if protocol:
         return {"size": Decimal(str(protocol)), "basis": PROTOCOL, "completed_cases": len(finished)}
+    if len(finished) >= K_MIN:
+        return {"size": Decimal(median(finished)), "basis": MEASURED, "completed_cases": len(finished)}
     if fallback:
         return {"size": Decimal(str(fallback)), "basis": DEFAULT, "completed_cases": len(finished)}
     return {"size": None, "basis": UNKNOWN, "completed_cases": len(finished)}
@@ -259,7 +270,17 @@ class Profile:
 
 
 def delivery_profile(cases, anchor, course, per_day_protocol) -> Profile:
-    """Measured week by week from cases seen in treatment for the whole week; see the module docstring."""
+    """The ration a child is laid along: the protocol's, every week, when the commodity states one.
+
+    Otherwise measured week by week from cases seen in treatment for the whole
+    week, then held at the last measured week, else a tenth of the course. The
+    protocol leads every week, measured weeks included (owner's call, #2386):
+    measured weeks divide by open cases, so a child not seen that week counts
+    as a zero and the ration read about half the protocol. What children are
+    actually given is `delivered_ration`, said beside the forecast.
+    """
+    if per_day_protocol:
+        return Profile({}, Decimal(str(per_day_protocol)) * 7, PROTOCOL)
     sums: dict[int, Decimal] = {}
     counts: dict[int, int] = {}
     for case in cases:
@@ -274,14 +295,55 @@ def delivery_profile(cases, anchor, course, per_day_protocol) -> Profile:
                 (given for day, given in case.visits if (day - case.enrolled_on).days // 7 == k), ZERO
             )
     measured = {k: (sums[k] / counts[k], counts[k]) for k in counts if counts[k] >= K_MIN}
-    if per_day_protocol:
-        return Profile(measured, Decimal(str(per_day_protocol)) * 7, PROTOCOL)
     later = [k for k in measured if k >= 1]
     if later:
         return Profile(measured, measured[max(later)][0], STEADY)
     if course:
         return Profile(measured, course / 10, DEFAULT)
     return Profile(measured, None, UNKNOWN)
+
+
+def delivered_ration(cases, per_day_protocol) -> dict | None:
+    """What the visits show a child in treatment is actually given, a day -- the comparison beside the forecast.
+
+    Measured from visited intervals only: what a child was given at one visit
+    over the days until their next, summed across every child seen at least
+    twice. A child not seen in a week is not a zero here (that is what made the
+    old weekly profile read half the protocol); dropout is `lost_after_days`'s
+    business. None until `K_MIN` children have two visits.
+
+    {per_day, per_week, share_of_protocol (a percentage, or None with no
+    protocol), days_between_visits, sachets_per_visit, children, intervals}.
+    """
+    given = days = ZERO
+    intervals = 0
+    children = 0
+    for case in cases:
+        visits = sorted(case.visits)
+        pairs = [(a, b) for a, b in zip(visits, visits[1:]) if (b[0] - a[0]).days > 0]
+        if not pairs:
+            continue
+        children += 1
+        for (on, sachets), (next_on, _) in pairs:
+            given += sachets
+            days += Decimal((next_on - on).days)
+            intervals += 1
+    if children < K_MIN or days <= 0:
+        return None
+    per_day = given / days
+    share = None
+    if per_day_protocol:
+        share = int((per_day / Decimal(str(per_day_protocol)) * 100).quantize(Decimal(1)))
+    return {
+        "per_day": _wire(per_day),
+        "per_week": _wire(per_day * 7),
+        "share_of_protocol": share,
+        "protocol_per_day": _wire(Decimal(str(per_day_protocol))) if per_day_protocol else None,
+        "days_between_visits": _wire(days / intervals),
+        "sachets_per_visit": _wire(given / intervals),
+        "children": children,
+        "intervals": intervals,
+    }
 
 
 def _lay(profile, course, left, first_week, weeks, already=ZERO) -> list[Decimal]:
@@ -486,6 +548,7 @@ def forecast(
             "shortfall": shortfall,
             "rate": rate,
             "owed": owed,
+            "basis": basis,
         }
         wired = belief.wire(node)
         workers.append(
@@ -522,6 +585,13 @@ def forecast(
     programme["open_cases"] = sum(w["open_cases"] for w in workers)
     # Counts summed from the unrounded figures, never from the rounded ones on the wire.
     programme["owed"] = _wire(sum((f["owed"] for f in worker_figures.values()), ZERO)) if rules else None
+    # Of what is owed (the rest of each child's course), the share the horizon lays out:
+    # "owed" and "needed" read as one story only with this beside them (#2386).
+    programme["owed_in_horizon"] = (
+        _wire(sum((sum(f["committed"], ZERO) for f in worker_figures.values() if f["basis"] == "cases"), ZERO))
+        if rules
+        else None
+    )
     rates = [f["rate"] for f in worker_figures.values() if f["rate"] is not None]
     programme["enrolled_per_week"] = _wire(sum(rates, ZERO)) if rates else None
     # Workers projected nothing for want of history: the enrolment figure leaves them out, and says so.
@@ -551,6 +621,8 @@ def forecast(
                 }
                 for k in range(horizon_weeks)
             ],
+            # Beside the protocol, never in it: what the visits show children are given (#2386).
+            "delivered": delivered_ration(cases, per_day),
             "enrolment_weeks": ENROL_WEEKS,
             "lost_after_days": sorted({rule.cases["lost_after_days"] for rule in rules}),
             "scenario": _wire(scenario),
