@@ -1355,6 +1355,30 @@ def pace_line(row):
 
 
 @register.filter
+def subtree_pace_text(subtree):
+    """What a store's "with everything below it" cover is paced on, said beside it (#2375).
+
+    "at its workers' own 14-day paces, added (2 sachets a day)" -- the figure the
+    Stock review adds up -- or, for a store with no worker below it, "at the last
+    90 days' consumption below it". "" with no subtree.
+    """
+    subtree = subtree or {}
+    window = subtree.get("amc_window_days")
+    if subtree.get("pace") == "workers_added":
+        text = f"at its workers' own {window}-day paces, added"
+        amc = subtree.get("amc")
+        if isinstance(amc, dict) and "amount" in amc:
+            text += f" ({per_day(amc)} a day)"
+        unpaced = subtree.get("unpaced_workers") or 0
+        if unpaced:
+            text += f"; {unpaced} worker{'s' if unpaced != 1 else ''} with no pace yet"
+        return text
+    if subtree.get("pace") == "window" and window:
+        return f"at the last {window} days' consumption below it"
+    return ""
+
+
+@register.filter
 def send_text(value):
     """What to send or reorder, rounded UP to a whole unit wherever the unit is counted.
 

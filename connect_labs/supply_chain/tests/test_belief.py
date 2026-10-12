@@ -267,14 +267,76 @@ def test_a_store_shows_what_came_in_from_outside_once_never_a_hop_summed_issued(
     assert "issued" not in wired["subtree"]
 
 
-def test_subtree_cover_is_recomputed_from_its_consumption_not_summed(item, world):
+def test_subtree_cover_is_recomputed_from_its_workers_paces_not_summed(item, world):
+    """Cover is the subtree's stock over the sum of its workers' own paces -- never cover summed.
+
+    With a window named, each worker's pace is over that window: A's 100 sachets over
+    the 51 days since its first visit, B's 10 over its 16.
+    """
     (central,) = belief.network_tree(PROGRAM, item, on_date=TODAY, window_days=90)
     (partner,) = central.children
 
-    # 110 sachets dispensed below the partner since the first of them, 51 days ago.
-    assert partner.subtree["amc"] == Quantity(Decimal("64.7059"), "sachet")
-    assert partner.subtree["months_of_stock"] == Decimal("490") / Decimal("64.7059")
-    assert partner.subtree["days_to_stockout"] == Decimal("490") / Decimal("64.7059") * 30
+    a, b = Decimal("58.8235"), Decimal("18.7500")
+    assert partner.subtree["amc"] == Quantity(a + b, "sachet")
+    assert partner.subtree["months_of_stock"] == Decimal("490") / (a + b)
+    assert partner.subtree["days_to_stockout"] == Decimal("490") / (a + b) * 30
+
+
+def test_a_stores_cover_uses_its_workers_own_14_day_paces_added(item, world):
+    """#2375: the store's cover agrees with the Stock review's "each worker's last 14 days, added".
+
+    By default a store's own window is 90 days, but its subtree is paced on what
+    its workers give out now: A 14 sachets in the last 14 days (30 a month), B 28
+    (60 a month). Not the 90-day consumption below it, which a 90-day store window
+    would give.
+    """
+    dispense(item, world["a"], 14, ago(2), "v8")
+    dispense(item, world["b"], 28, ago(3), "v9")
+
+    (central,) = belief.network_tree(PROGRAM, item, on_date=TODAY)
+    (partner,) = central.children
+
+    assert partner.subtree["amc"] == Quantity(Decimal("90.0000"), "sachet")
+    assert partner.subtree["months_of_stock"] == Decimal("448") / Decimal("90.0000")
+    # What the figure rests on, so a page can say it.
+    assert partner.subtree["pace"] == "workers_added"
+    assert partner.subtree["amc_window_days"] == 14
+    assert (partner.subtree["paced_workers"], partner.subtree["unpaced_workers"]) == (2, 0)
+    # The same rule at every level: central's subtree has the same two workers.
+    assert central.subtree["amc"] == Quantity(Decimal("90.0000"), "sachet")
+
+
+def test_a_worker_with_no_pace_yet_adds_nothing_and_is_counted_as_unpaced(item, world):
+    dispense(item, world["b"], 28, ago(3), "v9")  # A has given nothing in 14 days
+
+    (central,) = belief.network_tree(PROGRAM, item, on_date=TODAY)
+    (partner,) = central.children
+
+    assert partner.subtree["amc"] == Quantity(Decimal("60.0000"), "sachet")
+    assert (partner.subtree["paced_workers"], partner.subtree["unpaced_workers"]) == (1, 1)
+
+
+def test_a_subtree_whose_workers_have_no_pace_has_no_cover(item, world):
+    (central,) = belief.network_tree(PROGRAM, item, on_date=TODAY)
+    (partner,) = central.children
+
+    assert partner.subtree["amc"].reasons
+    assert partner.subtree["status"] == "unknown"
+    assert partner.subtree["pace"] == "workers_added"
+
+
+def test_a_store_with_no_workers_below_keeps_its_90_day_window(item):
+    """A store over a dispensing facility and no worker: the store window still decides."""
+    store = point("district", "regional_store", min_months_of_stock=Decimal("1"), max_months_of_stock=Decimal("3"))
+    clinic = point("clinic", "facility", parent=store)
+    move(item, "receipt", 900, ago(80), to=clinic)
+    move(item, "consumption", 90, ago(60), frm=clinic)
+
+    (root,) = belief.network_tree(PROGRAM, item, on_date=TODAY)
+
+    assert root.subtree["pace"] == "window"
+    assert root.subtree["amc_window_days"] == 90
+    assert root.subtree["amc"] == Quantity(Decimal("44.2623"), "sachet")  # 90 over the 61 days since
 
 
 def test_workers_below_their_minimum_are_counted_up_the_tree(item, world):
@@ -482,6 +544,23 @@ def test_a_worker_who_ran_out_weeks_ago_is_out_not_unknown(item, world):
 
     assert b.on_hand == sachets(0)
     assert b.status == "stockout"
+
+
+def test_a_stores_cover_says_what_it_is_paced_on():
+    from connect_labs.supply_chain.templatetags.supply_chain_extras import subtree_pace_text
+
+    added = {
+        "pace": "workers_added",
+        "amc_window_days": 14,
+        "amc": {"amount": "9330", "unit": "sachet"},
+        "unpaced_workers": 1,
+    }
+    assert (
+        subtree_pace_text(added)
+        == "at its workers' own 14-day paces, added (311 sachets a day); 1 worker with no pace yet"
+    )
+    assert subtree_pace_text({"pace": "window", "amc_window_days": 90}) == "at the last 90 days' consumption below it"
+    assert subtree_pace_text(None) == ""
 
 
 def test_every_screen_says_the_window_a_pace_is_over():
