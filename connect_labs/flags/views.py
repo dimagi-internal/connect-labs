@@ -19,6 +19,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from connect_labs.flags.data_access import FlagsDataAccess
+from connect_labs.utils.sandbox_guard import require_same_origin
 from connect_labs.workflow.data_access import WorkflowDataAccess
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,7 @@ def _refuse_if_run_completed(request: HttpRequest, workflow_run_id: int) -> Json
 
 @login_required
 @csrf_exempt
+@require_same_origin
 @require_http_methods(["POST"])
 def create_flag_for_run(request: HttpRequest, workflow_run_id: int) -> JsonResponse:
     """POST /labs/workflow/api/<workflow_run_id>/flags/

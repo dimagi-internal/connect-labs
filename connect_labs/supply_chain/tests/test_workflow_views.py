@@ -52,6 +52,9 @@ def client_in_programme(client, django_user_model, settings, monkeypatch, da):
         },
     )
     monkeypatch.setattr(page_views, "current_run_id", lambda request, pin: 77)
+    # A workflow, not a page. (A definition that cannot be read is no longer taken to be
+    # a workflow -- workflow/sandbox.py fails closed -- so the fixture says which it is.)
+    monkeypatch.setattr(page_views.WorkflowRunView, "_is_page_definition", lambda self, definition_id: False)
     return client
 
 

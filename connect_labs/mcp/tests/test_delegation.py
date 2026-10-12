@@ -238,6 +238,7 @@ def test_metadata_advertises_the_grant_only_when_it_is_on(settings):
         "mcp:no-uservisit-data",
         "explorer:read",
         "marketplace:read",
+        "page:read",
         "supply:read",
         "targeting:read",
         "workflow:act",

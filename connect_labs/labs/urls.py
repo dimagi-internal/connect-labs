@@ -1,5 +1,5 @@
 from canopy_sdk.django import views as canopy_views
-from django.urls import include, path
+from django.urls import include, path, re_path
 
 from connect_labs.labs import docs_comment_views, help_site, views, views_test_auth
 from connect_labs.labs.analysis import views as analysis_views
@@ -7,7 +7,7 @@ from connect_labs.labs.integrations.commcare import oauth_views as commcare_oaut
 from connect_labs.labs.integrations.connect import oauth_views as connect_oauth_views
 from connect_labs.labs.integrations.ocs import oauth_views as ocs_oauth_views
 from connect_labs.mcp import token_views as mcp_token_views
-from connect_labs.workflow import coach_image_views, page_views
+from connect_labs.workflow import coach_image_views, page_views, sandbox
 
 app_name = "labs"
 
@@ -91,6 +91,9 @@ urlpatterns = [
     path("p/<str:scope_type>/<str:scope_key>/<slug:page>/", page_views.PageView.as_view(), name="page"),
     # An address from before pages named their scope: redirect, or explain.
     path("p/<slug:slug>/", page_views.old_page, name="page_old"),
+    # The sandboxed page frame (workflow/sandbox.py): public, fixed, data-free. Answers
+    # 200 for every suffix and query, since a frame-src path match is dropped after a redirect.
+    re_path(r"^sandbox/render/.*$", sandbox.sandbox_render, name="sandbox_render"),
     # Settings: how an organisation, programme or opportunity has set labs up (scope_config/)
     path("", include("connect_labs.scope_config.urls")),
     # Synthetic sample data

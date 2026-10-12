@@ -234,6 +234,9 @@ MIDDLEWARE = [
     "django_htmx.middleware.HtmxMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # The session never answers a sandboxed page frame (workflow/sandbox.py), whatever
+    # a browser's cookie rules: Origin: null and cross-site writes are refused.
+    "connect_labs.utils.sandbox_guard.SandboxOriginGuardMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "connect_labs.utils.middleware.NoIndexMiddleware",
@@ -571,6 +574,9 @@ OAUTH2_PROVIDER_APPLICATION_MODEL = "oauth2_provider.Application"
 # prod and handing back a token their own server then rejects. Unset means the
 # MCP sign-in is simply not offered on this instance and it stays PAT-only.
 LABS_PUBLIC_URL = env("LABS_PUBLIC_URL", default="")
+# Pages' render code runs in a sandboxed frame (workflow/sandbox.py). An emergency switch
+# back only; there is no per-page opt-out.
+LABS_PAGE_SANDBOX = env.bool("LABS_PAGE_SANDBOX", default=True)
 
 # Connect Production OAuth (for audit data extraction)
 CONNECT_PRODUCTION_URL = env("CONNECT_PRODUCTION_URL", default="https://connect.dimagi.com")

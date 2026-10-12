@@ -78,9 +78,14 @@ class SupplyWorkflowPageView(WorkflowRunView):
         self.page_scope = Scope.of("program", program_id)
         params = request.GET.copy()
         if not params.get("run_id"):
-            if self._is_page_definition(pin.workflow_definition_id):
+            is_page_definition = self._is_page_definition(pin.workflow_definition_id)
+            if is_page_definition:
                 # A page fills the tab with no run at all (workflow/page_mode.py).
                 self.page_mode = True
+            elif is_page_definition is None:
+                # Could not tell: start no run. The render reads the definition and decides
+                # (a page renders sandboxed; anything else says there is no run).
+                pass
             else:
                 run_id = current_run_id(request, pin)
                 if run_id:
