@@ -121,16 +121,10 @@ def view_pin(access, data):
         "Take a pinned workflow out of this programme's supply navigation, by its slug; "
         "a tab it replaced comes back."
     ),
-    input_schema=obj({"slug": {"type": "string", "pattern": "^[a-z0-9-]{1,80}$"}, "view_id": ID}),
+    input_schema=obj({"slug": {"type": "string", "pattern": "^[a-z0-9-]{1,80}$"}}, required=("slug",)),
     is_write=True,
 )
-def view_unpin(access, slug=None, view_id=None):
-    if not slug and view_id is not None:
-        # A pin listed before pins moved to Settings: its old row names its slug.
-        from connect_labs.supply_chain.workflow_views.models import SupplyWorkflowView
-
-        row = SupplyWorkflowView.objects.filter(program_id=access._require_program(), pk=view_id).first()
-        slug = row.slug if row else None
+def view_unpin(access, slug=None):
     if not slug:
         raise ValueError("name the pin to take out by its slug (view_list shows them)")
     tabs = _program_tabs(access)

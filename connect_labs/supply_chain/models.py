@@ -1691,4 +1691,3 @@ from connect_labs.supply_chain.history.models import OperationCall, Revision  # 
 # why in its own docstring. Read it before adding a `program_id` to it.
 from connect_labs.supply_chain.portfolio.models import Portfolio  # noqa: E402,F401
 from connect_labs.supply_chain.update_links.models import UpdateLink, UpdateLinkSubmission  # noqa: E402,F401
-from connect_labs.supply_chain.workflow_views.models import SupplyWorkflowView  # noqa: E402,F401
