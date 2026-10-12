@@ -511,8 +511,10 @@ class TestUnwrappedRoutes:
 
         by_name = {p.name: p for p in urlpatterns}
         wrapped = {name for name, p in by_name.items() if getattr(p.callback, "supply_as_of_wrapped", False)}
-        for name in ("home", "order_detail", "procurement_tender_detail", "procurement_comparison", "stock"):
+        # Overview is "overview"; "home" is the front door, which wraps the Overview it serves itself.
+        for name in ("overview", "order_detail", "procurement_tender_detail", "procurement_comparison", "stock"):
             assert name in wrapped, name
+        assert getattr(by_name["home"].callback, "supply_as_of_wrapped", False) is False
         for name in ("market", "market_tender", "market_bid", "update_link_public", "api_operation"):
             assert name in by_name and name not in wrapped, name
 
