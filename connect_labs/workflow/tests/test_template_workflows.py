@@ -736,3 +736,65 @@ class TestExport:
         )
         # The programme and opportunity reports share one render.
         assert tw.code_template_path("indicator_opp_report") == tw.code_template_path("indicator_programme_report")
+
+
+# -----------------------------------------------------------------------------
+# A template homed in a labs-only scope
+# -----------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestLabsOnlyHome:
+    """A labs-only scope is read from labs' own database, with no Connect check behind
+    it: following a template homed there needs access to that scope, checked by labs,
+    or the template shared publicly -- the same rule as a real scope."""
+
+    LABS_ONLY = {"opportunity_id": 10042}
+
+    def _template(self, raw):
+        from connect_labs.labs.synthetic.models import SyntheticOpportunity
+
+        SyntheticOpportunity.objects.create(
+            opportunity_id=10042,
+            gdrive_folder_id="f",
+            labs_only=True,
+            created_by=User.objects.get(username="tmpl_owner"),
+            allowed_domains=["@owner-team.example"],
+        )
+        return _ok(
+            call_tool(
+                raw,
+                "workflow_template_create",
+                {"name": "Team report", "template_scope": "program:77", "template_key": KEY, **self.LABS_ONLY},
+            )
+        )["template_workflow_id"]
+
+    def _follow(self, raw, tid):
+        return call_tool(
+            raw,
+            "workflow_follow_template",
+            {"workflow_id": 900, **OTHER_PROGRAM_OPP, "template_workflow_id": tid, "template_opportunity_id": 10042},
+        )
+
+    def test_an_unshared_labs_only_template_cannot_be_followed_by_someone_outside_it(
+        self, store, owner, follower_only
+    ):
+        tid = self._template(owner[1])
+        _follower(store, 900, OTHER_PROGRAM_OPP)
+        err = _err(self._follow(follower_only[1], tid))
+        assert err["code"] == "PERMISSION_DENIED"
+        assert "render_source" not in store.raw(900)
+
+    def test_a_shared_labs_only_template_is_followed_but_its_list_is_not_written(self, store, owner, follower_only):
+        tid = self._template(owner[1])
+        _ok(
+            call_tool(
+                owner[1],
+                "workflow_template_set_sharing",
+                {"template_workflow_id": tid, **self.LABS_ONLY, "public": True},
+            )
+        )
+        _follower(store, 900, OTHER_PROGRAM_OPP)
+        out = _ok(self._follow(follower_only[1], tid))
+        assert out["listed_on_template"] is False
+        assert not store.raw(tid)["template_workflow"].get("followers")
