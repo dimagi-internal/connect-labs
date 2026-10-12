@@ -35,6 +35,11 @@ silently lacks.
     .pm-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
     .pm-chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid #e5e7eb; background: #fff; font-size: 13px; color: #374151; }
     .pm-chip:hover { border-color: #a5b4fc; }
+    /* A select is as wide as its longest option; a long commodity name ran the bar off a phone. */
+    /* A fixed cap, not a percentage: a percentage is ignored when the bar sizes itself, so the long option still won. */
+    #pm-commodity { max-width: 240px; text-overflow: ellipsis; }
+    .pm-bar { max-width: 100%; }
+    #pm-find-results { max-width: calc(100vw - 32px); }
     .pm-chip.pm-on { background: #312e81; border-color: #312e81; color: #fff; }
     .pm-dot { width: 9px; height: 9px; border-radius: 999px; flex: none; display: inline-block; }
     .pm-crumbs { font-size: 12.5px; color: #6b7280; padding: 12px 16px 0; }
@@ -68,7 +73,8 @@ silently lacks.
     .pm-note { font-size: 12px; border-radius: 8px; padding: 8px 10px; margin-top: 8px; }
     .pm-search { position: relative; }
     .pm-search i { position: absolute; left: 11px; top: 9px; color: #9ca3af; font-size: 12px; }
-    .pm-search input { height: 30px; width: 260px; border: 1px solid #e5e7eb; border-radius: 999px; padding: 0 12px 0 30px; font-size: 13px; }
+    .pm-search { max-width: 100%; }
+    .pm-search input { max-width: 100%; height: 30px; width: 260px; border: 1px solid #e5e7eb; border-radius: 999px; padding: 0 12px 0 30px; font-size: 13px; }
     #pm-find-results { position: absolute; top: 34px; left: 0; z-index: 30; width: 340px; max-height: 360px; overflow-y: auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.08); }
     #pm-find-results button { display: block; width: 100%; text-align: left; padding: 7px 12px; font-size: 13px; }
     #pm-find-results button:hover, #pm-find-results button.pm-on { background: #eef2ff; }
@@ -78,6 +84,10 @@ silently lacks.
     .pm-layers { position: absolute; right: 12px; top: 12px; display: flex; flex-direction: column; gap: 6px; }
     .pm-layers label { background: rgba(15,23,42,.86); color: #e2e8f0; font-size: 12px; padding: 5px 9px; border-radius: 8px; display: flex; gap: 6px; align-items: center; cursor: pointer; }
     .mapboxgl-popup-content { padding: 8px 10px; font-size: 12.5px; border-radius: 8px; }
+    /* A programme's map sits in the supply header's own column, edge to edge of it. */
+    .pm-col { max-width: 80rem; margin: 0 auto; padding: 0 16px; }
+    .pm-col .pm-head { padding-left: 0; padding-right: 0; }
+    .pm-col .pm-shell { border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; }
     @media (max-width: 1000px) {
       .pm-shell { grid-template-columns: 1fr; height: auto; }
       .pm-mapwrap { height: 55vh; }
@@ -92,7 +102,8 @@ silently lacks.
   a portfolio's map spans programmes, so it has none.{% endcomment %}
   <div class="max-w-7xl mx-auto px-4 pt-6">{% include 'supply_chain/_header.html' %}</div>
 {% endif %}
-<div class="px-4 pt-4 pb-3">
+<div{% if programme_map %} class="pm-col"{% endif %}>
+<div class="pm-head px-4 pt-4 pb-3">
   <div class="flex flex-wrap items-end justify-between gap-3">
     <div>
       <div class="text-xs text-gray-600 mb-0.5">
@@ -147,6 +158,7 @@ silently lacks.
   </div>
   <aside class="pm-side" id="pm-side" aria-label="Details"></aside>
 </div>
+</div>
 
 {{ map_payload|json_script:"pm-data" }}
 {% endblock %}
@@ -161,5 +173,6 @@ silently lacks.
 {% block inline_javascript %}
   {{ block.super }}
   <script src="{% static 'supply_chain/marker_size.js' %}"></script>
+  <script src="{% static 'supply_chain/map_frame.js' %}"></script>
   <script src="{% static 'supply_chain/portfolio_map.js' %}"></script>
 {% endblock %}

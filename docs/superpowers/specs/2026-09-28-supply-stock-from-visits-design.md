@@ -186,6 +186,19 @@ All program-scoped, all honouring `?as_of=`.
    the band as its colour. Consumption stays undrawn as a flow (it leaves the
    network).
 
+   *Decided 2026-10-12 (Jonathan, #2344 item 7):* a worker is drawn at the
+   median latitude and longitude of their visits' GPS (`stock/services/placement.py`,
+   location source `visits`). The median rather than the mean because one
+   stray fix (a phone that reported its last town, or 0,0 already dropped by
+   the reader) would drag a mean off by kilometres and cannot move a median.
+   A worker whose visits carry no GPS is drawn approximate at their store or
+   organisation's office, and the panel counts them as having no GPS rather
+   than drawing them as if they had some. A programme's own map frames its
+   places (stores and workers), not the suppliers its orders come from, and
+   shows the workers at every zoom; a portfolio's map keeps them until zoomed
+   in, since there may be thousands (`static/supply_chain/map_frame.js`).
+   Animating the map over time stays open.
+
 Every figure that rests on unapproved visits or estimates says so on the
 figure itself, not in a footnote.
 
