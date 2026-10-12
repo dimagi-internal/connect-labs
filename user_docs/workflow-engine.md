@@ -110,6 +110,16 @@ Each level of Labs has its own address for its page:
 !!! note "Old page links"
     The previous page addresses at `/labs/p/<name>/` no longer exist. If you follow an old link, Labs will take you to the new page at the correct address when your organisation, programme, or opportunity has one. If no matching page is found, you will see a message explaining that pages have moved rather than an error. Update any bookmarks or shared links to use the new addresses shown in the table above.
 
+### Context picker on a page
+
+When you open a page, the context picker in the header identifies what you are looking at:
+
+- An **organisation's page** shows **Org: \<name\>** in the header.
+- A **programme's page** shows the programme name.
+- An **opportunity's page** shows the opportunity name.
+
+This replaces the yellow **Select Context** button that previously appeared when no context had been chosen. You no longer need to select a context manually — opening the page sets it automatically.
+
 ### Setting an organisation's home page
 
 An organisation can have one page designated as its **home page**. When someone picks that organisation in Labs — or follows a link to `/labs/overview/?organization_id=<organisation>` — they land on the home page instead of the default overview.
@@ -247,12 +257,4 @@ Leaving the card without clicking **Send to \<worker\>** simply means you are no
     If **Send test** cannot complete, the card now tells you why underneath the button instead of leaving the button stuck on "Sending…" indefinitely. The most common reason is that your Labs account is not connected to Open Chat Studio. In that case the card shows "Connect Open Chat Studio in Labs first, then Send test again" with a **Connect it** link. Follow that link, connect your account, then return to the card and try **Send test** again.
 
 !!! note "If Open Chat Studio refuses a coaching send"
-    When Open Chat Studio refuses to start a coaching conversation, the run now records the specific reason that Open Chat Studio returned, rather than a generic refusal message. The card and the agent will show you that reason directly — for example: "Open Chat Studio refused the request: Failed to create channel: Participant not found in CommCare Connect". This makes it much easier to understand what went wrong and whether you need to take action (such as checking that the worker is registered in CommCare Connect) or contact support.
-
-### Choosing what the worker's picture shows
-
-When preparing coaching — either through the canopy agent card or via **Start coaching** on the run page — you can now choose what chart the worker receives in their picture. The options are:
-
-| Picture option | What the worker sees |
-|---|---|
-| **Their own figures** | The
+    When Open Chat Studio refuses to start a coaching conversation, the run now records the specific reason that Open Chat Studio returned, rather than a generic refusal message. The card and the agent will show you that reason directly — for example: "Open Chat Studio refused the request: Failed to create channel: Participant not found in
