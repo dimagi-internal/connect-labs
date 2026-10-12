@@ -8,6 +8,7 @@ directly, each filtered by program.
 
 from django.contrib.auth.decorators import login_required
 from django.http import Http404
+from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.decorators import method_decorator
@@ -17,9 +18,10 @@ from connect_labs.labs.context import get_org_data
 from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.banner import program_line
 from connect_labs.supply_chain.checks import course_applies_to_category, courses_carried_by_kits
-from connect_labs.supply_chain.history.as_of import end_of_day
+from connect_labs.supply_chain.history.as_of import as_of_view, end_of_day
 from connect_labs.supply_chain.history.timeline import answered_by, timeline_for_contract
 from connect_labs.supply_chain.identity import IdentityUnresolved, resolve_org
+from connect_labs.supply_chain.landing import landing_url
 from connect_labs.supply_chain.models import SupplierOffering
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
@@ -334,6 +336,24 @@ class DomainHomeView(OperationBase):
             context["checks"] = checks
             context["checks_by_audience"] = checks_by_audience(checks)
         return context
+
+
+# Overview as /supply/ serves it, with a past date as every other records page has one.
+_overview = as_of_view(DomainHomeView.as_view())
+
+
+def supply_front_door(request, *args, **kwargs):
+    """/supply/: the tab this programme opens on (landing.py), or Overview right here.
+
+    Decided before anything is rewound, so a past date costs no rewind just to
+    be sent on with it. Signed out, or with no programme, Overview does its own
+    refusing and asking.
+    """
+    if request.method in ("GET", "HEAD") and request.user.is_authenticated:
+        url = landing_url(request)
+        if url:
+            return redirect(url)
+    return _overview(request, *args, **kwargs)
 
 
 class ChecksView(OperationBase):

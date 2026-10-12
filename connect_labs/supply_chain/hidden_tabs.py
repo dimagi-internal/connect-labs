@@ -50,6 +50,6 @@ class HiddenSupplyTabMiddleware:
                 "settings_url": (
                     reverse("labs:settings", args=["program", program_id]) + "#supply" if program_id else None
                 ),
-                "home_url": reverse("supply_chain:home") + (f"?program_id={program_id}" if program_id else ""),
+                "home_url": reverse("supply_chain:overview") + (f"?program_id={program_id}" if program_id else ""),
             },
         )

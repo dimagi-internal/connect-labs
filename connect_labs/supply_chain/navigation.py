@@ -33,6 +33,9 @@ SUPPLY_TABS = (
 # Pages that belong under a tab without being it, so the tab still reads as
 # current when you are one level in.
 TAB_FOR_VIEW = {
+    # Overview at its own address, which its tab links to: /supply/ itself may
+    # open on another tab (landing.py).
+    "supply_chain:overview": "supply_chain:home",
     "supply_chain:dispensing_rules": "supply_chain:stock",
     "supply_chain:worker_detail": "supply_chain:workers",
     "supply_chain:dispensing_rule_create": "supply_chain:stock",
@@ -279,7 +282,9 @@ def supply_tabs(request) -> list[dict]:
             # The pinned workflow stands in for this tab; its own page ("classic view") still counts as here.
             tabs.append(pin_tab(pin, also_active=current == name))
         else:
-            tabs.append({"url": scoped_url(request, name), "label": label, "active": name == current})
+            # Overview's tab names Overview, not the front door that may open elsewhere.
+            href = scoped_url(request, "supply_chain:overview" if name == "supply_chain:home" else name)
+            tabs.append({"url": href, "label": label, "active": name == current})
         keys.append(name)
     # Tabs a programme ADDS sit after the tab they name (`after`), by default with
     # the stock pages; one naming a tab that is not there goes at the end.
