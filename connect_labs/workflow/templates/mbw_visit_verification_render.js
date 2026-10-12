@@ -91,18 +91,28 @@ function WorkflowUI({
     [registrationRows],
   );
 
-  // Registration GPS point per mother (GPS Map tab) -- home_gps is the raw
-  // geopoint captured during the Register Mother form's own GPS block,
-  // saved as a case property of the same name. Same lookup table as
-  // conductedAtRegistration (entity_id === mother_case_id), kept separate
-  // since the two features (exclude-visit toggle vs. map) don't share a
-  // consumer.
+  // Registration GPS point per mother (GPS Map tab) -- home_gps and
+  // health_facility_gps are siblings on the Register Mother form's GPS
+  // block: CommCare only populates home_gps when registration happened at
+  // the mother's home, and only populates health_facility_gps when it
+  // happened at a health facility (mutually exclusive `relevant`
+  // conditions, confirmed via commcare_hq_mcp) -- a mother only ever has
+  // ONE of the two. Falling back to whichever is populated means a
+  // facility-registered mother still gets a registration point (and
+  // therefore lines to her visits) instead of none at all, which is what
+  // this dashboard did before health_facility_gps was added here. A mother
+  // registered at "others" has neither field populated -- a genuine data
+  // gap (no GPS was ever captured for her registration), not something
+  // resolvable client-side. Same lookup table as conductedAtRegistration
+  // (entity_id === mother_case_id), kept separate since the two features
+  // (exclude-visit toggle vs. map) don't share a consumer.
   var motherRegistrationGps = React.useMemo(
     function () {
       var map = {};
       registrationRows.forEach(function (row) {
-        if (row.home_gps && row.entity_id) {
-          map[row.entity_id] = row.home_gps;
+        var gps = row.home_gps || row.health_facility_gps;
+        if (gps && row.entity_id) {
+          map[row.entity_id] = gps;
         }
       });
       return map;
@@ -2420,7 +2430,7 @@ function WorkflowUI({
           name: 'Registration point (circle)',
           def: 'The GPS location captured on the Register Mother form itself, at registration time. Hovering shows the mother ID, the registration datetime, how the FLW categorized the REGISTRATION location (Home / Health facility / Other), and the FLW.',
           field:
-            "motherRegistrationGps[mother_case_id] -- pipelines mother_registration (test domain) and/or mother_registration_prod (production domain), field home_gps (case.properties.home_gps, same case property the GPS-outcome distance calculations compare against). Raw geopoint string, parsed client-side via parseGpsLatLon (indices 0/1 of \"lat lon altitude accuracy\" -- same string format as gps_normalized_location, parsed by parseGpsAccuracyMeters for index 3 elsewhere on this dashboard). The tooltip's datetime comes from the same pipelines' registration_datetime field (case.date_opened -- a built-in CommCare Case API v2 attribute, not a custom property). The tooltip's location comes from registration_location_type (case.properties.where_is_the_registration_being_conducted -- the Register Mother form's own \"Where is the registration being conducted?\" answer, rendered via registrationLocationTypeLabel() since it uses a DIFFERENT value vocabulary -- home/health_facility/others -- than a visit's own where_is_the_visit_being_conducted). A mother with no home_gps on file (never captured, or registered before the GPS block existed) plots no circle.",
+            "motherRegistrationGps[mother_case_id] -- pipelines mother_registration (test domain) and/or mother_registration_prod (production domain), field home_gps OR health_facility_gps (case.properties.home_gps / case.properties.health_facility_gps -- mutually exclusive siblings on the Register Mother form, gated on registration_location_type being 'home' vs 'health_facility' respectively; the GPS-outcome distance calculations compare a VISIT's location against whichever one the mother's registration actually populated). Raw geopoint string, parsed client-side via parseGpsLatLon (indices 0/1 of \"lat lon altitude accuracy\" -- same string format as gps_normalized_location, parsed by parseGpsAccuracyMeters for index 3 elsewhere on this dashboard). The tooltip's datetime comes from the same pipelines' registration_datetime field (case.date_opened -- a built-in CommCare Case API v2 attribute, not a custom property). The tooltip's location comes from registration_location_type (case.properties.where_is_the_registration_being_conducted -- the Register Mother form's own \"Where is the registration being conducted?\" answer, rendered via registrationLocationTypeLabel() since it uses a DIFFERENT value vocabulary -- home/health_facility/others -- than a visit's own where_is_the_visit_being_conducted). A mother registered at 'others' has neither GPS field populated (CommCare never captured one) and plots no circle -- a real data gap, not a bug.",
         },
         {
           name: 'Visit points (squares)',
