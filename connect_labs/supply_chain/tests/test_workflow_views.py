@@ -66,7 +66,8 @@ def _tabs(client, name="supply_chain:catalogue"):
     import re
 
     body = client.get(reverse(name)).content.decode()
-    nav = body.split("<nav", 1)[1].split("</nav>", 1)[0]
+    # The tabs a wide screen shows; a phone folds the same links into a menu (#2375).
+    nav = body.split('<nav data-testid="supply-tabs"', 1)[1].split("</nav>", 1)[0]
     out = []
     for href, cls, label in re.findall(r'<a href="([^"]+)"\s+class="([^"]*)">([^<]+)</a>', nav):
         out.append((href, "bg-brand-indigo text-white" in cls, label))
@@ -99,7 +100,7 @@ def test_a_past_day_keeps_a_pin_made_after_it(client_in_programme, da):
     yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
 
     body = client_in_programme.get(reverse("supply_chain:catalogue") + f"?as_of={yesterday}").content.decode()
-    nav = body.split("<nav", 1)[1].split("</nav>", 1)[0]
+    nav = body.split('<nav data-testid="supply-tabs"', 1)[1].split("</nav>", 1)[0]
 
     assert "Stock review" in nav
     assert ">Workers<" not in nav
@@ -208,7 +209,9 @@ def test_the_run_is_read_by_the_pinned_opportunity_alone(client_in_programme, da
     body = client_in_programme.get(reverse("supply_chain:workflow_view", args=["stock-review"])).content.decode()
 
     assert seen == {"opportunity_id": OPP}
-    assert "Stock review" in body.split("<nav", 1)[1].split("</nav>", 1)[0]  # the frame still has its programme
+    assert (
+        "Stock review" in body.split('<nav data-testid="supply-tabs"', 1)[1].split("</nav>", 1)[0]
+    )  # the frame still has its programme
 
 
 def test_a_past_day_rides_on_the_runners_supply_endpoints_and_shows_in_the_header(

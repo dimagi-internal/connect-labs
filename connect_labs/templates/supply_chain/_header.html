@@ -4,22 +4,50 @@ The supply banner, the programme tabs and "view as of": every supply page's head
 Included by base.html, and by the programme map -- a full-width page on the root
 base -- so the map keeps the same header and tabs as every other supply page.
 {% endcomment %}
+{% comment %}Below sm (#2375) the banner is one line and the tabs fold into one "Supply" menu: fourteen
+tabs wrapped onto five rows and, with the banner, pushed every number on the page below a
+phone's fold. A <details> menu of plain links rather than a <select>: it needs no script, the
+as-of script in base.html carries a past date on to its links like any other, and a link
+opens in a new tab like any other. Plain CSS here rather than utilities, so nothing waits on
+the stylesheet being rebuilt, and here rather than in base.html, so the programme map --
+which includes this header outside base.html -- folds too.{% endcomment %}
+<style>
+  .supply-tabs-phone { display: none; }
+  .supply-tabs-phone > summary { list-style: none; cursor: pointer; }
+  .supply-tabs-phone > summary::-webkit-details-marker { display: none; }
+  .supply-tabs-phone[open] > summary .supply-tabs-caret { transform: rotate(180deg); }
+  .supply-tabs-phone > nav { position: absolute; left: 0; z-index: 30; margin-top: 0.25rem; width: 14rem; max-width: calc(100vw - 2rem); padding: 0.25rem 0; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1); }
+  @media (max-width: 639px) {
+    .supply-banner { padding: 0.5rem 0.75rem !important; margin-bottom: 0.75rem !important; gap: 0.75rem !important; }
+    .supply-banner-text { flex-direction: row !important; align-items: baseline; gap: 0.5rem; min-width: 0; }
+    .supply-banner-text h1 { font-size: 1rem !important; line-height: 1.5rem; margin: 0 !important; }
+    .supply-banner-line { margin: 0 !important; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .supply-banner-tagline { display: none; }
+    .supply-banner-market { display: none; }
+    .supply-tabs-row { margin-bottom: 1rem !important; align-items: center !important; flex-wrap: nowrap !important; }
+    .supply-tabs-wide { display: none !important; }
+    .supply-tabs-phone { display: block; position: relative; flex-shrink: 0; }
+    .supply-tabs-row [data-testid="as-of-slot"] { min-width: 0; }
+    .supply-tabs-row [data-as-of-form] label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .supply-tabs-row [data-as-of-form] input[name="as_of"] { width: 7.5rem; min-width: 0; }
+  }
+</style>
 {% comment %}`compact_banner`: a record's own page (a tender) lets its title and first
 section lead -- the banner shrinks to a strip and drops its tagline.{% endcomment %}
-<div data-testid="supply-banner" class="flex gap-4 items-center {% if compact_banner %}px-4 py-2 mb-4{% else %}p-4 mb-6{% endif %} profile-bg bg-brand-indigo rounded-2xl">
-  <div class="flex {% if compact_banner %}flex-wrap items-baseline gap-x-3{% else %}flex-col justify-center{% endif %} text-white">
+<div data-testid="supply-banner" class="supply-banner flex gap-4 items-center {% if compact_banner %}px-4 py-2 mb-4{% else %}p-4 mb-6{% endif %} profile-bg bg-brand-indigo rounded-2xl">
+  <div class="supply-banner-text flex {% if compact_banner %}flex-wrap items-baseline gap-x-3{% else %}flex-col justify-center{% endif %} text-white">
     <h1 class="{% if compact_banner %}text-base{% else %}text-2xl mb-1{% endif %} font-bold">Supply</h1>
     {% comment %}Which program, and who buys for it in that role (banner.py): said on
     every supply page, so no screen leaves whose purchasing it is to be guessed.{% endcomment %}
-    {% if supply_program_line %}<p data-testid="supply-program-line" class="text-sm font-medium{% if not compact_banner %} mb-1{% endif %}">{{ supply_program_line }}</p>{% endif %}
+    {% if supply_program_line %}<p data-testid="supply-program-line" title="{{ supply_program_line }}" class="supply-banner-line text-sm font-medium{% if not compact_banner %} mb-1{% endif %}">{{ supply_program_line }}</p>{% endif %}
     {% if not compact_banner %}
-    <p class="text-sm opacity-90">
+    <p class="supply-banner-tagline text-sm opacity-90">
       Source commodities, compare quotes on one basis, and track what reaches whom.
     </p>
     {% endif %}
   </div>
   {% comment %}Above the program tabs, because it is above programs: what suppliers see of every open tender.{% endcomment %}
-  <a href="{% url 'supply_chain:market' %}" class="ml-auto text-sm text-white/90 hover:text-white underline underline-offset-2">Supplier marketplace</a>
+  <a href="{% url 'supply_chain:market' %}" class="supply-banner-market ml-auto text-sm text-white/90 hover:text-white underline underline-offset-2">Supplier marketplace</a>
 </div>
 
 {% comment %}
@@ -28,15 +56,30 @@ how we buy it, what was ordered, what is on hand, where it went.
 {% endcomment %}
 {% comment %}"View as of" sits at the right of the tabs, so a page's own title leads the
 page rather than a date control above it.{% endcomment %}
-<div class="flex flex-wrap items-start gap-x-4 gap-y-2 mb-6">
-<nav class="flex flex-wrap gap-2 text-sm">
+<div class="supply-tabs-row flex flex-wrap items-start gap-x-4 gap-y-2 mb-6">
+{% supply_settings_url as settings_url %}
+<details data-testid="supply-tabs-phone" class="supply-tabs-phone">
+  <summary class="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border bg-white border-gray-300 text-gray-700">
+    <span class="sr-only">Supply section:</span>
+    {% for tab in supply_tabs %}{% if tab.active %}<span class="font-semibold text-gray-900">{{ tab.label }}</span>{% endif %}{% endfor %}
+    <span class="supply-tabs-caret" aria-hidden="true">&#9662;</span>
+  </summary>
+  <nav aria-label="Supply" class="rounded-md border border-gray-200 bg-white text-sm">
+    {% for tab in supply_tabs %}
+    <a href="{{ tab.url }}"{% if tab.active %} aria-current="page"{% endif %} class="block px-3 py-2 {% if tab.active %}bg-brand-indigo text-white{% else %}text-gray-700 hover:bg-gray-50{% endif %}">{{ tab.label }}</a>
+    {% endfor %}
+    {% if settings_url %}<a href="{{ settings_url }}" class="block px-3 py-2 border-t border-gray-100 text-brand-indigo">Settings</a>{% endif %}
+    {% comment %}The banner's marketplace link, which a phone's one-line banner has no room for.{% endcomment %}
+    <a href="{% url 'supply_chain:market' %}" class="block px-3 py-2 border-t border-gray-100 text-brand-indigo">Supplier marketplace</a>
+  </nav>
+</details>
+<nav data-testid="supply-tabs" class="supply-tabs-wide flex flex-wrap gap-2 text-sm">
   {% for tab in supply_tabs %}
     <a href="{{ tab.url }}"
        class="px-3 py-1.5 rounded-md border {% if tab.active %}bg-brand-indigo text-white border-brand-indigo{% else %}bg-white border-gray-300 hover:bg-gray-50 text-gray-700{% endif %}">{{ tab.label }}</a>
   {% endfor %}
 </nav>
-{% supply_settings_url as settings_url %}
-{% if settings_url %}<a data-testid="supply-settings" href="{{ settings_url }}" title="Which tabs this programme shows, and what fills them" class="px-3 py-1.5 text-sm rounded-md text-brand-indigo hover:underline">Settings</a>{% endif %}
+{% if settings_url %}<a data-testid="supply-settings" href="{{ settings_url }}" title="Which tabs this programme shows, and what fills them" class="supply-tabs-wide px-3 py-1.5 text-sm rounded-md text-brand-indigo hover:underline">Settings</a>{% endif %}
 <div class="ml-auto" data-testid="as-of-slot">{% include 'supply_chain/_as_of_bar.html' with as_of_part="form" %}</div>
 </div>
 
