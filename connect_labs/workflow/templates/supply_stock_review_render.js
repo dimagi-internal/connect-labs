@@ -50,13 +50,18 @@ function WorkflowUI({
     var d = new Date(String(iso).slice(0, 10) + 'T00:00:00');
     return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   }
-  // A run-out date counts from the day being viewed: on a past date, days
-  // left were measured then, so adding them to today moved every date forward.
-  var asOf = (stock && stock.metadata && stock.metadata.as_of) || null;
+  // A run-out date counts from the day the figures were measured on: the
+  // page's as-of day when rewound, else the server's today. Never the
+  // browser's clock -- a viewer whose day had already turned (or not yet)
+  // saw every date a day off from the days left beside it.
+  var fromDay =
+    (stock &&
+      stock.metadata &&
+      (stock.metadata.as_of || stock.metadata.today)) ||
+    null;
   function addDays(n) {
-    var d = asOf
-      ? new Date(String(asOf).slice(0, 10) + 'T00:00:00')
-      : new Date();
+    if (!fromDay) return '';
+    var d = new Date(String(fromDay).slice(0, 10) + 'T00:00:00');
     d.setDate(d.getDate() + Math.floor(n));
     return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   }
@@ -450,8 +455,7 @@ function WorkflowUI({
                           : r.days !== null
                             ? ' · ' +
                               daysLeft(r.days) +
-                              ', runs out ' +
-                              addDays(r.days)
+                              (fromDay ? ', runs out ' + addDays(r.days) : '')
                             : r.rateDays
                               ? ' · given out on ' +
                                 r.rateDays +

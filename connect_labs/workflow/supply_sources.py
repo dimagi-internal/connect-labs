@@ -34,6 +34,8 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
+from django.utils import timezone
+
 logger = logging.getLogger(__name__)
 
 OPPORTUNITY = "opportunity"
@@ -245,6 +247,9 @@ def run(request, definition, spec: dict, *, opportunity_ids, as_of: date | None 
             "scope": source.scope,
             "item": spec.get("item"),
             "as_of": as_of.isoformat() if as_of else None,
+            # The server's day, which the figures count from when the page is not rewound:
+            # a render dating anything ("runs out 14 Oct") adds to this, not the browser's clock.
+            "today": timezone.localdate().isoformat(),
             "opportunity_ids": [int(o) for o in opportunity_ids],
             "per_opp": per_opp,
         },
