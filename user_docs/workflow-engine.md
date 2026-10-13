@@ -119,6 +119,16 @@ For most reports this makes no visible difference. One case where it does matter
 
 If you notice a report no longer showing categories or notes that you expect from another workflow, the report's settings may need to be updated to declare that workflow. Contact your program administrator or support if you are unsure.
 
+### Indicator definition popup
+
+In KMC reports (program, opportunity, and worker review) and the generic indicator reports, you can click an indicator's name to open a popup with its full definition. The popup has been restyled to make it easier to read:
+
+- The indicator's **title** appears at the top, with its ID shown once as a small tag beneath it — it is no longer repeated twice.
+- The **title and close button** stay fixed at the top of the popup, and the **sort and download links** stay fixed at the bottom, so these controls are always visible while the definition text scrolls between them.
+- **Out of / Counts / Shown** appears in a clean box with dividers. Each term has its own entry with its meaning shown on the line below, rather than everything running together.
+- **Thresholds** are displayed as small chips rather than inline text.
+- The **underlying query** sits below a divider and wraps onto multiple lines, so long queries are no longer cut off at the right edge of the popup.
+
 ---
 
 ## Pages
@@ -214,18 +224,4 @@ To set the home page, go to the organisation's **Settings** and choose the page 
 
 A page can also be set to fill a **Supply tab**. When configured this way, the page opens inside the Supply header without starting a run. This lets you show stock summaries, links to supply workflows, or other supply-related content directly from the Supply tab.
 
-The Supply tab opens only for people who have access to the program or opportunity it is linked to. Setting up a Supply tab also requires access to that program or opportunity. A program can hide or rename a Supply tab that its organisation added — use the **Hide** button in Settings to do this.
-
-### Building a page
-
-Pages are built with the standard workflow tools. To create one, start from the **Page** template in the workflow builder, or use the **New page** button on the Pages list. Once published, the page appears in the Workflows list with an **Open page** button in place of **Start run**.
-
-!!! note "Pages cannot be started as runs"
-    A page cannot be started as a run — this applies to pages created from the blank page template as well as any other page template. If you need to collect data over a date range and review it, use a regular workflow instead.
-
-### How pages handle runs and links
-
-A few behaviours are worth knowing when you share or follow page links:
-
-- **Run numbers in a page's address are ignored.** If a page address includes a run number (for example, because someone copied it from a workflow run), the page simply opens as normal — pages have no runs, so the number has no effect.
-- **A workflow
+The Supply tab opens only for people who have access to the program or opportunity it is linked to. Setting up a Supply tab also requires access to that program or opportunity. A program can hide or rename a Supply
