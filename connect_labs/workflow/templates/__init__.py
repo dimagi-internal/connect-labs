@@ -48,6 +48,77 @@ logger = logging.getLogger(__name__)
 TEMPLATES: dict[str, dict] = {}
 
 
+#: Templates checked in the sandboxed frame (workflow/sandbox.py, "Phase 2" of
+#: docs/superpowers/specs/2026-10-12-page-sandbox-design.md): each drawn sandboxed and
+#: unsandboxed against the same data with the same text and no refused route. A checked
+#: template is marked `TEMPLATE["sandboxed"]`, so a workflow that FOLLOWS it runs in the
+#: frame, and its DEFINITION carries `config.sandbox: true`, so every NEW instance does
+#: too, even once it stops following. A copy made before (its own render code) is not
+#: vouched for by this list and stays out until it opts in or the rollout is `all`.
+#: Add a template here only after checking it the same way (WORKFLOW_REFERENCE.md §17).
+#:
+#: Left out on purpose: `kmc_image_audit` reads audit sessions for the opportunities in its
+#: own `config.opp_meta`, not its `opportunity_ids`, and the frame binds reads to the
+#: latter (an author-written list cannot widen what a frame may name). It needs the two
+#: reconciled first. `mbw_monitoring` is deprecated; `page_blank` and other pages are
+#: always sandboxed.
+SANDBOX_CHECKED = frozenset(
+    {
+        "audit_par",
+        "audit_with_ai_review",
+        "bulk_image_audit",
+        "chc_audit_history",
+        "chc_nutrition_analysis",
+        "flw_audit_trend_dashboard",
+        "flw_daily_indicator_report",
+        "flw_daily_indicator_table",
+        "flw_daily_summary_report",
+        "flw_daily_summary_report_rutf",
+        "flw_weekly_audit_report",
+        "indicator_opp_report",
+        "indicator_programme_report",
+        "indicator_worker_review",
+        "interviews_reporting_v2",
+        "iptsc_dashboard",
+        "jakusko_chlorine_dispenser",
+        "kmc_flw_flags",
+        "kmc_flw_review",
+        "kmc_longitudinal",
+        "kmc_opp_report",
+        "kmc_programme_metrics",
+        "kmc_project_metrics",
+        "llo_weekly_review",
+        "mbw_auditing_v5",
+        "mbw_auditing_v6",
+        "mbw_visit_verification",
+        "muac_picture_audit",
+        "muac_plausibility",
+        "ocs_outreach",
+        "performance_review",
+        "photo_audit_report",
+        "program_admin_report",
+        "program_audit_creator",
+        "rutf_ciff_kpis",
+        "sam_followup",
+        "supply_stock_forecast",
+        "supply_stock_review",
+        "verified_monitoring",
+        "weekly_dual_track_audit",
+    }
+)
+
+
+def _mark_sandbox_checked(key: str, template: dict) -> None:
+    if key not in SANDBOX_CHECKED:
+        return
+    template["sandboxed"] = True
+    definition = template.get("definition")
+    if isinstance(definition, dict):
+        config = definition.setdefault("config", {})
+        if isinstance(config, dict):
+            config.setdefault("sandbox", True)
+
+
 def _discover_templates() -> None:
     """
     Discover and register all templates from modules in this package.
@@ -85,6 +156,7 @@ def _discover_templates() -> None:
                         template["build_snapshot"] = module.build_snapshot
                     if hasattr(module, "run_default") and callable(module.run_default):
                         template["run_default"] = module.run_default
+                    _mark_sandbox_checked(key, template)
                     TEMPLATES[key] = template
                     logger.debug(f"Registered workflow template: {key}")
                 else:
@@ -864,9 +936,8 @@ def _with_inherited_safety_flags(instance_inputs: dict, template_key: str | None
 #     closed, is one click to satisfy, and is exactly what the template declares
 #     its render needs.
 #
-# `auth_requires` IS inherited. There is no denylist anywhere in this file or in
-# this package -- nothing filters it out -- and that is deliberate, not an
-# oversight. The observable effect is already live: `mbw_auditing_v5` instances
+# `auth_requires` IS inherited. The denylist below does not name it -- nothing
+# filters it out -- and that is deliberate, not an oversight. The observable effect is already live: `mbw_auditing_v5` instances
 # created between 2026-02-24 and 2026-04-29 now show the CommCare HQ leg of the
 # runner's auth gate, which costs one extra authorise click. It fails closed, and
 # it is exactly what the template declares its render needs, so those instances
@@ -876,7 +947,16 @@ def _with_inherited_safety_flags(instance_inputs: dict, template_key: str | None
 # If it ever turns out to be unwanted, the escape hatch is a DENYLIST of keys that
 # are gates rather than render settings -- a `_NOT_INHERITED = ("auth_requires",)`
 # filtered out of `missing` below -- not a return to the allow-list, which is what
-# let two flags ship inert in one week. Write it then; it does not exist now.
+# let two flags ship inert in one week. It now exists, holding one gate: `sandbox`
+# (`_NOT_INHERITED`, below).
+
+
+#: Config keys that are GATES, not render settings, and so are never inherited onto an
+#: instance that lacks them: `sandbox` says a workflow's render was checked in the
+#: sandboxed frame, which is true of a template's code and not of an older instance's
+#: own copy. (Inheriting it into the payload would also write it back on the next
+#: edit-mode save, silently opting a copy in.)
+_NOT_INHERITED = ("sandbox",)
 
 
 def with_inherited_config_flags(definition_data: dict, template_key: str | None) -> dict:
@@ -898,7 +978,7 @@ def with_inherited_config_flags(definition_data: dict, template_key: str | None)
         return definition_data
     config = definition_data.get("config")
     config = config if isinstance(config, dict) else {}
-    missing = {key: value for key, value in template_config.items() if key not in config}
+    missing = {key: value for key, value in template_config.items() if key not in config and key not in _NOT_INHERITED}
     if not missing:
         return definition_data
     # Deep-copied: a template's DEFINITION is module state shared by every
