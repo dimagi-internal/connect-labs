@@ -247,6 +247,13 @@ export async function proxyFetch(
   recheck?: (url: string) => CheckedRequest,
 ): Promise<FetchAnswer> {
   const headers = cleanHeaders(init.headers);
+  // Which definition this request is made for: the server binds the runs it reads
+  // to the ones that definition declares (workflow/declared_reads.py). Set here,
+  // after the frame's own headers are cut to content-type and accept, so the frame
+  // can neither set nor drop it.
+  headers['x-labs-sandbox-for'] = checked.sandboxFor || 'none';
+  if (checked.sandboxScope)
+    headers['x-labs-sandbox-scope'] = checked.sandboxScope;
   const unsafe = !['GET', 'HEAD'].includes(checked.method);
   if (unsafe) headers['x-csrftoken'] = csrfToken;
   // A route that checked its body sends what it checked (canonical JSON).

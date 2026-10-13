@@ -311,8 +311,10 @@ def test_seed_templates_are_scanned_apart():
     targets = {t.id: t for t in template_targets()}
     assert set(targets) == set(TEMPLATES)
     assert targets["performance_review"].sandboxed_now
-    assert not targets["kmc_image_audit"].sandboxed_now  # not checked
-    assert targets["kmc_image_audit"].sandboxed_all
+    assert targets["kmc_image_audit"].sandboxed_now  # checked since #2473
+    # The deprecated MBW v1 is never checked: in the frame only under "all".
+    assert not targets["mbw_monitoring"].sandboxed_now
+    assert targets["mbw_monitoring"].sandboxed_all
 
 
 class _FakeDA:
