@@ -196,9 +196,24 @@ This means you can ask Claude questions like "show me hospital vs home births br
 
 Some workflows are **pages** — a blank canvas for charts, maps, or custom content — rather than a standard run-based report. Pages behave differently from ordinary workflows in a few ways worth knowing.
 
-### Editing a page
+### Managing pages for a scope
 
-Anyone who can change the Settings of the organisation, programme, or opportunity that owns the page can edit it. In the workflow list, those people see an **Edit page** link next to the workflow. People who can view the page but cannot change its Settings do not see the link, and Labs will refuse their edits even if they navigate directly to the editor's address.
+An organisation, program, or opportunity can now have several pages. Each scope has a **Pages list** (at `/labs/p/<org|program|opportunity>/<key>/pages/`) that shows every page belonging to that scope, where each one lives, and which one is the home page. Anyone who can use the scope can view this list.
+
+People who can change the scope's Settings also get two additional actions:
+
+- **New page** — enter a title and address, and the new page starts from the blank page template and opens immediately in the editor. You can optionally set it as the home page at creation time.
+- **Make home** — available on each row of the list, this sets that page as the one the scope opens on.
+
+When you are already viewing a page, its editors see **Pages** and **Make this the home page** links next to the Settings button. A scope that has no home page set points visitors to its Pages list instead.
+
+You can also choose the home page from **Settings → Labs**, which shows a list of the scope's pages to pick from. The JSON editor is still available underneath, under **Advanced: edit as JSON**.
+
+### Who can edit pages and Settings
+
+Anyone who can change the Settings of the organisation, program, or opportunity that owns a page can edit it. In the workflow list, those people see an **Edit page** link next to the workflow. People who can view the page but cannot change its Settings do not see the link, and Labs will refuse their edits even if they navigate directly to the editor's address.
+
+**Dimagi staff** — anyone signed in with a @dimagi.com or @dimagi-ai.com email — can change Settings and edit pages for any scope, including labs-only organisations. Previously, a Dimagi person opening such a scope's Settings would be told that Dimagi staff could change it, and was then refused. The message now correctly reflects the rule.
 
 ### Opening a page vs. creating a run
 
@@ -217,22 +232,4 @@ Select the states you are considering. The page immediately shows you:
 - **Recommended programme for these states.** The single approach that averts the most under-5 deaths per dollar across your selected states, with each state starting on its own rainy season.
     - Which states to leave out, because they fall below GiveWell's 6× bar, and the deaths averted, cost, and × GiveWell figure for the remaining states.
     - How much better the recommended approach does compared with our proposal's quarterly design applied to the same states.
-    - What more money would buy: the next approach's additional deaths averted, at its cost per additional death, and whether that still clears the bar.
-- **The evidence.** The schedule comparison and the best state × schedule pairs, shown underneath the recommendation.
-
-You no longer choose a schedule yourself — the page derives the recommendation from your state selection automatically.
-
-### How the page handles the two death estimates
-
-The page uses two estimates of each state's under-5 malaria deaths — DHS-scaled and MAP — which can disagree by more than threefold in some states.
-
-- **Every decision the page makes** (which schedule to recommend, which states clear the bar, what each budget buys) is based on the **lower of the two estimates in each state**, so the recommendation holds whichever estimate turns out to be right.
-- **Both estimates are always shown** alongside the lower-of-two figure: in the recommendation sentence, in the comparison with our proposal's quarterly design, and in separate columns in the budget, schedule, and state tables.
-- **The DHS-scaled / MAP toggle is gone.** A box under the inputs explains both estimates and the rule the page uses.
-
-The numbers are intentionally conservative. For example, for the 17 year-round states at $0.73 a dose:
-
-| | Lower of the two (decides) | DHS-scaled alone | MAP alone |
-|---|---|---|---|
-| Proposal's quarterly design | 4.9× | 6.3× | 9.1× |
-| Recommended: 8 monthly rounds from the rains (16 states) |
+    - What more money would buy: the next approach's additional deaths averted, at its
