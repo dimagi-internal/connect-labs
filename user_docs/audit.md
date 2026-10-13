@@ -19,6 +19,17 @@ flowchart LR
 
 ---
 
+## Browsing the Audit List
+
+The main Audit list (the page you land on when you click **Audit** in the top menu) is designed to stay fast even when you have a large number of sessions:
+
+- **Page 1 always loads fresh.** When you first open the list, or refresh it, you see the very latest sessions — including any that were just completed or deleted.
+- **Paging and filtering reuse a recent snapshot.** When you move to page 2, page 3, or change a filter, Labs reuses the list it already fetched within the last minute rather than re-downloading everything from scratch. This makes paging much faster and prevents large lists from causing performance problems.
+
+If you have just created or completed a session and it does not appear when filtering or paging, return to page 1 to pick up the latest data.
+
+---
+
 ## Creating an Audit Session
 
 Navigate to **Audit** in the top menu, then click **Create Audit Session**.
@@ -158,11 +169,4 @@ When you reopen a run that used Visit Clustering, the run screen now shows the e
 
 The **Muac Picture Audit** workflow is a full audit-creation tool scoped to the CHC PRE-RCT opportunities in program 176. It covers the same ground as the standard audit creation page — opportunity selection, granularity, criteria, FLW preview and selection, field configuration, and metadata — with two differences from the standard workflow:
 
-- **Date and day-of-week filter** — in the criteria step you can combine a date range with a specific day of the week. For example, you can target *every Friday in January 2026* rather than selecting a plain date range. This is useful when your program collects MUAC measurements on a fixed schedule.
-- **MUAC images only** — the workflow restricts image type selection to MUAC image types. No other photo types appear, matching the focused purpose of this audit.
-
-All other steps — AI reviewer selection, pass threshold, exclude already-audited images, and so on — work the same way as described in the sections above.
-
-The bulk review screen for this workflow works the same as every other audit workflow: each image has a single **Duplicate/Fake** button, and completed reports are read-only. To change a finished audit you press **Reopen**, exactly as you would in any other workflow.
-
----
+- **Date and day-of-week filter** —
