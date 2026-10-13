@@ -221,15 +221,20 @@ In the workflow list, a page workflow shows **Open page** rather than **Create R
 
 ---
 
-## PMC Page
+## Microplans Access for Labs-Only Programs
 
-The PMC page helps you identify the most cost-effective programme design for a set of states. You pick the states; the page tells you the programme.
+Microplans (the portfolio, plan, group, review, compare, and create pages, and all their actions) follow the same access rules as the rest of Connect Labs for labs-only (synthetic) programs.
 
-### How it works
+For a **labs-only program**, those pages are visible only to:
 
-Select the states you are considering. The page immediately shows you:
+- The person who created the program
+- Dimagi staff (anyone signed in with a @dimagi.com or @dimagi-ai.com email)
+- Users whose email domain the program explicitly allows
 
-- **Recommended programme for these states.** The single approach that averts the most under-5 deaths per dollar across your selected states, with each state starting on its own rainy season.
-    - Which states to leave out, because they fall below GiveWell's 6× bar, and the deaths averted, cost, and × GiveWell figure for the remaining states.
-    - How much better the recommended approach does compared with our proposal's quarterly design applied to the same states.
-    - What more money would buy: the next approach's additional deaths averted, at its
+Anyone else who navigates to a microplans page for a labs-only program will see a "not found" page rather than an error or partial view.
+
+**Real Connect programs are not affected** — their microplans pages continue to follow the same access rules they always have.
+
+---
+
+## PMC
