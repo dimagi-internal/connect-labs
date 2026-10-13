@@ -46,6 +46,18 @@ DEFAULT_FONT_SRC = ("'self'", "data:", "https://fonts.gstatic.com", "https://cdn
 DEFAULT_FRAME_ANCESTORS = ("'none'",)
 
 
+def default_frame_src() -> tuple[str, ...]:
+    """Frames the app embeds: its own (the page sandbox's shell) and the canopy agent panel's widget.
+
+    Without a frame-src, `default-src 'self'` flagged the canopy panel on every page
+    that shows it -- noise that would hide a real report, and a block once enforced.
+    The widget is named by its exact path, as the sandboxed host page names it
+    (workflow/sandbox.py `host_frame_src`).
+    """
+    canopy = (getattr(settings, "CANOPY_BASE_URL", "") or "").rstrip("/")
+    return ("'self'", canopy + "/embed/chat") if canopy else ("'self'",)
+
+
 def build_policy() -> str:
     def directive(name: str, default: tuple[str, ...]) -> str:
         key = "CSP_" + name.replace("-", "_").upper()
@@ -59,6 +71,7 @@ def build_policy() -> str:
         directive("img-src", DEFAULT_IMG_SRC),
         directive("connect-src", DEFAULT_CONNECT_SRC),
         directive("font-src", DEFAULT_FONT_SRC),
+        directive("frame-src", default_frame_src()),
         # Not overridable and not merely cosmetic: `object-src 'none'` and
         # `base-uri 'self'` close two injection routes that survive an otherwise
         # tight script-src (a plugin object, and a rewritten <base> that
