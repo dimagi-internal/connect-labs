@@ -172,6 +172,36 @@ A synthetic organisation groups every synthetic program that shares the same org
 
 ---
 
+## The RUTF Supply Demo
+
+The RUTF supply demo is a synthetic clone program used for exploring and testing the Supply features in Labs. When the demo is seeded (or reseeded), it sets itself up to look realistic on whatever day seeding runs.
+
+### What the Stock review shows
+
+On the Stock review, most workers hold roughly 3½ to 5 weeks of RUTF at their own 14-day dispensing pace. About one in six workers falls below their minimum stock level, so the headline figure — **N of M workers below minimum at their own 14-day pace** — the alerts, and the blockers all have real data to display. Before this was corrected, workers appeared to hold 21 to 109 days of stock and nobody was ever below minimum, which made those indicators meaningless.
+
+Invented deliveries continue to arrive every fortnight in the days after seeding, recorded each day they fall due rather than being batched once a week, so the figures stay believable as time passes.
+
+### What reseeding sets up
+
+Reseeding the demo now also builds everything the demo is viewed through:
+
+- The **Stock review** tab in Supply, following the deployed template (so a template deploy updates it automatically).
+- The **Forecast** tab in Supply, also following the deployed template.
+- A **program home page** at `/labs/p/programme/<id>/`. The page shows:
+    - Workers below minimum
+    - When the network runs dry at protocol
+    - What share of the protocol children are actually receiving RUTF
+    - What stock workers currently hold
+    - The stores
+    - Open checks
+    - Links to every Supply tab and the workflows behind them
+    - The canopy agent panel
+
+- If the organisation that owns the demo has no home page yet, reseeding also creates one that links through to the program's page.
+
+---
+
 ## Coaching Workers from a Run Page
 
 When you ask the canopy agent to coach a field worker from a Labs run page, the agent can show a **coaching card** directly in the chat. The card displays:
@@ -232,34 +262,4 @@ Clicking the button opens the coaching dialog, which shows:
 - The first message the worker would receive
 - The exact briefing
 
-**Test sends only.** The only option available from this button is **Send to me (QA test)** — the conversation goes to your own phone. There is no option to send to the worker from this button. Labs remembers your PersonalID username in your browser, so after your first test send, subsequent sends need just one click.
-
-#### Case coaching pictures
-
-Each story has its own picture designed to be read on a phone. The picture type is determined by the case state recorded in the registry for that baby:
-
-| Story | Picture |
-|---|---|
-| **Growing well** | The baby's weight line climbing above the healthy-growth band, with a "Great work!" badge |
-| **Weighing to check** | The doubtful weighing circled on the growth line, with a four-step weighing checklist |
-| **Weight has stalled** | A flat growth line, with skin-to-skin hours per visit shown as bars |
-| **Danger sign** | A card listing the signs recorded, "Not referred", and what to do next |
-
-!!! note "Sending case coaching on synthetic KMC opportunities"
-    On synthetic KMC opportunities used for testing, the coaching card offers only **Send to me (QA test)** — messages cannot be sent to real workers from these opportunities.
-
-### Connecting Open Chat Studio before the card loads
-
-Every coaching send — including test sends — runs on your own Open Chat Studio (OCS) connection. Because of this, the card checks your OCS connection before showing anything else. If you are not yet connected, the card shows only:
-
-> **Connect Open Chat Studio first**
-
-with a **Connect Open Chat Studio** button and an **I've connected — continue** link that rechecks the connection. The rest of the card appears once your connection is confirmed.
-
-### Sending from the card
-
-The card has one primary action and a quiet secondary link:
-
-| Action | What it does |
-|---|---|
-| **Send to \
+**Test sends only.** The only option available from this button is **Send to me (QA
