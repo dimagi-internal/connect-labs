@@ -463,6 +463,17 @@ def test_the_view_preview_has_the_picture_inline_and_the_viewers_token(user, act
     assert out["executions"] == []
 
 
+def test_the_view_preview_links_the_full_size_picture(user, actionable, canopy, settings):
+    # The inline copy is scaled to the chat panel; the View opens this link in a new
+    # tab (ui/open-link) when the picture is clicked.
+    settings.LABS_PUBLIC_URL = "https://labs.example.org"
+    agent = _coach_preview(user)["workers"][0].get("image") or {}
+    image = _coach_preview(user, tool="workflow_action_preview_view")["workers"][0]["image"]
+    assert image["data_uri"].startswith("data:image/png;base64,")
+    assert agent["url"].startswith("https://labs.example.org/")
+    assert image["url"] == agent["url"]
+
+
 def test_the_view_previews_text_leaves_out_the_picture_and_the_token(user, actionable, canopy):
     from connect_labs.mcp.tool_registry import get_tool as registry_tool
 
