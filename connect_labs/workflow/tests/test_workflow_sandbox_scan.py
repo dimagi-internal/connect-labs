@@ -307,12 +307,16 @@ def test_an_unpublished_template_workflow_falls_back_to_the_stored_copy(local_re
     assert tw.render_source.endswith("(unresolved)") and tw.findings == [] and "no published version" in tw.note
 
 
-def test_seed_templates_are_scanned_apart():
+def test_seed_templates_are_scanned_apart(monkeypatch):
+    # An unchecked template, made here: every deployed non-page template is checked now.
+    unchecked = {k: v for k, v in TEMPLATES["performance_review"].items() if k != "sandboxed"}
+    unchecked["definition"] = {**unchecked["definition"], "config": {}}
+    monkeypatch.setitem(TEMPLATES, "unchecked_report", unchecked)
     targets = {t.id: t for t in template_targets()}
     assert set(targets) == set(TEMPLATES)
     assert targets["performance_review"].sandboxed_now
-    assert not targets["kmc_image_audit"].sandboxed_now  # not checked
-    assert targets["kmc_image_audit"].sandboxed_all
+    assert not targets["unchecked_report"].sandboxed_now
+    assert targets["unchecked_report"].sandboxed_all
 
 
 class _FakeDA:
