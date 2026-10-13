@@ -97,6 +97,10 @@ Pages are useful for landing screens and summary views that you want to keep per
 
 A page can display the latest run of other workflows. You will only see a workflow's run on a page if you have access to open that workflow directly — the same check that applies when you open it from the Workflows list. This applies to all workflows, including synthetic (labs-only) ones.
 
+### Editing a page
+
+The **Edit page** link appears for anyone who can change Settings for the organisation, program, or opportunity that owns the page. If you can view a page but do not have Settings access for its scope, the link is not shown — and Labs will refuse any attempt to save edits even if you navigate directly to the editor's address.
+
 ### Addresses for pages
 
 Each level of Labs has its own address for its page:
@@ -140,7 +144,7 @@ The Supply tab opens only for people who have access to the program or opportuni
 Pages are built with the standard workflow tools. To create one, start from the **Page** template in the workflow builder. Once published, the page appears in the Workflows list with an **Open page** button in place of **Start run**.
 
 !!! note "Pages cannot be started as runs"
-    A page cannot be started as a run. If you need to collect data over a date range and review it, use a regular workflow instead.
+    A page cannot be started as a run — this applies to pages created from the blank page template as well as any other page template. If you need to collect data over a date range and review it, use a regular workflow instead.
 
 ### How pages handle runs and links
 
@@ -259,5 +263,4 @@ The card has one primary action and a quiet secondary link:
 
 Leaving the card without clicking **Send to \<worker\>** simply means you are not ready yet — there is no separate "Not yet" button.
 
-!!! note "You decide when coaching is sent — the agent never sends it automatically"
-    Sending a coaching message is always your action, triggered by clicking **Send to \<worker\>** on the card. The agent will show you the briefing and tell you where to click — either **Send to \<worker\>** on the card in canopy, or **Start coaching** on the Labs run page itself — but it will never send on your behalf. If you prefer to act from
+!!! note "You decide when coaching is sent —
