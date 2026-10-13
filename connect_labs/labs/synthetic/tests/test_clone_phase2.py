@@ -469,3 +469,85 @@ def test_a_requested_opportunity_with_no_bundle_is_reported_not_silently_dropped
 
     assert [r["source_opportunity_id"] for r in rows] == [675]
     assert "999" in caplog.text, "a requested id with no bundle must be named, not silently skipped"
+
+
+@pytest.mark.parametrize("new_opportunities", [False, True])
+def test_on_its_own_machine_a_cohort_generates_in_parallel(tmp_path, settings, monkeypatch, new_opportunities):
+    """Real forked processes build the fixtures; the parent plans ids and registers, so none collide."""
+    from connect_labs.labs.synthetic import ecs_runner, gdrive
+    from connect_labs.labs.synthetic.bundle import write_bundle
+
+    settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent"
+    settings.SYNTHETIC_ECS_CPU = "4096"
+    monkeypatch.setenv(ecs_runner.RUNNER_ENV, "1")
+    monkeypatch.setattr(gdrive, "DriveClient", _FakeDrive)
+    monkeypatch.setattr(clone_from_prod, "_fetch_endpoint", lambda *a, **k: None)
+
+    bundle_root = tmp_path / "bundles"
+    bundle_root.mkdir()
+    sources = [523, 524, 525]
+    for opp_id in sources:
+        manifest = (
+            f"opportunity_id: {opp_id}\n"
+            f"opportunity_name: KMC-{opp_id}\n"
+            "random_seed: 42\n"
+            "timeline: {start_date: 2026-05-04, end_date: 2026-06-01, weeks: 4,"
+            " visit_cadence_per_week_per_flw: {mean: 5, stddev: 1}}\n"
+            "flw_personas: [{id: a, archetype: steady,"
+            " accuracy_distribution: {mean: 0.8, stddev: 0.05},"
+            " completeness_distribution: {mean: 0.8, stddev: 0.05}, flag_rate: 0.1}]\n"
+            "beneficiary_cohorts: [{id: primary, size: 20, progression: flat,"
+            ' field_distributions: {"form.w": {distribution: normal, mean: 12.0, stddev: 2.0}}}]\n'
+            "kpi_config: [{kpi: a, field_path: form.w, aggregation: mean, threshold_underperform: 1.0}]\n"
+        )
+        write_bundle(
+            bundle_root,
+            opp_id,
+            manifest_yaml=manifest,
+            app_structure={"learn_app": None, "deliver_app": {"modules": []}},
+            opportunity={"id": opp_id, "name": f"KMC-{opp_id}"},
+        )
+    bad_dir = bundle_root / "999"
+    bad_dir.mkdir()
+    (bad_dir / "manifest.yaml").write_text("opportunity_id: not_an_integer\n  bad_indent: [\n")
+
+    results = clone_from_prod.generate_opps_bulk(
+        bundle_root,
+        drive=_FakeDrive(),
+        program_name="KMC (Synthetic)",
+        org_name="Dimagi-KMC (Synthetic)",
+        new_opportunities=new_opportunities,
+    )
+
+    assert sorted(r.source_opportunity_id for r in results) == sources
+    opp_ids = [r.opportunity_id for r in results]
+    assert len(set(opp_ids)) == 3, f"opportunity ids collided: {opp_ids}"
+    rows = SyntheticOpportunity.objects.filter(opportunity_id__in=opp_ids)
+    assert {row.cloned_from_opportunity_id for row in rows} == set(sources)
+    assert len({row.program_id for row in rows}) == 1
+    assert all(row.visit_count for row in rows)
+
+
+@pytest.mark.parametrize("given, expected", [(True, True), ("true", True), ("false", False), (False, False)])
+def test_clone_generate_passes_new_opportunities_through(monkeypatch, given, expected):
+    """A second, fresher copy of a cohort beside the old one, instead of reusing its clones."""
+    from types import SimpleNamespace
+
+    from connect_labs.mcp.tools import synthetic as tools
+
+    seen = {}
+
+    def fake_generate_cohort(spec, **kwargs):
+        seen.update(kwargs)
+        spec.program_id = 10900
+        return spec, []
+
+    monkeypatch.setattr(tools, "generate_cohort", fake_generate_cohort)
+    monkeypatch.setattr(tools, "DriveClient", lambda: None)
+    fn = getattr(tools.synthetic_clone_generate, "__wrapped__", tools.synthetic_clone_generate)
+    fn(
+        SimpleNamespace(is_authenticated=True),
+        spec_yaml="bundle_root: 'gdrive:x'\nopportunity_ids: [523]\n",
+        new_opportunities=given,
+    )
+    assert seen["new_opportunities"] is expected
