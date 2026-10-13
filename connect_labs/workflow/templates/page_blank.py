@@ -2,7 +2,7 @@
 
 A page is a workflow with no runs (workflow/page_mode.py): render code, drawn by the
 workflow runner in page mode, reading what it declares as the viewer. This starter
-draws the scope it is opened in -- an organisation's programmes, a programme's
+draws the scope it is opened in -- an organisation's programs, a program's
 opportunities -- with links into each, and the latest run of every workflow it
 declares under `workflow_sources`. Change it like any workflow: pull, edit the JSX,
 push (`workflow_update_render_code`), and declare sources with
@@ -14,7 +14,7 @@ scope's home in Settings (namespace `labs`, key `home`).
 
 DEFINITION = {
     "name": "Page",
-    "description": "A page: a screen of its own, drawn from what this organisation, programme or opportunity holds.",
+    "description": "A page: a screen of its own, drawn from what this organisation, program or opportunity holds.",
     "version": 1,
     "kind": "page",
     # Where it is reached inside its scope: /labs/p/<scope>/<key>/<slug>/.
@@ -47,7 +47,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, workflows, scope, config }) 
     (s.opportunity && s.opportunity.name) ||
     (definition && definition.name) ||
     'Page';
-  var kind = { organization: 'Organisation', program: 'Programme', opportunity: 'Opportunity' }[s.type] || '';
+  var kind = { organization: 'Organisation', program: 'Program', opportunity: 'Opportunity' }[s.type] || '';
   var programs = s.programs || [];
   var opportunities = s.opportunities || [];
   var sources = (definition && definition.workflow_sources) || [];
@@ -70,7 +70,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, workflows, scope, config }) 
         <h1 className="text-2xl font-bold text-brand-indigo">{title}</h1>
         {s.type === 'organization' && programs.length ? (
           <p className="text-sm text-gray-600">
-            {programs.length} programme{programs.length === 1 ? '' : 's'} and {opportunities.length} opportunit
+            {programs.length} program{programs.length === 1 ? '' : 's'} and {opportunities.length} opportunit
             {opportunities.length === 1 ? 'y' : 'ies'} you can see.
           </p>
         ) : null}
@@ -78,7 +78,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, workflows, scope, config }) 
 
       {programs.length ? (
         <div className="mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">Programmes</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-2">Programs</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {programs.map(function (p) {
               var opps = opportunities.filter(function (o) { return String(o.program) === String(p.id); });

@@ -80,7 +80,7 @@ def _program(entry: dict | None) -> dict | None:
     pid = entry.get("id")
     return {
         "id": pid,
-        "name": entry.get("name") or f"Programme {pid}",
+        "name": entry.get("name") or f"Program {pid}",
         "organization": entry.get("organization"),
         "supply_url": f"/supply/?program_id={pid}",
         "workflows_url": f"/labs/workflow/?program_id={pid}",
