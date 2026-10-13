@@ -43,20 +43,40 @@ def get_org_data(request) -> dict:
     user = getattr(request, "user", None)
     if user is None or not getattr(user, "is_authenticated", False):
         return org_data
+    # A workspace derives its Network Managers from this same Connect tree; hand it
+    # over so deciding who someone is never needs a second fetch (labs.workspaces).
+    from connect_labs.labs import workspaces
+
+    workspaces.remember_org_data(user, org_data)
     if not getattr(user, "view_synthetic_opps", False):
-        return org_data
+        # The synthetic-data toggle is an opt-in for demo data; a workspace
+        # programme someone has a role in is shown to them without it.
+        try:
+            workspace_opps = workspaces.programs_for(user)
+        except Exception:  # noqa: BLE001 — DB unavailable should never break context
+            logger.exception("Failed to resolve workspace programmes")
+            return org_data
+        if not workspace_opps:
+            return org_data
+        return _merge_labs_only_opps(org_data, user, only_opportunity_ids=workspace_opps)
 
     return _merge_labs_only_opps(org_data, user)
 
 
-def _merge_labs_only_opps(org_data: dict, user) -> dict:
-    """Append visible labs-only synthetic opps to org/program/opportunity lists."""
+def _merge_labs_only_opps(org_data: dict, user, only_opportunity_ids=None) -> dict:
+    """Append visible labs-only synthetic opps to org/program/opportunity lists.
+
+    ``only_opportunity_ids`` limits the candidates (the workspace programmes of a
+    user without the synthetic-data toggle)."""
     # Local import to avoid circular dependency with labs.synthetic.models at module load.
     from connect_labs.labs.synthetic.models import SyntheticOpportunity
     from connect_labs.labs.synthetic.org_tree import synthetic_org_name, synthetic_org_slug, synthetic_program_id
 
     try:
-        candidates = list(SyntheticOpportunity.objects.filter(labs_only=True, enabled=True).select_related("labs_org"))
+        query = SyntheticOpportunity.objects.filter(labs_only=True, enabled=True)
+        if only_opportunity_ids is not None:
+            query = query.filter(opportunity_id__in=only_opportunity_ids)
+        candidates = list(query.select_related("labs_org__workspace"))
     except Exception:  # noqa: BLE001 — DB unavailable should never break context
         logger.exception("Failed to query labs-only synthetic opportunities")
         return org_data

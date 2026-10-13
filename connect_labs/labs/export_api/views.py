@@ -196,7 +196,9 @@ class OppOrgProgramListView(_ExportView):
         programs: dict[int, dict] = {}
         opportunities = []
 
-        for opp in SyntheticOpportunity.objects.filter(labs_only=True, enabled=True).select_related("labs_org"):
+        for opp in SyntheticOpportunity.objects.filter(labs_only=True, enabled=True).select_related(
+            "labs_org__workspace"
+        ):
             if not opp.is_visible_to(request.user):
                 continue
             org_slug = synthetic_org_slug(opp)

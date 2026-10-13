@@ -8,11 +8,24 @@
     <div>
       <h1 class="text-2xl font-bold text-gray-900">Microplan portfolio</h1>
       <p class="text-sm text-gray-500">Program #{{ program_id }} — candidate plans across regions, before any opportunity is live.</p>
+      {% if workspace %}
+        <p class="text-xs text-gray-500 mt-1">
+          You are a <b>{{ workspace.role_label }}</b> here{% if not workspace.is_program_manager %} — you see your team's plans and studies only{% endif %}.
+          {% if workspace.is_program_manager %}<a class="text-brand-cornflower-blue" href="{% url 'microplans:program_workspace_settings' program_id=program_id %}">Workspace settings</a>{% endif %}
+        </p>
+      {% endif %}
     </div>
     <div class="flex items-center gap-2">
+      {% if workspace and workspace.teams|length > 1 %}
+        <label class="text-xs text-gray-600" title="The team new plans and studies you create here belong to">Creating for
+          <select id="team-sel" class="border border-gray-300 rounded px-1 py-0.5 text-xs">
+            {% for t in workspace.teams %}<option value="{{ t.slug }}">{{ t.name }}</option>{% endfor %}
+          </select>
+        </label>
+      {% endif %}
       <button type="button" id="compare-sel" class="button button-sm outline-style" disabled title="Tick 2+ plans to compare">Compare selected</button>
-      <a href="{% url 'microplans:program_bulk_create_page' program_id=program_id %}" class="button button-sm outline-style" title="Paste a list of ward names and create one plan per ward in one batch">+ Bulk paste list</a>
-      <a href="{% url 'microplans:program_create_plan_page' program_id=program_id %}" class="button button-sm primary-dark">+ New plan</a>
+      <a id="bulk-link" href="{% url 'microplans:program_bulk_create_page' program_id=program_id %}" class="button button-sm outline-style" title="Paste a list of ward names and create one plan per ward in one batch">+ Bulk paste list</a>
+      <a id="new-plan-link" href="{% url 'microplans:program_create_plan_page' program_id=program_id %}" class="button button-sm primary-dark">+ New plan</a>
     </div>
   </div>
 
@@ -68,6 +81,7 @@
 {% block inline_javascript %}
 {{ block.super }}
 {{ user_opportunities|json_script:"opps-data" }}
+{{ workspace.teams|default_if_none:""|json_script:"workspace-teams" }}
 <script src="{% static 'microplans/shared.js' %}"></script>
 <script>
 (function () {
@@ -75,6 +89,24 @@
   const CSRF = "{{ csrf_token }}";
   const PLANS_URL = "{% url 'microplans:program_plans' program_id=program_id %}";
   const CREATE_GROUP_URL = "{% url 'microplans:program_group_create' program_id=program_id %}";
+  // Workspace programs: a Network Manager may not hard-delete (they archive), and
+  // new work is filed under a team (labs.workspaces). Elsewhere both are no-ops.
+  const CAN_DELETE = {{ can_delete|yesno:"true,false" }};
+  const TEAM_NAMES = (() => { try { return Object.fromEntries((JSON.parse(document.getElementById("workspace-teams").textContent) || []).map((t) => [t.slug, t.name])); } catch (e) { return {}; } })();
+  const IS_WORKSPACE = {{ workspace|yesno:"true,false" }};
+  const teamSel = document.getElementById("team-sel");
+  const currentTeam = () => (teamSel ? teamSel.value : undefined);
+  function syncTeamLinks() {
+    if (!teamSel) return;
+    for (const id of ["new-plan-link", "bulk-link"]) {
+      const a = document.getElementById(id);
+      const u = new URL(a.href, window.location.origin);
+      u.searchParams.set("team", teamSel.value);
+      a.href = u.pathname + u.search;
+    }
+  }
+  if (teamSel) { teamSel.addEventListener("change", syncTeamLinks); syncTeamLinks(); }
+  const teamChip = (team) => (IS_WORKSPACE ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700">${Microplans.esc(team ? (TEAM_NAMES[team] || team) : "Program managers only")}</span>` : "");
   const base = "/microplans/program/" + PROGRAM + "/";
   const reviewUrl = (pid) => base + "plan/" + pid + "/review/";
   const planUrl = (pid) => base + "plan/" + pid + "/";
@@ -181,6 +213,7 @@
           <span>
             <a class="font-semibold text-brand-cornflower-blue" href="${reviewUrl(p.plan_id)}">${esc(p.name)}</a>
             <div class="text-xs text-gray-500">${sub.join(" · ")}</div>
+            ${teamChip(p.team)}
           </span>
         </label>
         <span class="text-xs px-2 py-0.5 rounded whitespace-nowrap ${BADGE[p.status] || ''}">${esc(p.status_label)}</span>
@@ -188,7 +221,7 @@
       <div class="flex flex-wrap gap-1 mt-2">
         ${countChip}${travelChip}${p.coverage_pct < 100 ? chip("coverage", p.coverage_pct + "%") : ""}${exclChip}
       </div>
-      <div class="flex flex-wrap gap-1 mt-3">${actions}${p.status !== "archived" ? `<a class="button button-sm outline-style" href="${planSolicitationUrl(p.plan_id)}" title="Create a survey solicitation for this plan's coverage area">Create solicitation</a>` : ""}${p.status !== "deployed" ? `<button class="button button-sm outline-style text-red-600 border-red-200 hover:bg-red-50" data-delete="${p.plan_id}" title="Permanently delete this plan">Delete</button>` : ""}</div>
+      <div class="flex flex-wrap gap-1 mt-3">${actions}${p.status !== "archived" ? `<a class="button button-sm outline-style" href="${planSolicitationUrl(p.plan_id)}" title="Create a survey solicitation for this plan's coverage area">Create solicitation</a>` : ""}${CAN_DELETE && p.status !== "deployed" ? `<button class="button button-sm outline-style text-red-600 border-red-200 hover:bg-red-50" data-delete="${p.plan_id}" title="Permanently delete this plan">Delete</button>` : ""}</div>
     </div>`;
   }
 
@@ -340,7 +373,7 @@
       return `<div class="border rounded-lg p-3 bg-white${heroCls}">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2 min-w-0">
-            <a class="font-semibold text-brand-cornflower-blue truncate ${titleCls}" href="${primaryLink}" title="${esc(g.name)}">${esc(titleText)}</a>${badge}
+            <a class="font-semibold text-brand-cornflower-blue truncate ${titleCls}" href="${primaryLink}" title="${esc(g.name)}">${esc(titleText)}</a>${badge}${teamChip(g.team)}
           </div>
           ${studyStatusBadge}
         </div>
@@ -446,7 +479,7 @@
     // No name dialog — create an "Untitled study" and let the planner name it
     // in place on the manage page (same click-to-edit pattern as plan names).
     const btn = $("new-study"); btn.disabled = true;
-    const r = await post(CREATE_GROUP_URL, { name: "Untitled study", plan_ids: [], kind: "study" });
+    const r = await post(CREATE_GROUP_URL, { name: "Untitled study", plan_ids: [], kind: "study", team: currentTeam() });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.status !== "ok") { $("status").textContent = j.detail || "study create failed"; btn.disabled = false; return; }
     window.location = groupManageUrl(j.group_id);
@@ -455,7 +488,7 @@
     if (!selected.size) return;
     const name = prompt(`Name this group of ${selected.size} plan(s):`); if (!name) return;
     const offered_to = prompt("Which LLO is this bundle for? (optional)") || "";
-    const r = await post(CREATE_GROUP_URL, { name, plan_ids: [...selected], offered_to });
+    const r = await post(CREATE_GROUP_URL, { name, plan_ids: [...selected], offered_to, team: currentTeam() });
     const j = await r.json();
     if (!r.ok || j.status !== "ok") { $("status").textContent = j.detail || "group create failed"; return; }
     selected.clear(); load();

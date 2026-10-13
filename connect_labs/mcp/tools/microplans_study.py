@@ -91,9 +91,14 @@ def microplans_study_ensure(user, *, generate: bool = True, only_round: str | No
     is_write=True,
 )
 def microplans_study_reset_round(user, *, round_key: str) -> dict[str, Any]:
+    from connect_labs.microplans.core.data_access import WorkspaceDeleteForbidden
+
     manifest = study_seed.load_manifest()
     da = _study_data_access(manifest, user)
     try:
         return study_seed.reset_round(da, manifest, round_key)
+    except WorkspaceDeleteForbidden as e:
+        # Only if the study's program were a workspace (labs.workspaces).
+        raise MCPToolError("PERMISSION_DENIED", str(e))
     finally:
         da.close()
