@@ -20,12 +20,12 @@ from connect_labs.supply_chain.banner import program_line
 from connect_labs.supply_chain.checks import course_applies_to_category, courses_carried_by_kits
 from connect_labs.supply_chain.history.as_of import as_of_view, end_of_day
 from connect_labs.supply_chain.history.timeline import answered_by, timeline_for_contract
-from connect_labs.supply_chain.identity import IdentityUnresolved, resolve_org
 from connect_labs.supply_chain.landing import landing_url
 from connect_labs.supply_chain.models import SupplierOffering
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.procurement.services.compliance import kit_spec_verdict
+from connect_labs.supply_chain.runner import running_org, standing
 from connect_labs.supply_chain.standing import move_counts, standing_rows
 
 
@@ -293,14 +293,16 @@ class DomainHomeView(OperationBase):
         # the request: the same scope every operation on this page uses.
         access = _access(self.request)
         program_id = access.program_id
-        try:
-            org = resolve_org(access)
-        except IdentityUnresolved:
-            org = None
+        # The organisation that RUNS this programme, whoever is viewing: "ours"
+        # on this page is the programme's, not the viewer's (#2458).
+        org = running_org(program_id)
         # Under as-of the page runs inside the rewound transaction, so the
         # rows are the past; "today" is the as-of day and the log is cut there.
         as_of = getattr(self.request, "supply_as_of", None)
         context["program_heading"] = self._program_heading(program_id, org)
+        # What the viewer is here: support and a read-only partner are told so,
+        # so neither mistakes the page for their own (#2458).
+        context["supply_standing"] = standing(access)
         context["standing"] = standing_rows(
             int(program_id),
             as_of or timezone.localdate(),

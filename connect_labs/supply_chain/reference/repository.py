@@ -156,6 +156,9 @@ class ReferenceRepositoryMixin:
                     "an organisation's Connect id is its identity and does not change"
                 )
             else:
+                from connect_labs.supply_chain.data_access import _guard_running_org
+
+                _guard_running_org(self, org)
                 org.connect_organization_id = connect_id
                 org.save(update_fields=["connect_organization_id", "updated_at"])
 

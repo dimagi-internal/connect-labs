@@ -8,8 +8,8 @@ it is.
 The buyer is read off the records, never assumed: the organisation named on
 the program's orders where the program's own organisation is buyer of record
 (`Contract.buyer_of_record == "programme_org"`), the most common one when there
-are several. Before any order exists, the organisation acting in the program
-(`identity.resolve_org`) -- the one the overview's heading already names.
+are several. Before any order exists, the organisation that runs the program
+(`runner.running_org`) -- the one the overview's heading already names.
 Neither known, the line is the program's name alone.
 """
 
@@ -40,8 +40,8 @@ def program_line(request) -> str:
 
 
 def _buyer_of_record(access, program_id) -> str:
-    from connect_labs.supply_chain.identity import IdentityUnresolved, resolve_org
     from connect_labs.supply_chain.models import Contract
+    from connect_labs.supply_chain.runner import running_org
 
     named = Counter(
         Contract.objects.filter(program_id=program_id, buyer_of_record="programme_org", buyer_org__isnull=False)
@@ -50,8 +50,5 @@ def _buyer_of_record(access, program_id) -> str:
     )
     if named:
         return sorted(named.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
-    try:
-        org = resolve_org(access)
-    except IdentityUnresolved:
-        return ""
+    org = running_org(program_id)
     return org.name if org is not None else ""

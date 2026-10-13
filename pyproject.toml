@@ -17,6 +17,7 @@ markers = [
     "e2e: End-to-end browser tests (require real OAuth token and runserver)",
     "contract: Cross-boundary contract tests (e.g. server↔frontend matrix/field-name agreement)",
     "stub: Marks a simulated integration seam (KYC/payment/CommCare) — no external system is wired",
+    "real_standing: supply_chain test that decides programme standing for real rather than as the programme's own team",
 ]
 
 # ==== Coverage ====

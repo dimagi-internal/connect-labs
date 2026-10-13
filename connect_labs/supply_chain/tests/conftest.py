@@ -26,6 +26,27 @@ from connect_labs.supply_chain.models import Commodity, Item, Quote, Supplier, S
 SCOPE = "prog:10501"
 
 
+@pytest.fixture(autouse=True)
+def signed_in_callers_are_the_programmes_team(request, monkeypatch):
+    """Every test here is written as the programme's own team, unless it says otherwise.
+
+    Since #2458 a write needs programme standing: a member of the organisation
+    that runs the programme, or platform support. The screen and operation tests
+    in this directory sign in an anonymous "sophie" on a programme nobody has
+    declared, and what they test is the screens, not who may use them -- so here
+    she IS the programme's team. Who may write, and the refusals, are decided for
+    real in tests marked `real_standing` (test_programme_runner.py and friends).
+    """
+    if request.node.get_closest_marker("real_standing"):
+        return
+    from connect_labs.supply_chain import runner
+
+    def as_the_team(access):
+        return runner.Standing(runner.PROGRAMME, runner.running_org(getattr(access, "program_id", None)))
+
+    monkeypatch.setattr(runner, "_standing", as_the_team)
+
+
 def _rutf(**overrides) -> Commodity:
     fields = {
         "scope_key": SCOPE,

@@ -17,7 +17,7 @@ from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.identity import IdentityUnresolved, caller_org_ids, resolve_org, source_for
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.real_standing]
 
 PROGRAM = 10505
 SCOPE = f"prog:{PROGRAM}"
@@ -43,6 +43,15 @@ def _org(slug, kind, connect_organization_id, connect_organization_slug=""):
         connect_organization_id=connect_organization_id,
         connect_organization_slug=connect_organization_slug,
     )
+
+
+def _running(slug, connect_organization_id):
+    """The organisation that runs PROGRAM (#2458): whoever Connect says belongs to it is the programme."""
+    from connect_labs.supply_chain.runner import declare
+
+    org = _org(slug, "programme_org", connect_organization_id)
+    declare(PROGRAM, org)
+    return org
 
 
 class _Request:
@@ -202,12 +211,13 @@ class TestWhichOrganisation:
 
 
 class TestSource:
-    def test_a_kind_implies_how_the_fact_reached_us(self):
-        assert source_for(LabsOrg(slug="dimagi")) == "we_recorded"
-        assert source_for(LabsOrg(slug="kano-llo")) == "partner_reported"
+    def test_who_is_acting_here_implies_how_the_fact_reached_us(self):
+        """Standing in THIS programme, not a property of the organisation (#2458)."""
+        from connect_labs.supply_chain.runner import OPERATOR, PARTNER, PROGRAMME, Standing
 
-    def test_nothing_acting_has_no_source(self):
-        assert source_for(None) is None
+        assert source_for(Standing(PROGRAMME, LabsOrg(slug="kilele"))) == "we_recorded"
+        assert source_for(Standing(OPERATOR, LabsOrg(slug="kilele"))) == "we_recorded"
+        assert source_for(Standing(PARTNER, LabsOrg(slug="dimagi"))) == "partner_reported"
 
 
 class TestStamping:
@@ -268,7 +278,7 @@ class TestStamping:
         assert "org_upsert" in str(caught.value)
 
     def test_the_organisation_and_source_are_stamped_from_the_session(self):
-        org = _org("dimagi", "programme_org", 7)
+        org = _running("kano-programme", 7)
         access, request = _session_access([7])
         with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
             stamped = self._stamp(access, self._contract())
@@ -305,7 +315,7 @@ class TestStamping:
     def test_we_may_record_on_a_partners_behalf(self):
         """Not a privilege -- it is the normal case. Sophie enters what the
         LLO told her, and the row has to say the LLO reported it."""
-        _org("dimagi", "programme_org", 7)
+        _running("kano-programme", 7)
         llo = _org("kano-llo", "partner_org", 42)
         access, request = _session_access([7])
         with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
@@ -316,7 +326,7 @@ class TestStamping:
     def test_a_caller_supplied_source_is_not_overwritten(self):
         """A document is stronger evidence than the caller's own word, and a
         derived source must not downgrade it."""
-        _org("dimagi", "programme_org", 7)
+        _running("kano-programme", 7)
         access, request = _session_access([7])
         with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
             stamped = self._stamp(access, self._contract(source="document"))

@@ -33,30 +33,27 @@ from connect_labs.utils.dimagi_user import is_dimagi_user
 logger = logging.getLogger(__name__)
 
 # How a fact reached us implies how much it is worth. `we_recorded` is not a
-# default -- it is what is TRUE when the programme's own staff enter something,
-# and it is only reachable by someone who belongs to the programme's own
-# organisation. `agency` and `supplier` are deliberately absent: an agency's
-# report is not a partner's, and SOURCES has no term for it, so those callers
-# state their source rather than have one guessed.
-# Dimagi, as one organisation across all of labs.
-DIMAGI_ORG_SLUG = "dimagi"
+# default -- it is what is TRUE when the programme's own people enter something,
+# and it is only reachable by the programme itself: a member of the
+# organisation that RUNS it (`runner`), or platform support acting for it.
+# `agency` and `supplier` are deliberately absent: an agency's report is not a
+# partner's, and SOURCES has no term for it, so those callers state their
+# source rather than have one guessed.
+#
+# Dimagi used to be "the programme" everywhere, by slug. It is now one
+# organisation that runs programmes (#2458); these names stay importable.
+from connect_labs.supply_chain.runner import DIMAGI_ORG_SLUG, dimagi_org  # noqa: E402,F401
 
 
-def source_for(org) -> str | None:
-    """How a fact from this organisation reached us.
+def source_for(standing) -> str:
+    """How a fact from this caller reached us: first-hand for the programme, reported otherwise.
 
-    Derived from WHO is acting rather than from a field on the organisation.
-    It used to read `Party.kind`, which made "is the programme" a property of
-    the organisation -- so one body could be the programme everywhere, which
-    is not true of any organisation operating in more than one programme.
-
-    `we_recorded` is not a default. It is what is TRUE when Dimagi's own
-    staff enter something, and it is only reachable by them. Everyone else
-    is reporting, which is exactly what `partner_reported` says.
+    Derived from WHO is acting in THIS programme rather than from a field on
+    the organisation. It used to read `Party.kind`, and then `org.slug ==
+    "dimagi"` -- both made "is the programme" a property of an organisation,
+    which is not true of any organisation operating in more than one programme.
     """
-    if org is None:
-        return None
-    return "we_recorded" if org.slug == DIMAGI_ORG_SLUG else "partner_reported"
+    return "we_recorded" if standing.is_programme else "partner_reported"
 
 
 class IdentityUnresolved(ValueError):
@@ -176,33 +173,21 @@ def caller_org_ids(access) -> set[int] | None:
     return None if organizations is None else _integer_org_ids(organizations)
 
 
-def dimagi_org():
-    """Dimagi, as one organisation across all of labs.
+def resolve_org(access, prefer_id=None):
+    """The caller's OWN organisation -- who they are, whatever programme this is.
 
-    One row, not one per programme. The previous version created a
-    `programme_org` row inside each programme -- so an importer invented a
-    "Programme team" record for an organisation that plainly exists in
-    Connect, which is the second-registry behaviour this work exists to
-    remove. Dimagi is Dimagi in every programme it appears in.
+    Not who they act for: in a programme their organisation runs, that is the
+    running organisation (`acting_org`). Two rules, and no third for demo data:
 
-    Created on first use rather than by a setup step, because an
-    organisation labs already acts as is not something to wait for.
-    """
-    org, _ = LabsOrg.objects.get_or_create(slug=DIMAGI_ORG_SLUG, defaults={"name": "Dimagi", "short_name": "Dimagi"})
-    return org
-
-
-def resolve_org(access):
-    """The organisation this caller acts for.
-
-    Two rules, and no third for demo data:
-
-      1. Dimagi staff act for Dimagi -- the ACL
-         `SyntheticOpportunity.is_accessible_to` already grants them as
-         platform operators, so their membership list is not the question.
+      1. A Dimagi address belongs to Dimagi -- Dimagi's people are spread
+         across many Connect organisations, and labs has always recognised
+         them by domain. That makes them Dimagi, not the programme.
       2. Anyone else acts for the organisation they belong to, matched on
          `LabsOrg`'s own rule: the Connect id where there is one, the slug
          where there is not.
+
+    `prefer_id` settles a caller who belongs to more than one organisation
+    here: it is honoured only when it is one of theirs.
 
     The slug half matters. A labs-only organisation has no integer id, so an
     earlier version could never match one and no number of local rows would
@@ -232,6 +217,9 @@ def resolve_org(access):
         return None
     if len(candidates) == 1:
         return candidates[0]
+    chosen = [org for org in candidates if prefer_id is not None and org.pk == _as_org_id(prefer_id)]
+    if chosen:
+        return chosen[0]
     raise IdentityUnresolved(
         "this caller belongs to more than one organisation acting here "
         f"({', '.join(sorted(o.slug for o in candidates))}), so one cannot be chosen "
@@ -243,6 +231,20 @@ def resolve_org(access):
 # a document can carry them; a partner claiming `we_recorded` would be
 # claiming that WE witnessed what they are telling us.
 WITNESSED_SOURCES = {"we_recorded", "document"}
+
+
+def acting_org(access, prefer_id=None):
+    """The organisation this caller acts for IN THIS PROGRAMME.
+
+    The programme itself -- a member of its running organisation, or platform
+    support -- acts for the running organisation. Anyone else acts for their own.
+    """
+    from connect_labs.supply_chain.runner import standing
+
+    held = standing(access)
+    if held.is_programme and held.runner is not None:
+        return held.runner
+    return resolve_org(access, prefer_id=prefer_id)
 
 
 def takes_provenance(operation) -> bool:
@@ -299,7 +301,14 @@ def stamp_provenance(access, operation, payload: dict) -> dict:
     if not isinstance(data, dict):
         return payload
 
-    org = resolve_org(access)
+    from connect_labs.supply_chain.runner import OPERATOR, standing
+
+    held = standing(access)
+    claimed_org_id = data.get("recorded_by_org_id")
+    claimed_source = data.get("source")
+    org = (
+        held.runner if held.is_programme and held.runner is not None else resolve_org(access, prefer_id=claimed_org_id)
+    )
     if org is None:
         raise IdentityUnresolved(
             "this caller acts for no organisation in this programme, so a record "
@@ -307,13 +316,10 @@ def stamp_provenance(access, operation, payload: dict) -> dict:
             "set its connect_organization_id, or call as a member of one."
         )
 
-    claimed_org_id = data.get("recorded_by_org_id")
-    claimed_source = data.get("source")
-    # Ours, rather than "an organisation whose kind says programme". The
-    # distinction is the whole correction: being the programme is a fact
-    # about who is acting here, not a property the organisation carries into
-    # every other programme it appears in.
-    is_programme = org.slug == DIMAGI_ORG_SLUG
+    # Being the programme is a fact about who is acting HERE -- a member of the
+    # organisation that runs this programme, or support acting for it -- not a
+    # property an organisation carries into every programme it appears in.
+    is_programme = held.is_programme
 
     if claimed_org_id is not None and int(claimed_org_id) != org.pk and not is_programme:
         raise IdentityUnresolved(
@@ -326,11 +332,16 @@ def stamp_provenance(access, operation, payload: dict) -> dict:
             "knowledge. Use 'partner_reported', or attach a document."
         )
 
+    if held.role == OPERATOR and not claimed_source:
+        # Support typing something in for a programme is not the programme's own
+        # people seeing it, so nothing is presumed first-hand on their behalf.
+        raise IdentityUnresolved(
+            "you are acting as platform support in this program, so say how this reached you: "
+            "pass source (e.g. 'partner_reported', 'supplier_reported' or 'document')."
+        )
     data = dict(data)
     data.setdefault("recorded_by_org_id", org.pk)
-    derived = source_for(org)
-    if derived is not None:
-        data.setdefault("source", derived)
+    data.setdefault("source", source_for(held))
     return {**payload, "data": data}
 
 
@@ -414,19 +425,17 @@ def person_name(user) -> str:
 
 
 def acting_org_name(access) -> str:
-    """The name of the organisation this caller acts for, or "" when it cannot be said.
+    """The name of the organisation this caller acts for here, or "" when it cannot be said.
 
-    For a signature, not for provenance: a read must not create Dimagi's row
-    the way `dimagi_org()` does, and a caller who belongs to two organisations
-    here signs with a placeholder rather than having one chosen for them.
+    For a signature, not for provenance: in a programme the caller's
+    organisation runs it is the running organisation's name, otherwise their
+    own; a caller who belongs to two organisations here signs with a
+    placeholder rather than having one chosen for them.
     """
-    user = getattr(access, "user", None)
-    if user is not None and is_dimagi_user(user):
-        return LabsOrg.objects.filter(slug=DIMAGI_ORG_SLUG).values_list("name", flat=True).first() or "Dimagi"
-    if user is None and getattr(access, "request", None) is None:
+    if getattr(access, "user", None) is None and getattr(access, "request", None) is None:
         return ""
     try:
-        org = resolve_org(access)
+        org = acting_org(access)
     except IdentityUnresolved:
         return ""
     return org.name if org is not None else ""
