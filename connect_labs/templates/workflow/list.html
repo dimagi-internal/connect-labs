@@ -978,7 +978,7 @@
 
                     <!-- Action Buttons -->
                     <div class="flex items-center gap-2 flex-shrink-0">
-                    {% if workflow.definition.data.kind == "page" %}
+                    {% if workflow.is_page %}
                     {% comment %}A page has no runs (workflow/page_mode.py): it is opened, not started.{% endcomment %}
                     <a href="{% url 'labs:workflow:run' workflow.definition.id %}?{% if view_mode == "program" %}program_id={{ program_id }}{% else %}opportunity_id={{ workflow.definition.opportunity_id }}{% endif %}"
                        data-testid="open-page"
