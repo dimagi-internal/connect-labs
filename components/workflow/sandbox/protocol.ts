@@ -119,6 +119,11 @@ export const LIMITS = {
   streams: 6,
   /** What one stream may deliver, in all (a pipeline's rows ride the last event). */
   streamBytes: 96 * 1024 * 1024,
+  /** Streams opened per minute: each holds server work open, and closing one does
+   * not stop that work at once. */
+  streamOpensPerMinute: 20,
+  /** Requests that start server-side work (a job, a footprints fetch), per minute. */
+  jobStartsPerMinute: 30,
 };
 
 /** Per-mode request budgets: a workflow loads images and rows a page never does. */

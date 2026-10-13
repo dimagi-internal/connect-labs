@@ -29,7 +29,12 @@ import logging
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 
-from connect_labs.workflow.sandbox import deprecated_exempt, should_sandbox, workflow_sandbox_mode
+from connect_labs.workflow.sandbox import (
+    DEPRECATED_UNSANDBOXED,
+    deprecated_exempt,
+    should_sandbox,
+    workflow_sandbox_mode,
+)
 from connect_labs.workflow.sandbox_scan import Finding, scan_render_code, worst
 
 logger = logging.getLogger(__name__)
@@ -117,8 +122,12 @@ def _target(origin, def_id, data: dict, owner: str, code, render_source: str, no
     opp = owner.split(":", 1)[1] if owner.startswith("opportunity:") else None
     definition = SimpleNamespace(id=def_id, data=data, opportunity_id=int(opp) if opp and opp.isdigit() else None)
     page = is_page(definition)
-    if deprecated_exempt(definition):
+    if deprecated_exempt(definition, code):
         note = (note + "; " if note else "") + "deprecated: pinned out of the sandbox under `all` (sandbox.py)"
+    elif (def_id, definition.opportunity_id) in DEPRECATED_UNSANDBOXED:
+        note = (note + "; " if note else "") + (
+            "pinned deprecated copy, but its code is not a version labs shipped: sandboxed under `all`"
+        )
     return Target(
         origin=origin,
         id=def_id,
@@ -127,8 +136,8 @@ def _target(origin, def_id, data: dict, owner: str, code, render_source: str, no
         kind="page" if page else "workflow",
         template_type=str(config.get("templateType") or data.get("templateType") or ""),
         render_source=render_source,
-        sandboxed_now=should_sandbox(definition, mode=workflow_sandbox_mode()),
-        sandboxed_all=should_sandbox(definition, mode="all"),
+        sandboxed_now=should_sandbox(definition, mode=workflow_sandbox_mode(), render_code=code),
+        sandboxed_all=should_sandbox(definition, mode="all", render_code=code),
         code_found=bool(code),
         findings=scan_render_code(code, is_page=page),
         note=note,

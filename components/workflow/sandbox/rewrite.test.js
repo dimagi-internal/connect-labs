@@ -141,6 +141,19 @@ describe('rewrite: confirm()', () => {
     expect(out).toContain('await __labsSandbox.confirm("a")');
   });
 
+  it('leaves a handler that uses its event after the question (it would be too late)', () => {
+    const out = rewrite(`
+      <a href="/x/" onClick={(e) => { if (!confirm('Leave?')) e.preventDefault(); }}>x</a>;
+      <a href="/y/" onClick={({ target }) => { if (confirm('Go?')) go(target); }}>y</a>;
+    `);
+    expect(out).not.toContain(SANDBOX_GLOBAL);
+    // ...but an event used only BEFORE the question is fine.
+    const ok = rewrite(
+      '<b onClick={(e) => { e.stopPropagation(); if (confirm("Sure?")) del(); }} />',
+    );
+    expect(ok).toContain('await __labsSandbox.confirm("Sure?")');
+  });
+
   it('leaves a confirm whose function returns synchronously (the frame answers No)', () => {
     const out = rewrite(`
       function check() { return confirm('ok?'); }

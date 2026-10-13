@@ -119,6 +119,8 @@ def test_a_confirm_the_compile_makes_wait_is_info(body):
         "  function check() { return confirm('ok?'); }",
         "  const del = async () => { items.forEach(function (i) { if (confirm(i)) drop(i); }); };",
         "  if (cond) { if (confirm('x')) go(); }",
+        "  const a = <a onClick={(e) => { if (!confirm('Leave?')) e.preventDefault(); }}>x</a>;",
+        "  const a = <a onClick={({ target }) => { if (confirm('Go?')) go(target); }}>x</a>;",
     ],
 )
 def test_a_confirm_it_cannot_make_wait_still_breaks(body):
@@ -507,38 +509,51 @@ def test_command_refuses_an_unknown_user():
 
 # --- deprecated copies pinned out of the sandbox under `all` -------------------------
 
+MBW_CODE = TEMPLATES["mbw_monitoring"]["render_code"]
+
 
 def _mbw(id_, opp, key="mbw_monitoring"):
     return SimpleNamespace(id=id_, opportunity_id=opp, data={"name": "MBW", "config": {"templateType": key}})
 
 
-def test_only_the_pinned_deprecated_copies_stay_out_under_all():
+def test_the_shipped_mbw_code_is_among_the_digests():
+    from connect_labs.workflow.sandbox import render_code_digest
+    from connect_labs.workflow.sandbox_deprecated import DEPRECATED_RENDER_DIGESTS
+
+    assert render_code_digest(MBW_CODE) in DEPRECATED_RENDER_DIGESTS
+    assert render_code_digest("\n  " + MBW_CODE.replace("\n", "\r\n") + "  \n") in DEPRECATED_RENDER_DIGESTS
+
+
+def test_only_the_pinned_deprecated_copies_running_shipped_code_stay_out_under_all():
     from connect_labs.workflow.sandbox import DEPRECATED_UNSANDBOXED, should_sandbox
 
     pinned_id, pinned_opp = sorted(DEPRECATED_UNSANDBOXED)[0]
-    assert not should_sandbox(_mbw(pinned_id, pinned_opp), mode="all")
-    assert not should_sandbox(_mbw(pinned_id, pinned_opp, "mbw_monitoring_v2"), mode="all")
-    # The same id on another opportunity, another template, or a template name alone: in.
-    assert should_sandbox(_mbw(pinned_id, pinned_opp + 1), mode="all")
-    assert should_sandbox(_mbw(pinned_id, pinned_opp, "kmc_flw_flags"), mode="all")
-    assert should_sandbox(_mbw(999_999, pinned_opp), mode="all")
+
+    def all_mode(defn, code=MBW_CODE, **kw):
+        return should_sandbox(defn, mode="all", render_code=code, **kw)
+
+    assert not all_mode(_mbw(pinned_id, pinned_opp))
+    assert not all_mode(_mbw(pinned_id, pinned_opp, "mbw_monitoring_v2"))
+    # The pinned record running code labs did not ship, or no code at all: in.
+    assert all_mode(_mbw(pinned_id, pinned_opp), code=MBW_CODE + "\n// edited")
+    assert all_mode(_mbw(pinned_id, pinned_opp), code=STORED_BREAKS)
+    assert all_mode(_mbw(pinned_id, pinned_opp), code=None)
+    # The same id on another opportunity, another template, or the code alone: in.
+    assert all_mode(_mbw(pinned_id, pinned_opp + 1))
+    assert all_mode(_mbw(pinned_id, pinned_opp, "kmc_flw_flags"))
+    assert all_mode(_mbw(999_999, pinned_opp))
     # ?sandbox=1 still draws a pinned one sandboxed; opt_in is unchanged by the pin.
-    request = SimpleNamespace(GET={"sandbox": "1"})
-    assert should_sandbox(_mbw(pinned_id, pinned_opp), mode="all", request=request)
-    assert not should_sandbox(_mbw(pinned_id, pinned_opp), mode="opt_in")
+    assert all_mode(_mbw(pinned_id, pinned_opp), request=SimpleNamespace(GET={"sandbox": "1"}))
+    assert not should_sandbox(_mbw(pinned_id, pinned_opp), mode="opt_in", render_code=MBW_CODE)
 
 
-def test_a_pinned_copy_is_reported_as_kept_out():
+def test_a_pinned_copy_is_reported_as_kept_out_only_with_shipped_code():
     from connect_labs.workflow.sandbox import DEPRECATED_UNSANDBOXED
     from connect_labs.workflow.sandbox_scan_sources import _target
 
     pinned_id, pinned_opp = sorted(DEPRECATED_UNSANDBOXED)[0]
-    t = _target(
-        "connect",
-        pinned_id,
-        {"name": "MBW", "config": {"templateType": "mbw_monitoring"}},
-        f"opportunity:{pinned_opp}",
-        STORED_BREAKS,
-        "stored",
-    )
-    assert t.worst == "breaks" and not t.sandboxed_all and "pinned out of the sandbox" in t.note
+    data = {"name": "MBW", "config": {"templateType": "mbw_monitoring"}}
+    kept = _target("connect", pinned_id, data, f"opportunity:{pinned_opp}", MBW_CODE, "stored")
+    assert kept.worst == "breaks" and not kept.sandboxed_all and "pinned out of the sandbox" in kept.note
+    edited = _target("connect", pinned_id, data, f"opportunity:{pinned_opp}", STORED_BREAKS, "stored")
+    assert edited.sandboxed_all and "not a version labs shipped" in edited.note

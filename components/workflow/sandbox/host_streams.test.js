@@ -462,3 +462,171 @@ describe('forms', () => {
     expect(init.headers['x-csrftoken']).toBe('REAL');
   });
 });
+
+describe('review fixes', () => {
+  it('a closed stream keeps its place until the host’s read ends, and opens are budgeted', async () => {
+    const settle = [];
+    const stream = vi.fn(
+      (c, e, o, s) =>
+        new Promise((resolve) => {
+          settle.push(resolve);
+        }),
+    );
+    let t = 0;
+    const pushed = [];
+    const d = createDispatcher(
+      {
+        querySupply: vi.fn(),
+        queryWorkflow: vi.fn(),
+        navigate: vi.fn(),
+        shareSelection: vi.fn(),
+        resize: vi.fn(),
+        copyText: vi.fn(),
+        confirm: vi.fn(),
+        download: vi.fn(),
+        reportError: vi.fn(),
+      },
+      {
+        labsOrigin: LABS,
+        hasActivation: () => true,
+        mode: 'workflow',
+        routeContext: ctx(),
+        workflow: {
+          fetch: vi.fn(),
+          ask: vi.fn(),
+          actionKeys: () => [],
+          stream,
+        },
+        push: (m) => pushed.push(m),
+        now: () => t,
+      },
+    );
+    const open = (i) =>
+      d({
+        id: i,
+        method: 'streamOpen',
+        params: { url: '/labs/workflow/api/42/pipeline-data/stream/' },
+      });
+    const opened = [];
+    for (let i = 0; i < 6; i++) opened.push((await open(i)).result.stream);
+    await tick();
+    for (const s of opened)
+      await d({ id: 99, method: 'streamClose', params: { stream: s } });
+    // Closed, but the reads have not ended: still no room.
+    expect((await open(7)).error).toMatch(/too many streams/);
+    settle.forEach((r) => r());
+    await tick();
+    await tick();
+    expect((await open(8)).result).toBeTruthy();
+    expect(pushed).toEqual([]); // nothing after a close
+    // Opens per minute are budgeted, whatever is closed.
+    for (const r of settle.splice(0)) r();
+    let refused = 0;
+    for (let i = 0; i < 30; i++) {
+      const out = await open(100 + i);
+      if (out.error && /too many streams from this page/.test(out.error))
+        refused += 1;
+      settle.splice(0).forEach((r) => r());
+      await tick();
+      await tick();
+    }
+    expect(refused).toBeGreaterThan(0);
+    t += 61_000;
+    settle.splice(0).forEach((r) => r());
+    await tick();
+    await tick();
+    expect((await open(200)).result).toBeTruthy();
+  });
+
+  it('footprints: a few areas a request, and starts are budgeted', async () => {
+    const big = JSON.stringify({ areas: [1, 2, 3, 4, 5, 6] });
+    expect(() =>
+      checkFetch('/microplans/10/preview_footprints/', 'POST', ctx(), big),
+    ).toThrow(/at most 5 areas/);
+    expect(() =>
+      checkFetch('/microplans/10/preview_footprints/', 'POST', ctx(), '{}'),
+    ).toThrow(/at most 5 areas/);
+    const { d, w } = setup({ fetchAnswer: json({ task_id: 't' }) });
+    const outs = [];
+    for (let i = 0; i < 31; i++) {
+      outs.push(
+        await d({
+          id: i,
+          method: 'fetch',
+          params: {
+            url: '/microplans/10/preview_footprints/',
+            method: 'POST',
+            body: '{"areas":[{}]}',
+          },
+        }),
+      );
+    }
+    expect(outs.filter((o) => o.error).length).toBe(1);
+    expect(outs[30].error).toMatch(/too many background jobs/);
+    expect(w.fetch).toHaveBeenCalledTimes(30);
+  });
+
+  it('a checked body goes as the JSON it was checked as, whatever type the frame named', async () => {
+    const checked = checkFetch(
+      '/audit/api/audit/preview/',
+      'POST',
+      ctx(),
+      JSON.stringify({
+        opportunities: [10],
+        x: 'a&csrfmiddlewaretoken=1&opportunities=99',
+      }),
+    );
+    const fetchImpl = vi.fn(async () => new Response('{}', { status: 200 }));
+    await proxyFetch(
+      checked,
+      {
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: 'ignored',
+      },
+      'REAL',
+      fetchImpl,
+    );
+    const [, init] = fetchImpl.mock.calls[0];
+    expect(init.headers['content-type']).toBe('application/json');
+    expect(init.body).toBe(checked.body);
+  });
+
+  it('a form token is dropped whatever the content type’s case', async () => {
+    const checked = checkFetch('/audit/api/55/save/', 'POST', ctx());
+    const fetchImpl = vi.fn(async () => new Response('{}', { status: 200 }));
+    await proxyFetch(
+      checked,
+      {
+        headers: { 'Content-Type': 'Application/X-WWW-Form-Urlencoded' },
+        body: 'csrfmiddlewaretoken=x&visit_results=1',
+      },
+      'REAL',
+      fetchImpl,
+    );
+    expect(fetchImpl.mock.calls[0][1].body).toBe('visit_results=1');
+  });
+
+  it('a refused stream lets go of its connection', async () => {
+    const checked = checkFetch(
+      '/labs/workflow/api/job/a/status/',
+      'GET',
+      ctx(),
+    );
+    const cancel = vi.fn(async () => undefined);
+    const response = new Response('<html>', {
+      status: 200,
+      headers: { 'content-type': 'text/html' },
+    });
+    Object.defineProperty(response, 'body', { value: { cancel } });
+    await expect(
+      proxyStream(
+        checked,
+        () => {},
+        () => {},
+        new AbortController().signal,
+        async () => response,
+      ),
+    ).rejects.toThrow(/does not answer as a stream/);
+    expect(cancel).toHaveBeenCalled();
+  });
+});
