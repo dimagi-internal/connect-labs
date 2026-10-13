@@ -1,7 +1,7 @@
 """The Settings page: `/labs/settings/<scope type>/<key>/`.
 
 One section per namespace. Each shows what is in effect here and where each value
-came from ("labs default", "organisation Dimagi", "this programme"); its members can
+came from ("labs default", "organisation Dimagi", "this program"); its members can
 change this scope's own layer, see its history and undo any change. Someone who
 cannot use the scope gets a 404 -- the same as any labs page for a scope they are
 not in.
@@ -10,6 +10,7 @@ not in.
 from __future__ import annotations
 
 import json
+import logging
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -21,6 +22,8 @@ from connect_labs.scope_config import service
 from connect_labs.scope_config.merge import diff_patch
 from connect_labs.scope_config.namespaces import all_namespaces
 from connect_labs.scope_config.scopes import Scope
+
+logger = logging.getLogger(__name__)
 
 SOURCE_LABELS = {"default": "labs default"}
 
@@ -78,7 +81,7 @@ def _supply_tabs(got) -> list[dict]:
 
     def setter(key):
         sources = {v for p, v in got["provenance"].items() if p.startswith(f"tabs.{key}.") or p == f"tabs.{key}"}
-        # This scope's own layer reads "this programme", as the rows elsewhere on the page do.
+        # This scope's own layer reads "this program", as the rows elsewhere on the page do.
         named = {"this " + own_label.split(" ", 1)[0] if s == own_label else s for s in sources}
         return ", ".join(sorted(named)) or "labs default"
 
@@ -134,12 +137,62 @@ def _supply_landing(got, scope, tabs: list[dict]) -> str:
         except (TypeError, ValueError):
             in_field = False
         if in_field:
-            return f"Supply opens on {field}, because this programme's workers hold stock. Set `landing` to change it."
-        return "Supply opens on Overview: no worker in this programme holds stock. Set `landing` to change it."
+            return f"Supply opens on {field}, because this program's workers hold stock. Set `landing` to change it."
+        return "Supply opens on Overview: no worker in this program holds stock. Set `landing` to change it."
     return (
-        f"Each programme opens on {field} if its workers hold stock, otherwise on Overview. "
+        f"Each program opens on {field} if its workers hold stock, otherwise on Overview. "
         "Set `landing` to choose one tab for them all."
     )
+
+
+def _home_picker(request, scope, got) -> dict:
+    """The `labs` section's home picker: this scope's pages (workflow/page_manager.py), and which is home here."""
+    from connect_labs.workflow.page_manager import list_pages
+    from connect_labs.workflow.page_views import pages_url
+
+    try:
+        pages = list_pages(request, scope)["pages"]
+    except Exception:  # noqa: BLE001 -- Connect unreachable: the JSON below still sets a home
+        logger.warning("Settings: could not list %s's pages", scope, exc_info=True)
+        pages = None
+    fill = (got["data"].get("home") or {}).get("fill") or {}
+    current = ""
+    for page in pages or []:
+        if fill and int(fill.get("workflow") or 0) == page["id"] and page["is_home"]:
+            current = f"{page['owner'].token}:{page['id']}"
+    choices = [
+        {"value": f"{p['owner'].token}:{p['id']}", "label": f"{p['name']} · {p['owner'].label}"} for p in pages or []
+    ]
+    if fill and not current:
+        # Set to a page not in this list (kept elsewhere, or unreadable here): keep it choosable.
+        current = "keep"
+        choices.insert(0, {"value": "keep", "label": f"Page {fill.get('workflow')} (as set)"})
+    inherited = not fill and bool((got["value"].get("home") or {}).get("fill"))
+    return {
+        "choices": choices,
+        "current": current,
+        "inherited": inherited,
+        "inherited_from": got["provenance"].get("home.fill.workflow", ""),
+        "unavailable": pages is None,
+        "pages_url": pages_url(scope),
+    }
+
+
+def _set_home(request, scope, choice: str, version: int) -> None:
+    """Settings' home picker: "<owner type>:<owner key>:<page id>", "" for none, "keep" for unchanged."""
+    from connect_labs.workflow import page_manager
+
+    if choice == "keep":
+        return
+    if not choice:
+        page_manager.set_home(request, scope, None, None, version=version)
+        return
+    token, _, page_id = choice.rpartition(":")
+    owner = page_manager.owner_from_token(request, scope, token, service.tree_for(_caller(request)))
+    if owner is None or not page_id.isdigit():
+        raise service.Invalid("choose one of this scope's pages")
+    label = next((p["name"] for p in page_manager.list_pages(request, scope)["pages"] if p["id"] == int(page_id)), "")
+    page_manager.set_home(request, scope, owner, int(page_id), label=label, version=version)
 
 
 class SettingsView(LoginRequiredMixin, TemplateView):
@@ -169,11 +222,16 @@ class SettingsView(LoginRequiredMixin, TemplateView):
                     "history": service.history(namespace.key, scope, caller, limit=20) if got["settable_here"] else [],
                     "supply_tabs": supply_tabs,
                     "supply_landing": _supply_landing(got, scope, supply_tabs) if supply_tabs else "",
+                    "home_picker": (
+                        _home_picker(self.request, scope, got)
+                        if namespace.key == "labs" and got["settable_here"] and not write_note
+                        else None
+                    ),
                 }
             )
         context.update(scope=scope, scope_label=sections[0]["got"]["scope"]["label"] if sections else str(scope))
         context["sections"] = sections
-        context["scope_noun"] = {"organization": "organisation", "program": "programme"}.get(scope.type, scope.type)
+        context["scope_noun"] = {"organization": "organisation", "program": "program"}.get(scope.type, scope.type)
         return context
 
     def post(self, request, *args, **kwargs):
@@ -212,6 +270,9 @@ class SettingsView(LoginRequiredMixin, TemplateView):
                     namespace, scope, caller, change_id=_number(request.POST, "change_id"), via="settings:undo"
                 )
                 messages.success(request, "Undone.")
+            elif action == "set_home":
+                _set_home(request, scope, request.POST.get("home", ""), version)
+                messages.success(request, "Saved.")
             elif action in ("hide_tab", "show_tab"):
                 key = request.POST.get("tab", "")
                 current = (service.get(namespace, scope, caller)["data"].get("tabs") or {}).get(key) or {}

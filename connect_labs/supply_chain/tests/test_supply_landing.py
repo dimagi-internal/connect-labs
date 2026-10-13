@@ -179,4 +179,4 @@ def test_settings_says_any_other_programme_opens_on_the_overview(client_in_progr
 def test_settings_names_a_chosen_landing_and_who_chose_it(client_in_programme):
     _set({"landing": "supply_chain:orders"})
     line = _landing_line(client_in_programme)
-    assert "opens on Orders" in line and "this programme" in line
+    assert "opens on Orders" in line and "this program" in line

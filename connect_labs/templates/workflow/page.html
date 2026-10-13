@@ -25,7 +25,14 @@ out -- the scope's Settings (for whoever can change them) and the rest of labs.
     <a href="{% url 'labs:overview' %}" class="hover:text-gray-700">Labs</a>
     <i class="fa-solid fa-chevron-right text-xs"></i>
     <span class="text-gray-900" data-testid="labs-page-scope">{{ page_scope_label }}</span>
-    <span class="ml-auto flex items-center gap-3">
+    <span class="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1 whitespace-nowrap">
+      {% if page_make_home %}
+      <form method="post" action="{{ page_manager_url }}" class="inline">{% csrf_token %}
+        <input type="hidden" name="workflow" value="{{ page_make_home.workflow }}"><input type="hidden" name="owner" value="{{ page_make_home.owner }}"><input type="hidden" name="label" value="{{ definition.name }}"><input type="hidden" name="return_to" value="home">
+        <button name="action" value="make_home" data-testid="labs-page-make-home" class="text-brand-indigo hover:underline">Make this the home page</button>
+      </form>
+      {% endif %}
+      {% if page_manager_url %}<a data-testid="labs-page-pages" href="{{ page_manager_url }}" class="text-brand-indigo hover:underline">Pages</a>{% endif %}
       {% if page_settings_url %}<a data-testid="labs-page-settings" href="{{ page_settings_url }}" class="text-brand-indigo hover:underline">Settings</a>{% endif %}
       {% if page_edit_url %}<a data-testid="labs-page-edit" href="{{ page_edit_url }}" class="text-brand-indigo hover:underline">Edit page</a>{% endif %}
     </span>
