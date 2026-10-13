@@ -40,7 +40,10 @@ checked in the frame first. ``LABS_WORKFLOW_SANDBOX`` says how far it has gone:
 * ``"all"`` -- every workflow, whatever its definition says, except the few live
   copies of a DEPRECATED template named in ``DEPRECATED_UNSANDBOXED`` below (by id,
   on their opportunity: an author cannot add one), and only while the code they draw
-  is one of that template's own shipped versions.
+  is one of that template's own shipped versions; and the few copies with a RECORDED
+  exemption (``models.SandboxExemption``, written only by
+  ``manage.py workflow_sandbox_exempt``), only on the owner it names and only while the
+  code they draw hashes to the digest it recorded -- any edit voids it.
 
 There is no per-workflow opt-out (an author must not be able to take a workflow out of
 the frame): ``config.sandbox: false`` means nothing.
@@ -171,6 +174,62 @@ def deprecated_exempt(definition, render_code=None) -> bool:
     return pin in DEPRECATED_UNSANDBOXED
 
 
+def definition_owner(definition) -> str:
+    """A definition's owner as the scan names it: ``opportunity:<id>``, else
+    ``program:<id>``, else ``organization:<id>``."""
+    for attr in ("opportunity_id", "program_id", "organization_id"):
+        value = getattr(definition, attr, None)
+        if value is not None and value != "":
+            return f"{attr.split('_')[0]}:{value}"
+    return "unscoped"
+
+
+def _exemption_row(definition):
+    """The ``SandboxExemption`` recorded for this definition's id, or None. Fail closed: a
+    lookup that cannot be made is no exemption."""
+    try:
+        def_id = int(getattr(definition, "id", None))
+    except (TypeError, ValueError):
+        return None
+    try:
+        from connect_labs.workflow.models import SandboxExemption
+
+        return SandboxExemption.objects.filter(definition_id=def_id).first()
+    except Exception:  # noqa: BLE001 -- no table, no database: sandboxed
+        return None
+
+
+def recorded_exemption(definition, render_code=None):
+    """``(row, holds)``: the exemption recorded for this definition's id, and whether it
+    holds for this render -- the same owner, drawing code whose digest is the one recorded.
+    ``(None, False)`` when there is none."""
+    row = _exemption_row(definition)
+    if row is None:
+        return None, False
+    if not isinstance(render_code, str) or not render_code.strip():
+        return row, False
+    if row.owner() != definition_owner(definition):
+        return row, False
+    return row, render_code_digest(render_code) == row.render_code_sha256
+
+
+def sandbox_exemption(definition, render_code=None) -> dict | None:
+    """Why this WORKFLOW stays out of the frame under ``all``, or None when it does not.
+
+    ``{"kind": "deprecated" | "recorded", "reason": ...}``. Not asked for a page: pages
+    are always sandboxed (``should_sandbox`` decides them first).
+    """
+    if deprecated_exempt(definition, render_code):
+        return {
+            "kind": "deprecated",
+            "reason": "a live copy of a deprecated template, drawing code labs shipped",
+        }
+    row, holds = recorded_exemption(definition, render_code)
+    if holds:
+        return {"kind": "recorded", "reason": row.reason, "added_by": row.added_by}
+    return None
+
+
 def _template_is_sandboxed(key) -> bool:
     from connect_labs.workflow.templates import TEMPLATES
 
@@ -188,7 +247,11 @@ def workflow_wants_sandbox(definition, request=None, mode: str | None = None, re
     if mode == "all":
         if request is not None and request.GET.get("sandbox") == "1":
             return True
-        return not deprecated_exempt(definition, render_code)
+        # Edit mode draws code typed in the editor (or returned by the AI chat) that no
+        # exemption hashed: an exemption covers only the code it recorded, so never edit mode.
+        if request is not None and request.GET.get("edit") == "true":
+            return True
+        return sandbox_exemption(definition, render_code) is None
     if mode == "off":
         return False
     data = getattr(definition, "data", None) or {}

@@ -44,6 +44,18 @@ valve, **not** a DB-connection governor, and a value tight enough to bound RDS
 connections would 503 real users. Context and the open policy decision are in
 #1152; the incident that motivated it is #1060.
 
+## `LABS_WORKFLOW_SANDBOX` — how far workflows run in the sandbox frame
+
+`web.json` pins `LABS_WORKFLOW_SANDBOX: "opt_in"`, the code default
+(`config/settings/base.py`), so the rollout stage is a reviewed value here rather than
+whatever the setting's default happens to be. `off` sandboxes no workflow (pages still
+are), `opt_in` sandboxes checked templates' followers and opted-in copies, `all`
+sandboxes every workflow except the pinned deprecated copies and the copies with a
+recorded exemption (`manage.py workflow_sandbox_exempt`). Read
+`connect_labs/workflow/sandbox.py` and run `workflow_sandbox_scan` before moving it to
+`all`. Only the web service draws workflows, and `run-labs-command.yml` runs on the web
+task definition, so `worker.json` does not carry it.
+
 ## `TELEMETRY_SAMPLE_RATE` / `TELEMETRY_SAMPLE_PATH_PREFIX` — the unbiased sample
 
 Request telemetry is otherwise threshold-gated: a line exists only because the
