@@ -175,13 +175,29 @@ jobs:
           # had no logs:* permission at all, so every run of this workflow
           # reported "(no log events found)" and the actual output (including
           # tracebacks from failed commands) was never visible here.
+          # Every page of the stream, one event per line. get-log-events returns
+          # at most 1 MB / 10,000 events a call; reading one page cut a long
+          # command's output off mid-run, so a report printed at the end never
+          # appeared. The stream is read to its end, when the forward token stops
+          # changing.
+          read_stream() {
+            local token="" next page
+            while :; do
+              page=$(aws logs get-log-events \
+                --log-group-name "$LOG_GROUP" \
+                --log-stream-name "$LOG_STREAM" \
+                --start-from-head \
+                ${token:+--next-token "$token"} \
+                --output json) || return 1
+              printf '%s' "$page" | jq -r '.events[].message'
+              next=$(printf '%s' "$page" | jq -r '.nextForwardToken')
+              [ "$next" = "$token" ] && return 0
+              token="$next"
+            done
+          }
           OUT=""
           for i in 1 2 3 4 5 6 7 8; do
-            OUT=$(aws logs get-log-events \
-              --log-group-name "$LOG_GROUP" \
-              --log-stream-name "$LOG_STREAM" \
-              --start-from-head \
-              --query 'events[*].message' --output text) || {
+            OUT=$(read_stream) || {
                 echo "::warning::could not read $LOG_STREAM (see error above); retrying"
                 OUT=""
               }
