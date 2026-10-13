@@ -2402,7 +2402,7 @@ What only a run has, so a page cannot: `updateState` to a run, `view.complete`, 
 A workflow's render code can run in the same sandboxed frame as a page's ([§16](#16-pages-the-scope-prop-and-settings); spec `docs/superpowers/specs/2026-10-12-page-sandbox-design.md`, "Phase 2"): an opaque origin with no labs session, so the code cannot mint a token, call an endpoint as the viewer, or read anything the labs page around it does not hand it. **It is rolled out per workflow** (`LABS_WORKFLOW_SANDBOX`, default `opt_in`):
 
 - a workflow whose definition says `config.sandbox: true` -- every new instance of a template whose `TEMPLATE["sandboxed"]` is set, since its `DEFINITION` carries the key;
-- a workflow that **follows** such a template (`render_source: {"template": key}`);
+- a workflow that **follows** such a template (`render_source: {"template": key}`); the checked templates are listed in `SANDBOX_CHECKED` (`workflow/templates/__init__.py`);
 - any workflow opened with `?sandbox=1` on its address (it can only turn the sandbox on);
 - every workflow once the setting is `all`. There is no per-workflow opt-out (`config.sandbox: false` means nothing: an author must not be able to take a workflow out of the frame); `LABS_WORKFLOW_SANDBOX=off` is the emergency switch, for all of them.
 

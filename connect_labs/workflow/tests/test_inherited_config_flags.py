@@ -13,7 +13,7 @@ a named list of the flags someone has already been bitten by.
 
 import copy
 
-from connect_labs.workflow.templates import TEMPLATES, with_inherited_config_flags
+from connect_labs.workflow.templates import _NOT_INHERITED, TEMPLATES, with_inherited_config_flags
 
 # A template whose config is EMPTY, so "declares nothing" has a real subject.
 # Asserted below rather than assumed, because the identity guarantee this file
@@ -22,7 +22,10 @@ NO_CONFIG_TEMPLATE = "ocs_outreach"
 
 
 def test_the_no_config_template_really_declares_no_config():
-    assert not ((TEMPLATES[NO_CONFIG_TEMPLATE].get("definition") or {}).get("config") or {})
+    # `sandbox` (a checked template's gate, templates/__init__.py SANDBOX_CHECKED) is
+    # never inherited, so it does not count as config here.
+    config = (TEMPLATES[NO_CONFIG_TEMPLATE].get("definition") or {}).get("config") or {}
+    assert not {k: v for k, v in config.items() if k not in _NOT_INHERITED}
 
 
 def test_an_instance_stamped_before_the_flag_inherits_it():
@@ -46,7 +49,7 @@ def test_it_inherits_every_key_the_template_declares_not_a_named_list():
     stale = {"config": {"templateType": "kmc_flw_review"}}
     out = with_inherited_config_flags(stale, "kmc_flw_review")
     for key, value in declared.items():
-        if key == "templateType":
+        if key == "templateType" or key in _NOT_INHERITED:
             continue
         assert out["config"][key] == value, f"{key!r} did not reach the stale instance"
 

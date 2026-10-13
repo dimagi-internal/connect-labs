@@ -493,8 +493,38 @@ fails without it (`components/workflow/sandbox/workflow_sandbox.test.js`,
 - **Clickjacking-style prompts.** An author can time an effect request to a click. The
   question names the kind of write in labs' words; it does not name the rows.
 
-### Verified (locally, Chromium, gstack browse, 2026-10-12)
+### Verified (locally, 2026-10-12/13), and the rollout state
 
-See the PR for the table: every deployed template drawn sandboxed and unsandboxed against the
-same local data, text compared, console checked for refused routes; the probe list run on a
-workflow route.
+Against a local server (labs-only opportunity, a fixture of plausible pipeline rows and four
+workers per workflow, so both renders get identical data):
+
+- **Every deployed template** (the 41 non-deprecated, non-page ones) drawn plain and with
+  `?sandbox=1`: identical visible text for all 41 and no sandbox-only console error, after the
+  review fixes. Pages `page_blank` and `supply_program_home` drawn in the unified frame.
+- **Clicks**, plain vs sandboxed, identical after every click, on the priority set:
+  `supply_stock_review`, `supply_stock_forecast`, `kmc_programme_metrics` (29 clicks: tabs,
+  sorts, column-definition dialog, copy, the full statement), `kmc_opp_report`,
+  `kmc_flw_review`, the indicator trio, `mbw_auditing_v5`, `audit_with_ai_review`,
+  `program_admin_report`, `performance_review`. `performance_review` by hand: a status change
+  saved to the run; "Mark Run Complete" made labs ask (the page's text quoted), completed the
+  run and re-drew it from its snapshot.
+- **Probes on a workflow route** in Chromium, Firefox and WebKit (Playwright), all blocked,
+  and no request reached the server: `POST /labs/mcp/tokens/create/` (and a pristine `fetch`
+  from an `about:blank` child), the token page, a render-code write, a declared action's run
+  endpoint, another run's state, XHR to labs, fetch / sendBeacon / img to another host,
+  `document.cookie`, `parent.document`, `top.location`, labs' `localStorage`, `window.open`,
+  `location = <other host>` (the frame-src refuses it; Chromium and WebKit then stop the
+  frame), `top.location = ...`, an undeclared `runAction`; a click on "create task" made labs
+  ask and a no stopped it. `RTCPeerConnection` is there (the residual).
+
+**Marked as checked** (`SANDBOX_CHECKED`, workflow/templates/__init__.py): 40 templates, so
+their followers and every new instance run in the frame once this is deployed. Left out:
+`kmc_image_audit`, whose render reads audits for the opportunities in its own
+`config.opp_meta` rather than its `opportunity_ids` (the frame binds reads to the latter, and
+an author-written list cannot widen that); it needs the two reconciled.
+
+**Still to do before `all`:** a labs deploy and a live check there (Jonathan's session, the
+priority templates with real data); a scan of live COPIES (own render code) for
+`window.location =`, `window.confirm(` and fetches the table refuses -- those stay out until
+they opt in; then `LABS_WORKFLOW_SANDBOX=all`. Follow-ups: bind cross-workflow reads to the
+definitions a workflow declares; declared actions on pages (a scope instead of a run).
