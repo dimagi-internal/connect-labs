@@ -9,7 +9,7 @@ import logging
 
 from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.http import HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -30,7 +30,75 @@ from connect_labs.microplans.view_helpers import (
 logger = logging.getLogger(__name__)
 
 
-class _LabsContextSyncMixin:
+class _ProgramScopeMixin:
+    """Refuse a labs-only program (or opportunity) in the URL that this user may
+    not use, before the view runs.
+
+    A labs-only program's plans live in the labs DB with no Connect membership
+    check behind them, so this is that check (``microplans.access``). Every view
+    whose URL carries ``program_id`` or ``opp_id`` uses this mixin -- a test walks
+    the URLconf to keep it that way. Real programs and opportunities pass straight
+    through: Connect enforces those per request, as before.
+
+    Answers 404, never 403, so a refusal does not confirm the program exists.
+    """
+
+    # The labs context picker follows the URL's program/opportunity on pages
+    # (see _LabsContextSyncMixin); JSON endpoints leave the session alone.
+    sync_labs_context = False
+
+    def dispatch(self, request, *args, **kwargs):
+        if getattr(request, "user", None) is not None and request.user.is_authenticated:
+            refusal = self._refuse_denied_scope(request, kwargs)
+            if refusal is not None:
+                return refusal
+            if self.sync_labs_context:
+                self._sync_labs_context(request, kwargs)
+        return super().dispatch(request, *args, **kwargs)
+
+    def _refuse_denied_scope(self, request, kwargs):
+        from connect_labs.microplans.access import record_denial, scope_denied_reason
+
+        scope = {"program_id": kwargs.get("program_id"), "opportunity_id": kwargs.get("opp_id")}
+        denied = scope_denied_reason(request.user, **scope)
+        if not denied:
+            return None
+        record_denial(reason=denied, user=request.user, **scope)
+        if isinstance(self, TemplateView):
+            raise Http404("Not found.")
+        return JsonResponse({"status": "error", "detail": "Not found."}, status=404)
+
+    def _sync_labs_context(self, request, kwargs):
+        from connect_labs.labs.context import save_context_to_session, validate_context_access
+
+        ctx = {}
+        if "program_id" in kwargs:
+            ctx["program_id"] = int(kwargs["program_id"])
+        elif "opp_id" in kwargs:
+            ctx["opportunity_id"] = int(kwargs["opp_id"])
+        if not ctx:
+            return
+        validated = validate_context_access(request, ctx) or {}
+        # If the cached OAuth org_data didn't include this program/opp,
+        # validate gives us the id but no display object — synthesize a
+        # minimal one so the picker pill at least shows the URL's program
+        # rather than leaving the previous selection stuck on screen. (A
+        # labs-only scope this user may not use never gets here: dispatch
+        # refused it first.)
+        if "program_id" in ctx and "program" not in validated:
+            validated["program_id"] = ctx["program_id"]
+            validated["program"] = {"id": ctx["program_id"], "name": f"Program #{ctx['program_id']}"}
+        if "opportunity_id" in ctx and "opportunity" not in validated:
+            validated["opportunity_id"] = ctx["opportunity_id"]
+            validated["opportunity"] = {
+                "id": ctx["opportunity_id"],
+                "name": f"Opportunity #{ctx['opportunity_id']}",
+            }
+        request.labs_context = validated
+        save_context_to_session(request, ctx)
+
+
+class _LabsContextSyncMixin(_ProgramScopeMixin):
     """Sync the labs context picker pill to the program_id / opp_id in this view's
     URL kwargs. Without it, the picker stays on "Select Context" on every
     microplans page because the labs middleware reads context from query params
@@ -38,38 +106,15 @@ class _LabsContextSyncMixin:
     Result: users had to manually pick the program in the context picker even
     though the URL already says which program they're on. Now the picker just
     reflects the page on first load.
+
+    Runs the program access check first (``_ProgramScopeMixin``), so the picker is
+    only ever synced to a program the user may use.
     """
 
-    def dispatch(self, request, *args, **kwargs):
-        if getattr(request, "user", None) is not None and request.user.is_authenticated:
-            from connect_labs.labs.context import save_context_to_session, validate_context_access
-
-            ctx = {}
-            if "program_id" in kwargs:
-                ctx["program_id"] = int(kwargs["program_id"])
-            elif "opp_id" in kwargs:
-                ctx["opportunity_id"] = int(kwargs["opp_id"])
-            if ctx:
-                validated = validate_context_access(request, ctx) or {}
-                # If the cached OAuth org_data didn't include this program/opp,
-                # validate gives us the id but no display object — synthesize a
-                # minimal one so the picker pill at least shows the URL's program
-                # rather than leaving the previous selection stuck on screen.
-                if "program_id" in ctx and "program" not in validated:
-                    validated["program_id"] = ctx["program_id"]
-                    validated["program"] = {"id": ctx["program_id"], "name": f"Program #{ctx['program_id']}"}
-                if "opportunity_id" in ctx and "opportunity" not in validated:
-                    validated["opportunity_id"] = ctx["opportunity_id"]
-                    validated["opportunity"] = {
-                        "id": ctx["opportunity_id"],
-                        "name": f"Opportunity #{ctx['opportunity_id']}",
-                    }
-                request.labs_context = validated
-                save_context_to_session(request, ctx)
-        return super().dispatch(request, *args, **kwargs)
+    sync_labs_context = True
 
 
-class PreviewFrameView(LoginRequiredMixin, View):
+class PreviewFrameView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Enqueue the sampling preview for the drawn area(s) and return a task id.
 
     The first fetch for an area hits Overture S3 (~tens of seconds), which used
@@ -96,7 +141,7 @@ class PreviewFrameView(LoginRequiredMixin, View):
         return _queued(generate_frame_task.delay(areas, config_payload))
 
 
-class PreviewCoverageView(LoginRequiredMixin, View):
+class PreviewCoverageView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Enqueue the coverage-mode preview (balanced/grid clusters → polygons).
 
     Same offload contract as :class:`PreviewFrameView`: validate synchronously,
@@ -121,7 +166,7 @@ class PreviewCoverageView(LoginRequiredMixin, View):
         return _queued(generate_coverage_task.delay(areas, config_payload))
 
 
-class PreviewFootprintsView(LoginRequiredMixin, View):
+class PreviewFootprintsView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Enqueue a building-footprints fetch (as point features) for the area(s).
 
     Used by the "Show building footprints" toggle to sanity-check an area before
@@ -144,7 +189,7 @@ class PreviewFootprintsView(LoginRequiredMixin, View):
         return _queued(fetch_footprints_task.delay(areas))
 
 
-class PreviewAreaStatsView(LoginRequiredMixin, View):
+class PreviewAreaStatsView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Enqueue per-area building counts (by provider) for the setup planning table.
 
     Same offload/poll contract as the other previews. The table's name/population/
@@ -199,7 +244,7 @@ class PreviewStatusView(LoginRequiredMixin, View):
         return JsonResponse({"state": state.lower(), "message": f"Status: {state}"})
 
 
-class CompareSurroundingView(LoginRequiredMixin, View):
+class CompareSurroundingView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Enqueue the surrounding-ward control finder for the selected boundary.
 
     Given the intervention ward the planner has selected, score every same-level
@@ -291,7 +336,7 @@ class CountriesView(LoginRequiredMixin, View):
         return JsonResponse({"status": "ok", "countries": iso.all_countries(), "bespoke": bespoke})
 
 
-class AdminAreasView(LoginRequiredMixin, View):
+class AdminAreasView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """List admin areas for a country/level via the boundary resolver.
 
     POST body: {country, level, q?, parent?, source?}. `parent` is an AdminArea
@@ -345,7 +390,7 @@ class AdminAreasView(LoginRequiredMixin, View):
         )
 
 
-class AdminAreaGeometryView(LoginRequiredMixin, View):
+class AdminAreaGeometryView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Resolve one chosen admin area to its GeoJSON geometry (the sampling boundary)."""
 
     def post(self, request, opp_id):
@@ -367,7 +412,7 @@ class AdminAreaGeometryView(LoginRequiredMixin, View):
         return JsonResponse({"status": "ok", "name": area.name, "geometry": geom})
 
 
-class PopulationByNameView(LoginRequiredMixin, View):
+class PopulationByNameView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Best-effort population lookup for wards known only by name.
 
     Used by an uploaded boundary file (GeoJSON carrying wardname/lganame/
@@ -550,7 +595,7 @@ class ProgramWorkspaceView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateVi
         return context
 
 
-class ProgramPlansAPIView(LoginRequiredMixin, View):
+class ProgramPlansAPIView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """JSON: the program's plans (+ headline KPIs) and groups, for the workspace."""
 
     def get(self, request, program_id):
@@ -592,7 +637,7 @@ class ProgramPlansAPIView(LoginRequiredMixin, View):
         )
 
 
-class ProgramCreatePlanView(LoginRequiredMixin, View):
+class ProgramCreatePlanView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Create a Draft plan in the program from a generated frame (region + geometry)."""
 
     def post(self, request, program_id):
@@ -689,7 +734,7 @@ class ProgramCreatePlanView(LoginRequiredMixin, View):
         return JsonResponse(resp)
 
 
-class ProgramGroupBulkCreateFromBoundariesView(LoginRequiredMixin, View):
+class ProgramGroupBulkCreateFromBoundariesView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Create one boundary-only ward-plan per selected admin boundary, filed into a
     study (group), from the map "Add wards from map" surface.
 
@@ -770,7 +815,7 @@ class ProgramGroupBulkCreateFromBoundariesView(LoginRequiredMixin, View):
         return JsonResponse(resp)
 
 
-class ProgramPlanTransitionView(LoginRequiredMixin, View):
+class ProgramPlanTransitionView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Advance a plan's lifecycle status (Deploy binds the live opportunity_id)."""
 
     def post(self, request, program_id, plan_id):
@@ -807,7 +852,7 @@ class ProgramPlanTransitionView(LoginRequiredMixin, View):
         )
 
 
-class ProgramPlanDeleteView(LoginRequiredMixin, View):
+class ProgramPlanDeleteView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Hard-delete a plan record. POST → 204. Used for wiping sample data; the
     safer default for normal lifecycle is the Archive status transition."""
 
@@ -825,7 +870,7 @@ class ProgramPlanDeleteView(LoginRequiredMixin, View):
         return JsonResponse({"status": "ok", "plan_id": int(plan_id)})
 
 
-class ProgramGroupDeleteView(LoginRequiredMixin, View):
+class ProgramGroupDeleteView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Hard-delete a plan group record (sample-data wipe)."""
 
     def post(self, request, program_id, group_id):
@@ -842,7 +887,7 @@ class ProgramGroupDeleteView(LoginRequiredMixin, View):
         return JsonResponse({"status": "ok", "group_id": int(group_id)})
 
 
-class ProgramGroupsAPIView(LoginRequiredMixin, View):
+class ProgramGroupsAPIView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Create a plan group (a shareable subset offered to an LLO)."""
 
     def post(self, request, program_id):
@@ -870,7 +915,7 @@ class ProgramGroupsAPIView(LoginRequiredMixin, View):
         return JsonResponse({"status": "ok", "group_id": group.id})
 
 
-class ProgramGroupUpdateView(LoginRequiredMixin, View):
+class ProgramGroupUpdateView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Update a plan group (rename, change plans, set offered_to, share)."""
 
     def post(self, request, program_id, group_id):
@@ -1113,7 +1158,7 @@ class ProgramGroupAddFromMapView(_LabsContextSyncMixin, LoginRequiredMixin, Temp
         return context
 
 
-class ProgramGroupGenerateView(LoginRequiredMixin, View):
+class ProgramGroupGenerateView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Run the rooftop sampling engine across all of a group's member plans (bulk).
 
     Enqueues ``generate_group_samples_task`` with the group's shared sampling
@@ -1347,7 +1392,7 @@ class ProgramReviewView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView)
         return context
 
 
-class ProgramPlanView(LoginRequiredMixin, View):
+class ProgramPlanView(_ProgramScopeMixin, LoginRequiredMixin, View):
     def get(self, request, program_id, plan_id):
         from connect_labs.microplans.core.data_access import ProgramPlanDataAccess
 
@@ -1383,7 +1428,7 @@ class ProgramPlanView(LoginRequiredMixin, View):
         return JsonResponse({"status": "ok", "deleted": int(plan_id)})
 
 
-class ProgramPlanEditView(LoginRequiredMixin, View):
+class ProgramPlanEditView(_ProgramScopeMixin, LoginRequiredMixin, View):
     def post(self, request, program_id, plan_id):
         from connect_labs.microplans.core.data_access import ProgramPlanDataAccess, StalePlanError
         from connect_labs.microplans.core.plan import ACTIONS
@@ -1422,7 +1467,7 @@ class ProgramPlanEditView(LoginRequiredMixin, View):
         return JsonResponse(serialization.plan_to_json(plan))
 
 
-class ProgramPlanAreaTargetsView(LoginRequiredMixin, View):
+class ProgramPlanAreaTargetsView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Set per-area expected-visit targets {ward: total_expected_visits} and re-spread
     them across each area's retained buildings (#9/#15)."""
 
@@ -1452,7 +1497,7 @@ class ProgramPlanAreaTargetsView(LoginRequiredMixin, View):
         return JsonResponse(serialization.plan_to_json(plan))
 
 
-class ProgramPlanFootprintsView(LoginRequiredMixin, View):
+class ProgramPlanFootprintsView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Building footprints (polygons + centroids) inside a saved plan's area.
 
     Used by the review-page 'Show footprints' toggle. Prefers the plan's stored
@@ -1525,7 +1570,7 @@ class ProgramPlanFootprintsView(LoginRequiredMixin, View):
         return resp
 
 
-class ProgramPlanReassignView(LoginRequiredMixin, View):
+class ProgramPlanReassignView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Phase-2 op: re-apply the assignment strategy to a plan's groups (Celery-offloaded).
 
     Body: ``{"strategy", "workers", "restarts", "seed", "revision"}``. See
@@ -1544,7 +1589,7 @@ class ProgramPlanReassignView(LoginRequiredMixin, View):
         )
 
 
-class ProgramPlanRegenerateView(LoginRequiredMixin, View):
+class ProgramPlanRegenerateView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Destructive regenerate: wipe + rebuild a plan's work areas (Celery-offloaded).
     Same body shape as ProgramCreatePlanView sans name/region. Keeps the plan id;
     CHW assignments + per-area edits are reset."""
@@ -1581,7 +1626,7 @@ class ProgramPlanRegenerateView(LoginRequiredMixin, View):
         )
 
 
-class ProgramPlanRegroupView(LoginRequiredMixin, View):
+class ProgramPlanRegroupView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Phase-1 op: re-apply the grouping strategy to a plan's cells (Celery-offloaded).
 
     Body: ``{"strategy", "target_buildings", "buffer_distance_m", "target_size", "revision",
@@ -1603,7 +1648,7 @@ class ProgramPlanRegroupView(LoginRequiredMixin, View):
         )
 
 
-class ProgramPlanFootprintsRefreshView(LoginRequiredMixin, View):
+class ProgramPlanFootprintsRefreshView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Force a refresh of the footprint cache for this plan's area.
 
     Used to upgrade plans cached in the centroid-only era (pre-`geom_json`) to
@@ -1628,7 +1673,7 @@ class ProgramPlanFootprintsRefreshView(LoginRequiredMixin, View):
         return JsonResponse({"status": "ok", "deleted": deleted})
 
 
-class ProgramPlanCSVView(LoginRequiredMixin, View):
+class ProgramPlanCSVView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Serve the plan's work areas as a Connect-import CSV.
 
     Connect's WorkAreaCSVImporter REQUIRES non-empty LGA + State on every row (see
@@ -1729,7 +1774,7 @@ class ProgramSetupView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
         return context
 
 
-class ProgramComparePlansView(LoginRequiredMixin, View):
+class ProgramComparePlansView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Compare N program plans' KPIs side by side. Returns per-plan KPIs so the UI
     can stack them with deltas; no composite score (the metrics themselves are the
     comparison)."""
@@ -1825,7 +1870,7 @@ class _ServiceDeliveryMixin:
         return ids
 
 
-class PreviewServiceDeliveryView(_ServiceDeliveryMixin, LoginRequiredMixin, View):
+class PreviewServiceDeliveryView(_ProgramScopeMixin, _ServiceDeliveryMixin, LoginRequiredMixin, View):
     """Fetch service-delivery GPS points for one or more opportunities.
 
     POST {opp_ids: [int], pipeline_id?: int}. Each opp's points are fetched via
@@ -1902,7 +1947,7 @@ class PreviewServiceDeliveryView(_ServiceDeliveryMixin, LoginRequiredMixin, View
         return JsonResponse(body)
 
 
-class ServiceDeliveryPipelinesView(LoginRequiredMixin, View):
+class ServiceDeliveryPipelinesView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """List visit-level pipelines the user can pick instead of the default GPS one."""
 
     def get(self, request, opp_id):
@@ -1920,7 +1965,7 @@ class ServiceDeliveryPipelinesView(LoginRequiredMixin, View):
         return JsonResponse({"status": "ok", "pipelines": pipelines})
 
 
-class DeriveBoundaryView(LoginRequiredMixin, View):
+class DeriveBoundaryView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Derive a boundary polygon from a posted service-delivery point cloud.
 
     POST {coords: [[lon,lat],...], method?, concavity?, buffer_m?}. Returns the
@@ -1958,7 +2003,7 @@ class DeriveBoundaryView(LoginRequiredMixin, View):
         )
 
 
-class ArmComparabilityView(LoginRequiredMixin, View):
+class ArmComparabilityView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Comparability for a SINGLE two-arm plan — the same PSU/SMD engine + panel the
     study-group page uses, so both surfaces render one identical comparison.
 
@@ -2037,7 +2082,7 @@ class ProgramBulkCreatePlanPageView(_LabsContextSyncMixin, LoginRequiredMixin, T
         return context
 
 
-class ProgramBulkCreatePlansView(LoginRequiredMixin, View):
+class ProgramBulkCreatePlansView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Enqueue a batch create of N draft plans from confirmed admin boundaries.
 
     Body: ``{"plans": [{"boundary_id", "name"}], "mode", "grouping", "cell_size_m"}``.
