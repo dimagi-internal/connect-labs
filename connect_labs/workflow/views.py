@@ -1009,18 +1009,14 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         )
 
     def _sandbox_workflow_data(self, context, definition, scope, labs_context, page):
-        """A sandboxed page: what the host runner needs to draw the frame, and nothing the
-        frame should not have. Pages get no visit-level pipelines in phase 1 (whatever is
-        handed to the frame can leave it), so the pipeline endpoints are removed, not
-        merely unused. If the page shares with the canopy agent, its panel is set up here."""
+        """A sandboxed page: what the host runner needs to draw the frame. A page gets
+        what a workflow gets (pipelines, workers, the same bridge) except a run. If the
+        page shares with the canopy agent, its panel is set up here."""
         from connect_labs.workflow.sandbox import host_payload
 
         workflow_data = context["workflow_data"]
         workflow_data["sandbox"] = host_payload(self.request)
         workflow_data["mapboxToken"] = settings.MAPBOX_TOKEN or ""
-        workflow_data["pipeline_data"] = {}
-        for key in ("getWorkers", "getPipelineData", "streamPipelineData", "queryPipelineRows", "saveWorkerResult"):
-            workflow_data["apiEndpoints"][key] = None
         if page and not context["present_mode"]:
             self._add_page_agent(context, definition, scope, labs_context)
 
@@ -1154,9 +1150,14 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             # draws it (a page's address, its run URL, edit mode, present mode, a supply tab).
             from connect_labs.workflow.sandbox import should_sandbox
 
-            sandboxed = should_sandbox(definition, page_mode=self.page_mode)
+            sandboxed = should_sandbox(definition, page_mode=self.page_mode, request=self.request)
             context["sandboxed"] = sandboxed
-            if sandboxed or _is_page(definition):
+            # A page and a workflow are handed the same data and the same bridge
+            # (Jonathan, 2026-10-12: "pages should be completely definable like workflows
+            # are"); a page just has no run. What either does with the viewer's session
+            # goes through the host (sandbox/routes.ts).
+            page_sandbox = sandboxed and (self.page_mode or _is_page(definition))
+            if page_sandbox or _is_page(definition):
                 # A page has no runs: a `run_id` on its address names nothing of its own,
                 # so it is never read (another definition's run, snapshot and all, must
                 # not reach a page's frame).
@@ -1186,9 +1187,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
 
             # Bound to a local as well: workflow_data below serialises the same list
             # into the runner payload.
-            # A sandboxed page is handed no per-worker data: whatever reaches the frame is
-            # readable by the page's author (the spec's residual risk).
-            workers = [] if sandboxed else self._load_workers(data_access, effective_opp_ids)
+            workers = self._load_workers(data_access, effective_opp_ids)
             context["workers"] = workers
 
             # Hoisted: flags are loaded only on the run-id branch (live
@@ -1475,6 +1474,9 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             scope = self.page_scope or scope_in_view(labs_context)
             workflow_data = context["workflow_data"]
             workflow_data["is_page"] = page
+            # Staff see whether this render runs in the sandbox, and a link to try it there
+            # (the rollout is per workflow; sandbox.py).
+            workflow_data["viewer_is_staff"] = bool(getattr(self.request.user, "is_staff", False))
             workflow_data["scope"] = page_scope(self.request, scope)
             workflow_data["config"] = page_config(self.request, definition, scope)
             # Other workflows' runs (workflow/workflow_sources.py): the `workflows` prop and
@@ -1484,8 +1486,13 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             if page:
                 for key in RUN_ENDPOINTS:
                     workflow_data["apiEndpoints"][key] = None
-            if sandboxed:
+            if page_sandbox:
                 self._sandbox_workflow_data(context, definition, scope, labs_context, page)
+            elif sandboxed:
+                from connect_labs.workflow.sandbox import host_payload
+
+                workflow_data["sandbox"] = host_payload(self.request, mode="workflow")
+                workflow_data["mapboxToken"] = settings.MAPBOX_TOKEN or ""
 
             # Not in edit mode (no real run), not a page (no run either), and not on a
             # presentation link: a page shared with a funder carries no actions and no agent.

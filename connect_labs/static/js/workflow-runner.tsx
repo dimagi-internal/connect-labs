@@ -15,13 +15,14 @@ import { createRoot } from 'react-dom/client';
 import { DynamicWorkflow } from '@/components/workflow/DynamicWorkflow';
 import { SandboxFrame } from '@/components/workflow/sandbox/SandboxFrame';
 import type { FramePayload } from '@/components/workflow/sandbox/protocol';
+import type { RouteContext } from '@/components/workflow/sandbox/routes';
 import {
   ActionDialog,
   type ActionRequest,
 } from '@/components/workflow/ActionDialog';
 import { AIChat } from '@/components/AIChat';
 import { DEFAULT_RENDER_CODE } from '@/components/workflow/defaultRenderCode';
-import { streamTaskProgress } from './task-progress';
+import { createActionHandlers } from '@/components/workflow/actionHandlers';
 import type {
   WorkflowProps,
   WorkflowDataFromDjango,
@@ -70,6 +71,7 @@ import {
 import { PipelineEditor } from './pipeline-editor';
 import { LabsReport } from '@/components/workflow/report';
 import { createLinkHelpers } from '@/components/workflow/links';
+import { buildRunView } from '@/components/workflow/runView';
 
 // The shared report library, for render code to use at runtime (see
 // components/workflow/report/index.ts). Published before any workflow renders,
@@ -126,561 +128,6 @@ document.addEventListener('canopy:ready', () => {
   if (lastSelection) shareSelection(lastSelection);
 });
 
-function createActionHandlers(csrfToken: string): ActionHandlers {
-  return {
-    createTask: async (params: CreateTaskParams): Promise<TaskResult> => {
-      try {
-        const response = await fetch('/tasks/api/single-create/', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': csrfToken,
-          },
-          body: JSON.stringify({
-            username: params.username,
-            title: params.title,
-            description: params.description || '',
-            priority: params.priority || 'medium',
-            flw_name: params.flw_name || params.username,
-          }),
-        });
-
-        const data = await response.json();
-        return {
-          success: data.success,
-          task_id: data.task_id,
-          error: data.error,
-        };
-      } catch (e) {
-        return {
-          success: false,
-          error: e instanceof Error ? e.message : 'Failed to create task',
-        };
-      }
-    },
-
-    checkOCSStatus: async (): Promise<OCSStatusResult> => {
-      try {
-        const response = await fetch('/labs/workflow/api/ocs/status/');
-        return await response.json();
-      } catch (e) {
-        return {
-          connected: false,
-          error: e instanceof Error ? e.message : 'Failed to check OCS status',
-        };
-      }
-    },
-
-    listOCSBots: async (): Promise<OCSBotsResult> => {
-      try {
-        const response = await fetch('/labs/workflow/api/ocs/bots/');
-
-        if (response.status === 401) {
-          const data = await response.json();
-          return {
-            success: false,
-            needs_oauth: true,
-            error: data.error || 'OCS authentication required',
-          };
-        }
-
-        return await response.json();
-      } catch (e) {
-        return {
-          success: false,
-          error: e instanceof Error ? e.message : 'Failed to list OCS bots',
-        };
-      }
-    },
-
-    initiateOCSSession: async (
-      taskId: number,
-      params: OCSSessionParams,
-    ): Promise<OCSInitiateResult> => {
-      try {
-        const response = await fetch(`/tasks/${taskId}/ai/initiate/`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': csrfToken,
-          },
-          body: JSON.stringify({
-            identifier: params.identifier,
-            experiment: params.experiment,
-            prompt_text: params.prompt_text,
-            platform: params.platform || 'commcare_connect',
-            start_new_session: params.start_new_session ?? true,
-          }),
-        });
-
-        const data = await response.json();
-        return {
-          success: data.success,
-          message: data.message,
-          error: data.error,
-        };
-      } catch (e) {
-        return {
-          success: false,
-          error:
-            e instanceof Error ? e.message : 'Failed to initiate OCS session',
-        };
-      }
-    },
-
-    createTaskWithOCS: async (
-      params: CreateTaskWithOCSParams,
-    ): Promise<TaskWithOCSResult> => {
-      const taskResult =
-        await createActionHandlers(csrfToken).createTask(params);
-      if (!taskResult.success || !taskResult.task_id) {
-        return taskResult;
-      }
-
-      if (params.ocs && taskResult.task_id) {
-        const ocsResult = await createActionHandlers(
-          csrfToken,
-        ).initiateOCSSession(taskResult.task_id, {
-          identifier: params.username,
-          ...params.ocs,
-        });
-        return { ...taskResult, ocs: ocsResult };
-      }
-
-      return taskResult;
-    },
-
-    // Job Management Actions
-    startJob: async (
-      runId: number,
-      jobConfig: Record<string, unknown>,
-    ): Promise<{ success: boolean; task_id?: string; error?: string }> => {
-      try {
-        const response = await fetch(
-          `/labs/workflow/api/run/${runId}/job/start/`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRFToken': csrfToken,
-            },
-            body: JSON.stringify({ job_config: jobConfig }),
-          },
-        );
-
-        return await response.json();
-      } catch (e) {
-        return {
-          success: false,
-          error: e instanceof Error ? e.message : 'Failed to start job',
-        };
-      }
-    },
-
-    cancelJob: async (
-      taskId: string,
-      runId?: number,
-    ): Promise<{ success: boolean; error?: string }> => {
-      try {
-        const response = await fetch(
-          `/labs/workflow/api/job/${taskId}/cancel/`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRFToken': csrfToken,
-            },
-            body: JSON.stringify({ run_id: runId }),
-          },
-        );
-
-        return await response.json();
-      } catch (e) {
-        return {
-          success: false,
-          error: e instanceof Error ? e.message : 'Failed to cancel job',
-        };
-      }
-    },
-
-    deleteRun: async (
-      runId: number,
-    ): Promise<{ success: boolean; error?: string }> => {
-      try {
-        const response = await fetch(
-          `/labs/workflow/api/run/${runId}/delete/`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRFToken': csrfToken,
-            },
-          },
-        );
-
-        return await response.json();
-      } catch (e) {
-        return {
-          success: false,
-          error: e instanceof Error ? e.message : 'Failed to delete run',
-        };
-      }
-    },
-
-    streamJobProgress: (
-      taskId: string,
-      onProgress: (data: {
-        status: string;
-        current_stage?: number;
-        total_stages?: number;
-        stage_name?: string;
-        processed?: number;
-        total?: number;
-        message?: string;
-      }) => void,
-      onItemResult: (item: Record<string, unknown>) => void,
-      onComplete: (results: Record<string, unknown>) => void,
-      onError: (error: string) => void,
-      onCancelled: () => void,
-      // Optional: lets the server read this run's authoritative active_job so a
-      // reconnect to a dead/expired task terminates instead of spinning forever.
-      runId?: number,
-    ): (() => void) => {
-      // Poll-first: hit the JSON status endpoint on an interval instead of holding
-      // an SSE connection. A held stream pins a worker thread for the whole job, and
-      // the ASGI web tier has only WEB_CONCURRENCY workers, so concurrent users (or
-      // per-row streams) starve each other. Polling holds nothing and scales; the
-      // progress it reads is already persisted to run state, so a missed poll is
-      // never a correctness problem. The SSE endpoint remains for opt-in low-latency.
-      const qs = runId != null ? `?run_id=${runId}` : '';
-      return streamTaskProgress(
-        {
-          transport: 'poll',
-          statusUrl: `/labs/workflow/api/job/${taskId}/status.json${qs}`,
-          // SSE fallback target if a caller ever forces transport: 'sse'.
-          streamUrl: `/labs/workflow/api/job/${taskId}/status/${qs}`,
-        },
-        {
-          onProgress: (data) =>
-            onProgress({
-              status: data.status || 'running',
-              current_stage: data.current_stage,
-              total_stages: data.total_stages,
-              stage_name: data.stage_name,
-              processed: data.processed,
-              total: data.total,
-              message: data.message,
-            }),
-          onItemResult,
-          onComplete: (result) => onComplete(result || {}),
-          onError,
-          onCancelled,
-        },
-      );
-    },
-
-    // Audit Creation Actions
-    createAudit: async (config: {
-      opportunities: Array<{ id: number; name?: string }>;
-      criteria: Record<string, unknown>;
-      visit_ids?: number[];
-      flw_visit_ids?: Record<string, number[]>;
-      template_overrides?: Record<string, unknown>;
-      workflow_run_id?: number;
-      ai_agent_id?: string; // Optional AI agent to run after creation
-      ai_auto_apply_actions?: string[]; // Which AI verdicts pre-tag a human result ([] = flag only)
-    }): Promise<{
-      success: boolean;
-      task_id?: string;
-      error?: string;
-    }> => {
-      try {
-        const response = await fetch('/audit/api/audit/create-async/', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': csrfToken,
-          },
-          body: JSON.stringify(config),
-        });
-
-        return await response.json();
-      } catch (e) {
-        return {
-          success: false,
-          error: e instanceof Error ? e.message : 'Failed to create audit',
-        };
-      }
-    },
-
-    getAuditStatus: async (
-      taskId: string,
-    ): Promise<{
-      status: string;
-      message?: string;
-      current_stage?: number;
-      total_stages?: number;
-      stage_name?: string;
-      processed?: number;
-      total?: number;
-      result?: Record<string, unknown>;
-      error?: string;
-    }> => {
-      try {
-        const response = await fetch(`/audit/api/audit/task/${taskId}/status/`);
-        return await response.json();
-      } catch (e) {
-        return {
-          status: 'error',
-          error: e instanceof Error ? e.message : 'Failed to get status',
-        };
-      }
-    },
-
-    streamAuditProgress: (
-      taskId: string,
-      onProgress: (data: {
-        status: string;
-        message?: string;
-        current_stage?: number;
-        total_stages?: number;
-        stage_name?: string;
-        processed?: number;
-        total?: number;
-      }) => void,
-      onComplete: (result: Record<string, unknown>) => void,
-      onError: (error: string) => void,
-    ): (() => void) => {
-      // Poll-first (no held SSE connection — see streamJobProgress). The SSE
-      // stream endpoint stays wired as the opt-in transport / fallback.
-      return streamTaskProgress(
-        {
-          transport: 'poll',
-          statusUrl: `/audit/api/audit/task/${taskId}/status/`,
-          streamUrl: `/audit/api/audit/task/${taskId}/stream/`,
-        },
-        { onProgress, onComplete, onError },
-      );
-    },
-
-    cancelAudit: async (
-      taskId: string,
-    ): Promise<{ success: boolean; error?: string }> => {
-      try {
-        const response = await fetch(
-          `/audit/api/audit/task/${taskId}/cancel/`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRFToken': csrfToken,
-            },
-          },
-        );
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          return {
-            success: false,
-            error: errorData.error || 'Failed to cancel',
-          };
-        }
-
-        return { success: true };
-      } catch (e) {
-        return {
-          success: false,
-          error: e instanceof Error ? e.message : 'Failed to cancel',
-        };
-      }
-    },
-
-    // MBW Monitoring Actions
-    saveWorkerResult: async (
-      runId: number,
-      params: SaveWorkerResultParams,
-    ): Promise<SaveWorkerResultResponse> => {
-      try {
-        const response = await fetch(
-          `/labs/workflow/api/run/${runId}/worker-result/`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRFToken': csrfToken,
-            },
-            body: JSON.stringify(params),
-          },
-        );
-
-        return await response.json();
-      } catch (e) {
-        return {
-          success: false,
-          error:
-            e instanceof Error ? e.message : 'Failed to save worker result',
-        };
-      }
-    },
-
-    completeRun: async (
-      runId: number,
-      params?: CompleteRunParams,
-    ): Promise<CompleteRunResponse> => {
-      try {
-        const response = await fetch(
-          `/labs/workflow/api/run/${runId}/complete/`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRFToken': csrfToken,
-            },
-            body: JSON.stringify(params || {}),
-          },
-        );
-
-        return await response.json();
-      } catch (e) {
-        return {
-          success: false,
-          error: e instanceof Error ? e.message : 'Failed to complete run',
-        };
-      }
-    },
-
-    openTaskCreator: (params: TaskUrlParams): void => {
-      const urlParams = new URLSearchParams();
-      if (params.username) urlParams.set('username', params.username);
-      if (params.title) urlParams.set('title', params.title);
-      if (params.description) urlParams.set('description', params.description);
-      if (params.coaching_prompt)
-        urlParams.set('coaching_prompt', params.coaching_prompt);
-      if (params.workflow_instance_id)
-        urlParams.set(
-          'workflow_instance_id',
-          String(params.workflow_instance_id),
-        );
-      if (params.priority) urlParams.set('priority', params.priority);
-
-      window.open(`/tasks/new/?${urlParams.toString()}`, '_blank');
-    },
-
-    // --- Generic task management handlers (reusable by any workflow template) ---
-
-    getTaskDetail: async (taskId: number): Promise<Record<string, unknown>> => {
-      try {
-        const response = await fetch(`/tasks/api/${taskId}/`, {
-          headers: { 'X-CSRFToken': csrfToken },
-        });
-        try {
-          return await response.json();
-        } catch {
-          return { success: false, error: `Server error: ${response.status}` };
-        }
-      } catch (e) {
-        return {
-          success: false,
-          error: e instanceof Error ? e.message : 'Failed to fetch task',
-        };
-      }
-    },
-
-    getAITranscript: async (
-      taskId: number,
-      sessionId?: string,
-      refresh?: boolean,
-    ): Promise<Record<string, unknown>> => {
-      try {
-        const params = new URLSearchParams();
-        if (sessionId) params.set('session_id', sessionId);
-        if (refresh) params.set('refresh', 'true');
-        const response = await fetch(
-          `/tasks/${taskId}/ai/transcript/?${params.toString()}`,
-          {
-            headers: { 'X-CSRFToken': csrfToken },
-          },
-        );
-        try {
-          return await response.json();
-        } catch {
-          return { success: false, error: `Server error: ${response.status}` };
-        }
-      } catch (e) {
-        return {
-          success: false,
-          error: e instanceof Error ? e.message : 'Failed to fetch transcript',
-        };
-      }
-    },
-
-    getAISessions: async (taskId: number): Promise<Record<string, unknown>> => {
-      try {
-        const response = await fetch(`/tasks/${taskId}/ai/sessions/`);
-        const data = await response.json();
-        return data;
-      } catch (e) {
-        return {
-          success: false,
-          error: e instanceof Error ? e.message : 'Failed to fetch AI sessions',
-        };
-      }
-    },
-
-    updateTask: async (
-      taskId: number,
-      data: Record<string, unknown>,
-    ): Promise<Record<string, unknown>> => {
-      try {
-        const response = await fetch(`/tasks/api/${taskId}/update/`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': csrfToken,
-          },
-          body: JSON.stringify(data),
-        });
-        try {
-          return await response.json();
-        } catch {
-          return { success: false, error: `Server error: ${response.status}` };
-        }
-      } catch (e) {
-        return {
-          success: false,
-          error: e instanceof Error ? e.message : 'Failed to update task',
-        };
-      }
-    },
-
-    saveAITranscript: async (
-      taskId: number,
-      data: Record<string, unknown>,
-    ): Promise<Record<string, unknown>> => {
-      try {
-        const response = await fetch(`/tasks/${taskId}/ai/save-transcript/`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': csrfToken,
-          },
-          body: JSON.stringify(data),
-        });
-        try {
-          return await response.json();
-        } catch {
-          return { success: false, error: `Server error: ${response.status}` };
-        }
-      } catch (e) {
-        return {
-          success: false,
-          error: e instanceof Error ? e.message : 'Failed to save transcript',
-        };
-      }
-    },
-  };
-}
-
 // Extended data type
 interface ExtendedWorkflowData extends WorkflowDataFromDjango {
   render_code?: string;
@@ -700,8 +147,11 @@ interface ExtendedWorkflowData extends WorkflowDataFromDjango {
   config?: Record<string, Record<string, unknown>>;
   // A page runs sandboxed (workflow/sandbox.py): the runner is the HOST -- it draws
   // the frame at `src` and answers it, and compiles and runs no render code itself.
-  sandbox?: { src: string; origin: string };
+  // `mode: 'workflow'` (phase 2): a workflow's own render, handed what it reads
+  // today (workers, pipelines, its run) and answered through routes.ts.
+  sandbox?: { src: string; origin: string; mode?: 'page' | 'workflow' };
   mapboxToken?: string;
+  viewer_is_staff?: boolean;
 }
 
 /**
@@ -804,24 +254,21 @@ function WorkflowRunner({
   const [pipelineLoadingStatus, setPipelineLoadingStatus] = useState<
     string | null
   >(
-    // A sandboxed page streams none.
-    sandbox
+    // Already have data from server render?
+    initialData.pipeline_data &&
+      Object.keys(initialData.pipeline_data).length > 0
       ? null
-      : // Already have data from server render?
-        initialData.pipeline_data &&
-          Object.keys(initialData.pipeline_data).length > 0
+      : // No pipelines configured?
+        !initialData.definition.pipeline_sources?.length
         ? null
-        : // No pipelines configured?
-          !initialData.definition.pipeline_sources?.length
+        : // A finished run carries its own; nothing to wait for. Nor does a page
+          // that fetches its own rows (config.noPipelineStream).
+          snapshotCarriesPipelines ||
+            (definition?.config as Record<string, unknown> | undefined)
+              ?.noPipelineStream
           ? null
-          : // A finished run carries its own; nothing to wait for. Nor does a page
-            // that fetches its own rows (config.noPipelineStream).
-            snapshotCarriesPipelines ||
-              (definition?.config as Record<string, unknown> | undefined)
-                ?.noPipelineStream
-            ? null
-            : // Need to load
-              'Connecting...',
+          : // Need to load
+            'Connecting...',
   );
   // Opt-in per definition (`config.renderWhileLoading`): a drill-style page
   // whose headline comes from a saved report should not sit behind the
@@ -1622,9 +1069,12 @@ function WorkflowRunner({
   // Create action handlers
   // A workflow action a button asked to run (actions.runAction): the dialog's
   // request and the promise it settles.
+  const actionOpenRef = React.useRef(false);
+  const actionSeq = React.useRef(0);
   const [actionRequest, setActionRequest] = useState<{
     request: ActionRequest;
     resolve: (execution: WorkflowActionExecution | null) => void;
+    seq: number;
   } | null>(null);
   const workflowActions = useMemo(
     () => initialData.actions || [],
@@ -1767,6 +1217,20 @@ function WorkflowRunner({
       },
       copyText: (text: string): Promise<void> =>
         navigator.clipboard.writeText(text),
+      // Leaving the page (what code used to do with window.location). In the
+      // sandboxed frame the same calls are links the host checks first.
+      navigate: (
+        url: string,
+        opts?: { newTab?: boolean },
+      ): Promise<boolean> => {
+        if (opts?.newTab) window.open(url, '_blank', 'noopener');
+        else window.location.assign(url);
+        return Promise.resolve(true);
+      },
+      reload: (): Promise<boolean> => {
+        window.location.reload();
+        return Promise.resolve(true);
+      },
       runAction: (
         key: string,
         args: { workers: WorkflowActionWorker[]; [k: string]: unknown },
@@ -1778,6 +1242,14 @@ function WorkflowRunner({
             new Error(`This workflow has no action "${key}".`),
           );
         }
+        // One action at a time: a second while the dialog is open would swap what
+        // the person is reading for something else under the same buttons.
+        if (actionOpenRef.current) {
+          return Promise.reject(
+            new Error('Another action is waiting for an answer.'),
+          );
+        }
+        actionOpenRef.current = true;
         return new Promise((resolve) =>
           setActionRequest({
             request: {
@@ -1787,6 +1259,7 @@ function WorkflowRunner({
               qaOnly: Boolean(options?.qaOnly),
             },
             resolve,
+            seq: ++actionSeq.current,
           }),
         );
       },
@@ -1812,12 +1285,6 @@ function WorkflowRunner({
   const view = useMemo<RunView>(() => {
     const inst = initialData.instance;
     const isCompleted = inst.status === 'completed';
-    const snapshot = (inst.snapshot || null) as {
-      workers?: WorkerData[];
-      pipelines?: Record<string, PipelineResult>;
-      supply?: Record<string, SupplyResult>;
-      state?: WorkflowState;
-    } | null;
 
     const completeRunUrl = initialData.apiEndpoints.completeRun;
     const completeFn = async (opts?: {
@@ -1853,176 +1320,24 @@ function WorkflowRunner({
       }
     };
 
-    // The page contract's confirm (a sandboxed page has no window.confirm), here
-    // the browser's own.
-    const confirmText = (text: string): Promise<boolean> =>
-      Promise.resolve(window.confirm(text));
-
-    // Flags are always queried live — Flag lifecycle state-of-truth lives
-    // on the Flag record, not the run snapshot. Newest-first so render code
-    // that sorts by flagged_at gets sensible ordering.
-    const flagsList = (initialData.flags ?? [])
-      .slice()
-      .sort((a, b) => (b.flagged_at || '').localeCompare(a.flagged_at || ''));
-    const flagsByFlw = new Map<string, Flag[]>();
-    for (const f of flagsList) {
-      const list = flagsByFlw.get(f.flw_id);
-      if (list) {
-        list.push(f);
-      } else {
-        flagsByFlw.set(f.flw_id, [f]);
-      }
-    }
-    const flagsFor = (username: string) => flagsByFlw.get(username) ?? [];
-
-    // Audits + Tasks created against this run — same live-query
-    // philosophy as flags (the workflow_run snapshot never freezes them).
-    // Render code reads via view.auditsFor(username) / view.tasksFor
-    // (username) to know whether a per-row Action affordance should
-    // surface as "View" instead of "Create" — i.e., the action was
-    // already taken. Works on both in_progress and completed runs.
-    const auditsList = (initialData.audits ?? []) as Audit[];
-    const auditsByFlw = new Map<string, Audit[]>();
-    for (const a of auditsList) {
-      const list = auditsByFlw.get(a.flw_id);
-      if (list) {
-        list.push(a);
-      } else {
-        auditsByFlw.set(a.flw_id, [a]);
-      }
-    }
-    const auditsFor = (username: string) => auditsByFlw.get(username) ?? [];
-
-    const tasksList = (initialData.tasks ?? []) as Task[];
-    const tasksByFlw = new Map<string, Task[]>();
-    for (const t of tasksList) {
-      const list = tasksByFlw.get(t.flw_id);
-      if (list) {
-        list.push(t);
-      } else {
-        tasksByFlw.set(t.flw_id, [t]);
-      }
-    }
-    const tasksFor = (username: string) => tasksByFlw.get(username) ?? [];
-
-    // Dedup key for ensureAutoFlags. We track in a closure-scoped Set so
-    // repeated render-effect calls within the same page load are no-ops
-    // after the first POST, even before the BE reflects the new flag.
-    const persistedKeys = new Set<string>(
-      flagsList.map((f) => `${f.flw_id}::${f.flag_key}`),
-    );
-    const inflightKeys = new Set<string>();
-    const ensureAutoFlags = async (
-      computed: Array<{
-        flw_id: string;
-        flag_key: string;
-        flag_label?: string;
-        evidence?: Record<string, unknown>;
-      }>,
-    ): Promise<Flag[]> => {
-      if (isCompleted) return [];
-      const runId = initialData.instance.id;
-      const oppId =
-        initialData.instance.opportunity_id || initialData.opportunity_id;
-      if (!runId || !oppId) return [];
-      const toPost = computed.filter((c) => {
-        const k = `${c.flw_id}::${c.flag_key}`;
-        if (persistedKeys.has(k) || inflightKeys.has(k)) return false;
-        inflightKeys.add(k);
-        return true;
-      });
-      if (!toPost.length) return [];
-      const created: Flag[] = [];
-      await Promise.all(
-        toPost.map(async (c) => {
-          try {
-            const res = await fetch(`/labs/workflow/api/run/${runId}/flags/`, {
-              method: 'POST',
-              credentials: 'same-origin',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': csrfToken,
-              },
-              body: JSON.stringify({
-                opportunity_id: oppId,
-                flw_id: c.flw_id,
-                flag_key: c.flag_key,
-                flag_label: c.flag_label || c.flag_key,
-                evidence: c.evidence || {},
-                source: 'auto',
-              }),
-            });
-            if (res.ok) {
-              const body = (await res.json()) as Flag;
-              persistedKeys.add(`${c.flw_id}::${c.flag_key}`);
-              created.push(body);
-            } else {
-              console.warn(
-                `ensureAutoFlags: POST failed for ${c.flw_id}/${c.flag_key} (${res.status})`,
-              );
-            }
-          } catch (e) {
-            console.warn('ensureAutoFlags: network error', e);
-          }
-        }),
-      );
-      return created;
-    };
-
-    // Snapshot preference: serve the stamped snapshot whenever one
-    // exists, not just on completed runs. The framework only writes a
-    // snapshot at completion in production (`connect_labs/workflow/
-    // views.py:430` comment: "Snapshot is null while in_progress;
-    // populated on completion"), so the only time an in_progress run
-    // has a snapshot is when something explicitly seeded one — currently
-    // the synthetic generator, which stamps a preview snapshot onto its
-    // backdated in_progress run so the manager-flow demo doesn't open
-    // on a real-data live pipeline that happens to back the synthetic
-    // opp's CSV folder. Templates can still read `instance.snapshot`
-    // directly if they want even finer control.
-    if (snapshot) {
-      return {
-        workers: (snapshot.workers as WorkerData[]) ?? initialData.workers,
-        pipelines:
-          (snapshot.pipelines as Record<string, PipelineResult>) ??
-          pipelineData,
-        supply: (snapshot.supply as Record<string, SupplyResult>) ?? supplyData,
-        state: (snapshot.state as WorkflowState) ?? instanceState,
-        isCompleted,
-        asOf: isCompleted ? (inst.completed_at ?? null) : null,
-        complete: completeFn,
-        flags: flagsList,
-        flagsFor,
-        ensureAutoFlags,
-        audits: auditsList,
-        auditsFor,
-        tasks: tasksList,
-        tasksFor,
-        shareSelection,
-        confirm: confirmText,
-        workflowActions,
-      };
-    }
-
-    return {
+    return buildRunView({
+      instance: inst,
+      opportunityId: initialData.opportunity_id,
       workers: initialData.workers,
       pipelines: pipelineData,
       supply: supplyData,
       state: instanceState,
-      isCompleted: false,
-      asOf: null,
-      complete: completeFn,
-      flags: flagsList,
-      flagsFor,
-      ensureAutoFlags,
-      audits: auditsList,
-      auditsFor,
-      tasks: tasksList,
-      tasksFor,
-      shareSelection,
-      confirm: confirmText,
+      flags: initialData.flags,
+      audits: initialData.audits as Audit[] | undefined,
+      tasks: initialData.tasks as Task[] | undefined,
       workflowActions,
-    };
+      csrfToken,
+      complete: completeFn,
+      // The page contract's confirm (a sandboxed page has no window.confirm), here
+      // the browser's own.
+      confirm: (text: string) => Promise.resolve(window.confirm(text)),
+      shareSelection,
+    });
   }, [
     initialData.instance,
     initialData.workers,
@@ -2057,11 +1372,14 @@ function WorkflowRunner({
     view: view,
   };
 
-  // Host mode: the page's props as plain data for the sandboxed frame. Whatever is
-  // in here is readable by the page's author, so it carries no workers and no
-  // pipelines (the spec's residual risk).
-  const sandboxPayload = useMemo<FramePayload | null>(() => {
-    if (!sandbox) return null;
+  // Host mode: the props as plain data for the sandboxed frame. Whatever is in here
+  // is readable by the code's author (the spec's residual risk), so a PAGE carries
+  // no workers, no pipelines and no run. A WORKFLOW carries what its render reads
+  // today -- it is the viewer's own report -- and every write it makes comes back
+  // through the host (routes.ts, the action dialog, the completion question).
+  const sandboxMode: 'page' | 'workflow' =
+    sandbox?.mode === 'workflow' ? 'workflow' : 'page';
+  const pageInstance = useMemo(() => {
     // A page has no run, so no snapshot: whatever `instance` arrived with, its
     // snapshot never reaches the frame, and supply is always the live read.
     const { snapshot: _snapshot, ...instance } = initialData.instance as Record<
@@ -2069,43 +1387,230 @@ function WorkflowRunner({
       unknown
     >;
     void _snapshot;
-    return JSON.parse(
-      JSON.stringify({
-        renderCode,
-        definition,
-        instance: { ...instance, state: instanceState },
-        workers: [],
-        pipelines: {},
-        supply: supplyData,
-        workflows: workflowSourceData,
-        scope: initialData.scope ?? null,
-        config: initialData.config || {},
-        links: initialData.links,
-        view: {
-          state: instanceState,
-          isCompleted: initialData.instance.status === 'completed',
-          asOf:
-            initialData.instance.status === 'completed'
-              ? (initialData.instance.completed_at ?? null)
-              : null,
-        },
-        today: new Date().toISOString().slice(0, 10),
-        mapboxToken: initialData.mapboxToken || '',
-        pageUrl: window.location.href,
-      }),
+    return instance;
+  }, [initialData.instance]);
+  const frameInstance = useMemo(
+    () =>
+      sandboxMode === 'workflow'
+        ? {
+            ...(initialData.instance as Record<string, unknown>),
+            state: instanceState,
+          }
+        : { ...pageInstance, state: instanceState },
+    [sandboxMode, initialData.instance, pageInstance, instanceState],
+  );
+  const frameView = useMemo(
+    () => ({
+      state: instanceState,
+      isCompleted: initialData.instance.status === 'completed',
+      asOf:
+        initialData.instance.status === 'completed'
+          ? (initialData.instance.completed_at ?? null)
+          : null,
+    }),
+    [instanceState, initialData.instance],
+  );
+  const frameToday = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  // The names render code reads from `#user-opportunities`, cut to this
+  // workflow's own opportunities (the frame is never handed the viewer's whole list).
+  const frameOpportunities = useMemo(() => {
+    const ids = new Set(
+      [
+        ...(initialData.opportunity_ids || []),
+        initialData.opportunity_id,
+        initialData.instance.opportunity_id,
+      ].map((n) => Number(n)),
     );
+    try {
+      // Two carriers of the viewer's list: the multi-opp run page's own and the
+      // header context selector's (the only one on a single-opportunity page).
+      const all = ['user-opportunities', 'opportunity-data'].flatMap((id) => {
+        const el = document.getElementById(id);
+        try {
+          return el ? (JSON.parse(el.textContent || '[]') as unknown[]) : [];
+        } catch {
+          return [];
+        }
+      });
+      const seen = new Set<number>();
+      return all
+        .filter(
+          (o): o is { id: number; name: string } =>
+            !!o &&
+            typeof o === 'object' &&
+            ids.has(Number((o as { id?: unknown }).id)),
+        )
+        .map((o) => ({ id: Number(o.id), name: String(o.name ?? '') }))
+        .filter((o) => !seen.has(o.id) && (seen.add(o.id), true));
+    } catch {
+      return [];
+    }
+  }, [
+    initialData.opportunity_ids,
+    initialData.opportunity_id,
+    initialData.instance,
+  ]);
+  const framePageUrl = window.location.href;
+  const sandboxPayload = useMemo<FramePayload | null>(() => {
+    if (!sandbox) return null;
+    const common = {
+      mode: sandboxMode,
+      renderCode,
+      definition: definition as unknown as Record<string, unknown>,
+      instance: frameInstance,
+      supply: (sandboxMode === 'workflow'
+        ? (snapshotSupply ?? supplyData)
+        : supplyData) as Record<string, unknown>,
+      workflows: workflowSourceData as Record<string, unknown>,
+      scope: initialData.scope ?? null,
+      config: (initialData.config || {}) as Record<string, unknown>,
+      links: initialData.links,
+      view: frameView,
+      today: frameToday,
+      mapboxToken: initialData.mapboxToken || '',
+      pageUrl: framePageUrl,
+    };
+    // A page and a workflow are handed the same (Jonathan, 2026-10-12: "pages
+    // should be completely definable like workflows are"); a page just has no run.
+    return {
+      ...common,
+      workers: initialData.workers as unknown[],
+      pipelines: pipelineData as Record<string, unknown>,
+      apiEndpoints: initialData.apiEndpoints as unknown as Record<
+        string,
+        string | null
+      >,
+      flags: initialData.flags as unknown[],
+      audits: initialData.audits as unknown[],
+      tasks: initialData.tasks as unknown[],
+      workflowActions: workflowActions as unknown[],
+      isEditMode,
+      userOpportunities: frameOpportunities,
+      pipelinesLoading: Boolean(pipelineLoadingStatus),
+    };
   }, [
     sandbox,
+    sandboxMode,
     renderCode,
     definition,
-    initialData.instance,
+    frameInstance,
+    snapshotSupply,
+    supplyData,
+    workflowSourceData,
     initialData.scope,
     initialData.config,
     initialData.links,
     initialData.mapboxToken,
-    instanceState,
-    supplyData,
-    workflowSourceData,
+    initialData.workers,
+    initialData.apiEndpoints,
+    initialData.flags,
+    initialData.audits,
+    initialData.tasks,
+    frameView,
+    frameToday,
+    framePageUrl,
+    pipelineData,
+    workflowActions,
+    isEditMode,
+    pipelineLoadingStatus,
+    frameOpportunities,
+  ]);
+
+  // What the host does for a workflow in the frame: labs' own code, bound to this
+  // workflow and run (the frame names neither).
+  const sandboxWorkflow = useMemo(() => {
+    if (!sandbox) return undefined;
+    const ids = (xs: unknown[]) =>
+      Array.from(
+        new Set(
+          xs
+            .map((n) => Number(n))
+            .filter((n) => Number.isSafeInteger(n) && n > 0),
+        ),
+      );
+    // A page is about its scope: what is under it is what its code may name. A
+    // workflow may name only its own opportunities and program.
+    const scope = initialData.is_page ? initialData.scope : null;
+    const opportunityIds = ids([
+      ...(initialData.opportunity_ids || []),
+      initialData.opportunity_id,
+      initialData.instance.opportunity_id,
+      ...(scope?.opportunities || []).map((o) => o.id),
+      scope?.opportunity?.id,
+    ]);
+    const runProgram = (initialData.instance as { program_id?: number })
+      .program_id;
+    const programIds = ids([
+      initialData.program_id,
+      runProgram,
+      ...(scope?.programs || []).map((p) => p.id),
+      scope?.program?.id,
+    ]);
+    const ownOpp =
+      Number(
+        initialData.instance.opportunity_id || initialData.opportunity_id,
+      ) || 0;
+    const ownProgram = Number(initialData.program_id || runProgram) || 0;
+    const activeJob = (
+      initialData.instance.state as { active_job?: { job_id?: unknown } }
+    )?.active_job?.job_id;
+    const routeContext: RouteContext = {
+      labsOrigin: sandbox?.origin || window.location.origin,
+      definitionId: Number(initialData.definition_id) || null,
+      runId: Number(initialData.instance.id) || null,
+      opportunityIds,
+      programIds,
+      organizationKey: scope?.organization?.slug || null,
+      jobIds: typeof activeJob === 'string' ? [activeJob] : [],
+      defaultScope: ownOpp
+        ? { name: 'opportunity_id', value: String(ownOpp) }
+        : ownProgram
+          ? { name: 'program_id', value: String(ownProgram) }
+          : null,
+    };
+    return {
+      csrfToken,
+      routeContext,
+      queryPipelineRows: (alias: string, query: Record<string, unknown>) =>
+        actions.queryPipelineRows(alias, query as PipelineRowsQuery),
+      updateState: (state: Record<string, unknown>) => handleUpdateState(state),
+      runAction: (
+        key: string,
+        args: Record<string, unknown>,
+        options: { qaOnly: boolean },
+      ) =>
+        actions.runAction(
+          key,
+          args as { workers: WorkflowActionWorker[] },
+          options,
+        ),
+      actionKeys: () => workflowActions.map((a) => a.key),
+      completeRun: async () => {
+        if (initialData.instance.status === 'completed') {
+          return { success: false, error: 'This run is already complete.' };
+        }
+        if (!initialData.apiEndpoints.completeRun) {
+          return {
+            success: false,
+            error: 'Completion is not available for this run.',
+          };
+        }
+        return actions.completeRun(initialData.instance.id);
+      },
+    };
+  }, [
+    sandboxMode,
+    sandbox?.origin,
+    csrfToken,
+    initialData.opportunity_ids,
+    initialData.opportunity_id,
+    initialData.instance,
+    initialData.definition_id,
+    initialData.program_id,
+    initialData.apiEndpoints.completeRun,
+    actions,
+    handleUpdateState,
+    workflowActions,
   ]);
 
   return (
@@ -2115,12 +1620,14 @@ function WorkflowRunner({
           confirmation. */}
       {actionRequest && initialData.apiEndpoints.actionBase && (
         <ActionDialog
+          key={actionRequest.seq}
           request={actionRequest.request}
           actionBase={initialData.apiEndpoints.actionBase}
           executionBase={initialData.apiEndpoints.actionExecutionBase || ''}
           csrfToken={csrfToken}
           onClose={(execution) => {
             actionRequest.resolve(execution);
+            actionOpenRef.current = false;
             setActionRequest(null);
           }}
         />
@@ -2486,6 +1993,8 @@ function WorkflowRunner({
                     <SandboxFrame
                       labsOrigin={sandbox.origin || window.location.origin}
                       payload={sandboxPayload}
+                      mode={sandboxMode}
+                      workflow={sandboxWorkflow}
                       querySupply={(alias, args) =>
                         actions.querySupply(alias, { args } as SupplyQuery)
                       }
@@ -2532,6 +2041,38 @@ function WorkflowRunner({
             </div>
           </>
         )}
+
+        {/* Staff only: whether this workflow's code runs in the sandbox (rolled out
+            per workflow, workflow/sandbox.py), and a way to try it there. */}
+        {activeTab === 'workflow' &&
+          initialData.viewer_is_staff &&
+          !initialData.is_page && (
+            <div
+              className="px-4 mt-6 mb-2 text-xs text-gray-400"
+              data-testid="workflow-sandbox-status"
+            >
+              {sandbox ? (
+                <span>
+                  <i className="fa-solid fa-shield-halved mr-1" />
+                  Staff: this workflow runs in the sandbox.
+                </span>
+              ) : (
+                <span>
+                  Staff: this workflow does not run in the sandbox yet.{' '}
+                  <a
+                    className="underline hover:text-gray-600"
+                    href={(() => {
+                      const u = new URL(window.location.href);
+                      u.searchParams.set('sandbox', '1');
+                      return u.pathname + u.search;
+                    })()}
+                  >
+                    View it sandboxed
+                  </a>
+                </span>
+              )}
+            </div>
+          )}
 
         {/* Pipeline Editor - Show when pipeline tab is active */}
         {activeTab === 'pipeline' &&

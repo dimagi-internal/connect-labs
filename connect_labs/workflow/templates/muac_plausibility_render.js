@@ -850,7 +850,8 @@ function MpEmpty(props) {
           null,
           function () {
             setMessage('Done — loading the report…');
-            window.location.reload();
+            if (actions && actions.reload) actions.reload();
+            else window.location.reload();
           },
           function (err) {
             setStatus('error');

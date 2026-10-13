@@ -577,6 +577,10 @@ LABS_PUBLIC_URL = env("LABS_PUBLIC_URL", default="")
 # Pages' render code runs in a sandboxed frame (workflow/sandbox.py). An emergency switch
 # back only; there is no per-page opt-out.
 LABS_PAGE_SANDBOX = env.bool("LABS_PAGE_SANDBOX", default=True)
+# Workflows' render code in the same frame (phase 2), rolled out per workflow:
+# "off" | "opt_in" (a checked template, or config.sandbox: true) | "all".
+# See workflow/sandbox.py.
+LABS_WORKFLOW_SANDBOX = env("LABS_WORKFLOW_SANDBOX", default="opt_in")
 
 # Connect Production OAuth (for audit data extraction)
 CONNECT_PRODUCTION_URL = env("CONNECT_PRODUCTION_URL", default="https://connect.dimagi.com")

@@ -214,9 +214,9 @@ is not left to them. A middleware refuses any session-authenticated request carr
 WebRTC (a peer connection to an attacker's TURN server) is a full data channel that no
 shipping browser lets CSP close, and removing `RTCPeerConnection` in the frame is undone by
 a fresh `about:blank` child. So whatever the host hands the frame should be treated as
-readable by the page's author. Phase 1 therefore gives pages no visit-level pipelines and no
-`queryPipelineRows`: a page draws scope, Settings, supply figures (aggregates, no personal
-data) and other workflows' run summaries. Phase 2 has to decide what workflows may read with
+readable by the page's author. Phase 1 therefore gave pages no visit-level pipelines and no
+`queryPipelineRows` (withdrawn in phase 2: pages are as definable as workflows, and carry the
+same residual risk; see "Pages become as definable as workflows"). Phase 2 has to decide what workflows may read with
 that in mind (e.g. limiting a definition's sources to what its author can also read).
 
 
@@ -333,12 +333,168 @@ navigated on a click, the frame resized, `view.confirm` drew the host dialog, an
 Safari by hand, and the same on labs after a deploy, remain to do before a real
 organisation gets a landing page.
 
-## Phase 2: workflows (not built here)
+## Phase 2: workflows (as built, 2026-10-12)
 
-The same frame and bridge, plus: the phase-2 methods; images that need the session
-(visit photos) fetched by the host and passed in as `blob:` URLs; job progress over the
-bridge; `window.LabsAudit`'s fetch moved behind a method; the 76 direct `fetch(` calls in
-21 seed templates moved onto bridge methods. Every write goes through a method the host
-maps to a known endpoint, with the host's own preview/confirm where one exists. Also left
-from phase 1: `ConnectMap`'s admin boundaries (fetched from labs, so blocked in the frame;
-a bridge method or host-fetched GeoJSON), and Leaflet tile servers (not in `img-src`).
+Jonathan, 2026-10-12: "fix everything that's still open", after phase 1. Phase 2 puts a
+workflow's own render code in the same frame, on every route that draws it (run page, edit
+mode, `?present=1`, a supply tab, a template draft preview -- they are all
+`WorkflowRunView`, so the decision is still made once, in `should_sandbox`).
+
+### The design question, and the ruling
+
+**A workflow legitimately receives visit-level data (workers, pipelines, its run and
+snapshot). Inside the frame that data can leave over WebRTC. Does sandboxing a workflow
+still help?** Ruled yes, and it is not close. The invariant from phase 1 holds unchanged --
+*the session cannot leave the frame; data given to the frame can* -- and today a workflow's
+code runs on labs' origin WITH the session, which is strictly worse: it can already read
+everything its viewer can and also act as them. In the frame it keeps only what the host
+hands it (the data its render reads today) and loses the session: it cannot mint a token,
+write a record outside its run, run a declared action without the host's own dialog, or call
+any labs endpoint the route table does not name. So workflows get the same data as before
+(no new exposure) and lose the ability to act as the viewer (the exposure that matters).
+Cost: nothing a viewer sees changes, except the questions below.
+
+### Pages become as definable as workflows (ruling, 2026-10-12)
+
+Jonathan, during phase 2: **"pages should be completely definable like workflows are."**
+So the phase-1 page-only restrictions (no pipelines, no workers, no `queryPipelineRows`, no
+tasks / audits / images / boundaries / tiles) are gone: **one capability set, one code path,
+gated only by "has runs or not".** A page is drawn by the same frame component and the same
+host handlers as a workflow; it is handed its `pipeline_sources` (streamed as on a workflow),
+`workers`, `supply`, `workflows`, `scope` and `config`; its code reaches labs through the same
+route table with the same questions.
+
+What only a run has, and so a page cannot: `updateState` to a run (a page's state stays in the
+frame), `view.complete`, `actions.runAction` (a declared action's roster, confirm token and the
+tasks it attaches are all a run's: `workflow/actions.py` takes a run), background jobs (they
+write their results to a run), and every `/labs/workflow/api/run/<id>/...` write -- refused by
+routes.ts because a page has no run id to bind. The dispatcher refuses the run-only methods
+for a page with "needs a run, and a page has none"; a parity test pins that every other method
+answers a page exactly as it answers a workflow.
+
+Cost: a page's author can now see (and, over WebRTC, take) the visit-level data its pipelines
+read, exactly as a workflow's author can. That is the same residual risk, stated once for both
+below; the phase-1 rule "pages get no visit-level data" is withdrawn by this ruling. Pages keep
+what makes them pages: no run is ever read (a `run_id` on a page's address is ignored, no
+snapshot reaches the frame). Declared actions on a page would need the action framework to act
+on a scope instead of a run: a follow-up, not built here.
+
+### What a workflow's code can make labs do: one table
+
+Every labs request a workflow's code makes is a bridge `fetch` the host answers only if it
+matches a route in `components/workflow/sandbox/routes.ts`. That file is the whole of what
+workflow code can make labs do as the viewer; review it, not 21 templates.
+
+| Gate | What | Host does | Ruling |
+|---|---|---|---|
+| `read` | ~30 read endpoints the seed templates use (run history, snapshot preview, indicator definitions, audit sessions, AI agents, image questions, visit images, benchmarks, boundaries, job status...) | makes it, as the viewer | A route that names an opportunity, a program, this workflow's pipelines (`pipeline-rows`, `pipeline-query`, `case-states`, `supply-*`, `workflow-*`) or this run must name one this workflow covers. Reads of ANOTHER workflow's runs, history or indicator definitions are not id-bound: the companion reports (KMC, indicator cascade) read their program report that way. Cost recorded under residual risk. |
+| `own` | writes to this run's or this definition's own record: state, flags, worker result, rename, reconcile, audit-batch config, job cancel, and a job whose type only computes into this run (`audit_par_rollup`, `muac_plausibility_compute`, `program_admin_rollup`, read from the body the host is about to send) | makes it, no question | Bound to this run and definition (in edit mode, run 0, they are refused). Render code makes some from effects; a question on every state save would make every workflow unusable. |
+| `effect` | tasks, task updates, coaching conversations with a worker (`/tasks/<id>/ai/initiate/`), audits (create, delete, cancel), any other job (they create audits across opportunities), completing or deleting the run, the synthetic demo helpers | asks first, in labs' own words ("This workflow wants to create tasks, as you."); a yes holds for that kind of write for 2 minutes | One click that creates a batch is one question. The words are labs', never the page's. |
+| -- | everything else: `/labs/mcp/`, `/o/`, `/accounts/`, `/admin/`, render code, definitions, sharing, deleting a workflow, pipeline schemas, **and a workflow's declared actions** | refused, logged as `[sandbox] refused fetch: ...` on the host page | Declared actions run only through `actions.runAction`, which opens the host's own ActionDialog (preview, confirm token, execution), exactly as on the run page. |
+
+Writes never follow a redirect (a 307 would repeat the write elsewhere); reads follow labs'
+own (the context middleware adds the session's opportunity to a bare URL) and where they
+land is checked against the table again. Request headers are cut to `content-type` and
+`accept`; the host adds its own CSRF token.
+
+### Every prop and method, and its bridge equivalent
+
+| Render code uses | In the frame |
+|---|---|
+| `definition`, `instance` (run, state, snapshot), `workers`, `pipelines`, `supply`, `workflows`, `scope`, `config`, `links` | passed as data (INIT); later changes as partial UPDATEs (only the keys that changed: pipelines can be tens of MB) |
+| `onUpdateState(s)` | bridge `updateState` -> the host's `handleUpdateState` (this run's state endpoint; local in edit mode); the run's state comes back as an UPDATE |
+| `view.*` (`workers`, `pipelines`, `state`, `isCompleted`, `asOf`, flags/audits/tasks + `*For`, `ensureAutoFlags`, `workflowActions`, `shareSelection`, `confirm`) | built by the same function as on the run page (`components/workflow/runView.ts`); `ensureAutoFlags` posts through the frame's fetch (an `own` route) |
+| `view.complete({confirm})` | bridge `completeRun`: the host asks (its words, the page's text quoted under them), completes, reloads |
+| `actions.createTask`, `createTaskWithOCS`, `initiateOCSSession`, `startJob`, `cancelJob`, `deleteRun`, `streamJobProgress`, `createAudit`, `getAuditStatus`, `streamAuditProgress`, `cancelAudit`, `saveWorkerResult`, `completeRun`, `getTaskDetail`, `getAITranscript`, `getAISessions`, `updateTask`, `saveAITranscript`, `checkOCSStatus`, `listOCSBots` | the run page's own implementations (moved to `components/workflow/actionHandlers.ts`), whose `fetch` in the frame is the bridge's: each lands on a route above |
+| `actions.runAction(key, args)` | bridge `runAction`: key must be one this workflow declares; the host opens ActionDialog |
+| `actions.queryPipelineRows`, `querySupply`, `queryWorkflow` | bridge methods; the host calls this definition's endpoints with its own scope params |
+| `actions.download`, `copyText`, `openTaskCreator` | bridge `download` / `copyText` (on a click) / `navigate` to `/tasks/new/` |
+| `actions.navigate(url, {newTab})`, `actions.reload()` | new (on the run page too): bridge `navigate`. Workflows may also open `/audit/`, `/tasks/`, workflow and run pages, an indicator sheet, a visit photo and the "Authorize" sign-in starts; never an API address. Without a click just before, the host asks, showing the path |
+| `fetch(<labs path>)` (76 calls in 21 templates), `LabsAudit.fetchSessions`, `ConnectMap` boundaries | the frame's `fetch` is the bridge's for labs paths (route table); other hosts get the browser's, which the CSP mostly refuses |
+| `<img src="<labs path>">` (visit photos) | fetched by the host, shown as `blob:` URLs (the frame's img-src allows no labs address) |
+| `EventSource` | absent: the templates that prefer a stream fall back to their plain fetch |
+| `window.location = ...`, `location.reload()` | the frame navigates, the host's `frame-src` refuses where it goes and the host stops the frame ("tried to leave its frame"). It cannot be shimmed: the Navigation API that could cancel it is disabled in an opaque-origin document (checked in Chromium). The three seed templates that did this now call `actions.navigate` / `actions.reload`; a live COPY that still does is why the rollout scans copies before `all` |
+| `window.confirm` | returns false in the frame (no `allow-modals`); the one template that used it now awaits `view.confirm` |
+| `alert`, `window.open`, `history.pushState/replaceState`, `navigator.clipboard`, `<a download href="blob:">`, `document.cookie`, the DOM CSRF token, `#user-opportunities`, `WORKFLOW_API_ENDPOINTS`, `localStorage` | host notice; `navigate` in a new tab; the host's query/hash (same path); `copyText`; `download`; `""`; a dummy (the host adds the real token); this workflow's opportunities only; passed in; in memory |
+| `window.LabsReport`, `ConnectMap`, `PlanLayers`, `MicroplansMapPanel`, `LabsAudit`, Chart.js, Leaflet, Mapbox GL | loaded by the shell from labs static and the pinned CDN URLs; Leaflet tiles from OpenStreetMap and CARTO are now in img-src (GETs to tile servers nobody here controls) |
+
+### Rollout
+
+A big-bang switch would break live dashboards whose render code (copies, not followers)
+nobody has checked. So `LABS_WORKFLOW_SANDBOX` (default `opt_in`):
+
+- **Followers of a checked template** are sandboxed: `TEMPLATE["sandboxed"] = True` and
+  `render_source: {"template": key}`. Every checked template's `DEFINITION` also carries
+  `config.sandbox: true`, so every NEW instance is sandboxed even after it stops following.
+- **A copy** (own render code) is sandboxed when its definition says `config.sandbox: true`.
+- **`?sandbox=1`** sandboxes any workflow for that view -- it can only turn the sandbox on, so
+  a link cannot take a workflow out of it. Staff see a line under the workflow saying which it
+  is, with a "View it sandboxed" link.
+- **No per-workflow opt-out** (review fix): `config.sandbox: false` means nothing, so an author
+  cannot take a workflow that follows a checked template out of the frame.
+  `LABS_WORKFLOW_SANDBOX=off` and `LABS_PAGE_SANDBOX=false` are the emergency switches, for
+  everything at once. While the rollout is `opt_in` an author can still keep a workflow out by
+  not following a checked template and not opting in: under `opt_in` the frame protects the
+  checked templates and their followers, and `all` is what protects viewers from any author.
+- **Next: `all`**, after a labs deploy, a live check of the priority templates there, and a
+  scan of live copies (`workflow_list` + `workflow_get`, grep their render code for
+  `window.location =`, `window.confirm(` and fetches to routes the table refuses). Not done
+  here: it needs the deploy.
+
+### Review fixes (phase 2, before merge)
+
+An independent adversarial review of the diff found these; each is fixed with a test that
+fails without it (`components/workflow/sandbox/workflow_sandbox.test.js`,
+`connect_labs/workflow/tests/test_workflow_sandbox.py`):
+
+1. **A body check could be passed with bytes** (or a byte-order mark, which JavaScript
+   refuses to parse and Python accepts). A route that inspects its body now takes only a JSON
+   object, as text, parsed by the host; the host sends `JSON.stringify` of what it checked,
+   never the frame's bytes.
+2. **Scope in the query was unbound on reads**, and the context middleware both answers in
+   that scope and saves it to the viewer's session. `opportunity_id`, `program_id` and
+   `organization_id` are now bound on every request; a write that names none gets this
+   workflow's own scope appended, so it never lands in whatever the session last pointed at.
+3. **`/audit/api/audit/preview/` (and audit creation) named opportunities in the body
+   unchecked**: now bound.
+4. **One yes covered a kind of write against any record.** An effect on one existing record
+   (delete an audit, update a task, message the worker on a task, complete or delete the run,
+   cancel an audit job) is asked every time and names the record; a yes to a creating kind
+   still holds 2 minutes, now for at most 200 writes.
+5. **Job cancel was unbound**: it now takes only a job this run is running or this host
+   started, and only for this run.
+6. **The question could be double-click-jacked**: labs' own question is drawn unlike the
+   page's (amber, a shield), focuses Cancel, and Allow works only 700 ms after it appears and
+   for a press that began on it.
+7. **A sign-in start could carry a second hop** (`?next=` on to an OAuth consent page): a link
+   may not carry `next`, `redirect*` or `return*`; CommCare logout is no longer a link target.
+8. **A second `runAction` could swap the open dialog**: refused while one is open; the dialog
+   is keyed per request.
+9. **`setLocation` could rewrite the scope and run** that host code reads off the address:
+   `opportunity_id`, `program_id`, `organization_id`, `owning_program_id`, `run_id`, `edit`,
+   `sandbox`, `present`, `template_draft` may be kept but not changed.
+10. **A "compute-only" job's scope came from the frame**: `job_config` scope ids are bound.
+    What remains -- a rollup reading the watched sources named in this run's state -- is a
+    cross-workflow read, in the residual below.
+11. **`audit-batch-config` could name any opportunity**: its `per_opp` keys are bound.
+
+### Residual risk, phase 2
+
+- **Exfiltration of what a page or workflow shows its viewer** (WebRTC), as above: equal to
+  today for a workflow, and now the same for a page (the ruling above).
+- **Cross-workflow reads.** The run, history, snapshot-preview and indicator-definition reads
+  (and a rollup job reading the watched sources this run's state names)
+  are not bound to this workflow, so a workflow's author can read, as a viewer, any run the
+  viewer can see through those few routes (then exfiltrate it as above). Today the same code
+  can read everything. Follow-up: bind them to the definitions a workflow declares
+  (`workflow_sources`, companion links).
+- **Reads with ids the host cannot check** (an audit session's bulk data, a task's detail):
+  the server checks the viewer's access as always.
+- **Clickjacking-style prompts.** An author can time an effect request to a click. The
+  question names the kind of write in labs' words; it does not name the rows.
+
+### Verified (locally, Chromium, gstack browse, 2026-10-12)
+
+See the PR for the table: every deployed template drawn sandboxed and unsandboxed against the
+same local data, text compared, console checked for refused routes; the probe list run on a
+workflow route.
