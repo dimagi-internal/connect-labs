@@ -508,6 +508,24 @@ def test_every_figure_carries_each_death_estimate_alone(grid):
     assert all(p["by_basis"] for p in out["budget_plans"] if p["design_code"])
 
 
+def test_each_recommended_state_carries_its_own_figures_on_each_estimate(grid):
+    """The candidate-states View draws each state's range and re-totals any subset from these."""
+    lower = {"Ondo": 2_000.0, "Kano": 10_000.0}
+    by_basis = {"prevalence_scaled": {"Ondo": 2_000.0, "Kano": 20_000.0}, "map": {"Ondo": 4_000.0, "Kano": 10_000.0}}
+
+    states = rank.rank_pairs(["Ondo", "Kano"], grid=grid, deaths=lower, deaths_by_basis=by_basis)["recommendation"][
+        "states"
+    ]
+
+    ondo = next(s for s in states if s["state"] == "Ondo")
+    assert ondo["deaths_averted_per_year"] > 0 and ondo["spend_per_year"] > 0
+    # Ondo's MAP deaths are twice its lower (DHS-scaled) figure, so MAP's multiple is twice the deciding one.
+    assert ondo["by_basis"]["prevalence_scaled"]["multiple_of_benchmark"] == ondo["multiple_of_benchmark"]
+    assert ondo["by_basis"]["map"]["multiple_of_benchmark"] == pytest.approx(
+        2 * ondo["multiple_of_benchmark"], abs=0.2
+    )
+
+
 def test_without_other_estimates_there_is_no_by_basis(grid):
     out = rank.rank_pairs(["Ondo", "Kano"], grid=grid, deaths={"Ondo": 4_000.0, "Kano": 20_000.0})
 
