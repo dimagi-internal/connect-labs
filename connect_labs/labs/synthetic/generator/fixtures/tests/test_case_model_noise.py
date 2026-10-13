@@ -33,3 +33,33 @@ def test_synthetic_weights_stay_plausible_when_the_source_has_typos():
     implausible = sum(1 for w in weights if w < 800 or w > 5000) / len(weights)
     # The source itself is 6 slips in 1,000 weighings; the clone must stay of that order.
     assert implausible < 0.05, f"{implausible:.0%} of synthetic weights implausible"
+
+
+def test_a_rare_outcome_survives_modelling():
+    """child_alive flips to "no" for ~6% of babies -- under the 10% "time-varying" share --
+    and a modelled cohort must still record about that many deaths (it recorded ~10%)."""
+    rng = random.Random(5)
+    pool = []
+    for c in range(1000):
+        n = rng.choice([3, 4, 5, 6, 7, 8])
+        dies = rng.random() < 0.06
+        visits = [
+            {
+                "day": i * 7,
+                "form": "Register" if i == 0 else "Visit",
+                "values": {"form.w": 1500 + 25 * i * 7 + rng.gauss(0, 30)},
+                "cats": {"form.child_alive": "no" if (dies and i == n - 1) else "yes"},
+            }
+            for i in range(n)
+        ]
+        pool.append({"owner": f"flw_{c % 10:03d}", "start_date": "2026-06-01", "visits": visits})
+    real = sum(1 for c in pool if c["visits"][-1]["cats"]["form.child_alive"] == "no")
+
+    out, _report = cm.synthesize_case_pool(pool, seed=1)
+    died = [c for c in out if any((v.get("cats") or {}).get("form.child_alive") == "no" for v in c["visits"])]
+
+    assert 0.6 * real <= len(died) <= 1.4 * real, f"{len(died)} synthetic deaths for {real} real"
+    # A death is the case's LAST visit, never stamped across earlier ones.
+    for c in died:
+        alive = [(v.get("cats") or {}).get("form.child_alive") for v in c["visits"]]
+        assert alive[-1] == "no" and "no" not in alive[:-1]

@@ -71,8 +71,16 @@ def _time_varying_paths(pool: list[dict], *, min_cases: int = 5, vary_share: flo
     """
     multi: dict[str, int] = {}
     varied: dict[str, int] = {}
+    # A categorical that CHANGES AT THE CASE'S LAST VISIT is an outcome (child_alive
+    # "yes" ... "no"). Outcomes are rare by nature -- KMC mortality is ~6% -- so the
+    # share test below never sees them: child_alive was classed a per-case constant,
+    # the case model found no terminal value, and a modelled cohort recorded ~10% of
+    # its source's deaths (9 against 133 on opp 874, 2026-10-13). Enough cases ending
+    # on a changed value is evidence on its own.
+    ended_changed: dict[str, int] = {}
     for series in pool:
         seen: dict[str, set[Any]] = {}
+        cat_seq: dict[str, list[str]] = {}
         for v in series.get("visits") or []:
             for path, val in (v.get("values") or {}).items():
                 try:
@@ -83,6 +91,10 @@ def _time_varying_paths(pool: list[dict], *, min_cases: int = 5, vary_share: flo
             # is time-varying and must never be stamped back across earlier visits.
             for path, val in (v.get("cats") or {}).items():
                 seen.setdefault(path, set()).add(str(val))
+                cat_seq.setdefault(path, []).append(str(val))
+        for path, vals in cat_seq.items():
+            if len(vals) >= 2 and vals[-1] not in vals[:-1]:
+                ended_changed[path] = ended_changed.get(path, 0) + 1
         counts: dict[str, int] = {}
         for v in series.get("visits") or []:
             for path in list(v.get("values") or {}) + list(v.get("cats") or {}):
@@ -92,7 +104,8 @@ def _time_varying_paths(pool: list[dict], *, min_cases: int = 5, vary_share: flo
                 multi[path] = multi.get(path, 0) + 1
                 if len(seen.get(path, ())) > 1:
                     varied[path] = varied.get(path, 0) + 1
-    return {path for path, n in multi.items() if n >= min_cases and (varied.get(path, 0) / n) >= vary_share}
+    by_share = {path for path, n in multi.items() if n >= min_cases and (varied.get(path, 0) / n) >= vary_share}
+    return by_share | {path for path, n in ended_changed.items() if n >= min_cases}
 
 
 def _series_constants(
