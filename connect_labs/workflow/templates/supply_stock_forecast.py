@@ -57,6 +57,9 @@ TEMPLATE = {
     "color": "indigo",
     "multi_opp": True,
     "supports_saved_runs": False,
+    # Framework-owned: an instance carries no code of its own, so it follows the
+    # deployed template and a deploy reaches every Supply tab drawn from it.
+    "follow_template": True,
     "definition": DEFINITION,
     "render_code": _RENDER,
 }
