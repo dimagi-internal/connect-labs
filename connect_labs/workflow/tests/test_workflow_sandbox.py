@@ -140,7 +140,10 @@ def test_a_sandboxed_workflow_is_drawn_by_the_host_on_every_route(query):
     body = response.content.decode()
     assert response.status_code == 200, body[:500]
     assert response["Content-Security-Policy"].startswith(f"frame-src {HERE}/labs/sandbox/render/")
-    assert f'"sandbox": {{"src": "/labs/sandbox/render/", "origin": "{HERE}", "mode": "workflow"}}' in body
+    assert (
+        f'"sandbox": {{"src": "/labs/sandbox/render/", "origin": "{HERE}", "mode": "workflow", '
+        '"readable_definitions": [47]}' in body
+    )
     # Host mode: nothing on this page compiles or runs render code.
     for script in ("babel", "chart.umd.min.js", "mapbox-gl.js", "connect_map.js", "labs_audit_breakdown.js"):
         assert script not in body

@@ -504,12 +504,8 @@ fails without it (`components/workflow/sandbox/workflow_sandbox.test.js`,
 
 - **Exfiltration of what a page or workflow shows its viewer** (WebRTC), as above: equal to
   today for a workflow, and now the same for a page (the ruling above).
-- **Cross-workflow reads.** The run, history, snapshot-preview and indicator-definition reads
-  (and a rollup job reading the watched sources this run's state names)
-  are not bound to this workflow, so a workflow's author can read, as a viewer, any run the
-  viewer can see through those few routes (then exfiltrate it as above). Today the same code
-  can read everything. Follow-up: bind them to the definitions a workflow declares
-  (`workflow_sources`, companion links).
+- **Cross-workflow reads** -- closed after phase 2 (2026-10-13), see "Cross-workflow reads,
+  bound" below.
 - **Reads with ids the host cannot check** (an audit session's bulk data, a task's detail):
   the server checks the viewer's access as always.
 - **Clickjacking-style prompts.** An author can time an effect request to a click. The
@@ -567,3 +563,71 @@ priority templates with real data); a scan of live COPIES (own render code) with
 until fixed or opted in, and its coverage line says what it could not read; then
 `LABS_WORKFLOW_SANDBOX=all`. Follow-ups: bind cross-workflow reads to the
 definitions a workflow declares; declared actions on pages (a scope instead of a run).
+
+## After phase 2: the leftovers (2026-10-13)
+
+### Cross-workflow reads, bound
+
+**Ruling: a workflow or page reads another workflow's runs only if its definition DECLARES
+that workflow.** Declared means written on the definition, where a reviewer can see it:
+`workflow_sources[].workflow`; a companion's `config.source_workflow_id`,
+`source_definition_id` or `report_definition_id`; the instances a program report watches
+(`config.watched_sources`, `per_opp_instances`, legacy `watched_source`); or
+`config.read_workflows: [ids]` for anything else. The definition itself is always readable.
+One function decides it (`workflow/declared_reads.readable_definition_ids`).
+
+Why the server and not only the route table: a run is named by id, and the host cannot tell
+whose run an id is. So the host stamps every request it makes for the frame with
+`X-Labs-Sandbox-For: <definition id>` (set after the frame's headers are cut to
+`content-type` and `accept`, so the frame can neither set nor drop it; `none` when the frame
+names no definition, which refuses every cross-workflow read). The server reads that
+definition as the viewer and checks:
+
+- a run by id, its stored snapshot and its snapshot preview: by the run's own definition;
+- a history (`runs/history`, `flw-*-history?definition_id=`), indicator definitions and the
+  semantic endpoint: by the definition named (also bound by the host: `REL` routes and the
+  `definition_id` query parameter, against `readable_definitions` in the page payload);
+- the opportunity-wide readers (`prev-categories`, `open-run-state`, `run-category-history`):
+  only runs of declared definitions are listed;
+- a rollup job (`audit_par_rollup`, `program_admin_rollup`) started from the frame: only on
+  the workflow's own run, and every watched source must be a declared definition -- run
+  state is a frame-writable record, so it cannot be what declares (the seeders write
+  `config.watched_sources` as well);
+- a job's status (`job/<id>/status`): only for a run this request may read, and the host
+  binds `?run_id=` to this run;
+- every job, sandboxed or not: `job_config.run_id` must be the run in the URL (every handler
+  acts on it; no template names another), and is set to it when absent.
+
+One consent runs the other way: a report that names a companion review
+(`config.flw_review` / `worker_review: {workflow_id, run_id}`) lets that review read its
+runs, since it links its worker rows there with `?source_run=<its run>` (the KMC and
+indicator opportunity reports do).
+
+The host also stamps `X-Labs-Sandbox-Scope` (the definition's own `opportunity_id=` /
+`program_id=`), and the server reads the reader's definition there first: the session's
+scope is shared by every tab, and a program-owned definition is invisible at an
+opportunity's scope.
+
+A request without the header (labs' own page code, an MCP tool) is not restricted here: it
+already has the session. Fails closed: a reader whose definition cannot be read declares
+nothing.
+
+**Review fixes (before merge).** An independent adversarial review found: a job could be
+pointed at another run through `job_config.run_id` (fixed for every job, above); the job
+status endpoint read any run's active job (bound); "an opportunity the workflow covers"
+let a rollup read undeclared workflows (removed); the reader was read only in the
+session's scope (scope header); and the opportunity report's link to its worker review was
+refused (reverse consent). Each has a test that fails without it.
+
+Cost: the mbw auditing templates' carry-over of categories and notes from *another* workflow's
+runs in the same opportunity (`prev-categories`, `open-run-state` read "any workflow version")
+stops in the sandbox unless the earlier workflow is listed in `config.read_workflows`; their own
+runs carry over as before. A synthetic seed that writes watched sources into a program report's
+run state, outside both its config and its opportunities, makes the sandboxed rollup refuse
+with how to declare them. Residual: the audit sessions endpoint
+(`/audit/api/workflow/<run id>/sessions/`) is named by a run id too, but it returns audit
+sessions in an opportunity the route table binds, not a workflow run; left as is.
+
+Tests: `workflow/tests/test_declared_reads.py`,
+`components/workflow/sandbox/workflow_sandbox.test.js` ("reads of other workflows are bound").
+
