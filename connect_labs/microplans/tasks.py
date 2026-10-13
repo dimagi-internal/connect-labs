@@ -368,6 +368,7 @@ def bulk_create_plans_task(
     coverage_config=None,
     run_id=None,
     actor=None,
+    team=None,
 ):
     """Create one draft plan per confirmed admin boundary (one ward each), on the worker.
 
@@ -384,11 +385,15 @@ def bulk_create_plans_task(
 
     Reports incremental per-ward progress via ``set_task_progress`` (a growing
     ``results`` list in the task meta) so the front-end can flip each row's pill as
-    its ward finishes. Returns the final ``{results, created, total}`` summary."""
+    its ward finishes. Returns the final ``{results, created, total}`` summary.
+
+    ``team`` is the workspace team the enqueuing view or tool worked out for its
+    caller (``ProgramPlanDataAccess.team_for_new_records``); the worker has no
+    caller to work it out from. None outside a workspace program."""
     from connect_labs.labs.admin_boundaries.models import AdminBoundary
     from connect_labs.microplans.core.data_access import ProgramPlanDataAccess
 
-    da = ProgramPlanDataAccess(int(program_id), access_token=access_token)
+    da = ProgramPlanDataAccess(int(program_id), access_token=access_token, team=team)
     total = len(plans_input)
     results: list[dict] = []
     ok = 0
@@ -525,6 +530,7 @@ def create_boundary_plan(
     grouping=None,
     coverage_config=None,
     run_meta=None,
+    team=None,
 ):
     """Create one boundary plan from an admin boundary — the shared core of BOTH
     bulk-create-from-boundaries paths (the sync study "add wards from map" view and
@@ -582,6 +588,7 @@ def create_boundary_plan(
         coverage_config=cov_config,
         coverage_stats=cov_stats,
         run_meta=run_meta,
+        team=team,
     )
 
 

@@ -8,6 +8,7 @@ from datetime import timedelta
 from typing import Any
 
 from django.conf import settings
+from django.contrib.postgres.fields import ArrayField
 from django.db import models
 from django.utils import timezone
 
@@ -510,3 +511,44 @@ class LabsOrg(models.Model):
             candidates = {self.connect_organization_slug, *(self.aliases or [])}
             return slug in {c for c in candidates if c}
         return False
+
+
+class Workspace(models.Model):
+    """A labs-only organisation whose programmes are run with roles.
+
+    Everywhere else a labs-only programme is open to whoever its access model
+    (`SyntheticOpportunity.is_accessible_to`) admits, and everyone admitted sees
+    and may do the same things. A workspace replaces that with two roles,
+    resolved per request by `labs.workspaces`:
+
+      * a Program Manager -- Dimagi staff, or an admin of this organisation
+        (`marketplace.OrgMembership`, the override for a manager outside Dimagi);
+      * a Network Manager -- someone whose Connect organisation delivers an
+        opportunity in one of `connect_program_ids`. Their team is that Connect
+        organisation; apps scope what they see by it (microplans does).
+
+    This row existing is the whole flag: an organisation without one keeps
+    today's rules exactly. It points at `LabsOrg` rather than adding a column to
+    it because `LabsOrg` is identity only (see its docstring), and it is not a
+    Settings namespace because who may open a programme is not configuration --
+    it is checked on every read, and Settings is layered, edited from a generic
+    page, and undone with a click.
+    """
+
+    org = models.OneToOneField(LabsOrg, on_delete=models.CASCADE, related_name="workspace")
+    # The REAL Connect programmes whose delivering organisations are this
+    # workspace's Network Managers -- typically one per partner, made after the
+    # workspace, so a manager adds and removes them over time. Empty is valid:
+    # only Program Managers can use the workspace until one is linked.
+    connect_program_ids = ArrayField(models.IntegerField(), default=list, blank=True)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "labs_workspace"
+
+    def __str__(self) -> str:
+        return f"workspace {self.org}"
