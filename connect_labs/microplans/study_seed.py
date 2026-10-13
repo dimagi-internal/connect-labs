@@ -190,11 +190,14 @@ def ensure_synthetic_program(manifest: StudyManifest, *, user=None) -> int:
     return manifest.opportunity_id
 
 
-def data_access_for(manifest: StudyManifest):
-    """A ``ProgramPlanDataAccess`` bound to the manifest's labs-only program."""
+def data_access_for(manifest: StudyManifest, *, user=None):
+    """A ``ProgramPlanDataAccess`` bound to the manifest's labs-only program.
+
+    ``user`` is who the call acts for (the MCP tools pass theirs), so the data
+    access checks they may use the program; the local CLI passes none."""
     from connect_labs.microplans.core.data_access import ProgramPlanDataAccess
 
-    return ProgramPlanDataAccess(manifest.program_id, access_token="labs-local")
+    return ProgramPlanDataAccess(manifest.program_id, user=user, access_token="labs-local")
 
 
 # ---------------------------------------------------------------------- ensure

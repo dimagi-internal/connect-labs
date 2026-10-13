@@ -48,7 +48,7 @@ def _data_access(user, program_id: int):
     an access token to construct; for a labs-only program it is never used (the
     client short-circuits to the local backend), so a placeholder is fine when the
     user has no Connect token."""
-    from connect_labs.microplans.core.data_access import ProgramPlanDataAccess
+    from connect_labs.microplans.core.data_access import ProgramAccessDenied, ProgramPlanDataAccess
 
     if _is_labs_only(program_id):
         try:
@@ -57,7 +57,12 @@ def _data_access(user, program_id: int):
             token = "labs-local"  # unused for labs-only programs
     else:
         token = require_connect_token(user)
-    return ProgramPlanDataAccess(int(program_id), user=user, access_token=token)
+    try:
+        return ProgramPlanDataAccess(int(program_id), user=user, access_token=token)
+    except ProgramAccessDenied:
+        # The dispatcher's labs-only gate refuses this first; this is the same
+        # answer for a caller that reaches the handler without it.
+        raise MCPToolError("NOT_FOUND", f"program {program_id} is not there, or you cannot open it")
 
 
 @register(

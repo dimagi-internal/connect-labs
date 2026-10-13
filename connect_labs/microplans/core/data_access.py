@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from django.http import Http404
+
 from connect_labs.microplans.core import plan as plan_lib
 from connect_labs.microplans.core.models import TYPE_PLAN, TYPE_PLAN_GROUP, PlanGroupRecord, PlanRecord
 from connect_labs.workflow.data_access import BaseDataAccess
@@ -50,6 +52,26 @@ class RecordNotInProgramError(Exception):
     program first (404 → None) closes that. The view maps this to a 404."""
 
 
+class ProgramAccessDenied(Http404):
+    """The caller may not use this labs-only program (``microplans.access``).
+
+    A 404 rather than a 403, like every other labs-only refusal: it must not
+    confirm the program exists. Subclassing ``Http404`` means a view that lets it
+    escape still answers 404 instead of 500."""
+
+
+def _caller(kwargs):
+    """The user this data access acts for, if the caller named one.
+
+    Web views pass ``request``, MCP tools pass ``user``. Celery tasks, seeders and
+    tests pass neither: they act on ids a view or tool already checked when it
+    enqueued them, so there is no one to check here."""
+    if kwargs.get("user") is not None:
+        return kwargs["user"]
+    request = kwargs.get("request")
+    return getattr(request, "user", None) if request is not None else None
+
+
 class ProgramPlanDataAccess(BaseDataAccess):
     """Program-scoped CRUD for microplans + plan groups.
 
@@ -60,6 +82,17 @@ class ProgramPlanDataAccess(BaseDataAccess):
 
     def __init__(self, program_id, **kwargs):
         program_id = int(program_id)
+        # A labs-only program has no Connect membership check behind it (see
+        # below), so the caller's access to it is checked here, before anything
+        # is read. A real program returns None without a query.
+        caller = _caller(kwargs)
+        if caller is not None:
+            from connect_labs.microplans.access import record_denial, scope_denied_reason
+
+            denied = scope_denied_reason(caller, program_id=program_id)
+            if denied:
+                record_denial(reason=denied, program_id=program_id, user=caller)
+                raise ProgramAccessDenied(denied)
         # Labs-only program: a synthetic opp surfaced in user_programs by
         # labs.context._merge_labs_only_opps as a program id in the reserved range
         # (>= LABS_ONLY_OPP_ID_FLOOR / 10_000; = the backing opp's id). Carry that
