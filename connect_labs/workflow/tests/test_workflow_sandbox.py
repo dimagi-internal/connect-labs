@@ -140,7 +140,10 @@ def test_a_sandboxed_workflow_is_drawn_by_the_host_on_every_route(query):
     body = response.content.decode()
     assert response.status_code == 200, body[:500]
     assert response["Content-Security-Policy"].startswith(f"frame-src {HERE}/labs/sandbox/render/")
-    assert f'"sandbox": {{"src": "/labs/sandbox/render/", "origin": "{HERE}", "mode": "workflow"}}' in body
+    assert (
+        f'"sandbox": {{"src": "/labs/sandbox/render/", "origin": "{HERE}", "mode": "workflow", '
+        '"readable_definitions": [47]}' in body
+    )
     # Host mode: nothing on this page compiles or runs render code.
     for script in ("babel", "chart.umd.min.js", "mapbox-gl.js", "connect_map.js", "labs_audit_breakdown.js"):
         assert script not in body
@@ -185,6 +188,22 @@ def test_the_checked_templates_are_marked_and_their_new_instances_opt_in():
         assert template["definition"]["config"]["sandbox"] is True, key
     # A deprecated template is never vouched for.
     assert not any(TEMPLATES[k].get("deprecated") for k in SANDBOX_CHECKED)
+
+
+def test_every_deployed_template_that_is_not_a_page_is_checked():
+    """The rollout's last template (kmc_image_audit) joined once it read only its own
+    opportunities; a new template must be checked in the frame before it ships."""
+    from connect_labs.workflow.page_mode import is_page
+    from connect_labs.workflow.templates import SANDBOX_CHECKED
+
+    unchecked = sorted(
+        key
+        for key, template in TEMPLATES.items()
+        if not template.get("deprecated")
+        and not is_page(template.get("definition") or {})
+        and key not in SANDBOX_CHECKED
+    )
+    assert unchecked == []
 
 
 def test_a_follower_of_a_checked_template_is_sandboxed_and_a_copy_is_not():

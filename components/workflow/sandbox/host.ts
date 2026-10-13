@@ -22,6 +22,7 @@ import {
   PHASE1_METHODS,
   RATE,
   SHELL_PATH,
+  STREAM,
   UPDATE,
   WORKFLOW_METHODS,
   WORKFLOW_NAVIGATE_DENIED,
@@ -30,6 +31,7 @@ import {
   type BridgeRequest,
   type BridgeResponse,
   type FramePayload,
+  type StreamMessage,
 } from './protocol';
 import {
   RouteError,
@@ -247,14 +249,42 @@ export async function proxyFetch(
   recheck?: (url: string) => CheckedRequest,
 ): Promise<FetchAnswer> {
   const headers = cleanHeaders(init.headers);
+  // Which definition this request is made for: the server binds the runs it reads
+  // to the ones that definition declares (workflow/declared_reads.py). Set here,
+  // after the frame's own headers are cut to content-type and accept, so the frame
+  // can neither set nor drop it.
+  headers['x-labs-sandbox-for'] = checked.sandboxFor || 'none';
+  if (checked.sandboxScope)
+    headers['x-labs-sandbox-scope'] = checked.sandboxScope;
   const unsafe = !['GET', 'HEAD'].includes(checked.method);
   if (unsafe) headers['x-csrftoken'] = csrfToken;
   // A route that checked its body sends what it checked (canonical JSON).
-  const body = unsafe
+  let body = unsafe
     ? checked.body !== undefined
       ? checked.body
       : checkBody(init.body)
     : undefined;
+  // A body the route checked is sent as the JSON it was checked as, and says so: a
+  // form content type would let Django read fields out of it the check never saw.
+  if (unsafe && checked.body !== undefined) {
+    headers['content-type'] = 'application/json';
+  }
+  // A form the frame built carries the dummy token it read off its own DOM; Django
+  // reads a form's token before the header, so it is dropped and the header (this
+  // page's own token) decides.
+  if (
+    typeof body === 'string' &&
+    checked.body === undefined &&
+    (headers['content-type'] || '')
+      .toLowerCase()
+      .startsWith('application/x-www-form-urlencoded')
+  ) {
+    const form = new URLSearchParams(body);
+    if (form.has('csrfmiddlewaretoken')) {
+      form.delete('csrfmiddlewaretoken');
+      body = form.toString();
+    }
+  }
   const response = await fetchImpl(checked.href, {
     method: checked.method,
     headers,
@@ -293,6 +323,155 @@ export async function proxyFetch(
     headers: out,
     body: buffer,
   };
+}
+
+/** One server-sent event, as the frame's EventSource hands it to render code. */
+export interface SseEvent {
+  name: string;
+  data: string;
+  lastEventId: string;
+}
+
+/**
+ * A `text/event-stream` parser (the HTML spec's, without `retry`): feed it text as
+ * it arrives; it calls `onEvent` for each complete event.
+ */
+export function createSseParser(onEvent: (e: SseEvent) => void): {
+  feed(text: string): void;
+  end(): void;
+} {
+  let buffer = '';
+  let data: string[] = [];
+  let name = '';
+  let lastEventId = '';
+  let started = false;
+  let scanned = 0;
+  function line(raw: string) {
+    if (raw === '') {
+      if (data.length) {
+        onEvent({
+          name: name || 'message',
+          data: data.join('\n'),
+          lastEventId,
+        });
+      }
+      data = [];
+      name = '';
+      return;
+    }
+    if (raw.startsWith(':')) return;
+    const colon = raw.indexOf(':');
+    const field = colon === -1 ? raw : raw.slice(0, colon);
+    let value = colon === -1 ? '' : raw.slice(colon + 1);
+    if (value.startsWith(' ')) value = value.slice(1);
+    if (field === 'data') data.push(value);
+    else if (field === 'event') name = value;
+    else if (field === 'id' && !value.includes('\u0000')) lastEventId = value;
+  }
+  return {
+    feed(text: string) {
+      buffer += text;
+      if (!started && buffer.length) {
+        started = true;
+        if (buffer.charCodeAt(0) === 0xfeff) buffer = buffer.slice(1);
+      }
+      let m: RegExpExecArray | null;
+      const re = /\r\n|\n|\r(?!$)/g;
+      // Only what has not been looked at yet (less one, for a \r\n split across
+      // chunks): a pipeline's rows can be one line of tens of megabytes arriving in
+      // thousands of chunks, and rescanning it from the start each time is quadratic.
+      re.lastIndex = Math.max(0, scanned - 1);
+      let from = 0;
+      while ((m = re.exec(buffer))) {
+        line(buffer.slice(from, m.index));
+        from = m.index + m[0].length;
+      }
+      buffer = buffer.slice(from);
+      scanned = buffer.length;
+    },
+    end() {
+      // An event the stream did not finish with a blank line is dropped (spec).
+      buffer = '';
+      data = [];
+    },
+  };
+}
+
+/**
+ * Read a checked GET as a server-sent-event stream, as the viewer, from THIS page --
+ * with the same headers a proxied fetch carries (a browser EventSource can set
+ * none, which is why the host reads streams with fetch). Resolves when the stream
+ * ends; rejects when it cannot be read.
+ */
+export async function proxyStream(
+  checked: CheckedRequest,
+  onEvent: (e: SseEvent) => void,
+  onOpen: () => void,
+  signal: AbortSignal,
+  fetchImpl: typeof fetch = fetch,
+  recheck?: (url: string) => CheckedRequest,
+  maxBytes: number = LIMITS.streamBytes,
+): Promise<void> {
+  const headers: Record<string, string> = {
+    accept: 'text/event-stream',
+    'x-labs-sandbox-for': checked.sandboxFor || 'none',
+  };
+  if (checked.sandboxScope)
+    headers['x-labs-sandbox-scope'] = checked.sandboxScope;
+  const response = await fetchImpl(checked.href, {
+    method: 'GET',
+    headers,
+    credentials: 'same-origin',
+    redirect: 'follow',
+    signal,
+  });
+  // Every refusal below lets go of the connection first.
+  const refuse = (message: string): never => {
+    response.body?.cancel().catch(() => undefined);
+    throw new BridgeError(message);
+  };
+  if (response.redirected) {
+    let landed: CheckedRequest | null = null;
+    try {
+      landed = recheck ? recheck(response.url) : null;
+    } catch {
+      landed = null;
+    }
+    if (!landed || landed.gate !== 'read') {
+      refuse(
+        'stream: that address redirected somewhere a workflow cannot reach',
+      );
+    }
+  }
+  if (!response.ok) refuse(`stream: HTTP ${response.status}`);
+  const type = response.headers.get('content-type') || '';
+  if (!type.startsWith('text/event-stream')) {
+    refuse('stream: that address does not answer as a stream');
+  }
+  onOpen();
+  const parser = createSseParser(onEvent);
+  const decoder = new TextDecoder();
+  let seen = 0;
+  if (!response.body) {
+    const text = await response.text();
+    if (text.length > maxBytes) throw new BridgeError('stream: too large');
+    parser.feed(text);
+    parser.end();
+    return;
+  }
+  const reader = response.body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    seen += value.byteLength;
+    if (seen > maxBytes) {
+      reader.cancel().catch(() => undefined);
+      throw new BridgeError('stream: the stream is too large for a workflow');
+    }
+    parser.feed(decoder.decode(value, { stream: true }));
+  }
+  parser.feed(decoder.decode());
+  parser.end();
 }
 
 // ---------------------------------------------------------------------------
@@ -344,6 +523,13 @@ export interface WorkflowHandlers {
   ask(text: string): Promise<boolean>;
   /** The action keys this workflow declares (runAction refuses any other). */
   actionKeys(): string[];
+  /** Read a checked GET as a stream (proxyStream); resolves when it ends. */
+  stream?(
+    checked: CheckedRequest,
+    onEvent: (e: SseEvent) => void,
+    onOpen: () => void,
+    signal: AbortSignal,
+  ): Promise<void>;
 }
 
 export interface DispatchOptions {
@@ -364,7 +550,16 @@ export interface DispatchOptions {
   workflow?: WorkflowHandlers;
   /** The host page's query now (setLocation keeps its scope and run). */
   currentSearch?: () => string;
+  /** Send a stream's messages to the frame (on the port). */
+  push?: (message: StreamMessage) => void;
 }
+
+/** A dispatcher, and how to stop the streams it is reading. */
+export type Dispatcher = ((
+  request: unknown,
+) => Promise<BridgeResponse | null>) & {
+  closeStreams: () => void;
+};
 
 /** Address parameters the frame may keep but never change (setLocation). */
 export const PINNED_ADDRESS_PARAMS = [
@@ -379,14 +574,16 @@ export const PINNED_ADDRESS_PARAMS = [
   'template_draft',
 ];
 
-/** Methods only a run answers: a page asking for one is told it has no run. */
-export const RUN_ONLY_METHODS = ['updateState', 'completeRun', 'runAction'];
+/** Methods only a run answers: a page asking for one is told it has no run.
+ * (`runAction` is not one: a page's declared actions act within its scope, through
+ * the same host dialog -- workflow/actions.py `PageScope`.) */
+export const RUN_ONLY_METHODS = ['updateState', 'completeRun'];
 
 /** Answer one frame request at a time: `(request) => response`, never throwing. */
 export function createDispatcher(
   handlers: HostHandlers,
   options: DispatchOptions,
-): (request: unknown) => Promise<BridgeResponse | null> {
+): Dispatcher {
   const now = options.now || (() => Date.now());
   const mode: SandboxMode = options.mode || 'page';
   // The full method set is answered whenever the host gave the handlers for it.
@@ -395,6 +592,20 @@ export function createDispatcher(
   const noun = mode === 'workflow' ? 'workflow' : 'page';
   const recent: number[] = [];
   const grants = new Map<string, { until: number; left: number }>();
+  const streams = new Map<string, AbortController>();
+  const streamOpens: number[] = [];
+  const jobStarts: number[] = [];
+  let streamSeq = 0;
+
+  /** Within `limit` in the last minute, or refused: `recent` is this kind's log. */
+  function perMinute(recent: number[], limit: number, what: string) {
+    const t = now();
+    while (recent.length && recent[0] < t - 60_000) recent.shift();
+    if (recent.length >= limit) {
+      throw new BridgeError(`too many ${what} from this page; wait a moment`);
+    }
+    recent.push(t);
+  }
   let inFlight = 0;
 
   function needsActivation(method: string) {
@@ -429,8 +640,14 @@ export function createDispatcher(
    */
   async function allowEffect(checked: CheckedRequest) {
     const label = checked.label || 'make a change';
-    if (!checked.perRecord) {
-      const grant = grants.get(checked.kind);
+    // A yes to a kind of write; or, for a route that saves to one record again and
+    // again (an audit's results), a yes to that kind of write on THAT record only.
+    const grantKey = checked.recordGrant
+      ? `${checked.kind}#${checked.recordId || ''}`
+      : checked.kind;
+    const remembered = !checked.perRecord || checked.recordGrant;
+    if (remembered) {
+      const grant = grants.get(grantKey);
       if (grant && grant.until > now() && grant.left > 0) {
         grant.left -= 1;
         return;
@@ -442,8 +659,8 @@ export function createDispatcher(
         : label;
     const yes = await workflow().ask(`This ${noun} wants to ${what}, as you.`);
     if (!yes) throw new BridgeError('not allowed: the person said no');
-    if (!checked.perRecord) {
-      grants.set(checked.kind, {
+    if (remembered) {
+      grants.set(grantKey, {
         until: now() + LIMITS.effectGrantMs,
         left: LIMITS.effectGrantWrites - 1,
       });
@@ -466,6 +683,97 @@ export function createDispatcher(
     } catch {
       // not JSON: nothing started
     }
+  }
+
+  /** A search across the viewer's opportunities, cut to THIS workflow's. */
+  function onlyOurOpportunities(answer: FetchAnswer): FetchAnswer {
+    const ours = (options.routeContext as RouteContext).opportunityIds;
+    let data: unknown;
+    try {
+      data = JSON.parse(new TextDecoder().decode(answer.body));
+    } catch {
+      throw new BridgeError('fetch: that answer could not be read');
+    }
+    const list =
+      data && typeof data === 'object'
+        ? (data as { opportunities?: unknown }).opportunities
+        : undefined;
+    if (!Array.isArray(list)) {
+      throw new BridgeError('fetch: that answer could not be read');
+    }
+    const kept = list.filter(
+      (o) =>
+        !!o &&
+        typeof o === 'object' &&
+        ours.includes(Number((o as { id?: unknown }).id)),
+    );
+    const body = new TextEncoder().encode(
+      JSON.stringify({ ...(data as object), opportunities: kept }),
+    );
+    return { ...answer, body: body.buffer as ArrayBuffer };
+  }
+
+  /** Read a stream for the frame, pushing each event back on the port. */
+  function openStream(checked: CheckedRequest): string {
+    const w = workflow();
+    if (!w.stream || !options.push) {
+      throw new BridgeError('streams are not available here');
+    }
+    // A closed stream holds its place until the host's read of it has ended.
+    if (streams.size >= LIMITS.streams) {
+      throw new BridgeError('too many streams at once');
+    }
+    perMinute(streamOpens, LIMITS.streamOpensPerMinute, 'streams');
+    streamSeq += 1;
+    const id = `s${streamSeq}`;
+    const controller = new AbortController();
+    streams.set(id, controller);
+    const push = (m: Omit<StreamMessage, 'stream' | 'type'>) => {
+      if (streams.get(id) === controller && !controller.signal.aborted) {
+        options.push!({ type: STREAM, stream: id, ...m });
+      }
+    };
+    // After this request's answer (which names the stream) has been sent.
+    Promise.resolve()
+      .then(() =>
+        w.stream!(
+          checked,
+          (e) =>
+            push({
+              kind: 'event',
+              name: e.name,
+              data: e.data,
+              lastEventId: e.lastEventId,
+            }),
+          () => push({ kind: 'open' }),
+          controller.signal,
+        ),
+      )
+      .then(
+        () => push({ kind: 'end' }),
+        (e) => {
+          if (!controller.signal.aborted) {
+            const message = e instanceof Error ? e.message : String(e);
+            console.warn(`[sandbox] stream ended: ${message}`);
+            push({
+              kind: 'error',
+              message: message.slice(0, LIMITS.errorLength),
+            });
+          }
+        },
+      )
+      .finally(() => {
+        if (streams.get(id) === controller) streams.delete(id);
+      });
+    return id;
+  }
+
+  function closeStream(id: unknown) {
+    if (typeof id !== 'string') return;
+    const controller = streams.get(id);
+    if (!controller) return;
+    // Aborted, not forgotten: its slot is freed when the read settles (above).
+    controller.abort();
   }
 
   async function navigateTo(href: string, newTab: boolean) {
@@ -574,6 +882,9 @@ export function createDispatcher(
           if (e instanceof RouteError) throw new BridgeError(e.message);
           throw e;
         }
+        if (checked.startsJob) {
+          perMinute(jobStarts, LIMITS.jobStartsPerMinute, 'background jobs');
+        }
         if (checked.gate === 'effect') {
           await allowEffect(checked);
         }
@@ -583,6 +894,9 @@ export function createDispatcher(
             body: params.body,
           });
           if (checked.startsJob && answer.status < 300) rememberJob(answer);
+          if (checked.filterOpportunities && answer.status < 300) {
+            return onlyOurOpportunities(answer);
+          }
           return answer;
         });
       }
@@ -607,7 +921,11 @@ export function createDispatcher(
       case 'runAction': {
         const w = workflow();
         const key = params.key;
-        if (typeof key !== 'string' || !w.actionKeys().includes(key)) {
+        if (
+          typeof key !== 'string' ||
+          !/^[A-Za-z0-9_-]{1,64}$/.test(key) ||
+          !w.actionKeys().includes(key)
+        ) {
           throw new BridgeError(
             `This workflow has no action ${JSON.stringify(String(key)).slice(0, 80)}.`,
           );
@@ -664,6 +982,30 @@ export function createDispatcher(
         w.setLocation(search, hash, params.push === true);
         return true;
       }
+      case 'streamOpen': {
+        workflow();
+        let checked: CheckedRequest;
+        try {
+          checked = checkFetch(
+            params.url,
+            'GET',
+            options.routeContext as RouteContext,
+          );
+        } catch (e) {
+          if (e instanceof RouteError) throw new BridgeError(e.message);
+          throw e;
+        }
+        // A stream is a read: an address the table answers only as a write is not one.
+        if (checked.gate !== 'read') {
+          throw new BridgeError('stream: only a read can be streamed');
+        }
+        return { stream: openStream(checked) };
+      }
+      case 'streamClose': {
+        workflow();
+        closeStream(params.stream);
+        return true;
+      }
       case 'notify': {
         const w = workflow();
         const message =
@@ -680,7 +1022,7 @@ export function createDispatcher(
     }
   }
 
-  return async (request: unknown) => {
+  const dispatch = (async (request: unknown) => {
     if (!isPlainObject(request)) return null;
     const { id, method } = request as unknown as BridgeRequest;
     if (typeof id !== 'number' && typeof id !== 'string') return null;
@@ -743,7 +1085,12 @@ export function createDispatcher(
       }
       return { id, error: message.slice(0, LIMITS.errorLength) };
     }
+  }) as Dispatcher;
+  dispatch.closeStreams = () => {
+    for (const controller of streams.values()) controller.abort();
+    streams.clear();
   };
+  return dispatch;
 }
 
 // ---------------------------------------------------------------------------
@@ -854,11 +1201,15 @@ export function createSandboxHost(options: SandboxHostOptions): SandboxHost {
       routeContext: options.routeContext,
       workflow: options.workflow,
       currentSearch: () => win.location.search,
+      push: (message) => {
+        if (port && !stopped) port.postMessage(message);
+      },
     },
   );
 
   function stop() {
     stopped = true;
+    dispatch.closeStreams();
     if (port) port.close();
     port = null;
     win.removeEventListener('message', onMessage);

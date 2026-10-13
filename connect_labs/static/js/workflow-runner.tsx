@@ -149,7 +149,13 @@ interface ExtendedWorkflowData extends WorkflowDataFromDjango {
   // the frame at `src` and answers it, and compiles and runs no render code itself.
   // `mode: 'workflow'` (phase 2): a workflow's own render, handed what it reads
   // today (workers, pipelines, its run) and answered through routes.ts.
-  sandbox?: { src: string; origin: string; mode?: 'page' | 'workflow' };
+  sandbox?: {
+    src: string;
+    origin: string;
+    mode?: 'page' | 'workflow';
+    /** Definitions whose runs this one declares it reads (declared_reads.py). */
+    readable_definitions?: number[];
+  };
   mapboxToken?: string;
   viewer_is_staff?: boolean;
 }
@@ -1561,6 +1567,7 @@ function WorkflowRunner({
       opportunityIds,
       programIds,
       organizationKey: scope?.organization?.slug || null,
+      readableDefinitionIds: ids(sandbox?.readable_definitions || []),
       jobIds: typeof activeJob === 'string' ? [activeJob] : [],
       defaultScope: ownOpp
         ? { name: 'opportunity_id', value: String(ownOpp) }
@@ -1601,6 +1608,7 @@ function WorkflowRunner({
   }, [
     sandboxMode,
     sandbox?.origin,
+    sandbox?.readable_definitions,
     csrfToken,
     initialData.opportunity_ids,
     initialData.opportunity_id,
@@ -1623,6 +1631,7 @@ function WorkflowRunner({
           key={actionRequest.seq}
           request={actionRequest.request}
           actionBase={initialData.apiEndpoints.actionBase}
+          scopeQuery={initialData.apiEndpoints.actionScope}
           executionBase={initialData.apiEndpoints.actionExecutionBase || ''}
           csrfToken={csrfToken}
           onClose={(execution) => {

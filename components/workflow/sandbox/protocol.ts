@@ -7,6 +7,8 @@
  *   host  -> frame  (window):  {type: INIT, payload} + one MessagePort
  *   host  -> frame  (port):    {type: UPDATE, payload}
  *   frame -> host   (port):    {id, method, params}  ->  {id, result} | {id, error}
+ *   host  -> frame  (port):    {type: STREAM, stream, kind, ...}  (an EventSource the
+ *                              host reads for the frame: `streamOpen` / `streamClose`)
  *
  * After INIT everything rides the port; window messages are ignored.
  */
@@ -18,6 +20,19 @@ export const SHELL_PATH = '/labs/sandbox/render/';
 export const HELLO = 'labs-sandbox:hello';
 export const INIT = 'labs-sandbox:init';
 export const UPDATE = 'labs-sandbox:update';
+export const STREAM = 'labs-sandbox:stream';
+
+/** One thing that happened on a stream the host reads for the frame. */
+export interface StreamMessage {
+  type?: typeof STREAM;
+  stream: string;
+  /** `open` once; `event` per server-sent event; `end` or `error` last. */
+  kind: 'open' | 'event' | 'end' | 'error';
+  name?: string;
+  data?: string;
+  lastEventId?: string;
+  message?: string;
+}
 
 /** Methods the host answers on a page (phase 1). Anything else is an error. */
 export const PHASE1_METHODS = [
@@ -47,6 +62,8 @@ export type BridgeMethod = (typeof PHASE1_METHODS)[number];
  * - `setLocation`: history.pushState/replaceState on the host's URL (query and
  *   hash only, same path).
  * - `notify`: what alert() used to say, drawn by the host as text.
+ * - `streamOpen` / `streamClose`: an EventSource, read by the host for a GET the
+ *   route table allows as a read; its events come back as STREAM messages.
  */
 export const WORKFLOW_METHODS = [
   'fetch',
@@ -56,6 +73,8 @@ export const WORKFLOW_METHODS = [
   'completeRun',
   'setLocation',
   'notify',
+  'streamOpen',
+  'streamClose',
 ] as const;
 
 /** Kept for the page tests: what a page is refused. */
@@ -96,6 +115,15 @@ export const LIMITS = {
   /** ...and for at most this many writes. */
   effectGrantWrites: 200,
   messageLength: 2_000,
+  /** Streams (EventSource) the host reads for one frame at once. */
+  streams: 6,
+  /** What one stream may deliver, in all (a pipeline's rows ride the last event). */
+  streamBytes: 96 * 1024 * 1024,
+  /** Streams opened per minute: each holds server work open, and closing one does
+   * not stop that work at once. */
+  streamOpensPerMinute: 20,
+  /** Requests that start server-side work (a job, a footprints fetch), per minute. */
+  jobStartsPerMinute: 30,
 };
 
 /** Per-mode request budgets: a workflow loads images and rows a page never does. */

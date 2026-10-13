@@ -11,7 +11,11 @@
  *
  * - `read`: the endpoint only reads. The server checks the viewer's access as it
  *   always has. Routes whose path names an opportunity, a program, this workflow
- *   or this run are BOUND: the id must be one the workflow itself covers.
+ *   or this run are BOUND: the id must be one the workflow itself covers. Reads of
+ *   ANOTHER workflow's runs are bound to the workflows this one DECLARES
+ *   (workflow/declared_reads.py): a definition named in the path or the query here,
+ *   and a run by its definition on the server, which knows the request is the
+ *   frame's from the `X-Labs-Sandbox-For` header the host stamps on it.
  * - `own`: a write to this run's or this workflow's own record (its state, its
  *   flags, its name). Bound to this run / definition, no question asked: render
  *   code makes these as the person works (and some from effects).
@@ -52,6 +56,14 @@ export interface Route {
   perRecord?: boolean;
   /** The path's token must be a job this host started (or the run's own). */
   ownJob?: boolean;
+  /** With `perRecord`: a yes holds for THAT record a while (a screen that saves one
+   * audit's results again and again), never for another. */
+  recordGrant?: boolean;
+  /** The answer starts a job whose token later routes name (`ownJob`). */
+  startsJob?: boolean;
+  /** A search across everything the viewer has: the host cuts the answer's
+   * `opportunities` to this workflow's own. */
+  filterOpportunities?: boolean;
 }
 
 /**
@@ -108,6 +120,18 @@ function perOppInBody(body: Record<string, unknown>, ctx: RouteContext): void {
   }
 }
 
+/** Footprints for at most a few drawn areas per request (each is a cold fetch on the
+ * shared background worker). */
+export const MAX_FOOTPRINT_AREAS = 5;
+function fewAreas(body: Record<string, unknown>): void {
+  const areas = body.areas;
+  if (!Array.isArray(areas) || areas.length > MAX_FOOTPRINT_AREAS) {
+    throw new RouteError(
+      `fetch: building footprints for at most ${MAX_FOOTPRINT_AREAS} areas at a time`,
+    );
+  }
+}
+
 /** A job is cancelled only on THIS run. */
 function thisRunInBody(body: Record<string, unknown>, ctx: RouteContext): void {
   if (
@@ -149,6 +173,17 @@ function jobGate(
   ) {
     refuseOpportunity(config.opportunity_id);
   }
+  // Every job handler acts on job_config.run_id: it must be THIS run (the server
+  // also refuses one that is not the run in the URL).
+  if (
+    config.run_id !== undefined &&
+    config.run_id !== null &&
+    (ctx.runId === null || Number(config.run_id) !== ctx.runId)
+  ) {
+    throw new RouteError(
+      'fetch: that job names a run this workflow does not cover',
+    );
+  }
   if (
     config.program_id !== undefined &&
     config.program_id !== null &&
@@ -174,6 +209,10 @@ export interface RouteContext {
   programIds: number[];
   /** The organisation in view (a page's scope), by slug. */
   organizationKey: string | null;
+  /** The definitions whose runs this one declares it reads (itself included):
+   * `workflow_sources`, a companion's report, watched sources, `read_workflows`.
+   * From the server (declared_reads.readable_definition_ids). */
+  readableDefinitionIds: number[];
   /** Jobs this run is running or this host started: the only ones it may cancel.
    * The host adds to it as it starts jobs. */
   jobIds: string[];
@@ -194,14 +233,26 @@ export interface CheckedRequest {
   /** Asked every time, naming `recordId`. */
   perRecord?: boolean;
   recordId?: string;
+  /** A yes holds a while for `recordId` alone. */
+  recordGrant?: boolean;
+  /** The host cuts the answer's `opportunities` to this workflow's. */
+  filterOpportunities?: boolean;
   /** A job start: the host remembers the job it started. */
   startsJob?: boolean;
+  /** Stamped on the request as `X-Labs-Sandbox-For`: the definition it is made for,
+   * so the server binds the runs it reads to the ones that definition declares. */
+  sandboxFor: string;
+  /** Stamped as `X-Labs-Sandbox-Scope`: where that definition lives
+   * (`program_id=25`), so the server reads it there whatever the session holds. */
+  sandboxScope: string;
 }
 
 const ID = '(\\d+)';
 const RUN = '(?<run>\\d+)';
 const DEF = '(?<def>\\d+)';
 const OPP = '(?<opp>\\d+)';
+/** Another definition whose runs are read: one this workflow declares. */
+const REL = '(?<rel>\\d+)';
 const PROG = '(?<prog>\\d+)';
 const TOKEN = '([A-Za-z0-9_.:-]+)';
 /** A job's token, bound to the jobs this run has (`ownJob`). */
@@ -220,21 +271,24 @@ function p(source: string): RegExp {
 
 export const ROUTES: readonly Route[] = [
   // --- Reads: workflow runs, history, indicators -------------------------------
+  // A run by id: the server binds it to a definition this workflow declares
+  // (declared_reads.py, from the X-Labs-Sandbox-For header the host stamps).
   { methods: GET, gate: 'read', path: p(`/labs/workflow/api/run/${ID}/`) },
   {
     methods: GET,
     gate: 'read',
     path: p(`/labs/workflow/api/run/${ID}/snapshot/(preview/)?`),
   },
+  // Another workflow's history and indicators: one this workflow declares.
   {
     methods: GET,
     gate: 'read',
-    path: p(`/labs/workflow/api/${ID}/runs/history/`),
+    path: p(`/labs/workflow/api/${REL}/runs/history/`),
   },
   {
     methods: GET,
     gate: 'read',
-    path: p(`/labs/workflow/api/${ID}/(indicator-definitions|semantic)/`),
+    path: p(`/labs/workflow/api/${REL}/(indicator-definitions|semantic)/`),
   },
   {
     methods: GET,
@@ -246,7 +300,7 @@ export const ROUTES: readonly Route[] = [
     methods: GET,
     gate: 'read',
     path: p(
-      `/labs/workflow/api/${DEF}/(pipeline-rows|pipeline-rows/stream|case-states|pipeline-data|supply-data|workflow-data)/`,
+      `/labs/workflow/api/${DEF}/(pipeline-rows|pipeline-rows/stream|case-states|pipeline-data|pipeline-data/stream|supply-data|workflow-data|schedule)/`,
     ),
   },
   {
@@ -307,6 +361,13 @@ export const ROUTES: readonly Route[] = [
     path: p(`/audit/api/program/${PROG}/sessions-summary/`),
   },
   { methods: GET, gate: 'read', path: p(`/audit/api/scope-context/`) },
+  // The audit wizard's opportunity picker: answered with THIS workflow's only.
+  {
+    methods: GET,
+    gate: 'read',
+    path: p(`/audit/api/opportunities/search/`),
+    filterOpportunities: true,
+  },
   { methods: GET, gate: 'read', path: p(`/audit/api/ai-agents/`) },
   {
     methods: GET,
@@ -343,6 +404,22 @@ export const ROUTES: readonly Route[] = [
     path: p(
       `/microplans/${OPP}/boundaries/(areas|geometry|population_by_name)/`,
     ),
+  },
+  // Building footprints for an area drawn on a map: computed on the server from
+  // public data (writes nothing of the viewer's), then polled -- only a poll this
+  // host started. A few areas at a time; starts are budgeted by the host.
+  {
+    methods: POST,
+    gate: 'read',
+    path: p(`/microplans/${OPP}/preview_footprints/`),
+    startsJob: true,
+    bodyCheck: fewAreas,
+  },
+  {
+    methods: GET,
+    gate: 'read',
+    path: p(`/microplans/preview_status/${JOB}/`),
+    ownJob: true,
   },
 
   // --- Own: this run's and this workflow's own records --------------------------
@@ -443,6 +520,14 @@ export const ROUTES: readonly Route[] = [
     label: 'delete audit',
     perRecord: true,
   },
+  {
+    methods: POST,
+    gate: 'effect',
+    path: p(`/audit/api/${REC}/save/`),
+    label: 'save review results to audit',
+    perRecord: true,
+    recordGrant: true,
+  },
 ];
 
 /** Never, whatever a route above says (belt and braces against a loose pattern). */
@@ -462,6 +547,10 @@ const SCOPE_PARAMS = {
   organization_id: 'org',
 } as const;
 
+/** Other query parameters bound like a path id (the history endpoints name the
+ * workflow they read with `?definition_id=`). */
+const BOUND_PARAMS = { definition_id: 'rel', run_id: 'run' } as const;
+
 export class RouteError extends Error {}
 
 function bound(name: string, value: string, ctx: RouteContext): boolean {
@@ -476,6 +565,11 @@ function bound(name: string, value: string, ctx: RouteContext): boolean {
       return ctx.runId !== null && ctx.runId > 0 && n === ctx.runId;
     case 'def':
       return ctx.definitionId !== null && n === ctx.definitionId;
+    case 'rel':
+      return (
+        (ctx.definitionId !== null && n === ctx.definitionId) ||
+        (ctx.readableDefinitionIds || []).includes(n)
+      );
     case 'opp':
       return ctx.opportunityIds.includes(n);
     case 'prog':
@@ -491,6 +585,7 @@ const NOUNS: Record<string, string> = {
   org: 'an organization',
   run: 'a run',
   def: 'a workflow',
+  rel: 'a workflow',
   job: 'a job',
 };
 
@@ -554,7 +649,10 @@ export function checkFetch(
   // included: the context middleware both answers in that scope and saves it to
   // the viewer's session, so an unbound one would read another scope and move the
   // viewer's other tabs into it.
-  for (const [param, name] of Object.entries(SCOPE_PARAMS)) {
+  for (const [param, name] of Object.entries({
+    ...SCOPE_PARAMS,
+    ...BOUND_PARAMS,
+  })) {
     for (const value of parsed.searchParams.getAll(param)) {
       if (!bound(name, value, ctx)) {
         throw new RouteError(
@@ -592,7 +690,16 @@ export function checkFetch(
     body: canonical,
     perRecord: route.perRecord === true,
     recordId: groups.rec,
-    startsJob: /\/job\/start\/$/.test(path),
+    recordGrant: route.recordGrant === true,
+    filterOpportunities: route.filterOpportunities === true,
+    startsJob: route.startsJob === true || /\/job\/start\/$/.test(path),
+    sandboxFor:
+      ctx.definitionId !== null && Number.isSafeInteger(ctx.definitionId)
+        ? String(ctx.definitionId)
+        : 'none',
+    sandboxScope: ctx.defaultScope
+      ? `${ctx.defaultScope.name}=${ctx.defaultScope.value}`
+      : '',
   };
 }
 

@@ -100,6 +100,16 @@ On each workflow's listing you will see a line indicating whether it currently r
 
 If you are asked to confirm an action you did not expect, that is the protection working as intended — check what the workflow is about to do before clicking yes.
 
+#### Reading another workflow's runs in the protected frame
+
+A protected workflow can read the saved runs of another workflow only if its settings explicitly declare that relationship — for example, the way a worker review names the program report it belongs to, or the way a page lists the workflows it displays.
+
+If a protected workflow tries to read runs from a workflow it has not declared, it will show the message **"This workflow or page does not declare that workflow"** rather than loading any data.
+
+For most reports this makes no visible difference. One case where it does matter: the MBW auditing reports, when running in the protected frame, will no longer carry categories and notes across from a *different* workflow's runs unless that other workflow is listed in the report's settings. Categories and notes from a report's own runs continue to carry over as before.
+
+If you notice a report no longer showing categories or notes that you expect from another workflow, the report's settings may need to be updated to declare that workflow. Contact your program administrator or support if you are unsure.
+
 ---
 
 ## Pages
@@ -118,9 +128,22 @@ Pages are useful for landing screens and summary views that you want to keep per
 | Can show pipeline data and worker details | Yes | Yes |
 | Can open visit photos and draw maps | Yes | Yes |
 | Can create tasks or audits (with confirmation) | Yes | Yes |
+| Can start AI coaching conversations (with confirmation) | Yes | Yes |
 | Can save run state or complete a run | Yes | No |
 
 Pages can now be built with the full set of workflow tools. They can show pipeline data and worker details, open visit photos, draw maps with admin boundaries and map tiles, and create tasks or audits — with Labs asking for confirmation first, the same way a protected workflow does. The only things a page cannot do are those that require a run: saving run state, completing a run, running a declared action, or running a background job.
+
+### Actions on a page
+
+A page can have buttons that trigger actions — the same types of actions a report can trigger — scoped to the organisation, program, or opportunity the page belongs to:
+
+- **Create follow-up tasks** for workers
+- **Start an AI coaching conversation** with workers
+
+When you click one of these buttons, Labs opens its confirmation dialog showing you exactly which workers are affected and what will be sent. Nothing happens until you confirm. This is the same "nothing happens until you confirm" protection that applies to protected workflows.
+
+!!! note "Coaching from a page vs. coaching from a report"
+    When coaching is triggered from a page, the message sent is the one the page itself declares. Briefings, pictures, and case conversations — which are drawn from a report's saved figures — are only available from reports, not from pages.
 
 ### Access to workflows shown on a page
 
@@ -210,24 +233,4 @@ Settings uses the word **program** (not "programme") throughout.
 
 Who can change Settings and edit pages depends on whether the organisation, program, or opportunity is a **labs-only (synthetic)** scope or a **real partner** scope:
 
-- **Labs-only (synthetic) scopes** — anyone signed in with a **@dimagi.com** or **@dimagi-ai.com** email address can change Settings and edit pages, including scopes that have no administrator. This means a Dimagi person can always manage a synthetic scope, even if nobody else administers it.
-- **Real partner scopes** — Settings and page editing are controlled by the scope's own members (as Connect defines them) and any individuals who have been explicitly granted labs staff access. A Dimagi email address alone does not grant access to a real partner organisation, program, or opportunity.
-
-If you believe you should have access to a real partner scope's Settings but do not, ask the scope's administrator to grant you access directly.
-
-### Synthetic organisations
-
-A synthetic organisation groups every synthetic program that shares the same organisation name, regardless of who created them. Members of a synthetic organisation can read its Settings, but only **Dimagi staff** can make changes to a synthetic organisation's Settings. Each individual synthetic program can still set its own Settings independently.
-
-!!! note "Settings forms"
-    If you enter a value that is not a valid number in a Settings form, you will see a clear error message rather than a crash. Correct the value and save again.
-
----
-
-## The RUTF Supply Demo
-
-The RUTF supply demo is a synthetic clone program used for exploring and testing the Supply features in Labs. When the demo is seeded (or reseeded), it sets itself up to look realistic on whatever day seeding runs.
-
-### What the Stock review shows
-
-On the Stock review, most workers hold roughly 3½ to 5 weeks of RUTF at their own 14-day dispensing pace. About one in six workers falls below their minimum stock level, so the headline figure — **N of M workers below minimum at their own 14-day pace** — the alerts, and the blockers all have real data to display. Before this was corrected, workers appeared to hold 21 to 109 days of stock and nobody was ever below minimum, which made
+- **Labs-only (synthetic) scopes** — anyone signed in with a **@dimagi.com** or **@dimagi-ai.com**

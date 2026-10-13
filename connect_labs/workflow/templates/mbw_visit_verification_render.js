@@ -16,6 +16,13 @@ function WorkflowUI({
   // mixed unless "Both domains" is explicitly picked.
   var TEST_DOMAIN_NAME = 'ccc-mbw-experiments-1';
   var PROD_DOMAIN_NAME = 'ccc-mbw-production';
+  // The "ANC Visit" (etc.) xmlns match pulls every submission of that form
+  // ever made, from any build of the production app -- CommCare's Form API
+  // has no way to filter by build/version, and xmlns is stable across a
+  // form's whole edit history. That's WHY hasVerificationData() below can't
+  // rely on anything visit-level to mean "is this a verification-program
+  // visit" -- see its own comment for the mother-eligibility gate that
+  // replaces that inference.
   var DOMAIN_FILTER_OPTIONS = [
     { key: 'production', label: 'Production only' },
     { key: 'test', label: 'Test domain only' },
@@ -83,6 +90,29 @@ function WorkflowUI({
       var set = {};
       registrationRows.forEach(function (row) {
         if (row.conduct_visit_now === 'yes' && row.entity_id) {
+          set[row.entity_id] = true;
+        }
+      });
+      return set;
+    },
+    [registrationRows],
+  );
+
+  // Mother-level verification-program eligibility (hasVerificationData()'s
+  // gate below) -- mother_reg_for_visit_verification is set once at
+  // registration when a mother is randomized into the verification cohort,
+  // the SAME mother-level condition CommCare's own verification_properties
+  // form group checks (alongside the FLW's own eligibility, already covered
+  // by eligibleUsernames above) before it will compute a visit's
+  // visit_verification_outcome at all. A mother registered before the
+  // feature existed, or not selected into the sample, never gets this set
+  // to 'yes' -- a direct, principled replacement for inferring "is this
+  // visit UAT-period" from a visit-level field's mere presence.
+  var motherEligibleForVerification = React.useMemo(
+    function () {
+      var set = {};
+      registrationRows.forEach(function (row) {
+        if (row.mother_reg_for_visit_verification === 'yes' && row.entity_id) {
           set[row.entity_id] = true;
         }
       });
@@ -213,28 +243,31 @@ function WorkflowUI({
     });
   });
 
-  // Whether a visit's form has the verification block at all (vs. a
-  // pre-UAT submission from before the block existed on that form). The
-  // single gate this whole dashboard uses to mean "is this a UAT-period
-  // visit" -- extracted as a named function since the UAT Comparison tab
-  // also needs it (to split a FLW's full history into UAT vs. pre-UAT),
-  // not just the displayRows filter below.
+  // Whether a visit counts as part of the verification program at all (vs.
+  // a pre-cohort submission from a mother who predates the feature, or was
+  // never randomized into it). The single gate this whole dashboard uses to
+  // mean "is this a UAT-period visit" -- extracted as a named function since
+  // the UAT Comparison tab also needs it (to split a FLW's full history into
+  // UAT vs. pre-UAT), not just the displayRows filter below.
   //
-  // Gates on where_is_the_visit_being_conducted -- a required, unconditional
-  // question on any form version with the block, present no matter which
-  // location the FLW picked. visit_location_has_prev_home_gps was used here
-  // previously, but its own CommCare `relevant` condition is
-  // where_is_the_visit_being_conducted = 'mothers_home' -- it's blank for
-  // EVERY health-facility/other visit even when that visit's other methods
-  // (QR, signature, ANC card, birth certificate, mother questions) were
-  // fully captured, which silently dropped every non-home visit from the
-  // whole dashboard and miscounted it as pre-UAT on the UAT Comparison tab.
+  // Gates on motherEligibleForVerification -- the mother-level half of the
+  // SAME eligibility condition CommCare's own verification_properties form
+  // group checks before it will compute visit_verification_outcome at all
+  // (the other half, FLW eligibility, is eligibleUsernames above; CommCare
+  // ANDs the two as independent conditions, so neither replaces the other).
+  // Two earlier, weaker proxies for this were tried and retired: the visit's
+  // own where_is_the_visit_being_conducted field's mere presence (a form
+  // from a build before the feature shipped could still coincidentally
+  // produce a non-blank value there) and a hardcoded production app-build
+  // floor (an approximation of "was this submitted after the feature
+  // shipped" built on a GUESS at the build number, where the mother's own
+  // eligibility flag is the actual, CommCare-maintained signal for exactly
+  // that). mother_reg_for_visit_verification is set once at registration,
+  // so a mother registered before the feature existed -- which is also the
+  // population that would have had pre-block visit forms -- never gets it
+  // set to 'yes', without needing a visit-level or build-level proxy at all.
   function hasVerificationData(row) {
-    return (
-      row.where_is_the_visit_being_conducted !== null &&
-      row.where_is_the_visit_being_conducted !== undefined &&
-      row.where_is_the_visit_being_conducted !== ''
-    );
+    return !!motherEligibleForVerification[row.mother_case_id];
   }
 
   var enrichedRows = React.useMemo(
@@ -352,6 +385,15 @@ function WorkflowUI({
 
   function gpsOutcome(row) {
     var locType = row.where_is_the_visit_being_conducted;
+    // A blank locType means this specific form submission structurally
+    // lacks the verification block (e.g. an eligible mother's FLW happened
+    // to be on a stale, unsynced app build for this one visit) -- nothing
+    // to evaluate, not an anomaly. Without this check, a blank locType fell
+    // through to the catch-all ERROR branch below, which is reserved for a
+    // genuine inconsistency (fields present but not in an expected shape),
+    // not a structurally-absent block -- the original "GPS outcomes showing
+    // as ERROR" report.
+    if (!locType) return 'NA';
     // 'other' (neither the mother's home nor a health facility) has no
     // applicable prior-GPS field at all -- GPS verification doesn't apply
     // there, same as a missing prior GPS at home/health-facility.
@@ -546,6 +588,7 @@ function WorkflowUI({
     { key: 'form_instance_id', label: 'Visit ID' },
     { key: 'visit_datetime', label: 'Visit date' },
     { key: 'form_name', label: 'Visit type' },
+    { key: 'app_build_version', label: 'App build' },
     { key: 'visit_number', label: 'Visit #' },
     { key: 'where_is_the_visit_being_conducted', label: 'GPS location' },
     { key: 'gps_outcome', label: 'GPS outcome' },
@@ -1119,6 +1162,144 @@ function WorkflowUI({
         failedAnalysisDisplayRows,
         'gps_distance_from_health_facility_meters',
       );
+    },
+    [failedAnalysisDisplayRows],
+  );
+
+  // --- Final verification pass rate by GPS distance (Failed Verification --
+  // Analysis) -- tests whether a visit far from the reference point is less
+  // likely to pass OVERALL (visit_verification_outcome -- which can pass via
+  // GPS, QR, signature, ANC card, or mother questions), not just whether it
+  // passes the GPS check itself. Bucketing by GPS outcome instead would be
+  // circular: gps_visit_verification_matches is itself a hard <=200m
+  // pass/>200m fail rule on this same distance, so plotting it against
+  // distance would just redraw that threshold, not test anything.
+  //
+  // 200m-wide buckets out to 6000m (most visits with any failure are well
+  // under this; a bucket's bar is only shown when it has at least one row,
+  // so sparse far buckets don't inflate the x-axis with empty bars), then
+  // one 6000-10000m bucket and one 10000m+ bucket -- the latter specifically
+  // to isolate the ~55-66km outlier cluster from the single-digit-km
+  // stragglers rather than lumping them together.
+  //
+  // 'Other location' and 'No prior GPS (first visit)' are appended as two
+  // final categories, not distance buckets -- a visit with no distance to
+  // measure at all (either the location type has no reference point
+  // concept, or this IS the first visit to that location, so there's no
+  // prior point to compare against). Same hasPrevGps/locType branching as
+  // gpsOutcome(), just mapped to a bucket/category label instead of an
+  // outcome.
+  //
+  // Pass rate is passCount / (passCount + failCount + pendingCount) per
+  // bucket -- same verifiedTotal convention as summary.passPct, so a visit
+  // whose Final verification outcome was never computed (see "Verification
+  // Summary Tab" in Definitions) doesn't silently count as a fail here
+  // either.
+  var GPS_DISTANCE_BUCKET_WIDTH_M = 200;
+  var GPS_DISTANCE_FAR_BUCKET_START_M = 6000;
+  var GPS_DISTANCE_CATCHALL_START_M = 10000;
+
+  function gpsDistanceBucketLabel(distanceM) {
+    if (distanceM >= GPS_DISTANCE_CATCHALL_START_M) return '10,000m+';
+    if (distanceM >= GPS_DISTANCE_FAR_BUCKET_START_M) return '6,000-10,000m';
+    var lo =
+      Math.floor(distanceM / GPS_DISTANCE_BUCKET_WIDTH_M) *
+      GPS_DISTANCE_BUCKET_WIDTH_M;
+    var hi = lo + GPS_DISTANCE_BUCKET_WIDTH_M;
+    return lo + '-' + hi + 'm';
+  }
+
+  // Sort key so the fixed 200m buckets stay in numeric order and the two
+  // wider tail buckets land after all of them, regardless of insertion
+  // order (a Map preserves first-seen order, which depends on row order).
+  function gpsDistanceBucketSortKey(label) {
+    if (label === '10,000m+') return Infinity;
+    if (label === '6,000-10,000m') return GPS_DISTANCE_FAR_BUCKET_START_M;
+    return parseInt(label, 10);
+  }
+
+  var OTHER_LOCATION_CATEGORY = 'Other location';
+  var NO_PRIOR_GPS_CATEGORY = 'No prior GPS (first visit)';
+
+  var gpsDistancePassRateStats = React.useMemo(
+    function () {
+      var byCategory = {};
+      function tally(category, row) {
+        if (!byCategory[category]) {
+          byCategory[category] = {
+            category: category,
+            pass: 0,
+            fail: 0,
+            pending: 0,
+          };
+        }
+        var bucket = byCategory[category];
+        if (row.visit_verification_outcome === 'Pass') bucket.pass += 1;
+        else if (row.visit_verification_outcome === 'Fail') bucket.fail += 1;
+        else if (row.visit_verification_outcome === 'Pending Audit')
+          bucket.pending += 1;
+      }
+
+      failedAnalysisDisplayRows.forEach(function (row) {
+        var locType = row.where_is_the_visit_being_conducted;
+        if (locType === 'other') {
+          tally(OTHER_LOCATION_CATEGORY, row);
+          return;
+        }
+        var hasPrevGps =
+          locType === 'mothers_home'
+            ? row.visit_location_has_prev_home_gps
+            : locType === 'health_facility'
+              ? row.visit_location_has_prev_health_facility_gps
+              : null;
+        if (hasPrevGps === 'no') {
+          tally(NO_PRIOR_GPS_CATEGORY, row);
+          return;
+        }
+        var distance =
+          locType === 'mothers_home'
+            ? row.gps_distance_from_home_meters
+            : locType === 'health_facility'
+              ? row.gps_distance_from_health_facility_meters
+              : null;
+        // locType missing entirely (not a verification-era visit at all) or
+        // a distance that failed to compute despite a reference point
+        // existing (this visit's own GPS capture issue, not a location/
+        // first-visit case) -- neither fits a bucket or either named
+        // category, so skip rather than force it somewhere misleading.
+        if (typeof distance !== 'number' || isNaN(distance)) return;
+        tally(gpsDistanceBucketLabel(distance), row);
+      });
+
+      var buckets = Object.keys(byCategory)
+        .filter(function (c) {
+          return c !== OTHER_LOCATION_CATEGORY && c !== NO_PRIOR_GPS_CATEGORY;
+        })
+        .sort(function (a, b) {
+          return gpsDistanceBucketSortKey(a) - gpsDistanceBucketSortKey(b);
+        })
+        .map(function (c) {
+          return byCategory[c];
+        });
+
+      [OTHER_LOCATION_CATEGORY, NO_PRIOR_GPS_CATEGORY].forEach(function (c) {
+        if (byCategory[c]) buckets.push(byCategory[c]);
+      });
+
+      return buckets.map(function (b) {
+        var verifiedTotal = b.pass + b.fail + b.pending;
+        return {
+          category: b.category,
+          pass: b.pass,
+          fail: b.fail,
+          pending: b.pending,
+          verifiedTotal: verifiedTotal,
+          passPct:
+            verifiedTotal > 0
+              ? Math.round((b.pass / verifiedTotal) * 100)
+              : null,
+        };
+      });
     },
     [failedAnalysisDisplayRows],
   );
@@ -2132,7 +2313,7 @@ function WorkflowUI({
   var DEFINITION_SECTIONS = [
     {
       title: 'Which visits appear in this report',
-      body: "A visit only shows up if ALL are true: (1) it's from the CommCare domain(s) selected in the \"CommCare domain\" toggle at the top (Production only by default), (2) the FLW who conducted it is a commcare-user case with the property visit_verification set to 'yes' in that same domain, (3) the visit's form has the verification block at all, detected via where_is_the_visit_being_conducted being present/non-blank (a required, unconditional question on any form version with the block, present regardless of which location was chosen -- NOT visit_location_has_prev_home_gps, which is blank for every health-facility/other visit by the form's own design), and (4) if the \"Exclude visits that happened with registration\" checkbox is on (the default), it is not that mother's first visit AND conducted immediately at registration. Visits from FLWs not flagged for verification, from a domain not selected in the toggle, or submitted before the verification questions existed on that form, are excluded entirely -- not shown as blank rows. This gate applies dashboard-wide -- every tab (Verification Summary, Per FLW Verification View, Failed Verification Analysis) reads from the same filtered set, same as the domain and eligibility gates.",
+      body: "A visit only shows up if ALL are true: (1) it's from the CommCare domain(s) selected in the \"CommCare domain\" toggle at the top (Production only by default), (2) the mother it's for is a mother case with the property mother_reg_for_visit_verification set to 'yes' -- set once at registration when she's randomized into the verification cohort, (3) the FLW who conducted it is a commcare-user case with the property visit_verification set to 'yes' in that same domain, and (4) if the \"Exclude visits that happened with registration\" checkbox is on (the default), it is not that mother's first visit AND conducted immediately at registration. (2) and (3) are the SAME two conditions (independently ANDed) that CommCare's own verification_properties form group checks before it will compute a visit's Final verification outcome at all -- see \"Verification Summary Tab\" below for the one additional CommCare-side condition that can still leave a visit shown here without an outcome. Visits for a mother never randomized into the cohort, from an FLW not flagged for verification, or from a domain not selected in the toggle, are excluded entirely -- not shown as blank rows. This gate applies dashboard-wide -- every tab (Verification Summary, Per FLW Verification View, Failed Verification Analysis) reads from the same filtered set, same as the domain and eligibility gates.",
       items: [
         {
           name: 'Domain filter',
@@ -2145,9 +2326,9 @@ function WorkflowUI({
             "pipelines: eligible_flws (test domain) and/or eligible_flws_prod (production domain), per the domain filter (cchq_cases, case_type='commcare-user'). Fields: visit_verification (case.properties.visit_verification), entity_name (built-in, = case_name = FLW username). Joined to each visit row on username === entity_name.",
         },
         {
-          name: 'Verification-block-present gate',
+          name: 'Mother eligibility gate',
           field:
-            'visit_location_has_prev_home_gps (form.gps_verification.location_check.visit_location_has_prev_home_gps) must be non-null/undefined/empty-string.',
+            "pipelines: mother_registration (test domain) and/or mother_registration_prod (production domain), per the domain filter (cchq_cases, case_type='mother'). Field: mother_reg_for_visit_verification (case.properties.mother_reg_for_visit_verification) must equal 'yes'. Joined to each visit row on mother_case_id === entity_id -- same lookup table as the registration-exclude toggle below, built from the same pipelines.",
         },
         {
           name: 'Exclude visits that happened with registration (default ON)',
@@ -2311,7 +2492,7 @@ function WorkflowUI({
     },
     {
       title: 'Verification Summary Tab',
-      body: "The three percentages and the \"n=\" counts are computed over the domain+eligibility-filtered visit set (see \"Which visits appear\" above), further narrowed by this tab's own FLW filter if any FLWs are selected (summaryDisplayRows), using each visit's Final verification outcome. IMPORTANT: the percentages' denominator is summary.verifiedTotal (passCount + failCount + pendingCount) -- the count of visits that actually got a Final verification outcome -- NOT summary.total (every visit with the verification block present, summaryDisplayRows.length). The two differ because visit_verification_outcome lives in CommCare's own verification_properties form group, which has ITS OWN separate `relevant` condition on top of (and independent from) where_is_the_visit_being_conducted's gate: mother_reg_for_visit_verification (a mother case property) must be 'yes', AND the visit must not be CommCare's own same-day registration/1-week-visit form-linking edge case (reg_date_equal_to_one_week_date == 1). A visit can have real GPS/QR/signature/ANC-card/birth-certificate/mother-question data (showing correctly in the per-method breakdown below and the Table tab) while still having a BLANK visit_verification_outcome, because that group was never evaluated for it -- this is CommCare's own business rule, not a dashboard bug. Using summary.total as the percentages' denominator would silently count every such visit as if it had failed, which is wrong -- confirmed via commcare_hq_mcp's get_form_questions. The tab's caption states the exact count of visits excluded this way.",
+      body: "The three percentages and the \"n=\" counts are computed over the domain+eligibility-filtered visit set (see \"Which visits appear\" above), further narrowed by this tab's own FLW filter if any FLWs are selected (summaryDisplayRows), using each visit's Final verification outcome. IMPORTANT: the percentages' denominator is summary.verifiedTotal (passCount + failCount + pendingCount) -- the count of visits that actually got a Final verification outcome -- NOT summary.total (every visit in summaryDisplayRows). The two differ because visit_verification_outcome lives in CommCare's own verification_properties form group, which has ONE condition beyond the mother/FLW eligibility this dashboard already gates on: the visit must not be CommCare's own same-day registration/1-week-visit form-linking edge case (reg_date_equal_to_one_week_date == 1) -- not currently captured by any pipeline here. A visit hitting that edge case can have real GPS/QR/signature/ANC-card/birth-certificate/mother-question data (showing correctly in the per-method breakdown below and the Table tab) while still having a BLANK visit_verification_outcome, because that group was never evaluated for it -- this is CommCare's own business rule, not a dashboard bug. Using summary.total as the percentages' denominator would silently count every such visit as if it had failed, which is wrong -- confirmed via commcare_hq_mcp's get_form_questions. The tab's caption states the exact count of visits excluded this way; with the mother/FLW eligibility gate now exactly matching CommCare's own, this residual should be small and entirely attributable to that one edge case.",
       items: [
         {
           name: '% Passed Verification',
@@ -2353,7 +2534,7 @@ function WorkflowUI({
     },
     {
       title: 'Failed Verification Analysis Tab',
-      body: "Reports here use the domain+eligibility-filtered row set (domain toggle + FLW eligibility + verification-block-present gate), further narrowed by this tab's own FLW filter if any FLWs are selected (failedAnalysisDisplayRows) -- NOT the Status/FLW filters from the Per FLW Verification View tab or the Verification Summary tab's FLW filter, which are each scoped to their own tab alone. Three sections: By FLW, GPS Verification, and Mother question fail rate.",
+      body: "Reports here use the domain+eligibility-filtered row set (domain toggle + FLW eligibility + verification-block-present gate), further narrowed by this tab's own FLW filter if any FLWs are selected (failedAnalysisDisplayRows) -- NOT the Status/FLW filters from the Per FLW Verification View tab or the Verification Summary tab's FLW filter, which are each scoped to their own tab alone. Four sections: By FLW, GPS Verification (including Final verification pass rate by GPS distance), and Mother question fail rate.",
       items: [
         {
           name: 'By FLW -- chart',
@@ -2383,6 +2564,18 @@ function WorkflowUI({
           def: 'Hovering a dot shows the distance, accuracy, and which FLW submitted that visit.',
           field:
             'Each scatter point carries username alongside {x, y}; a custom Chart.js tooltip.callbacks.label reads it back out. Same username field as the FLW ID column.',
+        },
+        {
+          name: 'Final verification pass rate by GPS distance -- chart',
+          def: "Tests whether a visit farther from the reference point is less likely to be verified OVERALL, not whether it fails the GPS check itself -- plotting the GPS-specific outcome against this same distance would be circular, since that outcome IS a <=200m/>200m rule on this distance. Bars are the Final verification outcome's pass rate (same verifiedTotal denominator as the Verification Summary tab's cards -- a visit whose outcome was never computed doesn't count as a fail), bucketed by GPS distance into 200m-wide bins out to 6,000m, then one 6,000-10,000m bucket and one 10,000m+ bucket (the latter specifically isolates a cluster of ~55-66km outliers from the single-digit-km stragglers rather than averaging them together). A bucket only appears if at least one visit falls in it, so sparse ranges don't pad the chart with empty bars.",
+          field:
+            'gpsDistancePassRateStats -- failedAnalysisDisplayRows grouped by gpsDistanceBucketLabel(distance), where distance is the same gps_distance_from_home_meters/gps_distance_from_health_facility_meters pair the scatter plot above uses. Pass rate per bucket is pass / (pass + fail + pending) on visit_verification_outcome.',
+        },
+        {
+          name: 'Final verification pass rate by GPS distance -- Other location / No prior GPS bars',
+          def: '"Other location" (grey bar) is every visit where where_is_the_visit_being_conducted = \'other\' -- no location type has a GPS reference point to measure against. "No prior GPS (first visit)" (grey bar) is a visit at the mother\'s home or a health facility where no prior point existed yet for that location -- the same gate gpsOutcome() uses to return NA. Both are appended after the distance buckets for direct comparison, not distance values themselves.',
+          field:
+            "Same locType/hasPrevGps branching as gpsOutcome(): where_is_the_visit_being_conducted === 'other' -> 'Other location'; else visit_location_has_prev_home_gps/visit_location_has_prev_health_facility_gps === 'no' -> 'No prior GPS (first visit)'.",
         },
         {
           name: 'Home GPS mismatch reasons -- chart',
@@ -2834,6 +3027,90 @@ function WorkflowUI({
       };
     },
     [homeGpsMismatchReasonStats, activeTab],
+  );
+
+  // --- Final verification pass rate by GPS distance chart (Failed --------
+  // Verification Analysis)
+  var gpsDistancePassRateChartRef = React.useRef(null);
+  var gpsDistancePassRateChartInstance = React.useRef(null);
+
+  React.useEffect(
+    function () {
+      if (activeTab !== 'failed_analysis') return;
+      if (!gpsDistancePassRateChartRef.current || !window.Chart) return;
+      if (gpsDistancePassRateChartInstance.current)
+        gpsDistancePassRateChartInstance.current.destroy();
+
+      gpsDistancePassRateChartInstance.current = new window.Chart(
+        gpsDistancePassRateChartRef.current,
+        {
+          type: 'bar',
+          data: {
+            labels: gpsDistancePassRateStats.map(function (s) {
+              return s.category;
+            }),
+            datasets: [
+              {
+                label: 'Final verification pass rate',
+                data: gpsDistancePassRateStats.map(function (s) {
+                  return s.passPct;
+                }),
+                backgroundColor: gpsDistancePassRateStats.map(function (s) {
+                  return s.category === OTHER_LOCATION_CATEGORY ||
+                    s.category === NO_PRIOR_GPS_CATEGORY
+                    ? '#9ca3af'
+                    : '#3b82f6';
+                }),
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: { ticks: { maxRotation: 60, minRotation: 60 } },
+              y: {
+                beginAtZero: true,
+                max: 100,
+                title: { display: true, text: 'Pass rate (%)' },
+                ticks: {
+                  callback: function (v) {
+                    return v + '%';
+                  },
+                },
+              },
+            },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: function (context) {
+                    var s = gpsDistancePassRateStats[context.dataIndex];
+                    return (
+                      s.passPct +
+                      '% pass (n=' +
+                      s.verifiedTotal +
+                      ': ' +
+                      s.pass +
+                      ' pass, ' +
+                      s.fail +
+                      ' fail, ' +
+                      s.pending +
+                      ' pending)'
+                    );
+                  },
+                },
+              },
+            },
+          },
+        },
+      );
+      return function () {
+        if (gpsDistancePassRateChartInstance.current)
+          gpsDistancePassRateChartInstance.current.destroy();
+      };
+    },
+    [gpsDistancePassRateStats, activeTab],
   );
 
   // --- Mother question fail rate chart (Failed Verification Analysis) ----
@@ -3514,6 +3791,33 @@ function WorkflowUI({
                       >
                         <canvas ref={homeGpsMismatchReasonChartRef}></canvas>
                       </div>
+                    )}
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                    <h4 className="mb-1 text-sm font-medium text-gray-800">
+                      Final verification pass rate by GPS distance
+                    </h4>
+                    <p className="mb-2 text-xs text-gray-500">
+                      Does a visit farther from the reference point end up
+                      failing overall, or does it often still pass via another
+                      method? Bars are the visit's{' '}
+                      <strong>Final verification outcome</strong>, not the GPS
+                      check alone -- bucketed by GPS distance (home or health
+                      facility, 200m bins out to 6,000m, then 6,000-10,000m and
+                      10,000m+), plus two non-distance categories: "Other
+                      location" (no GPS reference point applies) and "No prior
+                      GPS (first visit)" (nothing to compare against yet). Hover
+                      a bar for the exact counts.
+                    </p>
+                    {gpsDistancePassRateStats.length > 0 ? (
+                      <div style={{ height: '360px' }}>
+                        <canvas ref={gpsDistancePassRateChartRef}></canvas>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400">
+                        No visits with a Final verification outcome in the
+                        current filter.
+                      </p>
                     )}
                   </div>
                 </div>

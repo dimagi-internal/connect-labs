@@ -53,6 +53,10 @@ function rememberQaUsername(value: string) {
 interface Props {
   request: ActionRequest;
   actionBase: string;
+  /** The scope query the action is read in (`?program_id=25`). A run page's comes
+   * from its own address; a page's from the server (its owner), since a page's
+   * address (`/labs/p/...`) names none. */
+  scopeQuery?: string;
   executionBase: string;
   csrfToken: string;
   onClose: (execution: WorkflowActionExecution | null) => void;
@@ -77,6 +81,7 @@ async function send(url: string, csrfToken: string, body?: unknown) {
 export function ActionDialog({
   request,
   actionBase,
+  scopeQuery,
   executionBase,
   csrfToken,
   onClose,
@@ -85,7 +90,16 @@ export function ActionDialog({
   const scope = window.location.search.match(
     /[?&](opportunity_id|program_id)=\d+/,
   );
-  const qs = scope ? `?${scope[0].slice(1)}` : '';
+  const qs =
+    scopeQuery !== undefined &&
+    /^(\?[A-Za-z_]+=[A-Za-z0-9_-]+)?$/.test(scopeQuery)
+      ? scopeQuery
+      : scope
+        ? `?${scope[0].slice(1)}`
+        : '';
+  // The key is a slug (the server offers no other); encoded all the same, so a key
+  // can never make this dialog post anywhere but this action's own address.
+  const keyPath = encodeURIComponent(request.key);
   const qaOnly = Boolean(request.qaOnly);
   const [args, setArgs] = useState(() => {
     // A QA-only send starts at the viewer's remembered username: one click sends.
@@ -128,7 +142,7 @@ export function ActionDialog({
       setPreview(null);
       try {
         setPreview(
-          await send(`${actionBase}${request.key}/preview/${qs}`, csrfToken, {
+          await send(`${actionBase}${keyPath}/preview/${qs}`, csrfToken, {
             arguments: next,
           }),
         );
@@ -165,14 +179,10 @@ export function ActionDialog({
     setBusy(true);
     setError('');
     try {
-      const data = await send(
-        `${actionBase}${request.key}/run/${qs}`,
-        csrfToken,
-        {
-          arguments: preview.arguments,
-          confirm: preview.confirm,
-        },
-      );
+      const data = await send(`${actionBase}${keyPath}/run/${qs}`, csrfToken, {
+        arguments: preview.arguments,
+        confirm: preview.confirm,
+      });
       setExecution(data.execution);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not run this action');

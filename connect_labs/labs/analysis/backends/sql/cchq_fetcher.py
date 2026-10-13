@@ -189,7 +189,18 @@ def fetch_cchq_forms_as_visit_dicts(
         logger.warning(f"[CCHQ Fetcher] Could not discover xmlns for '{form_name}', returning empty")
         return []
 
-    forms = client.fetch_forms(xmlns=xmlns, app_id=fetch_app_id, received_on_start=_received_on_start(data_source))
+    # raise_on_http_error=True: a silent partial result here is indistinguishable
+    # from "that was the complete form history" to every downstream consumer
+    # (the pipeline cache, the render code) -- mirrors fetch_cases's own flag,
+    # added for the identical reason on the cases side: a transient page
+    # failure on a cold-cache walk was silently cached as a short-but-complete
+    # dataset, with no signal anywhere that it was truncated.
+    forms = client.fetch_forms(
+        xmlns=xmlns,
+        app_id=fetch_app_id,
+        received_on_start=_received_on_start(data_source),
+        raise_on_http_error=True,
+    )
     logger.info(f"[CCHQ Fetcher] Fetched {len(forms)} '{form_name}' forms from {cc_domain}")
 
     visit_dicts = [normalize_cchq_form_to_visit_dict(form, i) for i, form in enumerate(forms)]
@@ -275,7 +286,19 @@ def iter_cchq_forms_as_visit_dicts(
         return
 
     logger.info(f"[CCHQ Fetcher] Streaming '{form_name}' forms from {cc_domain}")
+    # raise_on_http_error=True -- see the matching comment in
+    # fetch_cchq_forms_as_visit_dicts above. This is the variant actually used
+    # by the eager multi-pipeline workflow load (pipeline.py's cchq_forms
+    # branch), which already passes raise_on_error=True into
+    # stream_pipeline_events specifically so a real failure surfaces instead
+    # of a fake empty/partial success -- but that only works if the fetch
+    # itself raises rather than swallowing the error first.
     for i, form in enumerate(
-        client.iter_forms(xmlns=xmlns, app_id=fetch_app_id, received_on_start=_received_on_start(data_source))
+        client.iter_forms(
+            xmlns=xmlns,
+            app_id=fetch_app_id,
+            received_on_start=_received_on_start(data_source),
+            raise_on_http_error=True,
+        )
     ):
         yield normalize_cchq_form_to_visit_dict(form, i)

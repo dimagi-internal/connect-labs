@@ -31,6 +31,8 @@ const CTX = {
   opportunityIds: [10, 11],
   programIds: [7],
   organizationKey: 'acme',
+  // The report a companion reads (config.source_workflow_id), declared.
+  readableDefinitionIds: [42, 31],
   jobIds: ['job-of-this-run'],
   defaultScope: { name: 'opportunity_id', value: '10' },
 };
@@ -197,6 +199,7 @@ function workflowHandlers(overrides = {}) {
     notify: vi.fn(),
     ask: vi.fn(async () => true),
     actionKeys: () => ['coach'],
+    stream: vi.fn(async () => undefined),
     ...overrides,
   };
 }
@@ -450,6 +453,8 @@ describe('proxyFetch: the host makes the request as the viewer', () => {
     expect(init.headers).toEqual({
       'content-type': 'application/json',
       'x-csrftoken': 'real-token',
+      'x-labs-sandbox-for': '42',
+      'x-labs-sandbox-scope': 'opportunity_id=10',
     });
     expect(init.redirect).toBe('manual');
     expect(init.credentials).toBe('same-origin');
@@ -469,6 +474,93 @@ describe('proxyFetch: the host makes the request as the viewer', () => {
     const init = fetchImpl.mock.calls[0][1];
     expect(init.body).toBeUndefined();
     expect(init.headers['x-csrftoken']).toBeUndefined();
+  });
+});
+
+describe('reads of other workflows are bound to the ones this one declares', () => {
+  it.each([
+    '/labs/workflow/api/77/runs/history/?keys=snapshot.meta',
+    '/labs/workflow/api/77/indicator-definitions/?format=json',
+    '/labs/workflow/api/77/semantic/',
+    '/labs/workflow/api/flw-audit-report-history/?definition_id=77',
+    '/labs/workflow/api/flw-daily-summary-history/?definition_id=77',
+  ])('refuses an undeclared workflow: %s', (url) => {
+    expect(() => checkFetch(url, 'GET', CTX)).toThrow(/does not cover/);
+  });
+
+  it.each([
+    '/labs/workflow/api/31/runs/history/?keys=snapshot.meta',
+    '/labs/workflow/api/42/runs/history/?keys=snapshot.meta',
+    '/labs/workflow/api/31/indicator-definitions/',
+    '/labs/workflow/api/flw-audit-report-history/?definition_id=31',
+  ])('allows a declared one (or its own): %s', (url) => {
+    expect(() => checkFetch(url, 'GET', CTX)).not.toThrow();
+  });
+
+  it('a run is read by id, so every request says whose it is', async () => {
+    // The host cannot tell whose run 5555 is; the server can, from the header.
+    const checked = checkFetch('/labs/workflow/api/run/5555/', 'GET', CTX);
+    expect(checked.sandboxFor).toBe('42');
+    const fetchImpl = vi.fn(async () => new Response('{}'));
+    await proxyFetch(
+      checked,
+      // The frame cannot set it, or blank it, itself.
+      { headers: { 'X-Labs-Sandbox-For': '31', 'x-labs-sandbox-for': '' } },
+      't',
+      fetchImpl,
+    );
+    expect(fetchImpl.mock.calls[0][1].headers['x-labs-sandbox-for']).toBe('42');
+  });
+
+  it('a job acts only on this run, and a job status is only this run’s', () => {
+    const url = '/labs/workflow/api/run/900/job/start/';
+    const body = (cfg) => JSON.stringify({ job_config: cfg });
+    expect(
+      checkFetch(
+        url,
+        'POST',
+        CTX,
+        body({ job_type: 'audit_par_rollup', run_id: 900 }),
+      ).gate,
+    ).toBe('own');
+    expect(() =>
+      checkFetch(
+        url,
+        'POST',
+        CTX,
+        body({ job_type: 'audit_par_rollup', run_id: 901 }),
+      ),
+    ).toThrow(/run this workflow does not cover/);
+    expect(() =>
+      checkFetch(
+        '/labs/workflow/api/job/abc/status.json?run_id=901',
+        'GET',
+        CTX,
+      ),
+    ).toThrow(/run_id=901/);
+  });
+
+  it('every request says where its definition lives', async () => {
+    const fetchImpl = vi.fn(async () => new Response('{}'));
+    await proxyFetch(
+      checkFetch('/labs/workflow/api/run/5555/', 'GET', CTX),
+      { headers: { 'x-labs-sandbox-scope': 'program_id=999' } },
+      't',
+      fetchImpl,
+    );
+    expect(fetchImpl.mock.calls[0][1].headers['x-labs-sandbox-scope']).toBe(
+      'opportunity_id=10',
+    );
+  });
+
+  it('a frame that names no definition reads no other workflow', () => {
+    const ctx = { ...CTX, definitionId: null, readableDefinitionIds: [] };
+    expect(
+      checkFetch('/labs/workflow/api/run/5555/', 'GET', ctx).sandboxFor,
+    ).toBe('none');
+    expect(() =>
+      checkFetch('/labs/workflow/api/31/runs/history/', 'GET', ctx),
+    ).toThrow();
   });
 });
 
@@ -727,7 +819,9 @@ describe('the workflow frame on the host page', () => {
 // Jonathan, 2026-10-12: "pages should be completely definable like workflows are".
 // One capability set, gated only by whether there is a run.
 describe('a page can do everything a workflow can, except what needs a run', () => {
-  const RUN_ONLY = ['updateState', 'completeRun', 'runAction'];
+  // Saving a run's state and completing a run: the only things a page cannot do.
+  // Its declared actions run within its scope (workflow/actions.py PageScope).
+  const RUN_ONLY = ['updateState', 'completeRun'];
   const PAGE_CTX = { ...CTX, runId: null };
 
   function pageDispatcher(w = workflowHandlers(), h = pageHandlers()) {
@@ -767,6 +861,9 @@ describe('a page can do everything a workflow can, except what needs a run', () 
       confirm: { text: 'ok?' },
       download: { filename: 'a.csv', bytes: 'a,b' },
       reportError: { message: 'boom' },
+      runAction: { key: 'coach', args: { workers: [] } },
+      streamOpen: { url: '/audit/api/ai-agents/' },
+      streamClose: { stream: 's1' },
     }[method];
     const run = async (mode, ctx) =>
       createDispatcher(pageHandlers(), {
@@ -775,6 +872,7 @@ describe('a page can do everything a workflow can, except what needs a run', () 
         mode,
         routeContext: ctx,
         workflow: workflowHandlers(),
+        push: () => undefined,
       })({ id: 1, method, params });
     const page = await run('page', PAGE_CTX);
     const wf = await run('workflow', CTX);
@@ -794,9 +892,43 @@ describe('a page can do everything a workflow can, except what needs a run', () 
       expect(out.error).toBe(`${method} needs a run, and a page has none`);
       expect(w.updateState).not.toHaveBeenCalled();
       expect(w.completeRun).not.toHaveBeenCalled();
-      expect(w.runAction).not.toHaveBeenCalled();
     },
   );
+
+  it('a page runs its declared actions through the host, as a workflow does', async () => {
+    const { d, w } = pageDispatcher();
+    const ok = await d({
+      id: 1,
+      method: 'runAction',
+      params: { key: 'coach', args: { workers: [{ key: '10::w1' }] } },
+    });
+    expect(ok.error).toBeUndefined();
+    expect(w.runAction).toHaveBeenCalledWith(
+      'coach',
+      { workers: [{ key: '10::w1' }] },
+      { qaOnly: false },
+    );
+    const undeclared = await d({
+      id: 2,
+      method: 'runAction',
+      params: { key: 'not_declared', args: {} },
+    });
+    expect(undeclared.error).toMatch(/no action/);
+  });
+
+  it('an action key that is not a slug is refused even if declared', async () => {
+    const key = '../../1/delete/?x=';
+    const { d, w } = pageDispatcher(
+      workflowHandlers({ actionKeys: () => [key] }),
+    );
+    const out = await d({
+      id: 3,
+      method: 'runAction',
+      params: { key, args: {} },
+    });
+    expect(out.error).toMatch(/no action/);
+    expect(w.runAction).not.toHaveBeenCalled();
+  });
 
   it('a page reaches what a workflow reaches, except a run’s own routes', () => {
     expect(
