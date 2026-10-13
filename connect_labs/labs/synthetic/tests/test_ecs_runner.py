@@ -57,6 +57,8 @@ def test_launch_runs_the_job_command_from_the_workers_current_task_definition():
     assert override["name"] == "worker"
     assert override["command"] == ["python", "manage.py", "run_synthetic_job", "job-1"]
     assert {"name": ecs_runner.RUNNER_ENV, "value": "1"} in override["environment"]
+    # One math-library thread per forked process, or a cohort oversubscribes the machine.
+    assert {"name": "OMP_NUM_THREADS", "value": "1"} in override["environment"]
     # The arguments wait for the task, and the task's arn is remembered for cancel.
     assert cache.get("synthetic:ecs-job:job-1") == {"task": "some.task", "kwargs": {"spec_yaml": "x"}}
     assert ecs_runner.task_arn("job-1") == TASK_ARN
