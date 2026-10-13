@@ -192,6 +192,10 @@ class TestWebPipelineLeavesTheTokenToTheRequest:
         monkeypatch.setattr(CommCareDataAccess, "_refresh_token", fake_refresh)
         monkeypatch.setattr(CommCareDataAccess, "verify_hq_access", lambda self: self.access_token == "fresh")
         monkeypatch.setattr(CommCareDataAccess, "discover_form_xmlns", lambda self, form_name: None)
+        # Without this the app_id lookup went out to the real CommCare HQ: it
+        # passed only while HQ answered with an error status, and raised the day
+        # the request failed outright (offline, or a clock past HQ's certificate).
+        monkeypatch.setattr(CommCareDataAccess, "get_form_xmlns", lambda self, app_id, form_name=None: None)
 
         request = MagicMock()
         request.session = {"commcare_oauth": {"access_token": "expired", "refresh_token": "r", "expires_at": 0}}
@@ -229,6 +233,10 @@ class TestHeadlessWithToken:
         )
         monkeypatch.setattr(CommCareDataAccess, "verify_hq_access", lambda self: True)
         monkeypatch.setattr(CommCareDataAccess, "discover_form_xmlns", lambda self, form_name: None)
+        # Without this the app_id lookup went out to the real CommCare HQ: it
+        # passed only while HQ answered with an error status, and raised the day
+        # the request failed outright (offline, or a clock past HQ's certificate).
+        monkeypatch.setattr(CommCareDataAccess, "get_form_xmlns", lambda self, app_id, form_name=None: None)
 
         ds = DataSourceConfig(type="cchq_forms", form_name="visit", app_id="app-1")
 
