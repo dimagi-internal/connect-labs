@@ -84,6 +84,7 @@ module.exports = {
                 plugins: [
                   require('@tailwindcss/postcss'),
                   require('autoprefixer'),
+                  require('./postcss-host-viewport'),
                 ],
               },
             },
@@ -102,6 +103,7 @@ module.exports = {
                 plugins: [
                   require('@tailwindcss/postcss'),
                   require('autoprefixer'),
+                  require('./postcss-host-viewport'),
                 ],
               },
             },

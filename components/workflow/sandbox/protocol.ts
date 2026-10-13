@@ -9,6 +9,8 @@
  *   frame -> host   (port):    {id, method, params}  ->  {id, result} | {id, error}
  *   host  -> frame  (port):    {type: STREAM, stream, kind, ...}  (an EventSource the
  *                              host reads for the frame: `streamOpen` / `streamClose`)
+ *   host  -> frame  (port):    {type: VIEWPORT, viewport}  (the host window and where
+ *                              the frame sits in it; also in INIT, and on every change)
  *
  * After INIT everything rides the port; window messages are ignored.
  */
@@ -21,6 +23,32 @@ export const HELLO = 'labs-sandbox:hello';
 export const INIT = 'labs-sandbox:init';
 export const UPDATE = 'labs-sandbox:update';
 export const STREAM = 'labs-sandbox:stream';
+export const VIEWPORT = 'labs-sandbox:viewport';
+
+/**
+ * The host's window, as the frame needs it to size and place things the way they
+ * were on the run page (./viewport.ts): the frame is as tall as its content and
+ * never scrolls, so its own window says nothing about what the person sees.
+ * All in CSS pixels; `frameTop` is the iframe's top in the host's viewport (negative
+ * once scrolled past), `insetTop` the bottom of labs' fixed header (0 without one).
+ * `gutterLeft` / `gutterRight`: how far the iframe reaches past the column it is drawn
+ * in, into the page's empty margins (host.ts frameGutters); the frame keeps its content
+ * in the column, so what overflowed the column on the page still shows. `clipLeft` /
+ * `clipRight`: how far it may overflow before a box on the host clipped it (-1: none).
+ */
+export interface HostViewport {
+  width: number;
+  height: number;
+  scrollX: number;
+  scrollY: number;
+  frameTop: number;
+  frameHeight: number;
+  insetTop: number;
+  gutterLeft: number;
+  gutterRight: number;
+  clipLeft: number;
+  clipRight: number;
+}
 
 /** One thing that happened on a stream the host reads for the frame. */
 export interface StreamMessage {
@@ -41,6 +69,10 @@ export const PHASE1_METHODS = [
   'navigate',
   'shareSelection',
   'resize',
+  // Render code that scrolls the window (scrollTo, scrollIntoView, a focused field)
+  // scrolls the page around the frame: the frame itself never scrolls.
+  'scroll',
+  'reveal',
   'copyText',
   'confirm',
   'download',
@@ -104,7 +136,9 @@ export const LIMITS = {
   downloadBytes: 10 * 1024 * 1024,
   filenameLength: 120,
   minHeight: 80,
-  maxHeight: 50_000,
+  /** A last resort, warned about on the host: a long table is tall, and the frame is
+   * as tall as its content. */
+  maxHeight: 400_000,
   /** A workflow fetch: its request body, and the answer the host hands back. */
   fetchBodyBytes: 4 * 1024 * 1024,
   fetchResultBytes: 96 * 1024 * 1024,

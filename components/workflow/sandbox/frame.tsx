@@ -31,11 +31,14 @@ import {
   INIT,
   STREAM,
   UPDATE,
+  VIEWPORT,
   type BridgeResponse,
   type FramePayload,
+  type HostViewport,
   type StreamMessage,
 } from './protocol';
 import { SANDBOX_GLOBAL, sandboxRewritePlugin } from './rewrite';
+import { installViewport } from './viewport';
 
 // ---------------------------------------------------------------------------
 // Storage: an opaque origin has none, and reading localStorage throws there.
@@ -158,8 +161,14 @@ export interface Bridge {
 export function connectBridge(
   win: Window,
   handlers: {
-    onInit: (payload: FramePayload, bridge: Bridge) => void;
+    onInit: (
+      payload: FramePayload,
+      bridge: Bridge,
+      viewport: HostViewport | null,
+    ) => void;
     onUpdate: (payload: FramePayload) => void;
+    /** The host's window changed (./viewport.ts). */
+    onViewport?: (viewport: HostViewport) => void;
   },
   helloEveryMs = 200,
 ): () => void {
@@ -196,9 +205,14 @@ export function connectBridge(
     const data = event.data as BridgeResponse & {
       type?: string;
       payload?: FramePayload;
+      viewport?: HostViewport;
     };
     if (data && data.type === UPDATE && data.payload) {
       handlers.onUpdate(data.payload);
+      return;
+    }
+    if (data && data.type === VIEWPORT) {
+      if (isViewport(data.viewport)) handlers.onViewport?.(data.viewport);
       return;
     }
     if (data && data.type === STREAM) {
@@ -224,14 +238,22 @@ export function connectBridge(
   function onWindowMessage(event: MessageEvent) {
     if (port) return;
     if (event.source !== win.parent) return;
-    const data = event.data as { type?: string; payload?: FramePayload };
+    const data = event.data as {
+      type?: string;
+      payload?: FramePayload;
+      viewport?: unknown;
+    };
     if (!data || data.type !== INIT || !data.payload || !event.ports?.[0])
       return;
     port = event.ports[0];
     port.onmessage = onPortMessage;
     clearInterval(timer);
     win.removeEventListener('message', onWindowMessage);
-    handlers.onInit(data.payload, bridge);
+    handlers.onInit(
+      data.payload,
+      bridge,
+      isViewport(data.viewport) ? data.viewport : null,
+    );
   }
 
   win.addEventListener('message', onWindowMessage);
@@ -252,23 +274,76 @@ export function connectBridge(
 // Start
 // ---------------------------------------------------------------------------
 
-/** Report the content's height to the host whenever it changes. */
+function isViewport(v: unknown): v is HostViewport {
+  if (!v || typeof v !== 'object') return false;
+  const o = v as Record<string, unknown>;
+  return [
+    'width',
+    'height',
+    'scrollX',
+    'scrollY',
+    'frameTop',
+    'frameHeight',
+    'insetTop',
+    'gutterLeft',
+    'gutterRight',
+    'clipLeft',
+    'clipRight',
+  ].every((k) => typeof o[k] === 'number' && Number.isFinite(o[k] as number));
+}
+
+/** Growing this many times running, each within GROWTH_WINDOW_MS of the last, is
+ * content sized by the frame's own height (a feedback loop), not a page drawing. */
+export const RUNAWAY_GROWTHS = 60;
+export const GROWTH_WINDOW_MS = 250;
+
+/**
+ * Report the content's height to the host whenever it changes: the frame is as tall
+ * as what it draws, for pages and workflows alike. `minHeight` is the least it may
+ * be (an open dialog's window, ./viewport.ts). Content that keeps growing because it
+ * is sized by the frame's own height stops being followed, said once.
+ */
 export function reportHeight(
   root: HTMLElement,
   send: (height: number) => void,
-): () => void {
+  options: { minHeight?: () => number; now?: () => number } = {},
+): { measure: () => void; disconnect: () => void } {
+  const now = options.now || (() => Date.now());
   let last = -1;
+  let growths = 0;
+  let lastGrowthAt = 0;
+  let capped: number | null = null;
+  // Measured without ./viewport.ts's shift: only the height matters, and it is the
+  // element's own.
+  const rectOf = Element.prototype.getBoundingClientRect;
   const measure = () => {
-    const h = Math.ceil(root.getBoundingClientRect().height) + 2;
-    if (h !== last) {
-      last = h;
-      send(h);
+    // Exactly as tall, to the hundredth (rounded up, so nothing is cut off): the
+    // page around it is as long as it was with the render drawn in it.
+    let h = Math.ceil(rectOf.call(root).height * 100) / 100;
+    h = Math.max(h, Math.ceil(options.minHeight?.() || 0));
+    if (capped !== null && h > capped) h = capped;
+    if (h === last) return;
+    if (h > last && last > 0) {
+      const t = now();
+      growths = t - lastGrowthAt <= GROWTH_WINDOW_MS ? growths + 1 : 1;
+      lastGrowthAt = t;
+      if (growths >= RUNAWAY_GROWTHS && capped === null) {
+        capped = last;
+        console.warn(
+          `[sandbox] the content kept growing as the frame grew (${RUNAWAY_GROWTHS} times running); held at ${last}px`,
+        );
+        return;
+      }
+    } else {
+      growths = 0;
     }
+    last = h;
+    send(h);
   };
   const observer = new ResizeObserver(measure);
   observer.observe(root);
   measure();
-  return () => observer.disconnect();
+  return { measure, disconnect: () => observer.disconnect() };
 }
 
 // ---------------------------------------------------------------------------
@@ -483,10 +558,15 @@ export function startFrame(win: Window, rootEl: HTMLElement): void {
       ),
     ),
   );
+  let viewport: ReturnType<typeof installViewport> | null = null;
   connectBridge(win, {
-    onInit(payload, b) {
+    onInit(payload, b, hostViewport) {
       bridge = b;
       current = payload;
+      // The host's window, before anything is drawn: 100vh is its height from the
+      // first frame (./viewport.ts).
+      viewport = installViewport(win, rootEl, b);
+      if (hostViewport) viewport.apply(hostViewport);
       const pageUrl = () => (current && current.pageUrl) || '';
       // The host page's query and hash, as the frame moves them (history, a hash).
       const address: AddressState = { search: '', hash: '' };
@@ -563,10 +643,18 @@ export function startFrame(win: Window, rootEl: HTMLElement): void {
         typeof payload.pageUrl === 'string' ? payload.pageUrl : '',
         onDownload,
       );
-      reportHeight(rootEl, (height) => {
-        b.request('resize', { height }).catch(() => undefined);
-      });
+      const heights = reportHeight(
+        rootEl,
+        (height) => {
+          b.request('resize', { height }).catch(() => undefined);
+        },
+        { minHeight: () => viewport?.minHeight() || 0 },
+      );
+      viewport.onMinHeightChange(heights.measure);
       draw(payload);
+    },
+    onViewport(vp) {
+      viewport?.apply(vp);
     },
     // UPDATE carries only what changed.
     onUpdate(partial) {
