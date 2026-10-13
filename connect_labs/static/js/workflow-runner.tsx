@@ -14,6 +14,7 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { DynamicWorkflow } from '@/components/workflow/DynamicWorkflow';
 import { SandboxFrame } from '@/components/workflow/sandbox/SandboxFrame';
+import { createAgentSelection } from '@/components/workflow/agentSelection';
 import type { FramePayload } from '@/components/workflow/sandbox/protocol';
 import type { RouteContext } from '@/components/workflow/sandbox/routes';
 import {
@@ -83,50 +84,8 @@ declare global {
 }
 window.LabsReport = LabsReport;
 
-/**
- * Create action handlers for workflow operations.
- */
-/**
- * Tell the embedded agent what the page now shows.
- *
- * The canopy SDK's panel (`canopy_host/panel.html`, >= 0.5) declares the run's
- * selection when the page renders and exposes `window.canopyHost`; a report that
- * drills (an organisation, an opportunity, a worker) narrows that selection here
- * so the agent's "these workers" means the ones on screen. The run, its scope
- * and the tools on offer stay as the server declared them -- the SDK keeps them
- * -- and so do the server's filters, which the drill is layered over.
- * A no-op on a page with no panel (a workflow that does not share its runs).
- */
-interface CanopyHost {
-  pageState(): { filters?: Record<string, unknown> } | null;
-  updatePageState(patch: Record<string, unknown>): unknown;
-}
-let agentBaseFilters: Record<string, unknown> | null = null;
-let lastSelection: AgentSelection | null = null;
-export interface AgentSelection {
-  visible_ids?: string[];
-  drilled?: Record<string, unknown>;
-}
-function shareSelection(selection: AgentSelection): void {
-  lastSelection = selection;
-  const host = (window as unknown as { canopyHost?: CanopyHost }).canopyHost;
-  if (!host || typeof host.updatePageState !== 'function') return;
-  if (agentBaseFilters === null) {
-    agentBaseFilters = { ...(host.pageState()?.filters || {}) };
-  }
-  // Nested, never spread: the server's filters name the run's own scope
-  // (opportunity_id OR program_id), which every agent tool must be called with,
-  // and a drill into an opportunity must not read as a change of that scope.
-  const patch: Record<string, unknown> = {
-    filters: { ...agentBaseFilters, drilled: selection.drilled || {} },
-  };
-  if (selection.visible_ids) patch.visible_ids = selection.visible_ids;
-  host.updatePageState(patch);
-}
-// A selection shared before the panel finished loading is replayed once it has.
-document.addEventListener('canopy:ready', () => {
-  if (lastSelection) shareSelection(lastSelection);
-});
+// What the embedded agent is told the page shows (components/workflow/agentSelection.ts).
+const shareSelection = createAgentSelection(window, document);
 
 // Extended data type
 interface ExtendedWorkflowData extends WorkflowDataFromDjango {

@@ -398,6 +398,73 @@ def test_a_page_that_does_not_share_gets_no_panel(member_of_acme):
     assert response.status_code == 200
 
 
+@pytest.mark.django_db
+@pytest.mark.parametrize("sandboxed", [True, False], ids=["sandboxed", "not-sandboxed"])
+@pytest.mark.parametrize(
+    "route, panel",
+    [
+        ("page-address", True),
+        ("page-address-present", False),
+        ("workflow-url-with-run-id", True),
+        ("edit-mode", False),
+        ("workflow-url-present", False),
+        ("page-mode-on-a-workflow-definition", False),
+    ],
+)
+def test_which_routes_give_a_sharing_page_its_panel(route, panel, sandboxed, member_of_acme, monkeypatch):
+    """A panel where a page is drawn to be used; never in edit or present mode, and never
+    for a workflow a route draws in page mode (page_context reads only pages)."""
+    from connect_labs.workflow.page_views import PageView
+    from connect_labs.workflow.views import WorkflowRunView
+
+    calls = []
+
+    def panel_context(request, **kwargs):
+        calls.append(kwargs)
+        return {"ready": False, "page_state": None}
+
+    monkeypatch.setattr(WorkflowRunView, "_is_page_definition", lambda self, definition_id: True)
+    with patch("canopy_sdk.django.pages.panel_context", panel_context), override_settings(LABS_PAGE_SANDBOX=sandboxed):
+        if route.startswith("page-address"):
+            query = "?present=1" if route.endswith("present") else ""
+            request = _request("/labs/p/org/acme/" + query, context={})
+            _render(PageView, request, SHARING_PAGE, scope_type="org", scope_key="acme")
+        elif route == "page-mode-on-a-workflow-definition":
+            sharing_workflow = {**WORKFLOW, "config": {"agent": {"share": True}}}
+            with patch.object(WorkflowRunView, "page_mode", True):
+                _render(
+                    WorkflowRunView,
+                    _request("/labs/workflow/47/run/?program_id=25"),
+                    sharing_workflow,
+                    definition_id=47,
+                )
+        else:
+            query = {
+                "workflow-url-with-run-id": "?program_id=25&run_id=503",
+                "edit-mode": "?program_id=25&edit=true",
+                "workflow-url-present": "?program_id=25&present=1",
+            }[route]
+            _render(WorkflowRunView, _request("/labs/workflow/47/run/" + query), SHARING_PAGE, definition_id=47)
+    assert bool(calls) is panel
+    if panel:
+        # Always the page's own resource and tool, never a run's.
+        assert calls[0]["resource"].startswith("labs-page://") and calls[0]["backing_tool"] == "page_context"
+
+
+@pytest.mark.django_db
+def test_a_page_panel_is_not_drawn_when_the_browser_would_name_the_page(settings):
+    """In the SDK's key mode the browser names its page by path: no page panel, fail closed."""
+    from canopy_sdk.django import conf
+
+    from connect_labs.workflow.views import _page_only_panel
+
+    request = _request("/labs/workflow/47/run/?program_id=25")
+    request.resolver_match = SimpleNamespace(view_name="labs:workflow:run")
+    with patch.object(conf, "page_mode", return_value=conf.KEY):
+        out = _page_only_panel(request, {"ready": True, "page_token": "", "token_url": "", "options": {}})
+    assert out["ready"] is False
+
+
 def test_page_routes_are_registered_with_a_scope_that_reaches_page_context():
     from django.urls import reverse
 

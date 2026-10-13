@@ -58,6 +58,15 @@ def default_frame_src() -> tuple[str, ...]:
     return ("'self'", canopy + "/embed/chat") if canopy else ("'self'",)
 
 
+def default_script_src() -> tuple[str, ...]:
+    """Scripts the app loads, with the canopy panel's widget named by its exact path
+    (``canopy_host/panel.html`` loads ``<CANOPY_BASE_URL>/embed/widget.js``). Without
+    it, every page that shows the panel reported the widget -- and an enforced policy
+    would block it."""
+    canopy = (getattr(settings, "CANOPY_BASE_URL", "") or "").rstrip("/")
+    return DEFAULT_SCRIPT_SRC + ((canopy + "/embed/widget.js",) if canopy else ())
+
+
 def build_policy() -> str:
     def directive(name: str, default: tuple[str, ...]) -> str:
         key = "CSP_" + name.replace("-", "_").upper()
@@ -66,7 +75,7 @@ def build_policy() -> str:
 
     parts = [
         directive("default-src", ("'self'",)),
-        directive("script-src", DEFAULT_SCRIPT_SRC),
+        directive("script-src", default_script_src()),
         directive("style-src", DEFAULT_STYLE_SRC),
         directive("img-src", DEFAULT_IMG_SRC),
         directive("connect-src", DEFAULT_CONNECT_SRC),
