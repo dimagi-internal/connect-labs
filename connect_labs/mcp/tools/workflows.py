@@ -104,9 +104,9 @@ def workflow_list(user, opportunity_id=None, program_id=None, organization_id=No
         definitions = da.list_definitions()
     finally:
         da.close()
-    if kind is not None:
-        from connect_labs.workflow.page_mode import is_page
+    from connect_labs.workflow.page_mode import is_page
 
+    if kind is not None:
         definitions = [d for d in definitions if is_page(d) == (kind == "page")]
 
     return {
@@ -116,7 +116,7 @@ def workflow_list(user, opportunity_id=None, program_id=None, organization_id=No
                 "name": d.name,
                 "description": d.description,
                 "template_type": d.template_type,
-                "kind": "page" if (d.data or {}).get("kind") == "page" else "workflow",
+                "kind": "page" if is_page(d) else "workflow",
                 # updated_at is not on LocalLabsRecord; omit rather than error
                 "updated_at": None,
                 "pipeline_source_count": len(d.pipeline_sources),

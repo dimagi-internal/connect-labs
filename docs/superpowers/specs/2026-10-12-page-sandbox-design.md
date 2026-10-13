@@ -270,8 +270,9 @@ Built as written, with these differences, each for the reason given:
 - **The panel's `filters` carry the page's owner** (`program_id`, `opportunity_id` or
   `organization_id`) beside `definition_id`, scope kind and key: `page_context` needs it
   to read the definition where it lives. `page:read` is registered on the page routes and
-  also on `labs:workflow:run` and `supply_chain:workflow_view`, where a page is drawn too;
-  it reaches `page_context` only, which refuses anything that is not a sharing page.
+  `supply_chain:workflow_view`; on `labs:workflow:run` (whose own scopes are a workflow's)
+  a page's panel token is signed for `labs:workflow:run:page`, which grants `page:read`
+  alone (review fix, below).
 - **`page_context` is not in `RESTRICTED_TOOLS`** (it is in `USERVISIT_DATA_TOOLS`): a
   workflow source's run summary can carry indicator values computed from visits.
 - **The shared selection's `drilled` lands under `filters.drilled`**, the server's
@@ -295,6 +296,33 @@ Built as written, with these differences, each for the reason given:
 - **The unsandboxed runner gains `view.confirm`, `actions.download` and
   `actions.copyText` too**, so a page author's code works the same in both places.
 - The webpack entry is in `webpack/base.config.js` (there is no `webpack.config.js`).
+
+**Review fixes (2026-10-12, after #2449).** An independent review found these; each has
+a test that fails without it (`workflow/tests/test_page_sandbox.py`,
+`scope_config/tests/test_review_fixes.py`, `components/workflow/sandbox/sandbox.test.js`):
+
+- **What a route draws in page mode is sandboxed, whatever the definition says.**
+  `should_sandbox(definition, page_mode=...)`: a scope's home from Settings no longer
+  decides by the definition's `kind` alone. A home that is not a page is refused twice:
+  when it is set (`labs` namespace `check_targets`, read as the person setting it) and
+  when it is opened (`PageView` says the home is not a page and draws nothing of it).
+- **A page is a definition with `kind: "page"` or one made from `page_blank`**
+  (`page_mode.is_page`), so pages made before `kind` was written are pages everywhere it
+  is decided (sandbox, home check, run list, `workflow_list`). Chosen over a backfill:
+  it fails toward the sandbox and needs no write to existing records.
+- **A page never reads a run.** A `run_id` on a page's address is ignored; on every
+  route, a run is drawn only by the definition it belongs to; and the frame's
+  `instance` never carries `snapshot` (nor does supply come from one).
+- **The origin is the request's own** (`labs_origin`), for the host's `frame-src`, the
+  shell's `frame-ancestors` and the navigate check alike, so another allowed host draws.
+- **The guard decides by the session cookie**, not by whether an `Authorization` header
+  rides beside it.
+- **`navigate` refuses `sync` and `template` query parameters**, and the run page's
+  `?sync=true` GET (which overwrote render code) is removed; syncing is the POST
+  `sync-template` endpoint and the MCP tools.
+- **Relative links in a page resolve against the host page's URL** (`pageUrl` in INIT),
+  not the shell's, so they navigate as they did before the frame.
+- The old card pages' `pages-cards` entry, which nothing loaded, is deleted.
 
 Verified in Chromium (gstack browse) against a local server: every attempt on the live
 test list failed (fetch to labs and to another host, `document.cookie`, `parent.document`,

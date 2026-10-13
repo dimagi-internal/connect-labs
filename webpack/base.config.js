@@ -45,10 +45,6 @@ module.exports = {
       __dirname,
       '../connect_labs/static/js/solicitation-chat.tsx',
     ),
-    'pages-cards': path.resolve(
-      __dirname,
-      '../connect_labs/static/js/pages-cards.tsx',
-    ),
   },
   output: {
     path: path.resolve(__dirname, '../connect_labs/static/bundles/'),

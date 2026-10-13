@@ -135,9 +135,11 @@ PREVIEWED_WRITE_SCOPES: frozenset[str] = frozenset({"workflow:act"})
 PAGE_SCOPES: dict[str, tuple[str, ...]] = {
     "marketplace:network": ("marketplace:read",),
     "marketplace:round": ("marketplace:read",),
-    # A page can be drawn at its workflow URL too, and pinned as a supply tab; the page
-    # scope there reaches page_context only, which refuses anything that is not a page.
-    "labs:workflow:run": ("workflow:read", "workflow:act", "page:read"),
+    "labs:workflow:run": ("workflow:read", "workflow:act"),
+    # A page drawn at its workflow URL (or any route registered with more than a page
+    # needs): its panel names this key instead of the route (``PAGE_ON_ANOTHER_ROUTE``),
+    # so a page's agent reads the page and nothing a workflow's run would reach.
+    "labs:workflow:run:page": ("page:read",),
     "labs:page_home": ("page:read",),
     "labs:page": ("page:read",),
     "supply_chain:workflow_view": ("page:read",),
@@ -147,6 +149,11 @@ PAGE_SCOPES: dict[str, tuple[str, ...]] = {
     "supply_chain:procurement_tender_detail": ("supply:read",),
     "supply_chain:procurement_comparison": ("supply:read",),
 }
+
+#: The page key a page's panel uses on a route whose own registration grants more
+#: than ``page:read`` (the workflow run URL). Not a URL name: no route resolves to it.
+PAGE_ON_ANOTHER_ROUTE = "labs:workflow:run:page"
+PAGE_ONLY_SCOPES = ("page:read",)
 
 #: The panel's look on labs' pages. Rendered by the SDK's ``canopy_host/panel.html``.
 PANEL = {

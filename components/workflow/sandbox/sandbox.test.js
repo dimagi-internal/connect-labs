@@ -102,6 +102,10 @@ describe('navigate', () => {
     '/admin/',
     '/labs/workflow/12/edit/',
     'data:text/html,hi',
+    // A link that would make the run page write (its old GET sync).
+    '/labs/workflow/12/run/?sync=true',
+    '/labs/workflow/12/run/?program_id=25&sync=true&template=page_blank',
+    '/labs/workflow/12/run/?TEMPLATE=x',
   ];
   for (const url of refused) {
     it(`refuses ${JSON.stringify(url)}`, () => {
@@ -334,6 +338,26 @@ describe('the frame runtime', () => {
     expect(fragment.defaultPrevented).toBe(false);
     expect(js.defaultPrevented).toBe(true);
     expect(navigate).toHaveBeenCalledTimes(3);
+    stop();
+  });
+
+  it('resolves a relative link against the host page, not the shell', () => {
+    document.body.innerHTML =
+      '<a id="rel" href="../tools/">Tools</a><a id="q" href="?tab=2">Tab</a>';
+    const navigate = vi.fn();
+    const host = `${LABS}/labs/p/org/acme/home/`;
+    const stop = interceptAnchorClicks(document, navigate, host);
+    click(document.getElementById('rel'));
+    expect(navigate).toHaveBeenLastCalledWith(
+      `${LABS}/labs/p/org/acme/tools/`,
+      false,
+    );
+    click(document.getElementById('q'));
+    expect(navigate).toHaveBeenLastCalledWith(`${host}?tab=2`, false);
+    // ...which the host then lets through: it is a labs page on the allowlist.
+    expect(checkNavigate(navigate.mock.calls[0][0], LABS)).toBe(
+      `${LABS}/labs/p/org/acme/tools/`,
+    );
     stop();
   });
 
