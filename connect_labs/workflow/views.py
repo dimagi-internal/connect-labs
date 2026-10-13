@@ -258,10 +258,53 @@ class WorkflowTemplateListAPIView(LoginRequiredMixin, View):
         return JsonResponse({"templates": get_allowed_templates(request.user), "groups": template_groups()})
 
 
+def sandboxed_run_links(request) -> HttpResponse:
+    """The workflow list as a sandboxed workflow gets it: only links to the runs of
+    the workflows it declares (declared_reads), in the scope of the request, and
+    nothing else of the list page (no CSRF token, no names of other workflows).
+
+    Old dashboards find run ids by reading the list page (``/labs/workflow/<def>/run/
+    ?run_id=<run>`` links, ``Run #<id>`` and its date); this is that, cut to what the
+    reader may read. Spec: "Every live copy runs sandboxed".
+    """
+    from django.utils.html import escape
+
+    readable = declared_reads.readable_for(request) or set()
+    runs = []
+    if readable:
+        access = WorkflowDataAccess(request=request)
+        try:
+            runs = declared_reads.filter_runs(request, access.list_runs())
+        except Exception:  # noqa: BLE001 -- nothing listed rather than a 500
+            logger.warning("sandbox: could not list runs for the run links", exc_info=True)
+            runs = []
+        finally:
+            access.close()
+    rows = []
+    for run in sorted(runs, key=lambda r: r.id, reverse=True):
+        definition_id = (run.data or {}).get("definition_id")
+        created = str((run.data or {}).get("created_at") or "")[:10]
+        rows.append(
+            f'<li><a href="/labs/workflow/{int(definition_id)}/run/?run_id={int(run.id)}">'
+            f"Run #{int(run.id)}</a> {escape(created)}</li>"
+        )
+    body = "<!doctype html><title>Runs</title><ul>" + "".join(rows) + "</ul>"
+    response = HttpResponse(body, content_type="text/html; charset=utf-8")
+    response["Cache-Control"] = "no-store"
+    return response
+
+
 class WorkflowListView(LoginRequiredMixin, TemplateView):
     """List all workflow definitions the user can access."""
 
     template_name = "workflow/list.html"
+
+    def get(self, request, *args, **kwargs):
+        # A request the sandbox host makes for a framed workflow (X-Labs-Sandbox-For)
+        # gets only the run links of what that workflow declares, never the page.
+        if declared_reads.reader(request) is not None:
+            return sandboxed_run_links(request)
+        return super().get(request, *args, **kwargs)
 
     def _prefetch_pipeline_cache(self, pipeline_access, opportunity_ids=None):
         """Seed the per-request pipeline cache with ONE list call instead of one
@@ -1169,14 +1212,8 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             from connect_labs.workflow.render_source import resolve_render_code
             from connect_labs.workflow.sandbox import should_sandbox
 
-            # The code this render draws (resolved below as before): the sandbox's
-            # exemptions under `all` -- a pinned deprecated copy, or a recorded
-            # SandboxExemption -- hold only for the exact code they name
-            # (sandbox.sandbox_exemption), and never in edit mode.
             resolved_render = resolve_render_code(data_access, definition)
-            sandboxed = should_sandbox(
-                definition, page_mode=self.page_mode, request=self.request, render_code=resolved_render[0]
-            )
+            sandboxed = should_sandbox(definition, page_mode=self.page_mode, request=self.request)
             context["sandboxed"] = sandboxed
             # A page and a workflow are handed the same data and the same bridge
             # (Jonathan, 2026-10-12: "pages should be completely definable like workflows
@@ -1501,9 +1538,6 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             # Staff see whether this render runs in the sandbox, and a link to try it there
             # (the rollout is per workflow; sandbox.py).
             workflow_data["viewer_is_staff"] = bool(getattr(self.request.user, "is_staff", False))
-            # (Whether a workflow is EXEMPT, and why, is not shown in the UI -- owner's
-            # ruling: it is read from `workflow_sandbox_scan` and
-            # `workflow_sandbox_exempt --list` only.)
             workflow_data["scope"] = page_scope(self.request, scope)
             workflow_data["config"] = page_config(self.request, definition, scope)
             # Other workflows' runs (workflow/workflow_sources.py): the `workflows` prop and
@@ -2210,6 +2244,11 @@ def update_state_api(request, run_id):
         run = data_access.get_run(run_id, program_hint=_coerce_int(data.get("owning_program_id")))
         if not run:
             return JsonResponse({"error": "Run not found"}, status=404)
+        # From the sandbox frame: its own run, or (asked first by the host) a run of a
+        # workflow it declares -- never any run the viewer can write.
+        no = declared_reads.run_refusal(request, run)
+        if no is not None:
+            return no
         if run.is_completed:
             return JsonResponse(
                 {"error": "Run is completed; state is immutable. Start a new run."},

@@ -110,12 +110,45 @@ export function checkNavigate(
   const params = Array.from(parsed.searchParams.keys()).map((k) =>
     k.toLowerCase(),
   );
-  if (params.some((k) => NAVIGATE_DENIED_PARAMS.includes(k))) {
+  // A sign-in start ("Authorize CommCare") comes back to where the person was: its
+  // `next` is allowed when it is itself a labs address this check would open (with
+  // no second hop of its own), so it can lead nowhere a link could not.
+  const signIn =
+    mode !== 'page' && SIGN_IN_STARTS.some((p) => path.startsWith(p));
+  for (const k of params) {
+    if (!NAVIGATE_DENIED_PARAMS.includes(k)) continue;
+    if (signIn && k === 'next' && nextIsLabsPage(parsed, labsOrigin, mode)) {
+      continue;
+    }
     throw new BridgeError(
       'navigate: that labs address cannot be opened from a page',
     );
   }
   return parsed.href;
+}
+
+/** Sign-in starts whose `next` may name where to come back to. */
+export const SIGN_IN_STARTS = [
+  '/labs/ocs/initiate/',
+  '/labs/commcare/initiate/',
+];
+
+function nextIsLabsPage(
+  parsed: URL,
+  labsOrigin: string,
+  mode: NavigateSet,
+): boolean {
+  const all = parsed.searchParams.getAll('next');
+  if (all.length !== 1) return false;
+  const next = all[0];
+  // A path on labs, never a scheme-relative or absolute address.
+  if (!next.startsWith('/') || next.startsWith('//')) return false;
+  try {
+    const back = checkNavigate(next, labsOrigin, mode);
+    return !SIGN_IN_STARTS.some((p) => new URL(back).pathname.startsWith(p));
+  } catch {
+    return false;
+  }
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -653,8 +686,9 @@ export function createDispatcher(
         return;
       }
     }
-    const what =
-      checked.perRecord && checked.recordId
+    const what = checked.question
+      ? checked.question
+      : checked.perRecord && checked.recordId
         ? `${label} ${checked.recordId}`
         : label;
     const yes = await workflow().ask(`This ${noun} wants to ${what}, as you.`);
@@ -682,6 +716,23 @@ export function createDispatcher(
       }
     } catch {
       // not JSON: nothing started
+    }
+  }
+
+  /** Pipelines an available-pipelines answer offered: the ones `pipe` binds to. */
+  function rememberPipelines(answer: FetchAnswer) {
+    try {
+      const data = JSON.parse(new TextDecoder().decode(answer.body));
+      const list = data && Array.isArray(data.pipelines) ? data.pipelines : [];
+      const ctx = options.routeContext as RouteContext;
+      const ids = ctx.pipelineIds || (ctx.pipelineIds = []);
+      for (const p of list.slice(0, 2000)) {
+        const id = Number(p && typeof p === 'object' ? p.id : NaN);
+        if (Number.isSafeInteger(id) && id > 0 && !ids.includes(id))
+          ids.push(id);
+      }
+    } catch {
+      // not JSON: nothing offered
     }
   }
 
@@ -894,6 +945,9 @@ export function createDispatcher(
             body: params.body,
           });
           if (checked.startsJob && answer.status < 300) rememberJob(answer);
+          if (checked.remembersPipelines && answer.status < 300) {
+            rememberPipelines(answer);
+          }
           if (checked.filterOpportunities && answer.status < 300) {
             return onlyOurOpportunities(answer);
           }

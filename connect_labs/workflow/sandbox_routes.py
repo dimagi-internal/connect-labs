@@ -87,14 +87,24 @@ ROUTES: tuple[Route, ...] = (
     Route(GET, r"^/microplans/(?<opp>\d+)/boundaries/(areas|geometry|population_by_name)/$", "read"),
     Route(POST, r"^/microplans/(?<opp>\d+)/preview_footprints/$", "read"),
     Route(GET, r"^/microplans/preview_status/(?<job>[A-Za-z0-9_.:-]+)/$", "read"),
+    Route(GET, r"^/labs/workflow/api/available-pipelines/$", "read"),
+    Route(GET, r"^/labs/workflow/api/pipeline/(?<pipe>\d+)/$", "read"),
+    Route(GET, r"^/labs/workflow/$", "read"),
+    Route(POST, r"^/custom_analysis/mbw_monitoring/api/opportunity-flws/$", "read"),
+    Route(GET, r"^/custom_analysis/mbw_monitoring/(stream|api/oauth-status|api/snapshot)/$", "read"),
+    Route(GET, r"^/custom_analysis/mbw_monitoring/api/gps/([^/]+)/$", "read"),
     # Own: this run's and this workflow's own records
     Route(
         POST, r"^/labs/workflow/api/run/(?<run>\d+)/(state|worker-result|flags|rename|reconcile-generation)/$", "own"
     ),
     Route(POST, r"^/labs/workflow/api/(?<def>\d+)/audit-batch-config/$", "own"),
+    Route(POST, r"^/custom_analysis/mbw_monitoring/api/save-snapshot/$", "own"),
     Route(POST, r"^/labs/workflow/api/job/(?<job>[A-Za-z0-9_.:-]+)/cancel/$", "own"),
     # Effect: past this run; the host asks first
     Route(POST, r"^/labs/workflow/api/run/(?<run>\d+)/job/start/$", "effect"),
+    Route(POST, r"^/labs/workflow/api/run/(?<xrun>\d+)/state/$", "effect"),
+    Route(POST, r"^/labs/workflow/api/(?<def>\d+)/pipeline-sources/add/$", "effect"),
+    Route(POST, r"^/labs/workflow/api/(?<def>\d+)/pipeline-sources/remove/$", "effect"),
     Route(POST, r"^/labs/workflow/api/run/(?<run>\d+)/complete/$", "effect"),
     Route(POST, r"^/labs/workflow/api/run/(?<run>\d+)/delete/$", "effect"),
     Route(POST, r"^/labs/workflow/api/run/(?<run>\d+)/(manager-audit|manager-coaching)/$", "effect"),
@@ -130,10 +140,18 @@ def check_path(path: str, method: str = "GET") -> RouteVerdict:
     method = (method or "GET").upper()
     if any(path.startswith(d) for d in FETCH_DENIED):
         return RouteVerdict(False, "never reachable from a workflow (FETCH_DENIED)")
-    for route, pattern in compiled():
-        match = pattern.match(path)
-        if match:
-            if method not in route.methods:
-                return RouteVerdict(False, f"{method} is not allowed on this route (only {'/'.join(route.methods)})")
-            return RouteVerdict(True, "", route.gate, needs_run="run" in match.groupdict())
-    return RouteVerdict(False, "no route in the sandbox table")
+    # As routes.ts: the first route whose path and method match (binding aside).
+    matched = [(route, pattern.match(path)) for route, pattern in compiled()]
+    matched = [(route, match) for route, match in matched if match]
+    if not matched:
+        return RouteVerdict(False, "no route in the sandbox table")
+    by_method = [(route, match) for route, match in matched if method in route.methods]
+    if not by_method:
+        route = matched[0][0]
+        return RouteVerdict(False, f"{method} is not allowed on this route (only {'/'.join(route.methods)})")
+    return RouteVerdict(
+        True,
+        "",
+        by_method[0][0].gate,
+        needs_run=all("run" in match.groupdict() for _, match in by_method),
+    )
