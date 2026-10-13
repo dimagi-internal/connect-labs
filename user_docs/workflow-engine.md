@@ -101,6 +101,22 @@ Pages are useful for landing screens and summary views that you want to keep per
 
 A page can display the latest run of other workflows. You will only see a workflow's run on a page if you have access to open that workflow directly — the same check that applies when you open it from the Workflows list. This applies to all workflows, including synthetic (labs-only) ones.
 
+### Managing pages for a scope
+
+An organisation, program, or opportunity can have **several pages**. The **Pages list** at `/labs/p/<org|programme|opportunity>/<key>/pages/` shows every page belonging to that scope — for an organisation, this includes its own pages and those of its programs. For each page you can see where it lives and which one is currently set as the home page.
+
+Anyone who can use the scope can view the Pages list.
+
+#### Creating a new page
+
+If you can change Settings for the scope, a **New page** button appears on the Pages list. Clicking it asks for a title and an address, then opens the new page in the editor. You can also mark it as the home page at the same time.
+
+#### Choosing the home page
+
+Anyone who can change Settings for the scope can click **Make home** next to any page on the Pages list to set that page as the home. You can also choose the home page from **Settings → Labs**, which now shows a list of the scope's pages to pick from rather than requiring you to type a workflow id. The JSON editor is still available under **Advanced: edit as JSON** for cases where you need it.
+
+When you are editing a page, **Pages** and **Make this the home page** links appear next to the Settings link so you can manage the scope's pages without leaving the editor. If a scope has no home page set, those links point to the Pages list so you can set one.
+
 ### Editing a page
 
 The **Edit page** link appears for anyone who can change Settings for the organisation, program, or opportunity that owns the page. If you can view a page but do not have Settings access for its scope, the link is not shown — and Labs will refuse any attempt to save edits even if you navigate directly to the editor's address.
@@ -132,7 +148,7 @@ This replaces the yellow **Select Context** button that previously appeared when
 
 An organisation can have one page designated as its **home page**. When someone picks that organisation in Labs — or follows a link to `/labs/overview/?organization_id=<organisation>` — they land on the home page instead of the default overview.
 
-To set the home page, go to the organisation's **Settings** and choose the page you want visitors to land on. You must have access to the program or opportunity behind the page in order to set it as the home page, and visitors will only be taken to the home page if they have that same access.
+To set the home page, go to the organisation's **Settings** and choose the page you want visitors to land on from the list of the organisation's pages. You must have access to the program or opportunity behind the page in order to set it as the home page, and visitors will only be taken to the home page if they have that same access.
 
 !!! note "Only pages can be set as the home page"
     Settings will only accept a page as the home page — you cannot set a regular workflow (one with runs) as the home. If you try to select a regular workflow, Settings will refuse it. If an address that was previously saved as a home is not a page, opening it will show a "this home is not a page" message rather than drawing anything. Pages created from the "Page" starter before pages were formally labelled as pages still count as pages and continue to work as homes.
@@ -145,7 +161,7 @@ The Supply tab opens only for people who have access to the program or opportuni
 
 ### Building a page
 
-Pages are built with the standard workflow tools. To create one, start from the **Page** template in the workflow builder. Once published, the page appears in the Workflows list with an **Open page** button in place of **Start run**.
+Pages are built with the standard workflow tools. To create one, start from the **Page** template in the workflow builder, or use the **New page** button on the Pages list. Once published, the page appears in the Workflows list with an **Open page** button in place of **Start run**.
 
 !!! note "Pages cannot be started as runs"
     A page cannot be started as a run — this applies to pages created from the blank page template as well as any other page template. If you need to collect data over a date range and review it, use a regular workflow instead.
@@ -162,6 +178,12 @@ A few behaviours are worth knowing when you share or follow page links:
 ---
 
 ## Settings
+
+Settings uses the word **program** (not "programme") throughout.
+
+### Who can change Settings
+
+Anyone signed in with a **@dimagi.com** or **@dimagi-ai.com** email address counts as Dimagi staff for the purposes of Settings and page editing. This means a Dimagi person opening a labs-only organisation's Settings can now make changes. Previously, the Settings page told Dimagi staff they could change it and then refused when they tried. The message now accurately describes the rule that applies.
 
 ### Synthetic organisations
 
@@ -228,38 +250,4 @@ Each baby gets one story, and Labs only surfaces babies whose story happened rec
 
 #### How the briefing is built
 
-When the agent prepares a case coaching conversation, the briefing it shows you comes directly from the **case state** recorded in the registry for that baby. Each case state carries its own coaching guidance, which appears in the briefing immediately after the topic name:
-
-- **What it means** — a plain-language description of the baby's situation
-- **How to talk about it** — suggested language and tone for the conversation
-- **The step to agree** — the specific action the worker and coach should agree on
-- **What it does not tell you** — important caveats to keep in mind
-
-This means the briefing reflects whatever guidance has been configured for that case state in the registry, rather than fixed text. If the guidance for a state is updated in the registry, future briefings will pick up the change automatically.
-
-The picture the worker receives is drawn using the picture type that the case state names — so different states can produce different picture styles without any further configuration in Labs.
-
-#### How the agent suggests a case coaching conversation
-
-For each worker on an opportunity, Labs lists — per story — the babies that are currently eligible. The canopy agent panel uses this list to suggest one conversation per worker. You review the suggestion and approve it before anything is sent.
-
-!!! note "Saved run weeks record eligible cases"
-    Each saved week of the KMC Opportunity Report records which babies were eligible for which story. This means the agent can see what earlier weeks offered, so suggestions take previous opportunities into account.
-
-#### Starting a test case coaching conversation from the worker review
-
-The KMC Worker Review's case panel includes a **Coach about this baby** button. This lets you start a test coaching conversation about one specific baby directly from the baby's case panel, without going through the canopy agent.
-
-The button appears when two things are true:
-
-- The workflow has a coaching action set up.
-- The baby's case is in a recognised case state in the registry.
-
-Clicking the button opens the coaching dialog, which shows:
-
-- The picture the coach will send
-- The baby's story with its supporting facts
-- The first message the worker would receive
-- The exact briefing
-
-**Test sends only.** The only option available from this button is **Send to me (QA
+When the agent prepares a case coaching conversation, the briefing it shows you comes directly from the **case state** recorded in the registry for that baby
