@@ -1,5 +1,6 @@
 """The workflow app's tables: a record of each workflow action that was run, and the
-coaching charts its previews froze.
+coaching charts its previews froze, and the few definitions recorded as kept out of
+the sandbox frame (``SandboxExemption``).
 
 Everything else a workflow owns lives in Connect's LabsRecord API. An action's
 EFFECTS are written where they always are (tasks as LabsRecords, conversations in
@@ -111,3 +112,45 @@ class CoachChart(models.Model):
 
     class Meta:
         indexes = [models.Index(fields=["run_id", "worker_key"])]
+
+
+class SandboxExemption(models.Model):
+    """One workflow definition kept out of the sandbox frame under ``LABS_WORKFLOW_SANDBOX=all``,
+    recorded by hand (``manage.py workflow_sandbox_exempt``), with why.
+
+    For a live copy whose render code needs what the frame will never give it (a retired
+    endpoint, a definition write) and is kept only to stay readable. It holds for THIS
+    record, on THIS owner, drawing THIS code: ``render_code_sha256`` is the digest
+    (``sandbox.render_code_digest``) of the effective render code when the row was
+    written, and any edit to that code voids it -- the definition is sandboxed again,
+    fail closed. A page is never exempt (``sandbox.should_sandbox`` decides pages first),
+    and ``?sandbox=1`` still draws an exempt workflow in the frame. Written only by the
+    command, never by the app or the MCP: an author cannot exempt their own workflow.
+    """
+
+    #: The definition's LabsRecord id (on production Connect, or labs-local for a
+    #: synthetic opportunity). One row per id: the decision also checks the owner, so a
+    #: labs-local and a Connect record that share an id cannot borrow each other's row,
+    #: but only one of them can be exempted (no case of that exists).
+    definition_id = models.IntegerField(unique=True)
+    #: The definition's owner, as the scan names it: exactly one of these is set.
+    opportunity_id = models.IntegerField(null=True, blank=True)
+    program_id = models.IntegerField(null=True, blank=True)
+    organization_id = models.CharField(max_length=100, blank=True, default="")
+    render_code_sha256 = models.CharField(max_length=64)
+    reason = models.TextField()
+    #: The labs username the command read the definition as, and wrote the row for.
+    added_by = models.CharField(max_length=150)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["definition_id"]
+
+    def owner(self) -> str:
+        if self.opportunity_id is not None:
+            return f"opportunity:{self.opportunity_id}"
+        if self.program_id is not None:
+            return f"program:{self.program_id}"
+        if self.organization_id:
+            return f"organization:{self.organization_id}"
+        return "unscoped"

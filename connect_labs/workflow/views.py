@@ -1169,9 +1169,10 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             from connect_labs.workflow.render_source import resolve_render_code
             from connect_labs.workflow.sandbox import should_sandbox
 
-            # The code this render draws (resolved below as before): the sandbox's only
-            # exemption, a pinned deprecated copy under `all`, holds only for code labs
-            # shipped (sandbox.deprecated_exempt).
+            # The code this render draws (resolved below as before): the sandbox's
+            # exemptions under `all` -- a pinned deprecated copy, or a recorded
+            # SandboxExemption -- hold only for the exact code they name
+            # (sandbox.sandbox_exemption), and never in edit mode.
             resolved_render = resolve_render_code(data_access, definition)
             sandboxed = should_sandbox(
                 definition, page_mode=self.page_mode, request=self.request, render_code=resolved_render[0]
@@ -1500,6 +1501,14 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             # Staff see whether this render runs in the sandbox, and a link to try it there
             # (the rollout is per workflow; sandbox.py).
             workflow_data["viewer_is_staff"] = bool(getattr(self.request.user, "is_staff", False))
+            if workflow_data["viewer_is_staff"] and not sandboxed and not page:
+                # ...and, when it is kept out of the frame under `all`, why (a pinned
+                # deprecated copy, or a recorded exemption). Staff only: the reason is
+                # an admin's note.
+                from connect_labs.workflow.sandbox import sandbox_exemption, workflow_sandbox_mode
+
+                if workflow_sandbox_mode() == "all":
+                    workflow_data["sandbox_exemption"] = sandbox_exemption(definition, resolved_render[0])
             workflow_data["scope"] = page_scope(self.request, scope)
             workflow_data["config"] = page_config(self.request, definition, scope)
             # Other workflows' runs (workflow/workflow_sources.py): the `workflows` prop and

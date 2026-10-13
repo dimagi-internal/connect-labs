@@ -200,9 +200,11 @@ class Command(BaseCommand):
             f"{sum(1 for t in targets if t.worst == 'breaks' and t.sandboxed_all and not t.sandboxed_now)}; "
             f"breaking and sandboxed now: {sum(1 for t in targets if t.worst == 'breaks' and t.sandboxed_now)}"
         )
-        exempt = [t for t in targets if t.worst == "breaks" and "pinned out of the sandbox" in (t.note or "")]
+        pinned = sum(1 for t in targets if t.worst == "breaks" and t.exempt == "deprecated")
+        recorded = sum(1 for t in targets if t.worst == "breaks" and t.exempt == "recorded")
         w(
-            f"breaking but kept out of the sandbox under `all` (pinned deprecated): {len(exempt)}; "
+            f"breaking but kept out of the sandbox under `all`: pinned deprecated {pinned}, "
+            f"recorded exemption {recorded}; "
             f"breaking AND sandboxed under `all`: "
             f"{sum(1 for t in targets if t.worst == 'breaks' and t.sandboxed_all)}"
         )
