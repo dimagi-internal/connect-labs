@@ -122,6 +122,18 @@ class TestContentSecurityPolicy:
         frame_src = next(p for p in build_policy().split("; ") if p.startswith("frame-src"))
         assert frame_src == "frame-src 'self'"
 
+    def test_the_canopy_widget_script_is_named_by_its_path(self, settings):
+        """canopy_host/panel.html loads <CANOPY_BASE_URL>/embed/widget.js: named exactly."""
+        from connect_labs.utils.csp import DEFAULT_SCRIPT_SRC, build_policy
+
+        settings.CANOPY_BASE_URL = "https://canopy.example.org/"
+        script_src = next(p for p in build_policy().split("; ") if p.startswith("script-src")).split()[1:]
+        assert script_src[-1] == "https://canopy.example.org/embed/widget.js"
+        assert "https://canopy.example.org" not in script_src
+        settings.CANOPY_BASE_URL = ""
+        script_src = next(p for p in build_policy().split("; ") if p.startswith("script-src")).split()[1:]
+        assert tuple(script_src) == DEFAULT_SCRIPT_SRC
+
 
 def _html_response():
     from django.http import HttpResponse

@@ -1069,28 +1069,28 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         endpoints["actionExecutionBase"] = "/labs/workflow/api/actions/executions/"
         endpoints["actionScope"] = scope_qs
 
-    def _sandbox_workflow_data(self, context, definition, scope, labs_context, page):
+    def _sandbox_workflow_data(self, context):
         """A sandboxed page: what the host runner needs to draw the frame. A page gets
-        what a workflow gets (pipelines, workers, the same bridge) except a run. If the
-        page shares with the canopy agent, its panel is set up here."""
+        what a workflow gets (pipelines, workers, the same bridge) except a run."""
         from connect_labs.workflow.sandbox import host_payload
 
         workflow_data = context["workflow_data"]
         workflow_data["sandbox"] = host_payload(self.request)
         workflow_data["mapboxToken"] = settings.MAPBOX_TOKEN or ""
-        if page and not context["present_mode"]:
-            self._add_page_agent(context, definition, scope, labs_context)
 
     def _add_page_agent(self, context, definition, scope, labs_context):
         """The canopy panel on a page, gated exactly as on a run page (``config.agent.share``).
 
         The page state names the page and the scope; the agent reads what the page is
         built from through ``page_context``, as the visitor. The page narrows the view
-        (``view.shareSelection``); it never changes the resource or the tool.
+        (``view.shareSelection``); it never changes the resource or the tool. Sandboxed or
+        not: the panel is the host's, outside the frame, either way. Only for a
+        definition that IS a page -- ``page_context`` refuses anything else, so a workflow
+        a route draws in page mode (a supply tab) would get a panel that can read nothing.
         """
         from connect_labs.workflow.agent_sharing import definition_shares_with_agent
 
-        if not definition_shares_with_agent(definition):
+        if not _is_page(definition) or not definition_shares_with_agent(definition):
             return
         from canopy_sdk.django.pages import panel_context
 
@@ -1548,7 +1548,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 for key in RUN_ENDPOINTS:
                     workflow_data["apiEndpoints"][key] = None
             if page_sandbox:
-                self._sandbox_workflow_data(context, definition, scope, labs_context, page)
+                self._sandbox_workflow_data(context)
             elif sandboxed:
                 from connect_labs.workflow.sandbox import host_payload
 
@@ -1568,6 +1568,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 self._add_actions_and_agent(context, definition, run_data, workers)
             elif page and not context["present_mode"]:
                 self._add_page_actions(context, definition, run_scope_qs)
+                self._add_page_agent(context, definition, scope, labs_context)
 
         except LabsAPIError as e:
             # A 404 here means the scoped opportunity fetch was rejected — the
