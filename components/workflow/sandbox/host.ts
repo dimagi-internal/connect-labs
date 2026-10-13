@@ -24,6 +24,7 @@ import {
   SHELL_PATH,
   STREAM,
   UPDATE,
+  VIEWPORT,
   WORKFLOW_METHODS,
   WORKFLOW_NAVIGATE_DENIED,
   WORKFLOW_NAVIGATE_PATTERNS,
@@ -31,6 +32,7 @@ import {
   type BridgeRequest,
   type BridgeResponse,
   type FramePayload,
+  type HostViewport,
   type StreamMessage,
 } from './protocol';
 import {
@@ -511,12 +513,24 @@ export async function proxyStream(
 // Dispatch
 // ---------------------------------------------------------------------------
 
+export type RevealBlock = 'start' | 'center' | 'end' | 'nearest';
+const REVEAL_BLOCKS: RevealBlock[] = ['start', 'center', 'end', 'nearest'];
+
 export interface HostHandlers {
   querySupply(alias: string, args: Record<string, unknown>): Promise<unknown>;
   queryWorkflow(alias: string): Promise<unknown>;
   navigate(href: string, newTab: boolean): void;
   shareSelection(selection: ReturnType<typeof sanitizeSelection>): void;
   resize(height: number): void;
+  /** Scroll the host window to `top` (host page coordinates). */
+  scroll(top: number, smooth: boolean): void;
+  /** Scroll the host so `top..bottom` (FRAME document coordinates) is in view. */
+  reveal(
+    top: number,
+    bottom: number,
+    block: RevealBlock,
+    smooth: boolean,
+  ): void;
   copyText(text: string): Promise<void>;
   confirm(text: string): Promise<boolean>;
   download(file: { filename: string; mime: string; bytes: Uint8Array }): void;
@@ -612,6 +626,9 @@ export const PINNED_ADDRESS_PARAMS = [
  * the same host dialog -- workflow/actions.py `PageScope`.) */
 export const RUN_ONLY_METHODS = ['updateState', 'completeRun'];
 
+/** Methods outside the request budget (see the dispatcher). */
+const UNCOUNTED_METHODS = ['resize', 'scroll', 'reveal'];
+
 /** Answer one frame request at a time: `(request) => response`, never throwing. */
 export function createDispatcher(
   handlers: HostHandlers,
@@ -629,6 +646,7 @@ export function createDispatcher(
   const streamOpens: number[] = [];
   const jobStarts: number[] = [];
   let streamSeq = 0;
+  let warnedTall = false;
 
   /** Within `limit` in the last minute, or refused: `recent` is this kind's log. */
   function perMinute(recent: number[], limit: number, what: string) {
@@ -882,11 +900,44 @@ export function createDispatcher(
         const h = Number(params.height);
         if (!Number.isFinite(h))
           throw new BridgeError('resize: height must be a number');
-        const clamped = Math.round(
-          Math.min(LIMITS.maxHeight, Math.max(LIMITS.minHeight, h)),
-        );
+        // To the hundredth: a fractional height kept, so what follows the frame on
+        // the host sits where it sat when the render was on the page itself.
+        const clamped =
+          Math.round(
+            Math.min(LIMITS.maxHeight, Math.max(LIMITS.minHeight, h)) * 100,
+          ) / 100;
+        if (clamped < h && !warnedTall) {
+          warnedTall = true;
+          // Said once per frame, where whoever maintains the code can see it.
+          console.warn(
+            `[sandbox] the ${noun} is ${Math.round(h)}px tall; drawn ${clamped}px`,
+          );
+        }
         handlers.resize(clamped);
         return clamped;
+      }
+      case 'scroll': {
+        const top = Number(params.top);
+        if (!Number.isFinite(top))
+          throw new BridgeError('scroll: top must be a number');
+        handlers.scroll(Math.max(0, top), params.smooth === true);
+        return true;
+      }
+      case 'reveal': {
+        const top = Number(params.top);
+        const bottom = Number(params.bottom);
+        if (!Number.isFinite(top) || !Number.isFinite(bottom))
+          throw new BridgeError('reveal: top and bottom must be numbers');
+        const block = REVEAL_BLOCKS.includes(params.block as RevealBlock)
+          ? (params.block as RevealBlock)
+          : 'nearest';
+        handlers.reveal(
+          top,
+          Math.max(top, bottom),
+          block,
+          params.smooth === true,
+        );
+        return true;
       }
       case 'copyText': {
         needsActivation('copyText');
@@ -1105,8 +1156,9 @@ export function createDispatcher(
       }
       const t = now();
       while (recent.length && recent[0] < t - budget.windowMs) recent.shift();
-      // Resizes come with every layout change; they are not counted against the page.
-      if (method !== 'resize') {
+      // Resizes come with every layout change, and scrolling only moves the page the
+      // person is already on: neither is counted against the page.
+      if (!UNCOUNTED_METHODS.includes(method)) {
         if (recent.length >= budget.count) {
           throw new BridgeError(
             'too many requests from this page; wait a moment',
@@ -1175,7 +1227,7 @@ export interface SandboxHostOptions {
   container: HTMLElement;
   labsOrigin: string;
   payload: FramePayload;
-  handlers: Omit<HostHandlers, 'resize'>;
+  handlers: Omit<HostHandlers, 'resize' | 'scroll' | 'reveal'>;
   /** 'workflow' to answer the phase-2 methods (routeContext and workflow needed). */
   mode?: SandboxMode;
   routeContext?: RouteContext;
@@ -1183,15 +1235,6 @@ export interface SandboxHostOptions {
   /** Appended to the shell's path so `location.search` in the frame reads the
    * host's query, as render code did before the frame (the shell ignores it). */
   search?: string;
-  /**
-   * The frame is as tall as the window and scrolls inside, instead of growing to
-   * its content (a workflow). Render code sizes things by the viewport
-   * (`min-height: 100vh`, `fixed inset-0` dialogs): in a frame as tall as its
-   * content, `100vh` IS the content, so it grew without end and a dialog was
-   * centred somewhere off screen. A frame the size of the window keeps both meaning
-   * what they meant on the run page.
-   */
-  fill?: boolean;
   /** The frame navigated: it tried to leave. Called once; the host has stopped. */
   onLeave: () => void;
   hasActivation?: () => boolean;
@@ -1216,6 +1259,145 @@ function defaultActivation(win: Window): () => boolean {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Sizing: the frame is as tall as what it draws, and the page around it scrolls
+// ---------------------------------------------------------------------------
+
+/**
+ * The bottom of labs' fixed header (layouts/header.html) in the window, or 0: what
+ * the person cannot see the frame through. A header taller than 40% of the window
+ * is not a header.
+ */
+export function headerInset(doc: Document, win: Window): number {
+  let inset = 0;
+  for (const el of Array.from(doc.querySelectorAll('header'))) {
+    const position = win.getComputedStyle(el).position;
+    if (position !== 'fixed' && position !== 'sticky') continue;
+    const r = el.getBoundingClientRect();
+    if (r.height <= 0 || r.top > 1 || r.height > win.innerHeight * 0.4)
+      continue;
+    inset = Math.max(inset, r.bottom);
+  }
+  return Math.round(inset);
+}
+
+/** How far the frame reaches past its column, and how far content may overflow it. */
+export interface Gutters {
+  left: number;
+  right: number;
+  /** How far content may overflow the column, left and right, before a box on the
+   * host clips it (`overflow`): -1 where nothing does. */
+  clipLeft: number;
+  clipRight: number;
+}
+
+/**
+ * How far the frame may reach past the column it is drawn in (`container`), left and
+ * right: out through every ancestor whose other in-flow children are above or below it,
+ * never beside it, to the window's edges (where labs' fixed sidenav and header are drawn
+ * over it, as over the page). On the run page, content that overflowed its column
+ * showed in the page's margins, a fixed dialog was centred in the window and media
+ * queries were the window's; a frame as wide as the column clipped the first and moved
+ * the other two. A column beside it stops the reach. A box that clips (its overflow)
+ * does not stop it -- fixed elements were never clipped by one -- but is passed on, so
+ * the frame clips its content where the page did.
+ */
+export function frameGutters(container: HTMLElement, win: Window): Gutters {
+  const doc = container.ownerDocument;
+  const own = container.getBoundingClientRect();
+  const top = own.top;
+  const bottom = own.top + Math.max(1, own.height);
+  let left = own.left;
+  let right = own.right;
+  let clip: { left: number; right: number } | null = null;
+  let child: Element = container;
+  walk: for (
+    let a = container.parentElement;
+    a && a !== doc.documentElement;
+    child = a, a = a.parentElement
+  ) {
+    for (const sib of Array.from(a.children)) {
+      if (sib === child) continue;
+      const cs = win.getComputedStyle(sib);
+      if (cs.position === 'fixed' || cs.position === 'absolute') continue;
+      const r = sib.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) continue;
+      const besideIt =
+        r.bottom > top &&
+        r.top < bottom &&
+        (r.right <= left + 1 || r.left >= right - 1);
+      if (besideIt) break walk;
+    }
+    const r = a.getBoundingClientRect();
+    left = Math.min(left, r.left);
+    right = Math.max(right, r.right);
+    const x = win.getComputedStyle(a).overflowX;
+    if (!clip && a !== doc.body && x && x !== 'visible')
+      clip = { left: r.left, right: r.right };
+  }
+  const width = doc.documentElement.clientWidth || win.innerWidth;
+  return {
+    left: Math.max(0, Math.round(own.left - Math.max(0, left))),
+    right: Math.max(0, Math.round(Math.min(width, right) - own.right)),
+    clipLeft: clip ? Math.max(0, Math.round(own.left - clip.left)) : -1,
+    clipRight: clip ? Math.max(0, Math.round(clip.right - own.right)) : -1,
+  };
+}
+
+/** The host window, and where the frame sits in it (protocol.ts HostViewport). */
+export function measureViewport(
+  win: Window,
+  iframe: HTMLIFrameElement,
+  insetTop: number,
+  gutters: Gutters = { left: 0, right: 0, clipLeft: -1, clipRight: -1 },
+): HostViewport {
+  const r = iframe.getBoundingClientRect();
+  return {
+    width: win.innerWidth,
+    height: win.innerHeight,
+    scrollX: Math.round(win.scrollX),
+    scrollY: Math.round(win.scrollY),
+    frameTop: Math.round(r.top),
+    frameHeight: Math.round(r.height),
+    insetTop,
+    gutterLeft: gutters.left,
+    gutterRight: gutters.right,
+    clipLeft: gutters.clipLeft,
+    clipRight: gutters.clipRight,
+  };
+}
+
+/**
+ * Where the host window scrolls to show `top..bottom` of the frame's document, as
+ * `scrollIntoView` would have scrolled the run page -- the browser's own rule, so
+ * the window (less the page's `scroll-padding-top`, `padTop`), not the part below
+ * labs' header: null when nothing need move (`nearest`, already in view).
+ */
+export function revealTarget(
+  vp: HostViewport,
+  top: number,
+  bottom: number,
+  block: RevealBlock,
+  padTop = 0,
+): number | null {
+  const pageTop = vp.scrollY + vp.frameTop + top;
+  const pageBottom = vp.scrollY + vp.frameTop + bottom;
+  const visibleTop = vp.scrollY + padTop;
+  const visibleBottom = vp.scrollY + vp.height;
+  let target: number;
+  if (block === 'start') target = pageTop - padTop;
+  else if (block === 'end') target = pageBottom - vp.height;
+  else if (block === 'center')
+    target = (pageTop + pageBottom) / 2 - (padTop + vp.height) / 2;
+  else {
+    if (pageTop >= visibleTop && pageBottom <= visibleBottom) return null;
+    const tall = pageBottom - pageTop > vp.height - padTop;
+    target =
+      tall || pageTop < visibleTop ? pageTop - padTop : pageBottom - vp.height;
+  }
+  return Math.max(0, Math.round(target));
+}
+
 /** Draw the frame and answer it. The listener is attached BEFORE src is set. */
 export function createSandboxHost(options: SandboxHostOptions): SandboxHost {
   const win = options.win || window;
@@ -1230,25 +1412,81 @@ export function createSandboxHost(options: SandboxHostOptions): SandboxHost {
   iframe.style.width = '100%';
   iframe.style.border = '0';
   iframe.style.display = 'block';
-  iframe.style.height = options.fill ? '100vh' : `${LIMITS.minHeight * 4}px`;
-  // Filling: the window below where the frame starts, so the whole frame (and a
-  // dialog centred in it) is on screen with the page's header still above it.
-  const fit = () => {
-    const top = iframe.getBoundingClientRect().top + win.scrollY;
-    iframe.style.height = `${Math.max(LIMITS.minHeight * 6, Math.round(win.innerHeight - top - 8))}px`;
-  };
+  // As tall as what it draws (the frame reports it), for pages and workflows alike:
+  // the page around it scrolls, never the frame. What render code sized by the window
+  // (100vh, innerHeight, fixed dialogs, sticky headers) it sizes by THIS window, which
+  // the host tells it about (sendViewport; the frame's side is ./viewport.ts).
+  iframe.style.height = `${LIMITS.minHeight * 4}px`;
+  iframe.setAttribute('scrolling', 'no');
 
   let payload = options.payload;
   let port: MessagePort | null = null;
   let greeted = false;
   let loads = 0;
   let stopped = false;
+  let inset = 0;
+  let gutters: Gutters = { left: 0, right: 0, clipLeft: -1, clipRight: -1 };
+  let sentViewport = '';
+
+  /** Reach into the page's margins (frameGutters); the frame keeps its content in
+   * the column. */
+  const placeHorizontally = () => {
+    gutters = frameGutters(options.container, win);
+    iframe.style.width = `calc(100% + ${gutters.left + gutters.right}px)`;
+    iframe.style.marginLeft = `${-gutters.left}px`;
+    iframe.style.marginRight = `${-gutters.right}px`;
+  };
+  const viewportNow = () => measureViewport(win, iframe, inset, gutters);
+  /** Tell the frame about the window, when anything in it changed. */
+  const sendViewport = () => {
+    if (!port || stopped) return;
+    const viewport = viewportNow();
+    const key = JSON.stringify(viewport);
+    if (key === sentViewport) return;
+    sentViewport = key;
+    port.postMessage({ type: VIEWPORT, viewport });
+  };
+  const onWindowResize = () => {
+    inset = headerInset(doc, win);
+    placeHorizontally();
+    sendViewport();
+  };
+  // Content above the frame that changes height moves it without a scroll.
+  let rafId = 0;
+  const layoutObserver =
+    typeof ResizeObserver === 'function'
+      ? new ResizeObserver(() => {
+          if (rafId) return;
+          rafId = win.requestAnimationFrame(() => {
+            rafId = 0;
+            placeHorizontally();
+            sendViewport();
+          });
+        })
+      : null;
 
   const dispatch = createDispatcher(
     {
       ...options.handlers,
       resize: (h) => {
-        if (!options.fill) iframe.style.height = `${h}px`;
+        iframe.style.height = `${h}px`;
+        sendViewport();
+      },
+      scroll: (top, smooth) =>
+        win.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' }),
+      reveal: (top, bottom, block, smooth) => {
+        const pad = parseFloat(
+          win.getComputedStyle(doc.documentElement).scrollPaddingTop,
+        );
+        const target = revealTarget(
+          viewportNow(),
+          top,
+          bottom,
+          block,
+          Number.isFinite(pad) ? pad : 0,
+        );
+        if (target !== null)
+          win.scrollTo({ top: target, behavior: smooth ? 'smooth' : 'auto' });
       },
     },
     {
@@ -1270,6 +1508,10 @@ export function createSandboxHost(options: SandboxHostOptions): SandboxHost {
     if (port) port.close();
     port = null;
     win.removeEventListener('message', onMessage);
+    win.removeEventListener('scroll', sendViewport);
+    win.removeEventListener('resize', onWindowResize);
+    layoutObserver?.disconnect();
+    if (rafId) win.cancelAnimationFrame(rafId);
   }
 
   function onMessage(event: MessageEvent) {
@@ -1284,7 +1526,11 @@ export function createSandboxHost(options: SandboxHostOptions): SandboxHost {
     };
     // '*': an opaque origin cannot be named. The frame-src policy on this page keeps
     // the iframe on the shell, and a second load stops the bridge before anything else.
-    iframe.contentWindow?.postMessage({ type: INIT, payload }, '*', [
+    inset = headerInset(doc, win);
+    placeHorizontally();
+    const viewport = viewportNow();
+    sentViewport = JSON.stringify(viewport);
+    iframe.contentWindow?.postMessage({ type: INIT, payload, viewport }, '*', [
       channel.port2,
     ]);
   }
@@ -1309,10 +1555,9 @@ export function createSandboxHost(options: SandboxHostOptions): SandboxHost {
       : '';
   iframe.src = SHELL_PATH + search;
   options.container.appendChild(iframe);
-  if (options.fill) {
-    fit();
-    win.addEventListener('resize', fit);
-  }
+  win.addEventListener('scroll', sendViewport, { passive: true });
+  win.addEventListener('resize', onWindowResize);
+  layoutObserver?.observe(doc.documentElement);
 
   return {
     iframe,
@@ -1333,7 +1578,6 @@ export function createSandboxHost(options: SandboxHostOptions): SandboxHost {
     },
     destroy() {
       stop();
-      win.removeEventListener('resize', fit);
       iframe.removeEventListener('load', onLoad);
       iframe.remove();
     },

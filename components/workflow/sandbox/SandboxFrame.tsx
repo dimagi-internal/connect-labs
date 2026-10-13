@@ -204,7 +204,6 @@ export function SandboxFrame(props: SandboxFrameProps) {
       routeContext: wf?.routeContext,
       workflow: workflowHandlers,
       search: window.location.search,
-      fill: true,
       handlers: {
         querySupply: (alias, args) => propsRef.current.querySupply(alias, args),
         queryWorkflow: (alias) => propsRef.current.queryWorkflow(alias),
