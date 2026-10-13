@@ -164,6 +164,34 @@ def stamp_provenance(access, operation, payload):
     return _stamp_provenance_import()(access, operation, payload)
 
 
+# Writes governed by `org_access` rather than by a programme: the organisation
+# registry is one for all of labs, and these name no programme to run.
+ORG_REGISTRY_WRITES = frozenset({"org_upsert", "org_merge"})
+
+
+def require_programme_standing(access, operation) -> None:
+    """Refuse a write by anyone but the programme itself (#2458).
+
+    A programme's records are its running organisation's: its own people, or
+    platform support acting for it. A partner who can see the programme reads
+    it, and records its own deliveries through the update link or the
+    marketplace -- both of which run as the system caller, scoped to that
+    partner's rows. Holding a labs-only programme is visibility, which a whole
+    email domain has, so it cannot be what lets someone tender, award or pay.
+    """
+    from django.core.exceptions import PermissionDenied
+
+    from connect_labs.supply_chain.runner import is_system, refusal, standing
+
+    if is_system(access) or operation.name in ORG_REGISTRY_WRITES:
+        return
+    if getattr(access, "program_id", None) in (None, ""):
+        return
+    held = standing(access)
+    if not held.is_programme:
+        raise PermissionDenied(refusal(access, held))
+
+
 def get_operation(name: str) -> Operation:
     return _REGISTRY[name]
 
@@ -216,6 +244,8 @@ def call_operation(
     # the HTTP adapter and the MCP tools pass through, and provenance derived
     # in two places is provenance that can disagree with itself.
     digest = payload_digest(payload) if operation.is_write else ""
+    if operation.is_write:
+        require_programme_standing(access, operation)
     payload = stamp_provenance(access, operation, payload)
     if not operation.is_write:
         return operation.handler(access, **payload)
@@ -977,7 +1007,11 @@ def supplier_market_invite(access, supplier_id, email=""):
             "should act for it"
         )
     from connect_labs.labs.synthetic.org_tree import is_labs_only_org_row
+    from connect_labs.supply_chain.runner import is_running_org
 
+    if is_running_org(org):
+        # Its first admin would act as every program it runs (#2458).
+        raise ValueError(f"{org.name} runs a program on labs; its people are added by platform support, not invited")
     if is_labs_only_org_row(org):
         # Its first admin would also administer that synthetic organisation's Settings.
         raise ValueError(f"{org.name} is a labs-only (synthetic) organisation, not a company to hand over")

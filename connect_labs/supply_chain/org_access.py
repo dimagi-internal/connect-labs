@@ -15,6 +15,10 @@ row it keeps, which made it a way to take an organisation over (#2435 review, S1
                                      or a Connect member of the organisation it
                                      is linked to.
     any other row: merge             staff or system; or an admin of BOTH rows.
+    a RUNNING organisation           staff or system only, to change or to merge
+    (runs a programme, or Dimagi)    (#2458): running a programme is authority, and
+                                     re-keying, renaming or merging its row is how
+                                     someone else would take that authority over.
 
 "Staff" is the Django staff bit, not a Dimagi email address: labs-only data is
 visible across the whole Dimagi domain, so the domain is exactly who an attacker
@@ -32,6 +36,10 @@ STAFF_ONLY = "only Dimagi staff change a labs-only (synthetic) organisation's re
 NOT_YOURS = (
     "{name} is not an organisation you administer: ask one of its admins, a member of its Connect "
     "organisation, or Dimagi staff to change it"
+)
+RUNNING = (
+    "{name} runs a program on labs, so only platform support changes or merges its record: "
+    "who it is decides who acts as that program"
 )
 RESERVED = "keys beginning 'labs-synthetic-' are reserved for labs-only organisations, which labs files itself"
 
@@ -69,8 +77,12 @@ def _connect_member(access, org) -> bool:
 
 
 def require_change(access, org) -> None:
+    from connect_labs.supply_chain.runner import is_running_org
+
     if is_staff_or_system(access):
         return
+    if is_running_org(org):
+        raise PermissionDenied(RUNNING.format(name=org.name))
     if is_labs_only_org_row(org) or org.labs_only:
         raise PermissionDenied(STAFF_ONLY)
     if administers(access, org) or _connect_member(access, org):
@@ -79,9 +91,13 @@ def require_change(access, org) -> None:
 
 
 def require_merge(access, keep, merge) -> None:
+    from connect_labs.supply_chain.runner import is_running_org
+
     if is_staff_or_system(access):
         return
     for org in (keep, merge):
+        if is_running_org(org):
+            raise PermissionDenied(RUNNING.format(name=org.name))
         if org.labs_only:
             raise PermissionDenied(STAFF_ONLY)
         if not administers(access, org):

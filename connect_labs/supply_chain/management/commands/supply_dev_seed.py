@@ -46,8 +46,18 @@ class Command(BaseCommand):
         parser.add_argument("--reset", action="store_true", help="Delete this programme's records first.")
 
     def handle(self, *args, **options):
+        from django.conf import settings
+        from django.core.management.base import CommandError
+
+        from connect_labs.supply_chain.runner import declare_dimagi_if_undeclared
+
+        if not settings.DEBUG:
+            # It makes a staff superuser with a known password: platform support
+            # everywhere, which is no thing to leave on a deployed site.
+            raise CommandError("supply_dev_seed makes a local staff user, so it runs only with DEBUG on")
         self._dev_user()
         self._synthetic_programme()
+        declare_dimagi_if_undeclared(PROGRAMME_ID, "seeded by supply_dev_seed")
 
         # A local developer seeder: no request, no Connect token, no user to
         # authorise. It writes only to the labs-only synthetic programme below.

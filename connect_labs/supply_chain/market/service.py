@@ -141,15 +141,40 @@ def tender_by_slug(slug, orgs=()) -> ListedTender:
 def can_manage(request, tender) -> bool:
     """Whether this person may run a tender's listing.
 
-    Whoever manages the organisation that publishes it (its admins; for a
-    Connect organisation, its Connect members), or anyone on the tender's
-    program. Checked on every request to the manage page, never cached.
+    The programme itself -- a member of the organisation that runs the tender's
+    programme, or platform support -- or an admin of the organisation that
+    publishes it, by a membership granted for that organisation (or, for a
+    Connect organisation, Connect's own membership). Not merely being able to
+    see the programme: for a labs-only programme a whole email domain can (#2458).
+    Checked on every request to the manage page, never cached.
     """
-    from connect_labs.marketplace import membership
+    from connect_labs.marketplace.models import OrgMembership
+    from connect_labs.supply_chain.runner import is_member, standing
 
-    if tender.owner_org_id and membership.manages(request, tender.owner_org):
-        return True
-    return on_program(request, tender)
+    user = getattr(request, "user", None)
+    if user is None or not user.is_authenticated:
+        return False
+    owner = tender.owner_org
+    if owner is not None:
+        if OrgMembership.objects.filter(org=owner, user=user, role="admin", granted_for_org_id=owner.pk).exists():
+            return True
+        if owner.connect_organization_id is not None and is_member(_as_access(request, None), owner):
+            return True
+    if tender.program_id is None:
+        return False
+    return standing(_as_access(request, tender.program_id)).is_programme
+
+
+def _as_access(request, program_id):
+    """The little `standing` reads: who, from which request, in which programme."""
+    from types import SimpleNamespace
+
+    from connect_labs.labs.access.scopes import Caller
+
+    user = getattr(request, "user", None)
+    return SimpleNamespace(
+        program_id=program_id, request=request, user=user, caller=Caller(user=user, request=request)
+    )
 
 
 def on_program(request, tender) -> bool:

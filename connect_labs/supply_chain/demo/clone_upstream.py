@@ -29,7 +29,6 @@ NOTE = (
     "orders, shipments, invoices and payments -- is made up; no real supplier or order is named."
 )
 CARTON = 150  # sachets per carton
-BUYER_SLUG = "dimagi"
 DELIVERY = {
     "key": "central",
     "name": "Programme central store",
@@ -47,11 +46,11 @@ SUPPLIERS = [
 ]
 
 
-def _buyer(op, day) -> int:
-    for org in op(day, 9, "org_list"):
-        if org.get("slug") == BUYER_SLUG:
-            return org["id"]
-    return op(day, 9, "org_upsert", data={"slug": BUYER_SLUG, "name": "Dimagi"})["id"]
+def _buyer(program_id) -> int:
+    """The programme's running organisation: it is the buyer of record (#2458)."""
+    from connect_labs.supply_chain.runner import running_org
+
+    return running_org(program_id).pk
 
 
 def _cartons(sachets) -> int:
@@ -121,7 +120,7 @@ def seed_upstream(op, *, program_id: int, central_id: int, item, opening_sachets
     """Record the clone's sourcing and fulfilment; returns ids. `op(day, hour, name, **payload)` writes one, dated."""
     cartons = _cartons(opening_sachets)
     start = setup - timedelta(days=70)
-    buyer = _buyer(op, start)
+    buyer = _buyer(program_id)
     # The tenders' duty terms are "we import under the duty waiver": the waiver itself, on file, so
     # quotes we import can be landed. Invented, and its text says so.
     import base64

@@ -260,6 +260,15 @@ def _copy_of(obj, overrides: dict) -> dict:
     return {**plain, **overrides}
 
 
+def _guard_running_org(access, org) -> None:
+    """A supplier edit must not re-key or rename an organisation that runs a programme (#2458)."""
+    from connect_labs.supply_chain.org_access import require_change
+    from connect_labs.supply_chain.runner import is_running_org
+
+    if is_running_org(org):
+        require_change(access, org)
+
+
 class SupplyDataAccess(
     FulfilmentRepositoryMixin,
     ProcurementRepositoryMixin,
@@ -560,6 +569,8 @@ class SupplyDataAccess(
     def _edit_company(self, org, data):
         identity = {k: data[k] for k in ("name", "country") if data.get(k) not in (None, "")}
         changed = {k: v for k, v in identity.items() if getattr(org, k) != v}
+        if changed:
+            _guard_running_org(self, org)
         # Filling a blank is adding what we know; only replacing a value
         # somebody else set is refused.
         replaced = {k for k in changed if getattr(org, k)}
