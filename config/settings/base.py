@@ -592,6 +592,19 @@ CONNECT_OAUTH_CLIENT_SECRET = env("CONNECT_OAUTH_CLIENT_SECRET", default="")
 # enable the synthetic-opportunity feature. See docs/SYNTHETIC_OPPS.md.
 # LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID is the Drive folder ID where dump output lands.
 LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = env("LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID", default="")
+
+# Run each synthetic job (profiling, generation, cloning) on a standalone ECS Fargate
+# task of its own, which a deploy does not stop (labs/synthetic/ecs_runner.py). Off
+# locally and in tests; the labs worker task definition turns it on.
+SYNTHETIC_JOBS_ON_ECS = env.bool("SYNTHETIC_JOBS_ON_ECS", default=False)
+SYNTHETIC_ECS_CLUSTER = env("SYNTHETIC_ECS_CLUSTER", default="labs-jj-cluster")
+SYNTHETIC_ECS_SERVICE = env("SYNTHETIC_ECS_SERVICE", default="labs-jj-worker")
+SYNTHETIC_ECS_REGION = env("SYNTHETIC_ECS_REGION", default="us-east-1")
+# Fargate task size per job (8 vCPU / 32 GB: a cohort profiles its opportunities in
+# parallel, one process per vCPU) and how many may run at once.
+SYNTHETIC_ECS_CPU = env("SYNTHETIC_ECS_CPU", default="8192")
+SYNTHETIC_ECS_MEMORY = env("SYNTHETIC_ECS_MEMORY", default="32768")
+SYNTHETIC_ECS_MAX_TASKS = env.int("SYNTHETIC_ECS_MAX_TASKS", default=6)
 # LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID is the Drive folder ID for stock images.
 LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID = env("LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID", default="")
 # Drive folders a workflow pipeline may read (data_source.type "gdrive"). A source's
