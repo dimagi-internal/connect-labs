@@ -59,7 +59,7 @@ class Scope:
         return {}
 
     def label(self, tree: dict | None = None) -> str:
-        """ "programme 10112" or its name when the tree knows it."""
+        """ "program 10112" or its name when the tree knows it."""
         name = name_of(self, tree or {})
         return f"{LABELS[self.type]} {name or self.key}"
 

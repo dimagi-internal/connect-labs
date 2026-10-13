@@ -120,7 +120,7 @@ def test_settings_shows_each_tab_and_who_set_it(client_in_programme):
     body = client_in_programme.get(reverse("labs:settings", args=["program", PROGRAM])).content.decode()
     assert 'data-testid="settings-supply-tabs"' in body
     alerts = body.split('data-testid="settings-tab-supply_chain:alerts"', 1)[1].split("</tr>", 1)[0]
-    assert "Hidden" in alerts and "programme" in alerts
+    assert "Hidden" in alerts and "this program" in alerts
 
 
 def test_showing_a_tab_from_settings_puts_it_back(client_in_programme):
