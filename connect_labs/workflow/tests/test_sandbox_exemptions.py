@@ -255,15 +255,14 @@ def _render_run_as(is_staff):
 
 
 @pytest.mark.django_db
-def test_the_run_page_draws_an_exempt_workflow_plain_and_tells_staff_why():
+def test_the_run_page_draws_an_exempt_workflow_plain_and_says_nothing_about_it():
     # The test definition: id 47, owned by program 25, drawing this stored code.
     _exempt(47, code="function WorkflowUI() {}", program_id=25)
     staff = _render_run_as(is_staff=True)
     body = staff.content.decode()
     assert "Content-Security-Policy" not in staff and '"sandbox": {' not in body
-    assert '"sandbox_exemption": {"kind": "recorded", "reason": "needs a retired endpoint; kept readable"' in body
-    viewer = _render_run_as(is_staff=False).content.decode()
-    assert "needs a retired endpoint" not in viewer
+    # Exemption status is read from the scan and `--list`, never from the page.
+    assert "sandbox_exemption" not in body and "needs a retired endpoint" not in body
     # Without the row the same page is drawn in the frame.
     SandboxExemption.objects.all().delete()
     assert _render_run_as(is_staff=True)["Content-Security-Policy"].startswith("frame-src ")

@@ -158,12 +158,6 @@ interface ExtendedWorkflowData extends WorkflowDataFromDjango {
   };
   mapboxToken?: string;
   viewer_is_staff?: boolean;
-  /** Staff only, under LABS_WORKFLOW_SANDBOX=all: why this workflow is kept out of the frame. */
-  sandbox_exemption?: {
-    kind: string;
-    reason: string;
-    added_by?: string;
-  } | null;
 }
 
 /**
@@ -2070,28 +2064,6 @@ function WorkflowRunner({
                 <span>
                   <i className="fa-solid fa-shield-halved mr-1" />
                   Staff: this workflow runs in the sandbox.
-                </span>
-              ) : initialData.sandbox_exemption ? (
-                <span data-testid="workflow-sandbox-exemption">
-                  Staff: this workflow is exempt from the sandbox (
-                  {initialData.sandbox_exemption.kind === 'recorded'
-                    ? 'recorded exemption'
-                    : 'deprecated template'}
-                  ): {initialData.sandbox_exemption.reason}
-                  {initialData.sandbox_exemption.added_by
-                    ? ` -- added by ${initialData.sandbox_exemption.added_by}`
-                    : ''}
-                  . Editing its code ends the exemption.{' '}
-                  <a
-                    className="underline hover:text-gray-600"
-                    href={(() => {
-                      const u = new URL(window.location.href);
-                      u.searchParams.set('sandbox', '1');
-                      return u.pathname + u.search;
-                    })()}
-                  >
-                    View it sandboxed
-                  </a>
                 </span>
               ) : (
                 <span>
