@@ -1166,9 +1166,16 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             # Whether this render runs in the page sandbox (workflow/sandbox.py): decided
             # ONCE, here, from the consuming definition's own kind, on every route that
             # draws it (a page's address, its run URL, edit mode, present mode, a supply tab).
+            from connect_labs.workflow.render_source import resolve_render_code
             from connect_labs.workflow.sandbox import should_sandbox
 
-            sandboxed = should_sandbox(definition, page_mode=self.page_mode, request=self.request)
+            # The code this render draws (resolved below as before): the sandbox's only
+            # exemption, a pinned deprecated copy under `all`, holds only for code labs
+            # shipped (sandbox.deprecated_exempt).
+            resolved_render = resolve_render_code(data_access, definition)
+            sandboxed = should_sandbox(
+                definition, page_mode=self.page_mode, request=self.request, render_code=resolved_render[0]
+            )
             context["sandboxed"] = sandboxed
             # A page and a workflow are handed the same data and the same bridge
             # (Jonathan, 2026-10-12: "pages should be completely definable like workflows
@@ -1194,9 +1201,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             # environment, including labs.connect.dimagi.com).
             # ...unless the workflow FOLLOWS its template (render_source), in which case
             # the deployed template's code is the render -- see workflow/render_source.py.
-            from connect_labs.workflow.render_source import resolve_render_code
-
-            context["render_code"], context["render_source"] = resolve_render_code(data_access, definition)
+            context["render_code"], context["render_source"] = resolved_render
 
             # Determine effective opportunity list. Program-owned runs have no
             # owning opportunity — the opps come from the definition's

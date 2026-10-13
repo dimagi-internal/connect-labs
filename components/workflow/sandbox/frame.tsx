@@ -18,18 +18,24 @@ import { createActionHandlers } from '../actionHandlers';
 import { createLinkHelpers } from '../links';
 import { buildRunView } from '../runView';
 import type { WorkflowProps } from '../types';
+import type { CompileOptions } from '../renderCode';
 import {
   downloadBytes,
   installWorkflowShims,
   proxyLabsImages,
+  sandboxGlobals,
+  type AddressState,
 } from './frameShims';
 import {
   HELLO,
   INIT,
+  STREAM,
   UPDATE,
   type BridgeResponse,
   type FramePayload,
+  type StreamMessage,
 } from './protocol';
+import { SANDBOX_GLOBAL, sandboxRewritePlugin } from './rewrite';
 
 // ---------------------------------------------------------------------------
 // Storage: an opaque origin has none, and reading localStorage throws there.
@@ -141,6 +147,8 @@ export function resolveHref(raw: string, pageUrl: string): string {
 
 export interface Bridge {
   request(method: string, params?: unknown): Promise<unknown>;
+  /** Messages the host pushes for one stream (an EventSource it reads for us). */
+  listen?(stream: string, onMessage: (m: StreamMessage) => void): () => void;
 }
 
 /**
@@ -161,7 +169,19 @@ export function connectBridge(
     number,
     { resolve: (v: unknown) => void; reject: (e: Error) => void }
   >();
+  const listeners = new Map<string, (m: StreamMessage) => void>();
+  // A stream's first messages can beat the answer that names it: held until listened.
+  const early = new Map<string, StreamMessage[]>();
   const bridge: Bridge = {
+    listen(stream, onMessage) {
+      listeners.set(stream, onMessage);
+      const held = early.get(stream) || [];
+      early.delete(stream);
+      held.forEach(onMessage);
+      return () => {
+        listeners.delete(stream);
+      };
+    },
     request(method, params) {
       if (!port) return Promise.reject(new Error('the page is not connected'));
       const id = nextId++;
@@ -179,6 +199,18 @@ export function connectBridge(
     };
     if (data && data.type === UPDATE && data.payload) {
       handlers.onUpdate(data.payload);
+      return;
+    }
+    if (data && data.type === STREAM) {
+      const m = data as unknown as StreamMessage;
+      if (typeof m.stream !== 'string') return;
+      const to = listeners.get(m.stream);
+      if (to) to(m);
+      else if (early.size < 32) {
+        const held = early.get(m.stream) || [];
+        if (held.length < 64) held.push(m);
+        early.set(m.stream, held);
+      }
       return;
     }
     const waiting =
@@ -331,9 +363,11 @@ export function workflowActions(
 function WorkflowFramePage({
   payload,
   bridge,
+  compileOptions,
 }: {
   payload: FramePayload;
   bridge: Bridge;
+  compileOptions?: CompileOptions;
 }) {
   const pageUrl = useCallback(() => payload.pageUrl || '', [payload.pageUrl]);
   const actions = useMemo(
@@ -413,6 +447,7 @@ function WorkflowFramePage({
       onUpdateState={onUpdateState}
       view={view as unknown as WorkflowProps['view']}
       onError={onError}
+      compileOptions={compileOptions}
     />
   );
 }
@@ -422,6 +457,7 @@ export function startFrame(win: Window, rootEl: HTMLElement): void {
   const reactRoot = createRoot(rootEl);
   let bridge: Bridge | null = null;
   let current: FramePayload | null = null;
+  let compileOptions: CompileOptions | undefined;
   const draw = (payload: FramePayload) => {
     (win as unknown as { MAPBOX_TOKEN?: string }).MAPBOX_TOKEN =
       payload.mapboxToken || '';
@@ -429,7 +465,13 @@ export function startFrame(win: Window, rootEl: HTMLElement): void {
     (
       win as unknown as { WORKFLOW_API_ENDPOINTS?: unknown }
     ).WORKFLOW_API_ENDPOINTS = payload.apiEndpoints || {};
-    reactRoot.render(<WorkflowFramePage payload={payload} bridge={bridge!} />);
+    reactRoot.render(
+      <WorkflowFramePage
+        payload={payload}
+        bridge={bridge!}
+        compileOptions={compileOptions}
+      />,
+    );
   };
   const report = (message: string) =>
     bridge?.request('reportError', { message }).catch(() => undefined);
@@ -446,6 +488,21 @@ export function startFrame(win: Window, rootEl: HTMLElement): void {
       bridge = b;
       current = payload;
       const pageUrl = () => (current && current.pageUrl) || '';
+      // The host page's query and hash, as the frame moves them (history, a hash).
+      const address: AddressState = { search: '', hash: '' };
+      try {
+        const u = new URL(pageUrl());
+        address.search = u.search;
+        address.hash = u.hash;
+      } catch {
+        // no page URL: an empty address
+      }
+      // Render code is compiled with the sandbox's rewrites (./rewrite.ts): its
+      // `window.location` and awaitable `confirm()` reach these instead.
+      compileOptions = {
+        plugins: [sandboxRewritePlugin],
+        params: { [SANDBOX_GLOBAL]: sandboxGlobals(b, pageUrl, address) },
+      };
       let onDownload: ((a: HTMLAnchorElement) => boolean) | undefined;
       {
         // The shared map module asks this for admin boundaries (a labs path, so a
@@ -463,6 +520,7 @@ export function startFrame(win: Window, rootEl: HTMLElement): void {
           win as Window & typeof globalThis,
           b,
           pageUrl,
+          address,
         );
         proxyLabsImages(win.document, sandboxFetch, () => win.location.href);
         onDownload = (anchor) => {
