@@ -14,7 +14,21 @@ from typing import Any
 
 from connect_labs.microplans import study_seed
 
-from ..tool_registry import register
+from ..tool_registry import MCPToolError, register
+
+
+def _study_data_access(manifest, user):
+    """The study program's data access, as ``user``.
+
+    The study program is pinned by the manifest rather than named in the call, so
+    the dispatcher's labs-only gate (which reads ``program_id`` from the arguments)
+    never sees it; the data access checks it instead."""
+    from connect_labs.microplans.core.data_access import ProgramAccessDenied
+
+    try:
+        return study_seed.data_access_for(manifest, user=user)
+    except ProgramAccessDenied:
+        raise MCPToolError("NOT_FOUND", f"program {manifest.program_id} is not there, or you cannot open it")
 
 
 @register(
@@ -51,7 +65,7 @@ from ..tool_registry import register
 def microplans_study_ensure(user, *, generate: bool = True, only_round: str | None = None) -> dict[str, Any]:
     manifest = study_seed.load_manifest()
     study_seed.ensure_synthetic_program(manifest, user=user)
-    da = study_seed.data_access_for(manifest)
+    da = _study_data_access(manifest, user)
     try:
         return study_seed.ensure_study(da, manifest, generate=generate, only_round=only_round)
     finally:
@@ -78,7 +92,7 @@ def microplans_study_ensure(user, *, generate: bool = True, only_round: str | No
 )
 def microplans_study_reset_round(user, *, round_key: str) -> dict[str, Any]:
     manifest = study_seed.load_manifest()
-    da = study_seed.data_access_for(manifest)
+    da = _study_data_access(manifest, user)
     try:
         return study_seed.reset_round(da, manifest, round_key)
     finally:
