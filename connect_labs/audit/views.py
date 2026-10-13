@@ -183,6 +183,48 @@ class ExperimentAuditListView(LoginRequiredMixin, SingleTableView):
             self._flw_display_names = {}
             return []
 
+        sessions, flw_display_names = self._load_session_list(labs_context)
+
+        self._all_sessions = sessions
+        self._flw_display_names = flw_display_names
+
+        filtered = self._apply_filters(sessions)
+        # Sort by id descending (higher IDs are more recent)
+        return sorted(filtered, key=lambda x: x.id, reverse=True)
+
+    # The list is paginated, sorted and filtered in Python over EVERY session in
+    # scope, because the production API can neither page nor project fields. So
+    # each page used to re-download every session -- visit_images included, the
+    # bulk of each record -- and hold it all in the worker. On 2026-10-13 a curl
+    # crawl paging /audit/?page=N past the end (~770 req/min, 623 sessions per
+    # page) coincided with 18 web-worker OOM kills (#2512).
+    #
+    # Pages after the first now read a slim projection of the list cached for
+    # SESSION_LIST_CACHE_TTL. Page 1 always refetches, so landing on the list
+    # after creating, completing or deleting an audit is never stale; only
+    # paging within a minute of that reuses the snapshot. The key is per user
+    # AND per scope: the cached set is exactly what that caller's own token
+    # returned, so it never widens anyone's access. Filtering stays in Python
+    # over the projection, so changing a filter does not refetch either.
+    SESSION_LIST_CACHE_TTL = 60
+
+    def _session_list_cache_key(self, labs_context):
+        return "audit:session_list:v1:{}:{}:{}".format(
+            self.request.user.pk,
+            labs_context.get("opportunity_id") or "",
+            labs_context.get("program_id") or "",
+        )
+
+    def _wants_fresh_list(self):
+        return self.request.GET.get("page", "1").strip() in ("", "1")
+
+    def _load_session_list(self, labs_context):
+        key = self._session_list_cache_key(labs_context)
+        if not self._wants_fresh_list():
+            cached = cache.get(key)
+            if cached is not None:
+                return [AuditSessionRecord(row) for row in cached["rows"]], cached["flw_display_names"]
+
         # Get AuditSessionRecords from API (returns list, not QuerySet)
         data_access = AuditDataAccess(request=self.request)
         try:
@@ -199,12 +241,11 @@ class ExperimentAuditListView(LoginRequiredMixin, SingleTableView):
         finally:
             data_access.close()
 
-        self._all_sessions = sessions
-        self._flw_display_names = flw_display_names
-
-        filtered = self._apply_filters(sessions)
-        # Sort by id descending (higher IDs are more recent)
-        return sorted(filtered, key=lambda x: x.id, reverse=True)
+        rows = [_slim_session_list_row(s) for s in sessions]
+        cache.set(key, {"rows": rows, "flw_display_names": flw_display_names}, self.SESSION_LIST_CACHE_TTL)
+        # Serve the slim rows on page 1 too, so every page renders from the same
+        # shape and the full records can be freed before the table renders.
+        return [AuditSessionRecord(row) for row in rows], flw_display_names
 
     def _apply_filters(self, sessions):
         """Filter sessions by the opportunity / FLW / audit-completion-date query params."""
@@ -293,6 +334,51 @@ class ExperimentAuditListView(LoginRequiredMixin, SingleTableView):
             context["token_expires_at"] = None
 
         return context
+
+
+_SESSION_LIST_DATA_KEYS = (
+    "title",
+    "tag",
+    "description",
+    "status",
+    "overall_result",
+    "completed_at",
+    "opportunity_id",
+    "opportunity_name",
+    "visit_ids",
+)
+
+
+def _slim_session_list_row(session: AuditSessionRecord) -> dict:
+    """The api_data for an AuditSessionRecord carrying only what the list renders.
+
+    ``visit_images`` -- the per-visit image and assessment lists that make up
+    most of a session's size -- is reduced to the FLW usernames, in first-seen
+    order. That is all the list reads from it: ``flw_username`` takes the first
+    one and the row's Tasks link wants the distinct set, and both read the same
+    from one synthetic visit holding one stub image per username.
+    """
+    usernames = {}
+    for images in session.data.get("visit_images", {}).values():
+        for image in images:
+            if image.get("username"):
+                usernames.setdefault(image["username"], None)
+    data = {key: session.data[key] for key in _SESSION_LIST_DATA_KEYS if key in session.data}
+    data["visit_images"] = {"_list": [{"username": u} for u in usernames]} if usernames else {}
+    return {
+        "id": session.id,
+        "experiment": session.experiment,
+        "type": session.type,
+        "data": data,
+        "username": session.username,
+        # The STORAGE scope, which the constructor routes to storage_opportunity_id;
+        # the audit subject rides along in data["opportunity_id"].
+        "opportunity_id": session.storage_opportunity_id,
+        "organization_id": session.organization_id,
+        "program_id": session.program_id,
+        "labs_record_id": session.labs_record_id,
+        "public": session.public,
+    }
 
 
 class ExperimentBulkAssessmentView(LoginRequiredMixin, DetailView):
