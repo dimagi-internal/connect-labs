@@ -59,6 +59,8 @@ interface Question {
   detail?: string;
   okLabel: string;
   answer: (yes: boolean) => void;
+  /** Each its own dialog: a queued question is drawn fresh (and armed afresh). */
+  id?: number;
 }
 
 /**
@@ -110,22 +112,30 @@ export function SandboxFrame(props: SandboxFrameProps) {
 
   useEffect(() => {
     if (!containerRef.current) return;
-    // One question at a time: a second while one is open is a no.
+    // One question on screen at a time; the rest wait their turn (a batch of writes
+    // that each name their own record is a question per record), up to a few --
+    // beyond that, a no.
+    const waiting: Question[] = [];
+    let questionSeq = 0;
+    const showNext = () => setQuestion(waiting.length ? waiting[0] : null);
     const askQuestion = (q: Omit<Question, 'answer'>) =>
       new Promise<boolean>((resolve) => {
-        setQuestion((current) => {
-          if (current) {
-            resolve(false);
-            return current;
-          }
-          return {
-            ...q,
-            answer: (yes) => {
-              setQuestion(null);
-              resolve(yes);
-            },
-          };
-        });
+        if (waiting.length >= MAX_WAITING_QUESTIONS) {
+          resolve(false);
+          return;
+        }
+        questionSeq += 1;
+        const entry: Question = {
+          ...q,
+          id: questionSeq,
+          answer: (yes) => {
+            waiting.splice(waiting.indexOf(entry), 1);
+            showNext();
+            resolve(yes);
+          },
+        };
+        waiting.push(entry);
+        if (waiting.length === 1) showNext();
       });
     const wf = propsRef.current.workflow;
     const workflowHandlers: WorkflowHandlers | undefined = wf
@@ -275,6 +285,7 @@ export function SandboxFrame(props: SandboxFrameProps) {
       )}
       {question && (
         <QuestionDialog
+          key={question.id}
           question={question}
           asker={props.mode === 'workflow' ? 'workflow' : 'page'}
         />
@@ -282,6 +293,9 @@ export function SandboxFrame(props: SandboxFrameProps) {
     </div>
   );
 }
+
+/** Questions that may wait behind the one on screen. */
+export const MAX_WAITING_QUESTIONS = 25;
 
 /** How long labs' own question stays unanswerable after it appears: a double click
  * timed to its arrival must not land on Allow. */

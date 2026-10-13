@@ -67,6 +67,10 @@ export interface Route {
   /** The answer lists pipelines (`{pipelines: [{id}]}`) the viewer may attach: the
    * host remembers their ids, which `pipe` then binds to. */
   remembersPipelines?: boolean;
+  /** Query parameters this route alone binds, beyond the ones every route does
+   * (SCOPE_PARAMS, BOUND_PARAMS): `{session_id: 'run'}` where a view reads a run
+   * by another name. */
+  boundQuery?: Record<string, string>;
   /** For `effect`: what the host's question says, in labs' words, built from the
    * CHECKED body (for a write whose reach the body decides). Replaces `label`. */
   describe?: (body: Record<string, unknown>, ctx: RouteContext) => string;
@@ -290,6 +294,8 @@ export interface RouteContext {
   /** Pipelines this workflow may name: its own `pipeline_sources`, and those an
    * available-pipelines answer offered (the host adds to it). */
   pipelineIds?: number[];
+  /** Their names, as that answer gave them (for the host's question). */
+  pipelineNames?: Record<string, string>;
   /** Jobs this run is running or this host started: the only ones it may cancel.
    * The host adds to it as it starts jobs. */
   jobIds: string[];
@@ -541,6 +547,8 @@ export const ROUTES: readonly Route[] = [
     path: p(
       `/custom_analysis/mbw_monitoring/(stream|api/oauth-status|api/snapshot)/`,
     ),
+    // These views read the run as `run_id` OR `session_id`: both are this run.
+    boundQuery: { session_id: 'run' },
   },
   {
     methods: GET,
@@ -592,7 +600,10 @@ export const ROUTES: readonly Route[] = [
     methods: POST,
     gate: 'effect',
     path: p(`/labs/workflow/api/run/${XRUN}/state/`),
-    label: 'change saved runs of the workflows it reads (their state)',
+    label: 'change the saved state of run',
+    // Asked naming the run; a yes holds a while for THAT run only.
+    perRecord: true,
+    recordGrant: true,
   },
   // This workflow's own data sources: asked every time, naming the change.
   {
@@ -602,8 +613,17 @@ export const ROUTES: readonly Route[] = [
     label: 'change its own data sources',
     perRecord: true,
     bodyCheck: attachBody,
-    describe: (body) =>
-      `change its own data sources: attach pipeline #${Number(body.pipeline_id)} as "${String(body.alias)}"`,
+    describe: (body, ctx) => {
+      const id = Number(body.pipeline_id);
+      const name = (ctx.pipelineNames || {})[String(id)];
+      const named = name
+        ? ` "${name
+            .replace(/["\s]+/g, ' ')
+            .trim()
+            .slice(0, 80)}"`
+        : '';
+      return `change its own data sources: attach pipeline #${id}${named} as "${String(body.alias)}"`;
+    },
   },
   {
     methods: POST,
@@ -837,6 +857,7 @@ export function checkFetch(
   for (const [param, name] of Object.entries({
     ...SCOPE_PARAMS,
     ...BOUND_PARAMS,
+    ...(route.boundQuery || {}),
   })) {
     for (const value of parsed.searchParams.getAll(param)) {
       if (!bound(name, value, ctx)) {
@@ -876,7 +897,7 @@ export function checkFetch(
     label: route.label || '',
     body: canonical,
     perRecord: route.perRecord === true,
-    recordId: groups.rec,
+    recordId: groups.rec ?? groups.xrun,
     recordGrant: route.recordGrant === true,
     filterOpportunities: route.filterOpportunities === true,
     startsJob: route.startsJob === true || /\/job\/start\/$/.test(path),
