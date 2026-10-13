@@ -57,6 +57,13 @@ endif
 #   make test ARGS="-k uvicorn_worker"
 ARGS ?= connect_labs/
 
+# Run the suite as if today were another day (the CI `pytest-shifted-clock` job
+# does this after every merge). Anything --clock-shift takes: +30d, -1d, +12h,
+# or a start such as 2026-12-31T23:40. See connect_labs/testing/clock_shift.py.
+#   make test CLOCK_SHIFT=+30d ARGS="connect_labs/supply_chain -n 8"
+CLOCK_SHIFT ?=
+CLOCK_SHIFT_ARG := $(if $(CLOCK_SHIFT),--clock-shift=$(CLOCK_SHIFT),)
+
 test:
 	@if [ -z "$(VENV_BIN)" ] || [ ! -x "$(VENV_BIN)/pytest" ]; then \
 		echo "error: no pytest found at VENV_BIN=$(VENV_BIN)" >&2; \
@@ -74,7 +81,7 @@ test:
 			exit 1; \
 		fi; \
 	fi
-	PATH="$(VENV_BIN):$$PATH" $(VENV_BIN)/pytest $(ARGS)
+	PATH="$(VENV_BIN):$$PATH" $(VENV_BIN)/pytest $(ARGS) $(CLOCK_SHIFT_ARG)
 
 # Run manage.py with everything a worktree lacks — the same three fixes as
 # `test` (venv on PATH, .env linked from the main checkout, GIS library paths on

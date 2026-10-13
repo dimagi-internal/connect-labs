@@ -13,6 +13,7 @@ pytest
 pytest-httpx>=0.30
 pytest-playwright
 pytest-xdist
+time-machine
 xml2json @ git+https://github.com/dimagi/xml2json@041b1ef
 
 # Code quality

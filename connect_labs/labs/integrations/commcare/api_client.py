@@ -940,8 +940,10 @@ class CommCareDataAccess:
         except httpx.HTTPStatusError as e:
             logger.warning(f"Application Structure API error for app {app_id}: {e.response.status_code}")
             return None
-        except httpx.TimeoutException:
-            logger.warning(f"Timeout fetching application structure for app {app_id}")
+        except httpx.RequestError as e:
+            # Timeouts and failed connections alike: the caller falls back to
+            # discovering the xmlns, as it does for an error status.
+            logger.warning(f"Could not fetch application structure for app {app_id}: {e}")
             return None
 
         app_data = response.json()
