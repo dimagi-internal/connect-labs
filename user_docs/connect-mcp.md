@@ -235,6 +235,4 @@ Anyone else who navigates to a microplans page for a labs-only program will see 
 
 **Real Connect programs are not affected** — their microplans pages continue to follow the same access rules they always have.
 
----
-
-## PMC
+### Workspace programs with
