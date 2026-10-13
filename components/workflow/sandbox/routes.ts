@@ -32,42 +32,92 @@ export type Gate = 'read' | 'own' | 'effect';
 export interface Route {
   /** Methods this route answers. */
   methods: readonly string[];
-  /** Matched against the URL's pathname. Named groups bind ids (see `bindings`). */
+  /** Matched against the URL's pathname. Named groups bind ids (see `bound`). */
   path: RegExp;
   gate: Gate;
   /** For `effect`: how the host names it when it asks ("create a task"). */
   label?: string;
   /**
    * When the request's body decides how far the write reaches: return the gate
-   * for this body (or null to keep `gate`). Read from the body the host is about
-   * to send, so the frame cannot claim one thing and send another.
+   * for this body (or null to keep `gate`).
    */
-  bodyGate?: (body: unknown) => Gate | null;
+  bodyGate?: (body: Record<string, unknown>, ctx: RouteContext) => Gate | null;
   /** Ids a request names in its BODY, bound like path ids: throws when one is not
    * this workflow's. */
-  bodyCheck?: (body: unknown, ctx: RouteContext) => void;
+  bodyCheck?: (body: Record<string, unknown>, ctx: RouteContext) => void;
+  /**
+   * An effect on ONE existing record (delete this audit, update this task, message
+   * this worker): asked every time, naming the record; a yes is never reused.
+   */
+  perRecord?: boolean;
+  /** The path's token must be a job this host started (or the run's own). */
+  ownJob?: boolean;
 }
 
-function parseBody(body: unknown): unknown {
-  if (typeof body !== 'string') return body;
+/**
+ * A body a route inspects must be a JSON object, parsed HERE; the host then sends
+ * `JSON.stringify` of what it checked, never the frame's own bytes, so the server
+ * reads exactly what was checked (bytes, a byte-order mark or UTF-16 would
+ * otherwise be read one way by this check and another by Django).
+ */
+function jsonObjectBody(body: unknown): Record<string, unknown> {
+  if (body === undefined || body === null || body === '') return {};
+  if (typeof body !== 'string') {
+    throw new RouteError('fetch: this request takes a JSON body, as text');
+  }
+  let parsed: unknown;
   try {
-    return JSON.parse(body);
+    parsed = JSON.parse(body);
   } catch {
-    return null;
+    throw new RouteError('fetch: this request takes a JSON body');
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new RouteError('fetch: this request takes a JSON object');
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function refuseOpportunity(o: unknown): never {
+  throw new RouteError(
+    `fetch: that request names opportunity ${String(o).slice(0, 20)}, which this workflow does not cover`,
+  );
+}
+
+/** `{"opportunities": [ids or {id}]}`: every one must be this workflow's. */
+function opportunitiesInBody(
+  body: Record<string, unknown>,
+  ctx: RouteContext,
+): void {
+  const opps = body.opportunities;
+  if (opps === undefined || opps === null) return;
+  if (!Array.isArray(opps)) refuseOpportunity(opps);
+  for (const o of opps as unknown[]) {
+    const id =
+      o && typeof o === 'object' ? (o as { id?: unknown }).id : (o as unknown);
+    if (!ctx.opportunityIds.includes(Number(id))) refuseOpportunity(id);
   }
 }
 
-/** `{"opportunities": [ids]}`: every one must be this workflow's. */
-function opportunitiesInBody(body: unknown, ctx: RouteContext): void {
-  const parsed = parseBody(body) as { opportunities?: unknown } | null;
-  const opps =
-    parsed && Array.isArray(parsed.opportunities) ? parsed.opportunities : [];
-  for (const o of opps) {
-    if (!ctx.opportunityIds.includes(Number(o))) {
-      throw new RouteError(
-        `fetch: that request names opportunity ${String(o).slice(0, 20)}, which this workflow does not cover`,
-      );
-    }
+/** `{"per_opp": {"<opp id>": ...}}` (audit batch config). */
+function perOppInBody(body: Record<string, unknown>, ctx: RouteContext): void {
+  const per = body.per_opp;
+  if (per === undefined || per === null) return;
+  if (typeof per !== 'object' || Array.isArray(per)) refuseOpportunity(per);
+  for (const k of Object.keys(per as object)) {
+    if (!ctx.opportunityIds.includes(Number(k))) refuseOpportunity(k);
+  }
+}
+
+/** A job is cancelled only on THIS run. */
+function thisRunInBody(body: Record<string, unknown>, ctx: RouteContext): void {
+  if (
+    body.run_id !== undefined &&
+    body.run_id !== null &&
+    Number(body.run_id) !== ctx.runId
+  ) {
+    throw new RouteError(
+      'fetch: that request names a run this workflow does not cover',
+    );
   }
 }
 
@@ -83,25 +133,53 @@ export const COMPUTE_ONLY_JOBS = [
   'program_admin_rollup',
 ];
 
-function jobGate(body: unknown): Gate | null {
-  const parsed = parseBody(body);
-  const jobType =
-    parsed && typeof parsed === 'object'
-      ? ((parsed as { job_config?: { job_type?: unknown } }).job_config || {})
-          .job_type
-      : undefined;
+/** A job's own scope ids are bound like any other; then its type decides the gate. */
+function jobGate(
+  body: Record<string, unknown>,
+  ctx: RouteContext,
+): Gate | null {
+  const config =
+    body.job_config && typeof body.job_config === 'object'
+      ? (body.job_config as Record<string, unknown>)
+      : {};
+  if (
+    config.opportunity_id !== undefined &&
+    config.opportunity_id !== null &&
+    !ctx.opportunityIds.includes(Number(config.opportunity_id))
+  ) {
+    refuseOpportunity(config.opportunity_id);
+  }
+  if (
+    config.program_id !== undefined &&
+    config.program_id !== null &&
+    !ctx.programIds.includes(Number(config.program_id))
+  ) {
+    throw new RouteError(
+      'fetch: that job names a program this workflow does not cover',
+    );
+  }
+  const jobType = config.job_type;
   return typeof jobType === 'string' && COMPUTE_ONLY_JOBS.includes(jobType)
     ? 'own'
     : null;
 }
 
-/** What the host knows about the workflow it is drawing: the ids a route may name. */
+/** What the host knows about what it is drawing: the ids a route may name. */
 export interface RouteContext {
   labsOrigin: string;
   definitionId: number | null;
+  /** null on a page (it has no run) and in edit mode (run 0). */
   runId: number | null;
   opportunityIds: number[];
-  programId: number | null;
+  programIds: number[];
+  /** The organisation in view (a page's scope), by slug. */
+  organizationKey: string | null;
+  /** Jobs this run is running or this host started: the only ones it may cancel.
+   * The host adds to it as it starts jobs. */
+  jobIds: string[];
+  /** Added to a write that names no scope, so it lands in THIS workflow's and not
+   * in whatever the viewer's session last pointed at. */
+  defaultScope: { name: 'opportunity_id' | 'program_id'; value: string } | null;
 }
 
 export interface CheckedRequest {
@@ -111,6 +189,13 @@ export interface CheckedRequest {
   /** The route's kind, the key a yes is remembered under. */
   kind: string;
   label: string;
+  /** The body to send, when the route checked one (its canonical JSON). */
+  body?: string;
+  /** Asked every time, naming `recordId`. */
+  perRecord?: boolean;
+  recordId?: string;
+  /** A job start: the host remembers the job it started. */
+  startsJob?: boolean;
 }
 
 const ID = '(\\d+)';
@@ -119,6 +204,11 @@ const DEF = '(?<def>\\d+)';
 const OPP = '(?<opp>\\d+)';
 const PROG = '(?<prog>\\d+)';
 const TOKEN = '([A-Za-z0-9_.:-]+)';
+/** A job's token, bound to the jobs this run has (`ownJob`). */
+const JOB = '(?<job>[A-Za-z0-9_.:-]+)';
+/** The one existing record an effect acts on: named when the host asks. */
+const REC = '(?<rec>\\d+)';
+const RECTOKEN = '(?<rec>[A-Za-z0-9_.:-]+)';
 /** A visit image's blob id, URL-encoded by render code: anything but a slash. */
 const BLOB = '([^/]+)';
 const GET = ['GET', 'HEAD'] as const;
@@ -224,7 +314,12 @@ export const ROUTES: readonly Route[] = [
     path: p(`/audit/api/workflow/${ID}/sessions/`),
   },
   { methods: GET, gate: 'read', path: p(`/audit/api/${ID}/bulk-data/`) },
-  { methods: POST, gate: 'read', path: p(`/audit/api/audit/preview/`) },
+  {
+    methods: POST,
+    gate: 'read',
+    path: p(`/audit/api/audit/preview/`),
+    bodyCheck: opportunitiesInBody,
+  },
   {
     methods: GET,
     gate: 'read',
@@ -262,11 +357,14 @@ export const ROUTES: readonly Route[] = [
     methods: POST,
     gate: 'own',
     path: p(`/labs/workflow/api/${DEF}/audit-batch-config/`),
+    bodyCheck: perOppInBody,
   },
   {
     methods: POST,
     gate: 'own',
-    path: p(`/labs/workflow/api/job/${TOKEN}/cancel/`),
+    path: p(`/labs/workflow/api/job/${JOB}/cancel/`),
+    ownJob: true,
+    bodyCheck: thisRunInBody,
   },
 
   // --- Effect: past this run; the host asks first --------------------------------
@@ -282,12 +380,14 @@ export const ROUTES: readonly Route[] = [
     gate: 'effect',
     path: p(`/labs/workflow/api/run/${RUN}/complete/`),
     label: 'complete this run (it is saved and cannot change after)',
+    perRecord: true,
   },
   {
     methods: POST,
     gate: 'effect',
     path: p(`/labs/workflow/api/run/${RUN}/delete/`),
     label: 'delete this run',
+    perRecord: true,
   },
   {
     methods: POST,
@@ -304,38 +404,44 @@ export const ROUTES: readonly Route[] = [
   {
     methods: POST,
     gate: 'effect',
-    path: p(`/tasks/api/${ID}/(update|comment)/`),
-    label: 'update tasks',
+    path: p(`/tasks/api/${REC}/(update|comment)/`),
+    label: 'update task',
+    perRecord: true,
   },
   {
     methods: POST,
     gate: 'effect',
-    path: p(`/tasks/${ID}/ai/initiate/`),
-    label: 'start an AI coaching conversation with a worker',
+    path: p(`/tasks/${REC}/ai/initiate/`),
+    label: 'start an AI coaching conversation with the worker on task',
+    perRecord: true,
   },
   {
     methods: POST,
     gate: 'effect',
-    path: p(`/tasks/${ID}/ai/save-transcript/`),
-    label: 'save a coaching transcript to a task',
+    path: p(`/tasks/${REC}/ai/save-transcript/`),
+    label: 'save a coaching transcript to task',
+    perRecord: true,
   },
   {
     methods: POST,
     gate: 'effect',
     path: p(`/audit/api/audit/(create|create-async)/`),
     label: 'create audits',
+    bodyCheck: opportunitiesInBody,
   },
   {
     methods: POST,
     gate: 'effect',
-    path: p(`/audit/api/audit/task/${TOKEN}/cancel/`),
-    label: 'cancel an audit being created',
+    path: p(`/audit/api/audit/task/${RECTOKEN}/cancel/`),
+    label: 'cancel the audit being created by job',
+    perRecord: true,
   },
   {
     methods: POST,
     gate: 'effect',
-    path: p(`/audit/api/${ID}/delete/`),
-    label: 'delete audits',
+    path: p(`/audit/api/${REC}/delete/`),
+    label: 'delete audit',
+    perRecord: true,
   },
 ];
 
@@ -350,13 +456,21 @@ export const FETCH_DENIED = [
 ];
 
 /** Query parameters that name a scope: when present, bound like a path id. */
-const SCOPE_PARAMS = { opportunity_id: 'opp', program_id: 'prog' } as const;
+const SCOPE_PARAMS = {
+  opportunity_id: 'opp',
+  program_id: 'prog',
+  organization_id: 'org',
+} as const;
 
 export class RouteError extends Error {}
 
 function bound(name: string, value: string, ctx: RouteContext): boolean {
+  if (name === 'rec') return true; // named in the question, checked by the server
+  if (name === 'job') return ctx.jobIds.includes(value);
+  if (name === 'org')
+    return !!ctx.organizationKey && value === ctx.organizationKey;
   const n = Number(value);
-  if (!Number.isSafeInteger(n)) return false;
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(n)) return false;
   switch (name) {
     case 'run':
       return ctx.runId !== null && ctx.runId > 0 && n === ctx.runId;
@@ -365,16 +479,26 @@ function bound(name: string, value: string, ctx: RouteContext): boolean {
     case 'opp':
       return ctx.opportunityIds.includes(n);
     case 'prog':
-      return ctx.programId !== null && n === ctx.programId;
+      return ctx.programIds.includes(n);
     default:
       return false;
   }
 }
 
+const NOUNS: Record<string, string> = {
+  opp: 'an opportunity',
+  prog: 'a program',
+  org: 'an organization',
+  run: 'a run',
+  def: 'a workflow',
+  job: 'a job',
+};
+
 /**
- * Whether a workflow's request may be made, and as what. Returns the URL to use
- * (always the parsed, absolute labs URL -- never the string the frame sent) or
- * throws a RouteError saying why not.
+ * Whether a request from the frame may be made, and as what. Returns the URL to
+ * use (always the parsed, absolute labs URL -- never the string the frame sent) and,
+ * when the route reads its body, the body to send; or throws a RouteError saying
+ * why not.
  */
 export function checkFetch(
   url: unknown,
@@ -404,48 +528,71 @@ export function checkFetch(
     parsed.password
   ) {
     throw new RouteError(
-      'fetch: a workflow can only reach labs, and only through the page around it',
+      'fetch: this code can only reach labs, and only through the page around it',
     );
   }
   const path = parsed.pathname;
   if (FETCH_DENIED.some((d) => path.startsWith(d))) {
-    throw new RouteError(`fetch: ${path} cannot be reached from a workflow`);
+    throw new RouteError(`fetch: ${path} cannot be reached from here`);
   }
   const route = ROUTES.find((r) => r.path.test(path));
   if (!route) {
-    throw new RouteError(`fetch: ${path} cannot be reached from a workflow`);
+    throw new RouteError(`fetch: ${path} cannot be reached from here`);
   }
   if (!route.methods.includes(m)) {
-    throw new RouteError(`fetch: ${m} ${path} cannot be made from a workflow`);
+    throw new RouteError(`fetch: ${m} ${path} cannot be made from here`);
   }
   const groups = route.path.exec(path)?.groups || {};
   for (const [name, value] of Object.entries(groups)) {
     if (value !== undefined && !bound(name, value, ctx)) {
       throw new RouteError(
-        `fetch: ${path} names ${name === 'opp' ? 'an opportunity' : name === 'prog' ? 'a program' : name === 'run' ? 'a run' : 'a workflow'} this workflow does not cover`,
+        `fetch: ${path} names ${NOUNS[name] || 'something'} this workflow does not cover`,
       );
     }
   }
-  // Writes may not name another scope in their query either.
-  if (route.gate !== 'read') {
-    for (const [param, name] of Object.entries(SCOPE_PARAMS)) {
-      for (const value of parsed.searchParams.getAll(param)) {
-        if (!bound(name, value, ctx)) {
-          throw new RouteError(
-            `fetch: ${path} names ${param}=${value.slice(0, 20)}, which this workflow does not cover`,
-          );
-        }
+  // The scope a request names in its query is bound on EVERY request, reads
+  // included: the context middleware both answers in that scope and saves it to
+  // the viewer's session, so an unbound one would read another scope and move the
+  // viewer's other tabs into it.
+  for (const [param, name] of Object.entries(SCOPE_PARAMS)) {
+    for (const value of parsed.searchParams.getAll(param)) {
+      if (!bound(name, value, ctx)) {
+        throw new RouteError(
+          `fetch: ${path} names ${param}=${value.slice(0, 20)}, which this workflow does not cover`,
+        );
       }
     }
   }
-  if (route.bodyCheck) route.bodyCheck(body, ctx);
-  const gate = (route.bodyGate && route.bodyGate(body)) || route.gate;
+  if (route.ownJob && !groups.job) {
+    throw new RouteError("fetch: that job is not this run's");
+  }
+  let canonical: string | undefined;
+  let gate: Gate = route.gate;
+  if (route.bodyCheck || route.bodyGate) {
+    const obj = jsonObjectBody(body);
+    if (route.bodyCheck) route.bodyCheck(obj, ctx);
+    gate = (route.bodyGate && route.bodyGate(obj, ctx)) || route.gate;
+    canonical = JSON.stringify(obj);
+  }
+  // A write that names no scope lands in THIS workflow's, not in whatever the
+  // viewer's session last pointed at.
+  if (
+    gate !== 'read' &&
+    ctx.defaultScope &&
+    !Object.keys(SCOPE_PARAMS).some((k) => parsed.searchParams.has(k))
+  ) {
+    parsed.searchParams.set(ctx.defaultScope.name, ctx.defaultScope.value);
+  }
   return {
     href: parsed.href,
     method: m,
     gate,
     kind: route.path.source,
     label: route.label || '',
+    body: canonical,
+    perRecord: route.perRecord === true,
+    recordId: groups.rec,
+    startsJob: /\/job\/start\/$/.test(path),
   };
 }
 

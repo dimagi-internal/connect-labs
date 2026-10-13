@@ -44,6 +44,7 @@ def checked_template(monkeypatch):
     [
         (WORKFLOW, {}, False),
         (OPTED_IN, {}, True),
+        # `false` is not an opt-out: nothing in a definition takes a workflow out.
         (OPTED_OUT, {}, False),
         # ?sandbox=1 only ever turns it ON, for anyone, on any workflow...
         (WORKFLOW, {"sandbox": "1"}, True),
@@ -56,8 +57,12 @@ def test_a_workflow_is_sandboxed_when_it_opts_in(data, query, expected):
     assert sandbox.should_sandbox(_definition(data), request=_Req(query)) is expected
 
 
-def test_a_workflow_that_follows_a_checked_template_is_sandboxed(checked_template):
+def test_a_workflow_that_follows_a_checked_template_is_sandboxed(checked_template, monkeypatch):
+    monkeypatch.setitem(TEMPLATES, "kmc_opp_report", {**TEMPLATES["kmc_opp_report"], "sandboxed": False})
     follows = {"name": "x", "config": {}, "render_source": {"template": checked_template}}
+    # An author cannot write its way out of the frame.
+    refuses = {"name": "x", "config": {"sandbox": False}, "render_source": {"template": checked_template}}
+    assert sandbox.should_sandbox(_definition(refuses))
     follows_other = {"name": "x", "config": {}, "render_source": {"template": "kmc_opp_report"}}
     assert sandbox.should_sandbox(_definition(follows))
     assert not sandbox.should_sandbox(_definition(follows_other))

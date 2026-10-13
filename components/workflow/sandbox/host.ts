@@ -249,7 +249,12 @@ export async function proxyFetch(
   const headers = cleanHeaders(init.headers);
   const unsafe = !['GET', 'HEAD'].includes(checked.method);
   if (unsafe) headers['x-csrftoken'] = csrfToken;
-  const body = unsafe ? checkBody(init.body) : undefined;
+  // A route that checked its body sends what it checked (canonical JSON).
+  const body = unsafe
+    ? checked.body !== undefined
+      ? checked.body
+      : checkBody(init.body)
+    : undefined;
   const response = await fetchImpl(checked.href, {
     method: checked.method,
     headers,
@@ -357,7 +362,22 @@ export interface DispatchOptions {
   /** The ids a fetch may name (routes.ts). With `workflow`, the full method set. */
   routeContext?: RouteContext;
   workflow?: WorkflowHandlers;
+  /** The host page's query now (setLocation keeps its scope and run). */
+  currentSearch?: () => string;
 }
+
+/** Address parameters the frame may keep but never change (setLocation). */
+export const PINNED_ADDRESS_PARAMS = [
+  'opportunity_id',
+  'program_id',
+  'organization_id',
+  'owning_program_id',
+  'run_id',
+  'edit',
+  'sandbox',
+  'present',
+  'template_draft',
+];
 
 /** Methods only a run answers: a page asking for one is told it has no run. */
 export const RUN_ONLY_METHODS = ['updateState', 'completeRun', 'runAction'];
@@ -374,7 +394,7 @@ export function createDispatcher(
   const budget = RATE[full ? 'workflow' : 'page'];
   const noun = mode === 'workflow' ? 'workflow' : 'page';
   const recent: number[] = [];
-  const grants = new Map<string, number>();
+  const grants = new Map<string, { until: number; left: number }>();
   let inFlight = 0;
 
   function needsActivation(method: string) {
@@ -401,14 +421,51 @@ export function createDispatcher(
   }
 
   /** An `effect` write: the host asks, and a yes holds for that kind a while. */
-  async function allowEffect(kind: string, label: string) {
-    const until = grants.get(kind) || 0;
-    if (until > now()) return;
-    const yes = await workflow().ask(
-      `This ${noun} wants to ${label || 'make a change'}, as you.`,
-    );
+  /**
+   * An `effect` write: the host asks first. A yes to a kind of write that creates
+   * things holds for that kind a while, for a bounded number of writes; an effect on
+   * ONE existing record (delete, update, message, complete) is asked every time,
+   * naming the record.
+   */
+  async function allowEffect(checked: CheckedRequest) {
+    const label = checked.label || 'make a change';
+    if (!checked.perRecord) {
+      const grant = grants.get(checked.kind);
+      if (grant && grant.until > now() && grant.left > 0) {
+        grant.left -= 1;
+        return;
+      }
+    }
+    const what =
+      checked.perRecord && checked.recordId
+        ? `${label} ${checked.recordId}`
+        : label;
+    const yes = await workflow().ask(`This ${noun} wants to ${what}, as you.`);
     if (!yes) throw new BridgeError('not allowed: the person said no');
-    grants.set(kind, now() + LIMITS.effectGrantMs);
+    if (!checked.perRecord) {
+      grants.set(checked.kind, {
+        until: now() + LIMITS.effectGrantMs,
+        left: LIMITS.effectGrantWrites - 1,
+      });
+    }
+  }
+
+  /** A job this host started may be cancelled by it (routes.ts `ownJob`). */
+  function rememberJob(answer: FetchAnswer) {
+    try {
+      const data = JSON.parse(new TextDecoder().decode(answer.body));
+      const id = data && (data.task_id || data.job_id);
+      const ctx = options.routeContext as RouteContext;
+      if (
+        typeof id === 'string' &&
+        /^[A-Za-z0-9_.:-]+$/.test(id) &&
+        !ctx.jobIds.includes(id)
+      ) {
+        ctx.jobIds.push(id);
+      }
+    } catch {
+      // not JSON: nothing started
+    }
   }
 
   async function navigateTo(href: string, newTab: boolean) {
@@ -518,11 +575,16 @@ export function createDispatcher(
           throw e;
         }
         if (checked.gate === 'effect') {
-          await allowEffect(checked.kind, checked.label);
+          await allowEffect(checked);
         }
-        return limited(() =>
-          w.fetch(checked, { headers: params.headers, body: params.body }),
-        );
+        return limited(async () => {
+          const answer = await w.fetch(checked, {
+            headers: params.headers,
+            body: params.body,
+          });
+          if (checked.startsJob && answer.status < 300) rememberJob(answer);
+          return answer;
+        });
       }
       case 'queryPipelineRows': {
         const w = workflow();
@@ -583,6 +645,21 @@ export function createDispatcher(
         );
         if (keys.some((k) => NAVIGATE_DENIED_PARAMS.includes(k))) {
           throw new BridgeError('setLocation: that address is not allowed');
+        }
+        // The page's scope and run are labs' to set, not the frame's: code this page
+        // runs (the action dialog, a reload) reads them off the address.
+        const next = new URLSearchParams(search);
+        const current = new URLSearchParams(
+          options.currentSearch ? options.currentSearch() : '',
+        );
+        for (const k of PINNED_ADDRESS_PARAMS) {
+          if (
+            next.getAll(k).join('\u0000') !== current.getAll(k).join('\u0000')
+          ) {
+            throw new BridgeError(
+              `setLocation: ${k} cannot be changed from here`,
+            );
+          }
         }
         w.setLocation(search, hash, params.push === true);
         return true;
@@ -776,6 +853,7 @@ export function createSandboxHost(options: SandboxHostOptions): SandboxHost {
       mode: options.mode,
       routeContext: options.routeContext,
       workflow: options.workflow,
+      currentSearch: () => win.location.search,
     },
   );
 

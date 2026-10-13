@@ -29,7 +29,10 @@ const CTX = {
   definitionId: 42,
   runId: 900,
   opportunityIds: [10, 11],
-  programId: 7,
+  programIds: [7],
+  organizationKey: 'acme',
+  jobIds: ['job-of-this-run'],
+  defaultScope: { name: 'opportunity_id', value: '10' },
 };
 
 describe('routes: what a workflow can reach', () => {
@@ -134,7 +137,7 @@ describe('routes: what a workflow can reach', () => {
   it('writes past the run are effects, with labs’ own label', () => {
     const c = checkFetch('/tasks/123/ai/initiate/', 'POST', CTX);
     expect(c.gate).toBe('effect');
-    expect(c.label).toMatch(/coaching conversation with a worker/);
+    expect(c.label).toMatch(/coaching conversation with the worker/);
     expect(checkFetch('/tasks/api/single-create/', 'POST', CTX).gate).toBe(
       'effect',
     );
@@ -252,7 +255,7 @@ describe('the host answers a workflow', () => {
       method: 'fetch',
       params: { url: '/labs/mcp/tokens/create/', method: 'POST', body: '{}' },
     });
-    expect(out.error).toMatch(/cannot be reached from a workflow/);
+    expect(out.error).toMatch(/cannot be reached from here/);
     expect(w.fetch).not.toHaveBeenCalled();
   });
 
@@ -287,7 +290,11 @@ describe('the host answers a workflow', () => {
     await d({
       id: 3,
       method: 'fetch',
-      params: { url: '/audit/api/55/delete/', method: 'POST' },
+      params: {
+        url: '/audit/api/audit/create-async/',
+        method: 'POST',
+        body: '{}',
+      },
     });
     expect(w.ask).toHaveBeenCalledTimes(2);
     t += 3 * 60 * 1000;
@@ -437,7 +444,9 @@ describe('proxyFetch: the host makes the request as the viewer', () => {
       fetchImpl,
     );
     const [url, init] = fetchImpl.mock.calls[0];
-    expect(url).toBe(`${LABS}/labs/workflow/api/run/900/state/`);
+    expect(url).toBe(
+      `${LABS}/labs/workflow/api/run/900/state/?opportunity_id=10`,
+    );
     expect(init.headers).toEqual({
       'content-type': 'application/json',
       'x-csrftoken': 'real-token',
@@ -627,8 +636,9 @@ describe('routes cover what the seed templates fetch', () => {
     expect(
       checkFetch(url, 'POST', CTX, body('program_audit_generate')).gate,
     ).toBe('effect');
-    expect(checkFetch(url, 'POST', CTX, 'not json').gate).toBe('effect');
     expect(checkFetch(url, 'POST', CTX).gate).toBe('effect');
+    // A body the host cannot read as a JSON object is refused, not guessed at.
+    expect(() => checkFetch(url, 'POST', CTX, 'not json')).toThrow(/JSON/);
   });
 });
 
@@ -823,5 +833,235 @@ describe('a page can do everything a workflow can, except what needs a run', () 
     ]) {
       expect(typeof actions[name], name).toBe('function');
     }
+  });
+});
+
+// The adversarial review's findings, each pinned (spec, "Review fixes (phase 2)").
+describe('review fixes', () => {
+  it('1: a checked body must be JSON text, and the host sends what it checked', () => {
+    const url = '/labs/workflow/api/opportunity-flws/';
+    const bytes = new TextEncoder().encode('{"opportunities":[99]}');
+    expect(() => checkFetch(url, 'POST', CTX, bytes)).toThrow(/as text/);
+    expect(() =>
+      checkFetch(url, 'POST', CTX, '\uFEFF{"opportunities":[99]}'),
+    ).toThrow(/JSON/);
+    const ok = checkFetch(url, 'POST', CTX, ' { "opportunities" : [10] } ');
+    expect(ok.body).toBe('{"opportunities":[10]}');
+  });
+
+  it('1: proxyFetch sends the checked body, not the frame’s', async () => {
+    const fetchImpl = vi.fn(async () => new Response('{}'));
+    const checked = checkFetch(
+      '/labs/workflow/api/opportunity-flws/',
+      'POST',
+      CTX,
+      '{"opportunities":[10]}',
+    );
+    await proxyFetch(
+      checked,
+      { body: '{"opportunities":[99]}' },
+      't',
+      fetchImpl,
+    );
+    expect(fetchImpl.mock.calls[0][1].body).toBe('{"opportunities":[10]}');
+  });
+
+  it('2: a read may not name another scope in its query either', () => {
+    for (const q of [
+      'opportunity_id=99',
+      'program_id=8',
+      'organization_id=other',
+    ]) {
+      expect(
+        () => checkFetch('/labs/workflow/api/workers/?' + q, 'GET', CTX),
+        q,
+      ).toThrow(/does not cover/);
+    }
+    expect(
+      checkFetch('/labs/workflow/api/workers/?opportunity_id=10', 'GET', CTX)
+        .gate,
+    ).toBe('read');
+  });
+
+  it('2: a write that names no scope gets this workflow’s', () => {
+    const c = checkFetch('/tasks/api/single-create/', 'POST', CTX, '{}');
+    expect(new URL(c.href).searchParams.get('opportunity_id')).toBe('10');
+    const r = checkFetch('/audit/api/ai-agents/', 'GET', CTX);
+    expect(new URL(r.href).search).toBe('');
+  });
+
+  it('3: audit preview and creation bind the opportunities in the body', () => {
+    for (const url of [
+      '/audit/api/audit/preview/',
+      '/audit/api/audit/create-async/',
+    ]) {
+      expect(() =>
+        checkFetch(
+          url,
+          'POST',
+          CTX,
+          JSON.stringify({ opportunities: [{ id: 99 }] }),
+        ),
+      ).toThrow(/opportunity 99/);
+      expect(() =>
+        checkFetch(
+          url,
+          'POST',
+          CTX,
+          JSON.stringify({ opportunities: [{ id: 10 }, 11] }),
+        ),
+      ).not.toThrow();
+    }
+  });
+
+  it('4: an effect on one record is asked every time and names it', async () => {
+    const { d, w } = wfDispatcher();
+    for (const id of [55, 56]) {
+      await d({
+        id,
+        method: 'fetch',
+        params: { url: `/audit/api/${id}/delete/`, method: 'POST' },
+      });
+    }
+    expect(w.ask.mock.calls.map((c) => c[0])).toEqual([
+      'This workflow wants to delete audit 55, as you.',
+      'This workflow wants to delete audit 56, as you.',
+    ]);
+  });
+
+  it('4: a yes to a creating kind covers a bounded number of writes', async () => {
+    const { d, w } = wfDispatcher();
+    const req = {
+      method: 'fetch',
+      params: { url: '/tasks/api/single-create/', method: 'POST', body: '{}' },
+    };
+    for (let i = 0; i < 201; i++) await d({ id: i, ...req });
+    expect(w.ask).toHaveBeenCalledTimes(2);
+  });
+
+  it('5: only this run’s jobs can be cancelled, and only on this run', () => {
+    expect(() =>
+      checkFetch(
+        '/labs/workflow/api/job/someone-elses/cancel/',
+        'POST',
+        CTX,
+        '{}',
+      ),
+    ).toThrow(/a job/);
+    expect(() =>
+      checkFetch(
+        '/labs/workflow/api/job/job-of-this-run/cancel/',
+        'POST',
+        CTX,
+        '{"run_id": 901}',
+      ),
+    ).toThrow(/a run/);
+    expect(
+      checkFetch(
+        '/labs/workflow/api/job/job-of-this-run/cancel/',
+        'POST',
+        CTX,
+        '{"run_id": 900}',
+      ).gate,
+    ).toBe('own');
+  });
+
+  it('5: a job this host starts may then be cancelled', async () => {
+    const ctx = { ...CTX, jobIds: [] };
+    const w = workflowHandlers({
+      fetch: vi.fn(async () => ({
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        body: new TextEncoder().encode(
+          '{"success": true, "task_id": "new-job"}',
+        ).buffer,
+      })),
+    });
+    const d = createDispatcher(pageHandlers(), {
+      labsOrigin: LABS,
+      hasActivation: () => true,
+      mode: 'workflow',
+      routeContext: ctx,
+      workflow: w,
+    });
+    await d({
+      id: 1,
+      method: 'fetch',
+      params: {
+        url: '/labs/workflow/api/run/900/job/start/',
+        method: 'POST',
+        body: JSON.stringify({ job_config: { job_type: 'audit_par_rollup' } }),
+      },
+    });
+    expect(ctx.jobIds).toEqual(['new-job']);
+  });
+
+  it('7: a link may not carry a second hop', () => {
+    for (const u of [
+      '/labs/commcare/initiate/?next=/o/authorize/?client_id=x',
+      '/labs/ocs/initiate/?redirect_uri=/labs/mcp/tokens/',
+      '/audit/5/bulk/?return_to=/admin/',
+    ]) {
+      expect(() => checkNavigate(u, LABS, 'workflow'), u).toThrow();
+    }
+    expect(() =>
+      checkNavigate('/labs/commcare/logout/', LABS, 'workflow'),
+    ).toThrow();
+    expect(checkNavigate('/labs/commcare/initiate/', LABS, 'workflow')).toBe(
+      `${LABS}/labs/commcare/initiate/`,
+    );
+  });
+
+  it('9: setLocation keeps the scope and run as they are', async () => {
+    const w = workflowHandlers();
+    const d = createDispatcher(pageHandlers(), {
+      labsOrigin: LABS,
+      hasActivation: () => true,
+      mode: 'workflow',
+      routeContext: CTX,
+      workflow: w,
+      currentSearch: () => '?opportunity_id=10&run_id=900',
+    });
+    const ok = await d({
+      id: 1,
+      method: 'setLocation',
+      params: { search: '?opportunity_id=10&run_id=900&case=c1' },
+    });
+    expect(ok.error).toBeUndefined();
+    for (const search of [
+      '?opportunity_id=99&run_id=900',
+      '?opportunity_id=10',
+      '?opportunity_id=10&run_id=900&edit=true',
+    ]) {
+      const out = await d({ id: 2, method: 'setLocation', params: { search } });
+      expect(out.error, search).toMatch(/cannot be changed/);
+    }
+  });
+
+  it('10: a job’s own scope ids are bound', () => {
+    const body = (cfg) =>
+      JSON.stringify({ job_config: { job_type: 'audit_par_rollup', ...cfg } });
+    const url = '/labs/workflow/api/run/900/job/start/';
+    expect(() =>
+      checkFetch(url, 'POST', CTX, body({ opportunity_id: 99 })),
+    ).toThrow(/opportunity 99/);
+    expect(() => checkFetch(url, 'POST', CTX, body({ program_id: 8 }))).toThrow(
+      /program/,
+    );
+    expect(
+      checkFetch(url, 'POST', CTX, body({ opportunity_id: 10 })).gate,
+    ).toBe('own');
+  });
+
+  it('11: audit batch config names only this workflow’s opportunities', () => {
+    const url = '/labs/workflow/api/42/audit-batch-config/';
+    expect(() =>
+      checkFetch(url, 'POST', CTX, JSON.stringify({ per_opp: { 99: {} } })),
+    ).toThrow(/opportunity 99/);
+    expect(
+      checkFetch(url, 'POST', CTX, JSON.stringify({ per_opp: { 10: {} } }))
+        .gate,
+    ).toBe('own');
   });
 });

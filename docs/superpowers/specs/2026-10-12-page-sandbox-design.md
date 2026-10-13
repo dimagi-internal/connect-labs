@@ -430,18 +430,60 @@ nobody has checked. So `LABS_WORKFLOW_SANDBOX` (default `opt_in`):
 - **`?sandbox=1`** sandboxes any workflow for that view -- it can only turn the sandbox on, so
   a link cannot take a workflow out of it. Staff see a line under the workflow saying which it
   is, with a "View it sandboxed" link.
-- `config.sandbox: false` keeps one workflow out while the rollout is `opt_in`; `all`
-  overrides it. `LABS_PAGE_SANDBOX=false` still turns everything off.
+- **No per-workflow opt-out** (review fix): `config.sandbox: false` means nothing, so an author
+  cannot take a workflow that follows a checked template out of the frame.
+  `LABS_WORKFLOW_SANDBOX=off` and `LABS_PAGE_SANDBOX=false` are the emergency switches, for
+  everything at once. While the rollout is `opt_in` an author can still keep a workflow out by
+  not following a checked template and not opting in: under `opt_in` the frame protects the
+  checked templates and their followers, and `all` is what protects viewers from any author.
 - **Next: `all`**, after a labs deploy, a live check of the priority templates there, and a
   scan of live copies (`workflow_list` + `workflow_get`, grep their render code for
   `window.location =`, `window.confirm(` and fetches to routes the table refuses). Not done
   here: it needs the deploy.
+
+### Review fixes (phase 2, before merge)
+
+An independent adversarial review of the diff found these; each is fixed with a test that
+fails without it (`components/workflow/sandbox/workflow_sandbox.test.js`,
+`connect_labs/workflow/tests/test_workflow_sandbox.py`):
+
+1. **A body check could be passed with bytes** (or a byte-order mark, which JavaScript
+   refuses to parse and Python accepts). A route that inspects its body now takes only a JSON
+   object, as text, parsed by the host; the host sends `JSON.stringify` of what it checked,
+   never the frame's bytes.
+2. **Scope in the query was unbound on reads**, and the context middleware both answers in
+   that scope and saves it to the viewer's session. `opportunity_id`, `program_id` and
+   `organization_id` are now bound on every request; a write that names none gets this
+   workflow's own scope appended, so it never lands in whatever the session last pointed at.
+3. **`/audit/api/audit/preview/` (and audit creation) named opportunities in the body
+   unchecked**: now bound.
+4. **One yes covered a kind of write against any record.** An effect on one existing record
+   (delete an audit, update a task, message the worker on a task, complete or delete the run,
+   cancel an audit job) is asked every time and names the record; a yes to a creating kind
+   still holds 2 minutes, now for at most 200 writes.
+5. **Job cancel was unbound**: it now takes only a job this run is running or this host
+   started, and only for this run.
+6. **The question could be double-click-jacked**: labs' own question is drawn unlike the
+   page's (amber, a shield), focuses Cancel, and Allow works only 700 ms after it appears and
+   for a press that began on it.
+7. **A sign-in start could carry a second hop** (`?next=` on to an OAuth consent page): a link
+   may not carry `next`, `redirect*` or `return*`; CommCare logout is no longer a link target.
+8. **A second `runAction` could swap the open dialog**: refused while one is open; the dialog
+   is keyed per request.
+9. **`setLocation` could rewrite the scope and run** that host code reads off the address:
+   `opportunity_id`, `program_id`, `organization_id`, `owning_program_id`, `run_id`, `edit`,
+   `sandbox`, `present`, `template_draft` may be kept but not changed.
+10. **A "compute-only" job's scope came from the frame**: `job_config` scope ids are bound.
+    What remains -- a rollup reading the watched sources named in this run's state -- is a
+    cross-workflow read, in the residual below.
+11. **`audit-batch-config` could name any opportunity**: its `per_opp` keys are bound.
 
 ### Residual risk, phase 2
 
 - **Exfiltration of what a page or workflow shows its viewer** (WebRTC), as above: equal to
   today for a workflow, and now the same for a page (the ruling above).
 - **Cross-workflow reads.** The run, history, snapshot-preview and indicator-definition reads
+  (and a rollup job reading the watched sources this run's state names)
   are not bound to this workflow, so a workflow's author can read, as a viewer, any run the
   viewer can see through those few routes (then exfiltrate it as above). Today the same code
   can read everything. Follow-up: bind them to the definitions a workflow declares

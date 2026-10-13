@@ -93,6 +93,8 @@ export const LIMITS = {
   workflowParamsBytes: 4 * 1024 * 1024,
   /** How long a yes to an `effect` write holds for that kind of write. */
   effectGrantMs: 2 * 60 * 1000,
+  /** ...and for at most this many writes. */
+  effectGrantWrites: 200,
   messageLength: 2_000,
 };
 
@@ -133,7 +135,6 @@ export const WORKFLOW_NAVIGATE_PREFIXES = [
   '/tasks/',
   '/labs/ocs/initiate/',
   '/labs/commcare/initiate/',
-  '/labs/commcare/logout/',
   '/labs/workflow/api/image/',
 ];
 export const WORKFLOW_NAVIGATE_PATTERNS = [
@@ -148,7 +149,19 @@ export const WORKFLOW_NAVIGATE_DENIED = ['/audit/api/', '/tasks/api/'];
 export const NAVIGATE_DENIED = ['/o/', '/accounts/', '/labs/mcp/', '/admin/'];
 /** Query parameters a page's link may never carry: on the run page they once made a
  * GET write (`?sync=true&template=...` overwrote the render code). */
-export const NAVIGATE_DENIED_PARAMS = ['sync', 'template'];
+export const NAVIGATE_DENIED_PARAMS = [
+  'sync',
+  'template',
+  // Where a sign-in start or any other view sends the person AFTER: a second hop
+  // the allowlist never sees (e.g. on to an OAuth consent page).
+  'next',
+  'redirect',
+  'redirect_to',
+  'redirect_uri',
+  'return',
+  'return_to',
+  'return_url',
+];
 
 export interface BridgeRequest {
   id: number | string;
