@@ -526,3 +526,28 @@ def test_on_its_own_machine_a_cohort_generates_in_parallel(tmp_path, settings, m
     assert {row.cloned_from_opportunity_id for row in rows} == set(sources)
     assert len({row.program_id for row in rows}) == 1
     assert all(row.visit_count for row in rows)
+
+
+@pytest.mark.parametrize("given, expected", [(True, True), ("true", True), ("false", False), (False, False)])
+def test_clone_generate_passes_new_opportunities_through(monkeypatch, given, expected):
+    """A second, fresher copy of a cohort beside the old one, instead of reusing its clones."""
+    from types import SimpleNamespace
+
+    from connect_labs.mcp.tools import synthetic as tools
+
+    seen = {}
+
+    def fake_generate_cohort(spec, **kwargs):
+        seen.update(kwargs)
+        spec.program_id = 10900
+        return spec, []
+
+    monkeypatch.setattr(tools, "generate_cohort", fake_generate_cohort)
+    monkeypatch.setattr(tools, "DriveClient", lambda: None)
+    fn = getattr(tools.synthetic_clone_generate, "__wrapped__", tools.synthetic_clone_generate)
+    fn(
+        SimpleNamespace(is_authenticated=True),
+        spec_yaml="bundle_root: 'gdrive:x'\nopportunity_ids: [523]\n",
+        new_opportunities=given,
+    )
+    assert seen["new_opportunities"] is expected
