@@ -29,7 +29,7 @@ from datetime import date
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Column, Field, Fieldset, Layout, Row
 from django import forms
-from django.db.models import Case, Value, When
+from django.db.models import Case, Q, Value, When
 from django.utils.translation import gettext_lazy as _
 
 from connect_labs.labs.models import LabsOrg
@@ -226,11 +226,19 @@ class ContractForm(ProvenancedForm):
             | set(self.in_program(Contract).exclude(buyer_org=None).values_list("buyer_org_id", flat=True))
             | set(self.scoped(Supplier).values_list("org_id", flat=True))
         )
-        self.fields["buyer_org"].queryset = (
-            LabsOrg.objects.real()
-            .annotate(_in_programme=Case(When(pk__in=in_programme, then=Value(0)), default=Value(1)))
-            .order_by("_in_programme", "name")
-        )
+        # The organisation that runs the programme buys as "we" -- and may be a
+        # labs-only one (#2458), which `real()` would leave off its own picker.
+        from connect_labs.supply_chain.runner import running_org
+
+        runner = running_org(getattr(self.access, "program_id", None) if self.access else None)
+        orgs = LabsOrg.objects.filter(Q(labs_only=False) | Q(pk=runner.pk)) if runner else LabsOrg.objects.real()
+        if runner is not None:
+            in_programme = in_programme | {runner.pk}
+        self.fields["buyer_org"].queryset = orgs.annotate(
+            _in_programme=Case(When(pk__in=in_programme, then=Value(0)), default=Value(1))
+        ).order_by("_in_programme", "name")
+        if runner is not None and not (self.instance and self.instance.pk) and "buyer_org" not in self.initial:
+            self.initial["buyer_org"] = runner.pk
 
         self.fields["supplier"].empty_label = _("Select a supplier…")
         self.fields["commodity"].empty_label = _("Select a product…")

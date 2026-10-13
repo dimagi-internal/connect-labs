@@ -472,19 +472,19 @@ def client_in_program(client, monkeypatch, settings, da, sophie):
 class TestHomePage:
     def test_the_banner_names_the_program_and_its_buyer_of_record(self, client_in_program, base, monkeypatch):
         from connect_labs.labs.models import LabsOrg
+        from connect_labs.supply_chain.runner import declare
 
-        us = LabsOrg.objects.get(pk=base["us"]["id"])
-        monkeypatch.setattr("connect_labs.supply_chain.identity.resolve_org", lambda access: us)
+        declare(PROGRAM, LabsOrg.objects.get(pk=base["us"]["id"]))
         body = client_in_program.get(reverse("supply_chain:home")).content.decode()
 
-        # Before any order, the organisation acting in the program, in its role.
+        # Before any order, the organisation that runs the program, in its role (#2458).
         line = re.search(r'data-testid="supply-program-line"[^>]*>(.*?)</p>', body).group(1)
         assert line == "Connect-RUTF · The program, buyer of record"
         # Said once: the overview's own heading gives way to it.
         assert '<h2 class="text-lg font-semibold text-gray-900 mb-3">' not in body
 
     def test_the_heading_falls_back_to_the_program_id(self, client_in_program, base, monkeypatch):
-        monkeypatch.setattr("connect_labs.supply_chain.views.resolve_org", lambda access: None)
+        monkeypatch.setattr("connect_labs.supply_chain.views.running_org", lambda program_id: None)
         session = client_in_program.session
         session["labs_oauth"] = {}
         session.save()

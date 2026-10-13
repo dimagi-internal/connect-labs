@@ -190,6 +190,13 @@ if not list(settings.ALLOWED_HOSTS or []):
 
 SCOPES = _seed["SCOPES"]
 
+# The program team running these chains is Dimagi's: declare it, so Dimagi's
+# people act as each program here and nobody else does (#2458).
+from connect_labs.supply_chain.runner import declare_dimagi_if_undeclared as _declare
+
+for _scope in SCOPES.values():
+    _declare(_scope["program_id"], "seeded by the OES demo environment (ensure_demo)")
+
 # What is already here, reported rather than refused.
 #
 # This used to REFUSE outright if any scope held a single row, on the

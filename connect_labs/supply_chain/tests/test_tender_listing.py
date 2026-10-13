@@ -129,6 +129,7 @@ class TestManagingTheListing:
         listing.refresh_from_db()
         assert (listing.brief, listing.hue, listing.visibility) == ("Updated brief.", "#5c940d", "public")
 
+    @pytest.mark.real_standing
     def test_anyone_else_finds_no_manage_page(self, listing, client, django_user_model):
         stranger = django_user_model.objects.create_user(username="kemi", password="x")
         client.force_login(stranger)
@@ -138,6 +139,7 @@ class TestManagingTheListing:
         assert client.post(url, {"action": "invite", "org": supplier_org("Plateau Foods").pk}).status_code == 404
         assert not listing.invited_orgs.exists()
 
+    @pytest.mark.real_standing
     def test_a_member_who_is_not_an_admin_cannot_manage(self, listing, publisher, client, django_user_model):
         member = django_user_model.objects.create_user(username="bola", password="x")
         OrgMembership.objects.create(org=publisher, user=member, role="member")

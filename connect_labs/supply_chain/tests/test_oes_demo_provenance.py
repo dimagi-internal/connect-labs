@@ -84,18 +84,15 @@ def test_a_partner_cannot_claim_it_saw_something_itself():
     """The refusal that makes the whole distinction trustworthy.
 
     `source` is derived from WHO is acting, not accepted from the payload:
-    only the programme's own organisation records first-hand, and everyone
+    only the organisation running the programme records first-hand, and everyone
     else is reporting. Mutated `source_for` to return `"we_recorded"`
     unconditionally and watched this go red before trusting it.
     """
-    from connect_labs.supply_chain.identity import DIMAGI_ORG_SLUG, source_for
+    from connect_labs.supply_chain.identity import source_for
+    from connect_labs.supply_chain.runner import PARTNER, PROGRAMME, Standing
 
-    class Org:
-        def __init__(self, slug):
-            self.slug = slug
-
-    assert source_for(Org("eha-clinics-reach")) == "partner_reported"
-    assert source_for(Org(DIMAGI_ORG_SLUG)) == "we_recorded"
+    assert source_for(Standing(PARTNER, None)) == "partner_reported"
+    assert source_for(Standing(PROGRAMME, None)) == "we_recorded"
 
 
 # ---- the seeder produces two of the three, and the third cannot be faked --
