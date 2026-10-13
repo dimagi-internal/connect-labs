@@ -81,7 +81,7 @@ This means each workflow appears in exactly one place. If you cannot find a work
 
 ## Pages
 
-A **page** is a screen built with the same workflow tools as a regular workflow, but it has no runs. Instead of collecting data over a date range and producing a run to review, a page simply displays what an organisation, programme, or opportunity holds — with links into each — and can show the latest run of any workflow you are able to open.
+A **page** is a screen built with the same workflow tools as a regular workflow, but it has no runs. Instead of collecting data over a date range and producing a run to review, a page simply displays what an organisation, program, or opportunity holds — with links into each — and can show the latest run of any workflow you are able to open.
 
 Pages are useful for landing screens and summary views that you want to keep permanently visible without starting a new run each time.
 
@@ -104,18 +104,18 @@ Each level of Labs has its own address for its page:
 | Level | Address |
 |---|---|
 | Organisation | `/labs/p/org/<organisation>/` |
-| Programme | `/labs/p/programme/<id>/` |
+| Program | `/labs/p/programme/<id>/` |
 | Opportunity | `/labs/p/opportunity/<id>/` |
 
 !!! note "Old page links"
-    The previous page addresses at `/labs/p/<name>/` no longer exist. If you follow an old link, Labs will take you to the new page at the correct address when your organisation, programme, or opportunity has one. If no matching page is found, you will see a message explaining that pages have moved rather than an error. Update any bookmarks or shared links to use the new addresses shown in the table above.
+    The previous page addresses at `/labs/p/<name>/` no longer exist. If you follow an old link, Labs will take you to the new page at the correct address when your organisation, program, or opportunity has one. If no matching page is found, you will see a message explaining that pages have moved rather than an error. Update any bookmarks or shared links to use the new addresses shown in the table above.
 
 ### Context picker on a page
 
 When you open a page, the context picker in the header identifies what you are looking at:
 
 - An **organisation's page** shows **Org: \<name\>** in the header.
-- A **programme's page** shows the programme name.
+- A **program's page** shows the program name.
 - An **opportunity's page** shows the opportunity name.
 
 This replaces the yellow **Select Context** button that previously appeared when no context had been chosen. You no longer need to select a context manually — opening the page sets it automatically.
@@ -124,7 +124,7 @@ This replaces the yellow **Select Context** button that previously appeared when
 
 An organisation can have one page designated as its **home page**. When someone picks that organisation in Labs — or follows a link to `/labs/overview/?organization_id=<organisation>` — they land on the home page instead of the default overview.
 
-To set the home page, go to the organisation's **Settings** and choose the page you want visitors to land on. You must have access to the programme or opportunity behind the page in order to set it as the home page, and visitors will only be taken to the home page if they have that same access.
+To set the home page, go to the organisation's **Settings** and choose the page you want visitors to land on. You must have access to the program or opportunity behind the page in order to set it as the home page, and visitors will only be taken to the home page if they have that same access.
 
 !!! note "Only pages can be set as the home page"
     Settings will only accept a page as the home page — you cannot set a regular workflow (one with runs) as the home. If you try to select a regular workflow, Settings will refuse it. If an address that was previously saved as a home is not a page, opening it will show a "this home is not a page" message rather than drawing anything. Pages created from the "Page" starter before pages were formally labelled as pages still count as pages and continue to work as homes.
@@ -133,7 +133,7 @@ To set the home page, go to the organisation's **Settings** and choose the page 
 
 A page can also be set to fill a **Supply tab**. When configured this way, the page opens inside the Supply header without starting a run. This lets you show stock summaries, links to supply workflows, or other supply-related content directly from the Supply tab.
 
-The Supply tab opens only for people who have access to the programme or opportunity it is linked to. Setting up a Supply tab also requires access to that programme or opportunity. A programme can hide or rename a Supply tab that its organisation added — use the **Hide** button in Settings to do this.
+The Supply tab opens only for people who have access to the program or opportunity it is linked to. Setting up a Supply tab also requires access to that program or opportunity. A program can hide or rename a Supply tab that its organisation added — use the **Hide** button in Settings to do this.
 
 ### Building a page
 
@@ -157,7 +157,7 @@ A few behaviours are worth knowing when you share or follow page links:
 
 ### Synthetic organisations
 
-A synthetic organisation groups every synthetic programme that shares the same organisation name, regardless of who created them. Members of a synthetic organisation can read its Settings, but only **Dimagi staff** can make changes to a synthetic organisation's Settings. Each individual synthetic programme can still set its own Settings independently.
+A synthetic organisation groups every synthetic program that shares the same organisation name, regardless of who created them. Members of a synthetic organisation can read its Settings, but only **Dimagi staff** can make changes to a synthetic organisation's Settings. Each individual synthetic program can still set its own Settings independently.
 
 !!! note "Settings forms"
     If you enter a value that is not a valid number in a Settings form, you will see a clear error message rather than a crash. Correct the value and save again.
