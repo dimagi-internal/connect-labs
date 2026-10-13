@@ -640,6 +640,39 @@ def _function_at(code: str, brace: int) -> tuple[bool, bool] | None:
     return None
 
 
+def _close_brace_after(code: str, brace: int) -> int:
+    depth = 0
+    for k in range(brace, len(code)):
+        c = code[k]
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return k
+    return len(code)
+
+
+def _handler_uses_event_after(code: str, brace: int, pos: int) -> bool:
+    """For a handler whose body opens at ``brace``: whether its event parameter is
+    used after ``pos`` (the compile leaves such a handler alone, rewrite.ts)."""
+    head = _strip_end(code[:brace])
+    if head.endswith("=>"):
+        head = _strip_end(head[:-2])
+    if head.endswith(")"):
+        open_at = _open_paren_before(head, len(head) - 1)
+        params = head[open_at + 1 : -1] if open_at is not None else ""
+    else:
+        params = _tail_word(head)[0]
+    first = params.split(",")[0].strip()
+    if not first:
+        return False
+    if not all(c in _IDENT_CHARS for c in first):
+        return True  # destructured: the compile cannot tell, and leaves it
+    body = code[pos : _close_brace_after(code, brace)]
+    return re.search(r"(?<![\w$.])" + re.escape(first) + r"(?![\w$])", body) is not None
+
+
 def confirm_is_awaited(code: str, pos: int) -> bool:
     """Whether the frame's compile makes the ``confirm(`` at ``pos`` wait for the host:
     its nearest enclosing function is ``async``, or is an event handler (rewrite.ts).
@@ -661,7 +694,9 @@ def confirm_is_awaited(code: str, pos: int) -> bool:
             if found is None:
                 continue  # a block or an object: keep looking outward
             is_async, is_handler = found
-            return is_async or is_handler
+            if is_async:
+                return True
+            return is_handler and not _handler_uses_event_after(code, k, pos)
     return False
 
 

@@ -264,14 +264,20 @@ export async function proxyFetch(
       ? checked.body
       : checkBody(init.body)
     : undefined;
+  // A body the route checked is sent as the JSON it was checked as, and says so: a
+  // form content type would let Django read fields out of it the check never saw.
+  if (unsafe && checked.body !== undefined) {
+    headers['content-type'] = 'application/json';
+  }
   // A form the frame built carries the dummy token it read off its own DOM; Django
   // reads a form's token before the header, so it is dropped and the header (this
   // page's own token) decides.
   if (
     typeof body === 'string' &&
-    (headers['content-type'] || '').startsWith(
-      'application/x-www-form-urlencoded',
-    )
+    checked.body === undefined &&
+    (headers['content-type'] || '')
+      .toLowerCase()
+      .startsWith('application/x-www-form-urlencoded')
   ) {
     const form = new URLSearchParams(body);
     if (form.has('csrfmiddlewaretoken')) {
@@ -413,6 +419,11 @@ export async function proxyStream(
     redirect: 'follow',
     signal,
   });
+  // Every refusal below lets go of the connection first.
+  const refuse = (message: string): never => {
+    response.body?.cancel().catch(() => undefined);
+    throw new BridgeError(message);
+  };
   if (response.redirected) {
     let landed: CheckedRequest | null = null;
     try {
@@ -421,15 +432,15 @@ export async function proxyStream(
       landed = null;
     }
     if (!landed || landed.gate !== 'read') {
-      throw new BridgeError(
+      refuse(
         'stream: that address redirected somewhere a workflow cannot reach',
       );
     }
   }
-  if (!response.ok) throw new BridgeError(`stream: HTTP ${response.status}`);
+  if (!response.ok) refuse(`stream: HTTP ${response.status}`);
   const type = response.headers.get('content-type') || '';
   if (!type.startsWith('text/event-stream')) {
-    throw new BridgeError('stream: that address does not answer as a stream');
+    refuse('stream: that address does not answer as a stream');
   }
   onOpen();
   const parser = createSseParser(onEvent);
@@ -576,7 +587,19 @@ export function createDispatcher(
   const recent: number[] = [];
   const grants = new Map<string, { until: number; left: number }>();
   const streams = new Map<string, AbortController>();
+  const streamOpens: number[] = [];
+  const jobStarts: number[] = [];
   let streamSeq = 0;
+
+  /** Within `limit` in the last minute, or refused: `recent` is this kind's log. */
+  function perMinute(recent: number[], limit: number, what: string) {
+    const t = now();
+    while (recent.length && recent[0] < t - 60_000) recent.shift();
+    if (recent.length >= limit) {
+      throw new BridgeError(`too many ${what} from this page; wait a moment`);
+    }
+    recent.push(t);
+  }
   let inFlight = 0;
 
   function needsActivation(method: string) {
@@ -690,15 +713,17 @@ export function createDispatcher(
     if (!w.stream || !options.push) {
       throw new BridgeError('streams are not available here');
     }
+    // A closed stream holds its place until the host's read of it has ended.
     if (streams.size >= LIMITS.streams) {
       throw new BridgeError('too many streams at once');
     }
+    perMinute(streamOpens, LIMITS.streamOpensPerMinute, 'streams');
     streamSeq += 1;
     const id = `s${streamSeq}`;
     const controller = new AbortController();
     streams.set(id, controller);
     const push = (m: Omit<StreamMessage, 'stream' | 'type'>) => {
-      if (streams.get(id) === controller) {
+      if (streams.get(id) === controller && !controller.signal.aborted) {
         options.push!({ type: STREAM, stream: id, ...m });
       }
     };
@@ -741,7 +766,7 @@ export function createDispatcher(
     if (typeof id !== 'string') return;
     const controller = streams.get(id);
     if (!controller) return;
-    streams.delete(id);
+    // Aborted, not forgotten: its slot is freed when the read settles (above).
     controller.abort();
   }
 
@@ -850,6 +875,9 @@ export function createDispatcher(
         } catch (e) {
           if (e instanceof RouteError) throw new BridgeError(e.message);
           throw e;
+        }
+        if (checked.startsJob) {
+          perMinute(jobStarts, LIMITS.jobStartsPerMinute, 'background jobs');
         }
         if (checked.gate === 'effect') {
           await allowEffect(checked);

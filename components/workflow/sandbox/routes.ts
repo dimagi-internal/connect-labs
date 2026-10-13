@@ -120,6 +120,18 @@ function perOppInBody(body: Record<string, unknown>, ctx: RouteContext): void {
   }
 }
 
+/** Footprints for at most a few drawn areas per request (each is a cold fetch on the
+ * shared background worker). */
+export const MAX_FOOTPRINT_AREAS = 5;
+function fewAreas(body: Record<string, unknown>): void {
+  const areas = body.areas;
+  if (!Array.isArray(areas) || areas.length > MAX_FOOTPRINT_AREAS) {
+    throw new RouteError(
+      `fetch: building footprints for at most ${MAX_FOOTPRINT_AREAS} areas at a time`,
+    );
+  }
+}
+
 /** A job is cancelled only on THIS run. */
 function thisRunInBody(body: Record<string, unknown>, ctx: RouteContext): void {
   if (
@@ -395,12 +407,13 @@ export const ROUTES: readonly Route[] = [
   },
   // Building footprints for an area drawn on a map: computed on the server from
   // public data (writes nothing of the viewer's), then polled -- only a poll this
-  // host started.
+  // host started. A few areas at a time; starts are budgeted by the host.
   {
     methods: POST,
     gate: 'read',
     path: p(`/microplans/${OPP}/preview_footprints/`),
     startsJob: true,
+    bodyCheck: fewAreas,
   },
   {
     methods: GET,

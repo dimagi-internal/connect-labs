@@ -732,8 +732,9 @@ stream (`streamOpen`); the host checks it with `checkFetch` as a GET and require
 `read` gate, reads it with `fetch` (not a browser EventSource, which can set no headers:
 the request carries the same `X-Labs-Sandbox-For` / `-Scope` stamps as every other, so
 cross-workflow reads stay bound), parses `text/event-stream` and pushes each event back
-on the port (`STREAM` messages). At most 6 at once, 96 MB each; aborted when the frame
-stops. **Ruling: it does not reconnect.** A browser's EventSource reconnects after the
+on the port (`STREAM` messages). At most 6 at once (a closed one holds its place until
+the host's read of it has ended, so open-and-close cannot pile up server work) and 20 opens
+a minute, 96 MB each; aborted when the frame stops. **Ruling: it does not reconnect.** A browser's EventSource reconnects after the
 stream ends; every live use closes on its final event or falls back to a plain fetch on
 `error`, and a reconnect loop across the bridge would only re-run the server's work. So
 at the end the source is CLOSED and `error` fires.
@@ -754,8 +755,10 @@ Each is what a live copy legitimately asks for, bound the way the table binds:
   not on the table: it runs as the person, unattended.
 - `POST /microplans/<opp>/preview_footprints/` (building footprints for a drawn area:
   public data, computed on the server, writes nothing of the viewer's) as a read bound to
-  the workflow's opportunities, and `GET /microplans/preview_status/<task>/` only for a
-  task this host started (`startsJob` on the route; `ownJob` on the poll).
+  the workflow's opportunities, at most 5 areas a request, and `GET
+  /microplans/preview_status/<task>/` only for a task this host started (`startsJob` on
+  the route; `ownJob` on the poll). Every request that starts server work (these, and
+  `job/start`) is budgeted at 30 a minute per frame.
 - `GET /audit/api/opportunities/search/` (old bulk image audit copies' opportunity
   picker): answered, but the host cuts the answer's `opportunities` to this workflow's
   own (`filterOpportunities`), so it never lists what the workflow does not cover; an
@@ -784,18 +787,50 @@ Left refused, deliberately:
 
 **Ruling: the live copies of the deprecated MBW monitoring templates (v1, and the
 removed v2) are pinned out of the frame under `all`, by `(definition id, opportunity id)`
-in `workflow/sandbox.py` `DEPRECATED_UNSANDBOXED`, and must also still say they are one
-of those templates.** They call their own `/custom_analysis/mbw_monitoring/` endpoints
+in `workflow/sandbox.py` `DEPRECATED_UNSANDBOXED`, must also still say they are one of
+those templates, and the code they would draw must be byte-for-byte a version labs shipped
+(`workflow/sandbox_deprecated.py`: the sha256 of every committed version of the v1
+`RENDER_CODE` and of the v2/v3 render files, from git history).** They call their own `/custom_analysis/mbw_monitoring/` endpoints
 and stream from them; adding routes for dead code would be review surface for nothing,
 and breaking them would undo why they were kept (templates/mbw_monitoring/DEPRECATED.md).
 Why by id and not by the template key: `templateType` is
 author-writable, so "deprecated template => unsandboxed" would let any author take a
 workflow out of the frame by naming it -- exactly the opt-out this design refuses. Pinned
 ids can only shrink (no new instance can be made; a clone gets a new id and is
-sandboxed), and `?sandbox=1` still draws any of them sandboxed. Cost: those 16
-definitions, on four opportunities, keep today's exposure under `all` until they are
-retired; anyone with write access to one of them could change its render code and it
-would still run unsandboxed. Retiring them closes it.
+sandboxed), and `?sandbox=1` still draws any of them sandboxed. The code check is
+the review fix below: without it, anyone who can write one of those 16 records could put
+their own code in it and have it run unsandboxed. With it, a pinned record runs outside the
+frame only labs' own shipped code; edit it and it is drawn in the frame like any other.
+Cost: a pinned copy that was edited after it was made, or made from a v2 version whose code
+was derived at import time (not recoverable from history), is sandboxed under `all` and
+breaks there; the scan names each such record ("pinned deprecated copy, but its code is not
+a version labs shipped"). Retiring them closes the rest.
+
+### Review fixes (before merge)
+
+An independent adversarial review of the diff found these; each is fixed with a test that
+fails without it (`components/workflow/sandbox/host_streams.test.js` "review fixes",
+`rewrite.test.js`, `workflow/tests/test_workflow_sandbox_scan.py`):
+
+1. **The deprecated pin named records, not code**: a writer of a pinned record could run
+   their own code outside the frame under `all`. The pin now holds only for shipped code
+   (above).
+2. **Open-and-close got around the stream cap**, each abandoned stream still holding a
+   server worker: a closed stream keeps its slot until the read ends, and opens are
+   budgeted.
+3. **Footprints were an unbudgeted read** queueing work on the shared background worker:
+   at most 5 areas a request, 30 job starts a minute.
+4. **A body the route checked could be sent with a form content type**, so Django would
+   read form fields out of it the check never saw: a checked body is always sent as
+   `application/json`, and the CSRF form field is dropped only from an unchecked form body
+   (content type compared case-insensitively).
+5. **Making a handler async moved its `e.preventDefault()` after the event**: a handler
+   that uses its event after the question is left alone (its `confirm` answers No).
+
+Also: a stream the host refuses (redirect, status, content type) lets go of its connection.
+Left as stated residual: an audit save is bound to the audit the person said yes to, not to
+the workflow's opportunities (the host cannot tell whose an audit id is; the server checks
+the viewer's access as always).
 
 ### The scan models all this
 

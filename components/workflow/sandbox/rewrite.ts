@@ -22,7 +22,9 @@
  *   same control flow. Where it sits in an event handler (a JSX `on*={...}`
  *   attribute, an `on*:` property of a props object, `addEventListener`'s listener),
  *   that handler is made `async` first: nothing reads an event handler's return
- *   value. Anywhere else it is left alone, and the frame's `confirm` answers No and
+ *   value (unless it uses its event after the question -- `e.preventDefault()` would
+ *   then run after the event is over -- when it is left alone). Anywhere else it is
+ *   left alone, and the frame's `confirm` answers No and
  *   says so (frameShims.ts): the safe answer, since whatever it guards does not
  *   happen.
  *
@@ -137,6 +139,22 @@ function isEventHandler(fn: NodePath): boolean {
   return false;
 }
 
+/** Whether `fn`'s event parameter is referenced after `call` in the source. */
+function usesEventAfter(fn: NodePath, call: any): boolean {
+  const param = fn.node.params && fn.node.params[0];
+  if (!param) return false;
+  // A destructured event (`({ target }) => ...`): cannot tell, so leave it alone.
+  if (param.type !== 'Identifier') return true;
+  const binding = fn.scope.getBinding(param.name);
+  const at = typeof call.start === 'number' ? call.start : 0;
+  return !!(
+    binding &&
+    binding.referencePaths.some(
+      (r: NodePath) => typeof r.node.start === 'number' && r.node.start > at,
+    )
+  );
+}
+
 /** The Babel plugin. `(babel) => ({visitor})`, as both Babel 7 and 8 take it. */
 export function sandboxRewritePlugin({ types: t }: Babel) {
   const sandboxLocation = () =>
@@ -187,6 +205,9 @@ export function sandboxRewritePlugin({ types: t }: Babel) {
       if (!fn || fn.node.generator) return;
       if (!fn.node.async) {
         if (!isEventHandler(fn)) return;
+        // A handler that uses its event after the question (`e.preventDefault()`)
+        // would do so after the event is over once it awaits: left alone.
+        if (usesEventAfter(fn, path.node)) return;
         fn.node.async = true;
       }
       path.replaceWith(
