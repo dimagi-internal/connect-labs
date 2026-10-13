@@ -1,8 +1,9 @@
 {% load static i18n %}
 {% load avatar %}
 
-<header class="fixed top-0 left-16 right-0 bg-gray-100 z-30 h-16">
-    <div class="flex items-center justify-between w-full h-full px-4 py-2">
+{# Below md the sidenav is a drawer and its menu button sits in this bar's left corner (layouts/sidenav.html). #}
+<header class="fixed top-0 left-0 md:left-16 right-0 bg-gray-100 z-30 h-16">
+    <div class="flex items-center justify-between w-full h-full pl-16 pr-4 md:px-4 py-2">
         <!-- Left Section: Module Name -->
         <h1 class="text-lg text-brand-deep-purple font-medium truncate min-w-0 mr-3">
             <a href="{% url 'labs:overview' %}" class="hover:underline">{{ header_title|default:"Connect Labs" }}</a>
