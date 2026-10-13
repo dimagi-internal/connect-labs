@@ -127,10 +127,21 @@ def load_grid(path: str | os.PathLike | None = None) -> dict | None:
     return grid
 
 
-#: Year-round transmission, the page's state preset: under half the year's rain in the wettest quarter
-#: (SMC is for 60% or more), and DHS PfPR 2-5y of at least 10% (GiveWell's PMC topic excludes low transmission).
-PERENNIAL_MAX_WETTEST_PCT = 50
-PERENNIAL_MIN_PFPR = 0.10
+#: Where SMC already runs, by state (data/nga_smc_states.json, sourced). A state where SMC runs anywhere is
+#: not a PMC candidate: the model is whole-state, so valuing PMC there as if no chemoprevention ran
+#: overstates it. This replaced a rainfall and prevalence rule (under 50% of rain in the wettest quarter,
+#: PfPR of at least 10%): the ranking already sinks low transmission below the bar, and the real reason to
+#: leave a state out is that SMC is there, which rainfall only approximated.
+SMC_PATH = Path(__file__).resolve().parents[1] / "data" / "nga_smc_states.json"
+
+
+def smc_status() -> dict[str, dict]:
+    """State name -> {"smc": "statewide" | "some_lgas", "detail"?, "year", "source"}; absent means no SMC."""
+    key = str(SMC_PATH)
+    if key not in _cache:
+        with open(SMC_PATH) as f:
+            _cache[key] = json.load(f)["states"]
+    return _cache[key]
 
 
 #: The children each PMC design reaches, from its code: our proposal's approach is 3-24 months; the ``_y2`` designs
@@ -390,21 +401,20 @@ def recommend(
 
 
 def state_index(grid: dict | None) -> list[dict]:
-    """Every state in the grid, by name, for the page's picker: its prevalence, season and whether it is perennial."""
+    """Every state in the grid, by name, for the page's picker: its prevalence, season and whether SMC runs there."""
+    smc = smc_status()
     out = []
     for name, entry in sorted((grid or {}).get("states", {}).items()):
         inputs = entry.get("inputs") or {}
-        pfpr, wettest = inputs.get("pfpr_target"), inputs.get("rain_wettest_quarter")
+        status = smc.get(name) or {}
         out.append(
             {
                 "name": name,
-                "pfpr": pfpr,
-                "rain_wettest_quarter": wettest,
+                "pfpr": inputs.get("pfpr_target"),
+                "rain_wettest_quarter": inputs.get("rain_wettest_quarter"),
                 "onset_month": inputs.get("onset_month"),
-                "perennial": pfpr is not None
-                and wettest is not None
-                and wettest < PERENNIAL_MAX_WETTEST_PCT
-                and pfpr >= PERENNIAL_MIN_PFPR,
+                "smc": status.get("smc"),
+                "smc_detail": status.get("detail", ""),
             }
         )
     return out

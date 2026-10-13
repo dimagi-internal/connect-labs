@@ -301,7 +301,11 @@
           pct(s.pfpr * 100) +
           ' · ' +
           pct(s.rain_wettest_quarter) +
-          ' of the rain in the wettest quarter';
+          ' of the rain in the wettest quarter' +
+          (s.smc
+            ? ' · SMC runs here' +
+              (s.smc_detail ? ' (' + s.smc_detail + ')' : '')
+            : ' · no SMC');
         return (
           '<button type="button" class="pmc-pill" data-state="' +
           esc(s.name) +
@@ -310,7 +314,7 @@
           '" title="' +
           esc(tip) +
           '">' +
-          (s.perennial ? '<span class="dot"></span>' : '') +
+          (s.smc ? '' : '<span class="dot"></span>') +
           esc(s.name) +
           '</button>'
         );
@@ -351,10 +355,10 @@
     b.addEventListener('click', function () {
       var preset = b.getAttribute('data-preset');
       state.states =
-        preset === 'perennial'
+        preset === 'nosmc'
           ? gridStates
               .filter(function (s) {
-                return s.perennial;
+                return !s.smc;
               })
               .map(function (s) {
                 return s.name;
