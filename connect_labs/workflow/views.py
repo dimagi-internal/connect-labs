@@ -41,6 +41,7 @@ from connect_labs.workflow.data_access import (
     serialize_pipeline_row,
     streamed_and_skipped_aliases,
 )
+from connect_labs.workflow.page_mode import is_page as _is_page
 from connect_labs.workflow.templates import (
     MULTI_OPTION_COERCERS,
     TEMPLATES,
@@ -500,7 +501,7 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
             data_access = WorkflowDataAccess(request=self.request)
             pipeline_access = PipelineDataAccess(request=self.request)
             # Pages have no runs (page_mode.py), so the run list leaves them out.
-            definitions = [d for d in data_access.list_definitions() if (d.data or {}).get("kind") != "page"]
+            definitions = [d for d in data_access.list_definitions() if not _is_page(d)]
 
             # Program-owned workflows must not appear in an opp view.
             opp_defs = opp_owned_definitions(definitions)
@@ -569,7 +570,7 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
 
             # Program-scoped list: records whose program FK == this program. Pages have
             # no runs (page_mode.py), so the run list leaves them out.
-            owned_defs = [d for d in data_access.list_definitions() if (d.data or {}).get("kind") != "page"]
+            owned_defs = [d for d in data_access.list_definitions() if not _is_page(d)]
 
             runs_by_def: dict = {}
             for run in data_access.list_runs():
@@ -712,6 +713,29 @@ def _definition_unavailable_message(request, definition_id, opportunity_id, prog
         )
     scope = f"program {program_id}" if program_id else f"opportunity {opportunity_id}"
     return f"Workflow definition {definition_id} not found under {scope}."
+
+
+def _page_only_panel(request, panel: dict) -> dict:
+    """A page's panel grants ``page:read`` and nothing else, whichever route draws it.
+
+    The SDK signs the page token for the route that resolved. On a route registered
+    with more (the workflow run URL also grants the run scopes), the token is signed
+    again for ``PAGE_ON_ANOTHER_ROUTE``, whose only scope is ``page:read``.
+    """
+    from connect_labs.labs.canopy import PAGE_ON_ANOTHER_ROUTE, PAGE_ONLY_SCOPES, PAGE_SCOPES
+
+    if not panel.get("ready") or not panel.get("page_token"):
+        return panel
+    route = getattr(getattr(request, "resolver_match", None), "view_name", "") or ""
+    if tuple(PAGE_SCOPES.get(route, ())) == PAGE_ONLY_SCOPES:
+        return panel
+    from canopy_sdk.django import conf
+    from canopy_sdk.django.pages import _token_url, panel_options
+
+    token = conf.page_tokens().issue(PAGE_ON_ANOTHER_ROUTE, request.user.pk)
+    panel = {**panel, "page_token": token, "token_url": _token_url(token)}
+    panel["options"] = panel_options(panel)
+    return panel
 
 
 class WorkflowRunView(LoginRequiredMixin, TemplateView):
@@ -1016,7 +1040,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         owner = {
             k: labs_context[k] for k in ("opportunity_id", "program_id", "organization_id") if labs_context.get(k)
         }
-        context["canopy_panel"] = panel_context(
+        panel = panel_context(
             self.request,
             resource=f"labs-page://{scope_type}/{scope_key}/{slug}",
             backing_tool="page_context",
@@ -1024,6 +1048,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             filters={"definition_id": definition.id, "scope_type": scope_type, "scope_key": scope_key, **owner},
             path=self.request.path,
         )
+        context["canopy_panel"] = _page_only_panel(self.request, panel)
 
     def render_to_response(self, context, **response_kwargs):
         response = super().render_to_response(context, **response_kwargs)
@@ -1116,36 +1141,17 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             # draws it (a page's address, its run URL, edit mode, present mode, a supply tab).
             from connect_labs.workflow.sandbox import should_sandbox
 
-            sandboxed = should_sandbox(definition)
+            sandboxed = should_sandbox(definition, page_mode=self.page_mode)
             context["sandboxed"] = sandboxed
+            if sandboxed or _is_page(definition):
+                # A page has no runs: a `run_id` on its address names nothing of its own,
+                # so it is never read (another definition's run, snapshot and all, must
+                # not reach a page's frame).
+                run_id = None
 
-            # Sync render code from template if requested via ?sync=true
-            # Supports ?sync=true&template=mbw_monitoring to specify template explicitly
-            if self.request.GET.get("sync") == "true":
-                explicit_template = self.request.GET.get("template")
-                matched_template = None
-
-                if explicit_template:
-                    # Normalize dashes to underscores (e.g. mbw-monitoring → mbw_monitoring)
-                    explicit_template = explicit_template.replace("-", "_")
-                if explicit_template and explicit_template in TEMPLATES:
-                    matched_template = explicit_template
-                else:
-                    name_lower = definition.name.lower().replace(" ", "_")
-                    for key, tmpl in TEMPLATES.items():
-                        if key == name_lower or tmpl["name"].lower() == definition.name.lower():
-                            matched_template = key
-                            break
-
-                if matched_template:
-                    data_access.save_render_code(
-                        definition_id=definition_id,
-                        component_code=TEMPLATES[matched_template]["render_code"],
-                        version=1,
-                    )
-                    logger.info(
-                        f"Synced render code for definition {definition_id} from template '{matched_template}'"
-                    )
+            # (`?sync=true` used to overwrite the render code from a template on this GET.
+            # A write on a GET is one any link can make, so it is gone: sync with
+            # POST /labs/workflow/api/<id>/sync-template/ or the workflow_sync_* MCP tools.)
 
             # Render code always comes from the workflow's LabsRecord — same
             # in local and prod. Local doesn't shortcut to the template file:
@@ -1229,6 +1235,11 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 run = data_access.get_run(int(run_id))
                 if not run:
                     context["error"] = f"Workflow run {run_id} not found."
+                    return context
+                if str(run.definition_id) != str(definition_id):
+                    # A run is drawn only by its own workflow: never another definition's
+                    # render, which would be handed this run's state and snapshot.
+                    context["error"] = f"Workflow run {run_id} does not belong to this workflow."
                     return context
                 run_data = {
                     "id": run.id,
@@ -3290,7 +3301,7 @@ def start_run_api(request, definition_id):
         definition = data_access.get_definition(definition_id)
         if not definition:
             return JsonResponse({"error": "Workflow not found"}, status=404)
-        if (definition.data or {}).get("kind") == "page":
+        if _is_page(definition):
             # A page has no runs (page_mode.py): it is opened, never started.
             return JsonResponse({"error": "This is a page: it has no runs to start."}, status=400)
 

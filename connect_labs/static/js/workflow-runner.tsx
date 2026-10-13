@@ -774,8 +774,11 @@ function WorkflowRunner({
   // Supply sources (connect_labs/workflow/supply_sources.py): the `supply` prop.
   // A COMPLETED run whose snapshot froze them reads `snapshot.supply` instead,
   // and never loads live supply data.
+  // (Never for a sandboxed page: it has no run, so no snapshot to read.)
   const snapshotSupply =
-    initialData.instance.status === 'completed' && initialData.instance.snapshot
+    !initialData.sandbox &&
+    initialData.instance.status === 'completed' &&
+    initialData.instance.snapshot
       ? ((
           initialData.instance.snapshot as {
             supply?: Record<string, SupplyResult>;
@@ -2059,14 +2062,21 @@ function WorkflowRunner({
   // pipelines (the spec's residual risk).
   const sandboxPayload = useMemo<FramePayload | null>(() => {
     if (!sandbox) return null;
+    // A page has no run, so no snapshot: whatever `instance` arrived with, its
+    // snapshot never reaches the frame, and supply is always the live read.
+    const { snapshot: _snapshot, ...instance } = initialData.instance as Record<
+      string,
+      unknown
+    >;
+    void _snapshot;
     return JSON.parse(
       JSON.stringify({
         renderCode,
         definition,
-        instance: { ...initialData.instance, state: instanceState },
+        instance: { ...instance, state: instanceState },
         workers: [],
         pipelines: {},
-        supply: snapshotSupply ?? supplyData,
+        supply: supplyData,
         workflows: workflowSourceData,
         scope: initialData.scope ?? null,
         config: initialData.config || {},
@@ -2081,6 +2091,7 @@ function WorkflowRunner({
         },
         today: new Date().toISOString().slice(0, 10),
         mapboxToken: initialData.mapboxToken || '',
+        pageUrl: window.location.href,
       }),
     );
   }, [
@@ -2093,7 +2104,6 @@ function WorkflowRunner({
     initialData.links,
     initialData.mapboxToken,
     instanceState,
-    snapshotSupply,
     supplyData,
     workflowSourceData,
   ]);

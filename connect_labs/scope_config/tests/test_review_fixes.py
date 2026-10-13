@@ -85,3 +85,42 @@ def test_a_layer_the_caller_cannot_read_shows_in_effect_but_not_its_data_or_auth
     assert org_layer["readable"] is False and "data" not in org_layer and "updated_by" not in org_layer
     own = next(layer for layer in got["layers"] if layer["scope"]["type"] == "program")
     assert own["readable"] is True and "data" in own
+
+
+# --- a home is a page (page sandbox review, 2026-10-12) ---------------------------
+
+
+def _definitions(monkeypatch, data_by_id):
+    from types import SimpleNamespace
+
+    from connect_labs.scope_config import builtin
+
+    monkeypatch.setattr(
+        builtin,
+        "_read_definition",
+        lambda caller, owner, definition_id: SimpleNamespace(data=data_by_id[definition_id]),
+    )
+
+
+def test_a_home_set_to_a_workflow_that_is_not_a_page_is_refused(monkeypatch):
+    _definitions(monkeypatch, {5: {"kind": "page"}, 6: {"name": "Weekly report", "config": {}}})
+    member = caller("m", holds=("program:7",))
+    with pytest.raises(Invalid, match="not a page"):
+        service.update("labs", PROGRAMME, {"home": {"fill": {"workflow": 6, "program_id": 7}}}, member)
+    got = service.update("labs", PROGRAMME, {"home": {"fill": {"workflow": 5, "program_id": 7}}}, member)
+    assert got["value"]["home"]["fill"]["workflow"] == 5
+
+
+def test_a_page_made_from_the_page_template_before_kind_existed_is_still_a_home(monkeypatch):
+    _definitions(monkeypatch, {8: {"name": "Home", "config": {"templateType": "page_blank"}}})
+    member = caller("m", holds=("program:7",))
+    got = service.update("labs", PROGRAMME, {"home": {"fill": {"workflow": 8, "program_id": 7}}}, member)
+    assert got["value"]["home"]["fill"]["workflow"] == 8
+
+
+def test_an_undo_back_to_a_workflow_home_is_refused(monkeypatch):
+    service.update("labs", PROGRAMME, {"home": {"fill": {"workflow": 6, "program_id": 7}}}, SYSTEM)
+    service.update("labs", PROGRAMME, {"home": {"fill": {"workflow": 5, "program_id": 7}}}, SYSTEM)
+    _definitions(monkeypatch, {5: {"kind": "page"}, 6: {"name": "Weekly report", "config": {}}})
+    with pytest.raises(Invalid, match="not a page"):
+        service.undo("labs", PROGRAMME, caller("m", holds=("program:7",)))

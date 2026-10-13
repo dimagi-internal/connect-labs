@@ -70,15 +70,20 @@ def sandbox_enabled() -> bool:
     return bool(getattr(settings, "LABS_PAGE_SANDBOX", True))
 
 
-def should_sandbox(definition) -> bool:
+def should_sandbox(definition, page_mode: bool = False) -> bool:
     """Whether this definition's render runs in the sandbox: every page, on every route.
 
-    Decided from the consuming definition's own ``kind``, whatever its
-    ``render_source``: a template workflow's render is just as author-controlled.
+    Decided from the consuming definition as read for this render (its ``kind``, or the
+    page template it was made from), whatever its ``render_source``: a template
+    workflow's render is just as author-controlled. And whenever the route draws it in
+    page mode (a page's address, a supply tab), whatever the definition says: what a
+    route draws as a page is sandboxed, fail closed.
     """
     from connect_labs.workflow.page_mode import is_page
 
-    return sandbox_enabled() and definition is not None and is_page(definition)
+    if not sandbox_enabled() or definition is None:
+        return False
+    return bool(page_mode) or is_page(definition)
 
 
 def _origin_of(url: str) -> str:
@@ -89,13 +94,17 @@ def _origin_of(url: str) -> str:
 
 
 def labs_origin(request=None) -> str:
-    """Labs' public origin: ``LABS_PUBLIC_URL``, else the request's own (ALLOWED_HOSTS-checked) host."""
-    origin = _origin_of(getattr(settings, "LABS_PUBLIC_URL", "") or "")
-    if origin:
-        return origin
+    """The origin this request reached labs on: its scheme and (ALLOWED_HOSTS-checked) host.
+
+    The request's own, not ``LABS_PUBLIC_URL``: the host page's ``frame-src``, the
+    shell's ``frame-ancestors`` and the bridge's navigate check must all name the origin
+    the browser is actually on, or a host that serves labs under another name (a second
+    allowed host, ``127.0.0.1`` locally) draws a blank page. ``LABS_PUBLIC_URL`` is only
+    the fallback with no request.
+    """
     if request is not None:
         return f"{request.scheme}://{request.get_host()}"
-    return ""
+    return _origin_of(getattr(settings, "LABS_PUBLIC_URL", "") or "")
 
 
 def static_prefix(origin: str) -> str:

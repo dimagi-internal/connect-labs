@@ -13,7 +13,7 @@ So the session is not left to them:
 * ``require_same_origin`` adds an ``Origin`` check to the ``@csrf_exempt`` endpoints
   the workflow runner reaches, which have no CSRF check to lean on.
 
-Bearer, DPoP and PAT requests carry no session and are not affected.
+Bearer, DPoP and PAT requests that carry no session cookie are not affected.
 """
 
 from __future__ import annotations
@@ -28,8 +28,12 @@ SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 
 
 def _session_authenticated(request) -> bool:
-    if request.headers.get("authorization"):
-        return False
+    """A session cookie came with the request and authenticated a user.
+
+    Decided by the cookie, never by an ``Authorization`` header beside it: Django
+    authenticates from the session whatever else the request carries, so a header
+    must not switch the guard off.
+    """
     if settings.SESSION_COOKIE_NAME not in request.COOKIES:
         return False
     user = getattr(request, "user", None)
