@@ -1166,6 +1166,144 @@ function WorkflowUI({
     [failedAnalysisDisplayRows],
   );
 
+  // --- Final verification pass rate by GPS distance (Failed Verification --
+  // Analysis) -- tests whether a visit far from the reference point is less
+  // likely to pass OVERALL (visit_verification_outcome -- which can pass via
+  // GPS, QR, signature, ANC card, or mother questions), not just whether it
+  // passes the GPS check itself. Bucketing by GPS outcome instead would be
+  // circular: gps_visit_verification_matches is itself a hard <=200m
+  // pass/>200m fail rule on this same distance, so plotting it against
+  // distance would just redraw that threshold, not test anything.
+  //
+  // 200m-wide buckets out to 6000m (most visits with any failure are well
+  // under this; a bucket's bar is only shown when it has at least one row,
+  // so sparse far buckets don't inflate the x-axis with empty bars), then
+  // one 6000-10000m bucket and one 10000m+ bucket -- the latter specifically
+  // to isolate the ~55-66km outlier cluster from the single-digit-km
+  // stragglers rather than lumping them together.
+  //
+  // 'Other location' and 'No prior GPS (first visit)' are appended as two
+  // final categories, not distance buckets -- a visit with no distance to
+  // measure at all (either the location type has no reference point
+  // concept, or this IS the first visit to that location, so there's no
+  // prior point to compare against). Same hasPrevGps/locType branching as
+  // gpsOutcome(), just mapped to a bucket/category label instead of an
+  // outcome.
+  //
+  // Pass rate is passCount / (passCount + failCount + pendingCount) per
+  // bucket -- same verifiedTotal convention as summary.passPct, so a visit
+  // whose Final verification outcome was never computed (see "Verification
+  // Summary Tab" in Definitions) doesn't silently count as a fail here
+  // either.
+  var GPS_DISTANCE_BUCKET_WIDTH_M = 200;
+  var GPS_DISTANCE_FAR_BUCKET_START_M = 6000;
+  var GPS_DISTANCE_CATCHALL_START_M = 10000;
+
+  function gpsDistanceBucketLabel(distanceM) {
+    if (distanceM >= GPS_DISTANCE_CATCHALL_START_M) return '10,000m+';
+    if (distanceM >= GPS_DISTANCE_FAR_BUCKET_START_M) return '6,000-10,000m';
+    var lo =
+      Math.floor(distanceM / GPS_DISTANCE_BUCKET_WIDTH_M) *
+      GPS_DISTANCE_BUCKET_WIDTH_M;
+    var hi = lo + GPS_DISTANCE_BUCKET_WIDTH_M;
+    return lo + '-' + hi + 'm';
+  }
+
+  // Sort key so the fixed 200m buckets stay in numeric order and the two
+  // wider tail buckets land after all of them, regardless of insertion
+  // order (a Map preserves first-seen order, which depends on row order).
+  function gpsDistanceBucketSortKey(label) {
+    if (label === '10,000m+') return Infinity;
+    if (label === '6,000-10,000m') return GPS_DISTANCE_FAR_BUCKET_START_M;
+    return parseInt(label, 10);
+  }
+
+  var OTHER_LOCATION_CATEGORY = 'Other location';
+  var NO_PRIOR_GPS_CATEGORY = 'No prior GPS (first visit)';
+
+  var gpsDistancePassRateStats = React.useMemo(
+    function () {
+      var byCategory = {};
+      function tally(category, row) {
+        if (!byCategory[category]) {
+          byCategory[category] = {
+            category: category,
+            pass: 0,
+            fail: 0,
+            pending: 0,
+          };
+        }
+        var bucket = byCategory[category];
+        if (row.visit_verification_outcome === 'Pass') bucket.pass += 1;
+        else if (row.visit_verification_outcome === 'Fail') bucket.fail += 1;
+        else if (row.visit_verification_outcome === 'Pending Audit')
+          bucket.pending += 1;
+      }
+
+      failedAnalysisDisplayRows.forEach(function (row) {
+        var locType = row.where_is_the_visit_being_conducted;
+        if (locType === 'other') {
+          tally(OTHER_LOCATION_CATEGORY, row);
+          return;
+        }
+        var hasPrevGps =
+          locType === 'mothers_home'
+            ? row.visit_location_has_prev_home_gps
+            : locType === 'health_facility'
+              ? row.visit_location_has_prev_health_facility_gps
+              : null;
+        if (hasPrevGps === 'no') {
+          tally(NO_PRIOR_GPS_CATEGORY, row);
+          return;
+        }
+        var distance =
+          locType === 'mothers_home'
+            ? row.gps_distance_from_home_meters
+            : locType === 'health_facility'
+              ? row.gps_distance_from_health_facility_meters
+              : null;
+        // locType missing entirely (not a verification-era visit at all) or
+        // a distance that failed to compute despite a reference point
+        // existing (this visit's own GPS capture issue, not a location/
+        // first-visit case) -- neither fits a bucket or either named
+        // category, so skip rather than force it somewhere misleading.
+        if (typeof distance !== 'number' || isNaN(distance)) return;
+        tally(gpsDistanceBucketLabel(distance), row);
+      });
+
+      var buckets = Object.keys(byCategory)
+        .filter(function (c) {
+          return c !== OTHER_LOCATION_CATEGORY && c !== NO_PRIOR_GPS_CATEGORY;
+        })
+        .sort(function (a, b) {
+          return gpsDistanceBucketSortKey(a) - gpsDistanceBucketSortKey(b);
+        })
+        .map(function (c) {
+          return byCategory[c];
+        });
+
+      [OTHER_LOCATION_CATEGORY, NO_PRIOR_GPS_CATEGORY].forEach(function (c) {
+        if (byCategory[c]) buckets.push(byCategory[c]);
+      });
+
+      return buckets.map(function (b) {
+        var verifiedTotal = b.pass + b.fail + b.pending;
+        return {
+          category: b.category,
+          pass: b.pass,
+          fail: b.fail,
+          pending: b.pending,
+          verifiedTotal: verifiedTotal,
+          passPct:
+            verifiedTotal > 0
+              ? Math.round((b.pass / verifiedTotal) * 100)
+              : null,
+        };
+      });
+    },
+    [failedAnalysisDisplayRows],
+  );
+
   // --- Home GPS mismatch reasons (Failed Verification Analysis) ----------
   // home_gps_mismatch_reason is only populated by CommCare on exactly the
   // rows this breaks down -- a home-location visit where the GPS check
@@ -2396,7 +2534,7 @@ function WorkflowUI({
     },
     {
       title: 'Failed Verification Analysis Tab',
-      body: "Reports here use the domain+eligibility-filtered row set (domain toggle + FLW eligibility + verification-block-present gate), further narrowed by this tab's own FLW filter if any FLWs are selected (failedAnalysisDisplayRows) -- NOT the Status/FLW filters from the Per FLW Verification View tab or the Verification Summary tab's FLW filter, which are each scoped to their own tab alone. Three sections: By FLW, GPS Verification, and Mother question fail rate.",
+      body: "Reports here use the domain+eligibility-filtered row set (domain toggle + FLW eligibility + verification-block-present gate), further narrowed by this tab's own FLW filter if any FLWs are selected (failedAnalysisDisplayRows) -- NOT the Status/FLW filters from the Per FLW Verification View tab or the Verification Summary tab's FLW filter, which are each scoped to their own tab alone. Four sections: By FLW, GPS Verification (including Final verification pass rate by GPS distance), and Mother question fail rate.",
       items: [
         {
           name: 'By FLW -- chart',
@@ -2426,6 +2564,18 @@ function WorkflowUI({
           def: 'Hovering a dot shows the distance, accuracy, and which FLW submitted that visit.',
           field:
             'Each scatter point carries username alongside {x, y}; a custom Chart.js tooltip.callbacks.label reads it back out. Same username field as the FLW ID column.',
+        },
+        {
+          name: 'Final verification pass rate by GPS distance -- chart',
+          def: "Tests whether a visit farther from the reference point is less likely to be verified OVERALL, not whether it fails the GPS check itself -- plotting the GPS-specific outcome against this same distance would be circular, since that outcome IS a <=200m/>200m rule on this distance. Bars are the Final verification outcome's pass rate (same verifiedTotal denominator as the Verification Summary tab's cards -- a visit whose outcome was never computed doesn't count as a fail), bucketed by GPS distance into 200m-wide bins out to 6,000m, then one 6,000-10,000m bucket and one 10,000m+ bucket (the latter specifically isolates a cluster of ~55-66km outliers from the single-digit-km stragglers rather than averaging them together). A bucket only appears if at least one visit falls in it, so sparse ranges don't pad the chart with empty bars.",
+          field:
+            'gpsDistancePassRateStats -- failedAnalysisDisplayRows grouped by gpsDistanceBucketLabel(distance), where distance is the same gps_distance_from_home_meters/gps_distance_from_health_facility_meters pair the scatter plot above uses. Pass rate per bucket is pass / (pass + fail + pending) on visit_verification_outcome.',
+        },
+        {
+          name: 'Final verification pass rate by GPS distance -- Other location / No prior GPS bars',
+          def: '"Other location" (grey bar) is every visit where where_is_the_visit_being_conducted = \'other\' -- no location type has a GPS reference point to measure against. "No prior GPS (first visit)" (grey bar) is a visit at the mother\'s home or a health facility where no prior point existed yet for that location -- the same gate gpsOutcome() uses to return NA. Both are appended after the distance buckets for direct comparison, not distance values themselves.',
+          field:
+            "Same locType/hasPrevGps branching as gpsOutcome(): where_is_the_visit_being_conducted === 'other' -> 'Other location'; else visit_location_has_prev_home_gps/visit_location_has_prev_health_facility_gps === 'no' -> 'No prior GPS (first visit)'.",
         },
         {
           name: 'Home GPS mismatch reasons -- chart',
@@ -2877,6 +3027,90 @@ function WorkflowUI({
       };
     },
     [homeGpsMismatchReasonStats, activeTab],
+  );
+
+  // --- Final verification pass rate by GPS distance chart (Failed --------
+  // Verification Analysis)
+  var gpsDistancePassRateChartRef = React.useRef(null);
+  var gpsDistancePassRateChartInstance = React.useRef(null);
+
+  React.useEffect(
+    function () {
+      if (activeTab !== 'failed_analysis') return;
+      if (!gpsDistancePassRateChartRef.current || !window.Chart) return;
+      if (gpsDistancePassRateChartInstance.current)
+        gpsDistancePassRateChartInstance.current.destroy();
+
+      gpsDistancePassRateChartInstance.current = new window.Chart(
+        gpsDistancePassRateChartRef.current,
+        {
+          type: 'bar',
+          data: {
+            labels: gpsDistancePassRateStats.map(function (s) {
+              return s.category;
+            }),
+            datasets: [
+              {
+                label: 'Final verification pass rate',
+                data: gpsDistancePassRateStats.map(function (s) {
+                  return s.passPct;
+                }),
+                backgroundColor: gpsDistancePassRateStats.map(function (s) {
+                  return s.category === OTHER_LOCATION_CATEGORY ||
+                    s.category === NO_PRIOR_GPS_CATEGORY
+                    ? '#9ca3af'
+                    : '#3b82f6';
+                }),
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: { ticks: { maxRotation: 60, minRotation: 60 } },
+              y: {
+                beginAtZero: true,
+                max: 100,
+                title: { display: true, text: 'Pass rate (%)' },
+                ticks: {
+                  callback: function (v) {
+                    return v + '%';
+                  },
+                },
+              },
+            },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: function (context) {
+                    var s = gpsDistancePassRateStats[context.dataIndex];
+                    return (
+                      s.passPct +
+                      '% pass (n=' +
+                      s.verifiedTotal +
+                      ': ' +
+                      s.pass +
+                      ' pass, ' +
+                      s.fail +
+                      ' fail, ' +
+                      s.pending +
+                      ' pending)'
+                    );
+                  },
+                },
+              },
+            },
+          },
+        },
+      );
+      return function () {
+        if (gpsDistancePassRateChartInstance.current)
+          gpsDistancePassRateChartInstance.current.destroy();
+      };
+    },
+    [gpsDistancePassRateStats, activeTab],
   );
 
   // --- Mother question fail rate chart (Failed Verification Analysis) ----
@@ -3557,6 +3791,33 @@ function WorkflowUI({
                       >
                         <canvas ref={homeGpsMismatchReasonChartRef}></canvas>
                       </div>
+                    )}
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                    <h4 className="mb-1 text-sm font-medium text-gray-800">
+                      Final verification pass rate by GPS distance
+                    </h4>
+                    <p className="mb-2 text-xs text-gray-500">
+                      Does a visit farther from the reference point end up
+                      failing overall, or does it often still pass via another
+                      method? Bars are the visit's{' '}
+                      <strong>Final verification outcome</strong>, not the GPS
+                      check alone -- bucketed by GPS distance (home or health
+                      facility, 200m bins out to 6,000m, then 6,000-10,000m and
+                      10,000m+), plus two non-distance categories: "Other
+                      location" (no GPS reference point applies) and "No prior
+                      GPS (first visit)" (nothing to compare against yet). Hover
+                      a bar for the exact counts.
+                    </p>
+                    {gpsDistancePassRateStats.length > 0 ? (
+                      <div style={{ height: '360px' }}>
+                        <canvas ref={gpsDistancePassRateChartRef}></canvas>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400">
+                        No visits with a Final verification outcome in the
+                        current filter.
+                      </p>
                     )}
                   </div>
                 </div>
