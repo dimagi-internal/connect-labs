@@ -820,8 +820,8 @@ if a row exists for its id, on the owner it names (the scan's owner: opportunity
 program, else organization), and the code it is about to draw has that digest: any edit
 voids it, fail closed. A page is never exempt, edit mode is never exempt (the editor draws
 code no row hashed, the AI chat's included), `?sandbox=1` still draws an exempt workflow
-sandboxed, `opt_in` is unchanged by a row, and a lookup that fails is no exemption. Staff
-see the reason under the workflow. The scan reports an exempt copy as "kept out (exempt:
+sandboxed, `opt_in` is unchanged by a row, and a lookup that fails is no exemption. Exemption status is not shown in the workflow UI (owner's ruling, 2026-10-13): it is
+read from the scan and `workflow_sandbox_exempt --list` only. The scan reports an exempt copy as "kept out (exempt:
 <reason>)", and a recorded copy whose code or owner changed as void, so breaking. Every add
 and remove is in the audit trail (`resource_type=sandbox_exemption`). First used for the
 2026-10-13 scan's eight edited MBW copies, the outcome summary's pipeline controls and the
