@@ -28,12 +28,6 @@
   // Decisions count the lower death estimate in each state; every figure also shows each estimate alone.
   var BASES = ['lower', 'prevalence_scaled', 'map'];
   var AGES = ['3_24', '12_24'];
-  // What each choice means, said under its control rather than in a tooltip.
-  var AGES_HELP = {
-    '3_24': 'Our proposal: every child from 3 to 24 months.',
-    '12_24':
-      'The second year of life only. Cheaper per death, but babies under one would rely on clinic-based PMC.',
-  };
   var state = readUrl();
 
   function readUrl() {
@@ -166,7 +160,7 @@
       })
       .catch(function (err) {
         if (err && err.name === 'AbortError') return;
-        el('pmc-how').textContent = 'Could not load: ' + err.message;
+        setStatus('could not load: ' + err.message);
       });
     loadRank();
   }
@@ -182,7 +176,9 @@
     })[0];
   }
 
+  // The one-setting comparison is gone from the page; live runs still collect here.
   function renderHow() {
+    if (!el('pmc-how')) return;
     var costed = data.schedules
       .filter(function (s) {
         return s.cost_per_case_averted !== null;
@@ -331,7 +327,6 @@
       );
     });
     el('pmc-topn').value = String(state.top_n);
-    el('pmc-ages-help').textContent = AGES_HELP[state.ages] || '';
   }
 
   function rankChanged() {
@@ -389,7 +384,7 @@
     p.set('deaths_basis', state.deaths_basis);
     p.set('top_n', state.top_n);
     p.set('ages', state.ages);
-    setStatus('Updating…');
+    setStatus('recalculating…', true);
     fetch(cfg.rankUrl + '?' + p.toString(), {
       signal: ctrl.signal,
       credentials: 'same-origin',
@@ -409,31 +404,33 @@
       })
       .catch(function (err) {
         if (err && err.name === 'AbortError') return;
-        setStatus('Could not update: ' + err.message);
-        el('pmc-rank-answer').textContent = 'Could not rank: ' + err.message;
+        setStatus('could not update: ' + err.message);
         el('pmc-rank-rows').innerHTML = '';
       });
   }
 
-  // Nothing is run by hand: the answer follows the inputs, and this line says for which.
-  function setStatus(text) {
+  // Nothing is run by hand: the answer follows the inputs. The dot and the
+  // dimmed figures show it working; the line says what it is up to date for.
+  function setStatus(text, busy) {
     var s = el('pmc-status');
     if (s) s.textContent = text;
+    var dot = el('pmc-pulse');
+    if (dot) dot.classList.toggle('busy', !!busy);
+    var reco = el('pmc-reco');
+    if (reco) reco.classList.toggle('busy', !!busy);
   }
   function upToDate(d) {
     if (!d.available) return '';
     var n = d.best_per_state.length + (d.excluded || []).length;
     return (
-      'Up to date for ' +
+      'updated · ' +
       n +
       (n === 1 ? ' state' : ' states') +
-      ' at ' +
+      ' · ' +
       usd(d.costs.cost_per_dose, 2) +
-      ' a dose, ' +
-      (state.ages === '12_24'
-        ? 'children 12–24 months'
-        : 'children 3–24 months') +
-      '. The answer recalculates whenever you change an input; there is nothing to run.'
+      ' a dose · ' +
+      (state.ages === '12_24' ? '12–24' : '3–24') +
+      ' months'
     );
   }
 
@@ -474,114 +471,270 @@
           '×</span>';
   }
 
+  // The page draws figures and tables only. What they mean, in words, is the
+  // agent's to say (the "Explain this answer" button), from the same figures.
   function renderRank() {
     var d = rankData;
-    var total = el('pmc-rank-total');
     if (!d.available) {
-      el('pmc-reco').textContent = d.message;
-      el('pmc-rank-answer').textContent = '';
-      el('pmc-rank-rows').innerHTML = '';
-      total.classList.add('hidden');
-      el('pmc-rank-note').textContent = '';
+      el('pmc-reco').innerHTML =
+        '<div class="pmc-schedule">—</div><p class="pmc-sub">' +
+        esc(d.message) +
+        '</p>';
+      [
+        'pmc-rank-rows',
+        'pmc-design-rows',
+        'pmc-states-panel',
+        'pmc-budgets-panel',
+      ].forEach(function (id) {
+        el(id).innerHTML = '';
+      });
       return;
     }
     var byDeath = d.ranked_by === 'cost per death averted';
-    var rows = d.ranked || [];
-    var best = rows[0];
-    var perDose = usd(d.costs.cost_per_dose, 2);
-    var considered = d.best_per_state.length;
-    if (!best) {
-      el('pmc-rank-answer').textContent =
-        'None of these states can be ranked; see why below.';
-    } else if (byDeath) {
-      el('pmc-rank-answer').innerHTML =
-        'At ' +
-        perDose +
-        ' a dose, <b>' +
-        d.states_clearing_bar +
-        ' of ' +
-        considered +
-        '</b> states clear GiveWell’s ' +
-        num(d.bar) +
-        '× bar with their best design. Best value: <b>' +
-        esc(best.state_design) +
-        '</b>, ' +
-        usd(best.cost_per_death_averted) +
-        ' per under-5 death averted, ' +
-        times(best.multiple_of_benchmark) +
-        ' GiveWell’s benchmark.';
-    } else {
-      el('pmc-rank-answer').innerHTML =
-        'At ' +
-        perDose +
-        ' a dose, best value: <b>' +
-        esc(best.state_design) +
-        '</b>, ' +
-        usd(best.cost_per_case_averted, 2) +
-        ' per case averted.';
-    }
-
-    var t = d.best_per_state_totals || {};
-    total.innerHTML = considered
-      ? '<div class="cap">If each of these states ran its own best design</div>' +
-        stat('States ranked', considered) +
-        (byDeath
-          ? stat('Clear the ' + num(d.bar) + '× bar', d.states_clearing_bar) +
-            stat(
-              'Deaths averted / yr',
-              '≈' + num(approx(t.deaths_averted_per_year, 3)),
-            )
-          : stat(
-              'Cases averted / yr',
-              '≈' + num(approx(t.cases_averted_per_year, 3)),
-            )) +
-        stat('Cost / yr', '≈' + usdShort(approx(t.spend_per_year, 3))) +
-        (byDeath && t.deaths_averted_per_year
-          ? stat(
-              'Blended per death',
-              usd(approx(t.spend_per_year / t.deaths_averted_per_year, 2)),
-            )
-          : '')
-      : '';
-    // Superseded by the tailored programme, which keeps to one age band and the bar.
-    total.style.display = 'none';
-
+    renderAnswer(d);
     renderByDesign(d, byDeath);
-    renderRecommendation(d);
+    renderStates(d);
+    el('pmc-budgets-panel').innerHTML = budgetTable(d);
+    renderPairs(d, byDeath);
+    renderCaveats(d);
+  }
 
-    el('pmc-rank-rows').innerHTML =
+  function names(list) {
+    if (list.length <= 1) return list.join('');
+    return list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1];
+  }
+
+  function kpi(label, value, sub, cls) {
+    return (
+      '<div class="pmc-kpi' +
+      (cls ? ' ' + cls : '') +
+      '"><div class="pmc-label">' +
+      label +
+      '</div><div class="v pmc-num">' +
+      value +
+      '</div>' +
+      (sub ? '<div class="s pmc-num">' + sub + '</div>' : '') +
+      '</div>'
+    );
+  }
+
+  function estimates(b) {
+    if (!b || !b.prevalence_scaled || !b.map) return '';
+    return (
+      'DHS-scaled ' +
+      times(b.prevalence_scaled.multiple_of_benchmark) +
+      ' · MAP ' +
+      times(b.map.multiple_of_benchmark)
+    );
+  }
+
+  // The answer: one schedule for the states picked (rank.recommend), as figures.
+  function renderAnswer(d) {
+    var r = d.recommendation;
+    var box = el('pmc-reco');
+    var picked = d.best_per_state.length + (d.excluded || []).length;
+    if (!r) {
+      box.innerHTML =
+        '<div class="pmc-schedule">—</div><div class="pmc-where"><span class="tag out">' +
+        (d.ranked_by === 'cost per death averted'
+          ? 'no single schedule runs in every state picked'
+          : 'no death figures loaded') +
+        '</span></div>';
+      return;
+    }
+    var keep = r.keep.slice().sort();
+    var where =
+      '<span>in <b>' +
+      keep.length +
+      ' of ' +
+      picked +
+      '</b> states</span>' +
+      (keep.length && keep.length <= 12
+        ? keep
+            .map(function (s) {
+              return '<span class="tag">' + esc(s) + '</span>';
+            })
+            .join('')
+        : '') +
+      (r.drop.length
+        ? '<span class="tag out" title="Below GiveWell’s bar with this schedule">left out: ' +
+          esc(names(r.drop)) +
+          '</span>'
+        : '') +
+      (r.unclear && r.unclear.length
+        ? '<span class="tag out" title="The model’s effect there is within its own noise">effect unclear: ' +
+          esc(
+            names(
+              r.unclear.map(function (u) {
+                return u.state;
+              }),
+            ),
+          ) +
+          '</span>'
+        : '');
+    var clears = keep.length && r.multiple_of_benchmark >= d.bar;
+    var vq = r.versus_quarterly;
+    box.innerHTML =
+      '<div class="pmc-schedule">' +
+      esc(r.label) +
+      '</div><div class="pmc-where">' +
+      where +
+      '</div><div class="pmc-kpis">' +
+      kpi(
+        '× GiveWell · bar ' + num(d.bar) + '×',
+        times(r.multiple_of_benchmark),
+        estimates(r.by_basis),
+        'hero' + (clears ? '' : ' below'),
+      ) +
+      kpi('Deaths averted / yr', num(r.deaths_averted_per_year)) +
+      kpi('Cost / yr', usdShort(r.spend_per_year)) +
+      kpi('Per death averted', usd(r.cost_per_death_averted)) +
+      (vq
+        ? kpi(
+            'Quarterly, same states',
+            times(vq.multiple_of_benchmark),
+            estimates(vq.by_basis),
+          )
+        : '') +
+      '</div>' +
+      optionsTable(r);
+  }
+
+  // The other ways to spend on these states, side by side with the answer.
+  function optionsTable(r) {
+    var rows = [];
+    var tl = r.tailored;
+    if (tl && tl.schedules_used > 1)
+      rows.push([
+        'Each state its own best schedule (' +
+          tl.schedules_used +
+          ' schedules)',
+        tl.deaths_averted_per_year,
+        tl.spend_per_year,
+        tl.multiple_of_benchmark,
+        estimates(tl.by_basis),
+      ]);
+    if (r.step_up)
+      rows.push([
+        'Add on top: ' + r.step_up.label,
+        r.step_up.extra_deaths_averted_per_year,
+        r.step_up.extra_spend_per_year,
+        r.step_up.multiple_of_benchmark,
+        '',
+      ]);
+    var y2 = r.second_year_only;
+    if (y2)
+      rows.push([
+        y2.label + ' (' + y2.keep.length + ' states)',
+        y2.deaths_averted_per_year,
+        y2.spend_per_year,
+        y2.multiple_of_benchmark,
+        '',
+      ]);
+    if (!rows.length) return '';
+    return (
+      '<table class="pmc-table" style="margin-top:16px"><thead><tr><th class="l">Other options</th>' +
+      '<th>Deaths averted / yr</th><th class="pmc-hide-sm">Cost / yr</th><th>&times; GiveWell</th>' +
+      '<th class="pmc-hide-sm pmc-est">Each estimate</th></tr></thead><tbody>' +
       rows
+        .map(function (x) {
+          return (
+            '<tr><td class="design">' +
+            esc(x[0]) +
+            '</td><td class="pmc-num">' +
+            num(x[1]) +
+            '</td><td class="pmc-num pmc-hide-sm">' +
+            usdShort(x[2]) +
+            '</td><td class="pmc-num">' +
+            times(x[3]) +
+            '</td><td class="pmc-num pmc-hide-sm pmc-est">' +
+            esc(x[4]) +
+            '</td></tr>'
+          );
+        })
+        .join('') +
+      '</tbody></table>'
+    );
+  }
+
+  // Each state under the answer's schedule, best first, with its own best.
+  function renderStates(d) {
+    var r = d.recommendation;
+    if (!r) {
+      el('pmc-states-panel').innerHTML = '';
+      return;
+    }
+    var own = {};
+    ((r.tailored && r.tailored.states) || []).forEach(function (s) {
+      own[s.state] = s;
+    });
+    el('pmc-states-panel').innerHTML =
+      '<table class="pmc-table"><thead><tr><th class="l">State</th><th class="l">Rounds</th>' +
+      '<th>&times; GiveWell</th><th class="l pmc-hide-sm">Its own best schedule</th></tr></thead><tbody>' +
+      r.states
+        .map(function (x) {
+          var o = own[x.state];
+          var same = !o || o.schedule === r.label;
+          return (
+            '<tr' +
+            (x.clears_bar && x.clear_effect !== false ? '' : ' class="dim"') +
+            '><td class="l" style="font-weight:500">' +
+            esc(x.state) +
+            '</td><td class="design">' +
+            esc(x.design_label) +
+            '</td><td class="pmc-num" style="white-space:nowrap">' +
+            (x.clear_effect === false
+              ? '<span class="pmc-muted">effect unclear</span>'
+              : times(x.multiple_of_benchmark) + barChip(x, d.bar)) +
+            '</td><td class="design pmc-hide-sm">' +
+            (same
+              ? '<span class="pmc-muted">same</span>'
+              : esc(o.schedule) + ' · ' + times(o.multiple_of_benchmark)) +
+            '</td></tr>'
+          );
+        })
+        .join('') +
+      '</tbody></table>';
+  }
+
+  function renderPairs(d, byDeath) {
+    var rows = d.ranked || [];
+    var notes = [];
+    if (d.excluded && d.excluded.length)
+      notes.push(
+        'Not ranked: ' +
+          d.excluded
+            .map(function (x) {
+              return x.state + ' (' + x.reason + ')';
+            })
+            .join(', '),
+      );
+    el('pmc-rank-rows').innerHTML =
+      (rows
         .map(function (p) {
           return (
             '<tr title="' +
             esc(p.fit_note || '') +
-            '">' +
-            '<td class="l pmc-num">' +
+            '"><td class="l pmc-num">' +
             p.rank +
-            '</td>' +
-            '<td class="l" style="font-weight:500">' +
+            '</td><td class="l" style="font-weight:500">' +
             esc(p.state) +
             '<div class="pmc-sm-only pmc-sub">' +
             esc(p.design_label) +
-            '</div></td>' +
-            '<td class="design pmc-hide-sm">' +
+            '</div></td><td class="design pmc-hide-sm">' +
             esc(p.design_label) +
             (p.kind === 'smc' ? ' <span class="pmc-chip smc">SMC</span>' : '') +
-            '</td>' +
-            '<td class="pmc-num pmc-hide-sm">' +
+            '</td><td class="pmc-num pmc-hide-sm">' +
             (byDeath
               ? num(p.deaths_averted_per_year)
               : num(p.cases_averted_per_year) + ' cases') +
-            '</td>' +
-            '<td class="pmc-num pmc-hide-sm">' +
+            '</td><td class="pmc-num pmc-hide-sm">' +
             usdShort(p.spend_per_year) +
-            '</td>' +
-            '<td class="pmc-num" style="font-weight:600">' +
+            '</td><td class="pmc-num" style="font-weight:600">' +
             (byDeath
               ? usd(p.cost_per_death_averted)
               : usd(p.cost_per_case_averted, 2) + ' / case') +
-            '</td>' +
-            '<td class="pmc-num" style="white-space:nowrap">' +
+            '</td><td class="pmc-num" style="white-space:nowrap">' +
             (byDeath
               ? times(p.multiple_of_benchmark) + barChip(p, d.bar)
               : '—') +
@@ -590,248 +743,27 @@
             '</tr>'
           );
         })
-        .join('') || '<tr><td class="l" colspan="9">Nothing to rank.</td></tr>';
-
-    var notes = [];
-    if (d.note) notes.push(d.note);
-    if (d.excluded && d.excluded.length)
-      notes.push(
-        'Not ranked: ' +
-          d.excluded
-            .map(function (x) {
-              return x.state + ' (' + x.reason + ')';
-            })
-            .join(', ') +
-          '.',
-      );
-    notes.push(d.costs_line);
-    var caveats = d.caveats || [];
-    el('pmc-rank-note').innerHTML =
+        .join('') ||
+        '<tr><td class="l" colspan="9"><span class="pmc-muted">nothing to rank</span></td></tr>') +
       notes
         .map(function (n) {
-          return esc(n);
-        })
-        .join('<br>') +
-      (caveats.length
-        ? '<details class="pmc-caveats"><summary>How these figures are made (' +
-          caveats.length +
-          ' notes)</summary><ul>' +
-          caveats
-            .map(function (c) {
-              return '<li>' + esc(c) + '</li>';
-            })
-            .join('') +
-          '</ul></details>'
-        : '');
-  }
-
-  function names(list) {
-    if (list.length <= 1) return list.join('');
-    return list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1];
-  }
-
-  // The answer: one programme approach for the states picked (rank.recommend),
-  // in words, with what to drop, what it buys over our quarterly base, and
-  // whether spending more is worth it at the margin.
-  function renderRecommendation(d) {
-    var r = d.recommendation;
-    var box = el('pmc-reco');
-    var picked = d.best_per_state.length + (d.excluded || []).length;
-    if (!r) {
-      box.innerHTML =
-        '<div class="pmc-label">Recommended programme</div><p class="lead">' +
-        (d.ranked_by === 'cost per death averted'
-          ? 'No single approach can run in every state picked (SMC needs seasonal rain everywhere). See the evidence below.'
-          : 'No mortality figures are loaded, so no programme can be recommended; the evidence below ranks by cost per case.') +
-        '</p>';
-      return;
-    }
-    var keep = r.keep.length;
-    var lead = keep
-      ? 'Run <b>' +
-        esc(r.label.toLowerCase()) +
-        '</b>, in <b>' +
-        keep +
-        ' of the ' +
-        picked +
-        '</b> states, each starting with its own rainy season. That averts about <b>' +
-        num(r.deaths_averted_per_year) +
-        '</b> under-5 deaths a year for <b>' +
-        usdShort(r.spend_per_year) +
-        '</b>: ' +
-        usd(r.cost_per_death_averted) +
-        ' per death, <b>' +
-        times(r.multiple_of_benchmark) +
-        '</b> GiveWell’s benchmark' +
-        (eachEstimate(r.by_basis)
-          ? ' (' + eachEstimate(r.by_basis) + ' on each estimate alone).'
-          : '.')
-      : 'Even the best approach, <b>' +
-        esc(r.label.toLowerCase()) +
-        '</b>, falls below GiveWell’s ' +
-        num(d.bar) +
-        '× bar in every state picked.';
-    var points = [];
-    if (r.drop.length && keep)
-      points.push(
-        'Leave out ' +
-          esc(names(r.drop)) +
-          ': below GiveWell’s ' +
-          num(d.bar) +
-          '× bar with this approach.',
-      );
-    if (r.unclear && r.unclear.length)
-      points.push(
-        'Not clear with this approach in ' +
-          esc(
-            names(
-              r.unclear.map(function (u) {
-                return u.state;
-              }),
-            ),
-          ) +
-          ' (the model’s effect there is within its own noise). ' +
-          r.unclear
-            .map(function (u) {
-              return u.best_design_label
-                ? esc(u.state) +
-                    '’s best clear design: ' +
-                    esc(u.best_design_label) +
-                    ' (' +
-                    times(u.best_multiple_of_benchmark) +
-                    (u.best_clears_bar ? ')' : ', below the bar)')
-                : esc(u.state) + ' has no design with a clear effect';
-            })
-            .join('; ') +
-          '.',
-      );
-    if (r.versus_quarterly)
-      points.push(
-        'Our proposal’s quarterly design gets ' +
-          times(r.versus_quarterly.multiple_of_benchmark) +
-          (eachEstimate(r.versus_quarterly.by_basis)
-            ? ' (' + eachEstimate(r.versus_quarterly.by_basis) + ')'
-            : '') +
-          ' in the same states; this averts ' +
-          num(r.versus_quarterly.deaths_per_dollar_ratio, 1) +
-          '× the deaths per dollar.',
-      );
-    if (r.step_up)
-      points.push(
-        'More money? <b>' +
-          esc(r.step_up.label) +
-          '</b> adds about ' +
-          num(r.step_up.extra_deaths_averted_per_year) +
-          ' deaths a year for ' +
-          usdShort(r.step_up.extra_spend_per_year) +
-          ' more: ' +
-          usd(r.step_up.cost_per_extra_death) +
-          ' per extra death, ' +
-          times(r.step_up.multiple_of_benchmark) +
-          (r.step_up.clears_bar
-            ? ', still above the bar.'
-            : ', below the bar, so not worth it.'),
-      );
-    var tl = r.tailored;
-    if (tl && tl.schedules_used > 1)
-      points.push(
-        'Or let the schedule vary by state: <b>' +
-          tl.schedules_used +
-          ' schedules</b> across ' +
-          tl.states.length +
-          ' states avert about ' +
-          num(tl.deaths_averted_per_year) +
-          ' deaths a year for ' +
-          usdShort(tl.spend_per_year) +
-          ', <b>' +
-          times(tl.multiple_of_benchmark) +
-          '</b>' +
-          (eachEstimate(tl.by_basis)
-            ? ' (' + eachEstimate(tl.by_basis) + ')'
-            : '') +
-          '. One schedule is what a trial arm or a single protocol needs; see “Each state’s own best schedule” below.',
-      );
-    else if (tl)
-      points.push(
-        'Letting the schedule vary by state would not change it: this schedule is the best one in every state funded.',
-      );
-    var y2 = r.second_year_only;
-    if (y2)
-      points.push(
-        'Aimed at 12–24-month-olds only, each dollar does a little more: <b>' +
-          esc(y2.label.toLowerCase()) +
-          '</b> in ' +
-          y2.keep.length +
-          ' states gets ' +
-          times(y2.multiple_of_benchmark) +
-          ', ' +
-          num(y2.deaths_averted_per_year) +
-          ' deaths for ' +
-          usdShort(y2.spend_per_year) +
-          '. Babies under one would then rely on clinic-based PMC.',
-      );
-    var rows = r.states
-      .map(function (x) {
-        return (
-          '<tr' +
-          (x.clears_bar && x.clear_effect !== false
-            ? ''
-            : ' class="unranked"') +
-          '><td class="l">' +
-          esc(x.state) +
-          '</td><td class="design">' +
-          esc(x.design_label) +
-          '</td><td class="pmc-num">' +
-          (x.clear_effect === false
-            ? '<span class="pmc-muted">effect unclear</span>'
-            : times(x.multiple_of_benchmark) + barChip(x, d.bar)) +
-          '</td></tr>'
-        );
-      })
-      .join('');
-    box.innerHTML =
-      '<div class="pmc-label">Recommended programme for these ' +
-      picked +
-      ' states</div><p class="lead">' +
-      lead +
-      '</p>' +
-      (points.length
-        ? '<ul>' +
-          points
-            .map(function (x) {
-              return '<li>' + x + '</li>';
-            })
-            .join('') +
-          '</ul>'
-        : '') +
-      budgetTable(d) +
-      tailoredTable(tl) +
-      '<details><summary>When each state runs it</summary><table class="pmc-table">' +
-      '<thead><tr><th class="l">State</th><th class="l">Rounds</th><th>&times; GiveWell</th></tr></thead><tbody>' +
-      rows +
-      '</tbody></table></details>';
-  }
-
-  function tailoredTable(tl) {
-    if (!tl || tl.schedules_used < 2) return '';
-    return (
-      '<details><summary>Each state’s own best schedule</summary><table class="pmc-table"><thead><tr>' +
-      '<th class="l">State</th><th class="l">Schedule</th><th>&times; GiveWell</th></tr></thead><tbody>' +
-      tl.states
-        .map(function (s) {
           return (
-            '<tr><td class="l">' +
-            esc(s.state) +
-            '</td><td class="design">' +
-            esc(s.schedule) +
-            '</td><td class="pmc-num">' +
-            times(s.multiple_of_benchmark) +
-            '</td></tr>'
+            '<tr class="dim"><td class="l" colspan="9">' + esc(n) + '</td></tr>'
           );
         })
-        .join('') +
-      '</tbody></table></details>'
-    );
+        .join('');
+  }
+
+  // The ranking's own method notes, in the folded "How the numbers are made".
+  function renderCaveats(d) {
+    var list = el('pmc-caveats');
+    if (!list || !(d.caveats || []).length) return;
+    list.innerHTML = (d.caveats || [])
+      .concat(d.costs_line ? [d.costs_line] : [])
+      .map(function (c) {
+        return '<li>' + esc(c) + '</li>';
+      })
+      .join('');
   }
 
   // What a fixed annual budget buys: one schedule and the whole states it
@@ -840,12 +772,12 @@
     var plans = (d.budget_plans || []).filter(function (p) {
       return p.design_code;
     });
-    if (!plans.length) return '';
+    if (!plans.length)
+      return '<p class="pmc-sub" style="padding:10px 0">No budget plans for these inputs.</p>';
     return (
-      '<div class="pmc-budgets"><div class="pmc-label">With a fixed budget</div>' +
       '<table class="pmc-table"><thead><tr><th class="l">Budget a year</th><th class="l">Schedule and states</th>' +
       '<th>Deaths / yr</th><th class="pmc-hide-sm">Spend</th><th>&times; GiveWell</th>' +
-      '<th class="pmc-hide-sm pmc-est">DHS-scaled alone</th><th class="pmc-hide-sm pmc-est">MAP alone</th></tr></thead><tbody>' +
+      '<th class="pmc-hide-sm pmc-est">DHS-scaled</th><th class="pmc-hide-sm pmc-est">MAP</th></tr></thead><tbody>' +
       plans
         .map(function (p) {
           // Every state worth funding is funded and money is left over.
@@ -857,16 +789,14 @@
             usdShort(p.budget).replace('.00M', 'M') +
             '</b></td><td class="l design">' +
             esc(p.label) +
-            ' in ' +
+            ' · ' +
             p.states.length +
             (p.states.length === 1 ? ' state' : ' states') +
-            '<div class="states">' +
-            esc(names(p.states)) +
             (under
-              ? '. Only ' +
-                usdShort(p.spend_per_year) +
-                ' is worth spending; more states would fall below the bar.'
+              ? ' <span class="pmc-chip below" title="More states would fall below the bar">rest unspent</span>'
               : '') +
+            '<div class="pmc-sub">' +
+            esc(names(p.states)) +
             '</div></td><td class="pmc-num">' +
             num(p.deaths_averted_per_year) +
             '</td><td class="pmc-num pmc-hide-sm">' +
@@ -879,27 +809,27 @@
           );
         })
         .join('') +
-      '</tbody></table></div>'
+      '</tbody></table>'
     );
   }
 
-  // Each schedule pooled across the states picked: the schedule half of the
-  // page's question, and where the proposal's own design shows up even when
-  // it is too weak to reach the top pairs.
+  // Each schedule pooled across the states picked, the answer's row marked.
   function renderByDesign(d, byDeath) {
     var rows = d.by_design || [];
-    el('pmc-design-card').classList.toggle('hidden', !rows.length);
+    var on = d.recommendation && d.recommendation.design_code;
     el('pmc-design-rows').innerHTML = rows
       .map(function (r) {
         var weak = r.states_no_effect
-          ? '<div class="pmc-sub">no clear effect on its own in ' +
+          ? '<div class="pmc-sub">effect unclear in ' +
             r.states_no_effect +
             ' of ' +
             r.states +
             ' states</div>'
           : '';
         return (
-          '<tr><td class="l" style="font-weight:500">' +
+          '<tr' +
+          (r.design_code === on ? ' class="on"' : '') +
+          '><td class="l" style="font-weight:500">' +
           esc(r.label) +
           (r.kind === 'smc' ? ' <span class="pmc-chip smc">SMC</span>' : '') +
           weak +
@@ -925,14 +855,37 @@
       .join('');
   }
 
-  function stat(k, v) {
-    return (
-      '<div><div class="k">' +
-      k +
-      '</div><div class="v pmc-num">' +
-      v +
-      '</div></div>'
-    );
+  /* ---- tabs, and the agent's explanation ---------------------------------- */
+
+  document.querySelectorAll('.pmc-tab').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      var name = tab.getAttribute('data-tab');
+      document.querySelectorAll('.pmc-tab').forEach(function (t) {
+        t.setAttribute('aria-selected', String(t === tab));
+      });
+      document.querySelectorAll('.pmc-panel').forEach(function (p) {
+        p.classList.toggle('hidden', p.getAttribute('data-panel') !== name);
+      });
+    });
+  });
+
+  // The words come from the agent, which reads the same inputs from the page
+  // state and the same figures from targeting_pmc_rank. A panel that cannot be
+  // asked yet is opened, for the visitor to ask.
+  var EXPLAIN =
+    'Explain the answer on this page: the schedule, the states, and why, using the figures shown.';
+  var explainBtn = el('pmc-explain');
+  if (explainBtn) {
+    document.addEventListener('canopy:ready', function () {
+      explainBtn.classList.remove('hidden');
+    });
+    if (window.canopyHost) explainBtn.classList.remove('hidden');
+    explainBtn.addEventListener('click', function () {
+      var w = window.canopyHost && window.canopyHost.widget;
+      if (!w) return;
+      if (typeof w.ask === 'function') w.ask(EXPLAIN);
+      else if (typeof w.open === 'function') w.open();
+    });
   }
 
   /* ---- events ------------------------------------------------------------ */
@@ -943,18 +896,13 @@
       load();
     }
   }
-  el('pmc-schedules').addEventListener('click', function (e) {
-    var row = e.target.closest('.pmc-sched[data-code]');
-    if (row) choose(row.getAttribute('data-code'));
-  });
-  el('pmc-schedules').addEventListener('keydown', function (e) {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    var row = e.target.closest('.pmc-sched[data-code]');
-    if (row) {
-      e.preventDefault();
-      choose(row.getAttribute('data-code'));
-    }
-  });
+  var schedulesEl = el('pmc-schedules');
+  if (schedulesEl) {
+    schedulesEl.addEventListener('click', function (e) {
+      var row = e.target.closest('.pmc-sched[data-code]');
+      if (row) choose(row.getAttribute('data-code'));
+    });
+  }
 
   function bindPrice(id, key, scale) {
     var input = el(id);
@@ -1279,33 +1227,7 @@
     liveRows = liveRows.slice(-3);
     renderHow();
     renderLiveResults();
-    liveMsg(
-      stateName +
-        ': ' +
-        (val
-          ? '≈' +
-            num(val.deaths_averted_per_year) +
-            ' under-5 deaths averted a year at ' +
-            usd(val.cost_per_death_averted) +
-            ' each, ' +
-            times(val.multiple_of_benchmark) +
-            ' GiveWell’s benchmark (' +
-            (val.clears_bar ? 'clears' : 'below') +
-            ' the ' +
-            num(val.bar) +
-            '× bar)'
-          : pct(eff.averted_pct) +
-            ' of cases averted' +
-            (proj
-              ? ', ≈' +
-                num(proj.cases_averted_per_year) +
-                ' cases a year at ' +
-                usd(proj.cost_per_case_averted, 2) +
-                ' each'
-              : ', too uncertain to cost')) +
-        ' · ' +
-        (res.label || 'illustrative · live model run'),
-    );
+    liveMsg(stateName + ': done · ' + (res.label || 'live model run'));
   }
 
   // The runs so far, each beside its state's best ranked design (when that

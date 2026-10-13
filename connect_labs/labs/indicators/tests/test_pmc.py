@@ -181,30 +181,31 @@ class TestThePage:
         assert "Which PMC schedule, and where?" in body
         assert "Illustrative. One uncalibrated setting" in body
         assert "indicators/pmc/pmc.js" in body
-        # Inputs, then the answer, then the evidence; the own-schedule run and one-setting comparison fold below.
+        # Inputs, then the answer and its tables; the method and a live run fold below.
         assert (
-            body.index("Your inputs")
-            < body.index("Fixed in the model")
-            < body.index("The answer for these inputs")
+            body.index('aria-label="Inputs"')
             < body.index('id="pmc-reco"')
-            < body.index("The evidence")
+            < body.index('data-tab="schedules"')
+            < body.index("How the numbers are made")
+            < body.index("Run IDM's model for a schedule of your own")
         )
-        assert body.index("The evidence") < body.index("Advanced: test a schedule of your own") < body.index(">How<")
         assert '<script id="pmc-grid-states" type="application/json">[]</script>' in body
 
-    def test_the_inputs_say_what_the_model_holds_fixed(self, client_in, nigeria, settings):
+    def test_the_page_states_its_method_once_folded_and_writes_no_answer_in_words(self, client_in, nigeria, settings):
         settings.PMC_STATE_GRID_PATH = "/nonexistent/pmc_state_grid.json"
         body = client_in.get(reverse("targeting:pmc")).content.decode()
-        # The four inputs a visitor changes, each labelled; the rest stated, not hidden in a tooltip.
+        # The three inputs a visitor changes, each labelled.
         for label in ("States", "Price", "Children"):
             assert f'<div class="pmc-in-k">{label}' in body
-        assert "85% of the children reached each round" in body
-        # Deaths are not a choice: decisions use the lower estimate in each state, and both are shown.
+        # What the model holds fixed is stated once, in the folded method, not over the inputs.
+        method = body[body.index("How the numbers are made") :]
+        assert "85% of the children reached each round" in method
+        assert "lower of the two in each state" in method
+        assert "worth 113 units of value" in method and "0.003 units a dollar" in method
+        assert "6&times; bar is about $6,300 per death averted" in method
+        # Deaths are not a choice, and the answer is figures: no sentences of advice on the page.
         assert 'data-basis="' not in body
-        assert "lower of the two in each state" in body
-        assert "there is nothing to run" in body
-        assert "worth 113 units of value" in body and "0.003 units a dollar" in body
-        assert "6&times; bar is about $6,300 per death averted" in body
+        assert "there is nothing to run" not in body and "Our proposal:" not in body
 
     def test_with_the_grid_the_picker_lists_its_states_and_marks_the_year_round_ones(
         self, client_in, nigeria, settings
