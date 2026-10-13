@@ -818,14 +818,17 @@ their stored Connect login (as `workflow_sandbox_scan --as-user` does), and reco
 digest of that code (`sandbox.render_code_digest`). Under `all` a definition stays out only
 if a row exists for its id, on the owner it names (the scan's owner: opportunity, else
 program, else organization), and the code it is about to draw has that digest: any edit
-voids it, fail closed. A page is never exempt, `?sandbox=1` still draws an exempt workflow
+voids it, fail closed. A page is never exempt, edit mode is never exempt (the editor draws
+code no row hashed, the AI chat's included), `?sandbox=1` still draws an exempt workflow
 sandboxed, `opt_in` is unchanged by a row, and a lookup that fails is no exemption. Staff
 see the reason under the workflow. The scan reports an exempt copy as "kept out (exempt:
 <reason>)", and a recorded copy whose code or owner changed as void, so breaking. Every add
 and remove is in the audit trail (`resource_type=sandbox_exemption`). First used for the
 2026-10-13 scan's eight edited MBW copies, the outcome summary's pipeline controls and the
 draft dashboard's HTML fetch; the one copy that calls an endpoint that no longer exists is
-left as it is (already broken unsandboxed).
+left as it is (already broken unsandboxed). Only the render code is bound, not the
+definition's config: before recording a copy, check its code does not build same-origin
+addresses from config an author could change.
 
 ### Review fixes (before merge)
 

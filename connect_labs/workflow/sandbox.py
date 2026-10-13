@@ -247,6 +247,10 @@ def workflow_wants_sandbox(definition, request=None, mode: str | None = None, re
     if mode == "all":
         if request is not None and request.GET.get("sandbox") == "1":
             return True
+        # Edit mode draws code typed in the editor (or returned by the AI chat) that no
+        # exemption hashed: an exemption covers only the code it recorded, so never edit mode.
+        if request is not None and request.GET.get("edit") == "true":
+            return True
         return sandbox_exemption(definition, render_code) is None
     if mode == "off":
         return False

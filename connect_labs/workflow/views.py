@@ -1169,9 +1169,10 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             from connect_labs.workflow.render_source import resolve_render_code
             from connect_labs.workflow.sandbox import should_sandbox
 
-            # The code this render draws (resolved below as before): the sandbox's only
-            # exemption, a pinned deprecated copy under `all`, holds only for code labs
-            # shipped (sandbox.deprecated_exempt).
+            # The code this render draws (resolved below as before): the sandbox's
+            # exemptions under `all` -- a pinned deprecated copy, or a recorded
+            # SandboxExemption -- hold only for the exact code they name
+            # (sandbox.sandbox_exemption), and never in edit mode.
             resolved_render = resolve_render_code(data_access, definition)
             sandboxed = should_sandbox(
                 definition, page_mode=self.page_mode, request=self.request, render_code=resolved_render[0]
