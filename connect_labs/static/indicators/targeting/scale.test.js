@@ -329,3 +329,68 @@ describe('the column head over the value', () => {
     expect(header()).toBe('stunting');
   });
 });
+
+describe('the line above the totals', () => {
+  // "Total population 150M" for Nigeria read as a wrong census. It was right:
+  // the default threshold keeps 28 of 37 states. The line says so.
+  function load(S) {
+    globalThis.window = globalThis.window || globalThis;
+    globalThis.window.Targeting = {
+      util: {
+        esc: (x) => x,
+        fmt: (n) => String(n),
+        plural: (n, one) => (n === 1 ? one : one + 's'),
+      },
+      state: { get: () => S },
+    };
+    const fs = require('fs');
+    // eslint-disable-next-line no-eval
+    eval(fs.readFileSync(new URL('./table.js', import.meta.url), 'utf8'));
+    return globalThis.window.Targeting.table.renderTotalsScope;
+  }
+  function render(S, data) {
+    // No DOM in this suite: the one element it writes is stood in for.
+    const el = { innerHTML: '' };
+    globalThis.document = {
+      getElementById: (id) => (id === 'tg-totals-scope' ? el : null),
+    };
+    load(S)(data);
+    delete globalThis.document;
+    return el.innerHTML.replace(/<[^>]+>/g, '');
+  }
+  const u5 = {
+    indicator: 'u5mr',
+    indicatorMeta: { u5mr: { lower_is_worse: false } },
+  };
+
+  it('names the areas, the threshold, and that the country is only partly counted', () => {
+    const text = render(u5, {
+      label: 'Under-5 mortality rate',
+      unit: 'per 1,000 live births',
+      threshold: 80,
+      counts: { units: 28 },
+      countries_partly_above: ['Nigeria'],
+      projected_to: null,
+    });
+    expect(text).toBe(
+      'Totals for the 28 areas where Under-5 mortality rate is above 80 per 1,000 live births' +
+        ' — only part of Nigeria · as published, not projected to a delivery year',
+    );
+  });
+
+  it('says below for a coverage measure, and names the year counts were carried to', () => {
+    const text = render(
+      { indicator: 'ors', indicatorMeta: { ors: { lower_is_worse: true } } },
+      {
+        label: 'ORS coverage',
+        unit: '%',
+        threshold: 50,
+        counts: { units: 1 },
+        projected_to: 2026,
+      },
+    );
+    expect(text).toBe(
+      'Totals for the 1 area where ORS coverage is below 50 % · carried to 2026',
+    );
+  });
+});
