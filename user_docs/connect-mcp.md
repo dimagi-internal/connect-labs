@@ -135,6 +135,7 @@ The `mcp/no_user_visit/` address enforces a strict set of rules to prevent real 
 - **Generating from an old mirror-mode profile.** Profiles saved in the old mirror mode (before case timelines were introduced) hold real cases lightly perturbed, so their data never counts as "generated". Profiling with `case_timelines=true` *is* allowed: it models each worker's caseload and each case's timeline and saves only newly sampled cases, which are generated — not copies of real data. Re-profile any old mirror-mode profiles to use this safer approach.
 - **Writing synthetic data onto a real opportunity, wiping a shared demo environment, or reading or writing a profile bundle outside Drive.**
 - **Using the SQL explorer (`explorer_describe`, `explorer_query`).** These tools read live visit data and are not available on the restricted address.
+- **Starting a run on a page-type workflow.** Pages are not run through MCP — open them in the browser instead.
 
 The restricted address offers a simpler set of synthetic tools: `synthetic_clone_opp` (plus status checking, fidelity scoring, demo environments, and visibility) rather than the full set of step-by-step tools available on the full-access address.
 
@@ -191,6 +192,20 @@ This means you can ask Claude questions like "show me hospital vs home births br
 
 ---
 
+## Pages in Workflows
+
+Some workflows are **pages** — a blank canvas for charts, maps, or custom content — rather than a standard run-based report. Pages behave differently from ordinary workflows in a few ways worth knowing.
+
+### Editing a page
+
+Anyone who can change the Settings of the organisation, programme, or opportunity that owns the page can edit it. In the workflow list, those people see an **Edit page** link next to the workflow. People who can view the page but cannot change its Settings do not see the link, and Labs will refuse their edits even if they navigate directly to the editor's address.
+
+### Opening a page vs. creating a run
+
+In the workflow list, a page workflow shows **Open page** rather than **Create Run**. This applies to all pages, including any workflow created from the blank page template before pages were formally introduced. The MCP tools will also refuse to start a run on a page-type workflow — open it in your browser instead.
+
+---
+
 ## PMC Page
 
 The PMC page helps you identify the most cost-effective programme design for a set of states. You pick the states; the page tells you the programme.
@@ -220,20 +235,4 @@ The numbers are intentionally conservative. For example, for the 17 year-round s
 | | Lower of the two (decides) | DHS-scaled alone | MAP alone |
 |---|---|---|---|
 | Proposal's quarterly design | 4.9× | 6.3× | 9.1× |
-| Recommended: 8 monthly rounds from the rains (16 states) | 11.6× | 14.7× | 20.7× |
-
-### One schedule for a trial arm, or a schedule per state
-
-Next to the single recommended schedule — which is what a trial arm or a single protocol needs — the page also shows what would be possible if each state ran its own best schedule. The **"Each state's own best schedule"** section lists the best schedule for every included state individually.
-
-### Nothing to configure before reading results
-
-A line under the inputs tells you what the answer is based on (states, price per dose, children per household) and notes that the page recalculates automatically whenever you change an input. There is nothing to run.
-
-### Unclear results
-
-For some states, the model cannot confidently determine whether the recommended approach has a meaningful effect — the result falls within the model's noise. When this happens, the page does **not** count that state as passing. Instead, it tells you the result is unclear for that state and names the best design that does produce a clear result there.
-
-### Testing your own schedule
-
-If you want to explore a schedule that differs from the recommendation,
+| Recommended: 8 monthly rounds from the rains (16 states) |
