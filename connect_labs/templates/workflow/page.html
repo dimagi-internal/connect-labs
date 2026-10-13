@@ -28,7 +28,7 @@ out -- the scope's Settings (for whoever can change them) and the rest of labs.
     <span class="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1 whitespace-nowrap">
       {% if page_make_home %}
       <form method="post" action="{{ page_manager_url }}" class="inline">{% csrf_token %}
-        <input type="hidden" name="workflow" value="{{ page_make_home.workflow }}"><input type="hidden" name="owner" value="{{ page_make_home.owner }}"><input type="hidden" name="label" value="{{ definition.name }}"><input type="hidden" name="next" value="{{ request.path }}">
+        <input type="hidden" name="workflow" value="{{ page_make_home.workflow }}"><input type="hidden" name="owner" value="{{ page_make_home.owner }}"><input type="hidden" name="label" value="{{ definition.name }}"><input type="hidden" name="return_to" value="home">
         <button name="action" value="make_home" data-testid="labs-page-make-home" class="text-brand-indigo hover:underline">Make this the home page</button>
       </form>
       {% endif %}

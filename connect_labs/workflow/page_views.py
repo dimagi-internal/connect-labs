@@ -25,7 +25,6 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import Http404, HttpResponseBadRequest, HttpResponseRedirect
 from django.shortcuts import render
-from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.generic import TemplateView, View
 
 from connect_labs.labs.access.scopes import Caller
@@ -328,13 +327,12 @@ class PagesView(LoginRequiredMixin, View):
                 page_manager.set_home(request, scope, None, None)
                 messages.success(request, "Home page cleared.")
             else:
-                return HttpResponseBadRequest(f"unknown action {action!r}")
+                return HttpResponseBadRequest("unknown action")
         except service.ConfigError as exc:
             messages.error(request, str(exc)[:1].upper() + str(exc)[1:])
-        target = request.POST.get("next") or here
-        if not url_has_allowed_host_and_scheme(target, allowed_hosts={request.get_host()}, require_https=False):
-            target = here
-        return HttpResponseRedirect(target)
+        # From a page's "Make this the home page": the scope's own address, which now opens on it.
+        # Never a URL from the form.
+        return HttpResponseRedirect(page_url(scope) if request.POST.get("return_to") == "home" else here)
 
 
 def _settings_url(scope: Scope) -> str:

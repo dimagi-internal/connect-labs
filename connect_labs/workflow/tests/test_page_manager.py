@@ -185,13 +185,23 @@ def test_make_home_names_only_the_scopes_own_owners(pages):
     assert not service.get("labs", ACME, SYSTEM)["data"].get("home")
 
 
-def test_make_home_from_a_page_returns_to_that_page_but_never_off_site(pages):
-    ok = _view(_request("post", data={"action": "make_home", "workflow": "47", "owner": "program:25",
-                                      "next": "/labs/p/programme/25/home/"}))  # fmt: skip
-    off = _view(_request("post", data={"action": "make_home", "workflow": "47", "owner": "program:25",
-                                       "next": "https://elsewhere.example/"}))  # fmt: skip
+def test_make_home_from_a_page_lands_on_the_scopes_address_never_a_url_from_the_form(pages):
+    from_page = _view(
+        _request("post", data={"action": "make_home", "workflow": "47", "owner": "program:25", "return_to": "home"})
+    )
+    off = _view(
+        _request(
+            "post",
+            data={
+                "action": "make_home",
+                "workflow": "47",
+                "owner": "program:25",
+                "next": "https://elsewhere.example/",
+            },
+        )
+    )
 
-    assert ok["Location"] == "/labs/p/programme/25/home/"
+    assert from_page["Location"] == "/labs/p/org/acme/"
     assert off["Location"] == "/labs/p/org/acme/pages/"
 
 
