@@ -99,7 +99,7 @@ operations. Dimagi plays no part in either; its people see them read-only, and
 platform support (Django staff) can act for them. `org_procurement.py` says why
 each was chosen:
 
-- **`oes`**: Operation End Starvation as a *pooled buyer*. It tenders RUTF to
+- **`oes`**: Operation End Starvation as a _pooled buyer_. It tenders RUTF to
   producers, compares landed cost, awards and orders as buyer of record, and
   delivers into the store its implementers draw from. This is the
   `clone_upstream` chain, bought by its running organisation.
