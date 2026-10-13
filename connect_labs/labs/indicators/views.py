@@ -884,8 +884,10 @@ class CoverageView(OpenLocallyMixin, View):
         )
 
 
-#: What the PMC page tells the agent the visitor is looking at.
-PMC_PANEL_FILTER_KEYS = ("schedule", "states", "cost_per_visit", "platform_fee", "dose_rate", "deaths_basis", "ages")
+#: What the PMC page tells the agent the visitor is looking at: the inputs of the
+#: ranking it shows. Not `schedule`, which picks a row of the one-setting
+#: comparison the page no longer shows; passed on, it sent the agent to describe it.
+PMC_PANEL_FILTER_KEYS = ("states", "cost_per_visit", "platform_fee", "dose_rate", "deaths_basis", "ages")
 
 
 def _pmc_costs(request) -> dict:
@@ -943,7 +945,7 @@ class PmcView(OpenLocallyMixin, TemplateView):
             ctx["canopy_panel"] = panel_context(
                 self.request,
                 resource="labs-targeting://pmc",
-                backing_tool="targeting_pmc_schedules",
+                backing_tool="targeting_pmc_rank",
                 filters={"iso": pmc.ISO}
                 | {k: v for k, v in self.request.GET.items() if k in PMC_PANEL_FILTER_KEYS and v},
                 path=self.request.path,

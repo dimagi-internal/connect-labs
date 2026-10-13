@@ -293,11 +293,16 @@ class TestThePage:
         settings.CANOPY_CLIENT_ID = f"{base}/canopy/oauth/client.json"
         client.force_login(django_user_model.objects.create_user(username="pm2", password="x"))
 
-        body = client.get(reverse("targeting:pmc"), {"schedule": "connect_quarterly_3_24"}).content.decode()
+        body = client.get(
+            reverse("targeting:pmc"), {"schedule": "connect_quarterly_3_24", "states": "Benue"}
+        ).content.decode()
 
         assert "labs-targeting://pmc" in body
-        assert "targeting_pmc_schedules" in body
-        assert "connect_quarterly_3_24" in body
+        # The agent reads the ranking the page shows, at the visitor's inputs...
+        assert "targeting_pmc_rank" in body and "targeting_pmc_schedules" not in body
+        assert "Benue" in body
+        # ...and not the one-setting comparison's schedule, which the page no longer shows.
+        assert "connect_quarterly_3_24" not in body
 
     def test_the_page_may_use_the_targeting_tools(self):
         assert canopy.PAGE_SCOPES["targeting:pmc"] == ("targeting:read",)
