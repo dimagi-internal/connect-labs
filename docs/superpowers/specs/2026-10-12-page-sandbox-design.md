@@ -437,9 +437,31 @@ nobody has checked. So `LABS_WORKFLOW_SANDBOX` (default `opt_in`):
   not following a checked template and not opting in: under `opt_in` the frame protects the
   checked templates and their followers, and `all` is what protects viewers from any author.
 - **Next: `all`**, after a labs deploy, a live check of the priority templates there, and a
-  scan of live copies (`workflow_list` + `workflow_get`, grep their render code for
-  `window.location =`, `window.confirm(` and fetches to routes the table refuses). Not done
-  here: it needs the deploy.
+  scan of live copies with `workflow_sandbox_scan` (below). Not done here: it needs the
+  deploy.
+
+**The scan of live copies: `workflow_sandbox_scan`** (`workflow/management/commands/`,
+read-only). It resolves every definition's EFFECTIVE render code (stored copy, followed
+template, or a template workflow's published version) and checks it for what the frame
+does not give it -- navigations, `top`/`parent`, `confirm`/`prompt`, XHR, `EventSource`,
+`import()`, real form submits, jQuery, and every `fetch` to a labs path the route table
+refuses (checked against `workflow/sandbox_routes.py`, a Python mirror of `routes.ts` that a
+test pins to the TypeScript, so the two cannot drift), plus what only changes (`alert`,
+storage, `document.cookie`). Each finding is `breaks`, `changes` or `info`; a fallback a few
+lines after its guard (`actions.navigate ? ... : window.location.href = url`) is `info`. Per
+definition it says whether it is sandboxed now and would be under `all`. Output is ids,
+names, scopes, pattern ids and line numbers: never code. Run it on prod with
+`gh workflow run run-labs-command.yml --repo dimagi-internal/connect-labs --ref main --field
+command="workflow_sandbox_scan --all-users"` (output in the run's log; `--json`,
+`--fix-suggestions`, `--min-severity info` also take). **Coverage, stated plainly:** with no
+flags it covers every labs-local (synthetic) definition of every owner and every deployed
+seed template. Real-opportunity definitions live on production Connect, readable only per
+scope by a member, with no cross-owner listing; `--as-user USERNAME` / `--all-users` read
+them with stored Connect tokens across each user's org tree, and anything no scanned user
+belongs to is still not covered (the report counts scopes read, refused and failed). On the
+seed templates (2026-10-13) the only `breaks` is the deprecated `mbw_monitoring` (its own
+`/custom_analysis/` endpoints, `EventSource` with no fallback, `location.reload`); every
+checked template is clean of `breaks`.
 
 ### Review fixes (phase 2, before merge)
 
@@ -524,7 +546,8 @@ their followers and every new instance run in the frame once this is deployed. L
 an author-written list cannot widen that); it needs the two reconciled.
 
 **Still to do before `all`:** a labs deploy and a live check there (Jonathan's session, the
-priority templates with real data); a scan of live COPIES (own render code) for
-`window.location =`, `window.confirm(` and fetches the table refuses -- those stay out until
-they opt in; then `LABS_WORKFLOW_SANDBOX=all`. Follow-ups: bind cross-workflow reads to the
+priority templates with real data); a scan of live COPIES (own render code) with
+`workflow_sandbox_scan --all-users` (Rollout, above) -- its `breaks` rows are what stays out
+until fixed or opted in, and its coverage line says what it could not read; then
+`LABS_WORKFLOW_SANDBOX=all`. Follow-ups: bind cross-workflow reads to the
 definitions a workflow declares; declared actions on pages (a scope instead of a run).
