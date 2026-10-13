@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("labs", "0026_labsorg_labs_only"),
-        ("supply_chain", "0053_drop_supply_workflow_view"),
+        ("supply_chain", "0054_clone_top_up_daily"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

@@ -11,7 +11,7 @@ later is not silently left out. Reversing deletes only the rows this created.
 
 from django.db import migrations
 
-NOTE = "Declared by migration 0055: held supply data before running organisations existed (#2458)."
+NOTE = "Declared by migration 0056: held supply data before running organisations existed (#2458)."
 
 
 def declare(apps, schema_editor):
@@ -49,6 +49,6 @@ def undeclare(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-    dependencies = [("supply_chain", "0054_programme_runner")]
+    dependencies = [("supply_chain", "0055_programme_runner")]
 
     operations = [migrations.RunPython(declare, undeclare, hints={"run_on_secondary": False})]
