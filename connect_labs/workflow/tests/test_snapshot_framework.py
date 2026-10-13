@@ -656,10 +656,15 @@ class TestTheSnapshotShapeTheRunnerActuallyReads:
 
     RUNNER = "connect_labs/static/js/workflow-runner.tsx"
 
+    #: Where the runner's `view` is built since the sandbox (phase 2) shares it with
+    #: the sandboxed frame: one implementation, read by both.
+    RUN_VIEW = "components/workflow/runView.ts"
+
     def test_the_runner_still_reads_state_off_the_snapshot(self):
         from pathlib import Path
 
-        src = Path(self.RUNNER).read_text()
+        assert "buildRunView" in Path(self.RUNNER).read_text(), "the runner no longer builds view from runView.ts"
+        src = Path(self.RUN_VIEW).read_text()
         assert "snapshot.state" in src, (
             "the runner no longer derives view.state from the stored snapshot — "
             "this contract moved, and wrap_for_runner must move with it"

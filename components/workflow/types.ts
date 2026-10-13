@@ -750,6 +750,14 @@ export interface ActionHandlers {
   /** Put text on the clipboard, on a click. */
   copyText?(text: string): Promise<void>;
   /**
+   * Open a labs address (what render code used to do with `window.location`).
+   * In the sandbox the host checks where it leads first, and asks when the
+   * person did not just click.
+   */
+  navigate?(url: string, options?: { newTab?: boolean }): Promise<unknown>;
+  /** Reload the page (a run's saved result, a finished job). */
+  reload?(): Promise<unknown>;
+  /**
    * Run one of this workflow's declared actions (`view.workflowActions`) for some
    * workers -- e.g. "Initiate AI coach". The runner previews it, shows the person
    * exactly what will happen, and runs it only on their confirm. Resolves with the

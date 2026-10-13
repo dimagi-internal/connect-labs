@@ -113,7 +113,7 @@ def _assert_sandboxed(response, origin=HERE):
     body = response.content.decode()
     assert response.status_code == 200, body[:500]
     assert response["Content-Security-Policy"].startswith(f"frame-src {origin}/labs/sandbox/render/")
-    assert f'"sandbox": {{"src": "/labs/sandbox/render/", "origin": "{origin}"}}' in body
+    assert f'"sandbox": {{"src": "/labs/sandbox/render/", "origin": "{origin}", "mode": "page"}}' in body
     # Host mode: the runner bundle, and none of the eval path (Babel, render libraries).
     assert "workflow-runner-bundle.js" in body
     for script in ("babel", "chart.umd.min.js", "mapbox-gl.js", "connect_map.js"):
