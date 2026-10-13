@@ -31,9 +31,9 @@ CHROME_EDIT_MODAL = "Edit Opportunities"
 CHROME_CONTEXT_OPP = ">Opp:<"
 CHROME_RAW_OPP_ID = "(id: 10046"
 CHROME_VISIT_COUNT = "visits: 276"
-CHROME_HEADER_EL = '<header class="fixed top-0 left-16'
+CHROME_HEADER_EL = '<header class="fixed top-0 left-0 md:left-16'
 CHROME_LOGOUT = "labs/logout"
-CHROME_SIDENAV_GUTTER = "justify-center pl-16 bg-stone-100"
+CHROME_SIDENAV_GUTTER = "justify-center md:pl-16 bg-stone-100"
 
 ALL_CHROME = [
     CHROME_BREADCRUMB,
