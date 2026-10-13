@@ -2233,6 +2233,7 @@ An action is something a workflow lets you **do**, such as "Initiate AI coach". 
 - **It runs in the background, as the person.** Execution is the `execute_workflow_action` celery task. It uses the person's stored Connect token (`UserConnectToken`) and OCS token (`UserOCSToken`, saved when they connect OCS). No browser is needed.
   - Each task is filed in its **worker's** opportunity, which matters on program reports that span several.
   - `WorkflowActionExecution` records who ran the action, through which entry point (`page`, `mcp` or `canopy`), for which workers, and the outcome per worker.
+- **On a page** (a workflow with no runs, [§16](#16-pages-the-scope-prop-and-settings)) the same two steps run within the page's scope (`actions.PageScope`) at `api/<definition_id>/page-actions/<key>/preview/` and `.../run/`, from the page's buttons only (the MCP's `workflow_run_action` stays run-bound). The execution records `page_scope` (e.g. `program:25`) and no `run_id`.
 - **Off by default, and never inherited from a template that says nothing.** Set it per workflow with `workflow_update_definition`.
 
 ### Coaching charts (`workflow/coach_charts/`)
@@ -2387,7 +2388,9 @@ A **page** is a workflow definition whose data says `"kind": "page"` (`workflow/
 - Everything a workflow's code may ask labs for, through the same route table and the same questions: tasks, audits, coaching, visit images, admin boundaries for `ConnectMap`, Leaflet tiles, links to audits, tasks and workflows, downloads, the clipboard, `view.confirm`, `view.shareSelection` (the canopy panel, when the page shares with the agent).
 - `onUpdateState` keeps state in the frame (a page has no run to write it to).
 
-What only a run has, so a page cannot: `updateState` to a run, `view.complete`, a declared action (`actions.runAction` -- an action's roster, confirm token and the tasks it attaches all belong to a run), a background job (it writes its results to a run), and every endpoint under `/labs/workflow/api/run/<id>/` that writes. Each refuses with "needs a run, and a page has none".
+- **Declared actions** (`config.actions`, [§14](#14-workflow-actions-and-sharing-a-run-with-an-agent)): `actions.runAction(key, {workers})` opens labs' own preview-and-confirm dialog, exactly as on a run page. A page's action acts within the page's SCOPE instead of a run: the workers it may name are those of the opportunities the page covers (its `opportunity_ids` and the ones under its owner the viewer can see), the confirm token is bound to the page and scope, and the tasks it files belong to no run. What is read from a run's grading -- a coaching briefing, `include_image`, `picture`, a `case` conversation -- is refused on a page ("needs a run"); a coaching action sends its declared `prompt`.
+
+What only a run has, so a page cannot: `updateState` to a run, `view.complete`, a background job (it writes its results to a run), and every endpoint under `/labs/workflow/api/run/<id>/` that writes. Each refuses with "needs a run, and a page has none".
 
 **Residual risk, the same for both:** data handed to the frame can leave it (WebRTC), so a page's author can see what the page shows its viewers -- its pipelines and workers included. What the sandbox removes is the author acting AS the viewer.
 

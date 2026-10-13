@@ -1009,6 +1009,23 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             path=self.request.get_full_path(),
         )
 
+    def _add_page_actions(self, context, definition, scope_qs):
+        """A page's declared actions (workflow/actions.py): the same preview -> confirm ->
+        execute as a run's, within the page's scope instead (``PageScope``). Its
+        buttons call ``actions.runAction`` and the runner's own dialog asks the person.
+        ``actionScope`` is the owner scope the page is read in (an organisation-owned
+        page's is added by PageView)."""
+        from connect_labs.workflow.actions import definition_actions
+
+        offered = [{k: a[k] for k in ("key", "type", "label", "description")} for a in definition_actions(definition)]
+        context["workflow_data"]["actions"] = offered
+        if not offered:
+            return
+        endpoints = context["workflow_data"]["apiEndpoints"]
+        endpoints["actionBase"] = f"/labs/workflow/api/{definition.id}/page-actions/"
+        endpoints["actionExecutionBase"] = "/labs/workflow/api/actions/executions/"
+        endpoints["actionScope"] = scope_qs
+
     def _sandbox_workflow_data(self, context, definition, scope, labs_context, page):
         """A sandboxed page: what the host runner needs to draw the frame. A page gets
         what a workflow gets (pipelines, workers, the same bridge) except a run. If the
@@ -1506,6 +1523,8 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             # presentation link: a page shared with a funder carries no actions and no agent.
             if not is_edit_mode and not page and not context["present_mode"]:
                 self._add_actions_and_agent(context, definition, run_data, workers)
+            elif page and not context["present_mode"]:
+                self._add_page_actions(context, definition, run_scope_qs)
 
         except LabsAPIError as e:
             # A 404 here means the scoped opportunity fetch was rejected — the

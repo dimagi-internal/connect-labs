@@ -1335,6 +1335,8 @@ export interface WorkflowDataFromDjango {
     getSnapshot?: string | null;
     /** Base URL of this run's workflow actions (workflow/actions.py). */
     actionBase?: string;
+    /** A page's: the scope query its actions are read in (a page has no run). */
+    actionScope?: string;
     actionExecutionBase?: string;
   };
   render_code?: string;

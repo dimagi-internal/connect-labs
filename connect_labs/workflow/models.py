@@ -33,7 +33,10 @@ class WorkflowActionExecution(models.Model):
     actor = models.CharField(max_length=100, blank=True, default="")
 
     definition_id = models.IntegerField()
-    run_id = models.IntegerField(db_index=True)
+    #: The run it acted on -- or none, for a PAGE's action, which acts within the
+    #: page's scope instead (``page_scope``, e.g. "program:25"; workflow/actions.py).
+    run_id = models.IntegerField(db_index=True, null=True, blank=True)
+    page_scope = models.CharField(max_length=200, blank=True, default="")
     opportunity_id = models.IntegerField(null=True, blank=True)
     program_id = models.IntegerField(null=True, blank=True)
 
@@ -71,6 +74,7 @@ class WorkflowActionExecution(models.Model):
             "status": self.status,
             "via": self.via,
             "run_id": self.run_id,
+            "page_scope": self.page_scope or None,
             "progress": {"total": len(keys), "done": ok + failed, "ok": ok, "failed": failed},
             "results": results,
             "error": self.error,
