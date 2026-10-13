@@ -561,8 +561,8 @@ render and records its requests.
 priority templates with real data); a scan of live COPIES (own render code) with
 `workflow_sandbox_scan --all-users` (Rollout, above) -- its `breaks` rows are what stays out
 until fixed or opted in, and its coverage line says what it could not read; then
-`LABS_WORKFLOW_SANDBOX=all`. Follow-ups: bind cross-workflow reads to the
-definitions a workflow declares; declared actions on pages (a scope instead of a run).
+`LABS_WORKFLOW_SANDBOX=all`. The two follow-ups named here -- cross-workflow reads bound
+to declared workflows, and declared actions on pages -- are done (below).
 
 ## After phase 2: the leftovers (2026-10-13)
 
@@ -630,6 +630,7 @@ sessions in an opportunity the route table binds, not a workflow run; left as is
 
 Tests: `workflow/tests/test_declared_reads.py`,
 `components/workflow/sandbox/workflow_sandbox.test.js` ("reads of other workflows are bound").
+
 ### Declared actions on pages
 
 **Ruling: a page's declared actions run through the same framework as a workflow's
