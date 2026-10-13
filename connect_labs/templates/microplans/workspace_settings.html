@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Workspace settings{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto p-6 space-y-6">
+  <div>
+    <a href="{{ back_url }}" class="text-sm text-brand-cornflower-blue">&larr; Back to the portfolio</a>
+    <h1 class="text-2xl font-bold text-gray-900 mt-2">{{ workspace.org.name }} &mdash; workspace</h1>
+    <p class="text-sm text-gray-500">Labs program #{{ program_id }}. Only program managers see this page.</p>
+  </div>
+
+  <section class="bg-white border rounded-lg p-4 space-y-3">
+    <h2 class="text-lg font-semibold text-gray-900">Linked Connect programs</h2>
+    <p class="text-sm text-gray-600">
+      Anyone in a Connect organisation that delivers an opportunity in one of these programs can open this workspace
+      as a network manager, and sees only their organisation's plans and studies. Usually one Connect program per
+      partner &mdash; add each one as it is created. With none linked, only program managers can use the workspace.
+    </p>
+    <form method="post" class="flex flex-wrap items-end gap-2">
+      {% csrf_token %}
+      <label class="flex-1 min-w-[16rem] text-sm text-gray-700">
+        Connect program ids (comma-separated)
+        <input name="connect_program_ids" value="{{ linked_programs }}" class="mt-1 w-full border border-gray-300 rounded px-2 py-1 text-sm" autocomplete="off">
+      </label>
+      <button type="submit" class="button button-sm primary-dark">Save</button>
+    </form>
+  </section>
+
+  <section class="bg-white border rounded-lg p-4 space-y-3">
+    <h2 class="text-lg font-semibold text-gray-900">Teams</h2>
+    <p class="text-sm text-gray-600">
+      A team is one delivering Connect organisation. This list comes from what your own Connect account can see in the
+      linked programs, plus any team that already has plans here &mdash; so a partner your account cannot see appears
+      once they have created something. Connect organisation changes can take up to an hour to reach labs.
+    </p>
+    {% if teams %}
+      <table class="w-full text-sm">
+        <thead><tr class="text-left text-gray-500"><th class="py-1">Organisation</th><th>Slug</th><th class="text-right">Plans &amp; studies</th></tr></thead>
+        <tbody>
+          {% for t in teams %}
+            <tr class="border-t"><td class="py-1">{{ t.name }}{% if not t.derived %} <span class="text-xs text-gray-400">(seen on plans)</span>{% endif %}</td><td class="font-mono text-xs">{{ t.slug }}</td><td class="text-right">{{ t.records }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="text-sm text-gray-500">No teams yet.</p>
+    {% endif %}
+    {% if pm_only_records %}
+      <p class="text-xs text-gray-500">{{ pm_only_records }} plan(s) or stud(ies) have no team and are visible to program managers only.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

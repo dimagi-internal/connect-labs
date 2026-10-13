@@ -85,6 +85,12 @@ def _access_token_for(user, program_id: int) -> str:
                 "type": ["integer", "null"],
                 "description": "Optional: file every created plan into this existing study/bundle group.",
             },
+            "team": {
+                "type": ["string", "null"],
+                "description": "Workspace programs only: the team (Connect org slug) the plans belong to. "
+                "A Network Manager gets one of their own teams; a Program Manager may name any, or '' for "
+                "Program Managers only. Plans filed into a group take the group's team.",
+            },
         },
         "required": ["program_id", "boundary_ids"],
         "additionalProperties": False,
@@ -101,6 +107,7 @@ def microplans_bulk_create_plans(
     coverage_config=None,
     grouping=None,
     group_id=None,
+    team=None,
 ):
     import uuid
 
@@ -116,6 +123,25 @@ def microplans_bulk_create_plans(
 
     access_token = _access_token_for(user, int(program_id))
     actor = user.get_username() if hasattr(user, "get_username") else str(user)
+    # Workspace programs: the worker has no caller to take a team from, so it is
+    # decided here -- and a group to file into must be one this caller can see.
+    from connect_labs.labs.workspaces import workspace_for_program
+
+    if workspace_for_program(program_id) is None:
+        team = None
+    else:
+        from .microplans import _data_access
+
+        da = _data_access(user, program_id)
+        try:
+            if group_id is not None:
+                group = da.get_group(int(group_id))
+                if group is None:
+                    raise MCPToolError("NOT_FOUND", f"group {group_id} is not in program {program_id}")
+                team = (group.data or {}).get("team") or team
+            team = da.team_for_new_records(team)
+        finally:
+            da.close()
     run_id = f"bulk-{uuid.uuid4().hex[:12]}"
 
     task = bulk_create_plans_task.delay(
@@ -129,6 +155,7 @@ def microplans_bulk_create_plans(
         coverage_config=dict(coverage_config or {}),
         run_id=run_id,
         actor=actor,
+        team=team,
     )
     return {
         "program_id": int(program_id),

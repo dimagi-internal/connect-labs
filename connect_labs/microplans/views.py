@@ -6,6 +6,7 @@ superseded it."""
 import csv
 import json
 import logging
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -40,7 +41,15 @@ class _ProgramScopeMixin:
     the URLconf to keep it that way. Real programs and opportunities pass straight
     through: Connect enforces those per request, as before.
 
-    Answers 404, never 403, so a refusal does not confirm the program exists.
+    Answers 404, never 403, so a refusal does not confirm the program exists --
+    except on the pages of a workspace program (``labs.workspaces``), which tell a
+    refused person why, since the usual cause there is a Connect organisation
+    that is not (yet) part of the program.
+
+    In a workspace program it also refuses a Network Manager a ``plan_id`` or
+    ``group_id`` that belongs to another team -- the same 404 as a record that is
+    not there. That covers the views that hand a plan to a Celery task without
+    reading it first (regroup / reassign / regenerate / group generate).
     """
 
     # The labs context picker follows the URL's program/opportunity on pages
@@ -49,7 +58,7 @@ class _ProgramScopeMixin:
 
     def dispatch(self, request, *args, **kwargs):
         if getattr(request, "user", None) is not None and request.user.is_authenticated:
-            refusal = self._refuse_denied_scope(request, kwargs)
+            refusal = self._refuse_denied_scope(request, kwargs) or self._refuse_other_teams_record(request, kwargs)
             if refusal is not None:
                 return refusal
             if self.sync_labs_context:
@@ -64,6 +73,34 @@ class _ProgramScopeMixin:
         if not denied:
             return None
         record_denial(reason=denied, user=request.user, **scope)
+        if isinstance(self, TemplateView):
+            from connect_labs.labs.workspaces import workspace_for_program
+
+            if workspace_for_program(scope["program_id"]) is not None:
+                return _workspace_refused(request)
+            raise Http404("Not found.")
+        return JsonResponse({"status": "error", "detail": "Not found."}, status=404)
+
+    def _refuse_other_teams_record(self, request, kwargs):
+        if "program_id" not in kwargs or not ({"plan_id", "group_id"} & set(kwargs)):
+            return None
+        from connect_labs.labs.workspaces import workspace_for_program
+
+        if workspace_for_program(kwargs["program_id"]) is None:
+            return None
+        from connect_labs.microplans.core.data_access import ProgramPlanDataAccess
+
+        try:
+            da = ProgramPlanDataAccess(kwargs["program_id"], request=request)
+        except ValueError:  # no Connect token in the session: the view answers that itself
+            return None
+        if not da.restricted_to_teams:
+            return None
+        hidden = ("plan_id" in kwargs and da.get_plan(int(kwargs["plan_id"])) is None) or (
+            "group_id" in kwargs and da.get_group(int(kwargs["group_id"])) is None
+        )
+        if not hidden:
+            return None
         if isinstance(self, TemplateView):
             raise Http404("Not found.")
         return JsonResponse({"status": "error", "detail": "Not found."}, status=404)
@@ -112,6 +149,48 @@ class _LabsContextSyncMixin(_ProgramScopeMixin):
     """
 
     sync_labs_context = True
+
+
+def _workspace_refused(request):
+    """The page a workspace program shows someone it does not admit."""
+    from django.template.response import TemplateResponse
+
+    return TemplateResponse(request, "microplans/workspace_refused.html", status=404)
+
+
+def _new_record_team(da, requested=None, group_id=None):
+    """The team a new plan belongs to: its group's, when it is filed into one,
+    else the one asked for (``ProgramPlanDataAccess.team_for_new_records`` decides
+    what the caller may ask for). None outside a workspace program."""
+    if da.workspace is None:
+        return None
+    if group_id is not None:
+        try:
+            group = da.get_group(int(group_id))
+        except (TypeError, ValueError):
+            group = None
+        if group is not None:
+            requested = (group.data or {}).get("team") or requested
+    return da.team_for_new_records(requested)
+
+
+def _workspace_context(da) -> dict:
+    """What a page in a workspace program needs to know about the person (role,
+    teams, may they delete). Empty outside a workspace."""
+    if da.workspace is None:
+        return {}
+    from connect_labs.labs.workspaces import team_choices
+
+    viewer = da.viewer
+    return {
+        "workspace": {
+            "role": viewer.role if viewer else "",
+            "role_label": viewer.label if viewer else "",
+            "teams": team_choices(da.workspace, viewer, user=da.caller, records=[*da.list_plans(), *da.list_groups()]),
+            "can_delete": da.can_delete,
+            "is_program_manager": bool(viewer and viewer.is_program_manager),
+        }
+    }
 
 
 class PreviewFrameView(_ProgramScopeMixin, LoginRequiredMixin, View):
@@ -579,10 +658,16 @@ class ProgramWorkspaceView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateVi
         # Seed the new-plan map over the program's existing footprint so boundaries
         # load + the country auto-detects (see _program_map_seed). Absent any plans,
         # the template keeps its default view and the user navigates.
+        context["can_delete"] = True
         try:
             from connect_labs.microplans.core.data_access import ProgramPlanDataAccess
 
-            seed = _program_map_seed(ProgramPlanDataAccess(program_id, request=self.request).list_plans())
+            da = ProgramPlanDataAccess(program_id, request=self.request)
+            # Workspace programs: who this person is there, which teams they can
+            # file new work under, and whether the Delete buttons show at all.
+            context.update(_workspace_context(da))
+            context["can_delete"] = da.can_delete
+            seed = _program_map_seed(da.list_plans())
         except Exception:  # noqa: BLE001
             logger.exception("microplans new-plan map seed failed (program=%s)", program_id)
             seed = None
@@ -604,7 +689,11 @@ class ProgramPlansAPIView(_ProgramScopeMixin, LoginRequiredMixin, View):
 
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
-            plans = [serialization.plan_summary_row(p) for p in da.list_plans()]
+            plan_records = da.list_plans()
+            plans = [serialization.plan_summary_row(p) for p in plan_records]
+            if da.workspace is not None:
+                for row, p in zip(plans, plan_records):
+                    row["team"] = (p.data or {}).get("team") or ""
             groups = [
                 {
                     "group_id": g.id,
@@ -622,6 +711,10 @@ class ProgramPlansAPIView(_ProgramScopeMixin, LoginRequiredMixin, View):
                 }
                 for g in da.list_groups()
             ]
+            if da.workspace is not None:
+                teams = {g.id: (g.data or {}).get("team") or "" for g in da.list_groups()}
+                for row in groups:
+                    row["team"] = teams.get(row["group_id"], "")
         except Exception:  # noqa: BLE001
             logger.exception("microplans program plans failed (program=%s)", program_id)
             return JsonResponse({"status": "error", "detail": "Could not load program plans."}, status=502)
@@ -633,6 +726,7 @@ class ProgramPlansAPIView(_ProgramScopeMixin, LoginRequiredMixin, View):
                 "statuses": list(plan_lib.PLAN_STATUSES),
                 "status_labels": plan_lib.PLAN_STATUS_LABELS,
                 "transitions": {k: sorted(v) for k, v in plan_lib.PLAN_TRANSITIONS.items()},
+                "can_delete": da.can_delete,
             }
         )
 
@@ -690,6 +784,9 @@ class ProgramCreatePlanView(_ProgramScopeMixin, LoginRequiredMixin, View):
             state = _adm1_state_for(input_areas, hulls)
 
         da = ProgramPlanDataAccess(program_id, request=request)
+        # Workspace programs only: the team this plan is for (the setup page
+        # carries the portfolio's chosen team as ?team=).
+        team = _new_record_team(da, payload.get("team") or request.GET.get("team"), group_id)
         try:
             plan = da.create_plan(
                 region=region,
@@ -703,6 +800,7 @@ class ProgramCreatePlanView(_ProgramScopeMixin, LoginRequiredMixin, View):
                 state=state,
                 stats=stats,
                 area_targets=area_targets,
+                team=team,
             )
         except Exception as e:  # noqa: BLE001
             logger.exception("microplans create_plan failed (program=%s)", program_id)
@@ -759,6 +857,8 @@ class ProgramGroupBulkCreateFromBoundariesView(_ProgramScopeMixin, LoginRequired
             return JsonResponse({"status": "error", "detail": "Select at least one boundary to add."}, status=400)
 
         da = ProgramPlanDataAccess(program_id, request=request)
+        # Plans filed into a study take the study's team (workspace programs only).
+        team = _new_record_team(da, group_id=group_id)
         plan_ids: list[int] = []
         warnings: list[str] = []
         for item in boundaries:
@@ -787,6 +887,7 @@ class ProgramGroupBulkCreateFromBoundariesView(_ProgramScopeMixin, LoginRequired
                     boundary_id=str(item.get("boundary_id") or "").strip(),
                     lga=lga,
                     state=state,
+                    team=team,
                 )
             except Exception:  # noqa: BLE001
                 logger.exception("microplans bulk_create_from_boundaries: create_plan failed (program=%s)", program_id)
@@ -857,11 +958,17 @@ class ProgramPlanDeleteView(_ProgramScopeMixin, LoginRequiredMixin, View):
     safer default for normal lifecycle is the Archive status transition."""
 
     def post(self, request, program_id, plan_id):
-        from connect_labs.microplans.core.data_access import ProgramPlanDataAccess, RecordNotInProgramError
+        from connect_labs.microplans.core.data_access import (
+            ProgramPlanDataAccess,
+            RecordNotInProgramError,
+            WorkspaceDeleteForbidden,
+        )
 
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
             da.delete_plan(plan_id)
+        except WorkspaceDeleteForbidden as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=403)
         except RecordNotInProgramError:
             return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
         except Exception:  # noqa: BLE001
@@ -874,11 +981,17 @@ class ProgramGroupDeleteView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Hard-delete a plan group record (sample-data wipe)."""
 
     def post(self, request, program_id, group_id):
-        from connect_labs.microplans.core.data_access import ProgramPlanDataAccess, RecordNotInProgramError
+        from connect_labs.microplans.core.data_access import (
+            ProgramPlanDataAccess,
+            RecordNotInProgramError,
+            WorkspaceDeleteForbidden,
+        )
 
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
             da.delete_group(group_id)
+        except WorkspaceDeleteForbidden as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=403)
         except RecordNotInProgramError:
             return JsonResponse({"status": "error", "detail": "Group not found."}, status=404)
         except Exception:  # noqa: BLE001
@@ -891,7 +1004,7 @@ class ProgramGroupsAPIView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Create a plan group (a shareable subset offered to an LLO)."""
 
     def post(self, request, program_id):
-        from connect_labs.microplans.core.data_access import ProgramPlanDataAccess
+        from connect_labs.microplans.core.data_access import ProgramPlanDataAccess, RecordNotInProgramError
 
         try:
             payload = json.loads(request.body)
@@ -908,7 +1021,16 @@ class ProgramGroupsAPIView(_ProgramScopeMixin, LoginRequiredMixin, View):
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
-            group = da.create_group(name=name, plan_ids=plan_ids, offered_to=offered_to, kind=kind, arms=arms)
+            group = da.create_group(
+                name=name,
+                plan_ids=plan_ids,
+                offered_to=offered_to,
+                kind=kind,
+                arms=arms,
+                team=da.team_for_new_records(payload.get("team")),
+            )
+        except RecordNotInProgramError:
+            return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
         except Exception:  # noqa: BLE001
             logger.exception("microplans create_group failed (program=%s)", program_id)
             return JsonResponse({"status": "error", "detail": "Could not create the group."}, status=502)
@@ -919,7 +1041,7 @@ class ProgramGroupUpdateView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Update a plan group (rename, change plans, set offered_to, share)."""
 
     def post(self, request, program_id, group_id):
-        from connect_labs.microplans.core.data_access import ProgramPlanDataAccess
+        from connect_labs.microplans.core.data_access import ProgramPlanDataAccess, RecordNotInProgramError
 
         try:
             payload = json.loads(request.body)
@@ -944,7 +1066,10 @@ class ProgramGroupUpdateView(_ProgramScopeMixin, LoginRequiredMixin, View):
                 kind=payload.get("kind"),
                 arms=payload.get("arms"),  # study arm assignment (labs-side only)
                 status=payload.get("status"),
+                team=payload.get("team"),  # workspace programs, Program Managers only
             )
+        except RecordNotInProgramError:
+            return JsonResponse({"status": "error", "detail": "Not found."}, status=404)
         except Exception:  # noqa: BLE001
             logger.exception("microplans update_group failed (program=%s group=%s)", program_id, group_id)
             return JsonResponse({"status": "error", "detail": "Could not update the group."}, status=502)
@@ -1415,11 +1540,17 @@ class ProgramPlanView(_ProgramScopeMixin, LoginRequiredMixin, View):
         way to retire a candidate region; this is the explicit remove for plans
         the owner wants gone for good (e.g. demo/sample plans). Program-scoped:
         ``delete_plan`` refuses ids that aren't in this program."""
-        from connect_labs.microplans.core.data_access import ProgramPlanDataAccess, RecordNotInProgramError
+        from connect_labs.microplans.core.data_access import (
+            ProgramPlanDataAccess,
+            RecordNotInProgramError,
+            WorkspaceDeleteForbidden,
+        )
 
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
             da.delete_plan(int(plan_id))
+        except WorkspaceDeleteForbidden as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=403)
         except RecordNotInProgramError:
             return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
         except Exception:  # noqa: BLE001
@@ -1744,6 +1875,9 @@ class ProgramSetupView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
         # URLs shared with the review page. plan_url/edit/csv/etc. don't exist
         # yet (no plan), so leave them empty; the JS guards on null.
         context["create_plan_url"] = reverse("microplans:program_create_plan", args=[program_id])
+        if self.request.GET.get("team"):
+            # Workspace programs: the team the portfolio was creating for.
+            context["create_plan_url"] += "?" + urlencode({"team": self.request.GET["team"]})
         context["program_url"] = reverse("microplans:program_workspace", args=[program_id])
         context["back_url"] = context["program_url"]
         context.update(_sd_urls())
@@ -1833,6 +1967,96 @@ class MetricGlossaryView(LoginRequiredMixin, TemplateView):
     """
 
     template_name = "microplans/metric_glossary.html"
+
+
+class ProgramWorkspaceSettingsView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
+    """Program Managers' page for a workspace program (``labs.workspaces``).
+
+    Shows which REAL Connect programs the workspace is linked to -- their
+    delivering organisations are its Network Managers, one team each -- and the
+    teams that derives, and lets a Program Manager change the list (usually one
+    Connect program per partner, created over time). 404 for anyone else and for
+    a program that is not a workspace."""
+
+    template_name = "microplans/workspace_settings.html"
+
+    def _workspace_and_role(self, program_id):
+        from connect_labs.labs.workspaces import role_in, workspace_for_program
+
+        workspace = workspace_for_program(program_id)
+        role = role_in(self.request.user, workspace)
+        if workspace is None or role is None or not role.is_program_manager:
+            raise Http404("Not found.")
+        return workspace, role
+
+    def get_context_data(self, **kwargs):
+        from django.urls import reverse
+
+        from connect_labs.labs.workspaces import connect_org_data, delivering_orgs
+        from connect_labs.microplans.core.data_access import ProgramPlanDataAccess
+
+        context = super().get_context_data(**kwargs)
+        program_id = kwargs.get("program_id")
+        workspace, _role = self._workspace_and_role(program_id)
+        da = ProgramPlanDataAccess(program_id, request=self.request)
+        records = [*da.list_plans(), *da.list_groups()]
+        counts: dict[str, int] = {}
+        for r in records:
+            team = (r.data or {}).get("team") or ""
+            counts[team] = counts.get(team, 0) + 1
+        # What this Program Manager's own Connect account shows delivering in the
+        # linked programs. It may not be every partner -- only what their account
+        # can see -- so teams already on plans are listed too.
+        derived = delivering_orgs(connect_org_data(self.request.user), workspace.connect_program_ids)
+        teams = [{"slug": s, "name": n, "records": counts.get(s, 0), "derived": True} for s, n in derived.items()]
+        teams += [
+            {"slug": s, "name": s, "records": n, "derived": False}
+            for s, n in sorted(counts.items())
+            if s and s not in derived
+        ]
+        context.update(
+            {
+                "program_id": program_id,
+                "workspace": workspace,
+                "linked_programs": ", ".join(str(p) for p in workspace.connect_program_ids),
+                "teams": teams,
+                "pm_only_records": counts.get("", 0),
+                "back_url": reverse("microplans:program_workspace", args=[program_id]),
+            }
+        )
+        return context
+
+    def post(self, request, program_id):
+        from django.contrib import messages
+        from django.shortcuts import redirect
+
+        from connect_labs.audit_trail.models import Action
+        from connect_labs.audit_trail.service import record
+
+        workspace, _role = self._workspace_and_role(program_id)
+        raw = request.POST.get("connect_program_ids", "")
+        try:
+            ids = sorted({int(p) for p in raw.replace(",", " ").split()})
+        except ValueError:
+            messages.error(request, "Connect program ids are whole numbers, separated by commas or spaces.")
+            return redirect(request.path)
+        if any(p <= 0 for p in ids):
+            messages.error(request, "Connect program ids are positive whole numbers.")
+            return redirect(request.path)
+        before = list(workspace.connect_program_ids)
+        workspace.connect_program_ids = ids
+        workspace.updated_by = request.user
+        workspace.save(update_fields=["connect_program_ids", "updated_by", "updated_at"])
+        record(
+            Action.UPDATE,
+            resource_type="workspace",
+            resource_id=workspace.pk,
+            program_id=int(program_id),
+            labs_only=True,
+            metadata={"connect_program_ids": {"before": before, "after": ids}},
+        )
+        messages.success(request, "Linked Connect programs saved." if ids else "No Connect programs are linked now.")
+        return redirect(request.path)
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
@@ -2062,6 +2286,9 @@ class ProgramBulkCreatePlanPageView(_LabsContextSyncMixin, LoginRequiredMixin, T
         context["program_id"] = program_id
         context["program_url"] = reverse("microplans:program_workspace", args=[program_id])
         context["bulk_create_url"] = reverse("microplans:program_bulk_create", args=[program_id])
+        if self.request.GET.get("team"):
+            # Workspace programs: the team the portfolio was creating for.
+            context["bulk_create_url"] += "?" + urlencode({"team": self.request.GET["team"]})
         context["resolve_many_url"] = "/labs/admin/boundaries/resolve_many/"
         # Sensible defaults for the Kano RCT demo arm.
         context["default_iso"] = "NGA"
@@ -2124,6 +2351,15 @@ class ProgramBulkCreatePlansView(_ProgramScopeMixin, LoginRequiredMixin, View):
 
         from django.urls import reverse
 
+        from connect_labs.microplans.core.data_access import ProgramPlanDataAccess
+
+        # Workspace programs: the worker has no caller to take a team from, so it
+        # is decided here -- and a group to file into must be one this caller sees.
+        da = ProgramPlanDataAccess(program_id, request=request)
+        if group_id is not None and da.workspace is not None and da.get_group(int(group_id)) is None:
+            return JsonResponse({"status": "error", "detail": "Group not found."}, status=404)
+        team = _new_record_team(da, payload.get("team") or request.GET.get("team"), group_id)
+
         task = bulk_create_plans_task.delay(
             int(program_id),
             plans_input,
@@ -2134,6 +2370,7 @@ class ProgramBulkCreatePlansView(_ProgramScopeMixin, LoginRequiredMixin, View):
             group_id=int(group_id) if group_id is not None else None,
             coverage_config=coverage_config,
             actor=request.user.get_username() if hasattr(request.user, "get_username") else str(request.user),
+            team=team,
         )
         return JsonResponse(
             {

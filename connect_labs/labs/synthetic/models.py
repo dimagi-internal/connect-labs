@@ -151,6 +151,20 @@ class SyntheticOpportunity(models.Model):
             return LABS_ONLY_OPP_ID_FLOOR
         return current_max + 1
 
+    def _workspace(self):
+        """The workspace (``labs.models.Workspace``) this opp's organisation is, or None.
+
+        Free when the caller ``select_related("labs_org__workspace")``; one query
+        otherwise."""
+        if not self.labs_org_id:
+            return None
+        from django.core.exceptions import ObjectDoesNotExist
+
+        try:
+            return self.labs_org.workspace
+        except ObjectDoesNotExist:
+            return None
+
     def is_visible_to(self, user) -> bool:
         """Return True if ``user`` should see this labs-only opp in their labs_context.
 
@@ -161,6 +175,13 @@ class SyntheticOpportunity(models.Model):
         """
         if not self.labs_only or not self.enabled:
             return False
+        workspace = self._workspace()
+        if workspace is not None:
+            # A workspace's programmes are shown to the people with a role in it,
+            # toggle or not, and to no one else (labs.workspaces).
+            from connect_labs.labs.workspaces import role_in
+
+            return role_in(user, workspace) is not None
         if not getattr(user, "view_synthetic_opps", False):
             return False
         if not self.allowed_domains:
@@ -199,6 +220,14 @@ class SyntheticOpportunity(models.Model):
         """
         if not self.labs_only:
             return False
+        workspace = self._workspace()
+        if workspace is not None:
+            # A workspace replaces all of the rules below with its roles: Program
+            # Managers and the Network Managers its linked Connect programmes
+            # derive (labs.workspaces). No domain rule, toggle or invitation.
+            from connect_labs.labs.workspaces import role_in
+
+            return role_in(user, workspace) is not None
         if self.created_by_id and self.created_by_id == getattr(user, "id", None):
             return True
         email = (getattr(user, "email", "") or "").lower()
