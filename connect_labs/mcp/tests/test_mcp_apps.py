@@ -467,6 +467,9 @@ def test_the_candidate_states_view_re_totals_as_the_viewer_and_hands_the_selecti
     # It asks the agent's question again from the arguments: canopy's runner path passes the
     # result on as text, which for an answer this size is not the structured result.
     assert '"ui/notifications/tool-input"' in script and "askAgain" in script
+    # It starts with the four BEST kept states ticked: `keep` is not in rank order (live: it
+    # ticked Ondo and Imo and left Benue, the best, unticked).
+    assert "kept.indexOf(r.state)" in script and "(reco.keep || []).slice(0, 4)" not in script
     # It re-totals through the same read-only tool the agent called, and opens only https.
     assert '"targeting_pmc_rank"' in script
     assert 'indexOf("https://") !== 0' in script
