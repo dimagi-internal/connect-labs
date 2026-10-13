@@ -322,7 +322,9 @@ jobs:
   # When it runs, and why not on every PR: the `pytest` job is the critical
   # path of every merge, and this one costs the same again. So it runs after a
   # merge (push to main), nightly, and on a PR only when it carries the
-  # `clock-shift` label -- for a change that is itself about dates. It is NOT a
+  # `clock-shift` label -- for a change that is itself about dates. (The label
+  # is read on the next push: adding one is not an event this workflow takes,
+  # deliberately, or every label would re-run the whole of CI.) It is NOT a
   # required check: a red here means "some test depends on the date", which is
   # usually not the PR in hand. Fix forward, like any red on main.
   #
