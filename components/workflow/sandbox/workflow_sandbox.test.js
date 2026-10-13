@@ -818,7 +818,9 @@ describe('the workflow frame on the host page', () => {
 // Jonathan, 2026-10-12: "pages should be completely definable like workflows are".
 // One capability set, gated only by whether there is a run.
 describe('a page can do everything a workflow can, except what needs a run', () => {
-  const RUN_ONLY = ['updateState', 'completeRun', 'runAction'];
+  // Saving a run's state and completing a run: the only things a page cannot do.
+  // Its declared actions run within its scope (workflow/actions.py PageScope).
+  const RUN_ONLY = ['updateState', 'completeRun'];
   const PAGE_CTX = { ...CTX, runId: null };
 
   function pageDispatcher(w = workflowHandlers(), h = pageHandlers()) {
@@ -858,6 +860,7 @@ describe('a page can do everything a workflow can, except what needs a run', () 
       confirm: { text: 'ok?' },
       download: { filename: 'a.csv', bytes: 'a,b' },
       reportError: { message: 'boom' },
+      runAction: { key: 'coach', args: { workers: [] } },
     }[method];
     const run = async (mode, ctx) =>
       createDispatcher(pageHandlers(), {
@@ -885,9 +888,29 @@ describe('a page can do everything a workflow can, except what needs a run', () 
       expect(out.error).toBe(`${method} needs a run, and a page has none`);
       expect(w.updateState).not.toHaveBeenCalled();
       expect(w.completeRun).not.toHaveBeenCalled();
-      expect(w.runAction).not.toHaveBeenCalled();
     },
   );
+
+  it('a page runs its declared actions through the host, as a workflow does', async () => {
+    const { d, w } = pageDispatcher();
+    const ok = await d({
+      id: 1,
+      method: 'runAction',
+      params: { key: 'coach', args: { workers: [{ key: '10::w1' }] } },
+    });
+    expect(ok.error).toBeUndefined();
+    expect(w.runAction).toHaveBeenCalledWith(
+      'coach',
+      { workers: [{ key: '10::w1' }] },
+      { qaOnly: false },
+    );
+    const undeclared = await d({
+      id: 2,
+      method: 'runAction',
+      params: { key: 'not_declared', args: {} },
+    });
+    expect(undeclared.error).toMatch(/no action/);
+  });
 
   it('a page reaches what a workflow reaches, except a run’s own routes', () => {
     expect(

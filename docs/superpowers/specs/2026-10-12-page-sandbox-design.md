@@ -630,4 +630,37 @@ sessions in an opportunity the route table binds, not a workflow run; left as is
 
 Tests: `workflow/tests/test_declared_reads.py`,
 `components/workflow/sandbox/workflow_sandbox.test.js` ("reads of other workflows are bound").
+### Declared actions on pages
+
+**Ruling: a page's declared actions run through the same framework as a workflow's
+(`workflow/actions.py`: preview -> single-use confirm token -> background execution as
+the person, recorded in `WorkflowActionExecution`), bound to the page's SCOPE instead of
+a run.** `actions.PageScope` stands where the run stood (duck-typed, so preview, commit
+and execution are one code path):
+
+- the workers an action may name are those of the opportunities the page covers -- its
+  own `opportunity_ids` and the opportunities under its owner scope in the viewer's own
+  org data -- decided by the server (`action_views._page_and_scope`), never by the frame;
+- the confirm token's digest is bound to `page:<definition id>:<scope>`, so a page's token
+  confirms neither a run's action nor the same page's in another scope;
+- the execution records `page_scope` (`program:25`) and `run_id` NULL (migration 0005),
+  and the tasks it files are attached to no run;
+- the door is `api/<definition_id>/page-actions/<key>/(preview|run)/`, read in the owner
+  scope the page stamps (`actionScope`), refused for a definition that is not a page.
+
+What a run's grading supplies is refused, not faked: a coaching briefing, `include_image`,
+`picture` and `case` raise `needs_a_run`; a coaching action on a page sends the prompt it
+declares. In the frame, `runAction` is no longer a run-only method: it opens the host's
+ActionDialog as on a run page, and the parity test now lists only `updateState` and
+`completeRun` as what a page cannot do. Not in the present-mode view (no actions there,
+as for runs), and not over the MCP (`workflow_run_action` stays run-bound; a page's agent
+has `page_context` only).
+
+Cost: none for existing workflows (their path and tokens are unchanged); a page's coaching
+action cannot brief from figures until there is a page-level grading to read.
+
+Verified locally in Chromium: a page with a declared `create_task` action, drawn
+sandboxed, opened labs' dialog from a button in the frame, previewed one worker,
+confirmed, and the execution completed with `page_scope` set, no run, and one task.
+Tests: `workflow/tests/test_page_actions.py`, `components/workflow/sandbox/workflow_sandbox.test.js`.
 

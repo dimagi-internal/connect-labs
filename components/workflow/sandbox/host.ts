@@ -386,8 +386,10 @@ export const PINNED_ADDRESS_PARAMS = [
   'template_draft',
 ];
 
-/** Methods only a run answers: a page asking for one is told it has no run. */
-export const RUN_ONLY_METHODS = ['updateState', 'completeRun', 'runAction'];
+/** Methods only a run answers: a page asking for one is told it has no run.
+ * (`runAction` is not one: a page's declared actions act within its scope, through
+ * the same host dialog -- workflow/actions.py `PageScope`.) */
+export const RUN_ONLY_METHODS = ['updateState', 'completeRun'];
 
 /** Answer one frame request at a time: `(request) => response`, never throwing. */
 export function createDispatcher(

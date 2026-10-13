@@ -31,6 +31,14 @@ first producing the preview, and anything that changes between the two (a worker
 added, a different prompt) invalidates it. An agent is told to show the preview to
 the person and get their yes in between; the page does that with its own dialog.
 
+**A page's actions** (a page is a workflow with no runs, ``page_mode.py``) run the
+same way, within the page's SCOPE instead of a run (``PageScope``): the workers they
+may name are those of the opportunities the page covers (its own, and those under
+its owner the viewer can see), the confirm token is bound to the page and scope, the
+execution records ``page_scope`` with no ``run_id``, and the tasks it files are
+attached to no run. What only a run has is refused rather than faked: a coaching
+briefing, picture or case conversation is read from a run's grading.
+
 **Execution is in the background** (``tasks.execute_workflow_action``), so neither
 a page request nor an MCP call holds on to thirty OCS round trips. That works
 because the person's Connect token (``UserConnectToken``) and OCS token
@@ -63,6 +71,44 @@ _CONFIRM_SALT = "connect_labs.workflow.actions.confirm"
 #: The widest selection one action run may name. A preview is confirmed as one
 #: decision, and a person cannot meaningfully review a longer list.
 MAX_WORKERS = 200
+
+
+@dataclass(frozen=True)
+class PageScope:
+    """What a page's action acts within, in place of a run (a page has none).
+
+    Duck-typed against the run the rest of this module reads (``id``,
+    ``opportunity_id``, ``program_id``, ``period_end``, ``is_completed``), so preview,
+    commit and execution are one code path. ``opportunity_ids`` are the opportunities
+    the page's actions may reach, decided by the server (``action_views``), never by
+    the caller.
+    """
+
+    definition_id: int
+    scope_type: str
+    scope_key: str
+    opportunity_ids: tuple = ()
+    opportunity_id: int | None = None
+    program_id: int | None = None
+
+    #: A page has no run.
+    id = None
+    period_end = None
+    is_completed = False
+    snapshot = None
+
+    @property
+    def label(self) -> str:
+        return f"{self.scope_type}:{self.scope_key}"
+
+    @property
+    def subject(self) -> str:
+        """What a confirm token is bound to, in place of a run id."""
+        return f"page:{self.definition_id}:{self.label}"
+
+
+def is_page_scope(subject) -> bool:
+    return isinstance(subject, PageScope)
 
 
 class ActionError(ValueError):
@@ -518,7 +564,10 @@ def run_roster(wda, run, definition) -> dict[str, dict]:
     opportunity the workflow spans, read as the caller."""
     from connect_labs.workflow.agent_sharing import worker_key
 
-    opp_ids = list(definition.opportunity_ids or []) or ([run.opportunity_id] if run.opportunity_id else [])
+    if is_page_scope(run):
+        opp_ids = list(run.opportunity_ids)
+    else:
+        opp_ids = list(definition.opportunity_ids or []) or ([run.opportunity_id] if run.opportunity_id else [])
     roster: dict[str, dict] = {}
     for oid in opp_ids:
         try:
@@ -580,7 +629,7 @@ def _resolve(
         seen.add(item["key"])
     unknown = sorted(k for k in seen if k not in roster)
     if unknown:
-        raise ActionError("invalid", f"not workers on this run: {unknown[:10]}")
+        raise ActionError("invalid", f"not workers on this run or page: {unknown[:10]}")
 
     merged.setdefault("priority", "medium")
     merged.setdefault("title", action["label"])
@@ -971,7 +1020,8 @@ def _all_synthetic(arguments: dict) -> bool:
     return bool(opps) and all(get_synthetic_opp(o) is not None for o in opps)
 
 
-def _digest(user_id: int, run_id: int, key: str, arguments: dict) -> str:
+def _digest(user_id: int, run_id, key: str, arguments: dict) -> str:
+    """``run_id`` is the run's id, or a page scope's ``subject`` (a page has no run)."""
     body = json.dumps(
         {"u": user_id, "r": run_id, "k": key, "a": arguments}, sort_keys=True, separators=(",", ":"), default=str
     )
@@ -981,6 +1031,43 @@ def _digest(user_id: int, run_id: int, key: str, arguments: dict) -> str:
 # ---------------------------------------------------------------------------
 # Preview and commit
 # ---------------------------------------------------------------------------
+
+
+def _subject(run):
+    """What a confirm token is bound to: the run's id, or a page scope's subject."""
+    return run.subject if is_page_scope(run) else run.id
+
+
+def _readers(user, wda, run, definition, roster, briefing, request, restricted):
+    """The run's grading, cases and pictures for a coaching action -- none for a page,
+    which has no run to read them from."""
+    if is_page_scope(run):
+        return None, None, None
+    if briefing is None:
+        briefing = briefing_source(user, wda, run, definition)
+    cases = case_source(user, wda, run, definition, request=request)
+    pictures = picture_source(user, wda, run, definition, roster, briefing, restricted=restricted, cases=cases)
+    return briefing, cases, pictures
+
+
+#: What a page's action cannot ask for: each is read from a run's grading.
+RUN_ONLY_ARGUMENTS = (INCLUDE_IMAGE, PICTURE, CASE)
+
+
+def _refuse_run_only(run, action: dict, arguments: Any) -> None:
+    """A page has no run, so no grading to brief a coach from, picture or case."""
+    if not is_page_scope(run):
+        return
+    merged = {**(action.get("defaults") or {}), **(arguments if isinstance(arguments, dict) else {})}
+    items = merged.get("workers") if isinstance(merged.get("workers"), list) else []
+    asked = [k for k in RUN_ONLY_ARGUMENTS if merged.get(k)] + [
+        k for k in (PICTURE, CASE) for i in items if isinstance(i, dict) and i.get(k)
+    ]
+    if asked:
+        raise ActionError(
+            "needs_a_run",
+            f"{', '.join(sorted(set(asked)))}: read from a run's grading, and a page has no run.",
+        )
 
 
 def _preview_image(args: dict, prompt: str, opportunity_id, worker_key: str) -> dict | None:
@@ -1016,10 +1103,8 @@ def preview(
 
     action = find_action(definition, key)
     roster = run_roster(wda, run, definition)
-    if briefing is None:
-        briefing = briefing_source(user, wda, run, definition)
-    cases = case_source(user, wda, run, definition, request=request)
-    pictures = picture_source(user, wda, run, definition, roster, briefing, restricted=restricted, cases=cases)
+    briefing, cases, pictures = _readers(user, wda, run, definition, roster, briefing, request, restricted)
+    _refuse_run_only(run, action, arguments)
     args, skipped = _resolve(action, arguments, roster, user=user, briefing=briefing, pictures=pictures, cases=cases)
 
     needs: list[str] = []
@@ -1115,7 +1200,7 @@ def preview(
         # same send (a deliberate resend), which a digest-keyed spend did for 15 minutes
         # and the View read as "stale" in a loop (2026-10-09).
         result["confirm"] = signing.dumps(
-            {"d": _digest(user.pk, run.id, key, args), "n": secrets.token_urlsafe(9)},
+            {"d": _digest(user.pk, _subject(run), key, args), "n": secrets.token_urlsafe(9)},
             salt=_CONFIRM_SALT,
             compress=True,
         )
@@ -1147,11 +1232,9 @@ def commit(
     from connect_labs.workflow.tasks import execute_workflow_action
 
     action = find_action(definition, key)
-    if briefing is None:
-        briefing = briefing_source(user, wda, run, definition)
     roster = run_roster(wda, run, definition)
-    cases = case_source(user, wda, run, definition, request=request)
-    pictures = picture_source(user, wda, run, definition, roster, briefing, restricted=restricted, cases=cases)
+    briefing, cases, pictures = _readers(user, wda, run, definition, roster, briefing, request, restricted)
+    _refuse_run_only(run, action, arguments)
     args = resolve_arguments(action, arguments, roster, user=user, briefing=briefing, pictures=pictures, cases=cases)
     if not args["workers"]:
         raise ActionError("nothing_to_do", "None of these workers has an indicator off target or on watch.")
@@ -1161,7 +1244,7 @@ def commit(
         raise ActionError("confirm_expired", "That preview has expired. Preview again and confirm the new one.") from e
     except signing.BadSignature as e:
         raise ActionError("confirm_invalid", "`confirm` is not a token from a preview of this action.") from e
-    if signed.get("d") != _digest(user.pk, run.id, key, args):
+    if signed.get("d") != _digest(user.pk, _subject(run), key, args):
         raise ActionError(
             "confirm_mismatch",
             "These arguments are not the ones that were previewed. Preview again and confirm what is shown.",
@@ -1177,6 +1260,7 @@ def commit(
         actor=(actor or "")[:100],
         definition_id=definition.id,
         run_id=run.id,
+        page_scope=run.label if is_page_scope(run) else "",
         opportunity_id=run.opportunity_id,
         program_id=getattr(run, "program_id", None),
         action_key=key,
