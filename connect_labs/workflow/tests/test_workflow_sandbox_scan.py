@@ -35,21 +35,13 @@ def _wrap(body):
 # --- each pattern ------------------------------------------------------------------
 
 BREAKING = [
-    ("window.location = '/audit/';", "location_assign"),
-    ("window.location.href = url;", "location_assign"),
-    ("location.href = '/tasks/';", "location_assign"),
-    ("document.location = '/x/';", "location_assign"),
-    ("window.location.assign('/x/');", "location_assign"),
-    ("location.replace('/x/');", "location_assign"),
-    ("window.location.reload();", "location_reload"),
     ("window.top.postMessage('x', '*');", "top_or_parent"),
     ("parent.document.title = 'x';", "top_or_parent"),
-    ("top.location = '/x/';", "top_or_parent"),
     ("if (window.confirm('Delete?')) go();", "confirm"),
     ("if (confirm('Delete?')) go();", "confirm"),
     ("const n = prompt('Name?');", "prompt"),
     ("const x = new XMLHttpRequest();", "xhr"),
-    ("const es = new EventSource('/labs/workflow/api/job/a/stream/');", "event_source"),
+    ("const es = new EventSource('/custom_analysis/x/api/stream/');", "fetch_refused"),
     ("import('https://cdn.example.org/m.js').then(m => m.go());", "dynamic_import"),
     ("const f = <form action='/audit/api/audit/create/' method='post'></form>;", "form_action"),
     ("$.ajax({url: '/audit/api/ai-agents/'});", "jquery_ajax"),
@@ -65,9 +57,6 @@ def test_each_breaking_pattern_is_found(line, pattern):
 
 
 CHANGING = [
-    ("const c = document.cookie;", "document_cookie"),
-    ("alert('Saved');", "alert"),
-    ("window.alert('Saved');", "alert"),
     ("localStorage.setItem('k', 'v');", "storage"),
     ("sessionStorage.getItem('k');", "storage"),
     ("const f = <form onSubmit={save}><button/></form>;", "form_submit"),
@@ -77,6 +66,71 @@ CHANGING = [
 @pytest.mark.parametrize("line,pattern", CHANGING)
 def test_each_changing_pattern_is_found(line, pattern):
     assert (pattern, "changes") in _ids(_wrap("  " + line))
+
+
+# What the frame compiles or shims into something that works (rewrite.ts, frameShims.ts).
+WORKS = [
+    ("window.location = '/audit/';", "location_assign"),
+    ("window.location.href = url;", "location_assign"),
+    ("location.href = '/tasks/';", "location_assign"),
+    ("document.location = '/x/';", "location_assign"),
+    ("window.location.assign('/x/');", "location_assign"),
+    ("location.replace('/x/');", "location_assign"),
+    ("top.location = '/x/';", "location_assign"),
+    ("window.top.location.href = '/x/';", "location_assign"),
+    ("window.location.reload();", "location_reload"),
+    ("const es = new EventSource('/labs/workflow/api/job/a/status/');", "event_source"),
+    ("const c = document.cookie;", "document_cookie"),
+    ("alert('Saved');", "alert"),
+    ("window.alert('Saved');", "alert"),
+]
+
+
+@pytest.mark.parametrize("line,pattern", WORKS)
+def test_what_the_frame_rewrites_or_shims_is_info(line, pattern):
+    ids = _ids(_wrap("  " + line))
+    assert (pattern, "info") in ids
+    assert not {p for p, s in ids if s == "breaks"}
+
+
+def test_a_property_named_location_is_not_the_address():
+    assert scan_render_code(_wrap("  row.location = 'Kano';\n  const v = item.location.href;")) == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "  const del = async (s) => {\n    if (!window.confirm('Delete?')) return;\n  };",
+        "  async function del() { if (confirm('Delete?')) go(); }",
+        "  const b = <button onClick={() => { if (confirm('Sure?')) del(); }}>x</button>;",
+        "  h('button', { onClick: function () { var ok = window.confirm('Discard?'); if (ok) d(); } });",
+        "  el.addEventListener('click', function () { if (confirm('a')) b(); });",
+        '  const go = async () => { try { if (confirm("it\'s {fine}")) x(); } catch (e) {} };',
+    ],
+)
+def test_a_confirm_the_compile_makes_wait_is_info(body):
+    ids = _ids(_wrap(body))
+    assert ("confirm", "info") in ids and ("confirm", "breaks") not in ids
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "  function check() { return confirm('ok?'); }",
+        "  const del = async () => { items.forEach(function (i) { if (confirm(i)) drop(i); }); };",
+        "  if (cond) { if (confirm('x')) go(); }",
+    ],
+)
+def test_a_confirm_it_cannot_make_wait_still_breaks(body):
+    assert ("confirm", "breaks") in _ids(_wrap(body))
+
+
+def test_a_later_constant_part_of_an_address_is_resolved():
+    code = _wrap(
+        "  var KEYS = '/runs/history/?keys=a,b';\n"
+        "  fetch('/labs/workflow/api/' + sv.id + KEYS, { credentials: 'same-origin' });"
+    )
+    assert scan_render_code(code) == []
 
 
 def test_a_synchronous_xhr_is_named():
@@ -127,10 +181,13 @@ def test_a_guarded_fallback_is_info_not_breaks():
     assert not {p for p, s in ids if s == "breaks"}
 
 
-def test_event_source_with_a_typeof_guard_only_changes():
-    code = _wrap("  if (typeof EventSource !== 'undefined') { const es = new EventSource(u); }")
-    assert ("event_source", "changes") in _ids(code)
-    assert ("event_source", "breaks") not in _ids(code)
+def test_an_event_source_is_checked_like_a_fetch():
+    allowed = _wrap("  const es = new EventSource('/labs/workflow/api/' + d + '/pipeline-rows/stream/?alias=x');")
+    assert _ids(allowed) == {("event_source", "info")}
+    dynamic = _wrap("  if (typeof EventSource !== 'undefined') { const es = new EventSource(u); }")
+    assert _ids(dynamic) == {("event_source", "info")}
+    [refused] = scan_render_code(_wrap("  new EventSource('/custom_analysis/mbw_monitoring/api/stream/');"))
+    assert refused.pattern == "fetch_refused" and refused.detail.startswith("EventSource: GET")
 
 
 def test_line_numbers_are_those_of_the_render_code():
@@ -235,7 +292,7 @@ def test_mirror_patterns_compile_and_answer():
 
 # --- enumeration -------------------------------------------------------------------
 
-STORED_BREAKS = "function W(){ window.location = '/audit/'; return null; }"
+STORED_BREAKS = "function W(){ window.parent.postMessage('x', '*'); return null; }"
 PUBLISHED_BREAKS = "function W(){ if (confirm('x')) {} return null; }"
 STORED_CLEAN = "function W(){ return null; }"
 
@@ -285,7 +342,7 @@ def test_local_records_of_every_owner_with_their_effective_render(local_records)
     stored = targets[local_records.stored.id]
     assert stored.owner == "opportunity:10001" and stored.render_source == "stored"
     # the newest stored copy is what the run page draws
-    assert {f.pattern for f in stored.findings} == {"location_assign"}
+    assert {f.pattern for f in stored.findings} == {"top_or_parent"}
     assert (stored.sandboxed_now, stored.sandboxed_all) == (False, True)
 
     follower = targets[local_records.follower.id]
@@ -376,7 +433,7 @@ def test_connect_scopes_are_read_as_the_user_and_deduplicated():
         targets = connect_targets([user], coverage, seen=set())
     by_id = {t.id: t for t in targets}
     assert sorted(by_id) == [70, 71]
-    assert {f.pattern for f in by_id[70].findings} == {"location_assign"}
+    assert {f.pattern for f in by_id[70].findings} == {"top_or_parent"}
     assert by_id[71].render_source == "template:performance_review"
     assert (coverage.scopes_read, coverage.scopes_refused, coverage.connect_definitions) == (2, 1, 2)
     assert coverage.users_scanned == ["field.lead"] and coverage.real_opps_covered
@@ -390,17 +447,32 @@ MARKER = "CODE_MARKER_NEVER_PRINTED"
 @pytest.mark.django_db
 def test_command_prints_ids_and_names_never_code_and_states_the_gap():
     d = _local("workflow_definition", {"name": "Supervisor board", "config": {}}, opportunity_id=10003)
-    code = f"function W(){{ const k = '{MARKER}'; window.location = '/audit/'; return null; }}"
+    code = f"function W(){{ const k = '{MARKER}'; if (window.confirm('x')) go(); return null; }}"
     _local("workflow_render_code", {"definition_id": d.id, "component_code": code}, opportunity_id=10003)
     out = StringIO()
     call_command("workflow_sandbox_scan", "--fix-suggestions", stdout=out)
     text = out.getvalue()
     assert f"local:{d.id} | Supervisor board | opportunity:10003" in text
-    assert "location_assign | breaks | 1" in text
-    assert MARKER not in text and "window.location" not in text
+    assert "confirm | breaks | 1" in text
+    assert MARKER not in text and "window.confirm" not in text
     assert "NOT COVERED" in text and "--all-users" in text
     assert "Deployed seed templates" in text
-    assert "location_assign -> await actions.navigate(url) | lines 1" in text
+    assert "confirm -> await view.confirm(text)  (in an async function) | lines 1" in text
+
+
+@pytest.mark.django_db
+def test_command_summary_prints_counts_and_no_rows():
+    d = _local("workflow_definition", {"name": "Supervisor board", "config": {}}, opportunity_id=10003)
+    code = "function W(){ window.parent.postMessage('x', '*'); window.location.reload(); return null; }"
+    _local("workflow_render_code", {"definition_id": d.id, "component_code": code}, opportunity_id=10003)
+    out = StringIO()
+    call_command("workflow_sandbox_scan", "--summary", stdout=out)
+    text = out.getvalue()
+    assert "== Coverage" in text and "by worst finding:" in text
+    assert "top_or_parent      breaks      1 / 1" in text
+    assert "location_reload    info        1 / 1" in text
+    assert "breaking AND sandboxed under `all`, by template" in text
+    assert "Supervisor board" not in text and " | " not in text
 
 
 @pytest.mark.django_db
@@ -413,7 +485,14 @@ def test_command_json_has_no_code():
     assert MARKER not in out.getvalue()
     report = json.loads(out.getvalue())
     [row] = [r for r in report["definitions"] if r["id"] == d.id]
-    assert row["findings"] == [{"pattern": "confirm", "severity": "breaks", "line": 1, "detail": ""}]
+    assert row["findings"] == [
+        {
+            "pattern": "confirm",
+            "severity": "breaks",
+            "line": 1,
+            "detail": "not in an async function or event handler: answered No",
+        }
+    ]
     assert report["coverage"]["real_opps_covered"] is False
     assert len(report["templates"]) == len(TEMPLATES)
 
@@ -424,3 +503,42 @@ def test_command_refuses_an_unknown_user():
 
     with pytest.raises(CommandError):
         call_command("workflow_sandbox_scan", "--as-user", "nobody.here", stdout=StringIO())
+
+
+# --- deprecated copies pinned out of the sandbox under `all` -------------------------
+
+
+def _mbw(id_, opp, key="mbw_monitoring"):
+    return SimpleNamespace(id=id_, opportunity_id=opp, data={"name": "MBW", "config": {"templateType": key}})
+
+
+def test_only_the_pinned_deprecated_copies_stay_out_under_all():
+    from connect_labs.workflow.sandbox import DEPRECATED_UNSANDBOXED, should_sandbox
+
+    pinned_id, pinned_opp = sorted(DEPRECATED_UNSANDBOXED)[0]
+    assert not should_sandbox(_mbw(pinned_id, pinned_opp), mode="all")
+    assert not should_sandbox(_mbw(pinned_id, pinned_opp, "mbw_monitoring_v2"), mode="all")
+    # The same id on another opportunity, another template, or a template name alone: in.
+    assert should_sandbox(_mbw(pinned_id, pinned_opp + 1), mode="all")
+    assert should_sandbox(_mbw(pinned_id, pinned_opp, "kmc_flw_flags"), mode="all")
+    assert should_sandbox(_mbw(999_999, pinned_opp), mode="all")
+    # ?sandbox=1 still draws a pinned one sandboxed; opt_in is unchanged by the pin.
+    request = SimpleNamespace(GET={"sandbox": "1"})
+    assert should_sandbox(_mbw(pinned_id, pinned_opp), mode="all", request=request)
+    assert not should_sandbox(_mbw(pinned_id, pinned_opp), mode="opt_in")
+
+
+def test_a_pinned_copy_is_reported_as_kept_out():
+    from connect_labs.workflow.sandbox import DEPRECATED_UNSANDBOXED
+    from connect_labs.workflow.sandbox_scan_sources import _target
+
+    pinned_id, pinned_opp = sorted(DEPRECATED_UNSANDBOXED)[0]
+    t = _target(
+        "connect",
+        pinned_id,
+        {"name": "MBW", "config": {"templateType": "mbw_monitoring"}},
+        f"opportunity:{pinned_opp}",
+        STORED_BREAKS,
+        "stored",
+    )
+    assert t.worst == "breaks" and not t.sandboxed_all and "pinned out of the sandbox" in t.note

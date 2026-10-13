@@ -412,9 +412,9 @@ land is checked against the table again. Request headers are cut to `content-typ
 | `actions.navigate(url, {newTab})`, `actions.reload()` | new (on the run page too): bridge `navigate`. Workflows may also open `/audit/`, `/tasks/`, workflow and run pages, an indicator sheet, a visit photo and the "Authorize" sign-in starts; never an API address. Without a click just before, the host asks, showing the path |
 | `fetch(<labs path>)` (76 calls in 21 templates), `LabsAudit.fetchSessions`, `ConnectMap` boundaries | the frame's `fetch` is the bridge's for labs paths (route table); other hosts get the browser's, which the CSP mostly refuses |
 | `<img src="<labs path>">` (visit photos) | fetched by the host, shown as `blob:` URLs (the frame's img-src allows no labs address) |
-| `EventSource` | absent: the templates that prefer a stream fall back to their plain fetch |
-| `window.location = ...`, `location.reload()` | the frame navigates, the host's `frame-src` refuses where it goes and the host stops the frame ("tried to leave its frame"). It cannot be shimmed: the Navigation API that could cancel it is disabled in an opaque-origin document (checked in Chromium). The three seed templates that did this now call `actions.navigate` / `actions.reload`; a live COPY that still does is why the rollout scans copies before `all` |
-| `window.confirm` | returns false in the frame (no `allow-modals`); the one template that used it now awaits `view.confirm` |
+| `EventSource` | read by the host for the frame (bridge `streamOpen`), for a GET the route table allows as a read; does not reconnect (see "Compile-time rewrites" below; until then it was absent) |
+| `window.location = ...`, `location.reload()` | compiled, in the frame only, to `__labsSandbox.location`, whose changes are bridge `navigate` (see "Compile-time rewrites"). It cannot be shimmed at run time: the Navigation API that could cancel a navigation is disabled in an opaque-origin document (checked in Chromium) |
+| `window.confirm` | directly in an async function or an event handler: compiled to an awaited host question; anywhere else answers No, with a host notice (see "Compile-time rewrites") |
 | `alert`, `window.open`, `history.pushState/replaceState`, `navigator.clipboard`, `<a download href="blob:">`, `document.cookie`, the DOM CSRF token, `#user-opportunities`, `WORKFLOW_API_ENDPOINTS`, `localStorage` | host notice; `navigate` in a new tab; the host's query/hash (same path); `copyText`; `download`; `""`; a dummy (the host adds the real token); this workflow's opportunities only; passed in; in memory |
 | `window.LabsReport`, `ConnectMap`, `PlanLayers`, `MicroplansMapPanel`, `LabsAudit`, Chart.js, Leaflet, Mapbox GL | loaded by the shell from labs static and the pinned CDN URLs; Leaflet tiles from OpenStreetMap and CARTO are now in img-src (GETs to tile servers nobody here controls) |
 
@@ -678,3 +678,146 @@ sandboxed, opened labs' dialog from a button in the frame, previewed one worker,
 confirmed, and the execution completed with `page_scope` set, no run, and one task.
 Tests: `workflow/tests/test_page_actions.py`, `components/workflow/sandbox/workflow_sandbox.test.js`.
 
+
+## Compile-time rewrites, and the road to `all` (2026-10-13)
+
+The live scan (`workflow_sandbox_scan --as-user jonathan`, 549 definitions, labs at
+bc0746272) found 136 that would break under `all`: 103 set `window.location`, 25 reload,
+23 call `confirm()`, 17 open an `EventSource`, 36 fetch a path the table refuses. Nearly
+all are stored COPIES of old template versions (bulk image audit alone 93).
+
+**Ruling: fix it in the platform, not in 136 stored copies.** Rewriting copies by hand
+is work that never ends (every old copy, every clone of one) and edits other people's
+records.
+
+### What the frame now does to render code
+
+`components/workflow/sandbox/rewrite.ts` is a Babel plugin the FRAME's compile adds
+(`renderCode.tsx` `CompileOptions`; the run page compiles exactly as before). It runs in
+the pinned @babel/standalone 7.23.5 the frame loads, and its tests run it in that same
+version (a pinned devDependency).
+
+- **Every reference to the global `location`** -- bare, or through `window`, `document`,
+  `self`, `globalThis`, `top`, `parent`, `window.top`... -- becomes
+  `__labsSandbox.location`, a parameter of the compiled wrapper (never a global). It reads
+  the HOST page's address (so `location.pathname.match(/workflow\/(\d+)/)` finds the
+  workflow again, which in the frame it did not), and every change is the bridge's
+  `navigate`: `href =`, `= url`, `assign`, `replace`, `reload` (the address without its
+  hash: with one, the host would only jump), `search =`, `pathname =`. A `hash =` moves
+  only the host's hash (`setLocation`). The host checks it as it checks a link, and asks
+  when there was no click just before (an effect that redirects after a fetch, such as
+  bulk image audit's "Redirecting to review..."). A local named `location` (a parameter,
+  a `const`, a destructured prop) is left alone (Babel scope binding).
+- **`confirm()`** is synchronous and the host's question is not; nothing synchronous can
+  wait for it. **Ruling:** where the call sits directly in an `async` function it becomes
+  `(await __labsSandbox.confirm(msg))` -- identical control flow. Where it sits in an event
+  handler (a JSX `on*={...}`, an `on*:` property of a props object as hyperscript render
+  code writes them, an `addEventListener` listener), the handler is made `async` first:
+  nothing reads a handler's return value. Anywhere else (a function whose result is used,
+  a `forEach` callback) it is left alone, and the frame's `confirm` answers **No** and the
+  host says so in a notice. Why No and not Yes: whatever a confirm guards then does not
+  happen, which is the safe failure; a Yes would skip the person's own question, and only
+  the route table's own ask would stand between a page and a far-reaching write. Cost:
+  such code (one live copy's "attach pipeline" control, already refused as a definition
+  write) does nothing there.
+- Not compiled, because a run-time shim already covers it: `alert` (a host notice),
+  `document.cookie` (`""`; the host adds its own CSRF token, and drops the frame's dummy
+  `csrfmiddlewaretoken` from a form body, since Django reads a form's token before the
+  header), `prompt` (null, with a notice).
+
+### `EventSource`, through the host
+
+The frame's `EventSource` (frameShims.ts `makeEventSource`) asks the host to open the
+stream (`streamOpen`); the host checks it with `checkFetch` as a GET and requires the
+`read` gate, reads it with `fetch` (not a browser EventSource, which can set no headers:
+the request carries the same `X-Labs-Sandbox-For` / `-Scope` stamps as every other, so
+cross-workflow reads stay bound), parses `text/event-stream` and pushes each event back
+on the port (`STREAM` messages). At most 6 at once, 96 MB each; aborted when the frame
+stops. **Ruling: it does not reconnect.** A browser's EventSource reconnects after the
+stream ends; every live use closes on its final event or falls back to a plain fetch on
+`error`, and a reconnect loop across the bridge would only re-run the server's work. So
+at the end the source is CLOSED and `error` fires.
+
+`kmc_flw_review` (the template; two live followers) already guarded its stream with
+`typeof EventSource` and a plain-fetch fallback, so in the frame it used to take the
+fallback. **Ruling: the template needs no change** -- its stream
+(`/labs/workflow/api/<its own id>/pipeline-rows/stream/`) is a bound read on the table,
+so in the frame it now streams its progress as on the run page, and keeps its fallback.
+
+### Routes added for live copies
+
+Each is what a live copy legitimately asks for, bound the way the table binds:
+
+- `GET /labs/workflow/api/<this definition>/schedule/` (performance-review-based ward
+  trackers: "when was this data last synced") and `.../pipeline-data/stream/` (old copies
+  that stream their pipelines): reads of THIS definition. Making a schedule (`POST`) is
+  not on the table: it runs as the person, unattended.
+- `POST /microplans/<opp>/preview_footprints/` (building footprints for a drawn area:
+  public data, computed on the server, writes nothing of the viewer's) as a read bound to
+  the workflow's opportunities, and `GET /microplans/preview_status/<task>/` only for a
+  task this host started (`startsJob` on the route; `ownJob` on the poll).
+- `GET /audit/api/opportunities/search/` (old bulk image audit copies' opportunity
+  picker): answered, but the host cuts the answer's `opportunities` to this workflow's
+  own (`filterOpportunities`), so it never lists what the workflow does not cover; an
+  answer it cannot read is not passed on.
+- `POST /audit/api/<audit>/save/` (photo-review copies saving their verdicts): an
+  `effect` on one existing record, asked naming the audit. **Ruling:** a yes holds two
+  minutes for THAT audit only (`recordGrant`), not for another -- a review screen saves
+  one audit's results again and again, and asking on every save would make it unusable;
+  review fix 4's rule (one yes never covers another record) still holds.
+- A `FormData` body (those saves) is sent url-encoded; one carrying a file is refused.
+
+Left refused, deliberately:
+
+- `GET /labs/workflow/?opportunity_id=` (one draft dashboard scrapes the workflow LIST
+  page's HTML for run ids): an HTML page, carrying more than the run ids; the dashboard
+  should declare what it reads (`config.read_workflows`) and read runs through the run
+  routes. It falls back to no ids.
+- `/labs/workflow/api/pipeline/<id>/`, `available-pipelines/`, `<def>/pipeline-sources/`
+  (one outcome summary's "attach a pipeline" control): pipeline and definition writes,
+  never on the table.
+- `/labs/workflow/api/commcare-user-cases/` (one dev preview): the endpoint no longer
+  exists.
+- `/custom_analysis/mbw_monitoring/api/*` and its stream: see below.
+
+### Deprecated MBW copies stay out under `all`
+
+**Ruling: the live copies of the deprecated MBW monitoring templates (v1, and the
+removed v2) are pinned out of the frame under `all`, by `(definition id, opportunity id)`
+in `workflow/sandbox.py` `DEPRECATED_UNSANDBOXED`, and must also still say they are one
+of those templates.** They call their own `/custom_analysis/mbw_monitoring/` endpoints
+and stream from them; adding routes for dead code would be review surface for nothing,
+and breaking them would undo why they were kept (templates/mbw_monitoring/DEPRECATED.md).
+Why by id and not by the template key: `templateType` is
+author-writable, so "deprecated template => unsandboxed" would let any author take a
+workflow out of the frame by naming it -- exactly the opt-out this design refuses. Pinned
+ids can only shrink (no new instance can be made; a clone gets a new id and is
+sandboxed), and `?sandbox=1` still draws any of them sandboxed. Cost: those 16
+definitions, on four opportunities, keep today's exposure under `all` until they are
+retired; anyone with write access to one of them could change its render code and it
+would still run unsandboxed. Retiring them closes it.
+
+### The scan models all this
+
+`workflow_sandbox_scan` now reports a rewritten `location` and an awaitable `confirm` as
+`info`, an `EventSource` as a GET checked against the table (refused: `fetch_refused`
+`breaks`), `alert` and `document.cookie` as `info`, and a pinned deprecated copy as
+"kept out under `all`". Its fetch resolver also follows a constant named later in an
+address (`'/labs/workflow/api/' + id + KEYS`), which was a false `GET /labs/workflow/api/`
+before. `--summary` prints only coverage and counts.
+
+What the rewritten scan still reports as `breaks` on the copies read for this work: the
+draft dashboard's HTML scrape, the outcome summary's pipeline controls (and the three
+synchronous confirms in front of them), and the deprecated MBW copies (kept out). To
+check after the deploy:
+
+    gh workflow run run-labs-command.yml --repo dimagi-internal/connect-labs --ref main \
+        --field command="workflow_sandbox_scan --as-user jonathan --summary"
+
+Verified locally in Chromium against a local server, sandboxed: an old bulk image audit
+copy's effect-time redirect became labs' own question and then the audit page; a
+performance-review ward tracker copy read its schedule and reloaded; an old CHC nutrition
+copy drew as it does plain; a probe workflow's `window.location.href =`, `location =`,
+`location.reload()`, a handler `confirm` (yes), an async `confirm` (no), a synchronous
+`confirm` (No, with a notice), `alert`, `location.hash =` and an `EventSource` on its own
+pipeline stream (open, two messages, closed) all behaved as on the run page.

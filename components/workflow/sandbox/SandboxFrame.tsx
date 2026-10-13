@@ -9,6 +9,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   createSandboxHost,
   proxyFetch,
+  proxyStream,
   type SandboxHost,
   type SandboxMode,
   type WorkflowHandlers,
@@ -137,6 +138,10 @@ export function SandboxFrame(props: SandboxFrameProps) {
               fetch,
               (url) =>
                 checkFetch(url, 'GET', propsRef.current.workflow!.routeContext),
+            ),
+          stream: (checked, onEvent, onOpen, signal) =>
+            proxyStream(checked, onEvent, onOpen, signal, fetch, (url) =>
+              checkFetch(url, 'GET', propsRef.current.workflow!.routeContext),
             ),
           queryPipelineRows: (alias, query) =>
             propsRef.current.workflow!.queryPipelineRows(alias, query),

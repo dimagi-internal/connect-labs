@@ -13,13 +13,20 @@ after the guard that makes it unreachable in the frame (``actions.navigate ? ...
 window.location.href = url``, the seed templates' own fallback for the plain run
 page, which has no ``actions.navigate``) is reported as ``info``, not ``breaks``.
 
+It models what the frame does to render code before it runs it (spec, "Compile-time
+rewrites"; ``components/workflow/sandbox/rewrite.ts``): every reference to the global
+``location`` is compiled to the host's navigate, and a ``confirm()`` directly in an
+async function or an event handler to the host's question. Those report as ``info``.
+A ``confirm()`` anywhere else is still ``breaks`` (the frame answers it No), and an
+``EventSource`` is checked like a fetch (the host reads it, for a route it allows).
+
 Severities:
 
-* ``breaks`` -- would fail or stop the frame (a navigation, a refused fetch, a
-  ``confirm`` that now always answers no).
-* ``changes`` -- works, differently (``alert`` becomes a host notice, storage is
-  in memory only).
-* ``info`` -- worth knowing, nothing to fix (a dynamic fetch the scan cannot
+* ``breaks`` -- would fail or stop the frame (a refused fetch or stream, a
+  ``confirm`` that answers No, reaching into the page around the frame).
+* ``changes`` -- works, differently (storage is in memory only).
+* ``info`` -- worth knowing, nothing to fix (a navigation or question compiled to the
+  host's, an ``alert`` drawn as a host notice, a dynamic fetch the scan cannot
   resolve, a guarded fallback, a CSRF read the host makes harmless).
 
 Output carries ids, names, pattern ids and line numbers only: never code.
@@ -49,22 +56,26 @@ class Pattern:
     guard: str = ""
 
 
+#: The frame's global ``location``, reached directly or through a window
+#: (``window.``, ``document.``, ``top.``, ``window.parent.``...). A property named
+#: ``location`` on anything else (``row.location``) is not it.
+_LOCATION = r"(?<![\w$.])(?:(?:window|document|self|globalThis|top|parent|frames)\s*\.\s*)*location"
+
 PATTERNS: tuple[Pattern, ...] = (
     Pattern(
         "location_assign",
-        BREAKS,
-        "navigating the frame: the host refuses where it goes and stops the frame",
-        "await actions.navigate(url)  (or actions.navigate(url, {newTab: true}))",
-        r"(?<![\w$.])(?:(?:window|document|self|globalThis)\.)?location(?:\.href)?\s*=(?!=)"
-        r"|(?<![\w$.])(?:(?:window|document|self|globalThis)\.)?location\.(?:assign|replace)\s*\(",
+        INFO,
+        "compiled to the host's navigate: it goes where a link would, when the host allows it",
+        "nothing needed; actions.navigate(url) says the same plainly",
+        rf"{_LOCATION}(?:\.href)?\s*=(?!=)|{_LOCATION}\.(?:assign|replace)\s*\(",
         guard="actions.navigate",
     ),
     Pattern(
         "location_reload",
-        BREAKS,
-        "reloading the frame drops its bridge: a blank frame",
-        "await actions.reload()",
-        r"(?<![\w$.])(?:(?:window|document|self|globalThis)\.)?location\.reload\s*\(",
+        INFO,
+        "compiled to the host's navigate to the page's own address",
+        "nothing needed; actions.reload() says the same plainly",
+        rf"{_LOCATION}\.reload\s*\(",
         guard="actions.reload",
     ),
     Pattern(
@@ -72,15 +83,16 @@ PATTERNS: tuple[Pattern, ...] = (
         BREAKS,
         "the frame cannot reach the page around it (cross-origin)",
         "pass what is needed as data, or use an actions.* method",
-        r"(?<![\w$.])window\.(?:top|parent)\b"
-        r"|(?<![\w$.])(?:top|parent)\.(?:location|document|window|frames|postMessage|history)\b",
+        r"(?<![\w$.])window\.(?:top|parent)\b(?!\s*\.\s*location\b)"
+        r"|(?<![\w$.])(?:top|parent)\.(?:document|window|frames|postMessage|history)\b",
     ),
     Pattern(
         "confirm",
         BREAKS,
-        "window.confirm always returns false in the frame (no modals)",
-        "if (!(await view.confirm(text))) return;",
-        r"(?<![\w$.])(?:window\.)?confirm\s*\(",
+        "a confirm() outside an async function or event handler answers No in the frame "
+        "(one inside them is compiled to the host's question, and is info)",
+        "if (!(await view.confirm(text))) return;  (in an async function)",
+        r"(?<![\w$.])(?:(?:window|self|globalThis)\.)?confirm\s*\(",
         guard="view.confirm",
     ),
     Pattern(
@@ -106,9 +118,10 @@ PATTERNS: tuple[Pattern, ...] = (
     ),
     Pattern(
         "event_source",
-        BREAKS,
-        "EventSource is absent in the frame; without a fallback the code throws",
-        "guard with `if (typeof EventSource !== 'undefined')` and fall back to a plain fetch",
+        INFO,
+        "an EventSource the host reads for the frame, for an address the route table allows "
+        "(one it refuses is fetch_refused); it does not reconnect",
+        "nothing needed",
         r"\bnew\s+(?:window\.)?EventSource\s*\(",
     ),
     Pattern(
@@ -152,9 +165,9 @@ PATTERNS: tuple[Pattern, ...] = (
     ),
     Pattern(
         "document_cookie",
-        CHANGES,
-        'document.cookie reads "" in the frame',
-        "drop it: the host adds its own CSRF token to every write",
+        INFO,
+        'document.cookie reads "" in the frame; the host adds its own CSRF token to every write',
+        "nothing needed; it can be dropped",
         r"\bdocument\.cookie\b",
     ),
     Pattern(
@@ -165,7 +178,7 @@ PATTERNS: tuple[Pattern, ...] = (
     ),
     Pattern(
         "alert",
-        CHANGES,
+        INFO,
         "alert() becomes a notice drawn by the host (does not block)",
         "nothing needed; or show the message in the render",
         r"(?<![\w$.])(?:window\.)?alert\s*\(",
@@ -420,6 +433,11 @@ def resolve_address(expr: str, code: str, before: int, depth: int = 0) -> str | 
             out.append(resolved)
         elif k == 0:
             return None
+        elif _IDENT.match(part):
+            # A later part named by a constant (`base + id + SUFFIX`) is that constant.
+            value = _declared_value(code, part, before)
+            resolved = resolve_address(value, code, before, depth + 1) if value else None
+            out.append(resolved if resolved is not None and _DYNAMIC not in resolved else _DYNAMIC)
         else:
             out.append(_DYNAMIC)
     address = "".join(out)
@@ -500,6 +518,116 @@ def check_fetch_address(address: str, method: str | None, *, is_page: bool) -> t
 
 
 # -----------------------------------------------------------------------------
+# confirm(): where the frame's compile makes it wait for the host
+# -----------------------------------------------------------------------------
+
+
+def blank_strings(code: str) -> str:
+    """``code`` (comments already stripped) with every string literal's insides blanked.
+
+    Quotes and newlines are kept, so positions and line numbers do not move and a
+    brace in a string is not taken for code.
+    """
+    out, i, n = [], 0, len(code)
+    while i < n:
+        ch = code[i]
+        if ch in "'\"`":
+            j = _string_end(code, i)
+            body = code[i + 1 : j - 1] if j - i >= 2 else ""
+            out.append(ch + "".join(c if c == "\n" else " " for c in body) + (code[j - 1] if j - i >= 2 else ""))
+            i = j
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+_BLOCK_KEYWORD = re.compile(r"(?<![\w$])(?:if|for|while|switch|catch|with)\s*$")
+_ASYNC_FUNCTION = re.compile(r"(?<![\w$])async\s+function\s*\*?\s*[\w$]*\s*$")
+_FUNCTION = re.compile(r"(?<![\w$])function\s*\*?\s*[\w$]*\s*$")
+_ASYNC_METHOD = re.compile(r"(?<![\w$])async\s+[\w$]+\s*$")
+_ARROW = re.compile(r"=>\s*$")
+_ARROW_PARAMS = re.compile(r"(?:\([^()]*\)|[\w$]+)\s*=>\s*$")
+#: A function nothing reads the result of: `onClick={...`, `onClick: ...`,
+#: `addEventListener('click', ...`.
+_HANDLER_BEFORE = re.compile(
+    r"(?:(?<![\w$])on[A-Z][\w$]*\s*(?:=\s*\{|:)|addEventListener\s*\(\s*['\"`][^'\"`]*['\"`]\s*,)\s*$"
+)
+
+
+def _open_paren_before(code: str, close: int) -> int | None:
+    depth = 0
+    for k in range(close, -1, -1):
+        c = code[k]
+        if c == ")":
+            depth += 1
+        elif c == "(":
+            depth -= 1
+            if depth == 0:
+                return k
+    return None
+
+
+def _function_at(code: str, brace: int) -> tuple[bool, bool] | None:
+    """For the ``{`` at ``brace``: None when it opens no function body, else
+    ``(is_async, is_handler)``."""
+    head = code[:brace].rstrip()
+    if _ARROW.search(head):
+        m = _ARROW_PARAMS.search(head)
+        start = m.start() if m else len(head)
+        before = head[:start].rstrip()
+        is_async = before.endswith("async") and not re.search(r"[\w$]async$", before)
+        if is_async:
+            before = before[: -len("async")].rstrip()
+        return is_async, bool(_HANDLER_BEFORE.search(before))
+    if head.endswith(")"):
+        open_at = _open_paren_before(head, len(head) - 1)
+        if open_at is None:
+            return None
+        before = head[:open_at]
+        if _BLOCK_KEYWORD.search(before):
+            return None
+        if _ASYNC_FUNCTION.search(before):
+            return True, False
+        m = _FUNCTION.search(before)
+        if m:
+            return False, bool(_HANDLER_BEFORE.search(before[: m.start()].rstrip()))
+        if _ASYNC_METHOD.search(before):
+            return True, False
+        # A method `name(...) {`: a handler only if it is an on* one.
+        name = re.search(r"([\w$]+)\s*$", before)
+        if name:
+            return False, bool(re.match(r"on[A-Z]", name.group(1)))
+        return None
+    return None
+
+
+def confirm_is_awaited(code: str, pos: int) -> bool:
+    """Whether the frame's compile makes the ``confirm(`` at ``pos`` wait for the host:
+    its nearest enclosing function is ``async``, or is an event handler (rewrite.ts).
+
+    ``code`` has its comments stripped and its strings blanked. A heuristic on text,
+    not a parse: when it cannot tell, it says no, so the scan over-reports rather
+    than under.
+    """
+    depth = 0
+    for k in range(pos - 1, -1, -1):
+        c = code[k]
+        if c == "}":
+            depth += 1
+        elif c == "{":
+            if depth:
+                depth -= 1
+                continue
+            found = _function_at(code, k)
+            if found is None:
+                continue  # a block or an object: keep looking outward
+            is_async, is_handler = found
+            return is_async or is_handler
+    return False
+
+
+# -----------------------------------------------------------------------------
 # The check
 # -----------------------------------------------------------------------------
 
@@ -509,6 +637,7 @@ def scan_render_code(code: str | None, *, is_page: bool = False) -> list[Finding
     if not code:
         return []
     clean = strip_comments(code)
+    blank = blank_strings(clean)
     lines = clean.split("\n")
     findings: list[Finding] = []
 
@@ -526,10 +655,26 @@ def scan_render_code(code: str | None, *, is_page: bool = False) -> list[Finding
             if pattern.guard and guarded(line, pattern.guard):
                 findings.append(Finding("guarded_fallback", INFO, line, f"{pattern.id} after {pattern.guard}"))
                 continue
-            if pattern.id == "event_source" and re.search(
-                r"typeof\s+(?:window\.)?EventSource|window\.EventSource", clean
-            ):
-                findings.append(Finding("event_source", CHANGES, line, "has a typeof guard: takes its fallback"))
+            if pattern.id == "confirm":
+                if confirm_is_awaited(blank, m.start()):
+                    findings.append(Finding("confirm", INFO, line, "compiled to the host's question"))
+                else:
+                    findings.append(
+                        Finding("confirm", BREAKS, line, "not in an async function or event handler: answered No")
+                    )
+                continue
+            if pattern.id == "event_source":
+                expr, _ = _read_arg(clean, m.end())
+                address = resolve_address(expr, clean, m.start())
+                if address is None:
+                    findings.append(Finding("event_source", INFO, line, "address not resolved: unchecked"))
+                    continue
+                verdict = check_fetch_address(address.split("#")[0], "GET", is_page=is_page)
+                if verdict and verdict[0] != "fetch_dynamic":
+                    pid, detail = verdict
+                    findings.append(Finding(pid, PATTERN_BY_ID[pid].severity, line, f"EventSource: {detail}"))
+                else:
+                    findings.append(Finding("event_source", INFO, line, "read by the host"))
                 continue
             findings.append(Finding(pattern.id, pattern.severity, line))
 
