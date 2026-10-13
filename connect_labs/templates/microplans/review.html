@@ -54,6 +54,11 @@
   /* Drawing a polygon: the crosshair beats the inline hand cursor that the
      boundary / work-area hover handlers put on the canvas (review.js). */
   .mp-drawing .mapboxgl-canvas { cursor: crosshair !important; }
+  .mp-drawing.mp-picking .mapboxgl-canvas { cursor: pointer !important; }
+  /* Select + Undo buttons added to the draw control (review.js addDrawButtons). */
+  .mapbox-gl-draw_ctrl-draw-btn.mp-draw-pick { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path d='M5 3l14 8-6 1.5L10 19z' fill='none' stroke='%23333' stroke-width='2' stroke-linejoin='round'/></svg>"); }
+  .mapbox-gl-draw_ctrl-draw-btn.mp-draw-undo { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path d='M9 7L4 12l5 5M4 12h11a5 5 0 0 1 0 10h-2' fill='none' stroke='%23333' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>"); }
+  .mapbox-gl-draw_ctrl-draw-btn.mp-draw-undo:disabled { opacity: .35; cursor: default; }
   .map-resizer { position: absolute; left: 0; right: 0; bottom: -4px; height: 8px; cursor: row-resize; z-index: 6;
                  background: transparent; }
   .map-resizer::after { content: ""; position: absolute; left: 50%; transform: translateX(-50%); bottom: 1px;
@@ -211,7 +216,7 @@
           </div>
 
           <div id="area-draw" class="hidden space-y-2">
-            <p class="text-[10px] text-gray-500">Click on the map to add points; click the first point (or double-click) to finish. The polygon and delete buttons are at the top-left of the map.</p>
+            <p class="text-[10px] text-gray-500">Click on the map to add points; click the first point (or double-click) to finish. Undo (or Ctrl+Z) removes the last point. To delete a shape, click the arrow button at the top-left of the map, click the shape, then the bin.</p>
             <div class="border-t border-gray-100 pt-1.5">
               <div class="text-[10px] uppercase tracking-wide text-gray-400 mb-1">Or: trace service-delivery points</div>
               <p class="text-[10px] text-gray-400 mb-1">Turn on the <b>Service delivery</b> layer (map, top-right) and Show points first; this traces their footprint into the plan area.</p>
