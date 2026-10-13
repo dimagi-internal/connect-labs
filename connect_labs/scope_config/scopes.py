@@ -22,7 +22,7 @@ from dataclasses import dataclass
 
 TYPES = ("organization", "program", "opportunity", "user")
 
-LABELS = {"organization": "organisation", "program": "programme", "opportunity": "opportunity", "user": "user"}
+LABELS = {"organization": "organisation", "program": "program", "opportunity": "opportunity", "user": "user"}
 
 
 @dataclass(frozen=True)
