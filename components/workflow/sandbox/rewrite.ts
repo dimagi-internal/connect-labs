@@ -155,6 +155,122 @@ function usesEventAfter(fn: NodePath, call: any): boolean {
   );
 }
 
+/** Is `ref` (a reference to a function) used AS an event handler: a JSX `on*`
+ * attribute, an `on*:` property, `addEventListener`'s listener? */
+function isHandlerReference(ref: NodePath): boolean {
+  const parent = ref.parentPath;
+  if (!parent) return false;
+  const onName = (key: any) =>
+    !!key &&
+    ((key.type === 'Identifier' && /^on[A-Z]/.test(key.name)) ||
+      (key.type === 'StringLiteral' && /^on[A-Z]/.test(key.value)));
+  if (
+    parent.isJSXExpressionContainer() &&
+    parent.parentPath &&
+    parent.parentPath.isJSXAttribute()
+  ) {
+    const attr = parent.parentPath.node.name;
+    return (
+      !!attr && attr.type === 'JSXIdentifier' && /^on[A-Z]/.test(attr.name)
+    );
+  }
+  if (parent.isObjectProperty() && parent.node.value === ref.node) {
+    return !parent.node.computed && onName(parent.node.key);
+  }
+  if (parent.isCallExpression() && parent.node.arguments[1] === ref.node) {
+    const callee = parent.node.callee;
+    return (
+      !!callee &&
+      callee.type === 'MemberExpression' &&
+      propertyName(callee) === 'addEventListener'
+    );
+  }
+  return false;
+}
+
+/** The binding a function is reached by: `function f() {}`, `const f = () => {}`. */
+function functionBinding(fn: NodePath): any {
+  if (fn.isFunctionDeclaration() && fn.node.id) {
+    const scope = fn.parentPath && fn.parentPath.scope;
+    return scope ? scope.getBinding(fn.node.id.name) : null;
+  }
+  const parent = fn.parentPath;
+  if (
+    parent &&
+    parent.isVariableDeclarator() &&
+    parent.node.init === fn.node &&
+    parent.node.id.type === 'Identifier'
+  ) {
+    return parent.scope.getBinding(parent.node.id.name);
+  }
+  return null;
+}
+
+/** What making a function async takes: these functions made async, these calls
+ * awaited. */
+interface LiftPlan {
+  fns: Set<NodePath>;
+  awaits: NodePath[];
+}
+
+const MAX_LIFT_DEPTH = 4;
+
+/**
+ * Can `fn` -- a function holding a `confirm(...)` at `at` -- be made async without
+ * changing what its callers see? Yes when nothing reads its result: it is an event
+ * handler, or a named function used only as one, or called only as a statement
+ * (`attach();`) from functions that can be made async the same way (each such call
+ * is then awaited, so what follows it still runs after the answer). Anything else --
+ * a call whose value is used, a callback handed to code that is not an event
+ * listener (`useEffect`, `forEach`), a function reassigned -- and it is left alone.
+ */
+function planLift(
+  fn: NodePath,
+  at: any,
+  plan: LiftPlan,
+  depth: number,
+): boolean {
+  if (depth > MAX_LIFT_DEPTH || fn.node.generator) return false;
+  if (fn.node.async || plan.fns.has(fn)) return true;
+  if (isEventHandler(fn)) {
+    if (usesEventAfter(fn, at)) return false;
+    plan.fns.add(fn);
+    return true;
+  }
+  const binding = functionBinding(fn);
+  if (!binding || !binding.constant || !binding.referencePaths.length) {
+    return false;
+  }
+  const calls: NodePath[] = [];
+  for (const ref of binding.referencePaths as NodePath[]) {
+    if (isHandlerReference(ref)) {
+      if (usesEventAfter(fn, at)) return false;
+      continue;
+    }
+    const call = ref.parentPath;
+    if (!call || !call.isCallExpression() || call.node.callee !== ref.node) {
+      return false;
+    }
+    const holder = call.parentPath;
+    const discarded =
+      !!holder &&
+      (holder.isExpressionStatement() ||
+        // `onClick={() => attach()}`: the arrow's value is a handler's, unread.
+        (holder.isArrowFunctionExpression() &&
+          holder.node.body === call.node &&
+          isEventHandler(holder)));
+    if (!discarded) return false;
+    const caller = call.getFunctionParent();
+    if (!caller) return false;
+    calls.push(call);
+    plan.fns.add(fn);
+    if (!planLift(caller, call.node, plan, depth + 1)) return false;
+  }
+  plan.fns.add(fn);
+  plan.awaits.push(...calls);
+  return true;
+}
+
 /** The Babel plugin. `(babel) => ({visitor})`, as both Babel 7 and 8 take it. */
 export function sandboxRewritePlugin({ types: t }: Babel) {
   const sandboxLocation = () =>
@@ -204,11 +320,18 @@ export function sandboxRewritePlugin({ types: t }: Babel) {
       const fn = path.getFunctionParent();
       if (!fn || fn.node.generator) return;
       if (!fn.node.async) {
-        if (!isEventHandler(fn)) return;
         // A handler that uses its event after the question (`e.preventDefault()`)
-        // would do so after the event is over once it awaits: left alone.
-        if (usesEventAfter(fn, path.node)) return;
-        fn.node.async = true;
+        // would do so after the event is over once it awaits: left alone (planLift).
+        const plan: LiftPlan = { fns: new Set(), awaits: [] };
+        if (!planLift(fn, path.node, plan, 0)) return;
+        plan.fns.forEach((f) => {
+          f.node.async = true;
+        });
+        for (const call of plan.awaits) {
+          if (call.parentPath && call.parentPath.isAwaitExpression()) continue;
+          call.replaceWith(t.awaitExpression(call.node));
+          call.skip();
+        }
       }
       path.replaceWith(
         t.awaitExpression(

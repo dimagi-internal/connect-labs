@@ -770,65 +770,10 @@ Each is what a live copy legitimately asks for, bound the way the table binds:
   review fix 4's rule (one yes never covers another record) still holds.
 - A `FormData` body (those saves) is sent url-encoded; one carrying a file is refused.
 
-Left refused, deliberately:
-
-- `GET /labs/workflow/?opportunity_id=` (one draft dashboard scrapes the workflow LIST
-  page's HTML for run ids): an HTML page, carrying more than the run ids; the dashboard
-  should declare what it reads (`config.read_workflows`) and read runs through the run
-  routes. It falls back to no ids.
-- `/labs/workflow/api/pipeline/<id>/`, `available-pipelines/`, `<def>/pipeline-sources/`
-  (one outcome summary's "attach a pipeline" control): pipeline and definition writes,
-  never on the table.
-- `/labs/workflow/api/commcare-user-cases/` (one dev preview): the endpoint no longer
-  exists.
-- `/custom_analysis/mbw_monitoring/api/*` and its stream: see below.
-
-### Deprecated MBW copies stay out under `all`
-
-**Ruling: the live copies of the deprecated MBW monitoring templates (v1, and the
-removed v2) are pinned out of the frame under `all`, by `(definition id, opportunity id)`
-in `workflow/sandbox.py` `DEPRECATED_UNSANDBOXED`, must also still say they are one of
-those templates, and the code they would draw must be byte-for-byte a version labs shipped
-(`workflow/sandbox_deprecated.py`: the sha256 of every committed version of the v1
-`RENDER_CODE` and of the v2/v3 render files, from git history).** They call their own `/custom_analysis/mbw_monitoring/` endpoints
-and stream from them; adding routes for dead code would be review surface for nothing,
-and breaking them would undo why they were kept (templates/mbw_monitoring/DEPRECATED.md).
-Why by id and not by the template key: `templateType` is
-author-writable, so "deprecated template => unsandboxed" would let any author take a
-workflow out of the frame by naming it -- exactly the opt-out this design refuses. Pinned
-ids can only shrink (no new instance can be made; a clone gets a new id and is
-sandboxed), and `?sandbox=1` still draws any of them sandboxed. The code check is
-the review fix below: without it, anyone who can write one of those 16 records could put
-their own code in it and have it run unsandboxed. With it, a pinned record runs outside the
-frame only labs' own shipped code; edit it and it is drawn in the frame like any other.
-Cost: a pinned copy that was edited after it was made, or made from a v2 version whose code
-was derived at import time (not recoverable from history), is sandboxed under `all` and
-breaks there; the scan names each such record ("pinned deprecated copy, but its code is not
-a version labs shipped"). Retiring them closes the rest.
-
-### Recorded exemptions (2026-10-13)
-
-**Ruling: a live copy that would break under `all` because it needs what the frame will
-never give it (a retired endpoint, a definition write) is not given a route. It is
-recorded by hand as exempt, with why, in `workflow.models.SandboxExemption`, written only
-by `manage.py workflow_sandbox_exempt --definition <id> (--opportunity <id> | --program <id>)
---as-user <username> --reason "..."`** (`--remove`, `--list`; no MCP tool, no view). The
-command reads the definition and its effective render code server-side as that user, with
-their stored Connect login (as `workflow_sandbox_scan --as-user` does), and records the
-digest of that code (`sandbox.render_code_digest`). Under `all` a definition stays out only
-if a row exists for its id, on the owner it names (the scan's owner: opportunity, else
-program, else organization), and the code it is about to draw has that digest: any edit
-voids it, fail closed. A page is never exempt, edit mode is never exempt (the editor draws
-code no row hashed, the AI chat's included), `?sandbox=1` still draws an exempt workflow
-sandboxed, `opt_in` is unchanged by a row, and a lookup that fails is no exemption. Exemption status is not shown in the workflow UI (owner's ruling, 2026-10-13): it is
-read from the scan and `workflow_sandbox_exempt --list` only. The scan reports an exempt copy as "kept out (exempt:
-<reason>)", and a recorded copy whose code or owner changed as void, so breaking. Every add
-and remove is in the audit trail (`resource_type=sandbox_exemption`). First used for the
-2026-10-13 scan's eight edited MBW copies, the outcome summary's pipeline controls and the
-draft dashboard's HTML fetch; the one copy that calls an endpoint that no longer exists is
-left as it is (already broken unsandboxed). Only the render code is bound, not the
-definition's config: before recording a copy, check its code does not build same-origin
-addresses from config an author could change.
+Left refused, deliberately, at the time (all answered since: "Every live copy runs
+sandboxed", below): the draft dashboard's scrape of the workflow list page, the outcome
+summary's pipeline controls, the dev preview's call to an endpoint that no longer exists,
+and the deprecated MBW dashboards' own endpoints.
 
 ### Review fixes (before merge)
 
@@ -860,8 +805,8 @@ the viewer's access as always).
 
 `workflow_sandbox_scan` now reports a rewritten `location` and an awaitable `confirm` as
 `info`, an `EventSource` as a GET checked against the table (refused: `fetch_refused`
-`breaks`), `alert` and `document.cookie` as `info`, and a pinned deprecated copy as
-"kept out under `all`". Its fetch resolver also follows a constant named later in an
+`breaks`), `alert` and `document.cookie` as `info` (the "kept out under `all`" it once
+reported for pinned deprecated copies is gone with the pin, below). Its fetch resolver also follows a constant named later in an
 address (`'/labs/workflow/api/' + id + KEYS`), which was a false `GET /labs/workflow/api/`
 before. `--summary` prints only coverage and counts.
 
@@ -880,3 +825,76 @@ copy drew as it does plain; a probe workflow's `window.location.href =`, `locati
 `location.reload()`, a handler `confirm` (yes), an async `confirm` (no), a synchronous
 `confirm` (No, with a notice), `alert`, `location.hash =` and an `EventSource` on its own
 pipeline stream (open, two messages, closed) all behaved as on the run page.
+
+## Every live copy runs sandboxed (2026-10-13)
+
+**Ruling (Jonathan): no exemptions.** "Why are you calling them exemptions? The workflows
+want to be able to do everything they can today and more over time." So nothing is kept
+out of the frame under `all`: the pin of deprecated MBW copies (`DEPRECATED_UNSANDBOXED`,
+`sandbox_deprecated.py`) and the recorded exemptions (`SandboxExemption`, migration 0007
+drops its table, `workflow_sandbox_exempt`) are removed, and so is the scan's "kept out"
+reporting. What a live copy needs, the frame gives it through the host, bound the way the
+table binds everything, asked first when a write reaches past the workflow's own run.
+Why: an exemption is a workflow running with the viewer's session, which is exactly what
+the frame exists to stop; every one of them was a capability gap, and a gap is closed by
+giving the capability, not by giving the session. Cost: more route-table surface (below,
+each bound), and the deprecated MBW code now draws in the frame -- tested on its shipped
+code, not on every edited copy.
+
+What was added, from the live scan (`workflow_sandbox_scan --as-user jonathan`, labs at
+469e0a742: 19 definitions with `breaks`):
+
+- **The deprecated MBW monitoring dashboards** (16 copies; `templates/mbw_monitoring/urls.py`):
+  `POST .../api/opportunity-flws/` (opportunities in the body bound), `GET .../stream/`,
+  `.../api/oauth-status/`, `.../api/snapshot/`, `.../api/gps/<username>/` as reads (scope and
+  `run_id` in the query bound as everywhere), and `POST .../api/save-snapshot/` as an `own`
+  write whose body must name THIS run (and, if any, its opportunity). Its other writes
+  (suspend a user, a session result, complete a session) are not on the table: no copy calls
+  them. The stream is read by the host (`streamOpen`), as every `EventSource` is.
+- **"Authorize" links come back where the person was.** A sign-in start (`/labs/commcare/
+  initiate/`, `/labs/ocs/initiate/`) may carry one `next`, when `next` is a labs path the
+  navigate check itself would open and is not another sign-in start (review fix 7's second
+  hop stays closed). Before, every `?next=` was refused, so these buttons did nothing in the frame.
+- **A workflow's own data sources** (the MUAC outcome summary's attach / detach control):
+  `GET /labs/workflow/api/available-pipelines/` (names and ids of the viewer's own and shared
+  pipelines, no rows) is a read whose answer the host remembers; `GET /labs/workflow/api/
+  pipeline/<id>/` only for a pipeline this workflow has or was just offered (`pipelineIds`);
+  `POST /labs/workflow/api/<this definition>/pipeline-sources/(add|remove)/` an `effect`
+  asked EVERY time in labs' words built from the checked body ("This workflow wants to change
+  its own data sources: attach pipeline #6619 as "hsd", as you."), with only `pipeline_id`
+  (offered), `alias` (a slug) and `load` accepted. **Ruling:** a definition write of the
+  workflow's OWN definition is allowed asked-first, never remembered -- the person is changing
+  what the workflow reads, and should see that each time. Other definition writes (render
+  code, sharing, deleting) stay off the table: they are what an author does in the editor.
+- **`confirm()` in a named function** (`function attach() { if (!confirm(...)) return; ... }`
+  used as `onClick={attach}`, or called as a statement from a handler): the compile now makes
+  such a function async too (`rewrite.ts` `planLift`), when every reference to it is as an
+  event handler or a call whose value is unused from a function that can itself wait (a
+  handler, an async function, or another such function, four deep at most) -- and each such
+  call is awaited, so what follows it still runs after the answer. Why this and not a
+  host-drawn blocking flow: nothing in a browser can block a frame's script on another
+  document's dialog, and a statement call's result is by definition unused, so awaiting it is
+  the same control flow. Anything else (a result read, a `useEffect`/`forEach` callback, a
+  reassigned function) still answers No with a notice. The scan models it.
+- **The control room's run discovery** (a draft KMC dashboard scraping `/labs/workflow/` for
+  `run_id` links): `GET /labs/workflow/` is a read (scope bound), and the SERVER answers a
+  request carrying `X-Labs-Sandbox-For` not with the list page but with only the run links of
+  the workflows the reader declares (`views.sandboxed_run_links`: `<a href="/labs/workflow/
+  <def>/run/?run_id=<id>">Run #<id></a> <date>`): no CSRF token, no other workflow. **Ruling:**
+  proxy, narrowed on the server, rather than a new JSON route -- the copy's code is unchanged
+  and keeps working, and the header only ever narrows.
+- **A control room marking the runs it watches** (the same dashboard writes `baseline_excluded`
+  into its watched workflows' runs): `POST /labs/workflow/api/run/<another run>/state/` is an
+  `effect` ("change saved runs of the workflows it reads (their state)"), a yes holding two
+  minutes for a batch; the server takes it only for a run of a definition the reader declares
+  (`update_state_api` -> `declared_reads.run_refusal`; this run's own state is still `own`).
+  The route table now picks the first route a request fully satisfies, ids included, so the
+  same path is `own` for this run and `effect` for another.
+- **An endpoint that no longer exists** (`/labs/workflow/api/commcare-user-cases/`, one dev
+  preview) is reported by the scan as `fetch_gone` (info): it fails the same way unsandboxed.
+- **The scan** tries a dynamic part of an address as each word the table names, so
+  `'/pipeline-sources/' + path + '/'` is "answered for some values" (info), not refused.
+
+Still to do on the data, not the code: the control room reads audit sessions for the
+opportunities in its `config.opp_meta`; only those also in its `opportunity_ids` are answered
+(the `kmc_image_audit` ruling above), so its record may need `workflow_update_opportunity_ids`.

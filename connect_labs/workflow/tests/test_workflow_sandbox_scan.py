@@ -41,7 +41,7 @@ BREAKING = [
     ("if (confirm('Delete?')) go();", "confirm"),
     ("const n = prompt('Name?');", "prompt"),
     ("const x = new XMLHttpRequest();", "xhr"),
-    ("const es = new EventSource('/custom_analysis/x/api/stream/');", "fetch_refused"),
+    ("const es = new EventSource('/labs/workflow/api/1/render-code/');", "fetch_refused"),
     ("import('https://cdn.example.org/m.js').then(m => m.go());", "dynamic_import"),
     ("const f = <form action='/audit/api/audit/create/' method='post'></form>;", "form_action"),
     ("$.ajax({url: '/audit/api/ai-agents/'});", "jquery_ajax"),
@@ -188,8 +188,12 @@ def test_an_event_source_is_checked_like_a_fetch():
     assert _ids(allowed) == {("event_source", "info")}
     dynamic = _wrap("  if (typeof EventSource !== 'undefined') { const es = new EventSource(u); }")
     assert _ids(dynamic) == {("event_source", "info")}
-    [refused] = scan_render_code(_wrap("  new EventSource('/custom_analysis/mbw_monitoring/api/stream/');"))
+    [refused] = scan_render_code(_wrap("  new EventSource('/labs/workflow/api/1/render-code/');"))
     assert refused.pattern == "fetch_refused" and refused.detail.startswith("EventSource: GET")
+    # The deprecated MBW dashboard's own stream is on the table.
+    assert _ids(_wrap("  new EventSource('/custom_analysis/mbw_monitoring/stream/?x=1');")) == {
+        ("event_source", "info")
+    }
 
 
 def test_line_numbers_are_those_of_the_render_code():
@@ -230,7 +234,7 @@ def test_a_method_the_route_does_not_take_is_refused():
 
 
 def test_a_run_endpoint_on_a_page_is_refused():
-    code = _wrap("  fetch('/labs/workflow/api/run/' + r + '/state/', {method: 'POST'});")
+    code = _wrap("  fetch('/labs/workflow/api/run/' + r + '/flags/', {method: 'POST'});")
     assert ("fetch_needs_run", "breaks") in _ids(code, is_page=True)
     assert not _ids(code, is_page=False)
 
@@ -289,7 +293,9 @@ def test_the_mirror_parser_notices_a_drift():
 def test_mirror_patterns_compile_and_answer():
     assert sandbox_routes.check_path("/audit/api/ai-agents/").allowed
     assert not sandbox_routes.check_path("/o/token/").allowed
-    assert sandbox_routes.check_path("/labs/workflow/api/run/5/state/", "POST").needs_run
+    assert sandbox_routes.check_path("/labs/workflow/api/run/5/flags/", "POST").needs_run
+    # Another run's state is an effect a page may ask for too (declared reads bind it).
+    assert not sandbox_routes.check_path("/labs/workflow/api/run/5/state/", "POST").needs_run
 
 
 # --- enumeration -------------------------------------------------------------------
@@ -507,7 +513,7 @@ def test_command_refuses_an_unknown_user():
         call_command("workflow_sandbox_scan", "--as-user", "nobody.here", stdout=StringIO())
 
 
-# --- deprecated copies pinned out of the sandbox under `all` -------------------------
+# --- no workflow is kept out of the sandbox (2026-10-13 ruling) -----------------------
 
 MBW_CODE = TEMPLATES["mbw_monitoring"]["render_code"]
 
@@ -516,44 +522,41 @@ def _mbw(id_, opp, key="mbw_monitoring"):
     return SimpleNamespace(id=id_, opportunity_id=opp, data={"name": "MBW", "config": {"templateType": key}})
 
 
-def test_the_shipped_mbw_code_is_among_the_digests():
-    from connect_labs.workflow.sandbox import render_code_digest
-    from connect_labs.workflow.sandbox_deprecated import DEPRECATED_RENDER_DIGESTS
+def test_under_all_every_workflow_is_sandboxed_deprecated_copies_included():
+    from connect_labs.workflow.sandbox import should_sandbox
 
-    assert render_code_digest(MBW_CODE) in DEPRECATED_RENDER_DIGESTS
-    assert render_code_digest("\n  " + MBW_CODE.replace("\n", "\r\n") + "  \n") in DEPRECATED_RENDER_DIGESTS
-
-
-def test_only_the_pinned_deprecated_copies_running_shipped_code_stay_out_under_all():
-    from connect_labs.workflow.sandbox import DEPRECATED_UNSANDBOXED, should_sandbox
-
-    pinned_id, pinned_opp = sorted(DEPRECATED_UNSANDBOXED)[0]
-
-    def all_mode(defn, code=MBW_CODE, **kw):
-        return should_sandbox(defn, mode="all", render_code=code, **kw)
-
-    assert not all_mode(_mbw(pinned_id, pinned_opp))
-    assert not all_mode(_mbw(pinned_id, pinned_opp, "mbw_monitoring_v2"))
-    # The pinned record running code labs did not ship, or no code at all: in.
-    assert all_mode(_mbw(pinned_id, pinned_opp), code=MBW_CODE + "\n// edited")
-    assert all_mode(_mbw(pinned_id, pinned_opp), code=STORED_BREAKS)
-    assert all_mode(_mbw(pinned_id, pinned_opp), code=None)
-    # The same id on another opportunity, another template, or the code alone: in.
-    assert all_mode(_mbw(pinned_id, pinned_opp + 1))
-    assert all_mode(_mbw(pinned_id, pinned_opp, "kmc_flw_flags"))
-    assert all_mode(_mbw(999_999, pinned_opp))
-    # ?sandbox=1 still draws a pinned one sandboxed; opt_in is unchanged by the pin.
-    assert all_mode(_mbw(pinned_id, pinned_opp), request=SimpleNamespace(GET={"sandbox": "1"}))
-    assert not should_sandbox(_mbw(pinned_id, pinned_opp), mode="opt_in", render_code=MBW_CODE)
+    # The live MBW monitoring copies the 2026-10-13 scan found (once pinned out).
+    for id_, opp in ((1035, 740), (897, 765), (2411, 709)):
+        assert should_sandbox(_mbw(id_, opp), mode="all")
+        assert should_sandbox(_mbw(id_, opp, "mbw_monitoring_v2"), mode="all")
+    assert not should_sandbox(_mbw(1035, 740), mode="off")
 
 
-def test_a_pinned_copy_is_reported_as_kept_out_only_with_shipped_code():
-    from connect_labs.workflow.sandbox import DEPRECATED_UNSANDBOXED
-    from connect_labs.workflow.sandbox_scan_sources import _target
+def test_the_deprecated_mbw_dashboard_scans_without_a_break():
+    """Its own /custom_analysis/mbw_monitoring/ endpoints and stream are on the table now."""
+    from connect_labs.workflow.sandbox_scan import BREAKS
 
-    pinned_id, pinned_opp = sorted(DEPRECATED_UNSANDBOXED)[0]
-    data = {"name": "MBW", "config": {"templateType": "mbw_monitoring"}}
-    kept = _target("connect", pinned_id, data, f"opportunity:{pinned_opp}", MBW_CODE, "stored")
-    assert kept.worst == "breaks" and not kept.sandboxed_all and "pinned out of the sandbox" in kept.note
-    edited = _target("connect", pinned_id, data, f"opportunity:{pinned_opp}", STORED_BREAKS, "stored")
-    assert edited.sandboxed_all and "not a version labs shipped" in edited.note
+    breaks = [f for f in scan_render_code(MBW_CODE) if f.severity == BREAKS]
+    assert breaks == []
+
+
+def test_the_live_copies_gaps_are_answered():
+    """What the 2026-10-13 live scan found breaking, as the copies write it."""
+    from connect_labs.workflow.sandbox_scan import BREAKS
+
+    code = _wrap("""
+  function attachPipeline() {
+    if (!window.confirm('Attach anyway?')) return;
+    fetch('/labs/workflow/api/' + definitionId() + '/pipeline-sources/' + path + '/', { method: 'POST' });
+  }
+  fetch('/labs/workflow/api/pipeline/' + pid + '/');
+  fetch('/labs/workflow/api/available-pipelines/');
+  fetch("/labs/workflow/?opportunity_id=" + instance.opportunity_id, { credentials: "same-origin" });
+  var el = <button onClick={attachPipeline}>Attach</button>;
+""")
+    assert [f for f in scan_render_code(code) if f.severity == BREAKS] == []
+
+
+def test_a_fetch_to_an_address_labs_no_longer_has_is_info():
+    [gone] = [f for f in scan_render_code(_wrap("  fetch('/labs/workflow/api/commcare-user-cases/');"))]
+    assert gone.pattern == "fetch_gone" and gone.severity == "info"

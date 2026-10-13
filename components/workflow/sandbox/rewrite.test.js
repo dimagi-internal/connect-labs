@@ -164,6 +164,63 @@ describe('rewrite: confirm()', () => {
     expect(out).not.toContain('async');
   });
 
+  it('lifts a named function used only as a handler, and the statement calls to it', () => {
+    // The live MUAC outcome summary's attach / detach controls (2026-10-13 scan).
+    const out = rewrite(`
+      function attachPipeline() {
+        if (!pipeCompat) {
+          if (!window.confirm('Attach anyway?')) return;
+        }
+        post('add');
+      }
+      var detach = function () { if (!confirm('Detach now?')) return; post('remove'); };
+      <div>
+        <button onClick={attachPipeline}>Attach</button>
+        <button onClick={() => detach()}>Detach</button>
+        <button onClick={() => { detach(); after(); }}>Both</button>
+      </div>;
+    `);
+    expect(out).toContain('async function attachPipeline()');
+    expect(out).toContain("await __labsSandbox.confirm('Attach anyway?')");
+    expect(out).toContain('var detach = async function ()');
+    expect(out).toContain('async () => await detach()');
+    // A statement call is awaited, so what follows it still runs after the answer.
+    expect(out).toMatch(/async \(\) => \{\s*await detach\(\);\s*after\(\);/);
+  });
+
+  it('does not lift a function whose result is read, or that is not only a handler', () => {
+    const out = rewrite(`
+      function ok() { if (!confirm('a')) return false; return true; }
+      var x = ok();
+      function inEffect() { if (!confirm('b')) return; go(); }
+      React.useEffect(function () { inEffect(); }, []);
+      function passed() { if (!confirm('c')) return; go(); }
+      items.forEach(passed);
+      function reassigned() { if (!confirm('d')) return; }
+      reassigned = null;
+      <button onClick={reassigned} />;
+    `);
+    expect(out).not.toContain(SANDBOX_GLOBAL);
+    expect(out).not.toContain('async');
+  });
+
+  it('a lifted handler waits for the answer, and so does its caller', async () => {
+    let answer = false;
+    const sb = { confirm: () => Promise.resolve(answer) };
+    const log = [];
+    const click = run(
+      `function attach() { if (!window.confirm('Attach?')) return; log.push('attached'); }
+       const props = { onClick: function () { attach(); log.push('after'); } };
+       return props.onClick;`,
+      sb,
+      { log },
+    );
+    await click();
+    answer = true;
+    await click();
+    expect(log).toEqual(['after', 'attached', 'after']);
+  });
+
   it('leaves a local confirm, and other objects’ confirm, alone', () => {
     const out = rewrite(`
       async function f(confirm) { if (confirm('x')) g(); }

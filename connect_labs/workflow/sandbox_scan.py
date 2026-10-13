@@ -34,6 +34,7 @@ Output carries ids, names, pattern ids and line numbers only: never code.
 
 from __future__ import annotations
 
+import itertools
 import re
 from dataclasses import asdict, dataclass
 from urllib.parse import urlsplit
@@ -150,6 +151,12 @@ PATTERNS: tuple[Pattern, ...] = (
         BREAKS,
         "a labs path the sandbox route table refuses",
         "use a route the table allows (components/workflow/sandbox/routes.ts), or an actions.* method",
+    ),
+    Pattern(
+        "fetch_gone",
+        INFO,
+        "a labs path that no longer exists: it fails the same way without the sandbox",
+        "remove the call, or point it at the endpoint that replaced it",
     ),
     Pattern(
         "fetch_external",
@@ -492,9 +499,57 @@ def representative(address: str) -> str:
     return (path + sep + query).replace(_DYNAMIC, "1")
 
 
+def _labs_path_exists(path: str) -> bool:
+    """Whether labs answers ``path`` at all (its URL conf resolves it). True when it
+    cannot tell: only a definite miss says the address is gone."""
+    try:
+        from django.urls import Resolver404, resolve
+    except Exception:  # noqa: BLE001 -- no Django: cannot tell
+        return True
+    try:
+        resolve(path)
+    except Resolver404:
+        return False
+    except Exception:  # noqa: BLE001 -- not configured: cannot tell
+        return True
+    return True
+
+
+def _route_words() -> tuple[str, ...]:
+    """The path words the route table names (``add``, ``state``...): what a dynamic
+    part of an address that is not an id might be."""
+    from connect_labs.workflow.sandbox_routes import ROUTES
+
+    words = set()
+    for route in ROUTES:
+        words.update(re.findall(r"[a-z][a-z0-9_-]*", route.path.replace("(?<", "(")))
+    return tuple(sorted(words))
+
+
 def check_fetch_address(address: str, method: str | None, *, is_page: bool) -> tuple[str, str] | None:
-    """``(pattern id, detail)`` for one resolved fetch, or None when the host answers it."""
-    address = representative(address)
+    """``(pattern id, detail)`` for one resolved fetch, or None when the host answers it.
+
+    A dynamic part is tried as an id, and then as each word the route table names:
+    ``'/api/' + id + '/pipeline-sources/' + path + '/'`` is answered when ``path`` is
+    ``add``, so it is a dynamic fetch (``info``), not a refused one.
+    """
+    verdict = _check_one(representative(address), method, is_page=is_page)
+    if verdict is None or verdict[0] != "fetch_refused" or _DYNAMIC not in address:
+        return verdict
+    path, sep, query = address.partition("?")
+    pieces = path.split(_DYNAMIC)
+    if len(pieces) > 4:
+        return verdict
+
+    choices = ("1",) + _route_words()
+    for combo in itertools.product(choices, repeat=len(pieces) - 1):
+        candidate = pieces[0] + "".join(c + piece for c, piece in zip(combo, pieces[1:]))
+        if _check_one(candidate + sep + query.replace(_DYNAMIC, "1"), method, is_page=is_page) is None:
+            return "fetch_dynamic", f"{representative(address).split('?')[0]}: answered for some values"
+    return verdict
+
+
+def _check_one(address: str, method: str | None, *, is_page: bool) -> tuple[str, str] | None:
     parts = urlsplit(address)
     if parts.scheme in ("data", "blob"):
         return None
@@ -509,6 +564,8 @@ def check_fetch_address(address: str, method: str | None, *, is_page: bool) -> t
     verdicts = [check_path(path, m) for m in methods]
     allowed = [v for v in verdicts if v.allowed]
     if not allowed:
+        if not _labs_path_exists(path):
+            return "fetch_gone", f"{method or 'GET/POST'} {path}: no such labs address"
         return "fetch_refused", f"{method or 'GET/POST'} {path}: {verdicts[0].reason}"
     if is_page and all(v.needs_run for v in allowed):
         return "fetch_needs_run", f"{method or 'GET'} {path}"
@@ -673,22 +730,150 @@ def _handler_uses_event_after(code: str, brace: int, pos: int) -> bool:
     return re.search(r"(?<![\w$.])" + re.escape(first) + r"(?![\w$])", body) is not None
 
 
-def confirm_is_awaited(code: str, pos: int) -> bool:
+def _function_name_at(code: str, brace: int) -> tuple[str, int] | None:
+    """The name the function whose body opens at ``brace`` is declared by, and where:
+    ``function NAME(...) {``, ``NAME = function (...) {`` or ``NAME = (...) => {``."""
+    head = _strip_end(code[:brace])
+    if head.endswith("=>"):
+        before = _strip_end(head[:-2])
+        if before.endswith(")"):
+            open_at = _open_paren_before(before, len(before) - 1)
+            if open_at is None:
+                return None
+            before = before[:open_at]
+        else:
+            _, before = _tail_word(before)
+        word, rest = _tail_word(before)
+        if word == "async":
+            before = rest
+    elif head.endswith(")"):
+        open_at = _open_paren_before(head, len(head) - 1)
+        if open_at is None:
+            return None
+        word, rest = _tail_word(head[:open_at])
+        if word and word != "function":
+            w2, _ = _tail_word(rest)
+            if w2 == "function":
+                return word, len(rest)
+            return None
+        if word != "function":
+            return None
+        before = rest
+    else:
+        return None
+    b = _strip_end(before)
+    if not b.endswith("=") or b.endswith("==") or b[-2:-1] in ("!", "<", ">", "+", "-", "*", "/"):
+        return None
+    name, rest = _tail_word(b[:-1])
+    if not name or name[0].isdigit():
+        return None
+    return name, len(rest)
+
+
+def _call_close(code: str, open_paren: int) -> int | None:
+    depth = 0
+    for k in range(open_paren, len(code)):
+        c = code[k]
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return k
+    return None
+
+
+def _is_handler_reference(code: str, start: int, end: int) -> bool:
+    """`onClick={NAME}`, `onClick: NAME`, or `addEventListener('x', NAME)`."""
+    after = code[end:].lstrip()
+    before = _strip_end(code[:start])
+    if before.endswith("{") and after.startswith("}"):
+        b2 = _strip_end(before[:-1])
+        return b2.endswith("=") and _on_word(_tail_word(b2[:-1])[0])
+    if before.endswith(":") and after[:1] in (",", "}"):
+        return _on_word(_tail_word(before[:-1])[0])
+    if before.endswith(",") and after[:1] in (")", ","):
+        return _is_handler_context(before)
+    return False
+
+
+def _liftable(code: str, brace: int, pos: int, depth: int) -> bool:
+    """Whether the compile makes the named function whose body opens at ``brace``
+    async (rewrite.ts ``planLift``): every reference to it is as an event handler, or
+    a call whose value is unused from somewhere that waits itself."""
+    named = _function_name_at(code, brace)
+    if named is None:
+        return False
+    name, declared_at = named
+    word = re.compile(r"(?<![\w$.])" + re.escape(name) + r"(?![\w$])")
+    refs = 0
+    for m in word.finditer(code):
+        start, end = m.start(), m.end()
+        if abs(start - declared_at) <= 1:
+            continue  # the declaration
+        refs += 1
+        after = code[end:].lstrip()
+        if after.startswith("=") and not after.startswith("=="):
+            return False  # reassigned
+        if _is_handler_reference(code, start, end):
+            if _handler_uses_event_after(code, brace, pos):
+                return False
+            continue
+        if not after.startswith("("):
+            return False
+        close = _call_close(code, end + (len(code[end:]) - len(after)))
+        if close is None:
+            return False
+        before = _strip_end(code[:start])
+        rest = code[close + 1 :]
+        stripped = rest.lstrip(" \t")
+        statement = before.endswith((";", "{", "}")) or before == ""
+        arrow_body = before.endswith("=>")
+        if statement and not (stripped[:1] in (";", "}", "\n", "") or stripped.startswith("\r")):
+            return False
+        if arrow_body and not stripped.lstrip()[:1] in ("}", ",", ")", ";"):
+            return False
+        if not (statement or arrow_body):
+            return False
+        if arrow_body:
+            # `onClick={() => attach()}`: the arrow is the handler, and has no body brace.
+            head = _strip_end(before[:-2])
+            if head.endswith(")"):
+                open_at = _open_paren_before(head, len(head) - 1)
+                if open_at is None:
+                    return False
+                head = head[:open_at]
+            else:
+                _, head = _tail_word(head)
+            word2, rest2 = _tail_word(head)
+            if not _is_handler_context(rest2 if word2 == "async" else head):
+                return False
+            continue
+        if not confirm_is_awaited(code, start, depth + 1):
+            return False
+    return refs > 0
+
+
+def confirm_is_awaited(code: str, pos: int, depth: int = 0) -> bool:
     """Whether the frame's compile makes the ``confirm(`` at ``pos`` wait for the host:
-    its nearest enclosing function is ``async``, or is an event handler (rewrite.ts).
+    its nearest enclosing function is ``async``, or is an event handler, or is a
+    named function the compile makes async because nothing reads what it returns
+    (rewrite.ts ``planLift``).
 
     ``code`` has its comments stripped and its strings blanked. A heuristic on text,
     not a parse: when it cannot tell, it says no, so the scan over-reports rather
     than under.
     """
-    depth = 0
+    if depth > 4:
+        return False
+    nest = 0
     for k in range(pos - 1, -1, -1):
         c = code[k]
         if c == "}":
-            depth += 1
+            nest += 1
         elif c == "{":
-            if depth:
-                depth -= 1
+            if nest:
+                nest -= 1
                 continue
             found = _function_at(code, k)
             if found is None:
@@ -696,7 +881,9 @@ def confirm_is_awaited(code: str, pos: int) -> bool:
             is_async, is_handler = found
             if is_async:
                 return True
-            return is_handler and not _handler_uses_event_after(code, k, pos)
+            if is_handler:
+                return not _handler_uses_event_after(code, k, pos)
+            return _liftable(code, k, pos, depth)
     return False
 
 
