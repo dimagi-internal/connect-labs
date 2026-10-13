@@ -15,6 +15,7 @@ import { createRoot } from 'react-dom/client';
 import { DynamicWorkflow } from '@/components/workflow/DynamicWorkflow';
 import { SandboxFrame } from '@/components/workflow/sandbox/SandboxFrame';
 import type { FramePayload } from '@/components/workflow/sandbox/protocol';
+import type { RouteContext } from '@/components/workflow/sandbox/routes';
 import {
   ActionDialog,
   type ActionRequest,
@@ -1068,9 +1069,12 @@ function WorkflowRunner({
   // Create action handlers
   // A workflow action a button asked to run (actions.runAction): the dialog's
   // request and the promise it settles.
+  const actionOpenRef = React.useRef(false);
+  const actionSeq = React.useRef(0);
   const [actionRequest, setActionRequest] = useState<{
     request: ActionRequest;
     resolve: (execution: WorkflowActionExecution | null) => void;
+    seq: number;
   } | null>(null);
   const workflowActions = useMemo(
     () => initialData.actions || [],
@@ -1238,6 +1242,14 @@ function WorkflowRunner({
             new Error(`This workflow has no action "${key}".`),
           );
         }
+        // One action at a time: a second while the dialog is open would swap what
+        // the person is reading for something else under the same buttons.
+        if (actionOpenRef.current) {
+          return Promise.reject(
+            new Error('Another action is waiting for an answer.'),
+          );
+        }
+        actionOpenRef.current = true;
         return new Promise((resolve) =>
           setActionRequest({
             request: {
@@ -1247,6 +1259,7 @@ function WorkflowRunner({
               qaOnly: Boolean(options?.qaOnly),
             },
             resolve,
+            seq: ++actionSeq.current,
           }),
         );
       },
@@ -1507,30 +1520,57 @@ function WorkflowRunner({
   // workflow and run (the frame names neither).
   const sandboxWorkflow = useMemo(() => {
     if (!sandbox) return undefined;
-    const opportunityIds = Array.from(
-      new Set(
-        [
-          ...(initialData.opportunity_ids || []),
-          initialData.opportunity_id,
-          initialData.instance.opportunity_id,
-        ]
-          .map((n) => Number(n))
-          .filter((n) => Number.isSafeInteger(n) && n > 0),
-      ),
-    );
+    const ids = (xs: unknown[]) =>
+      Array.from(
+        new Set(
+          xs
+            .map((n) => Number(n))
+            .filter((n) => Number.isSafeInteger(n) && n > 0),
+        ),
+      );
+    // A page is about its scope: what is under it is what its code may name. A
+    // workflow may name only its own opportunities and program.
+    const scope = initialData.is_page ? initialData.scope : null;
+    const opportunityIds = ids([
+      ...(initialData.opportunity_ids || []),
+      initialData.opportunity_id,
+      initialData.instance.opportunity_id,
+      ...(scope?.opportunities || []).map((o) => o.id),
+      scope?.opportunity?.id,
+    ]);
+    const runProgram = (initialData.instance as { program_id?: number })
+      .program_id;
+    const programIds = ids([
+      initialData.program_id,
+      runProgram,
+      ...(scope?.programs || []).map((p) => p.id),
+      scope?.program?.id,
+    ]);
+    const ownOpp =
+      Number(
+        initialData.instance.opportunity_id || initialData.opportunity_id,
+      ) || 0;
+    const ownProgram = Number(initialData.program_id || runProgram) || 0;
+    const activeJob = (
+      initialData.instance.state as { active_job?: { job_id?: unknown } }
+    )?.active_job?.job_id;
+    const routeContext: RouteContext = {
+      labsOrigin: sandbox?.origin || window.location.origin,
+      definitionId: Number(initialData.definition_id) || null,
+      runId: Number(initialData.instance.id) || null,
+      opportunityIds,
+      programIds,
+      organizationKey: scope?.organization?.slug || null,
+      jobIds: typeof activeJob === 'string' ? [activeJob] : [],
+      defaultScope: ownOpp
+        ? { name: 'opportunity_id', value: String(ownOpp) }
+        : ownProgram
+          ? { name: 'program_id', value: String(ownProgram) }
+          : null,
+    };
     return {
       csrfToken,
-      routeContext: {
-        labsOrigin: sandbox?.origin || window.location.origin,
-        definitionId: Number(initialData.definition_id) || null,
-        runId: Number(initialData.instance.id) || null,
-        opportunityIds,
-        programId:
-          Number(
-            initialData.program_id ??
-              (initialData.instance as { program_id?: number }).program_id,
-          ) || null,
-      },
+      routeContext,
       queryPipelineRows: (alias: string, query: Record<string, unknown>) =>
         actions.queryPipelineRows(alias, query as PipelineRowsQuery),
       updateState: (state: Record<string, unknown>) => handleUpdateState(state),
@@ -1580,12 +1620,14 @@ function WorkflowRunner({
           confirmation. */}
       {actionRequest && initialData.apiEndpoints.actionBase && (
         <ActionDialog
+          key={actionRequest.seq}
           request={actionRequest.request}
           actionBase={initialData.apiEndpoints.actionBase}
           executionBase={initialData.apiEndpoints.actionExecutionBase || ''}
           csrfToken={csrfToken}
           onClose={(execution) => {
             actionRequest.resolve(execution);
+            actionOpenRef.current = false;
             setActionRequest(null);
           }}
         />

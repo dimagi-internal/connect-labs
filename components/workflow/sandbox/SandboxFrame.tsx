@@ -269,50 +269,108 @@ export function SandboxFrame(props: SandboxFrameProps) {
         </div>
       )}
       {question && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          role="dialog"
-          aria-modal="true"
-          data-testid="page-sandbox-confirm"
-        >
-          <div className="max-w-md w-full rounded-lg bg-white shadow-xl p-5">
-            <div className="text-xs uppercase tracking-wide text-gray-500 mb-2">
-              {question.from === 'labs'
-                ? 'Labs needs your OK'
-                : props.mode === 'workflow'
-                  ? 'This workflow asks'
-                  : 'This page asks'}
-            </div>
-            <p className="text-sm text-gray-900 whitespace-pre-wrap break-words">
-              {question.text}
-            </p>
-            {question.detail && (
-              <blockquote className="mt-3 border-l-4 border-gray-200 pl-3 text-sm text-gray-600 whitespace-pre-wrap break-words">
-                <span className="block text-xs text-gray-400 mb-1">
-                  The workflow says:
-                </span>
-                {question.detail}
-              </blockquote>
-            )}
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => question.answer(false)}
-                className="px-3 py-1.5 text-sm rounded-md bg-gray-100 hover:bg-gray-200 text-gray-800"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => question.answer(true)}
-                className="px-3 py-1.5 text-sm rounded-md bg-brand-indigo text-white hover:opacity-90"
-              >
-                {question.okLabel}
-              </button>
-            </div>
-          </div>
-        </div>
+        <QuestionDialog
+          question={question}
+          asker={props.mode === 'workflow' ? 'workflow' : 'page'}
+        />
       )}
+    </div>
+  );
+}
+
+/** How long labs' own question stays unanswerable after it appears: a double click
+ * timed to its arrival must not land on Allow. */
+export const ARM_MS = 700;
+
+/**
+ * The host's question. Labs' own (`from: 'labs'`, an effect or a run's completion)
+ * is drawn unlike the page's (amber, a shield, labs' words first), focuses Cancel,
+ * and its Allow only works after ARM_MS and a press that started on it.
+ */
+export function QuestionDialog({
+  question,
+  asker,
+}: {
+  question: Question;
+  asker: 'workflow' | 'page';
+}) {
+  const labs = question.from === 'labs';
+  const [armed, setArmed] = useState(!labs);
+  const pressed = useRef(false);
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    cancelRef.current?.focus();
+    if (!labs) return;
+    const t = setTimeout(() => setArmed(true), ARM_MS);
+    return () => clearTimeout(t);
+  }, [labs]);
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      data-testid="page-sandbox-confirm"
+    >
+      <div
+        className={`max-w-md w-full rounded-lg bg-white shadow-xl p-5 ${
+          labs ? 'border-4 border-amber-400' : ''
+        }`}
+      >
+        <div
+          className={`text-xs uppercase tracking-wide mb-2 ${
+            labs ? 'text-amber-700 font-semibold' : 'text-gray-500'
+          }`}
+        >
+          {labs ? (
+            <>
+              <i className="fa-solid fa-shield-halved mr-1" />
+              Labs needs your OK
+            </>
+          ) : (
+            `This ${asker} asks`
+          )}
+        </div>
+        <p className="text-sm text-gray-900 whitespace-pre-wrap break-words">
+          {question.text}
+        </p>
+        {question.detail && (
+          <blockquote className="mt-3 border-l-4 border-gray-200 pl-3 text-sm text-gray-600 whitespace-pre-wrap break-words">
+            <span className="block text-xs text-gray-400 mb-1">
+              The {asker} says:
+            </span>
+            {question.detail}
+          </blockquote>
+        )}
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            ref={cancelRef}
+            onClick={() => question.answer(false)}
+            className="px-3 py-1.5 text-sm rounded-md bg-gray-100 hover:bg-gray-200 text-gray-800"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!armed}
+            data-testid="page-sandbox-allow"
+            onPointerDown={() => {
+              pressed.current = armed;
+            }}
+            onClick={(e) => {
+              // A labs question takes a press that began on Allow once it was armed
+              // (a keyboard Enter on a focused Allow has detail 0 and counts).
+              if (labs && !(pressed.current || e.detail === 0)) return;
+              question.answer(true);
+            }}
+            className={`px-3 py-1.5 text-sm rounded-md text-white hover:opacity-90 disabled:opacity-40 ${
+              labs ? 'bg-amber-600' : 'bg-brand-indigo'
+            }`}
+          >
+            {question.okLabel}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

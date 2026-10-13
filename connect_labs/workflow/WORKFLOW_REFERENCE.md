@@ -2402,7 +2402,7 @@ A workflow's render code can run in the same sandboxed frame as a page's ([§16]
 - a workflow whose definition says `config.sandbox: true` -- every new instance of a template whose `TEMPLATE["sandboxed"]` is set, since its `DEFINITION` carries the key;
 - a workflow that **follows** such a template (`render_source: {"template": key}`);
 - any workflow opened with `?sandbox=1` on its address (it can only turn the sandbox on);
-- every workflow once the setting is `all`. `config.sandbox: false` keeps one out while the rollout is `opt_in`.
+- every workflow once the setting is `all`. There is no per-workflow opt-out (`config.sandbox: false` means nothing: an author must not be able to take a workflow out of the frame); `LABS_WORKFLOW_SANDBOX=off` is the emergency switch, for all of them.
 
 **What render code gets is what it gets on the run page**: `definition`, `instance` (the run, snapshot and all), `workers`, `pipelines`, `supply`, `workflows`, `scope`, `config`, `links`, `actions`, `onUpdateState` and `view`, plus the same globals (`window.LabsReport`, `ConnectMap`, `PlanLayers`, `MicroplansMapPanel`, `LabsAudit`, Chart.js, Leaflet with OpenStreetMap / CARTO tiles, Mapbox GL, `WORKFLOW_API_ENDPOINTS`, `#user-opportunities` cut to this workflow's opportunities). What changes is that **everything that used the viewer's session goes through the labs page**, which decides:
 

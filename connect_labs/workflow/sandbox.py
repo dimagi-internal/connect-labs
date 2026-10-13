@@ -38,6 +38,9 @@ checked in the frame first. ``LABS_WORKFLOW_SANDBOX`` says how far it has gone:
   or when the address asks for it with ``?sandbox=1`` (which can only turn the
   sandbox on, never off -- a link must not be able to take a workflow out of it).
 * ``"all"`` -- every workflow, whatever its definition says.
+
+There is no per-workflow opt-out (an author must not be able to take a workflow out of
+the frame): ``config.sandbox: false`` means nothing.
 """
 
 from __future__ import annotations
@@ -120,10 +123,10 @@ def workflow_wants_sandbox(definition, request=None) -> bool:
         return True
     if request is not None and request.GET.get("sandbox") == "1":
         return True
-    if config.get("sandbox") is False:
-        # An explicit opt-out holds while the rollout is opt-in (an emergency switch
-        # for one workflow); "all" overrides it.
-        return False
+    # There is no per-workflow opt-out: `config.sandbox: false` is read as unset. An
+    # author must not be able to take a workflow that follows a checked template out
+    # of the frame; the emergency switch is LABS_WORKFLOW_SANDBOX=off (or
+    # LABS_PAGE_SANDBOX=false), for everything at once.
     render_source = data.get("render_source")
     if isinstance(render_source, dict) and _template_is_sandboxed(render_source.get("template")):
         return True
