@@ -216,6 +216,8 @@ function pageHandlers() {
     navigate: vi.fn(),
     shareSelection: vi.fn(),
     resize: vi.fn(),
+    scroll: vi.fn(),
+    reveal: vi.fn(),
     copyText: vi.fn(async () => undefined),
     confirm: vi.fn(async () => true),
     download: vi.fn(),
@@ -771,27 +773,6 @@ describe('the workflow frame on the host page', () => {
     return frameWindow.postMessage.mock.calls[0][2][0];
   }
 
-  it('fills the window below it and does not grow to its content', async () => {
-    const fills = drawn({
-      mode: 'workflow',
-      fill: true,
-      routeContext: CTX,
-      workflow: workflowHandlers(),
-    });
-    const grows = drawn();
-    const before = fills.iframe.style.height;
-    for (const host of [fills, grows]) {
-      const port = connect(host);
-      // Content sized by 100vh reports the frame's own height back, bigger each time.
-      port.postMessage({ id: 1, method: 'resize', params: { height: 4321 } });
-    }
-    await new Promise((r) => setTimeout(r, 30));
-    expect(fills.iframe.style.height).toBe(before);
-    expect(grows.iframe.style.height).toBe('4321px');
-    fills.destroy();
-    grows.destroy();
-  });
-
   it('carries the page query to the shell, and nothing else', () => {
     const ok = drawn({ search: '?run_id=5&tab=2' });
     expect(ok.iframe.getAttribute('src')).toBe(
@@ -862,6 +843,8 @@ describe('a page can do everything a workflow can, except what needs a run', () 
       navigate: { url: '/audit/5/bulk/' },
       shareSelection: { visible_ids: ['a'] },
       resize: { height: 300 },
+      scroll: { top: 40 },
+      reveal: { top: 10, bottom: 20 },
       copyText: { text: 'x' },
       confirm: { text: 'ok?' },
       download: { filename: 'a.csv', bytes: 'a,b' },

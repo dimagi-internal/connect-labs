@@ -15,7 +15,29 @@ Everything a page draws arrives over the bridge from the host page around it
   <link rel="stylesheet" href="{{ google_fonts_css_url }}">
   <link rel="stylesheet" href="{{ leaflet_css_url }}">
   <link rel="stylesheet" href="{{ mapbox_gl_css_url }}">
-  <style>html, body { margin: 0; background: transparent; overflow-x: clip; }</style>
+  {% comment %} The frame is as tall as its content and never scrolls: the page around
+     it does. The body is moved to the part the person can see (the slice the host's
+     window shows, set by the frame runtime, components/workflow/sandbox/viewport.ts)
+     and its transform makes it the containing block of `position: fixed`, so a dialog
+     is centred where they are looking; the content is moved back by as much, so it
+     stays where it is. The frame also reaches into the page's empty margins either side
+     (host.ts frameGutters); the margins keep the content in its column, and the clip-path
+     clips what overflows it where a box on the page clipped it. {% endcomment %}
+  <style>
+    html, body { margin: 0; background: transparent; overflow-x: clip; }
+    html { overflow: hidden; }
+    body {
+      height: var(--labs-slice-height, auto);
+      transform: translateY(var(--labs-slice-top, 0px));
+    }
+    #sandbox-root {
+      position: relative;
+      top: calc(-1 * var(--labs-slice-top, 0px));
+      margin-left: var(--labs-gutter-left, 0px);
+      margin-right: var(--labs-gutter-right, 0px);
+      clip-path: inset(-100000px var(--labs-clip-right, -100000px) -100000px var(--labs-clip-left, -100000px));
+    }
+  </style>
 </head>
 <body class="font-work-sans">
   <div id="sandbox-root"></div>

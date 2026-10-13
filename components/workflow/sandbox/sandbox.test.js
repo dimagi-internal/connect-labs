@@ -27,6 +27,8 @@ function handlers(overrides = {}) {
     navigate: vi.fn(),
     shareSelection: vi.fn(),
     resize: vi.fn(),
+    scroll: vi.fn(),
+    reveal: vi.fn(),
     copyText: vi.fn(async () => undefined),
     confirm: vi.fn(async () => true),
     download: vi.fn(),
@@ -228,7 +230,7 @@ describe('what the host passes on', () => {
   it('resize is clamped', async () => {
     const h = handlers();
     await dispatcher(h)({ id: 1, method: 'resize', params: { height: 1e9 } });
-    expect(h.resize).toHaveBeenCalledWith(50000);
+    expect(h.resize).toHaveBeenCalledWith(400000);
   });
 });
 
