@@ -234,3 +234,13 @@ Anyone else who navigates to a microplans page for a labs-only program will see 
 **Real Connect programs are not affected** — their microplans pages continue to follow the same access rules they always have.
 
 ### Workspace programs with
+
+---
+
+## PMC State Selection
+
+The PMC page helps you identify the best states to target for a perennial malaria chemoprevention (PMC) programme.
+
+### Candidate states: where SMC doesn't run
+
+PMC is typically deployed in states where seasonal malaria chemoprev
