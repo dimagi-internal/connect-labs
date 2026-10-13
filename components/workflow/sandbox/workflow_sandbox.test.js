@@ -199,6 +199,7 @@ function workflowHandlers(overrides = {}) {
     notify: vi.fn(),
     ask: vi.fn(async () => true),
     actionKeys: () => ['coach'],
+    stream: vi.fn(async () => undefined),
     ...overrides,
   };
 }
@@ -861,6 +862,8 @@ describe('a page can do everything a workflow can, except what needs a run', () 
       download: { filename: 'a.csv', bytes: 'a,b' },
       reportError: { message: 'boom' },
       runAction: { key: 'coach', args: { workers: [] } },
+      streamOpen: { url: '/audit/api/ai-agents/' },
+      streamClose: { stream: 's1' },
     }[method];
     const run = async (mode, ctx) =>
       createDispatcher(pageHandlers(), {
@@ -869,6 +872,7 @@ describe('a page can do everything a workflow can, except what needs a run', () 
         mode,
         routeContext: ctx,
         workflow: workflowHandlers(),
+        push: () => undefined,
       })({ id: 1, method, params });
     const page = await run('page', PAGE_CTX);
     const wf = await run('workflow', CTX);

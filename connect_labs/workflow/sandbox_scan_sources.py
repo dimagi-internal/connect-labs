@@ -29,7 +29,7 @@ import logging
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 
-from connect_labs.workflow.sandbox import should_sandbox, workflow_sandbox_mode
+from connect_labs.workflow.sandbox import deprecated_exempt, should_sandbox, workflow_sandbox_mode
 from connect_labs.workflow.sandbox_scan import Finding, scan_render_code, worst
 
 logger = logging.getLogger(__name__)
@@ -114,8 +114,11 @@ def _target(origin, def_id, data: dict, owner: str, code, render_source: str, no
 
     data = data if isinstance(data, dict) else {}
     config = data.get("config") if isinstance(data.get("config"), dict) else {}
-    definition = SimpleNamespace(id=def_id, data=data)
+    opp = owner.split(":", 1)[1] if owner.startswith("opportunity:") else None
+    definition = SimpleNamespace(id=def_id, data=data, opportunity_id=int(opp) if opp and opp.isdigit() else None)
     page = is_page(definition)
+    if deprecated_exempt(definition):
+        note = (note + "; " if note else "") + "deprecated: pinned out of the sandbox under `all` (sandbox.py)"
     return Target(
         origin=origin,
         id=def_id,

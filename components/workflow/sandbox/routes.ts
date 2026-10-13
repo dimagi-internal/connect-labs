@@ -56,6 +56,14 @@ export interface Route {
   perRecord?: boolean;
   /** The path's token must be a job this host started (or the run's own). */
   ownJob?: boolean;
+  /** With `perRecord`: a yes holds for THAT record a while (a screen that saves one
+   * audit's results again and again), never for another. */
+  recordGrant?: boolean;
+  /** The answer starts a job whose token later routes name (`ownJob`). */
+  startsJob?: boolean;
+  /** A search across everything the viewer has: the host cuts the answer's
+   * `opportunities` to this workflow's own. */
+  filterOpportunities?: boolean;
 }
 
 /**
@@ -213,6 +221,10 @@ export interface CheckedRequest {
   /** Asked every time, naming `recordId`. */
   perRecord?: boolean;
   recordId?: string;
+  /** A yes holds a while for `recordId` alone. */
+  recordGrant?: boolean;
+  /** The host cuts the answer's `opportunities` to this workflow's. */
+  filterOpportunities?: boolean;
   /** A job start: the host remembers the job it started. */
   startsJob?: boolean;
   /** Stamped on the request as `X-Labs-Sandbox-For`: the definition it is made for,
@@ -276,7 +288,7 @@ export const ROUTES: readonly Route[] = [
     methods: GET,
     gate: 'read',
     path: p(
-      `/labs/workflow/api/${DEF}/(pipeline-rows|pipeline-rows/stream|case-states|pipeline-data|supply-data|workflow-data)/`,
+      `/labs/workflow/api/${DEF}/(pipeline-rows|pipeline-rows/stream|case-states|pipeline-data|pipeline-data/stream|supply-data|workflow-data|schedule)/`,
     ),
   },
   {
@@ -337,6 +349,13 @@ export const ROUTES: readonly Route[] = [
     path: p(`/audit/api/program/${PROG}/sessions-summary/`),
   },
   { methods: GET, gate: 'read', path: p(`/audit/api/scope-context/`) },
+  // The audit wizard's opportunity picker: answered with THIS workflow's only.
+  {
+    methods: GET,
+    gate: 'read',
+    path: p(`/audit/api/opportunities/search/`),
+    filterOpportunities: true,
+  },
   { methods: GET, gate: 'read', path: p(`/audit/api/ai-agents/`) },
   {
     methods: GET,
@@ -373,6 +392,21 @@ export const ROUTES: readonly Route[] = [
     path: p(
       `/microplans/${OPP}/boundaries/(areas|geometry|population_by_name)/`,
     ),
+  },
+  // Building footprints for an area drawn on a map: computed on the server from
+  // public data (writes nothing of the viewer's), then polled -- only a poll this
+  // host started.
+  {
+    methods: POST,
+    gate: 'read',
+    path: p(`/microplans/${OPP}/preview_footprints/`),
+    startsJob: true,
+  },
+  {
+    methods: GET,
+    gate: 'read',
+    path: p(`/microplans/preview_status/${JOB}/`),
+    ownJob: true,
   },
 
   // --- Own: this run's and this workflow's own records --------------------------
@@ -472,6 +506,14 @@ export const ROUTES: readonly Route[] = [
     path: p(`/audit/api/${REC}/delete/`),
     label: 'delete audit',
     perRecord: true,
+  },
+  {
+    methods: POST,
+    gate: 'effect',
+    path: p(`/audit/api/${REC}/save/`),
+    label: 'save review results to audit',
+    perRecord: true,
+    recordGrant: true,
   },
 ];
 
@@ -635,7 +677,9 @@ export function checkFetch(
     body: canonical,
     perRecord: route.perRecord === true,
     recordId: groups.rec,
-    startsJob: /\/job\/start\/$/.test(path),
+    recordGrant: route.recordGrant === true,
+    filterOpportunities: route.filterOpportunities === true,
+    startsJob: route.startsJob === true || /\/job\/start\/$/.test(path),
     sandboxFor:
       ctx.definitionId !== null && Number.isSafeInteger(ctx.definitionId)
         ? String(ctx.definitionId)

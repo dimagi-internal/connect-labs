@@ -37,7 +37,9 @@ checked in the frame first. ``LABS_WORKFLOW_SANDBOX`` says how far it has gone:
   FOLLOWS a deployed template that has been checked (``TEMPLATE["sandboxed"]``),
   or when the address asks for it with ``?sandbox=1`` (which can only turn the
   sandbox on, never off -- a link must not be able to take a workflow out of it).
-* ``"all"`` -- every workflow, whatever its definition says.
+* ``"all"`` -- every workflow, whatever its definition says, except the few live
+  copies of a DEPRECATED template named in ``DEPRECATED_UNSANDBOXED`` below (by id,
+  on their opportunity: an author cannot add one).
 
 There is no per-workflow opt-out (an author must not be able to take a workflow out of
 the frame): ``config.sandbox: false`` means nothing.
@@ -103,6 +105,56 @@ def workflow_sandbox_mode() -> str:
     return mode if mode in WORKFLOW_SANDBOX_MODES else "opt_in"
 
 
+#: Under ``all``, these definitions stay out of the frame: live copies of the
+#: deprecated MBW monitoring templates (``mbw_monitoring``, and the v2 that was removed
+#: from the repo), whose render code calls their own ``/custom_analysis/`` endpoints and
+#: an ``EventSource`` the route table will not answer. They are kept renderable for
+#: the record (templates/mbw_monitoring/DEPRECATED.md); no new one can be made, so the
+#: list only shrinks. Named here, by ``(definition id, opportunity id)`` on production
+#: Connect, and not by anything a definition says about itself: ``templateType`` is
+#: author-writable, so exempting by it would be the per-workflow opt-out this module
+#: refuses. A definition must ALSO still say it is one of these templates, so a pin
+#: can only narrow. Ids from the 2026-10-13 ``workflow_sandbox_scan``; spec, "Rollout
+#: to all". ``?sandbox=1`` still draws any of them sandboxed.
+DEPRECATED_TEMPLATE_KEYS = frozenset({"mbw_monitoring", "mbw_monitoring_v2", "mbw_monitoring_v3"})
+DEPRECATED_UNSANDBOXED: frozenset[tuple[int, int]] = frozenset(
+    {
+        (897, 765),
+        (1035, 740),
+        (1079, 740),
+        (1097, 740),
+        (1215, 740),
+        (1236, 740),
+        (1246, 740),
+        (1265, 740),
+        (1324, 1167),
+        (1327, 1167),
+        (1904, 1167),
+        (2408, 1167),
+        (2411, 709),
+        (2449, 740),
+        (2642, 765),
+        (2695, 740),
+    }
+)
+
+
+def deprecated_exempt(definition) -> bool:
+    """Whether ``definition`` is one of the pinned live copies of a deprecated template."""
+    if definition is None:
+        return False
+    data = getattr(definition, "data", None) or {}
+    config = data.get("config") if isinstance(data.get("config"), dict) else {}
+    key = config.get("templateType") or data.get("templateType")
+    if key not in DEPRECATED_TEMPLATE_KEYS:
+        return False
+    try:
+        pin = (int(getattr(definition, "id", None)), int(getattr(definition, "opportunity_id", None)))
+    except (TypeError, ValueError):
+        return False
+    return pin in DEPRECATED_UNSANDBOXED
+
+
 def _template_is_sandboxed(key) -> bool:
     from connect_labs.workflow.templates import TEMPLATES
 
@@ -118,7 +170,9 @@ def workflow_wants_sandbox(definition, request=None, mode: str | None = None) ->
     """
     mode = mode if mode in WORKFLOW_SANDBOX_MODES else workflow_sandbox_mode()
     if mode == "all":
-        return True
+        if request is not None and request.GET.get("sandbox") == "1":
+            return True
+        return not deprecated_exempt(definition)
     if mode == "off":
         return False
     data = getattr(definition, "data", None) or {}

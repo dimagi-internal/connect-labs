@@ -16,6 +16,7 @@ import {
   RenderErrorBoundary as DynamicErrorBoundary,
   compileRenderCode as createComponentFromCode,
   useBabel,
+  type CompileOptions,
 } from './renderCode';
 
 interface DynamicWorkflowProps extends WorkflowProps {
@@ -23,6 +24,8 @@ interface DynamicWorkflowProps extends WorkflowProps {
   renderCode: string;
   /** Callback when there's an error */
   onError?: (error: string) => void;
+  /** The sandbox frame's compile (rewrites + helpers); the run page passes none. */
+  compileOptions?: CompileOptions;
 }
 
 /**
@@ -43,6 +46,7 @@ export function DynamicWorkflow({
   onUpdateState,
   view,
   onError,
+  compileOptions,
 }: DynamicWorkflowProps) {
   const babelLoaded = useBabel();
   const [error, setError] = useState<string | null>(null);
@@ -67,7 +71,7 @@ export function DynamicWorkflow({
     }
 
     setError(null);
-    const component = createComponentFromCode(renderCode);
+    const component = createComponentFromCode(renderCode, compileOptions);
 
     if (!component) {
       const errorMsg = 'Failed to create component from render code';
@@ -77,7 +81,7 @@ export function DynamicWorkflow({
     }
 
     return component;
-  }, [babelLoaded, renderCode, onError]);
+  }, [babelLoaded, renderCode, onError, compileOptions]);
 
   // Loading state
   if (!babelLoaded) {
