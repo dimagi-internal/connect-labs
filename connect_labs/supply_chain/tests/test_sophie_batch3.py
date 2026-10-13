@@ -313,7 +313,7 @@ def _home(client, **params):
 def home_client(client_in_program, monkeypatch):
     from connect_labs.supply_chain import views
 
-    monkeypatch.setattr(views, "resolve_org", lambda access: None)
+    monkeypatch.setattr(views, "running_org", lambda program_id: None)
     return client_in_program
 
 

@@ -400,6 +400,10 @@ def seed(
     # Refused before anything is read: a real programme, or an opportunity not filed under this one.
     scopes.require_synthetic(program_id, "seed a clone's supply chain")
     scopes.require_programme_opportunity(program_id, opportunity_id)
+    from connect_labs.supply_chain.runner import declare_dimagi_if_undeclared
+
+    # A clone is Dimagi's demo, so Dimagi runs it -- the buyer of record its upstream names (#2458).
+    declare_dimagi_if_undeclared(program_id, "seeded as a Dimagi synthetic clone")
 
     today = today or timezone.localdate()
     access = SupplyDataAccess(

@@ -140,6 +140,13 @@ def update_link_issue(access, data):
     org = LabsOrg.objects.filter(pk=data["org_id"]).first()
     if org is None:
         raise ValueError(f"organisation {data['org_id']} does not exist")
+    from connect_labs.supply_chain.runner import running_org
+
+    runner = running_org(program_id)
+    if runner is not None and runner.pk == org.pk:
+        # Its people sign in and act as the program; a login-free link in their
+        # name would let whoever holds it write as the program too (#2458).
+        raise ValueError(f"{org.name} runs this program; its own people sign in rather than use an update link")
 
     contract_ids = list(data.get("contract_ids") or [])
     point_ids = list(data.get("supply_point_ids") or [])
