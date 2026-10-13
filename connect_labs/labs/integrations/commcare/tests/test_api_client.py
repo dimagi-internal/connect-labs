@@ -302,6 +302,8 @@ class TestFetchFormsRaiseOnHttpError:
     a first-of-the-day cold-cache load landed on far fewer passed visits
     than the day before, with no error or warning anywhere on the page."""
 
+    NEXT = "?limit=2&offset=2&order_by=received_on"
+
     @pytest.mark.parametrize("method", ["fetch_forms", "iter_forms"])
     def test_non_auth_http_error_still_returns_partial_results_by_default(self, method):
         """Unchanged legacy behavior when the caller doesn't opt in."""
