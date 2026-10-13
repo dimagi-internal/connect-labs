@@ -46,8 +46,19 @@ function dispatcher(h = handlers(), activation = true) {
 describe('the host refuses what a page may not ask for', () => {
   it('an unknown method gets an error and reaches no handler', async () => {
     const h = handlers();
-    const out = await dispatcher(h)({ id: 1, method: 'fetch', params: {} });
-    expect(out).toEqual({ id: 1, error: 'unknown method "fetch"' });
+    const out = await dispatcher(h)({
+      id: 1,
+      method: 'evalInHost',
+      params: {},
+    });
+    expect(out).toEqual({ id: 1, error: 'unknown method "evalInHost"' });
+    // fetch is a WORKFLOW method: a page asking for it is refused, and nothing runs.
+    const f = await dispatcher(h)({
+      id: 3,
+      method: 'fetch',
+      params: { url: '/labs/workflow/api/1/runs/history/' },
+    });
+    expect(f).toEqual({ id: 3, error: 'fetch is not available on a page' });
     expect(Object.values(h).every((fn) => fn.mock.calls.length === 0)).toBe(
       true,
     );
@@ -55,7 +66,7 @@ describe('the host refuses what a page may not ask for', () => {
 
   it('a workflow-only method says it is not on a page yet', async () => {
     const out = await dispatcher()({ id: 2, method: 'runAction', params: {} });
-    expect(out.error).toBe('runAction is not available on a page yet');
+    expect(out.error).toBe('runAction is not available on a page');
   });
 
   it('a message that is not a request is dropped', async () => {
@@ -384,7 +395,7 @@ describe('the frame runtime', () => {
   it('a workflow-only action rejects with a clear message, not a TypeError', async () => {
     const actions = pageActions({ request: vi.fn() });
     await expect(actions.createTask({})).rejects.toThrow(
-      'createTask is not available on a page yet',
+      'createTask is not available on a page',
     );
   });
 
