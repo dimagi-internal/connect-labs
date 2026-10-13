@@ -8,6 +8,11 @@ on every record), and the visit reader run week by week to today. See
 supply_chain/demo/clone_supply.py. Refuses anything but a labs-only programme
 and one of its own labs-only opportunities. --reset purges that programme's
 supply data and seeds it again.
+
+Every run -- with --reset or without -- also makes or refreshes what the demo is
+seen through (demo/clone_pages.py): the Stock review and Forecast tabs, following
+their templates; the program's home page at /labs/p/programme/<id>/; and, if it has
+none, the organisation's home. Without --reset on a seeded clone, that is all it does.
 """
 
 import json
@@ -25,7 +30,7 @@ class Command(BaseCommand):
         parser.add_argument("--opportunity", type=int, required=True)
         parser.add_argument("--reset", action="store_true", help="Purge this programme's supply data first.")
         parser.add_argument(
-            "--top-up", action="store_true", help="Only record the invented deliveries due since (weekly on beat)."
+            "--top-up", action="store_true", help="Only record the invented deliveries due since (daily on beat)."
         )
 
     def handle(self, *args, **options):

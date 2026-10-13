@@ -6,7 +6,7 @@ submission was read.
 """
 
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -41,6 +41,8 @@ from connect_labs.supply_chain.stock.services.visit_reader import outcome_key
 
 SKUS = {"syn-rutf-150", "syn-vita100k-100", "syn-vita200k-100", "syn-amox-100", "syn-mrdt-25"}
 START = date(2026, 8, 3)
+# The day the seeded world is seeded and read on: fixed, so no test depends on the day it runs.
+TODAY = date(2026, 9, 30)
 
 
 def leaf_paths(node, prefix="form"):
@@ -195,7 +197,7 @@ def seeded(db, settings):
     drive = FakeDrive()
     registry.invalidate_cache()
     with patch(FIXTURE_STORE, return_value=FakeStore(drive)):
-        summary = seed(drive=drive)
+        summary = seed(drive=drive, today=TODAY)
         yield {"drive": drive, "summary": summary, "opp": summary["opportunity_id"]}
     registry.invalidate_cache()
 
@@ -205,6 +207,7 @@ def item(opp, sku="syn-rutf-150"):
 
 
 def by_name(opp, **kwargs):
+    kwargs.setdefault("on_date", TODAY)
     return {b.point.connect_username: b for b in belief.worker_beliefs(opp, item(opp), **kwargs)}
 
 
@@ -329,7 +332,7 @@ def test_one_worker_runs_out(seeded):
 def test_one_worker_counts_well_above_the_ledger_and_reports_a_receipt_nobody_recorded(seeded):
     marula = by_name(seeded["opp"])[OVER_COUNTS]
     assert marula.variance.amount >= 90
-    unmatched = belief.unmatched_receipts(seeded["opp"], marula.point, item(seeded["opp"]))
+    unmatched = belief.unmatched_receipts(seeded["opp"], marula.point, item(seeded["opp"]), on_date=TODAY)
     assert len(unmatched) == 1
     for name, b in by_name(seeded["opp"]).items():
         if name != OVER_COUNTS:
@@ -346,18 +349,18 @@ def test_most_workers_reconcile(seeded):
 
 
 def test_history_is_dated_week_by_week(seeded):
-    three_days_ago = timezone.now() - timedelta(days=3)
+    three_days_ago = timezone.make_aware(datetime.combine(TODAY - timedelta(days=3), time()))
     assert Revision.objects.filter(program_id=seeded["opp"], recorded_at__lt=three_days_ago).exists()
 
 
-def _dispensed(opp, on_date=None):
+def _dispensed(opp, on_date=TODAY):
     return sum(b.dispensed.amount for b in by_name(opp, on_date=on_date).values())
 
 
 def test_as_of_four_weeks_ago_shows_less_dispensed_than_today(seeded):
     opp = seeded["opp"]
     today = _dispensed(opp)
-    past = timezone.localdate() - timedelta(weeks=4)
+    past = TODAY - timedelta(weeks=4)
     with transaction.atomic():
         undone = rewind(opp, end_of_day(past))
         # Rewound by recorded time alone -- no date filter -- the later weeks' reads are gone.
@@ -386,10 +389,10 @@ def test_seeding_again_changes_nothing_unless_reset(seeded):
     opp = seeded["opp"]
     before = Movement.objects.filter(program_id=opp).count()
     with patch(FIXTURE_STORE, return_value=FakeStore(seeded["drive"])):
-        again = seed(drive=seeded["drive"])
+        again = seed(drive=seeded["drive"], today=TODAY)
         assert again["seeded"] is False
         assert Movement.objects.filter(program_id=opp).count() == before
-        reset = seed(drive=seeded["drive"], reset=True)
+        reset = seed(drive=seeded["drive"], reset=True, today=TODAY)
     assert reset["opportunity_id"] == opp and reset["seeded"] is True
     assert Movement.objects.filter(program_id=opp).count() == before
     assert SupplyPoint.objects.filter(program_id=opp, kind="user_held").count() == 20
@@ -421,7 +424,7 @@ def test_most_workers_and_the_partner_store_sit_inside_their_band(seeded):
     assert len(within) >= 14, {name: b.status for name, b in beliefs.items()}
     assert RUNS_OUT not in within
 
-    roots = belief.network_tree(opp, item(opp))
+    roots = belief.network_tree(opp, item(opp), on_date=TODAY)
     partner = next(node for root in roots for node in [root, *root.children] if node.point.slug == "partner-store")
     assert partner.status == "ok", (partner.status, partner.months_of_stock)
     assert partner.subtree["status"] == "ok", partner.subtree
@@ -432,7 +435,7 @@ def test_the_reversed_workers_chart_shows_the_reversal(seeded):
 
     opp = seeded["opp"]
     neem = SupplyPoint.objects.get(program_id=opp, connect_username=REJECTED_LATER)
-    svg = timeline_svg(worker_timeline(opp, neem, item(opp)))
+    svg = timeline_svg(worker_timeline(opp, neem, item(opp), on_date=TODAY))
     assert svg.count('data-kind="reversed"') == 1
     assert "14 sachets put back (a visit rejected after it was counted)" in svg
 

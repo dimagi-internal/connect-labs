@@ -35,7 +35,7 @@ def ingest_visit_consumption() -> dict:
 
 @celery_app.task
 def top_up_clone_supply() -> dict:
-    """Record the invented deliveries due on every seeded clone (demo/clone_supply.py). Weekly, by migration 0047.
+    """Record the invented deliveries due on every seeded clone (demo/clone_supply.py). Daily, by migration 0054.
 
     Synthetic programmes only: top_up refuses anything else before it reads a visit.
     """

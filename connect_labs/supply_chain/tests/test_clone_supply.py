@@ -21,26 +21,94 @@ TODAY = START + timedelta(weeks=8, days=-1)
 FETCH = "connect_labs.supply_chain.stock.services.visit_source.fetch_visits"
 
 
-def test_each_issue_lasts_at_least_the_fortnight_ahead_and_a_worker_with_nothing_to_give_gets_none():
-    monday = date(2026, 8, 3)
-    dispensed = {
-        "a": {monday: Decimal(20), monday + timedelta(weeks=1): Decimal(10), monday + timedelta(weeks=2): Decimal(7)},
-        "b": {monday + timedelta(weeks=3): Decimal(14)},
-        "c": {monday: Decimal(300)},  # one burst, then nothing: more than any pace would size
-    }
-    issues = clone_supply.plan_distributions(dispensed, first=monday, last=monday + timedelta(weeks=3))
+# ---- planning the invented deliveries (no database) -----------------------------
 
-    assert [i["on"] for i in issues] == [monday, monday + timedelta(weeks=2)]
-    first, second = issues
-    # Worker a: 30 given out over the first fortnight; topped up to their target days of that pace, in tens.
-    target = clone_supply.target_days(dispensed)["a"]
-    assert first["lines"]["a"] == clone_supply._round_up(Decimal(30) / 14 * target)
-    assert first["lines"]["a"] % 10 == 0 and first["lines"]["a"] >= 30
-    # The fortnight ahead is a floor: c's burst is covered whatever their target.
-    assert first["lines"]["c"] >= 300
-    # Nothing to give out in a fortnight, nothing issued: b only appears once it dispenses.
-    assert "b" not in first["lines"]
-    assert "b" in second["lines"]
+FIRST = date(2026, 8, 3)
+
+
+def _caseloads(first, until):
+    """{username: {day: sachets}}: 18 steady workers at 5-30 a day, and two with the enrolment burst.
+
+    The burst -- every child's first ration in the first fortnight, then a far lower
+    pace -- is the shape a clone's visits open with, and the shape that left the
+    seeded clone at 21-109 days of cover.
+    """
+    out = {}
+    days = (until - first).days + 1
+    for n in range(18):
+        rate = Decimal(5 + (n * 25) // 17)
+        out[f"flw_{n:03d}"] = {first + timedelta(days=d): rate for d in range(days) if (d + n) % 7 != 6}
+    for n in (18, 19):
+        out[f"flw_{n:03d}"] = {
+            first + timedelta(days=d): Decimal(60 if d < 14 else 8) for d in range(days) if d % 7 != 6
+        }
+    return out
+
+
+def _simulate(by_day, issues, start, end):
+    from connect_labs.supply_chain.demo.clone_supply import _balances
+
+    return _balances(by_day, issues, start, end)
+
+
+def test_deliveries_fall_every_fortnight_the_last_a_week_before_the_seed():
+    today = FIRST + timedelta(days=60)
+    days = clone_supply.delivery_days(FIRST, today)
+    assert days[-1] == today - timedelta(days=clone_supply.LAST_DELIVERY_DAYS_AGO)
+    assert days[0] <= FIRST < days[0] + timedelta(days=clone_supply.CADENCE_DAYS)
+    assert all((b - a).days == clone_supply.CADENCE_DAYS for a, b in zip(days, days[1:]))
+
+
+def test_a_fixed_few_workers_are_short_and_the_choice_survives_a_new_worker():
+    names = [f"flw_{n:03d}" for n in range(20)]
+    short = clone_supply.short_workers(names)
+    assert len(short) == 3
+    assert clone_supply.short_workers(names + ["flw_new"]) & short
+    targets = clone_supply.target_days(names)
+    assert set(targets) == set(names) - short
+    assert targets == clone_supply.target_days(names)  # seeded
+
+
+@pytest.mark.parametrize("offset", range(7))  # whatever weekday it is seeded on
+def test_on_the_seed_day_most_workers_hold_their_target_and_the_short_few_are_under_minimum(offset):
+    """The design the clone read 21-109 days against: most at 24-34 days, the short few under 15."""
+    today = FIRST + timedelta(days=56 + offset)
+    dispensed = _caseloads(FIRST, today + timedelta(days=30))  # the clone's visits run on past today
+    issues = clone_supply.plan_distributions(
+        dispensed, first=FIRST, today=today, known_until=today + timedelta(days=30)
+    )
+    short = clone_supply.short_workers(dispensed)
+    targets = clone_supply.target_days(dispensed)
+
+    for username, by_day in dispensed.items():
+        mine = [(i["on"], i["lines"][username]) for i in issues if username in i["lines"]]
+        held = _simulate(by_day, mine, issues[0]["on"], today + timedelta(days=6))
+        pace = clone_supply.pace(by_day, today)
+        cover = held[today] / pace
+        if username in short:
+            assert cover < 15, (username, cover)
+        else:
+            low, high = targets[username][1], targets[username][1] + 10 / pace + 1
+            assert low - 1 <= cover <= high, (username, cover, targets[username])
+        # Nobody gives out stock they were never given, up to the next delivery.
+        assert min(held.values()) >= 0, (username, min(held.values()))
+
+
+def test_a_worker_with_nothing_to_give_out_is_sent_nothing():
+    today = FIRST + timedelta(days=40)
+    dispensed = {"busy": {FIRST + timedelta(days=d): Decimal(10) for d in range(41)}, "idle": {}}
+    issues = clone_supply.plan_distributions(dispensed, first=FIRST, today=today)
+    assert issues and all("idle" not in i["lines"] for i in issues)
+
+
+def test_a_short_worker_is_sent_the_fortnight_ahead_and_a_full_one_their_target():
+    held = Decimal(0)
+    by_day = {FIRST + timedelta(days=d): Decimal(10) for d in range(60)}
+    on = FIRST + timedelta(days=28)
+    known = FIRST + timedelta(days=59)
+    assert clone_supply.size_delivery(by_day, on=on, held=held, known_until=known, days=None) == 140
+    assert clone_supply.size_delivery(by_day, on=on, held=held, known_until=known, days=35) == 350
+    assert clone_supply.size_delivery(by_day, on=on, held=Decimal(100), known_until=known, days=35) == 250
 
 
 @pytest.fixture
@@ -90,7 +158,7 @@ def test_the_clone_is_seeded_end_to_end_and_every_invented_figure_says_so(clone)
     from connect_labs.supply_chain.stock.services import belief
 
     item = Item.objects.select_related("commodity").get(scope_key=f"prog:{opp}", sku=clone_supply.SKU)
-    on_hand = {b.point.connect_username: b for b in belief.worker_beliefs(opp, item)}
+    on_hand = {b.point.connect_username: b for b in belief.worker_beliefs(opp, item, on_date=TODAY)}
     assert on_hand and all(b.on_hand.amount >= 0 for b in on_hand.values()), {u: b.on_hand for u, b in on_hand.items()}
 
 
@@ -144,6 +212,40 @@ def test_a_weekly_top_up_records_only_the_deliveries_due_since(clone):
     assert again["deliveries_recorded"] == []
     assert all(r.note.startswith("Invented for the demo") for r in Distribution.objects.filter(program_id=opp))
     assert clone_supply.seeded_clones() == [(opp, opp)]
+    # Every fortnight after the last delivery the seed recorded, a week before it ran.
+    assert all((day - (midway - timedelta(days=7))).days % clone_supply.CADENCE_DAYS == 0 for day in new)
+
+
+def test_in_the_days_after_the_seed_the_daily_top_up_keeps_it_plausible(clone):
+    """Seeded part-way; then each day the reader posts that day's visits and the top-up runs, as on beat.
+
+    Nobody goes negative, and a few -- never most -- read below minimum on every day.
+    """
+    from connect_labs.labs.access.scopes import SYSTEM
+    from connect_labs.supply_chain.data_access import SupplyDataAccess
+    from connect_labs.supply_chain.models import Item
+    from connect_labs.supply_chain.operations import call_operation
+    from connect_labs.supply_chain.stock.services import belief, visit_source
+
+    opp = clone["opp"]
+    midway = START + timedelta(weeks=4, days=-1)
+    access = SupplyDataAccess(
+        access_token=visit_source.SYNTHETIC_TOKEN, program_id=opp, opportunity_id=opp, caller=SYSTEM
+    )
+    with patch(FETCH, return_value=clone["world"].visits):
+        clone_supply.seed(program_id=opp, opportunity_id=opp, today=midway)
+        item = Item.objects.select_related("commodity").get(scope_key=f"prog:{opp}", sku=clone_supply.SKU)
+        for n in range(1, 15):
+            day = midway + timedelta(days=n)
+            clone_supply.top_up(program_id=opp, opportunity_id=opp, today=day)
+            call_operation("visit_consumption_ingest", access, {"opportunity_id": opp, "until": day.isoformat()})
+            statuses = [b.status for b in belief.worker_beliefs(opp, item, on_date=day)]
+            below = sum(status in belief.BELOW for status in statuses)
+            assert "negative" not in statuses and below <= len(statuses) // 4, (day, statuses)
+            assert below > 0 or (day - (midway - timedelta(days=7))).days % clone_supply.CADENCE_DAYS < 3, (
+                day,
+                statuses,
+            )
 
 
 def test_a_top_up_before_any_seed_says_so(clone):
@@ -302,11 +404,12 @@ def test_the_clones_rutf_carries_the_programmes_protocol_for_the_forecast(clone)
     }
 
 
-def test_restocks_follow_each_workers_measured_pace_so_only_a_few_run_below_their_minimum(clone):
-    """The invented deliveries top each worker up at the pace the Workers page measures (14 days).
+def test_on_the_seed_day_the_short_few_are_below_minimum_and_the_rest_inside_their_band(clone):
+    """What the Stock review reads the day it is seeded, at each worker's own 14-day pace.
 
-    Sized only to the next fortnight, every worker spent most of it under half a month's cover,
-    and 19 of 20 read "below minimum" on the clone. A minority running short is the network.
+    The seeded clone read 21-109 days of cover with none below minimum: deliveries sized
+    to the busiest fortnight never ran down. Now the short few are under their minimum,
+    everyone else is inside their band, and nobody is negative.
     """
     from connect_labs.supply_chain.models import Item
     from connect_labs.supply_chain.stock.services import belief
@@ -315,24 +418,16 @@ def test_restocks_follow_each_workers_measured_pace_so_only_a_few_run_below_thei
     with patch(FETCH, return_value=clone["world"].visits):
         clone_supply.seed(program_id=opp, opportunity_id=opp, today=TODAY)
     item = Item.objects.select_related("commodity").get(scope_key=f"prog:{opp}", sku=clone_supply.SKU)
+    beliefs = {b.point.connect_username: b for b in belief.worker_beliefs(opp, item, on_date=TODAY)}
+    paced = {u: b for u, b in beliefs.items() if b.status in belief.BELOW + ("ok", "overstocked")}
+    short = clone_supply.short_workers(paced)
 
-    for day in (TODAY - timedelta(days=7), TODAY - timedelta(days=3), TODAY):
-        statuses = [b.status for b in belief.worker_beliefs(opp, item, on_date=day)]
-        below = sum(status in belief.BELOW for status in statuses)
-        assert statuses and 0 < below <= len(statuses) // 4, (day, statuses)
-        assert "negative" not in statuses
-
-
-def test_an_issue_tops_a_worker_up_to_their_target_at_the_pace_they_were_measured_at():
-    monday = date(2026, 8, 3)
-    weeks = {monday + timedelta(weeks=k): Decimal(70) for k in range(6)}  # 10 sachets a day, steady
-    issues = clone_supply.plan_distributions({"a": weeks}, first=monday, last=monday + timedelta(weeks=5))
-    target = clone_supply.target_days(["a"])["a"]
-
-    held = Decimal(0)
-    for n, issue in enumerate(issues):
-        held -= sum(weeks.get(issue["on"] - timedelta(weeks=k), 0) for k in (1, 2)) if n else 0
-        held += issue["lines"]["a"]
-        # Topped up to the target days at 10 a day, in tens; never less than the fortnight ahead.
-        assert target * 10 <= held < target * 10 + 10, (issue["on"], held)
-        assert held >= 140
+    below = {u for u, b in paced.items() if b.status in belief.BELOW}
+    assert below and below <= short, {u: (b.status, b.months_of_stock) for u, b in paced.items()}
+    assert "negative" not in {b.status for b in beliefs.values()}
+    assert all(paced[u].status == "ok" for u in set(paced) - short), {
+        u: (b.status, b.months_of_stock) for u, b in paced.items()
+    }
+    summary = belief.workers_below_minimum(list(beliefs.values()))
+    assert summary["line"] == f"{summary['below']} of {len(beliefs)} workers below minimum at their own 14-day pace"
+    assert 0 < summary["below"] <= len(beliefs) // 4
