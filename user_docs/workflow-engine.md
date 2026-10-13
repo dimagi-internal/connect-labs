@@ -183,7 +183,12 @@ Settings uses the word **program** (not "programme") throughout.
 
 ### Who can change Settings
 
-Anyone signed in with a **@dimagi.com** or **@dimagi-ai.com** email address counts as Dimagi staff for the purposes of Settings and page editing. This means a Dimagi person opening a labs-only organisation's Settings can now make changes. Previously, the Settings page told Dimagi staff they could change it and then refused when they tried. The message now accurately describes the rule that applies.
+Who can change Settings and edit pages depends on whether the organisation, program, or opportunity is a **labs-only (synthetic)** scope or a **real partner** scope:
+
+- **Labs-only (synthetic) scopes** — anyone signed in with a **@dimagi.com** or **@dimagi-ai.com** email address can change Settings and edit pages, including scopes that have no administrator. This means a Dimagi person can always manage a synthetic scope, even if nobody else administers it.
+- **Real partner scopes** — Settings and page editing are controlled by the scope's own members (as Connect defines them) and any individuals who have been explicitly granted labs staff access. A Dimagi email address alone does not grant access to a real partner organisation, program, or opportunity.
+
+If you believe you should have access to a real partner scope's Settings but do not, ask the scope's administrator to grant you access directly.
 
 ### Synthetic organisations
 
@@ -242,12 +247,4 @@ In addition to coaching on indicator scores, the agent can now coach a field wor
 | Story | What it means |
 |---|---|
 | **Danger sign recorded — not referred** | A danger sign was recorded for the baby but the baby was not referred for follow-up care |
-| **Weighing to check** | A recorded weight is hard to believe and should be verified |
-| **Weight has stalled** | The baby's weight has stopped growing while skin-to-skin time is also falling |
-| **Growing well** | The baby is growing healthily — an opportunity to recognise the worker's good practice |
-
-Each baby gets one story, and Labs only surfaces babies whose story happened recently — within 30 days of the baby's latest visit.
-
-#### How the briefing is built
-
-When the
+| **
