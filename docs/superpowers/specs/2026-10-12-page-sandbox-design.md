@@ -523,6 +523,22 @@ their followers and every new instance run in the frame once this is deployed. L
 `config.opp_meta` rather than its `opportunity_ids` (the frame binds reads to the latter, and
 an author-written list cannot widen that); it needs the two reconciled.
 
+**`kmc_image_audit` reconciled (2026-10-13), and checked: all 41.** Ruling: a workflow's
+opportunities are its `opportunity_ids`; `config.opp_meta` only *describes* them (LLO,
+country, scale hardware) and cannot add one. The render offers and reads only opportunities
+in both, drops a saved selection naming any other, and lists the ones its config describes
+but it does not cover ("Not offered: ... Add it to the workflow's opportunities"). Why: the
+alternative -- letting config declare opportunities -- is exactly the author-written widening
+the frame refuses. Cost: a live instance whose `opportunity_ids` are narrower than its
+`opp_meta` offers fewer opportunities until `workflow_update_opportunity_ids` adds them (the
+note names them). Its server-side schedule (`run_default`, `schedule_defaults.opportunity_ids`)
+is unchanged: it runs as the person who saved it, with their access checked by the API, so it
+widens nothing; a schedule can still audit an opportunity the dashboard does not show, which
+the note makes visible. Checked in Chromium against a local server: drawn sandboxed, selecting
+the opportunity and asking which photo types it has made only reads of that opportunity, and
+no request was refused. Test: `templates/__tests__/kmc_image_audit_opps.test.js` runs the real
+render and records its requests.
+
 **Still to do before `all`:** a labs deploy and a live check there (Jonathan's session, the
 priority templates with real data); a scan of live COPIES (own render code) for
 `window.location =`, `window.confirm(` and fetches the table refuses -- those stay out until

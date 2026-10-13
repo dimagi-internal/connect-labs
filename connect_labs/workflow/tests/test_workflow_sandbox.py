@@ -187,6 +187,22 @@ def test_the_checked_templates_are_marked_and_their_new_instances_opt_in():
     assert not any(TEMPLATES[k].get("deprecated") for k in SANDBOX_CHECKED)
 
 
+def test_every_deployed_template_that_is_not_a_page_is_checked():
+    """The rollout's last template (kmc_image_audit) joined once it read only its own
+    opportunities; a new template must be checked in the frame before it ships."""
+    from connect_labs.workflow.page_mode import is_page
+    from connect_labs.workflow.templates import SANDBOX_CHECKED
+
+    unchecked = sorted(
+        key
+        for key, template in TEMPLATES.items()
+        if not template.get("deprecated")
+        and not is_page(template.get("definition") or {})
+        and key not in SANDBOX_CHECKED
+    )
+    assert unchecked == []
+
+
 def test_a_follower_of_a_checked_template_is_sandboxed_and_a_copy_is_not():
     from connect_labs.workflow.templates import SANDBOX_CHECKED
 
