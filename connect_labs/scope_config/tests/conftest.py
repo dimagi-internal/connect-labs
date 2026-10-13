@@ -28,15 +28,16 @@ TREE = {
 
 
 class _User:
-    def __init__(self, username, is_staff=False):
+    def __init__(self, username, is_staff=False, email=""):
         self.username = username
         self.is_staff = is_staff
+        self.email = email
         self.is_authenticated = True
 
 
-def caller(username, holds=(), is_staff=False):
+def caller(username, holds=(), is_staff=False, email=""):
     """A caller holding exactly `holds` (strings like 'program:7'), or nothing knowable if holds is None."""
-    c = access.Caller(user=_User(username, is_staff=is_staff))
+    c = access.Caller(user=_User(username, is_staff=is_staff, email=email))
     # Caller is frozen; what it holds lives beside it, read by the fake below.
     _HOLDS[id(c)] = holds
     return c
