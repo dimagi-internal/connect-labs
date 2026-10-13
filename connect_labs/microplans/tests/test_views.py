@@ -468,8 +468,18 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
     seq = {"plan": (max(plans) if plans else 0) + 1, "group": (max(groups) if groups else 0) + 1}
 
     class FakeDA:
+        # Not a workspace program (labs.workspaces): no teams, deletes allowed.
+        workspace = None
+        viewer = None
+        caller = None
+        restricted_to_teams = False
+        can_delete = True
+
         def __init__(self, program_id, *a, **k):
             self.program_id = int(program_id)
+
+        def team_for_new_records(self, requested=None):
+            return None
 
         def list_plans(self):
             return list(plans.values())
@@ -493,6 +503,7 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
             coverage_config=None,
             coverage_stats=None,
             run_meta=None,
+            team=None,
         ):
             was = plan_lib.materialize_work_areas(mode, pins, hulls)
             if area_targets and mode == "coverage":
@@ -560,7 +571,9 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
             p.status_log = data.get("status_log", [])
             return p
 
-        def create_group(self, name, plan_ids, offered_to="", kind="bundle", arms=None, sampling_config=None):
+        def create_group(
+            self, name, plan_ids, offered_to="", kind="bundle", arms=None, sampling_config=None, team=None
+        ):
             gid = seq["group"]
             seq["group"] += 1
             groups[gid] = _FakeGroup(gid, name, plan_ids, offered_to, kind=kind, arms=arms)
