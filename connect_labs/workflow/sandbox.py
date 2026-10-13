@@ -110,9 +110,13 @@ def _template_is_sandboxed(key) -> bool:
     return bool(template and template.get("sandboxed"))
 
 
-def workflow_wants_sandbox(definition, request=None) -> bool:
-    """Whether a WORKFLOW (not a page) runs in the sandbox, per the rollout above."""
-    mode = workflow_sandbox_mode()
+def workflow_wants_sandbox(definition, request=None, mode: str | None = None) -> bool:
+    """Whether a WORKFLOW (not a page) runs in the sandbox, per the rollout above.
+
+    ``mode`` asks the question for a rollout mode other than the configured one
+    (``workflow_sandbox_scan`` reports both "now" and "under all").
+    """
+    mode = mode if mode in WORKFLOW_SANDBOX_MODES else workflow_sandbox_mode()
     if mode == "all":
         return True
     if mode == "off":
@@ -133,7 +137,7 @@ def workflow_wants_sandbox(definition, request=None) -> bool:
     return False
 
 
-def should_sandbox(definition, page_mode: bool = False, request=None) -> bool:
+def should_sandbox(definition, page_mode: bool = False, request=None, mode: str | None = None) -> bool:
     """Whether this definition's render runs in the sandbox.
 
     Every page, on every route: decided from the consuming definition as read for this
@@ -150,7 +154,7 @@ def should_sandbox(definition, page_mode: bool = False, request=None) -> bool:
         return False
     if bool(page_mode) or is_page(definition):
         return True
-    return workflow_wants_sandbox(definition, request)
+    return workflow_wants_sandbox(definition, request, mode=mode)
 
 
 def _origin_of(url: str) -> str:
