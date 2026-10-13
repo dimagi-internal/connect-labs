@@ -81,6 +81,23 @@ This means each workflow appears in exactly one place. If you cannot find a work
 !!! note "Drilling into worker visits from a program-level report"
     When you open a worker's case in the worker review from a programme report created at program level, their visits now load correctly. Previously, this could show a "pipeline not found" error; this has been fixed and visit data loads as expected.
 
+### Protected (sandboxed) workflows
+
+Some workflows run inside a **protected frame** — sometimes called a sandbox. A workflow in the protected frame looks and works exactly the same as normal, but it operates with an important safety constraint: its content cannot act on your behalf without asking you first.
+
+Specifically, a protected workflow cannot:
+
+- Create tasks or audits
+- Start a coaching conversation with a worker
+- Start a background job that creates records
+- Complete or delete a run
+
+…without Labs first showing you a prompt along the lines of **"This workflow wants to …, as you."** Confirming once covers that type of action for the next two minutes, so you will not be asked repeatedly during a single session.
+
+**Nothing changes for anyone by default.** Protection is switched on one workflow at a time, not all at once. On each workflow's listing you will see a line indicating whether it currently runs protected. If it does, a **View it sandboxed** link lets you try the protected version before it becomes the default for everyone.
+
+If you are asked to confirm an action you did not expect, that is the protection working as intended — check what the workflow is about to do before clicking yes.
+
 ---
 
 ## Pages
@@ -96,6 +113,12 @@ Pages are useful for landing screens and summary views that you want to keep per
 | Has runs | Yes | No |
 | Workflows list button | **Start run** | **Open page** |
 | Built with workflow tools | Yes | Yes |
+| Can show pipeline data and worker details | Yes | Yes |
+| Can open visit photos and draw maps | Yes | Yes |
+| Can create tasks or audits (with confirmation) | Yes | Yes |
+| Can save run state or complete a run | Yes | No |
+
+Pages can now be built with the full set of workflow tools. They can show pipeline data and worker details, open visit photos, draw maps with admin boundaries and map tiles, and create tasks or audits — with Labs asking for confirmation first, the same way a protected workflow does. The only things a page cannot do are those that require a run: saving run state, completing a run, running a declared action, or running a background job.
 
 ### Access to workflows shown on a page
 
@@ -210,41 +233,3 @@ On the Stock review, most workers hold roughly 3½ to 5 weeks of RUTF at their o
 Invented deliveries continue to arrive every fortnight in the days after seeding, recorded each day they fall due rather than being batched once a week, so the figures stay believable as time passes.
 
 ### What reseeding sets up
-
-Reseeding the demo now also builds everything the demo is viewed through:
-
-- The **Stock review** tab in Supply, following the deployed template (so a template deploy updates it automatically).
-- The **Forecast** tab in Supply, also following the deployed template.
-- A **program home page** at `/labs/p/programme/<id>/`. The page shows:
-    - Workers below minimum
-    - When the network runs dry at protocol
-    - What share of the protocol children are actually receiving RUTF
-    - What stock workers currently hold
-    - The stores — displayed in **sachets** (the same unit used across all other Supply screens), with each store's **workers' cover** filled in
-    - Open checks
-    - Links to every Supply tab and the workflows behind them
-    - The canopy agent panel
-
-- If the organisation that owns the demo has no home page yet, reseeding also creates one that links through to the program's page.
-
----
-
-## Coaching Workers from a Run Page
-
-When you ask the canopy agent to coach a field worker from a Labs run page, the agent can show a **coaching card** directly in the chat. The card displays:
-
-- The worker's name
-- The topics the coach will raise
-- The first message the worker will receive
-- A picture of the worker's figures
-
-### Case coaching — talking to a worker about one baby
-
-In addition to coaching on indicator scores, the agent can now coach a field worker about a **specific baby**. Labs reviews each baby's recent visits and identifies one of four stories that best describes their situation. Every figure in the coaching comes from that baby's own visits.
-
-#### The four stories
-
-| Story | What it means |
-|---|---|
-| **Danger sign recorded — not referred** | A danger sign was recorded for the baby but the baby was not referred for follow-up care |
-| **
