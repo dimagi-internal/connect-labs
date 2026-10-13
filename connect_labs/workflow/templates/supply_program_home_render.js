@@ -82,9 +82,21 @@ function WorkflowUI({ definition, scope, config, supply, view }) {
     return byKind[b] - byKind[a];
   });
 
-  var stores = ((src.stores && src.stores.rows) || []).filter(function (r) {
-    return r.kind !== 'user_held';
-  });
+  // The network tree, top store down: every store, with its own figures and its
+  // subtree's (what it and everything below it hold, paced on the workers below).
+  // One unit throughout -- the item's own, sachets for RUTF.
+  var stores = [];
+  (function walk(nodes) {
+    (nodes || []).forEach(function (r) {
+      if (r.kind === 'user_held') return;
+      stores.push(r);
+      walk(r.children);
+    });
+  })(src.stores && src.stores.rows);
+  var storeUnit =
+    (src.stores && src.stores.metadata && src.stores.metadata.unit) ||
+    (stores[0] && stores[0].unit) ||
+    '';
   var asOf = stock.metadata && (stock.metadata.as_of || stock.metadata.today);
 
   // ---- the ways in: the program's Supply tabs, as its Settings say ----
@@ -283,7 +295,9 @@ function WorkflowUI({ definition, scope, config, supply, view }) {
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-gray-500">
                   <th className="py-1">Store</th>
-                  <th className="py-1 text-right">On hand</th>
+                  <th className="py-1 text-right">
+                    {'On hand' + (storeUnit ? ' (' + storeUnit + 's)' : '')}
+                  </th>
                   <th className="py-1 text-right">Its cover</th>
                   <th className="py-1 text-right">Its workers' cover</th>
                 </tr>

@@ -52,7 +52,7 @@ DEFINITION = {
     "config_reads": ["supply"],
     "supply_sources": [
         {"alias": "stock", "source": "worker_stock", "item": "rutf"},
-        {"alias": "stores", "source": "network_stock", "item": "rutf"},
+        {"alias": "stores", "source": "network_tree", "item": "rutf"},
         {"alias": "forecast", "source": "stock_forecast", "item": "rutf", "params": {"course_size": 168}},
         {"alias": "checks", "source": "checks_list"},
     ],
