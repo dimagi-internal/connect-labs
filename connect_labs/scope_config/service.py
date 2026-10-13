@@ -8,13 +8,13 @@ Who may do what (spec section 1):
     opportunity    its members              its members, and Dimagi staff
     user           that person              that person
 
-"Dimagi staff" is `utils.dimagi_user.is_dimagi_staff`: Django `is_staff`, or a
-Dimagi sign-in (@dimagi.com / @dimagi-ai.com). Ruling 2026-10-12: it was
-`is_staff` alone, a flag no OAuth-created labs user carries, so the people the
-refusal named as allowed were refused. The cost: anyone with a Dimagi email may
-change any scope's layer, a labs-only organisation's included -- acceptable
-because a layer holds ids and labels, never visit data, every change is
-attributed with undo, and labs-only organisations are synthetic and internal.
+"Dimagi staff" is `_is_dimagi_staff_for`: Django `is_staff` (granted by hand) on
+any scope, and a Dimagi sign-in (@dimagi.com / @dimagi-ai.com) on a LABS-ONLY
+scope. Ruling 2026-10-12: it was `is_staff` alone, a flag no OAuth-created labs
+user carries, so the people the refusal named as allowed were refused on labs-only
+organisations nobody administers. Ruling 2026-10-13 narrows the fix: a Dimagi
+email does not open a real (partner) scope's layer -- there membership decides,
+as Connect says -- because that layer changes what the partner's people see.
 
 "Member" is `labs.access.scopes.may_use`, which also covers labs-only scopes and
 fails closed: a caller whose holdings cannot be established is refused with
@@ -70,10 +70,44 @@ def username_of(caller: access.Caller) -> str:
 
 
 def _is_staff(caller: access.Caller) -> bool:
-    """Dimagi staff: Django `is_staff`, or a Dimagi sign-in (utils.dimagi_user.is_dimagi_staff)."""
-    from connect_labs.utils.dimagi_user import is_dimagi_staff
+    """Labs staff: Django `is_staff`, a flag granted by hand. Passes for every scope."""
+    return bool(getattr(_user(caller), "is_staff", False))
 
-    return is_dimagi_staff(_user(caller))
+
+def _is_labs_only(scope: Scope) -> bool:
+    """Whether `scope` is labs-only (synthetic): nothing in it reaches a real Connect organisation."""
+    from connect_labs.labs.synthetic.local_records_backend import (
+        is_labs_only_opportunity_id,
+        is_labs_only_program_id,
+    )
+
+    try:
+        if scope.type == "organization":
+            return is_labs_only_org(scope.key)
+        if scope.type == "program":
+            return is_labs_only_program_id(int(scope.key))
+        if scope.type == "opportunity":
+            return is_labs_only_opportunity_id(int(scope.key))
+    except (TypeError, ValueError):
+        return False
+    return False
+
+
+def _is_dimagi_staff_for(caller: access.Caller, scope: Scope) -> bool:
+    """Dimagi staff, for `scope`: hand-granted `is_staff` anywhere, or a Dimagi sign-in on a labs-only scope.
+
+    Ruling 2026-10-13: a Dimagi email alone (utils.dimagi_user.is_dimagi_user) does
+    NOT open a real organisation's, program's or opportunity's layer -- that is
+    a partner's, and changing it changes what their people see. Real scopes stay
+    membership (Connect decides) plus hand-granted `is_staff`. A labs-only scope is
+    synthetic and internal, and often has no administrator (a seeder made it), so
+    there a Dimagi sign-in is staff.
+    """
+    if _is_staff(caller):
+        return True
+    from connect_labs.utils.dimagi_user import is_dimagi_user
+
+    return is_dimagi_user(_user(caller)) and _is_labs_only(scope)
 
 
 def tree_for(caller: access.Caller) -> dict:
@@ -110,7 +144,7 @@ def refusal(caller: access.Caller | None, scope: Scope) -> str | None:
         return None
     if scope.type == "user":
         return None if username_of(caller) == scope.key else "a person's settings are theirs alone"
-    if _is_staff(caller):
+    if _is_dimagi_staff_for(caller, scope):
         return None
     return access.may_use(caller, **scope.kwargs())
 
@@ -188,7 +222,7 @@ def write_refusal(caller: access.Caller | None, scope: Scope, tree: dict) -> str
     reason = refusal(caller, scope)
     if reason:
         return reason
-    if scope.type == "organization" and not caller.is_system and not _is_staff(caller):
+    if scope.type == "organization" and not caller.is_system and not _is_dimagi_staff_for(caller, scope):
         if is_labs_only_org(scope.key) and not administers_labs_only_org(caller, scope.key):
             return LABS_ONLY_ORG_WRITE
     return None
