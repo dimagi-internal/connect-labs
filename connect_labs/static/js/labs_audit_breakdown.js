@@ -19,7 +19,7 @@
 //   UI primitives".
 //
 // Contract: React is passed IN (never imported) so this works whether React
-// comes from the workflow-runner bundle or the pages-cards bundle. The renderer
+// comes from the workflow-runner bundle or anywhere else. The renderer
 // returns a React element that self-manages its own collapse state.
 
 (function () {

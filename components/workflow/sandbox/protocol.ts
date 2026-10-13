@@ -95,6 +95,9 @@ export const NAVIGATE_PATTERNS = [
 ];
 /** Never, whatever the lists above say. */
 export const NAVIGATE_DENIED = ['/o/', '/accounts/', '/labs/mcp/', '/admin/'];
+/** Query parameters a page's link may never carry: on the run page they once made a
+ * GET write (`?sync=true&template=...` overwrote the render code). */
+export const NAVIGATE_DENIED_PARAMS = ['sync', 'template'];
 
 export interface BridgeRequest {
   id: number | string;
@@ -127,4 +130,7 @@ export interface FramePayload {
   };
   today: string;
   mapboxToken: string;
+  /** The host page's own URL: what a page's relative links resolve against (the
+   * frame's own URL is the shell's, where no relative link means anything). */
+  pageUrl: string;
 }

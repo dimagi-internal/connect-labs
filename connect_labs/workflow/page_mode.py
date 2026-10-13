@@ -40,9 +40,21 @@ PAGE = "page"
 RUN_ENDPOINTS = ("updateState", "saveWorkerResult", "renameRun", "completeRun", "getSnapshot")
 
 
+#: The template a page starts from. A definition made from it before ``kind`` was
+#: written onto every page carries the template type alone; it is still a page.
+PAGE_TEMPLATE = "page_blank"
+
+
 def is_page(definition) -> bool:
+    """Whether a definition is a page. Fails toward "page" (and so toward the sandbox):
+    ``kind: "page"``, or made from the page template, whichever ``kind`` says."""
     data = getattr(definition, "data", definition) or {}
-    return isinstance(data, dict) and data.get("kind") == PAGE
+    if not isinstance(data, dict):
+        return False
+    if data.get("kind") == PAGE:
+        return True
+    config = data.get("config") if isinstance(data.get("config"), dict) else {}
+    return PAGE_TEMPLATE in (data.get("templateType"), config.get("templateType"))
 
 
 def blank_instance(definition_id, opportunity_id, program_id, opportunity_ids) -> dict:

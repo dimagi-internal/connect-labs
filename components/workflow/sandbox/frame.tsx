@@ -84,6 +84,7 @@ export function installMemoryStorage(win: Window): void {
 export function interceptAnchorClicks(
   doc: Document,
   navigate: (url: string, newTab: boolean) => void,
+  pageUrl = '',
 ): () => void {
   function onClick(event: MouseEvent) {
     const target = event.target as Element | null;
@@ -102,8 +103,10 @@ export function interceptAnchorClicks(
       event.metaKey ||
       event.shiftKey ||
       event.button === 1;
-    // The resolved href: relative links resolve against the shell's own URL on labs.
-    navigate(anchor.href || raw, newTab);
+    // Relative links resolve against the HOST page's URL (passed in INIT), as they
+    // would have before the page moved into a frame: against the frame's own URL they
+    // would all point under the shell, where navigate refuses them.
+    navigate(resolveHref(raw, pageUrl) || anchor.href || raw, newTab);
   }
   doc.addEventListener('click', onClick, true);
   doc.addEventListener('auxclick', onClick, true);
@@ -111,6 +114,16 @@ export function interceptAnchorClicks(
     doc.removeEventListener('click', onClick, true);
     doc.removeEventListener('auxclick', onClick, true);
   };
+}
+
+/** `raw` resolved against the host page's URL, or "" when either does not parse. */
+export function resolveHref(raw: string, pageUrl: string): string {
+  if (!pageUrl) return '';
+  try {
+    return new URL(raw, pageUrl).href;
+  } catch {
+    return '';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -335,11 +348,15 @@ export function startFrame(win: Window, rootEl: HTMLElement): void {
   connectBridge(win, {
     onInit(payload, b) {
       bridge = b;
-      interceptAnchorClicks(win.document, (url, newTab) => {
-        b.request('navigate', { url, newTab }).catch((err) =>
-          console.warn('[page] link refused:', err.message),
-        );
-      });
+      interceptAnchorClicks(
+        win.document,
+        (url, newTab) => {
+          b.request('navigate', { url, newTab }).catch((err) =>
+            console.warn('[page] link refused:', err.message),
+          );
+        },
+        typeof payload.pageUrl === 'string' ? payload.pageUrl : '',
+      );
       reportHeight(rootEl, (height) => {
         b.request('resize', { height }).catch(() => undefined);
       });
