@@ -616,7 +616,11 @@ export function createDispatcher(
       case 'runAction': {
         const w = workflow();
         const key = params.key;
-        if (typeof key !== 'string' || !w.actionKeys().includes(key)) {
+        if (
+          typeof key !== 'string' ||
+          !/^[A-Za-z0-9_-]{1,64}$/.test(key) ||
+          !w.actionKeys().includes(key)
+        ) {
           throw new BridgeError(
             `This workflow has no action ${JSON.stringify(String(key)).slice(0, 80)}.`,
           );

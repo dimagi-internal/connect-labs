@@ -70,20 +70,32 @@ def _page_and_scope(request, definition_id):
         return None, JsonResponse(
             {"error": "This is a workflow with runs: run its actions on a run.", "code": "not_a_page"}, status=400
         )
+    # The page must LIVE in the scope it is acted in: with no scope the read filter
+    # can fall back to public records (a labs-only organisation sends none), so the
+    # read alone does not prove where the page is.
+    from connect_labs.labs.context import get_org_data
+    from connect_labs.workflow.page_mode import page_owner_scope
+
+    owner = page_owner_scope(definition, get_org_data(request) or {})
+    if owner is None or (owner.type, str(owner.key)) != (scope.type, str(scope.key)):
+        wda.close()
+        return None, JsonResponse(
+            {"error": "This page does not live in the scope its action was asked in.", "code": "wrong_scope"},
+            status=403,
+        )
     prop = page_scope(request, scope)
-    reach: list[int] = []
-    for oid in (
-        list(definition.opportunity_ids or [])
-        + [definition.opportunity_id]
-        + [o.get("id") for o in prop.get("opportunities") or []]
-        + [(prop.get("opportunity") or {}).get("id")]
-    ):
+    # What is under the page's owner, in the viewer's own org data; the page's own
+    # opportunity_ids (author-written) can only NARROW that, never add to it.
+    under = []
+    for oid in [o.get("id") for o in prop.get("opportunities") or []] + [(prop.get("opportunity") or {}).get("id")]:
         try:
             n = int(oid)
         except (TypeError, ValueError):
             continue
-        if n > 0 and n not in reach:
-            reach.append(n)
+        if n > 0 and n not in under:
+            under.append(n)
+    listed = {int(o) for o in (definition.opportunity_ids or []) if str(o).isdigit()}
+    reach = [n for n in under if n in listed] if listed else under
     subject = PageScope(
         definition_id=int(definition.id),
         scope_type=scope.type,

@@ -97,6 +97,9 @@ export function ActionDialog({
       : scope
         ? `?${scope[0].slice(1)}`
         : '';
+  // The key is a slug (the server offers no other); encoded all the same, so a key
+  // can never make this dialog post anywhere but this action's own address.
+  const keyPath = encodeURIComponent(request.key);
   const qaOnly = Boolean(request.qaOnly);
   const [args, setArgs] = useState(() => {
     // A QA-only send starts at the viewer's remembered username: one click sends.
@@ -139,7 +142,7 @@ export function ActionDialog({
       setPreview(null);
       try {
         setPreview(
-          await send(`${actionBase}${request.key}/preview/${qs}`, csrfToken, {
+          await send(`${actionBase}${keyPath}/preview/${qs}`, csrfToken, {
             arguments: next,
           }),
         );
@@ -176,14 +179,10 @@ export function ActionDialog({
     setBusy(true);
     setError('');
     try {
-      const data = await send(
-        `${actionBase}${request.key}/run/${qs}`,
-        csrfToken,
-        {
-          arguments: preview.arguments,
-          confirm: preview.confirm,
-        },
-      );
+      const data = await send(`${actionBase}${keyPath}/run/${qs}`, csrfToken, {
+        arguments: preview.arguments,
+        confirm: preview.confirm,
+      });
       setExecution(data.execution);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not run this action');

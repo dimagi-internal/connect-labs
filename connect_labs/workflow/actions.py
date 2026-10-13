@@ -54,6 +54,7 @@ import copy
 import hashlib
 import json
 import logging
+import re
 import secrets
 from dataclasses import dataclass, field
 from typing import Any
@@ -460,6 +461,13 @@ ACTION_TYPES: dict[str, ActionType] = {
 # ---------------------------------------------------------------------------
 
 
+ACTION_KEY = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def is_action_key(key) -> bool:
+    return isinstance(key, str) and bool(ACTION_KEY.match(key))
+
+
 def declared_actions(definition_data: dict | None, template_type: str | None = None) -> list[dict]:
     """The actions a workflow offers, resolved: each with its type's description and
     argument schema. Entries with no known ``type``, or a duplicate ``key``, are not
@@ -475,7 +483,10 @@ def declared_actions(definition_data: dict | None, template_type: str | None = N
         if not isinstance(entry, dict):
             continue
         key, kind = entry.get("key"), entry.get("type")
-        if not isinstance(key, str) or not key or key in seen or kind not in ACTION_TYPES:
+        # A slug, checked on READ as well as on save: the key becomes part of the
+        # address the runner's dialog posts to, and a definition can be written by
+        # paths that never validate it.
+        if not is_action_key(key) or key in seen or kind not in ACTION_TYPES:
             continue
         seen.add(key)
         action_type = ACTION_TYPES[kind]
@@ -1050,6 +1061,28 @@ def _readers(user, wda, run, definition, roster, briefing, request, restricted):
     return briefing, cases, pictures
 
 
+def _check_page_prompts(run, args: dict, roster: dict[str, dict]) -> None:
+    """On a page every prompt is the author's own text (there is no grading to brief
+    from), so the rule a briefing's note is held to applies to all of it: it may not
+    name another worker."""
+    if not is_page_scope(run):
+        return
+    from connect_labs.workflow.coach_charts.chart import identity_leaks, identity_terms
+
+    for item in args.get("workers") or []:
+        prompt = item.get("prompt") or args.get("prompt")
+        if not prompt:
+            continue
+        me = roster.get(item["key"]) or {}
+        others = [(w["name"], w["username"]) for k, w in roster.items() if k != item["key"]]
+        if identity_leaks(prompt, identity_terms(others, me.get("name") or "")):
+            raise ActionError(
+                "peer_identity",
+                f"the text for {me.get('name') or item['key']} names another worker; a worker may only "
+                "ever see peers anonymously. Reword it without their name.",
+            )
+
+
 #: What a page's action cannot ask for: each is read from a run's grading.
 RUN_ONLY_ARGUMENTS = (INCLUDE_IMAGE, PICTURE, CASE)
 
@@ -1106,6 +1139,7 @@ def preview(
     briefing, cases, pictures = _readers(user, wda, run, definition, roster, briefing, request, restricted)
     _refuse_run_only(run, action, arguments)
     args, skipped = _resolve(action, arguments, roster, user=user, briefing=briefing, pictures=pictures, cases=cases)
+    _check_page_prompts(run, args, roster)
 
     needs: list[str] = []
     out: dict[str, Any] = {}
@@ -1236,6 +1270,7 @@ def commit(
     briefing, cases, pictures = _readers(user, wda, run, definition, roster, briefing, request, restricted)
     _refuse_run_only(run, action, arguments)
     args = resolve_arguments(action, arguments, roster, user=user, briefing=briefing, pictures=pictures, cases=cases)
+    _check_page_prompts(run, args, roster)
     if not args["workers"]:
         raise ActionError("nothing_to_do", "None of these workers has an indicator off target or on watch.")
     try:

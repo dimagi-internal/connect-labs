@@ -656,8 +656,21 @@ ActionDialog as on a run page, and the parity test now lists only `updateState` 
 as for runs), and not over the MCP (`workflow_run_action` stays run-bound; a page's agent
 has `page_context` only).
 
+**Review fixes (before merge).** An independent adversarial review found, and each now
+has a test: an action key was spliced unencoded into the address the dialog posts to, so a
+declaration written by a path that never validated it could make a viewer's browser post
+to any labs URL -- keys are now slugs on READ (`declared_actions`), encoded by the dialog,
+and refused by the host (this closed the same hole for run pages); the page's own
+`opportunity_ids` widened its reach -- they now only narrow what is under its owner in the
+viewer's org data; the page was not required to live in the scope it was acted in (a read
+with no scope can return a public record) -- its owner must now be that scope; and a page's
+plain coaching text skipped the peer-name rule -- it is now held to it.
+
 Cost: none for existing workflows (their path and tokens are unchanged); a page's coaching
-action cannot brief from figures until there is a page-level grading to read.
+action cannot brief from figures until there is a page-level grading to read; a page whose
+record names no owner (e.g. one in a labs-only organisation with no Connect id) offers no
+actions, failing closed. A definition marked a page only by `templateType: page_blank`
+is a page here as everywhere (`page_mode.is_page`); its reach is still its owner's.
 
 Verified locally in Chromium: a page with a declared `create_task` action, drawn
 sandboxed, opened labs' dialog from a button in the frame, previewed one worker,

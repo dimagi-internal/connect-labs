@@ -36,13 +36,14 @@ ORG_DATA = {
 }
 
 
-def _page(*entries, kind="page", opportunity_ids=None):
+def _page(*entries, kind="page", opportunity_ids=None, program_id=25):
     data = {"name": "Program home", "config": {"actions": list(entries)}}
     if kind:
         data["kind"] = kind
     return SimpleNamespace(
-        id=8, data=data, template_type=None, opportunity_ids=opportunity_ids or [], opportunity_id=None, name="Home"
-    )
+        id=8, data=data, template_type=None, opportunity_ids=opportunity_ids or [], opportunity_id=None,
+        program_id=program_id, organization_id=None, name="Home",
+    )  # fmt: skip
 
 
 SUBJECT = PageScope(definition_id=8, scope_type="program", scope_key="25", opportunity_ids=(10, 11), program_id=25)
@@ -249,3 +250,48 @@ def test_a_page_with_actions_gets_the_hosts_dialog_and_not_in_present_mode():
     assert endpoints["actionScope"] == "?program_id=25"
     present, _ = _run_context(data, request=_request("/labs/workflow/47/run/?program_id=25&present=1"), page_mode=True)
     assert "actionBase" not in present["workflow_data"]["apiEndpoints"]
+
+
+# --- the adversarial review's findings, each pinned ----------------------------------
+
+
+@pytest.mark.parametrize("key", ["../../123/delete/?program_id=25&x=", "a/b", "", "x" * 65, "k?y"])
+def test_an_action_key_that_is_not_a_slug_is_never_offered(key):
+    """Finding 1: the key is part of the address the dialog posts to; a definition
+    written by a path that never validated it must not make the dialog post elsewhere."""
+    assert actions.declared_actions({"config": {"actions": [{**TASK, "key": key}]}}) == []
+
+
+def test_the_page_door_narrows_to_what_is_under_its_owner(user, loaded):
+    """Finding 2: the page's own opportunity_ids can narrow its reach, never widen it."""
+    loaded.get_definition.return_value = _page(TASK, opportunity_ids=[11, 12, 777])
+    with patch.object(action_views, "preview", return_value={"summary": "x", "needs": []}) as p:
+        _post(
+            action_views.page_action_preview_api, user, {"arguments": {}}, {"program_id": 25},
+            definition_id=8, key="follow_up",
+        )  # fmt: skip
+    assert p.call_args.kwargs["run"].opportunity_ids == (11,)
+
+
+@pytest.mark.parametrize("owner", [{"program_id": 99}, {"program_id": None}])
+def test_the_page_must_live_in_the_scope_its_action_is_asked_in(user, loaded, owner):
+    """Finding 3: a read without a scope can return a public record from anywhere."""
+    loaded.get_definition.return_value = _page(TASK, **owner)
+    with patch.object(action_views, "preview") as p:
+        status, body = _post(
+            action_views.page_action_preview_api, user, {"arguments": {}}, {"program_id": 25},
+            definition_id=8, key="follow_up",
+        )  # fmt: skip
+    assert status == 403 and body["code"] == "wrong_scope"
+    p.assert_not_called()
+
+
+def test_a_pages_coaching_text_may_not_name_another_worker(user, real_opps, monkeypatch):
+    """Finding 4: a page has no briefing, so its plain prompt is held to the note rule."""
+    monkeypatch.setattr(actions, "_ocs_bots", lambda user, request: [{"id": "bot-1", "name": "Coach"}])
+    with pytest.raises(ActionError) as e:
+        preview(
+            user, wda=_wda(), run=SUBJECT, definition=_page(COACH), key="coach",
+            arguments={"workers": [{"key": "10::a10", "prompt": "Ask how Asha 11 does it."}]},
+        )  # fmt: skip
+    assert e.value.code == "peer_identity"

@@ -912,6 +912,20 @@ describe('a page can do everything a workflow can, except what needs a run', () 
     expect(undeclared.error).toMatch(/no action/);
   });
 
+  it('an action key that is not a slug is refused even if declared', async () => {
+    const key = '../../1/delete/?x=';
+    const { d, w } = pageDispatcher(
+      workflowHandlers({ actionKeys: () => [key] }),
+    );
+    const out = await d({
+      id: 3,
+      method: 'runAction',
+      params: { key, args: {} },
+    });
+    expect(out.error).toMatch(/no action/);
+    expect(w.runAction).not.toHaveBeenCalled();
+  });
+
   it('a page reaches what a workflow reaches, except a run’s own routes', () => {
     expect(
       checkFetch('/labs/workflow/api/42/pipeline-rows/', 'GET', PAGE_CTX).gate,
