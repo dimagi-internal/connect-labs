@@ -113,6 +113,15 @@ class TestContentSecurityPolicy:
     def test_a_report_uri_is_included_when_configured(self):
         assert "report-uri /csp-report/" in build_policy()
 
+    def test_it_allows_its_own_frames_and_the_canopy_panel_and_no_other(self, settings):
+        """No frame-src meant `default-src 'self'` flagged the canopy panel's frame on every page."""
+        settings.CANOPY_BASE_URL = "https://canopy.example.org/"
+        frame_src = next(p for p in build_policy().split("; ") if p.startswith("frame-src"))
+        assert frame_src == "frame-src 'self' https://canopy.example.org/embed/chat"
+        settings.CANOPY_BASE_URL = ""
+        frame_src = next(p for p in build_policy().split("; ") if p.startswith("frame-src"))
+        assert frame_src == "frame-src 'self'"
+
 
 def _html_response():
     from django.http import HttpResponse
