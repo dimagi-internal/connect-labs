@@ -93,6 +93,8 @@ Specifically, a protected workflow cannot:
 - Start a coaching conversation with a worker
 - Start a background job that creates records
 - Complete or delete a run
+- Attach or detach one of its own pipelines
+- Mark runs it is watching in a control room
 
 …without Labs first showing you a prompt along the lines of **"This workflow wants to …, as you."** The prompt appears in an amber box with **Cancel** focused, so dismissing it is the default action. Confirming once covers that type of action for the next two minutes, so you will not be asked repeatedly during a single session.
 
@@ -100,14 +102,14 @@ On each workflow's listing you will see a line indicating whether it is built to
 
 If you are asked to confirm an action you did not expect while previewing in sandbox mode, that is the protection working as intended — check what the workflow is about to do before clicking yes.
 
+!!! note "All live workflows are fully compatible with the sandbox"
+    Every workflow that exists on Labs today works correctly in the protected frame. This includes the older MBW monitoring dashboards, which load their data, stream their progress, open GPS details, and save snapshots as normal. Authorization buttons (such as **Authorize CommCare** or **Authorize OCS**) bring you back to the workflow after you sign in. Any confirmation question a workflow presents is shown in Labs' own dialog and properly waited for before continuing. No workflow requires an exemption from the sandbox.
+
 #### Sandbox exemptions
 
-A small number of older workflow copies contain code that relies on features the sandbox will never support — for example, retired endpoints or controls that directly edit workflow definitions. An administrator can mark one of these copies as **exempt** from the sandbox, recording a reason alongside the exemption. An exempt copy continues to draw exactly as it does today.
+~~A small number of older workflow copies contain code that relies on features the sandbox will never support~~ All live workflows are now fully compatible with the sandbox, so no exemptions are needed or granted. The exemption mechanism is no longer in use.
 
-If a workflow you are viewing is exempt, you will see a line on its listing stating that it is exempt and the reason why.
-
-!!! note "Exemptions and editing"
-    An exemption applies only to the copy of the workflow code as it stands when the exemption is recorded. If anyone edits that workflow's code, the exemption no longer applies and the workflow moves into the sandbox like any other. If you need to edit an exempt workflow, contact your program administrator first so the exemption can be reviewed.
+If you previously saw a workflow listed as exempt, that status no longer applies.
 
 #### Reading another workflow's runs in the protected frame
 
@@ -222,6 +224,4 @@ To set the home page, go to the organisation's **Settings** and choose the page 
 
 ### Pages in the Supply tab
 
-A page can also be set to fill a **Supply tab**. When configured this way, the page opens inside the Supply header without starting a run. This lets you show stock summaries, links to supply workflows, or other supply-related content directly from the Supply tab.
-
-The Supply tab opens only for people who have access to the program or opportunity it is linked to. Setting up a Supply tab also requires access
+A page can also be set to fill a **Supply tab**. When configured this way, the page opens inside the Supply header without starting a run. This lets you show stock summaries, links to supply workflows, or other supply-related
