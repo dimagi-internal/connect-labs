@@ -458,6 +458,7 @@
       // one is selected, pins the bulk panel. Hover previews a single work area
       // (no group); mouseout reverts to whatever is pinned (single or bulk).
       map.on('click', 'wa-fill', (e) => {
+        if (map.getContainer().classList.contains('mp-drawing')) return;
         const id = e.features[0].properties.id;
         const oe = e.originalEvent || {};
         if (oe.shiftKey || oe.metaKey || oe.ctrlKey) {
@@ -1926,18 +1927,61 @@
           },
         ],
       });
-      map.addControl(draw, 'top-right');
+      // Top-left: top-right sits under the Layers/Inspect panel, which hid the
+      // polygon + trash buttons.
+      map.addControl(draw, 'top-left');
       map.on('draw.create', refreshAreaStats);
       map.on('draw.update', refreshAreaStats);
       map.on('draw.delete', refreshAreaStats);
       // Once a freehand polygon is finished, drop back to the read-only mode so it
       // (and every picked boundary) can't be dragged/reshaped by a stray click.
+      // Deferred: draw.create fires from inside draw_polygon's onStop, and a
+      // changeMode there stops draw_polygon again, which fires draw.create again
+      // until the stack overflows and the mode is stuck in draw_polygon.
       map.on('draw.create', () => {
-        if (draw) draw.changeMode('static');
+        setTimeout(() => {
+          if (draw && draw.getMode() !== 'static') draw.changeMode('static');
+          syncDrawingState();
+        }, 0);
       });
+      // Programmatic changeMode is silent, so callers that switch modes also
+      // call syncDrawingState() themselves.
+      map.on('draw.modechange', syncDrawingState);
     } catch (e) {
       /* draw plugin unavailable — fall back gracefully */
     }
+  }
+
+  // While a polygon is being drawn, tag the map container so the crosshair wins
+  // over the hand cursor that the boundary / work-area hover handlers set inline,
+  // and so their click handlers stand aside (a vertex click must not also
+  // select the ward under it).
+  function syncDrawingState() {
+    const isDrawing = () => !!draw && draw.getMode() === 'draw_polygon';
+    const el = map.getContainer();
+    if (isDrawing()) {
+      el.classList.add('mp-drawing');
+      return;
+    }
+    // Clear on the next tick: the click that closes the polygon is still being
+    // dispatched to the boundary / work-area click handlers, and they must see it.
+    setTimeout(() => {
+      if (!isDrawing()) el.classList.remove('mp-drawing');
+    }, 0);
+  }
+
+  // The rail's "Draw" tab drops straight into polygon drawing; leaving it
+  // abandons an unfinished polygon and returns to the read-only mode.
+  function setPolygonDrawing(on) {
+    if (!draw) return;
+    try {
+      const mode = draw.getMode();
+      if (on && mode !== 'draw_polygon') draw.changeMode('draw_polygon');
+      else if (!on && mode === 'draw_polygon') draw.changeMode('static');
+    } catch (e) {
+      /* draw not ready — leave the mode as it is */
+    }
+    syncDrawingState();
   }
 
   function setAreaInput(i) {
@@ -1952,8 +1996,14 @@
       $(panelId)?.classList.toggle('hidden', k !== i);
     });
     if (i !== 'pin') disarmPin();
+    if (i !== 'draw') setPolygonDrawing(false);
   }
-  $('btn-area-draw').addEventListener('click', () => setAreaInput('draw'));
+  // Only the button arms drawing: the service-delivery trace also lands on this
+  // tab (setAreaInput('draw')) and must not start a polygon.
+  $('btn-area-draw').addEventListener('click', () => {
+    setAreaInput('draw');
+    setPolygonDrawing(true);
+  });
   $('btn-area-upload')?.addEventListener('click', () => setAreaInput('upload'));
   // "Boundaries" mode = reveal the boundary controls in the rail (#area-admin) and
   // turn on the map layer (lines + click-to-select). Controls live in the rail now.
