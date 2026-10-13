@@ -1166,6 +1166,7 @@ class TestWorkflowRunViewProgramScopedInstance:
         )
         mock_run = MagicMock(
             id=6823,
+            definition_id=6810,
             status="in_progress",
             state={},
             period_start="2026-07-17",

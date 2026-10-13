@@ -1040,21 +1040,7 @@ The overview table uses a CSS pattern to enable horizontal scrolling within flex
 
 ### Template Sync Mechanism
 
-When `RENDER_CODE` is updated in `template.py`, existing workflows in the DB still use the old version. Two mechanisms sync the template to the DB:
-
-**URL Parameter**: Append `?sync=true` to the workflow run URL:
-
-```text
-/labs/workflow/<id>/run/?run_id=<id>&sync=true
-```
-
-For workflows whose name doesn't match the template name, use an explicit template key:
-
-```text
-/labs/workflow/<id>/run/?run_id=<id>&sync=true&template=mbw_monitoring
-```
-
-The view matches the definition name against registered templates and updates the render code.
+When `RENDER_CODE` is updated in `template.py`, existing workflows in the DB still use the old version. Sync the template to the DB with:
 
 **API Endpoint**: `POST /labs/workflow/api/<definition_id>/sync-template/`
 
@@ -1064,7 +1050,7 @@ The view matches the definition name against registered templates and updates th
 // Optional, auto-detected from name
 ```
 
-Both are **manual actions only** - never automatic. User-modified render code is preserved until explicitly synced.
+It is a **manual action only** - never automatic. (The old `?sync=true` URL parameter on the run page was removed: a GET must not write.) User-modified render code is preserved until explicitly synced.
 
 ### Static File Build Pipeline
 
@@ -1113,7 +1099,7 @@ Django uses `CompressedManifestStaticFilesStorage` (whitenoise). The `{% static 
 | Inline task management        | Overview      | Expand FLW row to view AI conversation, update status, close task with outcome                                                                                                                                                              |
 | Visit Status filter           | Filter Bar    | Server-side filter by Connect approval status (Approved, Pending, Rejected, Over Limit); default Approved only; reuses cached pipeline data on filter change; state persisted in `sessionStorage` to survive OAuth redirects                |
 | App version filter (GPS)      | Filter Bar    | User-configurable operator (>, >=, =, <=, <) + version number for GPS data filtering; default > 14; persisted in run state                                                                                                                  |
-| Template sync                 | -             | Sync render code from template.py to DB via `?sync=true`                                                                                                                                                                                    |
+| Template sync                 | -             | Sync render code from template.py to DB via `POST .../sync-template/`                                                                                                                                                                       |
 | Template registry             | -             | Auto-discovery of workflow templates                                                                                                                                                                                                        |
 | Automatic token refresh       | Backend       | CommCare OAuth token auto-refreshed when expired                                                                                                                                                                                            |
 | Cross-app xmlns discovery     | Backend       | GS form xmlns found by searching all apps in domain                                                                                                                                                                                         |
@@ -1308,7 +1294,7 @@ Also apply `min-w-0` on React flex items in `workflow-runner.tsx` and `overflow-
 
 **Cause**: Render code is stored in the DB (WorkflowRenderCodeRecord) at workflow creation time. Changes to the Python template don't auto-apply to existing workflows.
 
-**Fix**: Append `?sync=true` to the workflow run URL, or POST to `/labs/workflow/api/<id>/sync-template/`.
+**Fix**: POST to `/labs/workflow/api/<id>/sync-template/`.
 
 ### Follow-Up Tab Empty
 

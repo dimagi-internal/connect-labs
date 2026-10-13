@@ -55,7 +55,7 @@ def test_the_frame_policy_is_sandboxed_and_reaches_no_labs_origin_and_no_wildcar
 def test_the_shell_answers_200_without_login_or_redirect_for_any_suffix_and_query(client, path):
     response = client.get(path)
     assert response.status_code == 200
-    assert response["Content-Security-Policy"] == sandbox.frame_policy(LABS)
+    assert response["Content-Security-Policy"] == sandbox.frame_policy(HERE)
     assert "X-Frame-Options" not in response
     assert "Content-Security-Policy-Report-Only" not in response
     assert response["Cross-Origin-Resource-Policy"] == "same-origin"
@@ -105,11 +105,15 @@ def _render(view_cls, request, data, **kwargs):
     return response, wda
 
 
-def _assert_sandboxed(response):
+#: RequestFactory's host. The origin is the request's own, not LABS_PUBLIC_URL (finding 3).
+HERE = "http://testserver"
+
+
+def _assert_sandboxed(response, origin=HERE):
     body = response.content.decode()
     assert response.status_code == 200, body[:500]
-    assert response["Content-Security-Policy"].startswith(f"frame-src {LABS}/labs/sandbox/render/")
-    assert '"sandbox": {"src": "/labs/sandbox/render/", "origin": "https://labs.connect.dimagi.com"}' in body
+    assert response["Content-Security-Policy"].startswith(f"frame-src {origin}/labs/sandbox/render/")
+    assert f'"sandbox": {{"src": "/labs/sandbox/render/", "origin": "{origin}"}}' in body
     # Host mode: the runner bundle, and none of the eval path (Babel, render libraries).
     assert "workflow-runner-bundle.js" in body
     for script in ("babel", "chart.umd.min.js", "mapbox-gl.js", "connect_map.js"):
@@ -144,6 +148,9 @@ def member_of_acme(monkeypatch):
         "workflow-url-present",
         "edit-mode",
         "supply-tab",
+        "workflow-url-with-run-id",
+        "page-template-without-kind",
+        "page-mode-on-a-workflow-definition",
     ],
 )
 def test_every_route_that_draws_a_page_draws_it_sandboxed(route, member_of_acme, monkeypatch):
@@ -156,16 +163,113 @@ def test_every_route_that_draws_a_page_draws_it_sandboxed(route, member_of_acme,
         response, _ = _render(PageView, request, PAGE, scope_type="org", scope_key="acme")
     elif route == "supply-tab":
         response = _supply_tab(monkeypatch)
+    elif route == "page-template-without-kind":
+        # A page made from page_blank before `kind` was written onto pages.
+        request = _request("/labs/p/org/acme/", context={})
+        response, _ = _render(PageView, request, BLANK_WITHOUT_KIND, scope_type="org", scope_key="acme")
+    elif route == "page-mode-on-a-workflow-definition":
+        # A route that draws in page mode sandboxes whatever the definition says.
+        request = _request("/labs/workflow/47/run/?program_id=25")
+        monkeypatch.setattr(WorkflowRunView, "_is_page_definition", lambda self, definition_id: True)
+        with patch.object(WorkflowRunView, "page_mode", True):
+            response, _ = _render(WorkflowRunView, request, WORKFLOW, definition_id=47)
     else:
         query = {
             "workflow-url-no-run": "?program_id=25",
             "workflow-url-present": "?program_id=25&present=1",
             "edit-mode": "?program_id=25&edit=true",
+            "workflow-url-with-run-id": "?program_id=25&run_id=503",
         }[route]
         request = _request("/labs/workflow/47/run/" + query)
         monkeypatch.setattr(WorkflowRunView, "_is_page_definition", lambda self, definition_id: True)
-        response, _ = _render(WorkflowRunView, request, PAGE, definition_id=47)
+        response, wda = _render(WorkflowRunView, request, PAGE, definition_id=47)
+        # A page has no runs: a run_id on its address is never read.
+        wda.get_run.assert_not_called()
     _assert_sandboxed(response)
+
+
+BLANK_WITHOUT_KIND = {
+    "name": "Acme home",
+    "page": {"slug": "home"},
+    "templateType": "page_blank",
+    "opportunity_ids": [],
+    "config": {"templateType": "page_blank"},
+}
+OTHER_RUN = {
+    "id": 503, "experiment": "w", "type": "r", "opportunity_id": None, "program_id": 25,
+    "data": {"status": "completed", "definition_id": 99, "state": {"secret_state": 1},
+             "snapshot": {"rows": ["another-workflows-snapshot"]}},
+}  # fmt: skip
+
+
+def test_a_page_template_definition_without_kind_is_a_page():
+    from connect_labs.workflow.page_mode import is_page
+
+    assert is_page(_definition(BLANK_WITHOUT_KIND))
+    assert is_page({"config": {"templateType": "page_blank"}})
+    assert not is_page(_definition(WORKFLOW))
+
+
+@pytest.mark.django_db
+def test_a_home_set_to_a_workflow_is_not_drawn(member_of_acme):
+    """Settings names a workflow with runs: the home says so, and draws nothing of it."""
+    from connect_labs.workflow.page_views import PageView
+
+    response, wda = _render(
+        PageView, _request("/labs/p/org/acme/", context={}), WORKFLOW, scope_type="org", scope_key="acme"
+    )
+    body = response.content.decode()
+    assert response.status_code == 200
+    assert "is not a page" in body
+    assert 'id="workflow-data"' not in body and "function WorkflowUI" not in body
+    assert "workflow-runner-bundle.js" not in body
+
+
+@pytest.mark.django_db
+def test_a_page_with_a_run_id_never_carries_another_definitions_snapshot(monkeypatch):
+    from connect_labs.workflow.data_access import WorkflowRunRecord
+    from connect_labs.workflow.views import WorkflowRunView
+
+    monkeypatch.setattr(WorkflowRunView, "_is_page_definition", lambda self, definition_id: True)
+    request = _request("/labs/workflow/47/run/?program_id=25&run_id=503")
+    with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
+        wda = _wda(MockWDA, PAGE)
+        wda.get_run.return_value = WorkflowRunRecord(OTHER_RUN)
+        response = WorkflowRunView.as_view()(request, definition_id=47)
+        response.render()
+    body = response.content.decode()
+    assert "another-workflows-snapshot" not in body and "secret_state" not in body
+    assert '"id": 0' in body  # the blank in-memory instance, not run 503
+
+
+@pytest.mark.django_db
+def test_a_run_of_another_workflow_is_refused_on_the_workflow_route():
+    from connect_labs.workflow.data_access import WorkflowRunRecord
+    from connect_labs.workflow.views import WorkflowRunView
+
+    request = _request("/labs/workflow/47/run/?program_id=25&run_id=503")
+    with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
+        wda = _wda(MockWDA, WORKFLOW)
+        wda.get_run.return_value = WorkflowRunRecord(OTHER_RUN)
+        response = WorkflowRunView.as_view()(request, definition_id=47)
+        response.render()
+    body = response.content.decode()
+    assert "does not belong to this workflow" in body
+    assert "another-workflows-snapshot" not in body and "secret_state" not in body
+
+
+@pytest.mark.django_db
+def test_the_origin_is_the_requests_own_host(member_of_acme, client):
+    """Another allowed host (127.0.0.1 locally) gets its own origin everywhere, not LABS_PUBLIC_URL."""
+    from connect_labs.workflow.page_views import PageView
+
+    with override_settings(ALLOWED_HOSTS=["127.0.0.1", "testserver"]):
+        request = _request("/labs/p/org/acme/", context={})
+        request.META["HTTP_HOST"] = "127.0.0.1:8000"
+        response, _ = _render(PageView, request, PAGE, scope_type="org", scope_key="acme")
+        _assert_sandboxed(response, origin="http://127.0.0.1:8000")
+        shell = client.get("/labs/sandbox/render/", HTTP_HOST="127.0.0.1:8000")
+    assert _directives(shell["Content-Security-Policy"])["frame-ancestors"] == ["http://127.0.0.1:8000"]
 
 
 def _supply_tab(monkeypatch):
@@ -256,6 +360,29 @@ def test_a_sharing_page_gets_the_panel_naming_the_page_and_page_context(member_o
 
 
 @pytest.mark.django_db
+def test_a_page_drawn_at_the_run_url_grants_its_agent_page_read_only():
+    from canopy_sdk.django import conf
+
+    from connect_labs.workflow.views import _page_only_panel
+
+    request = _request("/labs/workflow/47/run/?program_id=25")
+    run_token = conf.page_tokens().issue("labs:workflow:run", request.user.pk)
+    # What the SDK signs on the run URL grants the run scopes...
+    assert "workflow:act" in conf.page_tokens().scopes(run_token, request.user.pk)
+    request.resolver_match = SimpleNamespace(view_name="labs:workflow:run")
+    panel = {"ready": True, "page_token": run_token, "token_url": "/x?page=" + run_token, "options": {}}
+    out = _page_only_panel(request, panel)
+    # ...so a page's panel there is signed again, for page:read alone.
+    assert conf.page_tokens().scopes(out["page_token"], request.user.pk) == ("page:read",)
+    assert run_token not in out["token_url"] and out["options"]["tokenUrl"] == out["token_url"]
+    # On a page's own address the SDK's token is already page:read only, and is kept.
+    request.resolver_match = SimpleNamespace(view_name="labs:page_home")
+    page_token = conf.page_tokens().issue("labs:page_home", request.user.pk)
+    kept = {"ready": True, "page_token": page_token, "token_url": "", "options": {}}
+    assert _page_only_panel(request, kept) is kept
+
+
+@pytest.mark.django_db
 def test_a_page_that_does_not_share_gets_no_panel(member_of_acme):
     from connect_labs.workflow.page_views import PageView
 
@@ -276,8 +403,10 @@ def test_page_routes_are_registered_with_a_scope_that_reaches_page_context():
     reverse("labs:page_home", args=["org", "acme"])
     reverse("labs:page", args=["org", "acme", "home"])
     reverse("supply_chain:workflow_view", args=["home"])
-    for route in ("labs:page_home", "labs:page", "supply_chain:workflow_view", "labs:workflow:run"):
-        assert "page:read" in PAGE_SCOPES[route]
+    for route in ("labs:page_home", "labs:page", "supply_chain:workflow_view", "labs:workflow:run:page"):
+        assert PAGE_SCOPES[route] == ("page:read",)
+    # The run URL's own scopes are a workflow's: a page drawn there signs for the page key.
+    assert "page:read" not in PAGE_SCOPES["labs:workflow:run"]
     assert SCOPE_TOOLS["page:read"] == frozenset({"page_context"})
     assert "page_context" in _REGISTRY
 
@@ -364,7 +493,11 @@ def _session_request(method="get", path="/labs/mcp/tokens/create/", user=True, c
         ({"method": "post", "HTTP_SEC_FETCH_SITE": "cross-site"}, 403),
         ({"method": "get", "HTTP_SEC_FETCH_SITE": "cross-site"}, 200),  # a link from elsewhere still opens labs
         ({"method": "post", "HTTP_SEC_FETCH_SITE": "same-origin", "HTTP_ORIGIN": LABS}, 200),
-        ({"method": "post", "HTTP_ORIGIN": "null", "HTTP_AUTHORIZATION": "Bearer t"}, 200),  # no session in play
+        # A bearer token with no session cookie: no session in play.
+        ({"method": "post", "HTTP_ORIGIN": "null", "HTTP_AUTHORIZATION": "Bearer t", "cookie": False}, 200),
+        # ...but a header beside a session cookie does not switch the guard off.
+        ({"method": "post", "HTTP_ORIGIN": "null", "HTTP_AUTHORIZATION": "Bearer t"}, 403),
+        ({"method": "get", "HTTP_ORIGIN": "null", "HTTP_AUTHORIZATION": "Bearer t"}, 403),
         ({"method": "post", "HTTP_ORIGIN": "null", "cookie": False}, 200),
         ({"method": "post", "HTTP_ORIGIN": "null", "user": False}, 200),
         ({"method": "get", "HTTP_ORIGIN": "null", "path": "/labs/sandbox/render/"}, 200),

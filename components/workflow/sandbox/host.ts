@@ -15,6 +15,7 @@ import {
   INIT,
   LIMITS,
   NAVIGATE_DENIED,
+  NAVIGATE_DENIED_PARAMS,
   NAVIGATE_PATTERNS,
   NAVIGATE_PREFIXES,
   NOT_ON_A_PAGE,
@@ -73,6 +74,14 @@ export function checkNavigate(url: unknown, labsOrigin: string): string {
     NAVIGATE_PREFIXES.some((p) => path.startsWith(p)) ||
     NAVIGATE_PATTERNS.some((re) => re.test(path));
   if (!allowed) {
+    throw new BridgeError(
+      'navigate: that labs address cannot be opened from a page',
+    );
+  }
+  const params = Array.from(parsed.searchParams.keys()).map((k) =>
+    k.toLowerCase(),
+  );
+  if (params.some((k) => NAVIGATE_DENIED_PARAMS.includes(k))) {
     throw new BridgeError(
       'navigate: that labs address cannot be opened from a page',
     );

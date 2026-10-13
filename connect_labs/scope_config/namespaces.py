@@ -32,6 +32,10 @@ class Namespace:
     # opportunity). Whoever writes one must be able to use it: otherwise a member
     # could aim every viewer of their scope at someone else's records.
     owners: Callable[[dict], list] | None = None
+    # Rules about what a change newly points at that need the records themselves (a
+    # home must be a page): called as (before, after, caller) for a person's change,
+    # read as that person. Raises ValueError with a message for the person.
+    check_targets: Callable[[dict, dict, object], None] | None = None
 
 
 _REGISTRY: dict[str, Namespace] = {}

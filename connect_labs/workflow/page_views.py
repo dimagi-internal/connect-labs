@@ -187,6 +187,17 @@ class PageView(WorkflowRunView):
         context["page_scope_label"] = scope.label(tree)[0].upper() + scope.label(tree)[1:]
         context["page_settings_url"] = _settings_url(scope)
         definition = context.get("definition")
+        if definition is not None and not is_page(definition):
+            # A home set to a workflow with runs (Settings refuses one, but a definition's
+            # kind can change after it was chosen): not drawn here, whatever it holds.
+            for key in ("workflow_data", "render_code", "canopy_panel"):
+                context.pop(key, None)
+            context["error"] = (
+                "This scope's home is set to a workflow that is not a page, so it is not shown here. "
+                "Choose a page for it in Settings."
+            )
+            context["not_a_page"] = True
+            return context
         user = self.request.user
         # Who made the record: the LabsRecord's own username, not anything its data claims.
         author = getattr(definition, "username", None) if definition else None
