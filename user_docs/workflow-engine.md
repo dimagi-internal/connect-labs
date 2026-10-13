@@ -100,6 +100,15 @@ On each workflow's listing you will see a line indicating whether it currently r
 
 If you are asked to confirm an action you did not expect, that is the protection working as intended — check what the workflow is about to do before clicking yes.
 
+#### Sandbox exemptions
+
+A small number of older workflow copies contain code that relies on features the sandbox will never support — for example, retired endpoints or controls that directly edit workflow definitions. An administrator can mark one of these copies as **exempt** from the sandbox, recording a reason alongside the exemption. An exempt copy continues to draw exactly as it does today.
+
+If a workflow you are viewing is exempt, you will see a line on its listing stating that it is exempt and the reason why.
+
+!!! note "Exemptions and editing"
+    An exemption applies only to the copy of the workflow code as it stands when the exemption is recorded. If anyone edits that workflow's code, the exemption no longer applies and the workflow moves into the sandbox like any other. If you need to edit an exempt workflow, contact your program administrator first so the exemption can be reviewed.
+
 #### Reading another workflow's runs in the protected frame
 
 A protected workflow can read the saved runs of another workflow only if its settings explicitly declare that relationship — for example, the way a worker review names the program report it belongs to, or the way a page lists the workflows it displays.
@@ -219,18 +228,4 @@ Pages are built with the standard workflow tools. To create one, start from the 
 A few behaviours are worth knowing when you share or follow page links:
 
 - **Run numbers in a page's address are ignored.** If a page address includes a run number (for example, because someone copied it from a workflow run), the page simply opens as normal — pages have no runs, so the number has no effect.
-- **A workflow's run page only shows runs for that workflow.** Runs from other workflows are never mixed in.
-- **Relative links inside a page open where they point.** Previously these could be refused; they now work as expected.
-- **Pages draw correctly under all allowed addresses.** If Labs is opened under an alternative allowed address (for example, a local development address), pages render properly rather than showing a blank frame.
-
----
-
-## Settings
-
-Settings uses the word **program** (not "programme") throughout.
-
-### Who can change Settings
-
-Who can change Settings and edit pages depends on whether the organisation, program, or opportunity is a **labs-only (synthetic)** scope or a **real partner** scope:
-
-- **Labs-only (synthetic) scopes** — anyone signed in with a **@dimagi.com** or **@dimagi-ai.com**
+- **A workflow
