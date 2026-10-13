@@ -29,6 +29,10 @@
           "value": "us-east-1"
         },
         {
+          "name": "SYNTHETIC_JOBS_ON_ECS",
+          "value": "true"
+        },
+        {
           "name": "UMAMI_HOST_URL",
           "value": "https://labs.connect.dimagi.com/umami"
         },

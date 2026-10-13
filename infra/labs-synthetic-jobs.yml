@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+# Labs synthetic jobs -- each one on a standalone Fargate task of its own (see
+# infra/README.md for the pattern: a standalone stack that owns a NEW layer and
+# references the core infra created out-of-band).
+#
+# Why this exists. Synthetic profiling and generation ran on the worker SERVICE,
+# and every labs deploy replaces the worker: ECS sends SIGTERM and kills it 30
+# seconds later. A job that takes ten minutes or an hour never survived one, and
+# labs deploys several times a day. connect_labs/labs/synthetic/ecs_runner.py now
+# starts each job with ecs:RunTask from the worker's current task definition. A
+# standalone task belongs to no service, so a deploy does not touch it; it is
+# billed per second while it runs and exits when the job is done.
+#
+# Owns: one inline IAM policy on the existing ECS task role, letting the app
+#   start, list and stop its own synthetic tasks on the labs cluster.
+# References, does NOT own: the task role, the execution role, the cluster.
+#
+# Deploy (needs CAPABILITY_NAMED_IAM; ship it before the app change turns
+# SYNTHETIC_JOBS_ON_ECS on):
+#
+#   aws cloudformation deploy \
+#     --region us-east-1 --profile labs \
+#     --stack-name labs-jj-synthetic-jobs \
+#     --template-file infra/labs-synthetic-jobs.yml \
+#     --capabilities CAPABILITY_NAMED_IAM
+
+Parameters:
+  TaskRoleName:
+    Type: String
+    Default: labs-jj-ecs-task-role
+    Description: Existing ECS task role (app runtime permissions), web and worker.
+  ExecutionRoleName:
+    Type: String
+    Default: labs-jj-ecs-task-execution-role
+    Description: Existing ECS task execution role (image pull, secrets, logs).
+  ClusterName:
+    Type: String
+    Default: labs-jj-cluster
+  WorkerFamily:
+    Type: String
+    Default: labs-jj-worker
+    Description: Task definition family a synthetic job runs from (the worker's).
+
+Resources:
+  TaskRoleSyntheticJobsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: labs-synthetic-jobs
+      Roles: [!Ref TaskRoleName]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Start a job: only from the worker's task definition, only on this cluster.
+          - Effect: Allow
+            Action: ['ecs:RunTask']
+            Resource: !Sub 'arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${WorkerFamily}:*'
+            Condition:
+              ArnEquals:
+                ecs:cluster: !Sub 'arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${ClusterName}'
+          # Count running jobs (the cap) and stop one (cancel).
+          - Effect: Allow
+            Action: ['ecs:ListTasks', 'ecs:StopTask', 'ecs:DescribeTasks']
+            Resource: '*'
+            Condition:
+              ArnEquals:
+                ecs:cluster: !Sub 'arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${ClusterName}'
+          # Read the worker service's current task definition and network config.
+          - Effect: Allow
+            Action: ['ecs:DescribeServices']
+            Resource: !Sub 'arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/${ClusterName}/*'
+          - Effect: Allow
+            Action: ['ecs:DescribeTaskDefinition']
+            Resource: '*'
+          # RunTask hands the task the same two roles the worker runs with.
+          - Effect: Allow
+            Action: ['iam:PassRole']
+            Resource:
+              - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${TaskRoleName}'
+              - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ExecutionRoleName}'
+            Condition:
+              StringEquals:
+                iam:PassedToService: ecs-tasks.amazonaws.com
