@@ -1501,14 +1501,9 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             # Staff see whether this render runs in the sandbox, and a link to try it there
             # (the rollout is per workflow; sandbox.py).
             workflow_data["viewer_is_staff"] = bool(getattr(self.request.user, "is_staff", False))
-            if workflow_data["viewer_is_staff"] and not sandboxed and not page:
-                # ...and, when it is kept out of the frame under `all`, why (a pinned
-                # deprecated copy, or a recorded exemption). Staff only: the reason is
-                # an admin's note.
-                from connect_labs.workflow.sandbox import sandbox_exemption, workflow_sandbox_mode
-
-                if workflow_sandbox_mode() == "all":
-                    workflow_data["sandbox_exemption"] = sandbox_exemption(definition, resolved_render[0])
+            # (Whether a workflow is EXEMPT, and why, is not shown in the UI -- owner's
+            # ruling: it is read from `workflow_sandbox_scan` and
+            # `workflow_sandbox_exempt --list` only.)
             workflow_data["scope"] = page_scope(self.request, scope)
             workflow_data["config"] = page_config(self.request, definition, scope)
             # Other workflows' runs (workflow/workflow_sources.py): the `workflows` prop and
