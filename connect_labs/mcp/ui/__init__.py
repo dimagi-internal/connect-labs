@@ -29,6 +29,10 @@ UI_EXTENSION_SETTINGS = {"mimeTypes": [MCP_APP_MIME_TYPE]}
 #: that send it -- as the viewer.
 WORKFLOW_ACTION_PREVIEW_URI = "ui://labs/workflow-action-preview"
 
+#: The PMC candidate states: tick states, change the price, see the total, open them
+#: in the PMC explorer -- recomputed as the viewer through targeting_pmc_rank.
+PMC_STATES_URI = "ui://labs/pmc-states"
+
 _HERE = Path(__file__).resolve().parent
 
 
@@ -59,6 +63,17 @@ RESOURCES: tuple[UIResource, ...] = (
             "opening message and the picture -- with the buttons that send it as the viewer."
         ),
         filename="workflow_action_preview.html",
+        meta={"prefersBorder": True},
+    ),
+    UIResource(
+        uri=PMC_STATES_URI,
+        name="pmc_states",
+        description=(
+            "The states a PMC answer considered, each with its multiple of GiveWell's bar on the lower "
+            "death estimate and the range across both: tick states and change the price to re-total "
+            "them, then open the selection in the PMC explorer."
+        ),
+        filename="pmc_states.html",
         meta={"prefersBorder": True},
     ),
 )

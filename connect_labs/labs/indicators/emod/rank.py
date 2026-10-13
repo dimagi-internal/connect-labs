@@ -315,6 +315,10 @@ def recommend(
                 "multiple_of_benchmark": round(v["multiple_of_benchmark"], 1) if v else 0.0,
                 "clears_bar": bool(v and v["clears_bar"]),
                 "clear_effect": bool(r.get("clear", True)),
+                # Each state's own figures, so a View can draw it and re-total any subset.
+                "deaths_averted_per_year": sig(r["deaths"], 3),
+                "spend_per_year": sig(r["spend"], 3),
+                "by_basis": _by_basis([r], r["spend"]) if r["spend"] > 0 else None,
             }
         )
     keep = [r["state"] for r in per_state if r["clears_bar"] and r["clear_effect"]]
