@@ -8,7 +8,7 @@
 <div class="max-w-5xl mx-auto px-4 py-6" data-testid="settings-page">
   <div class="text-xs text-gray-600 mb-1">Settings</div>
   <h1 class="text-2xl font-bold text-brand-indigo mb-1">{{ scope_label|capfirst }}</h1>
-  <p class="text-sm text-gray-600 mb-6">What this {{ scope_noun }} has set up in labs. A value set further up (an organisation for its programmes) applies here unless this {{ scope_noun }} sets its own.</p>
+  <p class="text-sm text-gray-600 mb-6">What this {{ scope_noun }} has set up in labs. A value set further up (an organisation for its programs) applies here unless this {{ scope_noun }} sets its own.</p>
 
   {% for section in sections %}
   <section id="{{ section.namespace.key }}" data-testid="settings-{{ section.namespace.key }}" class="bg-white border border-gray-200 rounded-lg p-4 mb-6">
@@ -53,9 +53,24 @@
     <p class="text-sm text-gray-600 mb-4">Nothing set; labs defaults apply.</p>
     {% endif %}
 
+    {% if section.home_picker %}
+    <form method="post" class="mb-4 flex flex-wrap items-end gap-3" data-testid="settings-home-picker">{% csrf_token %}
+      <input type="hidden" name="namespace" value="labs"><input type="hidden" name="version" value="{{ section.got.version }}">
+      <label class="text-sm text-gray-700">Home page
+        <select name="home" class="mt-1 block w-full sm:w-auto max-w-full border border-gray-300 rounded-md px-2 py-1.5 bg-white" data-testid="settings-home-select">
+          <option value="" {% if not section.home_picker.current %}selected{% endif %}>None{% if section.home_picker.inherited %} (use {{ section.home_picker.inherited_from }}'s){% endif %}</option>
+          {% for choice in section.home_picker.choices %}<option value="{{ choice.value }}" {% if choice.value == section.home_picker.current %}selected{% endif %}>{{ choice.label }}</option>{% endfor %}
+        </select>
+      </label>
+      <button name="action" value="set_home" class="px-3 py-1.5 rounded-md bg-brand-indigo text-white text-sm">Save</button>
+      <a href="{{ section.home_picker.pages_url }}" class="text-sm text-brand-indigo hover:underline pb-1.5">Pages</a>
+      {% if section.home_picker.unavailable %}<p class="basis-full text-sm text-amber-800">This {{ scope_noun }}'s pages could not be listed just now; the JSON below still sets a home.</p>{% endif %}
+    </form>
+    {% endif %}
+
     {% if section.can_write %}
     <details class="mb-3">
-      <summary class="text-sm text-brand-indigo cursor-pointer">Edit this {{ scope_noun }}'s {{ section.namespace.label }} settings</summary>
+      <summary class="text-sm text-brand-indigo cursor-pointer">{% if section.home_picker %}Advanced: edit as JSON{% else %}Edit this {{ scope_noun }}'s {{ section.namespace.label }} settings{% endif %}</summary>
       <form method="post" class="mt-2">{% csrf_token %}
         <input type="hidden" name="namespace" value="{{ section.namespace.key }}"><input type="hidden" name="version" value="{{ section.got.version }}">
         <textarea name="data" rows="10" class="w-full font-mono text-xs border border-gray-300 rounded-md p-2" data-testid="settings-json-{{ section.namespace.key }}">{{ section.own_json }}</textarea>

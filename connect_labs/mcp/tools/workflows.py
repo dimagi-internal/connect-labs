@@ -650,6 +650,13 @@ def workflow_update_definition(
             "INVALID_SCHEMA",
             f"Unknown patch keys: {sorted(unknown_keys)}. " f"Allowed: {sorted(_DEFINITION_PATCH_ALLOWED)}",
         )
+    if isinstance(patch.get("page"), dict) and "slug" in patch["page"]:
+        # `/labs/p/<scope>/<key>/pages/` is the list of a scope's pages (workflow/page_manager.py).
+        from connect_labs.workflow.page_manager import slug_problem
+
+        problem = slug_problem(patch["page"]["slug"])
+        if problem:
+            raise MCPToolError("INVALID_SCHEMA", f"page.slug: {problem}")
     if isinstance(patch.get("config"), dict) and "actions" in patch["config"]:
         # The workflow's own actions (workflow/actions.py). A page skips an action it
         # cannot run, so a bad declaration would otherwise surface only as a button

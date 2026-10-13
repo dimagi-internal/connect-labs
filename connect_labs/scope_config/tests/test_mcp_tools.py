@@ -40,7 +40,7 @@ def test_set_then_get_shows_this_programme_set_it(member):
         expected_version=0,
     )
     got = _call("labs_config_get", member, namespace="t", scope_type="program", scope_key="7")
-    assert got["value"]["a"] == 3 and got["provenance"]["a"] == "programme Programme Seven" and got["version"] == 1
+    assert got["value"]["a"] == 3 and got["provenance"]["a"] == "program Programme Seven" and got["version"] == 1
 
 
 def test_a_stale_version_is_a_version_conflict(member):

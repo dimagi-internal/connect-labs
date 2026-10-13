@@ -46,7 +46,7 @@ def test_a_labs_only_orgs_home_page_can_still_be_set_by_staff():
 def test_a_page_owner_the_writer_cannot_use_is_refused():
     """S1-2 (write side): every viewer of the scope would be served a definition from someone else's programme."""
     member = caller("m", holds=("program:7",))
-    with pytest.raises(Forbidden, match="programme 99"):
+    with pytest.raises(Forbidden, match="program 99"):
         service.update("labs", PROGRAMME, {"home": {"fill": {"workflow": 5, "program_id": 99}}}, member)
     assert service.update("labs", PROGRAMME, {"home": {"fill": {"workflow": 5, "program_id": 7}}}, member)
 

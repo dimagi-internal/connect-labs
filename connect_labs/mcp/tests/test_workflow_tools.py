@@ -523,6 +523,23 @@ def test_update_definition_sets_and_removes_page_keys(mock_wda_cls, client, auth
 
 @pytest.mark.django_db
 @patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_definition_refuses_the_reserved_page_slug(mock_wda_cls, client, auth_user):
+    """`/labs/p/<scope>/<key>/pages/` is the list of a scope's pages (workflow/page_manager.py)."""
+    _, raw = auth_user
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_definition",
+        {"workflow_id": 42, "opportunity_id": 100, "patch": {"page": {"slug": "pages"}}, "expected_version": 3},
+    )
+
+    error = data["result"]["structuredContent"]["error"]
+    assert error["code"] == "INVALID_SCHEMA" and "taken" in error["message"]
+    mock_wda_cls.return_value.update_definition.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
 def test_update_definition_version_conflict(mock_wda_cls, client, auth_user):
     _, raw = auth_user
     mock_wda_cls.return_value.get_definition.return_value = MagicMock(

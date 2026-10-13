@@ -88,6 +88,9 @@ urlpatterns = [
     # Pages: workflows with no runs, at addresses naming their scope (workflow/page_views.py).
     # Before the old card pages below, whose `p/<slug>/` would otherwise never see these.
     path("p/<str:scope_type>/<str:scope_key>/", page_views.PageView.as_view(), name="page_home"),
+    # A scope's pages, and which one it opens on (page_manager.py). Before `<slug:page>`:
+    # "pages" is a reserved page slug (page_manager.RESERVED_SLUGS).
+    path("p/<str:scope_type>/<str:scope_key>/pages/", page_views.PagesView.as_view(), name="page_manager"),
     path("p/<str:scope_type>/<str:scope_key>/<slug:page>/", page_views.PageView.as_view(), name="page"),
     # An address from before pages named their scope: redirect, or explain.
     path("p/<slug:slug>/", page_views.old_page, name="page_old"),
