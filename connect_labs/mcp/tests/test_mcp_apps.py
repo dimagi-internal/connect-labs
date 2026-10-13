@@ -162,7 +162,7 @@ def test_the_views_preview_tool_is_app_only():
 
 def test_only_view_tools_carry_ui_meta():
     with_ui = {t["name"] for t in registry_list_tools() if "ui" in (t.get("_meta") or {})}
-    assert with_ui == {"workflow_run_action", "workflow_action_preview_view", "targeting_pmc_rank"}
+    assert with_ui == {"workflow_run_action", "workflow_action_preview_view", "targeting_pmc_states"}
 
 
 def test_the_views_preview_tool_reads_and_the_commit_writes():
@@ -426,13 +426,16 @@ def _pmc_resource():
     return next(r for r in RESOURCES if r.uri == PMC_STATES_URI)
 
 
-def test_targeting_pmc_rank_is_drawn_as_the_candidate_states_and_callable_by_them():
+def test_the_candidate_states_card_has_its_own_tool_and_the_ranking_stays_plain():
     from connect_labs.mcp.ui import PMC_STATES_URI
 
     _, tools, *_ = _session()
-    # The agent calls it, and the View calls it again as the viewer to re-total a selection.
-    assert tools["targeting_pmc_rank"].meta["ui"] == {"resourceUri": PMC_STATES_URI, "visibility": ["model", "app"]}
-    assert get_tool("targeting_pmc_rank").is_write is False
+    # The card is its own tool, so explaining the PMC page (targeting_pmc_rank) draws no
+    # second copy of the page in the chat; the card re-totals through the ranking.
+    assert tools["targeting_pmc_states"].meta["ui"] == {"resourceUri": PMC_STATES_URI, "visibility": ["model", "app"]}
+    assert "ui" not in (tools["targeting_pmc_rank"].meta or {})
+    assert get_tool("targeting_pmc_states").is_write is False
+    assert "labs-targeting://pmc" in get_tool("targeting_pmc_states").description
 
 
 def test_the_candidate_states_view_is_self_contained():

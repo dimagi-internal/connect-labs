@@ -1197,6 +1197,27 @@ class TestPmcRank:
         # The explorer link opens the page on the same deaths estimate.
         assert "deaths_basis=map" in got["explorer_path"]
 
+    def test_the_candidate_states_card_returns_its_headline_not_the_ranking_again(self, monkeypatch, settings):
+        from connect_labs.labs.indicators.emod import mortality
+
+        settings.LABS_PUBLIC_URL = "https://labs.example.org"
+        burden = {
+            "Ondo": {"u5_deaths": 15_000, "map_malaria_deaths": 3_000, "pfpr": 0.45, "pop_u5": 1_000_000},
+            "Kano": {"u5_deaths": 95_000, "map_malaria_deaths": 23_000, "pfpr": 0.54, "pop_u5": 2_000_000},
+        }
+        monkeypatch.setattr(mortality, "registry_burden", lambda: burden)
+        got = targeting.targeting_pmc_states(None, states=["Kano", "Ondo"], cost_per_visit=0.58)
+
+        assert got["card"] == "shown to the visitor"
+        assert "ranked" not in got and "by_design" not in got
+        assert got["recommendation"]["label"] and got["recommendation"]["keep"]
+        # The card opens the explorer at an absolute https address, on the visitor's price.
+        assert got["explorer_url"] == "https://labs.example.org/labs/targeting/pmc/"
+        assert got["costs"]["cost_per_visit"] == 0.58
+        from connect_labs.labs import canopy
+
+        assert "targeting_pmc_states" in canopy.SCOPE_TOOLS["targeting:read"]
+
     def test_with_no_mortality_loaded_it_falls_back_to_cost_per_case_and_says_so(self):
         got = targeting.targeting_pmc_rank(None, states=["Kano", "Ondo"])
 

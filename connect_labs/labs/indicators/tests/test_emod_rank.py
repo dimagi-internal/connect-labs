@@ -269,11 +269,12 @@ def test_without_deaths_it_still_ranks_by_cost_per_case(grid):
     assert out["ranked_by"] == "cost per case averted" and "multiple_of_benchmark" not in out["ranked"][0]
 
 
-def test_the_state_index_marks_year_round_transmission_by_season_and_prevalence(grid):
+def test_the_state_index_marks_where_smc_already_runs(grid):
     got = {s["name"]: s for s in rank.state_index(grid)}
 
-    # Ondo: 40% of the rain in the wettest quarter, 30% prevalence. Kano is seasonal; Lagos has 3% prevalence.
-    assert {n: s["perennial"] for n, s in got.items()} == {"Kano": False, "Lagos": False, "Ondo": True}
+    # Kano runs SMC statewide; Ondo and Lagos run none. Low prevalence (Lagos) is no longer a cutoff:
+    # the ranking and the bar drop it.
+    assert {n: s["smc"] for n, s in got.items()} == {"Kano": "statewide", "Lagos": None, "Ondo": None}
     assert got["Ondo"]["pfpr"] == 0.3 and got["Ondo"]["rain_wettest_quarter"] == 40.0
     assert rank.state_index(None) == []
 
@@ -530,3 +531,12 @@ def test_without_other_estimates_there_is_no_by_basis(grid):
     out = rank.rank_pairs(["Ondo", "Kano"], grid=grid, deaths={"Ondo": 4_000.0, "Kano": 20_000.0})
 
     assert out["recommendation"]["by_basis"] is None and "by_basis" not in out["ranked"][0]
+
+
+def test_the_smc_list_is_sourced_and_takes_out_a_state_with_smc_anywhere():
+    smc = rank.smc_status()
+    # Benue runs SMC in some LGAs (all of them planned for 2026): out, like a statewide one.
+    assert smc["Benue"]["smc"] == "some_lgas" and smc["Kano"]["smc"] == "statewide"
+    assert all(v["source"].startswith("https://") and v["year"] >= 2022 for v in smc.values())
+    # The southern states the proposal looks at run none.
+    assert not {"Ondo", "Imo", "Enugu", "Ekiti", "Lagos"} & set(smc)
