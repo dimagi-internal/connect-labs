@@ -1612,8 +1612,17 @@
     function wireMap() {
       if (wired) return;
       wired = true;
+      let hoverShown = false;
       map.on('mousemove', FILL, (e) => {
         if (!layer.on || !e.features.length) return;
+        // While the host draws a polygon, keep the outlines but don't highlight
+        // or inspect the ward under the cursor: that read as selecting it.
+        if (map.getContainer().classList.contains('mp-drawing')) {
+          if (hoverShown) clearHover();
+          hoverShown = false;
+          return;
+        }
+        hoverShown = true;
         map.getCanvas().style.cursor = 'pointer';
         const f = smallestAt(e.point) || e.features[0];
         showHover(f, e.point);
@@ -1621,6 +1630,7 @@
       map.on('mouseleave', FILL, () => {
         if (!layer.on) return;
         map.getCanvas().style.cursor = '';
+        hoverShown = false;
         clearHover();
       });
       map.on('click', FILL, (e) => {
