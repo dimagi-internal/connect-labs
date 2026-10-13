@@ -667,6 +667,14 @@ class ProgramWorkspaceView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateVi
             # file new work under, and whether the Delete buttons show at all.
             context.update(_workspace_context(da))
             context["can_delete"] = da.can_delete
+            if da.workspace is None:
+                # A labs-only program Dimagi staff could turn workspace roles on for.
+                from connect_labs.labs.synthetic.local_records_backend import is_labs_only_program_id
+                from connect_labs.utils.dimagi_user import is_dimagi_staff
+
+                context["can_turn_on_workspace"] = is_dimagi_staff(self.request.user) and is_labs_only_program_id(
+                    da.program_id
+                )
             seed = _program_map_seed(da.list_plans())
         except Exception:  # noqa: BLE001
             logger.exception("microplans new-plan map seed failed (program=%s)", program_id)
@@ -1975,10 +1983,28 @@ class ProgramWorkspaceSettingsView(_LabsContextSyncMixin, LoginRequiredMixin, Te
     Shows which REAL Connect programs the workspace is linked to -- their
     delivering organisations are its Network Managers, one team each -- and the
     teams that derives, and lets a Program Manager change the list (usually one
-    Connect program per partner, created over time). 404 for anyone else and for
-    a program that is not a workspace."""
+    Connect program per partner, created over time). 404 for anyone else.
+
+    For a labs-only program whose organisation is not a workspace yet, Dimagi
+    staff -- and only they -- get a "Turn on workspace roles" button instead: the
+    browser route to what ``setup_autoconnect_workspace --program-id`` does, by
+    the same function (``labs.workspaces.adopt_program``), for deployments where
+    nobody can run a management command. Everyone else gets a 404 for the page
+    and a 403 for the button."""
 
     template_name = "microplans/workspace_settings.html"
+
+    def _can_turn_on(self, program_id) -> bool:
+        """Dimagi staff, on a labs-only program that is not a workspace yet."""
+        from connect_labs.labs.synthetic.local_records_backend import is_labs_only_program_id
+        from connect_labs.labs.workspaces import workspace_for_program
+        from connect_labs.utils.dimagi_user import is_dimagi_staff
+
+        return (
+            is_dimagi_staff(self.request.user)
+            and is_labs_only_program_id(program_id)
+            and workspace_for_program(program_id) is None
+        )
 
     def _workspace_and_role(self, program_id):
         from connect_labs.labs.workspaces import role_in, workspace_for_program
@@ -1997,6 +2023,10 @@ class ProgramWorkspaceSettingsView(_LabsContextSyncMixin, LoginRequiredMixin, Te
 
         context = super().get_context_data(**kwargs)
         program_id = kwargs.get("program_id")
+        back_url = reverse("microplans:program_workspace", args=[program_id])
+        if self._can_turn_on(program_id):
+            context.update({"program_id": program_id, "workspace": None, "can_turn_on": True, "back_url": back_url})
+            return context
         workspace, _role = self._workspace_and_role(program_id)
         da = ProgramPlanDataAccess(program_id, request=self.request)
         records = [*da.list_plans(), *da.list_groups()]
@@ -2021,7 +2051,7 @@ class ProgramWorkspaceSettingsView(_LabsContextSyncMixin, LoginRequiredMixin, Te
                 "linked_programs": ", ".join(str(p) for p in workspace.connect_program_ids),
                 "teams": teams,
                 "pm_only_records": counts.get("", 0),
-                "back_url": reverse("microplans:program_workspace", args=[program_id]),
+                "back_url": back_url,
             }
         )
         return context
@@ -2033,6 +2063,8 @@ class ProgramWorkspaceSettingsView(_LabsContextSyncMixin, LoginRequiredMixin, Te
         from connect_labs.audit_trail.models import Action
         from connect_labs.audit_trail.service import record
 
+        if request.POST.get("action") == "turn_on":
+            return self._turn_on(request, program_id)
         workspace, _role = self._workspace_and_role(program_id)
         raw = request.POST.get("connect_program_ids", "")
         try:
@@ -2056,6 +2088,30 @@ class ProgramWorkspaceSettingsView(_LabsContextSyncMixin, LoginRequiredMixin, Te
             metadata={"connect_program_ids": {"before": before, "after": ids}},
         )
         messages.success(request, "Linked Connect programs saved." if ids else "No Connect programs are linked now.")
+        return redirect(request.path)
+
+    def _turn_on(self, request, program_id):
+        from django.contrib import messages
+        from django.core.exceptions import PermissionDenied
+        from django.shortcuts import redirect
+
+        from connect_labs.labs.synthetic.local_records_backend import is_labs_only_program_id
+        from connect_labs.labs.workspaces import AdoptRefused, adopt_program
+        from connect_labs.utils.dimagi_user import is_dimagi_staff
+
+        if not is_dimagi_staff(request.user):
+            raise PermissionDenied("Only Dimagi staff can turn on workspace roles.")
+        if not is_labs_only_program_id(program_id):
+            raise Http404("Not found.")
+        try:
+            _workspace, _opp, created = adopt_program(program_id, user=request.user)
+        except AdoptRefused as e:
+            messages.error(request, f"Workspace roles were not turned on: {e}.")
+            return redirect(request.path)
+        if created:
+            messages.success(request, "Workspace roles are on. Add the linked Connect programs below.")
+        else:
+            messages.info(request, "Workspace roles were already on.")
         return redirect(request.path)
 
 

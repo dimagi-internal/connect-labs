@@ -409,7 +409,7 @@ def test_setup_command_is_idempotent_and_edits_the_linked_programs(django_user_m
     assert OrgMembership.objects.get(org=workspace.org, user=admin).role == "admin"
 
 
-def _existing_program(opportunity_id, org_name="Existing Org", program_name="Existing Stage"):
+def _existing_program(opportunity_id, org_name="Existing Org", program_name="Existing Stage", domains=None):
     """A labs-only program made the way the MCP synthetic_create_labs_only tool makes one."""
     return SyntheticOpportunity.objects.create(
         opportunity_id=opportunity_id,
@@ -418,7 +418,7 @@ def _existing_program(opportunity_id, org_name="Existing Org", program_name="Exi
         program_name=program_name,
         gdrive_folder_id="",
         labs_only=True,
-        allowed_domains=["@dimagi.com"],
+        allowed_domains=domains or ["@dimagi.com"],
     )
 
 
@@ -482,3 +482,74 @@ def test_settings_page_is_program_managers_only_and_sets_linked_programs(client,
     assert resp.status_code == 302
     ws["workspace"].refresh_from_db()
     assert ws["workspace"].connect_program_ids == [9102, 9103]
+
+
+# --- turning workspace roles on from the browser (no management command) ----
+
+
+def test_dimagi_staff_turn_workspace_roles_on_from_the_settings_page(client, django_user_model):
+    from connect_labs.audit_trail.models import Action, AuditEvent
+    from connect_labs.labs.models import Workspace
+
+    opp = _existing_program(10_650)
+    _login(client, _user(django_user_model, "staff_on", "staff.on@dimagi.com"))
+    url = reverse("microplans:program_workspace_settings", args=[10_650])
+    resp = client.get(url)
+    assert resp.status_code == 200
+    assert b"Turn on workspace roles" in resp.content
+    assert client.post(url, {"action": "turn_on"}).status_code == 302
+    opp.refresh_from_db()
+    assert Workspace.objects.get().org == opp.labs_org
+    assert AuditEvent.objects.filter(action=Action.CREATE, resource_type="workspace", program_id=10_650).exists()
+    # Already a workspace: a no-op, not a second row.
+    assert client.post(url, {"action": "turn_on"}).status_code == 302
+    assert Workspace.objects.count() == 1
+    assert SyntheticOpportunity.objects.count() == 1
+
+
+def test_only_dimagi_staff_can_turn_workspace_roles_on(client, django_user_model):
+    from connect_labs.labs.models import Workspace
+
+    # A partner the program's domain rule admits -- so they reach the page at all.
+    _existing_program(10_655, domains=["@partner-a.example"])
+    _login(client, _user(django_user_model, "partner_user", "someone@partner-a.example"))
+    url = reverse("microplans:program_workspace_settings", args=[10_655])
+    assert client.get(url).status_code == 404  # never sees the button
+    assert client.post(url, {"action": "turn_on"}).status_code == 403
+    assert not Workspace.objects.exists()
+
+
+def test_turning_on_is_refused_for_an_org_holding_other_programs(client, django_user_model):
+    from connect_labs.labs.models import Workspace
+    from connect_labs.labs.workspaces import AdoptRefused, adopt_program
+
+    first = _existing_program(10_660)
+    SyntheticOpportunity.objects.create(
+        opportunity_id=10_661,
+        label="Another",
+        org_name="Existing Org",
+        program_name="Another program",
+        gdrive_folder_id="",
+        labs_only=True,
+        labs_org=first.labs_org,
+    )
+    _login(client, _user(django_user_model, "staff_refused", "staff.refused@dimagi.com"))
+    url = reverse("microplans:program_workspace_settings", args=[10_660])
+    resp = client.post(url, {"action": "turn_on"}, follow=True)
+    assert b"also holds program(s) 10661" in resp.content
+    assert not Workspace.objects.exists()
+    with pytest.raises(AdoptRefused):
+        adopt_program(10_660)
+
+
+def test_adopt_program_is_idempotent_and_refuses_what_is_not_a_labs_only_program():
+    from connect_labs.labs.workspaces import AdoptRefused, adopt_program
+
+    _existing_program(10_670)
+    workspace, _opp, created = adopt_program(10_670)
+    again, _opp, created_again = adopt_program(10_670)
+    assert created and not created_again and again.pk == workspace.pk
+    with pytest.raises(AdoptRefused):
+        adopt_program(133)
+    with pytest.raises(AdoptRefused):
+        adopt_program(10_999)

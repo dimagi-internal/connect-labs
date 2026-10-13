@@ -216,6 +216,71 @@ def programs_for(user) -> set[int]:
     return found
 
 
+class AdoptRefused(Exception):
+    """A labs-only program's organisation cannot be made a workspace (see `adopt_program`)."""
+
+
+def adopt_program(program_id, *, user=None):
+    """Turn on workspace roles for the labs-only program `program_id`.
+
+    Flags the program's labs-only organisation as a workspace -- the one thing
+    both the `setup_autoconnect_workspace` command and the "Turn on workspace
+    roles" button do, so the two can never disagree. Returns
+    ``(workspace, opp, created)``; for an organisation that already is one it
+    changes nothing (``created`` False). Logged on the audit trail when it does.
+
+    Raises `AdoptRefused` for an id that is not a labs-only program, for one not
+    filed under a labs-only organisation, and for an organisation that holds any
+    OTHER program -- the roles would then decide who opens those too.
+    """
+    from django.db import transaction
+    from django.db.models import Q
+
+    from connect_labs.labs.models import Workspace
+    from connect_labs.labs.synthetic.models import SyntheticOpportunity
+    from connect_labs.labs.synthetic.org_tree import is_labs_only_org_row, synthetic_program_id
+
+    try:
+        pid = int(program_id)
+    except (TypeError, ValueError):
+        raise AdoptRefused(f"{program_id!r} is not a program id") from None
+    opp = (
+        SyntheticOpportunity.objects.filter(labs_only=True)
+        .filter(Q(program_id=pid) | Q(program_id__isnull=True, opportunity_id=pid))
+        .select_related("labs_org")
+        .order_by("pk")
+        .first()
+    )
+    if opp is None:
+        raise AdoptRefused(f"there is no labs-only program {pid}")
+    org = opp.labs_org
+    if not is_labs_only_org_row(org):
+        raise AdoptRefused(f"labs-only program {pid} is not filed under a labs-only organisation")
+    others = sorted({synthetic_program_id(o) for o in SyntheticOpportunity.objects.filter(labs_org=org)} - {pid})
+    if others:
+        raise AdoptRefused(
+            f"the organisation {org.name!r} also holds program(s) {', '.join(map(str, others))}; "
+            "workspace roles would decide who can open those too, so they were not turned on"
+        )
+    with transaction.atomic():
+        workspace, created = Workspace.objects.get_or_create(org=org)
+    if created:
+        from connect_labs.audit_trail.models import Action
+        from connect_labs.audit_trail.service import record
+
+        record(
+            Action.CREATE,
+            resource_type="workspace",
+            resource_id=workspace.pk,
+            program_id=pid,
+            labs_only=True,
+            metadata={"organisation": org.slug},
+            user=user,
+        )
+        logger.info("workspace roles turned on for labs-only program %s (organisation %s)", pid, org.slug)
+    return workspace, opp, created
+
+
 def delivering_orgs(org_data, connect_program_ids) -> dict:
     """Every Connect organisation this tree shows delivering in the linked programmes.
 

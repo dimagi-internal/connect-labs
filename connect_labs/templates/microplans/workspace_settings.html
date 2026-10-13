@@ -3,6 +3,28 @@
 
 {% block content %}
 <div class="max-w-3xl mx-auto p-6 space-y-6">
+  {% if can_turn_on %}
+  <div>
+    <a href="{{ back_url }}" class="text-sm text-brand-cornflower-blue">&larr; Back to the portfolio</a>
+    <h1 class="text-2xl font-bold text-gray-900 mt-2">Turn on workspace roles</h1>
+    <p class="text-sm text-gray-500">Labs program #{{ program_id }}. Only Dimagi staff see this.</p>
+  </div>
+
+  <section class="bg-white border rounded-lg p-4 space-y-3">
+    <p class="text-sm text-gray-600">
+      With workspace roles on, this program is open to its program managers (Dimagi staff and the organisation's admins)
+      and to network managers: people whose Connect organisation delivers an opportunity in a Connect program you link
+      on the next screen. Network managers see only their organisation's plans and studies and cannot delete. Its
+      current email-domain access rule stops applying, and plans already here stay visible to program managers only.
+    </p>
+    <p class="text-sm text-gray-600">This is refused if the program's organisation holds other programs.</p>
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="turn_on">
+      <button type="submit" class="button button-sm primary-dark">Turn on workspace roles</button>
+    </form>
+  </section>
+  {% else %}
   <div>
     <a href="{{ back_url }}" class="text-sm text-brand-cornflower-blue">&larr; Back to the portfolio</a>
     <h1 class="text-2xl font-bold text-gray-900 mt-2">{{ workspace.org.name }} &mdash; workspace</h1>
@@ -49,5 +71,6 @@
       <p class="text-xs text-gray-500">{{ pm_only_records }} plan(s) or stud(ies) have no team and are visible to program managers only.</p>
     {% endif %}
   </section>
+  {% endif %}
 </div>
 {% endblock %}
