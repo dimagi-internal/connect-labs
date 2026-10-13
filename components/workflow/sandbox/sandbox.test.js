@@ -15,7 +15,6 @@ import {
   connectBridge,
   installMemoryStorage,
   interceptAnchorClicks,
-  pageActions,
 } from './frame';
 import { HELLO, INIT } from './protocol';
 
@@ -390,13 +389,6 @@ describe('the frame runtime', () => {
     win.localStorage.setItem('k', 1);
     expect(win.localStorage.getItem('k')).toBe('1');
     expect(win.sessionStorage).toBeInstanceOf(MemoryStorage);
-  });
-
-  it('a workflow-only action rejects with a clear message, not a TypeError', async () => {
-    const actions = pageActions({ request: vi.fn() });
-    await expect(actions.createTask({})).rejects.toThrow(
-      'createTask is not available on a page',
-    );
   });
 
   it('takes INIT only from its parent, then answers over the port', async () => {

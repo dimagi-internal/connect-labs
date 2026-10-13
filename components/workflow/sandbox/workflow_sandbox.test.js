@@ -12,7 +12,9 @@ import {
   createSandboxHost,
   proxyFetch,
 } from './host';
-import { UPDATE } from './protocol';
+import { UPDATE, WORKFLOW_METHODS, PHASE1_METHODS } from './protocol';
+import { RUN_ONLY_METHODS } from './host';
+import { workflowActions } from './frame';
 import {
   downloadBytes,
   labsUrl,
@@ -709,5 +711,117 @@ describe('the workflow frame on the host page', () => {
     // `big` is the same object: it is not cloned again. An unchanged payload sends nothing.
     expect(received).toEqual([{ type: UPDATE, payload: { a: 2 } }]);
     host.destroy();
+  });
+});
+
+// Jonathan, 2026-10-12: "pages should be completely definable like workflows are".
+// One capability set, gated only by whether there is a run.
+describe('a page can do everything a workflow can, except what needs a run', () => {
+  const RUN_ONLY = ['updateState', 'completeRun', 'runAction'];
+  const PAGE_CTX = { ...CTX, runId: null };
+
+  function pageDispatcher(w = workflowHandlers(), h = pageHandlers()) {
+    return {
+      w,
+      h,
+      d: createDispatcher(h, {
+        labsOrigin: LABS,
+        hasActivation: () => true,
+        mode: 'page',
+        routeContext: PAGE_CTX,
+        workflow: w,
+      }),
+    };
+  }
+
+  it('the run-only list is exactly the run-only methods', () => {
+    expect([...RUN_ONLY_METHODS].sort()).toEqual([...RUN_ONLY].sort());
+  });
+
+  it.each(
+    [...WORKFLOW_METHODS, ...PHASE1_METHODS].filter(
+      (m) => !RUN_ONLY.includes(m),
+    ),
+  )('%s is answered for a page as for a workflow', async (method) => {
+    const params = {
+      fetch: { url: '/audit/api/ai-agents/', method: 'GET' },
+      queryPipelineRows: { alias: 'visits', query: {} },
+      setLocation: { search: '?a=1' },
+      notify: { message: 'hi' },
+      querySupply: { alias: 'stock' },
+      queryWorkflow: { alias: 'report' },
+      navigate: { url: '/audit/5/bulk/' },
+      shareSelection: { visible_ids: ['a'] },
+      resize: { height: 300 },
+      copyText: { text: 'x' },
+      confirm: { text: 'ok?' },
+      download: { filename: 'a.csv', bytes: 'a,b' },
+      reportError: { message: 'boom' },
+    }[method];
+    const run = async (mode, ctx) =>
+      createDispatcher(pageHandlers(), {
+        labsOrigin: LABS,
+        hasActivation: () => true,
+        mode,
+        routeContext: ctx,
+        workflow: workflowHandlers(),
+      })({ id: 1, method, params });
+    const page = await run('page', PAGE_CTX);
+    const wf = await run('workflow', CTX);
+    expect(page.error).toBeUndefined();
+    expect(wf.error).toBeUndefined();
+  });
+
+  it.each(RUN_ONLY)(
+    '%s is refused for a page: it has no run',
+    async (method) => {
+      const { d, w } = pageDispatcher();
+      const out = await d({
+        id: 1,
+        method,
+        params: { key: 'coach', state: {} },
+      });
+      expect(out.error).toBe(`${method} needs a run, and a page has none`);
+      expect(w.updateState).not.toHaveBeenCalled();
+      expect(w.completeRun).not.toHaveBeenCalled();
+      expect(w.runAction).not.toHaveBeenCalled();
+    },
+  );
+
+  it('a page reaches what a workflow reaches, except a run’s own routes', () => {
+    expect(
+      checkFetch('/labs/workflow/api/42/pipeline-rows/', 'GET', PAGE_CTX).gate,
+    ).toBe('read');
+    expect(checkFetch('/tasks/api/single-create/', 'POST', PAGE_CTX).gate).toBe(
+      'effect',
+    );
+    for (const url of [
+      '/labs/workflow/api/run/900/state/',
+      '/labs/workflow/api/run/900/job/start/',
+      '/labs/workflow/api/run/900/complete/',
+      '/labs/workflow/api/run/900/worker-result/',
+      '/labs/workflow/api/run/900/rename/',
+    ]) {
+      expect(() => checkFetch(url, 'POST', PAGE_CTX), url).toThrow(/a run/);
+    }
+    expect(() =>
+      checkFetch('/labs/workflow/api/run/900/snapshot/', 'GET', {
+        ...PAGE_CTX,
+      }),
+    ).not.toThrow(); // another run's saved figures are a read, as on a workflow
+  });
+
+  it('a page’s actions are a workflow’s actions', () => {
+    const bridge = { request: vi.fn(async () => ({})) };
+    const actions = workflowActions(bridge, () => LABS + '/labs/p/org/acme/');
+    for (const name of [
+      'createTask',
+      'createAudit',
+      'queryPipelineRows',
+      'navigate',
+      'download',
+    ]) {
+      expect(typeof actions[name], name).toBe('function');
+    }
   });
 });

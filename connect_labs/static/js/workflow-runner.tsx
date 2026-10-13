@@ -253,24 +253,21 @@ function WorkflowRunner({
   const [pipelineLoadingStatus, setPipelineLoadingStatus] = useState<
     string | null
   >(
-    // A sandboxed page streams none.
-    sandbox
+    // Already have data from server render?
+    initialData.pipeline_data &&
+      Object.keys(initialData.pipeline_data).length > 0
       ? null
-      : // Already have data from server render?
-        initialData.pipeline_data &&
-          Object.keys(initialData.pipeline_data).length > 0
+      : // No pipelines configured?
+        !initialData.definition.pipeline_sources?.length
         ? null
-        : // No pipelines configured?
-          !initialData.definition.pipeline_sources?.length
+        : // A finished run carries its own; nothing to wait for. Nor does a page
+          // that fetches its own rows (config.noPipelineStream).
+          snapshotCarriesPipelines ||
+            (definition?.config as Record<string, unknown> | undefined)
+              ?.noPipelineStream
           ? null
-          : // A finished run carries its own; nothing to wait for. Nor does a page
-            // that fetches its own rows (config.noPipelineStream).
-            snapshotCarriesPipelines ||
-              (definition?.config as Record<string, unknown> | undefined)
-                ?.noPipelineStream
-            ? null
-            : // Need to load
-              'Connecting...',
+          : // Need to load
+            'Connecting...',
   );
   // Opt-in per definition (`config.renderWhileLoading`): a drill-style page
   // whose headline comes from a saved report should not sit behind the
@@ -1460,9 +1457,8 @@ function WorkflowRunner({
       mapboxToken: initialData.mapboxToken || '',
       pageUrl: framePageUrl,
     };
-    if (sandboxMode === 'page') {
-      return { ...common, workers: [], pipelines: {} };
-    }
+    // A page and a workflow are handed the same (Jonathan, 2026-10-12: "pages
+    // should be completely definable like workflows are"); a page just has no run.
     return {
       ...common,
       workers: initialData.workers as unknown[],
@@ -1510,7 +1506,7 @@ function WorkflowRunner({
   // What the host does for a workflow in the frame: labs' own code, bound to this
   // workflow and run (the frame names neither).
   const sandboxWorkflow = useMemo(() => {
-    if (sandboxMode !== 'workflow') return undefined;
+    if (!sandbox) return undefined;
     const opportunityIds = Array.from(
       new Set(
         [
@@ -2013,7 +2009,7 @@ function WorkflowRunner({
               className="px-4 mt-6 mb-2 text-xs text-gray-400"
               data-testid="workflow-sandbox-status"
             >
-              {sandboxMode === 'workflow' ? (
+              {sandbox ? (
                 <span>
                   <i className="fa-solid fa-shield-halved mr-1" />
                   Staff: this workflow runs in the sandbox.

@@ -1009,18 +1009,14 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         )
 
     def _sandbox_workflow_data(self, context, definition, scope, labs_context, page):
-        """A sandboxed page: what the host runner needs to draw the frame, and nothing the
-        frame should not have. Pages get no visit-level pipelines in phase 1 (whatever is
-        handed to the frame can leave it), so the pipeline endpoints are removed, not
-        merely unused. If the page shares with the canopy agent, its panel is set up here."""
+        """A sandboxed page: what the host runner needs to draw the frame. A page gets
+        what a workflow gets (pipelines, workers, the same bridge) except a run. If the
+        page shares with the canopy agent, its panel is set up here."""
         from connect_labs.workflow.sandbox import host_payload
 
         workflow_data = context["workflow_data"]
         workflow_data["sandbox"] = host_payload(self.request)
         workflow_data["mapboxToken"] = settings.MAPBOX_TOKEN or ""
-        workflow_data["pipeline_data"] = {}
-        for key in ("getWorkers", "getPipelineData", "streamPipelineData", "queryPipelineRows", "saveWorkerResult"):
-            workflow_data["apiEndpoints"][key] = None
         if page and not context["present_mode"]:
             self._add_page_agent(context, definition, scope, labs_context)
 
@@ -1156,9 +1152,10 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
 
             sandboxed = should_sandbox(definition, page_mode=self.page_mode, request=self.request)
             context["sandboxed"] = sandboxed
-            # A sandboxed PAGE (or any page) is handed no run and no per-worker data. A
-            # sandboxed WORKFLOW (phase 2) is handed what its render reads today; what it
-            # does with the viewer's session goes through the host (sandbox/routes.ts).
+            # A page and a workflow are handed the same data and the same bridge
+            # (Jonathan, 2026-10-12: "pages should be completely definable like workflows
+            # are"); a page just has no run. What either does with the viewer's session
+            # goes through the host (sandbox/routes.ts).
             page_sandbox = sandboxed and (self.page_mode or _is_page(definition))
             if page_sandbox or _is_page(definition):
                 # A page has no runs: a `run_id` on its address names nothing of its own,
@@ -1190,9 +1187,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
 
             # Bound to a local as well: workflow_data below serialises the same list
             # into the runner payload.
-            # A sandboxed page is handed no per-worker data: whatever reaches the frame is
-            # readable by the page's author (the spec's residual risk).
-            workers = [] if page_sandbox else self._load_workers(data_access, effective_opp_ids)
+            workers = self._load_workers(data_access, effective_opp_ids)
             context["workers"] = workers
 
             # Hoisted: flags are loaded only on the run-id branch (live

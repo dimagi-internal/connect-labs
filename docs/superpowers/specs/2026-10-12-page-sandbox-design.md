@@ -214,9 +214,9 @@ is not left to them. A middleware refuses any session-authenticated request carr
 WebRTC (a peer connection to an attacker's TURN server) is a full data channel that no
 shipping browser lets CSP close, and removing `RTCPeerConnection` in the frame is undone by
 a fresh `about:blank` child. So whatever the host hands the frame should be treated as
-readable by the page's author. Phase 1 therefore gives pages no visit-level pipelines and no
-`queryPipelineRows`: a page draws scope, Settings, supply figures (aggregates, no personal
-data) and other workflows' run summaries. Phase 2 has to decide what workflows may read with
+readable by the page's author. Phase 1 therefore gave pages no visit-level pipelines and no
+`queryPipelineRows` (withdrawn in phase 2: pages are as definable as workflows, and carry the
+same residual risk; see "Pages become as definable as workflows"). Phase 2 has to decide what workflows may read with
 that in mind (e.g. limiting a definition's sources to what its author can also read).
 
 
@@ -354,6 +354,31 @@ any labs endpoint the route table does not name. So workflows get the same data 
 (no new exposure) and lose the ability to act as the viewer (the exposure that matters).
 Cost: nothing a viewer sees changes, except the questions below.
 
+### Pages become as definable as workflows (ruling, 2026-10-12)
+
+Jonathan, during phase 2: **"pages should be completely definable like workflows are."**
+So the phase-1 page-only restrictions (no pipelines, no workers, no `queryPipelineRows`, no
+tasks / audits / images / boundaries / tiles) are gone: **one capability set, one code path,
+gated only by "has runs or not".** A page is drawn by the same frame component and the same
+host handlers as a workflow; it is handed its `pipeline_sources` (streamed as on a workflow),
+`workers`, `supply`, `workflows`, `scope` and `config`; its code reaches labs through the same
+route table with the same questions.
+
+What only a run has, and so a page cannot: `updateState` to a run (a page's state stays in the
+frame), `view.complete`, `actions.runAction` (a declared action's roster, confirm token and the
+tasks it attaches are all a run's: `workflow/actions.py` takes a run), background jobs (they
+write their results to a run), and every `/labs/workflow/api/run/<id>/...` write -- refused by
+routes.ts because a page has no run id to bind. The dispatcher refuses the run-only methods
+for a page with "needs a run, and a page has none"; a parity test pins that every other method
+answers a page exactly as it answers a workflow.
+
+Cost: a page's author can now see (and, over WebRTC, take) the visit-level data its pipelines
+read, exactly as a workflow's author can. That is the same residual risk, stated once for both
+below; the phase-1 rule "pages get no visit-level data" is withdrawn by this ruling. Pages keep
+what makes them pages: no run is ever read (a `run_id` on a page's address is ignored, no
+snapshot reaches the frame). Declared actions on a page would need the action framework to act
+on a scope instead of a run: a follow-up, not built here.
+
 ### What a workflow's code can make labs do: one table
 
 Every labs request a workflow's code makes is a bridge `fetch` the host answers only if it
@@ -414,7 +439,8 @@ nobody has checked. So `LABS_WORKFLOW_SANDBOX` (default `opt_in`):
 
 ### Residual risk, phase 2
 
-- **Exfiltration of what a workflow shows its viewer** (WebRTC), as above: equal to today.
+- **Exfiltration of what a page or workflow shows its viewer** (WebRTC), as above: equal to
+  today for a workflow, and now the same for a page (the ruling above).
 - **Cross-workflow reads.** The run, history, snapshot-preview and indicator-definition reads
   are not bound to this workflow, so a workflow's author can read, as a viewer, any run the
   viewer can see through those few routes (then exfiltrate it as above). Today the same code

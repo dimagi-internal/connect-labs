@@ -26,7 +26,6 @@ import {
 import {
   HELLO,
   INIT,
-  NOT_ON_A_PAGE,
   UPDATE,
   type BridgeResponse,
   type FramePayload,
@@ -217,102 +216,6 @@ export function connectBridge(
 // The props render code receives
 // ---------------------------------------------------------------------------
 
-function notOnAPage(name: string) {
-  return () => Promise.reject(new Error(`${name} is ${NOT_ON_A_PAGE}`));
-}
-
-/**
- * `actions`: the phase-1 bridge methods, and for every other name a function that
- * rejects with "not available on a page yet" (rather than `undefined is not a function`).
- */
-export function pageActions(bridge: Bridge): WorkflowProps['actions'] {
-  const known: Record<string, unknown> = {
-    querySupply: (alias: string, query: { args?: unknown } = {}) =>
-      bridge.request('querySupply', { alias, args: query?.args ?? {} }),
-    queryWorkflow: (alias: string) =>
-      bridge.request('queryWorkflow', { alias }),
-    download: (file: Record<string, unknown>) =>
-      bridge.request('download', file),
-    copyText: (text: string) => bridge.request('copyText', { text }),
-  };
-  return new Proxy(known, {
-    get(target, prop) {
-      if (typeof prop !== 'string') return undefined;
-      if (prop in target) return target[prop];
-      if (prop === 'then') return undefined; // not a thenable
-      return notOnAPage(prop);
-    },
-  }) as unknown as WorkflowProps['actions'];
-}
-
-function FramePage({
-  payload,
-  bridge,
-}: {
-  payload: FramePayload;
-  bridge: Bridge;
-}) {
-  const [state, setState] = useState(payload.view.state || {});
-  useEffect(() => setState(payload.view.state || {}), [payload.view.state]);
-  const onUpdateState = useCallback(async (next: Record<string, unknown>) => {
-    // A page has no run: its state lives only in the frame, as in edit mode.
-    setState((prev) => ({ ...prev, ...next }));
-  }, []);
-  const actions = useMemo(() => pageActions(bridge), [bridge]);
-  const onError = useCallback(
-    (message: string) => {
-      bridge.request('reportError', { message }).catch(() => undefined);
-    },
-    [bridge],
-  );
-  const view = useMemo(
-    () => ({
-      workers: [],
-      pipelines: {},
-      supply: payload.supply,
-      state,
-      isCompleted: payload.view.isCompleted,
-      asOf: payload.view.asOf,
-      complete: () =>
-        Promise.reject(new Error(`view.complete is ${NOT_ON_A_PAGE}`)),
-      flags: [],
-      flagsFor: () => [],
-      ensureAutoFlags: async () => [],
-      audits: [],
-      auditsFor: () => [],
-      tasks: [],
-      tasksFor: () => [],
-      workflowActions: [],
-      shareSelection: (selection: unknown) => {
-        bridge.request('shareSelection', selection).catch(() => undefined);
-      },
-      confirm: (text: string) =>
-        bridge.request('confirm', { text }).then(Boolean),
-    }),
-    [bridge, payload, state],
-  );
-  return (
-    <DynamicWorkflow
-      renderCode={payload.renderCode}
-      definition={payload.definition as unknown as WorkflowProps['definition']}
-      instance={
-        { ...payload.instance, state } as unknown as WorkflowProps['instance']
-      }
-      workers={[]}
-      pipelines={{}}
-      supply={payload.supply as WorkflowProps['supply']}
-      workflows={payload.workflows as WorkflowProps['workflows']}
-      scope={payload.scope as WorkflowProps['scope']}
-      config={payload.config as WorkflowProps['config']}
-      links={createLinkHelpers(payload.links)}
-      actions={actions}
-      onUpdateState={onUpdateState}
-      view={view as unknown as WorkflowProps['view']}
-      onError={onError}
-    />
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
@@ -437,15 +340,26 @@ function WorkflowFramePage({
     () => workflowActions(bridge, pageUrl),
     [bridge, pageUrl],
   );
-  const state = (payload.view?.state || {}) as Record<string, unknown>;
+  // A page has no run: its state lives only in the frame, as in edit mode. A
+  // workflow's state is the run's: the host writes it (or keeps it, in edit mode)
+  // and sends it back as an UPDATE.
+  const isPage = payload.mode !== 'workflow';
+  const [pageState, setPageState] = useState<Record<string, unknown>>(
+    (payload.view?.state || {}) as Record<string, unknown>,
+  );
+  const state = isPage
+    ? pageState
+    : ((payload.view?.state || {}) as Record<string, unknown>);
   const instance = payload.instance as unknown as WorkflowProps['instance'];
   const onUpdateState = useCallback(
     async (next: Record<string, unknown>) => {
-      // The host writes it to the run (or keeps it, in edit mode) and sends the
-      // run's state back as an UPDATE.
+      if (isPage) {
+        setPageState((prev) => ({ ...prev, ...next }));
+        return;
+      }
       await bridge.request('updateState', { state: next });
     },
-    [bridge],
+    [bridge, isPage],
   );
   const onError = useCallback(
     (message: string) => {
@@ -511,16 +425,11 @@ export function startFrame(win: Window, rootEl: HTMLElement): void {
   const draw = (payload: FramePayload) => {
     (win as unknown as { MAPBOX_TOKEN?: string }).MAPBOX_TOKEN =
       payload.mapboxToken || '';
-    if (payload.mode === 'workflow') {
-      (
-        win as unknown as { WORKFLOW_API_ENDPOINTS?: unknown }
-      ).WORKFLOW_API_ENDPOINTS = payload.apiEndpoints || {};
-      reactRoot.render(
-        <WorkflowFramePage payload={payload} bridge={bridge!} />,
-      );
-    } else {
-      reactRoot.render(<FramePage payload={payload} bridge={bridge!} />);
-    }
+    // One code path for pages and workflows: a page is a workflow with no run.
+    (
+      win as unknown as { WORKFLOW_API_ENDPOINTS?: unknown }
+    ).WORKFLOW_API_ENDPOINTS = payload.apiEndpoints || {};
+    reactRoot.render(<WorkflowFramePage payload={payload} bridge={bridge!} />);
   };
   const report = (message: string) =>
     bridge?.request('reportError', { message }).catch(() => undefined);
@@ -538,7 +447,7 @@ export function startFrame(win: Window, rootEl: HTMLElement): void {
       current = payload;
       const pageUrl = () => (current && current.pageUrl) || '';
       let onDownload: ((a: HTMLAnchorElement) => boolean) | undefined;
-      if (payload.mode === 'workflow') {
+      {
         // The shared map module asks this for admin boundaries (a labs path, so a
         // bridge fetch the host checks).
         (

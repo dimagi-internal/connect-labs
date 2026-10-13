@@ -39,7 +39,9 @@ import {
   type RouteContext,
 } from './routes';
 
+/** 'page' / 'workflow': what the frame draws (a page has no run). */
 export type SandboxMode = 'page' | 'workflow';
+type NavigateSet = SandboxMode | 'full';
 
 export class BridgeError extends Error {}
 
@@ -55,7 +57,7 @@ export class BridgeError extends Error {}
 export function checkNavigate(
   url: unknown,
   labsOrigin: string,
-  mode: SandboxMode = 'page',
+  mode: NavigateSet = 'page',
 ): string {
   if (typeof url !== 'string' || !url || url.length > LIMITS.urlLength) {
     throw new BridgeError('navigate: url must be a short string');
@@ -90,7 +92,9 @@ export function checkNavigate(
   let allowed =
     NAVIGATE_PREFIXES.some((p) => path.startsWith(p)) ||
     NAVIGATE_PATTERNS.some((re) => re.test(path));
-  if (!allowed && mode === 'workflow') {
+  // `full`: a host that answers the full method set (a workflow, or a page since
+  // pages became as definable as workflows) may also lead to these.
+  if (!allowed && mode !== 'page') {
     allowed =
       (WORKFLOW_NAVIGATE_PREFIXES.some((p) => path.startsWith(p)) ||
         WORKFLOW_NAVIGATE_PATTERNS.some((re) => re.test(path))) &&
@@ -342,12 +346,21 @@ export interface DispatchOptions {
   /** User activation on the HOST page when the request arrives. */
   hasActivation: () => boolean;
   now?: () => number;
-  /** 'page' unless the host is drawing a workflow. */
+  /**
+   * What the frame draws. A page and a workflow get ONE capability set (Jonathan,
+   * 2026-10-12: "pages should be completely definable like workflows are"); the
+   * only difference is that a page has no run, so the run-only methods
+   * (RUN_ONLY_METHODS) are refused for it, and every route that names a run is
+   * refused by routes.ts because there is no run id to bind.
+   */
   mode?: SandboxMode;
-  /** Workflow mode: the ids a fetch may name (routes.ts). */
+  /** The ids a fetch may name (routes.ts). With `workflow`, the full method set. */
   routeContext?: RouteContext;
   workflow?: WorkflowHandlers;
 }
+
+/** Methods only a run answers: a page asking for one is told it has no run. */
+export const RUN_ONLY_METHODS = ['updateState', 'completeRun', 'runAction'];
 
 /** Answer one frame request at a time: `(request) => response`, never throwing. */
 export function createDispatcher(
@@ -356,7 +369,10 @@ export function createDispatcher(
 ): (request: unknown) => Promise<BridgeResponse | null> {
   const now = options.now || (() => Date.now());
   const mode: SandboxMode = options.mode || 'page';
-  const budget = RATE[mode];
+  // The full method set is answered whenever the host gave the handlers for it.
+  const full = !!(options.workflow && options.routeContext);
+  const budget = RATE[full ? 'workflow' : 'page'];
+  const noun = mode === 'workflow' ? 'workflow' : 'page';
   const recent: number[] = [];
   const grants = new Map<string, number>();
   let inFlight = 0;
@@ -368,10 +384,8 @@ export function createDispatcher(
   }
 
   function workflow(): WorkflowHandlers {
-    if (mode !== 'workflow' || !options.workflow || !options.routeContext) {
-      throw new BridgeError('not available here');
-    }
-    return options.workflow;
+    if (!full) throw new BridgeError('not available here');
+    return options.workflow as WorkflowHandlers;
   }
 
   async function limited<T>(fn: () => Promise<T>): Promise<T> {
@@ -391,7 +405,7 @@ export function createDispatcher(
     const until = grants.get(kind) || 0;
     if (until > now()) return;
     const yes = await workflow().ask(
-      `This workflow wants to ${label || 'make a change'}, as you.`,
+      `This ${noun} wants to ${label || 'make a change'}, as you.`,
     );
     if (!yes) throw new BridgeError('not allowed: the person said no');
     grants.set(kind, now() + LIMITS.effectGrantMs);
@@ -402,8 +416,8 @@ export function createDispatcher(
     // one -- a navigation after an await -- the host asks, showing where it leads.
     if (!options.hasActivation()) {
       const path = new URL(href).pathname;
-      const yes = await (mode === 'workflow'
-        ? workflow().ask(`This workflow wants to open ${path}.`)
+      const yes = await (full
+        ? workflow().ask(`This ${noun} wants to open ${path}.`)
         : Promise.resolve(false));
       if (!yes)
         throw new BridgeError('navigate needs a click on the page first');
@@ -433,8 +447,12 @@ export function createDispatcher(
         });
       }
       case 'navigate': {
-        if (mode === 'page') needsActivation('navigate');
-        const href = checkNavigate(params.url, options.labsOrigin, mode);
+        if (!full) needsActivation('navigate');
+        const href = checkNavigate(
+          params.url,
+          options.labsOrigin,
+          full ? 'full' : 'page',
+        );
         await navigateTo(href, params.newTab === true);
         return true;
       }
@@ -595,8 +613,11 @@ export function createDispatcher(
       const isWorkflowMethod = (WORKFLOW_METHODS as readonly string[]).includes(
         method,
       );
-      if (isWorkflowMethod && mode !== 'workflow') {
+      if (isWorkflowMethod && !full) {
         throw new BridgeError(`${method} is ${NOT_ON_A_PAGE}`);
+      }
+      if (mode === 'page' && RUN_ONLY_METHODS.includes(method)) {
+        throw new BridgeError(`${method} needs a run, and a page has none`);
       }
       if (
         !isWorkflowMethod &&
@@ -618,8 +639,7 @@ export function createDispatcher(
         recent.push(t);
       }
       const params = request.params === undefined ? {} : request.params;
-      const cap =
-        mode === 'workflow' ? LIMITS.workflowParamsBytes : LIMITS.paramsBytes;
+      const cap = full ? LIMITS.workflowParamsBytes : LIMITS.paramsBytes;
       if (
         !isPlainObject(params) ||
         // A download's bytes and a fetch's body are sized against their own caps.
@@ -640,8 +660,8 @@ export function createDispatcher(
         e instanceof BridgeError
           ? e.message
           : `${String(request.method)} failed: ${e instanceof Error ? e.message : String(e)}`;
-      if (mode === 'workflow' && e instanceof BridgeError) {
-        // Said on the host page, where whoever maintains the workflow can see it.
+      if (full && e instanceof BridgeError) {
+        // Said on the host page, where whoever maintains the code can see it.
         console.warn(`[sandbox] refused ${String(request.method)}: ${message}`);
       }
       return { id, error: message.slice(0, LIMITS.errorLength) };

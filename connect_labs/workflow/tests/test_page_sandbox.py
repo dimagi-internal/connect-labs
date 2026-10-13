@@ -118,9 +118,11 @@ def _assert_sandboxed(response, origin=HERE):
     assert "workflow-runner-bundle.js" in body
     for script in ("babel", "chart.umd.min.js", "mapbox-gl.js", "connect_map.js"):
         assert script not in body
-    # No per-worker data and no visit-level pipelines for the frame.
-    assert "worker-one" not in body
-    assert '"streamPipelineData": null' in body and '"queryPipelineRows": null' in body
+    # A page is as definable as a workflow (Jonathan, 2026-10-12): its workers and its
+    # pipelines are loaded for the frame like a workflow's; only the run endpoints are gone.
+    assert '"streamPipelineData": "/labs/workflow/api/47/pipeline-data/stream/"' in body
+    assert '"queryPipelineRows": "/labs/workflow/api/47/pipeline-query/"' in body
+    assert '"updateState": null' in body and '"completeRun": null' in body
     return body
 
 
