@@ -1,0 +1,115 @@
+{
+  "_about": "Where seasonal malaria chemoprevention (SMC) runs in Nigeria, by state. A state where SMC runs ANYWHERE is not a PMC candidate: the PMC model is whole-state, so it cannot count only the LGAs SMC does not reach, and valuing PMC there as if no chemoprevention ran overstates it. Compiled 2026-10-13 from PMI's FY2023 Nigeria MOP (Table 2, 2022 LGAs), Malaria Consortium's 2024 SMC coverage report and 2024-2026 state reports; the federal government's 2026 statement names the same set (19 northern states, FCT and Oyo). Update this file when the national SMC plan changes.",
+  "states": {
+    "Sokoto": {
+      "smc": "statewide",
+      "year": 2024,
+      "source": "https://www.malariaconsortium.org/assets/global/2024-SMC-Coverage-Report.pdf"
+    },
+    "Kebbi": {
+      "smc": "statewide",
+      "year": 2024,
+      "source": "https://www.malariaconsortium.org/assets/global/2024-SMC-Coverage-Report.pdf"
+    },
+    "Borno": {
+      "smc": "statewide",
+      "year": 2024,
+      "source": "https://www.malariaconsortium.org/assets/global/2024-SMC-Coverage-Report.pdf"
+    },
+    "Bauchi": {
+      "smc": "statewide",
+      "year": 2024,
+      "source": "https://www.malariaconsortium.org/assets/global/2024-SMC-Coverage-Report.pdf"
+    },
+    "Zamfara": {
+      "smc": "statewide",
+      "year": 2025,
+      "source": "https://von.gov.ng/?p=448435"
+    },
+    "Kano": {
+      "smc": "statewide",
+      "year": 2022,
+      "source": "https://files.givewell.org/files/DWDA%202009/Malaria%20Consortium/US_Presidents_Malaria_Initiative_Nigeria_Malaria_Operational_Plan_FY_2023.pdf"
+    },
+    "Katsina": {
+      "smc": "statewide",
+      "year": 2022,
+      "source": "https://files.givewell.org/files/DWDA%202009/Malaria%20Consortium/US_Presidents_Malaria_Initiative_Nigeria_Malaria_Operational_Plan_FY_2023.pdf"
+    },
+    "Jigawa": {
+      "smc": "statewide",
+      "year": 2022,
+      "source": "https://files.givewell.org/files/DWDA%202009/Malaria%20Consortium/US_Presidents_Malaria_Initiative_Nigeria_Malaria_Operational_Plan_FY_2023.pdf"
+    },
+    "Kaduna": {
+      "smc": "statewide",
+      "year": 2022,
+      "source": "https://files.givewell.org/files/DWDA%202009/Malaria%20Consortium/US_Presidents_Malaria_Initiative_Nigeria_Malaria_Operational_Plan_FY_2023.pdf"
+    },
+    "Yobe": {
+      "smc": "statewide",
+      "year": 2022,
+      "source": "https://files.givewell.org/files/DWDA%202009/Malaria%20Consortium/US_Presidents_Malaria_Initiative_Nigeria_Malaria_Operational_Plan_FY_2023.pdf"
+    },
+    "Gombe": {
+      "smc": "statewide",
+      "year": 2022,
+      "source": "https://files.givewell.org/files/DWDA%202009/Malaria%20Consortium/US_Presidents_Malaria_Initiative_Nigeria_Malaria_Operational_Plan_FY_2023.pdf"
+    },
+    "Niger": {
+      "smc": "statewide",
+      "year": 2022,
+      "source": "https://files.givewell.org/files/DWDA%202009/Malaria%20Consortium/US_Presidents_Malaria_Initiative_Nigeria_Malaria_Operational_Plan_FY_2023.pdf"
+    },
+    "Plateau": {
+      "smc": "statewide",
+      "year": 2024,
+      "source": "https://www.malariaconsortium.org/assets/global/2024-SMC-Coverage-Report.pdf"
+    },
+    "Nasarawa": {
+      "smc": "statewide",
+      "year": 2024,
+      "source": "https://www.malariaconsortium.org/assets/global/2024-SMC-Coverage-Report.pdf"
+    },
+    "Kogi": {
+      "smc": "statewide",
+      "year": 2024,
+      "source": "https://www.malariaconsortium.org/assets/global/2024-SMC-Coverage-Report.pdf"
+    },
+    "Abuja Federal Capital Territory": {
+      "smc": "statewide",
+      "year": 2024,
+      "source": "https://www.malariaconsortium.org/assets/global/2024-SMC-Coverage-Report.pdf"
+    },
+    "Adamawa": {
+      "smc": "some_lgas",
+      "detail": "19 of 21 LGAs",
+      "year": 2025,
+      "source": "https://leadership.ng/malaria-campaigns-sfh-reached-45m-people-protected-4-1m-children-in-2025/"
+    },
+    "Taraba": {
+      "smc": "some_lgas",
+      "detail": "9 of 16 LGAs",
+      "year": 2022,
+      "source": "https://files.givewell.org/files/DWDA%202009/Malaria%20Consortium/US_Presidents_Malaria_Initiative_Nigeria_Malaria_Operational_Plan_FY_2023.pdf"
+    },
+    "Kwara": {
+      "smc": "some_lgas",
+      "detail": "11 of 16 LGAs",
+      "year": 2025,
+      "source": "https://von.gov.ng/kwara-targets-700000-children-for-malaria-prevention/"
+    },
+    "Benue": {
+      "smc": "some_lgas",
+      "detail": "8 of 23 LGAs in 2022; all 23 planned for 2026",
+      "year": 2026,
+      "source": "https://www.vanguardngr.com/2026/08/benue-approves-n294-5m-counterpart-fund-for-2026-malaria-campaign/"
+    },
+    "Oyo": {
+      "smc": "some_lgas",
+      "detail": "6 of 33 LGAs (the north)",
+      "year": 2024,
+      "source": "https://www.malariaconsortium.org/assets/global/2024-SMC-Coverage-Report.pdf"
+    }
+  }
+}

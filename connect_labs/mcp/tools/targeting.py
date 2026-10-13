@@ -1820,6 +1820,11 @@ def targeting_pmc_run_status(user, *, run_id, state, cost_per_visit=None, platfo
         "several states. For a single schedule what-if the grid does not hold (other months, rounds, ages or "
         "coverage in one state) use targeting_pmc_run_model; for the national comparison of the six PMC "
         "schedules in one modelled setting use targeting_pmc_schedules. "
+        "WHICH STATES: a state where seasonal malaria chemoprevention (SMC) already runs is not a PMC "
+        "candidate -- the answer's 'smc' names each one in the selection (statewide or some LGAs, with its "
+        "source); leave those out unless the visitor asks, and say why (PMC there would be valued as if no "
+        "chemoprevention ran). Do not apply a rainfall or prevalence cutoff: the ranking and GiveWell's bar "
+        "already drop low-transmission states. "
         "ANSWER BRIEFLY -- it is read in a narrow (~400px) side panel: one sentence naming the top pair and "
         "how many of the ranked states clear the bar (states_clearing_bar; say plainly when few or none do -- a "
         "top 10 is not a recommendation if it sits below the bar); the ranked pairs as a table of AT MOST "
@@ -1924,9 +1929,6 @@ def targeting_pmc_run_status(user, *, run_id, state, cost_per_visit=None, platfo
         },
         "additionalProperties": False,
     },
-    # The candidate-states View (ui://labs/pmc-states): a host that speaks MCP Apps draws the
-    # answer as states to tick, re-totalled as the viewer through this same tool.
-    meta=tool_meta(PMC_STATES_URI, "model", "app"),
 )
 def targeting_pmc_rank(
     user,
@@ -1994,10 +1996,72 @@ def targeting_pmc_rank(
         q["states"] = ",".join(n for n in dict.fromkeys(names) if n in grid["states"])
     from django.conf import settings
 
+    smc = rank.smc_status()
+    considered = [p["state"] for p in out["best_per_state"]] + [e["state"] for e in out["excluded"]]
     return {
         "available": True,
         **out,
+        # SMC already runs here: not a PMC candidate (data/nga_smc_states.json, sourced).
+        "smc": {n: smc[n] for n in dict.fromkeys(considered) if n in smc},
         "explorer_path": f"{reverse('targeting:pmc')}?{urlencode(q)}",
         # Absolute, for a View: it may open only an https link, and it builds one per selection.
         "explorer_url": f"{(getattr(settings, 'LABS_PUBLIC_URL', '') or '').rstrip('/')}{reverse('targeting:pmc')}",
+    }
+
+
+@register(
+    name="targeting_pmc_states",
+    description=(
+        "Show the visitor the PMC candidate states as an interactive card they can work with: each state with "
+        "its multiple of GiveWell's bar on the lower death estimate and the range across both estimates, the "
+        "recommended states ticked, a price switch (at scale / at launch), a live total as they tick, and a "
+        "button that opens their selection in the PMC explorer. CALL IT when the visitor is CHOOSING STATES "
+        "(e.g. on the targeting map), once you know the states to consider and the price -- pass every state "
+        "that qualifies, not only your pick, so they can swap one in. Do NOT call it on the PMC explorer page "
+        "itself (resource labs-targeting://pmc): that page already shows the answer, and a second copy in the "
+        "chat is noise. Use targeting_pmc_rank for your own reasoning and numbers; this tool is the visitor's "
+        "card. After calling it, say one line pointing to the card -- do not repeat its numbers."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "states": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "The states to show (every qualifying state). Default: all.",
+            },
+            "deaths_basis": {"type": "string", "enum": ["lower", "prevalence_scaled", "map"]},
+            "ages": {"type": "string", "enum": ["3_24", "12_24", "any"]},
+            **_PMC_COST_PROPS,
+        },
+        "additionalProperties": False,
+    },
+    # The candidate-states View (ui://labs/pmc-states). It re-asks and re-totals as the viewer
+    # through targeting_pmc_rank; this tool only puts the card in the chat.
+    meta=tool_meta(PMC_STATES_URI, "model", "app"),
+)
+def targeting_pmc_states(
+    user, *, states=None, cost_per_visit=None, platform_fee=None, dose_rate=None, deaths_basis="lower", ages="3_24"
+):
+    out = targeting_pmc_rank(
+        user,
+        states=states,
+        top_n=1,
+        cost_per_visit=cost_per_visit,
+        platform_fee=platform_fee,
+        dose_rate=dose_rate,
+        deaths_basis=deaths_basis,
+        ages=ages,
+    )
+    if not out.get("available"):
+        return out
+    reco = out.get("recommendation") or {}
+    # The agent gets the card's headline, not the whole ranking again: it already has that.
+    return {
+        "available": True,
+        "card": "shown to the visitor",
+        "recommendation": {k: reco.get(k) for k in ("label", "keep", "drop", "multiple_of_benchmark", "by_basis")},
+        "costs": out.get("costs"),
+        "explorer_path": out.get("explorer_path"),
+        "explorer_url": out.get("explorer_url"),
     }

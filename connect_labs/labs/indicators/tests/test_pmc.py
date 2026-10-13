@@ -217,9 +217,10 @@ class TestThePage:
         body = resp.content.decode()
 
         assert "Fitted per state. Illustrative" in body
-        picker = {s["name"]: s["perennial"] for s in resp.context["grid_states"]}
-        # Kano is seasonal, Lagos is too low in transmission; Ondo is year-round.
-        assert picker == {"Kano": False, "Lagos": False, "Ondo": True}
+        picker = {s["name"]: s["smc"] for s in resp.context["grid_states"]}
+        # SMC already runs in Kano; Ondo and Lagos run none (the ranking, not a cutoff, deals with Lagos).
+        assert picker == {"Kano": "statewide", "Lagos": None, "Ondo": None}
+        assert "Where SMC doesn" in body and 'data-preset="perennial"' not in body
 
     def test_the_rank_endpoint_is_the_agents_ranking_at_the_visitors_prices(
         self, client_in, nigeria, settings, monkeypatch
