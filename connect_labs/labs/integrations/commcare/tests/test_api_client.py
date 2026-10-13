@@ -288,3 +288,65 @@ class TestFormPagingIsStable:
             forms = list(getattr(client, method)(xmlns="x"))
 
         assert [f["id"] for f in forms] == ["a", "b", "c"]
+
+
+class TestFetchFormsRaiseOnHttpError:
+    """raise_on_http_error=True (used by cchq_fetcher.py for every cchq_forms
+    pipeline) turns a silent partial/empty result into a real exception --
+    same fix as TestFetchCasesRaiseOnHttpError above, for forms. Without it,
+    a non-auth HTTP error (a transient 5xx, a timeout) on page 2+ of a
+    cold-cache walk was silently cached as a short-but-complete dataset, with
+    nothing anywhere -- not the cache, not the pipeline result, not the
+    render code -- able to tell "page 2 failed" from "there were only 2
+    pages." Reproduced live on opp 765's MBW Visit Verification dashboard:
+    a first-of-the-day cold-cache load landed on far fewer passed visits
+    than the day before, with no error or warning anywhere on the page."""
+
+    @pytest.mark.parametrize("method", ["fetch_forms", "iter_forms"])
+    def test_non_auth_http_error_still_returns_partial_results_by_default(self, method):
+        """Unchanged legacy behavior when the caller doesn't opt in."""
+        client = _client()
+        second_page_error = MagicMock(spec=httpx.Response)
+        second_page_error.status_code = 500
+        second_page_error.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "500 error", request=MagicMock(), response=second_page_error
+        )
+        pages = [_forms_page(["a"], next_url=self.NEXT), second_page_error]
+
+        with (
+            patch("httpx.get", side_effect=pages),
+            patch.object(client, "check_token_valid", return_value=True),
+            patch.object(client, "_validate_pagination_url", return_value=True),
+        ):
+            forms = list(getattr(client, method)(xmlns="x"))
+
+        assert [f["id"] for f in forms] == ["a"]
+
+    @pytest.mark.parametrize("method", ["fetch_forms", "iter_forms"])
+    def test_non_auth_http_error_raises_when_opted_in(self, method):
+        client = _client()
+        second_page_error = MagicMock(spec=httpx.Response)
+        second_page_error.status_code = 500
+        second_page_error.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "500 error", request=MagicMock(), response=second_page_error
+        )
+        pages = [_forms_page(["a"], next_url=self.NEXT), second_page_error]
+
+        with (
+            patch("httpx.get", side_effect=pages),
+            patch.object(client, "check_token_valid", return_value=True),
+            patch.object(client, "_validate_pagination_url", return_value=True),
+        ):
+            with pytest.raises(httpx.HTTPStatusError):
+                list(getattr(client, method)(xmlns="x", raise_on_http_error=True))
+
+    @pytest.mark.parametrize("method", ["fetch_forms", "iter_forms"])
+    def test_request_error_raises_when_opted_in(self, method):
+        client = _client()
+
+        with (
+            patch("httpx.get", side_effect=httpx.ConnectError("connection refused")),
+            patch.object(client, "check_token_valid", return_value=True),
+        ):
+            with pytest.raises(httpx.ConnectError):
+                list(getattr(client, method)(xmlns="x", raise_on_http_error=True))

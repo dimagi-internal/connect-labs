@@ -704,11 +704,22 @@ class CommCareDataAccess:
         limit: int = 2500,
         received_on_start: str | None = None,
         received_on_end: str | None = None,
+        raise_on_http_error: bool = False,
     ) -> list[dict]:
         """Fetch form submissions from CCHQ Form API v1.
 
         Uses /a/{domain}/api/form/v1/ with optional xmlns filter.
         Paginates via meta.next URLs.
+
+        Args:
+            raise_on_http_error: If True, a non-auth HTTP/network error on any
+                page re-raises instead of silently returning whatever was
+                accumulated so far. Defaults to False to preserve existing
+                behavior for callers that already tolerate a partial result —
+                set True for callers where a silent partial/truncated result
+                would be mistaken for "this is the complete dataset" (e.g.
+                analysis pipelines; mirrors fetch_cases's own flag of the same
+                name, added for the identical reason).
         """
         if not self.check_token_valid():
             raise ValueError(
@@ -794,9 +805,13 @@ class CommCareDataAccess:
             raise
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP {e.response.status_code} fetching forms from CommCare (page {page}): {e}")
+            if raise_on_http_error:
+                raise
             return all_forms
         except httpx.RequestError as e:
             logger.error(f"Request error fetching forms from CommCare (page {page}): {e}")
+            if raise_on_http_error:
+                raise
             return all_forms
 
         logger.info(f"Fetched total of {len(all_forms)} forms from CommCare")
@@ -809,6 +824,7 @@ class CommCareDataAccess:
         limit: int = 2500,
         received_on_start: str | None = None,
         received_on_end: str | None = None,
+        raise_on_http_error: bool = False,
     ) -> Iterator[dict]:
         """Yield forms one page at a time without holding the full result set.
 
@@ -821,8 +837,14 @@ class CommCareDataAccess:
 
         Auth-error retry semantics match fetch_forms: 401/403 triggers one
         token-refresh-and-retry of the same page; persistent failure raises
-        CCHQAuthError. Network errors after the first page log and stop the
-        iteration silently — the caller sees fewer forms but no exception.
+        CCHQAuthError. By default, a network/HTTP error on a later page logs
+        and stops the iteration silently — the caller sees fewer forms but no
+        exception, indistinguishable from "that was everything." Pass
+        raise_on_http_error=True (mirrors fetch_cases's flag of the same
+        name) when a silently truncated result would be mistaken for a
+        complete one — e.g. an eager analysis-pipeline load, where nothing
+        downstream can otherwise tell "page 4 of 10 failed" from "there were
+        only 3 pages."
         """
         if not self.check_token_valid():
             raise ValueError(
@@ -906,9 +928,13 @@ class CommCareDataAccess:
             raise
         except httpx.HTTPStatusError as e:
             logger.error(f"[iter_forms] HTTP {e.response.status_code} on page {page}: {e}")
+            if raise_on_http_error:
+                raise
             return
         except httpx.RequestError as e:
             logger.error(f"[iter_forms] Request error on page {page}: {e}")
+            if raise_on_http_error:
+                raise
             return
 
         logger.info(f"[iter_forms] Done — yielded {total_yielded} forms total from CommCare")
