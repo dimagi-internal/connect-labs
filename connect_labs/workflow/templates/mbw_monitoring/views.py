@@ -1355,6 +1355,12 @@ class MBWSaveSnapshotView(LoginRequiredMixin, View):
 
         if not run:
             return JsonResponse({"error": "Run not found"}, status=404)
+        # From the sandbox frame: only the run of the workflow drawing it.
+        from connect_labs.workflow import declared_reads
+
+        refused = declared_reads.run_refusal(request, run)
+        if refused is not None:
+            return refused
 
         # Re-read GPS visits from pipeline cache if not already embedded
         gps_data = snapshot_data.get("gps_data")

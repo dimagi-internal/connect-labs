@@ -1568,6 +1568,12 @@ function WorkflowRunner({
       programIds,
       organizationKey: scope?.organization?.slug || null,
       readableDefinitionIds: ids(sandbox?.readable_definitions || []),
+      // Its own pipelines; an available-pipelines answer adds what it offers.
+      pipelineIds: ids(
+        (initialData.definition.pipeline_sources || []).map(
+          (src: { pipeline_id?: unknown }) => src.pipeline_id,
+        ),
+      ),
       jobIds: typeof activeJob === 'string' ? [activeJob] : [],
       defaultScope: ownOpp
         ? { name: 'opportunity_id', value: String(ownOpp) }

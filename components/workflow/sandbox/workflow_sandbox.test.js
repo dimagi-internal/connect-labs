@@ -104,8 +104,13 @@ describe('routes: what a workflow can reach', () => {
     expect(
       checkFetch('/labs/workflow/api/run/900/state/', 'POST', CTX).gate,
     ).toBe('own');
+    // Another run's state is not this run's own write: it is an effect the host asks
+    // about, and the server binds it to a declared workflow (declared_reads.py).
+    const other = checkFetch('/labs/workflow/api/run/901/state/', 'POST', CTX);
+    expect(other.gate).toBe('effect');
+    expect(other.label).toMatch(/saved state of run/);
     expect(() =>
-      checkFetch('/labs/workflow/api/run/901/state/', 'POST', CTX),
+      checkFetch('/labs/workflow/api/run/901/flags/', 'POST', CTX),
     ).toThrow(/a run this workflow does not cover/);
     expect(() =>
       checkFetch('/labs/workflow/api/41/audit-batch-config/', 'POST', CTX),
@@ -937,8 +942,11 @@ describe('a page can do everything a workflow can, except what needs a run', () 
     expect(checkFetch('/tasks/api/single-create/', 'POST', PAGE_CTX).gate).toBe(
       'effect',
     );
+    // A declared workflow's run's state: an effect, asked, for a page as for a workflow.
+    expect(
+      checkFetch('/labs/workflow/api/run/900/state/', 'POST', PAGE_CTX).gate,
+    ).toBe('effect');
     for (const url of [
-      '/labs/workflow/api/run/900/state/',
       '/labs/workflow/api/run/900/job/start/',
       '/labs/workflow/api/run/900/complete/',
       '/labs/workflow/api/run/900/worker-result/',
@@ -1195,5 +1203,392 @@ describe('review fixes', () => {
       checkFetch(url, 'POST', CTX, JSON.stringify({ per_opp: { 10: {} } }))
         .gate,
     ).toBe('own');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Every live copy runs sandboxed (2026-10-13): what the live scan found missing
+// ---------------------------------------------------------------------------
+
+describe('the deprecated MBW monitoring dashboards', () => {
+  it('reach their own endpoints, bound to their opportunity and run', () => {
+    for (const [url, method] of [
+      ['/custom_analysis/mbw_monitoring/api/oauth-status/?next=%2Fx%2F', 'GET'],
+      ['/custom_analysis/mbw_monitoring/api/snapshot/?run_id=900', 'GET'],
+      [
+        '/custom_analysis/mbw_monitoring/api/gps/some.user/?opportunity_id=10&start_date=2026-01-01',
+        'GET',
+      ],
+      [
+        '/custom_analysis/mbw_monitoring/stream/?opportunity_id=10&run_id=900',
+        'GET',
+      ],
+    ]) {
+      expect(checkFetch(url, method, CTX).gate, url).toBe('read');
+    }
+    expect(
+      checkFetch(
+        '/custom_analysis/mbw_monitoring/api/opportunity-flws/',
+        'POST',
+        CTX,
+        JSON.stringify({ opportunities: [10] }),
+      ).gate,
+    ).toBe('read');
+    // Another run's snapshot, another opportunity's stream or workers: refused.
+    expect(() =>
+      checkFetch(
+        '/custom_analysis/mbw_monitoring/api/snapshot/?run_id=901',
+        'GET',
+        CTX,
+      ),
+    ).toThrow(/does not cover/);
+    expect(() =>
+      checkFetch(
+        '/custom_analysis/mbw_monitoring/stream/?opportunity_id=99',
+        'GET',
+        CTX,
+      ),
+    ).toThrow(/does not cover/);
+    expect(() =>
+      checkFetch(
+        '/custom_analysis/mbw_monitoring/api/opportunity-flws/',
+        'POST',
+        CTX,
+        JSON.stringify({ opportunities: [99] }),
+      ),
+    ).toThrow(/does not cover/);
+    // Its other write endpoints (suspend a user, a session result) stay off the table.
+    for (const url of [
+      '/custom_analysis/mbw_monitoring/api/suspend-user/',
+      '/custom_analysis/mbw_monitoring/api/session/complete/',
+    ]) {
+      expect(() => checkFetch(url, 'POST', CTX, '{}'), url).toThrow(
+        /cannot be reached/,
+      );
+    }
+  });
+
+  it('save a snapshot of THIS run only', () => {
+    const body = (b) => JSON.stringify(b);
+    const ok = checkFetch(
+      '/custom_analysis/mbw_monitoring/api/save-snapshot/?opportunity_id=10',
+      'POST',
+      CTX,
+      body({ run_id: 900, opportunity_id: 10, snapshot_data: { a: 1 } }),
+    );
+    expect(ok.gate).toBe('own');
+    expect(JSON.parse(ok.body).run_id).toBe(900);
+    for (const b of [
+      { run_id: 901, snapshot_data: {} },
+      { snapshot_data: {} },
+      { run_id: 900, opportunity_id: 99, snapshot_data: {} },
+    ]) {
+      expect(() =>
+        checkFetch(
+          '/custom_analysis/mbw_monitoring/api/save-snapshot/',
+          'POST',
+          CTX,
+          body(b),
+        ),
+      ).toThrow(/does not cover/);
+    }
+    // In edit mode there is no run to save to.
+    expect(() =>
+      checkFetch(
+        '/custom_analysis/mbw_monitoring/api/save-snapshot/',
+        'POST',
+        { ...CTX, runId: null },
+        body({ run_id: 900 }),
+      ),
+    ).toThrow(/does not cover/);
+  });
+});
+
+describe("a workflow's own data sources (attach / detach a pipeline)", () => {
+  const ctx = () => ({ ...CTX, pipelineIds: [6619], jobIds: [] });
+
+  it('reads the pipelines on offer and only those, or its own', () => {
+    const c = ctx();
+    expect(
+      checkFetch('/labs/workflow/api/available-pipelines/', 'GET', c)
+        .remembersPipelines,
+    ).toBe(true);
+    expect(checkFetch('/labs/workflow/api/pipeline/6619/', 'GET', c).gate).toBe(
+      'read',
+    );
+    expect(() =>
+      checkFetch('/labs/workflow/api/pipeline/7000/', 'GET', c),
+    ).toThrow(/a pipeline this workflow does not cover/);
+    // ...and never the pipeline's other endpoints (schema writes, sharing, SQL).
+    for (const url of [
+      '/labs/workflow/api/pipeline/6619/schema/',
+      '/labs/workflow/api/pipeline/6619/share/',
+      '/labs/workflow/api/pipeline/6619/sql/',
+    ]) {
+      expect(() => checkFetch(url, 'POST', c, '{}'), url).toThrow(
+        /cannot be reached/,
+      );
+    }
+  });
+
+  it('attaching or detaching is asked every time, naming the change', () => {
+    const c = ctx();
+    const add = checkFetch(
+      '/labs/workflow/api/42/pipeline-sources/add/',
+      'POST',
+      c,
+      JSON.stringify({ pipeline_id: 6619, alias: 'hsd' }),
+    );
+    expect(add.gate).toBe('effect');
+    expect(add.perRecord).toBe(true);
+    expect(add.question).toBe(
+      'change its own data sources: attach pipeline #6619 as "hsd"',
+    );
+    const remove = checkFetch(
+      '/labs/workflow/api/42/pipeline-sources/remove/',
+      'POST',
+      c,
+      JSON.stringify({ alias: 'hsd' }),
+    );
+    expect(remove.question).toBe(
+      'change its own data sources: detach the pipeline "hsd"',
+    );
+    // Another workflow's sources, a pipeline it was not offered, a stray field.
+    for (const [url, b] of [
+      [
+        '/labs/workflow/api/41/pipeline-sources/add/',
+        { pipeline_id: 6619, alias: 'x' },
+      ],
+      [
+        '/labs/workflow/api/42/pipeline-sources/add/',
+        { pipeline_id: 7000, alias: 'x' },
+      ],
+      [
+        '/labs/workflow/api/42/pipeline-sources/add/',
+        { pipeline_id: 6619, alias: '"><img>' },
+      ],
+      [
+        '/labs/workflow/api/42/pipeline-sources/add/',
+        { pipeline_id: 6619, alias: 'x', definition_id: 41 },
+      ],
+      [
+        '/labs/workflow/api/42/pipeline-sources/remove/',
+        { alias: 'x', pipeline_id: 1 },
+      ],
+    ]) {
+      expect(
+        () => checkFetch(url, 'POST', c, JSON.stringify(b)),
+        JSON.stringify(b),
+      ).toThrow();
+    }
+  });
+
+  it('the host remembers what it offered, and asks in labs’ words', async () => {
+    const c = ctx();
+    const w = workflowHandlers({
+      fetch: vi.fn(async (checked) => ({
+        status: 200,
+        statusText: 'OK',
+        headers: { 'content-type': 'application/json' },
+        body: new TextEncoder().encode(
+          JSON.stringify(
+            checked.href.endsWith('/available-pipelines/')
+              ? { pipelines: [{ id: 7000, name: 'Other' }, { id: 'x' }] }
+              : { success: true },
+          ),
+        ).buffer,
+      })),
+    });
+    const d = createDispatcher(pageHandlers(), {
+      labsOrigin: LABS,
+      hasActivation: () => true,
+      mode: 'workflow',
+      routeContext: c,
+      workflow: w,
+    });
+    const attach = {
+      method: 'fetch',
+      params: {
+        url: '/labs/workflow/api/42/pipeline-sources/add/',
+        method: 'POST',
+        body: JSON.stringify({ pipeline_id: 7000, alias: 'hsd' }),
+      },
+    };
+    expect((await d({ id: 1, ...attach })).error).toMatch(/not offered/);
+    await d({
+      id: 2,
+      method: 'fetch',
+      params: { url: '/labs/workflow/api/available-pipelines/' },
+    });
+    expect(c.pipelineIds).toEqual([6619, 7000]);
+    const out = await d({ id: 3, ...attach });
+    expect(out.error).toBeUndefined();
+    expect(w.ask).toHaveBeenCalledWith(
+      'This workflow wants to change its own data sources: attach pipeline #7000 "Other" as "hsd", as you.',
+    );
+    // Asked again for the next one: a change to the definition is never remembered.
+    await d({ id: 4, ...attach });
+    expect(w.ask).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('a control room that marks the runs it watches', () => {
+  it('reads the run links of what it declares, bound to its scope', () => {
+    expect(
+      checkFetch('/labs/workflow/?opportunity_id=10', 'GET', CTX).gate,
+    ).toBe('read');
+    expect(() =>
+      checkFetch('/labs/workflow/?opportunity_id=99', 'GET', CTX),
+    ).toThrow(/does not cover/);
+    // The list page's other addresses are not reads it may make.
+    expect(() => checkFetch('/labs/workflow/create/', 'GET', CTX)).toThrow();
+  });
+
+  it('a change to another run is asked naming it, and a yes holds for that run only', async () => {
+    const t = 1_000;
+    const { d, w } = wfDispatcher({ now: () => t });
+    const write = (i, run) =>
+      d({
+        id: i,
+        method: 'fetch',
+        params: {
+          url: `/labs/workflow/api/run/${run}/state/`,
+          method: 'POST',
+          body: JSON.stringify({ state: { baseline_excluded: true } }),
+        },
+      });
+    for (const [i, run] of [39811, 39812, 39811, 39811].entries()) {
+      expect((await write(i, run)).error).toBeUndefined();
+    }
+    expect(w.ask.mock.calls.map((c) => c[0])).toEqual([
+      'This workflow wants to change the saved state of run 39811, as you.',
+      'This workflow wants to change the saved state of run 39812, as you.',
+    ]);
+    // The request carries who it is for: the server takes it only for a declared one.
+    expect(w.fetch.mock.calls[0][0].sandboxFor).toBe('42');
+    // This run's own state is still asked nothing.
+    await d({
+      id: 9,
+      method: 'fetch',
+      params: {
+        url: '/labs/workflow/api/run/900/state/',
+        method: 'POST',
+        body: '{"state":{}}',
+      },
+    });
+    expect(w.ask).toHaveBeenCalledTimes(2);
+  });
+
+  it('the only paths two routes share are a run’s state (own here, an effect elsewhere)', () => {
+    // A request falls through to a later route only on a binding miss: list where that
+    // can happen, so a new overlap is a decision, not an accident.
+    function expand(src) {
+      const start = src.indexOf('(');
+      if (start === -1) return [src.replace(/\\(.)/g, '$1')];
+      let depth = 0;
+      let end = start;
+      for (; end < src.length; end++) {
+        if (src[end] === '(' && src[end - 1] !== '\\') depth++;
+        if (src[end] === ')' && src[end - 1] !== '\\') depth--;
+        if (depth === 0) break;
+      }
+      const optional = src[end + 1] === '?';
+      const inner = src.slice(start + 1, end).replace(/^\?<\w+>/, '');
+      let options;
+      if (inner === '\\d+') options = ['7'];
+      else if (/^\[.*\]\+$/.test(inner)) options = ['x'];
+      else {
+        const parts = [];
+        let d = 0;
+        let last = 0;
+        for (let k = 0; k < inner.length; k++) {
+          if (inner[k] === '(') d++;
+          if (inner[k] === ')') d--;
+          if (inner[k] === '|' && d === 0) {
+            parts.push(inner.slice(last, k));
+            last = k + 1;
+          }
+        }
+        parts.push(inner.slice(last));
+        options = parts.flatMap(expand);
+      }
+      if (optional) options = [...options, ''];
+      const rest = expand(src.slice(end + (optional ? 2 : 1)));
+      const head = src.slice(0, start).replace(/\\(.)/g, '$1');
+      return options.flatMap((o) => rest.map((r) => head + o + r));
+    }
+    const overlapping = new Set();
+    ROUTES.forEach((r, i) => {
+      for (const probe of expand(r.path.source.slice(1, -1))) {
+        ROUTES.forEach((other, j) => {
+          if (j <= i || !r.methods.some((m) => other.methods.includes(m)))
+            return;
+          if (other.path.test(probe)) overlapping.add(probe);
+        });
+      }
+    });
+    expect([...overlapping]).toEqual(['/labs/workflow/api/run/7/state/']);
+  });
+});
+
+describe('the MBW views that read a run by another name', () => {
+  it('session_id is bound like run_id', () => {
+    for (const url of [
+      '/custom_analysis/mbw_monitoring/api/snapshot/?session_id=901',
+      '/custom_analysis/mbw_monitoring/stream/?program_id=7&session_id=901',
+    ]) {
+      expect(() => checkFetch(url, 'GET', CTX), url).toThrow(/does not cover/);
+    }
+    expect(
+      checkFetch(
+        '/custom_analysis/mbw_monitoring/api/snapshot/?session_id=900',
+        'GET',
+        CTX,
+      ).gate,
+    ).toBe('read');
+  });
+});
+
+describe('a sign-in start comes back to where the person was', () => {
+  it('its next is allowed when it is itself a labs page a link could open', () => {
+    const ok = checkNavigate(
+      '/labs/commcare/initiate/?next=' +
+        encodeURIComponent('/labs/workflow/42/run/?run_id=900'),
+      LABS,
+      'full',
+    );
+    expect(new URL(ok).pathname).toBe('/labs/commcare/initiate/');
+    for (const next of [
+      '/o/authorize/?client_id=x',
+      '//evil.example/',
+      'https://evil.example/',
+      '/labs/ocs/initiate/?next=/o/authorize/',
+      '/labs/workflow/42/run/?next=/o/authorize/',
+      '/labs/mcp/tokens/',
+    ]) {
+      expect(
+        () =>
+          checkNavigate(
+            '/labs/ocs/initiate/?next=' + encodeURIComponent(next),
+            LABS,
+            'full',
+          ),
+        next,
+      ).toThrow();
+    }
+    // Two nexts, a redirect param, or the page set (no sign-in starts there): refused.
+    expect(() =>
+      checkNavigate(
+        '/labs/ocs/initiate/?next=/labs/p/x/&next=/o/',
+        LABS,
+        'full',
+      ),
+    ).toThrow();
+    expect(() =>
+      checkNavigate('/labs/ocs/initiate/?redirect=/labs/p/x/', LABS, 'full'),
+    ).toThrow();
+    expect(() =>
+      checkNavigate('/labs/workflow/42/run/?next=/labs/p/x/', LABS, 'full'),
+    ).toThrow();
   });
 });

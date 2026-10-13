@@ -349,3 +349,107 @@ def test_a_report_that_names_this_review_lets_it_read_its_run(wda, key):
             wda.get_run.return_value = _run(STRANGER)
             response = preview_snapshot_api(_req("/labs/workflow/api/run/900/snapshot/preview/"), run_id=900)
         assert response.status_code == status, target.data
+
+
+# --- writes to another workflow's run, and the workflow list (2026-10-13) ------------
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "definition_id, sandbox_for, status",
+    [(READER, READER, 200), (DECLARED, READER, 200), (STRANGER, READER, 403), (STRANGER, None, 200)],
+)
+def test_a_frame_writes_the_state_only_of_its_own_or_a_declared_workflows_run(wda, definition_id, sandbox_for, status):
+    from connect_labs.workflow.views import update_state_api
+
+    run = _run(definition_id)
+    run.data["status"] = "in_progress"
+    wda.get_run.return_value = run
+    wda.update_run_state.return_value = run
+    with patch("connect_labs.workflow.views.s3_export"):
+        response = update_state_api(
+            _req(
+                "/labs/workflow/api/run/900/state/", sandbox_for=sandbox_for, method="post", body={"state": {"x": 1}}
+            ),
+            run_id=900,
+        )
+    assert response.status_code == status
+    assert wda.update_run_state.called is (status == 200)
+
+
+@pytest.mark.django_db
+def test_own_runs_state_is_written_even_when_the_reader_cannot_be_read():
+    from connect_labs.workflow.views import update_state_api
+
+    with (
+        patch("connect_labs.workflow.views.WorkflowDataAccess") as V,
+        patch("connect_labs.workflow.data_access.WorkflowDataAccess") as D,
+        patch("connect_labs.workflow.views.s3_export"),
+    ):
+        D.return_value.get_definition.return_value = None
+        run = _run(READER)
+        run.data["status"] = "in_progress"
+        V.return_value.get_run.return_value = run
+        V.return_value.update_run_state.return_value = run
+        response = update_state_api(
+            _req("/labs/workflow/api/run/900/state/", method="post", body={"state": {"x": 1}}), run_id=900
+        )
+        assert response.status_code == 200
+        # ...while another (declared or not) workflow's run is refused: nothing is declared.
+        V.return_value.get_run.return_value = _run(DECLARED)
+        response = update_state_api(
+            _req("/labs/workflow/api/run/900/state/", method="post", body={"state": {"x": 1}}), run_id=900
+        )
+        assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_the_workflow_list_answers_a_frame_with_only_the_declared_run_links(wda):
+    wda.list_runs.return_value = [
+        _run(DECLARED, run_id=901, created_at="2026-09-01T10:00:00Z"),
+        _run(STRANGER, run_id=902, created_at="2026-09-02T10:00:00Z"),
+        _run(READER, run_id=903, created_at="2026-09-03T10:00:00Z"),
+    ]
+    from connect_labs.workflow.views import WorkflowListView
+
+    request = _req("/labs/workflow/?opportunity_id=10")
+    response = WorkflowListView.as_view()(request)
+    body = response.content.decode()
+    assert response.status_code == 200
+    assert f'/labs/workflow/{DECLARED}/run/?run_id=901">Run #901</a> 2026-09-01' in body
+    assert f"/labs/workflow/{READER}/run/?run_id=903" in body
+    assert "902" not in body
+    # Nothing of the list page: no CSRF token, no other workflow.
+    assert "csrf" not in body.lower()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("definition_id, status", [(READER, 200), (STRANGER, 404)])
+def test_the_mbw_dashboard_reads_only_its_own_monitoring_run_from_the_frame(definition_id, status):
+    from connect_labs.workflow.templates.mbw_monitoring.views import MBWSnapshotView
+
+    run = _run(definition_id, state={"selected_workers": ["w1"], "dashboard_snapshot": {"timestamp": "t"}})
+    with (
+        patch("connect_labs.workflow.templates.mbw_monitoring.session_adapter.WorkflowDataAccess") as A,
+        patch("connect_labs.workflow.data_access.WorkflowDataAccess") as D,
+    ):
+        A.return_value.get_run.return_value = run
+        D.return_value.get_definition.return_value = _definition(COMPANION, id_=READER)
+        request = _req("/custom_analysis/mbw_monitoring/api/snapshot/?session_id=900")
+        response = MBWSnapshotView.as_view()(request)
+    assert response.status_code == status
+
+
+@pytest.mark.django_db
+def test_the_mbw_snapshot_is_saved_only_to_its_own_run_from_the_frame(wda):
+    from connect_labs.workflow.templates.mbw_monitoring.views import MBWSaveSnapshotView
+
+    with patch("connect_labs.workflow.templates.mbw_monitoring.views.WorkflowDataAccess") as V:
+        V.return_value.get_run.return_value = _run(STRANGER)
+        request = _req(
+            "/custom_analysis/mbw_monitoring/api/save-snapshot/",
+            method="post",
+            body={"run_id": 900, "snapshot_data": {}},
+        )
+        response = MBWSaveSnapshotView.as_view()(request)
+    assert response.status_code == 403
