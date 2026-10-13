@@ -91,14 +91,15 @@ def test_staff_may_edit_any_page(member_of_acme, monkeypatch):
     assert page_mode.page_edit_refusal(request, _record(pm.PAGE), {"program_id": 25}) is None
 
 
-def test_a_dimagi_sign_in_is_staff_for_editing_a_page(member_of_acme, monkeypatch):
-    """Staff was Django `is_staff` alone, which no OAuth-created labs user carries."""
+def test_a_dimagi_sign_in_does_not_edit_a_real_programs_page_it_is_not_in(member_of_acme, monkeypatch):
+    """Ruling 2026-10-13: a Dimagi email is staff only on a labs-only scope; a real program's page is its members'."""
     from connect_labs.workflow import page_mode
 
     _not_in_programme_25(monkeypatch)
     request = pm._request("/labs/p/org/acme/", context={})
-    assert page_mode.page_edit_refusal(request, _record(pm.PAGE), {"program_id": 25})
     request.user.email = "amina@dimagi.com"
+    assert page_mode.page_edit_refusal(request, _record(pm.PAGE), {"program_id": 25})
+    request.user.is_staff = True
     assert page_mode.page_edit_refusal(request, _record(pm.PAGE), {"program_id": 25}) is None
 
 

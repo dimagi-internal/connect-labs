@@ -58,3 +58,36 @@ def test_a_lookalike_domain_is_not_dimagi():
 
 def test_is_staff_alone_still_counts():
     assert service.write_refusal(caller("admin", is_staff=True), SHARED, {}) is None
+
+
+# Ruling 2026-10-13: a Dimagi sign-in is staff only on a LABS-ONLY scope. A real
+# (partner) organisation's, program's or opportunity's layer is its members' and
+# hand-granted staff's: changing it changes what the partner's people see.
+
+
+@pytest.mark.parametrize(
+    "scope",
+    [Scope.of("organization", "partner-org"), Scope.of("program", 7), Scope.of("opportunity", 70)],
+    ids=["organization", "program", "opportunity"],
+)
+def test_a_dimagi_sign_in_does_not_open_a_real_scope_it_is_not_a_member_of(scope):
+    dimagi = caller("jo", holds=(), email="jo@dimagi.com")
+
+    assert service.refusal(dimagi, scope) is not None
+    assert service.write_refusal(dimagi, scope, {}) is not None
+    with pytest.raises(Forbidden):
+        service.update("t", scope, {"a": 1}, dimagi)
+
+
+def test_a_dimagi_sign_in_opens_a_labs_only_program_it_is_not_a_member_of():
+    from connect_labs.labs.synthetic.models import SyntheticOpportunity
+
+    SyntheticOpportunity.objects.create(opportunity_id=10501, program_id=10500, labs_only=True, gdrive_folder_id="f")
+    dimagi = caller("jo", holds=(), email="jo@dimagi.com")
+
+    assert service.write_refusal(dimagi, Scope.of("program", 10500), {}) is None
+    assert service.write_refusal(dimagi, Scope.of("opportunity", 10501), {}) is None
+
+
+def test_hand_granted_staff_still_opens_a_real_scope():
+    assert service.write_refusal(caller("admin", is_staff=True), Scope.of("program", 7), {}) is None
