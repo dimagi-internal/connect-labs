@@ -229,6 +229,19 @@ describe('createSseParser', () => {
   });
 });
 
+describe('createSseParser on a long line in many chunks', () => {
+  it('reads it once, correctly, with a CRLF split across chunks', () => {
+    const got = [];
+    const p = createSseParser((e) => got.push(e.data));
+    const big = 'x'.repeat(200_000);
+    p.feed('data: ');
+    for (let i = 0; i < big.length; i += 1000) p.feed(big.slice(i, i + 1000));
+    p.feed('\r');
+    p.feed('\n\r\n');
+    expect(got).toEqual([big]);
+  });
+});
+
 describe('proxyStream: as the viewer, with the sandbox headers', () => {
   function sseResponse(text, init = {}) {
     return new Response(text, {

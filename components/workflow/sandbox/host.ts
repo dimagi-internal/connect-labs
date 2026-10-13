@@ -345,6 +345,7 @@ export function createSseParser(onEvent: (e: SseEvent) => void): {
   let name = '';
   let lastEventId = '';
   let started = false;
+  let scanned = 0;
   function line(raw: string) {
     if (raw === '') {
       if (data.length) {
@@ -376,12 +377,17 @@ export function createSseParser(onEvent: (e: SseEvent) => void): {
       }
       let m: RegExpExecArray | null;
       const re = /\r\n|\n|\r(?!$)/g;
+      // Only what has not been looked at yet (less one, for a \r\n split across
+      // chunks): a pipeline's rows can be one line of tens of megabytes arriving in
+      // thousands of chunks, and rescanning it from the start each time is quadratic.
+      re.lastIndex = Math.max(0, scanned - 1);
       let from = 0;
       while ((m = re.exec(buffer))) {
         line(buffer.slice(from, m.index));
         from = m.index + m[0].length;
       }
       buffer = buffer.slice(from);
+      scanned = buffer.length;
     },
     end() {
       // An event the stream did not finish with a blank line is dropped (spec).
