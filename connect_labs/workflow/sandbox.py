@@ -20,10 +20,27 @@ This module is the server half:
 * ``sandbox_render`` -- ``GET /labs/sandbox/render/``: a fixed, data-free shell,
   identical for every viewer. No login, no redirect, no CSRF token, query and suffix
   ignored (a ``frame-src`` path match does not survive a redirect).
-* ``should_sandbox`` -- THE decision, made once from the consuming definition's
-  ``kind`` in ``WorkflowRunView``.
+* ``should_sandbox`` -- THE decision, made once from the consuming definition in
+  ``WorkflowRunView``: every page, and a workflow that is switched on (phase 2).
 
-``LABS_PAGE_SANDBOX`` (default on) exists only as an emergency switch back.
+``LABS_PAGE_SANDBOX`` (default on) exists only as an emergency switch back, for
+pages and workflows alike.
+
+Phase 2 (workflows) is rolled out per workflow, because a workflow's render code
+used to reach labs directly and 40-odd templates and their live copies have to be
+checked in the frame first. ``LABS_WORKFLOW_SANDBOX`` says how far it has gone:
+
+* ``"off"`` -- no workflow is sandboxed (pages still are).
+* ``"opt_in"`` (the default) -- a workflow is sandboxed when its definition says
+  ``config.sandbox: true`` (written on every new instance of a template that has
+  been checked, since that template's DEFINITION carries it), or when its render
+  FOLLOWS a deployed template that has been checked (``TEMPLATE["sandboxed"]``),
+  or when the address asks for it with ``?sandbox=1`` (which can only turn the
+  sandbox on, never off -- a link must not be able to take a workflow out of it).
+* ``"all"`` -- every workflow, whatever its definition says.
+
+There is no per-workflow opt-out (an author must not be able to take a workflow out of
+the frame): ``config.sandbox: false`` means nothing.
 """
 
 from __future__ import annotations
@@ -55,6 +72,13 @@ GOOGLE_FONTS_CSS = "https://fonts.googleapis.com/css2"
 GOOGLE_FONTS_FILES = "https://fonts.gstatic.com"
 GOOGLE_FONTS_CSS_URL = f"{GOOGLE_FONTS_CSS}?family=Work+Sans:wght@400;500;600;700&display=swap"
 
+#: Raster tiles Leaflet maps draw (OpenStreetMap, CARTO): image GETs to tile
+#: servers nobody here controls, so not a channel out.
+TILE_HOSTS = (
+    "https://*.tile.openstreetmap.org",
+    "https://*.basemaps.cartocdn.com",
+)
+
 #: The Mapbox PATHS GL needs -- never the whole of api.mapbox.com, whose datasets and
 #: uploads APIs would be a two-way channel to whoever holds a token of their own.
 MAPBOX_PATHS = (
@@ -70,20 +94,63 @@ def sandbox_enabled() -> bool:
     return bool(getattr(settings, "LABS_PAGE_SANDBOX", True))
 
 
-def should_sandbox(definition, page_mode: bool = False) -> bool:
-    """Whether this definition's render runs in the sandbox: every page, on every route.
+WORKFLOW_SANDBOX_MODES = ("off", "opt_in", "all")
 
-    Decided from the consuming definition as read for this render (its ``kind``, or the
-    page template it was made from), whatever its ``render_source``: a template
-    workflow's render is just as author-controlled. And whenever the route draws it in
-    page mode (a page's address, a supply tab), whatever the definition says: what a
-    route draws as a page is sandboxed, fail closed.
+
+def workflow_sandbox_mode() -> str:
+    mode = str(getattr(settings, "LABS_WORKFLOW_SANDBOX", "opt_in") or "opt_in").strip().lower()
+    # An unknown value is read as the default, never as "off".
+    return mode if mode in WORKFLOW_SANDBOX_MODES else "opt_in"
+
+
+def _template_is_sandboxed(key) -> bool:
+    from connect_labs.workflow.templates import TEMPLATES
+
+    template = TEMPLATES.get(key) if isinstance(key, str) else None
+    return bool(template and template.get("sandboxed"))
+
+
+def workflow_wants_sandbox(definition, request=None) -> bool:
+    """Whether a WORKFLOW (not a page) runs in the sandbox, per the rollout above."""
+    mode = workflow_sandbox_mode()
+    if mode == "all":
+        return True
+    if mode == "off":
+        return False
+    data = getattr(definition, "data", None) or {}
+    config = data.get("config") if isinstance(data.get("config"), dict) else {}
+    if config.get("sandbox") is True:
+        return True
+    if request is not None and request.GET.get("sandbox") == "1":
+        return True
+    # There is no per-workflow opt-out: `config.sandbox: false` is read as unset. An
+    # author must not be able to take a workflow that follows a checked template out
+    # of the frame; the emergency switch is LABS_WORKFLOW_SANDBOX=off (or
+    # LABS_PAGE_SANDBOX=false), for everything at once.
+    render_source = data.get("render_source")
+    if isinstance(render_source, dict) and _template_is_sandboxed(render_source.get("template")):
+        return True
+    return False
+
+
+def should_sandbox(definition, page_mode: bool = False, request=None) -> bool:
+    """Whether this definition's render runs in the sandbox.
+
+    Every page, on every route: decided from the consuming definition as read for this
+    render (its ``kind``, or the page template it was made from), whatever its
+    ``render_source`` -- a template workflow's render is just as author-controlled --
+    and whenever the route draws it in page mode (a page's address, a supply tab),
+    whatever the definition says: what a route draws as a page is sandboxed, fail closed.
+
+    A workflow, when the phase-2 rollout says so (``workflow_wants_sandbox``).
     """
     from connect_labs.workflow.page_mode import is_page
 
     if not sandbox_enabled() or definition is None:
         return False
-    return bool(page_mode) or is_page(definition)
+    if bool(page_mode) or is_page(definition):
+        return True
+    return workflow_wants_sandbox(definition, request)
 
 
 def _origin_of(url: str) -> str:
@@ -136,7 +203,7 @@ def frame_policy(origin: str) -> str:
         "script-src " + " ".join(script_src),
         "style-src " + " ".join(style_src),
         f"font-src {static} {GOOGLE_FONTS_FILES}",
-        "img-src data: blob: " + " ".join(MAPBOX_PATHS),
+        "img-src data: blob: " + " ".join(MAPBOX_PATHS + TILE_HOSTS),
         "connect-src " + " ".join(MAPBOX_PATHS),
         "worker-src blob:",
         "frame-src 'none'",
@@ -164,9 +231,13 @@ def host_frame_src(origin: str) -> str:
     return "frame-src " + " ".join(sources)
 
 
-def host_payload(request) -> dict:
-    """What the host runner needs to draw the frame (``workflow_data.sandbox``)."""
-    return {"src": SHELL_PATH, "origin": labs_origin(request)}
+def host_payload(request, mode: str = "page") -> dict:
+    """What the host runner needs to draw the frame (``workflow_data.sandbox``).
+
+    ``mode`` is ``"page"`` or ``"workflow"``: the host answers a workflow's phase-2
+    requests (components/workflow/sandbox/routes.ts) only in workflow mode.
+    """
+    return {"src": SHELL_PATH, "origin": labs_origin(request), "mode": "workflow" if mode == "workflow" else "page"}
 
 
 def shell_html(origin: str) -> str:

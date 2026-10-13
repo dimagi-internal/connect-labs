@@ -113,14 +113,16 @@ def _assert_sandboxed(response, origin=HERE):
     body = response.content.decode()
     assert response.status_code == 200, body[:500]
     assert response["Content-Security-Policy"].startswith(f"frame-src {origin}/labs/sandbox/render/")
-    assert f'"sandbox": {{"src": "/labs/sandbox/render/", "origin": "{origin}"}}' in body
+    assert f'"sandbox": {{"src": "/labs/sandbox/render/", "origin": "{origin}", "mode": "page"}}' in body
     # Host mode: the runner bundle, and none of the eval path (Babel, render libraries).
     assert "workflow-runner-bundle.js" in body
     for script in ("babel", "chart.umd.min.js", "mapbox-gl.js", "connect_map.js"):
         assert script not in body
-    # No per-worker data and no visit-level pipelines for the frame.
-    assert "worker-one" not in body
-    assert '"streamPipelineData": null' in body and '"queryPipelineRows": null' in body
+    # A page is as definable as a workflow (Jonathan, 2026-10-12): its workers and its
+    # pipelines are loaded for the frame like a workflow's; only the run endpoints are gone.
+    assert '"streamPipelineData": "/labs/workflow/api/47/pipeline-data/stream/"' in body
+    assert '"queryPipelineRows": "/labs/workflow/api/47/pipeline-query/"' in body
+    assert '"updateState": null' in body and '"completeRun": null' in body
     return body
 
 

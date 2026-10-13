@@ -225,6 +225,12 @@ DEFINITION = {
 }
 
 RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines, links, actions, onUpdateState, view }) {
+    // Leaving the page goes through the runner, so a link works the same on the run
+    // page and in the sandboxed frame (where the host checks where it leads).
+    function labsGo(url) {
+        if (actions && actions.navigate) actions.navigate(url);
+        else window.location.href = url;
+    }
     // ── Data ────────────────────────────────────────────────────
     // Row priority:
     //   1. view.pipelines — snapshot-aware helper. On a completed run this
@@ -415,7 +421,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
         // the regular audit wizard (which doesn't carry the same context
         // pre-filling but at least opens the right page).
         if (!runIsLive || !runId || !oppId) {
-            window.location.href = links.auditUrl({username: row.username, count: (opts && opts.count) || 5});
+            labsGo(links.auditUrl({username: row.username, count: (opts && opts.count) || 5}));
             return;
         }
         apiPost('/labs/workflow/api/run/' + runId + '/manager-audit/', {
@@ -428,7 +434,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                 window.alert('Failed to create audit: ' + emsg);
                 return;
             }
-            window.location.href = res.data.redirect_url;
+            labsGo(res.data.redirect_url);
         });
     }
 
@@ -457,7 +463,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                 window.alert('Failed to create task: ' + emsg);
                 return;
             }
-            window.location.href = '/tasks/' + res.data.task_id + '/edit/' + oppScope;
+            labsGo('/tasks/' + res.data.task_id + '/edit/' + oppScope);
         });
     }
 

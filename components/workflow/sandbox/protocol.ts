@@ -33,17 +33,35 @@ export const PHASE1_METHODS = [
 ] as const;
 export type BridgeMethod = (typeof PHASE1_METHODS)[number];
 
-/** Methods a page will get with workflows (phase 2): rejected with a clear message. */
-export const PHASE2_METHODS = [
+/**
+ * Methods the host answers for a WORKFLOW drawn in the frame (phase 2), on top of
+ * the page ones. A page asking for any of these is told they are not for pages.
+ *
+ * - `fetch`: a labs request, checked against ./routes.ts (the whole of what a
+ *   workflow's code can make labs do as the viewer) and made by the host.
+ * - `queryPipelineRows`: server-side rows of this workflow's own pipeline.
+ * - `updateState`: this run's state (onUpdateState).
+ * - `runAction`: one of this workflow's declared actions, previewed and confirmed
+ *   by the host's own dialog (ActionDialog), never by the page.
+ * - `completeRun`: view.complete() -- the host asks, completes, reloads.
+ * - `setLocation`: history.pushState/replaceState on the host's URL (query and
+ *   hash only, same path).
+ * - `notify`: what alert() used to say, drawn by the host as text.
+ */
+export const WORKFLOW_METHODS = [
+  'fetch',
   'queryPipelineRows',
+  'updateState',
   'runAction',
-  'startJob',
-  'createTask',
-  'fetchImage',
-  'jobStatus',
+  'completeRun',
+  'setLocation',
+  'notify',
 ] as const;
 
-export const NOT_ON_A_PAGE = 'not available on a page yet';
+/** Kept for the page tests: what a page is refused. */
+export const PHASE2_METHODS = WORKFLOW_METHODS;
+
+export const NOT_ON_A_PAGE = 'not available on a page';
 
 export const LIMITS = {
   /** Serialised params of one request. */
@@ -68,6 +86,22 @@ export const LIMITS = {
   filenameLength: 120,
   minHeight: 80,
   maxHeight: 50_000,
+  /** A workflow fetch: its request body, and the answer the host hands back. */
+  fetchBodyBytes: 4 * 1024 * 1024,
+  fetchResultBytes: 96 * 1024 * 1024,
+  /** A workflow's own params (runAction's workers, a state update). */
+  workflowParamsBytes: 4 * 1024 * 1024,
+  /** How long a yes to an `effect` write holds for that kind of write. */
+  effectGrantMs: 2 * 60 * 1000,
+  /** ...and for at most this many writes. */
+  effectGrantWrites: 200,
+  messageLength: 2_000,
+};
+
+/** Per-mode request budgets: a workflow loads images and rows a page never does. */
+export const RATE = {
+  page: { count: 60, windowMs: 10_000, inFlight: 6 },
+  workflow: { count: 1_200, windowMs: 10_000, inFlight: 24 },
 };
 
 /** Extensions a page may download, and the type each is saved as (never the page's say). */
@@ -93,11 +127,41 @@ export const NAVIGATE_PATTERNS = [
   /^\/labs\/workflow\/\d+\/run\/$/,
   /^\/labs\/workflow\/$/,
 ];
+/** Where else a click in a WORKFLOW may lead: the audit, task and workflow screens
+ * its rows link to, a visit photo, an indicator sheet, and the sign-in starts its
+ * "Authorize" buttons name. Never an API address otherwise. */
+export const WORKFLOW_NAVIGATE_PREFIXES = [
+  '/audit/',
+  '/tasks/',
+  '/labs/ocs/initiate/',
+  '/labs/commcare/initiate/',
+  '/labs/workflow/api/image/',
+];
+export const WORKFLOW_NAVIGATE_PATTERNS = [
+  /^\/labs\/workflow\/\d+\/$/,
+  /^\/labs\/workflow\/\d+\/run\/$/,
+  /^\/labs\/workflow\/run\/\d+\/$/,
+  /^\/labs\/workflow\/api\/\d+\/indicator-definitions\/$/,
+];
+/** Inside the workflow prefixes above, still never these. */
+export const WORKFLOW_NAVIGATE_DENIED = ['/audit/api/', '/tasks/api/'];
 /** Never, whatever the lists above say. */
 export const NAVIGATE_DENIED = ['/o/', '/accounts/', '/labs/mcp/', '/admin/'];
 /** Query parameters a page's link may never carry: on the run page they once made a
  * GET write (`?sync=true&template=...` overwrote the render code). */
-export const NAVIGATE_DENIED_PARAMS = ['sync', 'template'];
+export const NAVIGATE_DENIED_PARAMS = [
+  'sync',
+  'template',
+  // Where a sign-in start or any other view sends the person AFTER: a second hop
+  // the allowlist never sees (e.g. on to an OAuth consent page).
+  'next',
+  'redirect',
+  'redirect_to',
+  'redirect_uri',
+  'return',
+  'return_to',
+  'return_url',
+];
 
 export interface BridgeRequest {
   id: number | string;
@@ -111,8 +175,12 @@ export interface BridgeResponse {
   error?: string;
 }
 
-/** What INIT and UPDATE carry: the page's props as plain data. */
+/** What INIT carries, and UPDATE carries any part of (only what changed): the
+ * page's or workflow's props as plain data. */
 export interface FramePayload {
+  /** 'page' (phase 1) or 'workflow' (phase 2). A page is never handed workers,
+   * pipelines or a run; a workflow is handed what its render reads today. */
+  mode?: 'page' | 'workflow';
   renderCode: string;
   definition: Record<string, unknown>;
   instance: Record<string, unknown>;
@@ -133,4 +201,18 @@ export interface FramePayload {
   /** The host page's own URL: what a page's relative links resolve against (the
    * frame's own URL is the shell's, where no relative link means anything). */
   pageUrl: string;
+  /** Workflow mode only. */
+  apiEndpoints?: Record<string, string | null>;
+  flags?: unknown[];
+  audits?: unknown[];
+  tasks?: unknown[];
+  workflowActions?: unknown[];
+  isEditMode?: boolean;
+  /** Workflow mode: the names of THIS workflow's opportunities, as render code
+   * reads them from `#user-opportunities` on the run page (only these, never
+   * every opportunity the viewer has). */
+  userOpportunities?: { id: number; name: string }[];
+  /** Set when the host is still streaming pipelines and the definition renders
+   * while loading (config.renderWhileLoading). */
+  pipelinesLoading?: boolean;
 }

@@ -14,12 +14,18 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { DynamicWorkflow } from '../DynamicWorkflow';
+import { createActionHandlers } from '../actionHandlers';
 import { createLinkHelpers } from '../links';
+import { buildRunView } from '../runView';
 import type { WorkflowProps } from '../types';
+import {
+  downloadBytes,
+  installWorkflowShims,
+  proxyLabsImages,
+} from './frameShims';
 import {
   HELLO,
   INIT,
-  NOT_ON_A_PAGE,
   UPDATE,
   type BridgeResponse,
   type FramePayload,
@@ -85,6 +91,8 @@ export function interceptAnchorClicks(
   doc: Document,
   navigate: (url: string, newTab: boolean) => void,
   pageUrl = '',
+  /** Workflow mode: a `<a download href="blob:...">` click; true when handled. */
+  onDownload?: (anchor: HTMLAnchorElement) => boolean,
 ): () => void {
   function onClick(event: MouseEvent) {
     const target = event.target as Element | null;
@@ -97,6 +105,7 @@ export function interceptAnchorClicks(
     if (!raw || raw.startsWith('#')) return;
     event.preventDefault();
     if (/^javascript:/i.test(raw)) return;
+    if (onDownload && onDownload(anchor)) return;
     const newTab =
       anchor.getAttribute('target') === '_blank' ||
       event.ctrlKey ||
@@ -207,102 +216,6 @@ export function connectBridge(
 // The props render code receives
 // ---------------------------------------------------------------------------
 
-function notOnAPage(name: string) {
-  return () => Promise.reject(new Error(`${name} is ${NOT_ON_A_PAGE}`));
-}
-
-/**
- * `actions`: the phase-1 bridge methods, and for every other name a function that
- * rejects with "not available on a page yet" (rather than `undefined is not a function`).
- */
-export function pageActions(bridge: Bridge): WorkflowProps['actions'] {
-  const known: Record<string, unknown> = {
-    querySupply: (alias: string, query: { args?: unknown } = {}) =>
-      bridge.request('querySupply', { alias, args: query?.args ?? {} }),
-    queryWorkflow: (alias: string) =>
-      bridge.request('queryWorkflow', { alias }),
-    download: (file: Record<string, unknown>) =>
-      bridge.request('download', file),
-    copyText: (text: string) => bridge.request('copyText', { text }),
-  };
-  return new Proxy(known, {
-    get(target, prop) {
-      if (typeof prop !== 'string') return undefined;
-      if (prop in target) return target[prop];
-      if (prop === 'then') return undefined; // not a thenable
-      return notOnAPage(prop);
-    },
-  }) as unknown as WorkflowProps['actions'];
-}
-
-function FramePage({
-  payload,
-  bridge,
-}: {
-  payload: FramePayload;
-  bridge: Bridge;
-}) {
-  const [state, setState] = useState(payload.view.state || {});
-  useEffect(() => setState(payload.view.state || {}), [payload.view.state]);
-  const onUpdateState = useCallback(async (next: Record<string, unknown>) => {
-    // A page has no run: its state lives only in the frame, as in edit mode.
-    setState((prev) => ({ ...prev, ...next }));
-  }, []);
-  const actions = useMemo(() => pageActions(bridge), [bridge]);
-  const onError = useCallback(
-    (message: string) => {
-      bridge.request('reportError', { message }).catch(() => undefined);
-    },
-    [bridge],
-  );
-  const view = useMemo(
-    () => ({
-      workers: [],
-      pipelines: {},
-      supply: payload.supply,
-      state,
-      isCompleted: payload.view.isCompleted,
-      asOf: payload.view.asOf,
-      complete: () =>
-        Promise.reject(new Error(`view.complete is ${NOT_ON_A_PAGE}`)),
-      flags: [],
-      flagsFor: () => [],
-      ensureAutoFlags: async () => [],
-      audits: [],
-      auditsFor: () => [],
-      tasks: [],
-      tasksFor: () => [],
-      workflowActions: [],
-      shareSelection: (selection: unknown) => {
-        bridge.request('shareSelection', selection).catch(() => undefined);
-      },
-      confirm: (text: string) =>
-        bridge.request('confirm', { text }).then(Boolean),
-    }),
-    [bridge, payload, state],
-  );
-  return (
-    <DynamicWorkflow
-      renderCode={payload.renderCode}
-      definition={payload.definition as unknown as WorkflowProps['definition']}
-      instance={
-        { ...payload.instance, state } as unknown as WorkflowProps['instance']
-      }
-      workers={[]}
-      pipelines={{}}
-      supply={payload.supply as WorkflowProps['supply']}
-      workflows={payload.workflows as WorkflowProps['workflows']}
-      scope={payload.scope as WorkflowProps['scope']}
-      config={payload.config as WorkflowProps['config']}
-      links={createLinkHelpers(payload.links)}
-      actions={actions}
-      onUpdateState={onUpdateState}
-      view={view as unknown as WorkflowProps['view']}
-      onError={onError}
-    />
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
@@ -326,14 +239,197 @@ export function reportHeight(
   return () => observer.disconnect();
 }
 
+// ---------------------------------------------------------------------------
+// A workflow in the frame (phase 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * `actions` for a workflow: the run page's own implementations (../actionHandlers),
+ * whose `fetch` here is the bridge's, plus the bridge methods the host answers
+ * itself -- declared actions through its dialog, this workflow's pipeline rows,
+ * supply and workflow sources, downloads and the clipboard.
+ */
+export function workflowActions(
+  bridge: Bridge,
+  pageUrl: () => string,
+): WorkflowProps['actions'] {
+  const base = createActionHandlers('');
+  return {
+    ...base,
+    queryPipelineRows: async (
+      alias: string,
+      query: Record<string, unknown> = {},
+    ) => {
+      // onStatus and timeoutMs are the caller's; the host polls a warming cache.
+      const { onStatus, timeoutMs, ...rest } = query as {
+        onStatus?: (m: string) => void;
+        timeoutMs?: number;
+      } & Record<string, unknown>;
+      void timeoutMs;
+      if (typeof onStatus === 'function') onStatus('Loading...');
+      return bridge.request('queryPipelineRows', {
+        alias,
+        query: rest,
+      }) as ReturnType<
+        NonNullable<WorkflowProps['actions']['queryPipelineRows']>
+      >;
+    },
+    querySupply: (alias: string, query: { args?: unknown } = {}) =>
+      bridge.request('querySupply', {
+        alias,
+        args: query?.args ?? {},
+      }) as ReturnType<NonNullable<WorkflowProps['actions']['querySupply']>>,
+    queryWorkflow: (alias: string) =>
+      bridge.request('queryWorkflow', { alias }) as ReturnType<
+        NonNullable<WorkflowProps['actions']['queryWorkflow']>
+      >,
+    download: (file: Record<string, unknown>) =>
+      bridge.request('download', file).then(() => undefined),
+    copyText: (text: string) =>
+      bridge.request('copyText', { text }).then(() => undefined),
+    runAction: (
+      key: string,
+      args: Record<string, unknown>,
+      options?: { qaOnly?: boolean },
+    ) =>
+      bridge.request('runAction', {
+        key,
+        args,
+        options: { qaOnly: Boolean(options?.qaOnly) },
+      }) as ReturnType<NonNullable<WorkflowProps['actions']['runAction']>>,
+    openTaskCreator: (params: Record<string, unknown>) => {
+      const q = new URLSearchParams();
+      for (const k of [
+        'username',
+        'title',
+        'description',
+        'coaching_prompt',
+        'workflow_instance_id',
+        'priority',
+      ]) {
+        if (params[k]) q.set(k, String(params[k]));
+      }
+      bridge
+        .request('navigate', {
+          url: `/tasks/new/?${q.toString()}`,
+          newTab: true,
+        })
+        .catch((e) =>
+          console.warn('[workflow] task creator refused:', e.message),
+        );
+    },
+    // Code that used to set window.location: a link the host checks.
+    navigate: (url: string, opts?: { newTab?: boolean }) =>
+      bridge.request('navigate', {
+        url: resolveHref(String(url), pageUrl()) || String(url),
+        newTab: Boolean(opts?.newTab),
+      }),
+    reload: () => bridge.request('navigate', { url: pageUrl(), newTab: false }),
+  } as unknown as WorkflowProps['actions'];
+}
+
+function WorkflowFramePage({
+  payload,
+  bridge,
+}: {
+  payload: FramePayload;
+  bridge: Bridge;
+}) {
+  const pageUrl = useCallback(() => payload.pageUrl || '', [payload.pageUrl]);
+  const actions = useMemo(
+    () => workflowActions(bridge, pageUrl),
+    [bridge, pageUrl],
+  );
+  // A page has no run: its state lives only in the frame, as in edit mode. A
+  // workflow's state is the run's: the host writes it (or keeps it, in edit mode)
+  // and sends it back as an UPDATE.
+  const isPage = payload.mode !== 'workflow';
+  const [pageState, setPageState] = useState<Record<string, unknown>>(
+    (payload.view?.state || {}) as Record<string, unknown>,
+  );
+  const state = isPage
+    ? pageState
+    : ((payload.view?.state || {}) as Record<string, unknown>);
+  const instance = payload.instance as unknown as WorkflowProps['instance'];
+  const onUpdateState = useCallback(
+    async (next: Record<string, unknown>) => {
+      if (isPage) {
+        setPageState((prev) => ({ ...prev, ...next }));
+        return;
+      }
+      await bridge.request('updateState', { state: next });
+    },
+    [bridge, isPage],
+  );
+  const onError = useCallback(
+    (message: string) => {
+      bridge.request('reportError', { message }).catch(() => undefined);
+    },
+    [bridge],
+  );
+  const view = useMemo(
+    () =>
+      buildRunView({
+        instance: { ...instance, state } as WorkflowProps['instance'],
+        opportunityId: (payload.instance as { opportunity_id?: number })
+          .opportunity_id,
+        workers: payload.workers as WorkflowProps['workers'],
+        pipelines: payload.pipelines as WorkflowProps['pipelines'],
+        supply: payload.supply as Record<string, never>,
+        state,
+        flags: payload.flags as never,
+        audits: payload.audits as never,
+        tasks: payload.tasks as never,
+        workflowActions: payload.workflowActions as never,
+        csrfToken: '',
+        complete: (opts?: { confirm?: string }) =>
+          bridge
+            .request('completeRun', { confirm: opts?.confirm || '' })
+            .then(Boolean),
+        confirm: (text: string) =>
+          bridge.request('confirm', { text }).then(Boolean),
+        shareSelection: (selection) => {
+          bridge.request('shareSelection', selection).catch(() => undefined);
+        },
+      }),
+    [bridge, payload, instance, state],
+  );
+  const pipelinesLoaded = Object.keys(payload.pipelines || {}).length > 0;
+  return (
+    <DynamicWorkflow
+      // As on the run page: remount once pipelines land (see workflow-runner.tsx).
+      key={pipelinesLoaded ? 'pipelines-loaded' : 'pipelines-empty'}
+      renderCode={payload.renderCode}
+      definition={payload.definition as unknown as WorkflowProps['definition']}
+      instance={{ ...instance, state } as WorkflowProps['instance']}
+      workers={payload.workers as WorkflowProps['workers']}
+      pipelines={payload.pipelines as WorkflowProps['pipelines']}
+      supply={payload.supply as WorkflowProps['supply']}
+      workflows={payload.workflows as WorkflowProps['workflows']}
+      scope={payload.scope as WorkflowProps['scope']}
+      config={payload.config as WorkflowProps['config']}
+      links={createLinkHelpers(payload.links)}
+      actions={actions}
+      onUpdateState={onUpdateState}
+      view={view as unknown as WorkflowProps['view']}
+      onError={onError}
+    />
+  );
+}
+
 export function startFrame(win: Window, rootEl: HTMLElement): void {
   installMemoryStorage(win);
   const reactRoot = createRoot(rootEl);
   let bridge: Bridge | null = null;
+  let current: FramePayload | null = null;
   const draw = (payload: FramePayload) => {
     (win as unknown as { MAPBOX_TOKEN?: string }).MAPBOX_TOKEN =
       payload.mapboxToken || '';
-    reactRoot.render(<FramePage payload={payload} bridge={bridge!} />);
+    // One code path for pages and workflows: a page is a workflow with no run.
+    (
+      win as unknown as { WORKFLOW_API_ENDPOINTS?: unknown }
+    ).WORKFLOW_API_ENDPOINTS = payload.apiEndpoints || {};
+    reactRoot.render(<WorkflowFramePage payload={payload} bridge={bridge!} />);
   };
   const report = (message: string) =>
     bridge?.request('reportError', { message }).catch(() => undefined);
@@ -348,6 +444,57 @@ export function startFrame(win: Window, rootEl: HTMLElement): void {
   connectBridge(win, {
     onInit(payload, b) {
       bridge = b;
+      current = payload;
+      const pageUrl = () => (current && current.pageUrl) || '';
+      let onDownload: ((a: HTMLAnchorElement) => boolean) | undefined;
+      {
+        // The shared map module asks this for admin boundaries (a labs path, so a
+        // bridge fetch the host checks).
+        (
+          win as unknown as { BOUNDARY_VIEWPORT_URL?: string }
+        ).BOUNDARY_VIEWPORT_URL = '/microplans/boundaries/viewport/';
+        // Render code reads opportunity names off the run page's #user-opportunities.
+        const names = win.document.createElement('script');
+        names.type = 'application/json';
+        names.id = 'user-opportunities';
+        names.textContent = JSON.stringify(payload.userOpportunities || []);
+        win.document.body.appendChild(names);
+        const { sandboxFetch, blobs } = installWorkflowShims(
+          win as Window & typeof globalThis,
+          b,
+          pageUrl,
+        );
+        proxyLabsImages(win.document, sandboxFetch, () => win.location.href);
+        onDownload = (anchor) => {
+          const href = anchor.getAttribute('href') || '';
+          if (!anchor.hasAttribute('download')) return false;
+          if (!href.startsWith('blob:') && !href.startsWith('data:'))
+            return false;
+          const filename = anchor.getAttribute('download') || 'download.csv';
+          downloadBytes(href, blobs).then((bytes) => {
+            if (!bytes) return;
+            b.request('download', { filename, bytes }).catch((e) =>
+              console.warn('[workflow] download refused:', e.message),
+            );
+          });
+          return true;
+        };
+        // `a.click()` on a link never added to the document reaches no listener:
+        // route it the same way.
+        const proto = (win as Window & typeof globalThis).HTMLAnchorElement
+          .prototype;
+        const nativeClick = proto.click;
+        proto.click = function (this: HTMLAnchorElement) {
+          if (this.isConnected) return nativeClick.call(this);
+          const raw = (this.getAttribute('href') || '').trim();
+          if (!raw || raw.startsWith('#') || /^javascript:/i.test(raw)) return;
+          if (onDownload && onDownload(this)) return;
+          b.request('navigate', {
+            url: resolveHref(raw, pageUrl()) || this.href || raw,
+            newTab: this.getAttribute('target') === '_blank',
+          }).catch((e) => console.warn('[workflow] link refused:', e.message));
+        };
+      }
       interceptAnchorClicks(
         win.document,
         (url, newTab) => {
@@ -356,12 +503,17 @@ export function startFrame(win: Window, rootEl: HTMLElement): void {
           );
         },
         typeof payload.pageUrl === 'string' ? payload.pageUrl : '',
+        onDownload,
       );
       reportHeight(rootEl, (height) => {
         b.request('resize', { height }).catch(() => undefined);
       });
       draw(payload);
     },
-    onUpdate: draw,
+    // UPDATE carries only what changed.
+    onUpdate(partial) {
+      current = { ...(current as FramePayload), ...partial };
+      draw(current);
+    },
   });
 }

@@ -32,7 +32,16 @@ DEFINITION = {
     "pipeline_sources": [],
 }
 
-RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines, links, actions, onUpdateState }) {
+RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines, links, actions, onUpdateState, view }) {
+    // Leaving the page and asking a question go through the runner, so they work
+    // the same on the run page and in the sandboxed frame (where the host checks
+    // where a link leads and draws the question itself).
+    const labsGo = (url) => {
+        if (actions && actions.navigate) actions.navigate(url);
+        else window.location.href = url;
+    };
+    const labsConfirm = (text) =>
+        view && view.confirm ? view.confirm(text) : Promise.resolve(window.confirm(text));
 
     // ── Phase (drives which section renders) ────────────────────────────────
     const [phase, setPhase] = React.useState(instance.state?.phase || 'config');
@@ -348,7 +357,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
     const [deletingSessionId, setDeletingSessionId] = React.useState(null);
     const deleteSession = async (session) => {
         if (session.status === 'completed') return;
-        if (!window.confirm('Delete this in-progress audit session permanently? This cannot be undone.')) return;
+        if (!(await labsConfirm('Delete this in-progress audit session permanently? This cannot be undone.'))) return;
         setDeletingSessionId(session.id);
         try {
             const res = await fetch('/audit/api/' + session.id + '/delete/', {
@@ -409,7 +418,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                             if (s.opportunity_id) params.set('opportunity_id', s.opportunity_id);
                             params.set('threshold', config.threshold || threshold);
                             if (instance.id) params.set('workflow_run_id', instance.id);
-                            window.location.href = '/audit/' + s.id + '/bulk/?' + params.toString();
+                            labsGo('/audit/' + s.id + '/bulk/?' + params.toString());
                         } else {
                             setPhase('reviewing');
                         }
@@ -440,10 +449,10 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
         // re-run after reverting doesn't silently stack a second (stray) session.
         if (linkedSessions.length > 0) {
             const n = linkedSessions.length;
-            if (!window.confirm(
+            if (!(await labsConfirm(
                 'This run already has ' + n + ' audit session' + (n === 1 ? '' : 's') +
                 '. Create another one anyway?'
-            )) {
+            ))) {
                 return;
             }
         }
@@ -581,7 +590,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                             if (s.opportunity_id) params.set('opportunity_id', s.opportunity_id);
                             params.set('threshold', threshold);
                             if (instance.id) params.set('workflow_run_id', instance.id);
-                            window.location.href = '/audit/' + s.id + '/bulk/?' + params.toString();
+                            labsGo('/audit/' + s.id + '/bulk/?' + params.toString());
                         } else {
                             setPhase('reviewing');
                         }
@@ -674,7 +683,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                 completion: { completed_at: new Date().toISOString() },
             });
             const oppId = instance.opportunity_id || '';
-            window.location.href = '/labs/workflow/' + (oppId ? '?opportunity_id=' + oppId : '');
+            labsGo('/labs/workflow/' + (oppId ? '?opportunity_id=' + oppId : ''));
         } catch (err) {
             setCompleteError(err.message || 'Failed to complete');
             setIsCompleting(false);
@@ -1263,7 +1272,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                 if (s.opportunity_id) params.set('opportunity_id', s.opportunity_id);
                 params.set('threshold', threshold);
                 if (instance.id) params.set('workflow_run_id', instance.id);
-                window.location.href = '/audit/' + s.id + '/bulk/?' + params.toString();
+                labsGo('/audit/' + s.id + '/bulk/?' + params.toString());
             }
         }, [loadingSessions, linkedSessions]);
 
@@ -1305,7 +1314,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
         React.useEffect(() => {
             if (!loadingSessions && linkedSessions.length === 1) {
                 const s = linkedSessions[0];
-                window.location.href = '/audit/' + s.id + '/bulk/?opportunity_id=' + s.opportunity_id;
+                labsGo('/audit/' + s.id + '/bulk/?opportunity_id=' + s.opportunity_id);
             }
         }, [loadingSessions, linkedSessions.length]);
 
