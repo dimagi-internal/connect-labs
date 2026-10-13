@@ -1625,6 +1625,9 @@
       });
       map.on('click', FILL, (e) => {
         if (!layer.on) return;
+        // The host is drawing a polygon (review.js tags the container): that
+        // click places a vertex, it must not also select the ward under it.
+        if (map.getContainer().classList.contains('mp-drawing')) return;
         const f = smallestAt(e.point);
         if (!f) return;
         // Plain click anywhere INSIDE a boundary toggles it — select (fills it)
