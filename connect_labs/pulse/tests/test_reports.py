@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from datetime import timezone as dt_timezone
 
 import pytest
+from django.utils import timezone
 
 from connect_labs.pulse import reports
 from connect_labs.pulse.api import _program_scope
@@ -203,7 +204,9 @@ class TestBackfillOrdering:
         settings.PULSE_EVENT_RETENTION_DAYS = 30
         from connect_labs.pulse import ingest
 
-        old = _ts(2026, 1, 5)
+        # Past the 30-day retention, inside the 365-day backfill: measured from
+        # today, because a fixed date drifts out of the window as the calendar does.
+        old = (timezone.now() - timedelta(days=100)).replace(hour=12, minute=0, second=0, microsecond=0)
         PulseEvent.objects.create(
             connect_visit_id=1,
             opportunity_id=opp.opportunity_id,

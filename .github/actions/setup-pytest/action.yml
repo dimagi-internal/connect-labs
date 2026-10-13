@@ -1,0 +1,122 @@
+name: Set up the pytest environment
+description: >-
+  Everything the test suite needs on a runner before pytest starts: the geo
+  libraries Django's GIS backend loads, Python 3.13, and the installed venv
+  (restored from cache when the requirements have not changed). Shared by the
+  required `pytest` job and the shifted-clock run in ci.yml, so the two cannot
+  drift into testing different environments.
+
+runs:
+  using: composite
+  steps:
+    # ~18s of every run went on `apt-get update` plus a download of the same
+    # three packages. Cache the .debs and unpack them instead.
+    - name: Cache the geo packages
+      uses: actions/cache@v4
+      with:
+        path: /tmp/geo-debs
+        # Bump the version suffix to force a refetch; the runner image's own
+        # base libraries move under us occasionally.
+        # v2 (2026-09-30): the v1 debs pinned libcurl4-gnutls-dev to a
+        # libcurl the runner image had moved past, and every run failed.
+        key: geo-debs-${{ runner.os }}-v2
+
+    - name: Install Geo Dependencies
+      # --no-install-recommends: Django reaches libgdal/libgeos through ctypes, so
+      # the recommended extras (docs, python bindings) are downloaded and unpacked
+      # for nothing on every run. Hard dependencies are still installed.
+      #
+      # A stale cache must never be able to fail this step or, worse, leave a
+      # half-installed GDAL that fails later inside pytest with an error about
+      # settings. `dpkg -i` is attempted first and ANY problem falls straight
+      # through to the plain apt path, which is exactly what this used to do.
+      # The import check at the end is the actual contract -- it is what a
+      # partial install would break, and it is cheap.
+      shell: bash
+      run: |
+        set -u
+        install_from_apt() {
+          # Only Ubuntu's own archive is needed here. The runner image also
+          # carries third-party lists (Chrome, Edge, ...) and a hash-sum
+          # mismatch on ANY of them fails `apt-get update` outright -- twice on
+          # one PR from dl.google.com alone (#1664). They are not ours to
+          # depend on, so they are dropped before the update, which also retries.
+          sudo grep -lE 'dl\.google\.com|packages\.microsoft\.com' \
+            /etc/apt/sources.list.d/* 2>/dev/null | xargs -r sudo rm -f
+          sudo apt-get update -o Acquire::Retries=3
+          # A stale cache can fail `dpkg -i` halfway and leave packages
+          # unpacked but unconfigured. apt then refuses every install until
+          # that is resolved, so the fallback failed exactly when it was
+          # needed (2026-09-30: libcurl4-gnutls-dev against a newer libcurl).
+          # Let apt repair it first -- it replaces the stale versions.
+          sudo dpkg --configure -a || true
+          sudo apt-get install -y -f --no-install-recommends -o Acquire::Retries=3
+          # apt refuses to use an archives dir without a `partial` inside it.
+          sudo rm -rf /tmp/geo-debs && mkdir -p /tmp/geo-debs/partial
+          sudo apt-get install -y --no-install-recommends \
+            -o Dir::Cache::archives=/tmp/geo-debs \
+            binutils \
+            gdal-bin \
+            libproj-dev
+          sudo chown -R "$USER" /tmp/geo-debs
+          rmdir /tmp/geo-debs/partial 2>/dev/null || true
+        }
+
+        if compgen -G '/tmp/geo-debs/*.deb' > /dev/null; then
+          echo "Restoring geo packages from cache"
+          sudo dpkg -i /tmp/geo-debs/*.deb || install_from_apt
+        else
+          install_from_apt
+        fi
+
+        # Prove the shared libraries are actually loadable. Without this a
+        # partial restore surfaces 300 lines later as a GDAL error inside
+        # pytest, which names neither this step nor the cache.
+        python3 -c "
+        import ctypes.util, sys
+        missing = [n for n in ('gdal', 'geos_c') if ctypes.util.find_library(n) is None]
+        sys.exit('geo libraries missing after install: ' + ', '.join(missing) if missing else 0)
+        "
+
+    - name: Set up Python
+      id: py
+      uses: actions/setup-python@v7
+      with:
+        python-version: '3.13'
+        cache: pip
+        # The real requirement files, not requirements-dev.txt — that is a
+        # three-line wrapper that just includes these two and has never changed,
+        # so hashing it produced a cache key frozen at whatever the first run
+        # downloaded. The key could not invalidate when a dependency changed, and
+        # equally could not pick up a newly added one.
+        cache-dependency-path: |
+          requirements/base.txt
+          requirements/dev.txt
+
+    # The pip cache above only saves the DOWNLOAD; the install still ran in full
+    # every time (~70s). Cache the built environment itself, keyed on the same
+    # content, so an unchanged dependency set is restored instead of rebuilt. A
+    # venv's scripts hard-code absolute paths, which is fine here because the
+    # workspace path is identical on every runner.
+    #
+    # The key carries the RESOLVED interpreter version, not the '3.13' we
+    # asked for. The venv's python is a symlink into the runner's toolcache
+    # (/opt/hostedtoolcache/Python/3.13.<patch>/x64), so the day setup-python
+    # moves to the next patch release, a cache keyed on '3.13' restores a venv
+    # whose interpreter no longer exists -- and every run fails on
+    # "No such file or directory" until someone works out that the fix is to
+    # bump a cache key.
+    - name: Cache the installed environment
+      id: venv
+      uses: actions/cache@v6
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-${{ hashFiles('requirements/base.txt', 'requirements/dev.txt') }}
+
+    - name: Install Dependencies
+      if: steps.venv.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        python -m venv .venv
+        .venv/bin/python -m pip install --upgrade pip
+        .venv/bin/pip install -r requirements-dev.txt

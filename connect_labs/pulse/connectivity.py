@@ -229,6 +229,7 @@ def backlog_days() -> list[dict]:
     a percentile over the whole table and changes only as days complete.
     """
     from django.core.cache import cache
+    from django.utils import timezone
 
     from connect_labs.pulse.models import PulseEvent
 
@@ -241,14 +242,16 @@ def backlog_days() -> list[dict]:
                COUNT(*) AS n,
                percentile_cont(0.1) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM sync_ts - field_ts)) / 60.0 AS p10
         FROM {table}
-        WHERE field_ts >= %s AND field_ts <= now() AND sync_ts >= field_ts
+        WHERE field_ts >= %s AND field_ts <= %s AND sync_ts >= field_ts
         GROUP BY 1
         HAVING COUNT(*) >= %s
            AND percentile_cont(0.1) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM sync_ts - field_ts)) > %s
         ORDER BY 1
     """
+    # "Now" is the app's clock, not the database's: every other cut in pulse is
+    # taken in Python, and two clocks disagree the moment either one drifts.
     with connection.cursor() as cur:
-        cur.execute(query, [RELIABLE_FROM, BACKLOG_MIN_VISITS, BACKLOG_P10_MINUTES * 60])
+        cur.execute(query, [RELIABLE_FROM, timezone.now(), BACKLOG_MIN_VISITS, BACKLOG_P10_MINUTES * 60])
         days = [{"date": day, "visits": n, "p10_minutes": round(float(p10), 1)} for day, n, p10 in cur.fetchall()]
     cache.set(_BACKLOG_CACHE_KEY, days, _BACKLOG_CACHE_SECONDS)
     return days

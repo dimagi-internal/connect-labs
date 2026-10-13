@@ -255,6 +255,8 @@ text-unidecode==1.3
     # via
     #   -c requirements/base.txt
     #   python-slugify
+time-machine==3.5.1
+    # via -r requirements/dev.in
 tomlkit==0.15.1
     # via pylint
 traitlets==5.16.1

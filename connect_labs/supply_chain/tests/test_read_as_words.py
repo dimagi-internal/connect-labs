@@ -442,6 +442,9 @@ class TestTheOrderShowsWhatCameThroughTheLink:
 
 
 def _days_ago(n: int) -> str:
+    """An ISO date counted back from today. A rate looks back over a window that
+    ends today, so a movement meant to land inside it is dated from today: a fixed
+    date leaves the window as the calendar moves, and the test fails on its own."""
     import datetime
 
     return (datetime.date.today() - datetime.timedelta(days=n)).isoformat()
@@ -558,7 +561,7 @@ class TestTheStockPageSpeaksInPacks:
             "movement_record",
             data={
                 "kind": "transfer",
-                "occurred_on": "2026-06-01",
+                "occurred_on": _days_ago(133),
                 "commodity_slug": "ors-zinc-copack",
                 "item_id": item_id,
                 "to_supply_point_id": store["id"],
@@ -567,7 +570,7 @@ class TestTheStockPageSpeaksInPacks:
                 "source": "we_recorded",
             },
         )
-        for day in ("2026-08-01", "2026-09-01"):
+        for day in (_days_ago(72), _days_ago(41)):
             op(
                 da,
                 "movement_record",
@@ -609,7 +612,7 @@ class TestTheChecksPage:
             "movement_record",
             data={
                 "kind": "receipt",
-                "occurred_on": "2026-06-01",
+                "occurred_on": _days_ago(133),
                 "commodity_slug": "ors-zinc-copack",
                 "item_id": item_id,
                 "to_supply_point_id": store["id"],
@@ -618,7 +621,7 @@ class TestTheChecksPage:
                 "source": "we_recorded",
             },
         )
-        for day in ("2026-08-01", "2026-09-01"):
+        for day in (_days_ago(72), _days_ago(41)):
             op(
                 da,
                 "movement_record",
