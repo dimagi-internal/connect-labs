@@ -332,6 +332,8 @@ jobs:
   # reproduces it, and successive merges walk across weekdays, month ends and
   # year ends. The step summary prints the faked date and the local command.
   pytest-shifted-clock:
+    # The unshifted suite takes ~12 minutes; a hang must not hold a runner for six hours.
+    timeout-minutes: 40
     if: >-
       github.event_name == 'push' ||
       github.event_name == 'schedule' ||
@@ -404,4 +406,5 @@ jobs:
         # Python sleeps to an absolute monotonic deadline, read off the real
         # clock, which libfaketime's clock_nanosleep then shifts into the past.
         run: |
-          faketime -f "+${{ steps.shift.outputs.days }}d" .venv/bin/pytest connect_labs/ -n auto
+          faketime -f "+${{ steps.shift.outputs.days }}d" .venv/bin/pytest connect_labs/ -n auto -v \
+            -o faulthandler_timeout=300
