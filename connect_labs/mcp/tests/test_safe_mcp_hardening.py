@@ -303,40 +303,13 @@ def test_an_identical_profiling_request_gets_the_running_job_back(jobs_running):
 
 
 @pytest.mark.django_db
-def test_jobs_in_flight_are_capped_per_person_and_free_when_they_finish(monkeypatch, jobs_running):
-    user = _user("inflight")
-    for n in (1, 2):
-        profile_limits.record(user, f"task-{n}", kind="opp", opportunity_ids=[n], args={"opportunity_id": n})
-
-    with pytest.raises(MCPToolError) as e:
-        profile_limits.admit(user, kind="opp", opportunity_ids=[3], args={"opportunity_id": 3}, restricted=False)
-    assert e.value.code == "RATE_LIMITED"
-    assert "task-1" in e.value.message
-
-    monkeypatch.setattr(profile_limits, "_state", lambda task_id: "SUCCESS")
-    assert (
-        profile_limits.admit(user, kind="opp", opportunity_ids=[3], args={"opportunity_id": 3}, restricted=False)
-        is None
-    )
-
-
-@pytest.mark.django_db
-def test_the_daily_quota_counts_opportunities(settings, jobs_running):
-    settings.SYNTHETIC_PROFILE_DAILY_OPPS_PER_USER = 5
-    settings.SYNTHETIC_PROFILE_MAX_INFLIGHT_PER_USER = 99
-    user = _user("daily")
-    profile_limits.record(user, "task-1", kind="bulk", opportunity_ids=[1, 2, 3, 4], args={"ids": [1, 2, 3, 4]})
-
-    with pytest.raises(MCPToolError) as e:
-        profile_limits.admit(user, kind="bulk", opportunity_ids=[5, 6], args={"ids": [5, 6]}, restricted=False)
-    assert "resets at 00:00 UTC" in e.value.message
-
-
-@pytest.mark.django_db
-def test_a_restricted_bulk_call_is_capped_and_a_full_one_is_not(jobs_running):
-    user = _user("percall")
-    ids = list(range(1, 12))
-
-    with pytest.raises(MCPToolError):
-        profile_limits.admit(user, kind="bulk", opportunity_ids=ids, args={"ids": ids}, restricted=True)
-    assert profile_limits.admit(user, kind="bulk", opportunity_ids=ids, args={"ids": ids}, restricted=False) is None
+def test_there_is_no_per_person_cap_on_profiling(jobs_running):
+    """Each job runs on a machine of its own (#2498), so a person may queue as many as they like."""
+    user = _user("nocap")
+    ids = list(range(1, 13))
+    for n in range(10):
+        args = {"ids": ids, "run": n}
+        assert profile_limits.admit(user, kind="bulk", opportunity_ids=ids, args=args, restricted=True) is None
+        profile_limits.record(user, f"task-{n}", kind="bulk", opportunity_ids=ids, args=args)
+    # 120 opportunities queued today, ten jobs in flight, 12 per restricted call: none refused.
+    assert len(profile_limits.recent_jobs(user)) == 10

@@ -55,11 +55,11 @@ over MCP still returns its result as before: it queues a job and waits for it, u
 8 minutes. Pass `wait=false` to get a `task_id` at once.
 
 **Limits:**
-- At most 2 synthetic jobs run at once across the whole system (`SYNTHETIC_JOB_SLOTS`).
-  The rest wait their turn on the queue, so audits and AI reviews keep the worker's
-  other slots.
-- Each person may have 2 profiling jobs in flight and profile 40 opportunities a day.
-  On the safe address, one call may profile at most 10 opportunities.
+- On labs each job runs on a Fargate task of its own (`labs/synthetic/ecs_runner.py`),
+  which a deploy does not stop; at most `SYNTHETIC_ECS_MAX_TASKS` (6) run at once and
+  the rest wait on the queue. Off ECS (locally), at most `SYNTHETIC_JOB_SLOTS` (2) run
+  on the worker at once.
+- There is no per-person cap on how many jobs or opportunities someone profiles.
 - An identical request returns the job already running.
 
 ### The flow, step by step: profile on the server, then generate
