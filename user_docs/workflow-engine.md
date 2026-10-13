@@ -83,7 +83,9 @@ This means each workflow appears in exactly one place. If you cannot find a work
 
 ### Protected (sandboxed) workflows
 
-Some workflows run inside a **protected frame** — sometimes called a sandbox. A workflow in the protected frame looks and works exactly the same as normal, but it operates with an important safety constraint: its content cannot act on your behalf without asking you first.
+Some workflows are designed to run inside a **protected frame** — sometimes called a sandbox. Pages and workflows on Labs are drawn directly in the page by default. To preview the sandboxed version of any page or workflow, add `?sandbox=1` to its address in your browser (or `&sandbox=1` if the address already contains a `?`).
+
+A workflow in the protected frame looks and works exactly the same as normal, but it operates with an important safety constraint: its content cannot act on your behalf without asking you first.
 
 Specifically, a protected workflow cannot:
 
@@ -94,11 +96,9 @@ Specifically, a protected workflow cannot:
 
 …without Labs first showing you a prompt along the lines of **"This workflow wants to …, as you."** The prompt appears in an amber box with **Cancel** focused, so dismissing it is the default action. Confirming once covers that type of action for the next two minutes, so you will not be asked repeatedly during a single session.
 
-**Forty standard report and review templates now run in the protected frame by default.** Any workflow built from one of those templates — and every new workflow created from one going forward — runs protected automatically. Workflows that carry their own independent copy of a template's code are not switched yet.
+On each workflow's listing you will see a line indicating whether it is built to support the protected frame. If it is, a **View it sandboxed** link lets you try the protected version by opening it with `?sandbox=1`.
 
-On each workflow's listing you will see a line indicating whether it currently runs protected. If it does, a **View it sandboxed** link lets you try the protected version before it becomes the default for everyone.
-
-If you are asked to confirm an action you did not expect, that is the protection working as intended — check what the workflow is about to do before clicking yes.
+If you are asked to confirm an action you did not expect while previewing in sandbox mode, that is the protection working as intended — check what the workflow is about to do before clicking yes.
 
 #### Sandbox exemptions
 
@@ -224,4 +224,4 @@ To set the home page, go to the organisation's **Settings** and choose the page 
 
 A page can also be set to fill a **Supply tab**. When configured this way, the page opens inside the Supply header without starting a run. This lets you show stock summaries, links to supply workflows, or other supply-related content directly from the Supply tab.
 
-The Supply tab opens only for people who have access to the program or opportunity it is linked to. Setting up a Supply tab also requires access to that program or opportunity. A program can hide or rename a Supply
+The Supply tab opens only for people who have access to the program or opportunity it is linked to. Setting up a Supply tab also requires access
