@@ -1889,6 +1889,96 @@
     },
   };
 
+  // draw_polygon with an undo: onSetup keeps the in-progress state (and the draw
+  // context, to re-render) so the Undo button / Ctrl+Z can drop the last vertex.
+  let drawingState = null;
+  let drawingCtx = null;
+  // Built when the control is (inside setupAreaDef's try), so a missing draw
+  // plugin still only disables drawing rather than the whole page.
+  const makeDrawPolygonMode = (base) =>
+    Object.assign({}, base, {
+      onSetup(opts) {
+        const state = base.onSetup.call(this, opts);
+        drawingState = state;
+        drawingCtx = this._ctx;
+        return state;
+      },
+      onStop(state) {
+        if (drawingState === state) drawingState = null;
+        return base.onStop.call(this, state);
+      },
+      onKeyUp(state, e) {
+        if ((e.ctrlKey || e.metaKey) && e.keyCode === 90) {
+          undoLastVertex();
+          return;
+        }
+        return base.onKeyUp.call(this, state, e);
+      },
+    });
+  function undoLastVertex() {
+    const st = drawingState;
+    if (!st || !st.polygon || st.currentVertexPosition < 1) return;
+    // The ring is [placed vertices..., cursor point]; removing the last placed
+    // vertex leaves the cursor point at the new currentVertexPosition.
+    st.polygon.removeCoordinate(`0.${st.currentVertexPosition - 1}`);
+    st.currentVertexPosition -= 1;
+    try {
+      drawingCtx.store.render();
+    } catch (_) {}
+  }
+
+  // Select-to-delete: click a drawn shape or picked ward to select it (no drag,
+  // no reshape), then trash / Delete removes it the same way the table's x does,
+  // so a ward pick also clears from the Boundaries layer.
+  const PickMode = {
+    onSetup() {
+      this.clearSelectedFeatures();
+      this.setActionableState({ trash: true });
+      return {};
+    },
+    onClick(state, e) {
+      const was = this.getSelectedIds();
+      const t = e.featureTarget;
+      const id =
+        t && t.properties && t.properties.meta === 'feature'
+          ? t.properties.id
+          : null;
+      this.clearSelectedFeatures();
+      if (id) this.setSelected([id]);
+      was.concat(id ? [id] : []).forEach((fid) => this.doRender(fid));
+    },
+    onTap(state, e) {
+      this.onClick(state, e);
+    },
+    onKeyUp(state, e) {
+      if (e.keyCode === 27) this.changeMode('static');
+    },
+    onTrash() {
+      const ids = this.getSelectedIds();
+      if (ids.length) setTimeout(() => deleteDrawFeatures(ids), 0);
+    },
+    onStop() {
+      this.clearSelectedFeatures();
+    },
+    toDisplayFeatures(state, geojson, display) {
+      geojson.properties.active = this.isSelected(geojson.properties.id)
+        ? 'true'
+        : 'false';
+      display(geojson);
+    },
+  };
+  function deleteDrawFeatures(ids) {
+    if (!draw) return;
+    const keys = new Set();
+    ids.forEach((id) => {
+      const f = draw.get(id);
+      if (!f) return;
+      const b = f.properties && f.properties.boundaryId;
+      keys.add(b ? 'bnd:' + b : 'draw:' + id);
+    });
+    keys.forEach((k) => deleteSetupRow(k));
+  }
+
   function setupAreaDef() {
     if (!map) return;
     // MapboxDraw is added top-right; works alongside the existing wa-fill /
@@ -1900,7 +1990,11 @@
         // Default to the read-only mode so picked boundaries aren't editable; the
         // polygon control still switches into draw_polygon on demand.
         defaultMode: 'static',
-        modes: Object.assign({}, MapboxDraw.modes, { static: StaticDrawMode }),
+        modes: Object.assign({}, MapboxDraw.modes, {
+          static: StaticDrawMode,
+          draw_polygon: makeDrawPolygonMode(MapboxDraw.modes.draw_polygon),
+          pick: PickMode,
+        }),
         styles: [
           {
             id: 'gl-draw-polygon-fill',
@@ -1913,6 +2007,29 @@
             type: 'line',
             filter: ['all', ['==', '$type', 'Polygon']],
             paint: { 'line-color': '#10b981', 'line-width': 2 },
+          },
+          // The shape picked for deletion in Select mode.
+          {
+            id: 'gl-draw-polygon-fill-picked',
+            type: 'fill',
+            filter: [
+              'all',
+              ['==', '$type', 'Polygon'],
+              ['==', 'mode', 'pick'],
+              ['==', 'active', 'true'],
+            ],
+            paint: { 'fill-color': '#ef4444', 'fill-opacity': 0.3 },
+          },
+          {
+            id: 'gl-draw-polygon-stroke-picked',
+            type: 'line',
+            filter: [
+              'all',
+              ['==', '$type', 'Polygon'],
+              ['==', 'mode', 'pick'],
+              ['==', 'active', 'true'],
+            ],
+            paint: { 'line-color': '#ef4444', 'line-width': 3 },
           },
           {
             id: 'gl-draw-vertex',
@@ -1930,6 +2047,7 @@
       // Top-left: top-right sits under the Layers/Inspect panel, which hid the
       // polygon + trash buttons.
       map.addControl(draw, 'top-left');
+      addDrawButtons();
       map.on('draw.create', refreshAreaStats);
       map.on('draw.update', refreshAreaStats);
       map.on('draw.delete', refreshAreaStats);
@@ -1956,9 +2074,18 @@
   // over the hand cursor that the boundary / work-area hover handlers set inline,
   // and so their click handlers stand aside (a vertex click must not also
   // select the ward under it).
+  // Select mode carries mp-drawing too (so boundary / work-area clicks and hovers
+  // stand aside there as well) plus mp-picking, which swaps the crosshair for a
+  // pointer.
   function syncDrawingState() {
-    const isDrawing = () => !!draw && draw.getMode() === 'draw_polygon';
+    const mode = draw ? draw.getMode() : null;
+    const isDrawing = () =>
+      !!draw && ['draw_polygon', 'pick'].includes(draw.getMode());
     const el = map.getContainer();
+    el.classList.toggle('mp-picking', mode === 'pick');
+    if (drawBtns.pick)
+      drawBtns.pick.classList.toggle('active', mode === 'pick');
+    if (drawBtns.undo) drawBtns.undo.disabled = mode !== 'draw_polygon';
     if (isDrawing()) {
       el.classList.add('mp-drawing');
       return;
@@ -1970,6 +2097,40 @@
     }, 0);
   }
 
+  // Select + Undo buttons, appended to the draw control's own button group so
+  // they sit with the polygon + trash buttons.
+  const drawBtns = {};
+  function addDrawButtons() {
+    const group = map
+      .getContainer()
+      .querySelector('.mapbox-gl-draw_polygon')?.parentElement;
+    if (!group) return;
+    const mk = (cls, title, onClick) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `mapbox-gl-draw_ctrl-draw-btn ${cls}`;
+      b.title = title;
+      b.setAttribute('aria-label', title);
+      b.addEventListener('click', onClick);
+      group.appendChild(b);
+      return b;
+    };
+    drawBtns.pick = mk(
+      'mp-draw-pick',
+      'Select a shape, then press the bin (or Delete) to remove it',
+      () => {
+        draw.changeMode(draw.getMode() === 'pick' ? 'static' : 'pick');
+        syncDrawingState();
+      },
+    );
+    drawBtns.undo = mk(
+      'mp-draw-undo',
+      'Undo the last point (Ctrl+Z)',
+      undoLastVertex,
+    );
+    drawBtns.undo.disabled = true;
+  }
+
   // The rail's "Draw" tab drops straight into polygon drawing; leaving it
   // abandons an unfinished polygon and returns to the read-only mode.
   function setPolygonDrawing(on) {
@@ -1977,7 +2138,8 @@
     try {
       const mode = draw.getMode();
       if (on && mode !== 'draw_polygon') draw.changeMode('draw_polygon');
-      else if (!on && mode === 'draw_polygon') draw.changeMode('static');
+      else if (!on && (mode === 'draw_polygon' || mode === 'pick'))
+        draw.changeMode('static');
     } catch (e) {
       /* draw not ready — leave the mode as it is */
     }
