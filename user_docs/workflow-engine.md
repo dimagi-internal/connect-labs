@@ -92,9 +92,11 @@ Specifically, a protected workflow cannot:
 - Start a background job that creates records
 - Complete or delete a run
 
-…without Labs first showing you a prompt along the lines of **"This workflow wants to …, as you."** Confirming once covers that type of action for the next two minutes, so you will not be asked repeatedly during a single session.
+…without Labs first showing you a prompt along the lines of **"This workflow wants to …, as you."** The prompt appears in an amber box with **Cancel** focused, so dismissing it is the default action. Confirming once covers that type of action for the next two minutes, so you will not be asked repeatedly during a single session.
 
-**Nothing changes for anyone by default.** Protection is switched on one workflow at a time, not all at once. On each workflow's listing you will see a line indicating whether it currently runs protected. If it does, a **View it sandboxed** link lets you try the protected version before it becomes the default for everyone.
+**Forty standard report and review templates now run in the protected frame by default.** Any workflow built from one of those templates — and every new workflow created from one going forward — runs protected automatically. Workflows that carry their own independent copy of a template's code are not switched yet.
+
+On each workflow's listing you will see a line indicating whether it currently runs protected. If it does, a **View it sandboxed** link lets you try the protected version before it becomes the default for everyone.
 
 If you are asked to confirm an action you did not expect, that is the protection working as intended — check what the workflow is about to do before clicking yes.
 
@@ -228,8 +230,4 @@ The RUTF supply demo is a synthetic clone program used for exploring and testing
 
 ### What the Stock review shows
 
-On the Stock review, most workers hold roughly 3½ to 5 weeks of RUTF at their own 14-day dispensing pace. About one in six workers falls below their minimum stock level, so the headline figure — **N of M workers below minimum at their own 14-day pace** — the alerts, and the blockers all have real data to display. Before this was corrected, workers appeared to hold 21 to 109 days of stock and nobody was ever below minimum, which made those indicators meaningless.
-
-Invented deliveries continue to arrive every fortnight in the days after seeding, recorded each day they fall due rather than being batched once a week, so the figures stay believable as time passes.
-
-### What reseeding sets up
+On the Stock review, most workers hold roughly 3½ to 5 weeks of RUTF at their own 14-day dispensing pace. About one in six workers falls below their minimum stock level, so the headline figure — **N of M workers below minimum at their own 14-day pace** — the alerts, and the blockers all have real data to display. Before this was corrected, workers appeared to hold 21 to 109 days of stock and nobody was ever below minimum, which made
