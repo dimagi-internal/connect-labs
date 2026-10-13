@@ -771,8 +771,17 @@ def _page_only_panel(request, panel: dict) -> dict:
     """
     from connect_labs.labs.canopy import PAGE_ON_ANOTHER_ROUTE, PAGE_ONLY_SCOPES, PAGE_SCOPES
 
-    if not panel.get("ready") or not panel.get("page_token"):
+    if not panel.get("ready"):
         return panel
+    from canopy_sdk.django import conf as canopy_conf
+
+    # In the SDK's key mode the BROWSER names the page by its path, so a page at the
+    # run URL would be granted the run's scopes: no panel there, fail closed (labs
+    # signs its page tokens; this only guards a configuration change).
+    if canopy_conf.page_mode() != canopy_conf.SIGNED:
+        return {**panel, "ready": False}
+    if not panel.get("page_token"):
+        return panel  # an unregistered route: the mint carries no grant
     route = getattr(getattr(request, "resolver_match", None), "view_name", "") or ""
     if tuple(PAGE_SCOPES.get(route, ())) == PAGE_ONLY_SCOPES:
         return panel
@@ -1083,8 +1092,11 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
 
         The page state names the page and the scope; the agent reads what the page is
         built from through ``page_context``, as the visitor. The page narrows the view
-        (``view.shareSelection``); it never changes the resource or the tool. Sandboxed or
-        not: the panel is the host's, outside the frame, either way. Only for a
+        (``view.shareSelection``); it never changes the resource or the tool -- when the
+        page is sandboxed. Drawn unsandboxed (the switch off) the page's code shares the
+        document with the panel and can call the widget itself, as an unsandboxed
+        workflow's code can on a run page: what it can then steer is the agent, over
+        what the visitor can read anyway; the scopes stay ``page:read``, decided here. Only for a
         definition that IS a page -- ``page_context`` refuses anything else, so a workflow
         a route draws in page mode (a supply tab) would get a panel that can read nothing.
         """

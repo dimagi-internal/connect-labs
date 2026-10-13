@@ -15,9 +15,11 @@ const LABS = 'https://labs.connect.dimagi.com';
 function sdkHost(declaredState) {
   let declared = declaredState;
   const pushed = [];
+  const patches = [];
   const host = {
     pageState: () => (declared ? JSON.parse(JSON.stringify(declared)) : null),
     updatePageState(patch) {
+      patches.push(JSON.parse(JSON.stringify(patch)));
       if (!declared) return null;
       const next = { ...declared, ...(patch || {}) };
       next.resource = declared.resource;
@@ -27,7 +29,7 @@ function sdkHost(declaredState) {
       return host.pageState();
     },
   };
-  return { host, pushed, current: () => declared };
+  return { host, pushed, patches, current: () => declared };
 }
 
 const PAGE_STATE = {
@@ -80,6 +82,14 @@ describe('shareSelection reaches the canopy panel', () => {
       },
     });
     expect(out.error).toBeUndefined();
+    // What labs sends the SDK, before the SDK's own pinning: only the selection, the
+    // server's filters with the drill under them -- never a resource, tool or path.
+    expect(sdk.patches).toEqual([
+      {
+        filters: { ...PAGE_STATE.filters, drilled: { opportunity: 'Kano' } },
+        visible_ids: ['10::amina', '11'],
+      },
+    ]);
     const state = sdk.current();
     expect(state.resource).toBe(PAGE_STATE.resource);
     expect(state.backing_tool).toBe('page_context');
