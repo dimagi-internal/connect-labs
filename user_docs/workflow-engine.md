@@ -102,6 +102,17 @@ On each workflow's listing you will see a line indicating whether it is built to
 
 If you are asked to confirm an action you did not expect while previewing in sandbox mode, that is the protection working as intended — check what the workflow is about to do before clicking yes.
 
+#### Scrolling and layout in the sandbox
+
+When you open a workflow or page in the sandbox, it looks and scrolls exactly like the normal (non-sandboxed) version:
+
+- The page grows to match the length of its content — there is no second scrollbar inside the report.
+- The page scrolls as a whole, so the browser's own scrollbar is the only one you use.
+- Dialogs open where you are looking, toasts appear at the bottom of the window, and tooltips appear beneath whatever you hover.
+- **Jump to** buttons and fields that receive focus scroll the page to bring themselves into view.
+
+One deliberate difference from the normal page: a header row set to stay fixed at the top of the report sticks just below the Labs header, where it remains visible as you scroll. On the normal page, that same sticky header can slide underneath the Labs header and become hidden.
+
 !!! note "All live workflows are fully compatible with the sandbox"
     Every workflow that exists on Labs today works correctly in the protected frame. This includes the older MBW monitoring dashboards, which load their data, stream their progress, open GPS details, and save snapshots as normal. Authorization buttons (such as **Authorize CommCare** or **Authorize OCS**) bring you back to the workflow after you sign in. Any confirmation question a workflow presents is shown in Labs' own dialog and properly waited for before continuing. No workflow requires an exemption from the sandbox.
 
@@ -217,11 +228,4 @@ This replaces the yellow **Select Context** button that previously appeared when
 
 An organisation can have one page designated as its **home page**. When someone picks that organisation in Labs — or follows a link to `/labs/overview/?organization_id=<organisation>` — they land on the home page instead of the default overview.
 
-To set the home page, go to the organisation's **Settings** and choose the page you want visitors to land on from the list of the organisation's pages. You must have access to the program or opportunity behind the page in order to set it as the home page, and visitors will only be taken to the home page if they have that same access.
-
-!!! note "Only pages can be set as the home page"
-    Settings will only accept a page as the home page — you cannot set a regular workflow (one with runs) as the home. If you try to select a regular workflow, Settings will refuse it. If an address that was previously saved as a home is not a page, opening it will show a "this home is not a page" message rather than drawing anything. Pages created from the "Page" starter before pages were formally labelled as pages still count as pages and continue to work as homes.
-
-### Pages in the Supply tab
-
-A page can also be set to fill a **Supply tab**. When configured this way, the page opens inside the Supply header without starting a run. This lets you show stock summaries, links to supply workflows, or other supply-related
+To set the home page, go to the organisation's **Settings** and choose the page you want visitors to land on from the list of the organisation's pages. You must have access to the program or opportunity behind the page in order to set it as
