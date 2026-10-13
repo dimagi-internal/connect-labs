@@ -33,6 +33,10 @@ Click any workflow to open its dashboard.
 
 On the Workflows list, **pages** (see [Pages](#pages)) appear alongside regular workflows but show an **Open page** button instead of **Start run**. Pages do not appear in the workflow run list.
 
+### Navigating on a phone
+
+On a phone, the purple menu rail that normally runs down the left side of the screen is hidden to give your workflow content the full width of the screen. A **menu button** (☰) in the top-left corner of the header opens the same navigation as a drawer that slides over the page. To close the drawer, tap anywhere outside it, press its close button, or press **Escape**. On a tablet, laptop, or desktop, the layout is unchanged.
+
 ### The PERIOD column
 
 The **PERIOD** column in the workflow list shows the date window that was actually audited for each run. Once a run has fired and audited data, this reflects the real window that was processed — which may differ from the date range that was set when the run was first created (for example, when you used the generic **Create Run** button).
@@ -258,9 +262,4 @@ The card has one primary action and a quiet secondary link:
 
 | Action | What it does |
 |---|---|
-| **Send to \<worker\>** | Sends the coaching message to the field worker |
-| **Send a test to me instead** | Switches the card to test mode — enter your PersonalID username, then click **Send test** to preview and send in one step (Dimagi staff only) |
-
-Leaving the card without clicking **Send to \<worker\>** simply means you are not ready yet — there is no separate "Not yet" button.
-
-!!! note "You decide when coaching is sent —
+| **Send to \
