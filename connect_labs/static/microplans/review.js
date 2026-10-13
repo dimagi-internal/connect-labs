@@ -481,6 +481,7 @@
         revertInspect();
       });
       map.on('mousemove', 'wa-fill', (e) => {
+        if (map.getContainer().classList.contains('mp-drawing')) return;
         const f = e.features[0];
         if (!f) return;
         if (f.properties.id === hoverWAId) return; // only rebuild when the cell changes
