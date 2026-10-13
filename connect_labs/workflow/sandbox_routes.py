@@ -48,7 +48,8 @@ ROUTES: tuple[Route, ...] = (
     Route(
         GET,
         r"^/labs/workflow/api/(?<def>\d+)/"
-        r"(pipeline-rows|pipeline-rows/stream|case-states|pipeline-data|supply-data|workflow-data)/$",
+        r"(pipeline-rows|pipeline-rows/stream|case-states|pipeline-data|pipeline-data/stream|supply-data"
+        r"|workflow-data|schedule)/$",
         "read",
     ),
     Route(POST, r"^/labs/workflow/api/(?<def>\d+)/(pipeline-query|supply-query|workflow-query)/$", "read"),
@@ -73,6 +74,7 @@ ROUTES: tuple[Route, ...] = (
     ),
     Route(GET, r"^/audit/api/program/(?<prog>\d+)/sessions-summary/$", "read"),
     Route(GET, r"^/audit/api/scope-context/$", "read"),
+    Route(GET, r"^/audit/api/opportunities/search/$", "read"),
     Route(GET, r"^/audit/api/ai-agents/$", "read"),
     Route(GET, r"^/audit/api/workflow/(\d+)/sessions/$", "read"),
     Route(GET, r"^/audit/api/(\d+)/bulk-data/$", "read"),
@@ -83,6 +85,8 @@ ROUTES: tuple[Route, ...] = (
     Route(GET, r"^/labs/benchmarks/api/(?<opp>\d+)/$", "read"),
     Route(GET, r"^/microplans/boundaries/(viewport|countries)/$", "read"),
     Route(GET, r"^/microplans/(?<opp>\d+)/boundaries/(areas|geometry|population_by_name)/$", "read"),
+    Route(POST, r"^/microplans/(?<opp>\d+)/preview_footprints/$", "read"),
+    Route(GET, r"^/microplans/preview_status/(?<job>[A-Za-z0-9_.:-]+)/$", "read"),
     # Own: this run's and this workflow's own records
     Route(
         POST, r"^/labs/workflow/api/run/(?<run>\d+)/(state|worker-result|flags|rename|reconcile-generation)/$", "own"
@@ -101,6 +105,7 @@ ROUTES: tuple[Route, ...] = (
     Route(POST, r"^/audit/api/audit/(create|create-async)/$", "effect"),
     Route(POST, r"^/audit/api/audit/task/(?<rec>[A-Za-z0-9_.:-]+)/cancel/$", "effect"),
     Route(POST, r"^/audit/api/(?<rec>\d+)/delete/$", "effect"),
+    Route(POST, r"^/audit/api/(?<rec>\d+)/save/$", "effect"),
 )
 
 #: Never reachable, whatever a route says (routes.ts FETCH_DENIED).

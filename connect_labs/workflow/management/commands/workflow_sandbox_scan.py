@@ -23,6 +23,7 @@ On prod (output lands in the Actions log):
         --field command="workflow_sandbox_scan --all-users"
 
 Output: ids, names, scopes, pattern ids and line numbers. Never code, never data.
+``--summary`` prints only the coverage and the counts (the rows run to hundreds).
 Exits 0 whatever it finds; non-zero only when it cannot run.
 """
 
@@ -44,11 +45,12 @@ GAP = (
     "Include them with --as-user USERNAME (repeatable) or --all-users, which read each user's org tree "
     "with their stored Connect token."
 )
-#: Patterns with a one-for-one replacement (the ones the seed templates were fixed with).
+#: Patterns with a one-for-one replacement. `location_assign` and `location_reload`
+#: are compiled to the host's navigate in the frame (rewrite.ts) and need none; a
+#: `confirm` that the compile cannot make wait (not in an async function or handler)
+#: still does.
 MECHANICAL = {
-    "location_assign": "await actions.navigate(url)",
-    "location_reload": "await actions.reload()",
-    "confirm": "await view.confirm(text)",
+    "confirm": "await view.confirm(text)  (in an async function)",
 }
 PARTIAL_GAP = (
     "PARTLY COVERED: real-opportunity definitions were read only in the scopes the scanned users belong to. "
@@ -78,6 +80,11 @@ class Command(BaseCommand):
             help="Least severe finding listed row by row (all are counted). Default: changes.",
         )
         parser.add_argument("--json", action="store_true", help="Machine-readable output.")
+        parser.add_argument(
+            "--summary",
+            action="store_true",
+            help="Only the coverage and the counts: no rows, no per-template table.",
+        )
         parser.add_argument(
             "--fix-suggestions",
             action="store_true",
@@ -149,7 +156,9 @@ class Command(BaseCommand):
         w("")
 
         for title, targets in (("Definitions", definitions), ("Deployed seed templates", templates)):
-            self._section(title, targets, floor)
+            self._section(title, targets, floor, summary=options["summary"])
+        if options["summary"]:
+            return
 
         if options["fix_suggestions"]:
             found = Counter(f.pattern for t in definitions + templates for f in t.findings)
@@ -168,7 +177,7 @@ class Command(BaseCommand):
             for t in definitions:
                 lines_by = {}
                 for f in t.findings:
-                    if f.pattern in MECHANICAL:
+                    if f.pattern in MECHANICAL and f.severity == "breaks":
                         lines_by.setdefault(f.pattern, []).append(f.line)
                 for pattern, lines in lines_by.items():
                     proposed += 1
@@ -180,7 +189,7 @@ class Command(BaseCommand):
                 w("(none)")
             w("")
 
-    def _section(self, title, targets, floor):
+    def _section(self, title, targets, floor, summary=False):
         w = self.stdout.write
         with_findings = [t for t in targets if t.findings]
         w(f"== {title}: {len(targets)} scanned, {len(with_findings)} with findings")
@@ -191,7 +200,36 @@ class Command(BaseCommand):
             f"{sum(1 for t in targets if t.worst == 'breaks' and t.sandboxed_all and not t.sandboxed_now)}; "
             f"breaking and sandboxed now: {sum(1 for t in targets if t.worst == 'breaks' and t.sandboxed_now)}"
         )
+        exempt = [t for t in targets if t.worst == "breaks" and "pinned out of the sandbox" in (t.note or "")]
+        w(
+            f"breaking but kept out of the sandbox under `all` (pinned deprecated): {len(exempt)}; "
+            f"breaking AND sandboxed under `all`: "
+            f"{sum(1 for t in targets if t.worst == 'breaks' and t.sandboxed_all)}"
+        )
         w(f"no render code found: {sum(1 for t in targets if not t.code_found)}")
+
+        by_pattern = Counter()
+        hits = Counter()
+        for t in targets:
+            for key in {(f.pattern, f.severity) for f in t.findings}:
+                by_pattern[key] += 1
+            for f in t.findings:
+                hits[(f.pattern, f.severity)] += 1
+        w("-- by pattern and severity (definitions / occurrences)")
+        for p in PATTERNS:
+            for sev in SEVERITY_ORDER:
+                if by_pattern.get((p.id, sev)):
+                    w(f"  {p.id:<18} {sev:<8} {by_pattern[(p.id, sev)]:>4} / {hits[(p.id, sev)]}")
+
+        if summary:
+            breaking = Counter((t.template_type or "-") for t in targets if t.worst == "breaks" and t.sandboxed_all)
+            w("-- breaking AND sandboxed under `all`, by template")
+            for tt, n in sorted(breaking.items()):
+                w(f"  {tt:<32} {n}")
+            if not breaking:
+                w("  (none)")
+            w("")
+            return
 
         by_template = Counter()
         for t in targets:
@@ -199,18 +237,6 @@ class Command(BaseCommand):
         w("-- by template / render source / worst")
         for (tt, rs, worst), n in sorted(by_template.items()):
             w(f"  {tt:<32} {rs:<18} {worst:<8} {n}")
-
-        by_pattern = Counter()
-        hits = Counter()
-        for t in targets:
-            for p in {f.pattern for f in t.findings}:
-                by_pattern[p] += 1
-            for f in t.findings:
-                hits[f.pattern] += 1
-        w("-- by pattern (definitions / occurrences)")
-        for p in PATTERNS:
-            if by_pattern.get(p.id):
-                w(f"  {p.id:<18} {p.severity:<8} {by_pattern[p.id]:>4} / {hits[p.id]}")
 
         w("-- rows: origin id | name | owner | render source | sandboxed now/all | pattern | severity | line | detail")
         for t in sorted(targets, key=lambda t: (SEVERITY_ORDER.get(t.worst, 9), str(t.owner), str(t.id))):

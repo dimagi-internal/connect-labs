@@ -12,21 +12,28 @@
  *                                  which the CSP mostly refuses)
  * - `<img src="<labs path>">`   -> the bytes fetched through the bridge, shown as a
  *                                  `blob:` URL (the only images img-src allows)
- * - `EventSource`               -> absent, so render code takes its plain-fetch path
+ * - `EventSource`               -> a stream the HOST reads (bridge `streamOpen`),
+ *                                  checked against the same route table as fetch
+ * - `FormData` bodies           -> sent url-encoded (files are refused)
  * - `document.cookie`           -> "" (reading it throws in an opaque origin)
+ * - `confirm()` / `prompt()`    -> No / null, and a host notice saying so (where the
+ *                                  call sits in an async function or an event
+ *                                  handler, ./rewrite.ts compiled it to the host's
+ *                                  own question instead)
  * - `alert(text)`               -> bridge `notify`, drawn by the host as text
  * - `window.open(url)`          -> bridge `navigate` in a new tab
  * - `history.pushState/replace` -> bridge `setLocation` on the host's own URL
  * - `navigator.clipboard`       -> bridge `copyText`
  * - a click on `<a download>`   -> bridge `download` with the blob's bytes
  *
- * Not shimmed: `window.location = ...`. The Navigation API that could cancel it is
- * disabled in an opaque-origin document, so the frame navigates, the host's
- * frame-src refuses the destination, and the host stops the frame ("tried to
- * leave"). Render code uses `actions.navigate(url)` instead.
+ * `window.location` cannot be shimmed at run time (the Navigation API that could
+ * cancel a navigation is disabled in an opaque-origin document, and the property
+ * cannot be redefined). ./rewrite.ts compiles every reference to it into
+ * `__labsSandbox.location` (`sandboxGlobals` below) instead.
  */
 
 import type { Bridge } from './frame';
+import type { StreamMessage } from './protocol';
 
 export interface FetchAnswer {
   status: number;
@@ -70,8 +77,22 @@ async function bodyOf(
   if (typeof Blob !== 'undefined' && body instanceof Blob) {
     return body.arrayBuffer();
   }
+  // A form of plain fields (a CSRF token among them, which the host drops: it adds
+  // its own) goes as the url-encoded form it is equivalent to. A file is refused:
+  // there is no upload route.
+  if (typeof FormData !== 'undefined' && body instanceof FormData) {
+    const params = new URLSearchParams();
+    body.forEach((value, key) => {
+      if (typeof value !== 'string') {
+        throw new TypeError('In the sandbox a form may not carry a file');
+      }
+      params.append(key, value);
+    });
+    headers['content-type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
+    return params.toString();
+  }
   throw new TypeError(
-    'In the sandbox a request body must be text, URLSearchParams or bytes',
+    'In the sandbox a request body must be text, a form, URLSearchParams or bytes',
   );
 }
 
@@ -288,13 +309,300 @@ export async function downloadBytes(
 }
 
 // ---------------------------------------------------------------------------
+// The address, and confirm(): what ./rewrite.ts compiles render code to reach
+// ---------------------------------------------------------------------------
+
+/** The host page's query and hash as the frame has set them (history, a hash). */
+export interface AddressState {
+  search: string;
+  hash: string;
+}
+
+/** `resolveHref` from ./frame, here to keep this module free of a cycle. */
+function resolveAgainst(raw: string, base: string): string {
+  try {
+    return new URL(raw, base).href;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * What render code compiled for the frame reaches as `__labsSandbox` (a parameter
+ * of its wrapper, renderCode.tsx): `location`, read off the HOST page's address and
+ * turning every change into a request the host checks, and `confirm`, the host's
+ * own question.
+ */
+export function sandboxGlobals(
+  bridge: Bridge,
+  pageUrl: () => string,
+  address: AddressState,
+): {
+  location: Record<string, unknown>;
+  confirm: (text?: unknown) => Promise<boolean>;
+} {
+  const current = (): URL => {
+    let u: URL;
+    try {
+      u = new URL(pageUrl());
+    } catch {
+      u = new URL('about:blank');
+    }
+    u.search = address.search;
+    u.hash = address.hash;
+    return u;
+  };
+  const go = (url: unknown) => {
+    const href = resolveAgainst(String(url), current().href) || String(url);
+    bridge
+      .request('navigate', { url: href, newTab: false })
+      .catch((e) => console.warn('[workflow] navigation refused:', e.message));
+  };
+  const withPart = (part: 'pathname' | 'search', value: unknown) => {
+    const u = current();
+    u[part] = String(value);
+    go(u.href);
+  };
+  const setHash = (value: unknown) => {
+    const raw = String(value ?? '');
+    address.hash =
+      raw === '' || raw === '#' ? '' : raw.startsWith('#') ? raw : '#' + raw;
+    bridge
+      .request('setLocation', {
+        search: address.search,
+        hash: address.hash,
+        push: true,
+      })
+      .catch((e) =>
+        console.warn('[workflow] address change refused:', e.message),
+      );
+  };
+  const read = (part: keyof URL) => () => String(current()[part]);
+  const location: Record<string, unknown> = {};
+  Object.defineProperties(location, {
+    href: { get: read('href'), set: go, enumerable: true },
+    pathname: {
+      get: read('pathname'),
+      set: (v: unknown) => withPart('pathname', v),
+      enumerable: true,
+    },
+    search: {
+      get: read('search'),
+      set: (v: unknown) => withPart('search', v),
+      enumerable: true,
+    },
+    hash: { get: read('hash'), set: setHash, enumerable: true },
+    origin: { get: read('origin'), enumerable: true },
+    protocol: { get: read('protocol'), enumerable: true },
+    host: { get: read('host'), enumerable: true },
+    hostname: { get: read('hostname'), enumerable: true },
+    port: { get: read('port'), enumerable: true },
+    assign: { value: go },
+    replace: { value: go },
+    // The address without its hash: navigating to the same address WITH one is a
+    // same-page jump, not a reload.
+    reload: {
+      value: () => {
+        const u = current();
+        u.hash = '';
+        go(u.href);
+      },
+    },
+    toString: { value: () => current().href },
+    valueOf: { value: () => current().href },
+  });
+  const holder = {
+    confirm: (text?: unknown) =>
+      bridge
+        .request('confirm', {
+          text: String(text ?? '').slice(0, 2_000) || 'Are you sure?',
+        })
+        .then(Boolean, () => false),
+  } as {
+    location: Record<string, unknown>;
+    confirm: (text?: unknown) => Promise<boolean>;
+  };
+  // `__labsSandbox.location = url` (from `window.location = url`) navigates.
+  Object.defineProperty(holder, 'location', {
+    get: () => location,
+    set: go,
+    enumerable: true,
+  });
+  return holder;
+}
+
+// ---------------------------------------------------------------------------
+// EventSource: a stream the host reads, as the viewer, for a route it allows
+// ---------------------------------------------------------------------------
+
+/** The bridge, plus the stream messages the host pushes on the same port. */
+export interface StreamingBridge extends Bridge {
+  listen?(stream: string, onMessage: (m: StreamMessage) => void): () => void;
+}
+
+/**
+ * `EventSource` in the frame. The frame has no network to labs, so the HOST opens
+ * the stream (bridge `streamOpen`, checked against ./routes.ts as a GET, made with
+ * the viewer's session and the same `X-Labs-Sandbox-*` headers as a fetch) and
+ * pushes each event back over the port. One difference from a browser's: it does
+ * not reconnect. When the stream ends or fails the source is CLOSED and `error`
+ * fires, which is what render code that streams already handles (it closes, or
+ * falls back to a plain fetch).
+ */
+export function makeEventSource(
+  bridge: StreamingBridge,
+  base: () => string,
+): typeof EventSource {
+  type Listener = EventListenerOrEventListenerObject;
+  // Its own listener list, not EventTarget's: some EventTargets also call `on<type>`
+  // themselves, and the handler would run twice.
+  class SandboxEventSource {
+    static readonly CONNECTING = 0;
+    static readonly OPEN = 1;
+    static readonly CLOSED = 2;
+    readonly CONNECTING = 0;
+    readonly OPEN = 1;
+    readonly CLOSED = 2;
+    readonly url: string;
+    readonly withCredentials: boolean;
+    readyState = 0;
+    onopen: ((ev: Event) => unknown) | null = null;
+    onmessage: ((ev: MessageEvent) => unknown) | null = null;
+    onerror: ((ev: Event) => unknown) | null = null;
+    private stream: string | null = null;
+    private unlisten: (() => void) | null = null;
+    private listeners = new Map<string, Listener[]>();
+
+    constructor(url: string | URL, init?: { withCredentials?: boolean }) {
+      const target = labsUrl(String(url), base());
+      this.url = target ? target.href : String(url);
+      this.withCredentials = Boolean(init?.withCredentials);
+      if (!target || !bridge.listen) {
+        // Another host: the frame's connect-src refuses it, as a browser's would.
+        setTimeout(() => this.fail(), 0);
+        return;
+      }
+      bridge
+        .request('streamOpen', { url: target.pathname + target.search })
+        .then(
+          (answer) => {
+            const id = (answer as { stream?: unknown })?.stream;
+            if (typeof id !== 'string') return this.fail();
+            if (this.readyState === 2) {
+              bridge
+                .request('streamClose', { stream: id })
+                .catch(() => undefined);
+              return;
+            }
+            this.stream = id;
+            this.unlisten = bridge.listen!(id, (m) => this.receive(m));
+          },
+          (e) => {
+            console.warn('[workflow] stream refused:', e.message);
+            this.fail();
+          },
+        );
+    }
+
+    addEventListener(type: string, listener: Listener | null) {
+      if (!listener) return;
+      const list = this.listeners.get(type) || [];
+      if (!list.includes(listener)) list.push(listener);
+      this.listeners.set(type, list);
+    }
+
+    removeEventListener(type: string, listener: Listener | null) {
+      const list = this.listeners.get(type) || [];
+      this.listeners.set(
+        type,
+        list.filter((l) => l !== listener),
+      );
+    }
+
+    dispatchEvent(event: Event): boolean {
+      for (const l of [...(this.listeners.get(event.type) || [])]) {
+        try {
+          if (typeof l === 'function') l.call(this, event);
+          else l.handleEvent(event);
+        } catch (e) {
+          setTimeout(() => {
+            throw e;
+          }, 0);
+        }
+      }
+      return true;
+    }
+
+    private emit(event: Event) {
+      this.dispatchEvent(event);
+      const handler = (this as unknown as Record<string, unknown>)[
+        'on' + event.type
+      ];
+      if (typeof handler !== 'function') return;
+      try {
+        handler.call(this, event);
+      } catch (e) {
+        // As a browser does: reported, and the stream goes on.
+        setTimeout(() => {
+          throw e;
+        }, 0);
+      }
+    }
+
+    private receive(m: StreamMessage) {
+      if (this.readyState === 2) return;
+      if (m.kind === 'open') {
+        this.readyState = 1;
+        this.emit(new Event('open'));
+        return;
+      }
+      if (m.kind === 'event') {
+        this.emit(
+          new MessageEvent(m.name || 'message', {
+            data: m.data ?? '',
+            lastEventId: m.lastEventId ?? '',
+            origin: new URL(this.url).origin,
+          }),
+        );
+        return;
+      }
+      this.fail();
+    }
+
+    private fail() {
+      if (this.readyState === 2) return;
+      this.release();
+      this.emit(new Event('error'));
+    }
+
+    private release() {
+      this.readyState = 2;
+      if (this.unlisten) this.unlisten();
+      this.unlisten = null;
+    }
+
+    close() {
+      if (this.readyState === 2) return;
+      const id = this.stream;
+      this.release();
+      if (id)
+        bridge.request('streamClose', { stream: id }).catch(() => undefined);
+    }
+  }
+  return SandboxEventSource as unknown as typeof EventSource;
+}
+
+// ---------------------------------------------------------------------------
 // The rest of the window
 // ---------------------------------------------------------------------------
 
 export function installWorkflowShims(
   win: Window & typeof globalThis,
-  bridge: Bridge,
+  bridge: StreamingBridge,
   pageUrl: () => string,
+  /** The host page's query and hash as the frame last set them (shared with the
+   * `location` render code is compiled to reach, sandboxGlobals). */
+  address: AddressState = { search: '', hash: '' },
 ): { sandboxFetch: typeof fetch; blobs: Map<string, Blob> } {
   const doc = win.document;
   const nativeFetch = win.fetch.bind(win);
@@ -313,9 +621,8 @@ export function installWorkflowShims(
   };
 
   define(win, 'fetch', sandboxFetch);
-  // Render code that streams prefers EventSource and falls back to a plain fetch
-  // when there is none; the frame has no network to labs to stream over.
-  define(win, 'EventSource', undefined);
+  // The frame has no network to labs to stream over: the host reads the stream.
+  define(win, 'EventSource', makeEventSource(bridge, base));
 
   try {
     Object.defineProperty(win.Document.prototype, 'cookie', {
@@ -332,6 +639,22 @@ export function installWorkflowShims(
       .request('notify', { message: String(message ?? '') })
       .catch(() => undefined);
   });
+
+  // A question code waits for synchronously cannot be the host's (it answers
+  // later). ./rewrite.ts compiled the ones it could make wait; any left answer No
+  // -- the safe answer, since whatever they guard does not happen -- and say so.
+  const unanswerable = (kind: string) => (message?: unknown) => {
+    bridge
+      .request('notify', {
+        message:
+          `A question this code asked cannot be waited for in the sandbox, so it was answered ${kind}: ` +
+          String(message ?? '').slice(0, 500),
+      })
+      .catch(() => undefined);
+    return kind === 'No' ? false : null;
+  };
+  define(win, 'confirm', unanswerable('No'));
+  define(win, 'prompt', unanswerable('with nothing'));
 
   define(win, 'open', (url?: string | URL) => {
     if (url) {
@@ -366,6 +689,8 @@ export function installWorkflowShims(
         } catch {
           return;
         }
+        address.search = target.search;
+        address.hash = target.hash;
         bridge
           .request('setLocation', {
             search: target.search,

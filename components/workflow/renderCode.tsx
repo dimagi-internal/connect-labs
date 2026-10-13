@@ -17,7 +17,7 @@ declare global {
     Babel?: {
       transform: (
         code: string,
-        options: { presets: string[] },
+        options: { presets: string[]; plugins?: unknown[] },
       ) => { code: string };
     };
   }
@@ -44,29 +44,50 @@ export function useBabel(): boolean {
 }
 
 /**
+ * How the sandbox frame compiles render code differently (components/workflow/
+ * sandbox/rewrite.ts): extra Babel plugins, and values the compiled code reaches by
+ * name, passed as parameters of its wrapper (never globals). The run page passes
+ * none, so it compiles exactly as before.
+ */
+export interface CompileOptions {
+  plugins?: unknown[];
+  params?: Record<string, unknown>;
+}
+
+/**
  * Transpile render code (which defines `function WorkflowUI(props)`) and return the
  * component, or null with the reason logged.
  */
 export function compileRenderCode(
   code: string,
+  options: CompileOptions = {},
 ): React.FC<WorkflowProps> | null {
   if (!window.Babel) {
     console.error('renderCode: Babel not loaded yet');
     return null;
   }
   try {
+    const names = Object.keys(options.params || {}).filter((n) =>
+      /^[A-Za-z_$][\w$]*$/.test(n),
+    );
     const wrappedCode = `
-      (function(React) {
+      (function(${['React', ...names].join(', ')}) {
         ${code}
         return WorkflowUI;
       })
     `;
     const transpiled = window.Babel.transform(wrappedCode, {
       presets: ['react'],
+      ...(options.plugins && options.plugins.length
+        ? { plugins: options.plugins }
+        : {}),
     });
     // eslint-disable-next-line no-eval
     const factory = eval(transpiled.code);
-    const Component = factory(React);
+    const Component = factory(
+      React,
+      ...names.map((n) => (options.params as Record<string, unknown>)[n]),
+    );
     if (!Component) {
       console.error('renderCode: WorkflowUI function not found in code');
       return null;
