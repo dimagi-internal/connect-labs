@@ -199,9 +199,11 @@ def test_the_workspace_program_appears_in_a_network_managers_picker(people, ws, 
         request = rf.get("/")
         request.user = _fresh(user)
         request.session = {"labs_oauth": {"organization_data": {}}}
-        return {p["id"] for p in get_org_data(request).get("programs", [])}
+        return {p["id"]: p.get("name") for p in get_org_data(request).get("programs", [])}
 
-    assert ws["program"] in picker(people["nm_river"])
+    # By name, for Network and Program Managers alike, with the synthetic-data toggle off.
+    assert picker(people["nm_river"]).get(ws["program"]) == "Test Stage Program"
+    assert picker(people["pm"]).get(ws["program"]) == "Test Stage Program"
     assert ws["program"] not in picker(people["stranger"])
 
 
@@ -405,6 +407,67 @@ def test_setup_command_is_idempotent_and_edits_the_linked_programs(django_user_m
     assert workspace.connect_program_ids == [9302]
     assert SyntheticOpportunity.objects.filter(labs_org=workspace.org, program_name="CLP Stage 4").count() == 1
     assert OrgMembership.objects.get(org=workspace.org, user=admin).role == "admin"
+
+
+def _existing_program(opportunity_id, org_name="Existing Org", program_name="Existing Stage"):
+    """A labs-only program made the way the MCP synthetic_create_labs_only tool makes one."""
+    return SyntheticOpportunity.objects.create(
+        opportunity_id=opportunity_id,
+        label=program_name,
+        org_name=org_name,
+        program_name=program_name,
+        gdrive_folder_id="",
+        labs_only=True,
+        allowed_domains=["@dimagi.com"],
+    )
+
+
+def test_setup_command_adopts_an_existing_program_by_id_without_duplicating():
+    from connect_labs.labs.models import Workspace
+
+    opp = _existing_program(10_620)
+    ProgramPlanDataAccess(10_620, access_token="labs-local").create_plan(
+        region="Before", name="Before", mode="coverage", pins=_EMPTY, hulls=_HULLS
+    )
+    call_command("setup_autoconnect_workspace", "--program-id", "10620", "--connect-program-id", "9401")
+    call_command("setup_autoconnect_workspace", "--program-id", "10620")
+    opp.refresh_from_db()
+    assert Workspace.objects.get().org == opp.labs_org
+    assert Workspace.objects.get().connect_program_ids == [9401]
+    assert SyntheticOpportunity.objects.count() == 1
+    # A plan made before the program became a workspace has no team: Program Managers' only.
+    assert "team" not in ProgramPlanDataAccess(10_620, access_token="labs-local").list_plans()[0].data
+
+
+def test_setup_command_adopts_an_existing_program_by_name():
+    from connect_labs.labs.models import Workspace
+
+    opp = _existing_program(10_630, org_name="Auto-Connect", program_name="CLP Stage 4")
+    call_command("setup_autoconnect_workspace")
+    call_command("setup_autoconnect_workspace")
+    opp.refresh_from_db()
+    assert Workspace.objects.get().org == opp.labs_org
+    assert SyntheticOpportunity.objects.count() == 1
+
+
+def test_setup_command_refuses_an_org_holding_other_programs(django_user_model):
+    from django.core.management.base import CommandError
+
+    from connect_labs.labs.models import Workspace
+
+    first = _existing_program(10_640)
+    SyntheticOpportunity.objects.create(
+        opportunity_id=10_641,
+        label="Another",
+        org_name="Existing Org",
+        program_name="Another program",
+        gdrive_folder_id="",
+        labs_only=True,
+        labs_org=first.labs_org,
+    )
+    with pytest.raises(CommandError):
+        call_command("setup_autoconnect_workspace", "--program-id", "10640")
+    assert not Workspace.objects.exists()
 
 
 def test_settings_page_is_program_managers_only_and_sets_linked_programs(client, people, ws):
