@@ -1497,9 +1497,13 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             scope = self.page_scope or scope_in_view(labs_context)
             workflow_data = context["workflow_data"]
             workflow_data["is_page"] = page
-            # Staff see whether this render runs in the sandbox, and a link to try it there
-            # (the rollout is per workflow; sandbox.py).
-            workflow_data["viewer_is_staff"] = bool(getattr(self.request.user, "is_staff", False))
+            # Dimagi staff see whether this render runs in the sandbox, and a link to try it
+            # there (the rollout is per workflow; sandbox.py). A display hint, not a
+            # permission, so a Dimagi sign-in counts (utils.dimagi_user.is_dimagi_staff):
+            # `is_staff` alone hid it from everyone signed in through Connect.
+            from connect_labs.utils.dimagi_user import is_dimagi_staff
+
+            workflow_data["viewer_is_staff"] = is_dimagi_staff(self.request.user)
             workflow_data["scope"] = page_scope(self.request, scope)
             workflow_data["config"] = page_config(self.request, definition, scope)
             # Other workflows' runs (workflow/workflow_sources.py): the `workflows` prop and

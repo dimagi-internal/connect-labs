@@ -224,3 +224,19 @@ def test_the_sandbox_flag_is_never_inherited_onto_an_older_instance():
     key = sorted(SANDBOX_CHECKED)[0]
     older = {"name": "x", "config": {}}
     assert "sandbox" not in with_inherited_config_flags(older, key)["config"]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "email, is_staff, shown",
+    [("amina@dimagi.com", False, True), ("amina@partner.org", False, False), ("amina@partner.org", True, True)],
+)
+def test_the_sandbox_line_is_shown_to_dimagi_staff_by_email_or_flag(email, is_staff, shown):
+    """A display hint, not a permission: `is_staff` alone hid it from everyone signed in through Connect."""
+    from django.contrib.auth import get_user_model
+
+    user, _ = get_user_model().objects.get_or_create(username="amina")
+    user.email, user.is_staff = email, is_staff
+    user.save()
+    body = _render_run(OPTED_IN, "?program_id=25&run_id=503").content.decode()
+    assert f'"viewer_is_staff": {"true" if shown else "false"}' in body
