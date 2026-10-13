@@ -44,7 +44,8 @@ export interface SandboxFrameProps {
     visible_ids: string[];
     drilled: Record<string, unknown>;
   }): void;
-  /** 'workflow' (phase 2) with `workflow` set; a page otherwise. */
+  /** What it draws: a page has no run. Both get the full method set when
+   * `workflow` (the host's handlers) is given. */
   mode?: SandboxMode;
   workflow?: WorkflowHostProps;
 }
@@ -126,66 +127,59 @@ export function SandboxFrame(props: SandboxFrameProps) {
         });
       });
     const wf = propsRef.current.workflow;
-    const workflowHandlers: WorkflowHandlers | undefined =
-      props.mode === 'workflow' && wf
-        ? {
-            fetch: (checked, init) =>
-              proxyFetch(
-                checked,
-                init,
-                propsRef.current.workflow!.csrfToken,
-                fetch,
-                (url) =>
-                  checkFetch(
-                    url,
-                    'GET',
-                    propsRef.current.workflow!.routeContext,
-                  ),
-              ),
-            queryPipelineRows: (alias, query) =>
-              propsRef.current.workflow!.queryPipelineRows(alias, query),
-            updateState: (state) =>
-              propsRef.current.workflow!.updateState(state),
-            runAction: (key, args, options) =>
-              propsRef.current.workflow!.runAction(key, args, options),
-            actionKeys: () => propsRef.current.workflow!.actionKeys(),
-            ask: (text) =>
-              askQuestion({ from: 'labs', text, okLabel: 'Allow' }),
-            completeRun: async (pageText) => {
-              const yes = await askQuestion({
-                from: 'labs',
-                text: 'Complete this run? It is saved as it is now and cannot change after.',
-                detail: pageText || undefined,
-                okLabel: 'Complete run',
-              });
-              if (!yes) return false;
-              const res = await propsRef.current.workflow!.completeRun();
-              if (!res.success) {
-                setNotices((n) => [
-                  ...n,
-                  {
-                    id: Date.now(),
-                    text: `The run could not be completed: ${res.error || 'unknown error'}`,
-                  },
-                ]);
-                return false;
-              }
-              // Re-drawn from the snapshot the server just wrote.
-              window.location.reload();
-              return true;
-            },
-            setLocation: (search, hash, push) => {
-              const url = window.location.pathname + search + hash;
-              if (push) window.history.pushState(null, '', url);
-              else window.history.replaceState(null, '', url);
-            },
-            notify: (text) =>
+    const workflowHandlers: WorkflowHandlers | undefined = wf
+      ? {
+          fetch: (checked, init) =>
+            proxyFetch(
+              checked,
+              init,
+              propsRef.current.workflow!.csrfToken,
+              fetch,
+              (url) =>
+                checkFetch(url, 'GET', propsRef.current.workflow!.routeContext),
+            ),
+          queryPipelineRows: (alias, query) =>
+            propsRef.current.workflow!.queryPipelineRows(alias, query),
+          updateState: (state) => propsRef.current.workflow!.updateState(state),
+          runAction: (key, args, options) =>
+            propsRef.current.workflow!.runAction(key, args, options),
+          actionKeys: () => propsRef.current.workflow!.actionKeys(),
+          ask: (text) => askQuestion({ from: 'labs', text, okLabel: 'Allow' }),
+          completeRun: async (pageText) => {
+            const yes = await askQuestion({
+              from: 'labs',
+              text: 'Complete this run? It is saved as it is now and cannot change after.',
+              detail: pageText || undefined,
+              okLabel: 'Complete run',
+            });
+            if (!yes) return false;
+            const res = await propsRef.current.workflow!.completeRun();
+            if (!res.success) {
               setNotices((n) => [
-                ...n.slice(-2),
-                { id: Date.now() + Math.random(), text },
-              ]),
-          }
-        : undefined;
+                ...n,
+                {
+                  id: Date.now(),
+                  text: `The run could not be completed: ${res.error || 'unknown error'}`,
+                },
+              ]);
+              return false;
+            }
+            // Re-drawn from the snapshot the server just wrote.
+            window.location.reload();
+            return true;
+          },
+          setLocation: (search, hash, push) => {
+            const url = window.location.pathname + search + hash;
+            if (push) window.history.pushState(null, '', url);
+            else window.history.replaceState(null, '', url);
+          },
+          notify: (text) =>
+            setNotices((n) => [
+              ...n.slice(-2),
+              { id: Date.now() + Math.random(), text },
+            ]),
+        }
+      : undefined;
     const host = createSandboxHost({
       container: containerRef.current,
       labsOrigin: props.labsOrigin,
@@ -194,8 +188,8 @@ export function SandboxFrame(props: SandboxFrameProps) {
       mode: props.mode,
       routeContext: wf?.routeContext,
       workflow: workflowHandlers,
-      search: props.mode === 'workflow' ? window.location.search : '',
-      fill: props.mode === 'workflow',
+      search: window.location.search,
+      fill: true,
       handlers: {
         querySupply: (alias, args) => propsRef.current.querySupply(alias, args),
         queryWorkflow: (alias) => propsRef.current.queryWorkflow(alias),

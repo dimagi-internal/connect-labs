@@ -2379,23 +2379,15 @@ A **page** is a workflow definition whose data says `"kind": "page"` (`workflow/
 
 **A page's code runs in a sandbox** (`workflow/sandbox.py`, `components/workflow/sandbox/`; spec `docs/superpowers/specs/2026-10-12-page-sandbox-design.md`). On every route that draws a page -- its address, its workflow URL, edit mode, `?present=1`, a supply tab -- the render code runs in an `<iframe sandbox="allow-scripts">` with an opaque origin and an enforced CSP: it has no labs cookies, cannot see the labs page around it, and cannot reach labs or any other host except through a short list of requests the labs page answers, as the viewer. It is compiled exactly as on the run page (`components/workflow/renderCode.tsx`), with the same props and the same globals (`window.LabsReport`, Chart.js, Leaflet, Mapbox GL, `ConnectMap`, Tailwind and Font Awesome classes).
 
-What a page **may** do:
+**A page can do everything a workflow can, except what needs a run** (Jonathan, 2026-10-12: "pages should be completely definable like workflows are"). One capability set and one code path ([§17](#17-workflows-in-the-sandbox)), gated only by "has runs or not":
 
-- Draw from its props: `scope`, `config`, `workflows` (other workflows' run summaries), `supply` (supply figures), `definition`, `instance` (blank) and `onUpdateState` (state kept in the frame only).
-- Read on demand: `actions.querySupply(alias, {args})` and `actions.queryWorkflow(alias)` -- always this page's own declared sources; any definition, opportunity or programme id it passes is dropped.
-- Link with plain `<a href>` (same tab, `target="_blank"`, or a modifier-click), on a click, to labs pages: `/labs/p/`, `/supply/`, `/labs/settings/`, `/labs/targeting/`, `/labs/marketplace/`, `/microplans/`, a workflow's `/labs/workflow/<id>/run/` and the list `/labs/workflow/`. A link to a workflow opens that workflow unsandboxed, as any link to it would.
-- Ask a question with `view.confirm(text)` (drawn by labs, labelled as the page's), save a file with `actions.download({filename, bytes})` (`.csv`, `.xlsx`, `.json`, `.png`, `.pdf`), copy with `actions.copyText(text)` -- the last two on a click.
-- Narrow what the canopy agent looks at with `view.shareSelection({visible_ids, drilled})`, when the page shares with the agent (`config.agent.share`; the agent reads the page through `page_context`). It cannot change what the agent may do.
-- Use `localStorage` / `sessionStorage`: they work, in memory, for the life of the frame.
+- Everything a workflow's render reads: `pipeline_sources` (loaded and streamed as on a workflow: `pipelines`, `workers`, `actions.queryPipelineRows`), `supply`, `workflows`, `scope`, `config`, `definition`, `instance` (blank: a page has no run).
+- Everything a workflow's code may ask labs for, through the same route table and the same questions: tasks, audits, coaching, visit images, admin boundaries for `ConnectMap`, Leaflet tiles, links to audits, tasks and workflows, downloads, the clipboard, `view.confirm`, `view.shareSelection` (the canopy panel, when the page shares with the agent).
+- `onUpdateState` keeps state in the frame (a page has no run to write it to).
 
-What a page **may not** do (each simply fails in the frame):
+What only a run has, so a page cannot: `updateState` to a run, `view.complete`, a declared action (`actions.runAction` -- an action's roster, confirm token and the tasks it attaches all belong to a run), a background job (it writes its results to a run), and every endpoint under `/labs/workflow/api/run/<id>/` that writes. Each refuses with "needs a run, and a page has none".
 
-- `fetch`, `XMLHttpRequest`, `EventSource` or `WebSocket` to labs or anywhere else; images, scripts or styles from hosts the frame's CSP does not name (only Mapbox's map paths are reachable).
-- Read `document.cookie`, the CSRF token or the labs page around it (`parent.document`, `top`).
-- `alert`, `confirm`, `prompt`, `window.open`, form submission, or `window.location = ...` (a frame that navigates itself is stopped: "this page tried to leave its frame").
-- Have pipelines, workers or `queryPipelineRows`: a page gets no visit-level data in phase 1, because whatever is handed to the frame is readable by its author. `pipeline_sources` on a page are not loaded.
-- Run actions, start jobs, create tasks or audits, or fetch visit images: those are workflow features ([§17](#17-workflows-in-the-sandbox)), and reject with "not available on a page".
-- Draw admin boundaries with `ConnectMap` (they are fetched from labs, which a page cannot reach; a sandboxed workflow can).
+**Residual risk, the same for both:** data handed to the frame can leave it (WebRTC), so a page's author can see what the page shows its viewers -- its pipelines and workers included. What the sandbox removes is the author acting AS the viewer.
 
 `LABS_PAGE_SANDBOX=false` is an emergency switch back to the old, unsandboxed render; there is no per-page opt-out.
 
