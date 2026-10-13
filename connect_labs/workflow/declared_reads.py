@@ -27,8 +27,9 @@ refuses every cross-workflow read.
 
 Run state can name watched sources too (a rollup job reads them), and the frame can
 write its own run's state, so a rollup started from the frame may watch only a
-declared definition or an opportunity the workflow itself covers
-(``refuse_job``).
+declared definition (``refuse_job``). A report that names a companion review
+(``config.flw_review`` / ``worker_review``) consents to that review reading its runs:
+it links to the review with ``?source_run=<its run>``.
 """
 
 from __future__ import annotations
@@ -41,6 +42,16 @@ logger = logging.getLogger(__name__)
 
 HEADER = "X-Labs-Sandbox-For"
 _META_KEY = "HTTP_X_LABS_SANDBOX_FOR"
+#: Where the reader's definition lives (``opportunity_id=10`` / ``program_id=25``),
+#: stamped by the host beside ``HEADER``: the session's scope can have moved (another
+#: tab), and a program-owned definition is invisible at an opportunity's scope.
+SCOPE_HEADER = "X-Labs-Sandbox-Scope"
+_SCOPE_META_KEY = "HTTP_X_LABS_SANDBOX_SCOPE"
+
+#: Config keys a report names its companion review by (``{"workflow_id", "run_id"}``):
+#: the report's own consent to that review reading its runs (it links to the review
+#: with ``?source_run=<its run>``).
+REVIEW_KEYS = ("flw_review", "worker_review")
 
 #: Config keys naming ONE other definition this one reads.
 SINGLE_KEYS = ("source_workflow_id", "source_definition_id", "report_definition_id")
@@ -129,23 +140,41 @@ def reader(request) -> int | None | bool:
     return _int(raw) or False
 
 
-def _reader_definition(request, reader_id: int):
-    cache = request.__dict__.setdefault("_sandbox_reader", {})
-    if reader_id not in cache:
-        from connect_labs.workflow import data_access
+def _stamped_scope(request) -> dict:
+    raw = (getattr(request, "META", None) or {}).get(_SCOPE_META_KEY) or ""
+    name, _, value = raw.partition("=")
+    n = _int(value)
+    return {name: n} if name in ("opportunity_id", "program_id") and n else {}
 
-        definition = None
+
+def _read_definition(request, definition_id: int, scopes: list[dict]):
+    """``definition_id`` read as the viewer in the first of ``scopes`` that has it
+    (``{}`` is the request's own), or None. Cached on the request."""
+    from connect_labs.workflow import data_access
+
+    cache = request.__dict__.setdefault("_sandbox_definitions", {})
+    if definition_id in cache:
+        return cache[definition_id]
+    definition = None
+    for scope in scopes:
         access = None
         try:
-            access = data_access.WorkflowDataAccess(request=request)
-            definition = access.get_definition(reader_id)
+            access = data_access.WorkflowDataAccess(request=request, **scope)
+            definition = access.get_definition(definition_id)
         except Exception:  # noqa: BLE001 -- unreadable reads as "declares nothing"
-            logger.warning("sandbox reader %s: could not read its definition", reader_id, exc_info=True)
+            logger.warning("sandbox: could not read definition %s in %s", definition_id, scope, exc_info=True)
         finally:
             if access is not None:
                 access.close()
-        cache[reader_id] = definition
-    return cache[reader_id]
+        if definition is not None:
+            break
+    cache[definition_id] = definition
+    return definition
+
+
+def _reader_definition(request, reader_id: int):
+    stamped = _stamped_scope(request)
+    return _read_definition(request, reader_id, ([stamped] if stamped else []) + [{}])
 
 
 def readable_for(request) -> set[int] | None:
@@ -162,13 +191,34 @@ def readable_for(request) -> set[int] | None:
     return readable_definition_ids(definition)
 
 
+def _names_reader_as_its_review(request, target_id: int) -> bool:
+    """Whether the definition being read names the reader as its companion review
+    (``config.flw_review`` / ``worker_review``): a report linking to its review with
+    ``?source_run=<its run>`` consents to that review reading the run."""
+    r = reader(request)
+    if not r or not target_id:
+        return False
+    target = _read_definition(request, target_id, [{}])
+    if target is None:
+        return False
+    config = _definition_data(target).get("config") or {}
+    for key in REVIEW_KEYS:
+        entry = config.get(key)
+        if isinstance(entry, dict) and _int(entry.get("workflow_id")) == r:
+            return True
+    return False
+
+
 def refusal(request, definition_id) -> JsonResponse | None:
     """A 403 when a sandboxed request reads runs of a definition its reader does not
     declare; None when it may (or is not sandboxed)."""
     readable = readable_for(request)
     if readable is None:
         return None
-    if _int(definition_id) in readable:
+    target = _int(definition_id)
+    if target in readable:
+        return None
+    if readable and _names_reader_as_its_review(request, target):
         return None
     logger.info("[sandbox] refused a read of workflow %s for %s", definition_id, reader(request))
     return JsonResponse({"error": REFUSED, "code": "undeclared_workflow"}, status=403)
@@ -188,28 +238,10 @@ def filter_runs(request, runs: list) -> list:
     return [r for r in runs if _int((getattr(r, "data", None) or {}).get("definition_id")) in readable]
 
 
-def _covered_opportunities(request, definition) -> set[int]:
-    opps = {n for n in (_int(o) for o in (getattr(definition, "opportunity_ids", None) or [])) if n}
-    own = _int(getattr(definition, "opportunity_id", None))
-    if own:
-        opps.add(own)
-    program = _int(getattr(definition, "program_id", None))
-    if program and not opps:
-        # A program-owned report spans its program's opportunities.
-        from connect_labs.labs.context import get_org_data
-
-        tree = get_org_data(request) or {}
-        opps |= {
-            n
-            for n in (_int(o.get("id")) for o in tree.get("opportunities") or [] if _int(o.get("program")) == program)
-            if n
-        }
-    return opps
-
-
 def refuse_job(request, run, job_config: dict) -> JsonResponse | None:
-    """A rollup started from the frame may watch only declared definitions or
-    opportunities its workflow covers; and only its own run."""
+    """A rollup started from the frame may watch only definitions its workflow
+    declares, and only on its own run. (Run state is a record the frame can write, so
+    it cannot be what declares.)"""
     r = reader(request)
     if r is None:
         return None
@@ -224,7 +256,6 @@ def refuse_job(request, run, job_config: dict) -> JsonResponse | None:
         return JsonResponse({"error": "A workflow may roll up only its own run.", "code": "not_own_run"}, status=403)
     definition = _reader_definition(request, r)
     readable = readable_definition_ids(definition)
-    covered = _covered_opportunities(request, definition)
     state = (getattr(run, "data", None) or {}).get("state") or {}
     config = (_definition_data(definition).get("config") or {}) if definition is not None else {}
     entries = []
@@ -239,16 +270,13 @@ def refuse_job(request, run, job_config: dict) -> JsonResponse | None:
             ]
     for entry in entries:
         ids = _entry_ids(entry)
-        opp = _int(entry.get("opportunity_id"))
         if ids and ids <= readable:
-            continue
-        if opp and opp in covered:
             continue
         return JsonResponse(
             {
                 "error": (
-                    "This run watches a workflow its definition does not declare, in an opportunity it does "
-                    "not cover. Declare it in config.watched_sources first."
+                    "This run watches a workflow its definition does not declare. "
+                    "Declare it in config.watched_sources first."
                 ),
                 "code": "undeclared_workflow",
             },

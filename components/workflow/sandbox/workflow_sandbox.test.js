@@ -453,6 +453,7 @@ describe('proxyFetch: the host makes the request as the viewer', () => {
       'content-type': 'application/json',
       'x-csrftoken': 'real-token',
       'x-labs-sandbox-for': '42',
+      'x-labs-sandbox-scope': 'opportunity_id=10',
     });
     expect(init.redirect).toBe('manual');
     expect(init.credentials).toBe('same-origin');
@@ -508,6 +509,47 @@ describe('reads of other workflows are bound to the ones this one declares', () 
       fetchImpl,
     );
     expect(fetchImpl.mock.calls[0][1].headers['x-labs-sandbox-for']).toBe('42');
+  });
+
+  it('a job acts only on this run, and a job status is only this run’s', () => {
+    const url = '/labs/workflow/api/run/900/job/start/';
+    const body = (cfg) => JSON.stringify({ job_config: cfg });
+    expect(
+      checkFetch(
+        url,
+        'POST',
+        CTX,
+        body({ job_type: 'audit_par_rollup', run_id: 900 }),
+      ).gate,
+    ).toBe('own');
+    expect(() =>
+      checkFetch(
+        url,
+        'POST',
+        CTX,
+        body({ job_type: 'audit_par_rollup', run_id: 901 }),
+      ),
+    ).toThrow(/run this workflow does not cover/);
+    expect(() =>
+      checkFetch(
+        '/labs/workflow/api/job/abc/status.json?run_id=901',
+        'GET',
+        CTX,
+      ),
+    ).toThrow(/run_id=901/);
+  });
+
+  it('every request says where its definition lives', async () => {
+    const fetchImpl = vi.fn(async () => new Response('{}'));
+    await proxyFetch(
+      checkFetch('/labs/workflow/api/run/5555/', 'GET', CTX),
+      { headers: { 'x-labs-sandbox-scope': 'program_id=999' } },
+      't',
+      fetchImpl,
+    );
+    expect(fetchImpl.mock.calls[0][1].headers['x-labs-sandbox-scope']).toBe(
+      'opportunity_id=10',
+    );
   });
 
   it('a frame that names no definition reads no other workflow', () => {

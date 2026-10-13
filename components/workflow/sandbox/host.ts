@@ -252,6 +252,8 @@ export async function proxyFetch(
   // after the frame's own headers are cut to content-type and accept, so the frame
   // can neither set nor drop it.
   headers['x-labs-sandbox-for'] = checked.sandboxFor || 'none';
+  if (checked.sandboxScope)
+    headers['x-labs-sandbox-scope'] = checked.sandboxScope;
   const unsafe = !['GET', 'HEAD'].includes(checked.method);
   if (unsafe) headers['x-csrftoken'] = csrfToken;
   // A route that checked its body sends what it checked (canonical JSON).

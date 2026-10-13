@@ -590,13 +590,34 @@ definition as the viewer and checks:
 - the opportunity-wide readers (`prev-categories`, `open-run-state`, `run-category-history`):
   only runs of declared definitions are listed;
 - a rollup job (`audit_par_rollup`, `program_admin_rollup`) started from the frame: only on
-  the workflow's own run, and every watched source must be a declared definition or sit in an
-  opportunity the workflow covers (its `opportunity_ids`, or its program's opportunities) --
-  run state is a frame-writable record, so it cannot be what declares.
+  the workflow's own run, and every watched source must be a declared definition -- run
+  state is a frame-writable record, so it cannot be what declares (the seeders write
+  `config.watched_sources` as well);
+- a job's status (`job/<id>/status`): only for a run this request may read, and the host
+  binds `?run_id=` to this run;
+- every job, sandboxed or not: `job_config.run_id` must be the run in the URL (every handler
+  acts on it; no template names another), and is set to it when absent.
+
+One consent runs the other way: a report that names a companion review
+(`config.flw_review` / `worker_review: {workflow_id, run_id}`) lets that review read its
+runs, since it links its worker rows there with `?source_run=<its run>` (the KMC and
+indicator opportunity reports do).
+
+The host also stamps `X-Labs-Sandbox-Scope` (the definition's own `opportunity_id=` /
+`program_id=`), and the server reads the reader's definition there first: the session's
+scope is shared by every tab, and a program-owned definition is invisible at an
+opportunity's scope.
 
 A request without the header (labs' own page code, an MCP tool) is not restricted here: it
 already has the session. Fails closed: a reader whose definition cannot be read declares
 nothing.
+
+**Review fixes (before merge).** An independent adversarial review found: a job could be
+pointed at another run through `job_config.run_id` (fixed for every job, above); the job
+status endpoint read any run's active job (bound); "an opportunity the workflow covers"
+let a rollup read undeclared workflows (removed); the reader was read only in the
+session's scope (scope header); and the opportunity report's link to its worker review was
+refused (reverse consent). Each has a test that fails without it.
 
 Cost: the mbw auditing templates' carry-over of categories and notes from *another* workflow's
 runs in the same opportunity (`prev-categories`, `open-run-state` read "any workflow version")
@@ -607,6 +628,6 @@ with how to declare them. Residual: the audit sessions endpoint
 (`/audit/api/workflow/<run id>/sessions/`) is named by a run id too, but it returns audit
 sessions in an opportunity the route table binds, not a workflow run; left as is.
 
-Tests: `workflow/tests/test_declared_reads.py` (19 of 27 fail without the server checks),
+Tests: `workflow/tests/test_declared_reads.py`,
 `components/workflow/sandbox/workflow_sandbox.test.js` ("reads of other workflows are bound").
 

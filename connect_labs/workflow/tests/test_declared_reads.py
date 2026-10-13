@@ -198,8 +198,9 @@ def test_an_opportunity_wide_listing_shows_only_declared_workflows_runs(wda, vie
     "watched, status",
     [
         ([{"opportunity_id": 10, "workflow_definition_id": DECLARED}], None),
-        # An opportunity the workflow covers: its own per-opp instance, undeclared but in scope.
-        ([{"opportunity_id": 10, "workflow_definition_id": STRANGER}], None),
+        # Run state is frame-writable, so an opportunity the workflow covers is not a
+        # declaration (review finding 3): undeclared is refused wherever it sits.
+        ([{"opportunity_id": 10, "workflow_definition_id": STRANGER}], 403),
         ([{"opportunity_id": 99, "workflow_definition_id": STRANGER}], 403),
     ],
 )
@@ -252,3 +253,99 @@ def test_the_sandbox_payload_names_the_declared_workflows():
 
     body = _render_run({**COMPANION, "config": {**COMPANION["config"], "sandbox": True}}, "?program_id=25&run_id=503")
     assert '"readable_definitions": [31, 32, 47]' in body.content.decode()
+
+
+# --- the adversarial review's findings, each pinned ---------------------------------
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("sandbox_for", [READER, None])
+def test_a_job_acts_only_on_the_run_it_is_started_on(wda, sandbox_for):
+    """Finding 1: handlers act on job_config.run_id, so naming another run there
+    pointed a job (and its writes) at it. Refused for everyone: no template does it."""
+    from connect_labs.workflow.views import start_job_api
+
+    with patch("connect_labs.workflow.tasks.run_workflow_job") as job:
+        wda.get_run.return_value = _run(READER, state={})
+        request = _req(
+            "/labs/workflow/api/run/900/job/start/?opportunity_id=10",
+            sandbox_for=sandbox_for,
+            method="post",
+            body={"job_config": {"job_type": "muac_plausibility_compute", "run_id": 901}},
+        )
+        response = start_job_api(request, run_id=900)
+    assert response.status_code == 400
+    job.delay.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_a_job_with_no_run_named_is_given_its_own():
+    from connect_labs.workflow.views import start_job_api
+
+    with (
+        patch("connect_labs.workflow.views.WorkflowDataAccess") as V,
+        patch("connect_labs.workflow.tasks.run_workflow_job") as job,
+    ):
+        V.return_value.get_run.return_value = _run(READER, state={})
+        job.delay.return_value = MagicMock(id="task-1")
+        request = _req(
+            "/labs/workflow/api/run/900/job/start/?opportunity_id=10",
+            sandbox_for=None,
+            method="post",
+            body={"job_config": {"job_type": "muac_plausibility_compute"}},
+        )
+        start_job_api(request, run_id=900)
+    assert job.delay.call_args.kwargs["job_config"]["run_id"] == 900
+
+
+@pytest.mark.django_db
+def test_a_jobs_status_of_an_undeclared_run_is_not_read(wda):
+    """Finding 2: the status endpoint read any run's active job."""
+    from connect_labs.workflow.views import read_active_job
+
+    wda.get_run.return_value = _run(STRANGER, state={"active_job": {"job_id": "j", "status": "running"}})
+    assert read_active_job(_req("/x/?run_id=900"), 900) is None
+    assert read_active_job(_req("/x/?run_id=900", sandbox_for=None), 900) == {"job_id": "j", "status": "running"}
+
+
+@pytest.mark.django_db
+def test_the_reader_is_read_where_it_lives_when_the_session_has_moved(wda):
+    """Finding 4: a program-owned definition is invisible at an opportunity's scope;
+    the host stamps where it lives."""
+    from connect_labs.workflow.views import get_run_api
+
+    def definition_in(**scope):
+        access = MagicMock()
+        access.get_definition.return_value = (
+            _definition(COMPANION, id_=READER) if scope.get("program_id") == 25 else None
+        )
+        return access
+
+    with patch(
+        "connect_labs.workflow.data_access.WorkflowDataAccess", side_effect=lambda request, **kw: definition_in(**kw)
+    ):
+        wda.get_run.return_value = _run(DECLARED)
+        request = _req("/labs/workflow/api/run/900/")
+        request.META["HTTP_X_LABS_SANDBOX_SCOPE"] = "program_id=25"
+        assert get_run_api(request, run_id=900).status_code == 200
+        unstamped = _req("/labs/workflow/api/run/900/")
+        assert get_run_api(unstamped, run_id=900).status_code == 403
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("key", ["flw_review", "worker_review"])
+def test_a_report_that_names_this_review_lets_it_read_its_run(wda, key):
+    """Finding 5: the opportunity report links its worker rows to the review with
+    ?source_run=<its own run>; naming the review is the report's consent."""
+    from connect_labs.workflow.views import preview_snapshot_api
+
+    report = _definition({"name": "Opp report", "config": {key: {"workflow_id": READER, "run_id": 5}}}, id_=STRANGER)
+    other = _definition({"name": "Opp report", "config": {key: {"workflow_id": 12345, "run_id": 5}}}, id_=STRANGER)
+    for target, status in ((report, 200), (other, 403)):
+        with patch("connect_labs.workflow.data_access.WorkflowDataAccess") as D:
+            D.return_value.get_definition.side_effect = lambda i, t=target: (
+                _definition(COMPANION, id_=READER) if i == READER else t
+            )
+            wda.get_run.return_value = _run(STRANGER)
+            response = preview_snapshot_api(_req("/labs/workflow/api/run/900/snapshot/preview/"), run_id=900)
+        assert response.status_code == status, target.data

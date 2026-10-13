@@ -5213,6 +5213,12 @@ def start_job_api(request, run_id):
 
         if not job_config:
             return JsonResponse({"error": "job_config required"}, status=400)
+        # Every job handler acts on job_config["run_id"]: it is the run in the URL, the
+        # one the checks below (and the sandbox's route table) were made against.
+        named_run = job_config.get("run_id")
+        if named_run not in (None, "") and str(named_run) != str(run_id):
+            return JsonResponse({"error": "job_config.run_id must be the run this job is started on"}, status=400)
+        job_config["run_id"] = run_id
 
         access_token = request.session.get("labs_oauth", {}).get("access_token")
         if not access_token:
@@ -5678,6 +5684,9 @@ def read_active_job(request, run_id):
         finally:
             data_access.close()
         if not run:
+            return None
+        if declared_reads.run_refusal(request, run) is not None:
+            # The sandbox reads only the jobs of runs its workflow declares.
             return None
         return (run.data.get("state", {}) or {}).get("active_job", {}) or {}
     except Exception:

@@ -153,6 +153,17 @@ function jobGate(
   ) {
     refuseOpportunity(config.opportunity_id);
   }
+  // Every job handler acts on job_config.run_id: it must be THIS run (the server
+  // also refuses one that is not the run in the URL).
+  if (
+    config.run_id !== undefined &&
+    config.run_id !== null &&
+    (ctx.runId === null || Number(config.run_id) !== ctx.runId)
+  ) {
+    throw new RouteError(
+      'fetch: that job names a run this workflow does not cover',
+    );
+  }
   if (
     config.program_id !== undefined &&
     config.program_id !== null &&
@@ -207,6 +218,9 @@ export interface CheckedRequest {
   /** Stamped on the request as `X-Labs-Sandbox-For`: the definition it is made for,
    * so the server binds the runs it reads to the ones that definition declares. */
   sandboxFor: string;
+  /** Stamped as `X-Labs-Sandbox-Scope`: where that definition lives
+   * (`program_id=25`), so the server reads it there whatever the session holds. */
+  sandboxScope: string;
 }
 
 const ID = '(\\d+)';
@@ -480,7 +494,7 @@ const SCOPE_PARAMS = {
 
 /** Other query parameters bound like a path id (the history endpoints name the
  * workflow they read with `?definition_id=`). */
-const BOUND_PARAMS = { definition_id: 'rel' } as const;
+const BOUND_PARAMS = { definition_id: 'rel', run_id: 'run' } as const;
 
 export class RouteError extends Error {}
 
@@ -626,6 +640,9 @@ export function checkFetch(
       ctx.definitionId !== null && Number.isSafeInteger(ctx.definitionId)
         ? String(ctx.definitionId)
         : 'none',
+    sandboxScope: ctx.defaultScope
+      ? `${ctx.defaultScope.name}=${ctx.defaultScope.value}`
+      : '',
   };
 }
 
