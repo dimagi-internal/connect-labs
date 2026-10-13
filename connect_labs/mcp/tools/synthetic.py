@@ -2145,6 +2145,16 @@ def synthetic_clone_profile(user, *, spec_yaml: str) -> dict[str, Any]:
     }
 
 
+def _as_bool(name: str, value) -> bool:
+    """A boolean that may arrive as the STRING "true"/"false" (MCP clients differ); "false"
+    is truthy, so anything else is refused rather than read as True."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().lower() in {"true", "false"}:
+        return value.strip().lower() == "true"
+    raise MCPToolError("INVALID_SCHEMA", f"{name} must be a boolean, got {value!r}.")
+
+
 @register(
     name="synthetic_clone_generate",
     description=(
@@ -2153,7 +2163,10 @@ def synthetic_clone_profile(user, *, spec_yaml: str) -> dict[str, Any]:
         "spec returned by synthetic_clone_profile. Reads the bundles from bundle_root "
         "and registers every opp as a labs-only opportunity under the spec's program_id "
         "(allocated + recorded back if unset) with program_name/org_name. Idempotent; "
-        "pass fresh=true to regenerate."
+        "pass fresh=true to regenerate. By default a source that already has a clone "
+        "anywhere is reused (refresh in place); new_opportunities=true makes every source "
+        "a NEW labs-only opportunity under this program, leaving existing clones untouched "
+        "-- for a second, fresher copy of a cohort beside the old one."
     ),
     input_schema={
         "type": "object",
@@ -2163,6 +2176,7 @@ def synthetic_clone_profile(user, *, spec_yaml: str) -> dict[str, Any]:
                 "description": "The cohort spec YAML returned by synthetic_clone_profile (bundle_root resolved).",
             },
             "fresh": {"type": "boolean", "default": False},
+            "new_opportunities": {"type": "boolean", "default": False},
         },
         "required": ["spec_yaml"],
         "additionalProperties": False,
@@ -2171,7 +2185,9 @@ def synthetic_clone_profile(user, *, spec_yaml: str) -> dict[str, Any]:
     wants_progress=True,
 )
 @_runs_on_worker
-def synthetic_clone_generate(user, *, spec_yaml: str, fresh: bool = False, progress=NULL_PROGRESS) -> dict[str, Any]:
+def synthetic_clone_generate(
+    user, *, spec_yaml: str, fresh: bool = False, new_opportunities: bool = False, progress=NULL_PROGRESS
+) -> dict[str, Any]:
     try:
         spec = CohortSpec.from_yaml(spec_yaml)
     except ValueError as exc:
@@ -2186,6 +2202,7 @@ def synthetic_clone_generate(user, *, spec_yaml: str, fresh: bool = False, progr
         progress=progress,
         authorize=lambda opp_id: _require_labs_only_target(user, opp_id),
         created_by=user,
+        new_opportunities=_as_bool("new_opportunities", new_opportunities),
     )
     return {
         "spec_yaml": spec.to_yaml(),

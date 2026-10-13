@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 from ..progress import NULL_PROGRESS, safe_call
 from .bundle import make_bundle_store, read_bundle
@@ -250,6 +251,21 @@ def profile_opps_bulk(
     return resolved, handles
 
 
+def _close_before_fork() -> None:
+    """Close the database connections before forking, so no child inherits one.
+
+    A child must never close an inherited Postgres connection: libpq's goodbye goes
+    down the socket the parent shares and ends the PARENT's session. So the parent
+    closes first (Django reopens on next use) and the children touch no database.
+    Skipped inside a transaction, which a close would break -- never the case on a
+    job's own task, always the case in a test.
+    """
+    from django.db import connection, connections
+
+    if not connection.in_atomic_block:
+        connections.close_all()
+
+
 def _profile_parallelism() -> int:
     """How many opportunities to profile at once: one per vCPU on a job's own machine, else one.
 
@@ -276,13 +292,11 @@ _FORK_JOB: dict = {}
 
 
 def _profile_one_forked(sid: int) -> str:
-    from django.db import connections
-
     from connect_labs.labs.synthetic.gdrive import DriveClient
 
     job = _FORK_JOB
-    # Never share the parent's Drive HTTP session or database connections.
-    connections.close_all()
+    # A fresh Drive client (never the parent's HTTP session). No database here: the
+    # parent closed its connections before forking -- see _close_before_fork.
     root = job["resolved_root"]
     store = make_bundle_store(root, drive=DriveClient() if root.startswith("gdrive:") else None)
     return profile_opp_to_bundle(
@@ -307,14 +321,12 @@ def _profile_in_parallel(
     import multiprocessing
     from concurrent.futures import ProcessPoolExecutor, as_completed
 
-    from django.db import connections
-
     resolved_root = f"gdrive:{store.root_folder_id}" if hasattr(store, "root_folder_id") else str(bundle_root)
     _FORK_JOB.clear()
     _FORK_JOB.update(
         resolved_root=resolved_root, base_url=base_url, oauth_token=oauth_token, curate=curate, mirror=mirror
     )
-    connections.close_all()
+    _close_before_fork()
     total = len(ids)
     handles: list[str] = []
     done = 0
@@ -443,31 +455,30 @@ def _with_person_names(manifest, person_names: dict | None, source_opportunity_i
     return manifest.model_copy(update={"person_names": config}) if config else manifest
 
 
-def _generate_one(
+@dataclass
+class _Plan:
+    """Where one bundle goes, decided before any work (see :func:`_plan_one`)."""
+
+    bundle: Any
+    opp_id: int
+    pre_existing: bool
+
+
+def _plan_one(
     bundle,
     *,
-    drive,
     program_id: int,
-    program_name: str,
-    org_name: str,
-    label: str | None = None,
-    allowed_domains=None,
     fresh: bool = False,
     target_opportunity_id: int | None = None,
-    image_config: dict | None = None,
-    person_names: dict | None = None,
     authorize=None,
-    created_by=None,
-) -> CloneResult:
-    """Generate fixtures + register a labs-only opp from an already-read bundle.
+) -> _Plan | CloneResult:
+    """Choose the destination, or return the existing clone when there is nothing to do.
 
-    Backend-agnostic core shared by the single-opp and bulk entry points; makes
-    no prod calls. Idempotent on ``cloned_from_opportunity_id`` — unless
-    ``target_opportunity_id`` pins the destination row explicitly, which skips
-    the lookup so an existing twin (e.g. an env-owned opp) is never touched.
+    Idempotent on ``cloned_from_opportunity_id`` -- unless ``target_opportunity_id``
+    pins the destination row explicitly, which skips the lookup so an existing twin
+    (e.g. an env-owned opp) is never touched.
     """
     source = bundle.source_opp_id
-
     existing = (
         None
         if target_opportunity_id is not None
@@ -483,7 +494,6 @@ def _generate_one(
             app_structure_present=bool(existing.gdrive_folder_id),
             skipped=True,
         )
-
     if target_opportunity_id is not None:
         opp_id = target_opportunity_id
     elif existing:
@@ -496,7 +506,17 @@ def _generate_one(
     pre_existing = SyntheticOpportunity.objects.filter(opportunity_id=opp_id).exists()
     if authorize is not None and (target_opportunity_id is not None or pre_existing):
         authorize(opp_id)
+    return _Plan(bundle=bundle, opp_id=opp_id, pre_existing=pre_existing)
 
+
+def _build_one(
+    plan: _Plan, *, drive, image_config: dict | None = None, person_names: dict | None = None
+) -> dict[str, Any]:
+    """Generate one bundle's fixtures and upload them. The heavy part; touches no database.
+
+    Returns plain data (picklable), so it can run in a forked process.
+    """
+    bundle, opp_id, source = plan.bundle, plan.opp_id, plan.bundle.source_opp_id
     manifest = Manifest.from_yaml(bundle.manifest_yaml)
     if image_config:
         # A CHOICE layered on at replay time, never baked into the bundle. The
@@ -545,38 +565,221 @@ def _generate_one(
         )
 
     upload = upload_fixtures(drive=drive, opportunity_id=opp_id, fixtures=fixtures)
+    return {
+        "opportunity_name": manifest.opportunity_name,
+        "replays_real_cases": replays_real_cases(manifest),
+        "visit_count": len(fixtures.get("user_visits") or []),
+        "app_structure_present": bool(fixtures.get("app_structure")),
+        "folder_id": upload.folder_id,
+        "folder_url": upload.folder_url,
+        "record_counts": upload.record_counts,
+        "dropped": dropped,
+        "parity": parity,
+    }
 
+
+def _register_one(
+    plan: _Plan,
+    built: dict[str, Any],
+    *,
+    program_id: int,
+    program_name: str,
+    org_name: str,
+    label: str | None = None,
+    allowed_domains=None,
+    created_by=None,
+) -> CloneResult:
+    """Register the labs-only opp for a built bundle."""
+    source = plan.bundle.source_opp_id
     row = register_labs_only_opp(
-        opportunity_id=opp_id,
-        label=label or f"[Synthetic] {manifest.opportunity_name}",
-        gdrive_folder_id=upload.folder_id,
+        opportunity_id=plan.opp_id,
+        label=label or f"[Synthetic] {built['opportunity_name']}",
+        gdrive_folder_id=built["folder_id"],
         org_name=org_name,
         program_name=program_name,
         program_id=program_id,
         allowed_domains=allowed_domains if allowed_domains is not None else ["@dimagi.com", "@dimagi-ai.com"],
         cloned_from=source,
-        created_by=None if pre_existing else created_by,
+        created_by=None if plan.pre_existing else created_by,
     )
-    SyntheticOpportunity.objects.filter(opportunity_id=row.opportunity_id).update(
-        visit_count=len(fixtures.get("user_visits") or [])
-    )
+    SyntheticOpportunity.objects.filter(opportunity_id=row.opportunity_id).update(visit_count=built["visit_count"])
     # Mirror mode replays real cases near-verbatim: that is not generated data, and a
     # regeneration over an opp that was generated before must not keep its mark.
-    if replays_real_cases(manifest):
+    if built["replays_real_cases"]:
         SyntheticOpportunity.objects.filter(opportunity_id=row.opportunity_id).update(generated_folder_id=None)
     else:
-        mark_generated(row.opportunity_id, upload.folder_id)
+        mark_generated(row.opportunity_id, built["folder_id"])
     return CloneResult(
         source_opportunity_id=source,
         opportunity_id=row.opportunity_id,
-        gdrive_folder_id=upload.folder_id,
-        folder_url=upload.folder_url,
-        record_counts=upload.record_counts,
-        app_structure_present=bool(fixtures.get("app_structure")),
+        gdrive_folder_id=built["folder_id"],
+        folder_url=built["folder_url"],
+        record_counts=built["record_counts"],
+        app_structure_present=built["app_structure_present"],
         skipped=False,
-        dropped_pool_paths=dropped,
-        parity=parity,
+        dropped_pool_paths=built["dropped"],
+        parity=built["parity"],
     )
+
+
+def _generate_one(
+    bundle,
+    *,
+    drive,
+    program_id: int,
+    program_name: str,
+    org_name: str,
+    label: str | None = None,
+    allowed_domains=None,
+    fresh: bool = False,
+    target_opportunity_id: int | None = None,
+    image_config: dict | None = None,
+    person_names: dict | None = None,
+    authorize=None,
+    created_by=None,
+) -> CloneResult:
+    """Generate fixtures + register a labs-only opp from an already-read bundle.
+
+    Backend-agnostic core shared by the single-opp and bulk entry points; makes
+    no prod calls. Plan, build, register -- the three steps
+    :func:`generate_opps_bulk` runs in parallel for a cohort.
+    """
+    plan = _plan_one(
+        bundle, program_id=program_id, fresh=fresh, target_opportunity_id=target_opportunity_id, authorize=authorize
+    )
+    if isinstance(plan, CloneResult):
+        return plan
+    built = _build_one(plan, drive=drive, image_config=image_config, person_names=person_names)
+    return _register_one(
+        plan,
+        built,
+        program_id=program_id,
+        program_name=program_name,
+        org_name=org_name,
+        label=label,
+        allowed_domains=allowed_domains,
+        created_by=created_by,
+    )
+
+
+def _build_one_forked(index: int) -> dict[str, Any]:
+    from connect_labs.labs.synthetic.gdrive import DriveClient
+
+    job = _FORK_JOB  # touches no database -- see _close_before_fork
+    return _build_one(
+        job["plans"][index],
+        drive=DriveClient(),
+        image_config=job["image_config"],
+        person_names=job["person_names"],
+    )
+
+
+def _generate_in_parallel(
+    handles,
+    *,
+    workers,
+    store,
+    bundle_root,
+    scope,
+    program_id,
+    program_name,
+    org_name,
+    fresh,
+    image_config,
+    person_names,
+    authorize,
+    created_by,
+    new_opportunities,
+    progress,
+) -> list[CloneResult]:
+    """:func:`generate_opps_bulk` across forked processes, one per vCPU.
+
+    Only the heavy middle runs in parallel. Every destination is PLANNED first, in
+    order, here -- a new opportunity takes the next labs-only id, and ids handed out
+    in parallel would collide, so each new one is the one after the last -- and every
+    opportunity is REGISTERED here afterwards, one at a time. Children generate and
+    upload fixtures and touch no database.
+    """
+    import multiprocessing
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+
+    total = len(handles)
+    results: list[CloneResult] = []
+    plans: list[_Plan] = []
+    done = 0
+    next_new_id: int | None = None
+    for handle in handles:
+        try:
+            bundle = store.read(handle)
+            if scope is not None and bundle.source_opp_id not in scope:
+                logger.info(
+                    "generate_opps_bulk: bundle %s (source %s) outside requested scope", handle, bundle.source_opp_id
+                )
+                done += 1
+                safe_call(progress, done, total, f"out of scope: {bundle.source_opp_id} ({done}/{total})")
+                continue
+            target = None
+            if new_opportunities:
+                if next_new_id is None:
+                    next_new_id = max(SyntheticOpportunity.next_labs_only_opp_id(), program_id + 1)
+                target, next_new_id = next_new_id, next_new_id + 1
+            plan = _plan_one(
+                bundle, program_id=program_id, fresh=fresh, target_opportunity_id=target, authorize=authorize
+            )
+            if isinstance(plan, CloneResult):
+                results.append(plan)
+                done += 1
+                safe_call(progress, done, total, f"already cloned: {bundle.source_opp_id} ({done}/{total})")
+                continue
+            if not new_opportunities and any(p.opp_id == plan.opp_id for p in plans):
+                # Two brand-new clones were both offered the next free id; give this one the one after.
+                plan.opp_id = max(p.opp_id for p in plans) + 1
+            plans.append(plan)
+        except Exception:  # noqa: BLE001
+            logger.exception("generate_opps_bulk: failed to plan bundle %s", handle)
+            done += 1
+            safe_call(progress, done, total, f"skipped {handle} (failed) ({done}/{total})")
+
+    _FORK_JOB.clear()
+    _FORK_JOB.update(plans=plans, image_config=image_config, person_names=person_names)
+    _close_before_fork()
+    built: dict[int, dict[str, Any]] = {}
+    try:
+        with ProcessPoolExecutor(
+            max_workers=min(workers, max(len(plans), 1)), mp_context=multiprocessing.get_context("fork")
+        ) as pool:
+            futures = {pool.submit(_build_one_forked, i): i for i in range(len(plans))}
+            for future in as_completed(futures):
+                i = futures[future]
+                source = plans[i].bundle.source_opp_id
+                try:
+                    built[i] = future.result()
+                    outcome = f"generated opportunity {source}"
+                except Exception:  # noqa: BLE001
+                    logger.exception("generate_opps_bulk: failed for source %s", source)
+                    outcome = f"skipped {source} (failed)"
+                done += 1
+                safe_call(progress, done, total, f"{outcome} ({done}/{total})")
+    finally:
+        _FORK_JOB.clear()
+
+    for i, plan in enumerate(plans):
+        if i not in built:
+            continue
+        try:
+            results.append(
+                _register_one(
+                    plan,
+                    built[i],
+                    program_id=program_id,
+                    program_name=program_name,
+                    org_name=org_name,
+                    created_by=created_by,
+                )
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("generate_opps_bulk: failed to register source %s", plan.bundle.source_opp_id)
+    return results
 
 
 def generate_opps_bulk(
@@ -629,6 +832,25 @@ def generate_opps_bulk(
     handles = list(store.list_handles())
     total = len(handles)
     safe_call(progress, 0, total, f"Generating from {total} bundles")
+    workers = min(_profile_parallelism(), total)
+    if workers > 1:
+        return _generate_in_parallel(
+            handles,
+            workers=workers,
+            store=store,
+            bundle_root=bundle_root,
+            scope=scope,
+            program_id=program_id,
+            program_name=program_name,
+            org_name=org_name,
+            fresh=fresh,
+            image_config=image_config,
+            person_names=person_names,
+            authorize=authorize,
+            created_by=created_by,
+            new_opportunities=new_opportunities,
+            progress=progress,
+        )
     for done, handle in enumerate(handles, start=1):
         outcome = f"bundle {handle}"
         try:
