@@ -57,6 +57,8 @@ def test_launch_runs_the_job_command_from_the_workers_current_task_definition():
     assert override["name"] == "worker"
     assert override["command"] == ["python", "manage.py", "run_synthetic_job", "job-1"]
     assert {"name": ecs_runner.RUNNER_ENV, "value": "1"} in override["environment"]
+    # One math-library thread per forked process, or a cohort oversubscribes the machine.
+    assert {"name": "OMP_NUM_THREADS", "value": "1"} in override["environment"]
     # The arguments wait for the task, and the task's arn is remembered for cancel.
     assert cache.get("synthetic:ecs-job:job-1") == {"task": "some.task", "kwargs": {"spec_yaml": "x"}}
     assert ecs_runner.task_arn("job-1") == TASK_ARN
@@ -215,3 +217,17 @@ def test_on_its_own_machine_a_cohort_profiles_in_parallel_into_one_store(monkeyp
     assert {p.name for p in tmp_path.iterdir()} >= {"1", "2"}
     # The last report says every opportunity is accounted for.
     assert progress.call_args.args[:2] == (3, 3)
+
+
+def test_run_job_finds_a_task_whose_module_nothing_has_imported_yet():
+    """A bare manage.py process has not autodiscovered tasks; run_job imports the task's module itself."""
+    name = "connect_labs.labs.synthetic.tasks.run_synthetic_clone_profile"
+    cache.set("synthetic:ecs-job:job-7", {"task": name, "kwargs": {}}, 60)
+    real = tasks.celery_app.tasks[name]
+    with (
+        mock.patch.object(real, "run", return_value="ok"),
+        mock.patch.object(tasks.celery_app.backend, "store_result"),
+        mock.patch("importlib.import_module") as imp,
+    ):
+        assert ecs_runner.run_job("job-7") == "ok"
+    imp.assert_called_once_with("connect_labs.labs.synthetic.tasks")

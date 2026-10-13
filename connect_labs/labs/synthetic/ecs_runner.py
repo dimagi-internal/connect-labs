@@ -40,6 +40,7 @@ RUNNER_ENV = "SYNTHETIC_ECS_RUNNER"
 STARTED_BY = "synthetic-job"
 # The job's arguments wait here until the task picks them up. A day is generous: a
 # task starts within a minute or two.
+_THREAD_ENV = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS")
 _PAYLOAD_TTL = 24 * 3600
 _LAUNCH_TTL = 3 * 24 * 3600
 
@@ -126,7 +127,14 @@ def launch(task_name: str, job_id: str, kwargs: dict[str, Any], client=None) -> 
                     {
                         "name": container,
                         "command": ["python", "manage.py", "run_synthetic_job", job_id],
-                        "environment": [{"name": RUNNER_ENV, "value": "1"}],
+                        "environment": [
+                            {"name": RUNNER_ENV, "value": "1"},
+                            # One math-library thread per process: the job forks a
+                            # process per vCPU, and each NumPy/BLAS pool sized to the
+                            # whole machine oversubscribed it (the first parallel
+                            # profile ran several times slower per opportunity).
+                            *({"name": n, "value": "1"} for n in _THREAD_ENV),
+                        ],
                     }
                 ],
             },
@@ -181,6 +189,15 @@ def run_job(job_id: str) -> Any:
     payload = cache.get(_payload_key(job_id))
     if not payload:
         raise RuntimeError(f"No arguments stored for synthetic job {job_id}; it may have expired.")
+    # A bare `manage.py` process has not autodiscovered the task modules (only a
+    # Celery worker does), so the registry does not know the task until its module
+    # is imported -- the first job run here died on a KeyError for exactly that.
+    import importlib
+
+    try:
+        importlib.import_module(payload["task"].rsplit(".", 1)[0])
+    except ImportError:
+        pass  # not a module path; the lookup below says what is missing
     task = celery_app.tasks[payload["task"]]
     # The task's container sets this already; set it for the body's duration either
     # way, so the body runs here rather than launching another task.
