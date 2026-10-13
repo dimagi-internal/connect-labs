@@ -91,6 +91,17 @@ def test_staff_may_edit_any_page(member_of_acme, monkeypatch):
     assert page_mode.page_edit_refusal(request, _record(pm.PAGE), {"program_id": 25}) is None
 
 
+def test_a_dimagi_sign_in_is_staff_for_editing_a_page(member_of_acme, monkeypatch):
+    """Staff was Django `is_staff` alone, which no OAuth-created labs user carries."""
+    from connect_labs.workflow import page_mode
+
+    _not_in_programme_25(monkeypatch)
+    request = pm._request("/labs/p/org/acme/", context={})
+    assert page_mode.page_edit_refusal(request, _record(pm.PAGE), {"program_id": 25})
+    request.user.email = "amina@dimagi.com"
+    assert page_mode.page_edit_refusal(request, _record(pm.PAGE), {"program_id": 25}) is None
+
+
 def test_an_organisation_owned_page_is_edited_by_whoever_may_write_the_organisation(member_of_acme):
     from connect_labs.workflow import page_mode
 

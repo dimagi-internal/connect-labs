@@ -52,7 +52,7 @@ def test_a_value_resolves_through_the_chain_with_its_provenance():
     got = service.get("t", OPP, member)
 
     assert got["value"] == {"a": 1, "m": {"x": "from owner"}}
-    assert got["provenance"] == {"a": "programme Programme Seven", "m.x": "organisation Owner Org"}
+    assert got["provenance"] == {"a": "program Programme Seven", "m.x": "organisation Owner Org"}
     assert got["data"] == {} and got["version"] == 0
 
 

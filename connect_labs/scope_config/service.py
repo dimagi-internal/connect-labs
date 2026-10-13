@@ -8,6 +8,14 @@ Who may do what (spec section 1):
     opportunity    its members              its members, and Dimagi staff
     user           that person              that person
 
+"Dimagi staff" is `utils.dimagi_user.is_dimagi_staff`: Django `is_staff`, or a
+Dimagi sign-in (@dimagi.com / @dimagi-ai.com). Ruling 2026-10-12: it was
+`is_staff` alone, a flag no OAuth-created labs user carries, so the people the
+refusal named as allowed were refused. The cost: anyone with a Dimagi email may
+change any scope's layer, a labs-only organisation's included -- acceptable
+because a layer holds ids and labels, never visit data, every change is
+attributed with undo, and labs-only organisations are synthetic and internal.
+
 "Member" is `labs.access.scopes.may_use`, which also covers labs-only scopes and
 fails closed: a caller whose holdings cannot be established is refused with
 `scopes.UNKNOWABLE`, never told they hold nothing. A programme member outside
@@ -62,7 +70,10 @@ def username_of(caller: access.Caller) -> str:
 
 
 def _is_staff(caller: access.Caller) -> bool:
-    return bool(getattr(_user(caller), "is_staff", False))
+    """Dimagi staff: Django `is_staff`, or a Dimagi sign-in (utils.dimagi_user.is_dimagi_staff)."""
+    from connect_labs.utils.dimagi_user import is_dimagi_staff
+
+    return is_dimagi_staff(_user(caller))
 
 
 def tree_for(caller: access.Caller) -> dict:
@@ -111,9 +122,9 @@ def _require(caller, scope: Scope) -> None:
 
 
 LABS_ONLY_ORG_WRITE = (
-    "a labs-only (synthetic) organisation's settings are changed by its administrators and Dimagi staff, "
-    "and seeing its opportunities does not make you one -- set this on your programme instead, "
-    "or ask an administrator of the organisation"
+    "a labs-only (synthetic) organisation's settings are changed by its administrators and by Dimagi staff "
+    "(anyone signed in with a @dimagi.com or @dimagi-ai.com email), and seeing its opportunities does not "
+    "make you one -- set this on your program instead, or ask an administrator of the organisation"
 )
 
 

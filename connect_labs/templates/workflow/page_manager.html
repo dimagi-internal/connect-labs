@@ -1,0 +1,114 @@
+{% extends 'base.html' %}
+
+{% comment %}
+A scope's pages (workflow/page_views.PagesView, page_manager.py): each page, which one
+the scope opens on, and -- for whoever may change the scope -- a new page and "Make home".
+{% endcomment %}
+
+{% block title %}Pages · {{ scope_label }}{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto px-4 py-6" data-testid="page-manager">
+  <nav class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-600">
+    <a href="{% url 'labs:overview' %}" class="hover:text-gray-700">Labs</a>
+    <i class="fa-solid fa-chevron-right text-xs"></i>
+    <a href="{{ home_url }}" class="hover:text-gray-700">{{ scope_label }}</a>
+    <i class="fa-solid fa-chevron-right text-xs"></i>
+    <span class="text-gray-900">Pages</span>
+    <a href="{{ settings_url }}" class="ml-auto text-brand-indigo hover:underline">Settings</a>
+  </nav>
+
+  <h1 class="text-2xl font-bold text-brand-indigo mb-1">Pages</h1>
+  <p class="text-sm text-gray-600 mb-5">The pages of {{ scope_name }}. The home page is the one <a href="{{ home_url }}" class="font-mono text-brand-indigo hover:underline break-all">{{ home_url }}</a> opens on.</p>
+
+  <div class="bg-white border border-gray-200 rounded-lg p-4 mb-6 flex flex-wrap items-center gap-3" data-testid="page-manager-home">
+    <div class="min-w-0">
+      <div class="text-xs text-gray-600 uppercase tracking-wide">Home page</div>
+      {% if home_page %}
+        <div class="font-semibold text-gray-900">{{ home_page.name }}</div>
+        {% if not home.own %}<div class="text-sm text-gray-600">Set by {{ home.source }}</div>{% endif %}
+      {% elif home.fill %}
+        <div class="font-semibold text-gray-900">{{ home.label|default:"A page kept elsewhere" }}</div>
+        <div class="text-sm text-gray-600">Page {{ home.fill.workflow }}{% if home.source %}, set by {{ home.source }}{% endif %}</div>
+      {% else %}
+        <div class="text-gray-900">None yet. The address says so and points here.</div>
+      {% endif %}
+    </div>
+    {% if can_manage and home.own %}
+    <form method="post" class="ml-auto">{% csrf_token %}
+      <button name="action" value="clear_home" class="text-sm text-gray-600 hover:text-gray-900 hover:underline" data-testid="page-manager-clear-home">Clear home page</button>
+    </form>
+    {% endif %}
+  </div>
+
+  {% if pages %}
+  <ul class="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100 mb-6" data-testid="page-manager-list">
+    {% for page in pages %}
+    <li class="p-4 flex flex-wrap items-start gap-x-4 gap-y-2" data-testid="page-manager-row" data-page-id="{{ page.id }}">
+      <div class="min-w-0 flex-1 basis-60">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="font-semibold text-gray-900">{{ page.name }}</span>
+          {% if page.is_home %}<span class="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-brand-indigo border border-indigo-200" data-testid="page-manager-is-home">Home</span>{% endif %}
+        </div>
+        <div class="text-sm text-gray-600 break-all">
+          {% if page.url %}<span class="font-mono">{{ page.url }}</span>{% else %}No address of its own{% endif %}
+        </div>
+        <div class="text-xs text-gray-600 mt-0.5">Kept in {{ page.owner.label }}{% if page.made_by %} · made by {{ page.made_by }}{% endif %}</div>
+      </div>
+      <div class="flex flex-wrap items-center gap-3 text-sm">
+        {% if page.url %}<a href="{{ page.url }}" class="text-brand-indigo hover:underline">Open</a>{% endif %}
+        {% if page.edit_url %}<a href="{{ page.edit_url }}" class="text-brand-indigo hover:underline" data-testid="page-manager-edit">Edit</a>{% endif %}
+        {% if can_manage and not page.is_home %}
+        <form method="post" class="inline">{% csrf_token %}
+          <input type="hidden" name="workflow" value="{{ page.id }}"><input type="hidden" name="owner" value="{{ page.owner.token }}"><input type="hidden" name="label" value="{{ page.name }}">
+          <button name="action" value="make_home" class="px-2.5 py-1 rounded-md border border-brand-indigo text-brand-indigo hover:bg-gray-50" data-testid="page-manager-make-home">Make home</button>
+        </form>
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="text-sm text-gray-600 mb-6" data-testid="page-manager-empty">No pages here yet.</p>
+  {% endif %}
+
+  {% if can_manage and new_page_owners %}
+  <section class="bg-white border border-gray-200 rounded-lg p-4" data-testid="page-manager-new">
+    <h2 class="text-lg font-semibold text-brand-indigo mb-1">New page</h2>
+    <p class="text-sm text-gray-600 mb-3">Starts from the blank page, which lists what is under {{ scope_name }}, and opens in the editor.</p>
+    <form method="post" class="grid gap-3 sm:grid-cols-2">{% csrf_token %}
+      <label class="text-sm text-gray-700">Title
+        <input name="name" required maxlength="120" class="mt-1 w-full border border-gray-300 rounded-md px-2 py-1.5" data-testid="page-manager-name" oninput="var s=document.getElementById('page-slug'); if(!s.dataset.touched){s.value=this.value.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60);}">
+      </label>
+      <label class="text-sm text-gray-700">Address
+        <span class="mt-1 flex items-center border border-gray-300 rounded-md overflow-hidden">
+          <span class="px-2 text-gray-600 bg-gray-50 border-r border-gray-300 py-1.5 font-mono text-xs whitespace-nowrap">…/</span>
+          <input id="page-slug" name="slug" required pattern="[a-z0-9][a-z0-9_\-]{0,59}" maxlength="60" class="w-full px-2 py-1.5 font-mono text-sm outline-none" data-testid="page-manager-slug" oninput="this.dataset.touched='1'">
+        </span>
+        <span class="text-xs text-gray-600">Lowercase letters, digits and hyphens. "pages" is taken.</span>
+      </label>
+      {% if new_page_owners|length > 1 %}
+      <label class="text-sm text-gray-700">Kept in
+        <select name="owner" class="mt-1 w-full border border-gray-300 rounded-md px-2 py-1.5 bg-white" data-testid="page-manager-owner">
+          {% for owner in new_page_owners %}<option value="{{ owner.token }}">{{ owner.label|capfirst }}</option>{% endfor %}
+        </select>
+        <span class="text-xs text-gray-600">Whoever may change it may edit the page.</span>
+      </label>
+      {% else %}
+      <input type="hidden" name="owner" value="{{ new_page_owners.0.token }}">
+      {% endif %}
+      <label class="text-sm text-gray-700 flex items-center gap-2 self-end pb-1.5">
+        <input type="checkbox" name="make_home" value="1" {% if not home.fill %}checked{% endif %}> Make it the home page
+      </label>
+      <div class="sm:col-span-2">
+        <button name="action" value="create" class="px-3 py-1.5 rounded-md bg-brand-indigo text-white text-sm" data-testid="page-manager-create">Create and edit</button>
+      </div>
+    </form>
+  </section>
+  {% elif can_manage %}
+  <p class="text-sm text-gray-600">A new page needs a place to be kept: this organisation has no programs you may change.</p>
+  {% else %}
+  <p class="text-sm text-gray-600" data-testid="page-manager-read-only">{{ write_note }}</p>
+  {% endif %}
+</div>
+{% endblock %}

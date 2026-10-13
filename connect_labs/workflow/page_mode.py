@@ -110,7 +110,9 @@ def page_edit_refusal(request, definition, owner: dict | None = None) -> str | N
     tree = service.tree_for(caller)
     scope = page_owner_scope(definition, tree, owner)
     if scope is None:
-        return None if getattr(user, "is_staff", False) else "this page's owner cannot be told"
+        from connect_labs.utils.dimagi_user import is_dimagi_staff
+
+        return None if is_dimagi_staff(user) else "this page's owner cannot be told"
     if service.write_refusal(caller, scope, tree) is None:
         return None
     return PAGE_EDIT_REFUSED.format(owner=_OWNER_WORDS[scope.type])
