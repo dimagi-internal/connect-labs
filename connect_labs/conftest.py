@@ -27,6 +27,13 @@ _COLLECTED_ON = datetime.date.today()
 _COLLECTION_DAYS = {_COLLECTED_ON, timezone.localdate()}
 
 
+def pytest_sessionstart(session):
+    """Read the collection day once the clock is set: `--clock-shift` moves it at configure."""
+    global _COLLECTED_ON, _COLLECTION_DAYS
+    _COLLECTED_ON = datetime.date.today()
+    _COLLECTION_DAYS = {_COLLECTED_ON, timezone.localdate()}
+
+
 @pytest.fixture(autouse=True)
 def _today_is_today(request):
     """Keep a test module's import-time `TODAY` in step with the code's own today.

@@ -58,13 +58,11 @@ endif
 ARGS ?= connect_labs/
 
 # Run the suite as if today were another day (the CI `pytest-shifted-clock` job
-# does this after every merge). Needs libfaketime (`brew install libfaketime`);
-# the shift is anything faketime takes, e.g. +30d or "@2026-12-31 23:40:00":
+# does this after every merge). Anything --clock-shift takes: +30d, -1d, +12h,
+# or a start such as 2026-12-31T23:40. See connect_labs/testing/clock_shift.py.
 #   make test CLOCK_SHIFT=+30d ARGS="connect_labs/supply_chain -n 8"
-# It wraps pytest itself, not make, because macOS strips DYLD_* from the
-# environment of anything under /usr/bin -- `faketime make test` fakes nothing.
 CLOCK_SHIFT ?=
-FAKETIME_PREFIX := $(if $(CLOCK_SHIFT),faketime -f "$(CLOCK_SHIFT)",)
+CLOCK_SHIFT_ARG := $(if $(CLOCK_SHIFT),--clock-shift=$(CLOCK_SHIFT),)
 
 test:
 	@if [ -z "$(VENV_BIN)" ] || [ ! -x "$(VENV_BIN)/pytest" ]; then \
@@ -83,7 +81,7 @@ test:
 			exit 1; \
 		fi; \
 	fi
-	PATH="$(VENV_BIN):$$PATH" $(FAKETIME_PREFIX) $(VENV_BIN)/pytest $(ARGS)
+	PATH="$(VENV_BIN):$$PATH" $(VENV_BIN)/pytest $(ARGS) $(CLOCK_SHIFT_ARG)
 
 # Run manage.py with everything a worktree lacks — the same three fixes as
 # `test` (venv on PATH, .env linked from the main checkout, GIS library paths on
