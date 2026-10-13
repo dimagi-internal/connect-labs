@@ -189,6 +189,23 @@ def _decimals(value: float) -> int:
     return min(len(text.split(".")[1].rstrip("0")), 6)
 
 
+def _robust_sd(values: list[float]) -> float:
+    """The spread of the residuals, unmoved by a handful of wild ones.
+
+    A plain standard deviation let a few real data-entry slips (2,500 g typed as
+    25,000) set the noise on EVERY synthetic weighing: the EHA cohort profiled on
+    2026-10-13 came back with 72% of its weights outside 800-5,000 g, half far too
+    light and half far too heavy, around a correct median. The scaled median
+    absolute deviation is the standard deviation for clean, normal residuals and
+    ignores the slips.
+    """
+    arr = np.asarray(values, dtype=float)
+    if arr.size == 0:
+        return 0.0
+    mad = float(np.median(np.abs(arr - np.median(arr))))
+    return 1.4826 * mad
+
+
 def _fit_line(points: list[tuple[float, float]]) -> tuple[float, float, list[float]]:
     xs = np.array([p[0] for p in points], dtype=float)
     ys = np.array([p[1] for p in points], dtype=float)
@@ -317,7 +334,7 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
             # Otherwise no identity holds and it keeps the kind set above: a trend if
             # it varies within cases, a per-case constant if it does not.
         if kind == "varying" and resid[path]:
-            model.resid_sd = float(np.std(resid[path]))
+            model.resid_sd = _robust_sd(resid[path])
         numeric[path] = model
     dates: dict[str, _PathModel] = {}
     for path, obs in date_obs.items():
