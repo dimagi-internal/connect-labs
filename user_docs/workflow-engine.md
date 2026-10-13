@@ -215,7 +215,7 @@ Reseeding the demo now also builds everything the demo is viewed through:
     - When the network runs dry at protocol
     - What share of the protocol children are actually receiving RUTF
     - What stock workers currently hold
-    - The stores
+    - The stores — displayed in **sachets** (the same unit used across all other Supply screens), with each store's **workers' cover** filled in
     - Open checks
     - Links to every Supply tab and the workflows behind them
     - The canopy agent panel
@@ -250,4 +250,4 @@ Each baby gets one story, and Labs only surfaces babies whose story happened rec
 
 #### How the briefing is built
 
-When the agent prepares a case coaching conversation, the briefing it shows you comes directly from the **case state** recorded in the registry for that baby
+When the
