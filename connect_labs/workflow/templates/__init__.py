@@ -57,11 +57,10 @@ TEMPLATES: dict[str, dict] = {}
 #: vouched for by this list and stays out until it opts in or the rollout is `all`.
 #: Add a template here only after checking it the same way (WORKFLOW_REFERENCE.md §17).
 #:
-#: Left out on purpose: `kmc_image_audit` reads audit sessions for the opportunities in its
-#: own `config.opp_meta`, not its `opportunity_ids`, and the frame binds reads to the
-#: latter (an author-written list cannot widen what a frame may name). It needs the two
-#: reconciled first. `mbw_monitoring` is deprecated; `page_blank` and other pages are
-#: always sandboxed.
+#: `kmc_image_audit` joined once it audited only its own `opportunity_ids` (its
+#: `config.opp_meta` describes them and cannot add one; the frame binds reads to the
+#: former). Left out on purpose: `mbw_monitoring` is deprecated; `page_blank` and other
+#: pages are always sandboxed.
 SANDBOX_CHECKED = frozenset(
     {
         "audit_par",
@@ -83,6 +82,7 @@ SANDBOX_CHECKED = frozenset(
         "jakusko_chlorine_dispenser",
         "kmc_flw_flags",
         "kmc_flw_review",
+        "kmc_image_audit",
         "kmc_longitudinal",
         "kmc_opp_report",
         "kmc_programme_metrics",
