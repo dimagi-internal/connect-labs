@@ -542,17 +542,54 @@ def blank_strings(code: str) -> str:
     return "".join(out)
 
 
-_BLOCK_KEYWORD = re.compile(r"(?<![\w$])(?:if|for|while|switch|catch|with)\s*$")
-_ASYNC_FUNCTION = re.compile(r"(?<![\w$])async\s+function\s*\*?\s*[\w$]*\s*$")
-_FUNCTION = re.compile(r"(?<![\w$])function\s*\*?\s*[\w$]*\s*$")
-_ASYNC_METHOD = re.compile(r"(?<![\w$])async\s+[\w$]+\s*$")
-_ARROW = re.compile(r"=>\s*$")
-_ARROW_PARAMS = re.compile(r"(?:\([^()]*\)|[\w$]+)\s*=>\s*$")
-#: A function nothing reads the result of: `onClick={...`, `onClick: ...`,
-#: `addEventListener('click', ...`.
-_HANDLER_BEFORE = re.compile(
-    r"(?:(?<![\w$])on[A-Z][\w$]*\s*(?:=\s*\{|:)|addEventListener\s*\(\s*['\"`][^'\"`]*['\"`]\s*,)\s*$"
-)
+_BLOCK_KEYWORDS = frozenset({"if", "for", "while", "switch", "catch", "with"})
+_IDENT_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_$")
+
+# Read backwards with plain loops, not `...\s*$` regexes: those try every start
+# position, and render code is author-written and long.
+
+
+def _tail_word(text: str) -> tuple[str, str]:
+    """The identifier ``text`` ends with (after trailing space), and what is before it."""
+    end = len(text)
+    while end and text[end - 1].isspace():
+        end -= 1
+    start = end
+    while start and text[start - 1] in _IDENT_CHARS:
+        start -= 1
+    return text[start:end], text[:start]
+
+
+def _strip_end(text: str) -> str:
+    end = len(text)
+    while end and text[end - 1].isspace():
+        end -= 1
+    return text[:end]
+
+
+def _on_word(word: str) -> bool:
+    return len(word) > 2 and word.startswith("on") and word[2].isupper()
+
+
+def _is_handler_context(before: str) -> bool:
+    """Whether a function written right after ``before`` is an event handler:
+    `onClick={`, `onClick:`, or `addEventListener('click',`."""
+    b = _strip_end(before)
+    if b.endswith("{"):
+        b2 = _strip_end(b[:-1])
+        if b2.endswith("="):
+            return _on_word(_tail_word(b2[:-1])[0])
+        return False
+    if b.endswith(":"):
+        return _on_word(_tail_word(b[:-1])[0])
+    if b.endswith(","):
+        b2 = _strip_end(b[:-1])
+        if b2 and b2[-1] in "'\"`":
+            opened = b2.rfind(b2[-1], 0, len(b2) - 1)
+            b3 = _strip_end(b2[:opened]) if opened >= 0 else ""
+            if b3.endswith("("):
+                return _tail_word(b3[:-1])[0] == "addEventListener"
+    return False
 
 
 def _open_paren_before(code: str, close: int) -> int | None:
@@ -571,34 +608,35 @@ def _open_paren_before(code: str, close: int) -> int | None:
 def _function_at(code: str, brace: int) -> tuple[bool, bool] | None:
     """For the ``{`` at ``brace``: None when it opens no function body, else
     ``(is_async, is_handler)``."""
-    head = code[:brace].rstrip()
-    if _ARROW.search(head):
-        m = _ARROW_PARAMS.search(head)
-        start = m.start() if m else len(head)
-        before = head[:start].rstrip()
-        is_async = before.endswith("async") and not re.search(r"[\w$]async$", before)
-        if is_async:
-            before = before[: -len("async")].rstrip()
-        return is_async, bool(_HANDLER_BEFORE.search(before))
+    head = _strip_end(code[:brace])
+    if head.endswith("=>"):
+        before = _strip_end(head[:-2])
+        if before.endswith(")"):
+            open_at = _open_paren_before(before, len(before) - 1)
+            if open_at is None:
+                return None
+            before = before[:open_at]
+        else:
+            _, before = _tail_word(before)
+        word, rest = _tail_word(before)
+        is_async = word == "async"
+        return is_async, _is_handler_context(rest if is_async else before)
     if head.endswith(")"):
         open_at = _open_paren_before(head, len(head) - 1)
         if open_at is None:
             return None
-        before = head[:open_at]
-        if _BLOCK_KEYWORD.search(before):
+        word, rest = _tail_word(head[:open_at])
+        if not word or word in _BLOCK_KEYWORDS:
             return None
-        if _ASYNC_FUNCTION.search(before):
-            return True, False
-        m = _FUNCTION.search(before)
-        if m:
-            return False, bool(_HANDLER_BEFORE.search(before[: m.start()].rstrip()))
-        if _ASYNC_METHOD.search(before):
-            return True, False
-        # A method `name(...) {`: a handler only if it is an on* one.
-        name = re.search(r"([\w$]+)\s*$", before)
-        if name:
-            return False, bool(re.match(r"on[A-Z]", name.group(1)))
-        return None
+        if word == "function":  # function (...) {
+            w2, r2 = _tail_word(rest)
+            return (True, False) if w2 == "async" else (False, _is_handler_context(rest))
+        w2, r2 = _tail_word(rest)
+        if w2 == "function":  # function name(...) {
+            w3, _ = _tail_word(r2)
+            return (True, False) if w3 == "async" else (False, _is_handler_context(r2))
+        # A method `name(...) {` (`async name(...) {`): a handler only if an on* one.
+        return w2 == "async", _on_word(word)
     return None
 
 
