@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Not part of this program{% endblock %}
+
+{% block content %}
+<div class="max-w-xl mx-auto p-6 space-y-4">
+  <h1 class="text-2xl font-bold text-gray-900">Your Connect organisation isn't part of this program</h1>
+  <p class="text-sm text-gray-600">
+    This program is open to the organisations delivering its Connect opportunities, and to its program managers.
+    None of the Connect organisations your account belongs to is delivering in it.
+  </p>
+  <p class="text-sm text-gray-600">
+    If your organisation was added recently, labs may still have an older copy of your Connect organisations
+    (it keeps one for up to an hour). Refresh it, then try again:
+  </p>
+  <form method="post" action="{% url 'labs:refresh_org_data' %}">
+    {% csrf_token %}
+    <button type="submit" class="button button-sm primary-dark">Refresh my Connect organisations</button>
+  </form>
+  <p class="text-xs text-gray-500">Still not working? Ask your program manager to check that your organisation's opportunity is in the program.</p>
+</div>
+{% endblock %}

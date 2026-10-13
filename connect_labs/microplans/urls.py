@@ -47,6 +47,13 @@ urlpatterns = [
     # Program layer: a program owns a portfolio of candidate plans + plan groups.
     path("program/<int:program_id>/", views.ProgramWorkspaceView.as_view(), name="program_workspace"),
     path("program/<int:program_id>/plans.json", views.ProgramPlansAPIView.as_view(), name="program_plans"),
+    # Workspace programs (labs.workspaces): the Program Managers' page -- linked
+    # Connect programs and the teams they derive.
+    path(
+        "program/<int:program_id>/workspace/",
+        views.ProgramWorkspaceSettingsView.as_view(),
+        name="program_workspace_settings",
+    ),
     path("program/<int:program_id>/compare/", views.ProgramComparePageView.as_view(), name="program_compare_page"),
     # Plan-quality metric glossary — definitions of every column shown on the
     # compare page. Program-scope-agnostic; one page covers the whole vocabulary.

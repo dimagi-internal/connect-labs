@@ -95,6 +95,9 @@ def microplans_list_plans(user, *, program_id):
                 # Batch provenance — groups plans created together by one bulk run so a
                 # parameter-tuning batch is identifiable in the list.
                 "run_id": (p.data.get("run_meta") or {}).get("run_id"),
+                # Workspace programs only (labs.workspaces): the Connect org slug of
+                # the team the plan belongs to; "" = Program Managers only.
+                **({"team": p.data.get("team") or ""} if da.workspace is not None else {}),
             }
             for p in da.list_plans()
         ]
@@ -105,6 +108,7 @@ def microplans_list_plans(user, *, program_id):
                 "kind": g.kind,
                 "plan_ids": g.plan_ids,
                 "arm_for": {str(pid): g.arm_for(pid) for pid in g.plan_ids},
+                **({"team": g.data.get("team") or ""} if da.workspace is not None else {}),
             }
             for g in da.list_groups()
         ]
@@ -136,6 +140,8 @@ def microplans_plan_work_areas(user, *, program_id, plan_id):
     da = _data_access(user, program_id)
     try:
         p = da.get_plan(int(plan_id))
+        if p is None:
+            raise MCPToolError("NOT_FOUND", f"plan {plan_id} is not in program {program_id}")
         was = []
         for w in p.work_areas:
             c = w.get("centroid") or [None, None]
@@ -179,7 +185,8 @@ def microplans_plan_work_areas(user, *, program_id, plan_id):
     name="microplans_delete_plan",
     description=(
         "Hard-delete one plan from a microplans program. Program-scoped: refuses if "
-        "the plan is not in this program (never deletes by raw id). Use to wipe "
+        "the plan is not in this program (never deletes by raw id). In a workspace "
+        "program only a Program Manager may delete (others archive). Use to wipe "
         "sample/residue plans; for normal lifecycle prefer microplans_transition_plan "
         "to 'archived'. Works for labs-only synthetic programs (program_id >= the "
         "labs-only floor = the backing opp id)."
@@ -196,13 +203,15 @@ def microplans_plan_work_areas(user, *, program_id, plan_id):
     is_write=True,
 )
 def microplans_delete_plan(user, *, program_id, plan_id):
-    from connect_labs.microplans.core.data_access import RecordNotInProgramError
+    from connect_labs.microplans.core.data_access import RecordNotInProgramError, WorkspaceDeleteForbidden
 
     _require_program_access(user, program_id)
     da = _data_access(user, program_id)
     try:
         try:
             da.delete_plan(int(plan_id))
+        except WorkspaceDeleteForbidden as e:
+            raise MCPToolError("PERMISSION_DENIED", str(e))
         except RecordNotInProgramError as e:
             raise MCPToolError("NOT_FOUND", str(e))
         return {"program_id": int(program_id), "plan_id": int(plan_id), "deleted": True}
@@ -231,13 +240,15 @@ def microplans_delete_plan(user, *, program_id, plan_id):
     is_write=True,
 )
 def microplans_delete_group(user, *, program_id, group_id):
-    from connect_labs.microplans.core.data_access import RecordNotInProgramError
+    from connect_labs.microplans.core.data_access import RecordNotInProgramError, WorkspaceDeleteForbidden
 
     _require_program_access(user, program_id)
     da = _data_access(user, program_id)
     try:
         try:
             da.delete_group(int(group_id))
+        except WorkspaceDeleteForbidden as e:
+            raise MCPToolError("PERMISSION_DENIED", str(e))
         except RecordNotInProgramError as e:
             raise MCPToolError("NOT_FOUND", str(e))
         return {"program_id": int(program_id), "group_id": int(group_id), "deleted": True}

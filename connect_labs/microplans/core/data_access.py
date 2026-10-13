@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from django.core.exceptions import PermissionDenied
 from django.http import Http404
 
 from connect_labs.microplans.core import plan as plan_lib
@@ -60,6 +61,14 @@ class ProgramAccessDenied(Http404):
     escape still answers 404 instead of 500."""
 
 
+class WorkspaceDeleteForbidden(PermissionDenied):
+    """Only a Program Manager may hard-delete in a workspace program.
+
+    Network Managers archive instead (a Program Manager can restore an archived
+    plan; nobody can restore a deleted one). A 403, deliberately: the action is
+    refused, not the record hidden. See ``ProgramPlanDataAccess._guard_delete``."""
+
+
 def _caller(kwargs):
     """The user this data access acts for, if the caller named one.
 
@@ -80,7 +89,10 @@ class ProgramPlanDataAccess(BaseDataAccess):
     plans. opportunity_id on a plan is a late binding set only at Deploy.
     """
 
-    def __init__(self, program_id, **kwargs):
+    def __init__(self, program_id, *, team: str | None = None, **kwargs):
+        """``team`` is what a caller-less construction (a Celery task a view
+        enqueued) stamps on new records in a workspace program -- the view worked
+        it out for its caller with ``team_for_new_records``. Ignored otherwise."""
         program_id = int(program_id)
         # A labs-only program has no Connect membership check behind it (see
         # below), so the caller's access to it is checked here, before anything
@@ -93,6 +105,16 @@ class ProgramPlanDataAccess(BaseDataAccess):
             if denied:
                 record_denial(reason=denied, program_id=program_id, user=caller)
                 raise ProgramAccessDenied(denied)
+        # A workspace program (labs.workspaces) scopes plans and groups by team and
+        # keeps hard deletes for Program Managers. `workspace` is None -- and every
+        # method below behaves exactly as it did -- for any other program; it costs
+        # no query for a real one.
+        from connect_labs.labs import workspaces
+
+        self.workspace = workspaces.workspace_for_program(program_id)
+        self.viewer = workspaces.role_in(caller, self.workspace) if self.workspace is not None else None
+        self.caller = caller
+        self._default_team = (team or "").strip()
         # Labs-only program: a synthetic opp surfaced in user_programs by
         # labs.context._merge_labs_only_opps as a program id in the reserved range
         # (>= LABS_ONLY_OPP_ID_FLOOR / 10_000; = the backing opp's id). Carry that
@@ -110,6 +132,90 @@ class ProgramPlanDataAccess(BaseDataAccess):
     @property
     def _experiment(self) -> str:
         return str(self.program_id)
+
+    # ---- workspace roles (labs.workspaces) ----
+    #
+    # In a workspace program a plan or group carries ``data["team"]``: the Connect
+    # org slug of the team that made it. A Network Manager reads and changes only
+    # their teams' records; a Program Manager, everything. A record with no team
+    # (made before the program was a workspace) is a Program Manager's. Outside a
+    # workspace none of this applies and no ``team`` is written.
+
+    @property
+    def restricted_to_teams(self) -> bool:
+        """Whether this caller sees only their own teams' records."""
+        return self.viewer is not None and not self.viewer.is_program_manager
+
+    @property
+    def can_delete(self) -> bool:
+        """Whether this caller may hard-delete here (everyone, outside a workspace)."""
+        return self.workspace is None or (self.viewer is not None and self.viewer.is_program_manager)
+
+    def _visible(self, record) -> bool:
+        if record is None or not self.restricted_to_teams:
+            return True
+        return (record.data or {}).get("team") in self.viewer.teams
+
+    def team_for_new_records(self, requested: str | None = None) -> str | None:
+        """The team a new plan or group made by this caller belongs to; None outside a workspace.
+
+        A Network Manager's is one of their teams -- the one asked for, else their
+        first. A Program Manager's is whichever they ask for ("" = Program
+        Managers only). A caller-less construction stamps what its view decided."""
+        if self.workspace is None:
+            return None
+        requested = (requested or "").strip()[:200]
+        if self.restricted_to_teams:
+            return requested if requested in self.viewer.teams else self.viewer.teams[0]
+        if self.viewer is not None:
+            return requested
+        return self._default_team
+
+    def _require_visible_plans(self, plan_ids) -> None:
+        """A Network Manager may not put another team's plan into a group."""
+        if not self.restricted_to_teams or not plan_ids:
+            return
+        visible = {p.id for p in self.list_plans()}
+        hidden = [int(p) for p in plan_ids if int(p) not in visible]
+        if hidden:
+            raise RecordNotInProgramError(f"plan(s) {hidden} are not in program {self.program_id}")
+
+    def _load_plan(self, plan_id: int) -> PlanRecord:
+        """``get_plan`` for a change: in a workspace, a plan the caller cannot see is
+        refused rather than handed back as None (outside one, unchanged)."""
+        plan = self.get_plan(plan_id)
+        if plan is None and self.workspace is not None:
+            raise RecordNotInProgramError(f"plan {plan_id} is not in program {self.program_id}")
+        return plan
+
+    def _load_group(self, group_id: int) -> PlanGroupRecord:
+        group = self.get_group(group_id)
+        if group is None and self.workspace is not None:
+            raise RecordNotInProgramError(f"group {group_id} is not in program {self.program_id}")
+        return group
+
+    def _guard_delete(self, kind: str, record_id: int) -> None:
+        """Refuse a hard delete in a workspace program to anyone but a Program
+        Manager -- one check for the web views and the MCP tools alike, logged on
+        the audit trail. Caller-less code is refused too: nothing legitimate
+        deletes a workspace's records in the background."""
+        if self.can_delete:
+            return
+        from connect_labs.audit_trail.models import Action, Outcome
+        from connect_labs.audit_trail.service import record
+
+        record(
+            Action.ACCESS_DENIED,
+            resource_type=kind,
+            resource_id=record_id,
+            program_id=self.program_id,
+            labs_only=True,
+            outcome=Outcome.FAILURE,
+            status_code=403,
+            metadata={"reason": "workspace delete requires a Program Manager"},
+            user=self.caller,
+        )
+        raise WorkspaceDeleteForbidden("Only a Program Manager can delete in this program. Archive it instead.")
 
     # ---- plans ----
 
@@ -129,6 +235,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
         coverage_config: dict | None = None,
         coverage_stats: list | None = None,
         run_meta: dict | None = None,
+        team: str | None = None,
     ) -> PlanRecord:
         """Create a Draft plan in the program from a generated frame (one work area
         per cluster/pin). ``input_areas`` is the original draw/admin/pin payload
@@ -201,6 +308,9 @@ class ProgramPlanDataAccess(BaseDataAccess):
                 data["coverage_stats"] = coverage_stats
         if run_meta:
             data["run_meta"] = dict(run_meta)
+        stamp = self.team_for_new_records(team)
+        if stamp is not None:
+            data["team"] = stamp
         # Per-ward expected-visit targets set in the setup planning table (the U5-for-
         # calc column). Stored + spread across each ward's retained buildings at
         # creation so visits are populated up front — the same math as the later
@@ -240,7 +350,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
         """
         from connect_labs.microplans.core import assignment as assignment_lib
 
-        plan = self.get_plan(plan_id)
+        plan = self._load_plan(plan_id)
         data = dict(plan.data)
         work_areas = [dict(w) for w in data.get("work_areas", [])]
         cfg = assignment_lib.AssignmentConfig.from_payload(assignment)
@@ -265,7 +375,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
         """
         from connect_labs.microplans.core import grouping as grouping_lib
 
-        plan = self.get_plan(plan_id)
+        plan = self._load_plan(plan_id)
         data = dict(plan.data)
         work_areas = [dict(w) for w in data.get("work_areas", [])]
         cfg = grouping_lib.GroupingConfig.from_payload(grouping)
@@ -312,7 +422,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
         Use when the LLO changes the boundary or cell size on an existing plan
         and wants the new layout to replace the old one outright.
         """
-        plan = self.get_plan(plan_id)
+        plan = self._load_plan(plan_id)
         data = dict(plan.data)
         # Regenerate runs on the Celery worker → barrier fetch may go remote.
         barriers = _barriers_if_needed(grouping, input_areas, allow_remote=True)
@@ -354,20 +464,23 @@ class ProgramPlanDataAccess(BaseDataAccess):
         return self._save_plan(plan, data, base_revision)
 
     def list_plans(self) -> list[PlanRecord]:
-        return self.labs_api.get_records(
+        plans = self.labs_api.get_records(
             experiment=self._experiment,
             type=TYPE_PLAN,
             program_id=self.program_id,
             model_class=PlanRecord,
         )
+        return [p for p in plans if self._visible(p)] if self.restricted_to_teams else plans
 
     def get_plan(self, plan_id: int) -> PlanRecord:
-        return self.labs_api.get_record_by_id(
+        """The plan, or None -- also None for another team's plan in a workspace."""
+        plan = self.labs_api.get_record_by_id(
             int(plan_id),
             experiment=self._experiment,
             type=TYPE_PLAN,
             model_class=PlanRecord,
         )
+        return plan if self._visible(plan) else None
 
     def _save_plan(self, plan: PlanRecord, data: dict, base_revision: int | None = None) -> PlanRecord:
         """Persist mutated plan ``data``, bumping the optimistic-concurrency
@@ -409,7 +522,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
         """Apply one edit to one or more work areas in a single read-modify-write
         (phase=planning audit per area). Last-write-wins across concurrent requests
         — acceptable for single-reviewer planning."""
-        plan = self.get_plan(plan_id)
+        plan = self._load_plan(plan_id)
         data = dict(plan.data)
         work_areas = [dict(w) for w in data.get("work_areas", [])]
         for wa_id in wa_ids:
@@ -433,7 +546,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
     ) -> PlanRecord:
         """Store per-area expected-visit targets {ward: total_expected_visits} on the
         plan and re-spread them across each area's retained buildings (#9/#15)."""
-        plan = self.get_plan(plan_id)
+        plan = self._load_plan(plan_id)
         data = dict(plan.data)
         clean = {}
         for k, v in (targets or {}).items():
@@ -459,7 +572,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
     ) -> PlanRecord:
         """Advance a plan's lifecycle status (Draft→In review→Approved→Deployed /
         Archived). Deploying binds the live Connect opportunity_id."""
-        plan = self.get_plan(plan_id)
+        plan = self._load_plan(plan_id)
         data = dict(plan.data)
         plan_lib.transition_plan(data, to, actor, opportunity_id=opportunity_id)
         return self._save_plan(plan, data, base_revision)
@@ -471,7 +584,9 @@ class ProgramPlanDataAccess(BaseDataAccess):
         Reads the plan scoped to this program first (``get_plan`` sends program_id,
         so the prod GET only returns it if it's in this program and the caller is a
         member). Refuses if it's not ours — never deletes by raw id. See
-        :class:`RecordNotInProgramError`."""
+        :class:`RecordNotInProgramError`. In a workspace program only a Program
+        Manager may (:class:`WorkspaceDeleteForbidden`)."""
+        self._guard_delete(TYPE_PLAN, int(plan_id))
         if self.get_plan(int(plan_id)) is None:
             raise RecordNotInProgramError(f"plan {plan_id} is not in program {self.program_id}")
         self.labs_api.delete_record(int(plan_id))
@@ -486,48 +601,65 @@ class ProgramPlanDataAccess(BaseDataAccess):
         kind: str = "bundle",
         arms: dict | None = None,
         sampling_config: dict | None = None,
+        team: str | None = None,
     ) -> PlanGroupRecord:
         """Create a plan group. ``kind="study"`` + ``arms`` make it a controlled
         study (arm assignment is labs-side — never written onto plans)."""
+        self._require_visible_plans(plan_ids)
+        data = {
+            "schema_version": SCHEMA_VERSION,
+            "program_id": self.program_id,
+            "name": name,
+            "plan_ids": [int(p) for p in plan_ids],
+            "offered_to": offered_to,
+            "shared": False,
+            "kind": kind,
+            "arms": {str(k): v for k, v in (arms or {}).items()},
+            "sampling_config": sampling_config or {},
+            "status": "defining",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        stamp = self.team_for_new_records(team)
+        if stamp is not None:
+            data["team"] = stamp
         record = self.labs_api.create_record(
             experiment=self._experiment,
             type=TYPE_PLAN_GROUP,
             program_id=self.program_id,
-            data={
-                "schema_version": SCHEMA_VERSION,
-                "program_id": self.program_id,
-                "name": name,
-                "plan_ids": [int(p) for p in plan_ids],
-                "offered_to": offered_to,
-                "shared": False,
-                "kind": kind,
-                "arms": {str(k): v for k, v in (arms or {}).items()},
-                "sampling_config": sampling_config or {},
-                "status": "defining",
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            },
+            data=data,
         )
         return PlanGroupRecord(record.to_api_dict())
 
     def list_groups(self) -> list[PlanGroupRecord]:
-        return self.labs_api.get_records(
+        groups = self.labs_api.get_records(
             experiment=self._experiment,
             type=TYPE_PLAN_GROUP,
             program_id=self.program_id,
             model_class=PlanGroupRecord,
         )
+        return [g for g in groups if self._visible(g)] if self.restricted_to_teams else groups
 
     def get_group(self, group_id: int) -> PlanGroupRecord:
-        return self.labs_api.get_record_by_id(
+        """The group, or None -- also None for another team's group in a workspace."""
+        group = self.labs_api.get_record_by_id(
             int(group_id),
             experiment=self._experiment,
             type=TYPE_PLAN_GROUP,
             model_class=PlanGroupRecord,
         )
+        return group if self._visible(group) else None
 
     def update_group(self, group_id: int, **fields) -> PlanGroupRecord:
-        group = self.get_group(group_id)
+        """``team`` moves a workspace group to another team -- a Program Manager's
+        call only; it is ignored for anyone else and outside a workspace."""
+        group = self._load_group(group_id)
+        if fields.get("plan_ids") is not None:
+            # Only what is being ADDED must be the caller's to add.
+            self._require_visible_plans({int(p) for p in fields["plan_ids"]} - set(group.plan_ids))
         data = dict(group.data)
+        is_pm = self.viewer is not None and self.viewer.is_program_manager
+        if fields.get("team") is not None and self.workspace is not None and is_pm:
+            data["team"] = str(fields["team"]).strip()[:200]
         for key in (
             "name",
             "offered_to",
@@ -554,15 +686,16 @@ class ProgramPlanDataAccess(BaseDataAccess):
 
     def add_plan_to_group(self, group_id: int, plan_id: int) -> PlanGroupRecord:
         """Add ``plan_id`` to the group's membership (idempotent)."""
-        group = self.get_group(group_id)
+        group = self._load_group(group_id)
         plan_id = int(plan_id)
+        self._require_visible_plans([plan_id])
         if plan_id in group.plan_ids:
             return group
         return self.update_group(group_id, plan_ids=[*group.plan_ids, plan_id])
 
     def remove_plan_from_group(self, group_id: int, plan_id: int) -> PlanGroupRecord:
         """Remove ``plan_id`` from the group, dropping any arm assignment for it."""
-        group = self.get_group(group_id)
+        group = self._load_group(group_id)
         plan_id = int(plan_id)
         new_ids = [p for p in group.plan_ids if p != plan_id]
         new_arms = {k: v for k, v in group.arms.items() if k != str(plan_id)}
@@ -570,7 +703,9 @@ class ProgramPlanDataAccess(BaseDataAccess):
 
     def delete_group(self, group_id: int) -> None:
         """Hard-delete a plan group record. Use sparingly. Reads it scoped to this
-        program first and refuses if it's not ours (see :class:`RecordNotInProgramError`)."""
+        program first and refuses if it's not ours (see :class:`RecordNotInProgramError`).
+        In a workspace program only a Program Manager may (:class:`WorkspaceDeleteForbidden`)."""
+        self._guard_delete(TYPE_PLAN_GROUP, int(group_id))
         if self.get_group(int(group_id)) is None:
             raise RecordNotInProgramError(f"group {group_id} is not in program {self.program_id}")
         self.labs_api.delete_record(int(group_id))
