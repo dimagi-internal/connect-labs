@@ -309,15 +309,17 @@ jobs:
   # passed only on the weekday it was written on; several more passed only
   # until a hard-coded date slid out of a "last 90 days" window. Nothing in the
   # `pytest` job can see either: it always runs today. This job runs the whole
-  # suite under libfaketime, with the clock moved 1-400 days forward, so a test
-  # that depends on the date shows up here -- usually long before the calendar
-  # would have broken it for real.
+  # suite with Python's clock moved 1-400 days forward (`--clock-shift`,
+  # connect_labs/testing/clock_shift.py), so a test that depends on the date
+  # shows up here -- usually long before the calendar would have broken it.
   #
-  # Only Python's clock moves. Postgres is a service container on the real
+  # Only Python's wall clock moves. Postgres is a service container on the real
   # clock, so product code must take "now" from the app (timezone.now(),
   # date.today()) and pass it into SQL rather than calling now() /
   # CURRENT_DATE in the query. Pulse's backlog days did, and was the one place
-  # the first sweep found that mixed the two.
+  # the first sweep found that mixed the two. (libfaketime moves everything,
+  # Postgres aside, and was tried first: on this runner it broke time.sleep()
+  # or hung the suite. clock_shift.py says more.)
   #
   # When it runs, and why not on every PR: the `pytest` job is the critical
   # path of every merge, and this one costs the same again. So it runs after a
@@ -370,13 +372,6 @@ jobs:
       - name: Set up the pytest environment
         uses: ./.github/actions/setup-pytest
 
-      - name: Install libfaketime
-        run: |
-          sudo grep -lE 'dl\.google\.com|packages\.microsoft\.com' \
-            /etc/apt/sources.list.d/* 2>/dev/null | xargs -r sudo rm -f
-          sudo apt-get update -o Acquire::Retries=3
-          sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 faketime
-
       - name: Choose the day
         id: shift
         env:
@@ -394,17 +389,14 @@ jobs:
             echo "### Suite run with the clock moved forward $days days"
             echo "Python saw today as **$faked** (UTC). Postgres stayed on the real clock."
             echo
-            echo "Reproduce locally (\`brew install libfaketime\` first on a Mac):"
+            echo "Reproduce locally:"
             echo
             echo "    make test CLOCK_SHIFT=+${days}d"
           } >> "$GITHUB_STEP_SUMMARY"
           echo "Faking +$days days: $faked"
 
       - name: Run tests with the clock moved
-        # Leave the monotonic clock faked too (libfaketime's default). With
-        # FAKETIME_DONT_FAKE_MONOTONIC=1 every time.sleep() failed with EINVAL:
-        # Python sleeps to an absolute monotonic deadline, read off the real
-        # clock, which libfaketime's clock_nanosleep then shifts into the past.
+        # faulthandler names the test if one hangs: a stack dump after 5 minutes.
         run: |
-          faketime -f "+${{ steps.shift.outputs.days }}d" .venv/bin/pytest connect_labs/ -n auto -v \
+          .venv/bin/pytest connect_labs/ -n auto --clock-shift=+${{ steps.shift.outputs.days }}d \
             -o faulthandler_timeout=300
