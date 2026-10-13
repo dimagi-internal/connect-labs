@@ -114,7 +114,6 @@
       baseFilters = Object.assign({}, (host.pageState() || {}).filters || {});
     host.updatePageState({
       filters: Object.assign({}, baseFilters, {
-        schedule: state.schedule,
         states: state.states.join(','),
         cost_per_visit: String(state.cost_per_visit),
         platform_fee: String(state.platform_fee),
