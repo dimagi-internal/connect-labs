@@ -95,7 +95,8 @@ def page_edit_refusal(request, definition, owner: dict | None = None) -> str | N
     The rule is the page's owning scope's WRITE rule (scope_config.service.write_refusal),
     the one Settings uses for that scope: a member of the organisation, programme or
     opportunity the page lives in edits it -- as they may write any other record
-    there -- and Dimagi staff edit any page. It is no longer "staff or whoever made
+    there -- and Dimagi staff: hand-granted `is_staff` on any page, a Dimagi sign-in
+    on a labs-only one. It is no longer "staff or whoever made
     it": the page sandbox (workflow/sandbox.py) means a page's code cannot act as the
     person viewing it, so letting a scope's members edit their own page hands no one
     another viewer's access.
@@ -110,9 +111,8 @@ def page_edit_refusal(request, definition, owner: dict | None = None) -> str | N
     tree = service.tree_for(caller)
     scope = page_owner_scope(definition, tree, owner)
     if scope is None:
-        from connect_labs.utils.dimagi_user import is_dimagi_staff
-
-        return None if is_dimagi_staff(user) else "this page's owner cannot be told"
+        # Its owner cannot be told, so neither can whether it is labs-only: hand-granted staff only.
+        return None if getattr(user, "is_staff", False) else "this page's owner cannot be told"
     if service.write_refusal(caller, scope, tree) is None:
         return None
     return PAGE_EDIT_REFUSED.format(owner=_OWNER_WORDS[scope.type])
