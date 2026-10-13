@@ -146,12 +146,10 @@ The restricted address offers a simpler set of synthetic tools: `synthetic_clone
 
 ## Profiling Limits
 
-The following limits apply when using the profiling and synthetic-data tools. Most limits apply to everyone; the per-call limit applies only to the restricted address.
+The following limits apply when using the profiling and synthetic-data tools.
 
 | Limit | Value | Who it applies to |
 | --- | --- | --- |
-| Jobs running at the same time per person | 2 | Everyone |
-| Opportunities profiled per person per day | 40 | Everyone |
 | Opportunities per single call | 10 | Restricted address only |
 | Time limit per job | 2 hours | Everyone |
 | Synthetic jobs running at the same time across the whole system | 2 | Everyone |
@@ -159,7 +157,7 @@ The following limits apply when using the profiling and synthetic-data tools. Mo
 If you submit a request that is identical to one already running, Labs returns the existing job rather than starting a duplicate.
 
 !!! tip "If you hit a limit"
-    Wait for a running job to finish before starting a new one, or spread your profiling requests across the day if you are working with a large list of opportunities.
+    Wait for a running job to finish before starting a new one if the system-wide limit is reached.
 
 ---
 
