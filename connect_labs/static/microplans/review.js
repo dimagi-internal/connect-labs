@@ -14,6 +14,9 @@
   let EDIT_URL = CFG.edit_url;
   const AREA_TARGETS_URL = CFG.area_targets_url;
   let AREA_POPS = {}; // {ward: {source: number}} — to seed per-ward visit targets
+  // {area_id: {source: number}} ESTIMATED for areas with no populations of their
+  // own (drawn / pin / unmatched upload) — shown marked "≈", never merged into AREA_POPS.
+  let AREA_POPS_EST = {};
   let AREA_TARGETS = {}; // {ward: total_expected_visits} the user has applied
   let CSV_URL = CFG.csv_url;
   const COMPARE_URL = CFG.compare_url;
@@ -792,6 +795,8 @@
     if (data && data.revision !== undefined) planRevision = data.revision;
     WAS = data.work_areas || [];
     if (data && data.area_populations) AREA_POPS = data.area_populations;
+    if (data && data.area_populations_est)
+      AREA_POPS_EST = data.area_populations_est;
     if (data && data.area_targets) AREA_TARGETS = data.area_targets;
     lastPlanData = data; // for the map-load retry of the boundary overlay
     // Purely informational — WA Revisit's Phase 3 hand-off tags every plan it
@@ -2852,6 +2857,46 @@
     // Population source is applied in renderSetupPopSource (needs its options built).
   }
 
+  // An area with no populations of its own gets an ESTIMATE from the last "Update
+  // table" fetch: the wards it overlaps, each weighted by the share of its buildings
+  // inside the area (preview_area_stats_task → core/area_population.py).
+  const EST_TITLE =
+    'Estimated from the wards this area overlaps, by share of their buildings inside it';
+  function estStatsFor(i) {
+    const s = SETUP_COUNTS && SETUP_COUNTS[i];
+    return s && s.populations_est && Object.keys(s.populations_est).length
+      ? s
+      : null;
+  }
+  // Sum per-part estimates (a boundary without a bag spans several draw features),
+  // keeping only the sources every part has.
+  function sumPopBags(bags) {
+    const out = {};
+    Object.keys(bags[0] || {})
+      .filter((k) => bags.every((b) => b[k] != null))
+      .forEach((k) => (out[k] = bags.reduce((s, b) => s + b[k], 0)));
+    return out;
+  }
+  // Tooltip: the method, then which wards it drew on and how much of each.
+  function estTitle(stats) {
+    const basis = stats
+      .flatMap((s) => (s && s.population_basis) || [])
+      .filter((b) => b.share > 0);
+    const lines = basis
+      .slice(0, 8)
+      .map(
+        (b) =>
+          `${b.ward}: ${(b.share * 100).toFixed(1)}% of its ${
+            b.basis === 'area' ? 'area' : 'buildings'
+          }`,
+      );
+    if (basis.length > 8) lines.push(`… and ${basis.length - 8} more`);
+    stats.forEach(
+      (s) => s && s.population_note && lines.push(s.population_note),
+    );
+    return [EST_TITLE].concat(lines).join('\n');
+  }
+
   function famTotal(pops, fam) {
     if (!pops) return null;
     return pops[fam.total] != null ? pops[fam.total] : null;
@@ -2916,6 +2961,11 @@
               : d.kind === 'upload'
                 ? 'upload:' + d.idx
                 : 'area_' + (i + 1);
+      // Carried into create (input_areas) so the plan keeps the estimate, apart
+      // from real populations (area_populations_est).
+      const own = a.populations && Object.keys(a.populations).length;
+      const est = !own && estStatsFor(i);
+      if (est) a.populations_est = est.populations_est;
     });
     return out;
   }
@@ -2947,6 +2997,8 @@
             lga: p.lga || '',
             state: p.state || '',
             pops: AREA_POPS[aid] || {},
+            popsEst: AREA_POPS_EST[aid] || null,
+            estTitle: EST_TITLE,
             buildings: 0,
             nWAs: 0,
             nExcl: 0,
@@ -2992,6 +3044,13 @@
         : c.reduce((s, x) => s + x, 0);
       g.nWAs = null; // no work areas until the plan is created
       g.nExcl = null;
+      // No populations of its own → the fetched estimate, when every part has one.
+      const est = g.memberIdx.map((i) => estStatsFor(i));
+      g.popsEst =
+        Object.keys(g.pops).length || !est.every(Boolean)
+          ? null
+          : sumPopBags(est.map((s) => s.populations_est));
+      g.estTitle = g.popsEst ? estTitle(est) : '';
     });
     return groups;
   }
@@ -3001,6 +3060,7 @@
     const seen = new Set();
     planningRows().forEach((r) => {
       Object.keys(r.pops || {}).forEach((k) => seen.add(k));
+      Object.keys(r.popsEst || {}).forEach((k) => seen.add(k));
     });
     return PROVIDER_FAMILIES.filter(
       (f) => seen.has(f.total) || (f.u5 && seen.has(f.u5)),
@@ -3096,9 +3156,16 @@
     const num = (v) => (v == null ? '—' : Math.round(v).toLocaleString());
     tb.innerHTML = rows
       .map((r) => {
-        const pops = r.pops || {};
+        // A row with no populations of its own falls back to its estimate (marked ≈);
+        // its U5 feeds "U5 for calc" exactly as a ward's own figure does.
+        const isEst = !Object.keys(r.pops || {}).length && !!r.popsEst;
+        const pops = isEst ? r.popsEst : r.pops || {};
         const total = fam ? famTotal(pops, fam) : null;
         const u5 = fam ? famU5(pops, fam) : null;
+        const popCell = (v) =>
+          isEst && v != null
+            ? `<span title="${esc(r.estTitle || EST_TITLE)}">≈${num(v)}</span>`
+            : num(v);
         const bld = r.buildings;
         const nWAs = r.nWAs;
         const ward = r.ward; // display only
@@ -3135,8 +3202,8 @@
           <td class="pr-2 py-1 text-gray-500 truncate" title="${esc(
             r.state,
           )}">${r.state ? esc(r.state) : '—'}</td>
-          <td class="pr-2 py-1 text-right text-gray-600">${num(total)}</td>
-          <td class="pr-2 py-1 text-right text-gray-600">${num(u5)}</td>
+          <td class="pr-2 py-1 text-right text-gray-600">${popCell(total)}</td>
+          <td class="pr-2 py-1 text-right text-gray-600">${popCell(u5)}</td>
           <td class="pr-2 py-1 text-right text-gray-600">${
             bld == null ? '—' : bld.toLocaleString()
           }</td>

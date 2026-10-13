@@ -915,5 +915,45 @@ def adjacent_boundaries(boundary_id: str, *, limit: int = 10) -> dict:
     }
 
 
+def overlapping_population_wards(area) -> list[dict]:
+    """Labs boundaries with an ``extra.populations`` bag that intersect ``area`` (a
+    WGS84 shapely geometry): the wards a drawn/pin/uploaded area's population is
+    estimated from (see ``core/area_population.py``).
+
+    Only the FINEST admin level carrying populations is kept, so a ward and an LGA
+    holding the same people are never both counted. Same-ward provider twins (NGA
+    wards exist as geopode + grid3 rows) collapse to one, preferring geopode (its bag
+    is a superset; see LABS_PROVIDER_PREFERENCE). Rows without a populations bag are
+    dropped BEFORE the dedupe, so a ward whose geopode twin lacks a bag still
+    contributes through its grid3 row. Each row: ``{boundary_id, name, source,
+    admin_level, populations, geometry}`` — ``geometry`` is a shapely geometry
+    (full resolution: it feeds the ward's own footprint fetch)."""
+    from django.contrib.gis.geos import GEOSGeometry
+    from shapely import wkb
+
+    from connect_labs.labs.admin_boundaries.models import AdminBoundary
+
+    qs = AdminBoundary.objects.filter(
+        geometry__intersects=GEOSGeometry(area.wkt, srid=4326), extra__has_key="populations"
+    ).order_by("name", "boundary_id")
+    rows = [b for b in qs if isinstance((b.extra or {}).get("populations"), dict) and b.extra["populations"]]
+    if not rows:
+        return []
+    finest = max(b.admin_level for b in rows)
+    rows = [b for b in rows if b.admin_level == finest]
+    deduped = _dedupe_by_provider_preference(rows, name_of=lambda b: b.name, source_of=lambda b: b.source)
+    return [
+        {
+            "boundary_id": b.boundary_id,
+            "name": b.name,
+            "source": b.source,
+            "admin_level": b.admin_level,
+            "populations": b.extra["populations"],
+            "geometry": wkb.loads(bytes(b.geometry.wkb)),
+        }
+        for b in deduped
+    ]
+
+
 def get_resolver() -> BoundaryResolver:
     return BoundaryResolver()

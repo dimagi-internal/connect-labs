@@ -336,6 +336,28 @@ class TestProgramPlanDataAccessContract:
                 assert isinstance(ev["changes"]["work_area_group"], list)
                 assert len(ev["changes"]["work_area_group"]) == 2
 
+    def test_create_plan_keeps_estimated_populations_apart_from_real_ones(self):
+        """A drawn area's estimate (populations_est) is stored under its own key, and
+        never for an area that has populations of its own."""
+        da = _make_program_da()
+        ward_pops = {"worldpop_total": 9000.0, "worldpop_u5": 1800.0}
+        est = {"worldpop_total": 1234.5, "worldpop_u5": 240.1}
+        plan = da.create_plan(
+            region="R",
+            name="N",
+            mode="coverage",
+            pins=_EMPTY_FC,
+            hulls=_HULLS_2,
+            input_areas=[
+                {"area_id": "bnd:w1", "populations": ward_pops, "populations_est": {"worldpop_total": 1.0}},
+                {"area_id": "draw:abc", "populations": None, "populations_est": est},
+                {"area_id": "circle:0", "populations": None, "populations_est": {}},
+            ],
+        )
+        refetched = da.get_plan(plan.id)
+        assert refetched.data["area_populations"] == {"bnd:w1": ward_pops}
+        assert refetched.data["area_populations_est"] == {"draw:abc": est}
+
     def test_create_plan_starts_at_revision_zero(self):
         da = _make_program_da()
         plan = da.create_plan(region="R", name="N", mode="coverage", pins=_EMPTY_FC, hulls=_HULLS_2)
