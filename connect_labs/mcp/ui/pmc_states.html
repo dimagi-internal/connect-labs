@@ -409,9 +409,17 @@
               return (b.lower || 0) - (a.lower || 0);
             });
           state.on = {};
-          (reco.keep || []).slice(0, 4).forEach(function (n) {
-            state.on[n] = true;
-          });
+          // The four best of the states the answer keeps: `keep` is not in rank order,
+          // the rows are (best first).
+          var kept = reco.keep || [];
+          state.rows
+            .filter(function (r) {
+              return kept.indexOf(r.state) >= 0;
+            })
+            .slice(0, 4)
+            .forEach(function (r) {
+              state.on[r.state] = true;
+            });
           // With no recommendation to keep, start from the four best.
           if (!ticked().length)
             state.rows.slice(0, 4).forEach(function (r) {
