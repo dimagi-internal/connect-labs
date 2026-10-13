@@ -437,7 +437,7 @@ def test_the_reversed_workers_chart_shows_the_reversal(seeded):
     assert "14 sachets put back (a visit rejected after it was counted)" in svg
 
 
-@pytest.mark.parametrize("weekday", [0, 6])  # seeded on a Monday (a full week read) and on a Sunday
+@pytest.mark.parametrize("weekday", range(7))  # the pace window holds the same visits whatever day it is seeded
 def test_the_band_holds_whatever_day_it_is_seeded(db, settings, weekday):
     settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent"
     drive = FakeDrive()
