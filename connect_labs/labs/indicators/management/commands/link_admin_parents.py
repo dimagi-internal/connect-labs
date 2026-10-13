@@ -39,6 +39,16 @@ class Command(BaseCommand):
         parser.add_argument("--dry-run", action="store_true", help="Report what would change, write nothing")
 
     def handle(self, *args, **opts):
+        # The targeting page caches its answers per version of the data; this
+        # command may rewrite rows in place, so it starts a new version.
+        from connect_labs.labs.indicators import response_cache
+
+        try:
+            return self._handle(*args, **opts)
+        finally:
+            response_cache.invalidate()
+
+    def _handle(self, *args, **opts):
         codes = [c.strip().upper() for c in (opts.get("iso") or "").split(",") if c.strip()]
 
         linked = 0

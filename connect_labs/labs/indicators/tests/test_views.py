@@ -1143,3 +1143,53 @@ class TestDefaultMethodAnswersTheIndicator:
         resp = client_in.get(reverse("targeting:selection"), {"indicator": "improved_water", "threshold": 90})
         assert resp.status_code == 200
         assert resp.json()["rows"], "an indicator with data returned nothing without ?method="
+
+
+class TestAnswersAreCachedUntilTheDataChanges:
+    """The map, selection and costing took ~4s each on labs; a repeat is now a cache hit."""
+
+    def _queries(self, client, url, params):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        with CaptureQueriesContext(connection) as ctx:
+            resp = client.get(url, params)
+        assert resp.status_code == 200
+        return len(ctx.captured_queries), resp.json()
+
+    def test_a_repeat_request_is_served_from_the_cache(self, client_in, africa):
+        url = reverse("targeting:selection")
+        first, a = self._queries(client_in, url, {"threshold": 80})
+        again, b = self._queries(client_in, url, {"threshold": 80})
+
+        assert a == b
+        # The repeat runs the session and the data fingerprint, not the resolver.
+        assert again < first and again <= 8
+
+    def test_another_query_is_not_served_the_cached_answer(self, client_in, africa):
+        url = reverse("targeting:selection")
+        _, high = self._queries(client_in, url, {"threshold": 80})
+        _, low = self._queries(client_in, url, {"threshold": 10})
+
+        assert high["totals"]["births"] != low["totals"]["births"]
+
+    def test_new_data_is_seen_at_once(self, client_in, africa):
+        url = reverse("targeting:selection")
+        _, before = self._queries(client_in, url, {"threshold": 80})
+        # Nigeria's cool region now clears the bar: a new row, a new version.
+        set_value(africa["b2"], "u5mr", 150, source=Source.IGME_SUBNATIONAL, year=2025)
+        _, after = self._queries(client_in, url, {"threshold": 80})
+
+        assert after["totals"]["births"] == before["totals"]["births"] + 44_000
+
+    def test_a_row_rewritten_in_place_is_seen_once_the_import_says_so(self, client_in, africa):
+        from connect_labs.labs.indicators import response_cache
+        from connect_labs.labs.indicators.models import IndicatorValue
+
+        url = reverse("targeting:selection")
+        _, before = self._queries(client_in, url, {"threshold": 80})
+        IndicatorValue.objects.filter(boundary=africa["b2"], indicator="u5mr").update(value=150)
+        response_cache.invalidate()
+        _, after = self._queries(client_in, url, {"threshold": 80})
+
+        assert after["totals"]["births"] == before["totals"]["births"] + 44_000

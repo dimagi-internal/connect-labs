@@ -20,6 +20,7 @@ from connect_labs.labs.indicators import export, interventions, measures, method
 from connect_labs.labs.indicators.africa import ISO_CODES, name_for
 from connect_labs.labs.indicators.models import IndicatorValue, IngestRun, Source
 from connect_labs.labs.indicators.resolve import BulkResolver, select_above
+from connect_labs.labs.indicators.response_cache import CachedJsonMixin
 
 logger = logging.getLogger(__name__)
 
@@ -313,12 +314,14 @@ class TargetingView(OpenLocallyMixin, TemplateView):
         return ctx
 
 
-class MapDataView(OpenLocallyMixin, View):
+class MapDataView(OpenLocallyMixin, CachedJsonMixin, View):
     """GeoJSON for the choropleth: one feature per ADM1 unit, carrying its numbers.
 
     Countries with no ADM1 boundaries fall back to their ADM0 outline so they
     appear on the map as a single unit rather than as a hole.
     """
+
+    cache_name = "map"
 
     def get(self, request):
         indicator = _indicator(request)
@@ -382,8 +385,10 @@ class MapDataView(OpenLocallyMixin, View):
         )
 
 
-class SelectionView(OpenLocallyMixin, View):
+class SelectionView(OpenLocallyMixin, CachedJsonMixin, View):
     """Apply a threshold and return the headline numbers plus the table."""
+
+    cache_name = "selection"
 
     def get(self, request):
         indicator = _indicator(request)
@@ -690,7 +695,7 @@ class ScopeView(OpenLocallyMixin, View):
         return JsonResponse(payload)
 
 
-class ScenarioView(OpenLocallyMixin, View):
+class ScenarioView(OpenLocallyMixin, CachedJsonMixin, View):
     """What a unit price buys, over the places a threshold selects.
 
     The arithmetic is trivial once two things are fixed: a **unit cost** and a
@@ -699,6 +704,8 @@ class ScenarioView(OpenLocallyMixin, View):
     household, a treatment per case — so the basis is chosen rather than
     inferred, and named interventions are presets for a basis and a price.
     """
+
+    cache_name = "scenario"
 
     def get(self, request):
         slug = request.GET.get("intervention")

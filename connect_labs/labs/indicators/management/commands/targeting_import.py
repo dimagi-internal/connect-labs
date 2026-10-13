@@ -44,6 +44,16 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **opts):
+        # The targeting page caches its answers per version of the data; this
+        # command may rewrite rows in place, so it starts a new version.
+        from connect_labs.labs.indicators import response_cache
+
+        try:
+            return self._handle(*args, **opts)
+        finally:
+            response_cache.invalidate()
+
+    def _handle(self, *args, **opts):
         if opts["path"]:
             blob = Path(opts["path"]).read_bytes()
             self.stdout.write(f"Reading {opts['path']} ({len(blob) / 1e6:.1f} MB)")
