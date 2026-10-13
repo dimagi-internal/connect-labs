@@ -57,6 +57,65 @@ def is_page(definition) -> bool:
     return PAGE_TEMPLATE in (data.get("templateType"), config.get("templateType"))
 
 
+_OWNER_WORDS = {"organization": "organisation", "program": "program", "opportunity": "opportunity"}
+
+#: What someone who may not edit a page is told (never the scope check's own wording).
+PAGE_EDIT_REFUSED = "You can view this page but not edit it: only people who can change its {owner} can."
+
+
+def page_owner_scope(definition, tree: dict, owner: dict | None = None) -> Scope | None:
+    """The scope a page's record lives in -- what decides who may edit it.
+
+    `owner` is the page view's own (an organisation by slug, or a programme or
+    opportunity id); without it, the record's own scope fields. An organisation
+    record carries a Connect id, named here by its slug from the viewer's tree:
+    one the viewer's tree does not hold is not one they can be shown to own.
+    """
+    if owner:
+        opp, program, org = (owner.get(k) for k in ("opportunity_id", "program_id", "organization_id"))
+    else:
+        opp, program, org = (getattr(definition, k, None) for k in ("opportunity_id", "program_id", "organization_id"))
+    try:
+        if opp:
+            return Scope.of("opportunity", opp)
+        if program:
+            return Scope.of("program", program)
+        if org not in (None, ""):
+            if str(org).isdigit():
+                org = (organization_entry(tree, org) or {}).get("slug")
+            return Scope.of("organization", org) if org else None
+    except ValueError:
+        return None
+    return None
+
+
+def page_edit_refusal(request, definition, owner: dict | None = None) -> str | None:
+    """Why the viewer may not edit page `definition`, or None if they may.
+
+    The rule is the page's owning scope's WRITE rule (scope_config.service.write_refusal),
+    the one Settings uses for that scope: a member of the organisation, programme or
+    opportunity the page lives in edits it -- as they may write any other record
+    there -- and Dimagi staff edit any page. It is no longer "staff or whoever made
+    it": the page sandbox (workflow/sandbox.py) means a page's code cannot act as the
+    person viewing it, so letting a scope's members edit their own page hands no one
+    another viewer's access.
+    """
+    from connect_labs.labs.access.scopes import Caller
+    from connect_labs.scope_config import service
+
+    user = getattr(request, "user", None)
+    if user is None or not getattr(user, "is_authenticated", False):
+        return "sign in to edit a page"
+    caller = Caller(user=user, request=request)
+    tree = service.tree_for(caller)
+    scope = page_owner_scope(definition, tree, owner)
+    if scope is None:
+        return None if getattr(user, "is_staff", False) else "this page's owner cannot be told"
+    if service.write_refusal(caller, scope, tree) is None:
+        return None
+    return PAGE_EDIT_REFUSED.format(owner=_OWNER_WORDS[scope.type])
+
+
 def blank_instance(definition_id, opportunity_id, program_id, opportunity_ids) -> dict:
     today = date.today().isoformat()
     return {

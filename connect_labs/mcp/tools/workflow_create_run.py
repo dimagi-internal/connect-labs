@@ -94,7 +94,9 @@ def workflow_create_run(
                 "NOT_FOUND",
                 f"workflow definition {definition_id} not found",
             )
-        if (definition.data or {}).get("kind") == "page":
+        from connect_labs.workflow.page_mode import is_page
+
+        if is_page(definition):
             # A page has no runs (workflow/page_mode.py).
             raise MCPToolError("INVALID_SCHEMA", f"workflow {definition_id} is a page: it has no runs to create.")
 

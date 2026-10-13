@@ -109,32 +109,6 @@ def test_the_overview_does_not_redirect_an_auto_selected_org(member_of_acme):
         assert LabsOverviewView.as_view()(request).status_code == 200
 
 
-def test_edit_page_follows_the_records_own_author_not_its_data(member_of_acme):
-    from connect_labs.workflow.data_access import WorkflowDefinitionRecord
-    from connect_labs.workflow.page_views import PageView
-
-    service.update(
-        "labs", Scope.of("organization", "acme"), {"home": {"fill": {"workflow": 47, "program_id": 25}}}, SYSTEM
-    )
-
-    def serve(record_user, data_user):
-        definition = WorkflowDefinitionRecord(
-            {"id": 47, "experiment": "workflow", "type": "workflow_definition", "opportunity_id": None,
-             "program_id": 25, "username": record_user, "data": {**pm.PAGE, "username": data_user}}
-        )  # fmt: skip
-        request = pm._request("/labs/p/org/acme/", context={})
-        with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
-            MockWDA.return_value.get_definition.return_value = definition
-            MockWDA.return_value.get_render_code.return_value = MagicMock(data={"component_code": "x"})
-            MockWDA.return_value.get_workers.return_value = []
-            response = PageView.as_view()(request, scope_type="org", scope_key="acme")
-            response.render()
-        return response.content.decode()
-
-    assert 'data-testid="labs-page-edit"' not in serve(record_user="someone-else", data_user="amina")
-    assert 'data-testid="labs-page-edit"' in serve(record_user="amina", data_user="someone-else")
-
-
 def test_a_page_cannot_be_started_as_a_run():
     from connect_labs.workflow.views import start_run_api
 
