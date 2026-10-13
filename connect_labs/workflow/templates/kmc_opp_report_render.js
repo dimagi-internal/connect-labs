@@ -400,16 +400,21 @@ function WorkflowUI({
       navigator.clipboard.writeText(text);
     }
   }
+  function defLabel(text) {
+    return (
+      <div className="text-[11px] uppercase tracking-wider text-gray-400 font-semibold">
+        {text}
+      </div>
+    );
+  }
   function defBlock(title, text) {
     return (
-      <div className="mt-3">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
-            {title}
-          </span>
+      <div className="mt-4">
+        <div className="flex items-center justify-between mb-1.5">
+          {defLabel(title)}
           <button
             type="button"
-            className="text-xs text-indigo-600 hover:underline"
+            className="text-xs text-gray-500 hover:text-indigo-600"
             onClick={function () {
               copyDefText(text);
             }}
@@ -417,7 +422,7 @@ function WorkflowUI({
             Copy
           </button>
         </div>
-        <pre className="mt-1 text-xs bg-gray-50 border border-gray-200 rounded-md p-2 overflow-x-auto whitespace-pre max-h-72">
+        <pre className="text-xs leading-relaxed text-gray-700 bg-gray-50 ring-1 ring-inset ring-gray-200 rounded-lg px-3 py-2.5 overflow-auto whitespace-pre-wrap break-words max-h-72">
           {text}
         </pre>
       </div>
@@ -432,11 +437,11 @@ function WorkflowUI({
     if (!where || !where.length)
       return <span className="text-gray-500">all babies</span>;
     return (
-      <ul className="space-y-0.5">
+      <ul className="space-y-1">
         {where.map(function (c) {
           return (
-            <li key={c} className="flex gap-1.5">
-              <span className="text-gray-400">•</span>
+            <li key={c} className="flex items-start gap-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-indigo-300 shrink-0 mt-2" />
               <span>{c}</span>
             </li>
           );
@@ -446,11 +451,11 @@ function WorkflowUI({
   }
   function howRow(label, body) {
     return (
-      <div className="grid grid-cols-[6rem_1fr] gap-2 py-1.5 border-t border-gray-100 first:border-t-0">
-        <div className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold pt-0.5">
+      <div className="grid grid-cols-[6rem_1fr] gap-3 px-4 py-3">
+        <div className="text-[11px] uppercase tracking-wider text-gray-400 font-semibold pt-0.5">
           {label}
         </div>
-        <div className="text-sm text-gray-800">{body}</div>
+        <div className="text-sm text-gray-800 leading-relaxed">{body}</div>
       </div>
     );
   }
@@ -472,7 +477,7 @@ function WorkflowUI({
         howRow(
           'Out of',
           <div>
-            <div className="text-gray-600 mb-0.5">{cap(h.base.what)} where</div>
+            <div className="text-gray-500 mb-1">{cap(h.base.what)} where</div>
             {conditionList(h.base.where)}
           </div>,
         ),
@@ -481,7 +486,7 @@ function WorkflowUI({
         howRow(
           h.kind === 'percent' ? 'Counts' : 'Divides',
           <div>
-            <div className="text-gray-600 mb-0.5">
+            <div className="text-gray-500 mb-1">
               {h.counts.where && h.counts.where.length
                 ? 'Those ' +
                   (h.counts.what === 'babies' ? 'babies' : h.counts.what) +
@@ -510,7 +515,7 @@ function WorkflowUI({
         ),
       );
     return (
-      <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1">
+      <div className="mt-4 rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
         {rows}
       </div>
     );
@@ -542,38 +547,36 @@ function WorkflowUI({
         }),
       )
       .join('\n');
-    var consts = Object.keys(e.constants || {})
-      .map(function (k) {
-        return k + ' = ' + e.constants[k];
-      })
-      .join(', ');
+    var constKeys = Object.keys(e.constants || {});
     var reads = (en.reads || []).filter(function (r) {
       return r.means;
     });
     return (
       <div>
         {en.plain ? (
-          <p className="text-base text-gray-900 leading-snug">{en.plain}</p>
+          <p className="text-[15px] text-gray-800 leading-relaxed">
+            {en.plain}
+          </p>
         ) : null}
         {en.how ? (
           howBlock(en.how)
         ) : en.definition ? (
-          <p className="text-gray-600 text-sm mt-2">{en.definition}</p>
+          <p className="text-gray-600 text-sm mt-2 leading-relaxed">
+            {en.definition}
+          </p>
         ) : null}
         {reads.length ? (
-          <div className="mt-3">
-            <div className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold mb-1">
-              Terms
-            </div>
-            <dl className="text-sm space-y-1.5">
+          <div className="mt-5">
+            {defLabel('Terms')}
+            <dl className="mt-1 divide-y divide-gray-100">
               {reads.map(function (r) {
                 return (
-                  <div key={r.name}>
-                    <dt className="font-medium text-gray-900 inline">
+                  <div key={r.name} className="py-2">
+                    <dt className="text-sm font-medium text-gray-900">
                       {r.label || r.name}
                     </dt>
-                    <dd className="text-gray-600 inline">
-                      {' \u2014 ' + r.means}
+                    <dd className="text-sm text-gray-600 leading-relaxed mt-0.5">
+                      {r.means}
                     </dd>
                   </div>
                 );
@@ -581,31 +584,42 @@ function WorkflowUI({
             </dl>
           </div>
         ) : null}
-        {consts ? (
+        {constKeys.length ? (
           <div className="mt-3 text-xs">
             <button
               type="button"
-              className="text-indigo-600 hover:underline"
+              className="text-indigo-600 hover:text-indigo-800 font-medium"
               onClick={function () {
                 setDefConsts(!defConsts);
               }}
             >
               {(defConsts ? 'Hide' : 'Show') +
                 ' the thresholds it uses (' +
-                Object.keys(e.constants || {}).length +
+                constKeys.length +
                 ')'}
             </button>
             {defConsts ? (
-              <div className="mt-1 font-mono text-gray-600 break-words">
-                {consts}
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {constKeys.map(function (k) {
+                  return (
+                    <span
+                      key={k}
+                      className="font-mono text-[11px] text-gray-700 bg-gray-100 rounded px-1.5 py-0.5"
+                    >
+                      {k + ' = ' + e.constants[k]}
+                    </span>
+                  );
+                })}
               </div>
             ) : null}
           </div>
         ) : null}
-        {defBlock('Measure', measureSql)}
-        {propSql
-          ? defBlock('Properties and window derivations it reads', propSql)
-          : null}
+        <div className="mt-6 pt-1 border-t border-gray-100">
+          {defBlock('Measure', measureSql)}
+          {propSql
+            ? defBlock('Properties and window derivations it reads', propSql)
+            : null}
+        </div>
       </div>
     );
   }
@@ -720,37 +734,43 @@ function WorkflowUI({
     }
     return (
       <div
-        className="fixed inset-0 z-50 flex items-start justify-center bg-gray-900/40 p-4 overflow-y-auto"
+        className="fixed inset-0 z-50 flex items-start justify-center bg-gray-900/40 p-4 sm:p-6"
         onClick={close}
       >
         <div
           role="dialog"
           aria-modal="true"
-          className="bg-white rounded-xl shadow-xl w-full max-w-3xl mt-12 text-sm text-left"
+          className="bg-white rounded-2xl shadow-2xl ring-1 ring-gray-200 w-full max-w-2xl max-h-full flex flex-col overflow-hidden text-sm text-left"
           onClick={function (ev) {
             ev.stopPropagation();
           }}
         >
-          <div className="px-5 py-3 border-b border-gray-100 flex items-start justify-between gap-3">
-            <div>
-              <div className="font-mono text-xs text-gray-400">
-                {colDef.id}
-                {e && e.measure ? ' · ' + e.measure : ''}
-              </div>
-              <div className="text-base font-semibold text-gray-900">
+          <div className="shrink-0 px-6 pt-5 pb-4 border-b border-gray-100 flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold text-gray-900 leading-snug">
                 {colDef.title || (e && e.title) || colDef.label}
+              </h2>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                <span className="font-mono text-[11px] text-gray-500 bg-gray-100 rounded px-1.5 py-0.5">
+                  {colDef.id}
+                </span>
+                {e && e.measure && e.measure !== colDef.id ? (
+                  <span className="font-mono text-[11px] text-gray-500 bg-gray-100 rounded px-1.5 py-0.5">
+                    {e.measure}
+                  </span>
+                ) : null}
               </div>
             </div>
             <button
               type="button"
               aria-label="Close"
-              className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+              className="-mr-2 -mt-1 h-8 w-8 shrink-0 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 text-xl leading-none"
               onClick={close}
             >
               {'×'}
             </button>
           </div>
-          <div className="px-5 py-4">
+          <div className="px-6 py-5 overflow-y-auto">
             {st.status === 'loading' ? (
               <div className="text-xs text-gray-400">
                 Reading the definition…
@@ -765,7 +785,7 @@ function WorkflowUI({
                 <div className="mt-3">
                   <button
                     type="button"
-                    className="text-xs text-indigo-600 hover:underline"
+                    className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
                     onClick={function () {
                       setDefFull(!defFull);
                     }}
@@ -785,7 +805,7 @@ function WorkflowUI({
               </div>
             )}
           </div>
-          <div className="px-5 py-3 border-t border-gray-100 flex items-center gap-2 flex-wrap text-xs">
+          <div className="shrink-0 px-6 py-3 border-t border-gray-100 bg-gray-50 flex items-center gap-2 flex-wrap text-xs">
             {colDef.table ? (
               <span className="flex items-center gap-2">
                 <span className="text-gray-500">Sort the table</span>
