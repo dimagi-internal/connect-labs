@@ -42,6 +42,7 @@ from __future__ import annotations
 import logging
 
 from ..tool_registry import MCPToolError, register
+from ..ui import PMC_STATES_URI, tool_meta
 
 logger = logging.getLogger(__name__)
 
@@ -1923,6 +1924,9 @@ def targeting_pmc_run_status(user, *, run_id, state, cost_per_visit=None, platfo
         },
         "additionalProperties": False,
     },
+    # The candidate-states View (ui://labs/pmc-states): a host that speaks MCP Apps draws the
+    # answer as states to tick, re-totalled as the viewer through this same tool.
+    meta=tool_meta(PMC_STATES_URI, "model", "app"),
 )
 def targeting_pmc_rank(
     user,
@@ -1988,4 +1992,12 @@ def targeting_pmc_rank(
         # The selection as the grid names it, ranked or not: the explorer shows why a state was excluded.
         names = [p["state"] for p in out["best_per_state"]] + [e["state"] for e in out["excluded"]]
         q["states"] = ",".join(n for n in dict.fromkeys(names) if n in grid["states"])
-    return {"available": True, **out, "explorer_path": f"{reverse('targeting:pmc')}?{urlencode(q)}"}
+    from django.conf import settings
+
+    return {
+        "available": True,
+        **out,
+        "explorer_path": f"{reverse('targeting:pmc')}?{urlencode(q)}",
+        # Absolute, for a View: it may open only an https link, and it builds one per selection.
+        "explorer_url": f"{(getattr(settings, 'LABS_PUBLIC_URL', '') or '').rstrip('/')}{reverse('targeting:pmc')}",
+    }
