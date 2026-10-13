@@ -118,7 +118,26 @@ def holds_a_synthetic_slot(fn):
 
     @functools.wraps(fn)
     def wrapper(self, *args, **kwargs):
+        from connect_labs.labs.synthetic import ecs_runner
+
         task_id = getattr(self.request, "id", None) or ""
+        # On a task of its own (ecs_runner): the job has the machine to itself, so
+        # it takes no worker slot -- and nothing here can be a stale redelivery.
+        if ecs_runner.in_runner():
+            return fn(self, *args, **kwargs)
+        if ecs_runner.should_launch():
+            # Hand the job to a standalone ECS task, which a deploy does not stop.
+            # Capped across the cluster; at the cap, wait on the queue as a slot does.
+            if ecs_runner.at_capacity():
+                raise self.retry(countdown=_SLOT_RETRY_SECONDS, max_retries=_SLOT_MAX_RETRIES)
+            ecs_runner.launch(self.name, task_id, kwargs)
+            self.update_state(
+                state="PROGRESS",
+                meta={"current": 0, "total": 1, "message": "Starting on a machine of its own"},
+            )
+            # Ignore, not return: the task now owns this job id's state; a return
+            # would store SUCCESS over it before the job has run.
+            raise Ignore()
         # A copy of a job a restart already failed (redelivered late): its owner has been
         # told to start again, and may have, so running this one would clone twice.
         # Ignore, not return: a return would store SUCCESS over the failure its owner was shown.
@@ -396,6 +415,12 @@ def cancel_job(task_id: str) -> None:
     """
     from django.core.cache import cache
 
+    from connect_labs.labs.synthetic import ecs_runner
+
+    try:
+        ecs_runner.stop(task_id)
+    except Exception:  # noqa: BLE001 -- still revoke and free the slot below
+        logger.exception("could not stop the ECS task of synthetic job %s", task_id)
     celery_app.control.revoke(task_id, terminate=True)
     celery_app.backend.store_result(task_id, None, "REVOKED")
     for i in range(_slots()):

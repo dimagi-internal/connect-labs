@@ -206,6 +206,21 @@ def profile_opps_bulk(
     ids = list(source_ids)
     total = len(ids)
     safe_call(progress, 0, total, f"Profiling {total} opportunities")
+    workers = min(_profile_parallelism(), total)
+    if workers > 1:
+        handles = _profile_in_parallel(
+            ids,
+            workers=workers,
+            store=store,
+            bundle_root=bundle_root,
+            base_url=base_url,
+            oauth_token=oauth_token,
+            curate=curate,
+            mirror=mirror,
+            progress=progress,
+        )
+        resolved = f"gdrive:{store.root_folder_id}" if hasattr(store, "root_folder_id") else str(bundle_root)
+        return resolved, handles
     for done, sid in enumerate(ids, start=1):
         try:
             handles.append(
@@ -233,6 +248,92 @@ def profile_opps_bulk(
         safe_call(progress, done, total, f"{outcome} ({done}/{total})")
     resolved = f"gdrive:{store.root_folder_id}" if hasattr(store, "root_folder_id") else str(bundle_root)
     return resolved, handles
+
+
+def _profile_parallelism() -> int:
+    """How many opportunities to profile at once: one per vCPU on a job's own machine, else one.
+
+    Profiling is CPU-bound Python (the case-timeline models dominate: 4.5 minutes for
+    1,710 cases), so threads would not help and processes only pay off on a machine
+    sized for it -- the standalone task ecs_runner starts. On the shared worker it
+    stays serial, as before.
+    """
+    from django.conf import settings
+
+    from connect_labs.labs.synthetic import ecs_runner
+
+    if not ecs_runner.in_runner():
+        return 1
+    try:
+        return max(1, int(str(getattr(settings, "SYNTHETIC_ECS_CPU", "1024"))) // 1024)
+    except ValueError:
+        return 1
+
+
+# Set in the parent just before forking, so a child reads its arguments without
+# pickling a Drive client.
+_FORK_JOB: dict = {}
+
+
+def _profile_one_forked(sid: int) -> str:
+    from django.db import connections
+
+    from connect_labs.labs.synthetic.gdrive import DriveClient
+
+    job = _FORK_JOB
+    # Never share the parent's Drive HTTP session or database connections.
+    connections.close_all()
+    root = job["resolved_root"]
+    store = make_bundle_store(root, drive=DriveClient() if root.startswith("gdrive:") else None)
+    return profile_opp_to_bundle(
+        sid,
+        base_url=job["base_url"],
+        oauth_token=job["oauth_token"],
+        store=store,
+        curate=job["curate"],
+        mirror=job["mirror"],
+    )
+
+
+def _profile_in_parallel(
+    ids, *, workers, store, bundle_root, base_url, oauth_token, curate, mirror, progress
+) -> list[str]:
+    """Profile ``ids`` across ``workers`` forked processes into the one store.
+
+    The store's root (a Drive run folder) was resolved once by the caller, so every
+    child writes beside the others. A failure is logged and skipped, as in the serial
+    loop. Progress is reported per finished opportunity.
+    """
+    import multiprocessing
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+
+    from django.db import connections
+
+    resolved_root = f"gdrive:{store.root_folder_id}" if hasattr(store, "root_folder_id") else str(bundle_root)
+    _FORK_JOB.clear()
+    _FORK_JOB.update(
+        resolved_root=resolved_root, base_url=base_url, oauth_token=oauth_token, curate=curate, mirror=mirror
+    )
+    connections.close_all()
+    total = len(ids)
+    handles: list[str] = []
+    done = 0
+    try:
+        with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("fork")) as pool:
+            futures = {pool.submit(_profile_one_forked, sid): sid for sid in ids}
+            for future in as_completed(futures):
+                sid = futures[future]
+                done += 1
+                try:
+                    handles.append(future.result())
+                    outcome = f"profiled opportunity {sid}"
+                except Exception:  # noqa: BLE001
+                    logger.exception("profile_opps_bulk: failed for opp %s", sid)
+                    outcome = f"skipped opportunity {sid} (failed)"
+                safe_call(progress, done, total, f"{outcome} ({done}/{total})")
+    finally:
+        _FORK_JOB.clear()
+    return handles
 
 
 # ---------------------------------------------------------------------------
