@@ -81,8 +81,15 @@ def test_all_sandboxes_every_workflow_whatever_it_says():
 def test_off_sandboxes_no_workflow_but_still_every_page():
     from connect_labs.workflow.tests.test_page_mode import PAGE
 
-    assert not sandbox.should_sandbox(_definition(OPTED_IN), request=_Req({"sandbox": "1"}))
+    assert not sandbox.should_sandbox(_definition(OPTED_IN), request=_Req())
     assert sandbox.should_sandbox(_definition(PAGE))
+
+
+@override_settings(LABS_WORKFLOW_SANDBOX="off")
+def test_off_still_previews_a_workflow_sandboxed_on_request():
+    """Switched off for everyone, `?sandbox=1` still shows the sandboxed render to whoever asks."""
+    assert sandbox.should_sandbox(_definition(WORKFLOW), request=_Req({"sandbox": "1"}))
+    assert not sandbox.should_sandbox(_definition(WORKFLOW), request=_Req({"sandbox": "0"}))
 
 
 @override_settings(LABS_WORKFLOW_SANDBOX="nonsense")
@@ -93,7 +100,13 @@ def test_an_unknown_rollout_value_is_the_default_never_off():
 
 @override_settings(LABS_PAGE_SANDBOX=False, LABS_WORKFLOW_SANDBOX="all")
 def test_the_emergency_switch_covers_workflows_too():
+    from connect_labs.workflow.tests.test_page_mode import PAGE
+
     assert not sandbox.should_sandbox(_definition(WORKFLOW))
+    assert not sandbox.should_sandbox(_definition(PAGE))
+    # ...but a preview asked for on the address still draws sandboxed.
+    assert sandbox.should_sandbox(_definition(PAGE), request=_Req({"sandbox": "1"}))
+    assert sandbox.should_sandbox(_definition(WORKFLOW), request=_Req({"sandbox": "1"}))
 
 
 def test_every_template_marked_checked_opts_its_new_instances_in():
