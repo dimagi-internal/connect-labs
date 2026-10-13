@@ -16,6 +16,21 @@ function WorkflowUI({
   // mixed unless "Both domains" is explicitly picked.
   var TEST_DOMAIN_NAME = 'ccc-mbw-experiments-1';
   var PROD_DOMAIN_NAME = 'ccc-mbw-production';
+  // The "ANC Visit" (etc.) xmlns match pulls every submission of that form
+  // ever made, from any build of the production app -- CommCare's Form API
+  // has no way to filter by build/version, and xmlns is stable across a
+  // form's whole edit history (confirmed: the production app's form
+  // structure lookup always reflects its current build, never a pinned
+  // historical one). The verification block shipped to production at build
+  // 27 -- a submission from an earlier build can still slip past
+  // hasVerificationData() below if it coincidentally has a non-blank value
+  // at the where_is_the_visit_being_conducted path. app_build_version
+  // (form.meta.app_build_version, CommCare's own clean integer build
+  // number -- not the descriptive form.meta.appVersion string) lets this
+  // gate exclude those directly instead of relying solely on that
+  // heuristic. Only enforced for PROD_DOMAIN_NAME -- the test domain's app
+  // has its own independent build-number sequence, not this threshold.
+  var PROD_APP_BUILD_FLOOR = 27;
   var DOMAIN_FILTER_OPTIONS = [
     { key: 'production', label: 'Production only' },
     { key: 'test', label: 'Test domain only' },
@@ -230,11 +245,25 @@ function WorkflowUI({
   // fully captured, which silently dropped every non-home visit from the
   // whole dashboard and miscounted it as pre-UAT on the UAT Comparison tab.
   function hasVerificationData(row) {
-    return (
+    var hasLocationField =
       row.where_is_the_visit_being_conducted !== null &&
       row.where_is_the_visit_being_conducted !== undefined &&
-      row.where_is_the_visit_being_conducted !== ''
-    );
+      row.where_is_the_visit_being_conducted !== '';
+    if (!hasLocationField) return false;
+    // Belt-and-suspenders against a stale-build submission that coincidentally
+    // has a non-blank where_is_the_visit_being_conducted -- see
+    // PROD_APP_BUILD_FLOOR's comment above. A row missing app_build_version
+    // entirely (older CommCare versions, or a path extraction miss) is NOT
+    // excluded here -- this only catches a build number we can POSITIVELY
+    // confirm is below the floor, not "we don't know."
+    if (
+      row.domain === PROD_DOMAIN_NAME &&
+      typeof row.app_build_version === 'number' &&
+      row.app_build_version < PROD_APP_BUILD_FLOOR
+    ) {
+      return false;
+    }
+    return true;
   }
 
   var enrichedRows = React.useMemo(
@@ -546,6 +575,7 @@ function WorkflowUI({
     { key: 'form_instance_id', label: 'Visit ID' },
     { key: 'visit_datetime', label: 'Visit date' },
     { key: 'form_name', label: 'Visit type' },
+    { key: 'app_build_version', label: 'App build' },
     { key: 'visit_number', label: 'Visit #' },
     { key: 'where_is_the_visit_being_conducted', label: 'GPS location' },
     { key: 'gps_outcome', label: 'GPS outcome' },
