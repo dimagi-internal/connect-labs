@@ -212,10 +212,14 @@ def _names_reader_as_its_review(request, target_id: int) -> bool:
 def refusal(request, definition_id) -> JsonResponse | None:
     """A 403 when a sandboxed request reads runs of a definition its reader does not
     declare; None when it may (or is not sandboxed)."""
-    readable = readable_for(request)
-    if readable is None:
+    r = reader(request)
+    if r is None:
         return None
     target = _int(definition_id)
+    # Its own runs, without reading the definition (the host stamped this id).
+    if r is not False and target == r:
+        return None
+    readable = readable_for(request)
     if target in readable:
         return None
     if readable and _names_reader_as_its_review(request, target):

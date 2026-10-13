@@ -29,13 +29,7 @@ import logging
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 
-from connect_labs.workflow.sandbox import (
-    DEPRECATED_UNSANDBOXED,
-    deprecated_exempt,
-    recorded_exemption,
-    should_sandbox,
-    workflow_sandbox_mode,
-)
+from connect_labs.workflow.sandbox import should_sandbox, workflow_sandbox_mode
 from connect_labs.workflow.sandbox_scan import Finding, scan_render_code, worst
 
 logger = logging.getLogger(__name__)
@@ -61,8 +55,6 @@ class Target:
     code_found: bool
     findings: list[Finding] = field(default_factory=list)
     note: str = ""
-    #: Why it is kept out of the frame under `all`: "deprecated", "recorded", or "".
-    exempt: str = ""
 
     @property
     def worst(self) -> str | None:
@@ -81,7 +73,6 @@ class Target:
             "sandboxed_all": self.sandboxed_all,
             "code_found": self.code_found,
             "note": self.note,
-            "exempt": self.exempt,
             "worst": self.worst,
             "findings": [f.as_dict() for f in self.findings],
         }
@@ -140,29 +131,6 @@ def _target(origin, def_id, data: dict, owner: str, code, render_source: str, no
         organization_id=_scope("organization", as_int=False),
     )
     page = is_page(definition)
-    exempt = ""
-
-    def _add(text):
-        nonlocal note
-        note = (note + "; " if note else "") + text
-
-    if page:
-        pass  # a page is always sandboxed: neither the pin nor a recorded exemption applies
-    elif deprecated_exempt(definition, code):
-        exempt = "deprecated"
-        _add("deprecated: pinned out of the sandbox under `all` (sandbox.py)")
-    else:
-        if (def_id, definition.opportunity_id) in DEPRECATED_UNSANDBOXED:
-            _add("pinned deprecated copy, but its code is not a version labs shipped: sandboxed under `all`")
-        row, holds = recorded_exemption(definition, code)
-        if holds:
-            exempt = "recorded"
-            _add(f"kept out (exempt: {row.reason})")
-        elif row is not None and row.owner() == owner:
-            # (A row on another owner is another record with the same id -- a labs-local
-            # one and a Connect one can share it -- and says nothing about this one.)
-            why = "no render code found" if not code else "its code changed since it was recorded"
-            _add(f"recorded exemption void ({why}): sandboxed under `all`")
     return Target(
         origin=origin,
         id=def_id,
@@ -171,12 +139,11 @@ def _target(origin, def_id, data: dict, owner: str, code, render_source: str, no
         kind="page" if page else "workflow",
         template_type=str(config.get("templateType") or data.get("templateType") or ""),
         render_source=render_source,
-        sandboxed_now=should_sandbox(definition, mode=workflow_sandbox_mode(), render_code=code),
-        sandboxed_all=should_sandbox(definition, mode="all", render_code=code),
+        sandboxed_now=should_sandbox(definition, mode=workflow_sandbox_mode()),
+        sandboxed_all=should_sandbox(definition, mode="all"),
         code_found=bool(code),
         findings=scan_render_code(code, is_page=page),
         note=note,
-        exempt=exempt,
     )
 
 

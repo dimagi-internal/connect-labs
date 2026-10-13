@@ -64,6 +64,16 @@ export interface Route {
   /** A search across everything the viewer has: the host cuts the answer's
    * `opportunities` to this workflow's own. */
   filterOpportunities?: boolean;
+  /** The answer lists pipelines (`{pipelines: [{id}]}`) the viewer may attach: the
+   * host remembers their ids, which `pipe` then binds to. */
+  remembersPipelines?: boolean;
+  /** Query parameters this route alone binds, beyond the ones every route does
+   * (SCOPE_PARAMS, BOUND_PARAMS): `{session_id: 'run'}` where a view reads a run
+   * by another name. */
+  boundQuery?: Record<string, string>;
+  /** For `effect`: what the host's question says, in labs' words, built from the
+   * CHECKED body (for a write whose reach the body decides). Replaces `label`. */
+  describe?: (body: Record<string, unknown>, ctx: RouteContext) => string;
 }
 
 /**
@@ -129,6 +139,74 @@ function fewAreas(body: Record<string, unknown>): void {
     throw new RouteError(
       `fetch: building footprints for at most ${MAX_FOOTPRINT_AREAS} areas at a time`,
     );
+  }
+}
+
+/** Requires `run_id` in the body, and that it is THIS run (a write a route makes
+ * to the run it names). */
+function thisRunRequired(
+  body: Record<string, unknown>,
+  ctx: RouteContext,
+): void {
+  if (ctx.runId === null || Number(body.run_id) !== ctx.runId) {
+    throw new RouteError(
+      'fetch: that request names a run this workflow does not cover',
+    );
+  }
+  if (
+    body.opportunity_id !== undefined &&
+    body.opportunity_id !== null &&
+    body.opportunity_id !== '' &&
+    !ctx.opportunityIds.includes(Number(body.opportunity_id))
+  ) {
+    refuseOpportunity(body.opportunity_id);
+  }
+}
+
+/** A pipeline alias, as the definition stores it: a short slug. */
+const ALIAS_RE = /^[A-Za-z0-9_-]{1,64}$/;
+function aliasIn(body: Record<string, unknown>): string {
+  const a = body.alias;
+  if (typeof a !== 'string' || !ALIAS_RE.test(a)) {
+    throw new RouteError('fetch: a pipeline alias is a short name');
+  }
+  return a;
+}
+
+/** Attaching a pipeline to THIS workflow: one the viewer was offered (the host saw it
+ * in an available-pipelines answer) or one the workflow already has. */
+function attachBody(body: Record<string, unknown>, ctx: RouteContext): void {
+  aliasIn(body);
+  const id = Number(body.pipeline_id);
+  if (!Number.isSafeInteger(id) || !(ctx.pipelineIds || []).includes(id)) {
+    throw new RouteError(
+      'fetch: that pipeline was not offered to this workflow',
+    );
+  }
+  if (
+    body.load !== undefined &&
+    body.load !== null &&
+    (typeof body.load !== 'string' || body.load.length > 32)
+  ) {
+    throw new RouteError('fetch: load is a short name');
+  }
+  for (const k of Object.keys(body)) {
+    if (!['pipeline_id', 'alias', 'load'].includes(k)) {
+      throw new RouteError(
+        `fetch: ${k.slice(0, 40)} is not part of that change`,
+      );
+    }
+  }
+}
+
+function detachBody(body: Record<string, unknown>): void {
+  aliasIn(body);
+  for (const k of Object.keys(body)) {
+    if (k !== 'alias') {
+      throw new RouteError(
+        `fetch: ${k.slice(0, 40)} is not part of that change`,
+      );
+    }
   }
 }
 
@@ -213,6 +291,11 @@ export interface RouteContext {
    * `workflow_sources`, a companion's report, watched sources, `read_workflows`.
    * From the server (declared_reads.readable_definition_ids). */
   readableDefinitionIds: number[];
+  /** Pipelines this workflow may name: its own `pipeline_sources`, and those an
+   * available-pipelines answer offered (the host adds to it). */
+  pipelineIds?: number[];
+  /** Their names, as that answer gave them (for the host's question). */
+  pipelineNames?: Record<string, string>;
   /** Jobs this run is running or this host started: the only ones it may cancel.
    * The host adds to it as it starts jobs. */
   jobIds: string[];
@@ -239,6 +322,10 @@ export interface CheckedRequest {
   filterOpportunities?: boolean;
   /** A job start: the host remembers the job it started. */
   startsJob?: boolean;
+  /** The host remembers the pipelines the answer lists. */
+  remembersPipelines?: boolean;
+  /** Labs' own words for the question, when the route builds them from the body. */
+  question?: string;
   /** Stamped on the request as `X-Labs-Sandbox-For`: the definition it is made for,
    * so the server binds the runs it reads to the ones that definition declares. */
   sandboxFor: string;
@@ -249,6 +336,11 @@ export interface CheckedRequest {
 
 const ID = '(\\d+)';
 const RUN = '(?<run>\\d+)';
+/** ANOTHER run, written as an effect: the server binds it to a definition this
+ * workflow declares (declared_reads.py). */
+const XRUN = '(?<xrun>\\d+)';
+/** A pipeline this workflow has or was offered (`pipelineIds`). */
+const PIPE = '(?<pipe>\\d+)';
 const DEF = '(?<def>\\d+)';
 const OPP = '(?<opp>\\d+)';
 /** Another definition whose runs are read: one this workflow declares. */
@@ -422,6 +514,48 @@ export const ROUTES: readonly Route[] = [
     ownJob: true,
   },
 
+  // The pipelines the viewer may attach (their own and shared ones: names and ids,
+  // no rows), and one pipeline's definition -- only one this workflow has or was
+  // just offered.
+  {
+    methods: GET,
+    gate: 'read',
+    path: p(`/labs/workflow/api/available-pipelines/`),
+    remembersPipelines: true,
+  },
+  {
+    methods: GET,
+    gate: 'read',
+    path: p(`/labs/workflow/api/pipeline/${PIPE}/`),
+  },
+  // The workflow list, as a sandboxed request gets it from the server: only the run
+  // links of the workflows this one declares (views.WorkflowListView, sandboxed),
+  // never the list page itself. Old dashboards find run ids there.
+  { methods: GET, gate: 'read', path: p(`/labs/workflow/`) },
+  // The deprecated MBW monitoring dashboards' own endpoints
+  // (workflow/templates/mbw_monitoring/urls.py): reads of this workflow's
+  // opportunity (bound by the query) and its own run (`run_id`, bound).
+  {
+    methods: POST,
+    gate: 'read',
+    path: p(`/custom_analysis/mbw_monitoring/api/opportunity-flws/`),
+    bodyCheck: opportunitiesInBody,
+  },
+  {
+    methods: GET,
+    gate: 'read',
+    path: p(
+      `/custom_analysis/mbw_monitoring/(stream|api/oauth-status|api/snapshot)/`,
+    ),
+    // These views read the run as `run_id` OR `session_id`: both are this run.
+    boundQuery: { session_id: 'run' },
+  },
+  {
+    methods: GET,
+    gate: 'read',
+    path: p(`/custom_analysis/mbw_monitoring/api/gps/([^/]+)/`),
+  },
+
   // --- Own: this run's and this workflow's own records --------------------------
   {
     methods: POST,
@@ -435,6 +569,13 @@ export const ROUTES: readonly Route[] = [
     gate: 'own',
     path: p(`/labs/workflow/api/${DEF}/audit-batch-config/`),
     bodyCheck: perOppInBody,
+  },
+  // The MBW dashboard's snapshot of THIS run (its body names the run).
+  {
+    methods: POST,
+    gate: 'own',
+    path: p(`/custom_analysis/mbw_monitoring/api/save-snapshot/`),
+    bodyCheck: thisRunRequired,
   },
   {
     methods: POST,
@@ -451,6 +592,48 @@ export const ROUTES: readonly Route[] = [
     path: p(`/labs/workflow/api/run/${RUN}/job/start/`),
     label: 'start a background job that creates audits or other records',
     bodyGate: jobGate,
+  },
+  // Another workflow's run's state (a control room marking the runs it watches):
+  // asked first; the server takes it only for a run of a definition this one
+  // declares (declared_reads.py). This run's own state is the `own` route above.
+  {
+    methods: POST,
+    gate: 'effect',
+    path: p(`/labs/workflow/api/run/${XRUN}/state/`),
+    label: 'change the saved state of run',
+    // Asked naming the run; a yes holds a while for THAT run only.
+    perRecord: true,
+    recordGrant: true,
+  },
+  // This workflow's own data sources: asked every time, naming the change.
+  {
+    methods: POST,
+    gate: 'effect',
+    path: p(`/labs/workflow/api/${DEF}/pipeline-sources/add/`),
+    label: 'change its own data sources',
+    perRecord: true,
+    bodyCheck: attachBody,
+    describe: (body, ctx) => {
+      const id = Number(body.pipeline_id);
+      const name = (ctx.pipelineNames || {})[String(id)];
+      const named = name
+        ? ` "${name
+            .replace(/["\s]+/g, ' ')
+            .trim()
+            .slice(0, 80)}"`
+        : '';
+      return `change its own data sources: attach pipeline #${id}${named} as "${String(body.alias)}"`;
+    },
+  },
+  {
+    methods: POST,
+    gate: 'effect',
+    path: p(`/labs/workflow/api/${DEF}/pipeline-sources/remove/`),
+    label: 'change its own data sources',
+    perRecord: true,
+    bodyCheck: detachBody,
+    describe: (body) =>
+      `change its own data sources: detach the pipeline "${String(body.alias)}"`,
   },
   {
     methods: POST,
@@ -563,6 +746,11 @@ function bound(name: string, value: string, ctx: RouteContext): boolean {
   switch (name) {
     case 'run':
       return ctx.runId !== null && ctx.runId > 0 && n === ctx.runId;
+    case 'xrun':
+      // Another run: the server binds it to a declared definition.
+      return n > 0 && n !== ctx.runId;
+    case 'pipe':
+      return (ctx.pipelineIds || []).includes(n);
     case 'def':
       return ctx.definitionId !== null && n === ctx.definitionId;
     case 'rel':
@@ -586,6 +774,8 @@ const NOUNS: Record<string, string> = {
   run: 'a run',
   def: 'a workflow',
   rel: 'a workflow',
+  xrun: 'a run',
+  pipe: 'a pipeline',
   job: 'a job',
 };
 
@@ -630,20 +820,35 @@ export function checkFetch(
   if (FETCH_DENIED.some((d) => path.startsWith(d))) {
     throw new RouteError(`fetch: ${path} cannot be reached from here`);
   }
-  const route = ROUTES.find((r) => r.path.test(path));
-  if (!route) {
+  // The first route the request satisfies: its path, its method and every id it
+  // binds. (This run's state is an `own` write; another run's is an `effect`.)
+  const candidates = ROUTES.filter((r) => r.path.test(path));
+  if (!candidates.length) {
     throw new RouteError(`fetch: ${path} cannot be reached from here`);
   }
-  if (!route.methods.includes(m)) {
+  const byMethod = candidates.filter((r) => r.methods.includes(m));
+  if (!byMethod.length) {
     throw new RouteError(`fetch: ${m} ${path} cannot be made from here`);
   }
-  const groups = route.path.exec(path)?.groups || {};
-  for (const [name, value] of Object.entries(groups)) {
-    if (value !== undefined && !bound(name, value, ctx)) {
-      throw new RouteError(
-        `fetch: ${path} names ${NOUNS[name] || 'something'} this workflow does not cover`,
-      );
+  let route: Route | null = null;
+  let groups: Record<string, string> = {};
+  let unbound = '';
+  for (const r of byMethod) {
+    const g = r.path.exec(path)?.groups || {};
+    const miss = Object.entries(g).find(
+      ([name, value]) => value !== undefined && !bound(name, value, ctx),
+    );
+    if (!miss) {
+      route = r;
+      groups = g;
+      break;
     }
+    if (!unbound) unbound = miss[0];
+  }
+  if (!route) {
+    throw new RouteError(
+      `fetch: ${path} names ${NOUNS[unbound] || 'something'} this workflow does not cover`,
+    );
   }
   // The scope a request names in its query is bound on EVERY request, reads
   // included: the context middleware both answers in that scope and saves it to
@@ -652,6 +857,7 @@ export function checkFetch(
   for (const [param, name] of Object.entries({
     ...SCOPE_PARAMS,
     ...BOUND_PARAMS,
+    ...(route.boundQuery || {}),
   })) {
     for (const value of parsed.searchParams.getAll(param)) {
       if (!bound(name, value, ctx)) {
@@ -666,10 +872,12 @@ export function checkFetch(
   }
   let canonical: string | undefined;
   let gate: Gate = route.gate;
-  if (route.bodyCheck || route.bodyGate) {
+  let question: string | undefined;
+  if (route.bodyCheck || route.bodyGate || route.describe) {
     const obj = jsonObjectBody(body);
     if (route.bodyCheck) route.bodyCheck(obj, ctx);
     gate = (route.bodyGate && route.bodyGate(obj, ctx)) || route.gate;
+    if (route.describe) question = route.describe(obj, ctx);
     canonical = JSON.stringify(obj);
   }
   // A write that names no scope lands in THIS workflow's, not in whatever the
@@ -689,10 +897,12 @@ export function checkFetch(
     label: route.label || '',
     body: canonical,
     perRecord: route.perRecord === true,
-    recordId: groups.rec,
+    recordId: groups.rec ?? groups.xrun,
     recordGrant: route.recordGrant === true,
     filterOpportunities: route.filterOpportunities === true,
     startsJob: route.startsJob === true || /\/job\/start\/$/.test(path),
+    remembersPipelines: route.remembersPipelines === true,
+    question,
     sandboxFor:
       ctx.definitionId !== null && Number.isSafeInteger(ctx.definitionId)
         ? String(ctx.definitionId)
