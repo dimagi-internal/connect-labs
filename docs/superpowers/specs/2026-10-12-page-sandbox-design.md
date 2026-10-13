@@ -806,6 +806,27 @@ was derived at import time (not recoverable from history), is sandboxed under `a
 breaks there; the scan names each such record ("pinned deprecated copy, but its code is not
 a version labs shipped"). Retiring them closes the rest.
 
+### Recorded exemptions (2026-10-13)
+
+**Ruling: a live copy that would break under `all` because it needs what the frame will
+never give it (a retired endpoint, a definition write) is not given a route. It is
+recorded by hand as exempt, with why, in `workflow.models.SandboxExemption`, written only
+by `manage.py workflow_sandbox_exempt --definition <id> (--opportunity <id> | --program <id>)
+--as-user <username> --reason "..."`** (`--remove`, `--list`; no MCP tool, no view). The
+command reads the definition and its effective render code server-side as that user, with
+their stored Connect login (as `workflow_sandbox_scan --as-user` does), and records the
+digest of that code (`sandbox.render_code_digest`). Under `all` a definition stays out only
+if a row exists for its id, on the owner it names (the scan's owner: opportunity, else
+program, else organization), and the code it is about to draw has that digest: any edit
+voids it, fail closed. A page is never exempt, `?sandbox=1` still draws an exempt workflow
+sandboxed, `opt_in` is unchanged by a row, and a lookup that fails is no exemption. Staff
+see the reason under the workflow. The scan reports an exempt copy as "kept out (exempt:
+<reason>)", and a recorded copy whose code or owner changed as void, so breaking. Every add
+and remove is in the audit trail (`resource_type=sandbox_exemption`). First used for the
+2026-10-13 scan's eight edited MBW copies, the outcome summary's pipeline controls and the
+draft dashboard's HTML fetch; the one copy that calls an endpoint that no longer exists is
+left as it is (already broken unsandboxed).
+
 ### Review fixes (before merge)
 
 An independent adversarial review of the diff found these; each is fixed with a test that
