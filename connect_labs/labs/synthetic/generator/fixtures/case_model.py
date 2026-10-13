@@ -756,27 +756,79 @@ class _Gate:
     that real case's own distance to its nearest real neighbour. The second condition
     is what makes "close" mean "identifying": in a tight population (every baby
     within 2% of the next) being near some real case is what a faithful model must
-    do, and says nothing about any one of them."""
+    do, and says nothing about any one of them.
+
+    Vectorised per visit-day shape. ``_distance`` one pair at a time was quadratic in
+    pure Python -- every pair of real cases sharing a shape at fit time, then every
+    real case of the shape for every sampled case -- and KMC's schedules are regular
+    enough that one shape holds hundreds of cases: it was most of a profile's time
+    (minutes for a 1,700-case opportunity). Each shape is now one matrix of its
+    cases' numbers, (visit, path) per column with NaN where a case has none, and the
+    same mean relative difference is computed for all of a shape's cases at once.
+    ``_distance`` stays the definition; the tests hold the two equal."""
+
+    # Rows per block of the pairwise computation, so a large shape never builds one
+    # (n x n x columns) array at once.
+    _BLOCK = 256
 
     def __init__(self, real: list[dict]):
-        self.by_shape: dict[tuple, list[tuple[dict, float]]] = defaultdict(list)
         grouped: dict[tuple, list[dict]] = defaultdict(list)
         for s in real:
             if len(s["visits"]) >= _GATE_MIN_VISITS:
                 grouped[tuple(int(v["day"]) for v in s["visits"])].append(s)
+        # shape -> (column index, real-case matrix, |matrix| floored, nearest-neighbour distances)
+        self._shapes: dict[tuple, tuple[dict, np.ndarray, np.ndarray, np.ndarray]] = {}
         for shape, cases in grouped.items():
-            for i, r in enumerate(cases):
-                others = [d for j, o in enumerate(cases) if j != i and (d := _distance(r, o)) is not None]
-                self.by_shape[shape].append((r, min(others) if others else math.inf))
+            columns: dict[tuple[int, str], int] = {}
+            for case in cases:
+                for vi, v in enumerate(case["visits"]):
+                    for path in v.get("values") or {}:
+                        columns.setdefault((vi, path), len(columns))
+            matrix = np.full((len(cases), len(columns)), np.nan)
+            for ci, case in enumerate(cases):
+                for vi, v in enumerate(case["visits"]):
+                    for path, x in (v.get("values") or {}).items():
+                        matrix[ci, columns[(vi, path)]] = x
+            denom = np.maximum(np.abs(matrix), 1e-9)
+            nn = np.full(len(cases), np.inf)
+            for lo in range(0, len(cases), self._BLOCK):
+                block = matrix[lo : lo + self._BLOCK]
+                # d[i, j] = mean over shared columns of |a_i - b_j| / max(|b_j|, eps)
+                d = self._mean_rel(block[:, None, :], matrix[None, :, :], denom[None, :, :])
+                for i in range(block.shape[0]):
+                    d[i, lo + i] = np.nan  # a case is not its own neighbour
+                with np.errstate(all="ignore"):
+                    row_min = np.nanmin(np.where(np.isnan(d), np.inf, d), axis=1)
+                nn[lo : lo + block.shape[0]] = row_min
+            self._shapes[shape] = (columns, matrix, denom, nn)
+
+    @staticmethod
+    def _mean_rel(a: np.ndarray, b: np.ndarray, denom: np.ndarray) -> np.ndarray:
+        """Mean of |a - b| / denom over the last axis where both are present, NaN if none."""
+        diff = np.abs(a - b) / denom
+        shared = ~np.isnan(diff)
+        count = shared.sum(axis=-1)
+        total = np.where(shared, diff, 0.0).sum(axis=-1)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            return np.where(count > 0, total / np.maximum(count, 1), np.nan)
 
     def too_close(self, case: dict) -> bool:
         if len(case["visits"]) < _GATE_MIN_VISITS:
             return False
-        for real, nn in self.by_shape.get(tuple(v["day"] for v in case["visits"]), []):
-            d = _distance(case, real)
-            if d is not None and d <= _GATE_REL_TOL and d < _GATE_NN_SHARE * nn:
-                return True
-        return False
+        found = self._shapes.get(tuple(v["day"] for v in case["visits"]))
+        if found is None:
+            return False
+        columns, matrix, denom, nn = found
+        row = np.full(len(columns), np.nan)
+        for vi, v in enumerate(case["visits"]):
+            for path, x in (v.get("values") or {}).items():
+                col = columns.get((vi, path))
+                if col is not None:
+                    row[col] = x
+        d = self._mean_rel(row[None, :], matrix, denom)
+        with np.errstate(invalid="ignore"):
+            hit = (d <= _GATE_REL_TOL) & (d < _GATE_NN_SHARE * nn)
+        return bool(np.any(hit))
 
 
 def synthesize_case_pool(
