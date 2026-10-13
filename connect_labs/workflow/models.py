@@ -129,7 +129,9 @@ class SandboxExemption(models.Model):
     """
 
     #: The definition's LabsRecord id (on production Connect, or labs-local for a
-    #: synthetic opportunity: the owner tells them apart).
+    #: synthetic opportunity). One row per id: the decision also checks the owner, so a
+    #: labs-local and a Connect record that share an id cannot borrow each other's row,
+    #: but only one of them can be exempted (no case of that exists).
     definition_id = models.IntegerField(unique=True)
     #: The definition's owner, as the scan names it: exactly one of these is set.
     opportunity_id = models.IntegerField(null=True, blank=True)

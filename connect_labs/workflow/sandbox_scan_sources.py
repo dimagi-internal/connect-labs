@@ -158,8 +158,10 @@ def _target(origin, def_id, data: dict, owner: str, code, render_source: str, no
         if holds:
             exempt = "recorded"
             _add(f"kept out (exempt: {row.reason})")
-        elif row is not None:
-            why = "its owner is not the one recorded" if row.owner() != owner else "its code changed since"
+        elif row is not None and row.owner() == owner:
+            # (A row on another owner is another record with the same id -- a labs-local
+            # one and a Connect one can share it -- and says nothing about this one.)
+            why = "no render code found" if not code else "its code changed since it was recorded"
             _add(f"recorded exemption void ({why}): sandboxed under `all`")
     return Target(
         origin=origin,

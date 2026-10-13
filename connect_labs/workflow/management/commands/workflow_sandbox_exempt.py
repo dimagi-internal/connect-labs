@@ -43,7 +43,7 @@ class Command(BaseCommand):
         scope = parser.add_mutually_exclusive_group()
         scope.add_argument("--opportunity", type=int, help="The opportunity that owns the definition.")
         scope.add_argument("--program", type=int, help="The program that owns the definition.")
-        scope.add_argument("--organization", help="The organization that owns the definition.")
+        scope.add_argument("--organization", type=int, help="The organization that owns the definition.")
         parser.add_argument(
             "--as-user",
             metavar="USERNAME",
@@ -60,16 +60,14 @@ class Command(BaseCommand):
         if options["definition"] is None:
             raise CommandError("--definition is required (or --list)")
         if options["remove"]:
-            return self._remove(options["definition"], self._user(options["as_user"], required=False))
+            return self._remove(options["definition"], self._user(options["as_user"], who="who is removing it"))
         return self._add(options)
 
     # ------------------------------------------------------------------
 
-    def _user(self, username, required=True):
+    def _user(self, username, who="the definition is read as that user"):
         if not username:
-            if required:
-                raise CommandError("--as-user is required: the definition is read as that user")
-            return None
+            raise CommandError(f"--as-user is required: {who}")
         user = get_user_model().objects.filter(username=username).first()
         if user is None:
             raise CommandError(f"no labs user {username!r}")
@@ -144,6 +142,7 @@ class Command(BaseCommand):
             raise CommandError(
                 f"definition {definition_id} already has an exemption on {existing.owner()}; --remove it first"
             )
+        previous = existing.render_code_sha256 if existing is not None else None
         with audit_context(user=user, source="script"):
             row, created = SandboxExemption.objects.update_or_create(
                 definition_id=definition_id,
@@ -162,7 +161,12 @@ class Command(BaseCommand):
                 resource_id=definition_id,
                 opportunity_id=row.opportunity_id,
                 program_id=row.program_id,
-                metadata={"owner": expected, "render_code_sha256": digest, "reason": reason},
+                metadata={
+                    "owner": expected,
+                    "render_code_sha256": digest,
+                    "previous_render_code_sha256": previous,
+                    "reason": reason,
+                },
                 user=user,
             )
         name = str((getattr(definition, "data", None) or {}).get("name") or "")

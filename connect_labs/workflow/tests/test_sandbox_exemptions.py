@@ -80,6 +80,25 @@ def test_the_same_id_on_another_owner_is_sandboxed():
 
 
 @pytest.mark.django_db
+def test_edit_mode_is_never_exempt():
+    # The editor draws code typed there (or from the AI chat), which no row hashed.
+    _exempt()
+    assert not _all(_defn(), request=SimpleNamespace(GET={}))
+    assert _all(_defn(), request=SimpleNamespace(GET={"edit": "true"}))
+
+
+@pytest.mark.django_db
+def test_an_organization_owned_exemption_matches_its_organization_only():
+    _exempt(definition_id=4103, organization_id="88")
+
+    def org_defn(org):
+        return SimpleNamespace(id=4103, data=WORKFLOW, opportunity_id=None, program_id=None, organization_id=org)
+
+    assert not _all(org_defn(88)) and not _all(org_defn("88"))
+    assert _all(org_defn(89))
+
+
+@pytest.mark.django_db
 def test_a_page_ignores_exemptions():
     _exempt()
     assert _all(_defn(data=PAGE))
@@ -100,9 +119,12 @@ def test_the_scan_reports_a_recorded_copy_as_kept_out_and_an_edited_one_as_break
     assert "kept out (exempt: needs a retired endpoint; kept readable)" in kept.note
     edited = _target("connect", 4101, WORKFLOW, "opportunity:7401", breaking + "\n// x", "stored")
     assert edited.worst == "breaks" and edited.sandboxed_all and edited.exempt == ""
-    assert "recorded exemption void (its code changed since)" in edited.note
+    assert "recorded exemption void (its code changed since it was recorded)" in edited.note
     moved = _target("connect", 4101, WORKFLOW, "opportunity:7402", breaking, "stored")
-    assert moved.sandboxed_all and "its owner is not the one recorded" in moved.note
+    # Another owner's record with the same id: sandboxed, and no word about this row.
+    assert moved.sandboxed_all and moved.exempt == "" and "exemption" not in moved.note
+    missing = _target("connect", 4101, WORKFLOW, "opportunity:7401", None, "stored")
+    assert missing.sandboxed_all and "recorded exemption void (no render code found)" in missing.note
 
 
 # --- the command ------------------------------------------------------------------
