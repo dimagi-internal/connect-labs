@@ -126,6 +126,9 @@ An organisation can have one page designated as its **home page**. When someone 
 
 To set the home page, go to the organisation's **Settings** and choose the page you want visitors to land on. You must have access to the programme or opportunity behind the page in order to set it as the home page, and visitors will only be taken to the home page if they have that same access.
 
+!!! note "Only pages can be set as the home page"
+    Settings will only accept a page as the home page — you cannot set a regular workflow (one with runs) as the home. If you try to select a regular workflow, Settings will refuse it. If an address that was previously saved as a home is not a page, opening it will show a "this home is not a page" message rather than drawing anything. Pages created from the "Page" starter before pages were formally labelled as pages still count as pages and continue to work as homes.
+
 ### Pages in the Supply tab
 
 A page can also be set to fill a **Supply tab**. When configured this way, the page opens inside the Supply header without starting a run. This lets you show stock summaries, links to supply workflows, or other supply-related content directly from the Supply tab.
@@ -138,6 +141,15 @@ Pages are built with the standard workflow tools. To create one, start from the 
 
 !!! note "Pages cannot be started as runs"
     A page cannot be started as a run. If you need to collect data over a date range and review it, use a regular workflow instead.
+
+### How pages handle runs and links
+
+A few behaviours are worth knowing when you share or follow page links:
+
+- **Run numbers in a page's address are ignored.** If a page address includes a run number (for example, because someone copied it from a workflow run), the page simply opens as normal — pages have no runs, so the number has no effect.
+- **A workflow's run page only shows runs for that workflow.** Runs from other workflows are never mixed in.
+- **Relative links inside a page open where they point.** Previously these could be refused; they now work as expected.
+- **Pages draw correctly under all allowed addresses.** If Labs is opened under an alternative allowed address (for example, a local development address), pages render properly rather than showing a blank frame.
 
 ---
 
@@ -248,13 +260,4 @@ The card has one primary action and a quiet secondary link:
 Leaving the card without clicking **Send to \<worker\>** simply means you are not ready yet — there is no separate "Not yet" button.
 
 !!! note "You decide when coaching is sent — the agent never sends it automatically"
-    Sending a coaching message is always your action, triggered by clicking **Send to \<worker\>** on the card. The agent will show you the briefing and tell you where to click — either **Send to \<worker\>** on the card in canopy, or **Start coaching** on the Labs run page itself — but it will never send on your behalf. If you prefer to act from the run page rather than the chat, the **Start coaching** button there works exactly as it always has.
-
-!!! note "Sending the same coaching twice"
-    If you need to send the same coaching to the same worker again within a short window, this now works. Previously, a repeat send within 15 minutes was refused and the card would loop on "That preview went stale". You can now resend deliberately without hitting that block.
-
-!!! note "If a test send can't go through"
-    If **Send test** cannot complete, the card now tells you why underneath the button instead of leaving the button stuck on "Sending…" indefinitely. The most common reason is that your Labs account is not connected to Open Chat Studio. In that case the card shows "Connect Open Chat Studio in Labs first, then Send test again" with a **Connect it** link. Follow that link, connect your account, then return to the card and try **Send test** again.
-
-!!! note "If Open Chat Studio refuses a coaching send"
-    When Open Chat Studio refuses to start a coaching conversation, the run now records the specific reason that Open Chat Studio returned, rather than a generic refusal message. The card and the agent will show you that reason directly — for example: "Open Chat Studio refused the request: Failed to create channel: Participant not found in
+    Sending a coaching message is always your action, triggered by clicking **Send to \<worker\>** on the card. The agent will show you the briefing and tell you where to click — either **Send to \<worker\>** on the card in canopy, or **Start coaching** on the Labs run page itself — but it will never send on your behalf. If you prefer to act from
