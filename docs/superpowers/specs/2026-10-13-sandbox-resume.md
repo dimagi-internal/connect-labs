@@ -32,20 +32,22 @@ Design and every ruling: [`docs/superpowers/specs/2026-10-12-page-sandbox-design
 | #2492 | Every live workflow's needs supported; exemptions removed (migration 0007 drops the table) |
 | #2493 | Canopy panel on every sharing page and workflow, sandboxed or not; end-to-end test `connect_labs/mcp/tests/test_canopy_panel_end_to_end.py` |
 | #2489 | Switched off on labs; `?sandbox=1` previews |
+| #2495 | Pages and workflows size the same way: the frame grows to its content, the labs page scrolls (host viewport for `vh`/`h-screen`, fixed dialogs placed in view, scrolls go to the host). Matched plain vs `?sandbox=1` on 11 templates, 3 browsers, desktop and phone |
 
 ## What is open
 
-- **#2495 `sandbox-frame-sizing`**: workflows grow to their content like pages (host viewport
-  height fed to `vh` / `h-screen`, host scroll offset for `position: fixed` dialogs and sticky
-  headers, `scrollIntoView` scrolls the host). Waiting on CI at pause time.
+- **Residual differences from #2495**, to show the owner and decide on: a document-level
+  `sticky top-0` sticks just below the labs header (plain, it slides under the header); a dialog's
+  dark backdrop does not cover the labs header and side nav, and the dialog centres in the window
+  below the header (~32px lower); near the top of a page a tall dialog scrolls inside itself.
+  Untested: touch scrolling on a real phone; `kmc_flw_review` with a real saved report (only its
+  empty state was compared locally).
 - **#2496 `sandbox-markercluster`** (draft): the frame's CSP allows the marker-cluster plugin the
   MBW GPS map uses. CI not yet checked.
 
 ## Steps to finish, in order
 
-1. **Land the two open PRs.** Check CI on #2495 and #2496 (`gh pr checks <N>`). Fix anything red,
-   then squash-merge. For #2495, read its screenshots (plain vs sandboxed, 1440 and 390, top /
-   middle / bottom, a dialog open) and confirm they match before merging.
+1. **Land #2496.** Check its CI (`gh pr checks 2496`), fix anything red, mark ready, squash-merge.
 2. **Run the checks that were not run in a real browser:**
    - The probes (token mint, labs API fetch, cookie, `parent.document`, `top.location`,
      localStorage, `window.open`, off-site fetch/image) on a sandboxed page AND workflow, in
