@@ -277,6 +277,37 @@
     });
   }
 
+  // The totals add up only the areas past the threshold, and only as measured
+  // unless a delivery year is set. Said above the cards, because "Total
+  // population" alone read as a census: Nigeria at the default threshold is 28
+  // of its 37 states, 150M, not the country.
+  function renderTotalsScope(data) {
+    var el = document.getElementById('tg-totals-scope');
+    if (!el) return;
+    var meta = (S.indicatorMeta || {})[S.indicator] || {};
+    var c = data.counts || {};
+    var partly = data.countries_partly_above || [];
+    var thr =
+      data.threshold === null || data.threshold === undefined
+        ? ''
+        : ' ' + util.fmt(data.threshold) + (data.unit ? ' ' + data.unit : '');
+    el.innerHTML =
+      'Totals for the <b>' +
+      util.fmt(c.units) +
+      ' ' +
+      util.plural(c.units, 'area') +
+      '</b> where ' +
+      util.esc(data.label || 'the indicator') +
+      ' is ' +
+      (meta.lower_is_worse ? 'below' : 'above') +
+      util.esc(thr) +
+      (partly.length ? ' — only part of ' + util.esc(partly.join(', ')) : '') +
+      ' · ' +
+      (data.projected_to
+        ? 'carried to ' + util.esc(String(data.projected_to))
+        : 'as published, not projected to a delivery year');
+  }
+
   function renderHeadline(data) {
     lastData = data;
     document.getElementById('tg-births').textContent = util.fmt(
@@ -342,6 +373,7 @@
     document.getElementById('tg-poptotal').textContent = util.fmt(
       data.totals.pop_total,
     );
+    renderTotalsScope(data);
 
     var c = data.counts;
     // Neutral now that births is one card among four rather than the headline.
@@ -505,5 +537,7 @@
     emptyReason: emptyReason,
     // Exposed for tests: this column head was a literal for all 52 indicators.
     valueHeader: valueHeader,
+    // Exposed for tests: the line that says what the four totals add up.
+    renderTotalsScope: renderTotalsScope,
   };
 })();
