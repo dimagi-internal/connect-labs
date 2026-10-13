@@ -631,9 +631,9 @@ def _absolute(path: str | None) -> str | None:
 
 def _inline_image(prompt: str | None, image: dict | None = None) -> dict | None:
     """The worker's picture as a ``data:`` URI, for a View: ``{"data_uri", "caption",
-    "bytes"}`` (plus the chart's ``chart`` info), or None when there is none. The frozen
-    chart the preview built (``image["chart"]["id"]``) -- the same one the worker's
-    conversation links to; else the briefing's own figures."""
+    "bytes"}`` (plus the chart's ``chart`` info, and its Labs ``url``), or None when there
+    is none. The frozen chart the preview built (``image["chart"]["id"]``) -- the same one
+    the worker's conversation links to; else the briefing's own figures."""
     import base64
 
     from connect_labs.workflow import coach_image
@@ -653,6 +653,12 @@ def _inline_image(prompt: str | None, image: dict | None = None) -> dict | None:
             return None
         png, caption = coach_image.render_png(payload), coach_image.caption(payload)
     extra = {"chart": chart_info} if chart_info else {}
+    # The opaque-origin View cannot LOAD the Labs link (hence the data: URI), but it can
+    # ask the host to open it in a new tab (ui/open-link) -- full size, where a signed-in
+    # Labs user sees it. A narrow chat panel shrinks the inline copy too far to read.
+    url = (image or {}).get("url") if isinstance(image, dict) else None
+    if isinstance(url, str) and url.startswith("https://"):
+        extra["url"] = url
     if len(png) > VIEW_IMAGE_MAX_BYTES:
         return {"omitted": f"too large to show inline ({len(png)} bytes)", "caption": caption, **extra}
     return {
@@ -913,7 +919,7 @@ def workflow_action_preview_view(
             out.pop("confirm_expires_in", None)
         out["sent_by"] = "click" if out["type"] in CLICK_TO_SEND_TYPES else "agent"
         for i, worker in enumerate(out["workers"]):
-            linked = worker.pop("image", None)  # the Labs link: no use to an opaque-origin View
+            linked = worker.pop("image", None)  # the Labs link: the View can only open it, not load it
             if out["type"] in CLICK_TO_SEND_TYPES and i < VIEW_IMAGE_WORKERS:
                 image = _inline_image(worker.get("prompt"), linked)
                 if image is not None:

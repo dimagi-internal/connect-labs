@@ -169,6 +169,9 @@
         border-radius: var(--border-radius-sm);
         background: #fff;
       }
+      figure img.enlarge {
+        cursor: zoom-in;
+      }
       figcaption {
         font-size: 12px;
         color: var(--color-text-secondary);
@@ -780,12 +783,33 @@
             w.image.data_uri &&
             w.image.data_uri.indexOf('data:image/png;base64,') === 0
           ) {
-            side = h('figure', null, [
-              h('img', {
-                src: w.image.data_uri,
-                alt: w.image.caption || "A picture of the worker's figures",
-              }),
-            ]);
+            // The inline copy is scaled to the panel; a click opens the full-size
+            // picture in a new tab through the host (ui/open-link).
+            var full = w.image.url;
+            var enlarge =
+              typeof full === 'string' && full.indexOf('https://') === 0
+                ? function () {
+                    openLink(full);
+                  }
+                : null;
+            var imgAttrs = {
+              src: w.image.data_uri,
+              alt: w.image.caption || "A picture of the worker's figures",
+            };
+            if (enlarge) {
+              imgAttrs.class = 'enlarge';
+              imgAttrs.title = 'Open full size in a new tab';
+              imgAttrs.role = 'button';
+              imgAttrs.tabindex = '0';
+              imgAttrs.onclick = enlarge;
+              imgAttrs.onkeydown = function (e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  enlarge();
+                }
+              };
+            }
+            side = h('figure', null, [h('img', imgAttrs)]);
           } else if (w.image && w.image.omitted) {
             side = h('div', {
               class: 'note',
