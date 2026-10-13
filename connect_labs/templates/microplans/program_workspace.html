@@ -13,6 +13,11 @@
           You are a <b>{{ workspace.role_label }}</b> here{% if not workspace.is_program_manager %} — you see your team's plans and studies only{% endif %}.
           {% if workspace.is_program_manager %}<a class="text-brand-cornflower-blue" href="{% url 'microplans:program_workspace_settings' program_id=program_id %}">Workspace settings</a>{% endif %}
         </p>
+      {% elif can_turn_on_workspace %}
+        <p class="text-xs text-gray-500 mt-1">
+          <a class="text-brand-cornflower-blue" href="{% url 'microplans:program_workspace_settings' program_id=program_id %}">Turn on workspace roles&hellip;</a>
+          <span class="text-gray-400">(Dimagi staff only)</span>
+        </p>
       {% endif %}
     </div>
     <div class="flex items-center gap-2">

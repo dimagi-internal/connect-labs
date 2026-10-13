@@ -34,40 +34,16 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 
-def _adopt(opp):
-    """Flag ``opp``'s labs-only organisation as a workspace; return it.
+def _adopt(program_id):
+    """`labs.workspaces.adopt_program` -- the same function the workspace settings
+    page's "Turn on workspace roles" button runs -- with its refusals as command errors."""
+    from connect_labs.labs.workspaces import AdoptRefused, adopt_program
 
-    Refuses an organisation that holds any OTHER program: flagging it would
-    change who can open those programs too."""
-    from connect_labs.labs.models import Workspace
-    from connect_labs.labs.synthetic.models import SyntheticOpportunity
-    from connect_labs.labs.synthetic.org_tree import is_labs_only_org_row, synthetic_program_id
-
-    org = opp.labs_org
-    if not is_labs_only_org_row(org):
-        raise CommandError(f"labs-only opportunity {opp.opportunity_id} is not filed under a labs-only organisation")
-    program = synthetic_program_id(opp)
-    others = sorted({synthetic_program_id(o) for o in SyntheticOpportunity.objects.filter(labs_org=org)} - {program})
-    if others:
-        raise CommandError(
-            f"the labs-only organisation {org.name!r} also holds program(s) {others}; "
-            "a workspace's roles would apply to them too, so it is not flagged"
-        )
-    Workspace.objects.get_or_create(org=org)
-    return org
-
-
-def _program_opps(program_id):
-    from django.db.models import Q
-
-    from connect_labs.labs.synthetic.models import SyntheticOpportunity
-
-    return (
-        SyntheticOpportunity.objects.filter(labs_only=True)
-        .filter(Q(program_id=program_id) | Q(program_id__isnull=True, opportunity_id=program_id))
-        .select_related("labs_org")
-        .order_by("pk")
-    )
+    try:
+        workspace, opp, created = adopt_program(program_id)
+    except AdoptRefused as e:
+        raise CommandError(str(e)) from None
+    return workspace.org, opp, created
 
 
 def ensure_workspace(org_name: str, program_name: str, program_id: int | None = None):
@@ -85,13 +61,8 @@ def ensure_workspace(org_name: str, program_name: str, program_id: int | None = 
     from connect_labs.labs.synthetic.org_tree import synthetic_program_id
 
     if program_id is not None:
-        opp = _program_opps(program_id).first()
-        if opp is None:
-            raise CommandError(f"no labs-only program {program_id}")
-        found = hasattr(opp.labs_org, "workspace") if opp.labs_org_id else False
-        with transaction.atomic():
-            org = _adopt(opp)
-        return org, opp, "found" if found else "adopted"
+        org, opp, created = _adopt(program_id)
+        return org, opp, "adopted" if created else "found"
 
     named = (
         SyntheticOpportunity.objects.filter(labs_only=True, program_name=program_name)
@@ -109,9 +80,7 @@ def ensure_workspace(org_name: str, program_name: str, program_id: int | None = 
             f"({sorted(programs)}); say which with --program-id"
         )
     if programs:
-        opp = next(iter(programs.values()))
-        with transaction.atomic():
-            org = _adopt(opp)
+        org, opp, _created = _adopt(next(iter(programs)))
         return org, opp, "adopted"
 
     with transaction.atomic():
@@ -135,7 +104,7 @@ def ensure_workspace(org_name: str, program_name: str, program_id: int | None = 
             # Dimagi only; the workspace roles replace this rule for its programs.
             allowed_domains=["@dimagi.com"],
         )
-        org = _adopt(opp)
+        org, opp, _created = _adopt(synthetic_program_id(opp))
     return org, opp, "created"
 
 
