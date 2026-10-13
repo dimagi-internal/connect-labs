@@ -169,3 +169,39 @@ def test_sandbox_1_on_the_address_draws_any_workflow_sandboxed():
     response = _render_run(WORKFLOW, "?program_id=25&run_id=503&sandbox=1")
     assert '"mode": "workflow"' in response.content.decode()
     assert response["Content-Security-Policy"].startswith(f"frame-src {HERE}/labs/sandbox/render/")
+
+
+# --- the rollout: checked templates ----------------------------------------------
+
+
+def test_the_checked_templates_are_marked_and_their_new_instances_opt_in():
+    from connect_labs.workflow.templates import SANDBOX_CHECKED
+
+    assert SANDBOX_CHECKED, "no template is checked"
+    for key in SANDBOX_CHECKED:
+        assert key in TEMPLATES, f"{key} is not a registered template"
+        template = TEMPLATES[key]
+        assert template.get("sandboxed") is True, key
+        assert template["definition"]["config"]["sandbox"] is True, key
+    # A deprecated template is never vouched for.
+    assert not any(TEMPLATES[k].get("deprecated") for k in SANDBOX_CHECKED)
+
+
+def test_a_follower_of_a_checked_template_is_sandboxed_and_a_copy_is_not():
+    from connect_labs.workflow.templates import SANDBOX_CHECKED
+
+    key = sorted(SANDBOX_CHECKED)[0]
+    follower = {"name": "x", "config": {}, "render_source": {"template": key}}
+    copy = {"name": "x", "config": {}, "templateType": key}
+    assert sandbox.should_sandbox(_definition(follower))
+    assert not sandbox.should_sandbox(_definition(copy))
+
+
+def test_the_sandbox_flag_is_never_inherited_onto_an_older_instance():
+    """Inheriting it would vouch for an instance's own copy of the render code, and an
+    edit-mode save (which posts the payload's definition back) would write it."""
+    from connect_labs.workflow.templates import SANDBOX_CHECKED, with_inherited_config_flags
+
+    key = sorted(SANDBOX_CHECKED)[0]
+    older = {"name": "x", "config": {}}
+    assert "sandbox" not in with_inherited_config_flags(older, key)["config"]
