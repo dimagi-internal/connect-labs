@@ -8,136 +8,126 @@
   <style>
     /* Plain CSS for everything pmc.js renders: classes built in JS are kept out
        of the utility build's guesswork, as on the targeting page. */
+    .pmc { --ink: #1c1917; --muted: #78716c; --line: #e7e5e4; --soft: #fafaf9; --brand: #16006d; --brand-soft: #eef2ff;
+           --ok: #166534; --ok-soft: #dcfce7; --warn: #92400e; --warn-soft: #fef3c7; color: var(--ink); }
     .pmc-num { font-variant-numeric: tabular-nums; }
-    .pmc-card { background: #fff; border: 1px solid #e7e5e4; border-radius: 10px; }
-    .pmc-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #78716c; }
-    .pmc-answer { font-size: 18px; line-height: 1.45; color: #1c1917; }
-    .pmc-answer b { color: #16006d; }
-    .pmc-chip { display: inline-block; white-space: nowrap; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
-    .pmc-chip.best { background: #16006d; color: #fff; }
-    .pmc-chip.near { background: #dcfce7; color: #166534; }
-    .pmc-chip.lower { background: #e0e7ff; color: #3730a3; }
-    .pmc-chip.out { background: #fef3c7; color: #92400e; }
-    .pmc-chip.unknown { background: #f5f5f4; color: #78716c; }
-
-    /* Schedules: name, bar, share averted, cost per case. One line each. */
-    .pmc-sched { display: grid; grid-template-columns: 18px minmax(200px, 1.2fr) 2fr 70px 90px; gap: 12px;
-                 align-items: center; padding: 8px 16px; cursor: pointer; border-top: 1px solid #f5f5f4; }
-    .pmc-sched:hover { background: #fafaf9; }
-    .pmc-sched.on { background: #eef2ff; }
-    .pmc-sched .name { font-size: 14px; color: #1c1917; }
-    .pmc-track { position: relative; height: 14px; background: #f5f5f4; border-radius: 4px; }
-    .pmc-bar { position: absolute; top: 0; left: 0; height: 14px; border-radius: 4px; background: #94a3b8; }
-    .pmc-bar.connect { background: #3843d0; }
-    .pmc-bar.best { background: #16006d; }
-    .pmc-ci { position: absolute; top: 6px; height: 2px; background: #1c1917; opacity: .5; }
-    .pmc-r { text-align: right; font-size: 14px; font-weight: 600; color: #1c1917; }
+    .pmc-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; }
+    .pmc-label { font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+    .pmc-chip { display: inline-block; white-space: nowrap; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+    .pmc-chip.near { background: var(--ok-soft); color: var(--ok); }
+    .pmc-chip.unknown { background: #f5f5f4; color: var(--muted); }
+    .pmc-chip.clears { background: var(--ok-soft); color: var(--ok); }
+    .pmc-chip.below { background: var(--warn-soft); color: var(--warn); }
+    .pmc-chip.smc { background: #e0f2fe; color: #075985; }
+    .pmc-chip.live { background: #fce7f3; color: #9d174d; }
     .pmc-muted { color: #a8a29e; font-weight: 500; }
 
-    .pmc-price { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 10px 16px;
-                 border-top: 1px solid #f5f5f4; font-size: 13px; color: #57534e; }
-    .pmc-price input { width: 64px; font-size: 13px; border: 1px solid #d6d3d1; border-radius: 6px; padding: 3px 6px; }
-
-    .pmc-live { padding: 10px 16px 12px; border-top: 1px solid #f5f5f4; font-size: 13px; color: #57534e; }
-    .pmc-live-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
-    .pmc-live select, .pmc-live input { font-size: 13px; border: 1px solid #d6d3d1; border-radius: 6px; padding: 3px 6px; background: #fff; }
-    .pmc-live input { width: 56px; }
-    .pmc-live button { font-size: 13px; font-weight: 600; color: #fff; background: #16006d; border: 0; border-radius: 6px; padding: 5px 12px; cursor: pointer; }
-    .pmc-live button:disabled { opacity: .55; cursor: default; }
-    .pmc-live-msg { margin-top: 8px; min-height: 18px; }
-    .pmc-live-msg.err { color: #92400e; }
-    .pmc-chip.live { background: #fce7f3; color: #9d174d; }
-
-    .pmc-table { width: 100%; font-size: 13px; border-collapse: collapse; }
-    .pmc-table th { text-align: right; font-weight: 600; color: #57534e; padding: 8px 10px; background: #fafaf9;
-                    border-bottom: 1px solid #e7e5e4; white-space: nowrap; }
-    .pmc-table td { text-align: right; padding: 7px 10px; border-bottom: 1px solid #f5f5f4; color: #292524; }
-    .pmc-table .l { text-align: left; }
-    .pmc-table tr.unranked td { color: #a8a29e; }
-    .pmc-total { display: flex; flex-wrap: wrap; gap: 28px; padding: 12px 16px; background: #16006d; color: #fff; border-radius: 8px; }
-    .pmc-total .k { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; opacity: .75; }
-    .pmc-total .v { font-size: 20px; font-weight: 700; }
-
-    /* Rank: the state picker, the deaths basis, and the (state, design) table. */
-    .pmc-pick { padding: 4px 16px 12px; }
-    .pmc-pick-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13px; color: #57534e; margin-bottom: 8px; }
-    .pmc-link { font-size: 13px; font-weight: 600; color: #3730a3; background: none; border: 0; padding: 0; cursor: pointer; }
-    .pmc-link:hover { text-decoration: underline; }
+    /* Inputs: three rows, label left, control right. */
+    .pmc-inputs { display: grid; grid-template-columns: 120px 1fr; }
+    .pmc-inputs > * { padding: 14px 20px; border-top: 1px solid #f5f5f4; }
+    .pmc-inputs > :nth-child(-n+2) { border-top: 0; }
+    .pmc-in-k { font-size: 13px; font-weight: 600; padding-top: 18px !important; }
+    .pmc-in-k .n { display: block; font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 2px; }
+    .pmc-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+    .pmc-presets .k { font-size: 12px; color: var(--muted); margin-right: 2px; }
+    .pmc-preset { font-size: 12px; font-weight: 600; color: #3730a3; background: var(--brand-soft); border: 0; border-radius: 999px; padding: 4px 10px; cursor: pointer; }
+    .pmc-preset:hover { background: #e0e7ff; }
     .pmc-states-pick { display: flex; flex-wrap: wrap; gap: 6px; }
     .pmc-pill { font-size: 12px; line-height: 1; padding: 6px 10px; border-radius: 999px; border: 1px solid #d6d3d1;
-                background: #fff; color: #44403c; cursor: pointer; }
-    .pmc-pill[aria-pressed="true"] { background: #16006d; border-color: #16006d; color: #fff; }
+                background: #fff; color: #44403c; cursor: pointer; transition: background .12s, border-color .12s; }
+    .pmc-pill:hover { border-color: #a8a29e; }
+    .pmc-pill[aria-pressed="true"] { background: var(--brand); border-color: var(--brand); color: #fff; }
     .pmc-pill .dot { display: inline-block; width: 6px; height: 6px; border-radius: 999px; background: #0f766e; margin-right: 5px; vertical-align: 1px; }
     .pmc-pill[aria-pressed="true"] .dot { background: #99f6e4; }
-    .pmc-seg { display: inline-flex; border: 1px solid #d6d3d1; border-radius: 6px; overflow: hidden; }
-    .pmc-seg button { font-size: 13px; padding: 3px 10px; background: #fff; color: #44403c; border: 0; cursor: pointer; }
+    .pmc-price-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font-size: 13px; color: #44403c; }
+    .pmc-price-row input { width: 66px; font-size: 14px; border: 1px solid #d6d3d1; border-radius: 8px; padding: 5px 8px; margin: 0 4px; }
+    .pmc-per-dose { margin-left: auto; font-size: 13px; color: var(--muted); }
+    .pmc-per-dose b { font-size: 18px; color: var(--ink); }
+    .pmc-seg { display: inline-flex; border: 1px solid #d6d3d1; border-radius: 8px; overflow: hidden; }
+    .pmc-seg button { font-size: 13px; padding: 6px 12px; background: #fff; color: #44403c; border: 0; cursor: pointer; }
     .pmc-seg button + button { border-left: 1px solid #d6d3d1; }
-    .pmc-seg button[aria-pressed="true"] { background: #16006d; color: #fff; }
-    .pmc-price select { font-size: 13px; border: 1px solid #d6d3d1; border-radius: 6px; padding: 3px 6px; background: #fff; }
-    .pmc-chip.clears { background: #dcfce7; color: #166534; }
-    .pmc-chip.below { background: #fef3c7; color: #92400e; }
-    .pmc-chip.smc { background: #e0f2fe; color: #075985; }
+    .pmc-seg button[aria-pressed="true"] { background: var(--brand); color: #fff; }
+
+    /* The answer: figures only, and it shows when it updates. */
+    .pmc-answer-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 16px 20px 0; }
+    .pmc-answer-head .pmc-label { white-space: nowrap; }
+    .pmc-pulse { width: 8px; height: 8px; border-radius: 999px; background: #22c55e; box-shadow: 0 0 0 0 rgba(34,197,94,.5); }
+    .pmc-pulse.busy { background: #f59e0b; animation: pmc-ping 1s infinite; }
+    @keyframes pmc-ping { 0% { box-shadow: 0 0 0 0 rgba(245,158,11,.55); } 100% { box-shadow: 0 0 0 9px rgba(245,158,11,0); } }
+    .pmc-status { font-size: 12px; color: var(--muted); }
+    .pmc-explain { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #fff;
+                   background: var(--brand); border: 0; border-radius: 999px; padding: 7px 14px; cursor: pointer; }
+    .pmc-explain:hover { background: #24108a; }
+    .pmc-answer { padding: 10px 20px 20px; transition: opacity .15s; }
+    .pmc-answer.busy { opacity: .45; }
+    .pmc-schedule { font-size: 24px; font-weight: 700; color: var(--brand); line-height: 1.25; }
+    .pmc-where { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; color: #44403c; }
+    .pmc-where .tag { font-size: 12px; padding: 3px 9px; border-radius: 999px; background: #f5f5f4; }
+    .pmc-where .tag.out { background: var(--warn-soft); color: var(--warn); }
+    .pmc-kpis { display: grid; grid-template-columns: 1.4fr repeat(4, 1fr); gap: 12px; margin-top: 16px; }
+    .pmc-kpi { background: var(--soft); border: 1px solid #f0efed; border-radius: 12px; padding: 12px 14px; }
+    .pmc-kpi .v { font-size: 24px; font-weight: 700; margin-top: 4px; }
+    .pmc-kpi .s { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .pmc-kpi.hero { background: var(--brand); border-color: var(--brand); color: #fff; }
+    .pmc-kpi.hero .pmc-label, .pmc-kpi.hero .s { color: rgba(255,255,255,.75); }
+    .pmc-kpi.hero .v { font-size: 34px; }
+    .pmc-kpi.hero.below { background: var(--warn); border-color: var(--warn); }
+
+    /* The evidence, one table at a time. */
+    .pmc-tabs { display: flex; gap: 4px; padding: 14px 20px 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
+    .pmc-tab { font-size: 13px; font-weight: 600; color: var(--muted); background: none; border: 0; padding: 8px 12px 10px;
+               border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; white-space: nowrap; }
+    .pmc-tab[aria-selected="true"] { color: var(--brand); border-bottom-color: var(--brand); }
+    .pmc-panel { padding: 8px 20px 18px; overflow-x: auto; }
+    .pmc-panel-tools { display: flex; justify-content: flex-end; font-size: 12px; color: var(--muted); padding: 6px 0; }
+    .pmc-panel-tools select { font-size: 12px; border: 1px solid #d6d3d1; border-radius: 6px; padding: 2px 4px; margin-left: 4px; }
+    .pmc-table { width: 100%; font-size: 13px; border-collapse: collapse; }
+    .pmc-table th { text-align: right; font-weight: 600; color: #57534e; padding: 9px 10px; background: var(--soft);
+                    border-bottom: 1px solid var(--line); white-space: nowrap; }
+    .pmc-table td { text-align: right; padding: 8px 10px; border-bottom: 1px solid #f5f5f4; color: #292524; }
+    .pmc-table .l { text-align: left; }
     .pmc-table td.design { text-align: left; color: #44403c; }
-    .pmc-note { font-size: 12px; line-height: 1.5; color: #78716c; padding: 0 16px 12px; }
-    .pmc-live-results { margin-top: 8px; }
-    .pmc-total .cap { flex-basis: 100%; font-size: 12px; opacity: .8; margin-bottom: -16px; }
-    .pmc-sub { font-size: 12px; font-weight: 400; color: #78716c; margin-top: 2px; }
+    .pmc-table tr.dim td { color: #a8a29e; }
+    .pmc-table tr.on td { background: var(--brand-soft); }
+    .pmc-table .pmc-est { color: var(--muted); font-weight: 400; }
+    .pmc-sub { font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 2px; }
     .pmc-sm-only { display: none; }
-    .pmc-legend { font-size: 13px; line-height: 1.5; color: #57534e; padding: 0 16px 4px; }
-    .pmc-legend b { color: #1c1917; }
-    .pmc-h { font-size: 13px; font-weight: 600; color: #1c1917; padding: 4px 16px 6px; }
-    .pmc-reco { margin: 12px 16px; padding: 16px 18px; background: #eef2ff; border-left: 4px solid #16006d; border-radius: 8px; }
-    .pmc-reco .lead { font-size: 18px; line-height: 1.5; color: #1c1917; margin-top: 4px; }
-    .pmc-reco .lead b { color: #16006d; }
-    .pmc-reco ul { list-style: disc; padding-left: 20px; margin-top: 8px; font-size: 14px; line-height: 1.55; color: #292524; }
-    .pmc-reco details { margin-top: 8px; font-size: 13px; }
-    .pmc-reco .pmc-budgets { margin-top: 12px; }
-    .pmc-reco .pmc-budgets .states { white-space: normal; font-size: 12px; color: #57534e; }
-    .pmc-reco summary { cursor: pointer; color: #3730a3; }
-    .pmc-evidence { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #78716c; padding: 14px 16px 0; }
-    .pmc-caveats { margin-top: 6px; }
-    .pmc-caveats summary { cursor: pointer; color: #3730a3; }
-    .pmc-caveats ul { list-style: disc; padding-left: 18px; margin-top: 4px; }
 
-    /* The inputs, numbered apart from what the page gives back. */
-    .pmc-step-head { display: flex; gap: 12px; align-items: flex-start; padding: 16px 16px 8px; border-top: 1px solid #e7e5e4; }
-    #pmc-rank-card > .pmc-step-head:first-child { border-top: 0; }
-    .pmc-step-n { flex: none; width: 26px; height: 26px; border-radius: 999px; background: #16006d; color: #fff;
-                  font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
-    .pmc-step-title { font-size: 16px; font-weight: 700; color: #1c1917; }
-    .pmc-in { display: grid; grid-template-columns: 150px 1fr; gap: 6px 16px; padding: 10px 16px 10px 54px; border-top: 1px solid #f5f5f4; }
-    .pmc-in-k { font-size: 14px; font-weight: 600; color: #1c1917; padding-top: 3px; }
-    .pmc-in-k .pmc-sub { display: block; }
-    .pmc-in-v .pmc-sub { margin-top: 6px; }
-    .pmc-in-v .pmc-pick-head { margin-bottom: 8px; }
-    .pmc-price-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: 13px; color: #44403c; }
-    .pmc-price-row input { width: 64px; font-size: 13px; border: 1px solid #d6d3d1; border-radius: 6px; padding: 3px 6px; margin-left: 4px; }
-    .pmc-per-dose { font-size: 14px; color: #1c1917; }
-    .pmc-fixed { margin: 0 16px 8px 54px; padding: 10px 12px; font-size: 12px; line-height: 1.55; color: #57534e;
-                 background: #fafaf9; border: 1px dashed #d6d3d1; border-radius: 8px; }
-    .pmc-fixed b { color: #1c1917; }
-    .pmc-status { margin: 4px 16px 8px 54px; font-size: 13px; color: #166534; }
-    .pmc-table .pmc-est { color: #78716c; font-weight: 400; }
-    .pmc-h-row { display: flex; align-items: center; gap: 8px; }
-    .pmc-h-row select { font-size: 12px; border: 1px solid #d6d3d1; border-radius: 6px; padding: 2px 4px; background: #fff; }
+    /* Folded below: the method, and a live run of a schedule of your own. */
+    .pmc-fold > summary { cursor: pointer; padding: 14px 20px; font-size: 13px; font-weight: 600; color: #3730a3; list-style: none; }
+    .pmc-fold > summary::before { content: "▸ "; }
+    .pmc-fold[open] > summary::before { content: "▾ "; }
+    .pmc-defs { display: grid; grid-template-columns: 200px 1fr; gap: 8px 18px; padding: 0 20px 18px; font-size: 13px; line-height: 1.5; color: #44403c; }
+    .pmc-defs dt { font-weight: 600; color: var(--ink); }
+    .pmc-defs ul { list-style: disc; padding-left: 18px; }
+    .pmc-live { padding: 0 20px 18px; font-size: 13px; color: #57534e; }
+    .pmc-live-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+    .pmc-live select, .pmc-live input { font-size: 13px; border: 1px solid #d6d3d1; border-radius: 8px; padding: 4px 6px; background: #fff; }
+    .pmc-live input { width: 56px; }
+    .pmc-live button { font-size: 13px; font-weight: 600; color: #fff; background: var(--brand); border: 0; border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+    .pmc-live button:disabled { opacity: .55; cursor: default; }
+    .pmc-live-msg { margin-top: 8px; min-height: 18px; }
+    .pmc-live-msg.err { color: var(--warn); }
+    .pmc-live-results { margin-top: 8px; }
 
-    @media (max-width: 640px) {
-      .pmc-in { grid-template-columns: 1fr; padding-left: 16px; }
-      .pmc-fixed { margin-left: 16px; }
-      .pmc-sched { grid-template-columns: 18px 1fr 70px 80px; }
-      .pmc-sched > :nth-child(3) { display: none; }
+    @media (max-width: 760px) {
+      .pmc-inputs { grid-template-columns: 1fr; }
+      .pmc-inputs > :nth-child(2) { border-top: 0; }
+      .pmc-in-k { padding-bottom: 0 !important; }
+      .pmc-kpis { grid-template-columns: 1fr 1fr; }
+      .pmc-kpi.hero { grid-column: 1 / -1; }
+      .pmc-defs { grid-template-columns: 1fr; }
       .pmc-hide-sm { display: none; }
       .pmc-sm-only { display: block; }
-      .pmc-table th { white-space: normal; padding: 6px; }
-      .pmc-table td { padding: 6px; }
-      .pmc-total { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-      .pmc-total .cap { grid-column: 1 / -1; margin-bottom: 0; }
+      .pmc-per-dose { margin-left: 0; }
+      .pmc-explain { margin-left: 0; order: 4; }
+      .pmc-status { flex-basis: 100%; order: 3; }
     }
   </style>
 {% endblock %}
 
 {% block content %}
-<div class="py-6 space-y-5 max-w-6xl">
+<div class="pmc py-6 space-y-4 max-w-6xl">
 
   <div class="flex flex-wrap items-baseline gap-3">
     <h1 class="text-2xl font-semibold text-stone-900">Which PMC schedule, and where?</h1>
@@ -148,131 +138,111 @@
     {% endif %}
     <a href="{% url 'targeting:index' %}" class="ml-auto text-sm text-indigo-700 hover:underline">← Targeting</a>
   </div>
-  <p class="text-sm text-stone-600 -mt-3">IDM's EMOD malaria model, run in each Nigerian state's own setting, ranked by under-5 deaths averted per dollar against GiveWell's bar.</p>
 
-  <section class="pmc-card" id="pmc-rank-card">
-    <div class="pmc-step-head">
-      <span class="pmc-step-n">1</span>
+  <section class="pmc-card" aria-label="Inputs">
+    <div class="pmc-inputs">
+      <div class="pmc-in-k">States<span class="n" id="pmc-rank-scope"></span></div>
       <div>
-        <div class="pmc-step-title">Your inputs</div>
-        <div class="pmc-sub">Three choices. Everything below recalculates from them in about a second; there is nothing to run. The page's address keeps them, so a link reopens this view.</div>
-      </div>
-    </div>
-    <div class="pmc-in">
-      <div class="pmc-in-k">States<span class="pmc-sub" id="pmc-rank-scope"></span></div>
-      <div class="pmc-in-v">
-      <div class="pmc-pick-head">
-        <span class="pmc-sub" style="margin:0">Where the programme could run. Click states to add or remove them, or start from</span>
-        <button type="button" class="pmc-link" data-preset="perennial" title="Under half the year's rain in the wettest quarter, and child malaria prevalence of at least 10%">Year-round transmission</button>
-        <span aria-hidden="true">·</span>
-        <button type="button" class="pmc-link" data-preset="all">All states</button>
-        <span aria-hidden="true">·</span>
-        <button type="button" class="pmc-link" data-preset="none">Clear</button>
-        <span class="ml-auto text-xs text-stone-500"><span class="pmc-pill" style="pointer-events:none;padding:2px 6px"><span class="dot"></span>year-round</span></span>
-      </div>
-      <div id="pmc-pick-states" class="pmc-states-pick" role="group" aria-label="States to rank"></div>
-      </div>
-    </div>
-    <div class="pmc-in">
-      <div class="pmc-in-k">Price</div>
-      <div class="pmc-in-v">
-        <div class="pmc-price-row">
-          <label>Paid to the partner per verified visit $<input id="pmc-cost" class="pmc-num" type="number" min="0" step="0.01"></label>
-          <label>+ Dimagi fee <input id="pmc-fee" class="pmc-num" type="number" min="0" step="1">%</label>
-          <label>÷ visits that give a dose <input id="pmc-rate" class="pmc-num" type="number" min="1" max="100" step="1">%</label>
-          <span class="pmc-per-dose">= <b id="pmc-per-dose" class="pmc-num"></b> per dose</span>
+        <div class="pmc-presets">
+          <span class="k">Start from</span>
+          <button type="button" class="pmc-preset" data-preset="perennial" title="Under half the year's rain in the wettest quarter, and child malaria prevalence of at least 10%">Year-round transmission</button>
+          <button type="button" class="pmc-preset" data-preset="all">All states</button>
+          <button type="button" class="pmc-preset" data-preset="none">Clear</button>
+          <span class="ml-auto pmc-sub"><span class="pmc-pill" style="pointer-events:none;padding:2px 6px"><span class="dot"></span>year-round</span></span>
         </div>
-        <div class="pmc-sub">Our proposal: $0.80 a visit at launch ($1.01 a dose), $0.58 at scale ($0.73 a dose). GiveWell judges a pilot at its at-scale cost.</div>
+        <div id="pmc-pick-states" class="pmc-states-pick" role="group" aria-label="States to rank"></div>
       </div>
-    </div>
-    <div class="pmc-in">
+      <div class="pmc-in-k">Price</div>
+      <div class="pmc-price-row">
+        <label>Per verified visit $<input id="pmc-cost" class="pmc-num" type="number" min="0" step="0.01"></label>
+        <label>Fee<input id="pmc-fee" class="pmc-num" type="number" min="0" step="1">%</label>
+        <label>Visits giving a dose<input id="pmc-rate" class="pmc-num" type="number" min="1" max="100" step="1">%</label>
+        <span class="pmc-per-dose">per dose <b id="pmc-per-dose" class="pmc-num"></b></span>
+      </div>
       <div class="pmc-in-k">Children</div>
-      <div class="pmc-in-v">
+      <div>
         <span class="pmc-seg" role="group" aria-label="Children targeted">
           <button type="button" data-ages="3_24">3–24 months</button>
-          <button type="button" data-ages="12_24">12–24 months only</button>
+          <button type="button" data-ages="12_24">12–24 months</button>
         </span>
-        <div class="pmc-sub" id="pmc-ages-help"></div>
       </div>
     </div>
-    <div class="pmc-fixed">
-      <b>Malaria deaths: both estimates, never one alone.</b> Nobody counts malaria deaths state by state in Nigeria, so the page uses two estimates:
-      <b>DHS-scaled</b> (each state's under-5 deaths &times; malaria's share of them, Nigeria's share from MAP raised or lowered by the state's DHS survey prevalence)
-      and <b>MAP</b> (MAP's own modelled malaria deaths, 76% of them under five). They disagree by more than threefold in places.
-      Every choice below is made on the <b>lower of the two in each state</b>, so it holds whichever is right, and every figure also shows each estimate alone.
+  </section>
+
+  <section class="pmc-card" aria-label="Answer">
+    <div class="pmc-answer-head">
+      <span id="pmc-pulse" class="pmc-pulse busy" aria-hidden="true"></span>
+      <span class="pmc-label">Best single schedule for these states</span>
+      <span id="pmc-status" class="pmc-status" role="status" aria-live="polite"></span>
+      {% if canopy_panel %}<button type="button" id="pmc-explain" class="pmc-explain hidden">✦ Explain this answer</button>{% endif %}
     </div>
-    <div class="pmc-fixed">
-      <b>Fixed in the model:</b> SP, one dose a round · {{ pmc_fixed.coverage_pct }}% of the children reached each round · each state's season from its rainfall ·
-      each under-5 death averted is worth {{ pmc_fixed.moral_weight }} units of value, and GiveWell's 1&times; is {{ pmc_fixed.benchmark }} units a dollar,
-      so its {{ pmc_fixed.bar }}&times; bar is about {{ pmc_fixed.per_death_at_bar }} per death averted · only deaths are counted, so every multiple is a floor.
+    <div id="pmc-reco" class="pmc-answer busy">Loading…</div>
+
+    <div class="pmc-tabs" role="tablist">
+      <button type="button" class="pmc-tab" role="tab" data-tab="schedules" aria-selected="true">Schedules</button>
+      <button type="button" class="pmc-tab" role="tab" data-tab="states" aria-selected="false">States</button>
+      <button type="button" class="pmc-tab" role="tab" data-tab="budgets" aria-selected="false">Budgets</button>
+      <button type="button" class="pmc-tab" role="tab" data-tab="pairs" aria-selected="false">State × schedule</button>
     </div>
-    <p id="pmc-status" class="pmc-status" role="status" aria-live="polite"></p>
-    <div class="pmc-step-head">
-      <span class="pmc-step-n">2</span>
-      <div>
-        <div class="pmc-step-title">The answer for these inputs</div>
-        <div class="pmc-sub">The one schedule that averts the most deaths per dollar across the states picked, what letting it vary by state would add, and what each budget buys.</div>
-      </div>
+    <div class="pmc-panel" data-panel="schedules">
+      <table class="pmc-table">
+        <thead>
+          <tr>
+            <th class="l">Schedule</th>
+            <th class="pmc-hide-sm">Doses / child / yr</th>
+            <th class="pmc-hide-sm">Deaths averted / yr</th>
+            <th>Per death averted</th>
+            <th title="Times as cost-effective as GiveWell's benchmark, on the lower death estimate in each state">&times; GiveWell</th>
+            <th class="pmc-hide-sm pmc-est">DHS-scaled</th>
+            <th class="pmc-hide-sm pmc-est">MAP</th>
+          </tr>
+        </thead>
+        <tbody id="pmc-design-rows"></tbody>
+      </table>
     </div>
-    <div id="pmc-reco" class="pmc-reco">Loading…</div>
-    <div class="pmc-step-head">
-      <span class="pmc-step-n">3</span>
-      <div>
-        <div class="pmc-step-title">The evidence</div>
-        <div class="pmc-sub">Every schedule across the states picked, then every state on its own.</div>
-      </div>
-    </div>
-    <p id="pmc-rank-answer" class="pmc-legend" style="padding-top:6px"></p>
-    <p class="pmc-legend"><b>&times; GiveWell</b>: how many times as cost-effective as GiveWell's benchmark, counting under-5 deaths only; GiveWell funds at about <b>6&times;</b> and above. The main column counts the lower death estimate in each state; the two grey columns are each estimate alone.</p>
-    <div id="pmc-rank-total" class="pmc-total hidden" style="margin:12px 16px"></div>
-    <div id="pmc-design-card" class="hidden">
-      <div class="pmc-h">Which schedule: each one across all the states picked</div>
-      <div class="overflow-x-auto px-4 pb-3">
-        <table class="pmc-table">
-          <thead>
-            <tr>
-              <th class="l">Schedule</th>
-              <th class="pmc-hide-sm">Doses / child / yr</th>
-              <th class="pmc-hide-sm">Deaths averted / yr</th>
-              <th title="The schedule's cost across these states divided by the deaths it averts across them">Per death averted</th>
-              <th title="How many times as cost-effective as GiveWell's benchmark; GiveWell's bar is about 6x">&times; GiveWell</th>
-              <th class="pmc-hide-sm pmc-est">DHS-scaled alone</th>
-              <th class="pmc-hide-sm pmc-est">MAP alone</th>
-            </tr>
-          </thead>
-          <tbody id="pmc-design-rows"></tbody>
-        </table>
-      </div>
-      <div class="pmc-h pmc-h-row">Where: the best state &times; schedule pairs
-        <label class="pmc-sub" style="margin:0 0 0 auto">Show the top <select id="pmc-topn"><option>10</option><option>20</option><option>50</option></select></label>
-      </div>
-    </div>
-    <div class="overflow-x-auto px-4 pb-3">
+    <div class="pmc-panel hidden" data-panel="states" id="pmc-states-panel"></div>
+    <div class="pmc-panel hidden" data-panel="budgets" id="pmc-budgets-panel"></div>
+    <div class="pmc-panel hidden" data-panel="pairs">
+      <div class="pmc-panel-tools"><label>Top <select id="pmc-topn"><option>10</option><option>20</option><option>50</option></select></label></div>
       <table class="pmc-table">
         <thead>
           <tr>
             <th class="l">#</th>
             <th class="l">State</th>
-            <th class="l pmc-hide-sm">Design</th>
+            <th class="l pmc-hide-sm">Schedule</th>
             <th class="pmc-hide-sm">Deaths averted / yr</th>
             <th class="pmc-hide-sm">Cost / yr</th>
-            <th title="Cost per year divided by under-5 deaths averted per year">Per death averted</th>
-            <th title="How many times as cost-effective as GiveWell's benchmark; GiveWell's bar is about 6x">&times; GiveWell</th>
-            <th class="pmc-hide-sm pmc-est">DHS-scaled alone</th>
-            <th class="pmc-hide-sm pmc-est">MAP alone</th>
+            <th>Per death averted</th>
+            <th>&times; GiveWell</th>
+            <th class="pmc-hide-sm pmc-est">DHS-scaled</th>
+            <th class="pmc-hide-sm pmc-est">MAP</th>
           </tr>
         </thead>
         <tbody id="pmc-rank-rows"><tr><td class="l" colspan="9">Loading…</td></tr></tbody>
       </table>
     </div>
-    <p id="pmc-rank-note" class="pmc-note"></p>
   </section>
 
-  <details class="pmc-card" id="pmc-advanced">
-    <summary class="cursor-pointer px-4 py-3 text-sm text-indigo-700">Advanced: test a schedule of your own in one state</summary>
+  <details class="pmc-card pmc-fold">
+    <summary>How the numbers are made</summary>
+    <dl class="pmc-defs">
+      <dt>Model</dt>
+      <dd><a class="text-indigo-700 hover:underline" href="{{ sweep.model.url }}" target="_blank" rel="noopener">{{ sweep.model.name }}</a>, fitted to each state's DHS malaria prevalence and rainfall season; {{ sweep.setting.seeds }} random seeds per schedule.</dd>
+      <dt>Held fixed</dt>
+      <dd>SP, one dose a round · {{ pmc_fixed.coverage_pct }}% of the children reached each round · each state's season from its rainfall.</dd>
+      <dt>Deaths</dt>
+      <dd>Two estimates: DHS-scaled and MAP. Every decision uses the lower of the two in each state; both are shown alone.</dd>
+      <dt>&times; GiveWell</dt>
+      <dd>An under-5 death averted is worth {{ pmc_fixed.moral_weight }} units of value; GiveWell's 1&times; is {{ pmc_fixed.benchmark }} units a dollar, so its {{ pmc_fixed.bar }}&times; bar is about {{ pmc_fixed.per_death_at_bar }} per death averted. Only deaths are counted, so every multiple is a floor.</dd>
+      <dt>Caveats</dt>
+      <dd><ul id="pmc-caveats">{% for c in caveats %}<li>{{ c }}</li>{% endfor %}</ul>
+        {% for ref in sweep.references %}<a class="text-indigo-700 hover:underline" href="{{ ref.url }}" target="_blank" rel="noopener">{{ ref.label }}</a> {% endfor %}</dd>
+    </dl>
+  </details>
+
+  <details class="pmc-card pmc-fold" id="pmc-advanced">
+    <summary>Run IDM's model for a schedule of your own</summary>
     <div class="pmc-live">
-      <div class="pmc-label" style="margin-bottom:4px">Try another schedule in one state</div>
-      <p style="margin-bottom:8px">Runs IDM's model live for one state on its own fitted setting, with a schedule of your own: other months, a narrower age range, a different coverage. It takes about five minutes, or is instant if someone has run the same thing before. The result is valued like the ranking and shown beside that state's best design.</p>
       <div class="pmc-live-row">
         <label>State <select id="pmc-live-state"></select></label>
         <label>Rounds
@@ -291,29 +261,10 @@
         <label>Ages <input id="pmc-live-amin" class="pmc-num" type="number" min="0" max="59" step="1" value="3">–<input id="pmc-live-amax" class="pmc-num" type="number" min="1" max="60" step="1" value="24"> months</label>
         <label>Coverage <input id="pmc-live-cov" class="pmc-num" type="number" min="5" max="100" step="5" value="85">%</label>
         <button id="pmc-live-run" type="button">Run IDM&rsquo;s model</button>
+        <span class="pmc-sub">about 5 minutes</span>
       </div>
       <div id="pmc-live-msg" class="pmc-live-msg" role="status" aria-live="polite"></div>
       <div id="pmc-live-results" class="pmc-live-results overflow-x-auto"></div>
-    </div>
-  </details>
-
-  <details class="pmc-card">
-    <summary class="cursor-pointer px-4 py-3 text-sm text-indigo-700">The schedules in one illustrative setting (before per-state fitting)</summary>
-    <div class="px-4 pt-1 pmc-label">How</div>
-    <p id="pmc-how" class="pmc-answer px-4 pt-1 pb-3"></p>
-    <div id="pmc-schedules"></div>
-  </details>
-
-  <details class="text-sm text-stone-600">
-    <summary class="cursor-pointer text-indigo-700">About the model and these numbers</summary>
-    <div class="mt-2 space-y-2 max-w-3xl">
-      <p><a class="text-indigo-700 hover:underline" href="{{ sweep.model.url }}" target="_blank" rel="noopener">{{ sweep.model.name }}</a>. {{ sweep.setting.description }}
-        Outcome: {{ sweep.setting.outcome }}; {{ sweep.setting.seeds }} random seeds, run {{ sweep.run_date }}.
-        Prices default to {{ sweep.default_costs.source }}.</p>
-      <ul class="list-disc pl-5 space-y-1">{% for c in caveats %}<li>{{ c }}</li>{% endfor %}</ul>
-      {% for ref in sweep.references %}
-        <p><a class="text-indigo-700 hover:underline" href="{{ ref.url }}" target="_blank" rel="noopener">{{ ref.label }}</a></p>
-      {% endfor %}
     </div>
   </details>
 </div>

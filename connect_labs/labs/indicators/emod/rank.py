@@ -81,8 +81,8 @@ DEATHS_CAVEATS = {
         "Deaths: in each state, the lower of two estimates of its under-5 malaria deaths -- DHS-scaled (the state's "
         "under-5 deaths x malaria's national share from MAP, spread by DHS prevalence) and MAP's own modelled deaths "
         "x 76% under five. They disagree by more than threefold in places, so decisions use the figure that "
-        "survives either; 'by_basis' gives each estimate alone. Mortality is assumed to fall with clinical cases, "
-        "and only deaths are valued, so every multiple is a floor."
+        "survives either; every figure also shows each estimate alone. Mortality is assumed to fall with "
+        "clinical cases, and only deaths are valued, so every multiple is a floor."
     ),
     "prevalence_scaled": (
         "Deaths: the state's under-5 deaths x malaria's share of them, set nationally from MAP and spread by DHS "
