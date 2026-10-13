@@ -128,9 +128,22 @@ Pages are useful for landing screens and summary views that you want to keep per
 | Can show pipeline data and worker details | Yes | Yes |
 | Can open visit photos and draw maps | Yes | Yes |
 | Can create tasks or audits (with confirmation) | Yes | Yes |
+| Can start AI coaching conversations (with confirmation) | Yes | Yes |
 | Can save run state or complete a run | Yes | No |
 
 Pages can now be built with the full set of workflow tools. They can show pipeline data and worker details, open visit photos, draw maps with admin boundaries and map tiles, and create tasks or audits — with Labs asking for confirmation first, the same way a protected workflow does. The only things a page cannot do are those that require a run: saving run state, completing a run, running a declared action, or running a background job.
+
+### Actions on a page
+
+A page can have buttons that trigger actions — the same types of actions a report can trigger — scoped to the organisation, program, or opportunity the page belongs to:
+
+- **Create follow-up tasks** for workers
+- **Start an AI coaching conversation** with workers
+
+When you click one of these buttons, Labs opens its confirmation dialog showing you exactly which workers are affected and what will be sent. Nothing happens until you confirm. This is the same "nothing happens until you confirm" protection that applies to protected workflows.
+
+!!! note "Coaching from a page vs. coaching from a report"
+    When coaching is triggered from a page, the message sent is the one the page itself declares. Briefings, pictures, and case conversations — which are drawn from a report's saved figures — are only available from reports, not from pages.
 
 ### Access to workflows shown on a page
 
@@ -220,13 +233,4 @@ Settings uses the word **program** (not "programme") throughout.
 
 Who can change Settings and edit pages depends on whether the organisation, program, or opportunity is a **labs-only (synthetic)** scope or a **real partner** scope:
 
-- **Labs-only (synthetic) scopes** — anyone signed in with a **@dimagi.com** or **@dimagi-ai.com** email address can change Settings and edit pages, including scopes that have no administrator. This means a Dimagi person can always manage a synthetic scope, even if nobody else administers it.
-- **Real partner scopes** — Settings and page editing are controlled by the scope's own members (as Connect defines them) and any individuals who have been explicitly granted labs staff access. A Dimagi email address alone does not grant access to a real partner organisation, program, or opportunity.
-
-If you believe you should have access to a real partner scope's Settings but do not, ask the scope's administrator to grant you access directly.
-
-### Synthetic organisations
-
-A synthetic organisation groups every synthetic program that shares the same organisation name, regardless of who created them. Members of a synthetic organisation can read its Settings, but only **Dimagi staff** can make changes to a synthetic organisation's Settings. Each individual synthetic program can still set its own Settings independently.
-
-!
+- **Labs-only (synthetic) scopes** — anyone signed in with a **@dimagi.com** or **@dimagi-ai.com**
