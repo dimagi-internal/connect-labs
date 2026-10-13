@@ -32,6 +32,13 @@ from django.http import Http404
 from django.shortcuts import redirect
 
 DEV_USERNAME = "dev"
+# A seeded example organisation's admin (`supply_seed_org_procurement`), signed in
+# with `?as=<username>` to walk supply as someone who is NOT Dimagi. Only a
+# local-only shape is accepted -- this prefix AND an address on the reserved
+# `.example` domain -- so even DEBUG left on somewhere real cannot sign in a
+# real account by name.
+SEEDED_PREFIX = "dev-"
+SEEDED_DOMAIN = ".example"
 ONE_YEAR = 365 * 24 * 60 * 60
 
 
@@ -41,11 +48,16 @@ def dev_login(request):
         raise Http404("dev-login is available only when DEBUG is on")
 
     User = get_user_model()
-    user = User.objects.filter(username=DEV_USERNAME).first()
+    wanted = request.GET.get("as") or DEV_USERNAME
+    if wanted != DEV_USERNAME and not wanted.startswith(SEEDED_PREFIX):
+        raise Http404(f"dev-login signs in only {DEV_USERNAME!r} or a seeded '{SEEDED_PREFIX}' user")
+    user = User.objects.filter(username=wanted).first()
+    if user is not None and wanted != DEV_USERNAME and not (user.email or "").lower().endswith(SEEDED_DOMAIN):
+        user = None
     if user is None:
         # Deliberately does NOT create one. See the module docstring: creating
         # a superuser here is a far worse failure mode than refusing to.
-        raise Http404(f'no local user {DEV_USERNAME!r}. Run: make manage CMD="supply_dev_seed"')
+        raise Http404(f'no local user {wanted!r}. Run: make manage CMD="supply_dev_seed"')
 
     # ModelBackend is not the only backend configured, so name it explicitly.
     login(request, user, backend="django.contrib.auth.backends.ModelBackend")
