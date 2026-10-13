@@ -85,6 +85,7 @@
     [
       'tg-rowcount',
       'tg-scope',
+      'tg-totals-scope',
       'tg-poptotal',
       'tg-popu5',
       'tg-births',
