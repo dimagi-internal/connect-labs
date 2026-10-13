@@ -153,6 +153,13 @@ def load_monitoring_run(request, run_id):
 
         if not run:
             return None
+        # From the sandbox frame: only a run of the workflow drawing it (or one it
+        # declares) -- never any monitoring run the viewer can read.
+        from connect_labs.workflow import declared_reads
+
+        if declared_reads.run_refusal(request, run) is not None:
+            logger.info("[sandbox] refused monitoring run %s for %s", run_id, declared_reads.reader(request))
+            return None
 
         # Verify it's a monitoring run (has selected_flws in state)
         state = run.data.get("state", {})

@@ -726,10 +726,13 @@ export function createDispatcher(
       const list = data && Array.isArray(data.pipelines) ? data.pipelines : [];
       const ctx = options.routeContext as RouteContext;
       const ids = ctx.pipelineIds || (ctx.pipelineIds = []);
+      const names = ctx.pipelineNames || (ctx.pipelineNames = {});
       for (const p of list.slice(0, 2000)) {
         const id = Number(p && typeof p === 'object' ? p.id : NaN);
-        if (Number.isSafeInteger(id) && id > 0 && !ids.includes(id))
-          ids.push(id);
+        if (!Number.isSafeInteger(id) || id <= 0) continue;
+        if (!ids.includes(id)) ids.push(id);
+        if (typeof p.name === 'string')
+          names[String(id)] = p.name.slice(0, 200);
       }
     } catch {
       // not JSON: nothing offered

@@ -898,3 +898,32 @@ What was added, from the live scan (`workflow_sandbox_scan --as-user jonathan`, 
 Still to do on the data, not the code: the control room reads audit sessions for the
 opportunities in its `config.opp_meta`; only those also in its `opportunity_ids` are answered
 (the `kmc_image_audit` ruling above), so its record may need `workflow_update_opportunity_ids`.
+
+### Review fixes (before merge)
+
+An independent adversarial review of the diff found these; each is fixed with a test that
+fails without it (`workflow_sandbox.test.js`, `workflow/tests/test_declared_reads.py`):
+
+1. **The MBW views read their run as `run_id` OR `session_id`**, and the host bound only
+   `run_id`: the frame could read another monitoring run's snapshot, or stream another
+   opportunity's visits through that run. `session_id` is now bound to this run on those
+   routes (`boundQuery`), and the server refuses a monitoring run that is not the reader's
+   own or declared (`session_adapter.load_monitoring_run`, `MBWSaveSnapshotView`:
+   `declared_reads.run_refusal`).
+2. **One yes to "change runs it reads" covered 200 silent writes to any declared run.** Now
+   asked naming the run, and a yes holds two minutes for THAT run only (`perRecord` +
+   `recordGrant`). So that a batch is not refused, the host's questions now wait their turn
+   (up to 25 behind the one on screen) instead of a second one answering No; each is drawn
+   fresh, so its 700 ms arming starts again.
+3. **The attach question named the pipeline by number only**: it now quotes the name the
+   available-pipelines answer gave.
+4. **Route choice now falls through on a binding miss**, so a future overlapping route could
+   silently land on a looser gate: a test lists the paths two routes share (today only a
+   run's state), so a new overlap is a decision.
+
+Accepted, stated: the available-pipelines answer and a pipeline's definition hand the frame
+the names, descriptions and schemas of pipelines the viewer can see (no rows, no personal
+data), which can leave the frame like any data given to it. And the MBW save-snapshot
+endpoint fails on the server whatever the frame does (`save_run_snapshot` no longer exists
+on the data access layer) -- broken unsandboxed too; its route is bound correctly for when
+it is mended.

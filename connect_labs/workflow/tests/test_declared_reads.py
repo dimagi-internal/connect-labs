@@ -421,3 +421,35 @@ def test_the_workflow_list_answers_a_frame_with_only_the_declared_run_links(wda)
     assert "902" not in body
     # Nothing of the list page: no CSRF token, no other workflow.
     assert "csrf" not in body.lower()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("definition_id, status", [(READER, 200), (STRANGER, 404)])
+def test_the_mbw_dashboard_reads_only_its_own_monitoring_run_from_the_frame(definition_id, status):
+    from connect_labs.workflow.templates.mbw_monitoring.views import MBWSnapshotView
+
+    run = _run(definition_id, state={"selected_workers": ["w1"], "dashboard_snapshot": {"timestamp": "t"}})
+    with (
+        patch("connect_labs.workflow.templates.mbw_monitoring.session_adapter.WorkflowDataAccess") as A,
+        patch("connect_labs.workflow.data_access.WorkflowDataAccess") as D,
+    ):
+        A.return_value.get_run.return_value = run
+        D.return_value.get_definition.return_value = _definition(COMPANION, id_=READER)
+        request = _req("/custom_analysis/mbw_monitoring/api/snapshot/?session_id=900")
+        response = MBWSnapshotView.as_view()(request)
+    assert response.status_code == status
+
+
+@pytest.mark.django_db
+def test_the_mbw_snapshot_is_saved_only_to_its_own_run_from_the_frame(wda):
+    from connect_labs.workflow.templates.mbw_monitoring.views import MBWSaveSnapshotView
+
+    with patch("connect_labs.workflow.templates.mbw_monitoring.views.WorkflowDataAccess") as V:
+        V.return_value.get_run.return_value = _run(STRANGER)
+        request = _req(
+            "/custom_analysis/mbw_monitoring/api/save-snapshot/",
+            method="post",
+            body={"run_id": 900, "snapshot_data": {}},
+        )
+        response = MBWSaveSnapshotView.as_view()(request)
+    assert response.status_code == 403
