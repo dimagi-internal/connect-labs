@@ -792,17 +792,72 @@
           new ResizeObserver(reportSize).observe(document.documentElement);
 
         // ---------------------------------------------------------------- lifecycle
+        // The agent's ARGUMENTS are what the View can rely on: a host passes the
+        // result on intact only for some paths (canopy's runner path records text, and
+        // for an answer this size that is not the structured result). So the View asks
+        // the same question again as the viewer, and reads the result only as a
+        // fallback for a viewer who cannot call tools.
+        function show(sc) {
+          if (state.result) return;
+          if (!readResult({ structuredContent: sc })) {
+            document.getElementById('app').innerHTML =
+              '<div class="sub">No states to show for this answer.</div>';
+            reportSize();
+            return;
+          }
+          render();
+          run(); // the starting total, for the starting ticks
+        }
+        var agentArgs = null;
+        function askAgain() {
+          if (!state.canAct || !agentArgs || state.result) return;
+          var args = {};
+          [
+            'states',
+            'cost_per_visit',
+            'platform_fee',
+            'dose_rate',
+            'deaths_basis',
+            'ages',
+          ].forEach(function (k) {
+            if (agentArgs[k] != null) args[k] = agentArgs[k];
+          });
+          args.top_n = 1;
+          request('tools/call', { name: RANK_TOOL, arguments: args }).then(
+            function (res) {
+              var sc =
+                res &&
+                !res.isError &&
+                (res.structuredContent || parseText(res));
+              if (sc && sc.recommendation) show(sc);
+              else if (pendingResult) show(pendingResult);
+            },
+            function (err) {
+              if (pendingResult) show(pendingResult);
+              else {
+                document.getElementById('app').innerHTML =
+                  '<div class="sub err">Could not load the states: ' +
+                  esc(err.message) +
+                  '</div>';
+                reportSize();
+              }
+            },
+          );
+        }
+        var pendingResult = null;
+
         var notifications = {
+          'ui/notifications/tool-input': function (params) {
+            if (agentArgs) return;
+            agentArgs = params.arguments || {};
+            askAgain();
+          },
           'ui/notifications/tool-result': function (params) {
-            if (state.result) return; // the agent's answer arrives once
-            if (!readResult(params)) {
-              document.getElementById('app').innerHTML =
-                '<div class="sub">No states to show for this answer.</div>';
-              reportSize();
-              return;
-            }
-            render();
-            run(); // the starting total, for the starting ticks
+            var sc = params && (params.structuredContent || parseText(params));
+            if (sc && sc.recommendation) pendingResult = sc;
+            // A viewer who cannot call tools sees the agent's own answer, if it arrived whole.
+            if (!state.canAct && pendingResult) show(pendingResult);
+            else if (!agentArgs && pendingResult) show(pendingResult);
           },
           'ui/notifications/host-context-changed': function (params) {
             applyHostContext(params);
