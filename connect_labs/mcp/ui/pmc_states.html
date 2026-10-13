@@ -1,0 +1,837 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PMC candidate states</title>
+    <!--
+  ui://labs/pmc-states — an MCP Apps View (SEP-1865, 2026-01-26).
+
+  Rendered by a host (canopy) for a targeting_pmc_rank result. It lists the states
+  the answer considered, each with its multiple of GiveWell's bar on the lower death
+  estimate and the range across both estimates. The viewer ticks states and picks a
+  price; the View re-totals them by calling targeting_pmc_rank AS THE VIEWER, tells
+  the agent what is on screen (ui/update-model-context), and opens the selection in
+  the PMC explorer (ui/open-link, a new tab) or asks the agent about it (ui/message).
+
+  Self-contained on purpose: no network load of any kind. Every call goes to the
+  host over postMessage.
+-->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --color-background-primary: light-dark(#ffffff, #171717);
+        --color-background-secondary: light-dark(#f6f7f9, #222326);
+        --color-text-primary: light-dark(#171717, #f2f2f2);
+        --color-text-secondary: light-dark(#5b6470, #a8b0ba);
+        --color-text-success: light-dark(#1d6b3a, #8fdcaa);
+        --color-text-warning: light-dark(#7a5300, #f3c969);
+        --color-border-primary: light-dark(#d9dde3, #3a3d42);
+        --color-border-secondary: light-dark(#eceff3, #2c2f33);
+        --brand: light-dark(#16006d, #a99bff);
+        --brand-soft: light-dark(#eef2ff, #24204a);
+        --dhs: light-dark(#2c5aa0, #7aa7ff);
+        --map: light-dark(#c26a1e, #f0a560);
+        --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: var(--font-sans);
+        font-size: 13px;
+        line-height: 1.4;
+        color: var(--color-text-primary);
+        background: var(--color-background-primary);
+      }
+      .wrap {
+        padding: 12px;
+      }
+      .head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      .title {
+        font-weight: 600;
+        font-size: 14px;
+      }
+      .sub {
+        color: var(--color-text-secondary);
+        font-size: 12px;
+      }
+      .seg {
+        display: inline-flex;
+        border: 1px solid var(--color-border-primary);
+        border-radius: 999px;
+        overflow: hidden;
+        margin-left: auto;
+      }
+      .seg button {
+        font: inherit;
+        font-size: 12px;
+        padding: 3px 10px;
+        border: 0;
+        background: transparent;
+        color: var(--color-text-primary);
+        cursor: pointer;
+      }
+      .seg button[aria-pressed='true'] {
+        background: var(--brand);
+        color: #fff;
+      }
+      .total {
+        background: var(--brand);
+        color: #fff;
+        border-radius: 10px;
+        padding: 10px 12px;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 2px 14px;
+        align-items: baseline;
+      }
+      .total .x {
+        font-size: 26px;
+        font-weight: 700;
+        grid-row: span 2;
+        font-variant-numeric: tabular-nums;
+      }
+      .total .x.below {
+        color: #ffd38a;
+      }
+      .total .l1 {
+        font-weight: 600;
+      }
+      .total .l2 {
+        opacity: 0.8;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      .total.busy {
+        opacity: 0.6;
+      }
+      .rows {
+        margin-top: 10px;
+        border-top: 1px solid var(--color-border-secondary);
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 18px 92px 1fr 52px;
+        gap: 8px;
+        align-items: center;
+        padding: 6px 2px;
+        border-bottom: 1px solid var(--color-border-secondary);
+        cursor: pointer;
+      }
+      .row:hover {
+        background: var(--color-background-secondary);
+      }
+      .row.off {
+        opacity: 0.5;
+      }
+      .row input {
+        margin: 0;
+        cursor: pointer;
+      }
+      .name {
+        font-weight: 500;
+      }
+      .name .m {
+        display: block;
+        font-weight: 400;
+        font-size: 11px;
+        color: var(--color-text-secondary);
+      }
+      .track {
+        position: relative;
+        height: 16px;
+      }
+      .track .bar6 {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 1px;
+        border-left: 1px dashed var(--color-text-secondary);
+        opacity: 0.6;
+      }
+      .track .rng {
+        position: absolute;
+        top: 7px;
+        height: 2px;
+        background: var(--color-border-primary);
+      }
+      .track .dot {
+        position: absolute;
+        top: 3px;
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        margin-left: -5px;
+      }
+      .dot.dhs {
+        background: var(--dhs);
+      }
+      .dot.map {
+        background: var(--map);
+      }
+      .val {
+        text-align: right;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      .val.below {
+        color: var(--color-text-warning);
+      }
+      .more {
+        font: inherit;
+        font-size: 12px;
+        color: var(--brand);
+        background: none;
+        border: 0;
+        padding: 6px 2px;
+        cursor: pointer;
+      }
+      .legend {
+        display: flex;
+        gap: 12px;
+        margin-top: 6px;
+        font-size: 11px;
+        color: var(--color-text-secondary);
+      }
+      .legend i {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        margin-right: 4px;
+        vertical-align: 0;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .btn {
+        font: inherit;
+        font-weight: 600;
+        font-size: 13px;
+        border-radius: 999px;
+        padding: 6px 14px;
+        cursor: pointer;
+        border: 1px solid var(--brand);
+      }
+      .btn.primary {
+        background: var(--brand);
+        color: #fff;
+      }
+      .btn.ghost {
+        background: transparent;
+        color: var(--brand);
+      }
+      .btn:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .note {
+        margin-top: 8px;
+        font-size: 12px;
+        color: var(--color-text-secondary);
+      }
+      .err {
+        color: var(--color-text-warning);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap" id="app"><div class="sub">Loading…</div></div>
+    <script>
+      (function () {
+        'use strict';
+
+        var RANK_TOOL = 'targeting_pmc_rank';
+        var PROTOCOL_VERSION = '2026-01-26';
+        var PRICES = [0.58, 0.8]; // at scale, at launch (the proposal's)
+        var BAR = 6;
+        var SHOWN = 8;
+
+        // ---------------------------------------------------------------- transport
+        var nextId = 1;
+        var pending = {};
+        function post(message) {
+          window.parent.postMessage(message, '*');
+        }
+        function request(method, params) {
+          var id = nextId++;
+          return new Promise(function (resolve, reject) {
+            pending[id] = { resolve: resolve, reject: reject };
+            post({
+              jsonrpc: '2.0',
+              id: id,
+              method: method,
+              params: params || {},
+            });
+          });
+        }
+        function notify(method, params) {
+          post({ jsonrpc: '2.0', method: method, params: params || {} });
+        }
+        window.addEventListener('message', function (event) {
+          if (event.source !== window.parent) return;
+          var msg = event.data;
+          if (!msg || typeof msg !== 'object' || msg.jsonrpc !== '2.0') return;
+          if (
+            msg.method === undefined &&
+            msg.id !== undefined &&
+            pending[msg.id]
+          ) {
+            var p = pending[msg.id];
+            delete pending[msg.id];
+            if (msg.error)
+              p.reject(
+                new Error((msg.error && msg.error.message) || 'Request failed'),
+              );
+            else p.resolve(msg.result);
+            return;
+          }
+          if (typeof msg.method !== 'string') return;
+          if (msg.id !== undefined) {
+            if (msg.method === 'ui/resource-teardown' || msg.method === 'ping')
+              post({ jsonrpc: '2.0', id: msg.id, result: {} });
+            else
+              post({
+                jsonrpc: '2.0',
+                id: msg.id,
+                error: { code: -32601, message: 'Method not found' },
+              });
+            return;
+          }
+          var handler = notifications[msg.method];
+          if (handler) handler(msg.params || {});
+        });
+
+        // ---------------------------------------------------------------- state
+        var state = {
+          canAct: false,
+          result: null, // the agent's answer: the states, their figures, the recommended schedule
+          rows: [], // {state, months, lower, dhs, map, deaths, spend, clears}
+          on: {}, // ticked states
+          price: null, // cost per visit chosen here
+          basePrice: null, // the price the agent's answer was computed at
+          total: null, // the live re-total for the ticked states
+          busy: false,
+          error: '',
+          showAll: false, // a chat panel is narrow: the best rows and the ticked ones first
+        };
+
+        function esc(v) {
+          return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+            return {
+              '&': '&amp;',
+              '<': '&lt;',
+              '>': '&gt;',
+              '"': '&quot;',
+              "'": '&#39;',
+            }[c];
+          });
+        }
+        function x(n) {
+          return n == null || isNaN(n)
+            ? '—'
+            : (Math.round(n * 10) / 10).toFixed(1) + '×';
+        }
+        function num(n) {
+          return n == null || isNaN(n)
+            ? '—'
+            : Math.round(n).toLocaleString('en-US');
+        }
+        function money(n) {
+          if (n == null || isNaN(n)) return '—';
+          return n >= 1e6
+            ? '$' + (n / 1e6).toFixed(2) + 'M'
+            : '$' + Math.round(n / 1e3) + 'k';
+        }
+        function perDose(visit) {
+          var c = (state.result && state.result.costs) || {};
+          var fee = c.platform_fee == null ? 0.2 : c.platform_fee;
+          var rate = c.dose_rate == null ? 0.95 : c.dose_rate;
+          return (visit * (1 + fee)) / rate;
+        }
+        // Every multiple scales with 1 / price per dose: the deaths do not move, the spend does.
+        function scaled(v) {
+          if (v == null) return null;
+          return (v * perDose(state.basePrice)) / perDose(state.price);
+        }
+        function months(label) {
+          var m = /,\s*([A-Z][a-z]{2}\S*[A-Z][a-z]{2})\s*,/.exec(label || '');
+          return m ? m[1] : '';
+        }
+        function ticked() {
+          return state.rows
+            .filter(function (r) {
+              return state.on[r.state];
+            })
+            .map(function (r) {
+              return r.state;
+            });
+        }
+
+        // ---------------------------------------------------------------- the answer in
+        function readResult(params) {
+          var sc = params && (params.structuredContent || parseText(params));
+          if (!sc || !sc.recommendation) return false;
+          state.result = sc;
+          var reco = sc.recommendation;
+          state.basePrice = (sc.costs && sc.costs.cost_per_visit) || PRICES[1];
+          state.price = state.basePrice;
+          state.rows = (reco.states || [])
+            .map(function (s) {
+              var b = s.by_basis || {};
+              return {
+                state: s.state,
+                months: months(s.design_label),
+                lower: s.multiple_of_benchmark,
+                dhs: b.prevalence_scaled
+                  ? b.prevalence_scaled.multiple_of_benchmark
+                  : null,
+                map: b.map ? b.map.multiple_of_benchmark : null,
+                clears: s.clears_bar && s.clear_effect !== false,
+              };
+            })
+            .sort(function (a, b) {
+              return (b.lower || 0) - (a.lower || 0);
+            });
+          state.on = {};
+          (reco.keep || []).slice(0, 4).forEach(function (n) {
+            state.on[n] = true;
+          });
+          // With no recommendation to keep, start from the four best.
+          if (!ticked().length)
+            state.rows.slice(0, 4).forEach(function (r) {
+              state.on[r.state] = true;
+            });
+          return true;
+        }
+        function parseText(result) {
+          var text = (result.content || [])
+            .map(function (c) {
+              return c && c.text;
+            })
+            .filter(Boolean)
+            .join('');
+          try {
+            return JSON.parse(text);
+          } catch (e) {
+            return null;
+          }
+        }
+
+        // ---------------------------------------------------------------- re-total
+        var timer = null;
+        var seq = 0;
+        function retotal() {
+          clearTimeout(timer);
+          timer = setTimeout(run, 250);
+          state.busy = true;
+          render();
+        }
+        function run() {
+          var names = ticked();
+          if (!names.length) {
+            state.total = null;
+            state.busy = false;
+            render();
+            return;
+          }
+          if (!state.canAct) {
+            state.busy = false;
+            render();
+            return;
+          }
+          var mine = ++seq;
+          var code = state.result.recommendation.design_code;
+          request('tools/call', {
+            name: RANK_TOOL,
+            arguments: {
+              states: names,
+              cost_per_visit: state.price,
+              top_n: 1,
+              ages: state.result.ages || '3_24',
+            },
+          }).then(
+            function (res) {
+              if (mine !== seq) return;
+              var sc = res && (res.structuredContent || parseText(res));
+              if (!sc || res.isError)
+                throw new Error('The model could not answer');
+              var design = (sc.by_design || []).filter(function (d) {
+                return d.design_code === code;
+              })[0];
+              var quarterly = (sc.by_design || []).filter(function (d) {
+                return d.design_code === 'pmc_q4';
+              })[0];
+              state.total = {
+                design: design,
+                quarterly: quarterly,
+                best: sc.recommendation,
+              };
+              state.error = '';
+              state.busy = false;
+              render();
+              tellAgent();
+            },
+            function (err) {
+              if (mine !== seq) return;
+              state.error = err.message;
+              state.busy = false;
+              render();
+            },
+          );
+        }
+
+        // The agent's next answer should be about what is on screen now.
+        function tellAgent() {
+          var t = state.total && state.total.design;
+          if (!t) return;
+          var text =
+            'On the PMC candidate-states card the viewer has ticked ' +
+            ticked().join(', ') +
+            ' at $' +
+            state.price.toFixed(2) +
+            ' a visit: ' +
+            state.result.recommendation.label +
+            ' gives ' +
+            x(t.multiple_of_benchmark) +
+            ' GiveWell on the lower death estimate (DHS-scaled ' +
+            x(
+              t.by_basis &&
+                t.by_basis.prevalence_scaled &&
+                t.by_basis.prevalence_scaled.multiple_of_benchmark,
+            ) +
+            ', MAP ' +
+            x(
+              t.by_basis &&
+                t.by_basis.map &&
+                t.by_basis.map.multiple_of_benchmark,
+            ) +
+            '), ' +
+            num(t.deaths_averted_per_year) +
+            ' deaths a year for ' +
+            money(t.spend_per_year) +
+            '.';
+          request('ui/update-model-context', {
+            content: [{ type: 'text', text: text }],
+            structuredContent: {
+              states: ticked(),
+              cost_per_visit: state.price,
+              total: t,
+            },
+          }).catch(function () {});
+        }
+
+        // ---------------------------------------------------------------- actions
+        function explorerUrl() {
+          var base = state.result && state.result.explorer_url;
+          if (!base || base.indexOf('https://') !== 0) return '';
+          return (
+            base +
+            '?cost_per_visit=' +
+            state.price +
+            '&states=' +
+            encodeURIComponent(ticked().join(','))
+          );
+        }
+        function openExplorer() {
+          var url = explorerUrl();
+          if (url) request('ui/open-link', { url: url }).catch(function () {});
+        }
+        function askAgent() {
+          request('ui/message', {
+            role: 'user',
+            content: {
+              type: 'text',
+              text:
+                'Tell me about ' +
+                ticked().join(', ') +
+                ' at $' +
+                state.price.toFixed(2) +
+                ' a visit: why these, and what changes if I add or drop one?',
+            },
+          }).catch(function () {});
+        }
+
+        // ---------------------------------------------------------------- view
+        function render() {
+          var app = document.getElementById('app');
+          if (!state.result) {
+            app.innerHTML = '<div class="sub">Waiting for the answer…</div>';
+            return;
+          }
+          var reco = state.result.recommendation;
+          var max = BAR;
+          state.rows.forEach(function (r) {
+            max = Math.max(
+              max,
+              scaled(r.dhs) || 0,
+              scaled(r.map) || 0,
+              scaled(r.lower) || 0,
+            );
+          });
+          max = max * 1.05;
+          var pos = function (v) {
+            return Math.max(0, Math.min(100, (v / max) * 100));
+          };
+          var t = state.total && state.total.design;
+          var q = state.total && state.total.quarterly;
+          var names = ticked();
+          var totalHtml = names.length
+            ? '<div class="total' +
+              (state.busy ? ' busy' : '') +
+              '">' +
+              '<div class="x' +
+              (t && t.multiple_of_benchmark < BAR ? ' below' : '') +
+              '">' +
+              (t ? x(t.multiple_of_benchmark) : state.busy ? '…' : '—') +
+              '</div>' +
+              '<div class="l1">' +
+              names.length +
+              (names.length === 1 ? ' state' : ' states') +
+              ' · ' +
+              esc(reco.label) +
+              '</div>' +
+              '<div class="l2">' +
+              (t
+                ? 'DHS ' +
+                  x(
+                    t.by_basis &&
+                      t.by_basis.prevalence_scaled &&
+                      t.by_basis.prevalence_scaled.multiple_of_benchmark,
+                  ) +
+                  ' · MAP ' +
+                  x(
+                    t.by_basis &&
+                      t.by_basis.map &&
+                      t.by_basis.map.multiple_of_benchmark,
+                  ) +
+                  ' · ' +
+                  num(t.deaths_averted_per_year) +
+                  ' deaths/yr · ' +
+                  money(t.spend_per_year) +
+                  '/yr' +
+                  (q ? ' · quarterly ' + x(q.multiple_of_benchmark) : '')
+                : state.canAct
+                  ? 'recalculating…'
+                  : 'open the panel to re-total') +
+              '</div></div>'
+            : '<div class="note">Tick at least one state.</div>';
+          var visible = state.rows.filter(function (r, i) {
+            return state.showAll || i < SHOWN || state.on[r.state];
+          });
+          var more = state.rows.length > visible.length || state.showAll;
+          var rows = visible
+            .map(function (r) {
+              var lower = scaled(r.lower);
+              var dhs = scaled(r.dhs);
+              var map = scaled(r.map);
+              var lo = Math.min(
+                dhs == null ? lower : dhs,
+                map == null ? lower : map,
+              );
+              var hi = Math.max(
+                dhs == null ? lower : dhs,
+                map == null ? lower : map,
+              );
+              return (
+                '<label class="row' +
+                (state.on[r.state] ? '' : ' off') +
+                '">' +
+                '<input type="checkbox" data-state="' +
+                esc(r.state) +
+                '"' +
+                (state.on[r.state] ? ' checked' : '') +
+                ' />' +
+                '<span class="name">' +
+                esc(r.state) +
+                '<span class="m">' +
+                esc(r.months) +
+                '</span></span>' +
+                '<span class="track"><span class="bar6" style="left:' +
+                pos(BAR) +
+                '%"></span>' +
+                '<span class="rng" style="left:' +
+                pos(lo) +
+                '%;width:' +
+                Math.max(0, pos(hi) - pos(lo)) +
+                '%"></span>' +
+                (dhs != null
+                  ? '<span class="dot dhs" style="left:' +
+                    pos(dhs) +
+                    '%" title="DHS-scaled ' +
+                    x(dhs) +
+                    '"></span>'
+                  : '') +
+                (map != null
+                  ? '<span class="dot map" style="left:' +
+                    pos(map) +
+                    '%" title="MAP ' +
+                    x(map) +
+                    '"></span>'
+                  : '') +
+                '</span><span class="val' +
+                (lower < BAR ? ' below' : '') +
+                '">' +
+                x(lower) +
+                '</span></label>'
+              );
+            })
+            .join('');
+          app.innerHTML =
+            '<div class="head"><span class="title">Candidate states</span>' +
+            '<span class="sub">tick to re-total · × GiveWell on the lower death estimate</span>' +
+            '<span class="seg">' +
+            PRICES.map(function (p) {
+              return (
+                '<button type="button" data-price="' +
+                p +
+                '" aria-pressed="' +
+                (Math.abs(p - state.price) < 1e-9) +
+                '">$' +
+                p.toFixed(2) +
+                (p === PRICES[0] ? ' at scale' : ' at launch') +
+                '</button>'
+              );
+            }).join('') +
+            '</span></div>' +
+            totalHtml +
+            '<div class="rows">' +
+            rows +
+            '</div>' +
+            (more && state.rows.length > SHOWN
+              ? '<button type="button" class="more" id="more">' +
+                (state.showAll
+                  ? 'Show fewer'
+                  : 'Show all ' + state.rows.length + ' states') +
+                '</button>'
+              : '') +
+            '<div class="legend"><span><i style="background:var(--dhs)"></i>DHS-scaled</span>' +
+            '<span><i style="background:var(--map)"></i>MAP</span><span>dashed line: GiveWell’s 6× bar</span></div>' +
+            '<div class="actions">' +
+            '<button type="button" class="btn primary" id="open"' +
+            (names.length && explorerUrl() ? '' : ' disabled') +
+            '>Open in PMC explorer ↗</button>' +
+            '<button type="button" class="btn ghost" id="ask"' +
+            (names.length && state.canAct ? '' : ' disabled') +
+            '>Ask the agent about these</button></div>' +
+            (state.error
+              ? '<div class="note err">' + esc(state.error) + '</div>'
+              : '');
+          reportSize();
+        }
+
+        document.addEventListener('change', function (e) {
+          var name =
+            e.target &&
+            e.target.getAttribute &&
+            e.target.getAttribute('data-state');
+          if (!name) return;
+          state.on[name] = !!e.target.checked;
+          retotal();
+        });
+        document.addEventListener('click', function (e) {
+          var t = e.target;
+          if (!t || !t.closest) return;
+          var price = t.closest('[data-price]');
+          if (price) {
+            state.price = parseFloat(price.getAttribute('data-price'));
+            retotal();
+            return;
+          }
+          if (t.closest('#more')) {
+            state.showAll = !state.showAll;
+            render();
+            return;
+          }
+          if (t.closest('#open')) openExplorer();
+          else if (t.closest('#ask')) askAgent();
+        });
+
+        // ---------------------------------------------------------------- theme + size
+        function applyHostContext(ctx) {
+          if (!ctx) return;
+          var root = document.documentElement;
+          var vars = ctx.styles && ctx.styles.variables;
+          if (vars)
+            Object.keys(vars).forEach(function (k) {
+              if (vars[k] != null && k.indexOf('--') === 0)
+                root.style.setProperty(k, String(vars[k]));
+            });
+          if (ctx.theme === 'light' || ctx.theme === 'dark')
+            root.style.colorScheme = ctx.theme;
+          var dims = ctx.containerDimensions;
+          if (dims && dims.maxWidth) root.style.maxWidth = dims.maxWidth + 'px';
+        }
+        var lastSize = '';
+        var initialized = false;
+        function reportSize() {
+          if (!initialized) return;
+          var w = Math.ceil(document.documentElement.scrollWidth);
+          var hgt = Math.ceil(document.documentElement.scrollHeight);
+          var key = w + 'x' + hgt;
+          if (key === lastSize) return;
+          lastSize = key;
+          notify('ui/notifications/size-changed', { width: w, height: hgt });
+        }
+        if (typeof ResizeObserver === 'function')
+          new ResizeObserver(reportSize).observe(document.documentElement);
+
+        // ---------------------------------------------------------------- lifecycle
+        var notifications = {
+          'ui/notifications/tool-result': function (params) {
+            if (state.result) return; // the agent's answer arrives once
+            if (!readResult(params)) {
+              document.getElementById('app').innerHTML =
+                '<div class="sub">No states to show for this answer.</div>';
+              reportSize();
+              return;
+            }
+            render();
+            run(); // the starting total, for the starting ticks
+          },
+          'ui/notifications/host-context-changed': function (params) {
+            applyHostContext(params);
+          },
+        };
+
+        request('ui/initialize', {
+          protocolVersion: PROTOCOL_VERSION,
+          appCapabilities: { availableDisplayModes: ['inline'] },
+          clientInfo: { name: 'labs-pmc-states', version: '1.0.0' },
+        }).then(
+          function (result) {
+            result = result || {};
+            applyHostContext(result.hostContext || {});
+            state.canAct = !!(
+              result.hostCapabilities && result.hostCapabilities.serverTools
+            );
+            notify('ui/notifications/initialized', {});
+            initialized = true;
+            render();
+          },
+          function (err) {
+            document.getElementById('app').innerHTML =
+              '<div class="sub err">Could not start: ' +
+              esc(err.message) +
+              '</div>';
+          },
+        );
+      })();
+    </script>
+  </body>
+</html>

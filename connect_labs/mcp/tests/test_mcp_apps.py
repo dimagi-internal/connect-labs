@@ -162,7 +162,7 @@ def test_the_views_preview_tool_is_app_only():
 
 def test_only_view_tools_carry_ui_meta():
     with_ui = {t["name"] for t in registry_list_tools() if "ui" in (t.get("_meta") or {})}
-    assert with_ui == {"workflow_run_action", "workflow_action_preview_view"}
+    assert with_ui == {"workflow_run_action", "workflow_action_preview_view", "targeting_pmc_rank"}
 
 
 def test_the_views_preview_tool_reads_and_the_commit_writes():
@@ -413,3 +413,57 @@ def test_the_card_previews_from_the_agents_result_not_the_hosts_input_copy():
     assert "out.bot" not in script and "item.prompt" not in script
     # A failed preview says so at the top instead of sitting on "Preparing…".
     assert "prepare this card" in script
+
+
+# ---------------------------------------------------------------------------
+# The PMC candidate-states View
+# ---------------------------------------------------------------------------
+
+
+def _pmc_resource():
+    from connect_labs.mcp.ui import PMC_STATES_URI
+
+    return next(r for r in RESOURCES if r.uri == PMC_STATES_URI)
+
+
+def test_targeting_pmc_rank_is_drawn_as_the_candidate_states_and_callable_by_them():
+    from connect_labs.mcp.ui import PMC_STATES_URI
+
+    _, tools, *_ = _session()
+    # The agent calls it, and the View calls it again as the viewer to re-total a selection.
+    assert tools["targeting_pmc_rank"].meta["ui"] == {"resourceUri": PMC_STATES_URI, "visibility": ["model", "app"]}
+    assert get_tool("targeting_pmc_rank").is_write is False
+
+
+def test_the_candidate_states_view_is_self_contained():
+    resource = _pmc_resource()
+    doc = _Doc()
+    doc.feed(resource.html())
+    for tag, attrs in doc.tags:
+        assert not (tag == "script" and attrs.get("src")), "external script"
+        assert tag not in ("link", "iframe", "object", "embed", "base"), tag
+        assert not (tag == "img" and attrs.get("src")), "a static image"
+    html = resource.html()
+    assert not re.search(r"""(src|href)\s*=\s*["']?https?:""", html)
+    for banned in ("fetch(", "XMLHttpRequest", "WebSocket", "eval(", "new Function"):
+        assert banned not in doc.script, banned
+
+
+def test_the_candidate_states_view_re_totals_as_the_viewer_and_hands_the_selection_on():
+    doc = _Doc()
+    doc.feed(_pmc_resource().html())
+    script = doc.script.replace("'", '"')
+    for method in (
+        '"ui/initialize"',
+        '"ui/notifications/initialized"',
+        '"ui/notifications/tool-result"',
+        '"ui/notifications/size-changed"',
+        '"tools/call"',
+        '"ui/update-model-context"',
+        '"ui/message"',
+        '"ui/open-link"',
+    ):
+        assert method in script, method
+    # It re-totals through the same read-only tool the agent called, and opens only https.
+    assert '"targeting_pmc_rank"' in script
+    assert 'indexOf("https://") !== 0' in script
