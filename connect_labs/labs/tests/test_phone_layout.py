@@ -47,8 +47,10 @@ def test_the_sidenav_is_an_off_canvas_drawer_below_md():
     assert "md:hidden" in toggle
     nav = re.search(r'<div id="labs-sidenav"[^>]*:class="([^"]*)"', html, re.S).group(1)
     # Closed: off screen on a phone, the 64px rail from md up.
-    assert "-translate-x-full md:w-16 md:translate-x-0" in nav
+    assert "-translate-x-full invisible md:visible md:w-16 md:translate-x-0" in nav
     assert 'data-testid="labs-nav-backdrop"' in html
+    # The drawer's own close control is a real, focusable button.
+    assert re.search(r'<button type="button" x-ref="navMenu"', html)
 
 
 def test_present_mode_still_draws_no_shell():
