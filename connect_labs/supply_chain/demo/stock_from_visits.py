@@ -263,9 +263,11 @@ def _protocol(rng, answers, screening) -> None:
 def build_world(start: date, *, weeks: int = WEEKS, seed: int = 7) -> World:
     """Every visit and every issue, deterministically. Pure: no database.
 
-    Each worker is issued stock on week 0's Monday (and RUTF again on week
-    4's), files a Stock Management form the next day, and makes three visits
-    a week (Tuesday, Thursday, Saturday); the first each week is a Screening.
+    A week is seven days from `start`, whatever weekday that is (the seeder
+    picks it so the last week ends yesterday). Each worker is issued stock on
+    week 0's first day (and RUTF again on week 4's), files a Stock Management
+    form the next day, and makes three visits a week (its second, fourth and
+    sixth days); the first each week is a Screening.
     The phone keeps its own RUTF balance and writes it on every visit.
     """
     rng = random.Random(seed)
@@ -289,17 +291,17 @@ def build_world(start: date, *, weeks: int = WEEKS, seed: int = 7) -> World:
         app = Decimal(0)  # the app's own running RUTF balance on this worker's phone
         user_id = world.uuids[username]
         for week in range(weeks):
-            monday = start + timedelta(weeks=week)
+            first_day = start + timedelta(weeks=week)
             status_now = "approved" if week < weeks - 2 else "pending"
             events = []
-            received = rutf_issues.get((monday, username))
+            received = rutf_issues.get((first_day, username))
             if received:
-                events.append((monday + timedelta(days=1), 0, "stock", received, monday))
+                events.append((first_day + timedelta(days=1), 0, "stock", received, first_day))
             if username == OVER_COUNTS and week == 6:
-                thursday = monday + timedelta(days=3)
-                events.append((thursday, 0, "stock", UNRECORDED_RECEIPT, thursday))
+                midweek = first_day + timedelta(days=3)
+                events.append((midweek, 0, "stock", UNRECORDED_RECEIPT, midweek))
             for n in range(3):
-                events.append((monday + timedelta(days=1 + 2 * n), 1, "visit", n, None))
+                events.append((first_day + timedelta(days=1 + 2 * n), 1, "visit", n, None))
             for on, _order, kind, value, received_on in sorted(events, key=lambda e: (e[0], e[1])):
                 visit_id, next_id = next_id, next_id + 1
                 if kind == "stock":
@@ -421,10 +423,6 @@ def rule_data(items: dict, resupply_point_id: int, start: date, *, opportunity_i
     ]
 
 
-def _monday_on_or_before(day: date) -> date:
-    return day - timedelta(days=day.weekday())
-
-
 def _registered():
     """The one labs-only opportunity this seeder owns, made on first use."""
     from connect_labs.labs.synthetic import registry
@@ -466,12 +464,13 @@ def seed(*, drive, reset: bool = False, today: date | None = None) -> dict:
     from connect_labs.supply_chain.stock.services.workers import worker_slug
 
     today = today or timezone.localdate()
-    # The last week's visits (Tuesday, Thursday, Saturday) all fall on or before
-    # today, as close to it as they can: a worker's pace is their last 14 days
-    # (resupply.window_for), and seeded on a Sunday the last visit used to be
-    # eight days back, which left one week of visits in the window and half the
-    # network reading overstocked.
-    start = _monday_on_or_before(today - timedelta(days=5)) - timedelta(weeks=WEEKS - 1)
+    # The last week ends yesterday, whatever weekday today is: a worker's pace
+    # is their last 14 days (resupply.window_for), so the window must hold the
+    # same two full weeks of visits on every day the demo is seeded. Weeks used
+    # to begin on the Monday before, which left six visits in the window when
+    # seeded on a Monday, five on a Tuesday, four by Thursday -- and the partner
+    # store reading overstocked on most days of the week.
+    start = today - timedelta(weeks=WEEKS)
     world = build_world(start)
 
     opp_id = _registered().opportunity_id
@@ -536,27 +535,27 @@ def seed(*, drive, reset: bool = False, today: date | None = None) -> dict:
 
     weeks = []
     for week in range(WEEKS):
-        monday = start + timedelta(weeks=week)
+        first_day = start + timedelta(weeks=week)
         for issue in world.issues:
-            if issue["on"] != monday:
+            if issue["on"] != first_day:
                 continue
             product = BY_SKU[issue["sku"]]
-            op(monday, 8, "distribution_record", data={
+            op(first_day, 8, "distribution_record", data={
                 "supply_point_id": partner["id"], "opportunity_id": opp_id, "commodity_slug": product.slug,
-                "distributed_on": monday.isoformat(), "source": "partner_reported",
+                "distributed_on": first_day.isoformat(), "source": "partner_reported",
                 "lines": [
                     {"connect_username": u, "item_id": items[product.sku]["id"], "quantity": str(q),
                      "quantity_unit": product.base}
                     for u, q in issue["lines"].items() if q
                 ],
             })  # fmt: skip
-        # Each week is read on its Sunday evening, as far as that Sunday, so the
+        # Each week is read on its last evening, as far as that day, so the
         # as-of history walks back through the reads one week at a time.
-        sunday = monday + timedelta(days=6)
-        report = op(sunday, 20, "visit_consumption_ingest", opportunity_id=opp_id, until=sunday.isoformat())
+        last_day = first_day + timedelta(days=6)
+        report = op(last_day, 20, "visit_consumption_ingest", opportunity_id=opp_id, until=last_day.isoformat())
         weeks.append(
             {
-                "week_of": monday.isoformat(),
+                "week_of": first_day.isoformat(),
                 **{k: report[k] for k in ("posted", "estimated", "reversed", "no_answer", "nothing_given")},
                 **{k: report[k] for k in ("balances_recorded", "receipts_recorded")},
                 **{k: len(report[k]) for k in ("unmatched", "unmapped", "unit_refused", "skipped")},
