@@ -399,9 +399,9 @@ jobs:
           echo "Faking +$days days: $faked"
 
       - name: Run tests with the clock moved
-        # Monotonic clocks are left alone: only the calendar is under test, and
-        # faking the monotonic clock makes waits and timeouts misbehave.
-        env:
-          FAKETIME_DONT_FAKE_MONOTONIC: '1'
+        # Leave the monotonic clock faked too (libfaketime's default). With
+        # FAKETIME_DONT_FAKE_MONOTONIC=1 every time.sleep() failed with EINVAL:
+        # Python sleeps to an absolute monotonic deadline, read off the real
+        # clock, which libfaketime's clock_nanosleep then shifts into the past.
         run: |
           faketime -f "+${{ steps.shift.outputs.days }}d" .venv/bin/pytest connect_labs/ -n auto
