@@ -31,6 +31,7 @@ from connect_labs.labs.integrations.connect.api_client import LabsAPIError
 from connect_labs.labs.presentation import is_present_mode
 from connect_labs.tasks.data_access import TaskDataAccess
 from connect_labs.utils.feature_access import can_create_from_template, get_allowed_templates
+from connect_labs.workflow import declared_reads
 from connect_labs.workflow.data_access import (
     PIPELINE_LOAD_VALUES,
     PipelineDataAccess,
@@ -1008,6 +1009,23 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             path=self.request.get_full_path(),
         )
 
+    def _add_page_actions(self, context, definition, scope_qs):
+        """A page's declared actions (workflow/actions.py): the same preview -> confirm ->
+        execute as a run's, within the page's scope instead (``PageScope``). Its
+        buttons call ``actions.runAction`` and the runner's own dialog asks the person.
+        ``actionScope`` is the owner scope the page is read in (an organisation-owned
+        page's is added by PageView)."""
+        from connect_labs.workflow.actions import definition_actions
+
+        offered = [{k: a[k] for k in ("key", "type", "label", "description")} for a in definition_actions(definition)]
+        context["workflow_data"]["actions"] = offered
+        if not offered:
+            return
+        endpoints = context["workflow_data"]["apiEndpoints"]
+        endpoints["actionBase"] = f"/labs/workflow/api/{definition.id}/page-actions/"
+        endpoints["actionExecutionBase"] = "/labs/workflow/api/actions/executions/"
+        endpoints["actionScope"] = scope_qs
+
     def _sandbox_workflow_data(self, context, definition, scope, labs_context, page):
         """A sandboxed page: what the host runner needs to draw the frame. A page gets
         what a workflow gets (pipelines, workers, the same bridge) except a run. If the
@@ -1148,9 +1166,16 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             # Whether this render runs in the page sandbox (workflow/sandbox.py): decided
             # ONCE, here, from the consuming definition's own kind, on every route that
             # draws it (a page's address, its run URL, edit mode, present mode, a supply tab).
+            from connect_labs.workflow.render_source import resolve_render_code
             from connect_labs.workflow.sandbox import should_sandbox
 
-            sandboxed = should_sandbox(definition, page_mode=self.page_mode, request=self.request)
+            # The code this render draws (resolved below as before): the sandbox's only
+            # exemption, a pinned deprecated copy under `all`, holds only for code labs
+            # shipped (sandbox.deprecated_exempt).
+            resolved_render = resolve_render_code(data_access, definition)
+            sandboxed = should_sandbox(
+                definition, page_mode=self.page_mode, request=self.request, render_code=resolved_render[0]
+            )
             context["sandboxed"] = sandboxed
             # A page and a workflow are handed the same data and the same bridge
             # (Jonathan, 2026-10-12: "pages should be completely definable like workflows
@@ -1176,9 +1201,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             # environment, including labs.connect.dimagi.com).
             # ...unless the workflow FOLLOWS its template (render_source), in which case
             # the deployed template's code is the render -- see workflow/render_source.py.
-            from connect_labs.workflow.render_source import resolve_render_code
-
-            context["render_code"], context["render_source"] = resolve_render_code(data_access, definition)
+            context["render_code"], context["render_source"] = resolved_render
 
             # Determine effective opportunity list. Program-owned runs have no
             # owning opportunity — the opps come from the definition's
@@ -1493,11 +1516,20 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
 
                 workflow_data["sandbox"] = host_payload(self.request, mode="workflow")
                 workflow_data["mapboxToken"] = settings.MAPBOX_TOKEN or ""
+            if workflow_data.get("sandbox"):
+                # The other workflows whose runs this one declares it reads: the host
+                # binds a definition named in a frame's request to these, and the
+                # server binds a run to them by its definition (declared_reads.py).
+                workflow_data["sandbox"]["readable_definitions"] = sorted(
+                    declared_reads.readable_definition_ids(definition)
+                )
 
             # Not in edit mode (no real run), not a page (no run either), and not on a
             # presentation link: a page shared with a funder carries no actions and no agent.
             if not is_edit_mode and not page and not context["present_mode"]:
                 self._add_actions_and_agent(context, definition, run_data, workers)
+            elif page and not context["present_mode"]:
+                self._add_page_actions(context, definition, run_scope_qs)
 
         except LabsAPIError as e:
             # A 404 here means the scoped opportunity fetch was rejected — the
@@ -2426,6 +2458,9 @@ def preview_snapshot_api(request, run_id):
         run = data_access.get_run(run_id, program_hint=_run_program_hint(request))
         if not run:
             return JsonResponse({"error": "Run not found"}, status=404)
+        no = declared_reads.run_refusal(request, run)
+        if no is not None:
+            return no
         if run.is_completed and run.snapshot:
             return JsonResponse({"source": "stored", "snapshot": run.snapshot, "cache": None})
 
@@ -3010,6 +3045,9 @@ def run_history_api(request, definition_id):
     from connect_labs.workflow.run_snapshot_store import snapshot_state
     from connect_labs.workflow.snapshot_runtime import project_state
 
+    no = declared_reads.refusal(request, definition_id)
+    if no is not None:
+        return no
     keys = [k.strip() for k in (request.GET.get("keys") or "").split(",") if k.strip()]
     if not keys:
         return JsonResponse({"error": "keys is required: comma-separated paths under the snapshot state"}, status=400)
@@ -3172,6 +3210,9 @@ def get_run_api(request, run_id):
         data_access = WorkflowDataAccess(request=request)
         run = data_access.get_run(run_id, program_hint=_run_program_hint(request))
 
+        no = declared_reads.run_refusal(request, run) if run else None
+        if no is not None:
+            return no
         if run:
             return JsonResponse(
                 {
@@ -3207,6 +3248,9 @@ def get_snapshot_api(request, run_id):
         run = data_access.get_run(run_id)
         if not run:
             return JsonResponse({"error": "Run not found"}, status=404)
+        no = declared_reads.run_refusal(request, run)
+        if no is not None:
+            return no
         return JsonResponse(
             {
                 "has_snapshot": bool(run.snapshot),
@@ -3921,6 +3965,9 @@ def semantic_explain_api(request, definition_id):
     from connect_labs.semantic.workflow_binding import resolve_registry_for
     from connect_labs.workflow.data_access import SemanticRegistryDataAccess
 
+    no = declared_reads.refusal(request, definition_id)
+    if no is not None:
+        return no
     fmt = (request.GET.get("format") or "json").strip().lower()
     scope = (request.GET.get("scope") or "programme").strip() or "programme"
     wanted = [i.strip() for i in (request.GET.get("indicators") or "").split(",") if i.strip()]
@@ -4050,6 +4097,9 @@ def semantic_indicators_api(request, definition_id):
     from connect_labs.semantic.workflow_binding import resolve_registry_for
     from connect_labs.workflow.data_access import SemanticRegistryDataAccess
 
+    no = declared_reads.refusal(request, definition_id)
+    if no is not None:
+        return no
     series = (request.GET.get("series") or "").strip() or None
     scopes = [s for s in (request.GET.get("scopes") or "").split(",") if s.strip()]
     # `as_of` is spliced into SQL as a date literal, so only a date may pass: an
@@ -5187,10 +5237,32 @@ def start_job_api(request, run_id):
 
         if not job_config:
             return JsonResponse({"error": "job_config required"}, status=400)
+        # Every job handler acts on job_config["run_id"]: it is the run in the URL, the
+        # one the checks below (and the sandbox's route table) were made against.
+        named_run = job_config.get("run_id")
+        if named_run not in (None, "") and str(named_run) != str(run_id):
+            return JsonResponse({"error": "job_config.run_id must be the run this job is started on"}, status=400)
+        job_config["run_id"] = run_id
 
         access_token = request.session.get("labs_oauth", {}).get("access_token")
         if not access_token:
             return JsonResponse({"error": "Not authenticated"}, status=401)
+
+        # A rollup started from the sandbox reads the watched sources in the run's
+        # state, which the frame can write: they must be declared (declared_reads).
+        if declared_reads.reader(request) is not None and job_config.get("job_type") in (
+            declared_reads.WATCHED_SOURCE_JOBS
+        ):
+            reader_access = WorkflowDataAccess(request=request)
+            try:
+                own_run = reader_access.get_run(run_id, program_hint=_run_program_hint(request))
+            finally:
+                reader_access.close()
+            if own_run is None:
+                return JsonResponse({"error": "Run not found"}, status=404)
+            no = declared_reads.refuse_job(request, own_run, job_config)
+            if no is not None:
+                return no
 
         # Dispatch scope: a PROGRAM-owned workflow's run has a program FK and NO
         # owning opportunity, so its job must be dispatched program-scoped. An
@@ -5636,6 +5708,9 @@ def read_active_job(request, run_id):
         finally:
             data_access.close()
         if not run:
+            return None
+        if declared_reads.run_refusal(request, run) is not None:
+            # The sandbox reads only the jobs of runs its workflow declares.
             return None
         return (run.data.get("state", {}) or {}).get("active_job", {}) or {}
     except Exception:
@@ -6323,7 +6398,7 @@ def prev_categories_api(request):
     """
     try:
         wf_access = WorkflowDataAccess(request=request)
-        runs = wf_access.list_runs()
+        runs = declared_reads.filter_runs(request, wf_access.list_runs())
         wf_access.close()
 
         candidates = [r for r in runs if r.is_completed and (r.data.get("state") or {}).get("worker_results")]
@@ -6348,7 +6423,7 @@ def run_category_history_api(request):
     """
     try:
         wf_access = WorkflowDataAccess(request=request)
-        runs = wf_access.list_runs()
+        runs = declared_reads.filter_runs(request, wf_access.list_runs())
         wf_access.close()
 
         # Only include completed runs — in-progress runs may have partial/test categories
@@ -6409,6 +6484,9 @@ def flw_audit_report_history_api(request):
         definition_id = int(definition_id)
     except (TypeError, ValueError):
         return JsonResponse({"error": "definition_id must be an integer"}, status=400)
+    no = declared_reads.refusal(request, definition_id)
+    if no is not None:
+        return no
 
     try:
         wf_access = WorkflowDataAccess(request=request)
@@ -6461,6 +6539,9 @@ def flw_daily_indicator_history_api(request):
         definition_id = int(definition_id)
     except (TypeError, ValueError):
         return JsonResponse({"error": "definition_id must be an integer"}, status=400)
+    no = declared_reads.refusal(request, definition_id)
+    if no is not None:
+        return no
 
     try:
         wf_access = WorkflowDataAccess(request=request)
@@ -6513,6 +6594,9 @@ def flw_daily_summary_history_api(request):
         definition_id = int(definition_id)
     except (TypeError, ValueError):
         return JsonResponse({"error": "definition_id must be an integer"}, status=400)
+    no = declared_reads.refusal(request, definition_id)
+    if no is not None:
+        return no
 
     try:
         wf_access = WorkflowDataAccess(request=request)
@@ -6553,7 +6637,7 @@ def open_run_state_api(request):
     """
     try:
         wf_access = WorkflowDataAccess(request=request)
-        runs = wf_access.list_runs()
+        runs = declared_reads.filter_runs(request, wf_access.list_runs())
         wf_access.close()
 
         runs_with_data = [r for r in runs if (r.data.get("state") or {}).get("worker_results")]

@@ -316,7 +316,17 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
     const SCALE_CHECK_TAG = 'kmc_scale_check';
     const SCALE_CHECK_PHOTOS = 8;
 
-    const allOppIds = Object.keys(OPP_META).map(s => parseInt(s, 10)).sort((a, b) => a - b);
+    // The opportunities this workflow audits are ITS OWN (opportunity_ids, set when it was
+    // created or with workflow_update_opportunity_ids). config.opp_meta only describes them
+    // -- LLO, country, scale hardware -- and cannot add one: an opportunity named there but
+    // not among the workflow's own is offered nowhere (and in the sandbox its reads would be
+    // refused), so it is listed under the picker with how to add it.
+    const ownOppIds = ((instance && instance.opportunity_ids) || definition.opportunity_ids
+        || (instance && instance.opportunity_id ? [instance.opportunity_id] : []))
+        .map(n => parseInt(n, 10)).filter(n => n > 0);
+    const metaOppIds = Object.keys(OPP_META).map(s => parseInt(s, 10)).sort((a, b) => a - b);
+    const allOppIds = metaOppIds.filter(id => ownOppIds.indexOf(id) >= 0);
+    const undeclaredOppIds = metaOppIds.filter(id => ownOppIds.indexOf(id) < 0);
     const meta = (id) => OPP_META[String(id)] || {};
     const oppLabel = (id) => {
         const m = meta(id);
@@ -327,7 +337,9 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
 
     // ── Selection + window ────────────────────────────────────────────────────
     const runState = (view && view.state) || instance.state || {};
-    const [selected, setSelected] = React.useState(runState.selected_opps || []);
+    // A run saved before the rule above may name an opportunity that is no longer offered.
+    const [selected, setSelected] = React.useState(
+        (runState.selected_opps || []).filter(id => allOppIds.indexOf(Number(id)) >= 0));
     const [datePreset, setDatePreset] = React.useState(runState.date_preset || 'last_week');
     const [startDate, setStartDate] = React.useState(runState.window_start || '');
     const [endDate, setEndDate] = React.useState(runState.window_end || '');
@@ -1414,6 +1426,15 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
                             </div>
                         ))}
                     </div>
+                    {undeclaredOppIds.length ? (
+                        <div className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2"
+                            data-testid="kmc-undeclared-opps">
+                            Not offered: {undeclaredOppIds.map(id => (meta(id).llo || 'Opportunity') + ' #' + id).join(', ')}.
+                            {' '}This workflow's config describes {undeclaredOppIds.length === 1 ? 'it' : 'them'}, but{' '}
+                            {undeclaredOppIds.length === 1 ? 'it is' : 'they are'} not among the workflow's own opportunities.
+                            {' '}Add {undeclaredOppIds.length === 1 ? 'it' : 'them'} to the workflow's opportunities to audit {undeclaredOppIds.length === 1 ? 'it' : 'them'} here.
+                        </div>
+                    ) : null}
                 </div>
 
                 {/* Agent routing */}

@@ -65,6 +65,18 @@ urlpatterns = [
         name="api_action_preview",
     ),
     path("api/run/<int:run_id>/actions/<slug:key>/run/", action_views.action_run_api, name="api_action_run"),
+    # A page's declared actions: the same two steps, within the page's scope (a page
+    # has no run; actions.PageScope).
+    path(
+        "api/<int:definition_id>/page-actions/<slug:key>/preview/",
+        action_views.page_action_preview_api,
+        name="api_page_action_preview",
+    ),
+    path(
+        "api/<int:definition_id>/page-actions/<slug:key>/run/",
+        action_views.page_action_run_api,
+        name="api_page_action_run",
+    ),
     path(
         "api/actions/executions/<int:execution_id>/",
         action_views.action_execution_api,

@@ -224,8 +224,12 @@ class PageView(WorkflowRunView):
         # (The owner is a slug: the middleware turns `?organization_id=<slug>` into its id.)
         if org and not (self.page_owner.get("program_id") or self.page_owner.get("opportunity_id")):
             for key, url in list(endpoints.items()):
+                if key in ("actionBase", "actionExecutionBase"):
+                    continue  # bases the dialog appends to; the scope is `actionScope`
                 if isinstance(url, str) and url.startswith("/labs/workflow/api/"):
                     endpoints[key] = url + ("&" if "?" in url else "?") + f"organization_id={org}"
+            if endpoints.get("actionBase") and not endpoints.get("actionScope"):
+                endpoints["actionScope"] = f"?organization_id={org}"
         return context
 
     def _add_page_manager_links(self, context, definition, tree) -> None:
