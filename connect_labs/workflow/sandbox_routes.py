@@ -42,8 +42,8 @@ ROUTES: tuple[Route, ...] = (
     # Reads: workflow runs, history, indicators
     Route(GET, r"^/labs/workflow/api/run/(\d+)/$", "read"),
     Route(GET, r"^/labs/workflow/api/run/(\d+)/snapshot/(preview/)?$", "read"),
-    Route(GET, r"^/labs/workflow/api/(\d+)/runs/history/$", "read"),
-    Route(GET, r"^/labs/workflow/api/(\d+)/(indicator-definitions|semantic)/$", "read"),
+    Route(GET, r"^/labs/workflow/api/(?<rel>\d+)/runs/history/$", "read"),
+    Route(GET, r"^/labs/workflow/api/(?<rel>\d+)/(indicator-definitions|semantic)/$", "read"),
     Route(GET, r"^/labs/workflow/api/run/(?<run>\d+)/flags/list/$", "read"),
     Route(
         GET,
