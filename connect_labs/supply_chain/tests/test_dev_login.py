@@ -34,6 +34,25 @@ def test_it_refuses_rather_than_creating_a_user():
     assert not get_user_model().objects.filter(username=DEV_USERNAME).exists()
 
 
+@override_settings(DEBUG=True)
+@pytest.mark.parametrize(
+    "username,email",
+    [
+        ("someone", "someone@example.org"),  # not a seeded handle
+        ("dev-someone", "someone@example.org"),  # a seeded handle, but a real-looking address
+    ],
+)
+def test_as_signs_in_only_a_seeded_example_user(username, email):
+    """`?as=` exists to walk Supply as a seeded organisation's admin (#2458).
+    Both halves must hold -- the `dev-` handle AND a `.example` address -- so
+    DEBUG left on somewhere real cannot sign in a real account by name."""
+    from django.contrib.auth import get_user_model
+
+    get_user_model().objects.create(username=username, email=email)
+    with pytest.raises(Http404):
+        dev_login(RequestFactory().get("/supply/dev-login/", {"as": username}))
+
+
 # There is deliberately no test for the OTHER guard -- that the URL is only
 # registered when DEBUG. The URLconf is built at import time, so whatever
 # DEBUG was when the process started is what decided it, and a test cannot

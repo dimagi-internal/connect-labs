@@ -89,3 +89,34 @@ per-week reader summary.
 A second run without `--reset` changes nothing. `--reset` purges this
 programme's supply data and history (allowed only for a registered labs-only
 programme) and seeds it again with a fresh fixture folder, dated from today.
+
+# Organisations that run their own procurement (#2458)
+
+`manage.py supply_seed_org_procurement {oes,llo} [--local-admin]` registers a
+labs-only programme, **declares the organisation that runs it** before anything
+else is written, and seeds its sourcing and orders through the ordinary
+operations. Dimagi plays no part in either; its people see them read-only, and
+platform support (Django staff) can act for them. `org_procurement.py` says why
+each was chosen:
+
+- **`oes`**: Operation End Starvation as a _pooled buyer_. It tenders RUTF to
+  producers, compares landed cost, awards and orders as buyer of record, and
+  delivers into the store its implementers draw from. This is the
+  `clone_upstream` chain, bought by its running organisation.
+- **`llo`**: an invented Kenyan community-health LLO, Kilele, buying its own
+  chlorine tablets and ORS/zinc for a safe-water opportunity from local
+  distributors. It is an implementer rather than a funder, buys small rather
+  than pooled, from local distributors rather than international producers,
+  in a different country and basket.
+
+Each organisation is a labs-only row under a fixed key the seeder owns
+(`labs-synthetic-demo-oes`, `labs-synthetic-demo-llo`). The seeder refuses an
+opportunity with the same label that is filed under any other organisation.
+Visibility is the organisation's own `.example` domain plus Dimagi's.
+
+On labs, run it without `--local-admin`. The organisation's real admin is then
+added by platform support (an `OrgMembership` granted for the organisation),
+because a running organisation takes no invitations. Locally, `--local-admin`
+also makes `dev-oes-admin` / `dev-kilele-admin` (a `.example` address with no
+usable password; DEBUG only). `/supply/dev-login/?as=dev-oes-admin` signs in as
+that admin, so you can walk Supply as someone who is not Dimagi.
