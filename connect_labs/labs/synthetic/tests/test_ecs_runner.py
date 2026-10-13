@@ -215,3 +215,17 @@ def test_on_its_own_machine_a_cohort_profiles_in_parallel_into_one_store(monkeyp
     assert {p.name for p in tmp_path.iterdir()} >= {"1", "2"}
     # The last report says every opportunity is accounted for.
     assert progress.call_args.args[:2] == (3, 3)
+
+
+def test_run_job_finds_a_task_whose_module_nothing_has_imported_yet():
+    """A bare manage.py process has not autodiscovered tasks; run_job imports the task's module itself."""
+    name = "connect_labs.labs.synthetic.tasks.run_synthetic_clone_profile"
+    cache.set("synthetic:ecs-job:job-7", {"task": name, "kwargs": {}}, 60)
+    real = tasks.celery_app.tasks[name]
+    with (
+        mock.patch.object(real, "run", return_value="ok"),
+        mock.patch.object(tasks.celery_app.backend, "store_result"),
+        mock.patch("importlib.import_module") as imp,
+    ):
+        assert ecs_runner.run_job("job-7") == "ok"
+    imp.assert_called_once_with("connect_labs.labs.synthetic.tasks")

@@ -181,6 +181,15 @@ def run_job(job_id: str) -> Any:
     payload = cache.get(_payload_key(job_id))
     if not payload:
         raise RuntimeError(f"No arguments stored for synthetic job {job_id}; it may have expired.")
+    # A bare `manage.py` process has not autodiscovered the task modules (only a
+    # Celery worker does), so the registry does not know the task until its module
+    # is imported -- the first job run here died on a KeyError for exactly that.
+    import importlib
+
+    try:
+        importlib.import_module(payload["task"].rsplit(".", 1)[0])
+    except ImportError:
+        pass  # not a module path; the lookup below says what is missing
     task = celery_app.tasks[payload["task"]]
     # The task's container sets this already; set it for the body's duration either
     # way, so the body runs here rather than launching another task.
