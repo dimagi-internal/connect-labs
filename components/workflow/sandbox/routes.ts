@@ -11,7 +11,11 @@
  *
  * - `read`: the endpoint only reads. The server checks the viewer's access as it
  *   always has. Routes whose path names an opportunity, a program, this workflow
- *   or this run are BOUND: the id must be one the workflow itself covers.
+ *   or this run are BOUND: the id must be one the workflow itself covers. Reads of
+ *   ANOTHER workflow's runs are bound to the workflows this one DECLARES
+ *   (workflow/declared_reads.py): a definition named in the path or the query here,
+ *   and a run by its definition on the server, which knows the request is the
+ *   frame's from the `X-Labs-Sandbox-For` header the host stamps on it.
  * - `own`: a write to this run's or this workflow's own record (its state, its
  *   flags, its name). Bound to this run / definition, no question asked: render
  *   code makes these as the person works (and some from effects).
@@ -174,6 +178,10 @@ export interface RouteContext {
   programIds: number[];
   /** The organisation in view (a page's scope), by slug. */
   organizationKey: string | null;
+  /** The definitions whose runs this one declares it reads (itself included):
+   * `workflow_sources`, a companion's report, watched sources, `read_workflows`.
+   * From the server (declared_reads.readable_definition_ids). */
+  readableDefinitionIds: number[];
   /** Jobs this run is running or this host started: the only ones it may cancel.
    * The host adds to it as it starts jobs. */
   jobIds: string[];
@@ -196,12 +204,17 @@ export interface CheckedRequest {
   recordId?: string;
   /** A job start: the host remembers the job it started. */
   startsJob?: boolean;
+  /** Stamped on the request as `X-Labs-Sandbox-For`: the definition it is made for,
+   * so the server binds the runs it reads to the ones that definition declares. */
+  sandboxFor: string;
 }
 
 const ID = '(\\d+)';
 const RUN = '(?<run>\\d+)';
 const DEF = '(?<def>\\d+)';
 const OPP = '(?<opp>\\d+)';
+/** Another definition whose runs are read: one this workflow declares. */
+const REL = '(?<rel>\\d+)';
 const PROG = '(?<prog>\\d+)';
 const TOKEN = '([A-Za-z0-9_.:-]+)';
 /** A job's token, bound to the jobs this run has (`ownJob`). */
@@ -220,21 +233,24 @@ function p(source: string): RegExp {
 
 export const ROUTES: readonly Route[] = [
   // --- Reads: workflow runs, history, indicators -------------------------------
+  // A run by id: the server binds it to a definition this workflow declares
+  // (declared_reads.py, from the X-Labs-Sandbox-For header the host stamps).
   { methods: GET, gate: 'read', path: p(`/labs/workflow/api/run/${ID}/`) },
   {
     methods: GET,
     gate: 'read',
     path: p(`/labs/workflow/api/run/${ID}/snapshot/(preview/)?`),
   },
+  // Another workflow's history and indicators: one this workflow declares.
   {
     methods: GET,
     gate: 'read',
-    path: p(`/labs/workflow/api/${ID}/runs/history/`),
+    path: p(`/labs/workflow/api/${REL}/runs/history/`),
   },
   {
     methods: GET,
     gate: 'read',
-    path: p(`/labs/workflow/api/${ID}/(indicator-definitions|semantic)/`),
+    path: p(`/labs/workflow/api/${REL}/(indicator-definitions|semantic)/`),
   },
   {
     methods: GET,
@@ -462,6 +478,10 @@ const SCOPE_PARAMS = {
   organization_id: 'org',
 } as const;
 
+/** Other query parameters bound like a path id (the history endpoints name the
+ * workflow they read with `?definition_id=`). */
+const BOUND_PARAMS = { definition_id: 'rel' } as const;
+
 export class RouteError extends Error {}
 
 function bound(name: string, value: string, ctx: RouteContext): boolean {
@@ -476,6 +496,11 @@ function bound(name: string, value: string, ctx: RouteContext): boolean {
       return ctx.runId !== null && ctx.runId > 0 && n === ctx.runId;
     case 'def':
       return ctx.definitionId !== null && n === ctx.definitionId;
+    case 'rel':
+      return (
+        (ctx.definitionId !== null && n === ctx.definitionId) ||
+        (ctx.readableDefinitionIds || []).includes(n)
+      );
     case 'opp':
       return ctx.opportunityIds.includes(n);
     case 'prog':
@@ -491,6 +516,7 @@ const NOUNS: Record<string, string> = {
   org: 'an organization',
   run: 'a run',
   def: 'a workflow',
+  rel: 'a workflow',
   job: 'a job',
 };
 
@@ -554,7 +580,10 @@ export function checkFetch(
   // included: the context middleware both answers in that scope and saves it to
   // the viewer's session, so an unbound one would read another scope and move the
   // viewer's other tabs into it.
-  for (const [param, name] of Object.entries(SCOPE_PARAMS)) {
+  for (const [param, name] of Object.entries({
+    ...SCOPE_PARAMS,
+    ...BOUND_PARAMS,
+  })) {
     for (const value of parsed.searchParams.getAll(param)) {
       if (!bound(name, value, ctx)) {
         throw new RouteError(
@@ -593,6 +622,10 @@ export function checkFetch(
     perRecord: route.perRecord === true,
     recordId: groups.rec,
     startsJob: /\/job\/start\/$/.test(path),
+    sandboxFor:
+      ctx.definitionId !== null && Number.isSafeInteger(ctx.definitionId)
+        ? String(ctx.definitionId)
+        : 'none',
   };
 }
 

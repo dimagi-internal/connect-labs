@@ -31,6 +31,7 @@ from connect_labs.labs.integrations.connect.api_client import LabsAPIError
 from connect_labs.labs.presentation import is_present_mode
 from connect_labs.tasks.data_access import TaskDataAccess
 from connect_labs.utils.feature_access import can_create_from_template, get_allowed_templates
+from connect_labs.workflow import declared_reads
 from connect_labs.workflow.data_access import (
     PIPELINE_LOAD_VALUES,
     PipelineDataAccess,
@@ -1493,6 +1494,13 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
 
                 workflow_data["sandbox"] = host_payload(self.request, mode="workflow")
                 workflow_data["mapboxToken"] = settings.MAPBOX_TOKEN or ""
+            if workflow_data.get("sandbox"):
+                # The other workflows whose runs this one declares it reads: the host
+                # binds a definition named in a frame's request to these, and the
+                # server binds a run to them by its definition (declared_reads.py).
+                workflow_data["sandbox"]["readable_definitions"] = sorted(
+                    declared_reads.readable_definition_ids(definition)
+                )
 
             # Not in edit mode (no real run), not a page (no run either), and not on a
             # presentation link: a page shared with a funder carries no actions and no agent.
@@ -2426,6 +2434,9 @@ def preview_snapshot_api(request, run_id):
         run = data_access.get_run(run_id, program_hint=_run_program_hint(request))
         if not run:
             return JsonResponse({"error": "Run not found"}, status=404)
+        no = declared_reads.run_refusal(request, run)
+        if no is not None:
+            return no
         if run.is_completed and run.snapshot:
             return JsonResponse({"source": "stored", "snapshot": run.snapshot, "cache": None})
 
@@ -3010,6 +3021,9 @@ def run_history_api(request, definition_id):
     from connect_labs.workflow.run_snapshot_store import snapshot_state
     from connect_labs.workflow.snapshot_runtime import project_state
 
+    no = declared_reads.refusal(request, definition_id)
+    if no is not None:
+        return no
     keys = [k.strip() for k in (request.GET.get("keys") or "").split(",") if k.strip()]
     if not keys:
         return JsonResponse({"error": "keys is required: comma-separated paths under the snapshot state"}, status=400)
@@ -3172,6 +3186,9 @@ def get_run_api(request, run_id):
         data_access = WorkflowDataAccess(request=request)
         run = data_access.get_run(run_id, program_hint=_run_program_hint(request))
 
+        no = declared_reads.run_refusal(request, run) if run else None
+        if no is not None:
+            return no
         if run:
             return JsonResponse(
                 {
@@ -3207,6 +3224,9 @@ def get_snapshot_api(request, run_id):
         run = data_access.get_run(run_id)
         if not run:
             return JsonResponse({"error": "Run not found"}, status=404)
+        no = declared_reads.run_refusal(request, run)
+        if no is not None:
+            return no
         return JsonResponse(
             {
                 "has_snapshot": bool(run.snapshot),
@@ -3921,6 +3941,9 @@ def semantic_explain_api(request, definition_id):
     from connect_labs.semantic.workflow_binding import resolve_registry_for
     from connect_labs.workflow.data_access import SemanticRegistryDataAccess
 
+    no = declared_reads.refusal(request, definition_id)
+    if no is not None:
+        return no
     fmt = (request.GET.get("format") or "json").strip().lower()
     scope = (request.GET.get("scope") or "programme").strip() or "programme"
     wanted = [i.strip() for i in (request.GET.get("indicators") or "").split(",") if i.strip()]
@@ -4050,6 +4073,9 @@ def semantic_indicators_api(request, definition_id):
     from connect_labs.semantic.workflow_binding import resolve_registry_for
     from connect_labs.workflow.data_access import SemanticRegistryDataAccess
 
+    no = declared_reads.refusal(request, definition_id)
+    if no is not None:
+        return no
     series = (request.GET.get("series") or "").strip() or None
     scopes = [s for s in (request.GET.get("scopes") or "").split(",") if s.strip()]
     # `as_of` is spliced into SQL as a date literal, so only a date may pass: an
@@ -5192,6 +5218,22 @@ def start_job_api(request, run_id):
         if not access_token:
             return JsonResponse({"error": "Not authenticated"}, status=401)
 
+        # A rollup started from the sandbox reads the watched sources in the run's
+        # state, which the frame can write: they must be declared (declared_reads).
+        if declared_reads.reader(request) is not None and job_config.get("job_type") in (
+            declared_reads.WATCHED_SOURCE_JOBS
+        ):
+            reader_access = WorkflowDataAccess(request=request)
+            try:
+                own_run = reader_access.get_run(run_id, program_hint=_run_program_hint(request))
+            finally:
+                reader_access.close()
+            if own_run is None:
+                return JsonResponse({"error": "Run not found"}, status=404)
+            no = declared_reads.refuse_job(request, own_run, job_config)
+            if no is not None:
+                return no
+
         # Dispatch scope: a PROGRAM-owned workflow's run has a program FK and NO
         # owning opportunity, so its job must be dispatched program-scoped. An
         # opp-owned run is dispatched opp-scoped. Read both signals from the
@@ -6323,7 +6365,7 @@ def prev_categories_api(request):
     """
     try:
         wf_access = WorkflowDataAccess(request=request)
-        runs = wf_access.list_runs()
+        runs = declared_reads.filter_runs(request, wf_access.list_runs())
         wf_access.close()
 
         candidates = [r for r in runs if r.is_completed and (r.data.get("state") or {}).get("worker_results")]
@@ -6348,7 +6390,7 @@ def run_category_history_api(request):
     """
     try:
         wf_access = WorkflowDataAccess(request=request)
-        runs = wf_access.list_runs()
+        runs = declared_reads.filter_runs(request, wf_access.list_runs())
         wf_access.close()
 
         # Only include completed runs — in-progress runs may have partial/test categories
@@ -6409,6 +6451,9 @@ def flw_audit_report_history_api(request):
         definition_id = int(definition_id)
     except (TypeError, ValueError):
         return JsonResponse({"error": "definition_id must be an integer"}, status=400)
+    no = declared_reads.refusal(request, definition_id)
+    if no is not None:
+        return no
 
     try:
         wf_access = WorkflowDataAccess(request=request)
@@ -6461,6 +6506,9 @@ def flw_daily_indicator_history_api(request):
         definition_id = int(definition_id)
     except (TypeError, ValueError):
         return JsonResponse({"error": "definition_id must be an integer"}, status=400)
+    no = declared_reads.refusal(request, definition_id)
+    if no is not None:
+        return no
 
     try:
         wf_access = WorkflowDataAccess(request=request)
@@ -6513,6 +6561,9 @@ def flw_daily_summary_history_api(request):
         definition_id = int(definition_id)
     except (TypeError, ValueError):
         return JsonResponse({"error": "definition_id must be an integer"}, status=400)
+    no = declared_reads.refusal(request, definition_id)
+    if no is not None:
+        return no
 
     try:
         wf_access = WorkflowDataAccess(request=request)
@@ -6553,7 +6604,7 @@ def open_run_state_api(request):
     """
     try:
         wf_access = WorkflowDataAccess(request=request)
-        runs = wf_access.list_runs()
+        runs = declared_reads.filter_runs(request, wf_access.list_runs())
         wf_access.close()
 
         runs_with_data = [r for r in runs if (r.data.get("state") or {}).get("worker_results")]

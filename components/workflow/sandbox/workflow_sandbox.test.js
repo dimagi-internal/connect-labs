@@ -31,6 +31,8 @@ const CTX = {
   opportunityIds: [10, 11],
   programIds: [7],
   organizationKey: 'acme',
+  // The report a companion reads (config.source_workflow_id), declared.
+  readableDefinitionIds: [42, 31],
   jobIds: ['job-of-this-run'],
   defaultScope: { name: 'opportunity_id', value: '10' },
 };
@@ -450,6 +452,7 @@ describe('proxyFetch: the host makes the request as the viewer', () => {
     expect(init.headers).toEqual({
       'content-type': 'application/json',
       'x-csrftoken': 'real-token',
+      'x-labs-sandbox-for': '42',
     });
     expect(init.redirect).toBe('manual');
     expect(init.credentials).toBe('same-origin');
@@ -469,6 +472,52 @@ describe('proxyFetch: the host makes the request as the viewer', () => {
     const init = fetchImpl.mock.calls[0][1];
     expect(init.body).toBeUndefined();
     expect(init.headers['x-csrftoken']).toBeUndefined();
+  });
+});
+
+describe('reads of other workflows are bound to the ones this one declares', () => {
+  it.each([
+    '/labs/workflow/api/77/runs/history/?keys=snapshot.meta',
+    '/labs/workflow/api/77/indicator-definitions/?format=json',
+    '/labs/workflow/api/77/semantic/',
+    '/labs/workflow/api/flw-audit-report-history/?definition_id=77',
+    '/labs/workflow/api/flw-daily-summary-history/?definition_id=77',
+  ])('refuses an undeclared workflow: %s', (url) => {
+    expect(() => checkFetch(url, 'GET', CTX)).toThrow(/does not cover/);
+  });
+
+  it.each([
+    '/labs/workflow/api/31/runs/history/?keys=snapshot.meta',
+    '/labs/workflow/api/42/runs/history/?keys=snapshot.meta',
+    '/labs/workflow/api/31/indicator-definitions/',
+    '/labs/workflow/api/flw-audit-report-history/?definition_id=31',
+  ])('allows a declared one (or its own): %s', (url) => {
+    expect(() => checkFetch(url, 'GET', CTX)).not.toThrow();
+  });
+
+  it('a run is read by id, so every request says whose it is', async () => {
+    // The host cannot tell whose run 5555 is; the server can, from the header.
+    const checked = checkFetch('/labs/workflow/api/run/5555/', 'GET', CTX);
+    expect(checked.sandboxFor).toBe('42');
+    const fetchImpl = vi.fn(async () => new Response('{}'));
+    await proxyFetch(
+      checked,
+      // The frame cannot set it, or blank it, itself.
+      { headers: { 'X-Labs-Sandbox-For': '31', 'x-labs-sandbox-for': '' } },
+      't',
+      fetchImpl,
+    );
+    expect(fetchImpl.mock.calls[0][1].headers['x-labs-sandbox-for']).toBe('42');
+  });
+
+  it('a frame that names no definition reads no other workflow', () => {
+    const ctx = { ...CTX, definitionId: null, readableDefinitionIds: [] };
+    expect(
+      checkFetch('/labs/workflow/api/run/5555/', 'GET', ctx).sandboxFor,
+    ).toBe('none');
+    expect(() =>
+      checkFetch('/labs/workflow/api/31/runs/history/', 'GET', ctx),
+    ).toThrow();
   });
 });
 
