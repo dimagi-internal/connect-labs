@@ -24,7 +24,7 @@
      no sidenav, no header context selector, and therefore no left gutter and no
      fixed-header offset to reserve. Views that never set it render exactly as
      before. See connect-labs#1295. {% endcomment %}
-  <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' class="flex flex-col justify-center {% if not present_mode %}pl-16 {% endif %}bg-stone-100 font-work-sans" style="overflow-x: clip">
+  <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' class="flex flex-col justify-center {% if not present_mode %}md:pl-16 {% endif %}bg-stone-100 font-work-sans" style="overflow-x: clip">
     {% block sidenav %}
       {% if not present_mode %}{% include 'layouts/sidenav.html'%}{% endif %}
     {% endblock %}

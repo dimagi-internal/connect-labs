@@ -1,9 +1,38 @@
 {% load static i18n %}
 
-<div x-data="{ sidebarOpen: false }" x-cloak
+{% comment %}
+Desktop (md and up): a 64px rail that widens to 256px on the menu button, as always.
+Phone (below md): no rail -- it took a fifth of a 390px screen from every page. The
+nav is an off-canvas drawer behind the menu button in the header's corner
+(`labs-nav-toggle`), over a backdrop that closes it. Same element, same state, so
+nothing in it is drawn twice. The toggle steps aside while the drawer is open (the
+drawer's own menu button, the backdrop and Escape close it), and stops its click so
+the drawer's click-outside does not shut it again on the click that opened it. On a
+phone, focus moves into the drawer when it opens (retried a frame at a time: the
+drawer is still `invisible`, so unfocusable, for the first frames of its transition) and back to the toggle when it
+closes, and the closed drawer is `invisible` (out of the tab order and the
+accessibility tree); from md up it is always visible.
+{% endcomment %}
+<div x-data="{
+        sidebarOpen: false,
+        focusMenu(frames = 30) {
+            this.$refs.navMenu.focus();
+            if (document.activeElement !== this.$refs.navMenu && frames > 0) requestAnimationFrame(() => this.focusMenu(frames - 1));
+        },
+    }" @keydown.escape.window="sidebarOpen = false"
+    x-init="$watch('sidebarOpen', open => { if (!window.matchMedia('(max-width: 767.98px)').matches) return; open ? focusMenu() : $nextTick(() => $refs.navToggle.focus()) })">
+<button type="button" data-testid="labs-nav-toggle" x-ref="navToggle" x-show="!sidebarOpen"
+    class="md:hidden fixed top-3 left-3 z-50 flex items-center justify-center w-10 h-10 rounded-lg bg-brand-deep-purple text-brand-sky"
+    :aria-expanded="sidebarOpen.toString()" aria-controls="labs-sidenav" aria-label="Menu"
+    @click.stop="sidebarOpen = !sidebarOpen">
+    <i class="fa-solid text-lg" :class="sidebarOpen ? 'fa-xmark' : 'fa-bars'"></i>
+</button>
+<div x-show="sidebarOpen" x-cloak x-transition.opacity data-testid="labs-nav-backdrop"
+    class="md:hidden fixed inset-0 z-40 bg-black/40" @click="sidebarOpen = false"></div>
+<div id="labs-sidenav" x-cloak
     @click.outside="sidebarOpen = false"
     class="fixed top-0 left-0 h-screen bg-brand-deep-purple pt-3 z-40 text-white flex flex-col justify-between transition-all duration-300 px-2"
-    :class="sidebarOpen ? 'w-64' : 'w-16'">
+    :class="sidebarOpen ? 'w-64 translate-x-0 visible' : 'w-64 -translate-x-full invisible md:visible md:w-16 md:translate-x-0'">
 
     <!-- Top Section -->
     <div>
@@ -26,12 +55,13 @@
         </div>
 
         <div class="flex rounded-lg items-center p-2 transition-all duration-300 cursor-pointer">
-            <div class="flex items-center justify-center w-8 h-8">
-                <i class="fa-solid text-lg text-brand-sky"
-                    :class="sidebarOpen ? 'fa-xmark': 'fa-bars'"
-                    @click="sidebarOpen = !sidebarOpen"></i>
-
-            </div>
+            <button type="button" x-ref="navMenu" data-testid="labs-nav-menu"
+                class="flex items-center justify-center w-8 h-8 text-brand-sky"
+                :aria-expanded="sidebarOpen.toString()" aria-controls="labs-sidenav"
+                :aria-label="sidebarOpen ? 'Close menu' : 'Open menu'"
+                @click="sidebarOpen = !sidebarOpen">
+                <i class="fa-solid text-lg" :class="sidebarOpen ? 'fa-xmark': 'fa-bars'"></i>
+            </button>
 
             <div class="transition-all duration-300 overflow-hidden flex items-center"
                  :class="sidebarOpen ? 'w-40 ml-4 opacity-100' : 'w-0 opacity-0'">
@@ -75,4 +105,5 @@
         {% endif %}
     </div>
 
+</div>
 </div>
