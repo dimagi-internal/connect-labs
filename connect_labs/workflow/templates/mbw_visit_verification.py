@@ -80,6 +80,14 @@ _VISIT_FIELDS = [
     # Built-in visit_date is date-only (always midnight) -- this carries the
     # real submission time-of-day for display.
     {"name": "visit_datetime", "path": "form.meta.timeEnd", "aggregation": "first"},
+    # CommCare's own clean integer build number -- NOT form.meta.appVersion,
+    # which is a free-text descriptive string ("CommCare Version: X, Build
+    # Number: Y..."). mbw_monitoring already uses this exact path
+    # (pipeline_config.py) for build-version filtering; same field here.
+    # Added to diagnose/guard against pre-verification-block submissions
+    # leaking into this dashboard via a stale xmlns match -- see
+    # hasVerificationData()'s PROD_APP_BUILD_FLOOR check in the render code.
+    {"name": "app_build_version", "path": "form.meta.app_build_version", "aggregation": "first", "transform": "int"},
     {
         "name": "where_is_the_visit_being_conducted",
         "path": "form.visit_location.where_is_the_visit_being_conducted",
@@ -480,6 +488,17 @@ PROD_ELIGIBLE_FLW_SCHEMA = {
 # (a mother only ever has one of the two populated). A mother registered at
 # "others" still has no GPS captured for registration at all -- a genuine
 # data gap, not something this pipeline can resolve.
+#
+# mother_reg_for_visit_verification is the mother-level half of the SAME
+# eligibility gate CommCare's own verification_properties form group checks
+# (its `relevant`: mother_reg_for_visit_verification = 'yes' AND
+# commcare-user.visit_verification = 'yes' AND ...) -- set once at
+# registration when a mother is randomized into the verification cohort.
+# Render code uses it (replacing an earlier visit-level heuristic on
+# where_is_the_visit_being_conducted, which could be coincidentally non-blank
+# on a pre-cohort submission) as the dashboard's "is this visit part of the
+# verification program" gate -- a mother registered before the feature
+# existed, or not selected into the sample, never gets this set to 'yes'.
 # ---------------------------------------------------------------------------
 
 MOTHER_REGISTRATION_SCHEMA = {
@@ -494,6 +513,11 @@ MOTHER_REGISTRATION_SCHEMA = {
         {
             "name": "registration_location_type",
             "path": "case.properties.where_is_the_registration_being_conducted",
+            "aggregation": "first",
+        },
+        {
+            "name": "mother_reg_for_visit_verification",
+            "path": "case.properties.mother_reg_for_visit_verification",
             "aggregation": "first",
         },
     ],
@@ -511,6 +535,11 @@ PROD_MOTHER_REGISTRATION_SCHEMA = {
         {
             "name": "registration_location_type",
             "path": "case.properties.where_is_the_registration_being_conducted",
+            "aggregation": "first",
+        },
+        {
+            "name": "mother_reg_for_visit_verification",
+            "path": "case.properties.mother_reg_for_visit_verification",
             "aggregation": "first",
         },
     ],
@@ -618,10 +647,11 @@ PIPELINE_SCHEMAS = [
         "name": "MBW Visit Verification — Mother Registration (test)",
         "description": (
             "Mother cases with the conduct_visit_now registration-time property, home_gps/"
-            "health_facility_gps registration GPS points, registration_datetime, and "
-            "registration_location_type (test domain) -- used to detect first visits that "
-            "happened immediately at registration, and to plot the registration point (with its "
-            "timestamp and location) on the GPS Map tab."
+            "health_facility_gps registration GPS points, registration_datetime, "
+            "registration_location_type, and mother_reg_for_visit_verification (test domain) -- "
+            "used to detect first visits that happened immediately at registration, to plot the "
+            "registration point (with its timestamp and location) on the GPS Map tab, and to gate "
+            "which visits count as verification-program-eligible."
         ),
         "schema": MOTHER_REGISTRATION_SCHEMA,
     },
@@ -630,10 +660,11 @@ PIPELINE_SCHEMAS = [
         "name": "MBW Visit Verification — Mother Registration (production)",
         "description": (
             "Mother cases with the conduct_visit_now registration-time property, home_gps/"
-            "health_facility_gps registration GPS points, registration_datetime, and "
-            "registration_location_type (opp 765's real production domain) -- used to detect "
-            "first visits that happened immediately at registration, and to plot the registration "
-            "point (with its timestamp and location) on the GPS Map tab."
+            "health_facility_gps registration GPS points, registration_datetime, "
+            "registration_location_type, and mother_reg_for_visit_verification (opp 765's real "
+            "production domain) -- used to detect first visits that happened immediately at "
+            "registration, to plot the registration point (with its timestamp and location) on "
+            "the GPS Map tab, and to gate which visits count as verification-program-eligible."
         ),
         "schema": PROD_MOTHER_REGISTRATION_SCHEMA,
     },
