@@ -419,6 +419,9 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
             "run_count": len(runs),
             "pipelines": pipelines,
             "template_type": definition.template_type,
+            # page_mode.is_page, never `kind` alone: a definition made from page_blank
+            # before `kind` was written onto pages is a page too.
+            "is_page": _is_page(definition),
             "latest_run_id": runs[0].id if runs else 0,
             "schedulable": definition_supports_default_run(definition),
             "schedule": schedule_dict,
@@ -1136,6 +1139,16 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 )
                 return context
             context["definition"] = definition
+            if is_edit_mode and _is_page(definition):
+                from connect_labs.workflow.page_mode import page_edit_refusal
+
+                refusal = page_edit_refusal(self.request, definition)
+                if refusal:
+                    # Edit mode is the editor (render code, AI chat, save): refused outright
+                    # for someone the save would refuse, not drawn and then failed on save.
+                    context["error"] = refusal
+                    context["edit_refused"] = True
+                    return context
             # Whether this render runs in the page sandbox (workflow/sandbox.py): decided
             # ONCE, here, from the consuming definition's own kind, on every route that
             # draws it (a page's address, its run URL, edit mode, present mode, a supply tab).
@@ -3530,6 +3543,23 @@ def add_chat_message_api(request, definition_id):
         return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
+def _page_write_refused(request, definition):
+    """A 403 if `definition` is a page the viewer may not edit, else None.
+
+    The page rule (page_mode.page_edit_refusal: its owning scope's write rule) is
+    checked here as well as on the Edit link, so hiding the link is never the only
+    thing in the way -- labs-only scopes' records sit in labs' own database, with no
+    Connect check behind the write. Workflows are not checked here: their writes
+    are the LabsRecord ACL's, as before.
+    """
+    if definition is None or not _is_page(definition):
+        return None
+    from connect_labs.workflow.page_mode import page_edit_refusal
+
+    reason = page_edit_refusal(request, definition)
+    return JsonResponse({"error": reason}, status=403) if reason else None
+
+
 @login_required
 @require_POST
 def save_render_code_api(request, definition_id):
@@ -3548,8 +3578,12 @@ def save_render_code_api(request, definition_id):
         # be accepted and never shown, so it is refused with the way out.
         from connect_labs.workflow.render_source import RenderFollowsTemplate, refuse_edit_if_following
 
+        definition = data_access.get_definition(definition_id)
+        refused = _page_write_refused(request, definition)
+        if refused is not None:
+            return refused
         try:
-            refuse_edit_if_following(data_access.get_definition(definition_id))
+            refuse_edit_if_following(definition)
         except RenderFollowsTemplate as exc:
             return JsonResponse({"error": str(exc)}, status=409)
 
@@ -4498,6 +4532,9 @@ def rename_workflow_api(request, definition_id):
 
         if not definition:
             return JsonResponse({"error": "Workflow not found"}, status=404)
+        refused = _page_write_refused(request, definition)
+        if refused is not None:
+            return refused
 
         # Update the name in the definition data
         definition_data = definition.data or {}

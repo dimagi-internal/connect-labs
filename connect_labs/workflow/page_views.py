@@ -29,7 +29,7 @@ from connect_labs.labs.access.scopes import Caller
 from connect_labs.labs.context import get_org_data, save_context_to_session
 from connect_labs.scope_config import service
 from connect_labs.scope_config.scopes import Scope, opportunity_entry, organization_entry, program_entry
-from connect_labs.workflow.page_mode import is_page
+from connect_labs.workflow.page_mode import is_page, page_edit_refusal
 from connect_labs.workflow.views import WorkflowRunView
 
 logger = logging.getLogger(__name__)
@@ -198,10 +198,10 @@ class PageView(WorkflowRunView):
             )
             context["not_a_page"] = True
             return context
-        user = self.request.user
-        # Who made the record: the LabsRecord's own username, not anything its data claims.
-        author = getattr(definition, "username", None) if definition else None
-        if definition and (user.is_staff or user.username == author):
+        # Whoever may change the page's owning scope (page_mode.page_edit_refusal) -- the
+        # same rule the edit view and the render-code save enforce, so the link is
+        # never offered to someone the server would refuse.
+        if definition and page_edit_refusal(self.request, definition, self.page_owner) is None:
             owner = "&".join(f"{k}={v}" for k, v in self.page_owner.items())
             context["page_edit_url"] = f"/labs/workflow/{definition.id}/run/?{owner}&edit=true"
         # An organisation-owned page's data calls name the organisation, so they are read
