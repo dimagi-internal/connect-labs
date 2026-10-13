@@ -189,6 +189,37 @@ on their click. The run page's Start coaching button is the other way to send. S
 names this scope, and `test_every_scoped_tool_exists_and_only_previewed_scopes_write`
 holds any future write scope to the same rule.
 
+## Labs pages (and the sandbox)
+
+A page (`kind: "page"`, WORKFLOW_REFERENCE.md §16) that sets `config.agent.share` gets the
+panel on every route that draws it -- its own address (`labs:page_home`, `labs:page`), its
+workflow URL, a supply tab -- whether its code runs in the sandbox frame or not. Not in
+edit or present mode, and not for a workflow a route draws in page mode (`page_context`
+reads only pages).
+
+- **Scope: `page:read` alone, wherever it is drawn.** On the run URL, whose own
+  registration grants `workflow:read` + `workflow:act`, the page token is signed again for
+  `labs:workflow:run:page` (`views._page_only_panel`). The one tool is `page_context`:
+  the page's name, scope, the Settings it reads and its workflow sources' runs, as the
+  visitor; it refuses a non-page or a non-sharing page whatever the token says.
+- **Page state:** `resource: labs-page://<scope type>/<scope key>/<slug>`,
+  `backing_tool: page_context`, `filters: {definition_id, scope_type, scope_key, <owner>}`
+  -- exactly `page_context`'s arguments. `view.shareSelection` narrows `visible_ids` and
+  sets `filters.drilled`, as on a run page (`components/workflow/agentSelection.ts`).
+- **Sandboxed**, the panel is host chrome, outside the frame; the frame's
+  `shareSelection` is a bridge request the host rebuilds (`host.ts sanitizeSelection`:
+  strings and primitives only) and hands to `canopyHost.updatePageState`, so page code
+  cannot touch the resource, the tool, the server's filters or the path. The host page's
+  enforced `frame-src` names the widget's `<canopy>/embed/chat`; the site's report-only
+  policy names `<canopy>/embed/widget.js` (script) and the same frame.
+- **Unsandboxed** (the switch off), page code shares the document with the panel and can
+  call the widget directly, as an unsandboxed workflow's code can on its run page: it can
+  steer the agent's view, never its scopes, which the server decided.
+
+`connect_labs/mcp/tests/test_canopy_panel_end_to_end.py` walks it for a page (two routes,
+sandboxed and not) and a workflow run: rendered page state, the panel's mint, the
+ID-JAG's scopes, the redeem at `/o/token/`, and the MCP call as the visitor.
+
 ## Contact details and transcripts
 
 `marketplace_orgs_get` returns real people's names and email addresses when asked
