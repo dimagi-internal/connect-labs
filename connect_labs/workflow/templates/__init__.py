@@ -492,6 +492,8 @@ TEMPLATE_GROUP_OF: dict[str, str] = {
     "jakusko_chlorine_dispenser": "other",
     # Pages: workflows with no runs (workflow/page_mode.py).
     "page_blank": "pages",
+    # A program's supply home: its headline figures and the way into each Supply tab.
+    "supply_program_home": "pages",
 }
 
 
