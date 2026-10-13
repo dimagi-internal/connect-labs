@@ -67,6 +67,7 @@ def plan_to_json(plan) -> dict:
         # Per-area visit targets + the populations available to seed them (#9/#15).
         "area_targets": plan.data.get("area_targets") or {},
         "area_populations": plan.data.get("area_populations") or {},
+        "area_populations_est": plan.data.get("area_populations_est") or {},
         # Sampling overlay so the review page redraws the ward boundaries + selected
         # PSU hulls + Sample details on load — making a reopened plan render exactly
         # like the just-created one. Empty/absent for coverage plans.

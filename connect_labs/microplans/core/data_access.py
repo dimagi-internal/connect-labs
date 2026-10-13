@@ -143,6 +143,18 @@ class ProgramPlanDataAccess(BaseDataAccess):
                 for a in (input_areas or [])
                 if a.get("area_id") and isinstance(a.get("populations"), dict)
             },
+            # Same shape, for areas with no populations of their own (drawn / pin /
+            # unmatched upload): the setup table's estimate from the wards they
+            # overlap (core/area_population.py). Kept apart so an estimate is never
+            # mistaken for a boundary's own figure.
+            "area_populations_est": {
+                str(a.get("area_id")): a["populations_est"]
+                for a in (input_areas or [])
+                if a.get("area_id")
+                and not a.get("populations")
+                and isinstance(a.get("populations_est"), dict)
+                and a["populations_est"]
+            },
             "grouping": dict(grouping or {}),
             "status_log": [],
             # Optimistic-concurrency counter; bumped on every _save_plan.

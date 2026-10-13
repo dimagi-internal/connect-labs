@@ -297,21 +297,45 @@ def preview_area_stats_task(self, areas, min_confidence=None):
     OWN bbox (cached after the first pull) and return the per-provider counts.
     The client sums the providers it currently has ticked, so toggling a
     building provider on/off updates the table with no re-fetch. Confidence is
-    applied here (it's a Google-only threshold), so changing it re-fetches."""
+    applied here (it's a Google-only threshold), so changing it re-fetches.
+
+    An area posted without ``populations`` (a drawn polygon, pin circle or unmatched
+    upload — a picked ward carries its own) also gets ``populations_est`` +
+    ``population_basis`` (+ ``population_note``), estimated from the wards it
+    overlaps by their buildings inside it — see ``core/area_population.py``."""
     from connect_labs.microplans.core.area_input import resolve_area
     from connect_labs.microplans.core.footprints import fetch_buildings, source_counts
 
-    set_task_progress(self, _FETCHING)
     stats = []
     try:
         for i, a in enumerate(areas):
+            set_task_progress(self, _FETCHING)  # (again after a ward-by-ward estimate)
+            area = resolve_area(a)
             # sources=None → every provider; the client filters by its checkboxes.
-            df = fetch_buildings(resolve_area(a), min_confidence=min_confidence, with_geom=False)
+            df = fetch_buildings(area, min_confidence=min_confidence, with_geom=False)
             counts = source_counts(df)
-            stats.append({"index": i, "source_counts": counts, "total": int(sum(counts.values()))})
+            entry = {"index": i, "source_counts": counts, "total": int(sum(counts.values()))}
+            if not a.get("populations"):
+                entry.update(_estimated_population(self, area, df, min_confidence))
+            stats.append(entry)
     except ValueError as e:
         return {"status": "error", "detail": str(e)}
     return {"status": "ok", "stats": stats}
+
+
+def _estimated_population(task, area, df, min_confidence) -> dict:
+    """``estimate_area_population`` for one stats entry, best-effort: an estimate
+    that fails must never cost the user the building counts it rides along with."""
+    from connect_labs.microplans.core.area_population import estimate_area_population
+
+    try:
+        est = estimate_area_population(
+            area, df, min_confidence=min_confidence, on_progress=lambda m: set_task_progress(task, m)
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("microplans: area population estimate failed", exc_info=True)
+        return {}
+    return est or {}
 
 
 @celery_app.task(bind=True)
