@@ -295,6 +295,12 @@ Two more ways a red check is not what it looks like:
 - **`main` can itself fail `pre-commit run --all-files`** (#1520). When it does,
   every open PR shows a red linter for files nobody on that PR touched. Check
   whether the failing files are yours before chasing it.
+- **`pytest-shifted-clock`** (after each merge, nightly, or a PR labelled
+  `clock-shift`) runs the suite with Python's clock moved 1-400 days forward.
+  Red there means a test depends on the date; reproduce with
+  `make test CLOCK_SHIFT=+<N>d` (the job summary gives N). Anchor fixture dates
+  to today, or pass `as_of`; never `now()` / `CURRENT_DATE` in SQL — Postgres
+  stays on the real clock.
 
 ## Key Commands
 

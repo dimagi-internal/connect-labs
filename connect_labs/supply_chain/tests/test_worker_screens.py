@@ -602,8 +602,12 @@ def test_too_few_days_say_when_an_estimate_comes_and_the_rate_so_far(client_in_p
     with recorded(10):
         _visit(world, cedar, "worker-cedar", dispensed=77, status="approved", estimated=False, days_ago=3)
     # The first dispensing day counts as one of the seven.
-    on = TODAY - timedelta(days=3) + timedelta(days=6)
-    when = f"{on.day} {on.strftime('%b')}" + ("" if on.year == TODAY.year else f" {on.year}")
+    first = TODAY - timedelta(days=3)
+    on = first + timedelta(days=6)
+    # The year is given only when the seven days cross into a new one (the page's
+    # rule, `_rate_wait`) -- not whenever `on` is in another year from today, which
+    # read the same except over New Year and failed then.
+    when = f"{on.day} {on.strftime('%b')}" + ("" if on.year == first.year else f" {on.year}")
 
     detail = get(client_in_program, "worker_detail", cedar.pk)
     figure = re.search(r'data-testid="stockout-figure">(.*?)</dd>', detail, re.S).group(1)
