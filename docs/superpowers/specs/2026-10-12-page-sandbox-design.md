@@ -125,7 +125,8 @@ embedder's `frame-src`). The site-wide report-only policy is unchanged.
 | `querySupply`, `queryWorkflow` | calls the existing endpoint for **this page's definition** (the frame cannot name another; the host strips any definition/opportunity/program ids from params), as the viewer; size- and rate-limited | 1 |
 | `navigate {url, newTab}` | only with user activation (`navigator.userActivation.isActive` on the host when the message arrives); parsed as `new URL(url, location.origin)`, required `origin === LABS_ORIGIN` and `https:`/same scheme, `pathname` on an allowlist (`/labs/p/`, `/labs/workflow/<id>/run/`, `/supply/`, `/labs/settings/`, `/labs/targeting/`, `/labs/marketplace/`, `/microplans/`), never `/o/`, `/accounts/`, `/labs/mcp/`, `/admin/`; the host navigates to `u.href`, new tabs with `noopener` | 1 |
 | `shareSelection {visible_ids, drilled}` | the host builds `{visible_ids, drilled}` itself (strings, count and length capped) and calls `window.canopyHost.updatePageState` — the frame can never touch `filters`, `path`, `resource` or `backing_tool` | 1 |
-| `resize {height}` | sets the iframe's height (clamped) | 1 |
+| `resize {height}` | sets the iframe's height (clamped; to the hundredth). Pages and workflows alike: the frame is as tall as its content (see "Sizing") | 1 |
+| `scroll {top, smooth}`, `reveal {top, bottom, block, smooth}` | scroll the HOST window (`scrollTo`, `scrollIntoView`, a focused field in the frame); not counted against the budget (see "Sizing") | 1 |
 | `copyText {text}` | user activation required; `navigator.clipboard.writeText` on the host (size-capped) | 1 |
 | `confirm {text}` | host-drawn dialog, visibly labelled as the page's content | 1 |
 | `download {filename, mime, bytes}` | user activation required; extension allowlist (csv, xlsx, json, png, pdf), size cap | 1 |
@@ -147,7 +148,8 @@ render code receives today, with `actions` / `view` functions that are bridge ca
 
 It also: intercepts clicks on `<a>` (capture phase) and turns them into `navigate`
 (honouring `target="_blank"`); installs in-memory `localStorage` / `sessionStorage`;
-reports its content height with a `ResizeObserver`; catches render errors and reports them.
+reports its content height with a `ResizeObserver`; catches render errors and reports them;
+makes its window the host's (`components/workflow/sandbox/viewport.ts`, "Sizing" below).
 
 ### 5. The canopy agent panel on pages
 
@@ -927,3 +929,89 @@ data), which can leave the frame like any data given to it. And the MBW save-sna
 endpoint fails on the server whatever the frame does (`save_run_snapshot` no longer exists
 on the data access layer) -- broken unsandboxed too; its route is bound correctly for when
 it is mended.
+
+## Sizing: the frame grows to its content (2026-10-13)
+
+Jonathan, on the sandboxed renders live: "looks fine aside from that scrolling thing" -- a
+workflow's frame filled the window and scrolled inside it, a page's grew to its content.
+**Ruling: pages and workflows size the same way. The frame is as tall as its content, has
+no scrollbar of its own, and the page around it scrolls, as it did with the render drawn on
+the page.** The fill-the-window mode (`fill` in `createSandboxHost`) is gone; there is one
+sizing path.
+
+Why the frame filled the window: render code sizes things by the window. In a frame as tall
+as its content, the frame's own `100vh` IS the content, so content sized by it grew without
+end, and a `fixed inset-0` dialog was centred in the middle of the whole document, off
+screen. So the frame's window is made to be the host's:
+
+- **The host tells the frame about its window.** `INIT` carries a `HostViewport` (window
+  width and height, scroll, the frame's top and height in the window, and `insetTop`, the
+  bottom of labs' fixed header), and a `VIEWPORT` message follows every scroll, resize, frame
+  resize and layout change above the frame (a `ResizeObserver` on the host document).
+- **`vh` is the host window's.** A PostCSS plugin (`webpack/postcss-host-viewport.js`)
+  rewrites every `vh`/`dvh`/`svh`/`lvh` in labs' stylesheets (Tailwind's `h-screen`,
+  `min-h-screen`, `max-h-screen`, `max-h-[80vh]`...) to `calc(var(--labs-host-vh, 1vh) * N)`:
+  unchanged on a labs page, where nothing sets the variable; the frame sets it. Inline
+  styles and `<style>` elements in render code are rewritten as they land (a
+  `MutationObserver`). `window.innerHeight` is the host window's.
+- **`position: fixed` is placed in what the person sees.** The part of the frame on screen
+  (the *slice*: from the frame's top, or labs' header once scrolled past, to the window's
+  bottom or the frame's end) is where the frame's `<body>` is moved (`transform`, which
+  also makes it the containing block of fixed elements); the content is moved back by as
+  much (`#sandbox-root { top: -slice }`, the shell's stylesheet). A dialog is centred where
+  the person is looking, a toast sits at the window's bottom. While a large fixed element is
+  open the frame is at least the window's height below the header, so a dialog on a short
+  page has room.
+- **Coordinates agree with that.** `getBoundingClientRect`, `getClientRects` (elements and
+  ranges), `clientY`/`y` of mouse and touch events and `elementFromPoint` are the slice's;
+  `pageY` and `scrollY` put them on the host page, so code that places a tooltip at an
+  element's rect, or scrolls to `rect.top + scrollY`, does what it did. (So `scrollY` is the
+  host's plus where the slice starts, not the host's own.)
+- **`position: sticky` sticks below labs' header.** The frame never scrolls, so a sticky
+  element whose box does not scroll itself is moved (`translate`) as the host scrolls, kept
+  within its table or parent. One inside a box that scrolls sticks to that box natively.
+  *This differs from the run page on purpose:* there, a document-level `sticky top-0` sticks
+  under labs' fixed header, out of sight.
+- **Scrolling is the host's.** `window.scrollTo`/`scroll`/`scrollBy`, `scrollTop` on the
+  document, `scrollIntoView` (after scrolling the element's own scrolling boxes) and a
+  focused field (unless `preventScroll`) scroll the host window, by the browser's own rule
+  (the whole window, less the page's `scroll-padding-top`). A host scroll is a `scroll` event
+  in the frame, a window resize a `resize`. Wheel, PageDown, the arrows, Home and End reach
+  the host from a frame that cannot scroll; Space does not in Chromium or WebKit, so the
+  frame pages the host itself. A field focused in a dialog that runs below the window, while
+  the frame's top is still below the header, scrolls the host by up to that much.
+- **Height reporting**: a `ResizeObserver` on the content, exactly as tall (to the
+  hundredth, rounded up), never less than an open dialog needs. Content that grows 60 times
+  running, each within 250 ms of the last, is content sized by the frame's own height: it
+  is held, said once in the console. The host's cap is 400,000px, a last resort, warned.
+
+- **Horizontally it reaches into the page's margins.** On the run page, content that
+  overflowed its column showed in the page's margins, a fixed dialog was centred in the
+  window and media queries were the window's. So the iframe reaches past its column, out
+  through every ancestor whose other in-flow children are above or below it (never one
+  beside it), to the window's edges, where labs' fixed sidenav and header are drawn over it
+  as over the page (`frameGutters`); the frame keeps its content in the column
+  (`--labs-gutter-left` / `--labs-gutter-right` as `#sandbox-root`'s margins). A box on the
+  page that clips (the run page's container has `overflow-x: clip`) does not stop the reach
+  -- fixed elements were never clipped by it -- but the frame clips overflowing content where
+  it did (`clip-path` on `#sandbox-root`, `--labs-clip-left` / `--labs-clip-right`). So `vw`,
+  `innerWidth` and media queries are the window's (less a scrollbar), and a dialog or a toast
+  is where it was.
+
+What still differs, and why: a fixed dialog's backdrop cannot cover labs' own header and
+sidenav (the frame cannot draw outside itself), and the dialog is centred in the part of the
+window below the header, not the whole window, so it is never under it.
+
+Verified locally (Chromium, Firefox, WebKit via Playwright; 1440x900 and 390x844), plain
+against `?sandbox=1` with the same fixture data: `supply_stock_review`,
+`supply_stock_forecast`, `kmc_programme_metrics` (and its column-definition dialog, open at
+the top and scrolled), `indicator_programme_report`, `performance_review`,
+`audit_with_ai_review`, `mbw_auditing_v5`, `bulk_image_audit`, `kmc_flw_review`,
+`page_blank` and `supply_program_home` drew pixel-identical at top, middle and bottom (beyond
+antialiasing), at the same page height. A probe workflow (a 120-row table, `h-[50vh]`, `30vh`
+inline, document-level sticky bar and header, a modal, a toast, tooltips placed from rects,
+one appended to `<body>`, `scrollIntoView`, a focused last field, `scrollTo(0)`) matched the
+run page in every scroll position measured, every browser, except the sticky elements (as
+above) and `scrollY`'s value. `kmc_flw_review` reads a saved program report, which a local
+server does not have: its empty state was compared, not its case table.
+
