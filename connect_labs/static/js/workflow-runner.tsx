@@ -1631,6 +1631,7 @@ function WorkflowRunner({
           key={actionRequest.seq}
           request={actionRequest.request}
           actionBase={initialData.apiEndpoints.actionBase}
+          scopeQuery={initialData.apiEndpoints.actionScope}
           executionBase={initialData.apiEndpoints.actionExecutionBase || ''}
           csrfToken={csrfToken}
           onClose={(execution) => {
