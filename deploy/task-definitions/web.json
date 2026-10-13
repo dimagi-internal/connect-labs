@@ -84,7 +84,11 @@
         },
         {
           "name": "LABS_WORKFLOW_SANDBOX",
-          "value": "opt_in"
+          "value": "off"
+        },
+        {
+          "name": "LABS_PAGE_SANDBOX",
+          "value": "false"
         },
         {
           "name": "TELEMETRY_SAMPLE_RATE",

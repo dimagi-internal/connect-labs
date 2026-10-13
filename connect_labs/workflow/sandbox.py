@@ -253,7 +253,7 @@ def workflow_wants_sandbox(definition, request=None, mode: str | None = None, re
             return True
         return sandbox_exemption(definition, render_code) is None
     if mode == "off":
-        return False
+        return _preview_asked(request)
     data = getattr(definition, "data", None) or {}
     config = data.get("config") if isinstance(data.get("config"), dict) else {}
     if config.get("sandbox") is True:
@@ -268,6 +268,11 @@ def workflow_wants_sandbox(definition, request=None, mode: str | None = None, re
     if isinstance(render_source, dict) and _template_is_sandboxed(render_source.get("template")):
         return True
     return False
+
+
+def _preview_asked(request) -> bool:
+    """`?sandbox=1`: draw this render sandboxed, whatever the rollout says. It only ever turns the sandbox on."""
+    return request is not None and request.GET.get("sandbox") == "1"
 
 
 def should_sandbox(
@@ -285,8 +290,12 @@ def should_sandbox(
     """
     from connect_labs.workflow.page_mode import is_page
 
-    if not sandbox_enabled() or definition is None:
+    if definition is None:
         return False
+    if not sandbox_enabled():
+        # Switched off: drawn as before, except that `?sandbox=1` still previews the
+        # sandboxed render to whoever asks (it can only turn the sandbox on).
+        return _preview_asked(request)
     if bool(page_mode) or is_page(definition):
         return True
     return workflow_wants_sandbox(definition, request, mode=mode, render_code=render_code)
