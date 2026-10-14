@@ -21,7 +21,7 @@ function WorkflowUI({
   // form's whole edit history. That's WHY hasVerificationData() below can't
   // rely on anything visit-level to mean "is this a verification-program
   // visit" -- see its own comment for the mother-eligibility gate that
-  // replaces that inference. The visit pipelines DO carry a 180-day
+  // replaces that inference. The visit pipelines DO carry a 90-day
   // form_lookback_days cutoff (see mbw_visit_verification.py,
   // PROD_LOOKBACK_DAYS) to bound how much history each load re-downloads.
 
@@ -179,7 +179,7 @@ function WorkflowUI({
   // --- Per-mother expanding-window computations -------------------------
   // visit_number and prior_verification_pass_rate can't be expressed by the
   // pipeline engine's window_fields today (only lag_haversine is supported),
-  // so they're computed here over the FULL (within the 180-day lookback)
+  // so they're computed here over the FULL (within the 90-day lookback)
   // visit set per mother -- the true 1st/2nd/3rd... sequence, independent of
   // which rows the verification-data filter below ends up keeping.
   //
@@ -236,13 +236,13 @@ function WorkflowUI({
       // mother been visited, what was her prior verification track record,
       // how far was this visit from her previous one), not per FLW. The
       // chain spans her WHOLE LOADED history (pre-UAT and UAT together,
-      // every visit-type form, within the 180-day pipeline lookback -- see
+      // every visit-type form, within the 90-day pipeline lookback -- see
       // mbw_visit_verification.py's PROD_LOOKBACK_DAYS) -- "her previous
       // visit" means exactly that within what's loaded, regardless of which
       // app version captured it, so the UAT Comparison tab's
       // revisit-distance metrics are never computed across a chain that's
       // artificially cut at the UAT boundary. A mother whose visits span
-      // more than 180 days will have an incomplete chain -- her oldest
+      // more than 90 days will have an incomplete chain -- her oldest
       // visits (and any pre-UAT baseline before the cutoff) are simply not
       // fetched at all.
       var byMother = {};
@@ -2276,7 +2276,7 @@ function WorkflowUI({
   var DEFINITION_SECTIONS = [
     {
       title: 'Which visits appear in this report',
-      body: "A visit only shows up if ALL are true: (1) the mother it's for is a mother case with the property mother_reg_for_visit_verification set to 'yes' -- set once at registration when she's randomized into the verification cohort, (2) the FLW who conducted it is a commcare-user case with the property visit_verification set to 'yes', and (3) if the \"Exclude visits that happened with registration\" checkbox is on (the default), it is not that mother's first visit AND conducted immediately at registration. (1) and (2) are the SAME two conditions (independently ANDed) that CommCare's own verification_properties form group checks before it will compute a visit's Final verification outcome at all -- see \"Verification Summary Tab\" below for the one additional CommCare-side condition that can still leave a visit shown here without an outcome. Visits for a mother never randomized into the cohort, or from an FLW not flagged for verification, are excluded entirely -- not shown as blank rows. This gate applies dashboard-wide -- every tab (Verification Summary, Per FLW Verification View, Failed Verification Analysis) reads from the same filtered set. Also note: the visit pipelines only cover the last 180 days (form_lookback_days, see mbw_visit_verification.py) -- a visit older than that is never fetched at all, regardless of eligibility.",
+      body: "A visit only shows up if ALL are true: (1) the mother it's for is a mother case with the property mother_reg_for_visit_verification set to 'yes' -- set once at registration when she's randomized into the verification cohort, (2) the FLW who conducted it is a commcare-user case with the property visit_verification set to 'yes', and (3) if the \"Exclude visits that happened with registration\" checkbox is on (the default), it is not that mother's first visit AND conducted immediately at registration. (1) and (2) are the SAME two conditions (independently ANDed) that CommCare's own verification_properties form group checks before it will compute a visit's Final verification outcome at all -- see \"Verification Summary Tab\" below for the one additional CommCare-side condition that can still leave a visit shown here without an outcome. Visits for a mother never randomized into the cohort, or from an FLW not flagged for verification, are excluded entirely -- not shown as blank rows. This gate applies dashboard-wide -- every tab (Verification Summary, Per FLW Verification View, Failed Verification Analysis) reads from the same filtered set. Also note: the visit pipelines only cover the last 90 days (form_lookback_days, see mbw_visit_verification.py) -- a visit older than that is never fetched at all, regardless of eligibility.",
       items: [
         {
           name: 'FLW eligibility gate',
@@ -2609,7 +2609,7 @@ function WorkflowUI({
         },
         {
           name: 'Revisit Dist (mean) -- distance_from_prev_visit_m',
-          def: 'The haversine (great-circle) distance, in meters, between a mother\'s visit and the PREVIOUS point in her chain -- and her chain now starts at her REGISTRATION point, not her first visit, so her first visit has a real distance (from registration) rather than always being null. Spans her whole LOADED history (within the 180-day visit-pipeline lookback) and every visit-type form, not reset at the UAT boundary or at a form-type change (her 1 Week Visit\'s "previous point" can be her ANC Visit, or her registration if the ANC Visit was itself her first) -- but a mother active longer than 180 days has an incomplete chain, since her oldest visits are never fetched.',
+          def: 'The haversine (great-circle) distance, in meters, between a mother\'s visit and the PREVIOUS point in her chain -- and her chain now starts at her REGISTRATION point, not her first visit, so her first visit has a real distance (from registration) rather than always being null. Spans her whole LOADED history (within the 90-day visit-pipeline lookback) and every visit-type form, not reset at the UAT boundary or at a form-type change (her 1 Week Visit\'s "previous point" can be her ANC Visit, or her registration if the ANC Visit was itself her first) -- but a mother active longer than 90 days has an incomplete chain, since her oldest visits are never fetched.',
           field:
             "Computed client-side in the same per-mother group-and-sort pass as visit_number/prior_verification_pass_rate (enrichedRows), seeded with parseGpsLatLon(motherRegistrationGps[mother_case_id]) instead of null before the first visit. Uses meta_location (form.meta.location, CommCare's own standard per-submission GPS stamp -- NOT gps_normalized_location, which is part of the verification block and blank on pre-UAT submissions). haversineMeters() reimplements the pipeline engine's own lag_haversine window-function math client-side, because that operation only chains WITHIN one cchq_forms pipeline (one visit-type form) and this template reads 12 separate per-form pipelines -- a mother's chain needs to cross form-type boundaries.",
         },
@@ -3938,8 +3938,8 @@ function WorkflowUI({
               which these two series deliberately ignore (see Definitions).
             </p>
             <p className="text-xs font-medium text-amber-700">
-              Visit data on this dashboard only covers the last 6 months
-              (rolling). A FLW whose pre-UAT history started more than 6 months
+              Visit data on this dashboard only covers the last 3 months
+              (rolling). A FLW whose pre-UAT history started more than 3 months
               ago will show a shorter, more recent "Pre-UAT" window than her
               true full history -- the comparison below is against what's
               loaded, not against everything that ever happened.
