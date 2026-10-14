@@ -1,0 +1,317 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ plan.name }} · Simple Microplan</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="{% static 'microplans/simple_microplan.css' %}">
+</head>
+<body>
+<div id="app">
+  <div id="map"></div>
+  <aside id="rail">
+
+    <!-- ============ Plan header: name, creator, save ============ -->
+    <section class="card plan-card">
+      <a class="back-link" id="mp-back" href="{% url 'microplans:simple_list' %}">&larr; Simple Microplans</a>
+      <div class="plan-name-row">
+        <h1 id="mp-name" title="Click to rename"></h1>
+        <input class="control" id="mp-name-input" type="text" maxlength="200" style="display:none">
+        <button class="link-btn" id="mp-rename-btn">Rename</button>
+      </div>
+      <p class="muted" id="mp-meta"></p>
+      <p class="readonly-note" id="mp-readonly" style="display:none">
+        View only &mdash; only the person who created this microplan can change it. You can still export the CSV.
+      </p>
+      <div class="save-row" id="mp-save-row">
+        <span id="mp-save-status" class="save-status">Saved</span>
+        <label class="autosave" title="Save automatically a few seconds after each change">
+          <input type="checkbox" id="mp-autosave" checked> Auto-save
+        </label>
+        <button class="primary-btn small" id="mp-save">Save</button>
+      </div>
+    </section>
+
+    <!-- ============ Find a place ============ -->
+    <section class="card" id="mp-search-card">
+      <div class="sub-head"><label for="mp-place" style="margin:0">Find a place</label><button type="button" class="help-q" data-help-open="find-a-place" title="How this step works" aria-label="Help for this step">?</button></div>
+      <form class="inline-row search-wrap" id="mp-place-form" autocomplete="off">
+        <input class="control" id="mp-place" type="search" placeholder="Town, ward, LGA… or lat, long">
+        <button class="btn-secondary inline" type="submit" id="mp-place-go">Search</button>
+        <div id="mp-place-results" class="results" style="top:46px"></div>
+      </form>
+      <p class="section-stat" id="mp-place-stat"></p>
+    </section>
+
+    <!-- ============ 1. Boundary ============ -->
+    <section class="card step" id="step-boundary">
+      <div class="step-head"><span class="step-num">1</span><h2>Boundary</h2><button type="button" class="help-q" data-help-open="step-1-boundary" title="How this step works" aria-label="Help for this step">?</button></div>
+
+      <div class="field">
+        <label for="mp-source">Boundary source</label>
+        <select class="control" id="mp-source">
+          <option value="draw">Draw boundary on map</option>
+          <option value="file">Upload boundary (GeoJSON)</option>
+          <option value="bbox">Bounding box</option>
+          <option value="wards">Ward lookup (admin GeoJSON)</option>
+          <option value="basegrid">Base point grid (rows &times; columns)</option>
+        </select>
+      </div>
+
+      <div id="mp-src-draw" class="mp-src">
+        <div class="btn-row">
+          <button class="btn-secondary" id="mp-bdraw-btn">Start drawing</button>
+          <button class="primary-btn" id="mp-bfinish-btn" style="display:none">Finish</button>
+        </div>
+        <p class="section-stat">Click the map to add vertices, then click Finish (or double-click / Esc).</p>
+      </div>
+
+      <div id="mp-src-file" class="mp-src" style="display:none">
+        <label class="upload">
+          <span>Boundary GeoJSON</span><small>polygon(s) in WGS84</small>
+          <input type="file" id="mp-boundary-file" accept=".geojson,.json">
+        </label>
+        <p class="section-stat" id="mp-file-stat"></p>
+      </div>
+
+      <div id="mp-src-bbox" class="mp-src" style="display:none">
+        <label for="mp-bbox">minLon, minLat, maxLon, maxLat (WGS84)</label>
+        <input class="control" id="mp-bbox" type="text" autocomplete="off" placeholder="7.728, 11.105, 7.739, 11.113">
+      </div>
+
+      <div id="mp-src-wards" class="mp-src" style="display:none">
+        <div class="upload-row">
+          <label class="upload">
+            <span>Admin GeoJSON</span><small>ADM3 wards file</small>
+            <input type="file" id="mp-wards-file" accept=".geojson,.json">
+          </label>
+          <label class="upload">
+            <span>Batch CSV</span><small>state/lga/ward rows</small>
+            <input type="file" id="mp-batch-file" accept=".csv" disabled>
+          </label>
+        </div>
+        <p class="section-stat" id="mp-wards-stat">Load the admin-boundaries GeoJSON (e.g. all wards in Nigeria) first.</p>
+        <div class="field search-wrap">
+          <label for="mp-ward-search">Search ward</label>
+          <input class="control" id="mp-ward-search" type="text" autocomplete="off" placeholder="Type a ward name" disabled>
+          <div id="mp-ward-results" class="results"></div>
+        </div>
+        <div id="mp-ward-chips" class="chips"></div>
+      </div>
+
+      <div id="mp-src-basegrid" class="mp-src" style="display:none">
+        <label for="mp-bg-base">Base point (lat, long)</label>
+        <div class="inline-row">
+          <input class="control" id="mp-bg-base" type="text" autocomplete="off" placeholder="e.g. 11.108, 7.733">
+          <button class="btn-secondary inline" id="mp-bg-pick">Pick</button>
+        </div>
+        <div class="mp-grid2" style="margin-top:10px">
+          <div><label for="mp-rows">Rows</label>
+            <input class="control" id="mp-rows" type="number" value="10" min="1" step="1"></div>
+          <div><label for="mp-cols">Columns</label>
+            <input class="control" id="mp-cols" type="number" value="10" min="1" step="1"></div>
+        </div>
+        <p class="section-stat">A rectangle of rows &times; columns cells (cell size from step 2) centred on the base point.
+          The grid in step 2 is anchored to the same point.</p>
+      </div>
+
+      <div class="btn-row">
+        <button class="primary-btn" id="mp-boundary-apply">Use as boundary</button>
+        <button class="btn-secondary" id="mp-boundary-clear">Clear</button>
+      </div>
+      <p class="section-stat" id="mp-boundary-stat">No boundary yet.</p>
+    </section>
+
+    <!-- ============ 2. Work areas ============ -->
+    <section class="card step" id="step-workareas">
+      <div class="step-head"><span class="step-num">2</span><h2>Work areas</h2><button type="button" class="help-q" data-help-open="step-2-work-areas" title="How this step works" aria-label="Help for this step">?</button></div>
+
+      <div class="seg" id="mp-wa-mode">
+        <button data-mode="grid" class="active">Auto-grid</button>
+        <button data-mode="draw">Draw</button>
+        <button data-mode="smart">Smart draw</button>
+      </div>
+
+      <div class="field">
+        <div class="mp-grid2">
+          <div><label for="mp-prefix">Slug prefix</label>
+            <input class="control" id="mp-prefix" type="text" maxlength="2" placeholder="auto (ward)"></div>
+          <div><label for="mp-iso">Country ISO</label>
+            <input class="control" id="mp-iso" type="text" maxlength="3" placeholder="auto (geocode)"></div>
+        </div>
+      </div>
+
+      <!-- auto-grid -->
+      <div id="mp-mode-grid" class="mp-mode">
+        <div class="field">
+          <div class="mp-grid2">
+            <div><label for="mp-cell">Cell size (m)</label>
+              <input class="control" id="mp-cell" type="number" value="50" min="10" step="10"></div>
+            <div><label for="mp-ratio">Visit ratio</label>
+              <input class="control" id="mp-ratio" type="number" value="1.0" min="0" step="0.1"></div>
+          </div>
+        </div>
+        <div class="field">
+          <label for="mp-base">Grid base point &mdash; optional (lat, long)</label>
+          <div class="inline-row">
+            <input class="control" id="mp-base" type="text" autocomplete="off" placeholder="e.g. 11.108, 7.733">
+            <button class="btn-secondary inline" id="mp-base-pick">Pick</button>
+          </div>
+          <p class="section-stat">Anchors the grid: cell corners align to this GPS point.</p>
+        </div>
+        <div class="mp-checks">
+          <label><input type="checkbox" id="mp-drop-empty" checked> Drop empty cells (0 buildings)</label>
+          <label><input type="checkbox" id="mp-singleton"> Add singleton columns (keepSingleton &le;300 m)</label>
+        </div>
+        <button class="primary-btn" id="mp-run">Generate grid</button>
+      </div>
+
+      <!-- hand drawn / smart drawn -->
+      <div id="mp-mode-draw" class="mp-mode" style="display:none">
+        <p class="section-stat" id="mp-draw-help"></p>
+        <div class="field" id="mp-snap-field">
+          <label for="mp-snap">Snap distance (m)</label>
+          <input class="control" id="mp-snap" type="number" value="20" min="1" step="1">
+        </div>
+        <div class="toggle-row">
+          <span class="lbl">Autofill from building footprints</span>
+          <label class="switch"><input type="checkbox" id="mp-autofill"><span class="slider"></span></label>
+        </div>
+        <p class="section-stat" id="mp-autofill-note" style="display:none">Building Count = footprints inside the area; Expected Visit Count = Building Count.</p>
+        <div class="field" id="mp-fill-field">
+          <label for="mp-fill">Minimum fill (Building Count &amp; Expected Visit Count)</label>
+          <input class="control" id="mp-fill" type="number" value="1" min="0" step="1">
+        </div>
+        <div class="btn-row">
+          <button class="primary-btn" id="mp-wadraw-btn">Draw work area</button>
+          <button class="btn-secondary" id="mp-wafinish-btn" style="display:none">Finish area</button>
+        </div>
+      </div>
+
+      <div class="mp-checks">
+        <label><input type="checkbox" id="mp-show-bldgs" checked> Show building footprints on map</label>
+      </div>
+      <div id="mp-progress">
+        <div class="mp-bar"><div id="mp-bar-fill"></div></div>
+        <span id="mp-bar-label"></span>
+      </div>
+      <p class="section-stat"><b id="mp-wa-count">0</b> work areas</p>
+      <button class="btn-secondary danger" id="mp-clear-was">Remove all work areas</button>
+      <div id="mp-log"></div>
+    </section>
+
+    <!-- ============ 3. Grouping ============ -->
+    <section class="card step" id="step-grouping">
+      <div class="step-head"><span class="step-num">3</span><h2>Grouping</h2><button type="button" class="help-q" data-help-open="step-3-grouping" title="How this step works" aria-label="Help for this step">?</button></div>
+
+      <div class="field" id="mp-autogroup-box">
+        <span class="lbl">Auto-group into WAGs</span>
+        <p class="section-stat" style="margin-top:2px">Named &lt;prefix&gt;-G-001, -G-002 &hellip; Run it as often as you like; Undo puts the previous groups back.</p>
+        <div class="seg" id="mp-group-by">
+          <button type="button" data-by="count" class="active">By work areas</button>
+          <button type="button" data-by="buildings">By buildings</button>
+        </div>
+        <div id="mp-gb-count" class="field">
+          <label for="mp-group-size">Work areas per WAG</label>
+          <input class="control" id="mp-group-size" type="number" value="4" min="1" step="1">
+        </div>
+        <div id="mp-gb-buildings" class="field" style="display:none">
+          <div class="mp-grid2">
+            <div><label for="mp-group-bldg">Buildings per WAG</label>
+              <input class="control" id="mp-group-bldg" type="number" value="100" min="1" step="1"></div>
+            <div><label for="mp-group-tol">Tolerance (&plusmn;%)</label>
+              <input class="control" id="mp-group-tol" type="number" value="10" min="0" max="100" step="1"></div>
+          </div>
+          <p class="section-stat" id="mp-group-range"></p>
+          <p class="section-stat">Every work area in a WAG shares a boundary with another in the same WAG &mdash; no scattered or broken groups (except a lone work area placed with a nearby group, below).</p>
+        </div>
+        <div class="field">
+          <div class="mp-grid2">
+            <div><label for="mp-group-scope">Group</label>
+              <select class="control" id="mp-group-scope">
+                <option value="all">All work areas</option>
+                <option value="selected">Selected only</option>
+              </select></div>
+            <div><label for="mp-group-start">Start from</label>
+              <select class="control" id="mp-group-start">
+                <option value="best">Best of 4 corners</option>
+                <option value="top-left">Top-left</option>
+                <option value="top-right">Top-right</option>
+                <option value="bottom-left">Bottom-left</option>
+                <option value="bottom-right">Bottom-right</option>
+              </select></div>
+          </div>
+        </div>
+        <div class="field">
+          <label for="mp-group-lone">Lone work areas join a group within (m)</label>
+          <input class="control" id="mp-group-lone" type="number" value="200" min="0" step="10">
+          <p class="section-stat">A WAG left with a single work area joins the group of the nearest work area within this distance (edge to edge). By buildings, one that already has enough buildings stays. 0 keeps them all on their own.</p>
+        </div>
+        <div class="btn-row">
+          <button class="primary-btn" id="mp-autogroup">Auto-group</button>
+          <button class="btn-secondary" id="mp-group-undo" disabled>Undo</button>
+        </div>
+        <button type="button" class="link-btn" id="mp-group-another" style="display:none;margin-top:8px">Try another layout (next start corner)</button>
+        <div id="mp-gprogress" class="gprogress" style="display:none">
+          <div class="mp-bar"><div id="mp-gbar-fill"></div></div>
+          <span id="mp-gbar-label"><span class="spinner"></span><span id="mp-gbar-text">Grouping…</span></span>
+        </div>
+        <div id="mp-group-result"></div>
+      </div>
+
+      <div class="divider"></div>
+      <div class="sub-head">
+        <span class="lbl">Manual grouping</span>
+        <button class="btn-secondary inline small" id="mp-select-toggle">Select work areas</button>
+      </div>
+      <p class="section-stat" id="mp-select-help">Turn on selection, then click work areas on the map
+        (or Ctrl/&#8984;/Shift-click any time). Click a group below to select all of it.</p>
+      <div id="mp-selection"></div>
+
+      <div class="legend" id="mp-group-legend"></div>
+    </section>
+
+    <!-- ============ 4. Export ============ -->
+    <section class="card step" id="step-export">
+      <div class="step-head"><span class="step-num">4</span><h2>Export</h2><button type="button" class="help-q" data-help-open="step-4-export" title="How this step works" aria-label="Help for this step">?</button></div>
+      <p class="section-stat">Same columns and format as the grid generator&rsquo;s work-area CSV.</p>
+      <div class="field">
+        <label for="mp-csv-name">File name</label>
+        <input class="control" id="mp-csv-name" type="text" autocomplete="off" placeholder="work_areas.csv">
+      </div>
+      <button class="primary-btn" id="mp-download">Download CSV</button>
+    </section>
+  </aside>
+</div>
+
+<!-- ============ Help: the user_docs/simple-microplan.md guide, searchable ============ -->
+<button type="button" id="mp-help-btn" class="help-fab" aria-label="Open help" title="Help">?</button>
+<div id="mp-help-panel" class="help-panel" role="dialog" aria-label="Simple Microplan help" hidden>
+  <div class="help-head">
+    <div class="help-avatar">?</div>
+    <div class="help-titles"><b>Help</b><span>Simple Microplan guide</span></div>
+    <button type="button" class="help-close" id="mp-help-close" aria-label="Close help">&times;</button>
+  </div>
+  <div class="help-body" id="mp-help-body"></div>
+  <div class="help-foot">
+    <input class="control" id="mp-help-q" type="search" autocomplete="off" placeholder="Search the help, e.g. smart draw">
+    <a href="{{ help_site_url }}" target="_blank" rel="noopener">Open the full guide</a>
+  </div>
+</div>
+
+{% csrf_token %}
+{{ plan_state|json_script:"mp-state" }}
+{{ help_index|json_script:"mp-help" }}
+{# Sanitised server-side (nh3) in simple_views.help_sections #}
+{% for sec in help_sections %}<template id="mp-help-art-{{ sec.id }}">{{ sec.html|safe }}</template>
+{% endfor %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.19.5/dist/proj4.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/polygon-clipping@0.15.7/dist/polygon-clipping.umd.js"></script>
+<script src="{% static 'microplans/simple_microplan_grouping.js' %}"></script>
+<script src="{% static 'microplans/simple_microplan.js' %}"></script>
+<script src="{% static 'microplans/simple_microplan_help.js' %}"></script>
+</body>
+</html>
