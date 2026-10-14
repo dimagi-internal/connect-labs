@@ -151,6 +151,24 @@ class _LabsContextSyncMixin(_ProgramScopeMixin):
     sync_labs_context = True
 
 
+class _SimpleMicroplanOnlyInWorkspaceMixin:
+    """A CHC page a workspace program does not offer: send everyone (Program
+    Managers too) to its Simple Microplan list instead
+    (``access.workspace_simple_microplan_url``). Listed after the scope mixin, so
+    the program access check has already refused anyone the program does not admit."""
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            from django.http import HttpResponseRedirect
+
+            from connect_labs.microplans.access import workspace_simple_microplan_url
+
+            url = workspace_simple_microplan_url(kwargs.get("program_id"))
+            if url is not None:
+                return HttpResponseRedirect(url)
+        return super().dispatch(request, *args, **kwargs)
+
+
 def _workspace_refused(request):
     """The page a workspace program shows someone it does not admit."""
     from django.template.response import TemplateResponse
@@ -645,8 +663,12 @@ class BoundaryViewportView(LoginRequiredMixin, View):
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
-class ProgramWorkspaceView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
-    """Program workspace: the portfolio of candidate plans + plan groups."""
+class ProgramWorkspaceView(
+    _LabsContextSyncMixin, _SimpleMicroplanOnlyInWorkspaceMixin, LoginRequiredMixin, TemplateView
+):
+    """Program workspace: the portfolio of candidate plans + plan groups.
+
+    Not for a workspace program, which makes its microplans in Simple Microplan."""
 
     template_name = "microplans/program_workspace.html"
 
@@ -1860,7 +1882,7 @@ class ProgramPlanCSVView(_ProgramScopeMixin, LoginRequiredMixin, View):
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
-class ProgramSetupView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
+class ProgramSetupView(_LabsContextSyncMixin, _SimpleMicroplanOnlyInWorkspaceMixin, LoginRequiredMixin, TemplateView):
     """New-plan landing page. Renders the same template as the per-plan review
     page (review.html) but with plan_id=None — the template branches once on
     that to show the area-definition section open by default, no work areas,
@@ -1990,7 +2012,11 @@ class ProgramWorkspaceSettingsView(_LabsContextSyncMixin, LoginRequiredMixin, Te
     browser route to what ``setup_autoconnect_workspace --program-id`` does, by
     the same function (``labs.workspaces.adopt_program``), for deployments where
     nobody can run a management command. Everyone else gets a 404 for the page
-    and a 403 for the button."""
+    and a 403 for the button.
+
+    Program Managers also name testers here: Dimagi people who see the workspace
+    as a Network Manager of a team (``labs.workspaces.add_tester``) -- and so,
+    while testing, are refused this page like any Network Manager."""
 
     template_name = "microplans/workspace_settings.html"
 
@@ -2020,19 +2046,22 @@ class ProgramWorkspaceSettingsView(_LabsContextSyncMixin, LoginRequiredMixin, Te
 
         from connect_labs.labs.workspaces import connect_org_data, delivering_orgs
         from connect_labs.microplans.core.data_access import ProgramPlanDataAccess
+        from connect_labs.microplans.models import SimpleMicroplan
 
         context = super().get_context_data(**kwargs)
         program_id = kwargs.get("program_id")
-        back_url = reverse("microplans:program_workspace", args=[program_id])
         if self._can_turn_on(program_id):
+            back_url = reverse("microplans:program_workspace", args=[program_id])
             context.update({"program_id": program_id, "workspace": None, "can_turn_on": True, "back_url": back_url})
             return context
         workspace, _role = self._workspace_and_role(program_id)
         da = ProgramPlanDataAccess(program_id, request=self.request)
         records = [*da.list_plans(), *da.list_groups()]
         counts: dict[str, int] = {}
-        for r in records:
-            team = (r.data or {}).get("team") or ""
+        teams_on_records = [(r.data or {}).get("team") or "" for r in records]
+        # A workspace program's microplans are made in Simple Microplan.
+        teams_on_records += SimpleMicroplan.objects.filter(program_id=program_id).values_list("team", flat=True)
+        for team in teams_on_records:
             counts[team] = counts.get(team, 0) + 1
         # What this Program Manager's own Connect account shows delivering in the
         # linked programs. It may not be every partner -- only what their account
@@ -2051,7 +2080,8 @@ class ProgramWorkspaceSettingsView(_LabsContextSyncMixin, LoginRequiredMixin, Te
                 "linked_programs": ", ".join(str(p) for p in workspace.connect_program_ids),
                 "teams": teams,
                 "pm_only_records": counts.get("", 0),
-                "back_url": back_url,
+                "testers": list(workspace.testers.select_related("user", "added_by").order_by("created_at")),
+                "back_url": reverse("microplans:program_simple_list", args=[program_id]),
             }
         )
         return context
@@ -2063,9 +2093,12 @@ class ProgramWorkspaceSettingsView(_LabsContextSyncMixin, LoginRequiredMixin, Te
         from connect_labs.audit_trail.models import Action
         from connect_labs.audit_trail.service import record
 
-        if request.POST.get("action") == "turn_on":
+        action = request.POST.get("action")
+        if action == "turn_on":
             return self._turn_on(request, program_id)
         workspace, _role = self._workspace_and_role(program_id)
+        if action in ("add_tester", "remove_tester"):
+            return self._change_testers(request, workspace, program_id, action)
         raw = request.POST.get("connect_program_ids", "")
         try:
             ids = sorted({int(p) for p in raw.replace(",", " ").split()})
@@ -2088,6 +2121,38 @@ class ProgramWorkspaceSettingsView(_LabsContextSyncMixin, LoginRequiredMixin, Te
             metadata={"connect_program_ids": {"before": before, "after": ids}},
         )
         messages.success(request, "Linked Connect programs saved." if ids else "No Connect programs are linked now.")
+        return redirect(request.path)
+
+    def _change_testers(self, request, workspace, program_id, action):
+        """Add a Dimagi person as a tester of a team (a Network Manager of it
+        here, until removed), or remove one (``labs.workspaces``)."""
+        from django.contrib import messages
+        from django.shortcuts import redirect
+
+        from connect_labs.labs.workspaces import TesterRefused, add_tester, remove_tester
+
+        if action == "remove_tester":
+            try:
+                user_id = int(request.POST.get("user_id", ""))
+            except ValueError:
+                user_id = None
+            if user_id is not None and remove_tester(workspace, user_id, by=request.user, program_id=int(program_id)):
+                messages.success(request, "Tester removed: their usual role applies again.")
+            return redirect(request.path)
+        try:
+            tester = add_tester(
+                workspace,
+                request.POST.get("who", ""),
+                request.POST.get("team", ""),
+                by=request.user,
+                program_id=int(program_id),
+            )
+        except TesterRefused as e:
+            messages.error(request, f"Tester not added: {e}.")
+            return redirect(request.path)
+        messages.success(
+            request, f"{tester.user.email or tester.user.username} now tests as a Network Manager of {tester.team}."
+        )
         return redirect(request.path)
 
     def _turn_on(self, request, program_id):
@@ -2113,6 +2178,25 @@ class ProgramWorkspaceSettingsView(_LabsContextSyncMixin, LoginRequiredMixin, Te
         else:
             messages.info(request, "Workspace roles were already on.")
         return redirect(request.path)
+
+
+class ProgramWorkspaceStopTestingView(_ProgramScopeMixin, LoginRequiredMixin, View):
+    """POST: a tester stops testing this workspace program as a Network Manager;
+    their usual role (Program Manager, for Dimagi staff) applies again."""
+
+    def post(self, request, program_id):
+        from django.contrib import messages
+        from django.http import HttpResponseRedirect
+        from django.urls import reverse
+
+        from connect_labs.labs.workspaces import remove_tester, workspace_for_program
+
+        workspace = workspace_for_program(program_id)
+        if workspace is None:
+            raise Http404("Not found.")
+        if remove_tester(workspace, request.user.pk, by=request.user, program_id=int(program_id)):
+            messages.success(request, "You stopped testing as a Network Manager.")
+        return HttpResponseRedirect(reverse("microplans:program_simple_list", args=[program_id]))
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
@@ -2327,7 +2411,9 @@ class ArmComparabilityView(_ProgramScopeMixin, LoginRequiredMixin, View):
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
-class ProgramBulkCreatePlanPageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
+class ProgramBulkCreatePlanPageView(
+    _LabsContextSyncMixin, _SimpleMicroplanOnlyInWorkspaceMixin, LoginRequiredMixin, TemplateView
+):
     """Render the bulk-create form (paste textarea + resolution preview + Create Plans)."""
 
     template_name = "microplans/bulk_create.html"
@@ -2488,4 +2574,11 @@ class MicroplansHubView(LoginRequiredMixin, TemplateView):
         program_id = labs_context.get("program_id") or 217
         context["chc_url"] = f"/microplans/program/{program_id}/"
         context["wa_revisit_url"] = f"/wa-revisit/program/{program_id}/"
+        # A workspace program (labs.workspaces) makes its microplans in Simple
+        # Microplan only, filed under the program and the person's team: the hub
+        # offers just that tile, opening the program's list (not the global test
+        # plans everyone can see).
+        from connect_labs.microplans.access import workspace_simple_microplan_url
+
+        context["workspace_simple_url"] = workspace_simple_microplan_url(labs_context.get("program_id"))
         return context

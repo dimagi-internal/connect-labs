@@ -552,3 +552,31 @@ class Workspace(models.Model):
 
     def __str__(self) -> str:
         return f"workspace {self.org}"
+
+
+class WorkspaceTester(models.Model):
+    """A Dimagi person testing a workspace AS a Network Manager of ``team``.
+
+    So the Network Manager view can be tried before any partner exists: while
+    this row exists, `labs.workspaces` resolves the person as a Network Manager
+    of ``team`` in this workspace -- winning over the Dimagi = Program Manager
+    rule -- and they see exactly what a partner would. ``team`` is free text
+    (a Connect org slug, or a made-up one such as ``test-llo-a``). Program
+    Managers add and remove testers on the workspace settings page; a tester
+    can stop testing themselves. Only Dimagi sign-ins can be testers, and the
+    rule is ignored for anyone else."""
+
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="testers")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    team = models.CharField(max_length=200)
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "labs_workspace_tester"
+        constraints = [models.UniqueConstraint(fields=["workspace", "user"], name="labs_workspace_tester_once")]
+
+    def __str__(self) -> str:
+        return f"{self.user} testing {self.workspace} as {self.team}"
