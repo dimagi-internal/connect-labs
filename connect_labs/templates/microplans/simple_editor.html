@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="{% static 'microplans/simple_microplan.css' %}">
 </head>
 <body>
-<div id="app">
+<div id="app" data-wards-url="{% url 'microplans:boundary_viewport' %}">
   <div id="map"></div>
   <aside id="rail">
 
@@ -281,6 +281,7 @@
         <input class="control" id="mp-csv-name" type="text" autocomplete="off" placeholder="work_areas.csv">
       </div>
       <button class="primary-btn" id="mp-download">Download CSV</button>
+      <p class="section-stat warn" id="mp-admin-missing" hidden></p>
     </section>
   </aside>
 </div>
@@ -311,6 +312,7 @@
 <script src="https://cdn.jsdelivr.net/npm/proj4@2.19.5/dist/proj4.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/polygon-clipping@0.15.7/dist/polygon-clipping.umd.js"></script>
 <script src="{% static 'microplans/simple_microplan_grouping.js' %}"></script>
+<script src="{% static 'microplans/simple_microplan_admin.js' %}"></script>
 <script src="{% static 'microplans/simple_microplan.js' %}"></script>
 <script src="{% static 'microplans/simple_microplan_help.js' %}"></script>
 </body>

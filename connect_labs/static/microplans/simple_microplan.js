@@ -355,6 +355,16 @@
     el.style.display = rows.length ? 'block' : 'none';
     el.innerHTML =
       '<b>' + rows.length + '</b> work area' + (rows.length === 1 ? '' : 's');
+    // Connect's work-area import rejects a row with a blank Ward, LGA or State
+    const missing = $('mp-admin-missing');
+    if (missing && window.SimpleMicroplanAdmin) {
+      const n = window.SimpleMicroplanAdmin.countMissingAdmin(rows);
+      missing.hidden = !n;
+      missing.textContent =
+        n +
+        (n === 1 ? ' work area has' : ' work areas have') +
+        ' no Ward/LGA/State — Connect will reject them.';
+    }
   }
 
   function onWorkAreaClick(slug, oe) {
@@ -1661,6 +1671,7 @@
         'Work Area Group Name': adm.ward || 'Microplan',
       });
     }
+    await fillAdminFromLabsWards(newRows);
     if (!rows.length && !$('mp-csv-name').value.trim()) {
       const a = newRows[0];
       $('mp-csv-name').value = autoCsvName(
@@ -2205,6 +2216,64 @@
         'warn',
       );
       return { ward: '', lga: '', state: '', iso2: '' };
+    }
+  }
+
+  // Blank Ward / LGA / State on new work areas (OpenStreetMap often has no ward)
+  // come from Labs' own ward boundaries: the ward containing each centroid, via
+  // the boundary-viewport endpoint the CHC creator's Boundaries layer uses.
+  const WARDS_URL = $('app').dataset.wardsUrl || '';
+  const wardsFetched = []; // [{box, features}]
+  async function wardsAround(box) {
+    const inside = (b) =>
+      b[0] <= box[0] && b[1] <= box[1] && b[2] >= box[2] && b[3] >= box[3];
+    const hit = wardsFetched.find((w) => inside(w.box));
+    if (hit) return hit.features;
+    const pad = 0.02; // ~2 km, so the next area drawn nearby reuses this fetch
+    const q = [box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad];
+    const params = new URLSearchParams({
+      bbox: q.map((n) => n.toFixed(5)).join(','),
+      level: '3',
+      source: 'labs',
+      zoom: '14', // full-resolution outlines, so cells near a ward edge land right
+    });
+    const r = await fetch(WARDS_URL + '?' + params.toString(), {
+      credentials: 'same-origin',
+    });
+    const data = await r.json().catch(() => null);
+    if (!r.ok || !data || data.status !== 'ok')
+      throw new Error((data && data.detail) || 'HTTP ' + r.status);
+    const features = data.features || [];
+    wardsFetched.push({ box: q, features });
+    return features;
+  }
+
+  async function fillAdminFromLabsWards(newRows) {
+    const A = window.SimpleMicroplanAdmin;
+    if (!A || !WARDS_URL) return;
+    const box = A.bboxOfRowsNeedingAdmin(newRows);
+    if (!box) return;
+    log(
+      '[wards] ' +
+        A.countMissingAdmin(newRows) +
+        ' work area(s) without Ward/LGA/State — looking them up in Labs ward boundaries…',
+    );
+    try {
+      const n = A.fillAdminFromWards(newRows, await wardsAround(box));
+      const left = A.countMissingAdmin(newRows);
+      log(
+        '[wards] Filled ' +
+          n +
+          (left ? '; ' + left + ' still blank (no Labs ward there).' : '.'),
+        left ? 'warn' : 'ok',
+      );
+    } catch (e) {
+      log(
+        '[wards] Ward lookup failed (' +
+          (e.message || e) +
+          ') — admin fields left as they were.',
+        'warn',
+      );
     }
   }
 
@@ -2823,13 +2892,15 @@
       progSpan = 1;
       if (!allRows.length)
         throw new Error('No cells were produced — nothing to output.');
+      await fillAdminFromLabsWards(allRows);
 
       const appending = rows.length > 0;
+      const first = allRows[0]; // one job: its admin fields, gaps filled above
       $('mp-csv-name').value = appending
         ? 'microplan_combined.csv'
         : jobs.length > 1
           ? 'grids_multiwards_' + (sharedIso.value || 'XX') + '.csv'
-          : autoCsvName(last.ward, last.lga, last.state, sharedIso.value);
+          : autoCsvName(first.Ward, first.LGA, first.State, sharedIso.value);
 
       addBuildings(allBldgs);
       rows = rows.concat(allRows);
