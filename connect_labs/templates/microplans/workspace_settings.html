@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Workspace settings{% endblock %}
+{% block title %}Workspace access{% endblock %}
 
 {% block content %}
+{% if can_turn_on %}
 <div class="max-w-3xl mx-auto p-6 space-y-6">
-  {% if can_turn_on %}
   <div>
     <a href="{{ back_url }}" class="text-sm text-brand-cornflower-blue">&larr; Back to the portfolio</a>
     <h1 class="text-2xl font-bold text-gray-900 mt-2">Turn on workspace roles</h1>
@@ -13,9 +13,9 @@
   <section class="bg-white border rounded-lg p-4 space-y-3">
     <p class="text-sm text-gray-600">
       With workspace roles on, this program is open to its program managers (Dimagi staff and the organisation's admins)
-      and to network managers: people whose Connect organisation delivers an opportunity in a Connect program you link
-      on the next screen. Network managers see only their organisation's plans and studies and cannot delete. Its
-      current email-domain access rule stops applying, and plans already here stay visible to program managers only.
+      and to network managers: members of the partner organisations (LLOs) you list on the next screen, and the people
+      you add by email. Network managers see only their organisation's microplans and cannot delete. Its current
+      email-domain access rule stops applying, and plans already here stay visible to program managers only.
     </p>
     <p class="text-sm text-gray-600">This is refused if the program's organisation holds other programs.</p>
     <form method="post">
@@ -24,101 +24,291 @@
       <button type="submit" class="button button-sm primary-dark">Turn on workspace roles</button>
     </form>
   </section>
-  {% else %}
+</div>
+{% else %}
+<div class="max-w-5xl mx-auto p-6 space-y-6" x-data="workspaceAccess()">
   <div>
     <a href="{{ back_url }}" class="text-sm text-brand-cornflower-blue">&larr; Back to Simple Microplan</a>
-    <h1 class="text-2xl font-bold text-gray-900 mt-2">{{ workspace.org.name }} &mdash; workspace</h1>
-    <p class="text-sm text-gray-500">Labs program #{{ program_id }}. Only program managers see this page.</p>
+    <h1 class="text-2xl font-bold text-gray-900 mt-2">{{ workspace.org.name }} &mdash; access</h1>
+    <p class="text-sm text-gray-500">Labs program #{{ program_id }}. Who can open this workspace, and as what. Only program managers see this page.</p>
   </div>
 
-  <section class="bg-white border rounded-lg p-4 space-y-3">
-    <h2 class="text-lg font-semibold text-gray-900">Linked Connect programs</h2>
-    <p class="text-sm text-gray-600">
-      Anyone in a Connect organisation that delivers an opportunity in one of these programs can open this workspace
-      as a network manager, and sees only their organisation's plans and studies. Usually one Connect program per
-      partner &mdash; add each one as it is created. With none linked, only program managers can use the workspace.
-    </p>
-    <form method="post" class="flex flex-wrap items-end gap-2">
+  {# ---------------------------------------------------------------- LLOs #}
+  <section id="llos" class="bg-white border rounded-lg p-4 space-y-3" x-data="pagedList({{ page_size }})">
+    <div class="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h2 class="text-lg font-semibold text-gray-900">LLOs</h2>
+        <p class="text-sm text-gray-600">
+          The partner organisations of this workspace. Everyone who signs in to labs as a member of one of these Connect
+          organisations is a network manager of it here, and sees only its microplans. Connect membership changes can
+          take up to an hour to reach labs.
+        </p>
+      </div>
+      <input type="search" x-cloak x-model="q" @input="page = 0; apply()" data-list-search placeholder="Search LLOs"
+             aria-label="Search LLOs" class="border border-gray-300 rounded px-2 py-1 text-sm w-56">
+    </div>
+
+    {% if llos %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm" data-list="llos">
+        <thead>
+          <tr class="text-left text-gray-500">
+            <th class="py-1 pr-3">Organisation</th>
+            <th class="pr-3">People so far</th>
+            <th class="pr-3 text-right">Microplans</th>
+            <th class="pr-3">Added</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for llo in llos %}
+          <tr class="border-t align-top" data-row data-search="{{ llo.search }}">
+            <td class="py-2 pr-3">
+              <div class="font-medium text-gray-900">{{ llo.name|default:llo.slug }}</div>
+              <div class="font-mono text-xs text-gray-500">{{ llo.slug }}</div>
+            </td>
+            <td class="py-2 pr-3">
+              {% if llo.people %}
+              <details>
+                <summary class="cursor-pointer text-gray-700">{{ llo.people|length }} {{ llo.people|length|pluralize:"person,people" }}</summary>
+                <ul class="mt-1 space-y-0.5">
+                  {% for p in llo.people %}
+                  <li class="text-xs text-gray-600">{{ p.user.name|default:p.user.username }} <span class="text-gray-400">{{ p.user.email }}</span> &middot; last seen {{ p.last_seen|date:"j M Y, H:i" }}</li>
+                  {% endfor %}
+                </ul>
+              </details>
+              {% else %}
+              <span class="text-xs text-gray-400">No one yet</span>
+              {% endif %}
+            </td>
+            <td class="py-2 pr-3 text-right tabular-nums">{{ llo.microplans }}</td>
+            <td class="py-2 pr-3 text-xs text-gray-500 whitespace-nowrap">{{ llo.created_at|date:"j M Y" }}{% if llo.added_by %}<br>{{ llo.added_by.name|default:llo.added_by.username }}{% endif %}</td>
+            <td class="py-2 text-right">
+              <form method="post" class="inline" @submit.prevent="ask($event)"
+                    data-confirm-title="Delete the LLO {{ llo.name|default:llo.slug }}?"
+                    data-confirm-body="Its members ({{ llo.people|length }} so far) lose access to this workspace, and its {{ llo.microplans }} microplan(s) become visible to program managers only. No microplan is deleted.">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="remove_llo">
+                <input type="hidden" name="slug" value="{{ llo.slug }}">
+                <button type="submit" class="text-red-600 hover:text-red-700 px-1" title="Delete" aria-label="Delete the LLO {{ llo.slug }}">
+                  <i class="fa-solid fa-trash" aria-hidden="true"></i>
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "microplans/_workspace_list_pager.html" with noun="LLOs" %}
+    {% else %}
+    <p class="text-sm text-gray-500">No LLOs yet. Until you add one, only program managers and the people under Users can open this workspace.</p>
+    {% endif %}
+
+    <form method="post" class="flex flex-wrap items-end gap-2 border-t pt-3">
       {% csrf_token %}
-      <label class="flex-1 min-w-[16rem] text-sm text-gray-700">
-        Connect program ids (comma-separated)
-        <input name="connect_program_ids" value="{{ linked_programs }}" class="mt-1 w-full border border-gray-300 rounded px-2 py-1 text-sm" autocomplete="off">
+      <input type="hidden" name="action" value="add_llo">
+      <label class="min-w-[14rem] text-sm text-gray-700">
+        Connect organisation slug
+        <input name="slug" required list="known-orgs" placeholder="riverbend-health" class="mt-1 w-full border border-gray-300 rounded px-2 py-1 text-sm font-mono" autocomplete="off">
       </label>
-      <button type="submit" class="button button-sm primary-dark">Save</button>
+      <label class="flex-1 min-w-[12rem] text-sm text-gray-700">
+        Display name <span class="text-xs text-gray-400">(optional)</span>
+        <input name="name" class="mt-1 w-full border border-gray-300 rounded px-2 py-1 text-sm" autocomplete="off">
+      </label>
+      <button type="submit" class="button button-sm primary-dark">Add LLO</button>
+      <datalist id="known-orgs">
+        {% for o in known_orgs %}<option value="{{ o.slug }}">{{ o.name }}</option>{% endfor %}
+      </datalist>
     </form>
   </section>
 
-  <section class="bg-white border rounded-lg p-4 space-y-3">
-    <h2 class="text-lg font-semibold text-gray-900">Teams</h2>
-    <p class="text-sm text-gray-600">
-      A team is one delivering Connect organisation. This list comes from what your own Connect account can see in the
-      linked programs, plus any team that already has plans here &mdash; so a partner your account cannot see appears
-      once they have created something. Connect organisation changes can take up to an hour to reach labs.
-    </p>
-    {% if teams %}
-      <table class="w-full text-sm">
-        <thead><tr class="text-left text-gray-500"><th class="py-1">Organisation</th><th>Slug</th><th class="text-right">Microplans, plans &amp; studies</th></tr></thead>
-        <tbody>
-          {% for t in teams %}
-            <tr class="border-t"><td class="py-1">{{ t.name }}{% if not t.derived %} <span class="text-xs text-gray-400">(seen on plans)</span>{% endif %}</td><td class="font-mono text-xs">{{ t.slug }}</td><td class="text-right">{{ t.records }}</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% else %}
-      <p class="text-sm text-gray-500">No teams yet.</p>
-    {% endif %}
-    {% if pm_only_records %}
-      <p class="text-xs text-gray-500">{{ pm_only_records }} plan(s) or stud(ies) have no team and are visible to program managers only.</p>
-    {% endif %}
-  </section>
+  {# --------------------------------------------------------------- Users #}
+  <section id="users" class="bg-white border rounded-lg p-4 space-y-3" x-data="pagedList({{ page_size }})">
+    <div class="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h2 class="text-lg font-semibold text-gray-900">Users</h2>
+        <p class="text-sm text-gray-600">
+          Access for one email address, which beats every other rule: make someone a program manager, or a network
+          manager of an LLO (for example to see the workspace as a partner would, or to let in someone whose LLO
+          membership does not come through). They need not have signed in yet &mdash; it applies when they sign in
+          with that email. Delete an entry and the usual rules apply to them again.
+        </p>
+      </div>
+      <input type="search" x-cloak x-model="q" @input="page = 0; apply()" data-list-search placeholder="Search users"
+             aria-label="Search users" class="border border-gray-300 rounded px-2 py-1 text-sm w-56">
+    </div>
 
-  <section class="bg-white border rounded-lg p-4 space-y-3" id="testers">
-    <h2 class="text-lg font-semibold text-gray-900">Testers</h2>
-    <p class="text-sm text-gray-600">
-      Try the network manager view before partners join. A tester is a Dimagi person who, in this workspace, is a
-      network manager of the team you give them &mdash; a Connect organisation slug, or a made-up one such as
-      <span class="font-mono text-xs">test-llo-a</span>. They see only that team's microplans and cannot delete, exactly
-      as a partner would, and cannot open this page while testing. Remove them here, or they can stop testing
-      themselves from Simple Microplan. You can add yourself.
-    </p>
-    {% if testers %}
-      <table class="w-full text-sm">
-        <thead><tr class="text-left text-gray-500"><th class="py-1">Tester</th><th>Team</th><th>Added by</th><th></th></tr></thead>
+    {% if users %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm" data-list="users">
+        <thead>
+          <tr class="text-left text-gray-500">
+            <th class="py-1 pr-3">Email</th>
+            <th class="pr-3">Access</th>
+            <th class="pr-3">Added</th>
+            <th></th>
+          </tr>
+        </thead>
         <tbody>
-          {% for t in testers %}
-            <tr class="border-t">
-              <td class="py-1">{{ t.user.name|default:t.user.username }} <span class="text-xs text-gray-400">{{ t.user.email }}</span></td>
-              <td class="font-mono text-xs">{{ t.team }}</td>
-              <td class="text-xs text-gray-500">{% if t.added_by %}{{ t.added_by.name|default:t.added_by.username }}{% else %}—{% endif %}</td>
-              <td class="text-right">
-                <form method="post" class="inline">
-                  {% csrf_token %}
-                  <input type="hidden" name="action" value="remove_tester">
-                  <input type="hidden" name="user_id" value="{{ t.user_id }}">
-                  <button type="submit" class="text-xs text-red-600 hover:text-red-700">Remove</button>
-                </form>
-              </td>
-            </tr>
+          {% for u in users %}
+          <tr class="border-t align-top" data-row data-search="{{ u.search }}">
+            <td class="py-2 pr-3">
+              <div class="text-gray-900">{{ u.email }}{% if u.is_self %} <span class="text-xs text-gray-400">(you)</span>{% endif %}</div>
+              <div class="text-xs text-gray-500">
+                {% if u.user %}{{ u.user.name|default:u.user.username }}{% else %}Not signed in yet{% endif %}
+                {% if not u.is_dimagi %} &middot; <span class="text-amber-700">not a Dimagi address</span>{% endif %}
+              </div>
+            </td>
+            <td class="py-2 pr-3">
+              <form method="post" class="flex flex-wrap items-center gap-1" @submit="askIfOutsidePm($event)" data-email="{{ u.email }}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="change_user">
+                <input type="hidden" name="entry_id" value="{{ u.id }}">
+                <select name="access" aria-label="Access for {{ u.email }}" class="border border-gray-300 rounded px-2 py-1 text-sm">
+                  <option value="program_manager"{% if not u.is_nm %} selected{% endif %}>Program Manager</option>
+                  {% for o in llo_choices %}
+                  <option value="network_manager:{{ o.slug }}"{% if u.is_nm and u.team == o.slug %} selected{% endif %}>Network Manager of {{ o.name }}</option>
+                  {% endfor %}
+                  {% if u.is_nm and not u.team_is_llo %}
+                  <option value="network_manager:{{ u.team }}" selected>Network Manager of {{ u.team }} (not an LLO)</option>
+                  {% endif %}
+                </select>
+                <button type="submit" class="text-xs text-brand-cornflower-blue hover:underline px-1">Change</button>
+              </form>
+            </td>
+            <td class="py-2 pr-3 text-xs text-gray-500 whitespace-nowrap">{{ u.created_at|date:"j M Y" }}{% if u.added_by %}<br>{{ u.added_by.name|default:u.added_by.username }}{% endif %}</td>
+            <td class="py-2 text-right">
+              <form method="post" class="inline" @submit.prevent="ask($event)"
+                    data-confirm-title="Delete the entry for {{ u.email }}?"
+                    data-confirm-body="{{ u.email }} loses the access this entry gives ({{ u.label }}). The usual rules apply to them again: Dimagi staff are program managers, members of an LLO are its network managers, and anyone else has no access.">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="remove_user">
+                <input type="hidden" name="entry_id" value="{{ u.id }}">
+                <button type="submit" class="text-red-600 hover:text-red-700 px-1" title="Delete" aria-label="Delete the entry for {{ u.email }}">
+                  <i class="fa-solid fa-trash" aria-hidden="true"></i>
+                </button>
+              </form>
+            </td>
+          </tr>
           {% endfor %}
         </tbody>
       </table>
+    </div>
+    {% include "microplans/_workspace_list_pager.html" with noun="users" %}
     {% else %}
-      <p class="text-sm text-gray-500">No testers.</p>
+    <p class="text-sm text-gray-500">No users listed. Dimagi staff are program managers, and LLO members network managers, without an entry.</p>
     {% endif %}
-    <form method="post" class="flex flex-wrap items-end gap-2">
+
+    <form method="post" class="flex flex-wrap items-end gap-2 border-t pt-3" @submit="askIfOutsidePm($event)">
       {% csrf_token %}
-      <input type="hidden" name="action" value="add_tester">
+      <input type="hidden" name="action" value="add_user">
       <label class="flex-1 min-w-[14rem] text-sm text-gray-700">
-        Dimagi email or username
-        <input name="who" required class="mt-1 w-full border border-gray-300 rounded px-2 py-1 text-sm" autocomplete="off">
+        Email address
+        <input name="email" type="email" required class="mt-1 w-full border border-gray-300 rounded px-2 py-1 text-sm" autocomplete="off">
       </label>
-      <label class="min-w-[10rem] text-sm text-gray-700">
-        Team
-        <input name="team" required placeholder="test-llo-a" class="mt-1 w-full border border-gray-300 rounded px-2 py-1 text-sm font-mono" autocomplete="off">
+      <label class="min-w-[14rem] text-sm text-gray-700">
+        Access
+        <select name="access" class="mt-1 w-full border border-gray-300 rounded px-2 py-1 text-sm">
+          <option value="program_manager">Program Manager</option>
+          {% for o in llo_choices %}<option value="network_manager:{{ o.slug }}">Network Manager of {{ o.name }}</option>{% endfor %}
+        </select>
       </label>
-      <button type="submit" class="button button-sm primary-dark">Add tester</button>
+      <button type="submit" class="button button-sm primary-dark">Add user</button>
     </form>
   </section>
-  {% endif %}
+
+  {# One confirmation dialog for the page, in the look of components/invoice_confirm_modal.html. #}
+  <div x-show="open" x-cloak x-transition.opacity class="modal-backdrop" role="dialog" aria-modal="true"
+       aria-labelledby="workspace-confirm-title" @keydown.escape.window="open = false" id="workspace-confirm">
+    <div @click.outside="open = false" class="modal">
+      <div class="flex justify-between items-center pb-2 mb-4">
+        <h2 id="workspace-confirm-title" class="text-lg font-medium text-brand-deep-purple" x-text="title"></h2>
+        <button type="button" @click="open = false" class="text-gray-500 hover:text-gray-700" aria-label="Close dialog">
+          <i class="fa-solid fa-xmark text-xl" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="mb-6"><p class="text-gray-700 mb-2" x-text="body"></p></div>
+      <div class="flex justify-end gap-2 pt-4">
+        <button type="button" class="button button-md outline-style" @click="open = false">Cancel</button>
+        <button type="button" class="button button-md negative-dark" @click="confirm()" x-text="confirmText"></button>
+      </div>
+    </div>
+  </div>
 </div>
+{% endif %}
 {% endblock %}
+
+{% block inline_javascript %}
+{{ block.super }}
+{% if not can_turn_on %}
+<script>
+  // The two lists: search + pages of {{ page_size }} rows in the browser, over rows
+  // the server rendered in full (so without JavaScript every row shows), and one
+  // confirmation dialog before anything is deleted.
+  document.addEventListener('alpine:init', () => {
+    const DIMAGI_EMAIL = /@(dimagi\.com|dimagi-ai\.com)$/i;
+    window.Alpine.data('workspaceAccess', () => ({
+      open: false,
+      title: '',
+      body: '',
+      confirmText: 'Delete',
+      form: null,
+      ask(event) {
+        const form = event.target.closest('form');
+        this.form = form;
+        this.title = form.dataset.confirmTitle || 'Are you sure?';
+        this.body = form.dataset.confirmBody || '';
+        this.confirmText = 'Delete';
+        this.open = true;
+      },
+      // Program Manager access for an address outside Dimagi gets its own question.
+      askIfOutsidePm(event) {
+        const form = event.target.closest('form');
+        const access = form.elements.access ? form.elements.access.value : '';
+        const email = (form.dataset.email || (form.elements.email ? form.elements.email.value : '')).trim();
+        if (access !== 'program_manager' || !email || DIMAGI_EMAIL.test(email)) return;
+        event.preventDefault();
+        this.form = form;
+        this.title = 'Give ' + email + ' Program Manager access?';
+        this.body = 'This gives a non-Dimagi account full Program Manager access, including deleting microplans. Continue?';
+        this.confirmText = 'Continue';
+        this.open = true;
+      },
+      confirm() {
+        const form = this.form;
+        this.open = false;
+        if (form) form.submit(); // submit() skips the submit handlers, so no second question
+      },
+    }));
+    window.Alpine.data('pagedList', (size) => ({
+      q: '',
+      page: 0,
+      size: size || 10,
+      total: 0,
+      rows: [],
+      init() {
+        this.rows = Array.from(this.$el.querySelectorAll('[data-row]'));
+        this.apply();
+      },
+      get pages() { return Math.max(1, Math.ceil(this.total / this.size)); },
+      get first() { return this.total ? this.page * this.size + 1 : 0; },
+      get last() { return Math.min(this.total, (this.page + 1) * this.size); },
+      apply() {
+        const q = this.q.trim().toLowerCase();
+        const hits = this.rows.filter((r) => !q || (r.dataset.search || '').toLowerCase().includes(q));
+        this.total = hits.length;
+        if (this.page > this.pages - 1) this.page = this.pages - 1;
+        const start = this.page * this.size;
+        this.rows.forEach((r) => { r.hidden = true; });
+        hits.slice(start, start + this.size).forEach((r) => { r.hidden = false; });
+      },
+      go(delta) {
+        this.page = Math.min(this.pages - 1, Math.max(0, this.page + delta));
+        this.apply();
+      },
+    }));
+  });
+</script>
+{% endif %}
+{% endblock inline_javascript %}

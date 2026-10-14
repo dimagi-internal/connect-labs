@@ -2000,25 +2000,34 @@ class MetricGlossaryView(LoginRequiredMixin, TemplateView):
 
 
 class ProgramWorkspaceSettingsView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
-    """Program Managers' page for a workspace program (``labs.workspaces``).
+    """Program Managers' access page for a workspace program (``labs.workspaces``).
 
-    Shows which REAL Connect programs the workspace is linked to -- their
-    delivering organisations are its Network Managers, one team each -- and the
-    teams that derives, and lets a Program Manager change the list (usually one
-    Connect program per partner, created over time). 404 for anyone else.
+    Two lists, each searchable and paged in the browser, every delete confirmed
+    in a dialog first:
 
-    For a labs-only program whose organisation is not a workspace yet, Dimagi
-    staff -- and only they -- get a "Turn on workspace roles" button instead: the
-    browser route to what ``setup_autoconnect_workspace --program-id`` does, by
-    the same function (``labs.workspaces.adopt_program``), for deployments where
-    nobody can run a management command. Everyone else gets a 404 for the page
-    and a 403 for the button.
+      * **LLOs** -- the workspace's partner organisations, by Connect organisation
+        slug. Every member of one is a Network Manager of it here. Deleting an LLO
+        takes that away and hands its Simple Microplans to Program Managers (team
+        cleared; nothing is deleted).
+      * **Users** -- explicit access by email address (any address, signed in yet
+        or not): Program Manager, or Network Manager of an LLO, switchable in
+        place. An entry wins over every other rule; deleting one returns that
+        person to the other rules. Nobody may change their own entry in a way
+        that would stop them getting back to Program Manager by themselves.
 
-    Program Managers also name testers here: Dimagi people who see the workspace
-    as a Network Manager of a team (``labs.workspaces.add_tester``) -- and so,
-    while testing, are refused this page like any Network Manager."""
+    404 for anyone but a Program Manager, on every action. For a labs-only program
+    whose organisation is not a workspace yet, Dimagi staff -- and only they --
+    get a "Turn on workspace roles" button instead: the browser route to what
+    ``setup_autoconnect_workspace --program-id`` does, by the same function
+    (``labs.workspaces.adopt_program``). Everyone else gets a 404 for the page and
+    a 403 for the button.
+
+    The workspace's older ``connect_program_ids`` (Network Managers by delivering
+    in a linked Connect program) still count but are no longer edited here; the
+    management command still sets them."""
 
     template_name = "microplans/workspace_settings.html"
+    LIST_PAGE_SIZE = 10
 
     def _can_turn_on(self, program_id) -> bool:
         """Dimagi staff, on a labs-only program that is not a workspace yet."""
@@ -2041,11 +2050,28 @@ class ProgramWorkspaceSettingsView(_LabsContextSyncMixin, LoginRequiredMixin, Te
             raise Http404("Not found.")
         return workspace, role
 
+    def _known_orgs(self, workspace) -> dict:
+        """Connect organisations this Program Manager's own tree names: slug -> name."""
+        from connect_labs.labs.workspaces import connect_org_data, delivering_orgs, member_slugs
+
+        org_data = connect_org_data(self.request.user) or {}
+        known = {
+            str(o["slug"]): o.get("name") or str(o["slug"])
+            for o in org_data.get("organizations") or []
+            if o.get("slug") and str(o["slug"]) in member_slugs(org_data)
+        }
+        for slug, name in delivering_orgs(org_data, workspace.connect_program_ids).items():
+            known.setdefault(slug, name)
+        return known
+
     def get_context_data(self, **kwargs):
+        from collections import defaultdict
+
+        from django.db.models import Count
         from django.urls import reverse
 
-        from connect_labs.labs.workspaces import connect_org_data, delivering_orgs
-        from connect_labs.microplans.core.data_access import ProgramPlanDataAccess
+        from connect_labs.labs.models import WorkspaceAccess, WorkspaceUser
+        from connect_labs.labs.workspaces import NETWORK_MANAGER, entry_is_for, is_dimagi_email
         from connect_labs.microplans.models import SimpleMicroplan
 
         context = super().get_context_data(**kwargs)
@@ -2055,32 +2081,86 @@ class ProgramWorkspaceSettingsView(_LabsContextSyncMixin, LoginRequiredMixin, Te
             context.update({"program_id": program_id, "workspace": None, "can_turn_on": True, "back_url": back_url})
             return context
         workspace, _role = self._workspace_and_role(program_id)
-        da = ProgramPlanDataAccess(program_id, request=self.request)
-        records = [*da.list_plans(), *da.list_groups()]
-        counts: dict[str, int] = {}
-        teams_on_records = [(r.data or {}).get("team") or "" for r in records]
-        # A workspace program's microplans are made in Simple Microplan.
-        teams_on_records += SimpleMicroplan.objects.filter(program_id=program_id).values_list("team", flat=True)
-        for team in teams_on_records:
-            counts[team] = counts.get(team, 0) + 1
-        # What this Program Manager's own Connect account shows delivering in the
-        # linked programs. It may not be every partner -- only what their account
-        # can see -- so teams already on plans are listed too.
-        derived = delivering_orgs(connect_org_data(self.request.user), workspace.connect_program_ids)
-        teams = [{"slug": s, "name": n, "records": counts.get(s, 0), "derived": True} for s, n in derived.items()]
-        teams += [
-            {"slug": s, "name": s, "records": n, "derived": False}
-            for s, n in sorted(counts.items())
-            if s and s not in derived
-        ]
+        user = self.request.user
+        known = self._known_orgs(workspace)
+        plan_counts = dict(
+            SimpleMicroplan.objects.filter(program_id=program_id)
+            .values("team")
+            .annotate(n=Count("pk"))
+            .values_list("team", "n")
+        )
+        # The people each LLO has brought in: Network Managers by membership, as
+        # noted when their role resolved (labs.workspaces.note_access).
+        people = defaultdict(list)
+        for seen in (
+            WorkspaceAccess.objects.filter(workspace=workspace, role=NETWORK_MANAGER, explicit=False)
+            .select_related("user")
+            .order_by("-last_seen")
+        ):
+            for team in seen.teams or []:
+                people[team].append(seen)
+        llos = []
+        for llo in workspace.llos.select_related("added_by").order_by("created_at", "pk"):
+            name = llo.name or known.get(llo.slug) or ""
+            members = people.get(llo.slug, [])
+            llos.append(
+                {
+                    "slug": llo.slug,
+                    "name": name,
+                    "people": members,
+                    "microplans": plan_counts.get(llo.slug, 0),
+                    "added_by": llo.added_by,
+                    "created_at": llo.created_at,
+                    "search": " ".join(
+                        [llo.slug, name]
+                        + [f"{getattr(p.user, 'name', '')} {p.user.email} {p.user.username}" for p in members]
+                    ),
+                }
+            )
+        llo_names = {r["slug"]: r["name"] or r["slug"] for r in llos}
+        users = []
+        for entry in workspace.users.select_related("user", "added_by").order_by("created_at", "pk"):
+            is_nm = entry.role == WorkspaceUser.NETWORK_MANAGER
+            team_name = llo_names.get(entry.team) or entry.team
+            users.append(
+                {
+                    "id": entry.pk,
+                    "email": entry.email,
+                    "user": entry.user,
+                    "role": entry.role,
+                    "is_nm": is_nm,
+                    "team": entry.team,
+                    "team_name": team_name,
+                    "team_is_llo": entry.team in llo_names,
+                    "access": f"{entry.role}:{entry.team}" if is_nm else entry.role,
+                    "label": f"Network Manager of {team_name}" if is_nm else "Program Manager",
+                    "is_self": entry_is_for(entry, user),
+                    "is_dimagi": is_dimagi_email(entry.email),
+                    "added_by": entry.added_by,
+                    "created_at": entry.created_at,
+                    "search": " ".join(
+                        [
+                            entry.email,
+                            getattr(entry.user, "name", "") if entry.user else "",
+                            "network manager" if is_nm else "program manager",
+                            entry.team,
+                            team_name,
+                        ]
+                    ),
+                }
+            )
         context.update(
             {
                 "program_id": program_id,
                 "workspace": workspace,
-                "linked_programs": ", ".join(str(p) for p in workspace.connect_program_ids),
-                "teams": teams,
-                "pm_only_records": counts.get("", 0),
-                "testers": list(workspace.testers.select_related("user", "added_by").order_by("created_at")),
+                "llos": llos,
+                "users": users,
+                "llo_choices": [{"slug": r["slug"], "name": r["name"] or r["slug"]} for r in llos],
+                "known_orgs": sorted(
+                    ({"slug": s, "name": n} for s, n in known.items() if s not in llo_names),
+                    key=lambda o: o["name"].lower(),
+                ),
+                "page_size": self.LIST_PAGE_SIZE,
                 "back_url": reverse("microplans:program_simple_list", args=[program_id]),
             }
         )
@@ -2090,70 +2170,155 @@ class ProgramWorkspaceSettingsView(_LabsContextSyncMixin, LoginRequiredMixin, Te
         from django.contrib import messages
         from django.shortcuts import redirect
 
-        from connect_labs.audit_trail.models import Action
-        from connect_labs.audit_trail.service import record
-
         action = request.POST.get("action")
         if action == "turn_on":
             return self._turn_on(request, program_id)
         workspace, _role = self._workspace_and_role(program_id)
-        if action in ("add_tester", "remove_tester"):
-            return self._change_testers(request, workspace, program_id, action)
-        raw = request.POST.get("connect_program_ids", "")
-        try:
-            ids = sorted({int(p) for p in raw.replace(",", " ").split()})
-        except ValueError:
-            messages.error(request, "Connect program ids are whole numbers, separated by commas or spaces.")
+        handler = {
+            "add_llo": self._add_llo,
+            "remove_llo": self._remove_llo,
+            "add_user": self._set_user,
+            "change_user": self._set_user,
+            "remove_user": self._remove_user,
+        }.get(action)
+        if handler is None:
+            messages.error(request, "Nothing was changed.")
             return redirect(request.path)
-        if any(p <= 0 for p in ids):
-            messages.error(request, "Connect program ids are positive whole numbers.")
-            return redirect(request.path)
-        before = list(workspace.connect_program_ids)
-        workspace.connect_program_ids = ids
-        workspace.updated_by = request.user
-        workspace.save(update_fields=["connect_program_ids", "updated_by", "updated_at"])
-        record(
-            Action.UPDATE,
-            resource_type="workspace",
-            resource_id=workspace.pk,
-            program_id=int(program_id),
-            labs_only=True,
-            metadata={"connect_program_ids": {"before": before, "after": ids}},
-        )
-        messages.success(request, "Linked Connect programs saved." if ids else "No Connect programs are linked now.")
-        return redirect(request.path)
+        return handler(request, workspace, int(program_id))
 
-    def _change_testers(self, request, workspace, program_id, action):
-        """Add a Dimagi person as a tester of a team (a Network Manager of it
-        here, until removed), or remove one (``labs.workspaces``)."""
+    # ---- LLOs ----
+
+    def _add_llo(self, request, workspace, program_id):
         from django.contrib import messages
         from django.shortcuts import redirect
 
-        from connect_labs.labs.workspaces import TesterRefused, add_tester, remove_tester
+        from connect_labs.labs.workspaces import AccessRefused, add_llo
 
-        if action == "remove_tester":
-            try:
-                user_id = int(request.POST.get("user_id", ""))
-            except ValueError:
-                user_id = None
-            if user_id is not None and remove_tester(workspace, user_id, by=request.user, program_id=int(program_id)):
-                messages.success(request, "Tester removed: their usual role applies again.")
-            return redirect(request.path)
         try:
-            tester = add_tester(
+            llo = add_llo(
                 workspace,
-                request.POST.get("who", ""),
-                request.POST.get("team", ""),
+                request.POST.get("slug", ""),
+                request.POST.get("name", ""),
                 by=request.user,
-                program_id=int(program_id),
+                program_id=program_id,
+                known_names=self._known_orgs(workspace),
             )
-        except TesterRefused as e:
-            messages.error(request, f"Tester not added: {e}.")
-            return redirect(request.path)
-        messages.success(
-            request, f"{tester.user.email or tester.user.username} now tests as a Network Manager of {tester.team}."
+        except AccessRefused as e:
+            messages.error(request, f"LLO not added: {e}.")
+        else:
+            messages.success(request, f"{llo.name or llo.slug} is an LLO: its members are Network Managers here.")
+        return redirect(f"{request.path}#llos")
+
+    def _remove_llo(self, request, workspace, program_id):
+        from django.contrib import messages
+        from django.shortcuts import redirect
+
+        from connect_labs.labs.workspaces import clean_slug, remove_llo
+        from connect_labs.microplans.models import SimpleMicroplan
+
+        slug = clean_slug(request.POST.get("slug"))
+        if not workspace.llos.filter(slug=slug).exists():
+            raise Http404("Not found.")
+        # Its microplans stay, for Program Managers only: nothing is deleted.
+        cleared = SimpleMicroplan.objects.filter(program_id=program_id, team=slug).update(team="")
+        remove_llo(
+            workspace, slug, by=request.user, program_id=program_id, metadata={"microplans_made_pm_only": cleared}
         )
-        return redirect(request.path)
+        messages.success(
+            request,
+            f"{slug} is no longer an LLO: its members lost access, and its {cleared} microplan(s) "
+            "are Program Managers' only.",
+        )
+        return redirect(f"{request.path}#llos")
+
+    # ---- Users ----
+
+    def _would_lock_out(self, request, workspace, *, keeps_pm: bool) -> bool:
+        """Whether changing the caller's own entry would leave them unable to get
+        back to Program Manager by themselves: fine if the entry keeps them one,
+        or if without it they are one anyway."""
+        from connect_labs.labs.workspaces import fallback_role
+
+        if keeps_pm:
+            return False
+        usual = fallback_role(request.user, workspace)
+        return usual is None or not usual.is_program_manager
+
+    def _set_user(self, request, workspace, program_id):
+        from django.contrib import messages
+        from django.shortcuts import redirect
+        from django.urls import reverse
+
+        from connect_labs.labs.models import WorkspaceUser
+        from connect_labs.labs.workspaces import AccessRefused, clean_email, entry_is_for, set_user
+
+        role, _, team = (request.POST.get("access") or "").partition(":")
+        existing = None
+        if request.POST.get("action") == "change_user":
+            try:
+                existing = workspace.users.get(pk=int(request.POST.get("entry_id", "")))
+            except (ValueError, WorkspaceUser.DoesNotExist):
+                raise Http404("Not found.") from None
+            email = existing.email
+        else:
+            email = request.POST.get("email", "")
+        try:
+            email = clean_email(email)
+        except AccessRefused as e:
+            messages.error(request, f"User not added: {e}.")
+            return redirect(f"{request.path}#users")
+        if existing is None:
+            existing = workspace.users.filter(email=email).first()
+        is_self = entry_is_for(existing, request.user) if existing else email == (request.user.email or "").lower()
+        keeps_pm = role == WorkspaceUser.PROGRAM_MANAGER
+        if is_self and self._would_lock_out(request, workspace, keeps_pm=keeps_pm):
+            messages.error(
+                request,
+                "You can't make your own entry Network Manager: you would lose Program Manager access here "
+                "and could not change it back. Ask another Program Manager.",
+            )
+            return redirect(f"{request.path}#users")
+        try:
+            entry, created = set_user(
+                workspace,
+                email,
+                role,
+                team,
+                by=request.user,
+                program_id=program_id,
+                keep_team=existing.team if existing else "",
+            )
+        except AccessRefused as e:
+            messages.error(request, f"User not {'added' if existing is None else 'changed'}: {e}.")
+            return redirect(f"{request.path}#users")
+        label = "a Program Manager" if keeps_pm else f"a Network Manager of {entry.team}"
+        messages.success(request, f"{entry.email} {'is now' if created else 'changed to'} {label}.")
+        if is_self and not keeps_pm:
+            # This page is Program Managers' only: land where they can now go.
+            return redirect(reverse("microplans:program_simple_list", args=[program_id]))
+        return redirect(f"{request.path}#users")
+
+    def _remove_user(self, request, workspace, program_id):
+        from django.contrib import messages
+        from django.shortcuts import redirect
+
+        from connect_labs.labs.models import WorkspaceUser
+        from connect_labs.labs.workspaces import entry_is_for, remove_user
+
+        try:
+            entry = workspace.users.get(pk=int(request.POST.get("entry_id", "")))
+        except (ValueError, WorkspaceUser.DoesNotExist):
+            raise Http404("Not found.") from None
+        if entry_is_for(entry, request.user) and self._would_lock_out(request, workspace, keeps_pm=False):
+            messages.error(
+                request,
+                "You can't delete your own entry: without it you would not be a Program Manager here. "
+                "Ask another Program Manager.",
+            )
+            return redirect(f"{request.path}#users")
+        remove_user(workspace, entry.pk, by=request.user, program_id=program_id)
+        messages.success(request, f"{entry.email} removed from Users: the usual rules apply to them again.")
+        return redirect(f"{request.path}#users")
 
     def _turn_on(self, request, program_id):
         from django.contrib import messages
@@ -2174,28 +2339,37 @@ class ProgramWorkspaceSettingsView(_LabsContextSyncMixin, LoginRequiredMixin, Te
             messages.error(request, f"Workspace roles were not turned on: {e}.")
             return redirect(request.path)
         if created:
-            messages.success(request, "Workspace roles are on. Add the linked Connect programs below.")
+            messages.success(request, "Workspace roles are on. Add the LLOs and Users below.")
         else:
             messages.info(request, "Workspace roles were already on.")
         return redirect(request.path)
 
 
 class ProgramWorkspaceStopTestingView(_ProgramScopeMixin, LoginRequiredMixin, View):
-    """POST: a tester stops testing this workspace program as a Network Manager;
-    their usual role (Program Manager, for Dimagi staff) applies again."""
+    """POST: someone a Users entry makes a Network Manager switches back to Program
+    Manager by deleting their own entry -- only when, without it, they ARE one
+    (so they could set it again). Anyone else is told to ask a Program Manager."""
 
     def post(self, request, program_id):
         from django.contrib import messages
         from django.http import HttpResponseRedirect
         from django.urls import reverse
 
-        from connect_labs.labs.workspaces import remove_tester, workspace_for_program
+        from connect_labs.labs.models import WorkspaceUser
+        from connect_labs.labs.workspaces import fallback_role, remove_user, user_entry, workspace_for_program
 
         workspace = workspace_for_program(program_id)
         if workspace is None:
             raise Http404("Not found.")
-        if remove_tester(workspace, request.user.pk, by=request.user, program_id=int(program_id)):
-            messages.success(request, "You stopped testing as a Network Manager.")
+        entry = user_entry(request.user, workspace)
+        usual = fallback_role(request.user, workspace)
+        if entry is None or entry.role != WorkspaceUser.NETWORK_MANAGER:
+            pass
+        elif usual is not None and usual.is_program_manager:
+            remove_user(workspace, entry.pk, by=request.user, program_id=int(program_id))
+            messages.success(request, "You are a Program Manager here again.")
+        else:
+            messages.error(request, "Ask a Program Manager to change your access.")
         return HttpResponseRedirect(reverse("microplans:program_simple_list", args=[program_id]))
 
 
