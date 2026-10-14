@@ -95,6 +95,16 @@ def _time_varying_paths(pool: list[dict], *, min_cases: int = 5, vary_share: flo
         for path, vals in cat_seq.items():
             if len(vals) >= 2 and vals[-1] not in vals[:-1]:
                 ended_changed[path] = ended_changed.get(path, 0) + 1
+        # A categorical recorded ONLY on a case's last visit (a discharge form's fields)
+        # is an outcome too: there is no earlier value for it to change from, and taken
+        # for a per-case constant it was stamped onto every visit that form can appear on.
+        visits = series.get("visits") or []
+        if len(visits) >= 2:
+            last_cats = visits[-1].get("cats") or {}
+            earlier = {p for v in visits[:-1] for p in (v.get("cats") or {})}
+            for path in last_cats:
+                if path not in earlier:
+                    ended_changed[path] = ended_changed.get(path, 0) + 1
         counts: dict[str, int] = {}
         for v in series.get("visits") or []:
             for path in list(v.get("values") or {}) + list(v.get("cats") or {}):
