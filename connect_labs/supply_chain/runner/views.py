@@ -1,11 +1,15 @@
 """Platform support's screen for declaring which organisation runs a programme (#2458)."""
 
+from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.utils.decorators import method_decorator
 
-from connect_labs.supply_chain.form_views import OperationFormView
+from connect_labs.supply_chain.api_views import has_program_context
+from connect_labs.supply_chain.form_views import OperationActionView, OperationFormView
 from connect_labs.supply_chain.navigation import scoped_url
 from connect_labs.supply_chain.runner import declared_runner, is_operator
-from connect_labs.supply_chain.runner.forms import ProgrammeRunnerForm
+from connect_labs.supply_chain.runner.forms import ProgrammeRunnerForm, TeamMemberForm
+from connect_labs.supply_chain.views import OperationBase
 
 
 class ProgrammeRunnerView(OperationFormView):
@@ -45,3 +49,57 @@ class ProgrammeRunnerView(OperationFormView):
 
     def redirect_to(self, result):
         return scoped_url(self.request, "supply_chain:overview")
+
+
+# ---- the running organisation's team ----------------------------------------
+
+
+@method_decorator(login_required, name="dispatch")
+class ProgrammeTeamView(OperationBase):
+    """Who acts for the program: its running organisation's team (#2458)."""
+
+    template_name = "supply_chain/programme_team.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["has_program_context"] = has_program_context(self.request)
+        if context["has_program_context"]:
+            try:
+                context["team"] = self.op("programme_team_list")
+            except (PermissionDenied, ValueError) as exc:
+                context["team_refusal"] = str(exc)
+        return context
+
+
+class ProgrammeTeamAddView(OperationFormView):
+    operation = "programme_team_add"
+    form_class = TeamMemberForm
+    title = "Add a person to the team"
+    intro = (
+        "They act for the program: tender, award, order and pay, and record first-hand. "
+        "Platform support, or an admin of the organisation that runs the program, adds people here."
+    )
+    submit_label = "Add"
+
+    def breadcrumb(self, **kwargs):
+        return [
+            {"label": "Team", "href": scoped_url(self.request, "supply_chain:programme_team")},
+            {"label": self.title},
+        ]
+
+    def cancel_href(self, **kwargs):
+        return scoped_url(self.request, "supply_chain:programme_team")
+
+    def redirect_to(self, result):
+        return scoped_url(self.request, "supply_chain:programme_team")
+
+
+class ProgrammeTeamRemoveView(OperationActionView):
+    operation = "programme_team_remove"
+    success_message = "Removed from the team."
+
+    def fixed(self, **kwargs):
+        return {"user_id": int(kwargs["user_id"])}
+
+    def redirect_to(self, **kwargs):
+        return scoped_url(self.request, "supply_chain:programme_team")

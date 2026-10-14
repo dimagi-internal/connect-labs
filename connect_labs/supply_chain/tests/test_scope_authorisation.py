@@ -178,6 +178,9 @@ def test_the_system_escape_hatch_is_greppable():
         # Operator-run: reads stock reports from visits; it and its operation refuse real programmes.
         "supply_chain/management/commands/supply_ingest_stock_reports.py",
         "supply_chain/management/commands/supply_load_bootstrap.py",
+        # Operator-run: adds a running organisation's first admin (#2458). Only the
+        # command line reaches it, which is the platform support it stands for.
+        "supply_chain/management/commands/supply_team_add.py",
         # Operator-run: reads visits into the ledger; the operation refuses real programmes.
         "supply_chain/management/commands/supply_ingest_visit_consumption.py",
         # The visit-reader beat task: no user, synthetic programmes only, a real one skipped by name.

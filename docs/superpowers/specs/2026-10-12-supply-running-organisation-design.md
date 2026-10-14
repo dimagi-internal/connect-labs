@@ -266,3 +266,12 @@ with a test.
   `supply/tests/test_auth.py::test_signup_refuses_a_dimagi_address`.
 - **A screen for support.** `/supply/runner/` (`runner/views.py`): staff declare or
   change the running organisation; the Overview links to it for staff.
+- **A team, and how it grows (2026-10-14).** A running organisation takes no
+  invitations (C1), so its people are kept at `/supply/team/`
+  (`programme_team_list` / `_add` / `_remove`). Platform support, or an admin
+  granted for that organisation, adds people by the email they sign in with.
+  Someone who has never signed in is refused, and so is someone the program's
+  allowed domains would not let open it. The last admin cannot be removed.
+  Support adds the FIRST admin with `manage.py supply_team_add <program> <email>
+  --role admin`, which runs the same operation as the system caller. Dimagi has
+  no team list: its people are recognised by their address.
