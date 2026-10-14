@@ -140,14 +140,14 @@ Click **Download CSV** to save the work areas. The file has the same columns and
 - Only the person who created a microplan (and Dimagi staff) can change, rename or delete it.
 - Anyone else opens it **view only**: they can look around the map, see the groups and download the CSV, but cannot change it.
 
-### In a program with workspace roles (for example Auto-Connect)
+### In a program with workspace roles (for example Auto-Connect or CLP Stage 4)
 
-Some programs keep their microplans to the program and its teams, and make them in Simple Microplan only. With such a program picked in the context picker, the Microplans page shows just the **Simple Microplan** tile, and it opens that program's own list. (CHC Microplan and CHC WA Revisit are not offered there; their links bring you to Simple Microplan.)
+Programs with workspace roles (such as Auto-Connect and CLP Stage 4) keep their microplans inside Simple Microplan, and only there. With such a program picked in the context picker, the Microplans page shows just the **Simple Microplan** tile, and it opens that program's own list. (CHC Microplan and CHC WA Revisit are not offered there; their links bring you to Simple Microplan.)
 
 - A microplan you create there belongs to the program and to your team. If you are on more than one team, pick the team when you create it.
-- **Network Managers** see only their own team's microplans. Everyone on the team can open, change and rename them. Only Program Managers can delete a microplan.
+- **Network Managers** see only their own team's microplans. Everyone on the team can open, change and rename them. Only Program Managers can delete a microplan; the Delete button is hidden for Network Managers.
 - **Program Managers** see every team's microplans and can change, rename and delete any of them. They can file a new microplan under a team, or under **Program Managers only**. **Workspace settings** (next to your role) is where they link partners' Connect programs and add testers.
-- **Testers**: a Program Manager can add a Dimagi colleague as a tester of a team, so they can try the Network Manager view before partners join. A tester sees a **Testing as Network Manager of …** banner and exactly what that team would see; **Stop testing** returns them to their usual role.
+- **Testers**: a Program Manager can add a Dimagi colleague (someone who signs in with an @dimagi.com or @dimagi-ai.com address) as a tester of a team. The team name is free text, so a made-up name such as `test-llo-a` works before any partner organisations have joined. While testing, that person acts as a Network Manager of that team: they see a **Testing as Network Manager of …** banner, only their team's microplans, no Delete button, and no Workspace settings page. A Program Manager can remove them at any time, or they can click **Stop testing** themselves to return to their usual role. People outside Dimagi cannot be added as testers. Adding and removing testers is recorded on the audit trail.
 - These microplans do not appear in the main Simple Microplans list.
 
 ## Getting help in the app
