@@ -59,10 +59,19 @@ def mcp_job_housekeeping() -> dict:
 
 
 @signals.worker_shutting_down.connect
-def _on_worker_shutting_down(sender=None, **kwargs):
-    """Hand back the jobs this worker holds, so the new worker takes them over at once (jobs.py, 5)."""
+def _on_worker_shutting_down(sender=None, how=None, **kwargs):
+    """Hand back the jobs this worker holds, so the new worker takes them over at once (jobs.py, 5).
+
+    Only on a COLD shutdown -- what a deploy sends (docker/start_celery remaps SIGTERM).
+    That is the one that cancels running jobs and returns their messages to the broker.
+    A warm shutdown lets them finish and acknowledges their messages, so a job handed
+    back there would have no message left to run it, and its finished result would be
+    refused for want of the lease.
+    """
     from . import jobs
 
+    if how != "Cold":
+        return
     try:
         released = jobs.release_held_by(str(sender or ""))
     except Exception:  # noqa: BLE001 -- shutdown must go on; the lease lapses by itself

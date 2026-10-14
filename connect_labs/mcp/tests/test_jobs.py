@@ -371,7 +371,7 @@ def test_a_deploy_hands_the_job_back_and_the_new_worker_runs_it_without_counting
     # The old worker's shutdown hook (tasks._on_worker_shutting_down).
     from connect_labs.mcp.tasks import _on_worker_shutting_down
 
-    _on_worker_shutting_down(sender="celery@old")
+    _on_worker_shutting_down(sender="celery@old", how="Cold")
     job.refresh_from_db()
     assert (job.state, job.lease_owner, job.attempts) == (MCPJob.QUEUED, "", 0)
     assert MCPJob.objects.get(pk=other.pk).state == MCPJob.RUNNING  # another worker's job is untouched
@@ -381,6 +381,23 @@ def test_a_deploy_hands_the_job_back_and_the_new_worker_runs_it_without_counting
     assert (job.state, job.attempts) == (MCPJob.SUCCEEDED, 1)
     # The old attempt can no longer record anything over it.
     assert jobs._finish(str(job.pk), "celery@old:1:a", MCPJob.FAILED, error="late") is False
+
+
+@pytest.mark.django_db
+def test_a_warm_shutdown_keeps_the_job_it_lets_finish():
+    """A warm shutdown runs the job to the end and acknowledges its message: nothing to hand back to."""
+    from connect_labs.mcp.tasks import _on_worker_shutting_down
+
+    alice = _user()
+    job = _queued_job(alice)
+    jobs._claim(str(job.pk), "celery@old:1:a", "celery@old", 120)
+
+    _on_worker_shutting_down(sender="celery@old", how="Warm")
+
+    job.refresh_from_db()
+    assert (job.state, job.lease_owner, job.attempts) == (MCPJob.RUNNING, "celery@old:1:a", 1)
+    # So the attempt still records its result.
+    assert jobs._finish(str(job.pk), "celery@old:1:a", MCPJob.SUCCEEDED, result={"x": 1}) is True
 
 
 @pytest.mark.django_db
@@ -485,7 +502,8 @@ def _ecs():
 @pytest.mark.django_db
 @override_settings(MCP_JOBS_ON_ECS=True)
 def test_a_standalone_job_is_launched_on_its_own_task_once_and_runs_there(tools, monkeypatch):
-    monkeypatch.delenv(jobs.KIND.runner_env, raising=False)
+    # Recorded as originally unset, so teardown removes the "1" the command writes.
+    monkeypatch.setenv(jobs.KIND.runner_env, "0")
     alice = _user()
     with _queue_only():
         job_id = _call(alice, STANDALONE, {"n": 7, "wait": False})["job_id"]
@@ -508,7 +526,6 @@ def test_a_standalone_job_is_launched_on_its_own_task_once_and_runs_there(tools,
     call_command("run_mcp_job", job_id)
     job = MCPJob.objects.get(pk=job_id)
     assert (job.state, job.result) == (MCPJob.SUCCEEDED, {"doubled": 14})
-    monkeypatch.delenv(jobs.KIND.runner_env, raising=False)
 
 
 @pytest.mark.django_db

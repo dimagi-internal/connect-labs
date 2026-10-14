@@ -44,8 +44,9 @@ SIGKILLs it at ``stopTimeout`` (30s). Five things together turn that from "job l
 5. The lease. A redelivered message may arrive while the job is held, so a job is
    CLAIMED before it runs (:func:`_claim`): held by one worker until ``lease_until``,
    renewed every ``MCP_JOB_HEARTBEAT_SECONDS`` by a heartbeat thread. A copy that finds
-   it held waits (a Celery retry) and a copy that finds it lapsed takes it over. On
-   shutdown the worker hands back the leases it holds (``tasks._on_worker_shutting_down``)
+   it held waits (a Celery retry) and a copy that finds it lapsed takes it over. On a
+   cold shutdown the worker hands back the leases it holds (``tasks._on_worker_shutting_down``;
+   a warm one lets its jobs finish, so it keeps them)
    and that attempt does not count against the job's ``MCP_JOB_MAX_ATTEMPTS``; an
    attempt that ended any other way does, so a job that kills its worker every time
    stops after a few tries instead of looping.
@@ -307,11 +308,11 @@ class _Heartbeat(threading.Thread):
     def __init__(self, job_id: str, owner: str):
         super().__init__(name=f"mcp-job-heartbeat-{job_id}", daemon=True)
         self.job_id, self.owner = job_id, owner
-        self._stop = threading.Event()
+        self._stop_event = threading.Event()
 
     def run(self):
         try:
-            while not self._stop.wait(heartbeat_seconds()):
+            while not self._stop_event.wait(heartbeat_seconds()):
                 renewed = MCPJob.objects.filter(pk=self.job_id, lease_owner=self.owner, state=MCPJob.RUNNING).update(
                     lease_until=timezone.now() + timedelta(seconds=lease_seconds())
                 )
@@ -323,7 +324,7 @@ class _Heartbeat(threading.Thread):
             connections.close_all()  # this thread's connections only
 
     def stop(self):
-        self._stop.set()
+        self._stop_event.set()
 
 
 def _reporter(job_id: str, owner: str):
