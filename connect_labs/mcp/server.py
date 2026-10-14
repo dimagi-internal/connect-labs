@@ -281,6 +281,10 @@ def allowed_tools(access_token) -> frozenset[str] | None:
         from connect_labs.labs import canopy
 
         permitted = canopy.allowed_tools(getattr(access_token, "scopes", None) or [])
+        # A token that can start a job can follow it. job_status still shows only jobs
+        # whose tool this token reaches (tools/jobs.py).
+        if any(getattr(_REGISTRY.get(name), "long_running", False) for name in permitted):
+            permitted = permitted | token_scopes.JOB_TOOLS
     if restricted_call(access_token):
         permitted = token_scopes.RESTRICTED_TOOLS if permitted is None else permitted & token_scopes.RESTRICTED_TOOLS
     return permitted
@@ -448,6 +452,43 @@ def _run_registry_tool(
         return _run_registry_tool_inner(spec, arguments, user, progress, actor_header)
 
 
+def policy_denial(tool_name: str, arguments: dict, user, restricted: bool) -> str | None:
+    """Why this call is refused on policy grounds, or None. Raises nothing.
+
+    The checks every tool call passes after its scope: what a restricted caller may do
+    with synthetic tools, the generated-only visit readers, and the labs-only access
+    gate. A long-running job runs them again when it starts (``jobs.execute``), so a
+    job queued a moment before an opportunity or a membership changed is held to
+    the rules as they are when it runs.
+    """
+    if restricted:
+        from .visit_access import synthetic_denied_reason
+
+        reason = synthetic_denied_reason(tool_name, arguments)
+        if reason:
+            return reason
+    # Without access to user visit data, a tool that reads visits runs only when every
+    # opportunity the call reads holds generated data.
+    if restricted and tool_name in token_scopes.GENERATED_ONLY_TOOLS:
+        from .visit_access import denied_reason
+
+        reason = denied_reason(user, tool_name, arguments)
+        if reason:
+            return reason
+    # Central labs-only access gate. Any tool scoped to a labs-only opp/program
+    # routes to the local backend with no downstream Connect membership check, so
+    # enforce the synthetic access model here — one place every tool passes through,
+    # rather than relying on each handler to remember its own gate. Real opps are
+    # untouched (the production API enforces them per request).
+    from connect_labs.labs.synthetic.access import labs_only_scope_denied_reason
+
+    return labs_only_scope_denied_reason(
+        user,
+        opportunity_id=arguments.get("opportunity_id"),
+        program_id=arguments.get("program_id"),
+    )
+
+
 def _run_registry_tool_inner(
     spec: RegistryToolSpec, arguments: dict, user, progress=NULL_PROGRESS, actor_header: str = ""
 ) -> ToolResult:
@@ -475,33 +516,7 @@ def _run_registry_tool_inner(
         except jsonschema.ValidationError as e:
             audit(user, spec.name, arguments, success=False, error_code="INVALID_SCHEMA", is_write=spec.is_write)
             raise ToolError(f"Invalid arguments for {spec.name}: {e.message}") from e
-        from .visit_access import synthetic_denied_reason
-
-        reason = synthetic_denied_reason(spec.name, arguments)
-        if reason:
-            audit(user, spec.name, arguments, success=False, error_code="PERMISSION_DENIED", is_write=spec.is_write)
-            raise ToolError(reason)
-    # Without access to user visit data, a tool that reads visits runs only when every
-    # opportunity the call reads holds generated data.
-    if spec.name in token_scopes.GENERATED_ONLY_TOOLS and restricted:
-        from .visit_access import denied_reason
-
-        reason = denied_reason(user, spec.name, arguments)
-        if reason:
-            audit(user, spec.name, arguments, success=False, error_code="PERMISSION_DENIED", is_write=spec.is_write)
-            raise ToolError(reason)
-    # Central labs-only access gate. Any tool scoped to a labs-only opp/program
-    # routes to the local backend with no downstream Connect membership check, so
-    # enforce the synthetic access model here — one place every tool passes through,
-    # rather than relying on each handler to remember its own gate. Real opps are
-    # untouched (the production API enforces them per request).
-    from connect_labs.labs.synthetic.access import labs_only_scope_denied_reason
-
-    denied = labs_only_scope_denied_reason(
-        user,
-        opportunity_id=arguments.get("opportunity_id"),
-        program_id=arguments.get("program_id"),
-    )
+    denied = policy_denial(spec.name, arguments, user, restricted)
     if denied:
         audit(user, spec.name, arguments, success=False, error_code="PERMISSION_DENIED", is_write=spec.is_write)
         raise ToolError(denied)
@@ -512,6 +527,33 @@ def _run_registry_tool_inner(
         except MCPToolError as e:
             audit(user, spec.name, arguments, success=False, error_code=e.code, is_write=True)
             raise ToolError(e.message) from e
+
+    if spec.long_running:
+        # Every gate above has passed; the work itself runs as a durable job (jobs.py),
+        # which re-applies policy_denial when it starts.
+        from . import jobs
+
+        arguments = dict(arguments)
+        wait = arguments.pop("wait", True)
+        delegation = _delegation_audit(actor_header)
+        try:
+            result = jobs.submit(
+                spec,
+                user,
+                arguments,
+                restricted=restricted,
+                client_id=delegation.get("client_id", ""),
+                actor=delegation.get("actor", ""),
+                wait=wait not in (False, "false", "False", 0),
+                progress=progress,
+            )
+        except MCPToolError as e:
+            audit(user, spec.name, arguments, success=False, error_code=e.code, is_write=spec.is_write)
+            raise ToolError(e.message) from e
+        audit(user, spec.name, arguments, success=True, is_write=spec.is_write)
+        return ToolResult(
+            content=[{"type": "text", "text": json.dumps(result, default=str)}], structured_content=result
+        )
 
     # `progress` is passed OUT OF BAND — it is not a caller-supplied argument, so
     # it stays out of `arguments` and therefore out of both the advertised input

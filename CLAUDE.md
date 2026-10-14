@@ -367,7 +367,7 @@ Connect OAuth token (`~/.commcare-connect/token.json`).
 A remote MCP server hosted inside the labs Django app (`connect_labs/mcp/`)
 at `https://labs.connect.dimagi.com/mcp/`. The protocol endpoint is a
 FastMCP 3.x Streamable-HTTP ASGI app mounted in `config/asgi.py`; the catalog
-registers **273 tools** as of 2026-10-12 (write tools are rate-limited and fully argument-logged
+registers **275 tools** as of 2026-10-14 (write tools are rate-limited and fully argument-logged
 to `MCPAuditLog`) — 116 of them generated from the supply-chain
 operation registry (`connect_labs/supply_chain/operations.py`), one tool per
 operation, so the count moves whenever that registry does. The registry holds
@@ -383,6 +383,18 @@ prefix **`supply_chain_`** (`connect_labs/supply_chain/mcp_tools.py`,
 for two-thirds of them — only sourcing is procurement, and the name stuck
 through fulfilment, stock and distribution. Plain `supply_` was not available:
 the OES demo app already registers `supply_demo_reseed`.
+
+**Long-running tools** (minutes of work) declare `long_running=True` on `@register`
+(`connect_labs/mcp/jobs.py`): after every gate passes, the call records an `MCPJob`
+(labs DB) and queues it on the Celery worker, returning `{job_id, poll_with:
+"job_status"}` -- or the result, if done within ~30s (`wait`). `job_status` /
+`job_cancel` show a job only to its starter, and to a restricted call only jobs a
+restricted call started; the job runs AS the caller with the call's restriction
+(`restricted_job`) and re-checks `server.policy_denial` when it starts. A deploy does
+not lose it (acks_late + requeue on cold shutdown + a DB lease; jobs.py says how), so the
+handler must be safe to RERUN from the start. Work of an hour or more adds
+`job_runner="standalone"` and runs on a Fargate task of its own (`labs/ecs_tasks.py`,
+shared with synthetic jobs). Today: `workflow_preview_as_of`, `workflow_rebuild_history`.
 
 **Auth:** two ways in for people and scripts (plus a third, below, for canopy acting as a visitor), each resolving to a labs user (tools run as that
 user, audit rows attribute to them):

@@ -42,7 +42,8 @@ filed under a new program and made visible in your labs lists. It returns a
 `task_id`; follow it with `synthetic_job_status(task_id)`, which says in plain
 words where the job is ("Step 1 of 2: measuring the real opportunities") and
 returns the new opportunity ids when it is done. You need access to each source
-opportunity.
+opportunity. The generic `job_status(job_id=<task_id>)` and `job_cancel` follow and
+stop a synthetic job too, so one status tool covers every background job.
 
 It is the only cloning tool on the safe MCP address (`/mcp/no_user_visit/`). The
 step-by-step tools below stay on the full address.
@@ -55,8 +56,9 @@ over MCP still returns its result as before: it queues a job and waits for it, u
 8 minutes. Pass `wait=false` to get a `task_id` at once.
 
 **Limits:**
-- On labs each job runs on a Fargate task of its own (`labs/synthetic/ecs_runner.py`),
-  which a deploy does not stop; at most `SYNTHETIC_ECS_MAX_TASKS` (6) run at once and
+- On labs each job runs on a Fargate task of its own (`labs/synthetic/ecs_runner.py`,
+  on the shared standalone runner `labs/ecs_tasks.py` that long-running MCP tools with
+  `job_runner="standalone"` also use), which a deploy does not stop; at most `SYNTHETIC_ECS_MAX_TASKS` (6) run at once and
   the rest wait on the queue. Off ECS (locally), at most `SYNTHETIC_JOB_SLOTS` (2) run
   on the worker at once.
 - Every job gets the same machine, 8 vCPU / 32 GB (`SYNTHETIC_ECS_CPU` /

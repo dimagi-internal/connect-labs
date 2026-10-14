@@ -278,10 +278,16 @@ DEFINITION_WRITE_TOOLS: frozenset[str] = frozenset(
     }
 )
 
+#: Following a long-running tool's job (``connect_labs/mcp/jobs.py``). Reachable
+#: outright: they return only the caller's OWN jobs, and a restricted caller only the
+#: jobs a restricted call started -- whose execution was held to every rule above. A
+#: job a full-access call started is invisible to a restricted one, whoever owns it.
+JOB_TOOLS: frozenset[str] = frozenset({"job_status", "job_cancel"})
+
 #: Everything a restricted caller can list. The generated-only tools are listed and
 #: then checked per call, on the opportunities that call reads.
 RESTRICTED_TOOLS: frozenset[str] = (
-    NO_USERVISIT_DATA_TOOLS | SYNTHETIC_TOOLS | GENERATED_ONLY_TOOLS | DEFINITION_WRITE_TOOLS
+    NO_USERVISIT_DATA_TOOLS | SYNTHETIC_TOOLS | GENERATED_ONLY_TOOLS | DEFINITION_WRITE_TOOLS | JOB_TOOLS
 )
 
 

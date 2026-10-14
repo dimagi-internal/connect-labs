@@ -9,6 +9,7 @@ import secrets
 from datetime import timedelta
 
 from django.conf import settings
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
 from django.utils import timezone
 
@@ -191,3 +192,76 @@ class MCPAuditLog(models.Model):
 
     def __str__(self) -> str:
         return f"{self.tool_name} by {self.user} at {self.created_at}"
+
+
+class MCPJob(models.Model):
+    """A long-running MCP tool call, run as a job instead of inside the request (``mcp/jobs.py``).
+
+    The durable record a caller polls with ``job_status``: who started it (the job runs
+    as them, and only they can read it), what was asked, how restricted the call was,
+    where it is, and how it ended. The result lives here rather than in Celery's result
+    backend so it outlives a Redis flush and a deploy, and is pruned after
+    ``MCP_JOB_RETENTION_DAYS``.
+
+    The lease fields are what make a redelivered job safe: a worker holds the job while
+    ``lease_until`` is in the future and renews it as it goes, so a copy of the message
+    delivered while it runs waits rather than running it twice, and a copy delivered
+    after its worker died takes it over.
+    """
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    STATE_CHOICES = [
+        (QUEUED, "Queued"),
+        (RUNNING, "Running"),
+        (SUCCEEDED, "Succeeded"),
+        (FAILED, "Failed"),
+        (CANCELLED, "Cancelled"),
+    ]
+    LIVE_STATES = (QUEUED, RUNNING)
+    TERMINAL_STATES = (SUCCEEDED, FAILED, CANCELLED)
+
+    WORKER = "worker"
+    STANDALONE = "standalone"
+    RUNNER_CHOICES = [(WORKER, "Worker service (Celery queue)"), (STANDALONE, "Standalone Fargate task")]
+
+    id = models.UUIDField(primary_key=True, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="mcp_jobs")
+    tool_name = models.CharField(max_length=100)
+    arguments = models.JSONField(default=dict, blank=True)
+    #: The calling MCP request's "no user visit data" answer, carried into the job.
+    restricted = models.BooleanField(default=False)
+    #: Set for a delegated call (canopy acting for a visitor), as on MCPAuditLog.
+    client_id = models.CharField(max_length=255, blank=True, default="")
+    actor = models.CharField(max_length=100, blank=True, default="")
+    runner = models.CharField(max_length=20, choices=RUNNER_CHOICES, default=WORKER)
+    state = models.CharField(max_length=20, choices=STATE_CHOICES, default=QUEUED, db_index=True)
+    #: {current, total, message} as the tool last reported it.
+    progress = models.JSONField(default=dict, blank=True)
+    result = models.JSONField(null=True, blank=True, encoder=DjangoJSONEncoder)
+    error_code = models.CharField(max_length=50, blank=True, default="")
+    error = models.TextField(blank=True, default="")
+    attempts = models.PositiveSmallIntegerField(default=0)
+    cancel_requested = models.BooleanField(default=False)
+    #: Who holds the job now (``<hostname>:<pid>:<nonce>``), until when, and on which
+    #: worker -- the worker's shutdown hook hands back what that worker holds.
+    lease_owner = models.CharField(max_length=255, blank=True, default="")
+    lease_until = models.DateTimeField(null=True, blank=True)
+    worker = models.CharField(max_length=255, blank=True, default="")
+    #: The standalone task running it, when ``runner`` is standalone.
+    task_arn = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "mcp_job"
+        indexes = [models.Index(fields=["user", "-created_at"])]
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.tool_name} job {self.id} ({self.state})"

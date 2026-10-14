@@ -42,24 +42,31 @@ from typing import Any
 
 from django.conf import settings
 
+from connect_labs.labs import ecs_tasks
+
 logger = logging.getLogger(__name__)
 
 # Set on the standalone task (a container override), so the job body runs here
 # instead of launching yet another task.
 RUNNER_ENV = "SYNTHETIC_ECS_RUNNER"
 STARTED_BY = "synthetic-job"
+# Searched for by the labs-jj-synthetic-job-overran alarm (infra/labs-synthetic-jobs.yml).
+OVERRAN_LOG = "synthetic job overran"
+#: Synthetic jobs as a kind of standalone job (``connect_labs.labs.ecs_tasks``).
+KIND = ecs_tasks.Kind(
+    started_by=STARTED_BY,
+    command="run_synthetic_job",
+    runner_env=RUNNER_ENV,
+    label="synthetic job",
+    overran_log=OVERRAN_LOG,
+)
 # The job's arguments wait here until the task picks them up. A day is generous: a
 # task starts within a minute or two.
-_THREAD_ENV = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS")
 _PAYLOAD_TTL = 24 * 3600
 _LAUNCH_TTL = 3 * 24 * 3600
 # Set on the task (a container override) to the vCPUs it was given, so the job forks
 # one process per vCPU it actually has.
 VCPUS_ENV = "SYNTHETIC_ECS_VCPUS"
-# The reaper's margin past the runtime limit: the job's own limit fires first.
-_REAP_GRACE_SECONDS = 15 * 60
-# Searched for by the labs-jj-synthetic-job-overran alarm (infra/labs-synthetic-jobs.yml).
-OVERRAN_LOG = "synthetic job overran"
 # Celery states that mean a job has not ended.
 _LIVE_STATES = frozenset({"PENDING", "RECEIVED", "STARTED", "PROGRESS", "RETRY"})
 
@@ -77,7 +84,7 @@ def enabled() -> bool:
 
 
 def in_runner() -> bool:
-    return os.environ.get(RUNNER_ENV) == "1"
+    return ecs_tasks.in_runner(KIND)
 
 
 def should_launch() -> bool:
@@ -86,23 +93,12 @@ def should_launch() -> bool:
 
 
 def _ecs():
-    import boto3
-
-    return boto3.client("ecs", region_name=getattr(settings, "SYNTHETIC_ECS_REGION", "us-east-1"))
-
-
-def _cluster() -> str:
-    return getattr(settings, "SYNTHETIC_ECS_CLUSTER", "labs-jj-cluster")
+    return ecs_tasks.client()
 
 
 def running_count(client=None) -> int:
     """Synthetic tasks running or starting now, across the cluster."""
-    client = client or _ecs()
-    arns: list[str] = []
-    for status in ("RUNNING", "PENDING"):
-        resp = client.list_tasks(cluster=_cluster(), startedBy=STARTED_BY, desiredStatus=status)
-        arns.extend(resp.get("taskArns") or [])
-    return len(set(arns))
+    return ecs_tasks.running_count(KIND, client or _ecs())
 
 
 def at_capacity(client=None) -> bool:
@@ -138,54 +134,19 @@ def launch(task_name: str, job_id: str, kwargs: dict[str, Any], client=None) -> 
     # running out of memory.
     cpu = str(getattr(settings, "SYNTHETIC_ECS_CPU", "8192"))
     memory = str(getattr(settings, "SYNTHETIC_ECS_MEMORY", "32768"))
-    client = client or _ecs()
     try:
-        service = client.describe_services(
-            cluster=_cluster(), services=[getattr(settings, "SYNTHETIC_ECS_SERVICE", "labs-jj-worker")]
-        )["services"][0]
-        # The worker's CURRENT task definition: the same image and environment the
-        # worker runs, so the job runs the code that is deployed right now.
-        task_definition = service["taskDefinition"]
-        container = client.describe_task_definition(taskDefinition=task_definition)["taskDefinition"][
-            "containerDefinitions"
-        ][0]["name"]
-        resp = client.run_task(
-            cluster=_cluster(),
-            launchType="FARGATE",
-            taskDefinition=task_definition,
-            count=1,
-            startedBy=STARTED_BY,
-            networkConfiguration=service["networkConfiguration"],
-            overrides={
-                "cpu": cpu,
-                "memory": memory,
-                "containerOverrides": [
-                    {
-                        "name": container,
-                        "command": ["python", "manage.py", "run_synthetic_job", job_id],
-                        "environment": [
-                            {"name": RUNNER_ENV, "value": "1"},
-                            {"name": VCPUS_ENV, "value": str(int(cpu) // 1024)},
-                            # One math-library thread per process: the job forks a
-                            # process per vCPU, and each NumPy/BLAS pool sized to the
-                            # whole machine oversubscribed it (the first parallel
-                            # profile ran several times slower per opportunity).
-                            *({"name": n, "value": "1"} for n in _THREAD_ENV),
-                        ],
-                    }
-                ],
-            },
+        arn = ecs_tasks.run_task(
+            KIND,
+            job_id,
+            cpu=cpu,
+            memory=memory,
+            ecs=client or _ecs(),
+            extra_env=[{"name": VCPUS_ENV, "value": str(int(cpu) // 1024)}],
         )
     except Exception:
         # Not launched: let a retry try again.
         cache.delete(_launched_key(job_id))
         raise
-    failures = resp.get("failures") or []
-    tasks = resp.get("tasks") or []
-    if failures or not tasks:
-        cache.delete(_launched_key(job_id))
-        raise RuntimeError(f"ECS could not start the synthetic job: {failures}")
-    arn = tasks[0]["taskArn"]
     cache.set(_launched_key(job_id), arn, _LAUNCH_TTL)
     logger.info("synthetic job %s (%s) launched as %s (cpu %s, memory %s)", job_id, task_name, arn, cpu, memory)
     return arn
@@ -203,7 +164,7 @@ def stop(job_id: str, client=None) -> bool:
     arn = task_arn(job_id)
     if not arn:
         return False
-    (client or _ecs()).stop_task(cluster=_cluster(), task=arn, reason="synthetic job cancelled")
+    ecs_tasks.stop_task(arn, "synthetic job cancelled", client or _ecs())
     return True
 
 
@@ -219,13 +180,8 @@ def _exit(code: int) -> None:  # replaced in tests
 def _arm_runtime_limit(job_id: str, seconds: int):
     """After ``seconds``, record the job failed and end this process, which stops the task.
 
-    A SIGALRM rather than a thread: the job forks, and forking a multi-threaded
-    process is unsafe. ``os._exit``, not an exception: an exception would wait in
-    ``ProcessPoolExecutor.__exit__`` for the very children that are not finishing.
-    This process is the container's PID 1, so its exit takes the children with it.
+    See ``ecs_tasks.arm_runtime_limit`` for why a SIGALRM and ``os._exit``.
     """
-    import signal
-
     from config import celery_app
 
     def _on_limit(signum, frame):
@@ -236,9 +192,7 @@ def _arm_runtime_limit(job_id: str, seconds: int):
         finally:
             _exit(124)
 
-    previous = signal.signal(signal.SIGALRM, _on_limit)
-    signal.alarm(seconds)
-    return previous
+    return ecs_tasks.arm_runtime_limit(seconds, _on_limit)
 
 
 def run_job(job_id: str) -> Any:
@@ -251,7 +205,6 @@ def run_job(job_id: str) -> Any:
     "starting" until someone noticed), and it stops at ``max_runtime_seconds()``.
     """
     import importlib
-    import signal
 
     from django.core.cache import cache
 
@@ -287,8 +240,7 @@ def run_job(job_id: str) -> Any:
         logger.exception("synthetic job %s failed", job_id)
         raise
     finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, previous_handler)
+        ecs_tasks.disarm_runtime_limit(previous_handler)
         if task is not None:
             task.pop_request()
         # The arguments carry the person's OAuth token: gone once the job has ended,
@@ -303,15 +255,6 @@ def run_job(job_id: str) -> Any:
     return result
 
 
-def _job_id_of(task: dict) -> str | None:
-    """The job id a synthetic task runs: the last word of its command override."""
-    for override in (task.get("overrides") or {}).get("containerOverrides") or []:
-        command = override.get("command") or []
-        if len(command) >= 2 and command[-2] == "run_synthetic_job":
-            return command[-1]
-    return None
-
-
 def _job_state(job_id: str) -> str:
     from celery.result import AsyncResult
 
@@ -320,57 +263,23 @@ def _job_state(job_id: str) -> str:
     return AsyncResult(job_id, app=celery_app).state
 
 
-def _describe(client, status: str) -> list[dict]:
-    arns = client.list_tasks(cluster=_cluster(), startedBy=STARTED_BY, desiredStatus=status).get("taskArns") or []
-    tasks: list[dict] = []
-    for i in range(0, len(arns), 100):  # DescribeTasks takes at most 100
-        tasks.extend(client.describe_tasks(cluster=_cluster(), tasks=arns[i : i + 100]).get("tasks") or [])
-    return tasks
-
-
-def _stopped_reason(task: dict) -> str:
-    parts = [task.get("stoppedReason") or task.get("stopCode") or "stopped"]
-    for container in task.get("containers") or []:
-        if container.get("reason"):
-            parts.append(container["reason"])
-        if container.get("exitCode") is not None:
-            parts.append(f"exit code {container['exitCode']}")
-    return "; ".join(parts)
-
-
 def reap(client=None, now=None) -> dict[str, list[str]]:
     """Stop synthetic tasks past the runtime limit; fail jobs whose task ended unrecorded.
 
     The backstop to :func:`run_job`'s own limit, for a process that cannot act on it.
-    Stopped tasks stay listed for about an hour, so a tick every ten minutes sees each.
     """
     from datetime import UTC, datetime
 
     from config import celery_app
 
-    client = client or _ecs()
-    now = now or datetime.now(UTC)
-    limit = max_runtime_seconds() + _REAP_GRACE_SECONDS
-    stopped_overrun: list[str] = []
-    failed: list[str] = []
-    for task in _describe(client, "RUNNING"):
-        began = task.get("startedAt") or task.get("createdAt")
-        if not began or (now - began).total_seconds() <= limit:
-            continue
-        job_id = _job_id_of(task) or "?"
-        logger.error("%s: job %s on %s, running since %s; stopping it", OVERRAN_LOG, job_id, task["taskArn"], began)
-        client.stop_task(cluster=_cluster(), task=task["taskArn"], reason="synthetic job overran its runtime limit")
-        if job_id != "?" and _job_state(job_id) in _LIVE_STATES:
-            message = f"Ran over its {max_runtime_seconds() // 3600}h limit on its own machine, so it was stopped."
-            celery_app.backend.store_result(job_id, RuntimeError(message), "FAILURE")
-        stopped_overrun.append(task["taskArn"])
-    for task in _describe(client, "STOPPED"):
-        job_id = _job_id_of(task)
-        if not job_id or _job_state(job_id) not in _LIVE_STATES:
-            continue
-        reason = _stopped_reason(task)
-        logger.warning("synthetic job %s: its task stopped without a result (%s); marking it failed", job_id, reason)
-        message = f"Its machine stopped before it finished ({reason}). Start it again."
+    def fail(job_id: str, message: str) -> None:
         celery_app.backend.store_result(job_id, RuntimeError(message), "FAILURE")
-        failed.append(job_id)
-    return {"stopped_overrun": stopped_overrun, "failed": failed}
+
+    return ecs_tasks.reap(
+        KIND,
+        max_runtime_seconds=max_runtime_seconds(),
+        is_live=lambda job_id: _job_state(job_id) in _LIVE_STATES,
+        fail=fail,
+        ecs=client or _ecs(),
+        now=now or datetime.now(UTC),
+    )

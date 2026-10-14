@@ -96,11 +96,19 @@ Resources:
   # beat stops any task that outlives it; both log "synthetic job overran"
   # (connect_labs/labs/synthetic/ecs_runner.py). A job hitting the limit is worth
   # a human look, so every one notifies.
+  #
+  # The same runner (connect_labs/labs/ecs_tasks.py) now also runs long-running MCP
+  # tools that declare job_runner="standalone" (connect_labs/mcp/jobs.py, its
+  # mcp-job-housekeeping beat, MCP_JOB_STANDALONE_MAX_RUNTIME_SECONDS). Those log
+  # "long-running job overran", matched below too. Their tasks carry startedBy
+  # "mcp-job" and run from the same worker task definition, so the IAM policy
+  # above covers them unchanged; their dead-machine line carries the same
+  # "its task stopped without a result" phrase as synthetic jobs'.
   JobOverranMetricFilter:
     Type: AWS::Logs::MetricFilter
     Properties:
       LogGroupName: !Ref WorkerLogGroupName
-      FilterPattern: '"synthetic job overran"'
+      FilterPattern: '?"synthetic job overran" ?"long-running job overran"'
       MetricTransformations:
         - MetricNamespace: Labs/Synthetic
           MetricName: JobOverran
@@ -114,8 +122,8 @@ Resources:
       AlarmDescription: >-
         A synthetic job's own Fargate machine ran past SYNTHETIC_ECS_MAX_RUNTIME_SECONDS
         and was stopped, by the job itself or by the reap-synthetic-job-tasks beat. The
-        job is marked failed. Search /ecs/labs-jj-worker for "synthetic job overran" for
-        the job id, then that task's log stream (worker/worker/<task id>) for where it
+        job is marked failed. Search /ecs/labs-jj-worker for "synthetic job overran" (or,
+        for a standalone MCP job, "long-running job overran") for the job id, then that task's log stream (worker/worker/<task id>) for where it
         stalled. A cohort that legitimately needs longer: raise the setting.
       Namespace: Labs/Synthetic
       MetricName: JobOverran
