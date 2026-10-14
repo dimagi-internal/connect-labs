@@ -115,14 +115,20 @@
       showList(q.value);
       return;
     }
-    // html was rendered and sanitised server-side (nh3)
-    body.innerHTML =
-      '<button type="button" class="help-back">&larr; All topics</button>' +
-      '<article class="help-article"><h3>' +
-      esc(s.title) +
-      '</h3>' +
-      s.html +
-      '</article>';
+    const tpl = document.getElementById('mp-help-art-' + s.id);
+    body.textContent = '';
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.className = 'help-back';
+    back.textContent = '← All topics';
+    const article = document.createElement('article');
+    article.className = 'help-article';
+    const h = document.createElement('h3');
+    h.textContent = s.title;
+    article.appendChild(h);
+    // the article itself is a server-rendered, sanitised <template>: clone it
+    if (tpl) article.appendChild(tpl.content.cloneNode(true));
+    body.append(back, article);
     body.scrollTop = 0;
     body.querySelector('.help-back').onclick = () => showList(q.value);
   }

@@ -3219,10 +3219,16 @@
               empty +
               '</b> with no buildings (isolated empty work areas)',
           );
+        const CORNER_LABELS = {
+          'top-left': 'top-left',
+          'top-right': 'top-right',
+          'bottom-left': 'bottom-left',
+          'bottom-right': 'bottom-right',
+        };
         const cornerNote =
-          corner === 'best'
+          corner === 'best' && CORNER_LABELS[res.corner]
             ? ' Best layout started from the ' +
-              res.corner.replace('-', ' ') +
+              CORNER_LABELS[res.corner] +
               ' corner.'
             : '';
         showGroupResult(

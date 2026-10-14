@@ -302,7 +302,10 @@
 
 {% csrf_token %}
 {{ plan_state|json_script:"mp-state" }}
-{{ help_sections|json_script:"mp-help" }}
+{{ help_index|json_script:"mp-help" }}
+{# Sanitised server-side (nh3) in simple_views.help_sections #}
+{% for sec in help_sections %}<template id="mp-help-art-{{ sec.id }}">{{ sec.html|safe }}</template>
+{% endfor %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/proj4@2.19.5/dist/proj4.js"></script>
