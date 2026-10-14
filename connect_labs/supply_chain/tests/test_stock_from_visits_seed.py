@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import pytest
 from django.db import transaction
+from django.test import override_settings
 from django.utils import timezone
 
 from connect_labs.labs.synthetic import registry
@@ -192,13 +193,53 @@ FIXTURE_STORE = "connect_labs.labs.integrations.connect.factory._get_fixture_sto
 
 
 @pytest.fixture
-def seeded(db, settings):
+def fresh_seeded(db, settings):
+    """A world seeded for this test alone -- only for a test that re-seeds or otherwise
+    changes the world beyond the database (the FakeDrive is in memory, so the per-test
+    rollback cannot undo it)."""
     settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent"
     drive = FakeDrive()
     registry.invalidate_cache()
     with patch(FIXTURE_STORE, return_value=FakeStore(drive)):
         summary = seed(drive=drive, today=TODAY)
         yield {"drive": drive, "summary": summary, "opp": summary["opportunity_id"]}
+    registry.invalidate_cache()
+
+
+@pytest.fixture(scope="class")
+def _world_seeded_once(django_db_setup, django_db_blocker):
+    """Seed the world ONCE for TestTheSeededWorld (per xdist worker), in an outer transaction.
+
+    Seeding takes ~10s and every read-only test used to pay it again: ~245s for this file.
+    Each test still runs in its own transaction (the `db` fixture nests as a savepoint
+    inside this one), so a test's writes roll back as before. The outer transaction rolls
+    back when the class ends -- CLASS scope, not module, because the tests that seed from
+    an empty database (the command, the band-by-weekday ones) live in this module too, and
+    pytest tears a class fixture down before the next test outside the class runs.
+    """
+    with django_db_blocker.unblock(), override_settings(LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID="parent"):
+        outer = transaction.atomic()
+        outer.__enter__()
+        try:
+            drive = FakeDrive()
+            registry.invalidate_cache()
+            with patch(FIXTURE_STORE, return_value=FakeStore(drive)):
+                summary = seed(drive=drive, today=TODAY)
+            yield {"drive": drive, "summary": summary, "opp": summary["opportunity_id"]}
+        finally:
+            transaction.set_rollback(True)
+            outer.__exit__(None, None, None)
+            registry.invalidate_cache()
+
+
+@pytest.fixture
+def seeded(_world_seeded_once, db, settings):
+    """The shared seeded world, read-only by contract: DB writes roll back per test, but
+    anything in memory (the FakeDrive) is shared -- use `fresh_seeded` to change it."""
+    settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent"
+    registry.invalidate_cache()
+    with patch(FIXTURE_STORE, return_value=FakeStore(_world_seeded_once["drive"])):
+        yield _world_seeded_once
     registry.invalidate_cache()
 
 
@@ -221,171 +262,183 @@ def posted_for(opp, visit, sku):
     ).first()
 
 
-def test_it_is_a_registered_labs_only_opportunity(seeded):
-    row = SyntheticOpportunity.objects.get(opportunity_id=seeded["opp"])
-    assert row.labs_only and row.enabled and row.gdrive_folder_id.startswith("folder-")
-    assert seeded["opp"] >= 10_000
-    assert seeded["summary"]["seeded"] is True and len(seeded["summary"]["weeks"]) == 8
+class TestTheSeededWorld:
+    """Read-only checks on ONE seeded world, shared by the whole class (see
+    `_world_seeded_once`). A test that re-seeds belongs outside this class."""
 
+    def test_it_is_a_registered_labs_only_opportunity(self, seeded):
+        row = SyntheticOpportunity.objects.get(opportunity_id=seeded["opp"])
+        assert row.labs_only and row.enabled and row.gdrive_folder_id.startswith("folder-")
+        assert seeded["opp"] >= 10_000
+        assert seeded["summary"]["seeded"] is True and len(seeded["summary"]["weeks"]) == 8
 
-def test_every_weekly_read_is_clean(seeded):
-    """Nothing the reader could not place: every path and answer string is one a rule knows."""
-    weeks = seeded["summary"]["weeks"]
-    for week in weeks:
-        assert (week["unmatched"], week["unmapped"], week["unit_refused"], week["skipped"]) == (0, 0, 0, 0), week
-        assert week["posted"] > 0 and week["balances_recorded"] > 0, week
-    assert [w["reversed"] for w in weeks] == [0, 0, 0, 0, 1, 0, 0, 0]
-    assert sum(w["receipts_recorded"] for w in weeks) == 20 + 19 + 1  # two deliveries, and marula's own
+    def test_every_weekly_read_is_clean(self, seeded):
+        """Nothing the reader could not place: every path and answer string is one a rule knows."""
+        weeks = seeded["summary"]["weeks"]
+        for week in weeks:
+            assert (week["unmatched"], week["unmapped"], week["unit_refused"], week["skipped"]) == (0, 0, 0, 0), week
+            assert week["posted"] > 0 and week["balances_recorded"] > 0, week
+        assert [w["reversed"] for w in weeks] == [0, 0, 0, 0, 1, 0, 0, 0]
+        assert sum(w["receipts_recorded"] for w in weeks) == 20 + 19 + 1  # two deliveries, and marula's own
 
+    def test_rules_exist_for_rutf_two_vitamin_a_strengths_amoxicillin_and_mrdt_only(self, seeded):
+        opp = seeded["opp"]
+        rules = DispensingRule.objects.filter(program_id=opp)
+        assert set(rules.values_list("item__sku", flat=True)) == SKUS
+        assert set(rules.values_list("opportunity_id", flat=True)) == {opp}
+        names = " ".join(Item.objects.filter(scope_key=f"prog:{opp}").values_list("sku", flat=True)).lower()
+        for off in ("ors", "zinc", "al-", "paracetamol", "albendazole"):
+            assert off not in names
 
-def test_rules_exist_for_rutf_two_vitamin_a_strengths_amoxicillin_and_mrdt_only(seeded):
-    opp = seeded["opp"]
-    rules = DispensingRule.objects.filter(program_id=opp)
-    assert set(rules.values_list("item__sku", flat=True)) == SKUS
-    assert set(rules.values_list("opportunity_id", flat=True)) == {opp}
-    names = " ".join(Item.objects.filter(scope_key=f"prog:{opp}").values_list("sku", flat=True)).lower()
-    for off in ("ors", "zinc", "al-", "paracetamol", "albendazole"):
-        assert off not in names
+    def test_the_reader_posted_visits_for_every_item(self, seeded):
+        posted = Movement.objects.filter(program_id=seeded["opp"], kind="consumption", source="connect_visit")
+        assert posted.filter(item__sku="syn-rutf-150").count() > 300
+        assert not posted.filter(item__sku="syn-rutf-150", estimated=True).exists()  # stated, never estimated
+        assert posted.filter(item__sku="syn-amox-100", estimated=True).exists()
+        assert set(posted.values_list("item__sku", flat=True)) == SKUS
 
-
-def test_the_reader_posted_visits_for_every_item(seeded):
-    posted = Movement.objects.filter(program_id=seeded["opp"], kind="consumption", source="connect_visit")
-    assert posted.filter(item__sku="syn-rutf-150").count() > 300
-    assert not posted.filter(item__sku="syn-rutf-150", estimated=True).exists()  # stated, never estimated
-    assert posted.filter(item__sku="syn-amox-100", estimated=True).exists()
-    assert set(posted.values_list("item__sku", flat=True)) == SKUS
-
-
-def test_a_screening_posts_its_deduction_alone_and_a_visit_adds_the_whole_appetite_sachet(seeded):
-    opp, world = seeded["opp"], world_of(seeded)
-    enrolled = next(
-        v
-        for v in forms_named(world, FORM_SCREENING)
-        if v["status"] != "rejected" and answer(v, PATHS["rutf_screening_ration"]) == "14"
-    )
-    assert posted_for(opp, enrolled, "syn-rutf-150").quantity == Decimal("14")
-    appetite_only = next(
-        v
-        for v in forms_named(world, FORM_VISIT)
-        if answer(v, PATHS["appetite_visit"]) == "1" and v["username"] != RUNS_OUT
-    )
-    assert posted_for(opp, appetite_only, "syn-rutf-150").quantity == Decimal("1")
-
-
-def test_vitamin_a_strength_follows_the_dose_question_answered(seeded):
-    opp, world = seeded["opp"], world_of(seeded)
-
-    def prepared(v, doses):
-        return answer(v, PATHS["vita_given"]) == "child_fine" and any(
-            answer(v, PATHS[d]) == "prepared_dosage" for d in doses
+    def test_a_screening_posts_its_deduction_alone_and_a_visit_adds_the_whole_appetite_sachet(self, seeded):
+        opp, world = seeded["opp"], world_of(seeded)
+        enrolled = next(
+            v
+            for v in forms_named(world, FORM_SCREENING)
+            if v["status"] != "rejected" and answer(v, PATHS["rutf_screening_ration"]) == "14"
         )
+        assert posted_for(opp, enrolled, "syn-rutf-150").quantity == Decimal("14")
+        appetite_only = next(
+            v
+            for v in forms_named(world, FORM_VISIT)
+            if answer(v, PATHS["appetite_visit"]) == "1" and v["username"] != RUNS_OUT
+        )
+        assert posted_for(opp, appetite_only, "syn-rutf-150").quantity == Decimal("1")
 
-    infant = next(v for v in world.visits if prepared(v, ("vita_6_11",)))
-    one_to_two = next(v for v in world.visits if prepared(v, ("vita_1_2",)))
-    two_to_five = next(v for v in world.visits if prepared(v, ("vita_2_5",)))
-    assert posted_for(opp, infant, "syn-vita100k-100").quantity == Decimal("1")
-    assert posted_for(opp, infant, "syn-vita200k-100") is None
-    for older in (one_to_two, two_to_five):  # either dose question: one 200,000 IU capsule, never two
-        assert posted_for(opp, older, "syn-vita200k-100").quantity == Decimal("1")
-        assert posted_for(opp, older, "syn-vita100k-100") is None
+    def test_vitamin_a_strength_follows_the_dose_question_answered(self, seeded):
+        opp, world = seeded["opp"], world_of(seeded)
 
+        def prepared(v, doses):
+            return answer(v, PATHS["vita_given"]) == "child_fine" and any(
+                answer(v, PATHS[d]) == "prepared_dosage" for d in doses
+            )
 
-def test_vitamin_a_rules_read_the_screening_form_by_its_xmlns(seeded):
-    rules = DispensingRule.objects.filter(program_id=seeded["opp"], item__sku__startswith="syn-vita")
-    for rule in rules:
-        assert {f for line in rule.lines for f in line["forms"]} == {XMLNS[FORM_SCREENING]}
-        assert {p for line in rule.lines for p in line["given_paths"]} == {PATHS["vita_given"]}
-    assert len(rules.get(item__sku="syn-vita200k-100").lines) == 2  # one line per dose question
+        infant = next(v for v in world.visits if prepared(v, ("vita_6_11",)))
+        one_to_two = next(v for v in world.visits if prepared(v, ("vita_1_2",)))
+        two_to_five = next(v for v in world.visits if prepared(v, ("vita_2_5",)))
+        assert posted_for(opp, infant, "syn-vita100k-100").quantity == Decimal("1")
+        assert posted_for(opp, infant, "syn-vita200k-100") is None
+        for older in (one_to_two, two_to_five):  # either dose question: one 200,000 IU capsule, never two
+            assert posted_for(opp, older, "syn-vita200k-100").quantity == Decimal("1")
+            assert posted_for(opp, older, "syn-vita100k-100") is None
 
+    def test_vitamin_a_rules_read_the_screening_form_by_its_xmlns(self, seeded):
+        rules = DispensingRule.objects.filter(program_id=seeded["opp"], item__sku__startswith="syn-vita")
+        for rule in rules:
+            assert {f for line in rule.lines for f in line["forms"]} == {XMLNS[FORM_SCREENING]}
+            assert {p for line in rule.lines for p in line["given_paths"]} == {PATHS["vita_given"]}
+        assert len(rules.get(item__sku="syn-vita200k-100").lines) == 2  # one line per dose question
 
-def test_amoxicillin_reads_the_dose_the_app_chose(seeded):
-    opp, world = seeded["opp"], world_of(seeded)
-    twenty = next(
-        v for v in world.visits if answer(v, PATHS["amox_visit"]) == "2 tablets every 12 hours(total 20 tablets)"
-    )
-    assert posted_for(opp, twenty, "syn-amox-100").quantity == Decimal("20")
+    def test_amoxicillin_reads_the_dose_the_app_chose(self, seeded):
+        opp, world = seeded["opp"], world_of(seeded)
+        twenty = next(
+            v for v in world.visits if answer(v, PATHS["amox_visit"]) == "2 tablets every 12 hours(total 20 tablets)"
+        )
+        assert posted_for(opp, twenty, "syn-amox-100").quantity == Decimal("20")
 
+    def test_one_worker_never_answers_the_rutf_question(self, seeded):
+        key = outcome_key(item(seeded["opp"]).pk)
+        unanswered = WorkerVisit.objects.filter(
+            program_id=seeded["opp"], connect_username=NEVER_ANSWERS, **{f"outcomes__{key}": "no_answer"}
+        )
+        assert unanswered.count() >= 20
+        assert by_name(seeded["opp"])[NEVER_ANSWERS].no_answer_visits >= 20
+        others = WorkerVisit.objects.filter(program_id=seeded["opp"], **{f"outcomes__{key}": "no_answer"})
+        assert set(others.values_list("connect_username", flat=True)) == {NEVER_ANSWERS}
 
-def test_one_worker_never_answers_the_rutf_question(seeded):
-    key = outcome_key(item(seeded["opp"]).pk)
-    unanswered = WorkerVisit.objects.filter(
-        program_id=seeded["opp"], connect_username=NEVER_ANSWERS, **{f"outcomes__{key}": "no_answer"}
-    )
-    assert unanswered.count() >= 20
-    assert by_name(seeded["opp"])[NEVER_ANSWERS].no_answer_visits >= 20
-    others = WorkerVisit.objects.filter(program_id=seeded["opp"], **{f"outcomes__{key}": "no_answer"})
-    assert set(others.values_list("connect_username", flat=True)) == {NEVER_ANSWERS}
+    def test_one_visit_is_reversed(self, seeded):
+        reversals = Movement.objects.filter(program_id=seeded["opp"], reverses__isnull=False)
+        assert reversals.count() == 1
+        assert reversals.get().to_supply_point.connect_username == REJECTED_LATER
 
+    def test_one_worker_runs_out(self, seeded):
+        beliefs = by_name(seeded["opp"])
+        assert beliefs[RUNS_OUT].status == "stockout"
+        assert [name for name, b in beliefs.items() if b.status == "stockout"] == [RUNS_OUT]
 
-def test_one_visit_is_reversed(seeded):
-    reversals = Movement.objects.filter(program_id=seeded["opp"], reverses__isnull=False)
-    assert reversals.count() == 1
-    assert reversals.get().to_supply_point.connect_username == REJECTED_LATER
+    def test_one_worker_counts_well_above_the_ledger_and_reports_a_receipt_nobody_recorded(self, seeded):
+        marula = by_name(seeded["opp"])[OVER_COUNTS]
+        assert marula.variance.amount >= 90
+        unmatched = belief.unmatched_receipts(seeded["opp"], marula.point, item(seeded["opp"]), on_date=TODAY)
+        assert len(unmatched) == 1
+        for name, b in by_name(seeded["opp"]).items():
+            if name != OVER_COUNTS:
+                assert not b.unmatched_receipts, name
 
+    def test_most_workers_reconcile(self, seeded):
+        beliefs = by_name(seeded["opp"])
+        reconciled = {name for name, b in beliefs.items() if b.variance is not None and b.variance.amount == 0}
+        assert reconciled == set(WORKERS) - {OVER_COUNTS, REJECTED_LATER}
+        # The rejected visit's sachets left the bag on the phone's arithmetic, and
+        # the ledger has put them back: the reversal is exactly the difference.
+        assert beliefs[REJECTED_LATER].variance.amount == -14
 
-def test_one_worker_runs_out(seeded):
-    beliefs = by_name(seeded["opp"])
-    assert beliefs[RUNS_OUT].status == "stockout"
-    assert [name for name, b in beliefs.items() if b.status == "stockout"] == [RUNS_OUT]
+    def test_history_is_dated_week_by_week(self, seeded):
+        three_days_ago = timezone.make_aware(datetime.combine(TODAY - timedelta(days=3), time()))
+        assert Revision.objects.filter(program_id=seeded["opp"], recorded_at__lt=three_days_ago).exists()
 
+    def test_as_of_four_weeks_ago_shows_less_dispensed_than_today(self, seeded):
+        opp = seeded["opp"]
+        today = _dispensed(opp)
+        past = TODAY - timedelta(weeks=4)
+        with transaction.atomic():
+            undone = rewind(opp, end_of_day(past))
+            # Rewound by recorded time alone -- no date filter -- the later weeks' reads are gone.
+            rewound = _dispensed(opp)
+            rewound_as_page = _dispensed(opp, on_date=past)
+            transaction.set_rollback(True)
+        assert undone > 0
+        assert 0 < rewound < today
+        assert rewound_as_page == rewound
+        assert _dispensed(opp) == today
 
-def test_one_worker_counts_well_above_the_ledger_and_reports_a_receipt_nobody_recorded(seeded):
-    marula = by_name(seeded["opp"])[OVER_COUNTS]
-    assert marula.variance.amount >= 90
-    unmatched = belief.unmatched_receipts(seeded["opp"], marula.point, item(seeded["opp"]), on_date=TODAY)
-    assert len(unmatched) == 1
-    for name, b in by_name(seeded["opp"]).items():
-        if name != OVER_COUNTS:
-            assert not b.unmatched_receipts, name
+    def test_the_reversal_appears_on_the_day_the_rejection_was_read(self, seeded):
+        opp = seeded["opp"]
+        week_4 = date.fromisoformat(seeded["summary"]["weeks"][4]["week_of"])
+        assert seeded["summary"]["weeks"][4]["reversed"] == 1
+        for day, expected in ((week_4 + timedelta(days=5), 0), (week_4 + timedelta(days=6), 1)):
+            with transaction.atomic():
+                rewind(opp, end_of_day(day))
+                found = Movement.objects.filter(program_id=opp, reverses__isnull=False).count()
+                transaction.set_rollback(True)
+            assert found == expected, day
 
+    def test_most_workers_and_the_partner_store_sit_inside_their_band(self, seeded):
+        """The special cases stand out against a mostly healthy network, as design §7 tells it."""
+        opp = seeded["opp"]
+        beliefs = by_name(opp)
+        within = {name for name, b in beliefs.items() if b.status == "ok"}
+        assert len(within) >= 14, {name: b.status for name, b in beliefs.items()}
+        assert RUNS_OUT not in within
 
-def test_most_workers_reconcile(seeded):
-    beliefs = by_name(seeded["opp"])
-    reconciled = {name for name, b in beliefs.items() if b.variance is not None and b.variance.amount == 0}
-    assert reconciled == set(WORKERS) - {OVER_COUNTS, REJECTED_LATER}
-    # The rejected visit's sachets left the bag on the phone's arithmetic, and
-    # the ledger has put them back: the reversal is exactly the difference.
-    assert beliefs[REJECTED_LATER].variance.amount == -14
+        roots = belief.network_tree(opp, item(opp), on_date=TODAY)
+        partner = next(node for root in roots for node in [root, *root.children] if node.point.slug == "partner-store")
+        assert partner.status == "ok", (partner.status, partner.months_of_stock)
+        assert partner.subtree["status"] == "ok", partner.subtree
 
+    def test_the_reversed_workers_chart_shows_the_reversal(self, seeded):
+        from connect_labs.supply_chain.stock.services.timeline import timeline_svg, worker_timeline
 
-def test_history_is_dated_week_by_week(seeded):
-    three_days_ago = timezone.make_aware(datetime.combine(TODAY - timedelta(days=3), time()))
-    assert Revision.objects.filter(program_id=seeded["opp"], recorded_at__lt=three_days_ago).exists()
+        opp = seeded["opp"]
+        neem = SupplyPoint.objects.get(program_id=opp, connect_username=REJECTED_LATER)
+        svg = timeline_svg(worker_timeline(opp, neem, item(opp), on_date=TODAY))
+        assert svg.count('data-kind="reversed"') == 1
+        assert "14 sachets put back (a visit rejected after it was counted)" in svg
 
 
 def _dispensed(opp, on_date=TODAY):
     return sum(b.dispensed.amount for b in by_name(opp, on_date=on_date).values())
 
 
-def test_as_of_four_weeks_ago_shows_less_dispensed_than_today(seeded):
-    opp = seeded["opp"]
-    today = _dispensed(opp)
-    past = TODAY - timedelta(weeks=4)
-    with transaction.atomic():
-        undone = rewind(opp, end_of_day(past))
-        # Rewound by recorded time alone -- no date filter -- the later weeks' reads are gone.
-        rewound = _dispensed(opp)
-        rewound_as_page = _dispensed(opp, on_date=past)
-        transaction.set_rollback(True)
-    assert undone > 0
-    assert 0 < rewound < today
-    assert rewound_as_page == rewound
-    assert _dispensed(opp) == today
-
-
-def test_the_reversal_appears_on_the_day_the_rejection_was_read(seeded):
-    opp = seeded["opp"]
-    week_4 = date.fromisoformat(seeded["summary"]["weeks"][4]["week_of"])
-    assert seeded["summary"]["weeks"][4]["reversed"] == 1
-    for day, expected in ((week_4 + timedelta(days=5), 0), (week_4 + timedelta(days=6), 1)):
-        with transaction.atomic():
-            rewind(opp, end_of_day(day))
-            found = Movement.objects.filter(program_id=opp, reverses__isnull=False).count()
-            transaction.set_rollback(True)
-        assert found == expected, day
-
-
-def test_seeding_again_changes_nothing_unless_reset(seeded):
+def test_seeding_again_changes_nothing_unless_reset(fresh_seeded):
+    seeded = fresh_seeded
     opp = seeded["opp"]
     before = Movement.objects.filter(program_id=opp).count()
     with patch(FIXTURE_STORE, return_value=FakeStore(seeded["drive"])):
@@ -414,30 +467,6 @@ def test_the_command_seeds_through_drive_and_prints_the_summary(db, settings, ca
     printed = json.loads(capsys.readouterr().out)
     assert printed["seeded"] is True and printed["workers"] == 20
     assert DispensingRule.objects.filter(program_id=printed["opportunity_id"]).count() == len(SKUS)
-
-
-def test_most_workers_and_the_partner_store_sit_inside_their_band(seeded):
-    """The special cases stand out against a mostly healthy network, as design §7 tells it."""
-    opp = seeded["opp"]
-    beliefs = by_name(opp)
-    within = {name for name, b in beliefs.items() if b.status == "ok"}
-    assert len(within) >= 14, {name: b.status for name, b in beliefs.items()}
-    assert RUNS_OUT not in within
-
-    roots = belief.network_tree(opp, item(opp), on_date=TODAY)
-    partner = next(node for root in roots for node in [root, *root.children] if node.point.slug == "partner-store")
-    assert partner.status == "ok", (partner.status, partner.months_of_stock)
-    assert partner.subtree["status"] == "ok", partner.subtree
-
-
-def test_the_reversed_workers_chart_shows_the_reversal(seeded):
-    from connect_labs.supply_chain.stock.services.timeline import timeline_svg, worker_timeline
-
-    opp = seeded["opp"]
-    neem = SupplyPoint.objects.get(program_id=opp, connect_username=REJECTED_LATER)
-    svg = timeline_svg(worker_timeline(opp, neem, item(opp), on_date=TODAY))
-    assert svg.count('data-kind="reversed"') == 1
-    assert "14 sachets put back (a visit rejected after it was counted)" in svg
 
 
 @pytest.mark.parametrize("weekday", range(7))  # the pace window holds the same visits whatever day it is seeded
