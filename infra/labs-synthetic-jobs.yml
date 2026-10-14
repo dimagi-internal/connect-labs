@@ -13,8 +13,11 @@ AWSTemplateFormatVersion: '2010-09-09'
 # billed per second while it runs and exits when the job is done.
 #
 # Owns: one inline IAM policy on the existing ECS task role, letting the app
-#   start, list and stop its own synthetic tasks on the labs cluster.
-# References, does NOT own: the task role, the execution role, the cluster.
+#   start, list and stop its own synthetic tasks on the labs cluster; and two
+#   alarms on those tasks (below), here rather than in labs-monitoring.yml, which
+#   is at CloudFormation's 51,200-byte inline-template limit.
+# References, does NOT own: the task role, the execution role, the cluster, the
+#   worker log group, the alert topic (labs-monitoring.yml's export).
 #
 # Deploy (needs CAPABILITY_NAMED_IAM; ship it before the app change turns
 # SYNTHETIC_JOBS_ON_ECS on):
@@ -41,6 +44,10 @@ Parameters:
     Type: String
     Default: labs-jj-worker
     Description: Task definition family a synthetic job runs from (the worker's).
+  WorkerLogGroupName:
+    Type: String
+    Default: /ecs/labs-jj-worker
+    Description: Log group a synthetic task (and the worker's reaper) logs to.
 
 Resources:
   TaskRoleSyntheticJobsPolicy:
@@ -81,3 +88,75 @@ Resources:
             Condition:
               StringEquals:
                 iam:PassedToService: ecs-tasks.amazonaws.com
+
+  # ── How a machine turns off, and the alarms when it did not ───────────────
+  # A standalone task stops only when its command exits; it has no lifetime of
+  # its own (8 vCPU / 32 GB at the most, ~$0.47/hour). The job arms a wall-clock
+  # limit (SYNTHETIC_ECS_MAX_RUNTIME_SECONDS) and the reap-synthetic-job-tasks
+  # beat stops any task that outlives it; both log "synthetic job overran"
+  # (connect_labs/labs/synthetic/ecs_runner.py). A job hitting the limit is worth
+  # a human look, so every one notifies.
+  JobOverranMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref WorkerLogGroupName
+      FilterPattern: '"synthetic job overran"'
+      MetricTransformations:
+        - MetricNamespace: Labs/Synthetic
+          MetricName: JobOverran
+          MetricValue: '1'
+          DefaultValue: 0
+
+  JobOverranAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: labs-jj-synthetic-job-overran
+      AlarmDescription: >-
+        A synthetic job's own Fargate machine ran past SYNTHETIC_ECS_MAX_RUNTIME_SECONDS
+        and was stopped, by the job itself or by the reap-synthetic-job-tasks beat. The
+        job is marked failed. Search /ecs/labs-jj-worker for "synthetic job overran" for
+        the job id, then that task's log stream (worker/worker/<task id>) for where it
+        stalled. A cohort that legitimately needs longer: raise the setting.
+      Namespace: Labs/Synthetic
+      MetricName: JobOverran
+      Statistic: Sum
+      Period: 600
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue labs-jj-alert-topic-arn]
+
+  # A machine that stopped before its job recorded an ending: killed for memory,
+  # an image that would not pull, a task stopped by hand. The reaper fails the
+  # job and logs why; ECS's stop reason (e.g. OutOfMemoryError) is in that line.
+  MachineDiedMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref WorkerLogGroupName
+      FilterPattern: '"its task stopped without a result"'
+      MetricTransformations:
+        - MetricNamespace: Labs/Synthetic
+          MetricName: MachineDied
+          MetricValue: '1'
+          DefaultValue: 0
+
+  MachineDiedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: labs-jj-synthetic-job-machine-died
+      AlarmDescription: >-
+        A synthetic job's own Fargate machine stopped before the job recorded how it
+        ended, and the reap-synthetic-job-tasks beat marked the job failed. Search
+        /ecs/labs-jj-worker for "its task stopped without a result": the line carries
+        ECS's stop reason. OutOfMemoryError means the job needs a larger machine
+        (ecs_runner.machine_size); "stopped by user" is someone stopping it by hand.
+      Namespace: Labs/Synthetic
+      MetricName: MachineDied
+      Statistic: Sum
+      Period: 600
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue labs-jj-alert-topic-arn]

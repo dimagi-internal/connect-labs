@@ -406,6 +406,16 @@ def slot_holders() -> list[str | None]:
     return [cache.get(f"synthetic:job-slot:{i}") for i in range(_slots())]
 
 
+@celery_app.task
+def reap_synthetic_job_tasks() -> dict[str, list[str]]:
+    """Beat: the backstop that turns synthetic jobs' own machines off (ecs_runner.reap)."""
+    from connect_labs.labs.synthetic import ecs_runner
+
+    if not ecs_runner.enabled():
+        return {"stopped_overrun": [], "failed": []}
+    return ecs_runner.reap()
+
+
 def cancel_job(task_id: str) -> None:
     """Stop a synthetic job: revoke it (ending it if it is running), mark it revoked, free its slot.
 
