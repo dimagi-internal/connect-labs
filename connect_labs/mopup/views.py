@@ -19,15 +19,17 @@ everywhere.
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.http import JsonResponse
+from django.http import Http404, HttpResponseRedirect, JsonResponse
 from django.views import View
 from django.views.generic import TemplateView
 
 from connect_labs.labs.context import get_org_data
+from connect_labs.microplans.access import workspace_simple_microplan_url
 from connect_labs.mopup.core import indicators as ind
 from connect_labs.mopup.core.candidates import (
     build_map_features,
@@ -42,6 +44,28 @@ from connect_labs.mopup.core.models import STATUS_LOCKED
 from connect_labs.mopup.core.work_areas import fetch_connect_implementation_areas, list_work_areas, summarize_wards
 
 logger = logging.getLogger(__name__)
+
+
+def simple_microplan_only_in_workspace(view):
+    """WA Revisit is not offered in a workspace program (``labs.workspaces``),
+    which makes its microplans in Simple Microplan only: a page there redirects
+    to the program's Simple Microplan list, anything else is a 404. Runs already
+    stored for the program are left as they are. Every other program passes
+    straight through (no query for a real program id). ``urls.py`` wraps every
+    route in it."""
+
+    @functools.wraps(view)
+    def wrapped(request, *args, **kwargs):
+        if request.user.is_authenticated:
+            url = workspace_simple_microplan_url(kwargs.get("program_id"))
+            if url is not None:
+                if request.method in ("GET", "HEAD"):
+                    return HttpResponseRedirect(url)
+                raise Http404("Not found.")
+        return view(request, *args, **kwargs)
+
+    wrapped.simple_microplan_only_in_workspace = True
+    return wrapped
 
 
 def _merged_indicator_configs(raw: dict | None) -> dict:

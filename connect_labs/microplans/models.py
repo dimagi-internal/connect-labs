@@ -81,13 +81,25 @@ class BarrierArea(models.Model):
 class SimpleMicroplan(models.Model):
     """A microplan made in the Simple Microplan creator (`/microplans/simple/`).
 
-    Unlike program plans (LabsRecords on Connect), these are quick test plans that
-    belong to no program, so they live in the labs DB and every user who can open
-    the creator sees the list. ``data`` is the creator's whole state: the boundary
-    parts, its settings and the work-area rows exactly as they export to CSV.
+    Unlike program plans (LabsRecords on Connect), these live in the labs DB.
+    ``data`` is the creator's whole state: the boundary parts, its settings and
+    the work-area rows exactly as they export to CSV.
+
+    Two kinds, told apart by ``program_id``:
+
+      * NULL -- a quick test plan that belongs to no program. Every user who can
+        open the creator sees the list at `/microplans/simple/`.
+      * set -- a plan in a WORKSPACE program (``labs.workspaces``), made at
+        `/microplans/program/<id>/simple/` and filed under ``team`` (a Connect org
+        slug; blank = Program Managers only). It follows the workspace's roles and
+        never appears in the global list.
     """
 
     name = models.CharField(max_length=200)
+    # The labs-only workspace program this plan belongs to; NULL for a global test plan.
+    program_id = models.IntegerField(null=True, blank=True, db_index=True)
+    # Workspace plans only: the Connect org slug of the team that owns it ("" = PMs only).
+    team = models.CharField(max_length=200, blank=True, default="")
     created_by = models.ForeignKey(
         "users.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="simple_microplans"
     )

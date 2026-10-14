@@ -140,6 +140,16 @@ Click **Download CSV** to save the work areas. The file has the same columns and
 - Only the person who created a microplan (and Dimagi staff) can change, rename or delete it.
 - Anyone else opens it **view only**: they can look around the map, see the groups and download the CSV, but cannot change it.
 
+### In a program with workspace roles (for example Auto-Connect)
+
+Some programs keep their microplans to the program and its teams, and make them in Simple Microplan only. With such a program picked in the context picker, the Microplans page shows just the **Simple Microplan** tile, and it opens that program's own list. (CHC Microplan and CHC WA Revisit are not offered there; their links bring you to Simple Microplan.)
+
+- A microplan you create there belongs to the program and to your team. If you are on more than one team, pick the team when you create it.
+- **Network Managers** see only their own team's microplans. Everyone on the team can open, change and rename them. Only Program Managers can delete a microplan.
+- **Program Managers** see every team's microplans and can change, rename and delete any of them. They can file a new microplan under a team, or under **Program Managers only**. **Workspace settings** (next to your role) is where they link partners' Connect programs and add testers.
+- **Testers**: a Program Manager can add a Dimagi colleague as a tester of a team, so they can try the Network Manager view before partners join. A tester sees a **Testing as Network Manager of …** banner and exactly what that team would see; **Stop testing** returns them to their usual role.
+- These microplans do not appear in the main Simple Microplans list.
+
 ## Getting help in the app
 
 Each page has a **?** button that opens a searchable, chat-style guide covering every part of the microplan tool. Each step also has its own **?** link that jumps straight to the relevant section of that guide.
