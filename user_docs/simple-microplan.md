@@ -4,6 +4,9 @@ Simple Microplan is a quick way to make a test microplan: pick an area, split it
 
 Open it from the Labs overview: **Microplans → Simple Microplan**.
 
+!!! note "Finding Microplans"
+    The Labs overview has a single **Microplans** tile (visible to everyone who can see Workflows). It opens a Microplans page with three options: **CHC Microplan** (the existing program workspace), **CHC WA Revisit** (the existing WA Revisit workflow), and **Simple Microplan**.
+
 ---
 
 ## Getting started
@@ -136,6 +139,10 @@ Click **Download CSV** to save the work areas. The file has the same columns and
 - Everyone who can open Simple Microplan sees every saved microplan and who created it.
 - Only the person who created a microplan (and Dimagi staff) can change, rename or delete it.
 - Anyone else opens it **view only**: they can look around the map, see the groups and download the CSV, but cannot change it.
+
+## Getting help in the app
+
+Each page has a **?** button that opens a searchable, chat-style guide covering every part of the microplan tool. Each step also has its own **?** link that jumps straight to the relevant section of that guide.
 
 ## Tips and troubleshooting
 
