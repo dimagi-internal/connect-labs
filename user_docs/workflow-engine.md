@@ -150,6 +150,30 @@ In KMC reports (program, opportunity, and worker review) and the generic indicat
 - **Thresholds** are displayed as small chips rather than inline text.
 - The **underlying query** sits below a divider and wraps onto multiple lines, so long queries are no longer cut off at the right edge of the popup.
 
+### MUAC/Age Plausibility report
+
+The MUAC/Age Plausibility report has three updates.
+
+#### "Too high" and "below −2SD" thresholds now use WHO 2007 values by exact month of age
+
+A reading is flagged as **too high** when it exceeds WHO's +3 standard deviations for the child's completed month of age and sex — a threshold that about 1 healthy child in 750 exceeds. Previously, a single fixed ceiling applied to all children within a broad age band, which could hold the oldest children in that band to as little as +2 SD. **Below −2SD** is now calculated the same way, using the WHO value for the child's exact month.
+
+6–11 month olds are now included in the check. Previously they had only a provisional 20 cm ceiling.
+
+Because WHO's +3 SD values are typically 0.5–1.5 cm higher than the old fixed ceilings, **you can expect to see fewer readings flagged as "too high"** after this change.
+
+#### Every column and tile explains itself
+
+Hover over any column title or tile label marked **ⓘ** to see a one- or two-sentence definition. The **"How readings are classified"** section at the bottom of the report now shows WHO's too-high and below-−2SD reference values for each age band, so you can see exactly which thresholds were applied.
+
+#### MUAC index column
+
+A new **MUAC index** column shows how many of Neal's six MUAC distribution checks each row passes — for example, **5/6**. These checks assess whether a worker's recorded MUAC values form one smooth, plausible distribution (a single hump). They come from the MUAC Index feature report.
+
+- Click the **▸** on any row to expand it and see the 1 cm histogram alongside which specific checks failed.
+- The **Lowest MUAC index** sort option puts the rows with the weakest scores first, making it easy to identify workers whose MUAC measurements warrant closer review.
+- Because the checks are designed for a single field worker's readings, any row that pools data across multiple workers — such as an LLO or ward row — is labelled as **pooled** rather than showing an index score.
+
 ---
 
 ## Pages
@@ -191,37 +215,4 @@ A page can display the latest run of other workflows. You will only see a workfl
 
 ### Managing pages for a scope
 
-An organisation, program, or opportunity can have **several pages**. The **Pages list** at `/labs/p/<org|programme|opportunity>/<key>/pages/` shows every page belonging to that scope — for an organisation, this includes its own pages and those of its programs. For each page you can see where it lives and which one is currently set as the home page.
-
-Anyone who can use the scope can view the Pages list.
-
-#### Creating a new page
-
-If you can change Settings for the scope, a **New page** button appears on the Pages list. Clicking it asks for a title and an address, then opens the new page in the editor. You can also mark it as the home page at the same time.
-
-#### Choosing the home page
-
-Anyone who can change Settings for the scope can click **Make home** next to any page on the Pages list to set that page as the home. You can also choose the home page from **Settings → Labs**, which now shows a list of the scope's pages to pick from rather than requiring you to type a workflow id. The JSON editor is still available under **Advanced: edit as JSON** for cases where you need it.
-
-When you are editing a page, **Pages** and **Make this the home page** links appear next to the Settings link so you can manage the scope's pages without leaving the editor. If a scope has no home page set, those links point to the Pages list so you can set one.
-
-### Editing a page
-
-The **Edit page** link appears for anyone who can change Settings for the organisation, program, or opportunity that owns the page. If you can view a page but do not have Settings access for its scope, the link is not shown — and Labs will refuse any attempt to save edits even if you navigate directly to the editor's address.
-
-### Addresses for pages
-
-Each level of Labs has its own address for its page:
-
-| Level | Address |
-|---|---|
-| Organisation | `/labs/p/org/<organisation>/` |
-| Program | `/labs/p/programme/<id>/` |
-| Opportunity | `/labs/p/opportunity/<id>/` |
-
-!!! note "Old page links"
-    The previous page addresses at `/labs/p/<name>/` no longer exist. If you follow an old link, Labs will take you to the new page at the correct address when your organisation, program, or opportunity has one. If no matching page is found, you will see a message explaining that pages have moved rather than an error. Update any bookmarks or shared links to use the new addresses shown in the table above.
-
-### Context picker on a page
-
-When you open a page,
+An organisation, program, or opportunity can have **several pages**. The **Pages list** at `/labs/p/<org|programme|opportunity>/<key>/pages/` shows every page belonging to that scope — for an organisation, this includes its
