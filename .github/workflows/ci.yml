@@ -250,6 +250,9 @@ jobs:
 
   pytest:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read # pull the mirrored postgis service image from GHCR
 
     services:
       redis:
@@ -257,7 +260,14 @@ jobs:
         ports:
           - 6379:6379
       postgres:
-        image: postgis/postgis:17-3.5
+        # Mirrored from Docker Hub's postgis/postgis:17-3.5 by mirror-ci-images.yml.
+        # Docker Hub's anonymous pull limit ("toomanyrequests: Data limit exceeded") was
+        # failing this job outright several times a day; GHCR pulls from Actions are not
+        # rate-limited that way. To bump the version, change it in BOTH files.
+        image: ghcr.io/dimagi-internal/connect-labs-ci-postgis:17-3.5
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
         ports:
           - 5432:5432
         env:
@@ -350,6 +360,9 @@ jobs:
       (github.event_name == 'pull_request' &&
        contains(github.event.pull_request.labels.*.name, 'clock-shift'))
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read # pull the mirrored postgis service image from GHCR
 
     services:
       redis:
@@ -357,7 +370,14 @@ jobs:
         ports:
           - 6379:6379
       postgres:
-        image: postgis/postgis:17-3.5
+        # Mirrored from Docker Hub's postgis/postgis:17-3.5 by mirror-ci-images.yml.
+        # Docker Hub's anonymous pull limit ("toomanyrequests: Data limit exceeded") was
+        # failing this job outright several times a day; GHCR pulls from Actions are not
+        # rate-limited that way. To bump the version, change it in BOTH files.
+        image: ghcr.io/dimagi-internal/connect-labs-ci-postgis:17-3.5
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
         ports:
           - 5432:5432
         env:

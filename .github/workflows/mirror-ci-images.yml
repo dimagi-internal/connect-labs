@@ -1,0 +1,45 @@
+name: Mirror CI images
+
+# Copies the Docker Hub images CI's service containers need into GHCR, so a pytest run
+# never depends on Docker Hub's anonymous pull limit. Before this, `pytest` failed
+# outright with "toomanyrequests: Data limit exceeded" several times a day (2026-10-14:
+# three failures in one afternoon, one of them blocking a merge).
+#
+# One Docker Hub pull per run instead of one per CI job. Runs weekly to pick up the
+# upstream tag's patch rebuilds, on demand, and whenever this file changes.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1' # Mondays 06:00 UTC
+  push:
+    paths:
+      - .github/workflows/mirror-ci-images.yml
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: mirror-ci-images
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        include:
+          - source: postgis/postgis:17-3.5
+            target: ghcr.io/dimagi-internal/connect-labs-ci-postgis:17-3.5
+    steps:
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Copy ${{ matrix.source }} -> ${{ matrix.target }}
+        # imagetools copies every platform of the manifest list registry-to-registry,
+        # without pulling layers onto the runner.
+        run: |
+          docker buildx imagetools create --tag "${{ matrix.target }}" "docker.io/${{ matrix.source }}"
+          docker buildx imagetools inspect "${{ matrix.target }}"
