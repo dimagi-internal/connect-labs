@@ -150,7 +150,7 @@ Resources:
         ended, and the reap-synthetic-job-tasks beat marked the job failed. Search
         /ecs/labs-jj-worker for "its task stopped without a result": the line carries
         ECS's stop reason. OutOfMemoryError means the job needs a larger machine
-        (ecs_runner.machine_size); "stopped by user" is someone stopping it by hand.
+        (SYNTHETIC_ECS_MEMORY); "stopped by user" is someone stopping it by hand.
       Namespace: Labs/Synthetic
       MetricName: MachineDied
       Statistic: Sum

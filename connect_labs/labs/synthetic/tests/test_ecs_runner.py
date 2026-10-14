@@ -233,44 +233,17 @@ def test_run_job_finds_a_task_whose_module_nothing_has_imported_yet():
     imp.assert_called_once_with("connect_labs.labs.synthetic.tasks")
 
 
-# ---- the machine is sized to the job ------------------------------------------
-
-SMALL_COHORT_YAML = "opportunity_ids: [523, 524, 675]\nbundle_root: /tmp/x\n"
+# ---- every job gets the same machine, and knows its vCPUs --------------------
 
 
-@pytest.mark.parametrize(
-    ("task_name", "kwargs", "size"),
-    [
-        ("t.run_synthetic_profile_opp", {"source_opportunity_id": 874}, ("2048", "8192")),
-        ("t.run_synthetic_profile_from_prod", {"opportunity_id": 874}, ("2048", "8192")),
-        ("t.run_synthetic_profile_opps_bulk", {"source_opportunity_ids": [1, 2, 3]}, ("4096", "16384")),
-        ("t.run_synthetic_clone_opp", {"source_opportunity_ids": list(range(9))}, ("8192", "32768")),
-        # A cohort spec is read for its opportunities (an unreadable one would get the large size).
-        ("t.run_synthetic_clone_profile", {"spec_yaml": SMALL_COHORT_YAML}, ("4096", "16384")),
-        ("t.run_synthetic_tool", {"tool_name": "synthetic_generate_opp", "arguments": {}}, ("2048", "8192")),
-        # Its arguments do not say how many opportunities: the large size, as before.
-        ("t.run_synthetic_tool", {"tool_name": "synthetic_generate_opps_bulk", "arguments": {}}, ("8192", "32768")),
-        ("t.run_synthetic_clone_profile", {"spec_yaml": "not: [a cohort"}, ("8192", "32768")),
-    ],
-)
-def test_a_job_gets_a_machine_sized_to_its_opportunities(task_name, kwargs, size):
-    assert ecs_runner.machine_size(task_name, kwargs) == size
-
-
-@override_settings(SYNTHETIC_ECS_CPU="4096", SYNTHETIC_ECS_MEMORY="16384")
-def test_no_job_gets_more_than_the_configured_large_size():
-    assert ecs_runner.machine_size("t.run_synthetic_clone_opp", {"source_opportunity_ids": list(range(9))}) == (
-        "4096",
-        "16384",
-    )
-
-
-def test_launch_asks_for_the_jobs_size_and_tells_the_task_its_vcpus():
+@override_settings(SYNTHETIC_ECS_CPU="8192", SYNTHETIC_ECS_MEMORY="32768")
+def test_every_job_gets_the_configured_machine_and_is_told_its_vcpus():
+    """One size for all: even a one-opportunity job gets the full machine (memory headroom)."""
     client = _ecs()
     ecs_runner.launch("t.run_synthetic_profile_opp", "job-1", {"source_opportunity_id": 874}, client=client)
     overrides = client.run_task.call_args.kwargs["overrides"]
-    assert (overrides["cpu"], overrides["memory"]) == ("2048", "8192")
-    assert {"name": ecs_runner.VCPUS_ENV, "value": "2"} in overrides["containerOverrides"][0]["environment"]
+    assert (overrides["cpu"], overrides["memory"]) == ("8192", "32768")
+    assert {"name": ecs_runner.VCPUS_ENV, "value": "8"} in overrides["containerOverrides"][0]["environment"]
 
 
 def test_a_job_forks_one_process_per_vcpu_its_machine_was_given(monkeypatch):

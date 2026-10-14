@@ -58,23 +58,10 @@ _LAUNCH_TTL = 3 * 24 * 3600
 VCPUS_ENV = "SYNTHETIC_ECS_VCPUS"
 # The reaper's margin past the runtime limit: the job's own limit fires first.
 _REAP_GRACE_SECONDS = 15 * 60
-# Searched for by the labs-jj-synthetic-job-overran alarm (infra/labs-monitoring.yml).
+# Searched for by the labs-jj-synthetic-job-overran alarm (infra/labs-synthetic-jobs.yml).
 OVERRAN_LOG = "synthetic job overran"
 # Celery states that mean a job has not ended.
 _LIVE_STATES = frozenset({"PENDING", "RECEIVED", "STARTED", "PROGRESS", "RETRY"})
-
-# Fargate sizes, smallest first, as (cpu units, memory MiB): 4 GB per vCPU, the share
-# each forked process had on the original 8 vCPU / 32 GB machine.
-_SMALL = ("2048", "8192")
-_MEDIUM = ("4096", "16384")
-# Worker tools that touch one opportunity (run_synthetic_tool's tool_name).
-_SINGLE_OPP_TOOLS = frozenset(
-    {
-        "synthetic_generate_from_manifest",
-        "synthetic_generate_opp",
-        "synthetic_fidelity_vs_source",
-    }
-)
 
 
 def _payload_key(job_id: str) -> str:
@@ -126,54 +113,8 @@ def max_runtime_seconds() -> int:
     return int(getattr(settings, "SYNTHETIC_ECS_MAX_RUNTIME_SECONDS", 6 * 3600))
 
 
-def _opportunity_count(task_name: str, kwargs: dict[str, Any]) -> int | None:
-    """How many opportunities a job works on, or None when its arguments do not say."""
-    args = kwargs
-    if task_name.endswith(".run_synthetic_tool"):
-        if kwargs.get("tool_name") in _SINGLE_OPP_TOOLS:
-            return 1
-        args = kwargs.get("arguments") or {}
-    for key in ("source_opportunity_ids", "opportunity_ids"):
-        if isinstance(args.get(key), list | tuple):
-            return len(args[key])
-    for key in ("source_opportunity_id", "opportunity_id"):
-        if args.get(key) is not None:
-            return 1
-    if args.get("spec_yaml"):
-        from connect_labs.labs.synthetic.cohort import CohortSpec
-
-        try:
-            return len(CohortSpec.from_yaml(args["spec_yaml"]).opportunity_ids)
-        except Exception:  # noqa: BLE001 -- the job reports a bad spec itself
-            return None
-    return None
-
-
-def machine_size(task_name: str, kwargs: dict[str, Any]) -> tuple[str, str]:
-    """The (cpu, memory) a job gets: as many vCPUs as it can use, up to the large size.
-
-    One opportunity runs serially, so it gets 2 vCPU; a handful gets 4; a cohort, or
-    a job whose size its arguments do not show, gets the large size (8 vCPU / 32 GB).
-    """
-    large = (
-        str(getattr(settings, "SYNTHETIC_ECS_CPU", "8192")),
-        str(getattr(settings, "SYNTHETIC_ECS_MEMORY", "32768")),
-    )
-    n = _opportunity_count(task_name, kwargs)
-    if n is None:
-        size = large
-    elif n == 1:
-        size = _SMALL
-    elif n <= 4:
-        size = _MEDIUM
-    else:
-        size = large
-    # Never larger than the configured large size.
-    return min(size, large, key=lambda s: int(s[0]))
-
-
 def vcpus() -> int:
-    """vCPUs this task was given (one forked process each), else the large size's."""
+    """vCPUs this task was given (one forked process each), else the configured size's."""
     raw = os.environ.get(VCPUS_ENV) or str(int(str(getattr(settings, "SYNTHETIC_ECS_CPU", "1024"))) // 1024)
     try:
         return max(1, int(raw))
@@ -193,7 +134,10 @@ def launch(task_name: str, job_id: str, kwargs: dict[str, Any], client=None) -> 
         logger.warning("synthetic job %s was already launched; not launching it again", job_id)
         return None
     cache.set(_payload_key(job_id), {"task": task_name, "kwargs": kwargs}, _PAYLOAD_TTL)
-    cpu, memory = machine_size(task_name, kwargs)
+    # One size for every job: a smaller machine for a small job saved cents and risked
+    # running out of memory.
+    cpu = str(getattr(settings, "SYNTHETIC_ECS_CPU", "8192"))
+    memory = str(getattr(settings, "SYNTHETIC_ECS_MEMORY", "32768"))
     client = client or _ecs()
     try:
         service = client.describe_services(
