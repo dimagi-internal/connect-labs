@@ -46,6 +46,8 @@ Work areas are the small areas a field worker visits. Choose how to make them wi
 
 **Slug prefix** (two letters at the start of each work-area ID) and **Country ISO** apply to every method. Leave them blank to fill them automatically from the ward name and the map location.
 
+**Ward, LGA and State** for each new work area come from the ward you picked in **Ward lookup**, or else from the map location (OpenStreetMap). OpenStreetMap often has no ward (in Nigeria it usually has none), so any that are still blank are filled from Labs' own ward boundaries (the **Enriched Boundaries** the CHC microplan uses): the ward that contains the centre of the work area, with its LGA and state. A value that is already there is never changed. Where Labs has no ward boundaries, they stay blank (see Step 4).
+
 ### Auto-grid
 
 Splits the boundary into square cells and counts the buildings in each one (from Google Open Buildings).
@@ -124,6 +126,8 @@ The list at the bottom of the step shows every group, its colour on the map and 
 ## Step 4: Export
 
 Click **Download CSV** to save the work areas. The file has the same columns and format as the grid generator: Area Slug, Ward, Centroid, Boundary, Building Count, Expected Visit Count, LGA, State, Target Population, Work Area Group Name (plus the singleton columns if you added them). Change the **File name** if you like.
+
+Connect will not import a work area with a blank Ward, LGA or State. If any work areas have one, a line under **Download CSV** says how many (for example "3 work areas have no Ward/LGA/State — Connect will reject them"). You can still download the file: fill those cells in before you import it, or remove those work areas and make them again.
 
 ## Saving and renaming
 
