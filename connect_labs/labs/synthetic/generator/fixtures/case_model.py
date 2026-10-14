@@ -204,6 +204,9 @@ class CaseModel:
     # it: a schedule belongs with its forms (a case registered on day 0 and followed up
     # from day 1 is not one first seen on a follow-up and registered on day 10).
     day_patterns_by_forms: dict[tuple, list[tuple[float, tuple[int, ...]]]] = field(default_factory=dict)
+    # path -> (form, days since the path was last recorded in the case, bucketed;
+    # -1 for never) -> P(recorded), where K_MIN or more visits back it.
+    presence_by_gap: dict[str, dict[tuple[str | None, int], float]] = field(default_factory=dict)
     # Which per-case constants were entered equal (one copied from another), as whole
     # patterns: persona or "*" -> [(groups of equal paths, share of cases)].
     copies: dict[str, list[tuple[tuple[tuple[str, ...], ...], float]]] = field(default_factory=dict)
@@ -313,6 +316,75 @@ def _fit_copies(
     return out
 
 
+def _since_bucket(days_since: int | None) -> int:
+    """Days since a field was last recorded, bucketed: -1 never, each day to a week (a
+    worker's rhythm is in days), then 8-14 and 15+."""
+    if days_since is None:
+        return -1
+    if days_since <= 7:
+        return max(days_since, 0)
+    return 8 if days_since <= 14 else 15
+
+
+def _visit_paths(visit: dict[str, Any]) -> set[str]:
+    return set(visit.get("values") or {}) | set(visit.get("dates") or {}) | set(visit.get("cats") or {})
+
+
+def _fit_presence_by_gap(
+    series_list: list[dict[str, Any]], presence: dict[str, dict[str | None, float]]
+) -> dict[str, dict[tuple[str | None, int], float]]:
+    """Whether a field is recorded on a visit, by form AND by how long since it last was.
+
+    A worker weighs a baby at a visit a week after the last weighing and skips the
+    scale at one two days later; recorded per form alone (two visits in three), the
+    clone weighed at visits days apart, and a step between two close weighings is
+    where the impossible-change check bites (EHA: 70 weighing gaps of 2-3 days in the
+    first three weeks against the source's 23). Kept where K_MIN visits back a cell;
+    elsewhere the per-form share stands.
+    """
+    seen: dict[str, Counter] = defaultdict(Counter)
+    hit: dict[str, Counter] = defaultdict(Counter)
+    for s in series_list:
+        last: dict[str, int] = {}
+        for v in s["visits"]:
+            form, day = v.get("form"), int(v["day"])
+            recorded = _visit_paths(v)
+            for path, by_form in presence.items():
+                if by_form.get(form, 0.0) <= 0:
+                    continue
+                key = (form, _since_bucket(day - last[path] if path in last else None))
+                seen[path][key] += 1
+                if path in recorded:
+                    hit[path][key] += 1
+                    last[path] = day
+    out: dict[str, dict[tuple[str | None, int], float]] = {}
+    for path, counts in seen.items():
+        cells = {key: hit[path][key] / n for key, n in counts.items() if n >= K_MIN}
+        if cells:
+            out[path] = cells
+    return out
+
+
+def _present(model: CaseModel, path: str, form: str | None, last: dict[str, int], day: int, rng) -> bool:
+    """Draw whether ``path`` is recorded on this visit (see _fit_presence_by_gap)."""
+    base = model.presence.get(path, {}).get(form, 0.0)
+    if base <= 0:
+        return False
+    since = _since_bucket(day - last[path] if path in last else None)
+    cells = model.presence_by_gap.get(path, {})
+    p = cells.get((form, since))
+    if p is None and since >= 0:
+        # A gap the source never had at this form: the nearest one it did have.
+        near = [(abs(b - since), q) for (f, b), q in cells.items() if f == form and b >= 0]
+        p = min(near)[1] if near else None
+    if p is None:
+        p = base
+    if rng.random() >= p:
+        return False
+    last[path] = day
+    return True
+
+
 def _fit_grid(
     obs: list[float], by_owner: dict[str, list[float]], value_cases: Counter, unit: float
 ) -> tuple[tuple[float, ...], dict[str, float]]:
@@ -405,9 +477,18 @@ def _sample_days(
     i = int(np.searchsorted(gaps, mean_gap))
     lo, hi = max(0, i - 3), min(len(pats), i + 4)
     _, days = pats[int(nrng.integers(lo, hi))]
+    # The jitter never makes a gap shorter than the schedule's own shortest: a source
+    # that never visits on consecutive days does not start to.
+    gaps = [b - a for a, b in zip(days, days[1:]) if b > a]
+    floor = min(gaps) if gaps else 0
     out = [0]
-    for d in days[1:-1]:
-        out.append(min(max(out[-1], int(d) + int(nrng.integers(-1, 2))), int(days[-1])))
+    for i, d in enumerate(days[1:-1], start=1):
+        moved = int(d) + int(nrng.integers(-1, 2))
+        if moved - out[-1] < min(floor, int(d) - out[-1]) or int(days[i + 1]) - moved < min(
+            floor, int(days[i + 1]) - int(d)
+        ):
+            moved = int(d)
+        out.append(min(max(out[-1], moved), int(days[-1])))
     if len(days) > 1:
         out.append(int(days[-1]))
     return out
@@ -551,6 +632,13 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
             model.grid, model.grid_share = _fit_grid(
                 obs, num_obs_owner[path], value_cases[path], 1.0 if whole else 10.0**-places
             )
+        if model.grid and model.resid_sd > 0:
+            # The source's residuals already hold its rounding (a reading put on a grid
+            # spaced d apart is off by a uniform error of variance d^2/12), and the grid
+            # puts it back on every sampled reading: taken out here, not counted twice.
+            spacing = float(np.median(np.diff(model.grid)))
+            rounding = model.grid_share.get("*", 0.0) * spacing**2 / 12
+            model.resid_sd = math.sqrt(max(model.resid_sd**2 - rounding, (0.25 * model.resid_sd) ** 2))
         if kind == "varying" and len(resid_pairs[path]) >= K_MIN:
             model.resid_ar = _ar_coefficient(resid_pairs[path], model.resid_sd)
         numeric[path] = model
@@ -614,6 +702,7 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
     presence = {}
     for path, by_form in path_in_form.items():
         presence[path] = {f: min(1.0, by_form[f] / form_seen[f]) for f in by_form if form_seen[f]}
+    presence_by_gap = _fit_presence_by_gap(series_list, presence)
 
     return CaseModel(
         real_starts=frozenset(d for starts in owner_starts.values() for d in starts),
@@ -632,6 +721,7 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
         rare_first=rare_first,
         rare_trans=dict(rare_trans),
         presence=presence,
+        presence_by_gap=presence_by_gap,
         numeric=numeric,
         dates=dates,
         cats=cats,
@@ -970,11 +1060,12 @@ def _sample_case(
                         params[key] = params[present[0]]
                 break
     last_resid: dict[str, float] = {}
+    last_seen: dict[str, int] = {}
     visits = []
     for idx, (day, form) in enumerate(zip(days, forms), start=1):
         values: dict[str, float] = {}
         for path, pm in model.numeric.items():
-            if rng.random() >= model.presence.get(path, {}).get(form, 0.0):
+            if not _present(model, path, form, last_seen, day, rng):
                 continue
             if pm.kind == "index":
                 values[path] = float(idx + pm.index_k)
@@ -993,7 +1084,7 @@ def _sample_case(
                 values[path] = _round_clamp(params[f"c:{path}"], pm)
         dates: dict[str, int] = {}
         for path, pm in model.dates.items():
-            if rng.random() >= model.presence.get(path, {}).get(form, 0.0):
+            if not _present(model, path, form, last_seen, day, rng):
                 continue
             if f"dd:{path}" in params:
                 dates[path] = int(round(params[f"dd:{path}"] + day))
@@ -1003,8 +1094,9 @@ def _sample_case(
         for path, cm in model.cats.items():
             if idx == n and endings.get(path):
                 cats[path] = endings[path]
+                last_seen[path] = day
                 continue
-            if rng.random() >= model.presence.get(path, {}).get(form, 0.0):
+            if not _present(model, path, form, last_seen, day, rng):
                 continue
             if not cm.varying:
                 if path not in const_cat:

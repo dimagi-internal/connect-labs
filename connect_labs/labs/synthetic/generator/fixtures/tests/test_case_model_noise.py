@@ -252,3 +252,33 @@ def test_readings_take_the_grid_the_source_writes_on_and_only_that():
     gram_pool = [c for c in _kmc_like_pool(n_cases=900) if c["owner"] in precise]
     model = cm.fit_case_model([dict(c, visits=list(c["visits"])) for c in gram_pool])
     assert not model.numeric["form.w"].grid or max(model.numeric["form.w"].grid_share.values()) < 0.02
+
+
+def test_a_field_is_recorded_on_the_sources_rhythm():
+    """Workers visit every two or three days but weigh only when the last weighing was
+    five or more days back -- about half the visits, never two close ones. Recorded per
+    form alone, the clone weighed at visits days apart (EHA: 70 weighing gaps of 2-3
+    days in the first three weeks against the source's 23, 2026-10-14)."""
+    rng = random.Random(4)
+    pool = []
+    for c in range(400):
+        day, last, visits = 0, None, []
+        for i in range(10):
+            values = {}
+            if i == 0 or day - last >= 5:
+                values["form.w"] = 1800.0 + 20 * day + rng.gauss(0, 10)
+                last = day
+            visits.append({"day": day, "form": "Register" if i == 0 else "Visit", "values": values})
+            day += rng.choice([2, 3])
+        pool.append({"owner": f"flw_{c % 8:03d}", "start_date": "2026-03-02", "visits": visits})
+
+    def close_share(cases):
+        gaps = []
+        for case in cases:
+            days = [v["day"] for v in case["visits"] if "form.w" in v.get("values", {})]
+            gaps += [b - a for a, b in zip(days, days[1:])]
+        return sum(1 for g in gaps if g < 4) / len(gaps)
+
+    out, _report = cm.synthesize_case_pool(pool, seed=5)
+    assert close_share(pool) == 0
+    assert close_share(out) < 0.1, f"{close_share(out):.0%} of synthetic weighings follow one under 4 days earlier"
