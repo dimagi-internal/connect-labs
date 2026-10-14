@@ -138,7 +138,7 @@ The **UAT Comparison** tab lets you compare data between your UAT and production
 
 The dashboard now loads only production data. The separate test/pilot domain and the toggle to switch between them have been removed, as production has carried real verification data for some time and the test domain is no longer in use. This roughly halves the number of data pipelines the dashboard streams on each load, making it faster and more reliable.
 
-Visit history on this tab is limited to the **last 180 days** (a rolling window). The "how does this compare to before the pilot" comparison will show a shorter history for any field worker whose pre-pilot data is older than 180 days — the tab notes this when it applies.
+Visit history on this tab is limited to the **last 90 days** (a rolling window). The "how does this compare to before the pilot" comparison will show a shorter history for any field worker whose pre-pilot data is older than 90 days — the tab notes this when it applies.
 
 ### Indicator definition popup
 
