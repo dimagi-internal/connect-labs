@@ -76,3 +76,31 @@ class BarrierArea(models.Model):
 
     def __str__(self) -> str:
         return f"{self.area_hash[:12]} ({self.n_features} barriers)"
+
+
+class SimpleMicroplan(models.Model):
+    """A microplan made in the Simple Microplan creator (`/microplans/simple/`).
+
+    Unlike program plans (LabsRecords on Connect), these are quick test plans that
+    belong to no program, so they live in the labs DB and every user who can open
+    the creator sees the list. ``data`` is the creator's whole state: the boundary
+    parts, its settings and the work-area rows exactly as they export to CSV.
+    """
+
+    name = models.CharField(max_length=200)
+    created_by = models.ForeignKey(
+        "users.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="simple_microplans"
+    )
+    # Kept beside the FK so the list still says who made it after the user row goes.
+    created_by_name = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    # Mirrors len(data["rows"]) so the list page can defer `data`, which can be MBs.
+    n_work_areas = models.IntegerField(default=0)
+    data = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+
+    def __str__(self) -> str:
+        return self.name

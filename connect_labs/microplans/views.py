@@ -2474,3 +2474,18 @@ class ProgramBulkCreateStatusView(LoginRequiredMixin, View):
             logger.error("microplans bulk_create task %s failed: %s", task_id, result.info)
             return JsonResponse({"state": "failed", "detail": "Bulk create failed. Check server logs."})
         return JsonResponse({"state": state.lower(), "results": [], "created": 0, "total": 0})
+
+
+class MicroplansHubView(LoginRequiredMixin, TemplateView):
+    """`/microplans/`: the overview's Microplans tile opens here, onto CHC, CHC WA Revisit and Simple Microplan."""
+
+    template_name = "microplans/hub.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        labs_context = getattr(self.request, "labs_context", {}) or {}
+        # The program picked in the context picker; 217 when none is picked.
+        program_id = labs_context.get("program_id") or 217
+        context["chc_url"] = f"/microplans/program/{program_id}/"
+        context["wa_revisit_url"] = f"/wa-revisit/program/{program_id}/"
+        return context
