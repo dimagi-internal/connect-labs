@@ -36,6 +36,10 @@ PREFIX_TO_FEATURE = {
     "connect_labs/solicitations/": "Solicitations",
     "connect_labs/custom_analysis/": "Custom Analysis",
     "connect_labs/coverage/": "Coverage Maps",
+    # Simple Microplan (its page is also the in-app help popup on the editor)
+    "connect_labs/microplans/simple_": "Simple Microplan",
+    "connect_labs/static/microplans/simple_microplan": "Simple Microplan",
+    "connect_labs/templates/microplans/simple_": "Simple Microplan",
     "connect_labs/ai/": "AI Features",
     "connect_labs/mcp/": "Connect MCP & Safe Mode",
     "docs/MCP_SETUP.md": "Connect MCP & Safe Mode",
@@ -63,6 +67,7 @@ FEATURE_TO_DOC_FILE = {
     "Solicitations": "user_docs/solicitations.md",
     "Custom Analysis": "user_docs/custom-analysis.md",
     "Coverage Maps": "user_docs/coverage-maps.md",
+    "Simple Microplan": "user_docs/simple-microplan.md",
     "AI Features": "user_docs/ai-features.md",
     "Connect MCP & Safe Mode": "user_docs/connect-mcp.md",
 }
@@ -427,7 +432,8 @@ def main() -> None:
         else:
             print("    — No markdown change needed")
 
-        if feature not in [f.split(" (")[0] for f in missing_pages]:
+        # Not every help page has a Confluence summary (Simple Microplan has none yet).
+        if FEATURE_PAGE_IDS.get(feature) and feature not in [f.split(" (")[0] for f in missing_pages]:
             update_confluence_summary(confluence, feature, product_description, ai_client)
             print(f"    ✓ Confluence summary updated (page {FEATURE_PAGE_IDS[feature]})")
 
