@@ -81,12 +81,6 @@ _GATE_REL_TOL = 0.01
 #: ...and closer to that real case than this share of its nearest real neighbour.
 _GATE_NN_SHARE = 0.25
 _GATE_MAX_TRIES = 20
-#: Rounding: a reading this large is rounded to the nearest _ROUND_TO when its worker
-#: rounds. Weighing scales read in grams and many workers write the nearest 100 g (41%
-#: of KMC weights; 99% at EHA, 13% at one PIPN opportunity), and the clone wrote none.
-_ROUND_TO = 100
-#: ...modelled only when more of a path's readings are whole hundreds than chance gives.
-_ROUND_MIN_SHARE = 0.05
 #: Field copies: b entered as a copy of a in at least this share of cases is modelled.
 _COPY_MIN_SHARE = 0.05
 
@@ -135,9 +129,14 @@ class _PathModel:
     # the trend over the gap plus this much noise -- not an independent draw around a
     # straight line, which a real series is not (see _sample_case).
     step_sd: float = 0.0
-    # Share of readings that are whole hundreds, per persona ("*" = everyone). Rounding a
-    # scale reading is a worker's habit; see _ROUND_TO.
-    round_share: dict[str, float] = field(default_factory=dict)
+    # The values this field commonly takes in the source -- each seen in K_MIN cases or
+    # more -- and, per persona ("*" = everyone), the share of its readings that are one
+    # of them. A sampled reading lands on the nearest common value at that rate (see
+    # _common_value), so a field the source records in whole hundreds comes out in whole
+    # hundreds, one recorded to the gram stays continuous, and a worker who writes
+    # 2,200 g where another writes 2,183 g still does.
+    common_values: np.ndarray | None = None
+    common_share: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -238,22 +237,39 @@ def _fit_line(points: list[tuple[float, float]]) -> tuple[float, float, list[flo
     return float(intercept), float(slope), resid
 
 
-def _round_shares(by_owner: dict[str, list[int]]) -> dict[str, float]:
-    """Each persona's share of whole-hundred readings, and everyone's ("*").
+def _common_values(
+    cases_by_value: dict[float, set[int]], readings_by_owner: dict[str, list[float]]
+) -> tuple[np.ndarray | None, dict[str, float]]:
+    """A field's common values (each seen in K_MIN cases or more) and how often a reading is one.
 
-    Empty unless the path is rounded more than chance would make it (a reading in grams
-    lands on a whole hundred 1% of the time), so a path nobody rounds is left alone. A
-    persona with fewer than K_MIN readings takes everyone's share.
+    The case model draws a reading from a trend and noise, so left alone it comes out
+    continuous: 2,183 g where the source wrote 2,200 g. This is what the source's values
+    look like, learned like any other part of it -- nothing about rounding or units. A
+    value counts only when K_MIN cases share it, so no one case's unusual reading is
+    ever reproduced.
     """
-    total = sum(c[0] for c in by_owner.values())
-    whole = sum(c[1] for c in by_owner.values())
-    if total < K_MIN or whole / total < _ROUND_MIN_SHARE:
-        return {}
-    shares = {"*": whole / total}
-    for owner, (n, k) in by_owner.items():
-        if n >= K_MIN:
-            shares[owner] = k / n
-    return shares
+    common = sorted(v for v, cases in cases_by_value.items() if len(cases) >= K_MIN)
+    if not common:
+        return None, {}
+    common_set = set(common)
+    every = [x for xs in readings_by_owner.values() for x in xs]
+    if not every:
+        return None, {}
+    shares = {"*": sum(1 for x in every if x in common_set) / len(every)}
+    for owner, xs in readings_by_owner.items():
+        if len(xs) >= K_MIN:
+            shares[owner] = sum(1 for x in xs if x in common_set) / len(xs)
+    return np.array(common, dtype=float), shares
+
+
+def _common_value(value: float, pm: _PathModel, owner: str, rng: random.Random) -> float:
+    """``value``, or the nearest of the field's common values at the persona's rate."""
+    vals = pm.common_values
+    if vals is None or not len(vals) or rng.random() >= pm.common_share.get(owner, pm.common_share.get("*", 0.0)):
+        return value
+    i = int(np.searchsorted(vals, value))
+    near = [vals[j] for j in (i - 1, i) if 0 <= j < len(vals)]
+    return float(min(near, key=lambda c: abs(c - value)))
 
 
 def _fit_copies(
@@ -357,9 +373,10 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
     date_cases: Counter = Counter()
     resid: dict[str, list[float]] = defaultdict(list)
     step_resid: dict[str, list[float]] = defaultdict(list)
+    # path -> value -> cases it was seen in; path -> persona -> readings
+    value_cases: dict[str, dict[float, set[int]]] = defaultdict(lambda: defaultdict(set))
+    owner_readings: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
     day_patterns: dict[int, list[tuple[float, tuple[int, ...]]]] = defaultdict(list)
-    # path -> persona -> [readings, whole hundreds]
-    rounding: dict[str, dict[str, list[int]]] = defaultdict(lambda: defaultdict(lambda: [0, 0]))
     case_consts: list[tuple[str, dict[str, float]]] = []
     index_offsets: dict[str, list[float]] = defaultdict(list)
     day_offset_consistent: dict[str, list[bool]] = defaultdict(list)
@@ -392,10 +409,8 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
             for path, val in (v.get("values") or {}).items():
                 per_path[path].append((int(v["day"]), idx, float(val)))
                 num_obs[path].append(float(val))
-                if abs(float(val)) >= 2 * _ROUND_TO:
-                    counts = rounding[path][s["owner"]]
-                    counts[0] += 1
-                    counts[1] += int(float(val) % _ROUND_TO == 0)
+                value_cases[path][float(val)].add(len(rows))
+                owner_readings[path][s["owner"]].append(float(val))
         for path, pts in per_path.items():
             num_cases[path] += 1
             if path in frozen_paths:
@@ -454,7 +469,7 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
             model.resid_sd = _robust_sd(resid[path])
         if kind == "varying" and len(step_resid[path]) >= K_MIN:
             model.step_sd = _robust_sd(step_resid[path])
-        model.round_share = _round_shares(rounding.get(path) or {})
+        model.common_values, model.common_share = _common_values(value_cases[path], owner_readings[path])
         numeric[path] = model
     dates: dict[str, _PathModel] = {}
     for path, obs in date_obs.items():
@@ -761,19 +776,6 @@ def fit_days(days: list[int], length: int) -> list[int]:
     return [d * max(length, 0) // span for d in days]
 
 
-def _rounds(pm: _PathModel, owner: str, rng: random.Random) -> bool:
-    """Whether this reading is written to the nearest hundred (the persona's habit)."""
-    if not pm.round_share:
-        return False
-    return rng.random() < pm.round_share.get(owner, pm.round_share["*"])
-
-
-def _to_hundred(value: float, pm: _PathModel) -> float:
-    if abs(value) < 2 * _ROUND_TO:
-        return value
-    return float(min(max(round(value / _ROUND_TO) * _ROUND_TO, pm.lo), pm.hi))
-
-
 def _round_clamp(value: float, pm: _PathModel) -> float:
     value = float(round(value)) if pm.whole else round(value, pm.places)
     return min(max(value, pm.lo), pm.hi)
@@ -838,12 +840,13 @@ def _sample_case(
                     break
             end = _draw(counts, rng)
             endings[path] = None if end in (None, _NONE) else end
-    # Per-case constants: rounded once (a case's birth weight is one entry), then copied
-    # where the source's workers copy one field into another (see _fit_copies).
+    # Per-case constants take the field's common values as the source's do (once per
+    # case: a birth weight is one entry), then are copied where the source's workers
+    # copy one field into another (see _fit_copies).
     for path, pm in model.numeric.items():
         key = f"c:{path}"
-        if pm.kind == "const" and key in params and _rounds(pm, owner, rng):
-            params[key] = _to_hundred(_round_clamp(params[key], pm), pm)
+        if pm.kind == "const" and key in params:
+            params[key] = _common_value(_round_clamp(params[key], pm), pm, owner, rng)
     for (a, b), shares in model.copies.items():
         if f"c:{a}" in params and f"c:{b}" in params and rng.random() < shares.get(owner, shares["*"]):
             params[f"c:{b}"] = params[f"c:{a}"]
@@ -869,8 +872,7 @@ def _sample_case(
                 else:
                     v = params[f"b:{path}"] + slope * day + nrng.normal(0.0, pm.resid_sd)
                 last_reading[path] = (day, v)
-                value = _round_clamp(v, pm)
-                values[path] = _to_hundred(value, pm) if _rounds(pm, owner, rng) else value
+                values[path] = _common_value(_round_clamp(v, pm), pm, owner, rng)
             elif f"c:{path}" in params:
                 values[path] = _round_clamp(params[f"c:{path}"], pm)
         dates: dict[str, int] = {}

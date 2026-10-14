@@ -115,21 +115,21 @@ def _shares(pool):
                 break
     return {
         "span_28": sum(1 for s in spans if s >= 27) / len(spans),
-        "rounded": sum(1 for w in ws if w % 100 == 0) / len(ws),
+        "hundreds": sum(1 for w in ws if w % 100 == 0) / len(ws),
         "copied": sum(1 for a, b in pairs if abs(a - b) < 1) / max(len(pairs), 1),
         "impossible": impossible / len(pool),
     }
 
 
 def test_a_modelled_programme_keeps_the_sources_shape():
-    """Schedule length, rounding habit, field copies and step plausibility all come
-    through. Before this batch: span_28 fell from ~100% to ~60%, rounding from 50% to
-    ~1%, copying from ~17% to 0%, and impossible steps rose several-fold."""
+    """Schedule length, the values readings take, field copies and step plausibility all
+    come through. Before this batch: span_28 fell from 100% to 78%, whole-hundred readings
+    from 51% to 1% (half the workers write every weight that way) and copying from 17% to 2%."""
     real_pool = _kmc_like_pool()
     real = _shares(real_pool)
     out, _report = cm.synthesize_case_pool(real_pool, seed=2)
     syn = _shares(out)
     assert syn["span_28"] >= real["span_28"] - 0.1, (real, syn)
-    assert abs(syn["rounded"] - real["rounded"]) <= 0.1, (real, syn)
+    assert abs(syn["hundreds"] - real["hundreds"]) <= 0.1, (real, syn)
     assert abs(syn["copied"] - real["copied"]) <= 0.08, (real, syn)
     assert syn["impossible"] <= real["impossible"] + 0.08, (real, syn)
