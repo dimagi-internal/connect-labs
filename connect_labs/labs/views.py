@@ -242,6 +242,14 @@ class LabsOverviewView(LoginRequiredMixin, TemplateView):
                 "feature": "workflow",
             },
             {
+                "name": "Microplans",
+                "url": "/microplans/",
+                "icon": "fa-map-location-dot",
+                "description": "CHC microplans, CHC WA Revisit plans and simple test microplans you draw and export",
+                "color": "emerald",
+                "feature": "workflow",
+            },
+            {
                 "name": "Audit",
                 "url": "/audit/",
                 "icon": "fa-clipboard-check",
