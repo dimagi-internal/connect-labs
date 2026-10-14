@@ -132,6 +132,10 @@ For most reports this makes no visible difference. One case where it does matter
 
 If you notice a report no longer showing categories or notes that you expect from another workflow, the report's settings may need to be updated to declare that workflow. Contact your program administrator or support if you are unsure.
 
+### UAT Comparison tab
+
+The **UAT Comparison** tab lets you compare data between your UAT and production environments side by side. Both environments have real verification data — if the verification block on this tab reads zero, that almost certainly means the page did not finish loading rather than that data is missing. Try refreshing the page; if the figure remains zero, contact support.
+
 ### Indicator definition popup
 
 In KMC reports (program, opportunity, and worker review) and the generic indicator reports, you can click an indicator's name to open a popup with its full definition. The popup has been restyled to make it easier to read:
@@ -226,6 +230,4 @@ This replaces the yellow **Select Context** button that previously appeared when
 
 ### Setting an organisation's home page
 
-An organisation can have one page designated as its **home page**. When someone picks that organisation in Labs — or follows a link to `/labs/overview/?organization_id=<organisation>` — they land on the home page instead of the default overview.
-
-To set the home page, go to the organisation's **Settings** and choose the page you want visitors to land on from the list of the organisation's pages. You must have access to the program or opportunity behind the page in order to set it as
+An organisation can have one page designated as its **home page**. When someone picks that organisation in Labs — or follows a
