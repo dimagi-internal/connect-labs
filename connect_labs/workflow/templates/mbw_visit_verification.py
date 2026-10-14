@@ -20,13 +20,20 @@ automatically) each carry a form_lookback_days cutoff (see
 PROD_LOOKBACK_DAYS below): CommCare's Form API has no way to filter by
 app-build/version, and without SOME cutoff these pipelines re-download a
 form's entire submission history on every cold-cache load, a volume that only
-grows. 180 days was chosen as a deliberate trade against the UAT Comparison
+grows. 90 days was chosen as a deliberate trade against the UAT Comparison
 tab's pre-UAT-vs-UAT baseline comparisons (see render code, enrichedRows'
 comment) -- a mother whose entire pre-UAT history predates the cutoff loses
 her baseline comparison, which is the accepted cost of a materially smaller
-payload. The eligible-FLW and mother-registration pipelines (cchq_cases) are
-NOT cut off -- registration happens once, so there is no "recent window" to
-apply there, and case-type queries are small regardless.
+payload. Shrunk from an initial 180 days (2026-10-14) after a cold-cache
+reload (forced by this same day's pipeline-schema changes invalidating every
+pipeline's cache at once) timed out against production's full visit volume --
+a rolling 90-day window is a stopgap; the better long-term fix is a FIXED
+cutoff anchored to when the verification block actually shipped to
+production (not yet implemented -- form_lookback_days is rolling-only, see
+cchq_fetcher.py's _received_on_start), once that date is confirmed. The
+eligible-FLW and mother-registration pipelines (cchq_cases) are NOT cut off
+-- registration happens once, so there is no "recent window" to apply there,
+and case-type queries are small regardless.
 
 Other derived columns computed client-side because the pipeline engine's
 window_fields can't express expanding-window computations today (only
@@ -42,7 +49,7 @@ from pathlib import Path
 # UAT history lookback (see module docstring)
 # ---------------------------------------------------------------------------
 
-PROD_LOOKBACK_DAYS = 180
+PROD_LOOKBACK_DAYS = 90
 
 # ---------------------------------------------------------------------------
 # Visit pipelines (one per visit-type form)
