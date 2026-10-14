@@ -48,6 +48,9 @@ Work areas are the small areas a field worker visits. Choose how to make them wi
 
 **Ward, LGA and State** for each new work area come from the ward you picked in **Ward lookup**, or else from the map location (OpenStreetMap). OpenStreetMap often has no ward (in Nigeria it usually has none), so any that are still blank are filled from Labs' own ward boundaries (the **Enriched Boundaries** the CHC microplan uses): the ward that contains the centre of the work area, with its LGA and state. A value that is already there is never changed. Where Labs has no ward boundaries, they stay blank (see Step 4).
 
+!!! note "Work areas made before this filling was introduced"
+    Work areas created before this change was made are not updated automatically. To get a Ward, LGA and State filled in for one, remove it and make it again.
+
 ### Auto-grid
 
 Splits the boundary into square cells and counts the buildings in each one (from Google Open Buildings).
@@ -127,7 +130,7 @@ The list at the bottom of the step shows every group, its colour on the map and 
 
 Click **Download CSV** to save the work areas. The file has the same columns and format as the grid generator: Area Slug, Ward, Centroid, Boundary, Building Count, Expected Visit Count, LGA, State, Target Population, Work Area Group Name (plus the singleton columns if you added them). Change the **File name** if you like.
 
-Connect will not import a work area with a blank Ward, LGA or State. If any work areas have one, a line under **Download CSV** says how many (for example "3 work areas have no Ward/LGA/State — Connect will reject them"). You can still download the file: fill those cells in before you import it, or remove those work areas and make them again.
+Connect will not import a work area with a blank Ward, LGA or State. Most work areas get these filled in automatically (see Step 2), but where Labs has no ward boundaries they may still be blank. If any work areas have a blank field, a line under **Download CSV** says how many (for example "3 work areas have no Ward/LGA/State — Connect will reject them"). You can still download the file: fill those cells in before you import it, or remove those work areas and make them again.
 
 ## Saving and renaming
 
@@ -166,4 +169,5 @@ Each page has a **?** button that opens a searchable, chat-style guide covering 
 - **"No coverage for country"**: fill in **Country ISO** with the two-letter code (for example NG).
 - **Smart draw added nothing**: the shape was outside the boundary or already covered by other work areas.
 - **Building counts are 0**: the area may not be covered by Google Open Buildings, or the country could not be worked out; set **Country ISO**.
+- **Work areas still have a blank Ward after export**: these were made before automatic filling was added, or Labs has no ward boundaries for that area. Remove and redraw them to pick up the ward details, or fill the cells in manually before importing to Connect.
 - Use the **⇲** button on the map to zoom back to the whole microplan.
