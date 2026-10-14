@@ -212,7 +212,11 @@ def test_editor_page_carries_the_help(client, plan, owner):
     client.force_login(owner)
     resp = client.get(reverse("microplans:simple_editor", kwargs={"plan_id": plan.pk}))
     assert any(s["id"] == "step-3-grouping" for s in resp.context["help_sections"])
-    assert 'id="mp-help"' in resp.content.decode()
+    body = resp.content.decode()
+    assert 'id="mp-help"' in body
+    # articles ship as sanitised <template>s; the JSON index carries no HTML
+    assert 'id="mp-help-art-step-3-grouping"' in body
+    assert all("html" not in s for s in resp.context["help_index"])
 
 
 def test_docs_updater_keeps_the_guide_current():

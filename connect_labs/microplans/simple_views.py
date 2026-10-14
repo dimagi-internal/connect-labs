@@ -141,7 +141,11 @@ class SimpleMicroplanEditorView(_SimpleMicroplanAccessMixin, TemplateView):
             "api_url": reverse("microplans:simple_api", kwargs={"plan_id": plan.pk}),
             "list_url": reverse("microplans:simple_list"),
         }
-        context["help_sections"] = help_sections()
+        sections = help_sections()
+        # Article HTML goes into <template> elements, never through JSON-as-text:
+        # the popup clones them instead of re-parsing strings as HTML.
+        context["help_sections"] = sections
+        context["help_index"] = [{k: sec[k] for k in ("id", "title", "text")} for sec in sections]
         context["help_site_url"] = HELP_SITE_URL
         return context
 
