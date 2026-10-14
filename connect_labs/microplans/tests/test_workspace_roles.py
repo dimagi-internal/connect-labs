@@ -470,18 +470,20 @@ def test_setup_command_refuses_an_org_holding_other_programs(django_user_model):
     assert not Workspace.objects.exists()
 
 
-def test_settings_page_is_program_managers_only_and_sets_linked_programs(client, people, ws):
+def test_settings_page_is_program_managers_only_and_no_longer_edits_linked_programs(client, people, ws):
     url = reverse("microplans:program_workspace_settings", args=[ws["program"]])
     _login(client, people["nm_river"])
     assert client.get(url).status_code == 404
     _login(client, people["pm"])
     resp = client.get(url)
     assert resp.status_code == 200
-    assert b"9101, 9102" in resp.content  # the linked programs, ready to edit
-    resp = client.post(url, {"connect_program_ids": "9102, 9103"})
-    assert resp.status_code == 302
+    assert b'id="llos"' in resp.content and b'id="users"' in resp.content
+    assert b"connect_program_ids" not in resp.content
+    # The older linked programs still count (and the management command sets them),
+    # but the page does not change them.
+    client.post(url, {"connect_program_ids": "9103"})
     ws["workspace"].refresh_from_db()
-    assert ws["workspace"].connect_program_ids == [9102, 9103]
+    assert ws["workspace"].connect_program_ids == [RIVERBEND_PROGRAM, HILLTOP_PROGRAM]
 
 
 # --- turning workspace roles on from the browser (no management command) ----

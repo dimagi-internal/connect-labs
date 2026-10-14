@@ -1,0 +1,10 @@
+{# The pager under a workspace access list (`pagedList` in workspace_settings.html). Hidden without JavaScript, when every row shows. #}
+<div x-cloak data-list-pager class="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+  <span x-show="total" x-text="`Showing ${first}–${last} of ${total} {{ noun }}`"></span>
+  <span x-show="!total && q">No {{ noun }} match &ldquo;<span x-text="q"></span>&rdquo;.</span>
+  <span x-show="pages > 1" class="flex items-center gap-2">
+    <button type="button" class="button button-sm outline-style" @click="go(-1)" :disabled="page === 0">Previous</button>
+    <span x-text="`Page ${page + 1} of ${pages}`"></span>
+    <button type="button" class="button button-sm outline-style" @click="go(1)" :disabled="page >= pages - 1">Next</button>
+  </span>
+</div>
