@@ -33,6 +33,9 @@ urlpatterns = [
     path("", views.supply_front_door, name="home"),
     path("overview/", views.DomainHomeView.as_view(), name="overview"),
     path("runner/", runner_views.ProgrammeRunnerView.as_view(), name="programme_runner"),
+    path("team/", runner_views.ProgrammeTeamView.as_view(), name="programme_team"),
+    path("team/add/", runner_views.ProgrammeTeamAddView.as_view(), name="programme_team_add"),
+    path("team/<int:user_id>/remove/", runner_views.ProgrammeTeamRemoveView.as_view(), name="programme_team_remove"),
     # The one address here that is NOT programme-scoped. It sits at the top
     # rather than under a sub-component because it is above all of them: one
     # row per programme, each linking down into its own chain. The slug is the

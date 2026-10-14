@@ -1,0 +1,56 @@
+{% extends 'supply_chain/base.html' %}
+
+{% comment %}
+The running organisation's team: the people who act for the program (#2458).
+A running organisation takes no marketplace invitations, so this is where its
+people are added -- by platform support or by one of its own admins.
+{% endcomment %}
+
+{% block supply_content %}
+<div class="flex flex-wrap items-end justify-between gap-4 mb-5">
+  <div>
+    <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Team{% if team %} · {{ team.org_name }}{% endif %}</h1>
+    <p class="text-sm text-gray-600 mt-1 max-w-2xl">
+      The people who act for this program: they tender, award, order and pay, and record first-hand.
+      Admins can also change the team.
+    </p>
+  </div>
+  {% if team %}
+    <a href="{% url 'supply_chain:programme_team_add' %}" data-testid="team-add"
+       class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">Add a person</a>
+  {% endif %}
+</div>
+
+{% if not has_program_context %}
+  <p class="text-sm text-gray-700">Choose a program above. A team belongs to the organisation that runs one.</p>
+{% elif team_refusal %}
+  <p class="text-sm text-gray-700" data-testid="team-refusal">{{ team_refusal|capfirst }}.</p>
+{% elif not team.members %}
+  <p class="text-sm text-gray-700">Nobody is on the team yet. Platform support adds the first admin.</p>
+{% else %}
+  <div class="border-brand-border-light overflow-x-auto rounded-lg border bg-white">
+    <table class="min-w-full text-sm" data-testid="team-table">
+      <thead class="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-600">
+        <tr><th class="px-4 py-2">Name</th><th class="px-4 py-2">Email</th><th class="px-4 py-2">Role</th><th class="px-4 py-2">Added</th><th class="px-4 py-2"></th></tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for member in team.members %}
+          <tr>
+            <td class="px-4 py-2 text-gray-900">{{ member.name }}</td>
+            <td class="px-4 py-2 text-gray-700">{{ member.email }}</td>
+            <td class="px-4 py-2 text-gray-700">{{ member.role|capfirst }}</td>
+            <td class="px-4 py-2 text-gray-700">{{ member.added_on }}</td>
+            <td class="px-4 py-2 text-right whitespace-nowrap">
+              <form method="post" action="{% url 'supply_chain:programme_team_remove' member.user_id %}" class="inline"
+                    onsubmit="return confirm('Take {{ member.name|escapejs }} off the team?')">
+                {% csrf_token %}
+                <button type="submit" class="text-red-600 hover:underline">Remove</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+{% endblock %}

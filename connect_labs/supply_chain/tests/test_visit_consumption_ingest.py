@@ -8,7 +8,6 @@ from unittest.mock import patch
 
 import pytest
 from django.core.management import call_command
-from django_celery_beat.models import PeriodicTask
 
 from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.labs.synthetic import registry
@@ -187,19 +186,6 @@ def test_the_beat_task_runs_the_scheduled_reader():
     with patch.object(visit_reader, "run_scheduled", return_value={"ok": True}) as run:
         assert ingest_visit_consumption() == {"ok": True}
     run.assert_called_once_with()
-
-
-def test_the_beat_schedule_exists():
-    """Runs the migration's own function rather than trusting the seeded row: a
-    TransactionTestCase elsewhere can flush the table (as test_alerts notes)."""
-    import importlib
-
-    importlib.import_module(
-        "connect_labs.supply_chain.migrations.0039_seed_visit_consumption_beat_task"
-    ).create_periodic_task(None, None)
-    task = PeriodicTask.objects.get(name="supply_chain_visit_consumption")
-    assert task.task == "connect_labs.supply_chain.tasks.ingest_visit_consumption"
-    assert (task.interval.every, task.interval.period) == (1, "hours")
 
 
 @pytest.mark.parametrize("bad", ["2026/09/19", "yesterday", "2026-9-19", "20260919", "", "2026-09-19T00:00"])

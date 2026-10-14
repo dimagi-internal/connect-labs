@@ -289,7 +289,7 @@ reproduce it on a clean `origin/main` worktree.
 
 Two more ways a red check is not what it looks like:
 
-- **CI runs `pytest connect_labs/ -n auto` and nothing else.** Anything outside
+- **CI runs `pytest connect_labs/ -n logical` and nothing else.** Anything outside
   that path — `tools/tests/` in particular — can never go red in CI, so a test
   there passing is not evidence it runs (#1391, #1431). Run it yourself.
 - **`main` can itself fail `pre-commit run --all-files`** (#1520). When it does,

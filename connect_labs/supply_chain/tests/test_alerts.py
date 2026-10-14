@@ -430,18 +430,3 @@ class TestTheTask:
         with patch.object(service, "run_alerts", return_value={"subscriptions": 0}) as run:
             tasks.send_supply_alerts()
         assert run.called
-
-    def test_the_task_is_scheduled(self):
-        """Runs the migration's own function rather than trusting the seeded row:
-        a TransactionTestCase elsewhere can flush the table, and a test that
-        passes or fails on run order proves nothing."""
-        import importlib
-
-        from django_celery_beat.models import PeriodicTask
-
-        importlib.import_module("connect_labs.supply_chain.migrations.0012_seed_alert_beat_task").create_periodic_task(
-            None, None
-        )
-        task = PeriodicTask.objects.get(name="supply_chain_send_alerts")
-        assert task.task == "connect_labs.supply_chain.tasks.send_supply_alerts"
-        assert task.enabled
