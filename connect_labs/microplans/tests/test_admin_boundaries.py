@@ -861,6 +861,34 @@ class TestViewportEndpoint:
         )
         assert [f["properties"]["name"] for f in resp.json()["features"]] == ["Jere"]
 
+    def test_wards_around_a_point_carry_ward_lga_state_and_provider(self, client, django_user_model):
+        """Simple Microplan fills blank Ward/LGA/State from the ward containing a work
+        area's centroid: it asks this endpoint for the level-3 labs wards around the
+        point and picks the preferred provider when GeoPoDe and GRID3 both load it."""
+        from django.urls import reverse
+
+        parents = {"parent_names": {"state": "Kaduna", "lga": "Sabon Gari"}}
+        _make_boundary("Sabon Gari", 3, _SQUARE, "ng-sg-geopode", source="geopode", extra=parents)
+        _make_boundary("Sabongari", 3, _SQUARE, "ng-sg-grid3", source="grid3", extra=parents)
+        _make_boundary("Kaduna", 1, _SQUARE, "ng-kd")  # not a ward: filtered out by level
+        _login_labs(client, django_user_model)
+        url = reverse("microplans:boundary_viewport")
+
+        # a point inside the ward
+        resp = client.get(url, {"bbox": "13.09,11.09,13.11,11.11", "level": "3", "source": "labs", "zoom": "14"})
+        data = resp.json()
+        assert data["status"] == "ok" and data["source"] == "labs"
+        props = sorted((f["properties"] for f in data["features"]), key=lambda p: p["provider_rank"])
+        assert [(p["name"], p["lga"], p["state"], p["provider"]) for p in props] == [
+            ("Sabon Gari", "Sabon Gari", "Kaduna", "geopode"),
+            ("Sabongari", "Sabon Gari", "Kaduna", "grid3"),
+        ]
+        assert props[0]["provider_rank"] < props[1]["provider_rank"]
+
+        # a point outside every ward
+        resp = client.get(url, {"bbox": "14.49,12.49,14.51,12.51", "level": "3", "source": "labs", "zoom": "14"})
+        assert resp.json()["features"] == []
+
     def test_missing_bbox_is_400(self, client, django_user_model):
         from django.urls import reverse
 

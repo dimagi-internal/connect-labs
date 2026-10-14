@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Microplans{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8 max-w-7xl">
+  <a href="{% url 'labs:overview' %}" class="text-sm text-indigo-600 hover:underline"><i class="fa-solid fa-arrow-left mr-1"></i>Labs</a>
+  <div class="bg-white rounded-xl shadow-sm p-8 mt-3">
+    <div class="flex items-center justify-between mb-6 pb-4 border-b-2 border-gray-200">
+      <h1 class="text-2xl font-bold text-gray-900 flex items-center">
+        <i class="fa-solid fa-map-location-dot text-emerald-600 mr-3"></i>
+        Microplans
+      </h1>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {% if not workspace_simple_url %}{# A workspace program makes its microplans in Simple Microplan only. #}
+      <a href="{{ chc_url }}" class="group h-full">
+        <div class="border-2 border-gray-200 hover:border-emerald-500 rounded-lg p-5 transition-all hover:shadow-md bg-gray-50 hover:bg-white h-full flex flex-col">
+          <div class="flex items-center mb-3">
+            <div class="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center mr-3 flex-shrink-0">
+              <i class="fa-solid fa-map-location-dot text-lg text-emerald-600"></i>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900 group-hover:text-emerald-600">CHC Microplan</h3>
+          </div>
+          <p class="text-sm text-gray-600 leading-snug mb-3 flex-grow">Generate and compare geographic microplans: footprints → work areas → FLW assignment</p>
+          <div class="flex items-center text-emerald-600 text-sm font-semibold mt-auto">
+            <span>Open</span>
+            <i class="fa-solid fa-chevron-right ml-1 text-xs group-hover:translate-x-1 transition-transform"></i>
+          </div>
+        </div>
+      </a>
+
+      <a href="{{ wa_revisit_url }}" class="group h-full">
+        <div class="border-2 border-gray-200 hover:border-violet-500 rounded-lg p-5 transition-all hover:shadow-md bg-gray-50 hover:bg-white h-full flex flex-col">
+          <div class="flex items-center mb-3">
+            <div class="w-10 h-10 bg-violet-100 rounded-lg flex items-center justify-center mr-3 flex-shrink-0">
+              <i class="fa-solid fa-rotate text-lg text-violet-600"></i>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900 group-hover:text-violet-600">CHC WA Revisit</h3>
+          </div>
+          <p class="text-sm text-gray-600 leading-snug mb-3 flex-grow">Revisit microplans for CHC programs: find under-covered work areas from visits and plan the revisit</p>
+          <div class="flex items-center text-violet-600 text-sm font-semibold mt-auto">
+            <span>Open</span>
+            <i class="fa-solid fa-chevron-right ml-1 text-xs group-hover:translate-x-1 transition-transform"></i>
+          </div>
+        </div>
+      </a>
+      {% endif %}
+
+      <a {% if workspace_simple_url %}id="workspace-simple-link" href="{{ workspace_simple_url }}"{% else %}href="{% url 'microplans:simple_list' %}"{% endif %} class="group h-full">
+        <div class="border-2 border-gray-200 hover:border-cyan-500 rounded-lg p-5 transition-all hover:shadow-md bg-gray-50 hover:bg-white h-full flex flex-col">
+          <div class="flex items-center mb-3">
+            <div class="w-10 h-10 bg-cyan-100 rounded-lg flex items-center justify-center mr-3 flex-shrink-0">
+              <i class="fa-solid fa-draw-polygon text-lg text-cyan-600"></i>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900 group-hover:text-cyan-600">Simple Microplan</h3>
+          </div>
+          <p class="text-sm text-gray-600 leading-snug mb-3 flex-grow">{% if workspace_simple_url %}This program's microplans{% else %}Quick test microplans{% endif %}: set a boundary, grid or draw work areas, group, export CSV</p>
+          <div class="flex items-center text-cyan-600 text-sm font-semibold mt-auto">
+            <span>Open</span>
+            <i class="fa-solid fa-chevron-right ml-1 text-xs group-hover:translate-x-1 transition-transform"></i>
+          </div>
+        </div>
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}

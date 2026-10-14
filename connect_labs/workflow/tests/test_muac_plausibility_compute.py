@@ -9,14 +9,16 @@ from connect_labs.workflow.muac_plausibility_compute import (
     aggregate,
     classify,
     tier_a_ceiling,
+    who_cutoff,
     who_minus_2sd,
 )
+from connect_labs.workflow.muac_who_reference import WHO_ACFA
 
 WAT = timedelta(hours=1)
 
 
 def _flags(result):
-    return {k for k, v in result.items() if v and k != "records"}
+    return {k for k, v in result.items() if v and k != "records" and not k.startswith("muac_bin_")}
 
 
 @pytest.mark.parametrize(
@@ -25,6 +27,14 @@ def _flags(result):
 )
 def test_age_band(age, band):
     assert age_band(age) == band
+
+
+def test_lms_reproduces_every_published_who_value():
+    """WHO publishes -2, +2 and +3 SD per month; the LMS formula must give them all."""
+    for sex, table in WHO_ACFA.items():
+        for month, (_l, _m, _s, minus2, plus2, plus3) in table.items():
+            for z, published in ((-2, minus2), (2, plus2), (3, plus3)):
+                assert round(who_cutoff(month, sex, z), 1) == pytest.approx(published), (sex, month, z)
 
 
 def test_age_prefers_form_age_then_dob_at_visit_date():
@@ -45,26 +55,38 @@ def test_floor_is_tier_a_low_in_both_ceiling_modes():
     assert _flags(classify("8.9", 30, "male")) == {"valid", "tier_a_low"}
 
 
-def test_age_banded_ceiling_catches_what_the_flat_one_passes():
-    # 18.0 at 14 months: over the 12-23 ceiling (17.5), under the flat 20.
-    flags = _flags(classify("18.0", 14, "male"))
+def test_ceiling_is_who_plus_3sd_for_the_month_and_sex():
+    # Boys: +3 SD is 18.4 cm at 12 months and 19.1 cm at 23 months.
+    assert tier_a_ceiling(12, "male") == pytest.approx(18.38, abs=0.01)
+    assert tier_a_ceiling(23, "male") == pytest.approx(19.07, abs=0.01)
+    assert "tier_a_high" in _flags(classify("18.5", 12, "male"))
+    # The same reading is plausible eleven months later.
+    assert "tier_a_high" not in _flags(classify("18.5", 23, "male"))
+    # A completed month: 23.9 months is month 23.
+    assert tier_a_ceiling(23.9, "male") == tier_a_ceiling(23, "male")
+
+
+def test_who_ceiling_catches_what_the_flat_one_passes_and_vice_versa():
+    # 19.5 at 14 months: over WHO +3 SD (18.5), under the flat 20.
+    flags = _flags(classify("19.5", 14, "male"))
     assert "tier_a_high" in flags and "tier_a_high_flat" not in flags
     # A Tier A reading is never also assessed for Tier B.
     assert "tier_b_assessed" not in flags
-
-
-def test_girls_ceiling_is_higher_at_48_59():
-    # Plausible for a girl under the age-banded ceiling; the flat 20 cm one flags it.
+    # 20.5 for a girl of 50 months: within WHO +3 SD (21.5), over the flat 20.
     assert _flags(classify("20.5", 50, "female")) == {"valid", "tier_b_assessed", "tier_a_high_flat"}
-    assert "tier_a_high" in _flags(classify("20.5", 50, "male"))
-    # No sex: the lower, more conservative ceiling.
-    assert tier_a_ceiling("48-59", None) == 20.0
 
 
-def test_6_to_11_months_uses_the_flat_ceiling_and_no_tier_b():
-    assert tier_a_ceiling("6-11", "male") == 20.0
-    assert _flags(classify("19.5", 8, "male")) == {"valid"}
-    assert "tier_a_high" in _flags(classify("20.1", 8, "male"))
+def test_sex_matters_and_unknown_sex_takes_the_lower_ceiling():
+    assert tier_a_ceiling(50, "female") > tier_a_ceiling(50, "male")
+    assert tier_a_ceiling(50, None) == tier_a_ceiling(50, "male")
+    # Unknown sex: still checked for Tier A, never for Tier B.
+    assert "tier_b_assessed" not in _flags(classify("15.0", 50, None))
+
+
+def test_6_to_11_months_is_fully_assessed():
+    assert tier_a_ceiling(8, "male") == pytest.approx(18.1, abs=0.05)
+    assert "tier_a_high" in _flags(classify("18.4", 8, "male"))
+    assert _flags(classify("12.0", 8, "male")) == {"valid", "tier_b_assessed", "tier_b"}
 
 
 def test_unit_error_is_kept_out_of_tier_a():
@@ -74,10 +96,27 @@ def test_unit_error_is_kept_out_of_tier_a():
 
 
 def test_tier_b_below_who_minus_2sd_but_above_floor():
-    assert who_minus_2sd(12, "male") == pytest.approx(12.5)
-    assert who_minus_2sd(30, "female") == pytest.approx(13.0)
+    assert who_minus_2sd(12, "male") == pytest.approx(12.5, abs=0.05)
+    assert who_minus_2sd(30, "female") == pytest.approx(13.0, abs=0.05)
     assert _flags(classify("12.0", 12, "male")) == {"valid", "tier_b_assessed", "tier_b"}
     assert _flags(classify("12.6", 12, "male")) == {"valid", "tier_b_assessed"}
+
+
+def test_muac_index_bins_count_every_in_range_value_whatever_the_age():
+    def bins(result):
+        return {k for k, v in result.items() if v and k.startswith("muac_bin_")}
+
+    assert bins(classify("9.5", 30, "male")) == {"muac_bin_0"}
+    assert bins(classify("10.4", 30, "male")) == {"muac_bin_0"}
+    assert bins(classify("10.5", 30, "male")) == {"muac_bin_1"}
+    assert bins(classify("21.4", 30, "male")) == {"muac_bin_11"}
+    # Out of the index range, or no value: no bin.
+    assert bins(classify("21.5", 30, "male")) == set()
+    assert bins(classify("9.4", 30, "male")) == set()
+    assert bins(classify(None, 30, "male")) == set()
+    # Counted even where the plausibility check does not apply.
+    assert bins(classify("14.0", None, "male")) == {"muac_bin_4"}
+    assert bins(classify("14.0", 3, "male")) == {"muac_bin_4"}
 
 
 def test_exclusions_and_out_of_range():

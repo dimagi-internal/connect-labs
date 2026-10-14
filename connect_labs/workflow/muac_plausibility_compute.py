@@ -1,9 +1,8 @@
 """MUAC-for-age plausibility: classify each MUAC reading and roll the results up.
 
 Used by the ``muac_plausibility`` template (Program 217, CHC Nigeria RCT). Every
-threshold lives in the constants below, not inline, because they will be refined:
-the 6-11 month WHO rows are still outstanding, and the baseline Tier A rate is
-expected to move once real data has been looked at.
+threshold lives in the constants below or in ``muac_who_reference`` (the WHO 2007
+MUAC-for-age standard, month by month), not inline.
 
 Each reading falls into exactly one bucket, in this order:
 
@@ -17,24 +16,35 @@ Each reading falls into exactly one bucket, in this order:
    * **Unit error** -- 90-200, almost certainly millimetres typed into the
      centimetre field. A different root cause (field design) from an implausible
      reading, so it is kept OUT of Tier A and shown on its own.
-   * **Tier A (hard implausible)** -- below the 9 cm floor or above the age-banded
-     ceiling: a near-certain entry error, not a clinical signal. This, and only
-     this, is the headline "% implausible".
-   * **Tier B (below WHO -2SD)** -- low for age and sex but above the floor. This
-     is where real MAM/SAM lives, so it is reported separately and must never be
-     folded into the implausible rate.
+   * **Tier A (hard implausible)** -- below the 9 cm floor, or above WHO +3 SD for
+     the child's completed month of age and sex. About 1 healthy child in 750 is
+     above +3 SD, and 9 cm is 4-5 SD below the median at every age, so these are
+     near-certain entry errors, not a clinical signal. This, and only this, is the
+     headline "% implausible".
+   * **Tier B (below WHO -2SD)** -- below WHO -2 SD for the child's month and sex
+     but above the floor. This is where real MAM/SAM lives, so it is reported
+     separately and must never be folded into the implausible rate.
 
 Tier A and Tier B are separate functions on purpose: merging them would make real
 malnutrition look like a data problem.
 
-Reference: de Onis, Yip & Mei, "The development of MUAC-for-age reference data
-recommended by a WHO Expert Committee", Bull WHO 1997;75(1):11-18.
+Separately, every MUAC value between 9.5 and 21.5 cm is counted into twelve 1 cm
+bins (``MUAC_BIN_EDGES``), whatever the child's age. The page runs the six MUAC
+distribution checks of Neal's MLFeatureAggregationReport (the "MUAC index") on
+those bins, so they are only counted here, never judged.
+
+Reference: WHO Child Growth Standards, arm circumference-for-age (2007); see
+``muac_who_reference``. The first version used de Onis, Yip & Mei (1997) at six
+reference ages with fixed band ceilings, which held an older child in a band to
+as little as +2 SD.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date, datetime, timedelta
+
+from connect_labs.workflow.muac_who_reference import WHO_ACFA
 
 # --------------------------------------------------------------------------- ages
 
@@ -58,21 +68,11 @@ BAND_UNKNOWN = "unknown"
 # Far below -3SD at every age 6-59 months (roughly -4 to -5SD).
 TIER_A_FLOOR_CM = 9.0
 
-# Age-banded ceilings, roughly WHO median + 3SD at the start of each band. Sex is
-# recorded on every Health Service Delivery visit, so the 48-59 band, where girls
-# run higher, is split by sex; elsewhere the two sexes are within 0.25 cm and share
-# a ceiling. None means "not yet set": the 6-11 month WHO rows are still to be
-# pulled from the primary source and are deliberately NOT extrapolated, so that
-# band falls back to the flat ceiling and the page says so.
-TIER_A_CEILING_CM = {
-    "6-11": None,
-    "12-23": {"male": 17.5, "female": 17.5},
-    "24-35": {"male": 18.5, "female": 18.5},
-    "36-47": {"male": 19.0, "female": 19.0},
-    "48-59": {"male": 20.0, "female": 21.0},
-}
-# The flat comparison band (Ibadan reliability study's observed 9-20 cm range).
-# Also the fallback ceiling for a band whose own ceiling is not yet set.
+# "Too high" is above WHO +3 SD for the child's completed month of age and sex.
+TIER_A_HIGH_Z = 3.0
+
+# The flat comparison band (Ibadan reliability study's observed 9-20 cm range),
+# kept as a toggle on the page to compare against the WHO-by-month ceiling.
 FLAT_CEILING_CM = 20.0
 
 # ----------------------------------------------------------------- unit errors
@@ -83,13 +83,14 @@ UNIT_ERROR_MAX = 200.0
 
 # ------------------------------------------------------------------------ Tier B
 
-# WHO MUAC-for-age -2SD (cm) at each reference age in months, by sex. Linear
-# interpolation between reference ages; no value outside 12-60 months, so the
-# 6-11 band is not assessed for Tier B until the 6-11 month rows are in.
-WHO_MINUS_2SD_CM = {
-    "male": ((12, 12.5), (18, 12.8), (24, 13.0), (36, 13.5), (48, 13.8), (60, 14.0)),
-    "female": ((12, 12.1), (18, 12.4), (24, 12.7), (36, 13.3), (48, 13.7), (60, 14.0)),
-}
+# "Below WHO -2SD" is below -2 SD for the child's completed month of age and sex.
+TIER_B_Z = -2.0
+
+# ------------------------------------------------------------ MUAC index bins
+
+# Neal's MLFeatureAggregationReport bins: twelve 1 cm bins, [9.5, 10.5) ... [20.5, 21.5).
+MUAC_BIN_EDGES = (9.5, 10.5, 11.5, 12.5, 13.5, 14.5, 15.5, 16.5, 17.5, 18.5, 19.5, 20.5, 21.5)
+MUAC_BINS = tuple(f"muac_bin_{i}" for i in range(len(MUAC_BIN_EDGES) - 1))
 
 # Cell counters, in the order they are stored in the snapshot.
 COUNTERS = (
@@ -100,10 +101,11 @@ COUNTERS = (
     "valid",  # the Tier A denominator
     "unit_error",
     "tier_a_low",
-    "tier_a_high",  # age-banded ceiling (the default)
-    "tier_a_high_flat",  # flat 20 cm ceiling (comparison)
-    "tier_b_assessed",  # valid readings with a WHO -2SD value (12-59 months, known sex)
+    "tier_a_high",  # above WHO +3 SD for month and sex (the default)
+    "tier_a_high_flat",  # above the flat 20 cm ceiling (comparison)
+    "tier_b_assessed",  # valid, not Tier A, sex known (so a WHO -2 SD value applies)
     "tier_b",
+    *MUAC_BINS,  # MUAC index histogram: every 9.5-21.5 cm value, any age
 )
 
 
@@ -180,37 +182,41 @@ def age_band(age: float | None) -> str:
 # ------------------------------------------------------------------ thresholds
 
 
-def tier_a_ceiling(band: str, sex: str | None) -> float:
-    """The age-banded ceiling. Without a sex, the lower (more conservative) of the
-    two sexes' ceilings; without a ceiling for the band, the flat one."""
-    by_sex = TIER_A_CEILING_CM.get(band)
-    if not by_sex:
-        return FLAT_CEILING_CM
-    if sex in by_sex:
-        return by_sex[sex]
-    return min(by_sex.values())
+def who_cutoff(age: float, sex: str, z: float) -> float | None:
+    """The MUAC (cm) at z standard deviations for this completed month of age and
+    sex, from WHO's L, M and S: M * (1 + L*S*z) ** (1/L). None outside 3-60 months."""
+    lms = WHO_ACFA.get(sex, {}).get(int(age))
+    if lms is None:
+        return None
+    L, M, S = lms[:3]
+    return M * (1 + L * S * z) ** (1 / L)
+
+
+def tier_a_ceiling(age: float, sex: str | None) -> float | None:
+    """WHO +3 SD for the child's month and sex. Without a sex, the lower (more
+    conservative) of the two sexes' values."""
+    if sex in WHO_ACFA:
+        return who_cutoff(age, sex, TIER_A_HIGH_Z)
+    values = [v for v in (who_cutoff(age, s, TIER_A_HIGH_Z) for s in WHO_ACFA) if v is not None]
+    return min(values) if values else None
 
 
 def who_minus_2sd(age: float, sex: str | None) -> float | None:
-    points = WHO_MINUS_2SD_CM.get(sex or "")
-    if not points or age < points[0][0] or age > points[-1][0]:
+    if sex not in WHO_ACFA:
         return None
-    for (age_lo, v_lo), (age_hi, v_hi) in zip(points, points[1:]):
-        if age_lo <= age <= age_hi:
-            return v_lo + (v_hi - v_lo) * (age - age_lo) / (age_hi - age_lo)
-    return None
+    return who_cutoff(age, sex, TIER_B_Z)
 
 
 def is_unit_error(muac: float) -> bool:
     return UNIT_ERROR_MIN <= muac <= UNIT_ERROR_MAX
 
 
-def tier_a(muac: float, band: str, sex: str | None, *, flat: bool = False) -> str | None:
+def tier_a(muac: float, age: float, sex: str | None, *, flat: bool = False) -> str | None:
     """'low', 'high' or None. Hard-implausible only; never call this for a unit error."""
     if muac < TIER_A_FLOOR_CM:
         return "low"
-    ceiling = FLAT_CEILING_CM if flat else tier_a_ceiling(band, sex)
-    if muac > ceiling:
+    ceiling = FLAT_CEILING_CM if flat else tier_a_ceiling(age, sex)
+    if ceiling is not None and muac > ceiling:
         return "high"
     return None
 
@@ -227,10 +233,25 @@ def tier_b(muac: float, age: float, sex: str | None) -> bool | None:
 # ------------------------------------------------------------------ classifier
 
 
+def muac_bin(muac: float | None) -> str | None:
+    """The MUAC index bin a value falls in, or None outside [9.5, 21.5)."""
+    if muac is None:
+        return None
+    for i in range(len(MUAC_BIN_EDGES) - 1):
+        if MUAC_BIN_EDGES[i] <= muac < MUAC_BIN_EDGES[i + 1]:
+            return MUAC_BINS[i]
+    return None
+
+
 def classify(muac_raw, age: float | None, sex: str | None) -> dict:
     """Every counter one reading contributes to (each 0 or 1)."""
     out = dict.fromkeys(COUNTERS, 0)
     out["records"] = 1
+    # The MUAC index histogram counts every in-range value, whatever the age or
+    # tier, the way MLFeatureAggregationReport does.
+    bin_name = muac_bin(parse_number(muac_raw))
+    if bin_name:
+        out[bin_name] = 1
     band = age_band(age)
     if band == BAND_UNKNOWN:
         out["missing_age"] = 1
@@ -248,12 +269,12 @@ def classify(muac_raw, age: float | None, sex: str | None) -> dict:
         out["unit_error"] = 1
         return out
 
-    banded = tier_a(muac, band, sex)
+    banded = tier_a(muac, age, sex)
     if banded == "low":
         out["tier_a_low"] = 1
     elif banded == "high":
         out["tier_a_high"] = 1
-    if tier_a(muac, band, sex, flat=True) == "high":
+    if tier_a(muac, age, sex, flat=True) == "high":
         out["tier_a_high_flat"] = 1
 
     # Tier B is only for readings that are not hard-implausible.
@@ -312,12 +333,26 @@ def aggregate(rows, *, form_name: str, utc_offset: timedelta) -> dict:
 
 def thresholds_summary() -> dict:
     """The thresholds in force, saved with every run so a figure can always be
-    traced back to the rule that produced it."""
+    traced back to the rule that produced it, and the page can explain it."""
+
+    def band_range(z, low, high):
+        out = {}
+        for sex in WHO_ACFA:
+            values = [who_cutoff(m, sex, z) for m in range(low, high + 1)]
+            out[sex] = [round(min(values), 1), round(max(values), 1)]
+        return out
+
     return {
+        "method": "who2007_monthly",
         "floor_cm": TIER_A_FLOOR_CM,
+        "high_z": TIER_A_HIGH_Z,
+        "tier_b_z": TIER_B_Z,
         "flat_ceiling_cm": FLAT_CEILING_CM,
         "unit_error_range": [UNIT_ERROR_MIN, UNIT_ERROR_MAX],
         "age_bands": [{"key": k, "label": label, "low": lo, "high": hi} for k, label, lo, hi in AGE_BANDS],
-        "ceilings": {band: by_sex for band, by_sex in TIER_A_CEILING_CM.items()},
-        "who_minus_2sd": {sex: [list(p) for p in pts] for sex, pts in WHO_MINUS_2SD_CM.items()},
+        # Per band: the lowest and highest +3 SD / -2 SD over its months, by sex.
+        "ceiling_range": {k: band_range(TIER_A_HIGH_Z, lo, hi) for k, _l, lo, hi in AGE_BANDS},
+        "minus_2sd_range": {k: band_range(TIER_B_Z, lo, hi) for k, _l, lo, hi in AGE_BANDS},
+        "muac_bin_edges": list(MUAC_BIN_EDGES),
+        "reference": "WHO Child Growth Standards, arm circumference-for-age (2007)",
     }

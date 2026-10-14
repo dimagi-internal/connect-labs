@@ -1,10 +1,17 @@
 from django.urls import path
 
-from connect_labs.microplans import views
+from connect_labs.microplans import simple_views, views
 
 app_name = "microplans"
 
 urlpatterns = [
+    path("", views.MicroplansHubView.as_view(), name="hub"),
+    # Simple Microplan: saved test plans made in the browser, outside any program
+    # (a workspace program's own are under program/<id>/simple/ below).
+    path("simple/", simple_views.SimpleMicroplanListView.as_view(), name="simple_list"),
+    path("simple/<int:plan_id>/", simple_views.SimpleMicroplanEditorView.as_view(), name="simple_editor"),
+    path("simple/<int:plan_id>/api/", simple_views.SimpleMicroplanAPIView.as_view(), name="simple_api"),
+    path("simple/<int:plan_id>/delete/", simple_views.SimpleMicroplanDeleteView.as_view(), name="simple_delete"),
     path("<int:opp_id>/preview_frame/", views.PreviewFrameView.as_view(), name="preview_frame"),
     path("<int:opp_id>/preview_coverage/", views.PreviewCoverageView.as_view(), name="preview_coverage"),
     path("<int:opp_id>/preview_footprints/", views.PreviewFootprintsView.as_view(), name="preview_footprints"),
@@ -53,6 +60,31 @@ urlpatterns = [
         "program/<int:program_id>/workspace/",
         views.ProgramWorkspaceSettingsView.as_view(),
         name="program_workspace_settings",
+    ),
+    path(
+        "program/<int:program_id>/workspace/stop-testing/",
+        views.ProgramWorkspaceStopTestingView.as_view(),
+        name="program_workspace_stop_testing",
+    ),
+    # Simple Microplan in a workspace program: the same views as the global
+    # simple/ routes, with the workspace's roles (team visibility, PM-only delete).
+    path(
+        "program/<int:program_id>/simple/", simple_views.SimpleMicroplanListView.as_view(), name="program_simple_list"
+    ),
+    path(
+        "program/<int:program_id>/simple/<int:plan_id>/",
+        simple_views.SimpleMicroplanEditorView.as_view(),
+        name="program_simple_editor",
+    ),
+    path(
+        "program/<int:program_id>/simple/<int:plan_id>/api/",
+        simple_views.SimpleMicroplanAPIView.as_view(),
+        name="program_simple_api",
+    ),
+    path(
+        "program/<int:program_id>/simple/<int:plan_id>/delete/",
+        simple_views.SimpleMicroplanDeleteView.as_view(),
+        name="program_simple_delete",
     ),
     path("program/<int:program_id>/compare/", views.ProgramComparePageView.as_view(), name="program_compare_page"),
     # Plan-quality metric glossary — definitions of every column shown on the

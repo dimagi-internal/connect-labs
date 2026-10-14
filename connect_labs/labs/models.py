@@ -552,3 +552,94 @@ class Workspace(models.Model):
 
     def __str__(self) -> str:
         return f"workspace {self.org}"
+
+
+class WorkspaceLLO(models.Model):
+    """A partner organisation (LLO) of a workspace: one Connect organisation, by slug.
+
+    Everyone who signs in to labs as a MEMBER of that Connect organisation (the
+    ``organizations`` of their Connect tree) is a Network Manager of this LLO in
+    the workspace -- their team is ``slug`` (`labs.workspaces`). Program Managers
+    add and delete LLOs on the workspace settings page; deleting one takes that
+    access away and leaves the LLO's microplans to Program Managers."""
+
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="llos")
+    slug = models.CharField(max_length=200)
+    # What to call it; blank shows the name from the viewer's Connect tree, else the slug.
+    name = models.CharField(max_length=255, blank=True)
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "labs_workspace_llo"
+        ordering = ["created_at", "pk"]
+        constraints = [models.UniqueConstraint(fields=["workspace", "slug"], name="labs_workspace_llo_once")]
+
+    def __str__(self) -> str:
+        return f"{self.slug} in {self.workspace}"
+
+
+class WorkspaceUser(models.Model):
+    """An explicit entry on a workspace's Users list: this email address's access.
+
+    Wins over every other rule in `labs.workspaces`: ``program_manager`` makes the
+    person a Program Manager, ``network_manager`` a Network Manager of ``team``
+    (an LLO's slug) -- so a Program Manager can look at the workspace as a partner
+    would, or let in someone whose LLO membership does not resolve. Any email
+    address; the person need not have signed in yet -- the entry matches the
+    labs user with that email (case-insensitively) when they do, and ``user`` is
+    filled in then. Replaced ``WorkspaceTester`` (migration labs/0029)."""
+
+    PROGRAM_MANAGER = "program_manager"
+    NETWORK_MANAGER = "network_manager"
+    ROLE_CHOICES = [(PROGRAM_MANAGER, "Program Manager"), (NETWORK_MANAGER, "Network Manager")]
+
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="users")
+    # Stored lower-case.
+    email = models.CharField(max_length=254)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    role = models.CharField(max_length=32, choices=ROLE_CHOICES)
+    # Network Manager entries only: the LLO slug they are a Network Manager of.
+    team = models.CharField(max_length=200, blank=True, default="")
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "labs_workspace_user"
+        ordering = ["created_at", "pk"]
+        constraints = [models.UniqueConstraint(fields=["workspace", "email"], name="labs_workspace_user_once")]
+
+    def __str__(self) -> str:
+        return f"{self.email} in {self.workspace} as {self.role}"
+
+
+class WorkspaceAccess(models.Model):
+    """Who has had a role in a workspace, and when they were last seen with it.
+
+    Upserted by `labs.workspaces.role_in` when a role resolves (at most every few
+    minutes per person, unless the role changed), so the settings page can show
+    the people each LLO has brought in. A record, not a grant: deleting a row
+    changes nobody's access."""
+
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="accesses")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    role = models.CharField(max_length=32)
+    teams = models.JSONField(default=list, blank=True)
+    # The role came from an explicit Users entry (`WorkspaceUser`).
+    explicit = models.BooleanField(default=False)
+    first_seen = models.DateTimeField(auto_now_add=True)
+    last_seen = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "labs_workspace_access"
+        constraints = [models.UniqueConstraint(fields=["workspace", "user"], name="labs_workspace_access_once")]
+
+    def __str__(self) -> str:
+        return f"{self.user} seen in {self.workspace} as {self.role}"

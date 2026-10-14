@@ -26,6 +26,8 @@ connect_labs/tasks/          → Task Management
 connect_labs/solicitations/  → Solicitations
 connect_labs/custom_analysis/→ Custom Analysis
 connect_labs/coverage/       → Coverage Maps
+connect_labs/microplans/simple_*, static/ + templates/microplans/simple_*
+                             → Simple Microplan (help site + the editor's help popup; no Confluence page)
 connect_labs/ai/             → AI Features
 docs/WORKFLOW_EDITOR_QUICKSTART.md
 docs/SAFE_MODE.md                → Connect MCP & Safe Mode
@@ -50,6 +52,7 @@ user_docs/
   solicitations.md       Solicitations
   custom-analysis.md     Custom Analysis
   coverage-maps.md       Coverage Maps
+  simple-microplan.md    Simple Microplan (also rendered as the editor's in-page help)
   ai-features.md         AI Features
   connect-mcp.md         Connect MCP & Safe Mode
   connect-safe-mode.md   (linked from connect-mcp.md; not auto-updated)

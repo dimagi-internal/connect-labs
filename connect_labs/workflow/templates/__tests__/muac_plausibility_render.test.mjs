@@ -404,3 +404,112 @@ test('the page renders at every level', () => {
     assert.ok(renderTree(tree) > 20, level);
   }
 });
+
+// Neal's MLFeatureAggregationReport, run on 400 synthetic histograms (bell-ish,
+// spiky and plateaued), gave these answers; the port must give the same.
+const PARITY = JSON.parse(
+  readFileSync(join(HERE, 'fixtures', 'muac_index_parity.json'), 'utf8'),
+);
+
+function binsAsCounts(bins) {
+  const c = {};
+  bins.forEach((n, i) => {
+    c['muac_bin_' + i] = n;
+  });
+  return c;
+}
+
+test('MUAC index matches MLFeatureAggregationReport on every parity case', () => {
+  assert.ok(PARITY.length >= 400);
+  for (const kase of PARITY) {
+    const ix = M.mpIndex(binsAsCounts(kase.bins));
+    for (const [name, expected] of Object.entries(kase.features)) {
+      assert.strictEqual(
+        ix.checks[name],
+        expected,
+        name + ' on ' + kase.bins.join(','),
+      );
+    }
+  }
+});
+
+test('MUAC index needs 20 readings and counts passed checks', () => {
+  assert.strictEqual(
+    M.mpIndex(binsAsCounts([0, 0, 0, 0, 19, 0, 0, 0, 0, 0, 0, 0])),
+    null,
+  );
+  // A clean hump passes all six.
+  const hump = M.mpIndex(
+    binsAsCounts([0, 1, 3, 8, 15, 22, 18, 10, 4, 1, 0, 0]),
+  );
+  assert.strictEqual(hump.passed, 6);
+  // Everything in one bin fails most of them.
+  const spike = M.mpIndex(binsAsCounts([0, 0, 0, 0, 0, 40, 0, 0, 0, 0, 0, 0]));
+  assert.ok(spike.passed <= 2);
+  assert.strictEqual(spike.checks.peak_reasonable, false);
+});
+
+test('sorting by lowest MUAC index puts the worst first and rows without one last', () => {
+  const units = [
+    {
+      key: 'a',
+      counts: Object.assign(
+        M.mpZero(),
+        binsAsCounts([0, 1, 3, 8, 15, 22, 18, 10, 4, 1, 0, 0]),
+        { valid: 82 },
+      ),
+    },
+    {
+      key: 'b',
+      counts: Object.assign(
+        M.mpZero(),
+        binsAsCounts([0, 0, 0, 0, 0, 40, 0, 0, 0, 0, 0, 0]),
+        { valid: 40 },
+      ),
+    },
+    { key: 'c', counts: Object.assign(M.mpZero(), { valid: 5 }) },
+  ];
+  const sorted = M.mpScore(units, 0.01, cfg, 'stat', false, 'index');
+  assert.strictEqual(sorted.map((u) => u.key).join(','), 'b,a,c');
+});
+
+test('every column and tile has a definition, and they describe the WHO-by-month rule', () => {
+  const monthly = M.mpDefs({ method: 'who2007_monthly', floor_cm: 9 });
+  for (const [k, v] of Object.entries(monthly)) {
+    assert.ok(typeof v === 'string' && v.length > 20, k);
+  }
+  assert.match(monthly.too_high, /\+3 SD/);
+  assert.match(monthly.too_high, /month/);
+  assert.match(monthly.too_high, /1 healthy child in 750/);
+  // An older run is described by its own rule.
+  assert.doesNotMatch(M.mpDefs({ floor_cm: 9 }).too_high, /750/);
+  // Header cells carry the definition as their hover title.
+  const th = M.MpTh({
+    className: 'x',
+    def: 'Some definition',
+    children: 'Too high',
+  });
+  assert.strictEqual(th.props.title, 'Some definition');
+});
+
+test('WHO-by-month ceiling text shows each band as a range by sex', () => {
+  const t = {
+    method: 'who2007_monthly',
+    ceiling_range: { '12-23': { male: [18.4, 19.1], female: [18.3, 19.0] } },
+  };
+  assert.strictEqual(
+    M.mpCeilingText(t, '12-23', false),
+    '> 18.4–19.1 cm boys, > 18.3–19 cm girls',
+  );
+});
+
+test('MUAC index colours: 5-6 green, 4 yellow, 3 or fewer red', () => {
+  const colourFor = (passed) =>
+    M.MpIndexBadge({ index: { passed } }).props.colour;
+  assert.strictEqual(colourFor(6), 'green');
+  assert.strictEqual(colourFor(5), 'green');
+  assert.strictEqual(colourFor(4), 'yellow');
+  assert.strictEqual(colourFor(3), 'red');
+  assert.strictEqual(colourFor(0), 'red');
+  assert.match(M.mpDefs({}).index, /Green 5–6, yellow 4, red 3 or fewer/);
+});

@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Simple Microplans{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 py-8 space-y-6">
+  <div class="flex items-start justify-between gap-4 flex-wrap">
+    <div>
+      <a href="{% url 'microplans:hub' %}" class="text-sm text-indigo-600 hover:underline"><i class="fa-solid fa-arrow-left mr-1"></i>Microplans</a>
+      <h1 class="text-2xl font-bold text-gray-900 mt-1">
+        <i class="fa-solid fa-draw-polygon text-emerald-600 mr-2"></i>Simple Microplans
+      </h1>
+      {% if workspace %}
+      <p class="text-gray-600 text-sm mt-1">Draw a boundary, make work areas, group them and export the work-area CSV. Microplans here belong to Program #{{ workspace.program_id }}.</p>
+      <p class="text-xs text-gray-500 mt-1">
+        You are a <b>{{ workspace.role_label }}</b> here{% if workspace.is_program_manager %} — you see every team's microplans{% else %} — you see your team's microplans only, and you and your teammates can change them{% endif %}.
+        {% if workspace.is_program_manager %}<a id="workspace-settings-link" class="text-indigo-600 hover:underline" href="{{ workspace.settings_url }}">Workspace settings</a>{% endif %}
+      </p>
+      {% else %}
+      <p class="text-gray-600 text-sm mt-1">Draw a boundary, make work areas, group them and export the work-area CSV. Every microplan is saved here.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if workspace.testing %}
+  <div id="testing-banner" class="rounded-lg border-2 border-amber-300 bg-amber-50 p-4 flex flex-wrap items-center justify-between gap-3">
+    <p class="text-sm text-amber-900">
+      <i class="fa-solid fa-user-gear mr-1"></i><b>Viewing as Network Manager of {{ workspace.teams.0.name }}.</b>
+      The workspace's Users list gives you this access: you see what a partner on that team would — their microplans only, and no delete.
+      {% if not workspace.can_switch_back %}Ask a Program Manager to change your access.{% endif %}
+    </p>
+    {% if workspace.can_switch_back %}
+    <form method="post" action="{{ workspace.stop_testing_url }}">
+      {% csrf_token %}
+      <button type="submit" class="inline-flex items-center px-3 py-1.5 bg-white border border-amber-400 text-amber-900 text-sm font-medium rounded-md hover:bg-amber-100">Switch back to Program Manager</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <form method="post" class="bg-white rounded-xl shadow-sm p-5 flex flex-wrap items-end gap-3">
+    {% csrf_token %}
+    <div class="flex-1 min-w-0">
+      <label for="mp-new-name" class="block text-sm font-semibold text-gray-800 mb-1">New microplan</label>
+      <input id="mp-new-name" name="name" type="text" maxlength="200" required
+             placeholder="e.g. Kaduna test — 50 m grid"
+             class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+      {% if name_error %}<p class="text-xs text-red-600 mt-1">{{ name_error }}</p>{% endif %}
+    </div>
+    {% if workspace %}
+      {% if workspace.teams|length > 1 %}
+      <div>
+        <label for="mp-new-team" class="block text-sm font-semibold text-gray-800 mb-1">Team</label>
+        <select id="mp-new-team" name="team" class="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+          {% for t in workspace.teams %}<option value="{{ t.slug }}">{{ t.name }}</option>{% endfor %}
+        </select>
+      </div>
+      {% elif workspace.teams %}
+      <input type="hidden" name="team" value="{{ workspace.teams.0.slug }}">
+      <p class="text-xs text-gray-500 pb-2">For {{ workspace.teams.0.name }}</p>
+      {% endif %}
+    {% endif %}
+    <button type="submit" class="inline-flex items-center px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-md shadow-sm">
+      <i class="fa-solid fa-plus mr-1.5"></i>Create
+    </button>
+  </form>
+
+  <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+    {% if plans %}
+    <div class="overflow-x-auto">
+    <table class="min-w-full text-sm">
+      <thead class="bg-gray-50 text-gray-600 text-left">
+        <tr>
+          <th class="px-4 py-3 font-semibold">Name</th>
+          {% if workspace %}<th class="px-4 py-3 font-semibold">Team</th>{% endif %}
+          <th class="px-4 py-3 font-semibold">Created by</th>
+          <th class="px-4 py-3 font-semibold">Created</th>
+          <th class="px-4 py-3 font-semibold">Last saved</th>
+          <th class="px-4 py-3 font-semibold text-right">Work areas</th>
+          <th class="px-4 py-3"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for plan in plans %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-4 py-3 font-medium">
+            <a href="{{ plan.editor_url }}" class="text-indigo-700 hover:underline">{{ plan.name }}</a>
+          </td>
+          {% if workspace %}<td class="px-4 py-3 text-gray-700">{{ plan.team_name|default:"Program Managers only" }}</td>{% endif %}
+          <td class="px-4 py-3 text-gray-700">{{ plan.created_by_name|default:"—" }}</td>
+          <td class="px-4 py-3 text-gray-600 whitespace-nowrap">{{ plan.created_at|date:"j M Y, H:i" }}</td>
+          <td class="px-4 py-3 text-gray-600 whitespace-nowrap">{{ plan.updated_at|date:"j M Y, H:i" }}</td>
+          <td class="px-4 py-3 text-right tabular-nums">{{ plan.n_work_areas }}</td>
+          <td class="px-4 py-3 text-right whitespace-nowrap">
+            {% if plan.deletable %}
+            <form method="post" action="{{ plan.delete_url }}" class="inline"
+                  onsubmit="return confirm('Delete “{{ plan.name|escapejs }}”? This cannot be undone.');">
+              {% csrf_token %}
+              <button type="submit" class="text-red-600 hover:text-red-700 text-xs font-medium">Delete</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="p-6 text-sm text-gray-500">No microplans yet. Name one above to start.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -59,6 +59,15 @@ over MCP still returns its result as before: it queues a job and waits for it, u
   which a deploy does not stop; at most `SYNTHETIC_ECS_MAX_TASKS` (6) run at once and
   the rest wait on the queue. Off ECS (locally), at most `SYNTHETIC_JOB_SLOTS` (2) run
   on the worker at once.
+- The machine is sized to the job: 2 vCPU / 8 GB for one opportunity, 4 vCPU / 16 GB
+  for two to four, 8 vCPU / 32 GB for a cohort or a job whose size its arguments do not
+  show. It is billed per second (about $0.47 an hour at the large size) and stops when
+  the job ends.
+- A job stops after `SYNTHETIC_ECS_MAX_RUNTIME_SECONDS` (6 hours) and is marked failed.
+  Every ten minutes the `reap-synthetic-job-tasks` beat stops any machine that outlives
+  that limit, and marks failed any job whose machine stopped without recording a result
+  (out of memory, an image that would not pull, stopped by hand). Both raise an alarm
+  (`labs-jj-synthetic-job-overran`, `labs-jj-synthetic-job-machine-died`).
 - There is no per-person cap on how many jobs or opportunities someone profiles.
 - An identical request returns the job already running.
 

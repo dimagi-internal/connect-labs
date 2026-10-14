@@ -2,36 +2,31 @@
 
 V1 is intentionally a single table, no job handler, no saved runs (action-shaped).
 
-Reads from BOTH domains at once: the test domain (ccc-mbw-experiments-1,
-app 00b59eb524884abc80c6a272a61cbc23 -- "MBW Deliver (MasterSep)"), where the
-visit-verification block already lives, and opp 765's real production domain
-(ccc-mbw-production, app 08cccdc1cdf58efea4a8b898587530b6). Production doesn't
-have the block yet as of this writing -- those pipelines just return empty
-rows until it ships -- but this way the report starts surfacing real
-production visits automatically the moment it does, with no code change and
-no one needing to be online to flip a switch.
+Production-only (opp 765's own ccc-mbw-production domain, app
+08cccdc1cdf58efea4a8b898587530b6): the verification block was piloted on a
+separate test domain (ccc-mbw-experiments-1) while production didn't have it
+yet, but production has carried real verification data for a while now and
+the test-domain pipelines were removed (2026-10-14) -- they were adding
+~6 of this template's 16 pipelines (6 visit-type forms + eligible-FLWs +
+mother-registration, all duplicated per domain) for a domain nobody reads
+anymore, and were a meaningful share of the payload this dashboard streams on
+every load. All pipelines use the standard app_id_source="opportunity"
+resolution: ccc-mbw-production is opp 765's own linked domain, so this stays
+correct automatically even if the app is ever rebuilt under a new id.
 
-Test-domain pipelines use data_source.domain, an explicit override added for
-this (see labs/analysis/config.py::DataSourceConfig.domain,
-labs/analysis/backends/sql/cchq_fetcher.py, and
-labs/analysis/backends/sql/cchq_cases_fetcher.py) -- needed because that
-domain has no Connect opportunity of its own, so the normal
-app_id_source="opportunity" resolution can't reach it. Production-domain
-pipelines use the normal, standard resolution (app_id_source="opportunity"):
-no override needed there since ccc-mbw-production genuinely is opp 765's own
-linked domain -- this is also more robust than hardcoding its app_id, since
-it re-resolves automatically if the app is ever rebuilt under a new id.
-
-Twelve visit pipelines (one per visit-type form, per domain -- cchq_forms
-fetches one form_name/xmlns at a time, unlike connect_csv, which merges across
-form types automatically) plus two eligible-FLW pipelines (cchq_cases over
-case_type="commcare-user", one per domain), merged in the render code. Today
-only the test domain's "ANC Visit " form has any real submissions with the
-verification block; every other pipeline (both domains) returns empty lists
-harmlessly until their form/domain combination gains the block too -- at that
-point this template starts surfacing them with zero code changes, since the
-row filter (see render code) is generic on field presence, not hardcoded to
-any specific form_name or domain.
+The six visit-type pipelines (one per form -- cchq_forms fetches one
+form_name/xmlns at a time, unlike connect_csv, which merges across form types
+automatically) each carry a form_lookback_days cutoff (see
+PROD_LOOKBACK_DAYS below): CommCare's Form API has no way to filter by
+app-build/version, and without SOME cutoff these pipelines re-download a
+form's entire submission history on every cold-cache load, a volume that only
+grows. 180 days was chosen as a deliberate trade against the UAT Comparison
+tab's pre-UAT-vs-UAT baseline comparisons (see render code, enrichedRows'
+comment) -- a mother whose entire pre-UAT history predates the cutoff loses
+her baseline comparison, which is the accepted cost of a materially smaller
+payload. The eligible-FLW and mother-registration pipelines (cchq_cases) are
+NOT cut off -- registration happens once, so there is no "recent window" to
+apply there, and case-type queries are small regardless.
 
 Other derived columns computed client-side because the pipeline engine's
 window_fields can't express expanding-window computations today (only
@@ -44,14 +39,13 @@ labs/analysis/backends/sql/query_builder.py::_window_field_to_sql):
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Test-domain override (see module docstring)
+# UAT history lookback (see module docstring)
 # ---------------------------------------------------------------------------
 
-TEST_DOMAIN = "ccc-mbw-experiments-1"
-TEST_APP_ID = "00b59eb524884abc80c6a272a61cbc23"
+PROD_LOOKBACK_DAYS = 180
 
 # ---------------------------------------------------------------------------
-# Visit pipelines (one per visit-type form, per domain)
+# Visit pipelines (one per visit-type form)
 # ---------------------------------------------------------------------------
 
 # form.parents.parent.case.@case_id is the visit case's own parent-case
@@ -319,133 +313,84 @@ _VISIT_FORM_NAMES = [
 
 # form_name must match exactly what CommCare HQ's Application Structure API
 # returns (get_form_xmlns does an exact string match against the form's name
-# dict) -- including the trailing space on "ANC Visit ".
-ANC_VISIT_SCHEMA = {
-    "data_source": {"type": "cchq_forms", "form_name": "ANC Visit ", "domain": TEST_DOMAIN, "app_id": TEST_APP_ID},
-    "grouping_key": "username",
-    "terminal_stage": "visit_level",
-    "fields": _VISIT_FIELDS,
-}
-
-POST_DELIVERY_VISIT_SCHEMA = {
-    "data_source": {
-        "type": "cchq_forms",
-        "form_name": "Post delivery visit",
-        "domain": TEST_DOMAIN,
-        "app_id": TEST_APP_ID,
-    },
-    "grouping_key": "username",
-    "terminal_stage": "visit_level",
-    "fields": _VISIT_FIELDS,
-}
-
-ONE_WEEK_VISIT_SCHEMA = {
-    "data_source": {
-        "type": "cchq_forms",
-        "form_name": "1 Week Visit",
-        "domain": TEST_DOMAIN,
-        "app_id": TEST_APP_ID,
-    },
-    "grouping_key": "username",
-    "terminal_stage": "visit_level",
-    "fields": _VISIT_FIELDS,
-}
-
-ONE_MONTH_VISIT_SCHEMA = {
-    "data_source": {
-        "type": "cchq_forms",
-        "form_name": "1 Month Visit",
-        "domain": TEST_DOMAIN,
-        "app_id": TEST_APP_ID,
-    },
-    "grouping_key": "username",
-    "terminal_stage": "visit_level",
-    "fields": _VISIT_FIELDS,
-}
-
-THREE_MONTH_VISIT_SCHEMA = {
-    "data_source": {
-        "type": "cchq_forms",
-        "form_name": "3 Month Visit",
-        "domain": TEST_DOMAIN,
-        "app_id": TEST_APP_ID,
-    },
-    "grouping_key": "username",
-    "terminal_stage": "visit_level",
-    "fields": _VISIT_FIELDS,
-}
-
-SIX_MONTH_VISIT_SCHEMA = {
-    "data_source": {
-        "type": "cchq_forms",
-        "form_name": "6 Month Visit",
-        "domain": TEST_DOMAIN,
-        "app_id": TEST_APP_ID,
-    },
-    "grouping_key": "username",
-    "terminal_stage": "visit_level",
-    "fields": _VISIT_FIELDS,
-}
-
-# --- Production-domain twins ------------------------------------------------
-# Same six forms, same fields, but no domain/app_id override: opp 765 owns
-# ccc-mbw-production, so the standard app_id_source="opportunity" resolution
-# reaches it directly.
-
+# dict) -- including the trailing space on "ANC Visit ". form_lookback_days
+# (see module docstring) is the UAT history cutoff -- a rolling window, not an
+# absolute date, so it keeps moving forward on every load.
 PROD_ANC_VISIT_SCHEMA = {
-    "data_source": {"type": "cchq_forms", "form_name": "ANC Visit ", "app_id_source": "opportunity"},
+    "data_source": {
+        "type": "cchq_forms",
+        "form_name": "ANC Visit ",
+        "app_id_source": "opportunity",
+        "form_lookback_days": PROD_LOOKBACK_DAYS,
+    },
     "grouping_key": "username",
     "terminal_stage": "visit_level",
     "fields": _VISIT_FIELDS,
 }
 
 PROD_POST_DELIVERY_VISIT_SCHEMA = {
-    "data_source": {"type": "cchq_forms", "form_name": "Post delivery visit", "app_id_source": "opportunity"},
+    "data_source": {
+        "type": "cchq_forms",
+        "form_name": "Post delivery visit",
+        "app_id_source": "opportunity",
+        "form_lookback_days": PROD_LOOKBACK_DAYS,
+    },
     "grouping_key": "username",
     "terminal_stage": "visit_level",
     "fields": _VISIT_FIELDS,
 }
 
 PROD_ONE_WEEK_VISIT_SCHEMA = {
-    "data_source": {"type": "cchq_forms", "form_name": "1 Week Visit", "app_id_source": "opportunity"},
+    "data_source": {
+        "type": "cchq_forms",
+        "form_name": "1 Week Visit",
+        "app_id_source": "opportunity",
+        "form_lookback_days": PROD_LOOKBACK_DAYS,
+    },
     "grouping_key": "username",
     "terminal_stage": "visit_level",
     "fields": _VISIT_FIELDS,
 }
 
 PROD_ONE_MONTH_VISIT_SCHEMA = {
-    "data_source": {"type": "cchq_forms", "form_name": "1 Month Visit", "app_id_source": "opportunity"},
+    "data_source": {
+        "type": "cchq_forms",
+        "form_name": "1 Month Visit",
+        "app_id_source": "opportunity",
+        "form_lookback_days": PROD_LOOKBACK_DAYS,
+    },
     "grouping_key": "username",
     "terminal_stage": "visit_level",
     "fields": _VISIT_FIELDS,
 }
 
 PROD_THREE_MONTH_VISIT_SCHEMA = {
-    "data_source": {"type": "cchq_forms", "form_name": "3 Month Visit", "app_id_source": "opportunity"},
+    "data_source": {
+        "type": "cchq_forms",
+        "form_name": "3 Month Visit",
+        "app_id_source": "opportunity",
+        "form_lookback_days": PROD_LOOKBACK_DAYS,
+    },
     "grouping_key": "username",
     "terminal_stage": "visit_level",
     "fields": _VISIT_FIELDS,
 }
 
 PROD_SIX_MONTH_VISIT_SCHEMA = {
-    "data_source": {"type": "cchq_forms", "form_name": "6 Month Visit", "app_id_source": "opportunity"},
+    "data_source": {
+        "type": "cchq_forms",
+        "form_name": "6 Month Visit",
+        "app_id_source": "opportunity",
+        "form_lookback_days": PROD_LOOKBACK_DAYS,
+    },
     "grouping_key": "username",
     "terminal_stage": "visit_level",
     "fields": _VISIT_FIELDS,
 }
 
 # ---------------------------------------------------------------------------
-# Eligible-FLW pipelines (commcare-user cases, gate which FLWs' visits show)
+# Eligible-FLW pipeline (commcare-user cases, gate which FLWs' visits show)
 # ---------------------------------------------------------------------------
-
-ELIGIBLE_FLW_SCHEMA = {
-    "data_source": {"type": "cchq_cases", "case_type": "commcare-user", "domain": TEST_DOMAIN},
-    "grouping_key": "entity_id",
-    "terminal_stage": "visit_level",
-    "fields": [
-        {"name": "visit_verification", "path": "case.properties.visit_verification", "aggregation": "first"},
-    ],
-}
 
 PROD_ELIGIBLE_FLW_SCHEMA = {
     "data_source": {"type": "cchq_cases", "case_type": "commcare-user"},
@@ -501,28 +446,6 @@ PROD_ELIGIBLE_FLW_SCHEMA = {
 # existed, or not selected into the sample, never gets this set to 'yes'.
 # ---------------------------------------------------------------------------
 
-MOTHER_REGISTRATION_SCHEMA = {
-    "data_source": {"type": "cchq_cases", "case_type": "mother", "domain": TEST_DOMAIN},
-    "grouping_key": "entity_id",
-    "terminal_stage": "visit_level",
-    "fields": [
-        {"name": "conduct_visit_now", "path": "case.properties.conduct_visit_now", "aggregation": "first"},
-        {"name": "home_gps", "path": "case.properties.home_gps", "aggregation": "first"},
-        {"name": "health_facility_gps", "path": "case.properties.health_facility_gps", "aggregation": "first"},
-        {"name": "registration_datetime", "path": "case.date_opened", "aggregation": "first"},
-        {
-            "name": "registration_location_type",
-            "path": "case.properties.where_is_the_registration_being_conducted",
-            "aggregation": "first",
-        },
-        {
-            "name": "mother_reg_for_visit_verification",
-            "path": "case.properties.mother_reg_for_visit_verification",
-            "aggregation": "first",
-        },
-    ],
-}
-
 PROD_MOTHER_REGISTRATION_SCHEMA = {
     "data_source": {"type": "cchq_cases", "case_type": "mother"},
     "grouping_key": "entity_id",
@@ -546,71 +469,37 @@ PROD_MOTHER_REGISTRATION_SCHEMA = {
 }
 
 # Alias names are read directly by RENDER_CODE (VISIT_PIPELINE_ALIASES and the
-# eligible_flws.../eligible_flws_prod pair) to merge all twelve visit
-# pipelines and both FLW-eligibility gates -- keep them in sync.
+# eligible_flws_prod pair) to merge the six visit pipelines and the
+# FLW-eligibility gate -- keep them in sync. Aliases keep their historical
+# "_prod" suffix even though production is now the only domain, to avoid
+# touching every reference to them across the render code and the live
+# pipeline records for a purely cosmetic rename.
 PIPELINE_SCHEMAS = [
-    {
-        "alias": "visits_anc_visit",
-        "name": "MBW Visit Verification — ANC Visit (test)",
-        "description": "ANC Visit form submissions with the visit-verification block (test domain).",
-        "schema": ANC_VISIT_SCHEMA,
-    },
-    {
-        "alias": "visits_post_delivery_visit",
-        "name": "MBW Visit Verification — Post delivery visit (test)",
-        "description": "Post delivery visit form submissions (test domain). Empty until this form gains the block.",
-        "schema": POST_DELIVERY_VISIT_SCHEMA,
-    },
-    {
-        "alias": "visits_1_week_visit",
-        "name": "MBW Visit Verification — 1 Week Visit (test)",
-        "description": "1 Week Visit form submissions (test domain). Empty until this form gains the block.",
-        "schema": ONE_WEEK_VISIT_SCHEMA,
-    },
-    {
-        "alias": "visits_1_month_visit",
-        "name": "MBW Visit Verification — 1 Month Visit (test)",
-        "description": "1 Month Visit form submissions (test domain). Empty until this form gains the block.",
-        "schema": ONE_MONTH_VISIT_SCHEMA,
-    },
-    {
-        "alias": "visits_3_month_visit",
-        "name": "MBW Visit Verification — 3 Month Visit (test)",
-        "description": "3 Month Visit form submissions (test domain). Empty until this form gains the block.",
-        "schema": THREE_MONTH_VISIT_SCHEMA,
-    },
-    {
-        "alias": "visits_6_month_visit",
-        "name": "MBW Visit Verification — 6 Month Visit (test)",
-        "description": "6 Month Visit form submissions (test domain). Empty until this form gains the block.",
-        "schema": SIX_MONTH_VISIT_SCHEMA,
-    },
     {
         "alias": "visits_prod_anc_visit",
         "name": "MBW Visit Verification — ANC Visit (production)",
-        "description": "ANC Visit form submissions from opp 765's real production app. Empty until it gains the block.",
+        "description": f"ANC Visit form submissions from opp 765's production app, last {PROD_LOOKBACK_DAYS} days.",
         "schema": PROD_ANC_VISIT_SCHEMA,
     },
     {
         "alias": "visits_prod_post_delivery_visit",
         "name": "MBW Visit Verification — Post delivery visit (production)",
         "description": (
-            "Post delivery visit form submissions from opp 765's real production app. "
-            "Empty until it gains the block."
+            f"Post delivery visit form submissions from opp 765's production app, last {PROD_LOOKBACK_DAYS} days."
         ),
         "schema": PROD_POST_DELIVERY_VISIT_SCHEMA,
     },
     {
         "alias": "visits_prod_1_week_visit",
         "name": "MBW Visit Verification — 1 Week Visit (production)",
-        "description": "1 Week Visit form submissions from opp 765's real production app. Empty until it gains the block.",
+        "description": f"1 Week Visit form submissions from opp 765's production app, last {PROD_LOOKBACK_DAYS} days.",
         "schema": PROD_ONE_WEEK_VISIT_SCHEMA,
     },
     {
         "alias": "visits_prod_1_month_visit",
         "name": "MBW Visit Verification — 1 Month Visit (production)",
         "description": (
-            "1 Month Visit form submissions from opp 765's real production app. Empty until it gains the block."
+            f"1 Month Visit form submissions from opp 765's production app, last {PROD_LOOKBACK_DAYS} days."
         ),
         "schema": PROD_ONE_MONTH_VISIT_SCHEMA,
     },
@@ -618,7 +507,7 @@ PIPELINE_SCHEMAS = [
         "alias": "visits_prod_3_month_visit",
         "name": "MBW Visit Verification — 3 Month Visit (production)",
         "description": (
-            "3 Month Visit form submissions from opp 765's real production app. Empty until it gains the block."
+            f"3 Month Visit form submissions from opp 765's production app, last {PROD_LOOKBACK_DAYS} days."
         ),
         "schema": PROD_THREE_MONTH_VISIT_SCHEMA,
     },
@@ -626,34 +515,15 @@ PIPELINE_SCHEMAS = [
         "alias": "visits_prod_6_month_visit",
         "name": "MBW Visit Verification — 6 Month Visit (production)",
         "description": (
-            "6 Month Visit form submissions from opp 765's real production app. Empty until it gains the block."
+            f"6 Month Visit form submissions from opp 765's production app, last {PROD_LOOKBACK_DAYS} days."
         ),
         "schema": PROD_SIX_MONTH_VISIT_SCHEMA,
     },
     {
-        "alias": "eligible_flws",
-        "name": "MBW Visit Verification — Eligible FLWs (test)",
-        "description": "commcare-user cases with the visit_verification property (test domain).",
-        "schema": ELIGIBLE_FLW_SCHEMA,
-    },
-    {
         "alias": "eligible_flws_prod",
         "name": "MBW Visit Verification — Eligible FLWs (production)",
-        "description": "commcare-user cases with the visit_verification property (opp 765's real production domain).",
+        "description": "commcare-user cases with the visit_verification property (opp 765's production domain).",
         "schema": PROD_ELIGIBLE_FLW_SCHEMA,
-    },
-    {
-        "alias": "mother_registration",
-        "name": "MBW Visit Verification — Mother Registration (test)",
-        "description": (
-            "Mother cases with the conduct_visit_now registration-time property, home_gps/"
-            "health_facility_gps registration GPS points, registration_datetime, "
-            "registration_location_type, and mother_reg_for_visit_verification (test domain) -- "
-            "used to detect first visits that happened immediately at registration, to plot the "
-            "registration point (with its timestamp and location) on the GPS Map tab, and to gate "
-            "which visits count as verification-program-eligible."
-        ),
-        "schema": MOTHER_REGISTRATION_SCHEMA,
     },
     {
         "alias": "mother_registration_prod",
@@ -661,10 +531,11 @@ PIPELINE_SCHEMAS = [
         "description": (
             "Mother cases with the conduct_visit_now registration-time property, home_gps/"
             "health_facility_gps registration GPS points, registration_datetime, "
-            "registration_location_type, and mother_reg_for_visit_verification (opp 765's real "
+            "registration_location_type, and mother_reg_for_visit_verification (opp 765's "
             "production domain) -- used to detect first visits that happened immediately at "
             "registration, to plot the registration point (with its timestamp and location) on "
-            "the GPS Map tab, and to gate which visits count as verification-program-eligible."
+            "the GPS Map tab, and to gate which visits count as verification-program-eligible. "
+            "Not lookback-limited -- registration happens once, so there is no recent window to apply."
         ),
         "schema": PROD_MOTHER_REGISTRATION_SCHEMA,
     },
@@ -679,8 +550,7 @@ DEFINITION = {
     "description": (
         "Single-table audit of GPS, QR, signature, ANC-card, and mother-questions "
         "verification outcomes per visit, for FLWs flagged for visit verification. "
-        "Reads from both the ccc-mbw-experiments-1 test domain and opp 765's own "
-        "production app — see module docstring."
+        "Reads from opp 765's own production app — see module docstring."
     ),
     "version": 1,
     "templateType": "mbw_visit_verification",

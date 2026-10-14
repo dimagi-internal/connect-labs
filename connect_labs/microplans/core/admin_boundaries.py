@@ -419,6 +419,11 @@ class BoundaryFeature:
     lga: str = ""
     state: str = ""
     ref: dict = field(default_factory=dict)
+    # The row's own provider (``AdminBoundary.source``: geopode / grid3 / ...). In the
+    # merged labs view the same ward can come back twice, once per provider;
+    # ``provider_rank`` (LABS_PROVIDER_PREFERENCE) lets a client keep the preferred
+    # one, as ``_dedupe_by_provider_preference`` does on the server.
+    provider: str = ""
 
     def to_feature(self) -> dict:
         """As a GeoJSON Feature for a FeatureCollection."""
@@ -439,6 +444,8 @@ class BoundaryFeature:
                 "lga": self.lga,
                 "state": self.state,
                 "ref": self.ref,
+                "provider": self.provider,
+                "provider_rank": _provider_rank(self.provider),
             },
         }
 
@@ -678,6 +685,7 @@ class LabsAdminBoundarySource(BoundarySource):
                     state=admin_names_from_extra(obj.extra)[0],
                     lga=admin_names_from_extra(obj.extra)[1],
                     ref={"boundary_id": obj.boundary_id, "source": self.name},
+                    provider=obj.source or "",
                 )
             )
         return out

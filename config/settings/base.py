@@ -605,6 +605,11 @@ SYNTHETIC_ECS_REGION = env("SYNTHETIC_ECS_REGION", default="us-east-1")
 SYNTHETIC_ECS_CPU = env("SYNTHETIC_ECS_CPU", default="8192")
 SYNTHETIC_ECS_MEMORY = env("SYNTHETIC_ECS_MEMORY", default="32768")
 SYNTHETIC_ECS_MAX_TASKS = env.int("SYNTHETIC_ECS_MAX_TASKS", default=6)
+# A job's own machine stops after this long, whatever the job is doing (the job is
+# marked failed). A standalone task has no lifetime of its own, and the Celery time
+# limits do not reach it. Six hours: an 8-opportunity cohort profile was still going
+# at 2h20m on 2026-10-13.
+SYNTHETIC_ECS_MAX_RUNTIME_SECONDS = env.int("SYNTHETIC_ECS_MAX_RUNTIME_SECONDS", default=6 * 3600)
 # LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID is the Drive folder ID for stock images.
 LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID = env("LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID", default="")
 # Drive folders a workflow pipeline may read (data_source.type "gdrive"). A source's
@@ -778,6 +783,13 @@ CELERY_BEAT_SCHEDULE = {
     },
     # Finish live EMOD runs whose task a deploy killed: the instance writes the result to S3 whether or
     # not anyone is waiting (connect_labs/labs/indicators/emod/tasks.py, sweep_dead_pmc_runs).
+    # Stop synthetic jobs' own machines that overran their limit, and fail jobs whose
+    # machine stopped without recording how it ended (labs/synthetic/ecs_runner.reap).
+    # Ten minutes: ECS lists a stopped task for about an hour.
+    "reap-synthetic-job-tasks": {
+        "task": "connect_labs.labs.synthetic.tasks.reap_synthetic_job_tasks",
+        "schedule": crontab(minute="*/10"),
+    },
     "heal-dead-pmc-runs": {
         "task": "connect_labs.labs.indicators.emod.tasks.sweep_dead_pmc_runs",
         "schedule": crontab(minute="*/5"),
