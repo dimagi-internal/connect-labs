@@ -11,7 +11,7 @@
       {% if workspace %}
         <p class="text-xs text-gray-500 mt-1">
           You are a <b>{{ workspace.role_label }}</b> here{% if not workspace.is_program_manager %} — you see your team's plans and studies only{% endif %}.
-          {% if workspace.is_program_manager %}<a class="text-brand-cornflower-blue" href="{% url 'microplans:program_workspace_settings' program_id=program_id %}">Workspace settings</a>{% endif %}
+          {% if workspace.can_manage_access %}<a class="text-brand-cornflower-blue" href="{% url 'microplans:program_workspace_settings' program_id=program_id %}">Workspace settings</a>{% endif %}
         </p>
       {% elif can_turn_on_workspace %}
         <p class="text-xs text-gray-500 mt-1">

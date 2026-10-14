@@ -197,16 +197,19 @@ def _workspace_context(da) -> dict:
     teams, may they delete). Empty outside a workspace."""
     if da.workspace is None:
         return {}
-    from connect_labs.labs.workspaces import team_choices
+    from connect_labs.labs.workspaces import can_manage_access, team_choices
 
     viewer = da.viewer
+    is_pm = bool(viewer and viewer.is_program_manager)
     return {
         "workspace": {
             "role": viewer.role if viewer else "",
             "role_label": viewer.label if viewer else "",
             "teams": team_choices(da.workspace, viewer, user=da.caller, records=[*da.list_plans(), *da.list_groups()]),
             "can_delete": da.can_delete,
-            "is_program_manager": bool(viewer and viewer.is_program_manager),
+            "is_program_manager": is_pm,
+            # The access page (``ProgramWorkspaceSettingsView``) is Dimagi Program Managers' only.
+            "can_manage_access": is_pm and can_manage_access(da.caller),
         }
     }
 
@@ -2015,7 +2018,10 @@ class ProgramWorkspaceSettingsView(_LabsContextSyncMixin, LoginRequiredMixin, Te
         person to the other rules. Nobody may change their own entry in a way
         that would stop them getting back to Program Manager by themselves.
 
-    404 for anyone but a Program Manager, on every action. For a labs-only program
+    404 for anyone but a Program Manager who signs in with a Dimagi address
+    (``labs.workspaces.can_manage_access``), on every action: a Program Manager by
+    a Users entry or as an organisation admin, outside Dimagi, does not manage
+    access. For a labs-only program
     whose organisation is not a workspace yet, Dimagi staff -- and only they --
     get a "Turn on workspace roles" button instead: the browser route to what
     ``setup_autoconnect_workspace --program-id`` does, by the same function
@@ -2042,8 +2048,10 @@ class ProgramWorkspaceSettingsView(_LabsContextSyncMixin, LoginRequiredMixin, Te
         )
 
     def _workspace_and_role(self, program_id):
-        from connect_labs.labs.workspaces import role_in, workspace_for_program
+        from connect_labs.labs.workspaces import can_manage_access, role_in, workspace_for_program
 
+        if not can_manage_access(self.request.user):
+            raise Http404("Not found.")
         workspace = workspace_for_program(program_id)
         role = role_in(self.request.user, workspace)
         if workspace is None or role is None or not role.is_program_manager:
@@ -2346,9 +2354,10 @@ class ProgramWorkspaceSettingsView(_LabsContextSyncMixin, LoginRequiredMixin, Te
 
 
 class ProgramWorkspaceStopTestingView(_ProgramScopeMixin, LoginRequiredMixin, View):
-    """POST: someone a Users entry makes a Network Manager switches back to Program
-    Manager by deleting their own entry -- only when, without it, they ARE one
-    (so they could set it again). Anyone else is told to ask a Program Manager."""
+    """POST: a Dimagi user a Users entry makes a Network Manager switches back to
+    Program Manager by deleting their own entry -- only when, without it, they ARE
+    one (so they could set it again). 404 for anyone outside Dimagi
+    (``labs.workspaces.can_manage_access``): their entry is simply their role."""
 
     def post(self, request, program_id):
         from django.contrib import messages
@@ -2356,10 +2365,16 @@ class ProgramWorkspaceStopTestingView(_ProgramScopeMixin, LoginRequiredMixin, Vi
         from django.urls import reverse
 
         from connect_labs.labs.models import WorkspaceUser
-        from connect_labs.labs.workspaces import fallback_role, remove_user, user_entry, workspace_for_program
+        from connect_labs.labs.workspaces import (
+            can_manage_access,
+            fallback_role,
+            remove_user,
+            user_entry,
+            workspace_for_program,
+        )
 
         workspace = workspace_for_program(program_id)
-        if workspace is None:
+        if workspace is None or not can_manage_access(request.user):
             raise Http404("Not found.")
         entry = user_entry(request.user, workspace)
         usual = fallback_role(request.user, workspace)

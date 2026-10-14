@@ -45,6 +45,16 @@ delivered by other organisations, and must not become every team at once.
 Every role that resolves is noted in `labs.models.WorkspaceAccess` (at most
 every few minutes per person), which is how the settings page lists the people
 each LLO has brought in.
+
+**Who manages access** (`can_manage_access`) is a separate question from who is
+a Program Manager: only a Program Manager who signs in with a Dimagi address
+(`utils.dimagi_user.is_dimagi_user`) may open the settings page, add or delete
+LLOs, and add, change (Program Manager <-> Network Manager) or delete Users
+entries -- and only they get the "Switch back to Program Manager" banner when an
+entry makes them a Network Manager. A Program Manager by a Users entry or as an
+organisation admin, outside Dimagi, has every other Program Manager power but
+cannot change who has access. An entry itself may still name any address, as
+either role.
 """
 
 from __future__ import annotations
@@ -417,6 +427,16 @@ def adopt_program(program_id, *, user=None):
 
 
 # ---- the settings page's two lists: LLOs and Users --------------------------
+
+
+def can_manage_access(user) -> bool:
+    """Whether `user` may change who has access to a workspace: its LLOs and Users
+    list, including switching an entry (or themselves) between Program Manager and
+    Network Manager. Dimagi sign-ins only, whatever role an entry or organisation
+    admin rights give anyone else. Callers also require a Program Manager role."""
+    from connect_labs.utils.dimagi_user import is_dimagi_user
+
+    return user is not None and is_dimagi_user(user)
 
 
 class AccessRefused(Exception):
