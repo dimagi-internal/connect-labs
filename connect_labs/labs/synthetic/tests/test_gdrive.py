@@ -249,6 +249,9 @@ def test_drive_reads_are_counted_against_the_in_flight_request(httpx_mock, fake_
     from connect_labs.utils import request_telemetry
     from connect_labs.utils.request_telemetry import RequestStats, current_stats
 
+    # What RequestTelemetryMiddleware does when a worker starts. Without it this test
+    # passed only when an earlier test on the same process had built the middleware.
+    request_telemetry.install_httpx_instrumentation()
     httpx_mock.add_response(
         url=(
             "https://www.googleapis.com/drive/v3/files"
