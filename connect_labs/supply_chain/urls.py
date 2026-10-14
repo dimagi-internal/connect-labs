@@ -12,6 +12,7 @@ from connect_labs.supply_chain.network import views as network_views
 from connect_labs.supply_chain.portfolio import views as portfolio_views
 from connect_labs.supply_chain.procurement import views as procurement_views
 from connect_labs.supply_chain.reference import views as reference_views
+from connect_labs.supply_chain.runner import views as runner_views
 from connect_labs.supply_chain.stock import views as stock_views
 from connect_labs.supply_chain.stock import visit_views
 from connect_labs.supply_chain.update_links import views as update_link_views
@@ -31,6 +32,7 @@ urlpatterns = [
     # right here. Overview's own tab links to overview/, so it never bounces on.
     path("", views.supply_front_door, name="home"),
     path("overview/", views.DomainHomeView.as_view(), name="overview"),
+    path("runner/", runner_views.ProgrammeRunnerView.as_view(), name="programme_runner"),
     # The one address here that is NOT programme-scoped. It sits at the top
     # rather than under a sub-component because it is above all of them: one
     # row per programme, each linking down into its own chain. The slug is the

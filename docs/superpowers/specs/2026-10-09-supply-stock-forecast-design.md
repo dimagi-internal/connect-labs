@@ -1,6 +1,6 @@
 # Supply stock forecast: service delivery meets stock
 
-**Status:** design, for Jonathan's review (2026-10-09). Nothing built yet.
+**Status:** shipped (#2373, #2380, #2381; protocol need #2447), 2026-10-12 — historical record, not current-state. The live template is `supply_stock_forecast`.
 
 ## What it is
 

@@ -1,6 +1,6 @@
 # Supply: the organisation that runs a programme — design
 
-**Status:** design, amended after adversarial review (§8 supersedes §1–§3 where they differ).
+**Status:** shipped (#2462, #2491; deployed 2026-10-13), amended after adversarial review (§8 supersedes §1–§3 where they differ). §8's follow-ups are closed out in §9.
 **Date:** 2026-10-12. **Issue:** #2458.
 **Reads against:** `connect_labs/supply_chain/identity.py` (who is writing),
 `connect_labs/labs/access/scopes.py` (who may use a scope),
@@ -249,3 +249,20 @@ programme a non-empty `allowed_domains` — the seeded examples do); `resolve_or
 ignores `OrgMembership` for a partner's own organisation (M4; no longer used to
 authorise anything); pin the OES satellite's privileged-domain signup block
 with a test.
+
+## 9. Follow-ups closed (2026-10-14)
+
+- **H3.** `programme_runner_set` refuses to declare any organisation but Dimagi on a
+  programme with a labs-only registration that is open to every email domain (no
+  `allowed_domains`, no workspace). Support sets the domains first. Dimagi's invented
+  demo programmes stay open, as they were; the fail-open default itself is the
+  security audit's (#1032 item F), not this design's.
+- **M3.** Declaring a running organisation revokes every live update link issued to it
+  in that programme (`runner.revoke_links_to_runner`), and migration 0057 revokes any
+  issued before #2458.
+- **M4.** Left as is, deliberately: `resolve_org` names who a partner is for
+  attribution and no longer authorises anything (§5's `standing` does).
+- **OES signup.** The OES satellite's refusal of Dimagi addresses is pinned by
+  `supply/tests/test_auth.py::test_signup_refuses_a_dimagi_address`.
+- **A screen for support.** `/supply/runner/` (`runner/views.py`): staff declare or
+  change the running organisation; the Overview links to it for staff.

@@ -189,6 +189,47 @@ class TestWhoDeclares:
         result = op(_access(support, UNDECLARED), "programme_runner_set", org_id=kilele.pk)
         assert result["org_id"] == kilele.pk
 
+    def test_another_organisation_is_not_declared_on_a_programme_open_to_every_domain(self, kilele):
+        from connect_labs.labs.synthetic.provisioning import register_labs_only_opp
+
+        register_labs_only_opp(opportunity_id=UNDECLARED, label="Open", program_id=UNDECLARED, allowed_domains=[])
+        support = _user("support", "support@dimagi.com", is_staff=True)
+        with pytest.raises(ValueError, match="allowed domains"):
+            op(_access(support, UNDECLARED), "programme_runner_set", org_id=kilele.pk)
+        # Dimagi's own invented programmes stay open, as they always were.
+        assert op(_access(support, UNDECLARED), "programme_runner_set", org_id=dimagi_org().pk)["org_name"] == "Dimagi"
+
+    def test_it_is_declared_once_the_programme_names_its_domains(self, kilele):
+        from connect_labs.labs.synthetic.provisioning import register_labs_only_opp
+
+        register_labs_only_opp(
+            opportunity_id=UNDECLARED, label="Kilele", program_id=UNDECLARED, allowed_domains=["@kilele.example"]
+        )
+        support = _user("support", "support@dimagi.com", is_staff=True)
+        assert op(_access(support, UNDECLARED), "programme_runner_set", org_id=kilele.pk)["org_id"] == kilele.pk
+
+    def test_declaring_revokes_the_links_its_new_runner_already_held(self, kilele):
+        from django.utils import timezone
+
+        from connect_labs.supply_chain.update_links.models import UpdateLink
+
+        def link(program_id, org, token):
+            return UpdateLink.objects.create(
+                program_id=program_id,
+                org=org,
+                token_hash=token,
+                expires_at=timezone.now() + timezone.timedelta(days=30),
+            )
+
+        held = link(UNDECLARED, kilele, "a" * 64)
+        elsewhere = link(KILELE_PROGRAM + 100, kilele, "b" * 64)
+        support = _user("support", "support@dimagi.com", is_staff=True)
+        op(_access(support, UNDECLARED), "programme_runner_set", org_id=kilele.pk)
+        held.refresh_from_db()
+        elsewhere.refresh_from_db()
+        assert (held.state, held.revoked_by_id) == ("revoked", support.pk)
+        assert elsewhere.state == "active"
+
     def test_anyone_who_holds_it_can_read_who_runs_it(self, kilele, outsider):
         got = op(_access(outsider, KILELE_PROGRAM), "programme_runner_get")
         assert (got["org_name"], got["your_standing"]) == ("Kilele Community Health", PARTNER)
