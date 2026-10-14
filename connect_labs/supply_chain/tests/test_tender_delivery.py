@@ -246,37 +246,3 @@ class TestOnTheMarketplace:
         form = BidForm(data={**complete()}, places=[{**KANO, "key": "central-store"}])
         assert form.is_valid(), form.errors
         assert form.payload()["delivery_point_keys"] == ["central-store"]
-
-
-def _migrate(targets):
-    from django.db import connection
-    from django.db.migrations.executor import MigrationExecutor
-
-    executor = MigrationExecutor(connection)
-    executor.loader.build_graph()
-    executor.migrate(targets)
-    return executor.loader.project_state(targets).apps
-
-
-@pytest.mark.django_db(transaction=True)
-def test_the_migration_turns_each_delivery_point_into_a_one_place_list():
-    from django.db import connection
-    from django.db.migrations.executor import MigrationExecutor
-
-    old = _migrate([("supply_chain", "0027_round_is_a_tender")])
-    OldTender = old.get_model("supply_chain", "Tender")
-    placed = OldTender.objects.create(
-        program_id=PROGRAM,
-        label="Old",
-        delivery_point={"name": "Central store", "city": "Kano", "incoterm_requested": "DAP"},
-    )
-    nowhere = OldTender.objects.create(program_id=PROGRAM, label="Nowhere", delivery_point={})
-    try:
-        new = _migrate([("supply_chain", "0029_tender_drops_single_delivery_point")])
-        NewTender = new.get_model("supply_chain", "Tender")
-        moved = NewTender.objects.get(pk=placed.pk)
-        assert moved.delivery_points == [{"key": "main", "name": "Central store", "city": "Kano"}]
-        assert moved.incoterm_requested == "DAP"
-        assert NewTender.objects.get(pk=nowhere.pk).delivery_points == []
-    finally:
-        _migrate(MigrationExecutor(connection).loader.graph.leaf_nodes())

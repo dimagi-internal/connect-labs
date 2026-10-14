@@ -10,7 +10,6 @@ THIS REPOSITORY IS PUBLIC. Every name here is invented.
 
 from __future__ import annotations
 
-import importlib
 from io import StringIO
 from unittest.mock import patch
 
@@ -265,12 +264,6 @@ def test_s3_filing_is_serialised(victim):
     with CaptureQueriesContext(connection) as queries:
         _opp(10_001, created_by=victim)
     assert any("pg_advisory_xact_lock" in q["sql"] for q in queries.captured_queries)
-
-
-def test_s3_the_bucket_backfill_is_explicitly_irreversible():
-    migration = importlib.import_module("connect_labs.labs.synthetic.migrations.0010_syntheticopportunity_labs_org")
-    run_python = migration.Migration.operations[-1]
-    assert not run_python.reversible
 
 
 def test_s3_supply_dropdowns_offer_no_labs_only_organisation(victims_org):

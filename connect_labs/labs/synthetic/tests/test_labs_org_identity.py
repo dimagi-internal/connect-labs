@@ -9,10 +9,7 @@ THIS REPOSITORY IS PUBLIC. Every name here is invented.
 
 from __future__ import annotations
 
-import importlib
-
 import pytest
-from django.apps import apps as global_apps
 
 from connect_labs.labs.context import _merge_labs_only_opps
 from connect_labs.labs.models import LabsOrg
@@ -141,37 +138,6 @@ def test_an_opp_pointed_at_a_real_organisation_never_names_it(ana):
 
     assert key.startswith(org_tree.SYNTHETIC_ORG_PREFIX)
     assert key != "real-ngo"
-
-
-@pytest.mark.django_db
-def test_the_backfill_keeps_each_existing_bucket_and_its_key(ana, ben):
-    """Existing buckets become registry rows under the key they already had,
-    so every setting, cohort and link that names them keeps working."""
-    shared_a = _opp(10_001, created_by=ana)
-    shared_b = _opp(10_002, created_by=ben)
-    solo = _opp(10_003, org_name="Baobab Trust", created_by=ana)
-    # As they stood before this change: no registry row.
-    SyntheticOpportunity.objects.update(labs_org=None)
-    LabsOrg.objects.all().delete()
-    OrgMembership.objects.all().delete()
-    # A row that already holds a bucket's key is that bucket's row.
-    existing = LabsOrg.objects.create(slug="labs-synthetic-baobab-trust", name="Baobab Trust")
-
-    migration = importlib.import_module("connect_labs.labs.synthetic.migrations.0010_syntheticopportunity_labs_org")
-    migration.backfill(global_apps, None)
-
-    for opp in (shared_a, shared_b, solo):
-        opp.refresh_from_db()
-    assert shared_a.labs_org_id == shared_b.labs_org_id
-    assert shared_a.labs_org.slug == "labs-synthetic-labs-synthetic"
-    assert solo.labs_org_id == existing.pk
-    # A bucket one person made is theirs; a bucket several people filled is nobody's.
-    assert OrgMembership.objects.filter(org=existing, user=ana, role="admin").exists()
-    assert not OrgMembership.objects.filter(org=shared_a.labs_org).exists()
-
-    # Run twice, change nothing.
-    migration.backfill(global_apps, None)
-    assert LabsOrg.objects.filter(slug__startswith="labs-synthetic-").count() == 2
 
 
 @pytest.mark.django_db

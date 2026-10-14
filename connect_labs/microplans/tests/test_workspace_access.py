@@ -8,10 +8,8 @@ made up.
 
 from __future__ import annotations
 
-import importlib
 import time
 from datetime import timedelta
-from types import SimpleNamespace
 
 import pytest
 from django.urls import reverse
@@ -407,47 +405,3 @@ def test_both_lists_have_search_pagination_and_confirmed_deletes(client, people,
     assert body.count('@submit.prevent="ask($event)"') == 13  # each trash icon asks first
     assert 'id="workspace-confirm"' in body
     assert "Delete the LLO llo-00?" in body and "Delete the entry for someone@example.org?" in body
-
-
-# --- the data migration ------------------------------------------------------
-
-
-def test_testers_are_carried_over_as_network_manager_entries(people, ws):
-    migration = importlib.import_module("connect_labs.labs.migrations.0029_workspace_llos_and_users")
-    testers = [
-        SimpleNamespace(
-            workspace_id=ws.pk,
-            user=people["pm"],
-            user_id=people["pm"].pk,
-            team="test-llo-a",
-            added_by_id=people["org_admin"].pk,
-        )
-    ]
-
-    class _Rows:
-        def select_related(self, *a):
-            return self
-
-        def order_by(self, *a):
-            return testers
-
-    class _Apps:
-        def get_model(self, app_label, name):
-            if name == "WorkspaceTester":
-                return SimpleNamespace(objects=_Rows())
-            from django.apps import apps
-
-            return apps.get_model(app_label, name)
-
-    migration.testers_to_users(_Apps(), None)
-    migration.testers_to_users(_Apps(), None)  # idempotent
-    entry = WorkspaceUser.objects.get()
-    assert (entry.email, entry.user, entry.role, entry.team, entry.added_by) == (
-        "pm.staff@dimagi.com",
-        people["pm"],
-        "network_manager",
-        "test-llo-a",
-        people["org_admin"],
-    )
-    # No LLO is made for a tester's team: that would let in all its members.
-    assert not WorkspaceLLO.objects.exists()

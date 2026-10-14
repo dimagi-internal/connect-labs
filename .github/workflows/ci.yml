@@ -298,12 +298,20 @@ jobs:
         # silently skipped campaign, mcp, pages, funder_dashboard, and others as
         # they were added. No -x: report every failure, not just the first.
         #
-        # -n auto spreads the suite over the runner's cores. pytest-django gives each
+        # -n logical spreads the suite over the runner's cores. pytest-django gives each
         # worker its own database (test_postgres_gwN), which is what makes this safe
         # for a suite that talks to Postgres in almost every test — and is also why
         # it removes a class of order-dependent failure rather than adding one.
+        #
+        # LOGICAL, not `auto`. `-n auto` asks psutil for PHYSICAL cores when psutil
+        # is importable, and only falls back to os.cpu_count() when it is not. On
+        # 2026-09-17 an ipython bump pulled psutil into the venv and the 4-vCPU
+        # runner (2 physical cores, hyperthreaded) silently dropped from
+        # "created: 4/4 workers" to "created: 2/2 workers" -- the suite got ~40%
+        # slower with no change to any test. This suite is mostly waiting on
+        # Postgres, so it wants every vCPU the runner reports.
         run: |
-          .venv/bin/pytest connect_labs/ -n auto
+          .venv/bin/pytest connect_labs/ -n logical
 
   # THE SAME SUITE, ON ANOTHER DAY. On 2026-10-13 main went red because a test
   # passed only on the weekday it was written on; several more passed only
@@ -398,5 +406,5 @@ jobs:
       - name: Run tests with the clock moved
         # faulthandler names the test if one hangs: a stack dump after 5 minutes.
         run: |
-          .venv/bin/pytest connect_labs/ -n auto --clock-shift=+${{ steps.shift.outputs.days }}d \
+          .venv/bin/pytest connect_labs/ -n logical --clock-shift=+${{ steps.shift.outputs.days }}d \
             -o faulthandler_timeout=300

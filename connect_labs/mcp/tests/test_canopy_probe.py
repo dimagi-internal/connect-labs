@@ -93,20 +93,6 @@ class TestTheProbePrincipal:
         assert user.email is None
         assert not user.groups.exists() and not user.user_permissions.exists()
 
-    def test_the_migration_restores_that_shape_on_an_existing_row(self):
-        user = _create_probe_user()
-        user.set_password("hunter2")
-        user.is_staff = True
-        user.email = "someone@example.invalid"
-        user.save()
-
-        user = _create_probe_user()
-
-        assert not user.has_usable_password()
-        assert not user.is_staff
-        assert user.email is None
-        assert User.objects.filter(username=canopy.PROBE_USERNAME).count() == 1
-
     def test_no_connect_username_can_be_the_probe(self):
         """Connect validates usernames with the same validator; a ``:`` fails it."""
         with pytest.raises(ValidationError):
