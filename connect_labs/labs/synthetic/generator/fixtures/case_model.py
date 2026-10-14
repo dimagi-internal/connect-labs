@@ -207,6 +207,8 @@ class CaseModel:
     # path -> (form, days since the path was last recorded in the case, bucketed;
     # -1 for never) -> P(recorded), where K_MIN or more visits back it.
     presence_by_gap: dict[str, dict[tuple[str | None, int], float]] = field(default_factory=dict)
+    # path -> the path it is a second name for on the same visit (see _fit_aliases).
+    aliases: dict[str, str] = field(default_factory=dict)
     # Which per-case constants were entered equal (one copied from another), as whole
     # patterns: persona or "*" -> [(groups of equal paths, share of cases)].
     copies: dict[str, list[tuple[tuple[tuple[str, ...], ...], float]]] = field(default_factory=dict)
@@ -314,6 +316,51 @@ def _fit_copies(
         if sum(counts.values()) >= K_MIN:
             out[owner] = shares(counts)
     return out
+
+
+def _fit_aliases(series_list: list[dict[str, Any]]) -> dict[str, str]:
+    """Fields that are another field under a second name on the same visit.
+
+    An app saves the reading it took onto the case as well (form.anthropometric.weight
+    and form.case.update.weight, every time, the same number) -- one measurement under
+    two names. Modelled as two fields, each drew its own noise and its own presence,
+    and a report reading the first one present fell through to an independent copy:
+    extra weighings, unrounded, with impossible steps between them (2026-10-14: the
+    copies equal the reading on 100% of the source's visits, KMC EHA/PIPN).
+
+    B is an alias of A when B is recorded only with A (95%+ of B's visits) and equal to
+    it on 99%+ of those, over K_MIN visits or more; A is the more often recorded. The
+    same for numbers, dates and categories.
+    """
+    seen: Counter = Counter()
+    together: Counter = Counter()
+    equal: Counter = Counter()
+    for s in series_list:
+        for v in s["visits"]:
+            for kind in ("values", "dates", "cats"):
+                fields = v.get(kind) or {}
+                keys = sorted(fields)
+                seen.update((kind, k) for k in keys)
+                for i, a in enumerate(keys):
+                    for b in keys[i + 1 :]:
+                        together[(kind, a, b)] += 1
+                        x, y = fields[a], fields[b]
+                        same = abs(float(x) - float(y)) <= 1e-9 * max(1.0, abs(float(x))) if kind != "cats" else x == y
+                        equal[(kind, a, b)] += same
+    out: dict[str, str] = {}
+    for (kind, a, b), n in together.items():
+        if n < K_MIN or equal[(kind, a, b)] < 0.99 * n:
+            continue
+        primary, alias = (a, b) if (seen[(kind, a)], b) >= (seen[(kind, b)], a) else (b, a)
+        if n >= 0.95 * seen[(kind, alias)]:
+            out.setdefault(alias, primary)
+    # A chain (C copies B, B copies A) resolves to its root.
+    for alias in list(out):
+        root, hops = out[alias], 0
+        while root in out and hops < len(out):
+            root, hops = out[root], hops + 1
+        out[alias] = root
+    return {alias: root for alias, root in out.items() if alias != root}
 
 
 def _since_bucket(days_since: int | None) -> int:
@@ -725,6 +772,7 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
         numeric=numeric,
         dates=dates,
         cats=cats,
+        aliases=_fit_aliases(series_list),
         driver=driver,
         driver_cuts=cuts,
         median_n=float(np.median([len(s["visits"]) for s in series_list])),
@@ -1061,6 +1109,9 @@ def _sample_case(
                 break
     last_resid: dict[str, float] = {}
     last_seen: dict[str, int] = {}
+    alias_groups: dict[str, list[str]] = defaultdict(list)
+    for alias, primary in model.aliases.items():
+        alias_groups[primary].append(alias)
     visits = []
     for idx, (day, form) in enumerate(zip(days, forms), start=1):
         values: dict[str, float] = {}
@@ -1107,6 +1158,28 @@ def _sample_case(
                 prev_cat[path] = val
             if val is not None:
                 cats[path] = val
+        # A second name for a field on this visit carries that field's value, on
+        # exactly the visits it is recorded (see _fit_aliases).
+        # When one of the names is a per-case constant its value is the one written:
+        # it carries the case's own relations (an enrolment weight copied from the
+        # birth weight), and the reading under the other name follows it.
+        for group in (values, dates, cats):
+            for primary, names in alias_groups.items():
+                if primary not in group:
+                    for name in names:
+                        group.pop(name, None)
+                    continue
+                source = next(
+                    (
+                        m
+                        for m in (primary, *names)
+                        if m in group and getattr(model.numeric.get(m), "kind", "") == "const"
+                    ),
+                    primary,
+                )
+                for m in (primary, *names):
+                    if m in group or m in names:
+                        group[m] = group[source]
         visit: dict[str, Any] = {"day": day, "values": values}
         if dates:
             visit["dates"] = dates

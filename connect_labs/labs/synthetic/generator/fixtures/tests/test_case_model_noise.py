@@ -282,3 +282,38 @@ def test_a_field_is_recorded_on_the_sources_rhythm():
     out, _report = cm.synthesize_case_pool(pool, seed=5)
     assert close_share(pool) == 0
     assert close_share(out) < 0.1, f"{close_share(out):.0%} of synthetic weighings follow one under 4 days earlier"
+
+
+def test_a_reading_saved_under_two_names_stays_one_reading():
+    """The app saves the weight it took onto the case too: form.case.update.w is form.w
+    on every visit that has it, and never without it. Modelled as two fields, each drew
+    its own noise and presence, and a report reading the first one present picked up
+    an independent copy -- extra, unrounded weighings with impossible steps between them
+    (KMC, 2026-10-14: the copy equals the reading on 100% of the source's visits)."""
+    rng = random.Random(13)
+    pool = []
+    for c in range(300):
+        visits = []
+        for i, day in enumerate((0, 7, 14, 21)):
+            values = {}
+            if i == 0 or rng.random() < 0.6:
+                w = float(round(1800 + 20 * day + rng.gauss(0, 15)))
+                values = {"form.w": w, "form.case.update.w": w}
+            visits.append({"day": day, "form": "Register" if i == 0 else "Visit", "values": values})
+        pool.append({"owner": f"flw_{c % 6:03d}", "start_date": "2026-03-02", "visits": visits})
+
+    out, _report = cm.synthesize_case_pool(pool, seed=9)
+
+    both = alone = differ = 0
+    for case in out:
+        for v in case["visits"]:
+            vals = v.get("values", {})
+            a, b = vals.get("form.w"), vals.get("form.case.update.w")
+            if a is not None and b is not None:
+                both += 1
+                differ += a != b
+            elif (a is None) != (b is None):
+                alone += 1
+    assert both > 300
+    assert differ == 0, f"{differ} of {both} visits carry two different readings"
+    assert alone == 0, f"{alone} visits record one name without the other"
