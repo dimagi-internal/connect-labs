@@ -274,16 +274,11 @@ def _profile_parallelism() -> int:
     sized for it -- the standalone task ecs_runner starts. On the shared worker it
     stays serial, as before.
     """
-    from django.conf import settings
-
     from connect_labs.labs.synthetic import ecs_runner
 
     if not ecs_runner.in_runner():
         return 1
-    try:
-        return max(1, int(str(getattr(settings, "SYNTHETIC_ECS_CPU", "1024"))) // 1024)
-    except ValueError:
-        return 1
+    return ecs_runner.vcpus()
 
 
 # Set in the parent just before forking, so a child reads its arguments without
