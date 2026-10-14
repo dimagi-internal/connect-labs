@@ -207,16 +207,22 @@ def _workspace_page_context(scope: _Scope, user, plans) -> dict:
     plan may be filed under, and team names for the list. Empty for the global list."""
     if not scope.in_workspace:
         return {}
-    from connect_labs.labs.workspaces import team_choices
+    from connect_labs.labs.models import WorkspaceUser
+    from connect_labs.labs.workspaces import fallback_role, team_choices
 
     teams = team_choices(scope.workspace, scope.role, user=user)
     if scope.role.is_program_manager:
-        # Teams already on a plan, or being tested (labs.workspaces testers), which
-        # the Program Manager's own tree may not show.
+        # Teams already on a plan, or named by a Users entry, that are not (or no
+        # longer) LLOs.
         known = {t["slug"] for t in teams}
-        others = {p.team for p in plans} | set(scope.workspace.testers.values_list("team", flat=True))
+        others = {p.team for p in plans} | set(
+            scope.workspace.users.filter(role=WorkspaceUser.NETWORK_MANAGER).values_list("team", flat=True)
+        )
         teams += [{"slug": t, "name": t} for t in sorted(others - known) if t]
     pid = scope.program_id
+    # Someone a Users entry makes a Network Manager may switch themselves back only
+    # when, without it, they would be a Program Manager (and so could set it again).
+    usual = fallback_role(user, scope.workspace) if scope.role.testing else None
     return {
         "workspace": {
             "program_id": pid,
@@ -224,8 +230,9 @@ def _workspace_page_context(scope: _Scope, user, plans) -> dict:
             "is_program_manager": scope.role.is_program_manager,
             "teams": teams,
             "team_names": {t["slug"]: t["name"] for t in teams},
-            # A Dimagi tester, seeing it as a Network Manager would (labs.workspaces).
+            # A Network Manager by an explicit Users entry (labs.workspaces).
             "testing": scope.role.testing,
+            "can_switch_back": bool(usual is not None and usual.is_program_manager),
             "stop_testing_url": reverse("microplans:program_workspace_stop_testing", args=[pid]),
             "settings_url": reverse("microplans:program_workspace_settings", args=[pid]),
         }

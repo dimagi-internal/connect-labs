@@ -24,13 +24,16 @@
   {% if workspace.testing %}
   <div id="testing-banner" class="rounded-lg border-2 border-amber-300 bg-amber-50 p-4 flex flex-wrap items-center justify-between gap-3">
     <p class="text-sm text-amber-900">
-      <i class="fa-solid fa-flask mr-1"></i><b>Testing as Network Manager of {{ workspace.teams.0.name }}.</b>
-      You see what a partner on that team would: their microplans only, and no delete.
+      <i class="fa-solid fa-user-gear mr-1"></i><b>Viewing as Network Manager of {{ workspace.teams.0.name }}.</b>
+      The workspace's Users list gives you this access: you see what a partner on that team would — their microplans only, and no delete.
+      {% if not workspace.can_switch_back %}Ask a Program Manager to change your access.{% endif %}
     </p>
+    {% if workspace.can_switch_back %}
     <form method="post" action="{{ workspace.stop_testing_url }}">
       {% csrf_token %}
-      <button type="submit" class="inline-flex items-center px-3 py-1.5 bg-white border border-amber-400 text-amber-900 text-sm font-medium rounded-md hover:bg-amber-100">Stop testing</button>
+      <button type="submit" class="inline-flex items-center px-3 py-1.5 bg-white border border-amber-400 text-amber-900 text-sm font-medium rounded-md hover:bg-amber-100">Switch back to Program Manager</button>
     </form>
+    {% endif %}
   </div>
   {% endif %}
 

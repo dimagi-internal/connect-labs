@@ -5,8 +5,9 @@
 <div class="max-w-xl mx-auto p-6 space-y-4">
   <h1 class="text-2xl font-bold text-gray-900">Your Connect organisation isn't part of this program</h1>
   <p class="text-sm text-gray-600">
-    This program is open to the organisations delivering its Connect opportunities, and to its program managers.
-    None of the Connect organisations your account belongs to is delivering in it.
+    This program is open to the members of its partner organisations, to people its program managers have added
+    by email, and to its program managers. None of the Connect organisations your account belongs to is one of its
+    partners, and your email address has not been added.
   </p>
   <p class="text-sm text-gray-600">
     If your organisation was added recently, labs may still have an older copy of your Connect organisations
@@ -16,6 +17,6 @@
     {% csrf_token %}
     <button type="submit" class="button button-sm primary-dark">Refresh my Connect organisations</button>
   </form>
-  <p class="text-xs text-gray-500">Still not working? Ask your program manager to check that your organisation's opportunity is in the program.</p>
+  <p class="text-xs text-gray-500">Still not working? Ask your program manager to check that your organisation is one of the program's partners, or to add your email address.</p>
 </div>
 {% endblock %}

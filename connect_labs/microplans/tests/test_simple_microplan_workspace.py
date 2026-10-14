@@ -414,7 +414,7 @@ def test_the_global_list_is_unchanged_for_everyone(client, people, plans):
     )
 
 
-# --- testers: Dimagi people trying the Network Manager view --------------------
+# --- the Users list: someone viewing a workspace as a Network Manager ----------
 
 
 @pytest.fixture
@@ -426,25 +426,35 @@ def _settings_url(prog):
     return reverse("microplans:program_workspace_settings", args=[prog])
 
 
-def _make_tester(prog, user, team):
-    from connect_labs.labs.models import WorkspaceTester
+def _make_nm_entry(prog, user, team):
+    from connect_labs.labs.models import WorkspaceLLO, WorkspaceUser
 
-    return WorkspaceTester.objects.create(workspace=workspaces.workspace_for_program(prog), user=user, team=team)
+    workspace = workspaces.workspace_for_program(prog)
+    WorkspaceLLO.objects.get_or_create(workspace=workspace, slug=team)
+    return WorkspaceUser.objects.create(
+        workspace=workspace, email=user.email, user=user, role="network_manager", team=team
+    )
 
 
-def test_a_tester_sees_exactly_what_a_network_manager_of_their_team_would(client, people, plans, prog, tester):
+def test_a_network_manager_entry_shows_exactly_what_a_partner_of_that_team_sees(client, people, plans, prog, tester):
     from connect_labs.audit_trail.models import Action, AuditEvent
+    from connect_labs.labs.models import WorkspaceLLO
 
+    WorkspaceLLO.objects.create(workspace=workspaces.workspace_for_program(prog), slug=RIVER[0], name=RIVER[1])
     _login(client, people["pm"])
-    resp = client.post(_settings_url(prog), {"action": "add_tester", "who": "Tester.One@dimagi.com", "team": RIVER[0]})
+    resp = client.post(
+        _settings_url(prog),
+        {"action": "add_user", "email": "Tester.One@dimagi.com", "access": f"network_manager:{RIVER[0]}"},
+    )
     assert resp.status_code == 302
-    assert AuditEvent.objects.filter(action=Action.CREATE, resource_type="workspace_tester", program_id=prog).exists()
+    assert AuditEvent.objects.filter(action=Action.CREATE, resource_type="workspace_user", program_id=prog).exists()
 
-    _login(client, tester)  # Dimagi staff: a Program Manager, but testing wins
+    _login(client, tester)  # Dimagi staff: a Program Manager, but the entry wins
     resp = client.get(_url("list", prog))
     assert [p.pk for p in resp.context["plans"]] == [plans["river"].pk]
     body = resp.content.decode()
-    assert 'id="testing-banner"' in body and f"Testing as Network Manager of {RIVER[0]}" in body
+    assert 'id="testing-banner"' in body and f"Viewing as Network Manager of {RIVER[1]}" in body
+    assert "Switch back to Program Manager" in body
     assert 'id="workspace-settings-link"' not in body
     assert client.get(_url("editor", prog, plans["hill"])).status_code == 404
     assert client.post(_url("delete", prog, plans["river"])).status_code == 403
@@ -453,66 +463,47 @@ def test_a_tester_sees_exactly_what_a_network_manager_of_their_team_would(client
     assert SimpleMicroplan.objects.get(name="Tester grid").team == RIVER[0]
 
 
-def test_a_tester_on_a_made_up_team_starts_empty_and_their_plans_reach_program_managers(
-    client, people, plans, prog, tester
-):
-    _make_tester(prog, tester, "test-llo-a")
-    _login(client, tester)
-    assert client.get(_url("list", prog)).context["plans"] == []
-    client.post(_url("list", prog), {"name": "LLO A grid"})
-    _login(client, people["pm"])
-    names = {p.name: p.team for p in client.get(_url("list", prog)).context["plans"]}
-    assert names["LLO A grid"] == "test-llo-a"
-
-
-def test_removing_a_tester_restores_their_usual_role(client, people, plans, prog, tester):
+def test_deleting_an_entry_restores_the_usual_role(client, people, plans, prog, tester):
     from connect_labs.audit_trail.models import Action, AuditEvent
-    from connect_labs.labs.models import WorkspaceTester
+    from connect_labs.labs.models import WorkspaceUser
 
-    _make_tester(prog, tester, RIVER[0])
+    entry = _make_nm_entry(prog, tester, RIVER[0])
     _login(client, people["pm"])
     assert b"tester.one@dimagi.com" in client.get(_settings_url(prog)).content
-    client.post(_settings_url(prog), {"action": "remove_tester", "user_id": tester.pk})
-    assert not WorkspaceTester.objects.exists()
-    assert AuditEvent.objects.filter(action=Action.DELETE, resource_type="workspace_tester", program_id=prog).exists()
+    client.post(_settings_url(prog), {"action": "remove_user", "entry_id": entry.pk})
+    assert not WorkspaceUser.objects.exists()
+    assert AuditEvent.objects.filter(action=Action.DELETE, resource_type="workspace_user", program_id=prog).exists()
     _login(client, tester)
     assert len(client.get(_url("list", prog)).context["plans"]) == 3
     assert client.get(_settings_url(prog)).status_code == 200
 
 
-def test_a_tester_can_stop_testing_themselves(client, plans, prog, tester):
-    from connect_labs.labs.models import WorkspaceTester
+def test_a_program_manager_viewing_as_a_network_manager_can_switch_back(client, plans, prog, tester):
+    from connect_labs.labs.models import WorkspaceUser
 
-    _make_tester(prog, tester, RIVER[0])
+    _make_nm_entry(prog, tester, RIVER[0])
     _login(client, tester)
     resp = client.post(reverse("microplans:program_workspace_stop_testing", args=[prog]))
     assert resp.status_code == 302 and resp["Location"] == _url("list", prog)
-    assert not WorkspaceTester.objects.exists()
+    assert not WorkspaceUser.objects.exists()
     assert client.get(_settings_url(prog)).status_code == 200
 
 
-def test_only_dimagi_people_can_be_testers(client, people, prog, django_user_model):
-    from connect_labs.labs.models import WorkspaceTester
+def test_someone_who_is_only_a_network_manager_cannot_switch_themselves(client, people, plans, prog):
+    from connect_labs.labs.models import WorkspaceUser
 
-    _login(client, people["pm"])
-    for who, team in [
-        (people["nm_hill"].email, RIVER[0]),  # not a Dimagi sign-in
-        ("nobody.yet@dimagi.com", RIVER[0]),  # never signed in to labs
-        ("pm.staff@dimagi.com", "  "),  # no team
-    ]:
-        client.post(_settings_url(prog), {"action": "add_tester", "who": who, "team": team})
-    assert not WorkspaceTester.objects.exists()
-    # A row for anyone else is ignored rather than trusted.
-    _make_tester(prog, people["nm_hill"], RIVER[0])
-    nm = type(people["nm_hill"]).objects.get(pk=people["nm_hill"].pk)
-    role = workspaces.role_for_program(nm, prog)
-    assert role.teams == (HILL[0],) and not role.testing
+    _make_nm_entry(prog, people["stranger"], RIVER[0])  # not Dimagi, in no LLO themselves
+    _login(client, people["stranger"])
+    body = client.get(_url("list", prog)).content.decode()
+    assert "Ask a Program Manager to change your access" in body and "Switch back" not in body
+    client.post(reverse("microplans:program_workspace_stop_testing", args=[prog]))
+    assert WorkspaceUser.objects.count() == 1
 
 
-def test_network_managers_cannot_add_testers(client, people, prog, tester):
-    from connect_labs.labs.models import WorkspaceTester
+def test_network_managers_cannot_add_users(client, people, prog, tester):
+    from connect_labs.labs.models import WorkspaceUser
 
     _login(client, people["nm_river"])
-    resp = client.post(_settings_url(prog), {"action": "add_tester", "who": tester.email, "team": RIVER[0]})
+    resp = client.post(_settings_url(prog), {"action": "add_user", "email": tester.email, "access": "program_manager"})
     assert resp.status_code == 404
-    assert not WorkspaceTester.objects.exists()
+    assert not WorkspaceUser.objects.exists()
