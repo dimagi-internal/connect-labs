@@ -42,6 +42,159 @@ var MP_COUNTERS = [
 
 var MP_AGE_BANDS = ['6-11', '12-23', '24-35', '36-47', '48-59'];
 
+// ---------------------------------------------------------------- MUAC index
+//
+// Neal's six MUAC distribution checks (MLFeatureAggregationReport.py), ported
+// line for line and checked against that file's own output on 400 histograms
+// (__tests__/fixtures/muac_index_parity.json). They read the twelve 1 cm bins
+// [9.5, 10.5) ... [20.5, 21.5) every run counts. A real FLW's readings form one
+// smooth hump; fabricated ones tend to pile into one bin, skip bins, or plateau.
+
+var MP_BINS = [
+  'muac_bin_0',
+  'muac_bin_1',
+  'muac_bin_2',
+  'muac_bin_3',
+  'muac_bin_4',
+  'muac_bin_5',
+  'muac_bin_6',
+  'muac_bin_7',
+  'muac_bin_8',
+  'muac_bin_9',
+  'muac_bin_10',
+  'muac_bin_11',
+];
+MP_COUNTERS = MP_COUNTERS.concat(MP_BINS);
+
+var MP_INDEX_MIN_READINGS = 20; // below this the checks are not run
+var MP_INDEX_PEAK_MAX = 0.42; // peak_reasonable threshold
+var MP_INDEX_PLATEAU_MIN = 3; // python file: 3+ similar high bins is a plateau
+
+var MP_INDEX_CHECKS = [
+  ['increasing', 'Rises to its peak'],
+  ['decreasing', 'Falls after its peak'],
+  ['no_skipped', 'No empty bins in the middle'],
+  ['no_plateau', 'No flat top'],
+  ['bins_sufficient', 'Spread over 5+ bins'],
+  ['peak_reasonable', 'Peak holds ≤ 42%'],
+];
+
+function mpIdxIncreasing(bins, nz, peak, wiggle) {
+  if (peak === 0) return false;
+  if (
+    !nz.some(function (i) {
+      return i < peak;
+    })
+  )
+    return false;
+  var pos = nz.indexOf(peak);
+  if (pos <= 0) return false;
+  var inc = 0;
+  var bigDrops = 0;
+  for (var i = 0; i < pos; i++) {
+    var step = bins[nz[i + 1]] - bins[nz[i]];
+    if (step > 0) inc++;
+    if (step < -wiggle) bigDrops++;
+  }
+  var enough = false;
+  for (var j = 0; j < peak; j++)
+    if (bins[j] >= bins[peak] * 0.25) enough = true;
+  return inc >= 1 && bigDrops === 0 && enough;
+}
+
+function mpIdxDecreasing(bins, nz, peak, wiggle) {
+  var pos = nz.indexOf(peak);
+  if (peak === bins.length - 1 || pos < 0) return false;
+  if (pos === nz.length - 1) return false;
+  var dec = 0;
+  var bigRises = 0;
+  for (var i = pos; i < nz.length - 1; i++) {
+    var step = bins[nz[i + 1]] - bins[nz[i]];
+    if (step < 0) dec++;
+    if (step > wiggle) bigRises++;
+  }
+  return dec >= 1 && bigRises === 0;
+}
+
+function mpIdxNoSkipped(bins, total) {
+  if (total <= 0) return true;
+  var sig = [];
+  bins.forEach(function (c, i) {
+    if (c >= total * 0.02) sig.push(i);
+  });
+  if (sig.length <= 1) return true;
+  for (var i = sig[0]; i <= sig[sig.length - 1]; i++)
+    if (bins[i] === 0) return false;
+  return true;
+}
+
+function mpIdxNoPlateau(bins, maxCount) {
+  var total = bins.reduce(function (a, b) {
+    return a + b;
+  }, 0);
+  if (total === 0 || maxCount === 0) return true;
+  var high = [];
+  bins.forEach(function (c, i) {
+    if (c >= 0.5 * maxCount) high.push([i, c]);
+  });
+  if (high.length < 2) return true;
+  var tolerance = total * 0.04;
+  var longest = 1;
+  var start = 0;
+  for (var i = 1; i < high.length; i++) {
+    if (high[i][0] === high[i - 1][0] + 1) {
+      var seg = high.slice(start, i + 1).map(function (h) {
+        return h[1];
+      });
+      if (Math.max.apply(null, seg) - Math.min.apply(null, seg) <= tolerance) {
+        longest = Math.max(longest, seg.length);
+      } else {
+        start = i - 1;
+      }
+    } else {
+      start = i - 1;
+    }
+  }
+  return longest < MP_INDEX_PLATEAU_MIN;
+}
+
+// The six checks for one set of counts, or null below 20 readings in 9.5-21.5 cm.
+function mpIndex(counts) {
+  var bins = MP_BINS.map(function (k) {
+    return Number(counts[k]) || 0;
+  });
+  var total = bins.reduce(function (a, b) {
+    return a + b;
+  }, 0);
+  if (total < MP_INDEX_MIN_READINGS) return null;
+  var nz = [];
+  bins.forEach(function (c, i) {
+    if (c > 0) nz.push(i);
+  });
+  var maxCount = Math.max.apply(null, bins);
+  var peak = bins.indexOf(maxCount);
+  var wiggle = total * 0.02;
+  var checks = {
+    increasing: mpIdxIncreasing(bins, nz, peak, wiggle),
+    decreasing: mpIdxDecreasing(bins, nz, peak, wiggle),
+    no_skipped: mpIdxNoSkipped(bins, total),
+    no_plateau: mpIdxNoPlateau(bins, maxCount),
+    bins_sufficient: nz.length >= 5,
+    peak_reasonable: maxCount / total <= MP_INDEX_PEAK_MAX,
+  };
+  var passed = MP_INDEX_CHECKS.filter(function (c) {
+    return checks[c[0]];
+  }).length;
+  return {
+    bins: bins,
+    total: total,
+    peak: peak,
+    peakShare: maxCount / total,
+    checks: checks,
+    passed: passed,
+  };
+}
+
 function mpConfig(definition) {
   var c = (definition && definition.config) || {};
   return {
@@ -241,6 +394,7 @@ function mpScore(units, p, cfg, method, flat, sortBy) {
     var res = mpColour(num, u.counts.valid, p, cfg, method);
     return Object.assign({}, u, {
       tierA: num,
+      index: mpIndex(u.counts),
       tooLow: u.counts.tier_a_low,
       tooHigh: mpTierAHigh(u.counts, flat),
       n: u.counts.valid,
@@ -252,6 +406,11 @@ function mpScore(units, p, cfg, method, flat, sortBy) {
   });
   scored.sort(function (a, b) {
     if (sortBy === 'total' && b.tierA !== a.tierA) return b.tierA - a.tierA;
+    if (sortBy === 'index') {
+      var ia = a.index ? a.index.passed : 99;
+      var ib = b.index ? b.index.passed : 99;
+      if (ia !== ib) return ia - ib;
+    }
     if (a.elevated !== b.elevated) return a.elevated ? -1 : 1;
     var ra = a.rate === null ? -1 : a.rate;
     var rb = b.rate === null ? -1 : b.rate;
@@ -301,6 +460,97 @@ function mpPct(rate, digits) {
 
 // ===========================================================================
 // 2. Components
+
+// ------------------------------------------------------------- definitions
+//
+// One or two sentences per column and tile, shown on hover over its title (the
+// (i) marks which titles have one). Written for programme staff, not analysts.
+
+function mpDefs(t) {
+  t = t || {};
+  var floorCm = t.floor_cm || 9;
+  var monthly = t.method === 'who2007_monthly';
+  var tooHigh = monthly
+    ? "Readings above WHO's +3 SD for the child's exact month of age and sex (WHO 2007 MUAC-for-age). About 1 healthy child in 750 measures this high, so these are very likely entry errors."
+    : "Readings above the fixed ceiling for the child's age band and sex (this run predates the WHO-by-month ceilings).";
+  return {
+    unit: 'The LLO, opportunity, ward or field worker these figures are for. Click a row to drill down; ▸ opens it by age range and shows its MUAC index.',
+    llo: 'The local organisation running the opportunity. R1 opportunities count under their LLO.',
+    wards:
+      'Wards this worker delivered approved visits in; one worker can appear under several wards.',
+    too_low:
+      'Readings below ' +
+      floorCm +
+      ' cm. That is 4-5 SD below the WHO median at every age from 6 to 59 months, so these are near-certain entry errors, not malnutrition. % is of the valid readings.',
+    too_high: tooHigh + ' % is of the valid readings.',
+    implausible:
+      'Too low plus too high: the readings that are almost certainly data errors.',
+    valid:
+      'Approved Health Service Delivery visits for a child aged 6-59 months with a MUAC value recorded. The denominator for every percentage in the row.',
+    pct: 'Implausible ÷ valid readings. The colour compares it with the programme-wide rate (see Upper bound).',
+    upper_bound:
+      'The highest rate this many readings would plausibly show by chance if the true rate were the programme baseline p: p + 1.645·√(p(1−p)/n), a one-sided 95% test. A rate above it is coloured red.',
+    elevated:
+      'Yes when the implausible rate is above the upper bound: higher than chance explains at 95% confidence. Shown only with at least the minimum number of valid readings.',
+    tier_b: monthly
+      ? "Readings below WHO's −2 SD for the child's month and sex but above " +
+        floorCm +
+        ' cm, out of the valid readings with a recorded sex. Real moderate or severe malnutrition sits here, so it is context, never an error.'
+      : 'Readings below WHO −2 SD for age and sex, out of the readings it could be assessed for. Context, never an error.',
+    unit_error:
+      'Readings between 90 and 200: almost certainly millimetres typed into the centimetre field (145 for 14.5). Counted on their own, not as implausible.',
+    excluded:
+      'Visits with no age, or a child aged 6-59 months with no MUAC value, out of all visits for children in range or of unknown age. A high share is itself a data problem.',
+    index:
+      "Neal's MUAC distribution index: how many of six checks this row's MUAC values pass (6/6 = looks like real measuring). It looks at the shape of all values from 9.5 to 21.5 cm in 1 cm bins, needs at least 20 of them, and is designed for one field worker. ▸ shows which checks failed.",
+    age: 'Age band in completed months at the visit.',
+    too_high_if: monthly
+      ? "WHO +3 SD for this band's months: the lowest and highest value over the band, by sex. Each child is checked against the value for their own month."
+      : 'The fixed ceiling this run used for the band.',
+    tile_implausible:
+      'Share of valid readings below ' +
+      floorCm +
+      " cm or above WHO +3 SD for the child's month and sex. The headline data-quality figure.",
+    tile_tier_b:
+      'Share of readings below WHO −2 SD for month and sex (but above ' +
+      floorCm +
+      ' cm). Possible real malnutrition: context, not an error.',
+    tile_unit:
+      'Readings between 90 and 200, almost certainly millimetres entered as centimetres.',
+    tile_excluded:
+      'Visits that could not be checked: no age, or no MUAC for a child of 6-59 months.',
+    tile_p:
+      'The rate each row is compared with: the programme-wide implausible rate over the selected weeks and ages (not narrowed by LLO, opportunity or ward), or a fixed assumption if configured.',
+    check_increasing:
+      'Counts build up towards the peak bin: at least one rise, no drop bigger than 2% of the readings, and a bin before the peak with at least a quarter of its count.',
+    check_decreasing:
+      'Counts tail off after the peak: at least one fall, no rise bigger than 2% of the readings, and the peak is not the last bin.',
+    check_no_skipped:
+      'No empty 1 cm bin between the first and last bins holding 2% or more of the readings.',
+    check_no_plateau:
+      'No run of ' +
+      MP_INDEX_PLATEAU_MIN +
+      '+ neighbouring high bins (each ≥ half the peak) with near-identical counts (within 4% of the readings).',
+    check_bins_sufficient:
+      'Readings fall in at least 5 of the 12 one-centimetre bins.',
+    check_peak_reasonable:
+      'The fullest 1 cm bin holds no more than 42% of the readings.',
+  };
+}
+
+// A column title with its definition on hover, marked with an (i).
+function MpTh(props) {
+  return (
+    <th
+      className={props.className}
+      title={props.def}
+      style={{ cursor: props.def ? 'help' : undefined }}
+    >
+      {props.children}
+      {props.def ? <span className="text-gray-400 font-normal"> ⓘ</span> : null}
+    </th>
+  );
+}
 // ===========================================================================
 
 var MP_COLOURS = {
@@ -329,7 +579,14 @@ function MpChip(props) {
 function MpTile(props) {
   return (
     <div className="border rounded-lg p-3 bg-white">
-      <div className="text-xs text-gray-500">{props.label}</div>
+      <div
+        className="text-xs text-gray-500"
+        title={props.def}
+        style={{ cursor: props.def ? 'help' : undefined }}
+      >
+        {props.label}
+        {props.def ? <span className="text-gray-400"> ⓘ</span> : null}
+      </div>
       <div className="text-2xl font-semibold mt-1">{props.value}</div>
       <div className="text-xs text-gray-500 mt-1">{props.sub}</div>
     </div>
@@ -418,6 +675,14 @@ function mpCeilingText(thresholds, band, flat) {
   var t = thresholds || {};
   var flatCm = t.flat_ceiling_cm || 20;
   if (flat) return '> ' + flatCm + ' cm';
+  var r = (t.ceiling_range || {})[band];
+  if (r) {
+    var span = function (v) {
+      return v[0] === v[1] ? v[0] + '' : v[0] + '–' + v[1];
+    };
+    return '> ' + span(r.male) + ' cm boys, > ' + span(r.female) + ' cm girls';
+  }
+  // A run saved before the WHO-by-month ceilings: fixed per-band values.
   var c = (t.ceilings || {})[band];
   if (!c) return '> ' + flatCm + ' cm (provisional)';
   if (c.male === c.female) return '> ' + c.male + ' cm';
@@ -429,6 +694,7 @@ function mpCeilingText(thresholds, band, flat) {
 function MpAgeTable(props) {
   var byBand = props.byBand || {};
   var floorCm = (props.thresholds || {}).floor_cm || 9;
+  var D = mpDefs(props.thresholds);
   var flat = props.flat;
   var total = mpZero();
   var rows = MP_AGE_BANDS.filter(function (b) {
@@ -460,18 +726,39 @@ function MpAgeTable(props) {
       <table className="min-w-full text-sm">
         <thead className="bg-gray-50">
           <tr>
-            <th className="px-3 py-1.5 text-left font-semibold">Age</th>
-            <th className="px-3 py-1.5 text-left font-semibold">Too high if</th>
-            <th className="px-3 py-1.5 text-right font-semibold">
+            <MpTh className="px-3 py-1.5 text-left font-semibold" def={D.age}>
+              Age
+            </MpTh>
+            <MpTh
+              className="px-3 py-1.5 text-left font-semibold"
+              def={D.too_high_if}
+            >
+              Too high if
+            </MpTh>
+            <MpTh
+              className="px-3 py-1.5 text-right font-semibold"
+              def={D.too_low}
+            >
               Too low (&lt; {floorCm} cm)
-            </th>
-            <th className="px-3 py-1.5 text-right font-semibold">Too high</th>
-            <th className="px-3 py-1.5 text-right font-semibold">
+            </MpTh>
+            <MpTh
+              className="px-3 py-1.5 text-right font-semibold"
+              def={D.too_high}
+            >
+              Too high
+            </MpTh>
+            <MpTh
+              className="px-3 py-1.5 text-right font-semibold"
+              def={D.implausible}
+            >
               Implausible (total)
-            </th>
-            <th className="px-3 py-1.5 text-right font-semibold">
+            </MpTh>
+            <MpTh
+              className="px-3 py-1.5 text-right font-semibold"
+              def={D.valid}
+            >
               Valid readings
-            </th>
+            </MpTh>
           </tr>
         </thead>
         <tbody className="divide-y">
@@ -497,13 +784,107 @@ function MpAgeTable(props) {
   );
 }
 
+// "5/6", tinted by how many checks fail; "—" below 20 readings.
+function MpIndexBadge(props) {
+  var ix = props.index;
+  if (!ix) return <span className="text-xs text-gray-400">—</span>;
+  var colour = ix.passed === 6 ? 'green' : ix.passed >= 4 ? 'yellow' : 'red';
+  return <MpChip colour={colour}>{ix.passed}/6</MpChip>;
+}
+
+// The 1 cm histogram the index reads, and each check passed or failed.
+function MpIndexPanel(props) {
+  var ix = props.index;
+  var D = props.defs;
+  if (!ix)
+    return (
+      <p className="text-xs text-gray-500">
+        MUAC index: fewer than {MP_INDEX_MIN_READINGS} readings between 9.5 and
+        21.5 cm, so the checks are not run.
+      </p>
+    );
+  var max = Math.max.apply(null, ix.bins) || 1;
+  return (
+    <div className="border rounded-lg p-3 bg-white">
+      <div
+        className="text-sm font-medium mb-2"
+        title={D.index}
+        style={{ cursor: 'help' }}
+      >
+        MUAC index: {ix.passed}/6 checks passed ({ix.total} readings)
+        <span className="text-gray-400 font-normal"> ⓘ</span>
+        {props.level !== 'flw' && (
+          <span className="text-xs text-gray-500 font-normal">
+            {' '}
+            — pooled over many workers; the checks are designed for one worker
+          </span>
+        )}
+      </div>
+      <div className="flex gap-4 flex-wrap">
+        <div>
+          <div className="flex items-end gap-1" style={{ height: '80px' }}>
+            {ix.bins.map(function (c, i) {
+              return (
+                <div
+                  key={i}
+                  title={
+                    10 + i + ' cm: ' + c + ' (' + mpPct(c / ix.total) + ')'
+                  }
+                  style={{
+                    width: '14px',
+                    height: Math.max(c > 0 ? 2 : 0, (c / max) * 78) + 'px',
+                    background: i === ix.peak ? '#1f2937' : '#9ca3af',
+                    borderRadius: '2px',
+                  }}
+                />
+              );
+            })}
+          </div>
+          <div className="flex gap-1 text-gray-500" style={{ fontSize: '9px' }}>
+            {ix.bins.map(function (_c, i) {
+              return (
+                <div key={i} style={{ width: '14px', textAlign: 'center' }}>
+                  {10 + i}
+                </div>
+              );
+            })}
+          </div>
+          <div className="text-xs text-gray-500">MUAC (cm), 1 cm bins</div>
+        </div>
+        <ul className="text-sm space-y-0.5">
+          {MP_INDEX_CHECKS.map(function (chk) {
+            var ok = ix.checks[chk[0]];
+            return (
+              <li
+                key={chk[0]}
+                title={D['check_' + chk[0]]}
+                style={{ cursor: 'help' }}
+              >
+                <span style={{ color: ok ? '#166534' : '#991b1b' }}>
+                  {ok ? '✓' : '✗'}
+                </span>{' '}
+                {chk[1]}
+                {chk[0] === 'peak_reasonable'
+                  ? ' (' + mpPct(ix.peakShare, 0) + ')'
+                  : ''}
+                <span className="text-gray-400"> ⓘ</span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 function MpUnitTable(props) {
   var level = props.level;
   var showParent = level !== 'llo';
   var _open = React.useState({});
   var open = _open[0];
   var setOpen = _open[1];
-  var colCount = 12 + (showParent ? 1 : 0) + (level === 'flw' ? 1 : 0);
+  var colCount = 13 + (showParent ? 1 : 0) + (level === 'flw' ? 1 : 0);
+  var D = mpDefs(props.thresholds);
 
   function toggle(key, e) {
     if (e && e.stopPropagation) e.stopPropagation();
@@ -517,48 +898,80 @@ function MpUnitTable(props) {
       <table className="min-w-full text-sm">
         <thead className="bg-gray-50">
           <tr>
-            <th className="px-2 py-2" title="Show this row by age range" />
-            <th className="px-3 py-2 text-left font-semibold">
+            <th
+              className="px-2 py-2"
+              title="Show this row by age range and its MUAC index"
+            />
+            <MpTh className="px-3 py-2 text-left font-semibold" def={D.unit}>
               {MP_LEVEL_LABELS[level]}
-            </th>
+            </MpTh>
             {showParent && (
-              <th className="px-3 py-2 text-left font-semibold">LLO</th>
+              <MpTh className="px-3 py-2 text-left font-semibold" def={D.llo}>
+                LLO
+              </MpTh>
             )}
             {level === 'flw' && (
-              <th className="px-3 py-2 text-left font-semibold">Ward(s)</th>
+              <MpTh className="px-3 py-2 text-left font-semibold" def={D.wards}>
+                Ward(s)
+              </MpTh>
             )}
-            <th
+            <MpTh
               className="px-3 py-2 text-right font-semibold"
-              title={'Below the ' + props.floorCm + ' cm floor'}
+              def={D.too_low}
             >
               Too low
-            </th>
-            <th
+            </MpTh>
+            <MpTh
               className="px-3 py-2 text-right font-semibold"
-              title="Above the ceiling for the child's age and sex"
+              def={D.too_high}
             >
               Too high
-            </th>
-            <th className="px-3 py-2 text-right font-semibold">
+            </MpTh>
+            <MpTh
+              className="px-3 py-2 text-right font-semibold"
+              def={D.implausible}
+            >
               Implausible (total)
-            </th>
-            <th className="px-3 py-2 text-right font-semibold">
+            </MpTh>
+            <MpTh className="px-3 py-2 text-right font-semibold" def={D.valid}>
               Valid readings
-            </th>
-            <th className="px-3 py-2 text-right font-semibold">
+            </MpTh>
+            <MpTh className="px-3 py-2 text-right font-semibold" def={D.pct}>
               % implausible
-            </th>
-            <th className="px-3 py-2 text-right font-semibold">Upper bound</th>
-            <th className="px-3 py-2 text-left font-semibold">Elevated?</th>
-            <th className="px-3 py-2 text-right font-semibold text-gray-500">
+            </MpTh>
+            <MpTh
+              className="px-3 py-2 text-right font-semibold"
+              def={D.upper_bound}
+            >
+              Upper bound
+            </MpTh>
+            <MpTh
+              className="px-3 py-2 text-left font-semibold"
+              def={D.elevated}
+            >
+              Elevated?
+            </MpTh>
+            <MpTh className="px-3 py-2 text-right font-semibold" def={D.index}>
+              MUAC index
+            </MpTh>
+            <MpTh
+              className="px-3 py-2 text-right font-semibold text-gray-500"
+              def={D.tier_b}
+            >
               Below WHO -2SD
-            </th>
-            <th className="px-3 py-2 text-right font-semibold text-gray-500">
+            </MpTh>
+            <MpTh
+              className="px-3 py-2 text-right font-semibold text-gray-500"
+              def={D.unit_error}
+            >
               mm/cm mix-ups
-            </th>
-            <th className="px-3 py-2 text-right font-semibold text-gray-500">
+            </MpTh>
+            <MpTh
+              className="px-3 py-2 text-right font-semibold text-gray-500"
+              def={D.excluded}
+            >
               Excluded
-            </th>
+            </MpTh>
           </tr>
         </thead>
         <tbody className="divide-y">
@@ -627,6 +1040,9 @@ function MpUnitTable(props) {
                     <span className="text-xs text-gray-500">No</span>
                   )}
                 </td>
+                <td className="px-3 py-2 text-right">
+                  <MpIndexBadge index={u.index} />
+                </td>
                 <td className="px-3 py-2 text-right text-gray-600">
                   {c.tier_b}/{c.tier_b_assessed} (
                   {mpPct(mpRate(c.tier_b, c.tier_b_assessed))})
@@ -645,11 +1061,14 @@ function MpUnitTable(props) {
               <tr key={u.key + ':age'} className="bg-gray-50">
                 <td />
                 <td className="px-3 py-2" colSpan={colCount - 1}>
-                  <MpAgeTable
-                    byBand={u.byBand}
-                    thresholds={props.thresholds}
-                    flat={props.flat}
-                  />
+                  <div className="space-y-3">
+                    <MpAgeTable
+                      byBand={u.byBand}
+                      thresholds={props.thresholds}
+                      flat={props.flat}
+                    />
+                    <MpIndexPanel index={u.index} defs={D} level={level} />
+                  </div>
                 </td>
               </tr>,
             ];
@@ -734,6 +1153,10 @@ function MpTrend(props) {
 function MpMethod(props) {
   var t = props.thresholds || {};
   var bands = t.age_bands || [];
+  var monthly = t.method === 'who2007_monthly';
+  var range = function (r) {
+    return r ? (r[0] === r[1] ? r[0] : r[0] + '–' + r[1]) + ' cm' : '—';
+  };
   var ceilings = t.ceilings || {};
   return (
     <details className="border rounded-lg p-3 bg-white text-sm">
@@ -747,21 +1170,60 @@ function MpMethod(props) {
           {(t.unit_error_range || []).join('–')} range is counted as a mm/cm
           mix-up and kept out of the implausible rate.
         </p>
-        <p>
-          <b>Implausible (headline)</b>: below {t.floor_cm} cm, or above the
-          ceiling for the child's age and sex. These are near-certain entry
-          errors, not malnutrition.
-        </p>
+        {monthly ? (
+          <p>
+            <b>Implausible (headline)</b>: below {t.floor_cm} cm, or above WHO's
+            +3 SD for the child's own completed month of age and sex (WHO 2007
+            MUAC-for-age standard). About 1 healthy child in 750 measures above
+            +3 SD, and {t.floor_cm} cm is 4–5 SD below the median at every age,
+            so these are very likely entry errors, not malnutrition. Neither is
+            impossible: a red row says "much more often than chance", not that
+            every reading is wrong.
+          </p>
+        ) : (
+          <p>
+            <b>Implausible (headline)</b>: below {t.floor_cm} cm, or above the
+            fixed ceiling for the child's age band and sex. This run predates
+            the WHO-by-month ceilings.
+          </p>
+        )}
         <table className="text-xs border">
           <thead className="bg-gray-50">
             <tr>
               <th className="px-2 py-1 text-left">Age</th>
-              <th className="px-2 py-1 text-right">Ceiling, boys</th>
-              <th className="px-2 py-1 text-right">Ceiling, girls</th>
+              <th className="px-2 py-1 text-right">Too high, boys</th>
+              <th className="px-2 py-1 text-right">Too high, girls</th>
+              {monthly && (
+                <th className="px-2 py-1 text-right">Below −2 SD, boys</th>
+              )}
+              {monthly && (
+                <th className="px-2 py-1 text-right">Below −2 SD, girls</th>
+              )}
             </tr>
           </thead>
           <tbody>
             {bands.map(function (b) {
+              if (monthly) {
+                var hi = (t.ceiling_range || {})[b.key] || {};
+                var lo = (t.minus_2sd_range || {})[b.key] || {};
+                return (
+                  <tr key={b.key}>
+                    <td className="px-2 py-1">{b.label}</td>
+                    <td className="px-2 py-1 text-right">
+                      &gt; {range(hi.male)}
+                    </td>
+                    <td className="px-2 py-1 text-right">
+                      &gt; {range(hi.female)}
+                    </td>
+                    <td className="px-2 py-1 text-right">
+                      &lt; {range(lo.male)}
+                    </td>
+                    <td className="px-2 py-1 text-right">
+                      &lt; {range(lo.female)}
+                    </td>
+                  </tr>
+                );
+              }
               var c = ceilings[b.key];
               return (
                 <tr key={b.key}>
@@ -781,25 +1243,37 @@ function MpMethod(props) {
             })}
           </tbody>
         </table>
-        <p>
-          The 6–11 month ceiling is provisional (the flat {t.flat_ceiling_cm}{' '}
-          cm) until the WHO 6–11 month reference rows are added; that band is
-          not assessed for "below WHO -2SD".
-        </p>
+        {monthly && (
+          <p className="text-xs text-gray-500">
+            Each band shows the range over its months; every child is checked
+            against the exact value for their own month, which rises with age.
+            The "Flat 9–20 cm" toggle compares with a single 20 cm ceiling for
+            all ages.
+          </p>
+        )}
         <p>
           <b>Below WHO -2SD</b> (secondary): low for age and sex but above the
           floor. Real moderate or severe malnutrition lives here, so it is never
           counted as implausible.
         </p>
         <p>
-          <b>Colours</b>: p is {props.baselineLabel}. A unit is red when its
-          rate is above p + 1.645·√(p(1−p)/n) — a one-sided 95% test, so a small
-          FLW with one slip is not flagged by chance — yellow when above p but
+          <b>Colours</b>: p is {props.baselineLabel}. A row is red when its rate
+          is above p + 1.645·√(p(1−p)/n) — a one-sided 95% test, so a small FLW
+          with one slip is not flagged by chance — yellow when above p but
           within that bound, green at or below p, and grey below {props.minN}{' '}
-          valid readings.
+          valid readings. Testing many rows at 95% means about 1 in 20 ordinary
+          rows turns red by chance.
+        </p>
+        <p>
+          <b>MUAC index</b>: Neal's six checks on the shape of a worker's MUAC
+          values in 1 cm bins (9.5–21.5 cm, any age, at least 20 values). Real
+          measuring gives one smooth hump; repeated or invented values pile into
+          one bin, skip bins or plateau. Green 6/6, yellow 4–5, red 3 or fewer.
         </p>
         <p className="text-xs text-gray-500">
-          Reference: de Onis, Yip &amp; Mei, Bull WHO 1997;75(1):11–18.
+          {monthly
+            ? 'Reference: WHO Child Growth Standards, arm circumference-for-age, 3–60 months (2007).'
+            : 'Reference: de Onis, Yip & Mei, Bull WHO 1997;75(1):11–18.'}
         </p>
       </div>
     </details>
@@ -998,6 +1472,7 @@ function WorkflowUI(props) {
   );
 
   var selected = mpFilter(cells, f, cfg);
+  var D = mpDefs(state.thresholds);
   var p = mpBaseline(cells, f, cfg, flat);
   var totals = mpSum(selected);
   var tierA = mpTierA(totals, flat);
@@ -1130,7 +1605,7 @@ function WorkflowUI(props) {
           label="Ceiling"
           value={flat ? 'flat' : 'banded'}
           options={[
-            { value: 'banded', label: 'Age-banded' },
+            { value: 'banded', label: 'WHO by month' },
             { value: 'flat', label: 'Flat 9–20 cm' },
           ]}
           onChange={function (v) {
@@ -1153,7 +1628,12 @@ function WorkflowUI(props) {
         style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
       >
         <MpTile
-          label={'Implausible MUAC (' + (flat ? 'flat' : 'age-banded') + ')'}
+          label={
+            'Implausible MUAC (' +
+            (flat ? 'flat 9–20 cm' : 'WHO by month') +
+            ')'
+          }
+          def={D.tile_implausible}
           value={
             <MpChip colour={headline.colour}>{mpPct(headline.rate, 2)}</MpChip>
           }
@@ -1174,16 +1654,18 @@ function WorkflowUI(props) {
         />
         <MpTile
           label="Below WHO -2SD (context, not an error)"
+          def={D.tile_tier_b}
           value={mpPct(mpRate(totals.tier_b, totals.tier_b_assessed))}
           sub={
             totals.tier_b +
             ' of ' +
             totals.tier_b_assessed +
-            ' readings aged 12–59 months'
+            ' readings with a recorded sex'
           }
         />
         <MpTile
           label="mm/cm mix-ups"
+          def={D.tile_unit}
           value={totals.unit_error}
           sub={
             mpPct(mpRate(totals.unit_error, totals.valid), 2) +
@@ -1192,6 +1674,7 @@ function WorkflowUI(props) {
         />
         <MpTile
           label="Excluded (no age or no MUAC)"
+          def={D.tile_excluded}
           value={excluded}
           sub={
             totals.missing_age +
@@ -1204,6 +1687,7 @@ function WorkflowUI(props) {
         />
         <MpTile
           label="Baseline p"
+          def={D.tile_p}
           value={mpPct(p, 2)}
           sub={
             cfg.baselineMode === 'fixed'
@@ -1284,6 +1768,7 @@ function WorkflowUI(props) {
           options={[
             { value: 'flagged', label: 'Flagged first' },
             { value: 'total', label: 'Most implausible' },
+            { value: 'index', label: 'Lowest MUAC index' },
           ]}
           onChange={setSortBy}
         />
