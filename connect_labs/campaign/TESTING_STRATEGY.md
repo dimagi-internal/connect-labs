@@ -193,7 +193,7 @@ working after migration when `config/settings/` is gone.
 | Visual               | in `tests/e2e/`          | slow  | pre-deploy / nightly | prototype fidelity screenshots, chart/donut render, no-undefined-bars                           |
 
 E2E/visual live in `campaign/tests/e2e/` following the house convention
-(`funder_dashboard/tests/e2e/`, `solicitations/tests/e2e/`) and are **ignored by the default pytest
+(`funder_dashboard/tests/e2e/`) and are **ignored by the default pytest
 run** — invoke explicitly. They use `pytest-playwright` (already a dependency), which is portable and
 replaces ad-hoc `gstack browse` so a migrated app can still run them.
 

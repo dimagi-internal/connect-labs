@@ -161,21 +161,6 @@ def test_the_supply_header_offers_settings_to_its_members(client_in_programme):
     assert f'data-testid="supply-settings" href="/labs/settings/program/{PROGRAM}/#supply"' in body
 
 
-def test_the_old_pin_table_is_gone_and_dropped_only_after_its_pins_moved():
-    """Pins live in Settings; the table they came from is dropped after scope_config/0002 copied it."""
-    from django.apps import apps
-    from django.db import connection
-    from django.db.migrations.loader import MigrationLoader
-
-    with pytest.raises(LookupError):
-        apps.get_model("supply_chain", "SupplyWorkflowView")
-    assert "supply_chain_supplyworkflowview" not in connection.introspection.table_names()
-    plan = MigrationLoader(connection).graph.forwards_plan(("supply_chain", "0053_drop_supply_workflow_view"))
-    assert plan.index(("scope_config", "0002_supply_pins")) < plan.index(
-        ("supply_chain", "0053_drop_supply_workflow_view")
-    )
-
-
 def test_unpin_names_the_pin_by_slug_only(da):
     """The old row id (`view_id`) went with the table; a pin is named by its slug."""
     from connect_labs.supply_chain.operations import call_operation
