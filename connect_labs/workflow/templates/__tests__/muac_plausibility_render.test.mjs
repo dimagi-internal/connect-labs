@@ -502,3 +502,14 @@ test('WHO-by-month ceiling text shows each band as a range by sex', () => {
     '> 18.4–19.1 cm boys, > 18.3–19 cm girls',
   );
 });
+
+test('MUAC index colours: 5-6 green, 4 yellow, 3 or fewer red', () => {
+  const colourFor = (passed) =>
+    M.MpIndexBadge({ index: { passed } }).props.colour;
+  assert.strictEqual(colourFor(6), 'green');
+  assert.strictEqual(colourFor(5), 'green');
+  assert.strictEqual(colourFor(4), 'yellow');
+  assert.strictEqual(colourFor(3), 'red');
+  assert.strictEqual(colourFor(0), 'red');
+  assert.match(M.mpDefs({}).index, /Green 5–6, yellow 4, red 3 or fewer/);
+});
