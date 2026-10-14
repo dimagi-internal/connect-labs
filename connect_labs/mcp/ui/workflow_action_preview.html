@@ -526,7 +526,7 @@
           return out;
         }
 
-        function loadPreview() {
+        function loadPreview(retried) {
           var a = state.input;
           if (!a || !a.run_id || !a.action) {
             showError('This preview is missing its run or action.');
@@ -560,11 +560,29 @@
               render();
             },
             function (err) {
+              // A preview changes nothing, so one that never reached the host (the
+              // browser's "Failed to fetch") is simply asked again, once.
+              if (isNetworkError(err) && !retried) {
+                setTimeout(function () {
+                  loadPreview(true);
+                }, 1500);
+                return;
+              }
               state.previewing = false;
               state.autoSend = false;
               state.preview = readOnly(state.agentResult);
-              showError(err.message);
+              showError(
+                isNetworkError(err)
+                  ? "Couldn't reach Labs to prepare this card. Close and reopen the panel to try again."
+                  : err.message,
+              );
             },
+          );
+        }
+
+        function isNetworkError(err) {
+          return /failed to fetch|networkerror|load failed|network request failed/i.test(
+            String((err && err.message) || ''),
           );
         }
 
