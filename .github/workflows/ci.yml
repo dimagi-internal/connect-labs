@@ -321,7 +321,14 @@ jobs:
         # slower with no change to any test. This suite is mostly waiting on
         # Postgres, so it wants every vCPU the runner reports.
         run: |
-          .venv/bin/pytest connect_labs/ -n logical
+          .venv/bin/pytest connect_labs/ -n logical --junitxml=junit.xml
+
+      - name: PROBE upload junit timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit
+          path: junit.xml
 
   # THE SAME SUITE, ON ANOTHER DAY. On 2026-10-13 main went red because a test
   # passed only on the weekday it was written on; several more passed only
