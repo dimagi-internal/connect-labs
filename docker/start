@@ -53,6 +53,9 @@ WORKERS=${WEB_CONCURRENCY:-3}
 # 12:05:31. The first version of this comment claimed ~30s per task off
 # every rollout from the 30s stop stagger; that stagger was scheduler
 # cadence (41s the next time), not the stopTimeout.
+# (Later evidence, 2026-10-14: with the delay at 60s, "deployment completed"
+# landed exactly 60s after the last drain began, so the drain DOES gate
+# completion. The delay is now 15s; infra/README.md has the numbers.)
 exec gunicorn config.asgi:application --bind 0.0.0.0:8000 --chdir=/app --timeout 600 \
     --no-control-socket \
     -k config.uvicorn_worker.LabsUvicornWorker -w "$WORKERS"

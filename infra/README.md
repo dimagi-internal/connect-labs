@@ -423,6 +423,21 @@ operations can never touch them. Recorded here for reproducibility:
   minutes after every deploy; 60s is plenty now that gunicorn actually
   receives SIGTERM (#1697) and finishes in-flight requests itself.
   canopy-web's group on the same ALB runs 5s / 2 / 2.
+  **Changed again 2026-10-14** (same two commands, by hand -- this group is not
+  in any CloudFormation stack) to health check every **5s**, timeout **4s**
+  (must be below the interval), healthy **2**, unhealthy **3**, and
+  `deregistration_delay.timeout_seconds` = **15**. Why: the drain IS on the
+  rollout's path after all. In the service events of the two rollouts on
+  2026-10-14, "deployment completed" landed 60s and 62s after the last "begun
+  draining connections" -- the delay, to the second. A 5s health interval
+  takes ~10s off each of the two task batches becoming healthy.
+  **15s, not canopy-web's 5s, on purpose:** labs has a long request tail that
+  canopy-web does not. TargetResponseTime over the 7 days to 2026-10-14 was
+  p99 10.2s, p99.5 15.5s, p99.8 36s (p99.9 191s is the SSE streams, cut at any
+  delay). The ALB closes whatever is still in flight on a draining target when
+  the delay expires, and in-flight requests skew long, so at 5s every deploy
+  would 502 a slow page load or two; 15s keeps ~99.5% of requests whole and
+  still takes 45 of the 60 seconds back. Revisit if the tail shrinks.
 
 - **Application Auto Scaling on `labs-jj-web`** — min **2**, max **6** tasks,
   registered 2026-09-11 via `aws application-autoscaling
