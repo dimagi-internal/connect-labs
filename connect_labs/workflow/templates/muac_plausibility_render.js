@@ -502,7 +502,7 @@ function mpDefs(t) {
     excluded:
       'Visits with no age, or a child aged 6-59 months with no MUAC value, out of all visits for children in range or of unknown age. A high share is itself a data problem.',
     index:
-      "Neal's MUAC distribution index: how many of six checks this row's MUAC values pass (6/6 = looks like real measuring). It looks at the shape of all values from 9.5 to 21.5 cm in 1 cm bins, needs at least 20 of them, and is designed for one field worker. ▸ shows which checks failed.",
+      "Neal's MUAC distribution index: how many of six checks this row's MUAC values pass (6/6 = looks like real measuring). It looks at the shape of all values from 9.5 to 21.5 cm in 1 cm bins, needs at least 20 of them, and is designed for one field worker. ▸ shows which checks failed. Green 5–6, yellow 4, red 3 or fewer.",
     age: 'Age band in completed months at the visit.',
     too_high_if: monthly
       ? "WHO +3 SD for this band's months: the lowest and highest value over the band, by sex. Each child is checked against the value for their own month."
@@ -788,7 +788,7 @@ function MpAgeTable(props) {
 function MpIndexBadge(props) {
   var ix = props.index;
   if (!ix) return <span className="text-xs text-gray-400">—</span>;
-  var colour = ix.passed === 6 ? 'green' : ix.passed >= 4 ? 'yellow' : 'red';
+  var colour = ix.passed >= 5 ? 'green' : ix.passed === 4 ? 'yellow' : 'red';
   return <MpChip colour={colour}>{ix.passed}/6</MpChip>;
 }
 
@@ -1268,7 +1268,7 @@ function MpMethod(props) {
           <b>MUAC index</b>: Neal's six checks on the shape of a worker's MUAC
           values in 1 cm bins (9.5–21.5 cm, any age, at least 20 values). Real
           measuring gives one smooth hump; repeated or invented values pile into
-          one bin, skip bins or plateau. Green 6/6, yellow 4–5, red 3 or fewer.
+          one bin, skip bins or plateau. Green 5–6, yellow 4, red 3 or fewer.
         </p>
         <p className="text-xs text-gray-500">
           {monthly
