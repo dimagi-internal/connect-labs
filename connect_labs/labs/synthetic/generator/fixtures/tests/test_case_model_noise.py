@@ -129,3 +129,44 @@ def test_a_modelled_programme_keeps_the_sources_shape():
     assert syn["span_28"] >= real["span_28"] - 0.1, (real, syn)
     assert abs(syn["copied"] - real["copied"]) <= 0.08, (real, syn)
     assert syn["impossible"] <= real["impossible"] + 0.08, (real, syn)
+
+
+def test_a_common_outcome_and_an_end_only_field_end_the_case():
+    """Discharge is most cases' outcome in some programmes (60% at one KMC opportunity),
+    and a discharge form's own fields are recorded only on that last visit. Both must end
+    the case, never land mid-case: the opportunity's clone put 75 of 126 discharges
+    mid-case (2026-10-14)."""
+    rng = random.Random(9)
+    pool = []
+    for c in range(400):
+        n = rng.choice([2, 3, 4, 5, 6])
+        discharged = rng.random() < 0.6
+        visits = []
+        for i in range(n):
+            last = i == n - 1
+            cats = {
+                "form.status": "enrolled" if i == 0 else ("discharged" if (discharged and last) else "in progress")
+            }
+            if discharged and last:
+                cats["form.discontinuation.reason"] = "discharged"
+            visits.append(
+                {
+                    "day": i * 7,
+                    "form": "Register" if i == 0 else "Visit",
+                    "values": {"form.w": 1800.0 + 60 * i},
+                    "cats": cats,
+                }
+            )
+        pool.append({"owner": f"flw_{c % 8:03d}", "start_date": "2026-03-02", "visits": visits})
+
+    out, _report = cm.synthesize_case_pool(pool, seed=4)
+
+    for path in ("form.status", "form.discontinuation.reason"):
+        ended = mid = 0
+        for case in out:
+            vals = [(v.get("cats") or {}).get(path) for v in case["visits"]]
+            hits = [i for i, x in enumerate(vals) if x == "discharged"]
+            ended += bool(hits)
+            mid += any(i < len(vals) - 1 for i in hits)
+        assert mid == 0, f"{path}: {mid} cases discharged mid-case"
+        assert 0.45 <= ended / len(out) <= 0.75, f"{path}: {ended / len(out):.0%} discharged, source 60%"

@@ -585,9 +585,14 @@ def _fit_cats(series_list, rows, driver, cuts, time_varying) -> tuple[dict[str, 
     cases_with: dict[str, dict[str, set[int]]] = defaultdict(lambda: defaultdict(set))
     # (tercile, long, shape, seq, value at the case's LAST visit or None)
     seqs: dict[str, list[tuple[int, int, tuple, list[str], str | None]]] = defaultdict(list)
-    # value -> [occurrences, occurrences at the case's last visit]
-    at_end: dict[str, dict[str, list[int]]] = defaultdict(lambda: defaultdict(lambda: [0, 0]))
+    # value -> [occurrences, occurrences at the case's last visit, cases], counted over
+    # cases of TWO OR MORE visits only: in a one-visit case every value is "at the end",
+    # which says nothing about whether the value ends a case.
+    at_end: dict[str, dict[str, list[int]]] = defaultdict(lambda: defaultdict(lambda: [0, 0, 0]))
     median_n = float(np.median([len(s["visits"]) for s in series_list]))
+    # (tercile, long, shape, paths recorded) for EVERY case: a case that never records a
+    # path did not end on it, which the ending odds must count (see below).
+    case_keys: list[tuple[int, int, tuple, set[str]]] = []
     for ci, (s, row) in enumerate(zip(series_list, rows)):
         terc = _tercile(row[driver], cuts) if driver in row else 1
         long = int(len(s["visits"]) > median_n)
@@ -595,17 +600,24 @@ def _fit_cats(series_list, rows, driver, cuts, time_varying) -> tuple[dict[str, 
         per_path: dict[str, list[str]] = defaultdict(list)
         last = len(s["visits"]) - 1
         last_val: dict[str, str] = {}
+        counted: set[tuple[str, str]] = set()
         for vi, v in enumerate(s["visits"]):
             for path, val in (v.get("cats") or {}).items():
                 val = str(val)
                 per_path[path].append(val)
                 cases_with[path][val].add(ci)
-                at_end[path][val][0] += 1
                 if vi == last:
-                    at_end[path][val][1] += 1
                     last_val[path] = val
+                if last >= 1:
+                    tally = at_end[path][val]
+                    tally[0] += 1
+                    tally[1] += int(vi == last)
+                    if (path, val) not in counted:
+                        tally[2] += 1
+                        counted.add((path, val))
         for path, seq in per_path.items():
             seqs[path].append((terc, long, shape, seq, last_val.get(path)))
+        case_keys.append((terc, long, shape, set(per_path)))
 
     out: dict[str, _CatModel] = {}
     suppressed = 0
@@ -615,11 +627,15 @@ def _fit_cats(series_list, rows, driver, cuts, time_varying) -> tuple[dict[str, 
         if not allowed:
             continue
         varying = path in time_varying
+        # A value ENDS a case when, in the cases long enough to tell, it is recorded on
+        # the last visit (90%+ of its occurrences, in K_MIN+ cases) -- however common it
+        # is. Discharge is most cases' outcome in some programmes (60% at one KMC
+        # opportunity); capping an ending at half the cases sprinkled it mid-case there.
         terminal = (
             {
                 val
                 for val in allowed
-                if at_end[path][val][1] >= 0.9 * at_end[path][val][0] and len(by_value[val]) < 0.5 * len(seqs[path])
+                if at_end[path][val][2] >= K_MIN and at_end[path][val][1] >= 0.9 * at_end[path][val][0]
             }
             if varying
             else set()
@@ -630,6 +646,16 @@ def _fit_cats(series_list, rows, driver, cuts, time_varying) -> tuple[dict[str, 
         first_by_shape: dict[tuple[tuple, int], Counter] = defaultdict(Counter)
         trans_by_shape: dict[tuple[tuple, int, str], Counter] = defaultdict(Counter)
         ending_by_shape: dict[tuple[tuple, int, int], Counter] = defaultdict(Counter)
+        if terminal:
+            # Cases that never recorded the path ended without it. Counting only the cases
+            # that have it made a field recorded solely on a discharge (always
+            # "discharged") end EVERY sampled case that way.
+            for terc, long, shape, recorded in case_keys:
+                if path not in recorded:
+                    for key in ((terc, long), (-1, -1)):
+                        ending[key][_NONE] += 1
+                    for key in ((shape, terc, long), (shape, -1, long)):
+                        ending_by_shape[key][_NONE] += 1
         for terc, long, shape, seq, last_val in seqs[path]:
             if terminal:
                 end = last_val if last_val in terminal else _NONE
