@@ -170,3 +170,85 @@ def test_a_common_outcome_and_an_end_only_field_end_the_case():
             mid += any(i < len(vals) - 1 for i in hits)
         assert mid == 0, f"{path}: {mid} cases discharged mid-case"
         assert 0.45 <= ended / len(out) <= 0.75, f"{path}: {ended / len(out):.0%} discharged, source 60%"
+
+
+def test_a_schedule_goes_with_its_forms():
+    """Two kinds of case with the same number of visits: registered on day 0 and followed
+    to day 28, or first seen on a follow-up, registered later and closed early. A schedule
+    drawn by length alone mixed them, and half the late-registered cases ran to day 28
+    (one KMC opportunity read 60% "lost by day 28" against the source's 39%, 2026-10-14)."""
+    rng = random.Random(12)
+    pool = []
+    for c in range(400):
+        if c % 2:
+            forms, days = ["Register", "Visit", "Visit", "Visit"], [0, 7, 14, rng.choice([27, 28, 29])]
+        else:
+            forms, days = ["Visit", "Register", "Visit", "Visit"], [0, rng.choice([9, 10, 11]), 12, 14]
+        visits = [
+            {"day": d, "form": f, "values": {"form.w": 1800.0 + 20 * d + rng.gauss(0, 10)}}
+            for f, d in zip(forms, days)
+        ]
+        pool.append({"owner": f"flw_{c % 8:03d}", "start_date": "2026-03-02", "visits": visits})
+
+    out, _report = cm.synthesize_case_pool(pool, seed=6)
+
+    for first, short in (("Register", False), ("Visit", True)):
+        spans = [
+            c["visits"][-1]["day"] - c["visits"][0]["day"]
+            for c in out
+            if len(c["visits"]) == 4 and c["visits"][0]["form"] == first
+        ]
+        assert len(spans) > 50
+        wrong = sum(1 for s in spans if (s > 20) == short) / len(spans)
+        assert wrong < 0.05, f"{first}-first cases: {wrong:.0%} on the other kind's schedule"
+
+
+def test_a_copy_held_in_two_fields_is_copied_once():
+    """The birth weight held twice (two forms ask it) and copied into the enrolment weight
+    in 40% of cases: each of the two pairs is equal in 40% of cases, and copying each on
+    its own share made the enrolment weight a copy for ~64% of them (2026-10-14)."""
+    rng = random.Random(21)
+    pool = []
+    for c in range(600):
+        bw = float(round(rng.uniform(1300, 2300)))
+        enrol = bw if rng.random() < 0.4 else float(round(bw * rng.uniform(0.88, 0.99)))
+        values = {"form.bw": bw, "form.bw2": bw, "form.enrol": enrol, "form.w": enrol}
+        visits = [{"day": 0, "form": "Register", "values": values}] + [
+            {"day": d, "form": "Visit", "values": {"form.w": enrol + 20 * d + rng.gauss(0, 10)}} for d in (7, 14)
+        ]
+        pool.append({"owner": f"flw_{c % 6:03d}", "start_date": "2026-03-02", "visits": visits})
+
+    out, _report = cm.synthesize_case_pool(pool, seed=8)
+
+    firsts = [c["visits"][0]["values"] for c in out]
+    both = [v for v in firsts if "form.bw" in v and "form.enrol" in v]
+    copied = sum(1 for v in both if abs(v["form.bw"] - v["form.enrol"]) < 1) / len(both)
+    assert 0.3 <= copied <= 0.5, f"{copied:.0%} copied, source 40%"
+
+
+def test_readings_take_the_grid_the_source_writes_on_and_only_that():
+    """Half the workers write weights in whole hundreds; the rest weigh to the gram. The
+    clone keeps both habits, per worker; and a source weighed to the gram throughout,
+    whose values repeat only by chance, is not put on any grid (the first attempt at
+    this, snapping to any value seen in K_MIN cases, moved gram readings hundreds of
+    grams onto chance repeats)."""
+
+    def hundreds(pool, owners=None):
+        vals = [
+            v["values"]["form.w"]
+            for c in pool
+            if owners is None or c["owner"] in owners
+            for v in c["visits"]
+            if "form.w" in v["values"]
+        ]
+        return sum(1 for x in vals if x % 100 == 0) / len(vals)
+
+    real_pool = _kmc_like_pool(n_cases=900)
+    out, _report = cm.synthesize_case_pool(real_pool, seed=3)
+    rounders, precise = {"flw_000", "flw_001", "flw_002"}, {"flw_003", "flw_004", "flw_005"}
+    assert hundreds(out, rounders) >= 0.85, hundreds(out, rounders)
+    assert hundreds(out, precise) <= 0.05, hundreds(out, precise)
+
+    gram_pool = [c for c in _kmc_like_pool(n_cases=900) if c["owner"] in precise]
+    model = cm.fit_case_model([dict(c, visits=list(c["visits"])) for c in gram_pool])
+    assert not model.numeric["form.w"].grid or max(model.numeric["form.w"].grid_share.values()) < 0.02
