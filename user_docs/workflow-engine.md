@@ -136,6 +136,10 @@ If you notice a report no longer showing categories or notes that you expect fro
 
 The **UAT Comparison** tab lets you compare data between your UAT and production environments side by side. Both environments have real verification data — if the verification block on this tab reads zero, that almost certainly means the page did not finish loading rather than that data is missing. Try refreshing the page; if the figure remains zero, contact support.
 
+The dashboard now loads only production data. The separate test/pilot domain and the toggle to switch between them have been removed, as production has carried real verification data for some time and the test domain is no longer in use. This roughly halves the number of data pipelines the dashboard streams on each load, making it faster and more reliable.
+
+Visit history on this tab is limited to the **last 180 days** (a rolling window). The "how does this compare to before the pilot" comparison will show a shorter history for any field worker whose pre-pilot data is older than 180 days — the tab notes this when it applies.
+
 ### Indicator definition popup
 
 In KMC reports (program, opportunity, and worker review) and the generic indicator reports, you can click an indicator's name to open a popup with its full definition. The popup has been restyled to make it easier to read:
@@ -220,14 +224,4 @@ Each level of Labs has its own address for its page:
 
 ### Context picker on a page
 
-When you open a page, the context picker in the header identifies what you are looking at:
-
-- An **organisation's page** shows **Org: \<name\>** in the header.
-- A **program's page** shows the program name.
-- An **opportunity's page** shows the opportunity name.
-
-This replaces the yellow **Select Context** button that previously appeared when no context had been chosen. You no longer need to select a context manually — opening the page sets it automatically.
-
-### Setting an organisation's home page
-
-An organisation can have one page designated as its **home page**. When someone picks that organisation in Labs — or follows a
+When you open a page,
