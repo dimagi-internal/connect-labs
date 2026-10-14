@@ -125,10 +125,13 @@ class _PathModel:
     hi: float
     resid_sd: float = 0.0
     index_k: float = 0.0
-    # Visit-to-visit noise around the case's trend: a weighing is the previous one plus
-    # the trend over the gap plus this much noise -- not an independent draw around a
-    # straight line, which a real series is not (see _sample_case).
-    step_sd: float = 0.0
+    # How much a reading's departure from its case's trend carries into the next one
+    # (lag-1 correlation of the source's residuals, 0..0.95). 0 is independent noise
+    # around the trend; near 1 a series wanders step by step. Learned per field, because
+    # sources differ: an independent draw where the source's errors carry made
+    # impossible steps between close visits, and a random walk where they do not blurs
+    # each case's slope (see _ar_coefficient).
+    resid_ar: float = 0.0
     # The values this field commonly takes in the source -- each seen in K_MIN cases or
     # more -- and, per persona ("*" = everyone), the share of its readings that are one
     # of them. A sampled reading lands on the nearest common value at that rate (see
@@ -235,6 +238,22 @@ def _fit_line(points: list[tuple[float, float]]) -> tuple[float, float, list[flo
     slope, intercept = np.polyfit(xs, ys, 1)
     resid = (ys - (intercept + slope * xs)).tolist()
     return float(intercept), float(slope), resid
+
+
+def _ar_coefficient(pairs: list[tuple[float, float]], sd: float) -> float:
+    """Lag-1 correlation of consecutive residuals, the slips clipped first, kept in 0..0.95.
+
+    Clipped at three robust SDs so a few data-entry slips cannot decide it (the same
+    reason resid_sd is robust). Negative values -- a residual followed by its opposite,
+    what a straight line fitted to a curve leaves -- are read as 0, independent noise.
+    """
+    if sd <= 0 or len(pairs) < K_MIN:
+        return 0.0
+    a = np.clip(np.array(pairs, dtype=float), -3 * sd, 3 * sd)
+    if a[:, 0].std() == 0 or a[:, 1].std() == 0:
+        return 0.0
+    r = float(np.corrcoef(a[:, 0], a[:, 1])[0, 1])
+    return 0.0 if not np.isfinite(r) else min(max(r, 0.0), 0.95)
 
 
 def _common_values(
@@ -372,7 +391,7 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
     date_obs: dict[str, list[float]] = defaultdict(list)
     date_cases: Counter = Counter()
     resid: dict[str, list[float]] = defaultdict(list)
-    step_resid: dict[str, list[float]] = defaultdict(list)
+    resid_pairs: dict[str, list[tuple[float, float]]] = defaultdict(list)
     # path -> value -> cases it was seen in; path -> persona -> readings
     value_cases: dict[str, dict[float, set[int]]] = defaultdict(lambda: defaultdict(set))
     owner_readings: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
@@ -426,8 +445,7 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
                 if len({d for d, _, _ in pts}) >= 2:
                     row[f"s:{path}"] = sl
                 resid[path].extend(res)
-                for (d0, _, y0), (d1, _, y1) in zip(pts, pts[1:]):
-                    step_resid[path].append((y1 - y0) - sl * (d1 - d0))
+                resid_pairs[path].extend(zip(res, res[1:]))
             else:
                 row[f"c:{path}"] = pts[0][2]
         case_consts.append((s["owner"], {p: pts[0][2] for p, pts in per_path.items() if p not in time_varying}))
@@ -467,8 +485,8 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
             # it varies within cases, a per-case constant if it does not.
         if kind == "varying" and resid[path]:
             model.resid_sd = _robust_sd(resid[path])
-        if kind == "varying" and len(step_resid[path]) >= K_MIN:
-            model.step_sd = _robust_sd(step_resid[path])
+        if kind == "varying" and len(resid_pairs[path]) >= K_MIN:
+            model.resid_ar = _ar_coefficient(resid_pairs[path], model.resid_sd)
         model.common_values, model.common_share = _common_values(value_cases[path], owner_readings[path])
         numeric[path] = model
     dates: dict[str, _PathModel] = {}
@@ -850,7 +868,7 @@ def _sample_case(
     for (a, b), shares in model.copies.items():
         if f"c:{a}" in params and f"c:{b}" in params and rng.random() < shares.get(owner, shares["*"]):
             params[f"c:{b}"] = params[f"c:{a}"]
-    last_reading: dict[str, tuple[int, float]] = {}
+    last_resid: dict[str, float] = {}
     visits = []
     for idx, (day, form) in enumerate(zip(days, forms), start=1):
         values: dict[str, float] = {}
@@ -862,16 +880,13 @@ def _sample_case(
             elif pm.kind == "dayoffset" and f"o:{path}" in params:
                 values[path] = float(round(params[f"o:{path}"] + day))
             elif pm.kind == "varying" and f"b:{path}" in params:
-                slope = params.get(f"s:{path}", 0.0)
-                prev = last_reading.get(path)
-                if prev is not None and pm.step_sd > 0:
-                    # The previous reading plus the trend over the gap: a real series
-                    # moves step by step, and independent draws around a line made
-                    # impossible steps between close visits (25% of babies vs 10%).
-                    v = prev[1] + slope * (day - prev[0]) + nrng.normal(0.0, pm.step_sd)
-                else:
-                    v = params[f"b:{path}"] + slope * day + nrng.normal(0.0, pm.resid_sd)
-                last_reading[path] = (day, v)
+                # Departure from the case's trend, carried from the previous reading as
+                # much as the source's carry (resid_ar); same spread whatever the carry.
+                prev = last_resid.get(path)
+                fresh = nrng.normal(0.0, pm.resid_sd)
+                e = fresh if prev is None else pm.resid_ar * prev + math.sqrt(1 - pm.resid_ar**2) * fresh
+                last_resid[path] = e
+                v = params[f"b:{path}"] + params.get(f"s:{path}", 0.0) * day + e
                 values[path] = _common_value(_round_clamp(v, pm), pm, owner, rng)
             elif f"c:{path}" in params:
                 values[path] = _round_clamp(params[f"c:{path}"], pm)
