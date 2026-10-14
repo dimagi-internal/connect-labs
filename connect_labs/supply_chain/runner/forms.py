@@ -36,3 +36,25 @@ class ProgrammeRunnerForm(forms.Form):
 
     def payload(self) -> dict:
         return {"org_id": self.cleaned_data["org"].pk, "note": self.cleaned_data.get("note") or ""}
+
+
+class TeamMemberForm(forms.Form):
+    email = forms.EmailField(
+        label=_("Email they sign in to labs with"),
+        help_text=_("They must have signed in to labs once."),
+    )
+    role = forms.ChoiceField(
+        label=_("Role"),
+        choices=(("member", _("Member: acts for the program")), ("admin", _("Admin: also changes the team"))),
+        initial="member",
+    )
+
+    def __init__(self, *args, access=None, **kwargs):
+        self.access = access
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.disable_csrf = True
+
+    def payload(self) -> dict:
+        return {"email": self.cleaned_data["email"], "role": self.cleaned_data["role"]}

@@ -25,7 +25,7 @@ from connect_labs.supply_chain.models import SupplierOffering
 from connect_labs.supply_chain.navigation import scoped_url, supply_tabs
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.procurement.services.compliance import kit_spec_verdict
-from connect_labs.supply_chain.runner import is_operator, running_org, standing
+from connect_labs.supply_chain.runner import DIMAGI_ORG_SLUG, is_operator, running_org, standing
 from connect_labs.supply_chain.standing import move_counts, standing_rows
 
 
@@ -306,6 +306,8 @@ class DomainHomeView(OperationBase):
         # Platform support declares who runs the programme from here (#2458).
         if is_operator(self.request.user):
             context["runner_url"] = scoped_url(self.request, "supply_chain:programme_runner", program_id=program_id)
+        if org is not None and org.slug != DIMAGI_ORG_SLUG and context["supply_standing"].is_programme:
+            context["team_url"] = scoped_url(self.request, "supply_chain:programme_team", program_id=program_id)
         context["standing"] = standing_rows(
             int(program_id),
             as_of or timezone.localdate(),
