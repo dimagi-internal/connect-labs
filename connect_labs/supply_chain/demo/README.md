@@ -120,3 +120,22 @@ because a running organisation takes no invitations. Locally, `--local-admin`
 also makes `dev-oes-admin` / `dev-kilele-admin` (a `.example` address with no
 usable password; DEBUG only). `/supply/dev-login/?as=dev-oes-admin` signs in as
 that admin, so you can walk Supply as someone who is not Dimagi.
+
+# A phone for every adult (`supply_seed_phones`)
+
+`manage.py supply_seed_phones [--reset]` registers a labs-only programme run by
+an invented Kenyan LLO, Tumaini, that buys a smartphone for each of the 1,200
+adults in three villages and hands each one over at a Connect visit. The LLO
+runs its own procurement (#2458): a tender to three local distributors (two
+quote, one is reminded and stays silent), an award to the quote delivered to
+the office with the specification stated, an order paid half in advance, a
+delivery received with six phones rejected at inspection, and an invoice that
+still bills all 1,200. Six field workers, two per village, are issued phones in
+two rounds; each handover visit (an invented `Phone handover` form) states one
+phone given, the adult's village and age, and the handset's IMEI, and the real
+visit reader takes it off that worker's stock week by week. One worker's app
+counts one phone fewer than the ledger says they hold. Majengo's last six adults
+wait for the replacements of the rejected phones.
+
+Where to look: Overview, the tender, the order (receipt and invoice), Map,
+Workers, Where it went. Walkthrough: `docs/walkthroughs/supply-phones-every-adult.yaml`.
