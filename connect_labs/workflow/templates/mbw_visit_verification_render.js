@@ -7,51 +7,32 @@ function WorkflowUI({
   actions,
   onUpdateState,
 }) {
-  // --- Domain filter (default: production only) --------------------------
-  // Which CommCare project space(s) to include: this opp's real production
-  // domain (the default, so the dashboard shows real data with zero clicks
-  // once the verification block ships there), the test domain the block was
-  // built and is being piloted in, or both. Gates BOTH the FLW-eligibility
-  // set and the visit rows below, so the two domains are never silently
-  // mixed unless "Both domains" is explicitly picked.
-  var TEST_DOMAIN_NAME = 'ccc-mbw-experiments-1';
-  var PROD_DOMAIN_NAME = 'ccc-mbw-production';
+  // Production-only (opp 765's own ccc-mbw-production domain). The
+  // verification block was piloted on a separate test domain while
+  // production didn't have it yet; production has carried real verification
+  // data for a while now, so the test-domain pipelines were retired
+  // (2026-10-14) -- they were half of this template's pipeline count and a
+  // meaningful share of what this dashboard streams on every load, for a
+  // domain nobody reads anymore.
+  //
   // The "ANC Visit" (etc.) xmlns match pulls every submission of that form
   // ever made, from any build of the production app -- CommCare's Form API
   // has no way to filter by build/version, and xmlns is stable across a
   // form's whole edit history. That's WHY hasVerificationData() below can't
   // rely on anything visit-level to mean "is this a verification-program
   // visit" -- see its own comment for the mother-eligibility gate that
-  // replaces that inference.
-  var DOMAIN_FILTER_OPTIONS = [
-    { key: 'production', label: 'Production only' },
-    { key: 'test', label: 'Test domain only' },
-    { key: 'both', label: 'Both domains' },
-  ];
-  var _domainFilter = React.useState('production');
-  var domainFilter = _domainFilter[0];
-  var setDomainFilter = _domainFilter[1];
-  var wantedDomain =
-    domainFilter === 'production'
-      ? PROD_DOMAIN_NAME
-      : domainFilter === 'test'
-        ? TEST_DOMAIN_NAME
-        : null; // null => both domains, no filtering
+  // replaces that inference. The visit pipelines DO carry a 180-day
+  // form_lookback_days cutoff (see mbw_visit_verification.py,
+  // PROD_LOOKBACK_DAYS) to bound how much history each load re-downloads.
 
   // --- Eligible-FLW set (commcare-user cases, visit_verification='yes') ---
   // entity_name is the built-in row field cchq_cases populates from each
   // case's case_name, which for commcare-user cases is the FLW's username.
-  var ELIGIBLE_PIPELINE_ALIASES = [
-    { alias: 'eligible_flws', domain: TEST_DOMAIN_NAME },
-    { alias: 'eligible_flws_prod', domain: PROD_DOMAIN_NAME },
-  ];
-  var eligibleRows = [];
-  ELIGIBLE_PIPELINE_ALIASES.forEach(function (p) {
-    if (wantedDomain && p.domain !== wantedDomain) return;
-    var rows =
-      (pipelines && pipelines[p.alias] && pipelines[p.alias].rows) || [];
-    eligibleRows = eligibleRows.concat(rows);
-  });
+  var eligibleRows =
+    (pipelines &&
+      pipelines.eligible_flws_prod &&
+      pipelines.eligible_flws_prod.rows) ||
+    [];
   var eligibleUsernames = React.useMemo(
     function () {
       var set = {};
@@ -74,17 +55,11 @@ function WorkflowUI({
   // per-tab filter) excludes that first visit from every tab, since it's
   // effectively a duplicate of the registration event rather than a
   // separate follow-up visit.
-  var REGISTRATION_PIPELINE_ALIASES = [
-    { alias: 'mother_registration', domain: TEST_DOMAIN_NAME },
-    { alias: 'mother_registration_prod', domain: PROD_DOMAIN_NAME },
-  ];
-  var registrationRows = [];
-  REGISTRATION_PIPELINE_ALIASES.forEach(function (p) {
-    if (wantedDomain && p.domain !== wantedDomain) return;
-    var rows =
-      (pipelines && pipelines[p.alias] && pipelines[p.alias].rows) || [];
-    registrationRows = registrationRows.concat(rows);
-  });
+  var registrationRows =
+    (pipelines &&
+      pipelines.mother_registration_prod &&
+      pipelines.mother_registration_prod.rows) ||
+    [];
   var conductedAtRegistration = React.useMemo(
     function () {
       var set = {};
@@ -204,43 +179,27 @@ function WorkflowUI({
   // --- Per-mother expanding-window computations -------------------------
   // visit_number and prior_verification_pass_rate can't be expressed by the
   // pipeline engine's window_fields today (only lag_haversine is supported),
-  // so they're computed here over the FULL unfiltered visit set per mother
-  // -- the true 1st/2nd/3rd... sequence, independent of which rows the
-  // verification-data filter below ends up keeping.
+  // so they're computed here over the FULL (within the 180-day lookback)
+  // visit set per mother -- the true 1st/2nd/3rd... sequence, independent of
+  // which rows the verification-data filter below ends up keeping.
   //
-  // Twelve pipelines -- one per visit-type form, times two domains. Gated by
-  // the same domain filter as the eligibility set above -- windowing never
-  // mixes rows across domains even in "Both domains" mode (their
-  // mother_case_ids come from different CommCare project spaces and can't
-  // collide in practice, so this is a safety property more than a behavior
-  // change from before the filter existed). cchq_forms fetches one
+  // Six pipelines -- one per visit-type form. cchq_forms fetches one
   // form_name at a time, unlike connect_csv, which merges across form types
   // automatically. Keep this list in sync with the aliases in
-  // PIPELINE_SCHEMAS. Forms/domains that haven't grown the verification
-  // block yet just contribute an empty rows array -- harmless.
+  // PIPELINE_SCHEMAS.
   var VISIT_PIPELINE_ALIASES = [
-    { alias: 'visits_anc_visit', domain: TEST_DOMAIN_NAME },
-    { alias: 'visits_post_delivery_visit', domain: TEST_DOMAIN_NAME },
-    { alias: 'visits_1_week_visit', domain: TEST_DOMAIN_NAME },
-    { alias: 'visits_1_month_visit', domain: TEST_DOMAIN_NAME },
-    { alias: 'visits_3_month_visit', domain: TEST_DOMAIN_NAME },
-    { alias: 'visits_6_month_visit', domain: TEST_DOMAIN_NAME },
-    { alias: 'visits_prod_anc_visit', domain: PROD_DOMAIN_NAME },
-    { alias: 'visits_prod_post_delivery_visit', domain: PROD_DOMAIN_NAME },
-    { alias: 'visits_prod_1_week_visit', domain: PROD_DOMAIN_NAME },
-    { alias: 'visits_prod_1_month_visit', domain: PROD_DOMAIN_NAME },
-    { alias: 'visits_prod_3_month_visit', domain: PROD_DOMAIN_NAME },
-    { alias: 'visits_prod_6_month_visit', domain: PROD_DOMAIN_NAME },
+    'visits_prod_anc_visit',
+    'visits_prod_post_delivery_visit',
+    'visits_prod_1_week_visit',
+    'visits_prod_1_month_visit',
+    'visits_prod_3_month_visit',
+    'visits_prod_6_month_visit',
   ];
 
   var allVisitRows = [];
-  VISIT_PIPELINE_ALIASES.forEach(function (p) {
-    if (wantedDomain && p.domain !== wantedDomain) return;
-    var rows =
-      (pipelines && pipelines[p.alias] && pipelines[p.alias].rows) || [];
-    rows.forEach(function (row) {
-      allVisitRows.push(Object.assign({}, row, { domain: p.domain }));
-    });
+  VISIT_PIPELINE_ALIASES.forEach(function (alias) {
+    var rows = (pipelines && pipelines[alias] && pipelines[alias].rows) || [];
+    allVisitRows = allVisitRows.concat(rows);
   });
 
   // Whether a visit counts as part of the verification program at all (vs.
@@ -276,11 +235,16 @@ function WorkflowUI({
       // the revisit distance are all per MOTHER (how many times has this
       // mother been visited, what was her prior verification track record,
       // how far was this visit from her previous one), not per FLW. The
-      // chain spans her ENTIRE history (pre-UAT and UAT together, every
-      // visit-type form) -- "her previous visit" means exactly that,
-      // regardless of which app version captured it, so the UAT Comparison
-      // tab's revisit-distance metrics are never computed across a chain
-      // that's artificially cut at the UAT boundary.
+      // chain spans her WHOLE LOADED history (pre-UAT and UAT together,
+      // every visit-type form, within the 180-day pipeline lookback -- see
+      // mbw_visit_verification.py's PROD_LOOKBACK_DAYS) -- "her previous
+      // visit" means exactly that within what's loaded, regardless of which
+      // app version captured it, so the UAT Comparison tab's
+      // revisit-distance metrics are never computed across a chain that's
+      // artificially cut at the UAT boundary. A mother whose visits span
+      // more than 180 days will have an incomplete chain -- her oldest
+      // visits (and any pre-UAT baseline before the cutoff) are simply not
+      // fetched at all.
       var byMother = {};
       allVisitRows.forEach(function (row) {
         var key = row.mother_case_id || '';
@@ -583,7 +547,6 @@ function WorkflowUI({
 
   var columns = [
     { key: 'username', label: 'FLW ID' },
-    { key: 'domain', label: 'CC Domain' },
     { key: 'mother_case_id', label: 'Mother ID' },
     { key: 'form_instance_id', label: 'Visit ID' },
     { key: 'visit_datetime', label: 'Visit date' },
@@ -640,7 +603,7 @@ function WorkflowUI({
   // Verification View, Failed Verification Analysis) -- each tab keeps its
   // own separate selection, so picking FLWs on one tab never silently
   // changes what another tab shows. The picker's list of names is the same
-  // everywhere: every username in the domain+eligibility-filtered set
+  // everywhere: every username in the eligibility-filtered set
   // (displayRows), independent of any filter.
   var STATUS_FILTER_OPTIONS = [
     { key: 'all', label: 'All' },
@@ -1349,14 +1312,14 @@ function WorkflowUI({
   // together (in space and/or time)?" -- one chain per mother: her
   // registration GPS point (home_gps, captured on the Register Mother form)
   // fanned out to each of her visit GPS points still in the current filter
-  // (domain + eligibility + the exclude-registration-visits toggle above --
+  // (eligibility + the exclude-registration-visits toggle above --
   // same displayRows as every other tab). Colored per FLW so one FLW's
   // activity across several mothers reads as one color on the map.
   //
   // A stable 10-color categorical palette (d3's category10) -- username ->
   // color is a deterministic hash, NOT an index into the currently-visible
   // FLW list, so a given FLW keeps the same color regardless of which
-  // domain/filter is selected or how many other FLWs are in view.
+  // filter is selected or how many other FLWs are in view.
   var FLW_MAP_COLORS = [
     '#1f77b4',
     '#ff7f0e',
@@ -1499,8 +1462,8 @@ function WorkflowUI({
   //     visually. Bucketed/matched by DAY (since within-day correlation IS
   //     the thing being measured), but the sample-size TARGET is a VISIT
   //     count, not a day count -- see compareToPreUat's weight parameter.
-  // Built from enrichedRows (not displayRows), which still respects the
-  // domain filter and FLW eligibility (same population as every other tab)
+  // Built from enrichedRows (not displayRows), which still respects
+  // FLW eligibility (same population as every other tab)
   // but NOT the verification-block-present gate -- that gate is exactly
   // the UAT/pre-UAT split being compared, so it can't be filtered away
   // before this runs. Neither series ever consults the
@@ -1866,10 +1829,10 @@ function WorkflowUI({
   // Exact question wording as asked on the form -- read from each
   // question_N_* field's own "Question:" label in the CommCare app
   // (random_test_question_bank group, shared verbatim across all 6
-  // visit-type forms and both domains; spot-checked identical on both ANC
-  // Visit and 1 Week Visit). Only the form builder's own "**Question**:"
-  // markdown prefix and an internal line break have been stripped for
-  // display -- the question text itself is unedited.
+  // visit-type forms; spot-checked identical on both ANC Visit and 1 Week
+  // Visit). Only the form builder's own "**Question**:" markdown prefix and
+  // an internal line break have been stripped for display -- the question
+  // text itself is unedited.
   var QUESTION_TEXT = {
     q1: "Enter the full name of the baby's father.",
     q2: "What is this mother's date of birth?",
@@ -2313,34 +2276,29 @@ function WorkflowUI({
   var DEFINITION_SECTIONS = [
     {
       title: 'Which visits appear in this report',
-      body: "A visit only shows up if ALL are true: (1) it's from the CommCare domain(s) selected in the \"CommCare domain\" toggle at the top (Production only by default), (2) the mother it's for is a mother case with the property mother_reg_for_visit_verification set to 'yes' -- set once at registration when she's randomized into the verification cohort, (3) the FLW who conducted it is a commcare-user case with the property visit_verification set to 'yes' in that same domain, and (4) if the \"Exclude visits that happened with registration\" checkbox is on (the default), it is not that mother's first visit AND conducted immediately at registration. (2) and (3) are the SAME two conditions (independently ANDed) that CommCare's own verification_properties form group checks before it will compute a visit's Final verification outcome at all -- see \"Verification Summary Tab\" below for the one additional CommCare-side condition that can still leave a visit shown here without an outcome. Visits for a mother never randomized into the cohort, from an FLW not flagged for verification, or from a domain not selected in the toggle, are excluded entirely -- not shown as blank rows. This gate applies dashboard-wide -- every tab (Verification Summary, Per FLW Verification View, Failed Verification Analysis) reads from the same filtered set, same as the domain and eligibility gates.",
+      body: "A visit only shows up if ALL are true: (1) the mother it's for is a mother case with the property mother_reg_for_visit_verification set to 'yes' -- set once at registration when she's randomized into the verification cohort, (2) the FLW who conducted it is a commcare-user case with the property visit_verification set to 'yes', and (3) if the \"Exclude visits that happened with registration\" checkbox is on (the default), it is not that mother's first visit AND conducted immediately at registration. (1) and (2) are the SAME two conditions (independently ANDed) that CommCare's own verification_properties form group checks before it will compute a visit's Final verification outcome at all -- see \"Verification Summary Tab\" below for the one additional CommCare-side condition that can still leave a visit shown here without an outcome. Visits for a mother never randomized into the cohort, or from an FLW not flagged for verification, are excluded entirely -- not shown as blank rows. This gate applies dashboard-wide -- every tab (Verification Summary, Per FLW Verification View, Failed Verification Analysis) reads from the same filtered set. Also note: the visit pipelines only cover the last 180 days (form_lookback_days, see mbw_visit_verification.py) -- a visit older than that is never fetched at all, regardless of eligibility.",
       items: [
-        {
-          name: 'Domain filter',
-          field:
-            "domainFilter state ('production' default / 'test' / 'both') -- gates which pipeline aliases are read at all: production = only the _prod pipelines (visits_prod_*, eligible_flws_prod, mother_registration_prod), test = only the non-_prod pipelines, both = every pipeline, unfiltered.",
-        },
         {
           name: 'FLW eligibility gate',
           field:
-            "pipelines: eligible_flws (test domain) and/or eligible_flws_prod (production domain), per the domain filter (cchq_cases, case_type='commcare-user'). Fields: visit_verification (case.properties.visit_verification), entity_name (built-in, = case_name = FLW username). Joined to each visit row on username === entity_name.",
+            "pipeline: eligible_flws_prod (cchq_cases, case_type='commcare-user'). Fields: visit_verification (case.properties.visit_verification), entity_name (built-in, = case_name = FLW username). Joined to each visit row on username === entity_name.",
         },
         {
           name: 'Mother eligibility gate',
           field:
-            "pipelines: mother_registration (test domain) and/or mother_registration_prod (production domain), per the domain filter (cchq_cases, case_type='mother'). Field: mother_reg_for_visit_verification (case.properties.mother_reg_for_visit_verification) must equal 'yes'. Joined to each visit row on mother_case_id === entity_id -- same lookup table as the registration-exclude toggle below, built from the same pipelines.",
+            "pipeline: mother_registration_prod (cchq_cases, case_type='mother'). Field: mother_reg_for_visit_verification (case.properties.mother_reg_for_visit_verification) must equal 'yes'. Joined to each visit row on mother_case_id === entity_id -- same lookup table as the registration-exclude toggle below, built from the same pipeline.",
         },
         {
           name: 'Exclude visits that happened with registration (default ON)',
           def: "Some mothers' very first visit is conducted immediately at registration rather than as a separate follow-up -- the registration form's own \"Would you like to conduct the first visit now?\" question records this. When this checkbox is on (the default), a mother's visit #1 is dropped from every tab if that question was answered 'yes' at her registration. Unchecking it shows those visits like any other.",
           field:
-            "excludeRegistrationVisits state (default true) -- drops a row when visit_number === 1 AND conductedAtRegistration[row.mother_case_id] is true. conductedAtRegistration is built from pipelines mother_registration (test domain) and/or mother_registration_prod (production domain), per the domain filter (cchq_cases, case_type='mother'). Fields: conduct_visit_now (case.properties.conduct_visit_now), entity_id (built-in, = the case's own @case_id). Joined to each visit row on mother_case_id === entity_id.",
+            "excludeRegistrationVisits state (default true) -- drops a row when visit_number === 1 AND conductedAtRegistration[row.mother_case_id] is true. conductedAtRegistration is built from pipeline mother_registration_prod (cchq_cases, case_type='mother'). Fields: conduct_visit_now (case.properties.conduct_visit_now), entity_id (built-in, = the case's own @case_id). Joined to each visit row on mother_case_id === entity_id.",
         },
       ],
     },
     {
       title: 'Status and FLW Filters',
-      body: "Status is table-only (Per FLW Verification View tab), narrowing the table and what CSV export downloads without affecting anything else on the page. FLW is available independently on all three data tabs -- Verification Summary, Per FLW Verification View, and Failed Verification Analysis -- and each tab keeps its OWN separate FLW selection: picking FLWs on one tab never changes what another tab shows. On every tab, the list of names offered is the same -- every username present in the domain+eligibility-filtered set (displayRows), independent of any filter (so switching Status on the table tab can't make an FLW's name disappear from any picker).",
+      body: "Status is table-only (Per FLW Verification View tab), narrowing the table and what CSV export downloads without affecting anything else on the page. FLW is available independently on all three data tabs -- Verification Summary, Per FLW Verification View, and Failed Verification Analysis -- and each tab keeps its OWN separate FLW selection: picking FLWs on one tab never changes what another tab shows. On every tab, the list of names offered is the same -- every username present in the eligibility-filtered set (displayRows), independent of any filter (so switching Status on the table tab can't make an FLW's name disappear from any picker).",
       items: [
         {
           name: 'Status (Per FLW Verification View tab only)',
@@ -2363,12 +2321,6 @@ function WorkflowUI({
           name: 'FLW ID',
           def: "The FLW's CommCare username.",
           field: 'username (built-in row field)',
-        },
-        {
-          name: 'CC Domain',
-          def: 'Which CommCare project space this visit was submitted in.',
-          field:
-            'Computed client-side (domain) -- tagged onto each row from which pipeline alias it came from (visits_prod_* -> "ccc-mbw-production", the rest -> "ccc-mbw-experiments-1"), not a raw pipeline field.',
         },
         {
           name: 'Mother ID',
@@ -2492,7 +2444,7 @@ function WorkflowUI({
     },
     {
       title: 'Verification Summary Tab',
-      body: "The three percentages and the \"n=\" counts are computed over the domain+eligibility-filtered visit set (see \"Which visits appear\" above), further narrowed by this tab's own FLW filter if any FLWs are selected (summaryDisplayRows), using each visit's Final verification outcome. IMPORTANT: the percentages' denominator is summary.verifiedTotal (passCount + failCount + pendingCount) -- the count of visits that actually got a Final verification outcome -- NOT summary.total (every visit in summaryDisplayRows). The two differ because visit_verification_outcome lives in CommCare's own verification_properties form group, which has ONE condition beyond the mother/FLW eligibility this dashboard already gates on: the visit must not be CommCare's own same-day registration/1-week-visit form-linking edge case (reg_date_equal_to_one_week_date == 1) -- not currently captured by any pipeline here. A visit hitting that edge case can have real GPS/QR/signature/ANC-card/birth-certificate/mother-question data (showing correctly in the per-method breakdown below and the Table tab) while still having a BLANK visit_verification_outcome, because that group was never evaluated for it -- this is CommCare's own business rule, not a dashboard bug. Using summary.total as the percentages' denominator would silently count every such visit as if it had failed, which is wrong -- confirmed via commcare_hq_mcp's get_form_questions. The tab's caption states the exact count of visits excluded this way; with the mother/FLW eligibility gate now exactly matching CommCare's own, this residual should be small and entirely attributable to that one edge case.",
+      body: "The three percentages and the \"n=\" counts are computed over the eligibility-filtered visit set (see \"Which visits appear\" above), further narrowed by this tab's own FLW filter if any FLWs are selected (summaryDisplayRows), using each visit's Final verification outcome. IMPORTANT: the percentages' denominator is summary.verifiedTotal (passCount + failCount + pendingCount) -- the count of visits that actually got a Final verification outcome -- NOT summary.total (every visit in summaryDisplayRows). The two differ because visit_verification_outcome lives in CommCare's own verification_properties form group, which has ONE condition beyond the mother/FLW eligibility this dashboard already gates on: the visit must not be CommCare's own same-day registration/1-week-visit form-linking edge case (reg_date_equal_to_one_week_date == 1) -- not currently captured by any pipeline here. A visit hitting that edge case can have real GPS/QR/signature/ANC-card/birth-certificate/mother-question data (showing correctly in the per-method breakdown below and the Table tab) while still having a BLANK visit_verification_outcome, because that group was never evaluated for it -- this is CommCare's own business rule, not a dashboard bug. Using summary.total as the percentages' denominator would silently count every such visit as if it had failed, which is wrong -- confirmed via commcare_hq_mcp's get_form_questions. The tab's caption states the exact count of visits excluded this way; with the mother/FLW eligibility gate now exactly matching CommCare's own, this residual should be small and entirely attributable to that one edge case.",
       items: [
         {
           name: '% Passed Verification',
@@ -2534,7 +2486,7 @@ function WorkflowUI({
     },
     {
       title: 'Failed Verification Analysis Tab',
-      body: "Reports here use the domain+eligibility-filtered row set (domain toggle + FLW eligibility + verification-block-present gate), further narrowed by this tab's own FLW filter if any FLWs are selected (failedAnalysisDisplayRows) -- NOT the Status/FLW filters from the Per FLW Verification View tab or the Verification Summary tab's FLW filter, which are each scoped to their own tab alone. Four sections: By FLW, GPS Verification (including Final verification pass rate by GPS distance), and Mother question fail rate.",
+      body: "Reports here use the eligibility-filtered row set (mother eligibility + FLW eligibility + verification-block-present gate), further narrowed by this tab's own FLW filter if any FLWs are selected (failedAnalysisDisplayRows) -- NOT the Status/FLW filters from the Per FLW Verification View tab or the Verification Summary tab's FLW filter, which are each scoped to their own tab alone. Four sections: By FLW, GPS Verification (including Final verification pass rate by GPS distance), and Mother question fail rate.",
       items: [
         {
           name: 'By FLW -- chart',
@@ -2552,7 +2504,7 @@ function WorkflowUI({
           name: 'GPS Verification -- scatter axes',
           def: "One dot per visit that actually ran a GPS check (only present when the visit was at the matching location type AND a reference point existed there). X is CommCare's own distance() calculation (meters) between this visit's captured GPS and the mother's registered reference point -- the SAME distance the form itself uses to decide GPS outcome. Y is the GPS accuracy (meters) of that same captured point, read from the raw geopoint string.",
           field:
-            'X: gps_distance_from_home_meters / gps_distance_from_health_facility_meters (form.gps_verification.location_check.calculation_distance_from_{home,health_facility}_gps, transform: "float"). Y: parseGpsAccuracyMeters(gps_normalized_location) -- index 3 of the raw "lat lon altitude accuracy" geopoint string (form.gps_block_anc_visit.normalized_location, fallback form.gps_block_pnc_visit.normalized_location). Verified identical paths and the 200m pass/fail threshold on both the test domain\'s and opp 765\'s production app.',
+            'X: gps_distance_from_home_meters / gps_distance_from_health_facility_meters (form.gps_verification.location_check.calculation_distance_from_{home,health_facility}_gps, transform: "float"). Y: parseGpsAccuracyMeters(gps_normalized_location) -- index 3 of the raw "lat lon altitude accuracy" geopoint string (form.gps_block_anc_visit.normalized_location, fallback form.gps_block_pnc_visit.normalized_location). Verified identical paths and the 200m pass/fail threshold on opp 765\'s production app.',
         },
         {
           name: 'GPS Verification -- dot color (Pass / Fail)',
@@ -2593,19 +2545,19 @@ function WorkflowUI({
           name: 'Mother question fail rate -- right/wrong/not-asked logic',
           def: "A question only counts toward a visit's tally when it was actually one of that visit's 4 random picks. CommCare's own score_qN calc is 0 for BOTH \"answered wrong\" AND \"wasn't picked this visit\" -- the form conflates the two -- so gating on the picks (not on asked_qN) is what makes right/wrong/not-asked-this-visit unambiguous. asked_qN was deliberately NOT used for this: it's a rolling case property that stays 'yes' on every later visit once a question has ever been asked (until a reset cycle clears it), so it would misreport \"wrong\" on visits that didn't re-ask the question at all.",
           field:
-            'mother_q_pick_1..4 (form.additional_visit_verification_block.verification_page.random_test_setup_page.random_test_setup.pick_1..4 -- each holds a question key like "q1" when that slot was used this visit) gates whether mother_q_score_1..14 (…random_test_setup.expected_answer.score_q1..14, transform: "float", 1 = correct / 0 = incorrect) counts for that visit. Shared path across all 6 visit-type forms and both domains.',
+            'mother_q_pick_1..4 (form.additional_visit_verification_block.verification_page.random_test_setup_page.random_test_setup.pick_1..4 -- each holds a question key like "q1" when that slot was used this visit) gates whether mother_q_score_1..14 (…random_test_setup.expected_answer.score_q1..14, transform: "float", 1 = correct / 0 = incorrect) counts for that visit. Shared path across all 6 visit-type forms.',
         },
         {
           name: 'Mother question fail rate -- hover for exact question wording',
           def: "Hovering a question name on the chart's left-hand axis shows that question's exact wording as asked on the form, via the browser's own tooltip. The short name shown as the axis label (e.g. \"Baby's father's name\") is a paraphrase for chart readability -- the hover text is the real question text.",
           field:
-            "QUESTION_TEXT[key] -- hardcoded per question key, read from each question_N_* field's own \"**Question**:\" label in the CommCare app (random_test_question_bank group inside additional_visit_verification_block.verification_page.random_test_setup_page), with only that markdown prefix and an internal line break stripped for display. Verified identical wording on both the ANC Visit and 1 Week Visit test-domain forms. Chart.js has no built-in hover tooltip for axis tick labels, so this is implemented via the chart's onHover callback: it checks whether the cursor is in the y-axis label gutter (left of chartArea) and which row (an even split of chartArea's height, one per plotted question) it's over, then sets the canvas element's native title attribute to that row's text -- cleared on canvas onMouseLeave.",
+            "QUESTION_TEXT[key] -- hardcoded per question key, read from each question_N_* field's own \"**Question**:\" label in the CommCare app (random_test_question_bank group inside additional_visit_verification_block.verification_page.random_test_setup_page), with only that markdown prefix and an internal line break stripped for display. Verified identical wording on both the ANC Visit and 1 Week Visit forms. Chart.js has no built-in hover tooltip for axis tick labels, so this is implemented via the chart's onHover callback: it checks whether the cursor is in the y-axis label gutter (left of chartArea) and which row (an even split of chartArea's height, one per plotted question) it's over, then sets the canvas element's native title attribute to that row's text -- cleared on canvas onMouseLeave.",
         },
       ],
     },
     {
       title: 'GPS Map Tab',
-      body: 'Plots one "chain" per mother on a Mapbox GL map (window.ConnectMap.createMap, the same properly-licensed basemap pipeline the rest of this app uses -- NOT raw Leaflet + OpenStreetMap tiles, which this tab used at first until OSM\'s volunteer-run tile servers started blocking the traffic): a circle at her registration GPS point, fanned out with a straight line to a square at each of her visit GPS points. Built from the SAME displayRows every other tab uses (domain + eligibility + verification-block-present + exclude-registration-visits), so a visit excluded there is also absent here -- a mother whose only visit was excluded as "conducted at registration" shows just her registration circle, no squares, no lines.',
+      body: 'Plots one "chain" per mother on a Mapbox GL map (window.ConnectMap.createMap, the same properly-licensed basemap pipeline the rest of this app uses -- NOT raw Leaflet + OpenStreetMap tiles, which this tab used at first until OSM\'s volunteer-run tile servers started blocking the traffic): a circle at her registration GPS point, fanned out with a straight line to a square at each of her visit GPS points. Built from the SAME displayRows every other tab uses (eligibility + verification-block-present + exclude-registration-visits), so a visit excluded there is also absent here -- a mother whose only visit was excluded as "conducted at registration" shows just her registration circle, no squares, no lines.',
       items: [
         {
           name: 'FLW filter',
@@ -2623,7 +2575,7 @@ function WorkflowUI({
           name: 'Registration point (circle)',
           def: 'The GPS location captured on the Register Mother form itself, at registration time. Hovering shows the mother ID, the registration datetime, how the FLW categorized the REGISTRATION location (Home / Health facility / Other), and the FLW.',
           field:
-            "motherRegistrationGps[mother_case_id] -- pipelines mother_registration (test domain) and/or mother_registration_prod (production domain), field home_gps OR health_facility_gps (case.properties.home_gps / case.properties.health_facility_gps -- mutually exclusive siblings on the Register Mother form, gated on registration_location_type being 'home' vs 'health_facility' respectively; the GPS-outcome distance calculations compare a VISIT's location against whichever one the mother's registration actually populated). Raw geopoint string, parsed client-side via parseGpsLatLon (indices 0/1 of \"lat lon altitude accuracy\" -- same string format as gps_normalized_location, parsed by parseGpsAccuracyMeters for index 3 elsewhere on this dashboard). The tooltip's datetime comes from the same pipelines' registration_datetime field (case.date_opened -- a built-in CommCare Case API v2 attribute, not a custom property). The tooltip's location comes from registration_location_type (case.properties.where_is_the_registration_being_conducted -- the Register Mother form's own \"Where is the registration being conducted?\" answer, rendered via registrationLocationTypeLabel() since it uses a DIFFERENT value vocabulary -- home/health_facility/others -- than a visit's own where_is_the_visit_being_conducted). A mother registered at 'others' has neither GPS field populated (CommCare never captured one) and plots no circle -- a real data gap, not a bug.",
+            "motherRegistrationGps[mother_case_id] -- pipeline mother_registration_prod, field home_gps OR health_facility_gps (case.properties.home_gps / case.properties.health_facility_gps -- mutually exclusive siblings on the Register Mother form, gated on registration_location_type being 'home' vs 'health_facility' respectively; the GPS-outcome distance calculations compare a VISIT's location against whichever one the mother's registration actually populated). Raw geopoint string, parsed client-side via parseGpsLatLon (indices 0/1 of \"lat lon altitude accuracy\" -- same string format as gps_normalized_location, parsed by parseGpsAccuracyMeters for index 3 elsewhere on this dashboard). The tooltip's datetime comes from the same pipeline's registration_datetime field (case.date_opened -- a built-in CommCare Case API v2 attribute, not a custom property). The tooltip's location comes from registration_location_type (case.properties.where_is_the_registration_being_conducted -- the Register Mother form's own \"Where is the registration being conducted?\" answer, rendered via registrationLocationTypeLabel() since it uses a DIFFERENT value vocabulary -- home/health_facility/others -- than a visit's own where_is_the_visit_being_conducted). A mother registered at 'others' has neither GPS field populated (CommCare never captured one) and plots no circle -- a real data gap, not a bug.",
         },
         {
           name: 'Visit points (squares)',
@@ -2639,7 +2591,7 @@ function WorkflowUI({
         },
         {
           name: 'FLW color',
-          def: 'Every point and line for a mother\'s whole chain (registration circle, all her visit squares, all her lines) is colored by one FLW -- the FLW who conducted her EARLIEST visit still in the current filter (not necessarily her true first-ever visit, if an earlier one was filtered out). A mother with no visits in the filter (registration circle only) has no FLW to color by and shows as "unknown" in the legend. The color itself is a deterministic hash of the username into a fixed 10-color palette (d3\'s category10), NOT an index into the currently-visible FLW list -- so a given FLW keeps the same color across every domain/filter combination, rather than reassigning colors whenever the visible FLW set changes.',
+          def: 'Every point and line for a mother\'s whole chain (registration circle, all her visit squares, all her lines) is colored by one FLW -- the FLW who conducted her EARLIEST visit still in the current filter (not necessarily her true first-ever visit, if an earlier one was filtered out). A mother with no visits in the filter (registration circle only) has no FLW to color by and shows as "unknown" in the legend. The color itself is a deterministic hash of the username into a fixed 10-color palette (d3\'s category10), NOT an index into the currently-visible FLW list -- so a given FLW keeps the same color across every filter combination, rather than reassigning colors whenever the visible FLW set changes.',
           field:
             'flwMapColor(username) -- FNV-ish char-code hash mod 10, indexing FLW_MAP_COLORS. Legend above the map lists every distinct FLW color actually in view (after the FLW filter above), sorted alphabetically.',
         },
@@ -2647,7 +2599,7 @@ function WorkflowUI({
     },
     {
       title: 'UAT Comparison Tab',
-      body: "Per FLW, compares TWO INDEPENDENT GPS metrics -- different underlying series, each with its own sample-size-matching unit, not the same series' mean vs. median. Built from enrichedRows (domain filter + FLW eligibility, same population as every other tab) rather than displayRows, because displayRows already drops every pre-UAT visit via the verification-block-present gate -- exactly the split this tab compares across. Both metrics gate UAT-vs-pre-UAT by hasVerificationData(row) on the VISIT being measured TO (the later point in a pair), same gate displayRows uses. Neither metric consults the exclude-registration-visits toggle above -- that toggle is about what counts as a distinct follow-up visit for the rest of the dashboard; these two series deliberately use the full physical GPS chain regardless, registration point included.",
+      body: "Per FLW, compares TWO INDEPENDENT GPS metrics -- different underlying series, each with its own sample-size-matching unit, not the same series' mean vs. median. Built from enrichedRows (FLW eligibility, same population as every other tab) rather than displayRows, because displayRows already drops every pre-UAT visit via the verification-block-present gate -- exactly the split this tab compares across. Both metrics gate UAT-vs-pre-UAT by hasVerificationData(row) on the VISIT being measured TO (the later point in a pair), same gate displayRows uses. Neither metric consults the exclude-registration-visits toggle above -- that toggle is about what counts as a distinct follow-up visit for the rest of the dashboard; these two series deliberately use the full physical GPS chain regardless, registration point included.",
       items: [
         {
           name: "Exclude visits not at mother's home",
@@ -2657,7 +2609,7 @@ function WorkflowUI({
         },
         {
           name: 'Revisit Dist (mean) -- distance_from_prev_visit_m',
-          def: 'The haversine (great-circle) distance, in meters, between a mother\'s visit and the PREVIOUS point in her chain -- and her chain now starts at her REGISTRATION point, not her first visit, so her first visit has a real distance (from registration) rather than always being null. Spans her ENTIRE history and every visit-type form, not reset at the UAT boundary or at a form-type change (her 1 Week Visit\'s "previous point" can be her ANC Visit, or her registration if the ANC Visit was itself her first).',
+          def: 'The haversine (great-circle) distance, in meters, between a mother\'s visit and the PREVIOUS point in her chain -- and her chain now starts at her REGISTRATION point, not her first visit, so her first visit has a real distance (from registration) rather than always being null. Spans her whole LOADED history (within the 180-day visit-pipeline lookback) and every visit-type form, not reset at the UAT boundary or at a form-type change (her 1 Week Visit\'s "previous point" can be her ANC Visit, or her registration if the ANC Visit was itself her first) -- but a mother active longer than 180 days has an incomplete chain, since her oldest visits are never fetched.',
           field:
             "Computed client-side in the same per-mother group-and-sort pass as visit_number/prior_verification_pass_rate (enrichedRows), seeded with parseGpsLatLon(motherRegistrationGps[mother_case_id]) instead of null before the first visit. Uses meta_location (form.meta.location, CommCare's own standard per-submission GPS stamp -- NOT gps_normalized_location, which is part of the verification block and blank on pre-UAT submissions). haversineMeters() reimplements the pipeline engine's own lag_haversine window-function math client-side, because that operation only chains WITHIN one cchq_forms pipeline (one visit-type form) and this template reads 12 separate per-form pipelines -- a mother's chain needs to cross form-type boundaries.",
         },
@@ -2701,7 +2653,7 @@ function WorkflowUI({
           name: 'Per-FLW Method Pass Rates -- table',
           def: "Below the comparison table: one row per FLW, one column per verification method plus Overall, Revisit Dist, and Metres/Visit, meant to be read ACROSS a row -- an FLW who's red straight across is persistently weak everywhere (more suspicious), one who's red in a single column likely has an isolated, sporadic issue there. Sorted worst Overall pass rate first. Pass-rate color bands: green >75%, yellow 50-75%, red <50%, grey = no attempted visits for that method. QR/Signature/Mother Questions/ANC Card/Birth Certificate cells show their attempted-visit count in parentheses next to the rate (e.g. \"80% (n=10)\") -- not shown when the cell is NA, since there's nothing to count. GPS and Overall don't show n= inline (GPS's home/facility split is in its tooltip instead; Overall's n is just Visits).",
           field:
-            "perFlwMethodStats -- displayRows (domain + eligibility + exclude-registration-visits, same population as the Verification Summary/Table tabs) grouped by username, tallied per method via the shared tallyOutcomes() helper (same Pass/Fail/Pending/\"other\" categorization the Summary cards and per-method chart use). Revisit Dist/Metres per Visit columns read directly from uatComparisonStats via a username lookup (uatStatsByUsername), so they show the same FLW's UAT value as the table above -- but colored on the ABSOLUTE value itself (revisitDistColorClass()/metresPerVisitColorClass()), not on whether it moved up or down from that FLW's own pre-UAT baseline the way the table above does (uatVerdict()). No arrow here, since there's no before/after being compared, just a value against a fixed threshold.",
+            "perFlwMethodStats -- displayRows (eligibility + exclude-registration-visits, same population as the Verification Summary/Table tabs) grouped by username, tallied per method via the shared tallyOutcomes() helper (same Pass/Fail/Pending/\"other\" categorization the Summary cards and per-method chart use). Revisit Dist/Metres per Visit columns read directly from uatComparisonStats via a username lookup (uatStatsByUsername), so they show the same FLW's UAT value as the table above -- but colored on the ABSOLUTE value itself (revisitDistColorClass()/metresPerVisitColorClass()), not on whether it moved up or down from that FLW's own pre-UAT baseline the way the table above does (uatVerdict()). No arrow here, since there's no before/after being compared, just a value against a fixed threshold.",
         },
         {
           name: 'Per-FLW Method Pass Rates -- Overall column',
@@ -3417,29 +3369,7 @@ function WorkflowUI({
       </div>
 
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
-        <span className="text-sm font-medium text-gray-700">
-          CommCare domain:
-        </span>
-        {DOMAIN_FILTER_OPTIONS.map(function (opt) {
-          var isActive = domainFilter === opt.key;
-          return (
-            <button
-              key={opt.key}
-              onClick={function () {
-                setDomainFilter(opt.key);
-              }}
-              className={
-                'rounded border px-3 py-1 text-sm font-medium ' +
-                (isActive
-                  ? 'border-blue-600 bg-blue-600 text-white'
-                  : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50')
-              }
-            >
-              {opt.label}
-            </button>
-          );
-        })}
-        <label className="ml-4 flex cursor-pointer items-center gap-2 text-sm font-medium text-gray-700">
+        <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-gray-700">
           <input
             type="checkbox"
             checked={excludeRegistrationVisits}
@@ -3451,13 +3381,13 @@ function WorkflowUI({
         </label>
       </div>
 
-      {domainFilter === 'production' && summary.total === 0 && (
+      {summary.total === 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          No verification-eligible visits loaded for the production domain (
-          {PROD_DOMAIN_NAME}) on this load. Production has real verification
-          data -- if you expect to see it, this page most likely didn't fully
-          load (a dropped connection, or data still loading). Try reloading
-          before assuming there's genuinely nothing here.
+          No verification-eligible visits loaded on this load. Production has
+          real verification data -- if you expect to see it, this page most
+          likely didn't fully load (a dropped connection, or data still
+          loading). Try reloading before assuming there's genuinely nothing
+          here.
         </div>
       )}
 
@@ -3689,8 +3619,8 @@ function WorkflowUI({
                 value shown in that table column -- so a visit where both GPS
                 and Mother Questions were attempted gets its own "GPS, Mother
                 Questions" category, separate from a visit with only GPS.
-                Respects the domain and eligibility filters above, plus this
-                tab's own FLW filter if set.
+                Respects the eligibility filters above, plus this tab's own FLW
+                filter if set.
               </p>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -3724,8 +3654,8 @@ function WorkflowUI({
                 threshold. "Home GPS mismatch reasons" breaks down the FLW's own
                 explanation for why a home GPS check failed -- the form only
                 asks this for home location mismatches, not health facility
-                ones. Respects the domain and eligibility filters above, plus
-                this tab's own FLW filter if set.
+                ones. Respects the eligibility filters above, plus this tab's
+                own FLW filter if set.
               </p>
             </div>
 
@@ -3840,8 +3770,8 @@ function WorkflowUI({
                 right/wrong/not-asked-this-visit stays unambiguous. Each bar's
                 label shows the fail rate and the number of responses it's based
                 on. Hover a question name on the left to see its exact wording
-                from the form. Respects the domain and eligibility filters
-                above, plus this tab's own FLW filter if set.
+                from the form. Respects the eligibility filters above, plus this
+                tab's own FLW filter if set.
               </p>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -3885,8 +3815,8 @@ function WorkflowUI({
               the FLW categorized that visit's location (Home / Health facility
               / Other). "Hide visits not at mother's home" (off by default)
               drops just the non-home visit points from the map, keeping each
-              mother's registration point and home visits. Respects the domain,
-              eligibility, and exclude-registration- visits filters above, same
+              mother's registration point and home visits. Respects the
+              eligibility and exclude-registration-visits filters above, same
               row set as every other tab.
             </p>
           </div>
@@ -4003,10 +3933,16 @@ function WorkflowUI({
               avg" draws 20 random same-size pre-UAT samples and averages their
               metric. "UAT active days" is reference only -- how many calendar
               days she's been active in UAT -- and is no longer the basis for
-              either metric. Respects the domain filter and FLW eligibility
-              above, same population as every other tab -- NOT the
-              exclude-registration-visits toggle, which these two series
-              deliberately ignore (see Definitions).
+              either metric. Respects FLW eligibility above, same population as
+              every other tab -- NOT the exclude-registration-visits toggle,
+              which these two series deliberately ignore (see Definitions).
+            </p>
+            <p className="text-xs font-medium text-amber-700">
+              Visit data on this dashboard only covers the last 6 months
+              (rolling). A FLW whose pre-UAT history started more than 6 months
+              ago will show a shorter, more recent "Pre-UAT" window than her
+              true full history -- the comparison below is against what's
+              loaded, not against everything that ever happened.
             </p>
           </div>
 
@@ -4225,9 +4161,9 @@ function WorkflowUI({
               rate first, so an FLW who's weak straight across every column
               (persistently suspicious) stands out from one who's weak in just
               one (likely a sporadic, isolated issue). Hover any cell for detail
-              pulled from elsewhere on this dashboard. Same domain + eligibility
-              + exclude-registration-visits population as the Verification
-              Summary and Table tabs (displayRows).
+              pulled from elsewhere on this dashboard. Same eligibility +
+              exclude-registration-visits population as the Verification Summary
+              and Table tabs (displayRows).
             </p>
           </div>
           {perFlwMethodStats.length > 0 ? (
