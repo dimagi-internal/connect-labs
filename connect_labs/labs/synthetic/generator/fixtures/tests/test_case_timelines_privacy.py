@@ -117,9 +117,7 @@ def test_an_app_computed_whole_number_keeps_its_relationship_to_the_visit(pool):
     A sampled schedule moves each later visit by up to a day (case_model._sample_days),
     so the ages follow the case's own days: the first is the source's, and each later one
     is the source's rate (20 per 7 days) times the case's own gap, to within rounding --
-    or one of the values the source's ages take (40, 60, 80: every case has them, and a
-    reading lands on a field's common values as often as the source's do), and never
-    past the source's own range.
+    and, like every sampled value, never past the source's own range (40 to 80).
     """
     for series in pool:
         days = [v["day"] for v in series["visits"]]
@@ -127,7 +125,7 @@ def test_an_app_computed_whole_number_keeps_its_relationship_to_the_visit(pool):
         assert ages[0] == 40.0
         for d, a in zip(days[1:], ages[1:]):
             expected = min(max(40.0 + 20.0 / 7.0 * (d - days[0]), 40.0), 80.0)
-            assert a in (40.0, 60.0, 80.0) or abs(a - expected) <= 1.0
+            assert abs(a - expected) <= 1.0
 
 
 # ---- GPS: the programme's shape, moved, and no real point ----------------------
