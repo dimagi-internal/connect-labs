@@ -21,17 +21,23 @@ from connect_labs.labs.models import LabsOrg
 class OrgProfile(models.Model):
     """The LLO Directory's Organizations row, minus the identity columns.
 
-    One row per organisation. Every field here is something a person maintains
-    in the sheet; nothing is derived from Connect. When Connect eventually
-    carries these, this table is what gets read from and dropped — which is only
-    possible because none of it leaked into ``LabsOrg``.
+    One row per organisation. For an organisation Connect does not know, every
+    field is something a person maintains in the sheet. For one linked to
+    Connect, Connect now carries most of this profile itself, and its values win
+    wherever it has one (`marketplace.connect_profile.CONNECT_OWNED`); the sheet
+    still supplies what Connect has no column for -- the MSA and work order, when
+    the organisation joined, contacts. This is the step towards reading the
+    profile from Connect and dropping the copy, which is only possible because
+    none of it leaked into ``LabsOrg``.
     """
 
     org = models.OneToOneField(LabsOrg, on_delete=models.CASCADE, related_name="marketplace_profile")
 
     has_used_connect = models.BooleanField(null=True, blank=True)
     year_established = models.IntegerField(null=True, blank=True)
-    team_size = models.IntegerField(null=True, blank=True)
+    # A bracket ("11-50"), as Connect collects it; the sheet's headcounts are
+    # converted on import (`directory.team_size_bracket`).
+    team_size = models.CharField(max_length=20, blank=True, default="")
 
     countries = models.JSONField(default=list, blank=True)
     regions = models.JSONField(default=list, blank=True)

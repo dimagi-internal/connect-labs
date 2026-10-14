@@ -312,6 +312,22 @@ class TestMembership:
 
         assert {o.pk for o in membership.orgs_for(request)} == {connect_org.pk, local_org.pk}
 
+    @pytest.mark.parametrize("role, manages", [("admin", True), ("member", True), ("viewer", False), (None, True)])
+    def test_a_connect_viewer_sees_the_organisation_but_does_not_manage_it(self, rf, django_user_model, role, manages):
+        """Connect gives a viewer read access. A sign-in tree from before Connect
+        sent roles carries none, and is read as it always was."""
+        user = django_user_model.objects.create_user(username="ada", password="x")
+        org = LabsOrg.objects.create(slug="sahel", name="Sahel Clinics", connect_organization_id=8101)
+        entry = {"id": 8101, "slug": "sahel"}
+        if role:
+            entry["role"] = role
+        request = rf.get("/")
+        request.user = user
+        request.session = {"labs_oauth": {"organization_data": {"organizations": [entry]}}}
+
+        assert [o.pk for o in membership.orgs_for(request)] == [org.pk]
+        assert membership.manages(request, org) is manages
+
 
 class TestHistoryNamesTheSupplier:
     """A bid is the supplier acting for itself: its history says so, not "Imported"."""

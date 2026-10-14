@@ -41,7 +41,8 @@ class DirectoryOrg:
     short_name: str = ""
     has_used_connect: bool | None = None
     year_established: int | None = None
-    team_size: int | None = None
+    # Connect's bracket ("11-50"), the form both sources now share.
+    team_size: str = ""
     countries: list[str] = field(default_factory=list)
     unresolved_countries: list[str] = field(default_factory=list)
     regions: list[str] = field(default_factory=list)
@@ -110,6 +111,31 @@ def _int_or_none(raw: str) -> int | None:
         return int(raw)
     except (TypeError, ValueError):
         return None
+
+
+# Connect's `TeamSizeRange`, verbatim: Connect collects team size as a bracket
+# because "nobody reports an exact number", and an organisation's profile there
+# is the one labs shows once linked. Upper bounds are inclusive.
+TEAM_SIZE_BRACKETS = (("1-10", 10), ("11-50", 50), ("51-200", 200), ("201-500", 500))
+TEAM_SIZE_OPEN = "500+"
+
+
+def team_size_bracket(raw) -> str:
+    """The directory's headcount, or a bracket someone typed, as Connect's bracket.
+
+    Blank for anything else -- ``quality.audit`` already reports a team-size cell
+    that is not a number, with its row.
+    """
+    value = str(raw if raw is not None else "").strip()
+    if value in {b for b, _ in TEAM_SIZE_BRACKETS} | {TEAM_SIZE_OPEN}:
+        return value
+    count = _int_or_none(value)
+    if count is None or count < 1:
+        return ""
+    for bracket, upper in TEAM_SIZE_BRACKETS:
+        if count <= upper:
+            return bracket
+    return TEAM_SIZE_OPEN
 
 
 def _bool_or_none(raw: str) -> bool | None:
@@ -222,7 +248,7 @@ def parse_organizations(rows: list[list[str]]) -> list[DirectoryOrg]:
                 short_name=cols.get(row, "Short Name"),
                 has_used_connect=_bool_or_none(cols.get(row, "Has Used Connect")),
                 year_established=_int_or_none(cols.get(row, "Year of Establishment")),
-                team_size=_int_or_none(cols.get(row, "Org Team Size")),
+                team_size=team_size_bracket(cols.get(row, "Org Team Size")),
                 countries=countries,
                 unresolved_countries=unresolved,
                 regions=_split_list(raw_regions),

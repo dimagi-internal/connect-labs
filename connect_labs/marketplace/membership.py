@@ -31,12 +31,24 @@ from connect_labs.supply_chain.update_links import tokens
 INVITE_DAYS = 30
 
 
-def _connect_orgs(request) -> Q:
-    """The organisations Connect says this user belongs to, as a filter."""
+# Connect's membership roles that may change what an organisation says about
+# itself. A Connect "viewer" may look, not edit. Connect sends the role on each
+# organisation of the sign-in tree; a tree from before it did carries none, and
+# is read as before.
+EDITING_ROLES = frozenset({"admin", "member"})
+
+
+def _connect_orgs(request, *, editing: bool = False) -> Q:
+    """The organisations Connect says this user belongs to, as a filter.
+
+    `editing` keeps only those whose role lets the user change them.
+    """
     from connect_labs.labs.context import get_org_data
     from connect_labs.supply_chain.identity import _integer_org_ids, caller_org_slugs
 
     organizations = (get_org_data(request) or {}).get("organizations") or []
+    if editing:
+        organizations = [o for o in organizations if o.get("role") is None or o.get("role") in EDITING_ROLES]
     ids, slugs = _integer_org_ids(organizations), caller_org_slugs(organizations)
     return Q(connect_organization_id__in=ids) | Q(
         connect_organization_id__isnull=True, connect_organization_slug__in=slugs
@@ -55,14 +67,15 @@ def manages(request, org) -> bool:
     """Whether this user may change what the organisation says about itself.
 
     A local admin; or, for an organisation Connect knows, any of its Connect
-    members -- Connect governs who they are, and labs keeps no second opinion.
+    admins and members -- Connect governs who they are, and labs keeps no
+    second opinion. Not its Connect viewers: Connect gives them read access.
     """
     user = getattr(request, "user", None)
     if user is None or not user.is_authenticated:
         return False
     if OrgMembership.objects.filter(org=org, user=user, role="admin").exists():
         return True
-    return LabsOrg.objects.filter(_connect_orgs(request), pk=org.pk).exists()
+    return LabsOrg.objects.filter(_connect_orgs(request, editing=True), pk=org.pk).exists()
 
 
 @transaction.atomic

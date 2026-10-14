@@ -44,7 +44,7 @@ class TestParseOrganizations:
         assert org.short_name == "HHI"
         assert org.has_used_connect is True
         assert org.year_established == 2011
-        assert org.team_size == 40
+        assert org.team_size == "11-50"
         assert org.countries == ["Nigeria"]
         assert org.regions == ["Kano", "Jigawa"]
         assert org.website == "https://example.invalid"

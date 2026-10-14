@@ -843,6 +843,13 @@ CELERY_BEAT_SCHEDULE = {
         "task": "connect_labs.pulse.tasks.import_partner_directory",
         "schedule": crontab(hour=4, minute=20),
     },
+    # Link LabsOrg rows to Connect's organisations, and follow Connect's merges.
+    # After the directory import, so a slug attribution the team added to the
+    # sheet that morning links the same day.
+    "labs-connect-org-sync": {
+        "task": "connect_labs.labs.tasks.sync_connect_organizations",
+        "schedule": crontab(hour=4, minute=50),
+    },
     "pulse-slow-maintenance": {
         "task": "connect_labs.pulse.tasks.poll_slow_maintenance",
         "schedule": crontab(minute=7),

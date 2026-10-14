@@ -28,7 +28,7 @@ from django.db.models import ProtectedError
 from django.utils import timezone
 
 from connect_labs.labs.models import LabsOrg
-from connect_labs.marketplace import directory, eoi
+from connect_labs.marketplace import connect_profile, directory, eoi
 from connect_labs.marketplace.identity import ensure_org
 from connect_labs.marketplace.models import OrgConnectSlug, OrgContact, OrgProfile
 from connect_labs.marketplace.quality import audit, findings_tab_rows
@@ -102,6 +102,8 @@ def import_directory(org_rows, contact_rows, date_rows, map_rows, *, prune: bool
                 fields["joined_at"], fields["joined_basis"] = joined
 
             OrgProfile.objects.update_or_create(org=org, defaults=fields)
+            # Linked to Connect: its profile wins over the sheet's where it has one.
+            connect_profile.apply(org)
 
         seen_emails: list[str] = []
         for contact in contacts:

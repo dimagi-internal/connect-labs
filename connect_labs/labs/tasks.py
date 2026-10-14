@@ -37,3 +37,17 @@ def cleanup_expired_sql_cache():
         logger.info(f"[SyntheticData] Cleaned up {synthetic_deleted} expired user synthetic datasets")
 
     return {"raw": raw_deleted, "computed_visits": visit_deleted, "flw": flw_deleted, "synthetic": synthetic_deleted}
+
+
+@celery_app.task(name="connect_labs.labs.tasks.sync_connect_organizations")
+def sync_connect_organizations():
+    """Link the organisation registry to Connect's organisations (`labs.connect_orgs`).
+
+    On beat because Connect's organisations change without labs hearing of it:
+    one is created, one merges two workspaces and deletes the other. Daily, after
+    the directory import, so a slug attribution added to the sheet that morning
+    is linked the same day.
+    """
+    from django.core.management import call_command
+
+    call_command("connect_org_sync")

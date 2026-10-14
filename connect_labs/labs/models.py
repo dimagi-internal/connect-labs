@@ -445,13 +445,19 @@ class LabsOrg(models.Model):
 
     Matching, stated so a reconciliation cannot be improvised later:
 
-      * `connect_organization_id` is the identity. It does not change.
+      * `connect_organization_id` is the identity. A rename does not change it.
       * the slug is a finding aid, and matches only a row with no id yet.
         Once an id is set, a slug that disagrees is refreshed rather than
         treated as a second candidate — a rename is not a new organisation.
       * two local rows resolving to one Connect id is a conflict, reported
         and never merged: merging folds two histories — two supplier
         profiles, two sets of contacts — on the strength of a string.
+      * the id stops being the identity only when Connect MERGES the
+        organisation into another, which deletes it. Then the row follows the
+        merge to the survivor, and keeps the old slug as an alias.
+
+    `labs.connect_orgs` applies these rules daily against Connect's whole
+    organisation list (cached in `ConnectOrganization`).
     """
 
     # A stable local handle, because an organisation needs referring to
@@ -511,6 +517,63 @@ class LabsOrg(models.Model):
             candidates = {self.connect_organization_slug, *(self.aliases or [])}
             return slug in {c for c in candidates if c}
         return False
+
+
+class ConnectOrganization(models.Model):
+    """A Connect organisation as labs last read it -- a cache, never edited here.
+
+    Connect made organisations first class (2026-08..10): the profile the LLO
+    Directory carries now lives on Connect's own row, and an organisation can be
+    MERGED into another, which deletes it. This table is what `labs.connect_orgs`
+    reads them into, so linking a `LabsOrg` is a lookup rather than a live call,
+    and so an organisation that disappears is noticed rather than silently
+    leaving a `LabsOrg` pointing at nothing.
+
+    `gone_at` is set only by a read of Connect's WHOLE organisation list. A
+    partial read (the poller's own memberships, when the profile export is
+    unavailable) can say an organisation exists, never that one does not.
+
+    No people: Connect also exports member and contact emails, and labs has no
+    use for them here, so they are not stored.
+    """
+
+    connect_id = models.IntegerField(unique=True)
+    slug = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    name = models.CharField(max_length=255, blank=True, default="")
+    short_name = models.CharField(max_length=40, blank=True, default="")
+
+    is_test = models.BooleanField(default=False)
+    program_manager = models.BooleanField(default=False)
+    funder = models.BooleanField(default=False)
+    verified = models.BooleanField(default=False)
+
+    # The profile, in Connect's own terms: countries are ISO 3166 alpha-3 codes,
+    # team size a bracket ("11-50"). Empty when only the org list was readable.
+    has_profile = models.BooleanField(default=False)
+    has_used_connect = models.BooleanField(default=False)
+    year_of_establishment = models.IntegerField(null=True, blank=True)
+    team_size = models.CharField(max_length=20, blank=True, default="")
+    flws_managed = models.IntegerField(null=True, blank=True)
+    countries = models.JSONField(default=list, blank=True)
+    regions = models.TextField(blank=True, default="")
+    primary_sectors = models.JSONField(default=list, blank=True)
+    website = models.CharField(max_length=500, blank=True, default="")
+    office_address = models.TextField(blank=True, default="")
+
+    first_seen_at = models.DateTimeField(auto_now_add=True)
+    last_seen_at = models.DateTimeField()
+    # Missing from a complete read. With `merged_into_id`, Connect said where it
+    # went; without, it was deleted (or the read was wrong -- either way a person
+    # should look).
+    gone_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    merged_into_id = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = "Connect organisation"
+
+    def __str__(self) -> str:
+        return f"{self.name or self.slug} (Connect {self.connect_id})"
 
 
 class Workspace(models.Model):

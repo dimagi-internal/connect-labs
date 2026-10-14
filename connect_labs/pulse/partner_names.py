@@ -15,11 +15,13 @@ this repository, because the people who own that identity do not review pull
 requests — and a name that lives in code drifts from the directory with nothing
 to detect the drift.
 
-**Several Connect orgs can be the same real partner.** Connect models this
-properly — ``organization.LLOEntity`` with ``Organization.llo_entity`` pointing
-at it — but ``OrganizationDataExportSerializer`` does not expose the FK, so the
-grouping cannot be read from the API. Matching to the directory reconstructs it:
-a partner running two workspaces otherwise shows up as two unrelated partners.
+**Several Connect orgs can be the same real partner.** Connect used to group
+them under ``organization.LLOEntity``; it retired that (2026-08) in favour of
+MERGING duplicate workspaces into one, which deletes the other. Until a partner's
+workspaces are merged, matching to the directory reconstructs the grouping: a
+partner running two workspaces otherwise shows up as two unrelated partners.
+After a merge, ``labs.connect_orgs`` keeps the merged-away slug as an alias of
+the surviving organisation, so history recorded under it still resolves.
 
 Three rules keep this honest:
 
