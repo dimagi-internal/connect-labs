@@ -454,6 +454,44 @@ class TestUpdateAuditBatchConfigView:
             assert per_opp["700"]["muac_image_paths"] == ["a/new"]
             assert per_opp["825"]["muac_image_paths"] == ["b/old"]  # untouched opp preserved
 
+    def test_save_keeps_opp_settings_the_page_does_not_send(self, dimagi_user, rf: RequestFactory):
+        # The page posts only paths and classifiers for an opp. A saved setting it does not
+        # know about (muac_reading_field) must survive the save, not be replaced away.
+        request = self._request(
+            rf,
+            dimagi_user,
+            {"per_opp": {"700": {"muac_image_paths": ["a/new"], "rest_image_paths": [], "classifiers": {}}}},
+        )
+
+        with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
+            mock_wda = MagicMock()
+            MockWDA.return_value = mock_wda
+            mock_wda.get_definition.return_value = MagicMock(
+                data={
+                    "config": {
+                        "audit_batch": {
+                            "per_opp": {
+                                "700": {
+                                    "muac_image_paths": ["a/old"],
+                                    "muac_reading_field": "a/muac_cm",
+                                }
+                            }
+                        }
+                    }
+                }
+            )
+            mock_wda.update_definition.return_value = MagicMock(data={"config": {"audit_batch": {}}})
+
+            from connect_labs.workflow.views import UpdateAuditBatchConfigView
+
+            response = UpdateAuditBatchConfigView.as_view()(request, definition_id=1)
+
+            assert response.status_code == 200
+            saved_data = mock_wda.update_definition.call_args[0][1]
+            opp_cfg = saved_data["config"]["audit_batch"]["per_opp"]["700"]
+            assert opp_cfg["muac_image_paths"] == ["a/new"]  # what the page sent wins
+            assert opp_cfg["muac_reading_field"] == "a/muac_cm"  # what it did not send is kept
+
     def test_rejects_unauthorized_opportunity_in_per_opp(self, dimagi_user, rf: RequestFactory):
         request = self._request(rf, dimagi_user, {"per_opp": {"9999": {"muac_image_paths": ["x"]}}})
 

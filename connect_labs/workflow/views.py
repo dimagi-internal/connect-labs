@@ -7466,7 +7466,11 @@ class UpdateAuditBatchConfigView(LoginRequiredMixin, View):
                 audit_batch["track_b"] = track_b
             if per_opp is not None:
                 existing_per_opp = dict(audit_batch.get("per_opp") or {})
-                existing_per_opp.update(per_opp)
+                for opp_key, opp_cfg in per_opp.items():
+                    # Merge into the opp's saved entry instead of replacing it: the page only
+                    # sends paths and classifiers, so a setting it does not know about (e.g.
+                    # muac_reading_field) would otherwise be dropped on every save.
+                    existing_per_opp[opp_key] = {**(existing_per_opp.get(opp_key) or {}), **opp_cfg}
                 audit_batch["per_opp"] = existing_per_opp
 
             new_config["audit_batch"] = audit_batch
