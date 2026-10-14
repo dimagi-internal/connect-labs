@@ -3452,10 +3452,12 @@ function WorkflowUI({
       </div>
 
       {domainFilter === 'production' && summary.total === 0 && (
-        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
-          No visits yet from the production domain ({PROD_DOMAIN_NAME}) -- the
-          verification block hasn't shipped there yet. Switch to "Test domain
-          only" or "Both domains" above to see current data.
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          No verification-eligible visits loaded for the production domain (
+          {PROD_DOMAIN_NAME}) on this load. Production has real verification
+          data -- if you expect to see it, this page most likely didn't fully
+          load (a dropped connection, or data still loading). Try reloading
+          before assuming there's genuinely nothing here.
         </div>
       )}
 
