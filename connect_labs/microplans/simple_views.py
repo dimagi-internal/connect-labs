@@ -8,17 +8,28 @@ saved plans and store each one's state as a `SimpleMicroplan` row.
 Everyone who can see Workflows can open the creator and every saved plan. Only
 the person who made a plan (or Dimagi staff) may change, rename or delete it;
 anyone else opens it read-only and can still export the CSV.
+
+**In a workspace program** (``labs.workspaces``) the same views serve
+`/microplans/program/<id>/simple/` with the workspace's rules instead: a Program
+Manager sees, changes and deletes every plan there; a Network Manager sees and
+changes only their teams' plans (anything else is a 404) and may not delete
+(403, on the audit trail). Those plans carry ``program_id`` + ``team`` and never
+appear in the global list, which shows only plans with no program. ``_Scope``
+holds the difference, so each view reads its plans through ``self.scope``.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import re
+from dataclasses import dataclass
 
 import markdown
 import nh3
 from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
@@ -28,8 +39,11 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.generic import TemplateView
 
 from connect_labs.microplans.models import SimpleMicroplan
+from connect_labs.microplans.views import _ProgramScopeMixin
 from connect_labs.utils.dimagi_user import is_dimagi_staff
 from connect_labs.utils.feature_access import user_has_feature_access
+
+logger = logging.getLogger(__name__)
 
 # The creator is offered beside Workflows on the overview, to the same people.
 FEATURE_KEY = "workflow"
@@ -82,30 +96,161 @@ def _display_name(user) -> str:
 
 
 def can_edit(user, plan: SimpleMicroplan) -> bool:
+    """A global plan: its creator, or Dimagi staff."""
     return (plan.created_by_id is not None and plan.created_by_id == user.pk) or is_dimagi_staff(user)
 
 
-class _SimpleMicroplanAccessMixin(LoginRequiredMixin):
-    def dispatch(self, request, *args, **kwargs):
-        if request.user.is_authenticated and not user_has_feature_access(request.user, FEATURE_KEY):
-            raise Http404
-        return super().dispatch(request, *args, **kwargs)
+def team_for_new_plan(role, requested=None) -> str:
+    """The team a plan made in a workspace program belongs to.
+
+    The rule ``ProgramPlanDataAccess.team_for_new_records`` applies to program
+    plans: a Network Manager's is one of their teams (the one asked for, else
+    their first); a Program Manager's is whichever they ask for ("" = Program
+    Managers only)."""
+    requested = (requested or "").strip()[:200]
+    if role.is_program_manager:
+        return requested
+    return requested if requested in role.teams else role.teams[0]
+
+
+@dataclass(frozen=True)
+class _Scope:
+    """Where a request's simple plans live and what the caller may do with them.
+
+    ``program_id`` None: the global test plans (no program), under today's rules.
+    Otherwise a workspace program and the caller's role in it."""
+
+    program_id: int | None = None
+    workspace: object | None = None
+    role: object | None = None  # labs.workspaces.WorkspaceRole
+
+    @property
+    def in_workspace(self) -> bool:
+        return self.program_id is not None
+
+    def plans(self):
+        """The plans this caller may see here. Every lookup goes through it, so
+        another team's plan (or one from another program) is simply not found."""
+        if not self.in_workspace:
+            return SimpleMicroplan.objects.filter(program_id__isnull=True)
+        plans = SimpleMicroplan.objects.filter(program_id=self.program_id)
+        if not self.role.is_program_manager:
+            plans = plans.filter(team__in=self.role.teams)
+        return plans
+
+    def can_edit(self, user, plan) -> bool:
+        if not self.in_workspace:
+            return can_edit(user, plan)
+        # Team members work on their team's plans together.
+        return self.role.is_program_manager or plan.team in self.role.teams
+
+    def can_delete(self, user, plan) -> bool:
+        if not self.in_workspace:
+            return can_edit(user, plan)
+        # As for program plans (``ProgramPlanDataAccess._guard_delete``).
+        return self.role.is_program_manager
+
+    def url(self, name: str, **kwargs) -> str:
+        if not self.in_workspace:
+            return reverse(f"microplans:simple_{name}", kwargs=kwargs)
+        return reverse(f"microplans:program_simple_{name}", kwargs={"program_id": self.program_id, **kwargs})
+
+    def new_plan_fields(self, requested_team=None) -> dict:
+        if not self.in_workspace:
+            return {}
+        return {"program_id": self.program_id, "team": team_for_new_plan(self.role, requested_team)}
+
+
+def _resolve_scope(user, program_id) -> _Scope:
+    """The caller's scope, or Http404.
+
+    Simple Microplan files plans under a program only in a workspace program;
+    any other program id is not a page. Someone with no role there was already
+    refused by the program access check (in a workspace, access IS a role) --
+    this does not rely on it."""
+    if not user_has_feature_access(user, FEATURE_KEY):
+        raise Http404
+    if program_id is None:
+        return _Scope()
+    from connect_labs.labs.workspaces import role_in, workspace_for_program
+
+    workspace = workspace_for_program(program_id)
+    role = role_in(user, workspace) if workspace is not None else None
+    if role is None:
+        raise Http404
+    return _Scope(program_id=int(program_id), workspace=workspace, role=role)
+
+
+class _SimpleMicroplanAccessMixin(_ProgramScopeMixin, LoginRequiredMixin):
+    """Who may open Simple Microplan here; sets ``self.scope``.
+
+    On a workspace route ``_ProgramScopeMixin`` first runs the labs-only program
+    access check every program route gets (a test walks the URLconf for it); on
+    the global routes there is no program and it passes straight through.
+    """
+
+    def _refuse_other_teams_record(self, request, kwargs):
+        # The program mixin's own team check looks ``plan_id`` up among the
+        # program's LabsRecord plans, which a simple plan's id is not. Simple plans
+        # are scoped by ``self.scope.plans()`` instead, resolved here: after the
+        # access check, before the context picker follows the URL.
+        self.scope = _resolve_scope(request.user, kwargs.get("program_id"))
+        return None
 
 
 def _clean_name(raw) -> str:
     return str(raw or "").strip()[:MAX_NAME_LENGTH]
 
 
+def _workspace_page_context(scope: _Scope, user, plans) -> dict:
+    """The workspace part of the list page: the caller's role, the teams a new
+    plan may be filed under, and team names for the list. Empty for the global list."""
+    if not scope.in_workspace:
+        return {}
+    from connect_labs.labs.workspaces import team_choices
+
+    teams = team_choices(scope.workspace, scope.role, user=user)
+    if scope.role.is_program_manager:
+        # Teams already on a plan, or being tested (labs.workspaces testers), which
+        # the Program Manager's own tree may not show.
+        known = {t["slug"] for t in teams}
+        others = {p.team for p in plans} | set(scope.workspace.testers.values_list("team", flat=True))
+        teams += [{"slug": t, "name": t} for t in sorted(others - known) if t]
+    pid = scope.program_id
+    return {
+        "workspace": {
+            "program_id": pid,
+            "role_label": scope.role.label,
+            "is_program_manager": scope.role.is_program_manager,
+            "teams": teams,
+            "team_names": {t["slug"]: t["name"] for t in teams},
+            # A Dimagi tester, seeing it as a Network Manager would (labs.workspaces).
+            "testing": scope.role.testing,
+            "stop_testing_url": reverse("microplans:program_workspace_stop_testing", args=[pid]),
+            "settings_url": reverse("microplans:program_workspace_settings", args=[pid]),
+        }
+    }
+
+
 class SimpleMicroplanListView(_SimpleMicroplanAccessMixin, TemplateView):
-    """Every saved simple microplan, newest change first, and the form to start one."""
+    """Every saved simple microplan the caller may see, newest change first, and
+    the form to start one."""
 
     template_name = "microplans/simple_list.html"
+    sync_labs_context = True  # workspace routes: the context picker follows the program
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        plans = list(SimpleMicroplan.objects.defer("data"))
+        scope, user = self.scope, self.request.user
+        plans = list(scope.plans().defer("data"))
+        context.update(_workspace_page_context(scope, user, plans))
+        names = context["workspace"]["team_names"] if scope.in_workspace else {}
         for plan in plans:
-            plan.editable = can_edit(self.request.user, plan)
+            plan.editable = scope.can_edit(user, plan)
+            plan.deletable = scope.can_delete(user, plan)
+            plan.editor_url = scope.url("editor", plan_id=plan.pk)
+            plan.delete_url = scope.url("delete", plan_id=plan.pk)
+            plan.team_name = names.get(plan.team) or plan.team
         context["plans"] = plans
         return context
 
@@ -115,9 +260,12 @@ class SimpleMicroplanListView(_SimpleMicroplanAccessMixin, TemplateView):
             context = self.get_context_data(name_error="Give the microplan a name.")
             return self.render_to_response(context, status=400)
         plan = SimpleMicroplan.objects.create(
-            name=name, created_by=request.user, created_by_name=_display_name(request.user)
+            name=name,
+            created_by=request.user,
+            created_by_name=_display_name(request.user),
+            **self.scope.new_plan_fields(request.POST.get("team")),
         )
-        return HttpResponseRedirect(reverse("microplans:simple_editor", kwargs={"plan_id": plan.pk}))
+        return HttpResponseRedirect(self.scope.url("editor", plan_id=plan.pk))
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
@@ -125,21 +273,24 @@ class SimpleMicroplanEditorView(_SimpleMicroplanAccessMixin, TemplateView):
     """The creator itself: a full-screen map page seeded with the plan's saved state."""
 
     template_name = "microplans/simple_editor.html"
+    sync_labs_context = True
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        plan = get_object_or_404(SimpleMicroplan, pk=kwargs["plan_id"])
+        scope = self.scope
+        plan = get_object_or_404(scope.plans(), pk=kwargs["plan_id"])
         context["plan"] = plan
+        context["list_url"] = scope.url("list")
         context["plan_state"] = {
             "id": plan.pk,
             "name": plan.name,
             "created_by": plan.created_by_name,
             "created_at": plan.created_at.isoformat(),
             "updated_at": plan.updated_at.isoformat(),
-            "editable": can_edit(self.request.user, plan),
+            "editable": scope.can_edit(self.request.user, plan),
             "data": plan.data or {},
-            "api_url": reverse("microplans:simple_api", kwargs={"plan_id": plan.pk}),
-            "list_url": reverse("microplans:simple_list"),
+            "api_url": scope.url("api", plan_id=plan.pk),
+            "list_url": context["list_url"],
         }
         sections = help_sections()
         # Article HTML goes into <template> elements, never through JSON-as-text:
@@ -153,9 +304,9 @@ class SimpleMicroplanEditorView(_SimpleMicroplanAccessMixin, TemplateView):
 class SimpleMicroplanAPIView(_SimpleMicroplanAccessMixin, View):
     """POST JSON ``{"name": ...}`` to rename, ``{"data": {...}}`` to save, or both."""
 
-    def post(self, request, plan_id):
-        plan = get_object_or_404(SimpleMicroplan, pk=plan_id)
-        if not can_edit(request.user, plan):
+    def post(self, request, plan_id, program_id=None):
+        plan = get_object_or_404(self.scope.plans(), pk=plan_id)
+        if not self.scope.can_edit(request.user, plan):
             return JsonResponse({"error": "Only the person who created this microplan can change it."}, status=403)
         try:
             body = json.loads(request.body or b"{}")
@@ -183,9 +334,33 @@ class SimpleMicroplanAPIView(_SimpleMicroplanAccessMixin, View):
 
 
 class SimpleMicroplanDeleteView(_SimpleMicroplanAccessMixin, View):
-    def post(self, request, plan_id):
-        plan = get_object_or_404(SimpleMicroplan, pk=plan_id)
-        if not can_edit(request.user, plan):
-            raise Http404
+    def post(self, request, plan_id, program_id=None):
+        scope = self.scope
+        plan = get_object_or_404(scope.plans(), pk=plan_id)
+        if not scope.can_delete(request.user, plan):
+            if not scope.in_workspace:
+                raise Http404
+            _record_refused_delete(scope, plan, request.user)
+            raise PermissionDenied("Only a Program Manager can delete a microplan in this program.")
         plan.delete()
-        return HttpResponseRedirect(reverse("microplans:simple_list"))
+        return HttpResponseRedirect(scope.url("list"))
+
+
+def _record_refused_delete(scope: _Scope, plan, user) -> None:
+    """Put a Network Manager's refused delete on the audit trail, as
+    ``ProgramPlanDataAccess._guard_delete`` does for program plans."""
+    from connect_labs.audit_trail.models import Action, Outcome
+    from connect_labs.audit_trail.service import record
+
+    logger.warning("Refusing simple microplan delete (program=%s plan=%s)", scope.program_id, plan.pk)
+    record(
+        Action.ACCESS_DENIED,
+        resource_type="simple_microplan",
+        resource_id=plan.pk,
+        program_id=scope.program_id,
+        labs_only=True,
+        outcome=Outcome.FAILURE,
+        status_code=403,
+        metadata={"reason": "workspace delete requires a Program Manager"},
+        user=user,
+    )

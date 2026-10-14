@@ -45,6 +45,22 @@ def scope_denied_reason(user, *, program_id=None, opportunity_id=None) -> str | 
     return labs_only_scope_denied_reason(user, program_id=program_id, opportunity_id=opportunity_id)
 
 
+def workspace_simple_microplan_url(program_id) -> str | None:
+    """Where a workspace program's microplans are made, or None for any other program.
+
+    A workspace program (``labs.workspaces``) makes its microplans in Simple
+    Microplan only, for everyone in it: the CHC portfolio and creator, WA Revisit
+    and the Microplans hub send people here instead. Plans and runs already
+    stored for it are left as they are. No query for a real program id."""
+    from connect_labs.labs.workspaces import workspace_for_program
+
+    if workspace_for_program(program_id) is None:
+        return None
+    from django.urls import reverse
+
+    return reverse("microplans:program_simple_list", args=[int(program_id)])
+
+
 def record_denial(*, reason: str, program_id=None, opportunity_id=None, status_code: int = 404, user=None) -> None:
     """Put a refused labs-only scope on the audit trail. Never raises.
 

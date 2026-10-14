@@ -14,7 +14,7 @@
 
     <!-- ============ Plan header: name, creator, save ============ -->
     <section class="card plan-card">
-      <a class="back-link" id="mp-back" href="{% url 'microplans:simple_list' %}">&larr; Simple Microplans</a>
+      <a class="back-link" id="mp-back" href="{{ list_url }}">&larr; Simple Microplans</a>
       <div class="plan-name-row">
         <h1 id="mp-name" title="Click to rename"></h1>
         <input class="control" id="mp-name-input" type="text" maxlength="200" style="display:none">

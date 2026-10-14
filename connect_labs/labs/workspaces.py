@@ -14,6 +14,12 @@ the rules it had before.
     each of those teams.
   * anyone else -- no role, and so no access to the workspace's programmes.
 
+**Testers.** A Program Manager can name a Dimagi person as a tester of a team
+(`labs.models.WorkspaceTester`, on the workspace settings page). While they are
+one, that person IS a Network Manager of that team in this workspace -- the
+tester rule wins over Dimagi = Program Manager -- so the Network Manager view
+can be tried before any partner exists. `WorkspaceRole.testing` says so.
+
 **Where the Network Manager answer comes from.** The Connect organisation tree
 labs already holds for the person: the session's copy on the web
 (`remember_org_data`, called by `labs.context.get_org_data`), else the
@@ -54,6 +60,8 @@ class WorkspaceRole:
     teams: tuple[str, ...] = ()
     # slug -> display name, where the tree names the organisation.
     team_names: dict = field(default_factory=dict, compare=False)
+    # A Dimagi person testing the workspace as a Network Manager (`WorkspaceTester`).
+    testing: bool = False
 
     @property
     def is_program_manager(self) -> bool:
@@ -167,8 +175,20 @@ def role_in(user, workspace) -> WorkspaceRole | None:
 
 
 def _resolve(user, workspace) -> WorkspaceRole | None:
+    from connect_labs.labs.models import WorkspaceTester
     from connect_labs.marketplace.models import OrgMembership
-    from connect_labs.utils.dimagi_user import is_dimagi_staff
+    from connect_labs.utils.dimagi_user import is_dimagi_staff, is_dimagi_user
+
+    # A tester sees exactly what a partner would: this wins over every rule below.
+    # Only a Dimagi sign-in may test (the settings page refuses anyone else, and
+    # a row for anyone else is ignored here rather than trusted).
+    tested_team = (
+        WorkspaceTester.objects.filter(workspace=workspace, user_id=user.pk).values_list("team", flat=True).first()
+    )
+    if tested_team and is_dimagi_user(user):
+        return WorkspaceRole(
+            NETWORK_MANAGER, teams=(tested_team,), team_names={tested_team: tested_team}, testing=True
+        )
 
     org_data = None
     if workspace.connect_program_ids:
@@ -279,6 +299,73 @@ def adopt_program(program_id, *, user=None):
         )
         logger.info("workspace roles turned on for labs-only program %s (organisation %s)", pid, org.slug)
     return workspace, opp, created
+
+
+class TesterRefused(Exception):
+    """Someone who cannot be made a tester of a workspace (see `add_tester`)."""
+
+
+def add_tester(workspace, who: str, team: str, *, by, program_id=None):
+    """Make the Dimagi person `who` (an email or username) a tester of `team` in
+    `workspace`: a Network Manager of that team there until removed. Changes the
+    team of someone already testing. Logged on the audit trail.
+
+    Raises `TesterRefused` for a blank team, someone labs has never seen (they
+    must sign in once first), and anyone who does not sign in with a Dimagi email."""
+    from django.contrib.auth import get_user_model
+    from django.db.models import Q
+
+    from connect_labs.audit_trail.models import Action
+    from connect_labs.audit_trail.service import record
+    from connect_labs.labs.models import WorkspaceTester
+    from connect_labs.utils.dimagi_user import is_dimagi_user
+
+    who, team = (who or "").strip(), (team or "").strip()[:200]
+    if not team:
+        raise TesterRefused("give the team they test as (for example test-llo-a)")
+    user = None
+    if who:
+        user = get_user_model().objects.filter(Q(email__iexact=who) | Q(username__iexact=who)).order_by("pk").first()
+    if user is None:
+        raise TesterRefused(f"no one has signed in to labs as {who!r} yet; they need to sign in once first")
+    if not is_dimagi_user(user):
+        raise TesterRefused("only people who sign in with a Dimagi email can be testers")
+    tester, created = WorkspaceTester.objects.update_or_create(
+        workspace=workspace, user=user, defaults={"team": team, "added_by": by}
+    )
+    record(
+        Action.CREATE if created else Action.UPDATE,
+        resource_type="workspace_tester",
+        resource_id=tester.pk,
+        program_id=program_id,
+        labs_only=True,
+        metadata={"workspace": workspace.pk, "tester_user_id": user.pk, "team": team},
+        user=by,
+    )
+    return tester
+
+
+def remove_tester(workspace, user_id, *, by, program_id=None) -> bool:
+    """Stop `user_id` testing `workspace` (their usual role applies again). Logged
+    on the audit trail. False if they were not testing it."""
+    from connect_labs.audit_trail.models import Action
+    from connect_labs.audit_trail.service import record
+    from connect_labs.labs.models import WorkspaceTester
+
+    tester = WorkspaceTester.objects.filter(workspace=workspace, user_id=user_id).first()
+    if tester is None:
+        return False
+    record(
+        Action.DELETE,
+        resource_type="workspace_tester",
+        resource_id=tester.pk,
+        program_id=program_id,
+        labs_only=True,
+        metadata={"workspace": workspace.pk, "tester_user_id": tester.user_id, "team": tester.team},
+        user=by,
+    )
+    tester.delete()
+    return True
 
 
 def delivering_orgs(org_data, connect_program_ids) -> dict:

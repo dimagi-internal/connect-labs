@@ -66,3 +66,9 @@ urlpatterns = [
         name="lock_isolation_filter",
     ),
 ]
+
+# A workspace program makes its microplans in Simple Microplan only, so no WA
+# Revisit route serves one. Applied to the whole list, so a route added above
+# later is covered too (a test walks the URLconf for it).
+for _pattern in urlpatterns:
+    _pattern.callback = views.simple_microplan_only_in_workspace(_pattern.callback)

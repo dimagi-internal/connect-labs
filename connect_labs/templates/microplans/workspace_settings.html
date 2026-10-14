@@ -26,7 +26,7 @@
   </section>
   {% else %}
   <div>
-    <a href="{{ back_url }}" class="text-sm text-brand-cornflower-blue">&larr; Back to the portfolio</a>
+    <a href="{{ back_url }}" class="text-sm text-brand-cornflower-blue">&larr; Back to Simple Microplan</a>
     <h1 class="text-2xl font-bold text-gray-900 mt-2">{{ workspace.org.name }} &mdash; workspace</h1>
     <p class="text-sm text-gray-500">Labs program #{{ program_id }}. Only program managers see this page.</p>
   </div>
@@ -57,7 +57,7 @@
     </p>
     {% if teams %}
       <table class="w-full text-sm">
-        <thead><tr class="text-left text-gray-500"><th class="py-1">Organisation</th><th>Slug</th><th class="text-right">Plans &amp; studies</th></tr></thead>
+        <thead><tr class="text-left text-gray-500"><th class="py-1">Organisation</th><th>Slug</th><th class="text-right">Microplans, plans &amp; studies</th></tr></thead>
         <tbody>
           {% for t in teams %}
             <tr class="border-t"><td class="py-1">{{ t.name }}{% if not t.derived %} <span class="text-xs text-gray-400">(seen on plans)</span>{% endif %}</td><td class="font-mono text-xs">{{ t.slug }}</td><td class="text-right">{{ t.records }}</td></tr>
@@ -70,6 +70,54 @@
     {% if pm_only_records %}
       <p class="text-xs text-gray-500">{{ pm_only_records }} plan(s) or stud(ies) have no team and are visible to program managers only.</p>
     {% endif %}
+  </section>
+
+  <section class="bg-white border rounded-lg p-4 space-y-3" id="testers">
+    <h2 class="text-lg font-semibold text-gray-900">Testers</h2>
+    <p class="text-sm text-gray-600">
+      Try the network manager view before partners join. A tester is a Dimagi person who, in this workspace, is a
+      network manager of the team you give them &mdash; a Connect organisation slug, or a made-up one such as
+      <span class="font-mono text-xs">test-llo-a</span>. They see only that team's microplans and cannot delete, exactly
+      as a partner would, and cannot open this page while testing. Remove them here, or they can stop testing
+      themselves from Simple Microplan. You can add yourself.
+    </p>
+    {% if testers %}
+      <table class="w-full text-sm">
+        <thead><tr class="text-left text-gray-500"><th class="py-1">Tester</th><th>Team</th><th>Added by</th><th></th></tr></thead>
+        <tbody>
+          {% for t in testers %}
+            <tr class="border-t">
+              <td class="py-1">{{ t.user.name|default:t.user.username }} <span class="text-xs text-gray-400">{{ t.user.email }}</span></td>
+              <td class="font-mono text-xs">{{ t.team }}</td>
+              <td class="text-xs text-gray-500">{% if t.added_by %}{{ t.added_by.name|default:t.added_by.username }}{% else %}—{% endif %}</td>
+              <td class="text-right">
+                <form method="post" class="inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="remove_tester">
+                  <input type="hidden" name="user_id" value="{{ t.user_id }}">
+                  <button type="submit" class="text-xs text-red-600 hover:text-red-700">Remove</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="text-sm text-gray-500">No testers.</p>
+    {% endif %}
+    <form method="post" class="flex flex-wrap items-end gap-2">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="add_tester">
+      <label class="flex-1 min-w-[14rem] text-sm text-gray-700">
+        Dimagi email or username
+        <input name="who" required class="mt-1 w-full border border-gray-300 rounded px-2 py-1 text-sm" autocomplete="off">
+      </label>
+      <label class="min-w-[10rem] text-sm text-gray-700">
+        Team
+        <input name="team" required placeholder="test-llo-a" class="mt-1 w-full border border-gray-300 rounded px-2 py-1 text-sm font-mono" autocomplete="off">
+      </label>
+      <button type="submit" class="button button-sm primary-dark">Add tester</button>
+    </form>
   </section>
   {% endif %}
 </div>
