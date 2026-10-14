@@ -112,9 +112,20 @@ def test_growth_is_modelled_from_the_source(pool):
 
 
 def test_an_app_computed_whole_number_keeps_its_relationship_to_the_visit(pool):
-    """age is `calculate`d, so it is rebuilt from the case's own timing, not jittered."""
+    """age is `calculate`d, so it is rebuilt from the case's own timing, not jittered.
+
+    A sampled schedule moves each later visit by up to a day (case_model._sample_days),
+    so the ages follow the case's own days: the first is the source's, and each later one
+    is the source's rate (20 per 7 days) times the case's own gap, to within rounding --
+    and, like every sampled value, never past the source's own range (40 to 80).
+    """
     for series in pool:
-        assert [v["values"]["form.age"] for v in series["visits"]] == [40.0, 60.0, 80.0]
+        days = [v["day"] for v in series["visits"]]
+        ages = [v["values"]["form.age"] for v in series["visits"]]
+        assert ages[0] == 40.0
+        for d, a in zip(days[1:], ages[1:]):
+            expected = min(max(40.0 + 20.0 / 7.0 * (d - days[0]), 40.0), 80.0)
+            assert abs(a - expected) <= 1.0
 
 
 # ---- GPS: the programme's shape, moved, and no real point ----------------------

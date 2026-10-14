@@ -81,6 +81,14 @@ _GATE_REL_TOL = 0.01
 #: ...and closer to that real case than this share of its nearest real neighbour.
 _GATE_NN_SHARE = 0.25
 _GATE_MAX_TRIES = 20
+#: Rounding: a reading this large is rounded to the nearest _ROUND_TO when its worker
+#: rounds. Weighing scales read in grams and many workers write the nearest 100 g (41%
+#: of KMC weights; 99% at EHA, 13% at one PIPN opportunity), and the clone wrote none.
+_ROUND_TO = 100
+#: ...modelled only when more of a path's readings are whole hundreds than chance gives.
+_ROUND_MIN_SHARE = 0.05
+#: Field copies: b entered as a copy of a in at least this share of cases is modelled.
+_COPY_MIN_SHARE = 0.05
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +131,13 @@ class _PathModel:
     hi: float
     resid_sd: float = 0.0
     index_k: float = 0.0
+    # Visit-to-visit noise around the case's trend: a weighing is the previous one plus
+    # the trend over the gap plus this much noise -- not an independent draw around a
+    # straight line, which a real series is not (see _sample_case).
+    step_sd: float = 0.0
+    # Share of readings that are whole hundreds, per persona ("*" = everyone). Rounding a
+    # scale reading is a worker's habit; see _ROUND_TO.
+    round_share: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -180,6 +195,13 @@ class CaseModel:
     # weeks past it reads as visits that have not happened yet.
     window: tuple[int, int] | None = None
     report: dict[str, Any] = field(default_factory=dict)
+    # Every real case's first-visit day (ordinals), which no sampled case may start on.
+    real_starts: frozenset[int] = frozenset()
+    # n -> (mean gap, visit days) of the source's cases that long, when K_MIN or more
+    # are: a case's whole schedule is drawn from these (see _sample_days).
+    day_patterns: dict[int, list[tuple[float, tuple[int, ...]]]] = field(default_factory=dict)
+    # (path a, path b) -> {persona or "*": share of cases where b was entered as a copy of a}.
+    copies: dict[tuple[str, str], dict[str, float]] = field(default_factory=dict)
 
 
 def _decimals(value: float) -> int:
@@ -214,6 +236,88 @@ def _fit_line(points: list[tuple[float, float]]) -> tuple[float, float, list[flo
     slope, intercept = np.polyfit(xs, ys, 1)
     resid = (ys - (intercept + slope * xs)).tolist()
     return float(intercept), float(slope), resid
+
+
+def _round_shares(by_owner: dict[str, list[int]]) -> dict[str, float]:
+    """Each persona's share of whole-hundred readings, and everyone's ("*").
+
+    Empty unless the path is rounded more than chance would make it (a reading in grams
+    lands on a whole hundred 1% of the time), so a path nobody rounds is left alone. A
+    persona with fewer than K_MIN readings takes everyone's share.
+    """
+    total = sum(c[0] for c in by_owner.values())
+    whole = sum(c[1] for c in by_owner.values())
+    if total < K_MIN or whole / total < _ROUND_MIN_SHARE:
+        return {}
+    shares = {"*": whole / total}
+    for owner, (n, k) in by_owner.items():
+        if n >= K_MIN:
+            shares[owner] = k / n
+    return shares
+
+
+def _fit_copies(
+    case_consts: list[tuple[str, dict[str, float]]], numeric: dict[str, _PathModel]
+) -> dict[tuple[str, str], dict[str, float]]:
+    """Per-case constants entered as a copy of another (enrolment weight = birth weight).
+
+    Drawn independently, two such fields match by chance almost never; in the source
+    one in three EHA babies has an enrolment weight copied from the birth weight, which
+    the birth-copy rate counts. Kept per persona, as copying is a worker's habit.
+    """
+    const_paths = sorted(p for p, m in numeric.items() if m.kind == "const")
+    together: Counter = Counter()
+    copied: dict[tuple[str, str], dict[str, list[int]]] = defaultdict(lambda: defaultdict(lambda: [0, 0]))
+    for owner, consts in case_consts:
+        present = [p for p in const_paths if p in consts]
+        for i, a in enumerate(present):
+            for b in present[i + 1 :]:
+                together[(a, b)] += 1
+                c = copied[(a, b)][owner]
+                c[0] += 1
+                c[1] += int(abs(consts[a] - consts[b]) < 1)
+    out: dict[tuple[str, str], dict[str, float]] = {}
+    for pair, n in together.items():
+        by_owner = copied[pair]
+        k = sum(c[1] for c in by_owner.values())
+        if n < K_MIN or k < K_MIN or k / n < _COPY_MIN_SHARE or k / n > 0.95:
+            # Over 95%: the two are the same field under two names, which the
+            # copula already keeps together; nothing to add.
+            continue
+        shares = {"*": k / n}
+        for owner, (m, j) in by_owner.items():
+            if m >= K_MIN:
+                shares[owner] = j / m
+        out[pair] = shares
+    return out
+
+
+def _sample_days(model: CaseModel, n: int, mean_gap: float, nrng: np.random.Generator) -> list[int] | None:
+    """A whole visit schedule from the source's cases of this length, or None.
+
+    Real follow-up runs to a protocol: a KMC case is seen until about day 28, so its
+    schedule's total length is tight even when single gaps are not. Drawing each gap on
+    its own (gap_ratios) kept the gaps' spread but lost that, and a clone's cases ended
+    early or ran long -- "lost by day 28" read 46% against the source's 19%. The schedule
+    taken is one whose mean gap is near the case's sampled mean gap (so the gap keeps its
+    place in the copula), and every visit between the first and the last moves by up to
+    a day so no source schedule is reproduced exactly. The last stays put: the length of
+    follow-up is what the outcome indicators measure (seen at day 28 or lost), and the
+    case's start date is jittered on its own.
+    """
+    pats = model.day_patterns.get(n)
+    if not pats:
+        return None
+    gaps = np.array([g for g, _ in pats])
+    i = int(np.searchsorted(gaps, mean_gap))
+    lo, hi = max(0, i - 3), min(len(pats), i + 4)
+    _, days = pats[int(nrng.integers(lo, hi))]
+    out = [0]
+    for d in days[1:-1]:
+        out.append(min(max(out[-1], int(d) + int(nrng.integers(-1, 2))), int(days[-1])))
+    if len(days) > 1:
+        out.append(int(days[-1]))
+    return out
 
 
 def _bucket(i: int) -> int:
@@ -252,6 +356,11 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
     date_obs: dict[str, list[float]] = defaultdict(list)
     date_cases: Counter = Counter()
     resid: dict[str, list[float]] = defaultdict(list)
+    step_resid: dict[str, list[float]] = defaultdict(list)
+    day_patterns: dict[int, list[tuple[float, tuple[int, ...]]]] = defaultdict(list)
+    # path -> persona -> [readings, whole hundreds]
+    rounding: dict[str, dict[str, list[int]]] = defaultdict(lambda: defaultdict(lambda: [0, 0]))
+    case_consts: list[tuple[str, dict[str, float]]] = []
     index_offsets: dict[str, list[float]] = defaultdict(list)
     day_offset_consistent: dict[str, list[bool]] = defaultdict(list)
 
@@ -263,6 +372,7 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
             gaps = [b - a for a, b in zip(days, days[1:])]
             mean_gap = max(sum(gaps) / len(gaps), 1e-9)
             row["mean_gap"] = sum(gaps) / len(gaps)
+            day_patterns[len(days)].append((row["mean_gap"], tuple(d - days[0] for d in days)))
             for i, g in enumerate(gaps, start=1):
                 gap_ratios[_bucket(i)].append(g / mean_gap if mean_gap > 1e-9 else 0.0)
         forms = [v.get("form") for v in visits]
@@ -282,6 +392,10 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
             for path, val in (v.get("values") or {}).items():
                 per_path[path].append((int(v["day"]), idx, float(val)))
                 num_obs[path].append(float(val))
+                if abs(float(val)) >= 2 * _ROUND_TO:
+                    counts = rounding[path][s["owner"]]
+                    counts[0] += 1
+                    counts[1] += int(float(val) % _ROUND_TO == 0)
         for path, pts in per_path.items():
             num_cases[path] += 1
             if path in frozen_paths:
@@ -297,8 +411,11 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
                 if len({d for d, _, _ in pts}) >= 2:
                     row[f"s:{path}"] = sl
                 resid[path].extend(res)
+                for (d0, _, y0), (d1, _, y1) in zip(pts, pts[1:]):
+                    step_resid[path].append((y1 - y0) - sl * (d1 - d0))
             else:
                 row[f"c:{path}"] = pts[0][2]
+        case_consts.append((s["owner"], {p: pts[0][2] for p, pts in per_path.items() if p not in time_varying}))
 
         per_date: dict[str, list[tuple[int, float]]] = defaultdict(list)
         for v in visits:
@@ -335,6 +452,9 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
             # it varies within cases, a per-case constant if it does not.
         if kind == "varying" and resid[path]:
             model.resid_sd = _robust_sd(resid[path])
+        if kind == "varying" and len(step_resid[path]) >= K_MIN:
+            model.step_sd = _robust_sd(step_resid[path])
+        model.round_share = _round_shares(rounding.get(path) or {})
         numeric[path] = model
     dates: dict[str, _PathModel] = {}
     for path, obs in date_obs.items():
@@ -398,6 +518,9 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
         presence[path] = {f: min(1.0, by_form[f] / form_seen[f]) for f in by_form if form_seen[f]}
 
     return CaseModel(
+        real_starts=frozenset(d for starts in owner_starts.values() for d in starts),
+        day_patterns={n: sorted(pats) for n, pats in day_patterns.items() if len(pats) >= K_MIN},
+        copies=_fit_copies(case_consts, numeric),
         owners=dict(owners),
         owner_starts=dict(owner_starts),
         columns=columns,
@@ -638,6 +761,19 @@ def fit_days(days: list[int], length: int) -> list[int]:
     return [d * max(length, 0) // span for d in days]
 
 
+def _rounds(pm: _PathModel, owner: str, rng: random.Random) -> bool:
+    """Whether this reading is written to the nearest hundred (the persona's habit)."""
+    if not pm.round_share:
+        return False
+    return rng.random() < pm.round_share.get(owner, pm.round_share["*"])
+
+
+def _to_hundred(value: float, pm: _PathModel) -> float:
+    if abs(value) < 2 * _ROUND_TO:
+        return value
+    return float(min(max(round(value / _ROUND_TO) * _ROUND_TO, pm.lo), pm.hi))
+
+
 def _round_clamp(value: float, pm: _PathModel) -> float:
     value = float(round(value)) if pm.whole else round(value, pm.places)
     return min(max(value, pm.lo), pm.hi)
@@ -648,9 +784,9 @@ def _sample_case(
 ) -> dict[str, Any]:
     params = _sample_params(model, n, nrng)
     # Visit days: the case's mean gap times pooled per-position ratios.
-    days = [0]
     mean_gap = max(params.get("mean_gap", 0.0), 0.0)
-    for i in range(1, n):
+    days = _sample_days(model, n, mean_gap, nrng) or [0]
+    for i in range(len(days), n):
         ratios = model.gap_ratios.get(_bucket(i))
         if ratios is None:
             ratios = model.gap_ratios[max(model.gap_ratios)]
@@ -702,6 +838,16 @@ def _sample_case(
                     break
             end = _draw(counts, rng)
             endings[path] = None if end in (None, _NONE) else end
+    # Per-case constants: rounded once (a case's birth weight is one entry), then copied
+    # where the source's workers copy one field into another (see _fit_copies).
+    for path, pm in model.numeric.items():
+        key = f"c:{path}"
+        if pm.kind == "const" and key in params and _rounds(pm, owner, rng):
+            params[key] = _to_hundred(_round_clamp(params[key], pm), pm)
+    for (a, b), shares in model.copies.items():
+        if f"c:{a}" in params and f"c:{b}" in params and rng.random() < shares.get(owner, shares["*"]):
+            params[f"c:{b}"] = params[f"c:{a}"]
+    last_reading: dict[str, tuple[int, float]] = {}
     visits = []
     for idx, (day, form) in enumerate(zip(days, forms), start=1):
         values: dict[str, float] = {}
@@ -713,8 +859,18 @@ def _sample_case(
             elif pm.kind == "dayoffset" and f"o:{path}" in params:
                 values[path] = float(round(params[f"o:{path}"] + day))
             elif pm.kind == "varying" and f"b:{path}" in params:
-                v = params[f"b:{path}"] + params.get(f"s:{path}", 0.0) * day + nrng.normal(0.0, pm.resid_sd)
-                values[path] = _round_clamp(v, pm)
+                slope = params.get(f"s:{path}", 0.0)
+                prev = last_reading.get(path)
+                if prev is not None and pm.step_sd > 0:
+                    # The previous reading plus the trend over the gap: a real series
+                    # moves step by step, and independent draws around a line made
+                    # impossible steps between close visits (25% of babies vs 10%).
+                    v = prev[1] + slope * (day - prev[0]) + nrng.normal(0.0, pm.step_sd)
+                else:
+                    v = params[f"b:{path}"] + slope * day + nrng.normal(0.0, pm.resid_sd)
+                last_reading[path] = (day, v)
+                value = _round_clamp(v, pm)
+                values[path] = _to_hundred(value, pm) if _rounds(pm, owner, rng) else value
             elif f"c:{path}" in params:
                 values[path] = _round_clamp(params[f"c:{path}"], pm)
         dates: dict[str, int] = {}
@@ -753,6 +909,16 @@ def _sample_case(
     start = start_ordinal + rng.choice(shifts)
     if model.window:
         start = place_in_window(start, days[-1], *model.window)
+        # Pinned to the window's edge, a case whose schedule is the length of a real one
+        # can start on that real case's first day. Never ship a real first-visit date.
+        real = model.real_starts
+        if start in real:
+            first, last = model.window
+            for d in (1, -1, 2, -2, 3, -3):
+                moved = start + d
+                if moved not in real and first <= moved and moved + days[-1] <= last:
+                    start = moved
+                    break
     return {"owner": owner, "start_date": dt.date.fromordinal(start).isoformat(), "visits": visits}
 
 
