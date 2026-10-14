@@ -117,15 +117,27 @@
       </div>
 
       <div class="btn-row">
-        <button class="primary-btn" id="mp-boundary-apply">Use as boundary</button>
-        <button class="btn-secondary" id="mp-boundary-clear">Clear</button>
+        <button class="primary-btn" id="mp-boundary-apply">Add boundary</button>
+        <button class="btn-secondary" id="mp-boundary-clear">Clear all</button>
       </div>
       <p class="section-stat" id="mp-boundary-stat">No boundary yet.</p>
+      <div class="field" id="mp-ia-box" hidden>
+        <span class="lbl">Boundaries</span>
+        <p class="section-stat" style="margin-top:2px">Each boundary is an Implementation Area on Connect, with its own name and its own settings in steps 2 and 3. Click one to work on it. Work areas inside it carry its name, so keep each one unique.</p>
+        <div id="mp-ia-list" class="ia-list"></div>
+        <p class="section-stat warn" id="mp-ia-dupes" hidden></p>
+      </div>
     </section>
 
     <!-- ============ 2. Work areas ============ -->
     <section class="card step" id="step-workareas">
       <div class="step-head"><span class="step-num">2</span><h2>Work areas</h2><button type="button" class="help-q" data-help-open="step-2-work-areas" title="How this step works" aria-label="Help for this step">?</button></div>
+
+      <div class="field active-boundary" id="mp-active-box" hidden>
+        <label for="mp-active">Boundary</label>
+        <select class="control" id="mp-active"></select>
+        <p class="section-stat">The settings below are kept for each boundary. Generate grid makes work areas for this boundary only, replacing any it already has.</p>
+      </div>
 
       <div class="seg" id="mp-wa-mode">
         <button data-mode="grid" class="active">Auto-grid</button>
@@ -207,7 +219,7 @@
 
       <div class="field" id="mp-autogroup-box">
         <span class="lbl">Auto-group into WAGs</span>
-        <p class="section-stat" style="margin-top:2px">Named &lt;prefix&gt;-G-001, -G-002 &hellip; Run it as often as you like; Undo puts the previous groups back.</p>
+        <p class="section-stat" style="margin-top:2px">Named &lt;ward&gt;-G-001, -G-002 &hellip; per ward (no spaces; the slug prefix when there is no ward). Run it as often as you like; Undo puts the previous groups back.</p>
         <div class="seg" id="mp-group-by">
           <button type="button" data-by="count" class="active">By work areas</button>
           <button type="button" data-by="buildings">By buildings</button>
@@ -230,6 +242,7 @@
           <div class="mp-grid2">
             <div><label for="mp-group-scope">Group</label>
               <select class="control" id="mp-group-scope">
+                <option value="boundary">This boundary</option>
                 <option value="all">All work areas</option>
                 <option value="selected">Selected only</option>
               </select></div>
@@ -275,13 +288,21 @@
     <!-- ============ 4. Export ============ -->
     <section class="card step" id="step-export">
       <div class="step-head"><span class="step-num">4</span><h2>Export</h2><button type="button" class="help-q" data-help-open="step-4-export" title="How this step works" aria-label="Help for this step">?</button></div>
-      <p class="section-stat">Same columns and format as the grid generator&rsquo;s work-area CSV.</p>
+      <p class="section-stat">Two files for Connect: the work areas, and the Implementation Areas (your boundaries) they belong to.</p>
       <div class="field">
+        <span class="lbl">Work areas</span>
         <label for="mp-csv-name">File name</label>
         <input class="control" id="mp-csv-name" type="text" autocomplete="off" placeholder="work_areas.csv">
       </div>
       <button class="primary-btn" id="mp-download">Download CSV</button>
       <p class="section-stat warn" id="mp-admin-missing" hidden></p>
+      <div class="divider"></div>
+      <div class="field">
+        <span class="lbl">Implementation Area</span>
+        <label for="mp-ia-csv-name">File name</label>
+        <input class="control" id="mp-ia-csv-name" type="text" autocomplete="off" placeholder="implementation_area.csv">
+      </div>
+      <button class="btn-secondary" id="mp-ia-download">Download Implementation Area CSV</button>
     </section>
   </aside>
 </div>
@@ -313,6 +334,7 @@
 <script src="https://cdn.jsdelivr.net/npm/polygon-clipping@0.15.7/dist/polygon-clipping.umd.js"></script>
 <script src="{% static 'microplans/simple_microplan_grouping.js' %}"></script>
 <script src="{% static 'microplans/simple_microplan_admin.js' %}"></script>
+<script src="{% static 'microplans/simple_microplan_export.js' %}"></script>
 <script src="{% static 'microplans/simple_microplan.js' %}"></script>
 <script src="{% static 'microplans/simple_microplan_help.js' %}"></script>
 </body>

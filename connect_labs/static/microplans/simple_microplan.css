@@ -1070,3 +1070,44 @@ body.readonly .edit-only {
     bottom: 108px;
   }
 }
+
+/* Implementation Area names (step 1) */
+.ia-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+}
+.ia-card {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 34px 6px 8px;
+  cursor: pointer;
+}
+.ia-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.ia-meta {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.ia-remove {
+  position: absolute;
+  top: 8px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.ia-remove:hover {
+  background: #fee2e2;
+  color: #b91c1c;
+}
