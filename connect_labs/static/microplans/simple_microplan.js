@@ -1,7 +1,8 @@
 /* ============================================================
    Simple Microplan creator
    1. Boundary  2. Work areas (auto-grid / draw / smart draw)
-   3. Grouping (auto / manual)  4. Export CSV
+   3. Grouping (auto / manual)  4. Export CSVs (work areas + Implementation
+   Area, simple_microplan_export.js)
    The grid engine, building fetch, slugs, singleton columns and CSV writer are
    the standalone generator's (a browser port of generate_grid_v2.py), kept as
    they were so the exported CSV does not change shape.
@@ -21,17 +22,6 @@
   const MAX_CELLS = 400000;
   const BLDG_LAYER_CAP = 60000;
   const WGS84 = '+proj=longlat +datum=WGS84 +no_defs';
-  const CSV_HEADERS = [
-    'Area Slug',
-    'Ward',
-    'Centroid',
-    'Boundary',
-    'Building Count',
-    'Expected Visit Count',
-    'LGA',
-    'State',
-    'Target Population',
-  ];
 
   const ISO3_TO_2 = {
     IND: 'IN',
@@ -100,6 +90,16 @@
   let rows = Array.isArray(saved.rows) ? saved.rows : []; // the CSV rows, in export order
   let settings = saved.settings || {};
   let admin = settings.admin || null; // reverse-geocoded {ward,lga,state,iso2}
+  // one boundary per polygon (older plans may hold several in one part)
+  boundary = window.SimpleMicroplanExport.splitBoundary(
+    boundary,
+    window.SimpleMicroplanExport.nextBoundaryId(boundary),
+  );
+  // the boundary steps 2 and 3 work on
+  let activeIdx = Math.min(
+    Math.max(0, Number(settings.activeBoundary) || 0),
+    Math.max(0, boundary.length - 1),
+  );
   let dirty = false;
 
   /* ============================================================
@@ -342,6 +342,7 @@
     refreshGroups();
     renderSelection();
     updateCounts();
+    renderIaNames(); // area names can come from the work areas' wards
   }
 
   function restyle(slug) {
@@ -503,7 +504,7 @@
       const inp = el.querySelector('#mp-group-name');
       if (list.length === 1) inp.value = groupOf(list[0]);
       const apply = () => {
-        const name = inp.value.trim();
+        const name = window.SimpleMicroplanExport.groupNameSafe(inp.value);
         if (!name) {
           el.querySelector('#mp-group-msg').textContent =
             'Type a group name first.';
@@ -764,14 +765,15 @@
   function renderBoundary() {
     boundaryLayer.clearLayers();
     let ha = 0;
-    boundary.forEach((part) => {
+    boundary.forEach((part, i) => {
+      const active = boundary.length > 1 && i === activeIdx;
       boundaryLayer.addLayer(
         L.geoJSON(
           { type: 'MultiPolygon', coordinates: part.polys },
           {
             style: {
-              color: '#0f172a',
-              weight: 2.5,
+              color: active ? '#4338ca' : '#0f172a',
+              weight: active ? 3.5 : 2.5,
               dashArray: '7 5',
               fill: false,
             },
@@ -785,6 +787,7 @@
         }),
       );
     });
+    renderIaNames();
     const wards = boundary.map((p) => p.ward).filter(Boolean);
     $('mp-boundary-stat').innerHTML = boundary.length
       ? '<b>Boundary set</b> — ' +
@@ -798,11 +801,244 @@
       : 'No boundary yet.';
   }
 
+  /* ---- Boundaries: each one an Implementation Area with its own settings ---- */
+  function iaAreas() {
+    return window.SimpleMicroplanExport.areasOf(boundary, rows);
+  }
+  // index of the boundary a work area sits in, or -1
+  function partOfRow(r, areas) {
+    const a = areas || iaAreas();
+    const i = window.SimpleMicroplanExport.areaIndexFor(r, a);
+    return i >= 0 ? a[i].part : -1;
+  }
+  function rowsInPart(i) {
+    const areas = iaAreas();
+    return rows.filter((r) => partOfRow(r, areas) === i);
+  }
+  function syncIaDupes() {
+    const dupes = window.SimpleMicroplanExport.duplicateNames(iaAreas());
+    const el = $('mp-ia-dupes');
+    el.hidden = !dupes.length;
+    el.textContent = dupes.length
+      ? 'Used more than once: ' +
+        dupes.join(', ') +
+        ' — Connect links work areas by name, so give each area its own.'
+      : '';
+  }
+
+  // Settings kept per boundary: step 2 (grid) and step 3 (grouping).
+  const BOUNDARY_FIELDS = {
+    cellSize: 'mp-cell',
+    ratio: 'mp-ratio',
+    base: 'mp-base',
+    prefix: 'mp-prefix',
+    groupSize: 'mp-group-size',
+    groupBldg: 'mp-group-bldg',
+    groupTol: 'mp-group-tol',
+    groupStart: 'mp-group-start',
+    groupLone: 'mp-group-lone',
+  };
+  const BOUNDARY_CHECKS = {
+    dropEmpty: 'mp-drop-empty',
+    singleton: 'mp-singleton',
+  };
+  function saveParams(i) {
+    const part = boundary[i];
+    if (!part) return;
+    const prm = { groupBy };
+    Object.entries(BOUNDARY_FIELDS).forEach(([k, id]) => {
+      prm[k] = $(id).value;
+    });
+    Object.entries(BOUNDARY_CHECKS).forEach(([k, id]) => {
+      prm[k] = $(id).checked;
+    });
+    part.params = prm;
+  }
+  // A boundary with no settings yet takes whatever is in the form.
+  function loadParams(i) {
+    const prm = boundary[i] && boundary[i].params;
+    if (!prm) return;
+    Object.entries(BOUNDARY_FIELDS).forEach(([k, id]) => {
+      if (prm[k] != null) $(id).value = prm[k];
+    });
+    Object.entries(BOUNDARY_CHECKS).forEach(([k, id]) => {
+      if (prm[k] != null) $(id).checked = !!prm[k];
+    });
+    if (prm.groupBy) setGroupBy(prm.groupBy);
+    syncGroupRange();
+    updateBaseMarkers();
+  }
+  function setActive(i) {
+    if (i === activeIdx || !boundary[i]) return;
+    saveParams(activeIdx);
+    activeIdx = i;
+    loadParams(i);
+    renderBoundary();
+    markDirty();
+  }
+  function syncActiveUi() {
+    const areas = iaAreas();
+    const sel = $('mp-active');
+    sel.innerHTML = '';
+    areas.forEach((a, i) => {
+      const o = document.createElement('option');
+      o.value = String(i);
+      o.textContent = a.name;
+      sel.appendChild(o);
+    });
+    sel.value = String(activeIdx);
+    sel.disabled = !EDITABLE;
+    $('mp-active-box').hidden = boundary.length < 2;
+    const opt = $('mp-group-scope').querySelector('option[value="boundary"]');
+    opt.textContent = areas[activeIdx]
+      ? 'This boundary (' + areas[activeIdx].name + ')'
+      : 'This boundary';
+  }
+
+  function renderIaNames() {
+    const list = $('mp-ia-list');
+    syncActiveUi();
+    if (list.contains(document.activeElement)) {
+      // mid-edit: leave the boxes alone, just move the highlight
+      [...list.children].forEach((c, i) =>
+        c.classList.toggle('active', i === activeIdx),
+      );
+      return;
+    }
+    list.innerHTML = '';
+    const areas = iaAreas();
+    $('mp-ia-box').hidden = !areas.length;
+    const counts = new Map();
+    rows.forEach((r) => {
+      const k = partOfRow(r, areas);
+      counts.set(k, (counts.get(k) || 0) + 1);
+    });
+    areas.forEach((area, i) => {
+      const part = boundary[area.part];
+      const card = document.createElement('div');
+      card.className = 'ia-card' + (i === activeIdx ? ' active' : '');
+      const inp = document.createElement('input');
+      inp.className = 'control';
+      inp.type = 'text';
+      inp.autocomplete = 'off';
+      inp.maxLength = 255;
+      inp.value = area.name;
+      inp.setAttribute('aria-label', 'Boundary ' + (i + 1) + ' name');
+      inp.disabled = !EDITABLE;
+      inp.addEventListener('focus', () => setActive(i));
+      inp.addEventListener('input', () => {
+        part.name = inp.value.trim();
+        delete part.names;
+        syncIaDupes();
+        syncActiveUi();
+        markDirty();
+      });
+      // a cleared box falls back to the ward / numbered default
+      inp.addEventListener('change', () => {
+        inp.value = iaAreas()[i].name;
+        syncActiveUi();
+      });
+      const meta = document.createElement('div');
+      meta.className = 'ia-meta';
+      const prm = part.params || {};
+      const ha = part.polys.reduce(
+        (s2, poly) =>
+          s2 +
+          poly.reduce((t, ring, r) => t + (r ? -1 : 1) * ringAreaHa(ring), 0),
+        0,
+      );
+      meta.textContent =
+        '~' +
+        ha.toFixed(1) +
+        ' ha · ' +
+        (counts.get(i) || 0) +
+        ' work areas' +
+        (prm.cellSize ? ' · ' + prm.cellSize + ' m cells' : '');
+      card.appendChild(inp);
+      card.appendChild(meta);
+      if (EDITABLE) {
+        const rm = document.createElement('button');
+        rm.type = 'button';
+        rm.className = 'ia-remove';
+        rm.title = 'Remove this boundary';
+        rm.setAttribute('aria-label', 'Remove boundary ' + area.name);
+        rm.textContent = '×';
+        rm.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          removeBoundary(i);
+        });
+        card.appendChild(rm);
+      }
+      card.addEventListener('click', (ev) => {
+        if (ev.target !== inp) setActive(i);
+      });
+      list.appendChild(card);
+    });
+    syncIaDupes();
+  }
+
+  function removeBoundary(i) {
+    const name = iaAreas()[i].name;
+    const inside = new Set(rowsInPart(i).map(slugOf));
+    const msg = inside.size
+      ? 'Remove the boundary “' +
+        name +
+        '” and its ' +
+        inside.size +
+        ' work areas?'
+      : 'Remove the boundary “' + name + '”?';
+    if (!confirm(msg)) return;
+    saveParams(activeIdx);
+    rows = rows.filter((r) => !inside.has(slugOf(r)));
+    boundary.splice(i, 1);
+    if (activeIdx >= boundary.length)
+      activeIdx = Math.max(0, boundary.length - 1);
+    else if (activeIdx > i) activeIdx--;
+    loadParams(activeIdx);
+    renderBoundary();
+    renderWorkAreas();
+    markDirty();
+  }
+
   function setBoundary(parts) {
-    boundary = parts;
+    boundary = window.SimpleMicroplanExport.splitBoundary(parts, 1);
+    activeIdx = 0;
     renderBoundary();
     fitToData();
     markDirty();
+  }
+
+  // Add boundaries to the ones already there; the first new one becomes active.
+  // A polygon that is already a boundary is not added twice.
+  function addBoundary(parts) {
+    const key = (poly) => JSON.stringify(poly[0]);
+    const have = new Set(boundary.map((p) => key(p.polys[0])));
+    const added = window.SimpleMicroplanExport.splitBoundary(
+      parts,
+      window.SimpleMicroplanExport.nextBoundaryId(boundary),
+    ).filter((p) => !have.has(key(p.polys[0])));
+    if (!added.length) {
+      log('That boundary is already in the list.', 'warn');
+      return;
+    }
+    saveParams(activeIdx);
+    boundary = boundary.concat(added);
+    activeIdx = boundary.length - added.length;
+    renderBoundary();
+    fitToData();
+    markDirty();
+    log(
+      'Added ' +
+        added.length +
+        ' boundar' +
+        (added.length === 1 ? 'y' : 'ies') +
+        ' — ' +
+        boundary.length +
+        ' in total. Steps 2 and 3 now work on “' +
+        iaAreas()[activeIdx].name +
+        '”.',
+      'ok',
+    );
   }
 
   $('mp-source').addEventListener('change', () => {
@@ -1133,7 +1369,7 @@
         log('Upload a boundary GeoJSON first.', 'err');
         return;
       }
-      setBoundary([{ polys: uploadedBoundary, ward: '', lga: '', state: '' }]);
+      addBoundary([{ polys: uploadedBoundary, ward: '', lga: '', state: '' }]);
     } else if (src === 'bbox') {
       const p = $('mp-bbox')
         .value.trim()
@@ -1151,13 +1387,13 @@
         [p[0], p[3]],
         [p[0], p[1]],
       ];
-      setBoundary([{ polys: [[ring]], ward: '', lga: '', state: '' }]);
+      addBoundary([{ polys: [[ring]], ward: '', lga: '', state: '' }]);
     } else if (src === 'wards') {
       if (!wardSel.length) {
         log('Load the admin GeoJSON and pick at least one ward.', 'err');
         return;
       }
-      setBoundary(
+      addBoundary(
         wardSel.map((w) => ({
           polys: geomToMultiPoly(w.feature.geometry),
           ward: w.name,
@@ -1221,7 +1457,7 @@
           cs +
           'm centred on the base point',
       );
-      setBoundary([
+      addBoundary([
         {
           polys: [[ring]],
           ward: '',
@@ -1234,7 +1470,8 @@
   });
   $('mp-boundary-clear').addEventListener('click', () => {
     if (!boundary.length) return;
-    if (!confirm('Clear the boundary? Work areas stay where they are.')) return;
+    if (!confirm('Remove all boundaries? Work areas stay where they are.'))
+      return;
     setBoundary([]);
   });
   $('mp-bfinish-btn').addEventListener('click', () => finishClicked());
@@ -1365,7 +1602,7 @@
       const ring = pts.map((p) => [p.lng, p.lat]);
       ring.push([...ring[0]]);
       stopDraw();
-      setBoundary([{ polys: [[ring]], ward: '', lga: '', state: '' }]);
+      addBoundary([{ polys: [[ring]], ward: '', lga: '', state: '' }]);
       return;
     }
     // work areas: keep drawing the next one until the person stops
@@ -1668,7 +1905,8 @@
         LGA: adm.lga,
         State: adm.state,
         'Target Population': 0,
-        'Work Area Group Name': adm.ward || 'Microplan',
+        'Work Area Group Name':
+          window.SimpleMicroplanExport.groupNameSafe(adm.ward) || 'Microplan',
       });
     }
     await fillAdminFromLabsWards(newRows);
@@ -2589,28 +2827,6 @@
     });
   }
 
-  function rowsToCsv(rs) {
-    const fieldnames = [...CSV_HEADERS];
-    const seen = new Set(fieldnames);
-    for (const r of rs) {
-      for (const k of Object.keys(r))
-        if (!seen.has(k)) {
-          seen.add(k);
-          fieldnames.push(k);
-        }
-    }
-    const esc = (v) => {
-      v = String(v ?? '');
-      return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
-    };
-    return (
-      fieldnames.join(',') +
-      '\n' +
-      rs.map((r) => fieldnames.map((f) => esc(r[f])).join(',')).join('\n') +
-      '\n'
-    );
-  }
-
   /* ============================================================
      Auto-grid pipeline (port of run())
      ============================================================ */
@@ -2748,7 +2964,8 @@
       (a, b) => a.ix - b.ix || a.iy - b.iy,
     );
     const prefix = params.prefix || (ward.slice(0, 2) || 'WA').toUpperCase();
-    const group = ward || 'Microplan';
+    const group =
+      window.SimpleMicroplanExport.groupNameSafe(ward) || 'Microplan';
     // without building data every cell would be "empty" — keep them all instead
     const dropEmpty = params.dropEmpty && buildings.length > 0;
     if (params.dropEmpty && !buildings.length) {
@@ -2855,7 +3072,23 @@
       singleton: $('mp-singleton').checked,
       base,
     };
-    const jobs = boundary;
+    saveParams(activeIdx);
+    const job = boundary[activeIdx];
+    const jobName = iaAreas()[activeIdx].name;
+    const jobs = [job];
+    // regenerating a boundary replaces its work areas instead of piling more on
+    const replacing = new Set(rowsInPart(activeIdx).map(slugOf));
+    if (
+      replacing.size &&
+      !confirm(
+        '“' +
+          jobName +
+          '” already has ' +
+          replacing.size +
+          ' work areas. Replace them with a new grid (their groups go too)?',
+      )
+    )
+      return;
 
     const btn = $('mp-run');
     btn.disabled = true;
@@ -2866,7 +3099,8 @@
     setProgress(0.01, 'Starting');
     try {
       // seed with slugs already on the map so appended grids can't collide
-      const usedSlugs = new Set(rows.map(slugOf));
+      const kept = rows.filter((r) => !replacing.has(slugOf(r)));
+      const usedSlugs = new Set(kept.map(slugOf));
       const sharedIso = { value: '' };
       const allRows = [],
         allBldgs = [];
@@ -2874,16 +3108,8 @@
       for (let i = 0; i < jobs.length; i++) {
         progBase = i / jobs.length;
         progSpan = 1 / jobs.length;
-        if (jobs.length > 1)
-          log(
-            '── [' +
-              (i + 1) +
-              '/' +
-              jobs.length +
-              '] ' +
-              (jobs[i].ward || 'area') +
-              ' ──',
-          );
+        if (boundary.length > 1)
+          log('── [' + (i + 1) + '/' + jobs.length + '] ' + jobName + ' ──');
         last = await runJob(jobs[i], params, usedSlugs, sharedIso);
         allRows.push(...last.rows);
         allBldgs.push(...last.buildings);
@@ -2894,7 +3120,7 @@
         throw new Error('No cells were produced — nothing to output.');
       await fillAdminFromLabsWards(allRows);
 
-      const appending = rows.length > 0;
+      const appending = kept.length > 0 || boundary.length > 1;
       const first = allRows[0]; // one job: its admin fields, gaps filled above
       $('mp-csv-name').value = appending
         ? 'microplan_combined.csv'
@@ -2903,14 +3129,23 @@
           : autoCsvName(first.Ward, first.LGA, first.State, sharedIso.value);
 
       addBuildings(allBldgs);
-      rows = rows.concat(allRows);
+      rows = kept.concat(allRows);
       renderWorkAreas();
-      if (appending)
+      if (replacing.size)
+        log(
+          '[map] Replaced ' +
+            replacing.size +
+            ' work areas in “' +
+            jobName +
+            '”.',
+          'ok',
+        );
+      else if (kept.length)
         log(
           '[map] Added ' +
             allRows.length +
             ' new cells to the ' +
-            (rows.length - allRows.length) +
+            kept.length +
             ' already on the map.',
           'ok',
         );
@@ -2961,20 +3196,14 @@
       .slice(0, 2)
       .toUpperCase();
 
-  // <prefix>-G-001, -G-002 … per slug prefix. When only some work areas are
-  // regrouped, numbering carries on after the groups that stay.
+  // <WARD>-G-001, -G-002 … per ward (no spaces), or per slug prefix for work
+  // areas with no ward. When only some work areas are regrouped, numbering
+  // carries on after the groups that stay.
   function makeNamer(keepRows) {
-    const next = new Map();
-    for (const r of keepRows) {
-      const m = String(groupOf(r)).match(/^([A-Z]{2})-G-(\d+)$/);
-      if (m) next.set(m[1], Math.max(next.get(m[1]) || 0, Number(m[2])));
-    }
-    return (prefix) => {
-      const n = (next.get(prefix) || 0) + 1;
-      next.set(prefix, n);
-      return prefix + '-G-' + String(n).padStart(3, '0');
-    };
+    return window.SimpleMicroplanExport.groupNamer(keepRows.map(groupOf));
   }
+  const groupKeyOf = (r) =>
+    window.SimpleMicroplanExport.groupWardKey(r) || slugPrefix(slugOf(r));
 
   // By work-area count. Greedy spatial grouping: sweep from a corner, each seed
   // grabs its (size-1) nearest ungrouped neighbours — on a regular grid with
@@ -2989,7 +3218,7 @@
       my = 110574;
     const byPrefix = new Map();
     for (const x of items) {
-      const prefix = slugPrefix(slugOf(x.r));
+      const prefix = groupKeyOf(x.r);
       if (!byPrefix.has(prefix)) byPrefix.set(prefix, []);
       byPrefix.get(prefix).push({ r: x.r, x: x.c[0] * mx, y: x.c[1] * my });
     }
@@ -3048,11 +3277,16 @@
     return Math.max(0, parseFloat($('mp-group-lone').value) || 0);
   }
 
-  // Name each member list <prefix>-G-### and write it onto the rows.
+  // Name each member list <WARD>-G-### (the ward most of it is in, else the
+  // slug prefix) and write it onto the rows.
   function nameGroups(list, groups, nameFor) {
     const bySlug = new Map(list.map((r) => [slugOf(r), r]));
     return groups.map((ids) => {
-      const name = nameFor(slugPrefix(ids[0]));
+      const members = ids.map((id) => bySlug.get(id));
+      const name = nameFor(
+        window.SimpleMicroplanExport.groupWardKeyOf(members) ||
+          slugPrefix(ids[0]),
+      );
       ids.forEach((id) => {
         bySlug.get(id)['Work Area Group Name'] = name;
       });
@@ -3107,7 +3341,7 @@
     // work areas with no boundary can't be placed by adjacency: own group each
     list.forEach((r) => {
       if (!parseWktRing(r['Boundary']))
-        r['Work Area Group Name'] = nameFor(slugPrefix(slugOf(r)));
+        r['Work Area Group Name'] = nameFor(groupKeyOf(r));
     });
     return Object.assign(res, { names, moves });
   }
@@ -3182,13 +3416,20 @@
   async function runAutoGroup() {
     if (grouping) return;
     const scope = $('mp-group-scope').value;
+    saveParams(activeIdx);
     const list =
-      scope === 'selected' ? rows.filter((r) => selected.has(slugOf(r))) : rows;
+      scope === 'selected'
+        ? rows.filter((r) => selected.has(slugOf(r)))
+        : scope === 'boundary' && boundary.length
+          ? rowsInPart(activeIdx)
+          : rows;
     if (!list.length) {
       showGroupResult(
         scope === 'selected'
           ? 'Select some work areas first (or set Group to “All work areas”).'
-          : 'Nothing to group — there are no work areas yet.',
+          : scope === 'boundary' && boundary.length
+            ? 'This boundary has no work areas yet — generate them in step 2.'
+            : 'Nothing to group — there are no work areas yet.',
         true,
       );
       return;
@@ -3383,16 +3624,9 @@
   /* ============================================================
      Export
      ============================================================ */
-  $('mp-download').addEventListener('click', () => {
-    if (!rows.length) {
-      alert('There are no work areas to export yet.');
-      return;
-    }
-    // what you download is what is saved
-    if (dirty) save();
-    let name = $('mp-csv-name').value.trim() || 'work_areas.csv';
+  function downloadCsv(text, name) {
     if (!/\.csv$/i.test(name)) name += '.csv';
-    const blob = new Blob([rowsToCsv(rows)], { type: 'text/csv' });
+    const blob = new Blob([text], { type: 'text/csv' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = name;
@@ -3400,6 +3634,49 @@
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+  function confirmDupes() {
+    const dupes = window.SimpleMicroplanExport.duplicateNames(iaAreas());
+    return (
+      !dupes.length ||
+      confirm(
+        'These Implementation Area names are used more than once: ' +
+          dupes.join(', ') +
+          '. Connect will not be able to tell them apart. Download anyway?',
+      )
+    );
+  }
+
+  $('mp-download').addEventListener('click', () => {
+    if (!rows.length) {
+      alert('There are no work areas to export yet.');
+      return;
+    }
+    if (!confirmDupes()) return;
+    // what you download is what is saved
+    if (dirty) save();
+    downloadCsv(
+      window.SimpleMicroplanExport.workAreaCsv(rows, boundary),
+      $('mp-csv-name').value.trim() || 'work_areas.csv',
+    );
+  });
+
+  $('mp-ia-download').addEventListener('click', () => {
+    if (!boundary.length) {
+      alert('Set a boundary in step 1 first — it is the Implementation Area.');
+      return;
+    }
+    if (!confirmDupes()) return;
+    if (dirty) save();
+    const stem = $('mp-name')
+      .textContent.toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    downloadCsv(
+      window.SimpleMicroplanExport.implementationAreaCsv(boundary, rows),
+      $('mp-ia-csv-name').value.trim() ||
+        'implementation_area' + (stem ? '_' + stem : '') + '.csv',
+    );
   });
 
   /* ============================================================
@@ -3433,7 +3710,8 @@
   };
 
   function collectSettings() {
-    const s = { waMode, admin, groupBy, groupCheck };
+    saveParams(activeIdx);
+    const s = { waMode, admin, groupBy, groupCheck, activeBoundary: activeIdx };
     Object.entries(SETTING_FIELDS).forEach(([k, id]) => {
       s[k] = $(id).value;
     });
@@ -3650,6 +3928,7 @@
     fmtDate(STATE.created_at);
   $('mp-csv-name').value = saved.csv_name || '';
   restoreSettings(settings);
+  loadParams(activeIdx);
   renderBoundary();
   renderWorkAreas();
   fitToData();
@@ -3676,6 +3955,16 @@
     ].forEach((id) => {
       $(id).addEventListener('change', markDirty);
     });
+    // per-boundary settings follow every edit
+    [
+      ...Object.values(BOUNDARY_FIELDS),
+      ...Object.values(BOUNDARY_CHECKS),
+    ].forEach((id) =>
+      $(id).addEventListener('change', () => saveParams(activeIdx)),
+    );
+    $('mp-active').addEventListener('change', () =>
+      setActive(Number($('mp-active').value)),
+    );
     setStatus(
       STATE.updated_at ? 'Saved ' + fmtDate(STATE.updated_at) : 'Not saved yet',
       'ok',
