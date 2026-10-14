@@ -240,6 +240,9 @@ select.control {
 .section-stat b {
   color: var(--ink);
 }
+.section-stat.warn {
+  color: #92400e;
+}
 .muted {
   color: var(--muted);
   font-size: 13px;
