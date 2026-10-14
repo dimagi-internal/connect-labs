@@ -81,6 +81,43 @@ def declare(program_id, org, *, by=None, note="") -> None:
     ProgrammeRunner.objects.update_or_create(
         program_id=int(program_id), defaults={"org": org, "declared_by": by, "note": note}
     )
+    revoke_links_to_runner(program_id, org, by=by)
+
+
+def revoke_links_to_runner(program_id, org, *, by=None) -> int:
+    """Revoke every live update link issued to `org` in this programme. Returns how many.
+
+    `update_link_issue` refuses a link to the running organisation, but a link
+    issued before that organisation was declared still works, and whoever holds
+    it writes as the programme with no sign-in (design §8, M3). Declaring is the
+    moment such a link becomes dangerous, so declaring is what ends it.
+    """
+    from django.utils import timezone
+
+    from connect_labs.supply_chain.update_links.models import UpdateLink
+
+    return UpdateLink.objects.filter(program_id=int(program_id), org=org, revoked_at__isnull=True).update(
+        revoked_at=timezone.now(), revoked_by=by
+    )
+
+
+def open_to_any_domain(program_id) -> bool:
+    """Whether a labs-only registration under this programme lets any partner read it.
+
+    A labs-only opportunity with no `allowed_domains` and no workspace is open
+    to every signed-in partner (`SyntheticOpportunity.is_accessible_to`), and a
+    partner who can read the programme reads its quotes and prices (design §8,
+    H3). A programme with no labs-only registration is governed by Connect.
+    """
+    from django.db.models import Q
+
+    from connect_labs.labs.synthetic.models import SyntheticOpportunity
+
+    pid = int(program_id)
+    registrations = SyntheticOpportunity.objects.filter(labs_only=True).filter(
+        Q(program_id=pid) | Q(program_id__isnull=True, opportunity_id=pid)
+    )
+    return any(not opp.allowed_domains and opp._workspace() is None for opp in registrations)
 
 
 def declare_dimagi_if_undeclared(program_id, note) -> None:

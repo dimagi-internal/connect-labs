@@ -79,3 +79,14 @@ def test_login_bad_password():
 def test_login_page_renders_for_anonymous():
     assert Client().get("/oes/login/").status_code == 200
     assert Client().get("/oes/signup/").status_code == 200
+
+
+@pytest.mark.parametrize("email", ["someone@dimagi.com", "someone@dimagi-ai.com", "Someone@DIMAGI.COM"])
+def test_signup_refuses_a_dimagi_address(email):
+    """Labs reads a Dimagi address as Dimagi (`is_dimagi_user`), and Dimagi is a programme's
+    running organisation: an open form must never mint one (#2458 design §8)."""
+    resp = Client().post("/oes/signup/", {**SIGNUP, "email": email})
+    assert resp.status_code == 200
+    assert b"cannot be created here" in resp.content
+    assert not get_user_model().objects.filter(email__iexact=email).exists()
+    assert not SupplierOrg.objects.filter(legal_name=SIGNUP["org_name"]).exists()

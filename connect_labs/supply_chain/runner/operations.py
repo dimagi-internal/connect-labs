@@ -44,15 +44,25 @@ def programme_runner_get(access):
 )
 def programme_runner_set(access, org_id, note=""):
     from connect_labs.supply_chain.org_access import is_staff_or_system
-    from connect_labs.supply_chain.runner import declare, is_operator
+    from connect_labs.supply_chain.runner import DIMAGI_ORG_SLUG, declare, is_operator, open_to_any_domain
 
     if not is_staff_or_system(access):
         raise PermissionDenied("only platform support declares which organisation runs a program")
     org = LabsOrg.objects.filter(pk=org_id).first()
     if org is None:
         raise ValueError(f"organisation {org_id} does not exist")
+    program_id = access._require_program()
+    if org.slug != DIMAGI_ORG_SLUG and open_to_any_domain(program_id):
+        # Another organisation's quotes and prices would be readable by every
+        # partner signed in to labs. Dimagi's own invented demo programmes stay
+        # open, as they always have been.
+        raise ValueError(
+            f"program {program_id} is labs-only and open to every email domain, so anyone signed in could read "
+            f"{org.name}'s quotes and prices. Set the program's allowed domains first "
+            "(synthetic_set_allowed_domains), then declare it."
+        )
     user = getattr(access, "user", None)
-    declare(access._require_program(), org, by=user if is_operator(user) else None, note=note)
+    declare(program_id, org, by=user if is_operator(user) else None, note=note)
     if hasattr(access, "_supply_standing"):
         del access._supply_standing
     return _describe(access)

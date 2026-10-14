@@ -36,6 +36,7 @@ TAB_FOR_VIEW = {
     # Overview at its own address, which its tab links to: /supply/ itself may
     # open on another tab (landing.py).
     "supply_chain:overview": "supply_chain:home",
+    "supply_chain:programme_runner": "supply_chain:home",
     "supply_chain:dispensing_rules": "supply_chain:stock",
     "supply_chain:worker_detail": "supply_chain:workers",
     "supply_chain:dispensing_rule_create": "supply_chain:stock",

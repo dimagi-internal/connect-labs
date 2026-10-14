@@ -27,6 +27,7 @@ tenders and orders sit folded below.
       {% elif supply_standing.role == "partner" %}
       <p class="text-sm text-gray-700" data-testid="standing-note">{% if supply_standing.runner %}{{ supply_standing.runner.name }} runs this program.{% else %}No organisation runs this program yet.{% endif %} You can read it; changes are made by its own team.</p>
       {% endif %}
+      {% if runner_url %}<a class="text-sm text-brand-indigo underline" href="{{ runner_url }}" data-testid="runner-link">{% if supply_standing.runner %}Change who runs this program{% else %}Declare who runs this program{% endif %}</a>{% endif %}
     </div>
     <div class="flex flex-wrap gap-3">
       {% comment %}The one headline for workers in trouble, worded by the server so every screen says it the same way (#2344).{% endcomment %}
