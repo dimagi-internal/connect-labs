@@ -113,13 +113,27 @@ class TestFetchWorkAreaGeometry:
         rows = [_FakeRow("103083", wa_case_id="wa-1", boundary=None, centroid=None)]
         pipeline = _FakePipeline(rows)
         geometry = fetch_work_area_geometry(1, pipeline=pipeline)
-        assert geometry["wa-1"] == {"lat": None, "lon": None, "boundary": None, "wag_name": "", "connect_status": ""}
+        assert geometry["wa-1"] == {
+            "lat": None,
+            "lon": None,
+            "boundary": None,
+            "wag_name": "",
+            "connect_status": "",
+            "owner_username": "",
+        }
 
     def test_malformed_geometry_does_not_raise(self):
         rows = [_FakeRow("103083", wa_case_id="wa-1", boundary="not json", centroid="also not json")]
         pipeline = _FakePipeline(rows)
         geometry = fetch_work_area_geometry(1, pipeline=pipeline)
-        assert geometry["wa-1"] == {"lat": None, "lon": None, "boundary": None, "wag_name": "", "connect_status": ""}
+        assert geometry["wa-1"] == {
+            "lat": None,
+            "lon": None,
+            "boundary": None,
+            "wag_name": "",
+            "connect_status": "",
+            "owner_username": "",
+        }
 
     def test_pulls_connects_work_area_status_and_upper_cases_it(self):
         # Inaccessibility lives ONLY in this status (it is never a visit), so
@@ -132,7 +146,7 @@ class TestFetchWorkAreaGeometry:
         ]
         pipeline = _FakePipeline(rows)
         geometry = fetch_work_area_geometry(1, pipeline=pipeline)
-        assert pipeline.last_config.fields[-1].path == "work_area.status"
+        assert "work_area.status" in [f.path for f in pipeline.last_config.fields]
         assert {k: v["connect_status"] for k, v in geometry.items()} == {
             "wa-1": "INACCESSIBLE",
             "wa-2": "REQUEST_FOR_INACCESSIBLE",

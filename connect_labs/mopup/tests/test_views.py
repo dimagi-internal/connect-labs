@@ -49,7 +49,7 @@ def _make_fake_run_da(monkeypatch, runs=None):
         def __init__(self, program_id, *a, **k):
             self.program_id = int(program_id)
 
-        def create_run(self, *, target_opportunity_id, name=""):
+        def create_run(self, *, target_opportunity_id, name="", round="r1", r1_opportunity_id=None):
             rid = seq["run"]
             seq["run"] += 1
             runs[rid] = MopupRunRecord(
@@ -61,7 +61,9 @@ def _make_fake_run_da(monkeypatch, runs=None):
                     "program_id": self.program_id,
                     "data": {
                         "status": STATUS_SETUP,
-                        "name": name or "WA Revisit",
+                        "name": name or ("WA Revisit R2" if round == "r2" else "WA Revisit"),
+                        "round": round,
+                        "r1_opportunity_id": r1_opportunity_id if round == "r2" else None,
                         "target_opportunity_id": target_opportunity_id,
                         "selected_wards": [],
                         "date_from": None,

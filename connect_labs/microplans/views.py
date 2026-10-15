@@ -2763,7 +2763,8 @@ class ProgramBulkCreateStatusView(LoginRequiredMixin, View):
 
 
 class MicroplansHubView(LoginRequiredMixin, TemplateView):
-    """`/microplans/`: the overview's Microplans tile opens here, onto CHC, CHC WA Revisit and Simple Microplan."""
+    """`/microplans/`: the overview's Microplans tile opens here, onto CHC, CHC WA Revisit (R1 and R2)
+    and Simple Microplan."""
 
     template_name = "microplans/hub.html"
 
@@ -2774,6 +2775,7 @@ class MicroplansHubView(LoginRequiredMixin, TemplateView):
         program_id = labs_context.get("program_id") or 217
         context["chc_url"] = f"/microplans/program/{program_id}/"
         context["wa_revisit_url"] = f"/wa-revisit/program/{program_id}/"
+        context["wa_revisit_r2_url"] = f"/wa-revisit/r2/program/{program_id}/"
         # A workspace program (labs.workspaces) makes its microplans in Simple
         # Microplan only, filed under the program and the person's team: the hub
         # offers just that tile, opening the program's list (not the global test

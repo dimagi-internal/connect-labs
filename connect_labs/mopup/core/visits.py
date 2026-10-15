@@ -149,7 +149,8 @@ def list_visits(
 def aggregate_visits_by_wa(visits: list[dict], wa_ids: set[str] | None = None) -> dict[str, dict]:
     """Roll up `list_visits`' rows into one aggregate per
     `wa_case_id`: ``{"approved_hsd_count", "approved_ncf_count",
-    "deworming_given", "muac_given", "vaccination_given", "flw_username"}``
+    "deworming_given", "muac_given", "vaccination_given",
+    "rejected_hsd_count", "rejected_ncf_count", "flw_username"}``
     — the count fields are the exact ones `core.indicators.wa_rate` expects,
     minus the work-area case properties (ward/status/building_count/etc.),
     which come from `core/work_areas.py` instead. (Inaccessible is not a visit
@@ -207,11 +208,19 @@ def aggregate_visits_by_wa(visits: list[dict], wa_ids: set[str] | None = None) -
                 "deworming_given": 0,
                 "muac_given": 0,
                 "vaccination_given": 0,
+                "rejected_hsd_count": 0,
+                "rejected_ncf_count": 0,
                 "flw_username": "",
             },
         )
+        # WA Revisit R2's "rejected visit" rule (core/r2.py). Additive only:
+        # a rejected visit still counts toward the two totals above exactly
+        # as before.
+        rejected = v.get("status") == "rejected"
         if v["form_name"] == HSD_FORM_NAME:
             row["approved_hsd_count"] += 1
+            if rejected:
+                row["rejected_hsd_count"] += 1
             if v.get("deworming_given"):
                 row["deworming_given"] += 1
             if v.get("muac_recorded"):
@@ -220,6 +229,8 @@ def aggregate_visits_by_wa(visits: list[dict], wa_ids: set[str] | None = None) -
                 row["vaccination_given"] += 1
         elif v["form_name"] == NCF_FORM_NAME:
             row["approved_ncf_count"] += 1
+            if rejected:
+                row["rejected_ncf_count"] += 1
 
         username = v.get("username")
         if username:
@@ -253,6 +264,8 @@ def build_evaluation_rows(work_areas: list[dict], visit_aggregates: dict[str, di
         "deworming_given": 0,
         "muac_given": 0,
         "vaccination_given": 0,
+        "rejected_hsd_count": 0,
+        "rejected_ncf_count": 0,
         "flw_username": "",
     }
     rows = []

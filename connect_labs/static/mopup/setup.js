@@ -97,6 +97,11 @@ window.MopupSetup = (function () {
         wards: [...selectedWards.values()],
         date_from: $('date-from').value || null,
         date_to: $('date-to').value || null,
+        round: CFG.round || 'r1',
+        // WA Revisit R2 only (the picker exists on its setup page alone).
+        r1_opportunity_id: $('r1-opp-select')
+          ? Number($('r1-opp-select').value) || null
+          : null,
       });
       const data = await resp.json();
       if (!resp.ok || data.status !== 'ok') {
@@ -116,6 +121,12 @@ window.MopupSetup = (function () {
     CFG = cfg;
     $('opp-select').addEventListener('change', () => {
       const has = !!$('opp-select').value;
+      // R2: default the R1 opportunity to the picked one's known R1 pair
+      // (blank -- "None" -- when it has none).
+      if ($('r1-opp-select')) {
+        const r1 = (CFG.r1Defaults || {})[$('opp-select').value];
+        $('r1-opp-select').value = r1 ? String(r1) : '';
+      }
       $('refresh-wards').disabled = !has;
       refreshStartButton();
       if (has) loadWards(false);

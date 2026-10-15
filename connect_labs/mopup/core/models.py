@@ -17,6 +17,14 @@ STATUS_SETUP = "setup"  # Phase 1: opportunity/ward(s)/date not yet all picked
 STATUS_ANALYSIS = "analysis"  # Phase 2: analyzing, thresholds still live
 STATUS_LOCKED = "locked"  # Phase 2->3 boundary: candidate set frozen
 
+# Which revisit round a run belongs to. R1 (the original WA Revisit) selects
+# work areas by coverage/quality indicators; R2 ("WA Revisit R2") selects them
+# by suspended workers, rejected visits and microplan inaccessibility, and
+# leaves out whatever R1 already sent back -- see core/r2.py. A run saved
+# before rounds existed has no `round` key and is R1.
+ROUND_R1 = "r1"
+ROUND_R2 = "r2"
+
 
 class MopupRunRecord(LocalLabsRecord):
     """One mop-up review in progress: which opportunity, which ward(s) and
@@ -45,6 +53,23 @@ class MopupRunRecord(LocalLabsRecord):
         picker) — distinct from the base class's own `opportunity_id`
         attribute, which is unset (None) for this program-scoped record."""
         return self.data.get("target_opportunity_id")
+
+    @property
+    def round(self) -> str:
+        """`ROUND_R1` or `ROUND_R2`. Missing (every run created before R2
+        existed) means R1."""
+        return self.data.get("round") or ROUND_R1
+
+    @property
+    def is_r2(self) -> bool:
+        return self.round == ROUND_R2
+
+    @property
+    def r1_opportunity_id(self) -> int | None:
+        """R2 only: the R1 revisit opportunity whose work areas this run
+        leaves out (see `core.r2.fetch_r1_geometry_keys`). `None` for R1 runs,
+        or an R2 run set up without one (then nothing is left out)."""
+        return self.data.get("r1_opportunity_id")
 
     @property
     def selected_wards(self) -> list[dict]:

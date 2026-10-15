@@ -149,6 +149,8 @@ class TestAggregateVisitsByWa:
             "deworming_given": 1,
             "muac_given": 2,
             "vaccination_given": 1,
+            "rejected_hsd_count": 0,
+            "rejected_ncf_count": 0,
             "flw_username": "",
         }
         assert agg["wa-2"]["approved_hsd_count"] == 1

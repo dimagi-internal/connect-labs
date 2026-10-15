@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from connect_labs.mopup.core.models import STATUS_SETUP, TYPE_RUN, MopupRunRecord
+from connect_labs.mopup.core.models import ROUND_R1, ROUND_R2, STATUS_SETUP, TYPE_RUN, MopupRunRecord
 from connect_labs.workflow.data_access import BaseDataAccess
 
 
@@ -33,10 +33,20 @@ class MopupRunDataAccess(BaseDataAccess):
         super().__init__(program_id=program_id, **kwargs)
         self._experiment = str(program_id)
 
-    def create_run(self, *, target_opportunity_id: int, name: str = "") -> MopupRunRecord:
+    def create_run(
+        self,
+        *,
+        target_opportunity_id: int,
+        name: str = "",
+        round: str = ROUND_R1,
+        r1_opportunity_id: int | None = None,
+    ) -> MopupRunRecord:
+        is_r2 = round == ROUND_R2
         data = {
             "status": STATUS_SETUP,
-            "name": name or "WA Revisit",
+            "name": name or ("WA Revisit R2" if is_r2 else "WA Revisit"),
+            "round": ROUND_R2 if is_r2 else ROUND_R1,
+            "r1_opportunity_id": r1_opportunity_id if is_r2 else None,
             "target_opportunity_id": target_opportunity_id,
             "selected_wards": [],
             "date_from": None,

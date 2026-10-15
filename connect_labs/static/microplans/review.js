@@ -808,7 +808,11 @@
       banner.classList.toggle('hidden', !isMopup);
       if (isMopup)
         banner.textContent =
-          '↻ WA Revisit plan (run #' + data.run_meta.mopup_run_id + ')';
+          '↻ ' +
+          (data.run_meta.round === 'r2' ? 'WA Revisit R2' : 'WA Revisit') +
+          ' plan (run #' +
+          data.run_meta.mopup_run_id +
+          ')';
     }
     renderSummary(data.summary || {});
     renderKpis(data.kpis || {});

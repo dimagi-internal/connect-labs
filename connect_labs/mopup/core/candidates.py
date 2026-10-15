@@ -99,6 +99,11 @@ def build_evaluation_input(
         # see geometry.INACCESSIBLE_CONNECT_STATUSES. 0/1 so the Inaccessible
         # indicator reads it the same way it reads NCF's visit count.
         row["connect_inaccessible"] = 1 if geo.get("connect_status") in INACCESSIBLE_CONNECT_STATUSES else 0
+        # Carried for WA Revisit R2 (core/r2.py): the exact Connect status
+        # (its microplan-inaccessible rule wants INACCESSIBLE, not a pending
+        # request) and the work area's assigned worker in Connect.
+        row["connect_status"] = geo.get("connect_status") or ""
+        row["owner_username"] = geo.get("owner_username") or ""
 
     if access_token:
         stage("Resolving FLW names…")
