@@ -94,13 +94,10 @@ anything downstream being rewritten". This change does that migration.
    (owner resolved from the programme's Supply runner, else refused with a
    message naming `org_slug`). Dead `solicitations/mcp_tools.py` is deleted;
    the csrf-exempt JSON API is deleted (no in-repo callers; MCP is the API).
-9. **Migration of prod data** is a staff-only long-running MCP tool,
-   `solicitations_import_records`, run once after deploy as a staff user: it
-   reads prod `solicitation`, `solicitation_response` and `solicitation_review`
-   records, upserts by `legacy_record_id`, sets `owner_org` from the programme's
-   runner (or an explicit `default_owner_org_slug` argument), and leaves calls
-   whose title or programme marks them as smoke/test unlisted. Re-running is
-   safe. Prod records are left untouched.
+9. **No migration of prod data.** The 54 prod LabsRecord solicitations were
+   almost all ACE test output; they are left where they are and not imported
+   (decided 2026-10-15). `legacy_record_id` and the id floor stay, so an
+   import remains possible later.
 10. **Demo.** `solicitations_seed_demo` (management command) creates a labs-only
     demo organisation with three open calls and a few responses, so external
     demos never show real applicants. The calls are unlisted (out of the

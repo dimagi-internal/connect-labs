@@ -14,8 +14,9 @@ Three kinds of row share the tables, told apart by ``source``:
   Directory sheet (``marketplace_import --eoi``). The marketplace pages read
   only these, because they show applicants to every signed-in user.
 * ``labs`` -- calls created in labs (the web form, MCP, agents).
-* ``labs_record`` -- calls imported once from prod LabsRecords
-  (``solicitations_import_records``), keyed by ``legacy_record_id``.
+* ``labs_record`` -- reserved for calls brought over from the old prod
+  LabsRecords, keyed by ``legacy_record_id``. None were: the records there were
+  ACE test output, left where they were (decided 2026-10-15).
 
 ``ResponseRecord.llo_entity_id`` was a free string; here it is a real foreign
 key to the respondent's organisation, which is what turns application history
