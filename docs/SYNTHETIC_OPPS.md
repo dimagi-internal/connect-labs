@@ -101,8 +101,12 @@ lengths. Every case is drawn from models fitted to the real cases: its numbers
 (weighings, birth weight, ages, counters), its visit days, and its answers
 (outcomes, danger signs, referrals), each conditioned on the case's own growth, so a
 slow grower dies as often as in the source. What reports read off the numbers is
-modelled too: each worker's rounding, data-entry slips, copies a form saves under a
-second name. What the pool never holds:
+modelled too: each worker's rounding (to every unit the source rounds to), data-entry
+slips, copies a form saves under a second name, a first reading copied from a
+registration value, which visits record a field (whole patterns at least 5 cases
+share), and a scale's heavy-tailed error. Outcomes follow the growth series that best
+separates how the source's cases end, and a case ends on one whole combination of
+outcome answers that at least 5 real cases share. What the pool never holds:
 
 - A real case: the real cases are used only to fit the models, at profile time.
 - A real case's numbers. A baby's weighings single it out to anyone holding the real
