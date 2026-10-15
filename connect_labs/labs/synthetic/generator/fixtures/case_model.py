@@ -177,6 +177,8 @@ class _CatModel:
 
 
 _NONE = "\x00none"
+#: The growth band of a case whose readings show no growth (see _tercile).
+_NO_BAND = -2
 
 
 @dataclass
@@ -368,8 +370,14 @@ def _shrink_slopes(
         pred = X @ coef
         resid_var = _robust_sd((slopes - pred).tolist()) ** 2
         true_var = max(resid_var - float(np.median(err)), 0.05 * resid_var)
+    # Each slope is DRAWN from what its readings leave possible (its posterior), not set
+    # at the posterior's mean: set at the mean, a two-weighing case's growth was exactly
+    # what its birth weight predicts, and growth followed birth weight more closely than
+    # in the source (0.47 against 0.42). Seeded on the data, so a fit is repeatable.
+    draw = np.random.default_rng(len(fits) * 7919 + int(abs(float(slopes.sum())) * 1000) % 7919)
     for (ri, mean_day, mean_val, _sxx, slope), e, p in zip(fits, err, pred):
-        shrunk = p + true_var / (true_var + e) * (slope - p)
+        share = true_var / (true_var + e)
+        shrunk = p + share * (slope - p) + draw.normal(0.0, math.sqrt(true_var * (1 - share)))
         rows[ri][f"s:{path}"] = float(shrunk)
         rows[ri][f"b:{path}"] = float(mean_val - shrunk * mean_day)
 
@@ -927,12 +935,21 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
         key=lambda c: -len(margins[c].values),
     )
     driver = slope_cols[0] if slope_cols else "n"
-    driver_vals = margins[driver].values
+    # Answers are fitted, and drawn, by the growth a case's readings SHOW: the raw slope
+    # through them (slips left out), not the shrunk one modelled as its true growth.
+    # Sampling bands a case the same way (_observed_driver).
+    banded = [dict(row) for row in rows]
+    if driver.startswith("s:"):
+        for row in banded:
+            row.pop(driver, None)
+        for ri, *_rest, raw in slope_fits[driver[2:]]:
+            banded[ri][driver] = raw
+    driver_vals = np.array([row[driver] for row in banded if driver in row], dtype=float)
     # Growth bands: fifths when there are enough cases to fill them, else thirds.
     bands = 5 if len(series_list) >= 40 * K_MIN else 3
     cuts = tuple(float(np.quantile(driver_vals, q / bands)) for q in range(1, bands))
 
-    cats, suppressed = _fit_cats(series_list, rows, driver, cuts, time_varying)
+    cats, suppressed = _fit_cats(series_list, banded, driver, cuts, time_varying)
     report["categorical_values_suppressed"] = suppressed
 
     rare_first: Counter = Counter()
@@ -1022,8 +1039,39 @@ def _correlation(rows: list[dict[str, float]], columns: list[str], margins: dict
     return nearest_psd(corr)
 
 
+def _observed_slope(points: list[tuple[float, float]]) -> float | None:
+    """The least-squares slope through (day, value) points, None under two distinct days."""
+    if len({d for d, _ in points}) < 2:
+        return None
+    return _fit_line(points)[1]
+
+
+def _observed_driver(model: CaseModel, params: dict[str, float], days, numbers, slipped: set[int]) -> float:
+    """The growth a sampled case's own readings show, for its growth band.
+
+    A case's answers follow the band its readings put it in, measured as on the real
+    cases (_fit_cats): the slope through its readings, slips left out. Banding the
+    case's modelled TRUE growth on odds learnt from real cases' measured growth
+    flattened deaths across bands -- a two-weighing slope is mostly scale error, so in
+    the source the measured bands mix fast and slow growers -- and slow growers died
+    little more often than fast ones (0.18 against the source's 0.24 apart)."""
+    if not model.driver or not model.driver.startswith("s:"):
+        return params.get(model.driver or "n", params["n"])
+    path = model.driver[2:]
+    points = [
+        (float(d), vals[path])
+        for i, (d, (vals, _)) in enumerate(zip(days, numbers))
+        if path in vals and i not in slipped
+    ]
+    slope = _observed_slope(points)
+    return math.nan if slope is None else slope
+
+
 def _tercile(value: float, cuts: tuple[float, ...]) -> int:
-    """The growth band ``value`` falls in (0 = slowest), given the band cut points."""
+    """The growth band ``value`` falls in (0 = slowest), given the band cut points; a case
+    whose growth cannot be read (fewer than two days weighed) is a band of its own, -2."""
+    if value is None or not math.isfinite(value):
+        return _NO_BAND
     return int(sum(1 for cut in cuts if value > cut))
 
 
@@ -1050,7 +1098,7 @@ def _fit_cats(series_list, rows, driver, cuts, time_varying) -> tuple[dict[str, 
     # path did not end on it, which the ending odds must count (see below).
     case_keys: list[tuple[int, int, tuple, set[str]]] = []
     for ci, (s, row) in enumerate(zip(series_list, rows)):
-        terc = _tercile(row[driver], cuts) if driver in row else 1
+        terc = _tercile(row.get(driver, math.nan), cuts)
         long = int(len(s["visits"]) > median_n)
         shape = _shape(v.get("form") for v in s["visits"])
         per_path: dict[str, list[str]] = defaultdict(list)
@@ -1210,13 +1258,17 @@ def _sample_params(model: CaseModel, n: int, rng: np.random.Generator) -> dict[s
     cov = model.corr[np.ix_(others, others)] - np.outer(r_on, r_on)
     w, v = np.linalg.eigh((cov + cov.T) / 2.0)
     z = mu + (v * np.sqrt(np.clip(w, 0, None))) @ rng.standard_normal(len(others))
-    for i, zi in zip(others, z):
+    for k, (i, zi) in enumerate(zip(others, z)):
         u = float(norm.cdf(zi))
         params[cols[i]] = model.margins[cols[i]].ppf(u)
         if cols[i] == "mean_gap":
-            # Its rank too: a schedule is picked by where the case falls among cases
-            # of its own kind (see _sample_days), not by the gap's value across all.
-            params["u:mean_gap"] = u
+            # Its rank too: a schedule is picked by where the case falls among cases of
+            # its own kind (see _sample_days), so the rank is the one GIVEN its length.
+            # The rank among every case put each two-visit case on the tightest
+            # two-visit schedules (two-visit cases have the shortest gaps of all), and
+            # two weighings 2 days apart read as noise, not growth.
+            sd = math.sqrt(max(float(cov[k, k]), 1e-12))
+            params["u:mean_gap"] = float(norm.cdf((zi - mu[k]) / sd))
     return params
 
 
@@ -1282,27 +1334,6 @@ def _sample_case(
     if model.window:
         days = fit_days(days, model.window[1] - model.window[0])
 
-    driver_value = params.get(model.driver, params["n"]) if model.driver else params["n"]
-    terc = _tercile(driver_value, model.driver_cuts)
-    long = int(n > model.median_n)
-    prev_cat: dict[str, str | None] = {}
-    const_cat: dict[str, str | None] = {}
-    # Each terminal-valued path's ending for this case, decided up front.
-    endings: dict[str, str | None] = {}
-    for path, cm in model.cats.items():
-        # Only a case whose last form records the path can end on it: a child only
-        # ever screened has no treatment outcome to end with.
-        if cm.terminal and model.presence.get(path, {}).get(forms[-1], 0.0) > 0:
-            for counts in (
-                cm.ending_by_shape.get((shape, terc, long)),
-                cm.ending_by_shape.get((shape, -1, long)),
-                cm.ending.get((terc, long)),
-                cm.ending.get((-1, -1), Counter()),
-            ):
-                if counts and sum(counts.values()) >= K_MIN:
-                    break
-            end = _draw(counts, rng)
-            endings[path] = None if end in (None, _NONE) else end
     # Per-case constants copied where the source's workers copy one field into another
     # (see _fit_copies).
     # A per-case constant is written once, so it is put on its grid once (see _fit_grid),
@@ -1326,7 +1357,10 @@ def _sample_case(
     alias_groups: dict[str, list[str]] = defaultdict(list)
     for alias, primary in model.aliases.items():
         alias_groups[primary].append(alias)
-    visits = []
+    # Numbers first, for the whole case: its answers are drawn by the growth its own
+    # readings show (see _observed_driver).
+    numbers: list[tuple[dict[str, float], dict[str, int]]] = []
+    slipped: set[int] = set()
     for idx, (day, form) in enumerate(zip(days, forms), start=1):
         values: dict[str, float] = {}
         dates: dict[str, int] = {}
@@ -1349,6 +1383,8 @@ def _sample_case(
                     # A slip: what the worker would have written, mistyped (see _find_slips).
                     slip = _on_grid(min(max(trend + e, pm.lo), pm.hi), pm, owner, rng) * rng.choice(pm.slip_ratios)
                     values[path] = float(round(slip)) if pm.whole else round(slip, pm.places)
+                    if model.driver == f"s:{path}":
+                        slipped.add(idx - 1)
                 else:
                     values[path] = _round_clamp(_on_grid(trend + e, pm, owner, rng), pm)
             elif f"c:{path}" in params:
@@ -1360,6 +1396,31 @@ def _sample_case(
                 dates[path] = int(round(params[f"dd:{path}"] + day))
             elif f"d:{path}" in params:
                 dates[path] = int(round(params[f"d:{path}"]))
+        numbers.append((values, dates))
+
+    terc = _tercile(_observed_driver(model, params, days, numbers, slipped), model.driver_cuts)
+    long = int(n > model.median_n)
+    prev_cat: dict[str, str | None] = {}
+    const_cat: dict[str, str | None] = {}
+    # Each terminal-valued path's ending for this case, decided up front.
+    endings: dict[str, str | None] = {}
+    for path, cm in model.cats.items():
+        # Only a case whose last form records the path can end on it: a child only
+        # ever screened has no treatment outcome to end with.
+        if cm.terminal and model.presence.get(path, {}).get(forms[-1], 0.0) > 0:
+            for counts in (
+                cm.ending_by_shape.get((shape, terc, long)),
+                cm.ending_by_shape.get((shape, -1, long)),
+                cm.ending.get((terc, long)),
+                cm.ending.get((-1, -1), Counter()),
+            ):
+                if counts and sum(counts.values()) >= K_MIN:
+                    break
+            end = _draw(counts, rng)
+            endings[path] = None if end in (None, _NONE) else end
+    visits = []
+    for idx, (day, form) in enumerate(zip(days, forms), start=1):
+        values, dates = numbers[idx - 1]
         cats: dict[str, str] = {}
         for path, cm in model.cats.items():
             if idx == n and endings.get(path):
