@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load static %}
-{% block title %}WA Revisit — Analysis{% endblock %}
+{% block title %}{{ tool_name }} — Analysis{% endblock %}
 
 {% block css %}
 {{ block.super }}
@@ -85,8 +85,13 @@
 <div class="max-w-6xl mx-auto p-6 space-y-6" x-data>
   <div class="flex items-start justify-between">
     <div>
-      <h1 class="text-2xl font-bold text-gray-900">WA Revisit — Candidate Analysis</h1>
+      <a href="{{ home_url }}" class="text-sm text-indigo-600 hover:underline">← {{ tool_name }} runs</a>
+      <h1 class="text-2xl font-bold text-gray-900">{{ tool_name }} — Candidate Analysis</h1>
+      {% if is_r2 %}
+      <p class="text-sm text-gray-500">Run #{{ run_id }} — program #{{ program_id }}. Reviewing <span class="font-medium text-gray-700">{{ target_opportunity_name|default:"the original opportunity" }}</span>{% if r1_opportunity_name %}, leaving out work areas already in <span class="font-medium text-gray-700">{{ r1_opportunity_name }}</span>{% elif run.r1_opportunity_id %}, leaving out work areas already in R1 opportunity #{{ run.r1_opportunity_id }}{% else %} (no R1 opportunity picked — nothing is left out){% endif %}. Switch rules on or off below; the candidate count updates live.</p>
+      {% else %}
       <p class="text-sm text-gray-500">Run #{{ run_id }} — program #{{ program_id }}. Tune thresholds below; the candidate count updates live against already-loaded data.</p>
+      {% endif %}
     </div>
     <div class="text-sm text-gray-500">
       <span id="live-count" class="text-2xl font-bold text-gray-900">—</span> candidate work area(s)
@@ -121,7 +126,8 @@
     </div>
   </section>
 
-  <section class="border border-gray-200 rounded p-4">
+  {# R2's rules are per-work-area facts, not rates, so the cluster filter has nothing to corroborate; kept in the DOM (hidden) so the shared page script finds it. #}
+  <section class="border border-gray-200 rounded p-4 {% if is_r2 %}hidden{% endif %}">
     <label class="inline-flex items-center gap-2 font-medium text-gray-900">
       <input type="checkbox" id="cfg-cluster-filter-enabled">
       Enable cluster-aware filter <span class="info-icon" tabindex="0" data-tip="Optional, applied AFTER the full candidate list is built, to every indicator including NCF/inaccessible: drops a candidate only if NONE of its triggered indicators have enough spatially-nearby, also-flagged neighbors. Never adds candidates, never removes an indicator from a WA that survives — it can only shorten the list. When off, Neighbor distance/Min neighbor count are greyed out and every indicator's count is simply the raw number of affected work areas.">ⓘ</span>
@@ -130,12 +136,20 @@
 
   <section class="border border-gray-200 rounded p-4 space-y-4">
     <div class="flex items-center justify-between">
-      <h2 class="text-lg font-semibold text-gray-900">Indicators</h2>
+      <h2 class="text-lg font-semibold text-gray-900">{% if is_r2 %}R2 rules{% else %}Indicators{% endif %}</h2>
       <button type="button" id="recompute" class="button primary-dark">Recompute</button>
     </div>
+    {% if is_r2 %}<p id="r2-sources" class="text-xs text-gray-500"></p>{% endif %}
     <div class="overflow-x-auto">
     <table class="w-full text-sm">
       <thead>
+        {% if is_r2 %}
+        <tr class="text-left text-gray-500 border-b border-gray-100">
+          <th class="pb-2 pr-2">On</th>
+          <th class="pb-2 pr-2">Rule</th>
+          <th class="pb-2 pr-2"># WAs selected <span class="info-icon" tabindex="0" data-tip="How many work areas this rule selects, after leaving out the ones already in R1 (when that is on). A work area selected by more than one rule is counted under each.">ⓘ</span></th>
+        </tr>
+        {% else %}
         <tr class="text-left text-gray-500 border-b border-gray-100">
           <th class="pb-2 pr-2">On</th>
           <th class="pb-2 pr-2">Indicator</th>
@@ -144,6 +158,7 @@
           <th class="pb-2 pr-2">Min neighbor count <span class="info-icon" tabindex="0" data-tip="The fewest spatially-nearby neighbors that must ALSO be flagged on the same indicator to corroborate it. Only used when the filter above is enabled.">ⓘ</span></th>
           <th class="pb-2 pr-2"># WAs triggered <span class="info-icon" tabindex="0" data-tip="How many work areas this specific indicator flagged (after the optional cluster-aware filter, if enabled), under the current thresholds. Updates automatically a moment after you change a setting, or immediately if you hit Recompute.">ⓘ</span></th>
         </tr>
+        {% endif %}
       </thead>
       <tbody id="indicator-rows"></tbody>
     </table>
@@ -185,7 +200,7 @@
             <th class="p-2">WAG Name</th>
             <th class="p-2">Total buildings</th><th class="p-2">Total EVC</th>
             <th class="p-2 cursor-pointer" id="sort-severity">Severity <span class="info-icon" tabindex="0" data-tip="How many of the currently-enabled indicators flagged this work area. A plain count, not a weighted score.">ⓘ</span> ↕</th>
-            <th class="p-2">Triggered indicators</th>
+            <th class="p-2">{% if is_r2 %}Why selected{% else %}Triggered indicators{% endif %}</th>
           </tr>
         </thead>
         <tbody id="candidate-rows"></tbody>
@@ -289,7 +304,7 @@
   </section>
 
   <section>
-    <button type="button" id="create-plan" class="button primary-dark" {% if run.status != "locked" or not isolation_filter_locked %}disabled{% endif %}>Create WA Revisit plan</button>
+    <button type="button" id="create-plan" class="button primary-dark" {% if run.status != "locked" or not isolation_filter_locked %}disabled{% endif %}>Create {{ tool_name }} plan</button>
   </section>
 
   </div>
@@ -324,6 +339,7 @@
     isolationFilterLocked: {{ isolation_filter_locked|yesno:"true,false" }},
     planningGapsRecomputeDone: {{ planning_gap_recompute_done|yesno:"true,false" }},
     mapboxToken: "{{ mapbox_token|escapejs }}",
+    isR2: {{ is_r2|yesno:"true,false" }},
   });
 })();
 </script>

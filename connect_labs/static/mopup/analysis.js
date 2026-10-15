@@ -35,6 +35,13 @@ window.MopupAnalysis = (function () {
     muac: 'Of children served here, the share who had a MUAC (mid-upper arm circumference) measurement recorded.',
     vaccination:
       'Of children served here, the share who received any vaccine during the visit.',
+    // WA Revisit R2 rules (core/r2.py).
+    suspended_flw:
+      "The work area's assigned worker is suspended on the original opportunity. Every work area they own is selected, including ones that look complete, because their visits can't be trusted.",
+    rejected_visit:
+      'The work area has at least one Health Service Delivery or No Children Found visit that was rejected in review, even if it also has approved visits. Only the original opportunity is read, so rejections inside the R1 opportunity do not count. On by default for ISODAF and JHF only.',
+    microplan_inaccessible:
+      'Connect has the work area marked Inaccessible -- the clusters flagged inaccessible when the original microplan was made. A request still awaiting review is not counted.',
   };
   const SEVERITY_TOOLTIP =
     'How many of the currently-enabled indicators flagged this work area. A plain count, not a weighted score.';
@@ -131,7 +138,42 @@ window.MopupAnalysis = (function () {
           }></td>`;
   }
 
+  // WA Revisit R2: one plain row per rule (no thresholds or neighbour
+  // settings -- each rule is a yes/no fact about a work area), then a row
+  // for leaving out what R1 already covered. That last row has no
+  // .ind-enabled checkbox, so collectIndicatorConfigs skips it, and it sits
+  // inside #indicator-rows so locking disables it with everything else.
+  function renderR2Rows() {
+    const rows = indicatorDefs.map((def) => {
+      const cfg = indicatorConfigs[def.key] || { enabled: true };
+      return `<tr class="border-b border-gray-50 ${
+        cfg.enabled ? '' : 'opacity-50'
+      }" data-key="${esc(def.key)}">
+          <td class="py-2 pr-2"><input type="checkbox" class="ind-enabled" ${
+            cfg.enabled ? 'checked' : ''
+          }></td>
+          <td class="py-2 pr-2">${esc(
+            def.label,
+          )} <span class="info-icon" tabindex="0" data-tip="${esc(
+            INDICATOR_TOOLTIPS[def.key] || '',
+          )}">ⓘ</span></td>
+          <td class="py-2 pr-2 ind-trigger-count">—</td>
+        </tr>`;
+    });
+    rows.push(`<tr class="bg-gray-50" data-key="exclude_r1_settings">
+        <td class="py-2 pr-2"><input type="checkbox" id="cfg-exclude-r1"></td>
+        <td class="py-2 pr-2">Leave out work areas already in R1 <span class="info-icon" tabindex="0" data-tip="Matched on the work area's exact centroid: R1 work areas were uploaded with the original work area's boundary unchanged. Needs an R1 opportunity picked at setup.">ⓘ</span></td>
+        <td class="py-2 pr-2 text-gray-600"><span id="r2-excluded-count">—</span> left out</td>
+      </tr>`);
+    $('indicator-rows').innerHTML = rows.join('');
+    applyIndicatorRowStates();
+  }
+
   function renderIndicatorRows() {
+    if (CFG.isR2) {
+      renderR2Rows();
+      return;
+    }
     const tb = $('indicator-rows');
     const sharedGroupsState = {
       tier2: { rendered: false },
@@ -348,6 +390,10 @@ window.MopupAnalysis = (function () {
   }
 
   function renderGlobalConfig() {
+    if (CFG.isR2) {
+      $('cfg-exclude-r1').checked = globalConfig.exclude_r1 !== false;
+      return;
+    }
     $('cfg-min-evc-floor').value = globalConfig.min_evc_floor;
     $('cfg-evc-neighbor-distance').value = globalConfig.evc_neighbor_distance_m;
     $('cfg-evc-min-neighbor-count').value = globalConfig.evc_min_neighbor_count;
@@ -388,6 +434,9 @@ window.MopupAnalysis = (function () {
   }
 
   function collectGlobalConfig() {
+    if (CFG.isR2) {
+      return { exclude_r1: $('cfg-exclude-r1').checked };
+    }
     return {
       min_evc_floor: parseInt($('cfg-min-evc-floor').value, 10) || 0,
       evc_neighbor_distance_m:
@@ -486,6 +535,9 @@ window.MopupAnalysis = (function () {
     deworming: 'Deworming completion',
     muac: 'MUAC-recorded rate',
     vaccination: 'Vaccination-given rate',
+    suspended_flw: 'Suspended worker',
+    rejected_visit: 'Rejected visit',
+    microplan_inaccessible: 'Inaccessible in microplan',
     planning_gap: 'Planning gap (new)',
   };
 
@@ -494,6 +546,16 @@ window.MopupAnalysis = (function () {
       .map((key) => {
         const label = INDICATOR_LABELS[key] || key;
         const detail = (c.detail || {})[key] || {};
+        if (key === 'suspended_flw') {
+          return esc(detail.worker ? `${label} (${detail.worker})` : label);
+        }
+        if (key === 'rejected_visit') {
+          const parts = [];
+          if (detail.rejected_hsd) parts.push(`${detail.rejected_hsd} HSD`);
+          if (detail.rejected_ncf) parts.push(`${detail.rejected_ncf} NCF`);
+          return esc(parts.length ? `${label} (${parts.join(', ')})` : label);
+        }
+        if (key === 'microplan_inaccessible') return esc(label);
         if (key === 'ncf' || key === 'inaccessible') {
           return esc(`${label} (affected)`);
         }
@@ -569,6 +631,9 @@ window.MopupAnalysis = (function () {
     deworming: '#eab308',
     muac: '#8b5cf6',
     vaccination: '#06b6d4',
+    suspended_flw: '#dc2626',
+    rejected_visit: '#f59e0b',
+    microplan_inaccessible: '#db2777',
   };
   const NOT_INCLUDED_LABEL = 'Not included';
   const NOT_INCLUDED_KEY = 'not_included';
@@ -1311,6 +1376,7 @@ window.MopupAnalysis = (function () {
       renderWardSummary(lastWardSummaryRows, lastGapSummaryByWard);
       renderCandidates();
       renderIndicatorCounts(data.per_indicator_counts);
+      if (CFG.isR2) renderR2Summary(data);
       renderMap(data.map_features);
       $('status').textContent =
         `${data.total_work_areas} work area(s) evaluated.`;
@@ -1324,6 +1390,31 @@ window.MopupAnalysis = (function () {
     } catch (e) {
       showLoadingError('Failed to load data.');
     }
+  }
+
+  // R2: how many work areas were left out as already in R1, and what the
+  // one-time fetch read (so "0 suspended workers" or "R1 has 0 work areas"
+  // shows up as such, rather than as a mysteriously short candidate list).
+  function renderR2Summary(data) {
+    const extra = data.extra_counts || {};
+    if ($('r2-excluded-count')) {
+      $('r2-excluded-count').textContent = extra.excluded_in_r1 ?? '—';
+    }
+    const src = data.r2_sources;
+    if (!$('r2-sources') || !src) return;
+    const parts = [
+      `${src.suspended_workers} suspended worker(s) on this opportunity`,
+    ];
+    if (src.r1_opportunity_id) {
+      parts.push(
+        `${src.r1_work_areas} work area(s) in the R1 opportunity, ${
+          extra.r1_matched ?? 0
+        } of them in the wards reviewed here`,
+      );
+    } else {
+      parts.push('no R1 opportunity picked, so nothing is left out');
+    }
+    $('r2-sources').textContent = 'Read: ' + parts.join(' · ') + '.';
   }
 
   function retryLoad() {

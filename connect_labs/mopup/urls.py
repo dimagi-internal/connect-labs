@@ -1,11 +1,21 @@
 from django.urls import path
 
 from connect_labs.mopup import views
+from connect_labs.mopup.core.models import ROUND_R2
 
 app_name = "mopup"
 
 urlpatterns = [
     path("program/<int:program_id>/", views.MopupProgramHomeView.as_view(), name="program_home"),
+    # WA Revisit R2: its own home and setup, listing and starting R2 runs only.
+    # Everything from the analysis screen on is per run and shared with R1
+    # (the run knows its own round), so a run's URLs look the same either way.
+    path(
+        "r2/program/<int:program_id>/",
+        views.MopupProgramHomeView.as_view(round=ROUND_R2),
+        name="r2_program_home",
+    ),
+    path("r2/program/<int:program_id>/setup/", views.MopupSetupView.as_view(round=ROUND_R2), name="r2_setup"),
     path("program/<int:program_id>/runs/delete/", views.MopupDeleteRunsView.as_view(), name="delete_runs"),
     path("program/<int:program_id>/setup/", views.MopupSetupView.as_view(), name="setup"),
     path("program/<int:program_id>/ward_list/", views.MopupWardListView.as_view(), name="ward_list"),

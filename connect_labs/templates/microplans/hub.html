@@ -45,6 +45,22 @@
           </div>
         </div>
       </a>
+
+      <a href="{{ wa_revisit_r2_url }}" id="wa-revisit-r2-link" class="group h-full">
+        <div class="border-2 border-gray-200 hover:border-fuchsia-500 rounded-lg p-5 transition-all hover:shadow-md bg-gray-50 hover:bg-white h-full flex flex-col">
+          <div class="flex items-center mb-3">
+            <div class="w-10 h-10 bg-fuchsia-100 rounded-lg flex items-center justify-center mr-3 flex-shrink-0">
+              <i class="fa-solid fa-arrows-rotate text-lg text-fuchsia-600"></i>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900 group-hover:text-fuchsia-600">CHC WA Revisit R2</h3>
+          </div>
+          <p class="text-sm text-gray-600 leading-snug mb-3 flex-grow">Second revisit round: work areas of suspended workers, with rejected visits, or inaccessible in the microplan, leaving out what R1 already covered</p>
+          <div class="flex items-center text-fuchsia-600 text-sm font-semibold mt-auto">
+            <span>Open</span>
+            <i class="fa-solid fa-chevron-right ml-1 text-xs group-hover:translate-x-1 transition-transform"></i>
+          </div>
+        </div>
+      </a>
       {% endif %}
 
       <a {% if workspace_simple_url %}id="workspace-simple-link" href="{{ workspace_simple_url }}"{% else %}href="{% url 'microplans:simple_list' %}"{% endif %} class="group h-full">

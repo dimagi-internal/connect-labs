@@ -143,7 +143,7 @@ def create_plan_from_locked_run(
         w["populations"] = {"hsd_children_per_building": rate}
 
     states = {w["state"] for w in wards if w.get("state")}
-    region = run.name or "WA Revisit"
+    region = run.name or ("WA Revisit R2" if run.is_r2 else "WA Revisit")
     lga = ", ".join(sorted({w["lga"] for w in wards if w.get("lga")})) or region
     state = next(iter(states)) if len(states) == 1 else ""
 
@@ -167,6 +167,7 @@ def create_plan_from_locked_run(
                 "source": "chc_mopup",
                 "opportunity_ids": opportunity_ids,
                 "mopup_run_id": run.id,
+                "round": run.round,
                 "include_planning_gaps": bool(gap_features),
             },
         )

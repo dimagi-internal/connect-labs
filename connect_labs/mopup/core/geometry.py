@@ -39,20 +39,17 @@ from django.http import HttpRequest
 INACCESSIBLE_CONNECT_STATUSES = frozenset({"INACCESSIBLE", "REQUEST_FOR_INACCESSIBLE"})
 
 
-def fetch_work_area_geometry(
+def _fetch_export_rows(
     opportunity_id: int,
     *,
     request: HttpRequest | None = None,
     pipeline=None,
-) -> dict[str, dict]:
-    """``{wa_case_id: {"lat": float|None, "lon": float|None, "boundary": dict|None, "wag_name": str,
-    "connect_status": str}}`` for every work area in `opportunity_id`.
-    `connect_status` is Connect's own work-area status enum, upper-cased ("" if
-    absent) -- see `INACCESSIBLE_CONNECT_STATUSES` for the values the
-    Inaccessible indicator keys off. A row with unparseable/missing
-    geometry maps to ``{"lat": None, "lon": None, "boundary": None, "wag_name": "", ...}``
-    rather than being skipped — callers should treat a missing entry the
-    same way (this function never raises on a single bad row)."""
+    caller: str = "fetch_work_area_geometry",
+) -> list[dict]:
+    """Every row of `opportunity_id`'s Connect `work_areas` export, as the
+    computed field dict of the config below -- shared by
+    `fetch_work_area_geometry` (keyed by case id) and
+    `fetch_work_area_centroids` (every row, case or not)."""
     from connect_labs.labs.analysis.config import (
         AnalysisPipelineConfig,
         CacheStage,
@@ -63,7 +60,7 @@ def fetch_work_area_geometry(
 
     if pipeline is None:
         if request is None:
-            raise ValueError("fetch_work_area_geometry requires either `request` or `pipeline`")
+            raise ValueError(f"{caller} requires either `request` or `pipeline`")
         pipeline = AnalysisPipeline(request=request)
 
     config = AnalysisPipelineConfig(
@@ -93,6 +90,10 @@ def fetch_work_area_geometry(
             # Connect's native status enum, the only place a work area being
             # inaccessible is recorded -- see INACCESSIBLE_CONNECT_STATUSES.
             FieldComputation(name="connect_status", path="work_area.status", aggregation="first"),
+            # The work area's assigned worker, as a CONNECT username (the id
+            # space the user_data export's `suspended` flag is keyed by) --
+            # read by WA Revisit R2's suspended-worker rule (core/r2.py).
+            FieldComputation(name="owner_username", path="work_area.username", aggregation="first"),
         ],
         # Real production bug, found live this session: without this, this
         # ad-hoc config shares ONE raw-visit-cache slot per opportunity with
@@ -111,25 +112,33 @@ def fetch_work_area_geometry(
     # surfaces downstream as every locked candidate's `boundary` being None.
     # This call always wants a guaranteed-fresh read, not a lenient cache hit.
     result = pipeline.stream_analysis_ignore_events(config, opportunity_id, force_refresh=True)
+    # `row.computed` is `None` (not `{}`) for some real rows where field
+    # extraction found nothing to compute — confirmed against real
+    # program-217 data this session.
+    return [row.computed or {} for row in result.rows]
 
+
+def fetch_work_area_geometry(
+    opportunity_id: int,
+    *,
+    request: HttpRequest | None = None,
+    pipeline=None,
+) -> dict[str, dict]:
+    """``{wa_case_id: {"lat": float|None, "lon": float|None, "boundary": dict|None, "wag_name": str,
+    "connect_status": str, "owner_username": str}}`` for every work area in `opportunity_id`.
+    `connect_status` is Connect's own work-area status enum, upper-cased ("" if
+    absent) -- see `INACCESSIBLE_CONNECT_STATUSES` for the values the
+    Inaccessible indicator keys off. A row with unparseable/missing
+    geometry maps to ``{"lat": None, "lon": None, "boundary": None, "wag_name": "", ...}``
+    rather than being skipped — callers should treat a missing entry the
+    same way (this function never raises on a single bad row)."""
     geometry: dict[str, dict] = {}
-    for row in result.rows:
-        # `row.computed` is `None` (not `{}`) for some real rows where field
-        # extraction found nothing to compute — confirmed against real
-        # program-217 data this session.
-        c = row.computed or {}
+    for c in _fetch_export_rows(opportunity_id, request=request, pipeline=pipeline):
         wa_case_id = c.get("wa_case_id")
         if not wa_case_id:
             continue
 
-        lat = lon = None
-        centroid_raw = c.get("centroid")
-        if centroid_raw:
-            try:
-                centroid = json.loads(centroid_raw) if isinstance(centroid_raw, str) else centroid_raw
-                lon, lat = centroid["coordinates"]
-            except (TypeError, ValueError, KeyError, IndexError, json.JSONDecodeError):
-                lat = lon = None
+        lon, lat = _parse_centroid(c.get("centroid"))
 
         boundary = None
         boundary_raw = c.get("boundary")
@@ -145,6 +154,42 @@ def fetch_work_area_geometry(
             "boundary": boundary,
             "wag_name": c.get("wag_name") or "",
             "connect_status": str(c.get("connect_status") or "").upper(),
+            "owner_username": str(c.get("owner_username") or ""),
         }
 
     return geometry
+
+
+def _parse_centroid(centroid_raw) -> tuple[float | None, float | None]:
+    """``(lon, lat)`` from the export's GeoJSON Point (a JSON string or an
+    already-parsed dict); ``(None, None)`` if missing or unparseable."""
+    if not centroid_raw:
+        return None, None
+    try:
+        centroid = json.loads(centroid_raw) if isinstance(centroid_raw, str) else centroid_raw
+        lon, lat = centroid["coordinates"]
+        return float(lon), float(lat)
+    except (TypeError, ValueError, KeyError, IndexError, json.JSONDecodeError):
+        return None, None
+
+
+def fetch_work_area_centroids(
+    opportunity_id: int,
+    *,
+    request: HttpRequest | None = None,
+    pipeline=None,
+) -> list[tuple[float, float]]:
+    """``(lon, lat)`` of EVERY work area in `opportunity_id`'s export,
+    including ones with no CommCare case yet (an uploaded but unassigned
+    work area has ``case_id: null`` -- every work area in a freshly uploaded
+    revisit opportunity looks like that). WA Revisit R2 matches these against
+    the original opportunity's centroids to leave out what R1 already sent
+    back (core/r2.py); `fetch_work_area_geometry` would drop them."""
+    centroids = []
+    for c in _fetch_export_rows(
+        opportunity_id, request=request, pipeline=pipeline, caller="fetch_work_area_centroids"
+    ):
+        lon, lat = _parse_centroid(c.get("centroid"))
+        if lon is not None and lat is not None:
+            centroids.append((lon, lat))
+    return centroids

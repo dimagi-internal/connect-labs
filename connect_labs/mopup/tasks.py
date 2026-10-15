@@ -87,12 +87,39 @@ def fetch_evaluation_data(self, program_id: int, run_id: int, user_id: int) -> d
     )
 
     result = {"rows": rows}
+    if run.is_r2:
+        result["r2_sources"] = _annotate_r2_rows(
+            run, rows, pipeline=pipeline, access_token=access_token, stage=on_stage
+        )
     # `result=` passed explicitly to set_task_progress (not left to the bare
     # return value) — matches the established convention (e.g.
     # connect_labs/audit/tasks.py's audit-creation task) that
     # build_task_progress relies on to find the payload at meta["result"].
     set_task_progress(self, "Done", is_complete=True, result=result)
     return result
+
+
+def _annotate_r2_rows(run, rows: list[dict], *, pipeline, access_token: str, stage) -> dict:
+    """WA Revisit R2's two extra reads -- who is suspended on the original
+    opportunity, and which work areas the R1 opportunity already holds --
+    stamped onto `rows` (see `core.r2.annotate_rows`). Returns what was read,
+    for the analysis page to show next to the rule counts."""
+    from connect_labs.mopup.core import r2
+
+    stage("Reading suspended workers…")
+    suspended = r2.fetch_suspended_usernames(run.target_opportunity_id, access_token)
+
+    r1_keys: set[str] = set()
+    if run.r1_opportunity_id:
+        stage("Reading the R1 opportunity's work areas…")
+        r1_keys = r2.fetch_r1_centroid_keys(run.r1_opportunity_id, pipeline=pipeline)
+
+    r2.annotate_rows(rows, suspended_usernames=suspended, r1_centroid_keys=r1_keys)
+    return {
+        "suspended_workers": len(suspended),
+        "r1_opportunity_id": run.r1_opportunity_id,
+        "r1_work_areas": len(r1_keys),
+    }
 
 
 @celery_app.task(bind=True)

@@ -31,6 +31,7 @@ from django.views.generic import TemplateView
 from connect_labs.labs.context import get_org_data
 from connect_labs.microplans.access import workspace_simple_microplan_url
 from connect_labs.mopup.core import indicators as ind
+from connect_labs.mopup.core import r2
 from connect_labs.mopup.core.candidates import (
     build_map_features,
     filter_gap_features,
@@ -40,7 +41,7 @@ from connect_labs.mopup.core.candidates import (
 )
 from connect_labs.mopup.core.data_access import MopupRunDataAccess, MopupRunNotFoundError
 from connect_labs.mopup.core.isolation import isolated_work_area_ids
-from connect_labs.mopup.core.models import STATUS_LOCKED
+from connect_labs.mopup.core.models import ROUND_R1, ROUND_R2, STATUS_LOCKED
 from connect_labs.mopup.core.work_areas import fetch_connect_implementation_areas, list_work_areas, summarize_wards
 
 logger = logging.getLogger(__name__)
@@ -68,7 +69,7 @@ def simple_microplan_only_in_workspace(view):
     return wrapped
 
 
-def _merged_indicator_configs(raw: dict | None) -> dict:
+def _merged_indicator_configs(raw: dict | None, run=None) -> dict:
     """Every CURRENT indicator key (`ind.DEFAULT_INDICATOR_CONFIGS`), each
     defaulted then overridden per-key by whatever `raw` (a payload's or a
     run's saved `indicator_configs`) provides for that same key — never a
@@ -91,8 +92,30 @@ def _merged_indicator_configs(raw: dict | None) -> dict:
     today's default — the same self-healing `global_config` already got via
     its own `{**DEFAULT, **saved}` merge one level up, just done per-key
     instead of whole-dict since a per-key shape actually changed here."""
+    if run is not None and run.is_r2:
+        return r2.merged_indicator_configs(raw, run.target_opportunity_id)
     raw = raw or {}
     return {key: {**ind.DEFAULT_INDICATOR_CONFIGS[key], **raw.get(key, {})} for key in ind.DEFAULT_INDICATOR_CONFIGS}
+
+
+def _merged_global_config(raw: dict | None, run) -> dict:
+    """The run's round's global settings, defaulted then overridden by `raw`
+    (R1: neighbour/filter settings, `ind.DEFAULT_GLOBAL_CONFIG`; R2: just
+    whether to leave out R1's work areas, `r2.DEFAULT_GLOBAL_CONFIG`)."""
+    if run.is_r2:
+        return r2.merged_global_config(raw)
+    return {**ind.DEFAULT_GLOBAL_CONFIG, **(raw or {})}
+
+
+def _evaluate(run, rows: list[dict], indicator_configs: dict, global_config: dict) -> tuple[list[dict], dict]:
+    """Candidates for this run's round, minus the reviewer's manual
+    exclusions, plus round-specific extra counts (R2: how many were left out
+    as already in R1; R1: none)."""
+    if run.is_r2:
+        candidates, extra = r2.evaluate_run(rows, indicator_configs, global_config)
+    else:
+        candidates, extra = ind.evaluate_run(rows, indicator_configs, global_config), {}
+    return _apply_exclusions(candidates, run), extra
 
 
 def _resolve_thresholds(run, payload: dict) -> tuple[dict, dict]:
@@ -100,11 +123,14 @@ def _resolve_thresholds(run, payload: dict) -> tuple[dict, dict]:
     defaults, resolve which indicator/global config to evaluate with — in
     that priority order."""
     indicator_configs = _merged_indicator_configs(
-        payload.get("indicator_configs") or run.thresholds.get("indicator_configs")
+        payload.get("indicator_configs") or run.thresholds.get("indicator_configs"), run
     )
-    global_config = (
-        payload.get("global_config") or run.thresholds.get("global_config") or dict(ind.DEFAULT_GLOBAL_CONFIG)
-    )
+    if run.is_r2:
+        global_config = _merged_global_config(payload.get("global_config") or run.thresholds.get("global_config"), run)
+    else:
+        global_config = (
+            payload.get("global_config") or run.thresholds.get("global_config") or dict(ind.DEFAULT_GLOBAL_CONFIG)
+        )
     return indicator_configs, global_config
 
 
@@ -140,9 +166,16 @@ def _active_combined_rows(run) -> list[dict]:
 
 
 def _rows_or_progress(da, run, request, program_id) -> tuple[list[dict] | None, dict | None]:
+    """`_fetch_result_or_progress`, for callers that only need the rows."""
+    result, progress = _fetch_result_or_progress(da, run, request, program_id)
+    return (result["rows"] if result is not None else None), progress
+
+
+def _fetch_result_or_progress(da, run, request, program_id) -> tuple[dict | None, dict | None]:
     """Ensure a fetch task exists for `run` (dispatching one if it's never
     been started, or if the last one failed and was cleared), and report on
-    it. Returns `(rows, None)` once the task has actually finished, or
+    it. Returns `(result, None)` once the task has actually finished
+    (`{"rows": [...]}`, plus `r2_sources` for an R2 run), or
     `(None, progress)` while it's still pending/running/failed — `progress`
     is `build_task_progress`'s own canonical shape (the same one workflow
     jobs and audit creation already use for poll-first progress), safe to
@@ -166,7 +199,7 @@ def _rows_or_progress(da, run, request, program_id) -> tuple[list[dict] | None, 
     progress = build_task_progress(task.state, task.info)
 
     if progress["status"] == "completed":
-        return progress["result"]["rows"], None
+        return progress["result"], None
     if progress["status"] == "failed":
         # Clear so the NEXT poll re-dispatches automatically — the reviewer
         # doesn't need a separate "retry" action, just keep polling (or
@@ -295,19 +328,30 @@ class MopupProgramHomeView(LoginRequiredMixin, TemplateView):
     "Start new mop-up" action into Phase 1."""
 
     template_name = "mopup/program_home.html"
+    # Which round's runs this page lists and starts: R1 at /wa-revisit/
+    # program/<id>/, R2 ("WA Revisit R2") at /wa-revisit/r2/program/<id>/.
+    round = ROUND_R1
 
     def get_context_data(self, **kwargs):
         from django.urls import reverse
 
         context = super().get_context_data(**kwargs)
         program_id = kwargs["program_id"]
+        is_r2 = self.round == ROUND_R2
         context["program_id"] = program_id
-        context["setup_url"] = reverse("mopup:setup", args=[program_id])
+        context["is_r2"] = is_r2
+        context["tool_name"] = "WA Revisit R2" if is_r2 else "WA Revisit"
+        context["setup_url"] = reverse("mopup:r2_setup" if is_r2 else "mopup:setup", args=[program_id])
+        context["other_round_url"] = reverse(
+            "mopup:program_home" if is_r2 else "mopup:r2_program_home", args=[program_id]
+        )
 
         da = MopupRunDataAccess(program_id, request=self.request)
         opps_by_id = {opp["id"]: opp.get("name", "") for opp in _program_opportunities(self.request, program_id)}
         runs = []
         for run in da.list_runs():
+            if run.is_r2 != is_r2:
+                continue
             runs.append(
                 {
                     "id": run.id,
@@ -315,10 +359,11 @@ class MopupProgramHomeView(LoginRequiredMixin, TemplateView):
                     "status": run.status,
                     "created_at": run.created_at,
                     "opportunity_name": opps_by_id.get(run.target_opportunity_id, ""),
+                    "r1_opportunity_name": opps_by_id.get(run.r1_opportunity_id, ""),
                     "url": (
                         reverse("mopup:analysis", args=[program_id, run.id])
                         if run.status != "setup"
-                        else reverse("mopup:setup", args=[program_id])
+                        else context["setup_url"]
                     ),
                 }
             )
@@ -364,17 +409,26 @@ class MopupDeleteRunsView(LoginRequiredMixin, View):
 
 
 class MopupSetupView(LoginRequiredMixin, TemplateView):
-    """Phase 1: pick opportunity, ward(s), optional date range."""
+    """Phase 1: pick opportunity, ward(s), optional date range. An R2 run
+    also picks the R1 opportunity whose work areas it leaves out, defaulted
+    from `r2.R1_OPPORTUNITY_BY_ORIGINAL`."""
 
     template_name = "mopup/setup.html"
+    round = ROUND_R1
 
     def get_context_data(self, **kwargs):
         from django.urls import reverse
 
         context = super().get_context_data(**kwargs)
         program_id = kwargs["program_id"]
+        is_r2 = self.round == ROUND_R2
         context["program_id"] = program_id
+        context["is_r2"] = is_r2
+        context["round"] = self.round
+        context["tool_name"] = "WA Revisit R2" if is_r2 else "WA Revisit"
+        context["home_url"] = reverse("mopup:r2_program_home" if is_r2 else "mopup:program_home", args=[program_id])
         context["opportunities"] = _program_opportunities(self.request, program_id)
+        context["r1_defaults"] = {str(k): v for k, v in r2.R1_OPPORTUNITY_BY_ORIGINAL.items()}
         context["ward_list_url"] = reverse("mopup:ward_list", args=[program_id])
         context["create_run_url"] = reverse("mopup:create_run", args=[program_id])
         return context
@@ -445,11 +499,28 @@ class MopupCreateRunView(LoginRequiredMixin, View):
             date_from = payload.get("date_from") or None
             date_to = payload.get("date_to") or None
             name = str(payload.get("name", "") or "").strip()[:255]
+            round_ = ROUND_R2 if payload.get("round") == ROUND_R2 else ROUND_R1
+            r1_opportunity_id = payload.get("r1_opportunity_id") or None
+            if r1_opportunity_id is not None:
+                r1_opportunity_id = int(r1_opportunity_id)
+                if r1_opportunity_id == target_opportunity_id:
+                    raise ValueError("the R1 opportunity must differ from the opportunity being reviewed")
+                # The task reads this opportunity's work areas with the
+                # user's token and drops every match, so a wrong id would
+                # silently remove candidates: only this program's own.
+                program_opp_ids = {opp.get("id") for opp in _program_opportunities(request, program_id)}
+                if r1_opportunity_id not in program_opp_ids:
+                    raise ValueError("the R1 opportunity is not in this program")
         except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
         da = MopupRunDataAccess(program_id, request=request)
-        run = da.create_run(target_opportunity_id=target_opportunity_id, name=name)
+        run = da.create_run(
+            target_opportunity_id=target_opportunity_id,
+            name=name,
+            round=round_,
+            r1_opportunity_id=r1_opportunity_id,
+        )
         run = da.set_ward_selection(run, wards=wards, date_from=date_from, date_to=date_to)
 
         return JsonResponse(
@@ -457,6 +528,8 @@ class MopupCreateRunView(LoginRequiredMixin, View):
                 "status": "ok",
                 "run_id": run.id,
                 "run_status": run.status,
+                "round": run.round,
+                "r1_opportunity_id": run.r1_opportunity_id,
                 "target_opportunity_id": run.target_opportunity_id,
                 "selected_wards": run.selected_wards,
                 "date_from": run.date_from,
@@ -504,7 +577,9 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
         context["lock_isolation_filter_url"] = reverse("mopup:lock_isolation_filter", args=[program_id, run_id])
         context["upload_buildings_url"] = reverse("mopup:upload_buildings", args=[program_id, run_id])
         context["exclude_work_area_url"] = reverse("mopup:exclude_work_area", args=[program_id, run_id])
-        context["planning_gap_config"] = run.planning_gap_config
+        # R2 adds no new gap-fill work areas unless the reviewer asks: its
+        # job is to send workers back to existing work areas.
+        context["planning_gap_config"] = run.planning_gap_config or ({"mode": "skip"} if run.is_r2 else {})
         # A non-"skip" gap mode needs at least one real Recompute (fetches
         # building data, computes gap cells) before "Lock in Step 2" is
         # allowed -- see MopupAnalysis.updateLockPlanningGapsAvailability in
@@ -531,16 +606,28 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
         # into the form. `indicator_configs` needs the same treatment
         # per-key, not just per-whole-dict (see `_merged_indicator_configs`'s
         # docstring for the real 500 this caused before this fix).
-        context["indicator_configs"] = _merged_indicator_configs(run.thresholds.get("indicator_configs"))
-        context["global_config"] = {**ind.DEFAULT_GLOBAL_CONFIG, **(run.thresholds.get("global_config") or {})}
-        context["indicator_defs"] = [
-            {"key": ind.EVC_SHORTFALL, "label": "EVC shortfall", "tier": 1},
-            {"key": ind.NCF, "label": "NCF", "tier": 1},
-            {"key": ind.INACCESSIBLE, "label": "Inaccessible", "tier": 1},
-            {"key": ind.DEWORMING, "label": "Deworming completion", "tier": 2},
-            {"key": ind.MUAC, "label": "MUAC-recorded rate", "tier": 2},
-            {"key": ind.VACCINATION, "label": "Vaccination-given rate", "tier": 2},
-        ]
+        context["indicator_configs"] = _merged_indicator_configs(run.thresholds.get("indicator_configs"), run)
+        context["global_config"] = _merged_global_config(run.thresholds.get("global_config"), run)
+        context["is_r2"] = run.is_r2
+        context["round"] = run.round
+        context["tool_name"] = "WA Revisit R2" if run.is_r2 else "WA Revisit"
+        context["home_url"] = reverse(
+            "mopup:r2_program_home" if run.is_r2 else "mopup:program_home", args=[program_id]
+        )
+        if run.is_r2:
+            opps_by_id = {opp["id"]: opp.get("name", "") for opp in _program_opportunities(self.request, program_id)}
+            context["target_opportunity_name"] = opps_by_id.get(run.target_opportunity_id, "")
+            context["r1_opportunity_name"] = opps_by_id.get(run.r1_opportunity_id, "")
+            context["indicator_defs"] = r2.R2_INDICATOR_DEFS
+        else:
+            context["indicator_defs"] = [
+                {"key": ind.EVC_SHORTFALL, "label": "EVC shortfall", "tier": 1},
+                {"key": ind.NCF, "label": "NCF", "tier": 1},
+                {"key": ind.INACCESSIBLE, "label": "Inaccessible", "tier": 1},
+                {"key": ind.DEWORMING, "label": "Deworming completion", "tier": 2},
+                {"key": ind.MUAC, "label": "MUAC-recorded rate", "tier": 2},
+                {"key": ind.VACCINATION, "label": "Vaccination-given rate", "tier": 2},
+            ]
         context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
         access_token = self.request.session.get("labs_oauth", {}).get("access_token")
         ward_boundaries, boundary_source_caption = self._ward_boundaries_geojson(
@@ -659,9 +746,10 @@ class MopupCandidatesView(LoginRequiredMixin, View):
         except json.JSONDecodeError as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        rows, progress = _rows_or_progress(da, run, request, program_id)
-        if rows is None:
+        result, progress = _fetch_result_or_progress(da, run, request, program_id)
+        if result is None:
             return JsonResponse(progress)
+        rows = result["rows"]
 
         if run.status == STATUS_LOCKED:
             # "Thresholds stop mattering after [Step 1 lock]" (the page's own
@@ -674,21 +762,21 @@ class MopupCandidatesView(LoginRequiredMixin, View):
             # what Step 3 actually considers "included in the plan". Ignoring
             # the payload (and never persisting) once locked keeps the two in
             # lockstep, whatever the reviewer's browser still has cached.
-            indicator_configs = _merged_indicator_configs(run.thresholds.get("indicator_configs"))
-            global_config = {**ind.DEFAULT_GLOBAL_CONFIG, **(run.thresholds.get("global_config") or {})}
+            indicator_configs = _merged_indicator_configs(run.thresholds.get("indicator_configs"), run)
+            global_config = _merged_global_config(run.thresholds.get("global_config"), run)
         else:
             indicator_configs, global_config = _resolve_thresholds(run, payload)
             new_thresholds = {"indicator_configs": indicator_configs, "global_config": global_config}
             if new_thresholds != run.thresholds:
                 da.update_run(run, thresholds=new_thresholds)
-        candidates = _apply_exclusions(ind.evaluate_run(rows, indicator_configs, global_config), run)
+        candidates, extra_counts = _evaluate(run, rows, indicator_configs, global_config)
         ward_summary = summarize_candidates_by_ward(candidates, rows)
 
         # Per-indicator breakdown of the union candidate count above — how
         # many work areas each individual indicator flagged, recomputed every
         # call the same as everything else here (no separate cache/staleness
         # risk since it's a cheap pass over the already-built candidate list).
-        per_indicator_counts = {key: 0 for key in ind.ALL_INDICATORS}
+        per_indicator_counts = {key: 0 for key in (r2.R2_INDICATORS if run.is_r2 else ind.ALL_INDICATORS)}
         for c in candidates:
             for key in c["triggered_indicators"]:
                 per_indicator_counts[key] = per_indicator_counts.get(key, 0) + 1
@@ -706,6 +794,10 @@ class MopupCandidatesView(LoginRequiredMixin, View):
                 "total_work_areas": len(rows),
                 "candidate_count": len(candidates),
                 "per_indicator_counts": per_indicator_counts,
+                # R2 only: work areas an enabled rule matched but left out as
+                # already in R1, and what the one-time fetch read.
+                "extra_counts": extra_counts,
+                "r2_sources": result.get("r2_sources"),
                 "map_features": build_map_features(rows, candidates, gap_features, run.planning_gap_building_points),
             }
         )
@@ -736,7 +828,7 @@ class MopupLockView(LoginRequiredMixin, View):
             return JsonResponse(progress)
 
         indicator_configs, global_config = _resolve_thresholds(run, payload)
-        candidates = _apply_exclusions(ind.evaluate_run(rows, indicator_configs, global_config), run)
+        candidates, _extra = _evaluate(run, rows, indicator_configs, global_config)
 
         if not candidates:
             return JsonResponse(

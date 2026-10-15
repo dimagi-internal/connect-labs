@@ -1,18 +1,19 @@
 {% extends "base.html" %}
 {% load static %}
-{% block title %}WA Revisit — Setup{% endblock %}
+{% block title %}{{ tool_name }} — Setup{% endblock %}
 
 {% block content %}
 <div class="max-w-3xl mx-auto p-6 space-y-6" x-data>
   <div>
-    <h1 class="text-2xl font-bold text-gray-900">WA Revisit — Setup</h1>
+    <a href="{{ home_url }}" class="text-sm text-indigo-600 hover:underline">← {{ tool_name }} runs</a>
+    <h1 class="text-2xl font-bold text-gray-900">{{ tool_name }} — Setup</h1>
     <p class="text-sm text-gray-500">Program #{{ program_id }} — pick an opportunity, then which ward(s) to review, before pulling any visit data.</p>
   </div>
 
   <div id="status" class="text-sm text-gray-500"></div>
 
   <section class="space-y-2">
-    <label for="opp-select" class="block text-sm font-semibold text-gray-700">1. Opportunity</label>
+    <label for="opp-select" class="block text-sm font-semibold text-gray-700">1. Opportunity{% if is_r2 %} <span class="font-normal text-gray-500">(the original RCT opportunity — its workers, visits and microplan are what R2 reads)</span>{% endif %}</label>
     <select id="opp-select" class="base-input">
       <option value="">— pick an opportunity —</option>
       {% for opp in opportunities %}
@@ -20,6 +21,19 @@
       {% endfor %}
     </select>
   </section>
+
+  {% if is_r2 %}
+  <section class="space-y-2">
+    <label for="r1-opp-select" class="block text-sm font-semibold text-gray-700">R1 revisit opportunity to leave out</label>
+    <p class="text-xs text-gray-500">Every work area already in this opportunity is left out of R2. Filled in automatically for the CHC RCT opportunities; pick “None” to leave nothing out.</p>
+    <select id="r1-opp-select" class="base-input">
+      <option value="">— None —</option>
+      {% for opp in opportunities %}
+        <option value="{{ opp.id }}">{{ opp.name }}{% if not opp.is_active %} (inactive){% endif %}</option>
+      {% endfor %}
+    </select>
+  </section>
+  {% endif %}
 
   <section class="space-y-2">
     <div class="flex items-center justify-between">
@@ -48,6 +62,7 @@
 
 {% block inline_javascript %}
 {{ block.super }}
+{{ r1_defaults|json_script:"r1-defaults-data" }}
 <script src="{% static 'mopup/setup.js' %}"></script>
 <script>
 (function () {
@@ -56,6 +71,8 @@
     createRunUrl: "{{ create_run_url }}",
     csrfToken: "{{ csrf_token }}",
     programBase: "/wa-revisit/program/{{ program_id }}/",
+    round: "{{ round }}",
+    r1Defaults: JSON.parse(document.getElementById('r1-defaults-data').textContent),
   });
 })();
 </script>
