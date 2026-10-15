@@ -975,6 +975,45 @@ function WorkflowUI({
     [summaryDisplayRows],
   );
 
+  // --- Visits over time, by Final verification outcome (Verification -----
+  // Summary tab) -- same summaryDisplayRows population as the cards and the
+  // per-method chart above (eligibility + exclude-registration-visits,
+  // narrowed by this tab's own FLW filter). Bucketed by week (Monday-
+  // aligned, UTC) rather than day -- daily bars over even a 90-day window
+  // would be ~90 bars, too dense to read; weekly gives ~13 bars, enough to
+  // see a trend.
+  function weekStartLabel(isoDateStr) {
+    var d = new Date(isoDateStr.slice(0, 10) + 'T00:00:00Z');
+    var day = d.getUTCDay(); // 0=Sun..6=Sat
+    var diffToMonday = day === 0 ? 6 : day - 1;
+    d.setUTCDate(d.getUTCDate() - diffToMonday);
+    return d.toISOString().slice(0, 10);
+  }
+
+  var visitsOverTimeStats = React.useMemo(
+    function () {
+      var byWeek = {};
+      summaryDisplayRows.forEach(function (row) {
+        if (!row.visit_datetime) return;
+        var week = weekStartLabel(row.visit_datetime);
+        if (!byWeek[week]) {
+          byWeek[week] = { week: week, pass: 0, pending: 0, fail: 0 };
+        }
+        if (row.visit_verification_outcome === 'Pass') byWeek[week].pass += 1;
+        else if (row.visit_verification_outcome === 'Fail')
+          byWeek[week].fail += 1;
+        else if (row.visit_verification_outcome === 'Pending Audit')
+          byWeek[week].pending += 1;
+      });
+      return Object.keys(byWeek)
+        .sort()
+        .map(function (week) {
+          return byWeek[week];
+        });
+    },
+    [summaryDisplayRows],
+  );
+
   // --- By-FLW failed-visit breakdown (Failed Verification Analysis tab) --
   // For every FLW with at least one failed visit (Final verification
   // outcome === 'Fail'), one bar segment per visit, colored/grouped by
@@ -2465,6 +2504,12 @@ function WorkflowUI({
             'visit_verification_outcome === "Fail", divided by verifiedTotal (not total).',
         },
         {
+          name: 'Visits Over Time -- chart',
+          def: "One bar per calendar week (Monday-aligned, UTC), stacked Passed (green, bottom) / Pending Audit (yellow) / Failed (red, top) by Final verification outcome. Same summaryDisplayRows population as the cards above it -- eligibility + exclude-registration-visits, narrowed by this tab's own FLW filter. A visit whose Final verification outcome never computed (the same CommCare-side edge case described in this section's intro) contributes to neither segment, so a week's total bar height can read lower than how many visits actually happened that week.",
+          field:
+            "visitsOverTimeStats -- summaryDisplayRows grouped by weekStartLabel(visit_datetime) (the Monday of that visit's week, computed client-side, not a raw pipeline field), tallied into pass/pending/fail via visit_verification_outcome. Weekly rather than daily bucketing: a 90-day lookback window would be ~90 daily bars, too dense to read as a trend.",
+        },
+        {
           name: 'Stacked bar chart',
           def: "One bar per verification method (GPS, QR, Signature, Mother Questions, ANC Card, Birth Certificate), showing how many visits landed Pass (green) / Pending (yellow) / Fail (red) for that specific method -- independent of the overall Final verification outcome above. A single visit can fail one method and pass another (e.g. fail GPS but pass QR), so it's counted in more than one bar. That means these counts are NOT meant to add up to the % Passed/Pending/Failed totals above -- a bar's Fail count can be, and usually is, larger than the overall Failed Verification n= at the top, since one visit's failure can show up in several bars at once. The caption above the chart states the reconciling number directly: how many visits failed at least one method vs. how many are recorded Fail overall. Hovering a segment shows a percentage alongside its count -- of THAT METHOD'S OWN row total (its own Pass+Pending+Fail, plus its grey 4th segment if it has one), NOT of the overall visit count in the filter, so a bar's own segments always sum to 100% of each other. GPS and QR have a grey 4th segment counted into their own row total (\"No location to match on\", \"Not available (QR)\"); the other 4 methods don't, so a blank/NA answer for those simply isn't counted in either the numerator or that method's denominator.",
           field:
@@ -2791,6 +2836,82 @@ function WorkflowUI({
       };
     },
     [methodStats, activeTab],
+  );
+
+  // --- Visits over time chart (Verification Summary tab) -----------------
+  var visitsOverTimeChartRef = React.useRef(null);
+  var visitsOverTimeChartInstance = React.useRef(null);
+
+  React.useEffect(
+    function () {
+      if (activeTab !== 'summary') return;
+      if (!visitsOverTimeChartRef.current || !window.Chart) return;
+      if (visitsOverTimeChartInstance.current)
+        visitsOverTimeChartInstance.current.destroy();
+
+      visitsOverTimeChartInstance.current = new window.Chart(
+        visitsOverTimeChartRef.current,
+        {
+          type: 'bar',
+          data: {
+            labels: visitsOverTimeStats.map(function (w) {
+              return w.week;
+            }),
+            datasets: [
+              {
+                label: 'Passed',
+                data: visitsOverTimeStats.map(function (w) {
+                  return w.pass;
+                }),
+                backgroundColor: '#22c55e',
+              },
+              {
+                label: 'Pending Audit',
+                data: visitsOverTimeStats.map(function (w) {
+                  return w.pending;
+                }),
+                backgroundColor: '#eab308',
+              },
+              {
+                label: 'Failed',
+                data: visitsOverTimeStats.map(function (w) {
+                  return w.fail;
+                }),
+                backgroundColor: '#ef4444',
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: {
+                stacked: true,
+                title: { display: true, text: 'Week of (Mon, UTC)' },
+              },
+              y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } },
+            },
+            plugins: {
+              legend: { position: 'bottom' },
+              tooltip: {
+                callbacks: {
+                  footer: function (items) {
+                    var w = visitsOverTimeStats[items[0].dataIndex];
+                    return 'Total: ' + (w.pass + w.pending + w.fail);
+                  },
+                },
+              },
+            },
+          },
+        },
+      );
+
+      return function () {
+        if (visitsOverTimeChartInstance.current)
+          visitsOverTimeChartInstance.current.destroy();
+      };
+    },
+    [visitsOverTimeStats, activeTab],
   );
 
   // --- By-FLW failed-visit chart (Failed Verification Analysis tab) ------
@@ -3456,6 +3577,27 @@ function WorkflowUI({
             </p>
           </div>
           {summaryCards}
+          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-semibold text-gray-900">
+              Visits Over Time
+            </h3>
+            <p className="mb-2 text-xs text-gray-500">
+              Weekly count of visits by Final verification outcome (Passed
+              stacked at the bottom, then Pending Audit, then Failed on top). A
+              visit that never reached an outcome (see the note above) isn't
+              counted in any segment, so a week's bar height can be less than
+              its true visit count.
+            </p>
+            {visitsOverTimeStats.length > 0 ? (
+              <div style={{ height: '320px' }}>
+                <canvas ref={visitsOverTimeChartRef}></canvas>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400">
+                No visits with a date in the current filter.
+              </p>
+            )}
+          </div>
           <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
             <h3 className="text-sm font-semibold text-gray-900">
               Per-Method Outcome Breakdown
