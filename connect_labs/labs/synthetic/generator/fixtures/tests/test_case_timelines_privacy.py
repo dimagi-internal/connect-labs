@@ -130,10 +130,14 @@ def test_a_number_that_names_someone_never_reaches_the_profile():
             noise_seed=3,
         )
     )
-    pool = manifest["beneficiary_cohorts"][0]["longitudinal"]["transplant_pool"]
+    cohort = manifest["beneficiary_cohorts"][0]
+    pool = cohort["longitudinal"]["transplant_pool"]
     paths = {p for s in pool for v in s["visits"] for p in (v.get("values") or {})}
     assert "form.weight" in paths
     assert not paths & {"form.mothers_phone_number", "form.registration_code"}, paths
+    # ... nor anywhere else in the profile: a distribution's lo/hi are observed values.
+    assert not set(cohort["field_distributions"]) & {"form.mothers_phone_number", "form.registration_code"}
+    assert "256700000000" not in yaml.dump(manifest) and "400000000" not in yaml.dump(manifest)
 
 
 def test_growth_is_modelled_from_the_source(pool):

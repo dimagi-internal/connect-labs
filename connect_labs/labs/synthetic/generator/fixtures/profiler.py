@@ -1140,6 +1140,9 @@ def profile(
     personas = _profile_flw_personas(visits_by_flw, curate=curate, opp_jitter=opp_jitter)
     timeline = _profile_timeline(user_visits, visits_by_flw)
     field_dists = _profile_field_distributions(user_visits, form_json_paths)
+    # A number that names someone is never profiled, in any block: a distribution's
+    # lo/hi are observed percentiles, so a phone number would ship in the manifest.
+    field_dists = {p: d for p, d in field_dists.items() if not _is_numeric_identifier(user_visits, p)}
 
     kinds: dict[str, str] = {}
     computed_paths: set[str] = set()
@@ -1154,7 +1157,11 @@ def profile(
         # auto-discovered, so nothing real is left for the engine's randint(0,10)
         # stub to fill (issue #713 #4). Already-profiled paths are left untouched.
         for path, kind in kinds.items():
-            if kind in {"int", "decimal"} and path not in field_dists:
+            if (
+                kind in {"int", "decimal"}
+                and path not in field_dists
+                and not _is_numeric_identifier(user_visits, path)
+            ):
                 extra = _profile_field_distributions(user_visits, [path])
                 if path in extra:
                     field_dists[path] = extra[path]

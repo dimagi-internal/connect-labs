@@ -426,7 +426,9 @@ def _fit_copies(
 
         for i, a in enumerate(present):
             for b in present[i + 1 :]:
-                if abs(consts[a] - consts[b]) < 1:
+                # Equal to the finer field's precision: 1.45 and 1.80 kg are not a copy.
+                tol = 0.5 * 10.0 ** -max(numeric[a].places, numeric[b].places)
+                if abs(consts[a] - consts[b]) < tol:
                     parent[root(b)] = root(a)
         groups: dict[str, list[str]] = defaultdict(list)
         for p in present:
@@ -621,6 +623,11 @@ def _fit_grid(
     if len(obs) < K_MIN or unit <= 0:
         return (), {}
     units = Counter(int(round(x / unit)) for x in obs)
+    # Cases per value, keyed by its unit index: a float key looked up as k * unit
+    # missed (15 * 0.1 is not 1.5), and no decimal field ever had a grid.
+    cases_at: Counter = Counter()
+    for x, c in value_cases.items():
+        cases_at[int(round(x / unit))] += c
     keys = np.array(sorted(units))
     counts = np.array([units[k] for k in keys], dtype=float)
     cum = np.concatenate([[0.0], np.cumsum(counts)])
@@ -633,7 +640,7 @@ def _fit_grid(
     grid_keys = [
         int(k)
         for k, c, b in zip(keys, counts, around)
-        if c >= _GRID_EXCESS * max(b, 1.0 / (2 * _GRID_WINDOW)) and value_cases[k * unit] >= K_MIN
+        if c >= _GRID_EXCESS * max(b, 1.0 / (2 * _GRID_WINDOW)) and cases_at[int(k)] >= K_MIN
     ]
     if len(grid_keys) < 2:
         return (), {}
@@ -652,7 +659,8 @@ def _fit_grid(
             shares[owner] = share(values)
     if max(shares.values()) <= 0:
         return (), {}
-    return tuple(k * unit for k in grid_keys), shares
+    places = max(0, -int(math.floor(math.log10(unit)))) if unit < 1 else 0
+    return tuple(round(k * unit, places) for k in grid_keys), shares
 
 
 def _on_grid(value: float, pm: _PathModel, owner: str, rng: random.Random) -> float:

@@ -1,5 +1,6 @@
 """A few real data-entry slips must not set the noise on every synthetic weighing."""
 
+import collections
 import datetime as dt
 import random
 
@@ -498,3 +499,22 @@ def test_a_case_still_open_when_the_source_was_read_stays_open():
     as_of = end - 3
     assert abs(lost(out, as_of) - lost(pool, as_of)) < 0.03, (lost(out, as_of), lost(pool, as_of))
     assert all(dt.date.fromisoformat(c["start_date"]).toordinal() + int(c["visits"][-1]["day"]) <= end for c in out)
+
+
+def test_a_grid_is_found_in_decimal_readings_and_copies_respect_precision():
+    """Readings in kg to 0.1 sit on a grid like grams in hundreds; a float key looked
+    up as k * unit (15 * 0.1 is not 1.5) gave decimal fields no grid at all. And two
+    decimal constants within 1 of each other are not a copy of each other."""
+    rng = random.Random(41)
+    obs = [round(rng.gauss(2.2, 0.4), 1) if rng.random() < 0.8 else round(rng.gauss(2.2, 0.4), 3) for _ in range(600)]
+    value_cases = collections.Counter(obs)
+    grid, shares = cm._fit_grid(obs, {}, value_cases, 0.001)
+    assert grid and all(abs(g * 10 - round(g * 10)) < 1e-9 for g in grid), grid[:5]
+    assert shares["*"] > 0.5
+
+    numeric = {
+        "form.bw": cm._PathModel(kind="const", whole=False, places=2, lo=1.0, hi=3.0),
+        "form.ew": cm._PathModel(kind="const", whole=False, places=2, lo=1.0, hi=3.0),
+    }
+    consts = [(f"flw_{i % 4}", {"form.bw": 1.45, "form.ew": 1.80}) for i in range(20)]
+    assert cm._fit_copies(consts, numeric) == {}
