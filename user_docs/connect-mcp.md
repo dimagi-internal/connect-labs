@@ -133,6 +133,7 @@ The `mcp/no_user_visit/` address enforces a strict set of rules to prevent real 
 - **Reading stored workflow snapshots.** Workflow runs are rebuilt live from generated data instead of reading a stored snapshot that might contain real visits.
 - **Pointing `pipeline_preview` at another opportunity's export or at Open Chat Studio sessions.** This prevents a restricted caller from pulling in visit-level data through a pipeline preview.
 - **Generating from an old mirror-mode profile.** Profiles saved in the old mirror mode (before case timelines were introduced) hold real cases lightly perturbed, so their data never counts as "generated". Profiling with `case_timelines=true` *is* allowed: it models each worker's caseload and each case's timeline and saves only newly sampled cases, which are generated — not copies of real data. Re-profile any old mirror-mode profiles to use this safer approach.
+- **Generating from a profile created before measurement numbers were fully modelled.** Profiles created before all numeric measurements (such as weights and visit-day sequences) were regenerated hold data that traces back to real cases. A synthetic programme profiled before this change no longer counts as generated data and must be re-profiled before it can be read on the restricted address.
 - **Writing synthetic data onto a real opportunity, wiping a shared demo environment, or reading or writing a profile bundle outside Drive.**
 - **Using the SQL explorer (`explorer_describe`, `explorer_query`).** These tools read live visit data and are not available on the restricted address.
 - **Starting a run on a page-type workflow.** Pages are not run through MCP — open them in the browser instead.
@@ -237,6 +238,4 @@ You can also choose the home page from **Settings → Labs**, which shows a list
 
 ### Who can edit pages and Settings
 
-Anyone who can change the Settings of the organisation, program, or opportunity that owns a page can edit it. In the workflow list, those people see an **Edit page** link next to the workflow. People who can view the page but cannot change its Settings do not see the link, and Labs will refuse their edits even if they navigate directly to the editor's address.
-
-**Dimagi staff** — anyone signed in
+Anyone who can change the Settings of the organisation
