@@ -55,18 +55,18 @@ scenes:
     target: text:Compare quotes
     seconds: 60
   - kind: hold
-    seconds: 5.0
+    seconds: 3.0
   - kind: scroll_to
     target: text:2 of 3 answered
   - kind: hover
     target: text:Pwani Mobile Distributors
-    seconds: 6.0
+    seconds: 4.5
   - kind: hover
     target: text:Bahari Electronics Wholesale
-    seconds: 5.0
+    seconds: 4.0
   - kind: hover
     target: text:Lakeview Devices
-    seconds: 5.0
+    seconds: 3.5
   - kind: snapshot
 - id: phones-compare
   persona: lead
@@ -84,13 +84,13 @@ scenes:
     target: text:Compare quotes
     seconds: 60
   - kind: hold
-    seconds: 4.0
+    seconds: 1.5
   - kind: hover
     target: text:EXW Mombasa
-    seconds: 5.0
+    seconds: 2.0
   - kind: hover
     target: text:DAP Kilifi
-    seconds: 4.0
+    seconds: 2.5
   - kind: snapshot
 - id: phones-order
   persona: lead
@@ -110,19 +110,19 @@ scenes:
     target: text:TCN-PO-0001
     seconds: 60
   - kind: hold
-    seconds: 4.0
+    seconds: 3.0
   - kind: hover
     target: text:1,194 / 1,200
-    seconds: 5.5
+    seconds: 5.0
   - kind: hover
     target: text:6 refused
-    seconds: 5.0
+    seconds: 4.5
   - kind: hover
     target: text:Billed vs agreed
-    seconds: 5.0
+    seconds: 4.5
   - kind: hover
     target: text:safe to pay now
-    seconds: 6.5
+    seconds: 5.0
   - kind: snapshot
 - id: phones-workers
   persona: lead
@@ -142,13 +142,13 @@ scenes:
     target: text:chw-amani
     seconds: 60
   - kind: hold
-    seconds: 6.5
+    seconds: 3.0
   - kind: hover
     target: text:chw-amani
-    seconds: 9.0
+    seconds: 7.0
   - kind: hover
     target: text:chw-faraji
-    seconds: 11.0
+    seconds: 10.5
   - kind: snapshot
 - id: phones-flow
   persona: lead
@@ -168,17 +168,17 @@ scenes:
     target: text:Given out at visits
     seconds: 60
   - kind: hold
-    seconds: 5.0
+    seconds: 2.5
   - kind: hover
     target: text:Arrived
-    seconds: 5.0
+    seconds: 4.0
   - kind: hover
     target: text:With workers
-    seconds: 5.0
+    seconds: 4.0
   - kind: click
     target: css:#flow-play
   - kind: hold
-    seconds: 11.0
+    seconds: 6.0
   - kind: snapshot
 - id: phones-map
   persona: lead
@@ -198,11 +198,11 @@ scenes:
     target: text:Where the supplies are
     seconds: 60
   - kind: hold
-    seconds: 8.0
+    seconds: 3.0
   - kind: hover
     target: text:Movement,
-    seconds: 8.0
+    seconds: 5.5
   - kind: hover
     target: text:places across 1 program
-    seconds: 9.5
+    seconds: 6.0
   - kind: snapshot
