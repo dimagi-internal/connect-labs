@@ -9,6 +9,8 @@ from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
+from django.db import transaction
+from django.test import override_settings
 
 from connect_labs.labs.synthetic import registry
 from connect_labs.labs.synthetic.fixture_store import ENDPOINT_FILES
@@ -99,17 +101,39 @@ class FakeStore:
         return None
 
 
-@pytest.fixture
-def seeded(db, settings):
-    settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent"
+@pytest.fixture(scope="module")
+def _seeded_once(django_db_setup, django_db_blocker):
+    """Seed the phones world ONCE for this module, inside an outer transaction rolled back at the end.
+
+    Each test still runs in its own savepoint (the `db` fixture nests inside this), so a
+    test's writes -- the reset re-seed included -- roll back as before.
+    """
     drive = FakeDrive()
+    with django_db_blocker.unblock(), override_settings(LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID="parent"):
+        outer = transaction.atomic()
+        outer.__enter__()
+        try:
+            registry.invalidate_cache()
+            with (
+                patch(
+                    "connect_labs.labs.integrations.connect.factory._get_fixture_store",
+                    return_value=FakeStore(drive),
+                ),
+                patch("connect_labs.labs.synthetic.provisioning.invalidate_synthetic_caches"),
+            ):
+                summary = phones.seed(drive=drive, today=TODAY)
+            yield {"drive": drive, "summary": summary, "program_id": summary["program_id"]}
+        finally:
+            transaction.set_rollback(True)
+            outer.__exit__(None, None, None)
+            registry.invalidate_cache()
+
+
+@pytest.fixture
+def seeded(_seeded_once, db, settings):
+    settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent"
     registry.invalidate_cache()
-    with (
-        patch("connect_labs.labs.integrations.connect.factory._get_fixture_store", return_value=FakeStore(drive)),
-        patch("connect_labs.labs.synthetic.provisioning.invalidate_synthetic_caches"),
-    ):
-        summary = phones.seed(drive=drive, today=TODAY)
-        yield {"drive": drive, "summary": summary, "program_id": summary["program_id"]}
+    yield _seeded_once
     registry.invalidate_cache()
 
 
