@@ -174,7 +174,20 @@ def test_seeding_again_changes_nothing_unless_reset(seeded):
     ):
         again = phones.seed(drive=seeded["drive"], today=TODAY)
         assert again["seeded"] is False
+        import cProfile, io, os, pstats, time  # PROBE
+
+        prof = cProfile.Profile()
+        t0 = time.monotonic()
+        prof.enable()
         reset = phones.seed(drive=seeded["drive"], reset=True, today=TODAY)
+        prof.disable()
+        if os.environ.get("PROFILE_PHONES"):
+            out = io.StringIO()
+            out.write(f"reset took {time.monotonic() - t0:.1f}s on {os.environ.get('PYTEST_XDIST_WORKER')}\n")
+            pstats.Stats(prof, stream=out).sort_stats("cumulative").print_stats("connect_labs|execute", 40)
+            pstats.Stats(prof, stream=out).sort_stats("tottime").print_stats(15)
+            with open(os.environ["PROFILE_PHONES"], "a") as fh:
+                fh.write(out.getvalue())
         assert reset["seeded"] is True and reset["program_id"] == seeded["program_id"]
     assert Tender.objects.filter(program_id=seeded["program_id"]).count() == 1
 

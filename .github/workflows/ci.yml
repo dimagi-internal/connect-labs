@@ -267,7 +267,8 @@ jobs:
       # Every slice reports its failures, not just the first slice to fail.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1]
+        rep: [a, b, c]
     permissions:
       contents: read
       packages: read # pull the mirrored postgis service image from GHCR
@@ -348,7 +349,14 @@ jobs:
         # slower with no change to any test. This suite is mostly waiting on
         # Postgres, so it wants every vCPU the runner reports.
         run: |
-          .venv/bin/pytest connect_labs/ -n logical --shard=${{ matrix.shard }}/3
+          docker exec -i ${{ job.services.postgres.id }} psql -U postgres -c "ALTER SYSTEM SET log_min_duration_statement = 500" -c "SELECT pg_reload_conf()"
+          PROFILE_PHONES=/tmp/phones-prof.txt .venv/bin/pytest connect_labs/ -n logical --shard=${{ matrix.shard }}/3
+
+      - name: PROBE output
+        if: always()
+        run: |
+          echo "== slow statements"; docker logs ${{ job.services.postgres.id }} 2>&1 | grep -A3 "duration:" | cut -c1-400 | head -80
+          echo "== profile"; cat /tmp/phones-prof.txt || true
 
       # On a cache miss this run built the template itself; keep it for the
       # next run. Only after a GREEN slice: a dump from a run that failed may be
