@@ -170,23 +170,55 @@ def test_candidates_evaluates_r2_rules_and_leaves_out_r1(client, django_user_mod
     )
     assert resp.status_code == 200, resp.content
     body = resp.json()
+    # Step A's cluster-aware filter is on by default (as in R1), and these
+    # rows have no coordinates to corroborate with, so only step B selects.
     assert {c["wa_id"] for c in body["candidates"]} == {"suspended", "rejected", "inaccessible"}
-    assert body["per_indicator_counts"] == {r2.SUSPENDED_FLW: 1, r2.REJECTED_VISIT: 1, r2.MICROPLAN_INACCESSIBLE: 1}
-    assert body["extra_counts"] == {r2.EXCLUDED_IN_R1: 1, "r1_matched": 1}
+    counts = body["per_indicator_counts"]
+    assert {k: counts[k] for k in r2.R2_INDICATORS} == {
+        r2.SUSPENDED_FLW: 1,
+        r2.REJECTED_VISIT: 1,
+        r2.MICROPLAN_INACCESSIBLE: 1,
+    }
+    assert set(counts) == set(r2.ALL_KEYS)
+    assert body["extra_counts"][r2.EXCLUDED_IN_R1] == 1
     assert body["r2_sources"]["r1_work_areas"] == 1640
-    # Saved as R2 settings, not R1's indicator set.
-    assert set(runs[1].thresholds["indicator_configs"]) == set(r2.R2_INDICATORS)
-    assert runs[1].thresholds["global_config"] == {"exclude_r1": True}
+    # Saved as step A's R1 indicators plus step B's rules.
+    assert set(runs[1].thresholds["indicator_configs"]) == set(r2.ALL_KEYS)
+    assert runs[1].thresholds["global_config"]["exclude_r1"] is True
+    assert runs[1].thresholds["global_config"]["min_building_count"] == 3
 
 
-def test_candidates_rejected_rule_off_by_default_for_eha(client, django_user_model, monkeypatch):
+def test_candidates_step_a_selects_under_covered_work_areas(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch, runs={1: _run(1, round_="r2", target=2155, r1=2305)})
+    rows = [
+        _wa("low", approved_hsd_count=1, expected_visit_count=10, muac_given=1, deworming_given=1),
+        _wa("high", approved_hsd_count=9, expected_visit_count=10, muac_given=9, deworming_given=9),
+    ]
+    _mock_ready_data(monkeypatch, runs[1], rows)
+    body = client.post(
+        reverse("mopup:candidates", kwargs={"program_id": 217, "run_id": 1}),
+        data={"global_config": {"cluster_aware_filter_enabled": False}},
+        content_type="application/json",
+    ).json()
+    assert [c["wa_id"] for c in body["candidates"]] == ["low"]
+    assert body["candidates"][0]["triggered_indicators"] == ["evc_shortfall"]
+    assert body["extra_counts"]["step_a"] == 1
+
+
+def test_candidates_rejected_rule_is_on_for_every_llo_and_can_be_switched_off(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch, runs={1: _run(1, round_="r2", target=2155, r1=2305)})
     _mock_ready_data(monkeypatch, runs[1], [_wa("rejected", rejected_hsd_count=2)])
-    body = client.post(
-        reverse("mopup:candidates", kwargs={"program_id": 217, "run_id": 1}), content_type="application/json"
+    url = reverse("mopup:candidates", kwargs={"program_id": 217, "run_id": 1})
+    on = client.post(url, content_type="application/json").json()
+    assert [c["wa_id"] for c in on["candidates"]] == ["rejected"]
+    off = client.post(
+        url,
+        data={"indicator_configs": {r2.REJECTED_VISIT: {"enabled": False}}},
+        content_type="application/json",
     ).json()
-    assert body["candidates"] == []
+    assert off["candidates"] == []
 
 
 def test_candidates_honours_turning_off_the_r1_exclusion(client, django_user_model, monkeypatch):
@@ -215,9 +247,14 @@ def test_analysis_page_renders_r2_rules(client, django_user_model, monkeypatch):
     _make_fake_run_da(monkeypatch, runs={1: _run(1, round_="r2", r1=2291)})
     resp = client.get(reverse("mopup:analysis", kwargs={"program_id": 217, "run_id": 1}))
     assert resp.status_code == 200
-    assert resp.context["indicator_defs"] == r2.R2_INDICATOR_DEFS
-    assert resp.context["indicator_configs"][r2.REJECTED_VISIT]["enabled"] is True  # ISODAF
-    assert resp.context["global_config"] == {"exclude_r1": True}
+    # Step A is R1's indicator table; step B's rules come separately.
+    assert [d["key"] for d in resp.context["indicator_defs"]][0] == "evc_shortfall"
+    assert resp.context["r2_rule_defs"] == r2.R2_INDICATOR_DEFS
+    assert resp.context["indicator_configs"]["evc_shortfall"]["threshold"] == 0.4
+    assert resp.context["indicator_configs"][r2.REJECTED_VISIT]["enabled"] is True
+    assert resp.context["global_config"]["exclude_r1"] is True
+    assert b'id="r2-rule-rows"' in resp.content
+    assert b'id="cfg-cluster-filter-enabled"' in resp.content
     assert resp.context["planning_gap_config"] == {"mode": "skip"}
     assert b"WA Revisit R2" in resp.content
     assert b"CHC - NG - ISODAF - R1" in resp.content
@@ -229,6 +266,8 @@ def test_analysis_page_for_an_r1_run_is_unchanged(client, django_user_model, mon
     _make_fake_run_da(monkeypatch, runs={1: _run(1, round_="r1")})
     resp = client.get(reverse("mopup:analysis", kwargs={"program_id": 217, "run_id": 1}))
     assert [d["key"] for d in resp.context["indicator_defs"]][0] == "evc_shortfall"
+    assert resp.context["r2_rule_defs"] == []
+    assert b'id="r2-rule-rows"' not in resp.content
     assert b"isR2: false" in resp.content
 
 

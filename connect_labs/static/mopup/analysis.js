@@ -39,7 +39,7 @@ window.MopupAnalysis = (function () {
     suspended_flw:
       "The work area's assigned worker is suspended on the original opportunity. Every work area they own is selected, including ones that look complete, because their visits can't be trusted.",
     rejected_visit:
-      'The work area has at least one Health Service Delivery or No Children Found visit that was rejected in review, even if it also has approved visits. Only the original opportunity is read, so rejections inside the R1 opportunity do not count. On by default for ISODAF and JHF only.',
+      'The work area has at least one Health Service Delivery or No Children Found visit that was rejected in review, even if it also has approved visits. Only the original opportunity is read, so rejections inside the R1 opportunity do not count. On by default for every LLO; switch it off here.',
     microplan_inaccessible:
       'Connect has the work area marked Inaccessible -- the clusters flagged inaccessible when the original microplan was made. A request still awaiting review is not counted.',
   };
@@ -48,6 +48,7 @@ window.MopupAnalysis = (function () {
 
   let CFG = {};
   let indicatorDefs = [];
+  let r2RuleDefs = [];
   let indicatorConfigs = {};
   let globalConfig = {};
   let lastCandidates = [];
@@ -138,20 +139,20 @@ window.MopupAnalysis = (function () {
           }></td>`;
   }
 
-  // WA Revisit R2: one plain row per rule (no thresholds or neighbour
-  // settings -- each rule is a yes/no fact about a work area), then a row
-  // for leaving out what R1 already covered. That last row has no
-  // .ind-enabled checkbox, so collectIndicatorConfigs skips it, and it sits
-  // inside #indicator-rows so locking disables it with everything else.
+  // WA Revisit R2's step B: one plain row per rule (no thresholds or
+  // neighbour settings -- each is a yes/no fact about a work area), then a
+  // row for leaving out what R1 already covered. Its own tbody, under step
+  // A's R1 indicator table; that last row has no .ind-enabled checkbox, so
+  // collectIndicatorConfigs skips it.
   function renderR2Rows() {
-    const rows = indicatorDefs.map((def) => {
+    const rows = r2RuleDefs.map((def) => {
       const cfg = indicatorConfigs[def.key] || { enabled: true };
       return `<tr class="border-b border-gray-50 ${
         cfg.enabled ? '' : 'opacity-50'
       }" data-key="${esc(def.key)}">
-          <td class="py-2 pr-2"><input type="checkbox" class="ind-enabled" ${
-            cfg.enabled ? 'checked' : ''
-          }></td>
+          <td class="py-2 pr-2"><input type="checkbox" role="switch" class="ind-enabled r2-switch" aria-label="${esc(
+            def.label,
+          )}" ${cfg.enabled ? 'checked' : ''}></td>
           <td class="py-2 pr-2">${esc(
             def.label,
           )} <span class="info-icon" tabindex="0" data-tip="${esc(
@@ -161,19 +162,15 @@ window.MopupAnalysis = (function () {
         </tr>`;
     });
     rows.push(`<tr class="bg-gray-50" data-key="exclude_r1_settings">
-        <td class="py-2 pr-2"><input type="checkbox" id="cfg-exclude-r1"></td>
-        <td class="py-2 pr-2">Leave out work areas already in R1 <span class="info-icon" tabindex="0" data-tip="Matched on the work area's exact centroid: R1 work areas were uploaded with the original work area's boundary unchanged. Needs an R1 opportunity picked at setup.">ⓘ</span></td>
+        <td class="py-2 pr-2"><input type="checkbox" role="switch" class="r2-switch" id="cfg-exclude-r1" aria-label="Leave out work areas already in R1"></td>
+        <td class="py-2 pr-2">Leave out work areas already in R1 (steps A and B) <span class="info-icon" tabindex="0" data-tip="Matched on the work area's exact centroid: R1 work areas were uploaded with the original work area's boundary unchanged. Needs an R1 opportunity picked at setup.">ⓘ</span></td>
         <td class="py-2 pr-2 text-gray-600"><span id="r2-excluded-count">—</span> left out</td>
       </tr>`);
-    $('indicator-rows').innerHTML = rows.join('');
-    applyIndicatorRowStates();
+    $('r2-rule-rows').innerHTML = rows.join('');
   }
 
   function renderIndicatorRows() {
-    if (CFG.isR2) {
-      renderR2Rows();
-      return;
-    }
+    if (CFG.isR2) renderR2Rows();
     const tb = $('indicator-rows');
     const sharedGroupsState = {
       tier2: { rendered: false },
@@ -286,10 +283,12 @@ window.MopupAnalysis = (function () {
 
   function renderIndicatorCounts(counts) {
     counts = counts || {};
-    document.querySelectorAll('#indicator-rows tr').forEach((tr) => {
-      const cell = tr.querySelector('.ind-trigger-count');
-      if (cell) cell.textContent = counts[tr.dataset.key] ?? '—';
-    });
+    document
+      .querySelectorAll('#indicator-rows tr, #r2-rule-rows tr')
+      .forEach((tr) => {
+        const cell = tr.querySelector('.ind-trigger-count');
+        if (cell) cell.textContent = counts[tr.dataset.key] ?? '—';
+      });
   }
 
   // A single shared tooltip element, positioned in JS with `position: fixed`
@@ -360,12 +359,19 @@ window.MopupAnalysis = (function () {
   function applyIndicatorRowStates() {
     if (CFG.locked) {
       document
-        .querySelectorAll('#indicator-rows input, #indicator-rows select')
+        .querySelectorAll(
+          '#indicator-rows input, #indicator-rows select, #r2-rule-rows input',
+        )
         .forEach((el) => {
           el.disabled = true;
         });
       return;
     }
+    document.querySelectorAll('#r2-rule-rows tr[data-key]').forEach((tr) => {
+      const enabledInput = tr.querySelector('.ind-enabled');
+      if (enabledInput)
+        tr.classList.toggle('opacity-50', !enabledInput.checked);
+    });
     const filterInput = $('cfg-cluster-filter-enabled');
     const filterOn = filterInput ? filterInput.checked : true;
     document.querySelectorAll('#indicator-rows tr[data-key]').forEach((tr) => {
@@ -392,7 +398,6 @@ window.MopupAnalysis = (function () {
   function renderGlobalConfig() {
     if (CFG.isR2) {
       $('cfg-exclude-r1').checked = globalConfig.exclude_r1 !== false;
-      return;
     }
     $('cfg-min-evc-floor').value = globalConfig.min_evc_floor;
     $('cfg-evc-neighbor-distance').value = globalConfig.evc_neighbor_distance_m;
@@ -412,32 +417,33 @@ window.MopupAnalysis = (function () {
 
   function collectIndicatorConfigs() {
     const out = {};
-    document.querySelectorAll('#indicator-rows tr').forEach((tr) => {
-      // Skip the per-indicator settings sub-rows (data-key ending in
-      // "_settings") -- they have no .ind-enabled checkbox of their own,
-      // they're rendered directly under the real indicator row.
-      const enabledInput = tr.querySelector('.ind-enabled');
-      if (!enabledInput) return;
-      const key = tr.dataset.key;
-      const thresholdInput = tr.querySelector('.ind-threshold');
-      out[key] = {
-        enabled: enabledInput.checked,
-        // The input is a 0-100 percentage (display-only, see
-        // renderIndicatorRows) -- convert back to the 0-1 rate the backend
-        // has always stored/compared against.
-        ...(thresholdInput
-          ? { threshold: (parseFloat(thresholdInput.value) || 0) / 100 }
-          : {}),
-      };
-    });
+    document
+      .querySelectorAll('#indicator-rows tr, #r2-rule-rows tr')
+      .forEach((tr) => {
+        // Skip the per-indicator settings sub-rows (data-key ending in
+        // "_settings") -- they have no .ind-enabled checkbox of their own,
+        // they're rendered directly under the real indicator row.
+        const enabledInput = tr.querySelector('.ind-enabled');
+        if (!enabledInput) return;
+        const key = tr.dataset.key;
+        const thresholdInput = tr.querySelector('.ind-threshold');
+        out[key] = {
+          enabled: enabledInput.checked,
+          // The input is a 0-100 percentage (display-only, see
+          // renderIndicatorRows) -- convert back to the 0-1 rate the backend
+          // has always stored/compared against.
+          ...(thresholdInput
+            ? { threshold: (parseFloat(thresholdInput.value) || 0) / 100 }
+            : {}),
+        };
+      });
     return out;
   }
 
   function collectGlobalConfig() {
-    if (CFG.isR2) {
-      return { exclude_r1: $('cfg-exclude-r1').checked };
-    }
     return {
+      // WA Revisit R2 only: leave out what R1 already covered.
+      ...(CFG.isR2 ? { exclude_r1: $('cfg-exclude-r1').checked } : {}),
       min_evc_floor: parseInt($('cfg-min-evc-floor').value, 10) || 0,
       evc_neighbor_distance_m:
         parseFloat($('cfg-evc-neighbor-distance').value) || 0,
@@ -1400,6 +1406,17 @@ window.MopupAnalysis = (function () {
     if ($('r2-excluded-count')) {
       $('r2-excluded-count').textContent = extra.excluded_in_r1 ?? '—';
     }
+    if ($('r2-totals')) {
+      $('r2-totals').textContent =
+        `${data.candidate_count} candidate work area(s): ${
+          extra.step_a ?? 0
+        } from step A (with any step B reasons added) + ${
+          extra.step_b_only ?? 0
+        } added only by step B` +
+        (extra.excluded_in_r1
+          ? `, after leaving out ${extra.excluded_in_r1} already in R1.`
+          : '.');
+    }
     const src = data.r2_sources;
     if (!$('r2-sources') || !src) return;
     const parts = [
@@ -1890,6 +1907,7 @@ window.MopupAnalysis = (function () {
     CFG = cfg;
     planningGapsRecomputed = !!cfg.planningGapsRecomputeDone;
     indicatorDefs = JSON.parse($('indicator-defs-data').textContent);
+    r2RuleDefs = JSON.parse($('r2-rule-defs-data')?.textContent || '[]');
     indicatorConfigs = JSON.parse($('indicator-configs-data').textContent);
     globalConfig = JSON.parse($('global-config-data').textContent);
     wardBoundariesData = JSON.parse(
@@ -1914,6 +1932,12 @@ window.MopupAnalysis = (function () {
       if (e.target.classList.contains('ind-enabled')) applyIndicatorRowStates();
       scheduleRecompute();
     });
+    if ($('r2-rule-rows')) {
+      $('r2-rule-rows').addEventListener('change', () => {
+        applyIndicatorRowStates();
+        scheduleRecompute();
+      });
+    }
     $('recompute').addEventListener('click', () => {
       clearTimeout(recomputeDebounceTimer);
       pollOrEvaluate();
