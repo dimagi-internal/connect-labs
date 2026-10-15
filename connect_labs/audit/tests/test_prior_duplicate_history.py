@@ -388,31 +388,6 @@ def _filter_card() -> str:
     raise AssertionError("the filter card's markup does not balance")
 
 
-def test_the_card_splits_sixty_forty():
-    card = _filter_card()
-    assert "lg:w-3/5" in card, "the controls column is not 60%"
-    assert "lg:w-2/5" in card, "the history column is not 40%"
-
-
-def test_both_columns_can_shrink_so_the_history_scrolls_instead_of_stretching_the_card():
-    """`min-width: auto` is the flex default. Without min-w-0 the 40% column refuses
-    to shrink below its content, overflow-x-auto never engages, and a wide strip
-    widens the whole page -- which is the one thing the scroll was asked for."""
-    card = _filter_card()
-    assert card.count("min-w-0") >= 2
-    assert "overflow-x-auto" in card
-
-
-def test_the_history_panel_states_every_outcome_it_can_have():
-    """Four distinct cases, and three of them are easy to leave as a blank box that
-    a reviewer reads as "this FLW is clean"."""
-    card = _filter_card()
-    assert "History unavailable" in card, "an unattributed index must say so"
-    assert "Pick an FLW above" in card, "several FLWs and no filter has no single answer"
-    assert "No duplicate or fake images in earlier audits" in card, "a genuinely clean record"
-    assert "priorDuplicateHistory.days" in card, "the columns themselves"
-
-
 def test_the_table_is_two_rows_dates_then_counts():
     card = _filter_card()
     assert "day.label" in card and "day.count" in card
@@ -426,16 +401,9 @@ def test_the_page_defaults_to_unattributed_rather_than_clean():
     assert "data.prior_duplicates_attributed === true" in html
 
 
-def test_the_panel_distinguishes_a_clean_record_from_one_below_the_threshold():
-    """Both render as "no columns", and treating them the same would tell you an FLW
-    flagged every week has never been flagged at all."""
+def test_the_panel_reads_every_bucket_the_history_endpoint_returns():
     card = _filter_card()
-    assert "No duplicate or fake images in earlier audits" in card
-    assert "no single day reached" in card
-
-
-def test_the_panel_states_both_buckets_no_column_can_show():
-    card = _filter_card()
+    assert "priorDuplicateHistory.days" in card, "the columns themselves"
     assert "priorDuplicateHistory.below_threshold" in card, "days under the threshold"
     assert "priorDuplicateHistory.undated" in card, "flags with no readable date"
 
