@@ -1,731 +1,459 @@
-"""
-Tests for solicitations data access layer.
+"""SolicitationsDataAccess on the labs database: standing enforced at the choke point."""
 
-All tests mock LabsRecordAPIClient to avoid real API calls.
-Mock returns LocalLabsRecord-compatible objects (proxy model instances).
-"""
-
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.test import override_settings
+from django.utils import timezone
 
-from connect_labs.labs.models import LocalLabsRecord
-from connect_labs.solicitations.data_access import (
-    RESPONSE_TYPE,
-    REVIEW_TYPE,
-    SOLICITATION_TYPE,
-    SolicitationsDataAccess,
+from connect_labs.solicitations.data_access import HasResponses, SolicitationsDataAccess
+from connect_labs.solicitations.local_models import SOURCE_LABS, Solicitation, SolicitationResponse
+from connect_labs.solicitations.tests.factories import (
+    CRITERIA,
+    QUESTIONS,
+    grant,
+    make_call,
+    make_org,
+    make_response,
+    make_review,
+    make_user,
 )
-from connect_labs.solicitations.models import ResponseRecord, ReviewRecord, SolicitationRecord
 
-# =========================================================================
-# Fixtures
-# =========================================================================
+pytestmark = pytest.mark.django_db
 
 
-def _make_solicitation_record(**overrides):
-    """Create a SolicitationRecord from dict data."""
+def da(user=None, **kw):
+    return SolicitationsDataAccess(user=user, **kw)
+
+
+@pytest.fixture
+def world():
+    owner_org = make_org("owner-org", name="Owner Org")
+    owner = make_user("owner")
+    grant(owner, owner_org)
+    firm_org = make_org("firm-org", name="Firm Org")
+    applicant = make_user("applicant")
+    grant(applicant, firm_org)
+    return {
+        "owner_org": owner_org,
+        "owner": owner,
+        "firm_org": firm_org,
+        "applicant": applicant,
+        "outsider": make_user("outsider"),
+        "staff": make_user("support", staff=True),
+    }
+
+
+def payload(**kw):
     data = {
-        "title": "Test Solicitation",
-        "description": "A test",
-        "scope_of_work": "Do the work",
+        "title": "Survey firm wanted",
+        "description": "A household survey.",
         "solicitation_type": "rfp",
         "status": "active",
-        "is_public": True,
-        "questions": [{"id": "q1", "text": "Why?", "type": "text", "required": True}],
-        "application_deadline": "2026-06-01",
-        "expected_start_date": "2026-07-01",
-        "expected_end_date": "2026-12-31",
-        "estimated_scale": "1000 beneficiaries",
-        "contact_email": "test@example.com",
-        "created_by": "testuser",
-        "program_name": "Test Program",
+        "questions": QUESTIONS,
+        "evaluation_criteria": CRITERIA,
     }
-    data.update(overrides.pop("data", {}))
-    defaults = {
-        "id": 1,
-        "experiment": "prog_42",
-        "type": SOLICITATION_TYPE,
-        "data": data,
-        "opportunity_id": 0,
+    data.update(kw)
+    return data
+
+
+# --- construction ------------------------------------------------------------
+
+
+def test_no_token_needed():
+    access = SolicitationsDataAccess()
+    assert access.access_token is None
+    assert access.user is None
+
+
+def test_request_supplies_user_token_and_context(world):
+    request = MagicMock()
+    request.user = world["owner"]
+    request.session = {"labs_oauth": {"access_token": "tok", "expires_at": timezone.now().timestamp() + 60}}
+    request.labs_context = {"program_id": 25, "organization_id": "owner-org"}
+    access = SolicitationsDataAccess(request=request)
+    assert access.user == world["owner"]
+    assert access.access_token == "tok"
+    assert access.program_id == 25
+    assert access.organization_id == "owner-org"
+
+
+# --- create ------------------------------------------------------------------
+
+
+def test_create_owned_by_named_org(world):
+    call = da(world["owner"]).create_solicitation(payload(org_slug="owner-org", is_public=True, program_id="25"))
+    assert call.owner_org == world["owner_org"]
+    assert call.source == SOURCE_LABS
+    assert call.listed is True
+    assert call.program_id == 25
+    assert call.created_by == world["owner"]
+    assert call.slug
+
+
+def test_create_refused_for_non_member(world):
+    with pytest.raises(PermissionDenied):
+        da(world["outsider"]).create_solicitation(payload(org_slug="owner-org"))
+
+
+def test_staff_creates_for_any_org(world):
+    call = da(world["staff"]).create_solicitation(payload(org_slug="owner-org"))
+    assert call.owner_org == world["owner_org"]
+
+
+def test_owner_from_programme_runner(world):
+    from connect_labs.supply_chain.runner import declare
+
+    declare(77, world["owner_org"])
+    call = da(world["owner"], program_id=77).create_solicitation(payload())
+    assert call.owner_org == world["owner_org"]
+    assert call.program_id == 77
+
+
+def test_programme_without_runner_names_org_slug(world):
+    with pytest.raises(ValidationError) as exc:
+        da(world["owner"], program_id=78).create_solicitation(payload())
+    assert "org_slug" in str(exc.value)
+
+
+def test_no_owner_at_all_names_org_slug(world):
+    with pytest.raises(ValidationError, match="org_slug"):
+        da(world["owner"]).create_solicitation(payload())
+
+
+def test_create_validates_payload(world):
+    with pytest.raises(ValidationError):
+        da(world["owner"]).create_solicitation(payload(org_slug="owner-org", overview="drift"))
+
+
+def test_create_locks_rubric(world):
+    call = da(world["owner"]).create_solicitation(payload(org_slug="owner-org", criteria_locked=True))
+    assert call.criteria_locked
+
+
+# --- read --------------------------------------------------------------------
+
+
+def test_get_by_id_hides_unreadable(world):
+    hidden = make_call(world["owner_org"], listed=False)
+    assert da(world["outsider"]).get_solicitation_by_id(hidden.pk) is None
+    assert da(world["owner"]).get_solicitation_by_id(hidden.pk) == hidden
+    assert da().get_solicitation_by_id(make_call(world["owner_org"]).pk) is not None  # anonymous, listed
+
+
+def test_get_by_id_prefers_legacy_record_id(world):
+    imported = make_call(world["owner_org"], legacy_record_id=2841)
+    assert da().get_solicitation_by_id(2841) == imported
+    assert da().get_solicitation_by_id(imported.pk) == imported
+
+
+def test_public_list_and_open_only(world):
+    today = timezone.localdate()
+    open_call = make_call(world["owner_org"], application_deadline=today + timedelta(days=3))
+    past = make_call(world["owner_org"], application_deadline=today - timedelta(days=1))
+    make_call(world["owner_org"], listed=False)
+    make_call(world["owner_org"], status="draft")
+    Solicitation.objects.create(slug="directory-round", title="EOI", status="active", listed=True)
+    assert set(da().get_public_solicitations()) == {open_call, past}
+    assert da().get_public_solicitations(open_only=True) == [open_call]
+    assert da().get_public_solicitations(owner="firm-org") == []
+
+
+def test_get_solicitations_lists_managed_calls(world):
+    mine = make_call(world["owner_org"], listed=False)
+    other = make_call(make_org("other-org"))
+    assert da(world["owner"]).get_solicitations() == [mine]
+    assert set(da(world["staff"]).get_solicitations()) == {mine, other}
+    assert da(world["outsider"]).get_solicitations() == []
+    assert da(world["outsider"]).get_solicitations(include_listed=True) == [other]
+    assert da(world["outsider"]).get_solicitations(org="owner-org") == []
+    assert da(world["owner"]).get_solicitations(org="owner-org") == [mine]
+
+
+def test_by_fund_id(world):
+    call = make_call(world["owner_org"], fund_id=42)
+    make_call(world["owner_org"], fund_id=42, listed=False)
+    assert da().get_solicitations_by_fund_id(42) == [call]
+    assert len(da(world["owner"]).get_solicitations_by_fund_id(42)) == 2
+
+
+# --- update ------------------------------------------------------------------
+
+
+def test_update_merges(world):
+    call = make_call(world["owner_org"], estimated_scale="500 households", program_name="Programme A")
+    updated = da(world["owner"]).update_solicitation(call.pk, {"title": "New title"})
+    assert updated.title == "New title"
+    assert updated.estimated_scale == "500 households"
+    assert updated.program_name == "Programme A"
+    assert updated.questions == QUESTIONS
+
+
+def test_update_refused_for_non_owner(world):
+    call = make_call(world["owner_org"])
+    with pytest.raises(PermissionDenied):
+        da(world["outsider"]).update_solicitation(call.pk, {"title": "Hijacked"})
+
+
+def test_update_missing_call(world):
+    with pytest.raises(Solicitation.DoesNotExist):
+        da(world["owner"]).update_solicitation(999_999_999, {"title": "x"})
+
+
+def test_is_public_flips_listed(world):
+    call = make_call(world["owner_org"], listed=False)
+    assert da(world["owner"]).update_solicitation(call.pk, {"is_public": True}).listed is True
+
+
+def test_locked_rubric_cannot_change(world):
+    call = make_call(world["owner_org"], criteria_locked_at=timezone.now())
+    owner = da(world["owner"])
+    with pytest.raises(ValidationError, match="locked"):
+        owner.update_solicitation(call.pk, {"evaluation_criteria": [{"id": "c1", "name": "Only", "weight": 100}]})
+    with pytest.raises(ValidationError, match="locked"):
+        owner.update_solicitation(call.pk, {"criteria_locked": False})
+    with pytest.raises(ValidationError, match="locked"):
+        da(world["staff"]).update_solicitation(call.pk, {"evaluation_criteria": []})
+    # resending the same rubric is fine (the edit form always sends it)
+    owner.update_solicitation(call.pk, {"evaluation_criteria": CRITERIA, "title": "Renamed"})
+
+
+def test_update_validates_merged_shape(world):
+    call = make_call(world["owner_org"])
+    with pytest.raises(ValidationError):
+        da(world["owner"]).update_solicitation(
+            call.pk, {"evaluation_criteria": [{"id": "c9", "name": "x", "weight": 5, "linked_questions": ["nope"]}]}
+        )
+
+
+def test_delete_guard_and_force(world):
+    call = make_call(world["owner_org"])
+    make_review(make_response(call), world["owner"])
+    with pytest.raises(HasResponses):
+        da(world["owner"]).delete_solicitation(call.pk)
+    assert da(world["owner"]).delete_solicitation(call.pk, force=True) == {
+        "solicitations": 1,
+        "responses": 1,
+        "reviews": 1,
     }
-    defaults.update(overrides)
-    return SolicitationRecord(defaults)
+    assert not Solicitation.objects.filter(pk=call.pk).exists()
 
 
-def _make_response_record(**overrides):
-    """Create a ResponseRecord from dict data."""
-    data = {
-        "solicitation_id": 1,
-        "llo_entity_id": "llo_entity_123",
-        "llo_entity_name": "Test Org",
-        "responses": {"q1": "Because"},
-        "status": "submitted",
-        "submitted_by_name": "Jane Doe",
-        "submitted_by_email": "jane@example.com",
-        "submission_date": "2026-05-15T10:00:00Z",
-    }
-    data.update(overrides.pop("data", {}))
-    defaults = {
-        "id": 10,
-        "experiment": "llo_entity_123",
-        "type": RESPONSE_TYPE,
-        "data": data,
-        "opportunity_id": 0,
-    }
-    defaults.update(overrides)
-    return ResponseRecord(defaults)
+# --- responses ---------------------------------------------------------------
 
 
-def _make_review_record(**overrides):
-    """Create a ReviewRecord from dict data."""
-    data = {
-        "response_id": 10,
-        "llo_entity_id": "llo_entity_123",
-        "score": 85,
-        "recommendation": "approved",
-        "notes": "Looks good",
-        "tags": "experienced,local",
-        "reviewer_username": "reviewer1",
-        "review_date": "2026-05-20T14:00:00Z",
-    }
-    data.update(overrides.pop("data", {}))
-    defaults = {
-        "id": 20,
-        "experiment": "llo_entity_123",
-        "type": REVIEW_TYPE,
-        "data": data,
-        "opportunity_id": 0,
-    }
-    defaults.update(overrides)
-    return ReviewRecord(defaults)
-
-
-@pytest.fixture
-def mock_api_client():
-    """Create a mock LabsRecordAPIClient."""
-    with patch("connect_labs.solicitations.data_access.LabsRecordAPIClient") as MockClient:
-        mock_instance = MagicMock()
-        MockClient.return_value = mock_instance
-        yield mock_instance
-
-
-@pytest.fixture
-def data_access(mock_api_client):
-    """Create a SolicitationsDataAccess with mocked API client."""
-    da = SolicitationsDataAccess(
-        program_id="42",
-        access_token="test-token",
+def test_respond_as_own_org(world):
+    call = make_call(world["owner_org"])
+    response = da(world["applicant"]).create_response(
+        call.pk, "firm-org", {"responses": {"q1": "Yes"}, "status": "submitted"}
     )
-    # Replace the labs_api with our mock (constructor already called LabsRecordAPIClient)
-    da.labs_api = mock_api_client
-    return da
-
-
-# =========================================================================
-# Constructor Tests
-# =========================================================================
-
-
-class TestConstructor:
-    def test_requires_access_token(self):
-        """Raises ValueError when no access token is provided."""
-        with pytest.raises(ValueError, match="OAuth access token required"):
-            SolicitationsDataAccess(program_id="42")
-
-    @patch("connect_labs.solicitations.data_access.LabsRecordAPIClient")
-    def test_stores_program_id(self, MockClient):
-        da = SolicitationsDataAccess(program_id="42", access_token="tok")
-        assert da.program_id == "42"
-
-    @patch("connect_labs.solicitations.data_access.LabsRecordAPIClient")
-    def test_creates_api_client_with_token(self, MockClient):
-        SolicitationsDataAccess(program_id="42", access_token="tok")
-        # program 42 is below the labs-only floor, so opportunity_id stays None and
-        # the client routes to the prod Labs Record API as before.
-        MockClient.assert_called_once_with("tok", program_id=42, organization_id=None, opportunity_id=None)
-
-    @patch("connect_labs.labs.synthetic.local_records_backend.is_labs_only_opportunity_id", return_value=True)
-    @patch("connect_labs.solicitations.data_access.LabsRecordAPIClient")
-    def test_labs_only_program_routes_via_opportunity_id(self, MockClient, _mock_is_labs_only):
-        """A labs-only program (program_id == synthetic opp id) is passed through as
-        opportunity_id so LabsRecordAPIClient short-circuits to the local-records backend
-        instead of the prod API (which 404s on a synthetic opp the user can't access)."""
-        SolicitationsDataAccess(program_id="10008", access_token="tok")
-        MockClient.assert_called_once_with("tok", program_id=10008, organization_id=None, opportunity_id=10008)
-
-    @patch("connect_labs.solicitations.data_access.LabsRecordAPIClient")
-    def test_extracts_context_from_request(self, MockClient):
-        request = MagicMock()
-        request.labs_context = {"program_id": 99}
-        request.session = {"labs_oauth": {"access_token": "req-tok", "expires_at": 9999999999}}
-        da = SolicitationsDataAccess(request=request)
-        assert da.program_id == "99"
-
-    @patch("connect_labs.solicitations.data_access.LabsRecordAPIClient")
-    def test_explicit_program_id_overrides_context(self, MockClient):
-        request = MagicMock()
-        request.labs_context = {"program_id": 99}
-        request.session = {"labs_oauth": {"access_token": "req-tok", "expires_at": 9999999999}}
-        da = SolicitationsDataAccess(program_id="42", request=request)
-        assert da.program_id == "42"
-
-
-# =========================================================================
-# Solicitation Tests
-# =========================================================================
-
-
-class TestGetSolicitations:
-    def test_returns_solicitation_records(self, data_access, mock_api_client):
-        records = [_make_solicitation_record(id=1), _make_solicitation_record(id=2)]
-        mock_api_client.get_records.return_value = records
-
-        result = data_access.get_solicitations()
-
-        assert result == records
-        mock_api_client.get_records.assert_called_once_with(
-            experiment="42",
-            type=SOLICITATION_TYPE,
-            model_class=SolicitationRecord,
-        )
-
-    def test_filters_by_status(self, data_access, mock_api_client):
-        mock_api_client.get_records.return_value = []
-
-        data_access.get_solicitations(status="active")
-
-        mock_api_client.get_records.assert_called_once_with(
-            experiment="42",
-            type=SOLICITATION_TYPE,
-            model_class=SolicitationRecord,
-            status="active",
-        )
-
-    def test_filters_by_solicitation_type(self, data_access, mock_api_client):
-        mock_api_client.get_records.return_value = []
-
-        data_access.get_solicitations(solicitation_type="rfp")
-
-        mock_api_client.get_records.assert_called_once_with(
-            experiment="42",
-            type=SOLICITATION_TYPE,
-            model_class=SolicitationRecord,
-            solicitation_type="rfp",
-        )
-
-    def test_filters_by_both(self, data_access, mock_api_client):
-        mock_api_client.get_records.return_value = []
-
-        data_access.get_solicitations(status="draft", solicitation_type="eoi")
-
-        mock_api_client.get_records.assert_called_once_with(
-            experiment="42",
-            type=SOLICITATION_TYPE,
-            model_class=SolicitationRecord,
-            status="draft",
-            solicitation_type="eoi",
-        )
-
-
-class TestGetPublicSolicitations:
-    def test_passes_public_flag(self, data_access, mock_api_client):
-        mock_api_client.get_records.return_value = []
-
-        data_access.get_public_solicitations()
-
-        mock_api_client.get_records.assert_called_once_with(
-            type=SOLICITATION_TYPE,
-            public=True,
-            model_class=SolicitationRecord,
-        )
-
-    def test_filters_by_type(self, data_access, mock_api_client):
-        mock_api_client.get_records.return_value = []
-
-        data_access.get_public_solicitations(solicitation_type="eoi")
-
-        mock_api_client.get_records.assert_called_once_with(
-            type=SOLICITATION_TYPE,
-            public=True,
-            model_class=SolicitationRecord,
-            solicitation_type="eoi",
-        )
-
-
-class TestGetSolicitationById:
-    def test_returns_record(self, data_access, mock_api_client):
-        record = _make_solicitation_record(id=5)
-        mock_api_client.get_records.return_value = [
-            _make_solicitation_record(id=3),
-            record,
-            _make_solicitation_record(id=7),
-        ]
-
-        result = data_access.get_solicitation_by_id(5)
-
-        assert result is record
-        mock_api_client.get_records.assert_called_once_with(
-            type=SOLICITATION_TYPE,
-            public=True,
-            model_class=SolicitationRecord,
-        )
-
-    def test_returns_none_when_not_found(self, data_access, mock_api_client):
-        mock_api_client.get_records.return_value = [
-            _make_solicitation_record(id=1),
-            _make_solicitation_record(id=2),
-        ]
-
-        result = data_access.get_solicitation_by_id(999)
-
-        assert result is None
-
-
-class TestCreateSolicitation:
-    def test_creates_record(self, data_access, mock_api_client):
-        # Canonical-shape payload — validate_solicitation_payload (called inside
-        # data_access.create_solicitation) requires title/description/type.
-        input_data = {
-            "title": "New Solicitation",
-            "description": "Why this matters.",
-            "solicitation_type": "eoi",
-            "status": "draft",
-        }
-        api_return = LocalLabsRecord(
-            {
-                "id": 100,
-                "experiment": "42",
-                "type": SOLICITATION_TYPE,
-                "data": input_data,
-                "opportunity_id": 0,
-            }
-        )
-        mock_api_client.create_record.return_value = api_return
-
-        result = data_access.create_solicitation(input_data)
-
-        assert isinstance(result, SolicitationRecord)
-        assert result.id == 100
-        mock_api_client.create_record.assert_called_once_with(
-            experiment="42",
-            type=SOLICITATION_TYPE,
-            data=input_data,
-            program_id=42,
-            public=False,
-        )
-
-    def test_sets_public_flag_from_data(self, data_access, mock_api_client):
-        """is_public in input data is forwarded to public= AND stripped from the persisted JSON.
-
-        The flag lives on LabsRecord.public (the envelope), not inside data, so
-        we don't want a stale duplicate sitting in the JSON column.
-        """
-        input_data = {
-            "title": "Public Solicitation",
-            "description": "Listed publicly.",
-            "solicitation_type": "rfp",
-            "is_public": True,
-        }
-        persisted_data = {k: v for k, v in input_data.items() if k != "is_public"}
-        api_return = LocalLabsRecord(
-            {
-                "id": 101,
-                "experiment": "42",
-                "type": SOLICITATION_TYPE,
-                "data": persisted_data,
-                "opportunity_id": 0,
-                "public": True,
-            }
-        )
-        mock_api_client.create_record.return_value = api_return
-
-        data_access.create_solicitation(input_data)
-
-        # is_public is removed from data; the value is forwarded as public=True
-        mock_api_client.create_record.assert_called_once_with(
-            experiment="42",
-            type=SOLICITATION_TYPE,
-            data=persisted_data,
-            program_id=42,
-            public=True,
-        )
-
-    def test_invalid_payload_raises_validation_error(self, data_access, mock_api_client):
-        """The chokepoint: schema drift is rejected at the data-access layer.
-
-        This is what makes the UI form, the HTTP API, and the MCP tool all share
-        one contract — they all flow through this method, and any drift surfaces
-        as ValidationError before persistence.
-        """
-        from django.core.exceptions import ValidationError
-
-        with pytest.raises(ValidationError):
-            # Missing required `description` and `solicitation_type`.
-            data_access.create_solicitation({"title": "Drifted"})
-        mock_api_client.create_record.assert_not_called()
-
-
-class TestUpdateSolicitation:
-    def test_updates_record(self, data_access, mock_api_client):
-        updated_data = {"title": "Updated Title", "status": "closed"}
-        api_return = LocalLabsRecord(
-            {
-                "id": 5,
-                "experiment": "42",
-                "type": SOLICITATION_TYPE,
-                "data": updated_data,
-                "opportunity_id": 0,
-            }
-        )
-        mock_api_client.update_record.return_value = api_return
-
-        result = data_access.update_solicitation(5, updated_data)
-
-        assert isinstance(result, SolicitationRecord)
-        assert result.id == 5
-        # public=None means "preserve current envelope flag" — the API client only
-        # adds it to the payload when explicitly set.
-        mock_api_client.update_record.assert_called_once_with(
-            record_id=5,
-            experiment="42",
-            type=SOLICITATION_TYPE,
-            data=updated_data,
-            public=None,
-        )
-
-    def test_forwards_is_public_to_envelope(self, data_access, mock_api_client):
-        """Toggling is_public via the form path flips the server LabsRecord.public flag."""
-        updated_data = {"title": "Updated Title", "is_public": False}
-        api_return = LocalLabsRecord(
-            {
-                "id": 5,
-                "experiment": "42",
-                "type": SOLICITATION_TYPE,
-                "data": {"title": "Updated Title"},
-                "opportunity_id": 0,
-                "public": False,
-            }
-        )
-        mock_api_client.update_record.return_value = api_return
-
-        data_access.update_solicitation(5, updated_data)
-
-        mock_api_client.update_record.assert_called_once_with(
-            record_id=5,
-            experiment="42",
-            type=SOLICITATION_TYPE,
-            data={"title": "Updated Title"},
-            public=False,
-        )
-
-
-# =========================================================================
-# Response Tests
-# =========================================================================
-
-
-class TestGetResponsesForSolicitation:
-    def test_returns_response_records(self, data_access, mock_api_client):
-        records = [_make_response_record(id=10), _make_response_record(id=11)]
-        mock_api_client.get_records.return_value = records
-
-        result = data_access.get_responses_for_solicitation(solicitation_id=1)
-
-        assert result == records
-        mock_api_client.get_records.assert_called_once_with(
-            type=RESPONSE_TYPE,
-            labs_record_id=1,
-            public=True,
-            model_class=ResponseRecord,
-        )
-
-
-class TestGetResponseById:
-    def test_returns_record(self, data_access, mock_api_client):
-        record = _make_response_record(id=10)
-        mock_api_client.get_record_by_id.return_value = record
-
-        result = data_access.get_response_by_id(10)
-
-        assert result is record
-        mock_api_client.get_record_by_id.assert_called_once_with(
-            record_id=10,
-            type=RESPONSE_TYPE,
-            model_class=ResponseRecord,
-        )
-
-    def test_returns_none_when_not_found(self, data_access, mock_api_client):
-        mock_api_client.get_record_by_id.return_value = None
-
-        result = data_access.get_response_by_id(999)
-
-        assert result is None
-
-
-class TestCreateResponse:
-    def test_creates_record_with_llo_entity_id_as_experiment(self, data_access, mock_api_client):
-        input_data = {
-            "solicitation_id": 1,
-            "llo_entity_id": "llo_entity_123",
-            "responses": {"q1": "Answer"},
-        }
-        api_return = LocalLabsRecord(
-            {
-                "id": 50,
-                "experiment": "llo_entity_123",
-                "type": RESPONSE_TYPE,
-                "data": input_data,
-                "opportunity_id": 0,
-            }
-        )
-        mock_api_client.create_record.return_value = api_return
-
-        result = data_access.create_response(
-            solicitation_id=1,
-            llo_entity_id="llo_entity_123",
-            data=input_data,
-        )
-
-        assert isinstance(result, ResponseRecord)
-        assert result.id == 50
-        mock_api_client.create_record.assert_called_once_with(
-            experiment="llo_entity_123",
-            type=RESPONSE_TYPE,
-            data=input_data,
-            labs_record_id=1,
-            public=True,
-        )
-
-
-class TestAwardResponse:
-    def test_awards_response(self, data_access, mock_api_client):
-        current_record = _make_response_record(id=10)
-        mock_api_client.get_record_by_id.return_value = current_record
-
-        updated_data = dict(current_record.data)
-        updated_data["status"] = "awarded"
-        updated_data["reward_budget"] = 500000
-        updated_data["org_id"] = "org_99"
-        api_return = LocalLabsRecord(
-            {
-                "id": 10,
-                "experiment": "llo_entity_123",
-                "type": RESPONSE_TYPE,
-                "data": updated_data,
-                "opportunity_id": 0,
-            }
-        )
-        mock_api_client.update_record.return_value = api_return
-
-        result = data_access.award_response(10, reward_budget=500000, org_id="org_99")
-
-        assert isinstance(result, ResponseRecord)
-        mock_api_client.update_record.assert_called_once()
-        call_data = mock_api_client.update_record.call_args[1]["data"]
-        assert call_data["status"] == "awarded"
-        assert call_data["reward_budget"] == 500000
-        assert call_data["org_id"] == "org_99"
-        # Award stamps the notification — awardee_notified + awarded_at are recorded.
-        assert call_data["awardee_notified"] is True
-        assert call_data["awarded_at"]
-
-    def test_raises_for_missing_response(self, data_access, mock_api_client):
-        mock_api_client.get_record_by_id.return_value = None
-        with pytest.raises(ValueError, match="Response 999 not found"):
-            data_access.award_response(999, reward_budget=500000, org_id="org_99")
-
-
-class TestUpdateResponse:
-    def test_updates_record(self, data_access, mock_api_client):
-        updated_data = {
-            "llo_entity_id": "llo_entity_123",
-            "responses": {"q1": "Updated answer"},
-            "status": "submitted",
-        }
-        api_return = LocalLabsRecord(
-            {
-                "id": 10,
-                "experiment": "llo_entity_123",
-                "type": RESPONSE_TYPE,
-                "data": updated_data,
-                "opportunity_id": 0,
-            }
-        )
-        mock_api_client.update_record.return_value = api_return
-
-        result = data_access.update_response(10, updated_data)
-
-        assert isinstance(result, ResponseRecord)
-        assert result.id == 10
-        mock_api_client.update_record.assert_called_once_with(
-            record_id=10,
-            experiment="llo_entity_123",
-            type=RESPONSE_TYPE,
-            data=updated_data,
-        )
-
-
-# =========================================================================
-# Review Tests
-# =========================================================================
-
-
-class TestGetReviewsForResponse:
-    def test_returns_review_records(self, data_access, mock_api_client):
-        records = [_make_review_record(id=20), _make_review_record(id=21)]
-        mock_api_client.get_records.return_value = records
-
-        result = data_access.get_reviews_for_response(response_id=10)
-
-        assert result == records
-        mock_api_client.get_records.assert_called_once_with(
-            type=REVIEW_TYPE,
-            labs_record_id=10,
-            public=True,
-            model_class=ReviewRecord,
-        )
-
-
-class TestGetReviewById:
-    def test_returns_record(self, data_access, mock_api_client):
-        record = _make_review_record(id=20)
-        mock_api_client.get_record_by_id.return_value = record
-
-        result = data_access.get_review_by_id(20)
-
-        assert result is record
-        mock_api_client.get_record_by_id.assert_called_once_with(
-            record_id=20,
-            type=REVIEW_TYPE,
-            model_class=ReviewRecord,
-        )
-
-    def test_returns_none_when_not_found(self, data_access, mock_api_client):
-        mock_api_client.get_record_by_id.return_value = None
-
-        result = data_access.get_review_by_id(999)
-
-        assert result is None
-
-
-class TestCreateReview:
-    def test_creates_record_with_llo_entity_id_as_experiment(self, data_access, mock_api_client):
-        input_data = {
-            "response_id": 10,
-            "llo_entity_id": "llo_entity_123",
-            "score": 90,
-            "recommendation": "approved",
-            "reviewer_username": "reviewer1",
-        }
-        api_return = LocalLabsRecord(
-            {
-                "id": 60,
-                "experiment": "llo_entity_123",
-                "type": REVIEW_TYPE,
-                "data": input_data,
-                "opportunity_id": 0,
-            }
-        )
-        mock_api_client.create_record.return_value = api_return
-
-        result = data_access.create_review(response_id=10, data=input_data)
-
-        assert isinstance(result, ReviewRecord)
-        assert result.id == 60
-        mock_api_client.create_record.assert_called_once_with(
-            experiment="llo_entity_123",
-            type=REVIEW_TYPE,
-            data=input_data,
-            labs_record_id=10,
-            public=True,
-        )
-
-
-class TestAwardResponseAutoAllocation:
-    def test_award_creates_fund_allocation(self):
-        """When the solicitation has a fund_id, awarding auto-creates a fund allocation."""
-        response_data = {
-            "solicitation_id": 100,
-            "status": "submitted",
-            "llo_entity_id": "org1",
-            "llo_entity_name": "Partner Org",
-        }
-        mock_response = ResponseRecord(
-            {
-                "id": 10,
-                "experiment": "org1",
-                "type": "solicitation_new_response",
-                "opportunity_id": None,
-                "data": response_data,
-            }
-        )
-        awarded_data = dict(response_data)
-        awarded_data.update({"status": "awarded", "reward_budget": 50000, "org_id": "42"})
-        mock_awarded = ResponseRecord(
-            {
-                "id": 10,
-                "experiment": "org1",
-                "type": "solicitation_new_response",
-                "opportunity_id": None,
-                "data": awarded_data,
-            }
-        )
-
-        solicitation_data = {"title": "Test RFP", "fund_id": 5}
-        mock_solicitation = SolicitationRecord(
-            {
-                "id": 100,
-                "experiment": "1",
-                "type": "solicitation_new",
-                "opportunity_id": None,
-                "data": solicitation_data,
-            }
-        )
-
-        da = SolicitationsDataAccess(program_id="1", access_token="tok")
-        with (
-            patch.object(da, "get_response_by_id", return_value=mock_response),
-            patch.object(da, "update_response", return_value=mock_awarded),
-            patch.object(da, "get_solicitation_by_id", return_value=mock_solicitation),
-            patch("connect_labs.funder_dashboard.data_access.FunderDashboardDataAccess") as MockFDA,
-        ):
-            mock_fda_instance = MockFDA.return_value
-            da.award_response(10, reward_budget=50000, org_id="42")
-            mock_fda_instance.add_allocation.assert_called_once()
-            alloc = mock_fda_instance.add_allocation.call_args[1]["allocation"]
-            assert alloc["amount"] == 50000
-            assert alloc["type"] == "award"
-            assert alloc["response_id"] == 10
-            assert alloc["solicitation_id"] == 100
-
-
-class TestUpdateReview:
-    def test_updates_record(self, data_access, mock_api_client):
-        updated_data = {
-            "llo_entity_id": "llo_entity_123",
-            "score": 95,
-            "recommendation": "approved",
-            "notes": "Updated notes",
-        }
-        api_return = LocalLabsRecord(
-            {
-                "id": 20,
-                "experiment": "llo_entity_123",
-                "type": REVIEW_TYPE,
-                "data": updated_data,
-                "opportunity_id": 0,
-            }
-        )
-        mock_api_client.update_record.return_value = api_return
-
-        result = data_access.update_review(20, updated_data)
-
-        assert isinstance(result, ReviewRecord)
-        assert result.id == 20
-        mock_api_client.update_record.assert_called_once_with(
-            record_id=20,
-            experiment="llo_entity_123",
-            type=REVIEW_TYPE,
-            data=updated_data,
-        )
+    assert response.submitted_by == world["applicant"]
+    assert response.llo_entity == world["firm_org"]
+    assert response.org_name == "Firm Org"
+    assert response.status == "submitted"
+    assert response.submission_date is not None
+    assert response.submitted_by_email == world["applicant"].email
+
+
+def test_cannot_respond_as_someone_elses_org(world):
+    call = make_call(world["owner_org"])
+    with pytest.raises(PermissionDenied):
+        da(world["outsider"]).create_response(call.pk, "firm-org", {"status": "submitted"})
+
+
+def test_unregistered_org_name_is_kept_as_typed(world):
+    call = make_call(world["owner_org"])
+    response = da(world["outsider"]).create_response(call.pk, None, {"org_name": "New Firm", "status": "submitted"})
+    assert response.llo_entity is None
+    assert response.org_name == "New Firm"
+
+
+def test_one_draft_per_user_edited_in_place(world):
+    call = make_call(world["owner_org"])
+    access = da(world["applicant"])
+    first = access.create_response(call.pk, None, {"responses": {"q1": "draft 1"}, "status": "draft"})
+    second = access.create_response(call.pk, None, {"responses": {"q1": "draft 2"}, "status": "draft"})
+    assert first.pk == second.pk
+    submitted = access.create_response(call.pk, None, {"responses": {"q1": "final"}, "status": "submitted"})
+    assert submitted.pk == first.pk
+    assert submitted.status == "submitted"
+    assert call.responses.count() == 1
+
+
+def test_deadline_refuses_responses(world):
+    call = make_call(world["owner_org"], application_deadline=timezone.localdate() - timedelta(days=1))
+    with pytest.raises(PermissionDenied, match="deadline"):
+        da(world["applicant"]).create_response(call.pk, None, {"status": "submitted"})
+
+
+def test_anonymous_cannot_respond(world):
+    with pytest.raises(PermissionDenied):
+        da().create_response(make_call(world["owner_org"]).pk, None, {"status": "submitted"})
+
+
+def test_on_behalf_by_owner_only(world):
+    call = make_call(world["owner_org"], status="closed")
+    response = da(world["owner"]).create_response(
+        call.pk, "firm-org", {"status": "submitted", "ai_proposed_scores": {"c1": {"score": 7}}}, on_behalf=True
+    )
+    assert response.submitted_by is None
+    assert response.llo_entity == world["firm_org"]
+    assert response.ai_proposed_scores == {"c1": {"score": 7}}
+    with pytest.raises(PermissionDenied):
+        da(world["outsider"]).create_response(call.pk, None, {"status": "submitted"}, on_behalf=True)
+
+
+def test_responses_confidential_to_owner(world):
+    call = make_call(world["owner_org"])
+    theirs = make_response(call, world["applicant"])
+    mine = make_response(call, world["outsider"])
+    draft = make_response(call, make_user("drafter"), status="draft")
+    assert set(da(world["owner"]).get_responses_for_solicitation(call.pk)) == {theirs, mine}
+    assert da(world["outsider"]).get_responses_for_solicitation(call.pk) == [mine]
+    assert da().get_responses_for_solicitation(call.pk) == []
+    assert da(world["outsider"]).get_response_by_id(theirs.pk) is None
+    assert da(world["owner"]).get_response_by_id(draft.pk) is None
+    assert da(world["applicant"]).get_response_by_id(theirs.pk) == theirs
+
+
+def test_get_my_response(world):
+    call = make_call(world["owner_org"])
+    make_response(call, world["applicant"])
+    draft = make_response(call, world["applicant"], status="draft")
+    assert da(world["applicant"]).get_my_response(call.pk) == draft
+    assert da(world["outsider"]).get_my_response(call.pk) is None
+
+
+def test_respondent_edits_draft_and_owner_moves_status(world):
+    call = make_call(world["owner_org"])
+    response = make_response(call, world["applicant"], status="draft", responses={"q1": "a", "q2": "1"})
+    updated = da(world["applicant"]).update_response(response.pk, {"responses": {"q1": "b", "q2": "1"}})
+    assert updated.responses["q1"] == "b"
+    submitted = da(world["applicant"]).update_response(response.pk, {"status": "submitted"})
+    assert submitted.status == "submitted"
+    assert submitted.responses["q1"] == "b"  # merged, not replaced
+    with pytest.raises(PermissionDenied):
+        da(world["applicant"]).update_response(response.pk, {"responses": {"q1": "too late"}})
+    assert da(world["owner"]).update_response(response.pk, {"status": "rejected"}).status == "rejected"
+    with pytest.raises(ValidationError):
+        da(world["owner"]).update_response(response.pk, {"status": "awarded"})
+
+
+# --- award -------------------------------------------------------------------
+
+
+def test_award_records_and_does_not_claim_notification_when_email_off(world):
+    call = make_call(world["owner_org"])
+    response = make_response(call, world["applicant"])
+    awarded = da(world["owner"]).award_response(response.pk, reward_budget=5000, org_id="77", award_stage="full")
+    assert awarded.status == "awarded"
+    assert awarded.reward_budget == 5000
+    assert awarded.award_stage == "full"
+    assert awarded.awarded_at is not None
+    assert awarded.awardee_notified is False
+    call.refresh_from_db()
+    assert call.status == "awarded"
+
+
+@override_settings(LABS_EMAIL_ENABLED=True)
+def test_award_notifies_when_email_on(world):
+    response = make_response(make_call(world["owner_org"], currency="KES"), world["applicant"])
+    with patch("connect_labs.utils.email.send_labs_email", return_value=MagicMock()) as send:
+        awarded = da(world["owner"]).award_response(response.pk, reward_budget=100)
+    assert awarded.awardee_notified is True
+    subject, message, recipients = send.call_args[0]
+    assert recipients == ["applicant@firm.example"]
+    assert "KES" in message
+
+
+@override_settings(LABS_EMAIL_ENABLED=True)
+def test_submission_confirms_to_respondent_and_owner(world):
+    call = make_call(world["owner_org"])
+    with patch("connect_labs.utils.email.send_labs_email", return_value=MagicMock()) as send:
+        da(world["applicant"]).create_response(call.pk, None, {"status": "submitted"})
+    sent_to = [c[0][2] for c in send.call_args_list]
+    assert [world["applicant"].email] in sent_to
+    assert ["calls@owner.example"] in sent_to
+
+
+def test_respondent_cannot_award_own_response(world):
+    grant(world["applicant"], world["owner_org"])
+    response = make_response(make_call(world["owner_org"]), world["applicant"])
+    with pytest.raises(PermissionDenied):
+        da(world["applicant"]).award_response(response.pk, reward_budget=1)
+
+
+def test_outsider_cannot_award(world):
+    response = make_response(make_call(world["owner_org"]), world["applicant"])
+    with pytest.raises(SolicitationResponse.DoesNotExist):
+        da(world["outsider"]).award_response(response.pk, reward_budget=1)
+
+
+def test_award_allocates_fund_without_program(world):
+    call = make_call(world["owner_org"], fund_id=9)
+    response = make_response(call, world["applicant"], llo_entity=world["firm_org"])
+    with patch("connect_labs.funder_dashboard.data_access.FunderDashboardDataAccess") as fda:
+        da(world["owner"], access_token="tok").award_response(response.pk, reward_budget=10, org_id="77")
+    allocation = fda.return_value.add_allocation.call_args.kwargs["allocation"]
+    assert fda.return_value.add_allocation.call_args.kwargs["fund_id"] == 9
+    assert allocation["program_id"] is None
+    assert allocation["org_name"] == "Firm Org"
+    assert allocation["amount"] == 10
+
+
+def test_award_survives_allocation_failure(world):
+    call = make_call(world["owner_org"], fund_id=9)
+    response = make_response(call, world["applicant"])
+    with patch("connect_labs.funder_dashboard.data_access.FunderDashboardDataAccess", side_effect=RuntimeError):
+        awarded = da(world["owner"], access_token="tok").award_response(response.pk, reward_budget=10)
+    assert awarded.status == "awarded"
+
+
+# --- reviews -----------------------------------------------------------------
+
+
+def test_review_upserts_per_reviewer_and_weights_score(world):
+    response = make_response(make_call(world["owner_org"]), world["applicant"])
+    owner = da(world["owner"])
+    review = owner.create_review(response.pk, {"criteria_scores": {"c1": 10, "c2": 5}, "score": 3, "notes": "ok"})
+    assert review.score == 80
+    assert review.reviewer == world["owner"]
+    again = owner.create_review(response.pk, {"recommendation": "approved"})
+    assert again.pk == review.pk
+    assert again.notes == "ok"  # merged
+    assert again.recommendation == "approved"
+    response.refresh_from_db()
+    assert response.status == "under_review"
+
+
+def test_score_without_criteria_is_kept(world):
+    response = make_response(make_call(world["owner_org"]), world["applicant"])
+    assert da(world["owner"]).create_review(response.pk, {"score": 64}).score == 64
+
+
+def test_reviews_hidden_from_respondent_and_outsiders(world):
+    response = make_response(make_call(world["owner_org"]), world["applicant"])
+    review = make_review(response, world["owner"], score=50)
+    assert da(world["owner"]).get_reviews_for_response(response.pk) == [review]
+    assert da(world["applicant"]).get_reviews_for_response(response.pk) == []
+    assert da(world["applicant"]).get_review_by_id(review.pk) is None
+    assert da(world["outsider"]).get_review_by_id(review.pk) is None
+
+
+def test_respondent_cannot_review_own_response(world):
+    grant(world["applicant"], world["owner_org"])
+    response = make_response(make_call(world["owner_org"]), world["applicant"])
+    with pytest.raises(PermissionDenied):
+        da(world["applicant"]).create_review(response.pk, {"score": 99})
+
+
+def test_only_reviewer_or_staff_updates_a_review(world):
+    response = make_response(make_call(world["owner_org"]), world["applicant"])
+    review = make_review(response, world["owner"], score=50)
+    colleague = make_user("colleague")
+    grant(colleague, world["owner_org"])
+    with pytest.raises(PermissionDenied):
+        da(colleague).update_review(review.pk, {"notes": "mine now"})
+    assert da(world["staff"]).update_review(review.pk, {"notes": "support fix"}).notes == "support fix"

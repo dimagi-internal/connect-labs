@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import api_views, views
+from . import views
 
 app_name = "solicitations"
 
@@ -22,11 +22,4 @@ urlpatterns = [
     path("response/<int:pk>/review/", views.ReviewView.as_view(), name="review"),
     # AI-assisted generation
     path("api/generate-criteria/", views.generate_criteria_api, name="generate_criteria"),
-    # JSON API
-    path("api/solicitations/", api_views.api_solicitations_list, name="api_solicitations_list"),
-    path("api/solicitations/<int:pk>/", api_views.api_solicitation_detail, name="api_solicitation_detail"),
-    path("api/responses/", api_views.api_responses_list, name="api_responses_list"),
-    path("api/responses/<int:pk>/", api_views.api_response_detail, name="api_response_detail"),
-    path("api/reviews/", api_views.api_reviews_create, name="api_reviews_create"),
-    path("api/reviews/<int:pk>/", api_views.api_review_detail, name="api_review_detail"),
 ]

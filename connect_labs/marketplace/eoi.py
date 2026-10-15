@@ -68,7 +68,7 @@ def upsert_rounds(rounds) -> dict:
         }
         for name in DATE_FIELDS:
             defaults[name] = _date(getattr(row, name))
-        Solicitation.objects.update_or_create(slug=row.slug, defaults=defaults)
+        Solicitation.objects.directory_rounds().update_or_create(slug=row.slug, defaults=defaults)
         stats["rounds"] += 1
     return stats
 
@@ -92,7 +92,7 @@ def check_access(read_tab, *, write_back_to=None, spreadsheet_id=None) -> list[d
     Labs writes exactly two cells per round and nothing else in the workbook.
     """
     results = []
-    for round_ in Solicitation.objects.all():
+    for round_ in Solicitation.objects.directory_rounds():
         if not round_.response_spreadsheet_id:
             state, detail = ACCESS_MISSING, "no response sheet recorded"
         else:
@@ -152,7 +152,7 @@ def _write_access_columns(results, rounds, spreadsheet_id) -> None:
 
     by_slug = {r.slug: r for r in rounds if r.source_row}
     stamp = timezone.now().strftime("%Y-%m-%d %H:%M UTC")
-    saved = {r.slug: r for r in Solicitation.objects.all()}
+    saved = {r.slug: r for r in Solicitation.objects.directory_rounds()}
     updates = []
     for result in results:
         parsed = by_slug.get(result["slug"])
@@ -194,7 +194,8 @@ def ingest_round(round_: Solicitation, rows, human_verdicts=None) -> dict:
     # neither, and a directory contact always wins.
     by_earlier_email: dict = {}
     for emails, org in (
-        SolicitationResponse.objects.exclude(llo_entity=None)
+        SolicitationResponse.objects.directory_rounds()
+        .exclude(llo_entity=None)
         .exclude(solicitation=round_)
         .select_related("llo_entity")
         .values_list("submitted_by_email", "llo_entity")

@@ -22,7 +22,7 @@ from django.db.models import Count, Max, Prefetch, Q
 from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace import programs
 from connect_labs.marketplace.models import OrgProfile
-from connect_labs.solicitations.local_models import ACCESS_OK, Solicitation, SolicitationResponse
+from connect_labs.solicitations.local_models import ACCESS_OK, SOURCE_DIRECTORY, Solicitation, SolicitationResponse
 
 # The segments people actually work, in the order they are offered. Each one is
 # a real job — "who can I still activate", "who can I not even write to" — not a
@@ -481,13 +481,15 @@ def program_cards(view: str = "separate") -> list[dict]:
             delivering[slug] = delivering.get(slug, 0) + 1
 
     applied: dict[str, set] = {}
-    for response in SolicitationResponse.objects.exclude(llo_entity=None).select_related("solicitation"):
+    for response in (
+        SolicitationResponse.objects.directory_rounds().exclude(llo_entity=None).select_related("solicitation")
+    ):
         slug = response.solicitation.delivery_type
         if programs.is_program(slug):
             applied.setdefault(slug, set()).add(response.llo_entity_id)
 
     rounds: dict[str, int] = {}
-    for slug in Solicitation.objects.values_list("delivery_type", flat=True):
+    for slug in Solicitation.objects.directory_rounds().values_list("delivery_type", flat=True):
         if programs.is_program(slug):
             rounds[slug] = rounds.get(slug, 0) + 1
 
@@ -629,7 +631,7 @@ def network_orgs():
     to share it: a demo seed's own copy of a real partner showed up beside
     the directory's row, delivering the same programs.
     """
-    applied = SolicitationResponse.objects.exclude(llo_entity=None).values("llo_entity")
+    applied = SolicitationResponse.objects.directory_rounds().exclude(llo_entity=None).values("llo_entity")
     return LabsOrg.objects.filter(Q(marketplace_profile__isnull=False) | Q(pk__in=applied))
 
 
@@ -648,32 +650,36 @@ def network_totals() -> dict:
         "organisations": network_orgs().count(),
         "countries": len({p.country_iso3 for p in profiles}),
         "services": services,
-        "rounds": Solicitation.objects.count(),
-        "applications": SolicitationResponse.objects.count(),
+        "rounds": Solicitation.objects.directory_rounds().count(),
+        "applications": SolicitationResponse.objects.directory_rounds().count(),
         "delivering": len(delivering_names()),
     }
 
 
 def rounds_with_counts():
     """Every round, with how many applications and organisations it drew."""
-    return Solicitation.objects.annotate(
-        applications=Count("responses", distinct=True),
-        # Identified organisations PLUS the submissions nobody could attribute.
-        # `COUNT(DISTINCT llo_entity_id)` ignores NULLs, so on its own it drops
-        # every applicant awaiting a verdict — the French Readers round showed
-        # "4 organisations" over a list of five, one of which was simply not
-        # matched yet. An unattributed submission is still an applicant; what
-        # is unknown is WHICH one, and the verdict count next to it says so.
-        # Each is counted separately because assuming two of them are the same
-        # organisation is precisely the judgement being deferred.
-        organisations=Count("responses__llo_entity_id", distinct=True)
-        + Count("responses", filter=Q(responses__llo_entity__isnull=True), distinct=True),
-        unresolved=Count(
-            "responses",
-            filter=Q(responses__match_state=SolicitationResponse.MATCH_UNMATCHED),
-            distinct=True,
-        ),
-    ).order_by("-published_on", "title")
+    return (
+        Solicitation.objects.directory_rounds()
+        .annotate(
+            applications=Count("responses", distinct=True),
+            # Identified organisations PLUS the submissions nobody could attribute.
+            # `COUNT(DISTINCT llo_entity_id)` ignores NULLs, so on its own it drops
+            # every applicant awaiting a verdict — the French Readers round showed
+            # "4 organisations" over a list of five, one of which was simply not
+            # matched yet. An unattributed submission is still an applicant; what
+            # is unknown is WHICH one, and the verdict count next to it says so.
+            # Each is counted separately because assuming two of them are the same
+            # organisation is precisely the judgement being deferred.
+            organisations=Count("responses__llo_entity_id", distinct=True)
+            + Count("responses", filter=Q(responses__llo_entity__isnull=True), distinct=True),
+            unresolved=Count(
+                "responses",
+                filter=Q(responses__match_state=SolicitationResponse.MATCH_UNMATCHED),
+                distinct=True,
+            ),
+        )
+        .order_by("-published_on", "title")
+    )
 
 
 # A round is open only if its own dates still say so. `status` is typed onto
@@ -819,7 +825,7 @@ def submission_trend(round_: Solicitation, buckets: int = 26) -> list[dict]:
 
 def unreadable_rounds():
     """Rounds labs could not open. Not the same as rounds nobody applied to."""
-    return Solicitation.objects.exclude(sa_access_state=ACCESS_OK).order_by("title")
+    return Solicitation.objects.directory_rounds().exclude(sa_access_state=ACCESS_OK).order_by("title")
 
 
 def map_points(rows, delivering: set[str]) -> list[dict]:
@@ -934,19 +940,26 @@ def all_rows_with_rounds():
     revisit: the fix then is to push filtering back into SQL and paginate, not
     to fetch more rows into memory.
     """
-    responses = SolicitationResponse.objects.select_related("solicitation").order_by("-solicitation__published_on")
+    responses = (
+        SolicitationResponse.objects.directory_rounds()
+        .select_related("solicitation")
+        .order_by("-solicitation__published_on")
+    )
+    # Responses to owned calls are confidential to their owner; only directory
+    # rounds are counted here (the prefetch above is filtered the same way).
+    directory = Q(solicitation_responses__solicitation__source=SOURCE_DIRECTORY)
     return list(
         network_orgs()
         .select_related("marketplace_profile")
         .prefetch_related(Prefetch("solicitation_responses", queryset=responses))
         .annotate(
             contact_count=Count("contacts", distinct=True),
-            application_count=Count("solicitation_responses", distinct=True),
+            application_count=Count("solicitation_responses", filter=directory, distinct=True),
             # Distinct ROUNDS, not submissions. An organisation that sent the
             # same round's form twice has not "come back for another round",
             # which is what the segment below claims of it.
-            rounds_applied=Count("solicitation_responses__solicitation", distinct=True),
-            last_applied=Max("solicitation_responses__submission_date"),
+            rounds_applied=Count("solicitation_responses__solicitation", filter=directory, distinct=True),
+            last_applied=Max("solicitation_responses__submission_date", filter=directory),
         )
         .order_by("name")
     )
@@ -962,7 +975,7 @@ def applied_programs_of(org) -> set[str]:
     return {
         r.solicitation.delivery_type
         for r in org.solicitation_responses.all()
-        if programs.is_program(r.solicitation.delivery_type)
+        if r.solicitation.source == SOURCE_DIRECTORY and programs.is_program(r.solicitation.delivery_type)
     }
 
 

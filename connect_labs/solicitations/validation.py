@@ -2,7 +2,7 @@
 
 Single source of truth for the shape of a solicitation record's ``data``
 dict. Every write path (UI form view, HTTP API, MCP tool) ultimately flows
-through :func:`SolicitationsDataAccess.create_solicitation`, which calls
+through :class:`SolicitationsDataAccess` (create and update), which calls
 :func:`validate_solicitation_payload`. Nested-shape checks (``questions[]``,
 ``evaluation_criteria[]``) are enforced here because the Django form
 delegates those fields to client-side JS, leaving API-only callers
@@ -74,6 +74,8 @@ ALLOWED_FIELDS: frozenset[str] = frozenset(
         # criteria are fixed before any firm responds.
         "criteria_locked",
         "criteria_locked_at",
+        # ISO 4217 code the award is paid in; the award page shows it.
+        "currency",
     }
 )
 
@@ -328,6 +330,10 @@ def validate_solicitation_payload(data, *, partial: bool = False) -> None:
     coid = data.get("connect_opportunity_id")
     if coid is not None and (not isinstance(coid, int) or isinstance(coid, bool)):
         raise ValidationError({"connect_opportunity_id": "must be an integer"})
+
+    currency = data.get("currency")
+    if currency not in (None, "") and (not isinstance(currency, str) or not currency.isalpha() or len(currency) > 8):
+        raise ValidationError({"currency": "must be a currency code such as 'USD'"})
 
     fid = data.get("fund_id")
     if fid is not None and (not isinstance(fid, int) or isinstance(fid, bool)):

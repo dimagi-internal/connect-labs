@@ -96,59 +96,6 @@ class TestURLResolution:
         assert match.url_name == "review"
         assert match.kwargs == {"pk": 8}
 
-    # -- JSON API endpoints --
-
-    def test_api_solicitations_list_reverse(self):
-        url = reverse("solicitations:api_solicitations_list")
-        assert url == "/solicitations/api/solicitations/"
-
-    def test_api_solicitations_list_resolve(self):
-        match = resolve("/solicitations/api/solicitations/")
-        assert match.url_name == "api_solicitations_list"
-
-    def test_api_solicitation_detail_reverse(self):
-        url = reverse("solicitations:api_solicitation_detail", kwargs={"pk": 1})
-        assert url == "/solicitations/api/solicitations/1/"
-
-    def test_api_solicitation_detail_resolve(self):
-        match = resolve("/solicitations/api/solicitations/99/")
-        assert match.url_name == "api_solicitation_detail"
-        assert match.kwargs == {"pk": 99}
-
-    def test_api_responses_list_reverse(self):
-        url = reverse("solicitations:api_responses_list")
-        assert url == "/solicitations/api/responses/"
-
-    def test_api_responses_list_resolve(self):
-        match = resolve("/solicitations/api/responses/")
-        assert match.url_name == "api_responses_list"
-
-    def test_api_response_detail_reverse(self):
-        url = reverse("solicitations:api_response_detail", kwargs={"pk": 1})
-        assert url == "/solicitations/api/responses/1/"
-
-    def test_api_response_detail_resolve(self):
-        match = resolve("/solicitations/api/responses/50/")
-        assert match.url_name == "api_response_detail"
-        assert match.kwargs == {"pk": 50}
-
-    def test_api_reviews_create_reverse(self):
-        url = reverse("solicitations:api_reviews_create")
-        assert url == "/solicitations/api/reviews/"
-
-    def test_api_reviews_create_resolve(self):
-        match = resolve("/solicitations/api/reviews/")
-        assert match.url_name == "api_reviews_create"
-
-    def test_api_review_detail_reverse(self):
-        url = reverse("solicitations:api_review_detail", kwargs={"pk": 1})
-        assert url == "/solicitations/api/reviews/1/"
-
-    def test_api_review_detail_resolve(self):
-        match = resolve("/solicitations/api/reviews/20/")
-        assert match.url_name == "api_review_detail"
-        assert match.kwargs == {"pk": 20}
-
     # -- Namespace verification --
 
     def test_all_urls_in_correct_namespace(self):
@@ -163,12 +110,6 @@ class TestURLResolution:
             "respond",
             "response_detail",
             "review",
-            "api_solicitations_list",
-            "api_solicitation_detail",
-            "api_responses_list",
-            "api_response_detail",
-            "api_reviews_create",
-            "api_review_detail",
         ]
         for name in url_names:
             full_name = f"solicitations:{name}"
@@ -181,16 +122,13 @@ class TestURLResolution:
                 "respond",
                 "response_detail",
                 "review",
-                "api_solicitation_detail",
-                "api_response_detail",
-                "api_review_detail",
             ):
                 kwargs = {"pk": 1}
             url = reverse(full_name, kwargs=kwargs)
             assert url.startswith("/solicitations/"), f"{full_name} resolved to {url}"
 
     def test_url_pattern_count(self):
-        """Ensure we have exactly the expected number of URL patterns (16 total)."""
+        """Ensure we have exactly the expected number of URL patterns (the JSON API is gone: MCP is the API)."""
         from connect_labs.solicitations.urls import urlpatterns
 
-        assert len(urlpatterns) == 17
+        assert len(urlpatterns) == 11
