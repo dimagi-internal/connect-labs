@@ -209,6 +209,9 @@ class CaseModel:
     presence_by_gap: dict[str, dict[tuple[str | None, int], float]] = field(default_factory=dict)
     # path -> the path it is a second name for on the same visit (see _fit_aliases).
     aliases: dict[str, str] = field(default_factory=dict)
+    # alias -> (form, the value under the main name for a category, else None) ->
+    # P(the alias is recorded | the main name is), see _fit_alias_presence.
+    alias_presence: dict[str, dict[tuple[str | None, str | None], float]] = field(default_factory=dict)
     # Which per-case constants were entered equal (one copied from another), as whole
     # patterns: persona or "*" -> [(groups of equal paths, share of cases)].
     copies: dict[str, list[tuple[tuple[tuple[str, ...], ...], float]]] = field(default_factory=dict)
@@ -361,6 +364,44 @@ def _fit_aliases(series_list: list[dict[str, Any]]) -> dict[str, str]:
             root, hops = out[root], hops + 1
         out[alias] = root
     return {alias: root for alias, root in out.items() if alias != root}
+
+
+def _fit_alias_presence(
+    series_list: list[dict[str, Any]], aliases: dict[str, str]
+) -> dict[str, dict[tuple[str | None, str | None], float]]:
+    """How often each second name is recorded when its field is, by form and -- for a
+    category -- by the field's value.
+
+    A case copy is often the union of one question per form (the registration
+    checklist's "referred" and the follow-up's), each the copy on its own form only;
+    and a discharge form's reason is the case status under another name only when
+    that status is "discharged". Written wherever the field was, the registration
+    question turned up on every follow-up (KMC PIPN, 2026-10-14: 18% of visits against
+    5.6%). Kept where K_MIN visits back a cell; the per-form cell (value None) is the
+    fallback.
+    """
+    seen: dict[str, Counter] = defaultdict(Counter)
+    hit: dict[str, Counter] = defaultdict(Counter)
+    for s in series_list:
+        for v in s["visits"]:
+            form = v.get("form")
+            for alias, primary in aliases.items():
+                for kind in ("values", "dates", "cats"):
+                    fields = v.get(kind) or {}
+                    if primary not in fields:
+                        continue
+                    keys = [(form, None)]
+                    if kind == "cats":
+                        keys.append((form, str(fields[primary])))
+                    for key in keys:
+                        seen[alias][key] += 1
+                        hit[alias][key] += alias in fields
+    out: dict[str, dict[tuple[str | None, str | None], float]] = {}
+    for alias, counts in seen.items():
+        cells = {key: hit[alias][key] / n for key, n in counts.items() if n >= K_MIN}
+        if cells:
+            out[alias] = cells
+    return out
 
 
 def _since_bucket(days_since: int | None) -> int:
@@ -753,6 +794,7 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
         presence[path] = {f: min(1.0, by_form[f] / form_seen[f]) for f in by_form if form_seen[f]}
     presence_by_gap = _fit_presence_by_gap(series_list, presence)
 
+    aliases = _fit_aliases(series_list)
     return CaseModel(
         real_starts=frozenset(d for starts in owner_starts.values() for d in starts),
         day_patterns={n: sorted(pats) for n, pats in day_patterns.items() if len(pats) >= K_MIN},
@@ -774,7 +816,8 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
         numeric=numeric,
         dates=dates,
         cats=cats,
-        aliases=_fit_aliases(series_list),
+        aliases=aliases,
+        alias_presence=_fit_alias_presence(series_list, aliases),
         driver=driver,
         driver_cuts=cuts,
         median_n=float(np.median([len(s["visits"]) for s in series_list])),
@@ -1165,8 +1208,10 @@ def _sample_case(
                 prev_cat[path] = val
             if val is not None:
                 cats[path] = val
-        # A second name for a field on this visit carries that field's value, on
-        # exactly the visits it is recorded (see _fit_aliases).
+        # A second name for a field on this visit carries that field's value (see
+        # _fit_aliases), on the share of the field's visits it is recorded at this form:
+        # a case copy is often the union of one question per form, and each question is
+        # the copy on its own form only.
         # When one of the names is a per-case constant its value is the one written:
         # it carries the case's own relations (an enrolment weight copied from the
         # birth weight), and the reading under the other name follows it.
@@ -1184,9 +1229,21 @@ def _sample_case(
                     ),
                     primary,
                 )
-                for m in (primary, *names):
-                    if m in group or m in names:
-                        group[m] = group[source]
+                value = group[source]
+                p_primary = model.presence.get(primary, {}).get(form, 0.0)
+                for name in names:
+                    cells = model.alias_presence.get(name, {})
+                    p = cells.get((form, str(value)) if group is cats else (form, None))
+                    if p is None:
+                        p = cells.get((form, None))
+                    if p is None:
+                        p_name = model.presence.get(name, {}).get(form, 0.0)
+                        p = min(1.0, p_name / p_primary) if p_primary > 0 else 0.0
+                    if rng.random() < p:
+                        group[name] = value
+                    else:
+                        group.pop(name, None)
+                group[primary] = value
         visit: dict[str, Any] = {"day": day, "values": values}
         if dates:
             visit["dates"] = dates

@@ -356,3 +356,40 @@ def test_each_kind_of_case_keeps_its_own_schedule_length():
     assert len(long_cases) > 200
     short = sum(1 for c in long_cases if c["visits"][-1]["day"] - c["visits"][0]["day"] < 27) / len(long_cases)
     assert short < 0.2, f"{short:.0%} of five-visit cases end before day 27; the source has 10%"
+
+
+def test_a_second_name_is_recorded_only_on_the_forms_that_carry_it():
+    """The case copy (form.case.update.referred) is the union of two form questions: the
+    registration checklist's and the follow-up's. Each is the copy under another name,
+    but only on its own form. Written wherever the copy was, the registration question
+    turned up on every follow-up (KMC PIPN, 2026-10-14: 18% of visits against 5.6%)."""
+    rng = random.Random(21)
+    pool = []
+    for c in range(300):
+        visits = []
+        for i, day in enumerate((0, 7, 14, 21)):
+            form = "Register" if i == 0 else "Visit"
+            cats = {}
+            if rng.random() < 0.5:
+                val = rng.choice(["yes", "no"])
+                own = "form.reg.referred" if form == "Register" else "form.visit.referred"
+                cats = {own: val, "form.case.update.referred": val}
+            visits.append({"day": day, "form": form, "values": {}, "cats": cats})
+        pool.append({"owner": f"flw_{c % 6:03d}", "start_date": "2026-03-02", "visits": visits})
+
+    out, _report = cm.synthesize_case_pool(pool, seed=4)
+
+    def share(cases, path, form):
+        vs = [v for case in cases for v in case["visits"] if v.get("form") == form]
+        return sum(path in (v.get("cats") or {}) for v in vs) / len(vs)
+
+    assert share(out, "form.reg.referred", "Visit") == 0
+    assert share(out, "form.visit.referred", "Register") == 0
+    for path, form in (("form.reg.referred", "Register"), ("form.visit.referred", "Visit")):
+        assert abs(share(out, path, form) - share(pool, path, form)) < 0.08, (path, share(out, path, form))
+    for case in out:
+        for v in case["visits"]:
+            cats = v.get("cats") or {}
+            for own in ("form.reg.referred", "form.visit.referred"):
+                if own in cats:
+                    assert cats[own] == cats.get("form.case.update.referred")
