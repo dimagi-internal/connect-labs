@@ -251,6 +251,50 @@ def _fit_line(points: list[tuple[float, float]]) -> tuple[float, float, list[flo
     return float(intercept), float(slope), resid
 
 
+def _shrink_slopes(
+    rows: list[dict[str, float]], path: str, fits: list[tuple[int, float, float, float, float]], noise_sd: float
+) -> None:
+    """Each case's slope counted for what its readings can tell (in place on ``rows``).
+
+    A slope fitted to two weighings a day apart is mostly the scale's error: +-80 g on
+    each reading is +-110 g a day between them, against growth of about 20. Drawn as a
+    case's growth, those slopes put a 40-day clone at 1.3 kg or 5.7 kg where the source
+    sits between 2.1 and 3.7 (KMC EHA, 2026-10-15). A random-coefficient fit: a case's
+    slope estimate carries error noise^2 / (spread of its days); the spread of TRUE
+    slopes is what the estimates spread beyond that; and each slope is pulled, by the
+    share of its spread that is error, towards what the case's own constants predict
+    (heavier babies grow faster) -- pulled towards one cohort figure instead, a noisy
+    case lost its relation to its birth weight. The intercept follows, so the line
+    still passes through the case's own mean reading.
+    """
+    if len(fits) < K_MIN or noise_sd <= 0:
+        return
+    slopes = np.array([f[4] for f in fits])
+    err = np.array([noise_sd**2 / max(f[3], 1e-9) for f in fits])
+    # Predictors: the per-case constants most of these cases have, missing ones at the median.
+    const_cols = sorted({c for f in fits for c in rows[f[0]] if c.startswith("c:")})
+    cols = [c for c in const_cols if sum(c in rows[f[0]] for f in fits) >= 0.8 * len(fits)]
+    X = np.ones((len(fits), 1 + len(cols)))
+    for j, c in enumerate(cols, start=1):
+        vals = np.array([rows[f[0]].get(c, np.nan) for f in fits], dtype=float)
+        vals[np.isnan(vals)] = np.nanmedian(vals)
+        sd = vals.std()
+        X[:, j] = (vals - vals.mean()) / sd if sd > 0 else 0.0
+    spread = _robust_sd(slopes.tolist()) ** 2
+    true_var = max(spread - float(np.median(err)), 0.05 * spread)
+    pred = np.full(len(fits), float(np.median(slopes)))
+    for _ in range(2):
+        w = np.sqrt(1.0 / (true_var + err))
+        coef, *_ = np.linalg.lstsq(X * w[:, None], slopes * w, rcond=None)
+        pred = X @ coef
+        resid_var = _robust_sd((slopes - pred).tolist()) ** 2
+        true_var = max(resid_var - float(np.median(err)), 0.05 * resid_var)
+    for (ri, mean_day, mean_val, _sxx, slope), e, p in zip(fits, err, pred):
+        shrunk = p + true_var / (true_var + e) * (slope - p)
+        rows[ri][f"s:{path}"] = float(shrunk)
+        rows[ri][f"b:{path}"] = float(mean_val - shrunk * mean_day)
+
+
 def _ar_coefficient(pairs: list[tuple[float, float]], sd: float) -> float:
     """Lag-1 correlation of consecutive residuals, the slips clipped first, kept in 0..0.95.
 
@@ -627,6 +671,8 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
     day_patterns_by_forms: dict[tuple, list[tuple[float, tuple[int, ...]]]] = defaultdict(list)
     case_consts: list[tuple[str, dict[str, float]]] = []
     index_offsets: dict[str, list[float]] = defaultdict(list)
+    # path -> (row index, mean day, mean value, spread of days, fitted slope) per case
+    slope_fits: dict[str, list[tuple[int, float, float, float, float]]] = defaultdict(list)
     day_offset_consistent: dict[str, list[bool]] = defaultdict(list)
 
     for s in series_list:
@@ -675,8 +721,24 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
                 row[f"b:{path}"] = b
                 if len({d for d, _, _ in pts}) >= 2:
                     row[f"s:{path}"] = sl
-                resid[path].extend(res)
-                resid_pairs[path].extend(zip(res, res[1:]))
+                    xs = np.array([d for d, _, _ in pts], dtype=float)
+                    slope_fits[path].append(
+                        (
+                            len(rows),
+                            float(xs.mean()),
+                            float(np.mean([v for _, _, v in pts])),
+                            float(((xs - xs.mean()) ** 2).sum()),
+                            sl,
+                        )
+                    )
+                # A line through two readings fits them exactly and leaves no residual to
+                # learn the scale's error from; only cases a line cannot fit exactly do,
+                # each residual scaled for the two the line used up.
+                if len(res) >= 3:
+                    scale = math.sqrt(len(res) / (len(res) - 2))
+                    res = [r * scale for r in res]
+                    resid[path].extend(res)
+                    resid_pairs[path].extend(zip(res, res[1:]))
             else:
                 row[f"c:{path}"] = pts[0][2]
         case_consts.append((s["owner"], {p: pts[0][2] for p, pts in per_path.items() if p not in time_varying}))
@@ -731,6 +793,8 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
             model.resid_sd = math.sqrt(max(model.resid_sd**2 - rounding, (0.25 * model.resid_sd) ** 2))
         if kind == "varying" and len(resid_pairs[path]) >= K_MIN:
             model.resid_ar = _ar_coefficient(resid_pairs[path], model.resid_sd)
+        if kind == "varying":
+            _shrink_slopes(rows, path, slope_fits[path], _robust_sd(resid[path]))
         numeric[path] = model
     dates: dict[str, _PathModel] = {}
     for path, obs in date_obs.items():

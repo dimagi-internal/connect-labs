@@ -393,3 +393,41 @@ def test_a_second_name_is_recorded_only_on_the_forms_that_carry_it():
             for own in ("form.reg.referred", "form.visit.referred"):
                 if own in cats:
                     assert cats[own] == cats.get("form.case.update.referred")
+
+
+def test_a_slope_from_two_close_readings_is_not_taken_for_growth():
+    """Babies gain about 20 g a day, and a scale reads to +-80 g. A slope fitted to two
+    weighings a day apart is mostly that error (+-110 g a day), and drawn as a case's
+    growth across a 40-day case it put clones at 1.3 kg and 5.7 kg where the source
+    sits between 2.1 and 3.7 (KMC EHA, 2026-10-15). Each case's slope counts for what
+    its readings can tell, and the scale's error is read off cases a line cannot fit
+    exactly."""
+    rng = random.Random(17)
+    pool = []
+    for c in range(400):
+        start_w = rng.gauss(2000, 150)
+        gain = rng.gauss(20, 4)
+        if c % 2:
+            days = [0, rng.choice([1, 2])]
+        else:
+            days = [0, 7, 14, 21, 28, 35]
+        visits = [
+            {"day": d, "form": "Visit", "values": {"form.w": float(round(start_w + gain * d + rng.gauss(0, 80)))}}
+            for d in days
+        ]
+        pool.append({"owner": f"flw_{c % 8:03d}", "start_date": "2026-03-02", "visits": visits})
+
+    out, _report = cm.synthesize_case_pool(pool, seed=6)
+
+    def spread(cases, last_day_min):
+        ws = sorted(
+            v["values"]["form.w"]
+            for case in cases
+            if case["visits"][-1]["day"] >= last_day_min
+            for v in case["visits"]
+            if "form.w" in v.get("values", {}) and v["day"] >= 28
+        )
+        return ws[len(ws) // 10], ws[9 * len(ws) // 10]
+
+    (r10, r90), (s10, s90) = spread(pool, 28), spread(out, 28)
+    assert s10 >= r10 - 150 and s90 <= r90 + 150, f"late weights {s10:.0f}-{s90:.0f}, source {r10:.0f}-{r90:.0f}"
