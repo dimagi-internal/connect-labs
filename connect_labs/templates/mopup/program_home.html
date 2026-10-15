@@ -9,7 +9,7 @@
       <h1 class="text-2xl font-bold text-gray-900">{{ tool_name }}</h1>
       <p class="text-sm text-gray-500">Program #{{ program_id }} — review past {{ tool_name }} runs or start a new one.</p>
       {% if is_r2 %}
-      <p class="text-sm text-gray-600 mt-2 max-w-2xl">Second revisit round. Selects work areas whose worker is suspended, that have a rejected Health Service Delivery or No Children Found visit, or that were inaccessible in the original microplan — and leaves out every work area the R1 revisit opportunity already covered.</p>
+      <p class="text-sm text-gray-600 mt-2 max-w-2xl">Second revisit round. Step A keeps under-covered work areas using WA Revisit R1's indicators and thresholds; step B always adds work areas of suspended workers, ones approved as inaccessible, and ones with a rejected Health Service Delivery or No Children Found visit. Every work area the R1 revisit opportunity already covered is left out.</p>
       <a href="{{ other_round_url }}" class="text-sm text-indigo-600 hover:underline">Go to WA Revisit (R1)</a>
       {% else %}
       <a href="{{ other_round_url }}" class="text-sm text-indigo-600 hover:underline">Go to WA Revisit R2</a>

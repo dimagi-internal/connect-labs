@@ -1,9 +1,16 @@
-"""WA Revisit R2 -- the second revisit round's selection rules.
+"""WA Revisit R2 -- the second revisit round's selection.
 
-R1 (`core.indicators`) picks work areas from coverage and service-quality
-indicators. R2 sends workers back to work areas where children may have been
-missed for a different reason, decided per work area from plain facts rather
-than rates:
+Two steps, then one exclusion:
+
+**Step A -- under-covered work areas, by R1's own indicators.** The whole of
+`core.indicators.evaluate_run` (EVC shortfall, NCF, Inaccessible, deworming,
+MUAC, vaccination; thresholds, neighbour settings and the cluster-aware
+filter, all reviewer-tunable exactly as in R1), with R2's own starting
+values (`STEP_A_INDICATOR_DEFAULTS` / `STEP_A_GLOBAL_DEFAULTS`): a work area
+stays a candidate only while its HSD visits are under 40% of EVC, MUAC under
+70%, deworming under 40%, or it has an NCF visit and at least 3 buildings.
+
+**Step B -- always added**, whatever step A decided, each a plain per-WA fact:
 
 - **Suspended worker** -- the work area's assigned worker is suspended on the
   ORIGINAL opportunity (Connect's `user_data` export, `suspended`). Every
@@ -19,7 +26,8 @@ than rates:
   carry it, and every one is assigned to a worker); a request still awaiting
   review (`REQUEST_FOR_INACCESSIBLE`) is not counted.
 
-Then, by default, **every work area R1 already sent back is left out**. The
+Then, by default, **every work area R1 already sent back is left out**,
+whichever step selected it. The
 R1 opportunity is its own Connect opportunity whose work areas were uploaded
 from WA Revisit plans that carried each original work area's boundary over
 unchanged (`core.areas.carry_forward_features`), so an R1 work area has
@@ -40,6 +48,8 @@ lock and plan hand-off all work unchanged.
 from __future__ import annotations
 
 import logging
+
+from connect_labs.mopup.core import indicators as ind
 
 logger = logging.getLogger(__name__)
 
@@ -69,37 +79,64 @@ R1_OPPORTUNITY_BY_ORIGINAL = {
     2157: 2306,  # SOLINA
 }
 
-# The rejected-visit rule applies to ISODAF and JHF only. Again only the
-# default: a reviewer can switch it on or off for any run.
-REJECTED_RULE_DEFAULT_OPPORTUNITIES = frozenset({2154, 2156})
-
 _INACCESSIBLE_STATUS = "INACCESSIBLE"
 _CENTROID_DECIMALS = 7
+
+# Step A's starting values: R1's indicator set, re-pointed at R2's bar --
+# "drop a work area whose HSD visits are over 40% of EVC, MUAC over 70%,
+# deworming over 40%, or that had an NCF with only 1-2 buildings". R1
+# flags a rate BELOW its threshold, so the same numbers are the thresholds.
+# R1's own Inaccessible indicator is off: step B's microplan-inaccessible
+# rule covers inaccessibility (approved status only). Vaccination is off.
+STEP_A_INDICATOR_DEFAULTS = {
+    ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.4},
+    ind.NCF: {"enabled": True},
+    ind.INACCESSIBLE: {"enabled": False},
+    ind.DEWORMING: {"enabled": True, "threshold": 0.4},
+    ind.MUAC: {"enabled": True, "threshold": 0.7},
+    ind.VACCINATION: {"enabled": False, "threshold": 0.7},
+}
+STEP_A_GLOBAL_DEFAULTS = {
+    # NCF only counts in a work area with at least 3 buildings.
+    "min_building_count": 3,
+}
+
+# Step B's rules all start on, for every LLO; each has its own toggle.
+STEP_B_DEFAULTS = {key: {"enabled": True} for key in R2_INDICATORS}
+
+ALL_KEYS = ind.ALL_INDICATORS + R2_INDICATORS
 
 DEFAULT_GLOBAL_CONFIG = {"exclude_r1": True}
 
 
-def default_indicator_configs(opportunity_id: int | None) -> dict[str, dict]:
-    return {
-        SUSPENDED_FLW: {"enabled": True},
-        REJECTED_VISIT: {"enabled": opportunity_id in REJECTED_RULE_DEFAULT_OPPORTUNITIES},
-        MICROPLAN_INACCESSIBLE: {"enabled": True},
+def default_indicator_configs(opportunity_id: int | None = None) -> dict[str, dict]:
+    """Step A's R1 indicators plus step B's rules, as R2 starts them."""
+    step_a = {
+        key: {**ind.DEFAULT_INDICATOR_CONFIGS[key], **STEP_A_INDICATOR_DEFAULTS.get(key, {})}
+        for key in ind.ALL_INDICATORS
     }
+    return {**step_a, **{key: dict(cfg) for key, cfg in STEP_B_DEFAULTS.items()}}
 
 
-def merged_indicator_configs(raw: dict | None, opportunity_id: int | None) -> dict[str, dict]:
-    """Every R2 rule, defaulted for this opportunity then overridden per key
-    by `raw` (a payload's or a run's saved `indicator_configs`). Keys `raw`
-    has that aren't R2 rules are dropped, the same self-healing
-    `views._merged_indicator_configs` does for R1."""
+def default_global_config() -> dict:
+    return {**ind.DEFAULT_GLOBAL_CONFIG, **STEP_A_GLOBAL_DEFAULTS, **DEFAULT_GLOBAL_CONFIG}
+
+
+def merged_indicator_configs(raw: dict | None, opportunity_id: int | None = None) -> dict[str, dict]:
+    """Every step A indicator and step B rule, defaulted then overridden per
+    key by `raw` (a payload's or a run's saved `indicator_configs`). Keys
+    `raw` has that are neither are dropped, the same self-healing
+    `views._merged_indicator_configs` does for R1 -- which is also what lets
+    an R2 run saved before step A existed open with step A's defaults."""
     raw = raw or {}
     defaults = default_indicator_configs(opportunity_id)
-    return {key: {**defaults[key], **(raw.get(key) or {})} for key in R2_INDICATORS}
+    return {key: {**defaults[key], **(raw.get(key) or {})} for key in ALL_KEYS}
 
 
 def merged_global_config(raw: dict | None) -> dict:
+    defaults = default_global_config()
     raw = raw or {}
-    return {**DEFAULT_GLOBAL_CONFIG, **{k: v for k, v in raw.items() if k in DEFAULT_GLOBAL_CONFIG}}
+    return {**defaults, **{k: v for k, v in raw.items() if k in defaults}}
 
 
 def centroid_key(lon, lat) -> str | None:
@@ -189,56 +226,86 @@ def _rule_detail(row: dict, key: str) -> dict | None:
     return None
 
 
+def _step_b_candidate(row: dict, detail: dict) -> dict:
+    triggered = [key for key in R2_INDICATORS if key in detail]
+    return {
+        "wa_id": row["wa_id"],
+        "wa_name": row.get("wa_name", ""),
+        "wag_name": row.get("wag_name", ""),
+        "ward": row.get("ward", ""),
+        "lga": row.get("lga", ""),
+        "state": row.get("state", ""),
+        "flw_username": row.get("flw_username", ""),
+        "flw_name": row.get("flw_name", ""),
+        "boundary": row.get("boundary"),
+        "building_count": row.get("building_count", 0),
+        "expected_visit_count": row.get("expected_visit_count", 0),
+        "source": ind.SOURCE_EXISTING_WA,
+        "triggered_indicators": triggered,
+        "severity_count": len(triggered),
+        "tier": 1,
+        "detail": detail,
+    }
+
+
 def evaluate_run(
     rows: list[dict], indicator_configs: dict, global_config: dict | None = None
 ) -> tuple[list[dict], dict]:
-    """Candidates (any enabled rule fires, and -- unless `exclude_r1` is off
-    -- not already in R1) plus a summary:
-    ``{"excluded_in_r1": n, "r1_matched": n}``, where `r1_matched` is every
-    work area in scope that R1 covered, whatever the rules say (a sanity
-    check that the R1 match found anything at all)."""
-    from connect_labs.mopup.core.indicators import SOURCE_EXISTING_WA
+    """Step A (R1's indicators) OR step B (R2's rules), then -- unless
+    `exclude_r1` is off -- minus every work area already in R1.
 
+    A work area both steps select is one candidate listing every reason:
+    step A's indicators first, then step B's rules, with both steps'
+    evidence in `detail`. Returns the candidates plus
+    ``{"excluded_in_r1": n, "r1_matched": n, "step_a": n, "step_b_only": n}``:
+    how many selected work areas R1 already covered (and were left out),
+    how many in scope R1 covered at all (a check the R1 match found
+    anything), and how many survivors came from step A versus only from B."""
     config = merged_global_config(global_config)
-    enabled = [key for key in R2_INDICATORS if (indicator_configs.get(key) or {}).get("enabled")]
+    configs = indicator_configs or {}
 
-    candidates = []
-    excluded_in_r1 = 0
-    r1_matched = 0
+    step_a_configs = {key: configs[key] for key in ind.ALL_INDICATORS if key in configs}
+    step_a_global = {k: v for k, v in config.items() if k not in DEFAULT_GLOBAL_CONFIG}
+    by_id = {c["wa_id"]: c for c in ind.evaluate_run(rows, step_a_configs, step_a_global)}
+    from_step_a = set(by_id)
+
+    enabled_b = [key for key in R2_INDICATORS if (configs.get(key) or {}).get("enabled")]
     for row in rows:
-        in_r1 = bool(row.get("in_r1"))
-        if in_r1:
-            r1_matched += 1
         detail = {}
-        for key in enabled:
+        for key in enabled_b:
             evidence = _rule_detail(row, key)
             if evidence is not None:
                 detail[key] = evidence
         if not detail:
             continue
-        if in_r1 and config["exclude_r1"]:
+        existing = by_id.get(row["wa_id"])
+        if existing is None:
+            by_id[row["wa_id"]] = _step_b_candidate(row, detail)
+            continue
+        existing["triggered_indicators"] = existing["triggered_indicators"] + [
+            key for key in R2_INDICATORS if key in detail
+        ]
+        existing["severity_count"] = len(existing["triggered_indicators"])
+        existing["tier"] = 1
+        existing["detail"] = {**existing.get("detail", {}), **detail}
+
+    in_r1 = {row["wa_id"] for row in rows if row.get("in_r1")}
+    candidates = []
+    excluded_in_r1 = 0
+    for row in rows:
+        candidate = by_id.get(row["wa_id"])
+        if candidate is None:
+            continue
+        candidate["in_r1"] = row["wa_id"] in in_r1
+        if candidate["in_r1"] and config["exclude_r1"]:
             excluded_in_r1 += 1
             continue
-        triggered = [key for key in R2_INDICATORS if key in detail]
-        candidates.append(
-            {
-                "wa_id": row["wa_id"],
-                "wa_name": row.get("wa_name", ""),
-                "wag_name": row.get("wag_name", ""),
-                "ward": row.get("ward", ""),
-                "lga": row.get("lga", ""),
-                "state": row.get("state", ""),
-                "flw_username": row.get("flw_username", ""),
-                "flw_name": row.get("flw_name", ""),
-                "boundary": row.get("boundary"),
-                "building_count": row.get("building_count", 0),
-                "expected_visit_count": row.get("expected_visit_count", 0),
-                "source": SOURCE_EXISTING_WA,
-                "triggered_indicators": triggered,
-                "severity_count": len(triggered),
-                "tier": 1,
-                "in_r1": in_r1,
-                "detail": detail,
-            }
-        )
-    return candidates, {EXCLUDED_IN_R1: excluded_in_r1, "r1_matched": r1_matched}
+        candidates.append(candidate)
+
+    step_a_count = sum(1 for c in candidates if c["wa_id"] in from_step_a)
+    return candidates, {
+        EXCLUDED_IN_R1: excluded_in_r1,
+        "r1_matched": len(in_r1),
+        "step_a": step_a_count,
+        "step_b_only": len(candidates) - step_a_count,
+    }

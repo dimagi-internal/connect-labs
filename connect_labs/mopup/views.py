@@ -618,16 +618,17 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
             opps_by_id = {opp["id"]: opp.get("name", "") for opp in _program_opportunities(self.request, program_id)}
             context["target_opportunity_name"] = opps_by_id.get(run.target_opportunity_id, "")
             context["r1_opportunity_name"] = opps_by_id.get(run.r1_opportunity_id, "")
-            context["indicator_defs"] = r2.R2_INDICATOR_DEFS
-        else:
-            context["indicator_defs"] = [
-                {"key": ind.EVC_SHORTFALL, "label": "EVC shortfall", "tier": 1},
-                {"key": ind.NCF, "label": "NCF", "tier": 1},
-                {"key": ind.INACCESSIBLE, "label": "Inaccessible", "tier": 1},
-                {"key": ind.DEWORMING, "label": "Deworming completion", "tier": 2},
-                {"key": ind.MUAC, "label": "MUAC-recorded rate", "tier": 2},
-                {"key": ind.VACCINATION, "label": "Vaccination-given rate", "tier": 2},
-            ]
+        # Step A of R2 is R1's indicator table itself; R2 adds step B's rules
+        # in a table of their own (`r2_rule_defs`).
+        context["r2_rule_defs"] = r2.R2_INDICATOR_DEFS if run.is_r2 else []
+        context["indicator_defs"] = [
+            {"key": ind.EVC_SHORTFALL, "label": "EVC shortfall", "tier": 1},
+            {"key": ind.NCF, "label": "NCF", "tier": 1},
+            {"key": ind.INACCESSIBLE, "label": "Inaccessible", "tier": 1},
+            {"key": ind.DEWORMING, "label": "Deworming completion", "tier": 2},
+            {"key": ind.MUAC, "label": "MUAC-recorded rate", "tier": 2},
+            {"key": ind.VACCINATION, "label": "Vaccination-given rate", "tier": 2},
+        ]
         context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
         access_token = self.request.session.get("labs_oauth", {}).get("access_token")
         ward_boundaries, boundary_source_caption = self._ward_boundaries_geojson(
@@ -776,7 +777,7 @@ class MopupCandidatesView(LoginRequiredMixin, View):
         # many work areas each individual indicator flagged, recomputed every
         # call the same as everything else here (no separate cache/staleness
         # risk since it's a cheap pass over the already-built candidate list).
-        per_indicator_counts = {key: 0 for key in (r2.R2_INDICATORS if run.is_r2 else ind.ALL_INDICATORS)}
+        per_indicator_counts = {key: 0 for key in (r2.ALL_KEYS if run.is_r2 else ind.ALL_INDICATORS)}
         for c in candidates:
             for key in c["triggered_indicators"]:
                 per_indicator_counts[key] = per_indicator_counts.get(key, 0) + 1

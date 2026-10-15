@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from unittest import mock
 
+from connect_labs.mopup.core import indicators as ind
 from connect_labs.mopup.core import r2
 from connect_labs.mopup.core.visits import aggregate_visits_by_wa
 
@@ -36,34 +37,48 @@ def _row(wa_id="wa-1", **overrides):
     return row
 
 
+# Step B only (no step A indicators): isolates the R2 rules.
 ALL_ON = {key: {"enabled": True} for key in r2.R2_INDICATORS}
+NO_CLUSTER_FILTER = {"cluster_aware_filter_enabled": False}
 
 
 class TestDefaults:
-    def test_rejected_rule_defaults_on_for_isodaf_and_jhf_only(self):
-        assert r2.default_indicator_configs(2154)[r2.REJECTED_VISIT]["enabled"] is True  # JHF
-        assert r2.default_indicator_configs(2156)[r2.REJECTED_VISIT]["enabled"] is True  # ISODAF
-        assert r2.default_indicator_configs(2155)[r2.REJECTED_VISIT]["enabled"] is False  # EHA
-        assert r2.default_indicator_configs(2157)[r2.REJECTED_VISIT]["enabled"] is False  # SOLINA
-
-    def test_suspended_and_inaccessible_default_on_everywhere(self):
+    def test_step_b_rules_all_default_on_for_every_llo(self):
         for opp in (2154, 2155, 2156, 2157, None):
             cfg = r2.default_indicator_configs(opp)
-            assert cfg[r2.SUSPENDED_FLW]["enabled"] is True
-            assert cfg[r2.MICROPLAN_INACCESSIBLE]["enabled"] is True
+            for key in r2.R2_INDICATORS:
+                assert cfg[key]["enabled"] is True, (opp, key)
+
+    def test_step_a_starts_at_r2s_thresholds(self):
+        cfg = r2.default_indicator_configs()
+        assert cfg[ind.EVC_SHORTFALL] == {"enabled": True, "threshold": 0.4}
+        assert cfg[ind.MUAC] == {"enabled": True, "threshold": 0.7}
+        assert cfg[ind.DEWORMING] == {"enabled": True, "threshold": 0.4}
+        assert cfg[ind.NCF]["enabled"] is True
+        # Step B's approved-inaccessible rule replaces R1's own indicator.
+        assert cfg[ind.INACCESSIBLE]["enabled"] is False
+        assert cfg[ind.VACCINATION]["enabled"] is False
+        assert r2.default_global_config()["min_building_count"] == 3
 
     def test_merge_overrides_per_key_and_drops_unknown_keys(self):
         merged = r2.merged_indicator_configs(
-            {r2.REJECTED_VISIT: {"enabled": True}, "evc_shortfall": {"enabled": True, "threshold": 0.5}}, 2155
+            {r2.REJECTED_VISIT: {"enabled": False}, ind.EVC_SHORTFALL: {"threshold": 0.33}, "stale_key": {}}
         )
-        assert set(merged) == set(r2.R2_INDICATORS)
-        assert merged[r2.REJECTED_VISIT]["enabled"] is True
+        assert set(merged) == set(ind.ALL_INDICATORS + r2.R2_INDICATORS)
+        assert merged[r2.REJECTED_VISIT]["enabled"] is False
+        assert merged[ind.EVC_SHORTFALL] == {"enabled": True, "threshold": 0.33}
 
-    def test_global_config_defaults_to_excluding_r1(self):
-        assert r2.merged_global_config(None) == {"exclude_r1": True}
-        assert r2.merged_global_config({"exclude_r1": False, "cluster_aware_filter_enabled": True}) == {
-            "exclude_r1": False
-        }
+    def test_a_run_saved_before_step_a_opens_with_step_a_defaults(self):
+        merged = r2.merged_indicator_configs({key: {"enabled": True} for key in r2.R2_INDICATORS})
+        assert merged[ind.EVC_SHORTFALL]["threshold"] == 0.4
+
+    def test_global_config_is_r1s_settings_plus_the_r1_exclusion(self):
+        merged = r2.merged_global_config({"exclude_r1": False, "min_evc_floor": 2, "unknown": 1})
+        assert merged["exclude_r1"] is False
+        assert merged["min_evc_floor"] == 2
+        assert merged["min_building_count"] == 3
+        assert "unknown" not in merged
+        assert set(ind.DEFAULT_GLOBAL_CONFIG) <= set(merged)
 
     def test_r1_pairs_cover_all_four_llos(self):
         assert r2.R1_OPPORTUNITY_BY_ORIGINAL == {2154: 2304, 2155: 2305, 2156: 2291, 2157: 2306}
@@ -118,17 +133,106 @@ class TestR1Exclusion:
         rows = [_row("wa-r1", owner_suspended=1, in_r1=1), _row("wa-new", owner_suspended=1)]
         candidates, extra = r2.evaluate_run(rows, ALL_ON)
         assert [c["wa_id"] for c in candidates] == ["wa-new"]
-        assert extra == {r2.EXCLUDED_IN_R1: 1, "r1_matched": 1}
+        assert extra == {r2.EXCLUDED_IN_R1: 1, "r1_matched": 1, "step_a": 0, "step_b_only": 1}
 
     def test_r1_match_with_no_rule_is_not_counted_as_left_out(self):
         _, extra = r2.evaluate_run([_row(in_r1=1)], ALL_ON)
-        assert extra == {r2.EXCLUDED_IN_R1: 0, "r1_matched": 1}
+        assert extra[r2.EXCLUDED_IN_R1] == 0
+        assert extra["r1_matched"] == 1
 
     def test_exclusion_can_be_switched_off(self):
         candidates, extra = r2.evaluate_run([_row(owner_suspended=1, in_r1=1)], ALL_ON, {"exclude_r1": False})
         assert [c["wa_id"] for c in candidates] == ["wa-1"]
         assert candidates[0]["in_r1"] is True
         assert extra[r2.EXCLUDED_IN_R1] == 0
+
+
+def _coverage(wa_id, *, hsd, evc=10, muac=None, dw=None, **overrides):
+    """A row whose step A rates are HSD/EVC, MUAC/HSD and DW/HSD (R1's own
+    definitions), fully covered on MUAC/DW unless given."""
+    fields = {
+        "approved_hsd_count": hsd,
+        "expected_visit_count": evc,
+        "approved_ncf_count": 0,
+        "connect_inaccessible": 0,
+        "muac_given": hsd if muac is None else muac,
+        "deworming_given": hsd if dw is None else dw,
+        "vaccination_given": hsd,
+    }
+    return _row(wa_id, **{**fields, **overrides})
+
+
+class TestStepAThenStepB:
+    CONFIGS = r2.default_indicator_configs()
+
+    def _evaluate(self, rows, **global_overrides):
+        return r2.evaluate_run(rows, self.CONFIGS, {**NO_CLUSTER_FILTER, **global_overrides})
+
+    def test_step_a_keeps_under_covered_and_drops_well_covered(self):
+        rows = [
+            _coverage("low-hsd", hsd=3),  # 30% of EVC < 40%
+            _coverage("well-covered", hsd=8),  # 80% of EVC, MUAC/DW full
+            _coverage("low-muac", hsd=8, muac=4),  # MUAC 50% < 70%
+            _coverage("low-dw", hsd=8, dw=2),  # DW 25% < 40%
+        ]
+        candidates, extra = self._evaluate(rows)
+        assert {c["wa_id"] for c in candidates} == {"low-hsd", "low-muac", "low-dw"}
+        assert extra["step_a"] == 3 and extra["step_b_only"] == 0
+
+    def test_ncf_counts_only_with_at_least_three_buildings(self):
+        rows = [
+            _coverage("ncf-small", hsd=8, approved_ncf_count=1, building_count=2),
+            _coverage("ncf-big", hsd=8, approved_ncf_count=1, building_count=3),
+        ]
+        candidates, _ = self._evaluate(rows)
+        assert [c["wa_id"] for c in candidates] == ["ncf-big"]
+
+    def test_step_b_adds_well_covered_work_areas_back(self):
+        rows = [
+            _coverage("suspended", hsd=9, owner_suspended=1),
+            _coverage("rejected", hsd=9, rejected_hsd_count=1),
+            _coverage("inaccessible", hsd=9, connect_status="INACCESSIBLE"),
+            _coverage("well-covered", hsd=9),
+        ]
+        candidates, extra = self._evaluate(rows)
+        assert {c["wa_id"] for c in candidates} == {"suspended", "rejected", "inaccessible"}
+        assert extra == {r2.EXCLUDED_IN_R1: 0, "r1_matched": 0, "step_a": 0, "step_b_only": 3}
+
+    def test_a_work_area_selected_by_both_steps_lists_every_reason_once(self):
+        candidates, extra = self._evaluate([_coverage("both", hsd=2, owner_suspended=1)])
+        assert len(candidates) == 1
+        assert candidates[0]["triggered_indicators"] == [ind.EVC_SHORTFALL, r2.SUSPENDED_FLW]
+        # R1's engine records every enabled indicator's evidence; step B's
+        # rule evidence is merged in alongside it.
+        assert {ind.EVC_SHORTFALL, r2.SUSPENDED_FLW} <= set(candidates[0]["detail"])
+        assert candidates[0]["severity_count"] == 2
+        assert extra["step_a"] == 1 and extra["step_b_only"] == 0
+
+    def test_r1_work_areas_are_left_out_whichever_step_selected_them(self):
+        rows = [
+            _coverage("a-in-r1", hsd=2, in_r1=1),
+            _coverage("b-in-r1", hsd=9, rejected_ncf_count=1, in_r1=1),
+            _coverage("kept", hsd=2),
+        ]
+        candidates, extra = self._evaluate(rows)
+        assert [c["wa_id"] for c in candidates] == ["kept"]
+        assert extra[r2.EXCLUDED_IN_R1] == 2
+
+    def test_rejected_rule_toggle_off_drops_only_its_additions(self):
+        configs = {**self.CONFIGS, r2.REJECTED_VISIT: {"enabled": False}}
+        rows = [_coverage("rejected", hsd=9, rejected_hsd_count=2), _coverage("low", hsd=1, rejected_hsd_count=2)]
+        candidates, _ = r2.evaluate_run(rows, configs, NO_CLUSTER_FILTER)
+        assert [c["wa_id"] for c in candidates] == ["low"]
+        assert candidates[0]["triggered_indicators"] == [ind.EVC_SHORTFALL]
+
+    def test_threshold_edits_apply_to_step_a(self):
+        configs = {**self.CONFIGS, ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.9}}
+        candidates, _ = r2.evaluate_run([_coverage("eighty", hsd=8)], configs, NO_CLUSTER_FILTER)
+        assert [c["wa_id"] for c in candidates] == ["eighty"]
+
+    def test_zero_evc_is_not_a_step_a_candidate(self):
+        candidates, _ = self._evaluate([_coverage("no-evc", hsd=0, evc=0)])
+        assert candidates == []
 
 
 class TestAnnotateRows:
