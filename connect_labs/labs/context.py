@@ -533,6 +533,9 @@ class LabsContextMiddleware(MiddlewareMixin):
                 # Programme-scoped: a bare supply URL picks up the session's programme
                 # and shows it, so the links a supply page offers name their scope.
                 "/supply/",
+                # The global Simple Microplan list filters by the picked context; the
+                # picker reads its selection from the URL, so the URL must carry it.
+                "/microplans/simple/",
             ]
             is_whitelisted = any(path.startswith(prefix) for prefix in whitelisted_prefixes)
 

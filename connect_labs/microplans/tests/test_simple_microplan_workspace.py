@@ -398,20 +398,15 @@ def test_chc_and_wa_revisit_pages_are_unchanged_for_other_programs(client, peopl
     assert client.get(reverse("mopup:program_home", args=[217])).status_code == 200
 
 
-def test_the_global_list_is_unchanged_for_everyone(client, people, plans):
-    _login(client, people["nm_river"])  # a Network Manager elsewhere is just a user here
+def test_the_global_list_follows_the_global_rules_for_everyone(client, people, plans):
+    # A Network Manager elsewhere is just a user here: a global plan with no context
+    # is its creator's (and Dimagi staff's) only -- see test_simple_microplan_context.
+    _login(client, people["nm_river"])
     resp = client.get(reverse("microplans:simple_list"))
     assert resp.status_code == 200
-    assert [p.pk for p in resp.context["plans"]] == [plans["global"].pk]
+    assert list(resp.context["plans"]) == []
     assert "workspace" not in resp.context
-    # someone else's global plan: read-only, no delete, as before
-    assert reverse("microplans:simple_delete", kwargs={"plan_id": plans["global"].pk}) not in resp.content.decode()
-    assert (
-        client.get(reverse("microplans:simple_editor", kwargs={"plan_id": plans["global"].pk})).context["plan_state"][
-            "editable"
-        ]
-        is False
-    )
+    assert client.get(reverse("microplans:simple_editor", kwargs={"plan_id": plans["global"].pk})).status_code == 404
 
 
 # --- the Users list: someone viewing a workspace as a Network Manager ----------

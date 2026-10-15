@@ -5,9 +5,16 @@ Boundary -> work areas (auto-grid, hand-drawn, or drawn with snapping) -> groups
 the browser (`static/microplans/simple_microplan.js`); these views only list the
 saved plans and store each one's state as a `SimpleMicroplan` row.
 
-Everyone who can see Workflows can open the creator and every saved plan. Only
-the person who made a plan (or Dimagi staff) may change, rename or delete it;
-anyone else opens it read-only and can still export the CSV.
+Everyone who can see Workflows can open the creator. A plan records the labs
+context (organisation / program / opportunity) picked in the context picker when
+it was made, and the list shows the plans of the context picked now -- the most
+specific of the three wins; with nothing picked, the caller's own plans. Who may
+open and change a plan follows the same Connect tree the picker offers
+(``ContextAccess``): its creator, Dimagi staff, and anyone who can pick the plan's
+most specific context. A plan with no context (made with nothing picked, or before
+contexts existed) is its creator's and Dimagi staff's only. Only the creator or
+Dimagi staff may delete. A plan someone may not see is a 404; a delete they may
+not make is a 403.
 
 **In a workspace program** (``labs.workspaces``) the same views serve
 `/microplans/program/<id>/simple/` with the workspace's rules instead: a Program
@@ -30,6 +37,7 @@ import nh3
 from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
+from django.db.models import Q
 from django.http import Http404, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
@@ -95,9 +103,101 @@ def _display_name(user) -> str:
     return (getattr(user, "name", "") or getattr(user, "username", "") or getattr(user, "email", "") or "").strip()
 
 
-def can_edit(user, plan: SimpleMicroplan) -> bool:
-    """A global plan: its creator, or Dimagi staff."""
+def is_creator_or_staff(user, plan: SimpleMicroplan) -> bool:
+    """Who may delete a global plan: its creator, or Dimagi staff."""
     return (plan.created_by_id is not None and plan.created_by_id == user.pk) or is_dimagi_staff(user)
+
+
+def _ids(rows) -> frozenset[int]:
+    out = set()
+    for row in rows or []:
+        try:
+            out.add(int(row.get("id")))
+        except (AttributeError, TypeError, ValueError):
+            continue
+    return frozenset(out)
+
+
+@dataclass(frozen=True)
+class ContextAccess:
+    """What a person may do with global plans, from the Connect organisations /
+    programs / opportunities tree the labs context picker offers them
+    (``labs.context.get_org_data``) -- never from the URL or the session's pick,
+    which ``validate_context_access`` passes through unchecked when the cached
+    tree does not hold it."""
+
+    staff: bool = False
+    org_slugs: frozenset = frozenset()
+    program_ids: frozenset = frozenset()
+    opportunity_ids: frozenset = frozenset()
+
+    @classmethod
+    def for_request(cls, request) -> ContextAccess:
+        from connect_labs.labs.context import get_org_data
+
+        data = get_org_data(request) or {}
+        return cls(
+            staff=is_dimagi_staff(request.user),
+            org_slugs=frozenset(o["slug"] for o in data.get("organizations") or [] if o.get("slug")),
+            program_ids=_ids(data.get("programs")),
+            opportunity_ids=_ids(data.get("opportunities")),
+        )
+
+    def visible(self, plans, user):
+        """The plans this person may open: their own, and those whose most specific
+        context (opportunity, else program, else organisation) they can pick.
+        A plan with no context matches none of those, so it stays its creator's."""
+        if self.staff:
+            return plans
+        return plans.filter(
+            Q(created_by_id=user.pk)
+            | Q(opportunity_id__in=self.opportunity_ids)
+            | Q(opportunity_id__isnull=True, context_program_id__in=self.program_ids)
+            | Q(opportunity_id__isnull=True, context_program_id__isnull=True, organization_slug__in=self.org_slugs)
+        )
+
+    def can_open(self, user, plan) -> bool:
+        """``visible`` for one plan. Opening a plan is changing it too."""
+        if self.staff or (plan.created_by_id is not None and plan.created_by_id == user.pk):
+            return True
+        if plan.opportunity_id is not None:
+            return plan.opportunity_id in self.opportunity_ids
+        if plan.context_program_id is not None:
+            return plan.context_program_id in self.program_ids
+        return bool(plan.organization_slug) and plan.organization_slug in self.org_slugs
+
+    def fields_for_new_plan(self, labs_context) -> dict:
+        """The picked organisation, program and opportunity a new plan records --
+        each only when this person can pick it (Dimagi staff: any). Something they
+        cannot is left off rather than trusted from the URL."""
+        ctx = labs_context or {}
+        fields = {}
+        slug = ctx.get("organization_slug")
+        if slug and (self.staff or slug in self.org_slugs):
+            fields["organization_slug"] = str(slug)[:255]
+            fields["organization_name"] = str((ctx.get("organization") or {}).get("name") or slug)[:255]
+        program_id = ctx.get("program_id")
+        if program_id and (self.staff or program_id in self.program_ids):
+            fields["context_program_id"] = int(program_id)
+            fields["program_name"] = str((ctx.get("program") or {}).get("name") or "")[:255]
+        opportunity_id = ctx.get("opportunity_id")
+        if opportunity_id and (self.staff or opportunity_id in self.opportunity_ids):
+            fields["opportunity_id"] = int(opportunity_id)
+            fields["opportunity_name"] = str((ctx.get("opportunity") or {}).get("name") or "")[:255]
+        return fields
+
+
+def filter_by_picked_context(plans, labs_context, user):
+    """The global list for what the context picker has picked: the most specific of
+    opportunity, program, organisation wins; with nothing picked, the caller's own."""
+    ctx = labs_context or {}
+    if ctx.get("opportunity_id"):
+        return plans.filter(opportunity_id=ctx["opportunity_id"])
+    if ctx.get("program_id"):
+        return plans.filter(context_program_id=ctx["program_id"])
+    if ctx.get("organization_slug"):
+        return plans.filter(organization_slug=ctx["organization_slug"])
+    return plans.filter(created_by_id=user.pk)
 
 
 def team_for_new_plan(role, requested=None) -> str:
@@ -117,22 +217,26 @@ def team_for_new_plan(role, requested=None) -> str:
 class _Scope:
     """Where a request's simple plans live and what the caller may do with them.
 
-    ``program_id`` None: the global test plans (no program), under today's rules.
-    Otherwise a workspace program and the caller's role in it."""
+    ``program_id`` None: the global plans (no program), under ``access`` -- the
+    caller's ``ContextAccess``. Otherwise a workspace program and the caller's role
+    in it."""
 
     program_id: int | None = None
     workspace: object | None = None
     role: object | None = None  # labs.workspaces.WorkspaceRole
+    user: object | None = None
+    access: ContextAccess | None = None  # global plans only
 
     @property
     def in_workspace(self) -> bool:
         return self.program_id is not None
 
     def plans(self):
-        """The plans this caller may see here. Every lookup goes through it, so
-        another team's plan (or one from another program) is simply not found."""
+        """The plans this caller may see here. Every lookup goes through it, so a
+        plan of a context they cannot pick, another team's plan, or one from
+        another program is simply not found."""
         if not self.in_workspace:
-            return SimpleMicroplan.objects.filter(program_id__isnull=True)
+            return self.access.visible(SimpleMicroplan.objects.filter(program_id__isnull=True), self.user)
         plans = SimpleMicroplan.objects.filter(program_id=self.program_id)
         if not self.role.is_program_manager:
             plans = plans.filter(team__in=self.role.teams)
@@ -140,13 +244,13 @@ class _Scope:
 
     def can_edit(self, user, plan) -> bool:
         if not self.in_workspace:
-            return can_edit(user, plan)
+            return self.access.can_open(user, plan)
         # Team members work on their team's plans together.
         return self.role.is_program_manager or plan.team in self.role.teams
 
     def can_delete(self, user, plan) -> bool:
         if not self.in_workspace:
-            return can_edit(user, plan)
+            return is_creator_or_staff(user, plan)
         # As for program plans (``ProgramPlanDataAccess._guard_delete``).
         return self.role.is_program_manager
 
@@ -155,23 +259,24 @@ class _Scope:
             return reverse(f"microplans:simple_{name}", kwargs=kwargs)
         return reverse(f"microplans:program_simple_{name}", kwargs={"program_id": self.program_id, **kwargs})
 
-    def new_plan_fields(self, requested_team=None) -> dict:
+    def new_plan_fields(self, request) -> dict:
         if not self.in_workspace:
-            return {}
-        return {"program_id": self.program_id, "team": team_for_new_plan(self.role, requested_team)}
+            return self.access.fields_for_new_plan(getattr(request, "labs_context", None))
+        return {"program_id": self.program_id, "team": team_for_new_plan(self.role, request.POST.get("team"))}
 
 
-def _resolve_scope(user, program_id) -> _Scope:
+def _resolve_scope(request, program_id) -> _Scope:
     """The caller's scope, or Http404.
 
     Simple Microplan files plans under a program only in a workspace program;
     any other program id is not a page. Someone with no role there was already
     refused by the program access check (in a workspace, access IS a role) --
     this does not rely on it."""
+    user = request.user
     if not user_has_feature_access(user, FEATURE_KEY):
         raise Http404
     if program_id is None:
-        return _Scope()
+        return _Scope(user=user, access=ContextAccess.for_request(request))
     from connect_labs.labs.workspaces import role_in, workspace_for_program
 
     workspace = workspace_for_program(program_id)
@@ -194,12 +299,27 @@ class _SimpleMicroplanAccessMixin(_ProgramScopeMixin, LoginRequiredMixin):
         # program's LabsRecord plans, which a simple plan's id is not. Simple plans
         # are scoped by ``self.scope.plans()`` instead, resolved here: after the
         # access check, before the context picker follows the URL.
-        self.scope = _resolve_scope(request.user, kwargs.get("program_id"))
+        self.scope = _resolve_scope(request, kwargs.get("program_id"))
         return None
 
 
 def _clean_name(raw) -> str:
     return str(raw or "").strip()[:MAX_NAME_LENGTH]
+
+
+def _picked_context_label(labs_context) -> str:
+    """What the global list is showing, in words: the picked context that filters it."""
+    ctx = labs_context or {}
+    if ctx.get("opportunity_id"):
+        name = (ctx.get("opportunity") or {}).get("name") or f"Opportunity #{ctx['opportunity_id']}"
+        return f"opportunity {name}"
+    if ctx.get("program_id"):
+        name = (ctx.get("program") or {}).get("name") or f"Program #{ctx['program_id']}"
+        return f"program {name}"
+    if ctx.get("organization_slug"):
+        name = (ctx.get("organization") or {}).get("name") or ctx["organization_slug"]
+        return f"organization {name}"
+    return ""
 
 
 def _workspace_page_context(scope: _Scope, user, plans) -> dict:
@@ -245,8 +365,8 @@ def _workspace_page_context(scope: _Scope, user, plans) -> dict:
 
 
 class SimpleMicroplanListView(_SimpleMicroplanAccessMixin, TemplateView):
-    """Every saved simple microplan the caller may see, newest change first, and
-    the form to start one."""
+    """The saved simple microplans the caller may see -- in the global list, those
+    of the context picked now -- newest change first, and the form to start one."""
 
     template_name = "microplans/simple_list.html"
     sync_labs_context = True  # workspace routes: the context picker follows the program
@@ -254,7 +374,12 @@ class SimpleMicroplanListView(_SimpleMicroplanAccessMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         scope, user = self.scope, self.request.user
-        plans = list(scope.plans().defer("data"))
+        plans = scope.plans()
+        if not scope.in_workspace:
+            picked = getattr(self.request, "labs_context", None) or {}
+            plans = filter_by_picked_context(plans, picked, user)
+            context["picked_context"] = _picked_context_label(picked)
+        plans = list(plans.defer("data"))
         context.update(_workspace_page_context(scope, user, plans))
         names = context["workspace"]["team_names"] if scope.in_workspace else {}
         for plan in plans:
@@ -275,7 +400,7 @@ class SimpleMicroplanListView(_SimpleMicroplanAccessMixin, TemplateView):
             name=name,
             created_by=request.user,
             created_by_name=_display_name(request.user),
-            **self.scope.new_plan_fields(request.POST.get("team")),
+            **self.scope.new_plan_fields(request),
         )
         return HttpResponseRedirect(self.scope.url("editor", plan_id=plan.pk))
 
@@ -292,6 +417,7 @@ class SimpleMicroplanEditorView(_SimpleMicroplanAccessMixin, TemplateView):
         scope = self.scope
         plan = get_object_or_404(scope.plans(), pk=kwargs["plan_id"])
         context["plan"] = plan
+        context["in_workspace"] = scope.in_workspace
         context["list_url"] = scope.url("list")
         context["plan_state"] = {
             "id": plan.pk,
@@ -351,7 +477,7 @@ class SimpleMicroplanDeleteView(_SimpleMicroplanAccessMixin, View):
         plan = get_object_or_404(scope.plans(), pk=plan_id)
         if not scope.can_delete(request.user, plan):
             if not scope.in_workspace:
-                raise Http404
+                raise PermissionDenied("Only the person who created this microplan, or Dimagi staff, can delete it.")
             _record_refused_delete(scope, plan, request.user)
             raise PermissionDenied("Only a Program Manager can delete a microplan in this program.")
         plan.delete()
