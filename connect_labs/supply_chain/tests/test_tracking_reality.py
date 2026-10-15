@@ -14,88 +14,27 @@ import jsonschema
 import pytest
 from django.urls import reverse
 
-from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.checks import run_checks
-from connect_labs.supply_chain.data_access import SupplyDataAccess
-from connect_labs.supply_chain.history.context import seed_overrides
 from connect_labs.supply_chain.models import Contract, Payment, Quote, Shipment
-from connect_labs.supply_chain.operations import call_operation, declared_only
+from connect_labs.supply_chain.operations import declared_only
 from connect_labs.supply_chain.procurement.repository import SuspectedDuplicate
 from connect_labs.supply_chain.standing import standing_rows
+from connect_labs.supply_chain.tests import rehearsal_world
+from connect_labs.supply_chain.tests.rehearsal_world import (
+    KANEM_EMAIL,
+    PROGRAM,
+    TODAY,
+    _contract,
+    _held_on_our_form_m,
+    _kanem_quote,
+    op,
+)
 
-PROGRAM = 20877
-TODAY = datetime.date(2026, 10, 1)
-WHEN = datetime.datetime(2026, 10, 1, 9, 0, tzinfo=datetime.UTC)
-
-KANEM_EMAIL = "Our price for RUTF is USD 54.50 per carton, CPT Kano. Quote valid 45 days."
-
-
-def _synthetic(program_id):
-    from connect_labs.labs.synthetic.models import SyntheticOpportunity
-
-    return SyntheticOpportunity.objects.create(
-        opportunity_id=program_id,
-        program_id=program_id,
-        labs_only=True,
-        enabled=True,
-        label="tracking reality tests",
-        allowed_domains=["dimagi.com"],
-    )
-
-
-@pytest.fixture
-def da(db):
-    _synthetic(PROGRAM)
-    return SupplyDataAccess(program_id=PROGRAM, caller=SYSTEM)
-
-
-def op(da, name, *, channel="mcp", **payload):
-    with seed_overrides(PROGRAM, recorded_at=WHEN):
-        return call_operation(name, da, payload, channel=channel)
-
-
-@pytest.fixture
-def world(da):
-    op(da, "commodity_upsert", data={"slug": "rutf", "name": "RUTF", "base_unit": "sachet", "pack_unit": "carton"})
-    us = op(da, "org_upsert", data={"slug": "tracking-buyer", "name": "Rehearsal buyer"})
-    tender = op(
-        da,
-        "tender_create",
-        data={
-            "label": "RUTF round",
-            "lines": [{"commodity_slug": "rutf", "quantity": 2000, "quantity_unit": "carton"}],
-            "delivery_points": [{"key": "kano", "name": "Warehouse, Kano", "city": "Kano", "country": "NG"}],
-        },
-    )
-    op(da, "tender_open", tender_id=tender["id"])
-    kanem = op(
-        da,
-        "supplier_create",
-        data={
-            "name": "Kanem Foods Rehearsal",
-            "contacts": [{"name": "Grace", "email": "grace@kanem.example.invalid"}],
-        },
-    )
-    northgate = op(da, "supplier_create", data={"name": "Northgate Rehearsal Commodities"})
-    outreach = op(
-        da, "outreach_log", data={"tender_id": tender["id"], "supplier_id": kanem["id"], "sent_on": "2026-07-06"}
-    )
-    return {"us": us, "tender": tender, "kanem": kanem, "northgate": northgate, "outreach": outreach}
-
-
-def _kanem_quote(world, **overrides):
-    return {
-        "tender_id": world["tender"]["id"],
-        "supplier_id": world["kanem"]["id"],
-        "commodity_slug": "rutf",
-        "as_quoted_amount": "54.50",
-        "as_quoted_unit": "per_pack",
-        "as_quoted_currency": "USD",
-        "freight_basis": "included",
-        "duties_basis": "excluded",
-        "delivery_point_keys": ["kano"],
-        **overrides,
-    }
+# The world lives in rehearsal_world (a module, not a test), so feature tests share it
+# without importing this module.
+da = rehearsal_world.da
+world = rehearsal_world.world
+client_in_program = rehearsal_world.client_in_program
 
 
 # ---- ruling 1: an undeclared field is refused, by name, and nothing is written
@@ -249,32 +188,6 @@ class TestRealDates:
 # ---- ruling 4: an invoice above the contract is a check, on the order page
 
 
-def _contract(da, world, **overrides):
-    return op(
-        da,
-        "contract_create",
-        channel="web",
-        data={
-            "tender_id": world["tender"]["id"],
-            "supplier_id": world["kanem"]["id"],
-            "commodity_slug": "rutf",
-            "buyer_of_record": "programme_org",
-            "buyer_org_id": world["us"]["id"],
-            "reference": "PO-REH-1",
-            "status": "placed",
-            "currency": "USD",
-            "quantity": 2000,
-            "quantity_unit": "carton",
-            "unit_price": "49.80",
-            "unit_price_unit": "per_pack",
-            "freight_basis": "excluded",
-            "freight_amount": "7200.00",
-            "source": "we_recorded",
-            **overrides,
-        },
-    )
-
-
 class TestInvoiceAboveContract:
     def _bill(self, da, contract, **data):
         return op(
@@ -318,35 +231,6 @@ class TestInvoiceAboveContract:
 
 
 # ---- ruling 5: a delay of ours does not read as the supplier's
-
-
-def _held_on_our_form_m(da, world):
-    contract = _contract(da, world, signed_on="2026-07-28", promised_lead_time_days=35)
-    shipment = op(
-        da,
-        "shipment_record",
-        data={
-            "contract_id": contract["id"],
-            "reference": "PO-REH-1",
-            "status": "dispatched",
-            "dispatched_on": "2026-08-26",
-            "expected_on": "2026-09-05",
-            "source": "supplier_reported",
-            "lines": [{"quantity": 2000, "quantity_unit": "carton"}],
-        },
-    )
-    op(
-        da,
-        "shipment_update",
-        source={"ref": "<cfc-1@forwarder.example.invalid>", "sender": "Crescent Rehearsal Freight"},
-        shipment_id=shipment["id"],
-        data={
-            "status": "at_customs",
-            "expected_on": "2026-09-19",
-            "required_documents": [{"kind": "import_permit", "owed_by_org_id": world["us"]["id"]}],
-        },
-    )
-    return contract, shipment
 
 
 class TestWhoseMoveItIs:
@@ -559,33 +443,3 @@ class TestTheSender:
         assert slip.sender == "Crescent Rehearsal Freight"
         created = next(e for e in entries if e.sentence.startswith("Shipment recorded"))
         assert created.sender == "Kanem Foods Rehearsal"
-
-
-# ---- the page fixture ------------------------------------------------------
-
-
-class _ProgramContextMiddleware:
-    def __init__(self, get_response):
-        self.get_response = get_response
-
-    def __call__(self, request):
-        request.labs_context = {"program_id": PROGRAM} if request.user.is_authenticated else {}
-        return self.get_response(request)
-
-
-@pytest.fixture
-def client_in_program(client, monkeypatch, settings, da, django_user_model):
-    from connect_labs.supply_chain import views  # noqa: F401  -- bind before patching
-    from connect_labs.supply_chain.procurement import views as procurement_views  # noqa: F401
-
-    sophie = django_user_model.objects.create_user(
-        username="sophie-reh", email="sophie@example.invalid", name="Sophie", password="x"
-    )
-    settings.MIDDLEWARE = [*settings.MIDDLEWARE, f"{__name__}._ProgramContextMiddleware"]
-    monkeypatch.setattr("connect_labs.supply_chain.views._access", lambda request: da)
-    monkeypatch.setattr("connect_labs.supply_chain.procurement.views._access", lambda request: da)
-    client.force_login(sophie)
-    session = client.session
-    session["labs_oauth"] = {"organization_data": {"programs": [{"id": PROGRAM, "name": "Connect-RUTF"}]}}
-    session.save()
-    return client

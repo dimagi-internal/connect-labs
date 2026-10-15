@@ -7,10 +7,8 @@ import re
 import pytest
 
 from connect_labs.supply_chain.tests import test_tracking_reality as reality
+from connect_labs.supply_chain.tests.rehearsal_world import _question, _set, _tender_page
 from connect_labs.supply_chain.tests.test_tracking_reality import op
-from connect_labs.supply_chain.tests.test_unanswered_round_batch1 import _tender_page
-from connect_labs.supply_chain.tests.test_unanswered_round_batch2 import _question
-from connect_labs.supply_chain.tests.test_unanswered_round_v11_duty_terms import _set
 
 da = reality.da
 world = reality.world

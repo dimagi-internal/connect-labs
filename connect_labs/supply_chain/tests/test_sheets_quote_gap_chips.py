@@ -19,8 +19,8 @@ from connect_labs.supply_chain import moves
 from connect_labs.supply_chain.procurement.views import _freight_in_price
 from connect_labs.supply_chain.templatetags.supply_chain_extras import gap_tone, supplies
 from connect_labs.supply_chain.tests import test_tracking_reality as reality
+from connect_labs.supply_chain.tests.rehearsal_world import _tender_page
 from connect_labs.supply_chain.tests.test_tracking_reality import PROGRAM, _kanem_quote, op
-from connect_labs.supply_chain.tests.test_unanswered_round_batch1 import _tender_page
 
 da = reality.da
 world = reality.world

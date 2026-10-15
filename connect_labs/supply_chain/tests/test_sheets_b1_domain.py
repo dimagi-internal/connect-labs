@@ -335,3 +335,49 @@ class TestOwedDocumentsSayWhatHoldsTheShipment:
         body = _order(client_in_program, contract["id"])
         assert _text(re.search(r'data-testid="owed-open-count"[^>]*>(.*?)</span>', body).group(1)) == "— 1 open"
         assert 'data-testid="owed-holding-count"' not in body
+
+
+# ---- the reply that went out is said on the supplier's row (judged batch 4)
+
+
+def _northgate(moves, world):
+    return next(m for m in moves if m.supplier_id == world["northgate"]["id"])
+
+
+class TestAReplySentIsSaidOnTheRow:
+    def test_a_reply_marked_sent_is_said_under_the_waiting_row(self, da, world):
+        _, asked = _northgate_asked_questions(da, world)
+        _we_answered(da, asked, sent_on="2026-09-22")
+
+        status = tender_status(_tender(world), TODAY, program_id=PROGRAM)
+        assert _northgate(status["theirs"], world).note == "reply sent 22 Sep"
+        # Read without being handed anything, the same.
+        _, theirs = rules.tender_moves(_tender(world), TODAY)
+        assert _northgate(theirs, world).note == "reply sent 22 Sep"
+
+    def test_an_answer_only_marked_resolved_is_not_a_reply_sent(self, da, world):
+        _, asked = _northgate_asked_questions(da, world)
+        op(
+            da,
+            "commitment_resolve",
+            commitment_id=asked["id"],
+            resolution="Answered by phone.",
+            resolved_on="2026-09-22",
+        )
+
+        _, theirs = rules.tender_moves(_tender(world), TODAY)
+        northgate = _northgate(theirs, world)
+        assert northgate.state == rules.AWAITING_QUOTE
+        assert northgate.note == ""
+
+    def test_the_tender_page_shows_reply_sent_on_the_row(self, client_in_program, da, world):
+        _, asked = _northgate_asked_questions(da, world)
+        _we_answered(da, asked, sent_on="2026-09-22")
+
+        body = client_in_program.get(
+            reverse("supply_chain:procurement_tender_detail", args=[world["tender"]["id"]])
+        ).content.decode()
+        rail = body.split('data-testid="on-suppliers"', 1)[1].split("</section>", 1)[0]
+        row = next(r for r in re.split(r'data-testid="move"', rail) if NORTHGATE in r)
+        assert "Answered · awaiting quote" in row
+        assert re.search(r'data-testid="move-note"[^>]*>reply sent 22 Sep<', row)

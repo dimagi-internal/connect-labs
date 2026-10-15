@@ -25,8 +25,8 @@ from connect_labs.supply_chain.models import Contract, Document, Tender
 from connect_labs.supply_chain.procurement import status
 from connect_labs.supply_chain.procurement.services.pricing import program_duty_exemption
 from connect_labs.supply_chain.tests import test_tracking_reality as reality
+from connect_labs.supply_chain.tests.rehearsal_world import _quote
 from connect_labs.supply_chain.tests.test_tracking_reality import PROGRAM, _contract, op
-from connect_labs.supply_chain.tests.test_unanswered_round_v11_duty_terms import _quote
 
 da = reality.da
 world = reality.world
