@@ -41,7 +41,7 @@ scenes:
   persona: lead
   pace: teach
   title: "The tender"
-  url: /supply/procurement/tenders/TENDER_ID/?program_id=PROGRAM_ID
+  url: /supply/procurement/tenders/362/?program_id=10136
   show: "The tender for 1,200 phones delivered to the Kilifi office: three distributors asked, two quoted, one silent after a reminder."
   concept_claim: "The tender page shows the 1,200 phones asked for, the three distributors asked, the two quotes with their price and terms, and the one who stayed silent after a reminder."
   provenance: "supply_chain procurement tender_detail, phones demo"
@@ -53,25 +53,26 @@ scenes:
   actions:
   - kind: wait_for
     target: text:Compare quotes
+    seconds: 60
   - kind: hold
-    seconds: 3.0
+    seconds: 5.0
   - kind: scroll_to
     target: text:2 of 3 answered
   - kind: hover
     target: text:Pwani Mobile Distributors
-    seconds: 3.5
+    seconds: 6.0
   - kind: hover
     target: text:Bahari Electronics Wholesale
-    seconds: 3.0
+    seconds: 5.0
   - kind: hover
     target: text:Lakeview Devices
-    seconds: 3.0
+    seconds: 5.0
   - kind: snapshot
 - id: phones-compare
   persona: lead
   pace: teach
   title: "Comparing the quotes"
-  url: /supply/procurement/tenders/TENDER_ID/compare/?program_id=PROGRAM_ID
+  url: /supply/procurement/tenders/362/compare/?program_id=10136
   show: "The comparison: each quote's price per phone and delivery term side by side; the cheaper one is ex-works with freight left open."
   concept_claim: "The comparison sets the two quotes side by side per phone and shows the cheaper one is collected from Mombasa with freight left open."
   provenance: "supply_chain procurement compare view, phones demo"
@@ -81,49 +82,53 @@ scenes:
   actions:
   - kind: wait_for
     target: text:Compare quotes
+    seconds: 60
   - kind: hold
-    seconds: 2.5
+    seconds: 4.0
   - kind: hover
     target: text:EXW Mombasa
-    seconds: 3.0
+    seconds: 5.0
   - kind: hover
     target: text:DAP Kilifi
-    seconds: 2.5
+    seconds: 4.0
   - kind: snapshot
 - id: phones-order
   persona: lead
   pace: teach
   title: "Receiving and checking the phones"
-  url: /supply/orders/ORDER_ID/?program_id=PROGRAM_ID
-  show: "The order: half paid in advance, delivered, 1,194 accepted and 6 rejected at inspection, and an invoice for all 1,200."
-  concept_claim: "The order shows the advance paid, the delivery received with 1,194 phones accepted and 6 rejected because they would not power on, and an invoice that still bills 1,200."
+  url: /supply/orders/322/?program_id=10136
+  show: "The order: half paid in advance, delivered, 1,194 of 1,200 received with 6 refused at inspection, billed for all 1,200, and what is safe to pay now."
+  concept_claim: "The order shows the advance paid, 1,194 of 1,200 phones received with 6 refused at inspection, an invoice that still bills 1,200, and the balance that is safe to pay for what was kept."
   provenance: "supply_chain OrderDetailView, phones demo"
   narrative: >-
     This is a quick overview of how we receive the phones. We paid half in advance, and the
     order was delivered to our office. At inspection we accepted 1,194 phones and rejected
-    six that would not switch on. The invoice still bills all 1,200, so the order shows the
-    difference before we pay the balance.
+    six that would not switch on. The invoice still bills all 1,200, so the order works out
+    what is safe to pay for the 1,194 we kept.
   actions:
   - kind: wait_for
     target: text:TCN-PO-0001
+    seconds: 60
   - kind: hold
-    seconds: 3.0
-  - kind: scroll_to
-    target: text:rejected
-  - kind: hover
-    target: text:rejected
     seconds: 4.0
-  - kind: scroll_to
-    target: text:PMD-INV-0931
   - kind: hover
-    target: text:PMD-INV-0931
-    seconds: 4.0
+    target: text:1,194 / 1,200
+    seconds: 5.5
+  - kind: hover
+    target: text:6 refused
+    seconds: 5.0
+  - kind: hover
+    target: text:Billed vs agreed
+    seconds: 5.0
+  - kind: hover
+    target: text:safe to pay now
+    seconds: 6.5
   - kind: snapshot
 - id: phones-workers
   persona: lead
   pace: teach
   title: "Phones with each field worker"
-  url: /supply/workers/?program_id=PROGRAM_ID
+  url: /supply/workers/?program_id=10136
   show: "The Workers view: six field workers, the phones each was issued, handed over and still holds, and one whose own count is a phone short."
   concept_claim: "The Workers view shows, for each of six field workers, the phones issued, handed over at visits and still held, and flags the one whose own count is one phone fewer than the record."
   provenance: "supply_chain WorkersView, phones demo"
@@ -135,20 +140,21 @@ scenes:
   actions:
   - kind: wait_for
     target: text:chw-amani
+    seconds: 60
   - kind: hold
-    seconds: 3.0
+    seconds: 6.5
   - kind: hover
     target: text:chw-amani
-    seconds: 4.0
+    seconds: 9.0
   - kind: hover
     target: text:chw-faraji
-    seconds: 5.0
+    seconds: 11.0
   - kind: snapshot
 - id: phones-flow
   persona: lead
   pace: teach
   title: "Where every phone went"
-  url: /supply/flow/?program_id=PROGRAM_ID
+  url: /supply/flow/?program_id=10136
   show: "Where it went for the phones: arrived, in the office store, with workers, handed over at visits; played week by week."
   concept_claim: "Where it went accounts for every phone that arrived as held in the office store, held by a field worker, or handed over at a visit, and plays it week by week."
   provenance: "supply_chain StockFlowView, phones demo"
@@ -160,41 +166,43 @@ scenes:
   actions:
   - kind: wait_for
     target: text:Given out at visits
+    seconds: 60
   - kind: hold
-    seconds: 3.0
+    seconds: 5.0
   - kind: hover
     target: text:Arrived
-    seconds: 3.0
+    seconds: 5.0
   - kind: hover
     target: text:With workers
-    seconds: 3.0
+    seconds: 5.0
   - kind: click
     target: css:#flow-play
   - kind: hold
-    seconds: 7.0
+    seconds: 11.0
   - kind: snapshot
 - id: phones-map
   persona: lead
   pace: teach
   title: "The villages on the map"
-  url: /supply/map/?program_id=PROGRAM_ID
+  url: /supply/map/?program_id=10136
   show: "The programme map: the office store in Kilifi, the field workers drawn in their three villages, and phones moving from the store to them."
   concept_claim: "The map draws the office store and each field worker where their handover visits were, with the phones that moved between them."
   provenance: "supply_chain ProgrammeMapView, phones demo"
   narrative: >-
-    This is a quick overview of where the phones are. Our office store is in Kilifi, and
+    This is a quick overview of how we see where the phones are. Our office store is in Kilifi, and
     each field worker is drawn in the village where their handover visits happened. The
     lines are phones moving from the store to the workers, and the panel on the right sums
     up what is still open.
   actions:
   - kind: wait_for
     target: text:Where the supplies are
+    seconds: 60
   - kind: hold
-    seconds: 5.0
+    seconds: 8.0
   - kind: hover
     target: text:Movement,
-    seconds: 5.0
+    seconds: 8.0
   - kind: hover
     target: text:places across 1 program
-    seconds: 6.0
+    seconds: 9.5
   - kind: snapshot
