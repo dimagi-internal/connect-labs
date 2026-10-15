@@ -194,6 +194,10 @@ def test_the_system_escape_hatch_is_greppable():
         # Seeds the example organisations that run their own procurement (#2458): operator-run through
         # its command, writes only the labs-only programmes it registers and refuses a label filed elsewhere.
         "supply_chain/demo/org_procurement.py",
+        # The phones demo seeder: operator-run through its command; writes only the labs-only programme it
+        # registers through org_procurement.ensure_programme (which refuses a label filed elsewhere), and
+        # its --reset purge refuses any programme that is not a registered labs-only one.
+        "supply_chain/demo/phones.py",
         # The clone's tabs and home pages: run by that seeder; refuses the same way before it writes a setting.
         "supply_chain/demo/clone_pages.py",
         # The alert beat task: no user, reads only programmes that already

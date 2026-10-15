@@ -1,0 +1,242 @@
+name: supply-rutf-stock-at-scale
+narrative: A programme that buys therapeutic food and gets it to children sees, on one set of screens,
+  every procurement, where the stock is, how long each field worker's stock lasts, where every sachet
+  went, and what the next order must cover.
+base_url: https://labs.connect.dimagi.com
+review_mode: autonomous
+style: recorded
+tagline: Every sachet, from the tender to the child
+video_pace: medium
+video_viewport_width: 1440
+video_viewport_height: 900
+personas:
+  manager:
+    name: Programme manager
+    role: Runs the RUTF supply for a nutrition programme
+    color: '#3843D0'
+    intro: Buys the RUTF, gets it to field workers, and answers for every sachet.
+    org: Programme
+cuts:
+- id: procurements
+  title: Every procurement in one place
+  scenes:
+  - procurements-overview
+- id: buying
+  title: Buying RUTF
+  scenes:
+  - tender-suppliers
+  - tender-compare
+- id: where-it-is
+  title: Where the supplies are
+  scenes:
+  - supply-map
+- id: with-workers
+  title: Stock with every field worker
+  scenes:
+  - stock-review
+- id: where-it-went
+  title: Where every sachet went
+  scenes:
+  - where-it-went
+- id: next-order
+  title: Planning the next order
+  scenes:
+  - forecast
+scenes:
+- id: procurements-overview
+  persona: manager
+  title: Every procurement in one place
+  url: /supply/overview/?program_id=10112
+  show: 'The programme''s overview: one line per tender and order, with its stage, who it waits on and
+    when it last changed.'
+  concept_claim: The overview lists the programme's open tender and its order in transit, each with its
+    stage, the suppliers it is waiting on, and when it last changed.
+  provenance: connect_labs/supply_chain overview (DomainHomeView), programme 10112
+  narrative: This is a quick overview of how we see every RUTF procurement in one place. Each line is
+    a tender or an order, with the stage it has reached. This tender is collecting quotes, and it names
+    the two suppliers who have not answered yet. This order is on the road, with the day it is expected.
+    Each line also says when it last changed and how.
+  actions:
+  - kind: wait_for
+    target: text:Procurements
+  - kind: hold
+    seconds: 3.6
+  - kind: hover
+    target: text:Collecting quotes
+    seconds: 4.8
+  - kind: hover
+    target: text:Silent
+    seconds: 4.8
+  - kind: hover
+    target: text:In transit
+    seconds: 4.8
+  - kind: hover
+    target: text:Last change
+    seconds: 3.6
+  - kind: snapshot
+  pace: teach
+- id: tender-suppliers
+  persona: manager
+  title: The tender's suppliers
+  url: /supply/procurement/tenders/356/?program_id=10112
+  show: The open tender for 679 cartons to Maiduguri; its Suppliers sheet with two quotes and two silent
+    suppliers who were reminded.
+  concept_claim: The tender page shows who was asked, who answered with what price and terms, and who
+    is silent and when they were last chased.
+  provenance: supply_chain procurement tender_detail, tender 356
+  narrative: This is a quick overview of how we buy RUTF. We asked four suppliers to quote 679 cartons
+    delivered to Maiduguri. Two have quoted, with their price and terms in one row each, and the two who
+    are silent have had a reminder.
+  actions:
+  - kind: wait_for
+    target: text:Compare quotes
+  - kind: hold
+    seconds: 2.4
+  - kind: scroll_to
+    target: text:2 of 4 answered
+  - kind: hover
+    target: text:Sahel Nutrition Works
+    seconds: 4.3
+  - kind: hover
+    target: text:1st reminder
+    seconds: 4.3
+  - kind: snapshot
+  pace: teach
+- id: tender-compare
+  persona: manager
+  title: Comparing quotes on one basis
+  url: /supply/procurement/tenders/356/compare/?program_id=10112
+  show: 'The comparison: each quote on a row, its landed price per carton, and the fact a quote left out
+    marked to ask.'
+  concept_claim: The comparison puts each quote on a landed price per carton and marks the facts a quote
+    left out, such as sachets per carton, as the next thing to ask.
+  provenance: supply_chain procurement compare view, tender 356
+  narrative: Comparing the quotes puts each one on a landed price per carton. Where a quote leaves out
+    a fact, like how many sachets are in a carton, it says so, and that is what we ask the supplier next.
+  actions:
+  - kind: wait_for
+    target: text:Landed
+  - kind: hold
+    seconds: 5.7
+  - kind: hover
+    target: text:needs sachets per carton
+    seconds: 7.5
+  - kind: snapshot
+  pace: teach
+- id: supply-map
+  persona: manager
+  title: Where the supplies are
+  url: /supply/map/?program_id=10112
+  show: 'The programme map: the central store, the partner store, twenty field workers, the stock moving
+    between them, and the panel that says what needs attention.'
+  concept_claim: The map draws the central store, the partner store and each field worker where they work,
+    the stock that moved between them in the last 90 days, and a count of what needs attention.
+  provenance: supply_chain portfolio ProgrammeMapView, programme 10112
+  narrative: This is a quick overview of how we see where the supplies are. Our central store feeds a
+    partner store, and the partner store resupplies twenty field workers, each drawn where they work.
+    The lines are stock moving over the last 90 days, and red marks a place with something open. The panel
+    on the right sums it up for the whole programme.
+  actions:
+  - kind: wait_for
+    target: text:Where the supplies are
+  - kind: hold
+    seconds: 5.7
+  - kind: hover
+    target: text:Movement,
+    seconds: 5.7
+  - kind: hover
+    target: text:Has a blocker
+    seconds: 2.9
+  - kind: hover
+    target: text:places across 1 program
+    seconds: 4.8
+  - kind: snapshot
+  pace: teach
+- id: stock-review
+  persona: manager
+  title: Stock with every field worker
+  url: /supply/views/stock-review/?program_id=10112
+  show: 'Stock review: one bar per worker for how many days their RUTF lasts at their own pace, soonest
+    first, then the check of what each worker counted against the records.'
+  concept_claim: Stock review shows how many days each worker's RUTF lasts at their own last-14-day pace,
+    soonest first, and sets each worker's own count against what the records say they hold.
+  provenance: supply_stock_review workflow pinned as the programme's Stock review tab
+  narrative: This is a quick overview of how we track the stock every field worker holds. Each worker's
+    RUTF goes down as their visits record the sachets given to a child. Each bar is how many days that
+    stock lasts at the worker's own pace, and the ones that run out first are at the top. Below, what
+    each worker counted is set against our records, and any gap shows in red.
+  actions:
+  - kind: wait_for
+    target: text:How long it lasts
+  - kind: hold
+    seconds: 4.7
+  - kind: hover
+    target: text:How long it lasts
+    seconds: 9.3
+  - kind: scroll_to
+    target: text:Does it add up?
+  - kind: hold
+    seconds: 9.3
+  - kind: snapshot
+  pace: teach
+- id: where-it-went
+  persona: manager
+  title: Where every sachet went
+  url: /supply/flow/?program_id=10112
+  show: 'Where it went: what arrived, what is in the stores, with workers and given out at visits, drawn
+    as one flow from the partner store through each worker to the visits; then it is played week by week.'
+  concept_claim: Where it went accounts for every sachet that arrived, as held in the stores, held by
+    workers, given out at visits, or lost or sent elsewhere, and plays that flow week by week.
+  provenance: supply_chain StockFlowView ('Where it went')
+  narrative: This is a quick overview of how we account for every sachet. Everything that arrived is either
+    in our stores, with a field worker, or given out at a visit, and nothing is marked lost. The diagram
+    follows it from the partner store, through each worker, to the visits. When I press play, it builds
+    up week by week.
+  actions:
+  - kind: wait_for
+    target: text:Given out at visits
+  - kind: hold
+    seconds: 2.8
+  - kind: hover
+    target: text:Arrived
+    seconds: 3.7
+  - kind: hover
+    target: text:Lost or sent elsewhere
+    seconds: 2.8
+  - kind: click
+    target: css:#flow-play
+  - kind: hold
+    seconds: 9.3
+  - kind: snapshot
+  pace: teach
+- id: forecast
+  persona: manager
+  title: Planning the next order
+  url: /supply/views/forecast/?program_id=10112
+  show: 'The forecast: children in treatment from their visits, the rest of each child''s course at the
+    protocol, need week by week against the stock in the network, a higher-enrolment scenario, and the
+    workers who run dry first.'
+  concept_claim: The forecast counts the children in treatment from their visits, needs the rest of each
+    course at the 168-sachet protocol, lays that need week by week against the network's stock including
+    the order in transit, and re-runs it when new enrolments rise.
+  provenance: supply_stock_forecast workflow pinned as the programme's Forecast tab
+  narrative: This is a quick overview of how we plan the next order. The forecast counts the children
+    in treatment from their visits, and what is left of each child's course at the protocol of 168 sachets.
+    Week by week it sets that need against the stock in our network, counting the order on the road. Here
+    I see what happens if new enrolments rise by half.
+  actions:
+  - kind: wait_for
+    target: text:Week by week
+  - kind: hold
+    seconds: 4.2
+  - kind: hover
+    target: text:Rest of each child
+    seconds: 7.0
+  - kind: scroll_to
+    target: text:Week by week
+  - kind: click
+    target: text:150%
+  - kind: hold
+    seconds: 8.4
+  - kind: snapshot
+  pace: teach

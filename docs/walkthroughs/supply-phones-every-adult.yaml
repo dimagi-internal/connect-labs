@@ -1,0 +1,200 @@
+name: supply-phones-every-adult
+narrative: >-
+  A local organisation buys a phone for every adult in three villages: it tenders to local
+  distributors, awards on a complete quote, inspects what arrives, issues the phones to its field
+  workers, and every handover visit takes one phone off that worker's stock.
+base_url: https://labs.connect.dimagi.com
+review_mode: autonomous
+style: recorded
+tagline: One phone for every adult, accounted for from the tender to the handover
+video_pace: medium
+video_viewport_width: 1440
+video_viewport_height: 900
+# Filmed on the invented Tumaini programme seeded by `manage.py supply_seed_phones`
+# (connect_labs/supply_chain/demo/phones.py). Every organisation, village, person,
+# price and IMEI in it is invented. Record with --storage-state pointing at a labs session.
+personas:
+  lead:
+    name: Programme lead
+    role: Runs a phone distribution for a local organisation
+    color: '#3843D0'
+    intro: Buys the phones, gets them to field workers, and answers for every handset.
+    org: LLO
+cuts:
+- id: buying-phones
+  title: Buying the phones
+  scenes: [phones-tender, phones-compare]
+- id: receiving
+  title: Receiving and checking the phones
+  scenes: [phones-order]
+- id: with-workers
+  title: Phones with each field worker
+  scenes: [phones-workers]
+- id: where-they-went
+  title: Where every phone went
+  scenes: [phones-flow]
+- id: on-the-map
+  title: The villages on the map
+  scenes: [phones-map]
+scenes:
+- id: phones-tender
+  persona: lead
+  pace: teach
+  title: "The tender"
+  url: /supply/procurement/tenders/TENDER_ID/?program_id=PROGRAM_ID
+  show: "The tender for 1,200 phones delivered to the Kilifi office: three distributors asked, two quoted, one silent after a reminder."
+  concept_claim: "The tender page shows the 1,200 phones asked for, the three distributors asked, the two quotes with their price and terms, and the one who stayed silent after a reminder."
+  provenance: "supply_chain procurement tender_detail, phones demo"
+  narrative: >-
+    This is a quick overview of how we buy phones for every adult in three villages. We
+    counted 1,200 adults, so we asked three local distributors to quote 1,200 phones to our
+    specification, delivered to our office. Two quoted, and one stayed silent after a
+    reminder.
+  actions:
+  - kind: wait_for
+    target: text:Compare quotes
+  - kind: hold
+    seconds: 3.0
+  - kind: scroll_to
+    target: text:2 of 3 answered
+  - kind: hover
+    target: text:Pwani Mobile Distributors
+    seconds: 3.5
+  - kind: hover
+    target: text:Bahari Electronics Wholesale
+    seconds: 3.0
+  - kind: hover
+    target: text:Lakeview Devices
+    seconds: 3.0
+  - kind: snapshot
+- id: phones-compare
+  persona: lead
+  pace: teach
+  title: "Comparing the quotes"
+  url: /supply/procurement/tenders/TENDER_ID/compare/?program_id=PROGRAM_ID
+  show: "The comparison: each quote's price per phone and delivery term side by side; the cheaper one is ex-works with freight left open."
+  concept_claim: "The comparison sets the two quotes side by side per phone and shows the cheaper one is collected from Mombasa with freight left open."
+  provenance: "supply_chain procurement compare view, phones demo"
+  narrative: >-
+    Side by side, the cheaper quote is collected from Mombasa with the freight left open,
+    so we award the one delivered to our office.
+  actions:
+  - kind: wait_for
+    target: text:Compare quotes
+  - kind: hold
+    seconds: 2.5
+  - kind: hover
+    target: text:EXW Mombasa
+    seconds: 3.0
+  - kind: hover
+    target: text:DAP Kilifi
+    seconds: 2.5
+  - kind: snapshot
+- id: phones-order
+  persona: lead
+  pace: teach
+  title: "Receiving and checking the phones"
+  url: /supply/orders/ORDER_ID/?program_id=PROGRAM_ID
+  show: "The order: half paid in advance, delivered, 1,194 accepted and 6 rejected at inspection, and an invoice for all 1,200."
+  concept_claim: "The order shows the advance paid, the delivery received with 1,194 phones accepted and 6 rejected because they would not power on, and an invoice that still bills 1,200."
+  provenance: "supply_chain OrderDetailView, phones demo"
+  narrative: >-
+    This is a quick overview of how we receive the phones. We paid half in advance, and the
+    order was delivered to our office. At inspection we accepted 1,194 phones and rejected
+    six that would not switch on. The invoice still bills all 1,200, so the order shows the
+    difference before we pay the balance.
+  actions:
+  - kind: wait_for
+    target: text:TCN-PO-0001
+  - kind: hold
+    seconds: 3.0
+  - kind: scroll_to
+    target: text:rejected
+  - kind: hover
+    target: text:rejected
+    seconds: 4.0
+  - kind: scroll_to
+    target: text:PMD-INV-0931
+  - kind: hover
+    target: text:PMD-INV-0931
+    seconds: 4.0
+  - kind: snapshot
+- id: phones-workers
+  persona: lead
+  pace: teach
+  title: "Phones with each field worker"
+  url: /supply/workers/?program_id=PROGRAM_ID
+  show: "The Workers view: six field workers, the phones each was issued, handed over and still holds, and one whose own count is a phone short."
+  concept_claim: "The Workers view shows, for each of six field workers, the phones issued, handed over at visits and still held, and flags the one whose own count is one phone fewer than the record."
+  provenance: "supply_chain WorkersView, phones demo"
+  narrative: >-
+    This is a quick overview of how we track the phones each field worker holds. Each worker
+    was issued phones for their village. Every handover visit records the adult and the
+    phone's IMEI, and takes that phone off the worker's stock. This worker's own count is
+    one phone short of our records, so that is the one we follow up.
+  actions:
+  - kind: wait_for
+    target: text:chw-amani
+  - kind: hold
+    seconds: 3.0
+  - kind: hover
+    target: text:chw-amani
+    seconds: 4.0
+  - kind: hover
+    target: text:chw-faraji
+    seconds: 5.0
+  - kind: snapshot
+- id: phones-flow
+  persona: lead
+  pace: teach
+  title: "Where every phone went"
+  url: /supply/flow/?program_id=PROGRAM_ID
+  show: "Where it went for the phones: arrived, in the office store, with workers, handed over at visits; played week by week."
+  concept_claim: "Where it went accounts for every phone that arrived as held in the office store, held by a field worker, or handed over at a visit, and plays it week by week."
+  provenance: "supply_chain StockFlowView, phones demo"
+  narrative: >-
+    This is a quick overview of how we account for every phone. Each phone that arrived is
+    in our office store, with a field worker, or handed to an adult at a visit. The diagram
+    follows them from the store, through each worker, to the handovers, and when I press
+    play it builds up week by week.
+  actions:
+  - kind: wait_for
+    target: text:Given out at visits
+  - kind: hold
+    seconds: 3.0
+  - kind: hover
+    target: text:Arrived
+    seconds: 3.0
+  - kind: hover
+    target: text:With workers
+    seconds: 3.0
+  - kind: click
+    target: css:#flow-play
+  - kind: hold
+    seconds: 7.0
+  - kind: snapshot
+- id: phones-map
+  persona: lead
+  pace: teach
+  title: "The villages on the map"
+  url: /supply/map/?program_id=PROGRAM_ID
+  show: "The programme map: the office store in Kilifi, the field workers drawn in their three villages, and phones moving from the store to them."
+  concept_claim: "The map draws the office store and each field worker where their handover visits were, with the phones that moved between them."
+  provenance: "supply_chain ProgrammeMapView, phones demo"
+  narrative: >-
+    This is a quick overview of where the phones are. Our office store is in Kilifi, and
+    each field worker is drawn in the village where their handover visits happened. The
+    lines are phones moving from the store to the workers, and the panel on the right sums
+    up what is still open.
+  actions:
+  - kind: wait_for
+    target: text:Where the supplies are
+  - kind: hold
+    seconds: 5.0
+  - kind: hover
+    target: text:Movement,
+    seconds: 5.0
+  - kind: hover
+    target: text:places across 1 program
+    seconds: 6.0
+  - kind: snapshot
