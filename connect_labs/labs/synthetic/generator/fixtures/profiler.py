@@ -88,6 +88,40 @@ def profile_over_limit_rate(all_visits: list[dict]) -> float:
     return min(0.5, round(n / len(all_visits), 3))
 
 
+def _profile_presence_by_form(visits: list[dict], min_visits: int = 5) -> dict[str, dict[str, float]]:
+    """For every field the source records, the share of each form's visits it is on
+    (see BeneficiaryCohort.presence_by_form). Forms with fewer than ``min_visits``
+    visits are left out; a field is listed under a form only where that form records
+    it. Paths, forms and shares only -- no values."""
+    per_form: Counter = Counter()
+    hits: dict[str, Counter] = defaultdict(Counter)
+
+    def walk(node: Any, prefix: str, form: str, seen: set[str]) -> None:
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if k.startswith(("@", "#")) or k == "meta":
+                    continue
+                walk(v, f"{prefix}.{k}" if prefix else k, form, seen)
+        elif not isinstance(node, list) and node not in (None, ""):
+            seen.add(prefix)
+
+    for v in visits:
+        fj = v.get("form_json") or {}
+        form = str((fj.get("form") or {}).get("@name") or "")
+        if not form:
+            continue
+        per_form[form] += 1
+        seen: set[str] = set()
+        walk(fj.get("form") or {}, "form", form, seen)
+        for path in seen:
+            hits[path][form] += 1
+    return {
+        path: {form: round(c / per_form[form], 4) for form, c in sorted(by.items()) if per_form[form] >= min_visits}
+        for path, by in sorted(hits.items())
+        if any(per_form[form] >= min_visits for form in by)
+    }
+
+
 def profile_status_by_flag(all_visits: list[dict]) -> dict[str, dict[str, float]]:
     """The source's status mix for its flagged and for its unflagged visits (see
     Manifest.status_by_flag); a branch with fewer than 5 visits is left out, and the
@@ -1165,6 +1199,9 @@ def profile(
         "field_distributions": field_dists,
         "progression": "flat",
     }
+    presence_by_form = _profile_presence_by_form(user_visits)
+    if presence_by_form:
+        cohort["presence_by_form"] = presence_by_form
     if correlation is not None:
         cohort["correlation"] = correlation
 

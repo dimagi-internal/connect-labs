@@ -326,6 +326,10 @@ class BeneficiaryCohort(BaseModel):
     repeat_groups: dict[str, RepeatGroupSpec] = Field(default_factory=dict)
     # Per-entity longitudinal behaviour. None → legacy i.i.d. per-visit draws.
     longitudinal: LongitudinalSpec | None = None
+    # path -> form name -> share of that form's visits the source records the path on
+    # (profiler._profile_presence_by_form). Mirror replay fills a field on a form only
+    # at this rate, never on a form the source does not record it on.
+    presence_by_form: dict[str, dict[str, float]] = Field(default_factory=dict)
     # Human names for the cohort's entities, written to each visit's `entity_name`
     # (the field Connect itself carries the case name in). Entity N (1-based) takes
     # the Nth name; past the end the list repeats with a " (2)", " (3)" suffix so
