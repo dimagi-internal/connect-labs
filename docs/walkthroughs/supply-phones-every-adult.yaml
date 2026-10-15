@@ -197,6 +197,14 @@ scenes:
   - kind: wait_for
     target: text:Where the supplies are
     seconds: 60
+  # The map draws its markers and lines on the canvas well after the page text
+  # is up (slow under headless SwiftShader), and only repaints once the pointer
+  # touches it. This pause is a load wait, so it is cut from the rendered video.
+  - kind: hover
+    target: css:.mapboxgl-canvas
+    seconds: 1.0
+  - kind: wait_for
+    target: '35000'
   - kind: hold
     seconds: 3.0
   - kind: hover
