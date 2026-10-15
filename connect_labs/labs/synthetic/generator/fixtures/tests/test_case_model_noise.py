@@ -1,5 +1,7 @@
 """A few real data-entry slips must not set the noise on every synthetic weighing."""
 
+import collections
+import datetime as dt
 import random
 
 from connect_labs.labs.synthetic.generator.fixtures import case_model as cm
@@ -27,7 +29,7 @@ def test_residual_spread_ignores_a_few_typos():
 
 def test_synthetic_weights_stay_plausible_when_the_source_has_typos():
     pool = _pool()
-    out, _report = cm.synthesize_case_pool(pool, seed=11)
+    out, _report = cm.synthesize_case_pool(pool, seed=11, replay_numeric=False)
     weights = [v["values"]["form.w"] for case in out for v in case["visits"] if "form.w" in v.get("values", {})]
     assert weights
     implausible = sum(1 for w in weights if w < 800 or w > 5000) / len(weights)
@@ -55,7 +57,7 @@ def test_a_rare_outcome_survives_modelling():
         pool.append({"owner": f"flw_{c % 10:03d}", "start_date": "2026-06-01", "visits": visits})
     real = sum(1 for c in pool if c["visits"][-1]["cats"]["form.child_alive"] == "no")
 
-    out, _report = cm.synthesize_case_pool(pool, seed=1)
+    out, _report = cm.synthesize_case_pool(pool, seed=1, replay_numeric=False)
     died = [c for c in out if any((v.get("cats") or {}).get("form.child_alive") == "no" for v in c["visits"])]
 
     assert 0.6 * real <= len(died) <= 1.4 * real, f"{len(died)} synthetic deaths for {real} real"
@@ -124,7 +126,7 @@ def test_a_modelled_programme_keeps_the_sources_shape():
     batch: span_28 fell from 100% to 78% and copying from 17% to 2%."""
     real_pool = _kmc_like_pool()
     real = _shares(real_pool)
-    out, _report = cm.synthesize_case_pool(real_pool, seed=2)
+    out, _report = cm.synthesize_case_pool(real_pool, seed=2, replay_numeric=False)
     syn = _shares(out)
     assert syn["span_28"] >= real["span_28"] - 0.1, (real, syn)
     assert abs(syn["copied"] - real["copied"]) <= 0.08, (real, syn)
@@ -159,7 +161,7 @@ def test_a_common_outcome_and_an_end_only_field_end_the_case():
             )
         pool.append({"owner": f"flw_{c % 8:03d}", "start_date": "2026-03-02", "visits": visits})
 
-    out, _report = cm.synthesize_case_pool(pool, seed=4)
+    out, _report = cm.synthesize_case_pool(pool, seed=4, replay_numeric=False)
 
     for path in ("form.status", "form.discontinuation.reason"):
         ended = mid = 0
@@ -170,3 +172,349 @@ def test_a_common_outcome_and_an_end_only_field_end_the_case():
             mid += any(i < len(vals) - 1 for i in hits)
         assert mid == 0, f"{path}: {mid} cases discharged mid-case"
         assert 0.45 <= ended / len(out) <= 0.75, f"{path}: {ended / len(out):.0%} discharged, source 60%"
+
+
+def test_a_schedule_goes_with_its_forms():
+    """Two kinds of case with the same number of visits: registered on day 0 and followed
+    to day 28, or first seen on a follow-up, registered later and closed early. A schedule
+    drawn by length alone mixed them, and half the late-registered cases ran to day 28
+    (one KMC opportunity read 60% "lost by day 28" against the source's 39%, 2026-10-14)."""
+    rng = random.Random(12)
+    pool = []
+    for c in range(400):
+        if c % 2:
+            forms, days = ["Register", "Visit", "Visit", "Visit"], [0, 7, 14, rng.choice([27, 28, 29])]
+        else:
+            forms, days = ["Visit", "Register", "Visit", "Visit"], [0, rng.choice([9, 10, 11]), 12, 14]
+        visits = [
+            {"day": d, "form": f, "values": {"form.w": 1800.0 + 20 * d + rng.gauss(0, 10)}}
+            for f, d in zip(forms, days)
+        ]
+        pool.append({"owner": f"flw_{c % 8:03d}", "start_date": "2026-03-02", "visits": visits})
+
+    out, _report = cm.synthesize_case_pool(pool, seed=6, replay_numeric=False)
+
+    for first, short in (("Register", False), ("Visit", True)):
+        spans = [
+            c["visits"][-1]["day"] - c["visits"][0]["day"]
+            for c in out
+            if len(c["visits"]) == 4 and c["visits"][0]["form"] == first
+        ]
+        assert len(spans) > 50
+        wrong = sum(1 for s in spans if (s > 20) == short) / len(spans)
+        assert wrong < 0.05, f"{first}-first cases: {wrong:.0%} on the other kind's schedule"
+
+
+def test_a_copy_held_in_two_fields_is_copied_once():
+    """The birth weight held twice (two forms ask it) and copied into the enrolment weight
+    in 40% of cases: each of the two pairs is equal in 40% of cases, and copying each on
+    its own share made the enrolment weight a copy for ~64% of them (2026-10-14)."""
+    rng = random.Random(21)
+    pool = []
+    for c in range(600):
+        bw = float(round(rng.uniform(1300, 2300)))
+        enrol = bw if rng.random() < 0.4 else float(round(bw * rng.uniform(0.88, 0.99)))
+        values = {"form.bw": bw, "form.bw2": bw, "form.enrol": enrol, "form.w": enrol}
+        visits = [{"day": 0, "form": "Register", "values": values}] + [
+            {"day": d, "form": "Visit", "values": {"form.w": enrol + 20 * d + rng.gauss(0, 10)}} for d in (7, 14)
+        ]
+        pool.append({"owner": f"flw_{c % 6:03d}", "start_date": "2026-03-02", "visits": visits})
+
+    out, _report = cm.synthesize_case_pool(pool, seed=8, replay_numeric=False)
+
+    firsts = [c["visits"][0]["values"] for c in out]
+    both = [v for v in firsts if "form.bw" in v and "form.enrol" in v]
+    copied = sum(1 for v in both if abs(v["form.bw"] - v["form.enrol"]) < 1) / len(both)
+    assert 0.3 <= copied <= 0.5, f"{copied:.0%} copied, source 40%"
+
+
+def test_readings_take_the_grid_the_source_writes_on_and_only_that():
+    """Half the workers write weights in whole hundreds; the rest weigh to the gram. The
+    clone keeps both habits, per worker; and a source weighed to the gram throughout,
+    whose values repeat only by chance, is not put on any grid (the first attempt at
+    this, snapping to any value seen in K_MIN cases, moved gram readings hundreds of
+    grams onto chance repeats)."""
+
+    def hundreds(pool, owners=None):
+        vals = [
+            v["values"]["form.w"]
+            for c in pool
+            if owners is None or c["owner"] in owners
+            for v in c["visits"]
+            if "form.w" in v["values"]
+        ]
+        return sum(1 for x in vals if x % 100 == 0) / len(vals)
+
+    real_pool = _kmc_like_pool(n_cases=900)
+    out, _report = cm.synthesize_case_pool(real_pool, seed=3, replay_numeric=False)
+    rounders, precise = {"flw_000", "flw_001", "flw_002"}, {"flw_003", "flw_004", "flw_005"}
+    assert hundreds(out, rounders) >= 0.85, hundreds(out, rounders)
+    assert hundreds(out, precise) <= 0.05, hundreds(out, precise)
+
+    gram_pool = [c for c in _kmc_like_pool(n_cases=900) if c["owner"] in precise]
+    model = cm.fit_case_model([dict(c, visits=list(c["visits"])) for c in gram_pool])
+    assert not model.numeric["form.w"].grid or max(model.numeric["form.w"].grid_share.values()) < 0.02
+
+
+def test_a_field_is_recorded_on_the_sources_rhythm():
+    """Workers visit every two or three days but weigh only when the last weighing was
+    five or more days back -- about half the visits, never two close ones. Recorded per
+    form alone, the clone weighed at visits days apart (EHA: 70 weighing gaps of 2-3
+    days in the first three weeks against the source's 23, 2026-10-14)."""
+    rng = random.Random(4)
+    pool = []
+    for c in range(400):
+        day, last, visits = 0, None, []
+        for i in range(10):
+            values = {}
+            if i == 0 or day - last >= 5:
+                values["form.w"] = 1800.0 + 20 * day + rng.gauss(0, 10)
+                last = day
+            visits.append({"day": day, "form": "Register" if i == 0 else "Visit", "values": values})
+            day += rng.choice([2, 3])
+        pool.append({"owner": f"flw_{c % 8:03d}", "start_date": "2026-03-02", "visits": visits})
+
+    def close_share(cases):
+        gaps = []
+        for case in cases:
+            days = [v["day"] for v in case["visits"] if "form.w" in v.get("values", {})]
+            gaps += [b - a for a, b in zip(days, days[1:])]
+        return sum(1 for g in gaps if g < 4) / len(gaps)
+
+    out, _report = cm.synthesize_case_pool(pool, seed=5, replay_numeric=False)
+    assert close_share(pool) == 0
+    assert close_share(out) < 0.1, f"{close_share(out):.0%} of synthetic weighings follow one under 4 days earlier"
+
+
+def test_a_reading_saved_under_two_names_stays_one_reading():
+    """The app saves the weight it took onto the case too: form.case.update.w is form.w
+    on every visit that has it, and never without it. Modelled as two fields, each drew
+    its own noise and presence, and a report reading the first one present picked up
+    an independent copy -- extra, unrounded weighings with impossible steps between them
+    (KMC, 2026-10-14: the copy equals the reading on 100% of the source's visits)."""
+    rng = random.Random(13)
+    pool = []
+    for c in range(300):
+        visits = []
+        for i, day in enumerate((0, 7, 14, 21)):
+            values = {}
+            if i == 0 or rng.random() < 0.6:
+                w = float(round(1800 + 20 * day + rng.gauss(0, 15)))
+                values = {"form.w": w, "form.case.update.w": w}
+            visits.append({"day": day, "form": "Register" if i == 0 else "Visit", "values": values})
+        pool.append({"owner": f"flw_{c % 6:03d}", "start_date": "2026-03-02", "visits": visits})
+
+    out, _report = cm.synthesize_case_pool(pool, seed=9, replay_numeric=False)
+
+    both = alone = differ = 0
+    for case in out:
+        for v in case["visits"]:
+            vals = v.get("values", {})
+            a, b = vals.get("form.w"), vals.get("form.case.update.w")
+            if a is not None and b is not None:
+                both += 1
+                differ += a != b
+            elif (a is None) != (b is None):
+                alone += 1
+    assert both > 300
+    assert differ == 0, f"{differ} of {both} visits carry two different readings"
+    assert alone == 0, f"{alone} visits record one name without the other"
+
+
+def test_each_kind_of_case_keeps_its_own_schedule_length():
+    """Half the cases are seen twice a few days apart; the rest five times, nearly all to
+    day 28 (one in ten closes early).
+    A schedule matched on a mean gap drawn across both kinds gave the long cases the
+    short ones' gaps: 30% of five-visit cases ended before day 28 against 5% in the
+    source (KMC EHA, 2026-10-14)."""
+    rng = random.Random(17)
+    pool = []
+    for c in range(600):
+        if c % 2:
+            days = [0, rng.choice([1, 2, 3])]
+        elif c % 20 == 0:  # a few five-visit cases really are short
+            days = [0, 2, 4, 6, 8]
+        else:
+            days = [
+                0,
+                rng.choice([6, 7, 8]),
+                rng.choice([13, 14, 15]),
+                rng.choice([20, 21, 22]),
+                rng.choice([28, 29, 30]),
+            ]
+        visits = [
+            {
+                "day": d,
+                "form": "Register" if i == 0 else "Visit",
+                "values": {"form.w": 1800.0 + 20 * d + rng.gauss(0, 10)},
+            }
+            for i, d in enumerate(days)
+        ]
+        pool.append({"owner": f"flw_{c % 6:03d}", "start_date": "2026-03-02", "visits": visits})
+
+    out, _report = cm.synthesize_case_pool(pool, seed=12, replay_numeric=False)
+
+    long_cases = [c for c in out if len(c["visits"]) == 5]
+    assert len(long_cases) > 200
+    short = sum(1 for c in long_cases if c["visits"][-1]["day"] - c["visits"][0]["day"] < 27) / len(long_cases)
+    assert short < 0.2, f"{short:.0%} of five-visit cases end before day 27; the source has 10%"
+
+
+def test_a_second_name_is_recorded_only_on_the_forms_that_carry_it():
+    """The case copy (form.case.update.referred) is the union of two form questions: the
+    registration checklist's and the follow-up's. Each is the copy under another name,
+    but only on its own form. Written wherever the copy was, the registration question
+    turned up on every follow-up (KMC PIPN, 2026-10-14: 18% of visits against 5.6%)."""
+    rng = random.Random(21)
+    pool = []
+    for c in range(300):
+        visits = []
+        for i, day in enumerate((0, 7, 14, 21)):
+            form = "Register" if i == 0 else "Visit"
+            cats = {}
+            if rng.random() < 0.5:
+                val = rng.choice(["yes", "no"])
+                own = "form.reg.referred" if form == "Register" else "form.visit.referred"
+                cats = {own: val, "form.case.update.referred": val}
+            visits.append({"day": day, "form": form, "values": {}, "cats": cats})
+        pool.append({"owner": f"flw_{c % 6:03d}", "start_date": "2026-03-02", "visits": visits})
+
+    out, _report = cm.synthesize_case_pool(pool, seed=4, replay_numeric=False)
+
+    def share(cases, path, form):
+        vs = [v for case in cases for v in case["visits"] if v.get("form") == form]
+        return sum(path in (v.get("cats") or {}) for v in vs) / len(vs)
+
+    assert share(out, "form.reg.referred", "Visit") == 0
+    assert share(out, "form.visit.referred", "Register") == 0
+    for path, form in (("form.reg.referred", "Register"), ("form.visit.referred", "Visit")):
+        assert abs(share(out, path, form) - share(pool, path, form)) < 0.08, (path, share(out, path, form))
+    for case in out:
+        for v in case["visits"]:
+            cats = v.get("cats") or {}
+            for own in ("form.reg.referred", "form.visit.referred"):
+                if own in cats:
+                    assert cats[own] == cats.get("form.case.update.referred")
+
+
+def test_a_slope_from_two_close_readings_is_not_taken_for_growth():
+    """Babies gain about 20 g a day, and a scale reads to +-80 g. A slope fitted to two
+    weighings a day apart is mostly that error (+-110 g a day), and drawn as a case's
+    growth across a 40-day case it put clones at 1.3 kg and 5.7 kg where the source
+    sits between 2.1 and 3.7 (KMC EHA, 2026-10-15). Each case's slope counts for what
+    its readings can tell, and the scale's error is read off cases a line cannot fit
+    exactly."""
+    rng = random.Random(17)
+    pool = []
+    for c in range(400):
+        start_w = rng.gauss(2000, 150)
+        gain = rng.gauss(20, 4)
+        if c % 2:
+            days = [0, rng.choice([1, 2])]
+        else:
+            days = [0, 7, 14, 21, 28, 35]
+        visits = [
+            {"day": d, "form": "Visit", "values": {"form.w": float(round(start_w + gain * d + rng.gauss(0, 80)))}}
+            for d in days
+        ]
+        pool.append({"owner": f"flw_{c % 8:03d}", "start_date": "2026-03-02", "visits": visits})
+
+    out, _report = cm.synthesize_case_pool(pool, seed=6, replay_numeric=False)
+
+    def spread(cases, last_day_min):
+        ws = sorted(
+            v["values"]["form.w"]
+            for case in cases
+            if case["visits"][-1]["day"] >= last_day_min
+            for v in case["visits"]
+            if "form.w" in v.get("values", {}) and v["day"] >= 28
+        )
+        return ws[len(ws) // 10], ws[9 * len(ws) // 10]
+
+    (r10, r90), (s10, s90) = spread(pool, 28), spread(out, 28)
+    assert s10 >= r10 - 150 and s90 <= r90 + 150, f"late weights {s10:.0f}-{s90:.0f}, source {r10:.0f}-{r90:.0f}"
+
+
+def test_a_data_entry_slip_is_a_slip_not_a_trajectory():
+    """One weighing in fifty is a slip -- 2,500 typed as 25,000. Fitted into its case's
+    line, a slip made a trajectory of it: slopes of 1,400 g a day, intercepts of -19 kg,
+    and clones whose tenth of weights sat at 1.6 kg and top tenth at 9.5 kg where the
+    source's ran 2.1 to 3.7 (KMC EHA, 2026-10-15). A slip is taken out of its case's
+    trend and comes back as a slip, at the source's rate."""
+    rng = random.Random(23)
+    pool = []
+    readings = slips = 0
+    for c in range(400):
+        start_w, gain = rng.gauss(2000, 150), rng.gauss(20, 4)
+        visits = []
+        for d in (0, 7, 14, 21, 28):
+            w = float(round((start_w + gain * d + rng.gauss(0, 60)) / 10) * 10)
+            if rng.random() < 0.02:
+                w *= 10
+                slips += 1
+            readings += 1
+            visits.append({"day": d, "form": "Visit", "values": {"form.w": w}})
+        pool.append({"owner": f"flw_{c % 8:03d}", "start_date": "2026-03-02", "visits": visits})
+
+    out, _report = cm.synthesize_case_pool(pool, seed=8, replay_numeric=False)
+
+    ws = sorted(v["values"]["form.w"] for case in out for v in case["visits"] if "form.w" in v["values"])
+    wild = sum(1 for w in ws if w > 8000) / len(ws)
+    plain = [w for w in ws if w <= 8000]
+    assert plain[len(plain) // 10] > 1700 and plain[9 * len(plain) // 10] < 3000, (
+        plain[len(plain) // 10],
+        plain[9 * len(plain) // 10],
+    )
+    assert abs(wild - slips / readings) < 0.012, f"{wild:.1%} wild readings, source {slips / readings:.1%}"
+
+
+def test_a_case_still_open_when_the_source_was_read_stays_open():
+    """A case still being visited when the source was read has a schedule cut off by that
+    day. Placed on another case's start, or moved earlier, the cut lands before the
+    source's last day, and a baby still in follow-up reads as lost: 61% lost by day 28
+    on the clone of an opportunity still enrolling, against 20% (KMC PIPN, 2026-10-15)."""
+    rng = random.Random(31)
+    end = dt.date(2026, 6, 30).toordinal()
+    pool = []
+    for c in range(400):
+        start = end - rng.randint(0, 120)
+        days = [d for d in range(0, 43, 7) if start + d <= end]
+        visits = [{"day": d, "form": "Visit", "values": {"form.w": 2000.0 + 20 * d}} for d in days]
+        pool.append(
+            {"owner": f"flw_{c % 8:03d}", "start_date": dt.date.fromordinal(start).isoformat(), "visits": visits}
+        )
+
+    out, _report = cm.synthesize_case_pool(pool, seed=14)
+
+    def lost(cases, as_of):
+        eligible = lost = 0
+        for case in cases:
+            start = dt.date.fromisoformat(case["start_date"]).toordinal()
+            seen = [start + int(v["day"]) for v in case["visits"] if start + int(v["day"]) <= as_of]
+            if seen and as_of - seen[0] >= 28:
+                eligible += 1
+                lost += seen[-1] - seen[0] < 28
+        return lost / eligible
+
+    as_of = end - 3
+    assert abs(lost(out, as_of) - lost(pool, as_of)) < 0.03, (lost(out, as_of), lost(pool, as_of))
+    assert all(dt.date.fromisoformat(c["start_date"]).toordinal() + int(c["visits"][-1]["day"]) <= end for c in out)
+
+
+def test_a_grid_is_found_in_decimal_readings_and_copies_respect_precision():
+    """Readings in kg to 0.1 sit on a grid like grams in hundreds; a float key looked
+    up as k * unit (15 * 0.1 is not 1.5) gave decimal fields no grid at all. And two
+    decimal constants within 1 of each other are not a copy of each other."""
+    rng = random.Random(41)
+    obs = [round(rng.gauss(2.2, 0.4), 1) if rng.random() < 0.8 else round(rng.gauss(2.2, 0.4), 3) for _ in range(600)]
+    value_cases = collections.Counter(obs)
+    grid, shares = cm._fit_grid(obs, {}, value_cases, 0.001)
+    assert grid and all(abs(g * 10 - round(g * 10)) < 1e-9 for g in grid), grid[:5]
+    assert shares["*"] > 0.5
+
+    numeric = {
+        "form.bw": cm._PathModel(kind="const", whole=False, places=2, lo=1.0, hi=3.0),
+        "form.ew": cm._PathModel(kind="const", whole=False, places=2, lo=1.0, hi=3.0),
+    }
+    consts = [(f"flw_{i % 4}", {"form.bw": 1.45, "form.ew": 1.80}) for i in range(20)]
+    assert cm._fit_copies(consts, numeric) == {}

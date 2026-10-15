@@ -98,10 +98,46 @@ def test_the_saved_profile_holds_no_real_first_visit_date(pool):
     assert not ({series["start_date"] for series in pool} & real_starts)
 
 
-def test_the_saved_profile_holds_no_real_weight_series(pool):
-    real_series = {tuple(1500.0 + 100 * i + 13 * e for i in range(3)) for e in range(8)}
-    shipped = {tuple(v["values"]["form.weight"] for v in s["visits"]) for s in pool}
-    assert not (shipped & real_series)
+def test_the_saved_profile_replays_each_real_weight_series_once(pool):
+    """A case's numbers are replayed from one real case (Jonathan, 2026-10-15: a weight
+    series identifies nobody); each real case donates once, so the cohort's series are
+    the source's, neither duplicated nor dropped."""
+    real_series = sorted(tuple(1500.0 + 100 * i + 13 * e for i in range(3)) for e in range(8))
+    shipped = sorted(tuple(v["values"]["form.weight"] for v in s["visits"]) for s in pool)
+    assert shipped == real_series
+
+
+def test_a_number_that_names_someone_never_reaches_the_profile():
+    """Numbers are replayed exactly, so a phone or an id the app types as a number must
+    never be one of them -- refused by its name, or by its values (long runs of digits)."""
+    visits = _source()
+    for i, v in enumerate(visits):
+        v["form_json"]["form"]["mothers_phone_number"] = float(256700000000 + 7919 * (i // 3))
+        v["form_json"]["form"]["registration_code"] = float(400000000 + 104729 * (i // 3))
+    app = _app()
+    app["deliver_app"]["modules"][0]["forms"][0]["questions"] += [
+        {"value": "/data/mothers_phone_number", "type": "Int", "options": []},
+        {"value": "/data/registration_code", "type": "Int", "options": []},
+    ]
+    manifest = yaml.safe_load(
+        profile(
+            opportunity_id=10_009,
+            user_visits=visits,
+            user_data=[],
+            opportunity_detail={"name": "KMC"},
+            app_structure=app,
+            case_timelines=True,
+            noise_seed=3,
+        )
+    )
+    cohort = manifest["beneficiary_cohorts"][0]
+    pool = cohort["longitudinal"]["transplant_pool"]
+    paths = {p for s in pool for v in s["visits"] for p in (v.get("values") or {})}
+    assert "form.weight" in paths
+    assert not paths & {"form.mothers_phone_number", "form.registration_code"}, paths
+    # ... nor anywhere else in the profile: a distribution's lo/hi are observed values.
+    assert not set(cohort["field_distributions"]) & {"form.mothers_phone_number", "form.registration_code"}
+    assert "256700000000" not in yaml.dump(manifest) and "400000000" not in yaml.dump(manifest)
 
 
 def test_growth_is_modelled_from_the_source(pool):

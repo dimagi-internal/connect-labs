@@ -248,9 +248,13 @@ def _format_forced(value: Any, kind: str | None) -> Any:
         # licenses reshaping a value.
         return value
     try:
-        return round(float(value), 3)
+        number = round(float(value), 3)
     except (TypeError, ValueError):
         return value
+    # A whole number is written whole. CommCare submits "2", never "2.0", and a form
+    # reader compares the text: a visit counter replayed as 2.0 read "2.0" and matched
+    # none of the source's "1".."5" (KMC GHI, 2026-10-15).
+    return int(number) if number.is_integer() else number
 
 
 def _sample_count(count: dict[int, float], rng: random.Random) -> int:
@@ -381,7 +385,11 @@ def fill_form_json(
     correlated_values: dict[str, Any] | None = None,
     forced_values: dict[str, Any] | None = None,
     mirror: bool = False,
+    owned_paths: frozenset[str] | set[str] = frozenset(),
 ) -> dict[str, Any]:
+    # ``owned_paths``: fields a modelled pool decides (engine._modelled_paths). Where the
+    # pool left one blank the source would have, so it is never filled from a marginal --
+    # a follow-up's danger-sign checklist drawn onto registrations at its overall rate.
     anomaly_paths = {a.field_path for a in anomalies_for_visit if a.field_path}
     # Persona overrides take precedence over cohort distributions. Building a
     # merged map once avoids re-checking the persona on every field.
@@ -420,12 +428,28 @@ def fill_form_json(
         written_forced.add(path)
     covered_paths |= written_forced
 
+    # Whether the source records a field on THIS form (cohort.presence_by_form), drawn
+    # once per field: None where the profile has no per-form view (the visit's form
+    # unknown, or an older profile), and then the field's overall null_rate stands.
+    # A registration question filled at its overall rate landed on follow-ups the app
+    # never shows it on (cause of premature birth on 100% of KMC follow-ups, 2026-10-15).
+    form_name = forced.get("form.@name")
+    by_form = getattr(cohort, "presence_by_form", {}) or {}
+
+    def recorded_here(path: str) -> bool | None:
+        if not (mirror and form_name and by_form):
+            return None
+        return rng.random() < by_form.get(path, {}).get(form_name, 0.0)
+
     relevance_groups = getattr(cohort, "relevance_groups", {}) or {}
     for spec in _relevance_ordered(schema.questions, relevance_groups):
         if _under_repeat(spec.json_path, repeat_bases):
             continue  # owned by a repeat array, emitted below
         if spec.json_path in written_forced:
             continue  # already set from the transplanted series
+        if spec.json_path in owned_paths:
+            covered_paths.add(spec.json_path)
+            continue  # the pool left it blank on this visit
         if _under_repeat(spec.json_path, _irrelevant_bases(out, relevance_groups)):
             # The XForm would not have shown this question, so a real submission
             # cannot carry it. Filling it anyway is what let a not-held meeting
@@ -440,9 +464,12 @@ def fill_form_json(
             # invent a value. Inventing at duplicate/sibling numeric paths buries the
             # real per-entity trajectory when an analysis coalesces by field name (#713).
             continue
+        here = recorded_here(spec.json_path)
+        if here is False:
+            continue
         if spec.json_path in correlated:
             dist = effective.get(spec.json_path)
-            if dist is not None and getattr(dist, "null_rate", 0.0) and rng.random() < dist.null_rate:
+            if here is None and dist is not None and getattr(dist, "null_rate", 0.0) and rng.random() < dist.null_rate:
                 continue
             _set_nested(out, spec.json_path, correlated[spec.json_path])
             continue
@@ -464,7 +491,7 @@ def fill_form_json(
             continue
         if dist is None:
             value = _default_for_kind(spec, rng)
-        elif getattr(dist, "null_rate", 0.0) and rng.random() < dist.null_rate:
+        elif here is None and getattr(dist, "null_rate", 0.0) and rng.random() < dist.null_rate:
             continue  # omit this field — matches real missing-data rate
         elif isinstance(dist, CategoricalDistribution):
             value = _categorical_value(dist, rng)
@@ -492,16 +519,21 @@ def fill_form_json(
     for path, dist in effective.items():
         if path in covered_paths or path in consumed_keys or _under_repeat(path, repeat_bases):
             continue
+        if path in owned_paths:
+            continue
         if _under_repeat(path, irrelevant):
             continue  # same gate as above — an orphan under a hidden group is still hidden
         if mirror and isinstance(dist, (NormalDistribution, UniformDistribution)):
             continue  # mirror: numeric orphans come only from the transplant (forced)
+        here = recorded_here(path)
+        if here is False:
+            continue
         if path in correlated:
-            if getattr(dist, "null_rate", 0.0) and rng.random() < dist.null_rate:
+            if here is None and getattr(dist, "null_rate", 0.0) and rng.random() < dist.null_rate:
                 continue
             _set_nested(out, path, correlated[path])
             continue
-        if getattr(dist, "null_rate", 0.0) and rng.random() < dist.null_rate:
+        if here is None and getattr(dist, "null_rate", 0.0) and rng.random() < dist.null_rate:
             continue
         if isinstance(dist, CategoricalDistribution):
             _set_nested(out, path, _categorical_value(dist, rng))

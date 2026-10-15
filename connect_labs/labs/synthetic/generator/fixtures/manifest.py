@@ -326,6 +326,10 @@ class BeneficiaryCohort(BaseModel):
     repeat_groups: dict[str, RepeatGroupSpec] = Field(default_factory=dict)
     # Per-entity longitudinal behaviour. None → legacy i.i.d. per-visit draws.
     longitudinal: LongitudinalSpec | None = None
+    # path -> form name -> share of that form's visits the source records the path on
+    # (profiler._profile_presence_by_form). Mirror replay fills a field on a form only
+    # at this rate, never on a form the source does not record it on.
+    presence_by_form: dict[str, dict[str, float]] = Field(default_factory=dict)
     # Human names for the cohort's entities, written to each visit's `entity_name`
     # (the field Connect itself carries the case name in). Entity N (1-based) takes
     # the Nth name; past the end the list repeats with a " (2)", " (3)" suffix so
@@ -710,6 +714,16 @@ class Manifest(BaseModel):
     # Capped at 0.5 rather than 1.0: over_limit is an edge condition, and a manifest
     # asking for a majority of visits to be over-cap is a typo, not a scenario.
     over_limit_rate: float = Field(ge=0, le=0.5, default=0.0)
+    # The source's own status mix, for flagged and for unflagged visits:
+    # {"flagged": {status: share}, "unflagged": {...}} (profiler.profile_status_by_flag).
+    # When present it decides a visit's status in place of the fixed rules in
+    # status.decide_visit_status. Connect flags a visit and still approves it: at KMC
+    # EHA 98% of flagged visits were approved or over the cap, where the fixed rule
+    # made them 60% pending and 40% rejected -- 17% of the clone's visits left out of
+    # every report that counts valid visits.
+    status_by_flag: dict[
+        Literal["flagged", "unflagged"], dict[Literal["approved", "pending", "rejected", "over_limit"], float]
+    ] = Field(default_factory=dict)
 
     @classmethod
     def from_yaml(cls, source: str | bytes) -> Manifest:

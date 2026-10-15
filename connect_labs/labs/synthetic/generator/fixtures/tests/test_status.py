@@ -200,3 +200,31 @@ def test_profiler_does_not_split_one_reason_across_key_orderings():
     dist = _profile_flag_reasons([{"flagged": True, "flag_reason": a}, {"flagged": True, "flag_reason": b}])
     assert len(dist) == 1
     assert next(iter(dist.values())) == 1.0
+
+
+def test_a_flagged_visit_takes_the_sources_own_status_mix():
+    """Connect flags a visit and still approves it: at KMC EHA 98% of flagged visits were
+    approved or over the cap. A fixed 60% pending / 40% rejected left 17% of the clone's
+    visits out of every report that counts valid visits (2026-10-15)."""
+    from connect_labs.labs.synthetic.generator.fixtures.profiler import profile_status_by_flag
+
+    source = (
+        [{"flagged": True, "status": "approved"}] * 56
+        + [{"flagged": True, "status": "over_limit"}] * 43
+        + [{"flagged": True, "status": "rejected"}] * 1
+        + [{"flagged": False, "status": "approved"}] * 61
+        + [{"flagged": False, "status": "over_limit"}] * 39
+    )
+    learned = profile_status_by_flag(source)
+    rng = random.Random(4)
+    flagged = [
+        decide_visit_status(persona=_p(1.0), has_anomaly=False, rng=rng, status_by_flag=learned) for _ in range(2000)
+    ]
+    valid = sum(s.status in ("approved", "over_limit") for s in flagged) / len(flagged)
+    assert valid > 0.97, valid
+    assert all(s.flagged for s in flagged)
+    plain = [
+        decide_visit_status(persona=_p(0.0), has_anomaly=False, rng=rng, status_by_flag=learned) for _ in range(2000)
+    ]
+    over = sum(s.status == "over_limit" for s in plain) / len(plain)
+    assert abs(over - 0.39) < 0.04, over  # above the 0.5-capped over_limit_rate's reach is fine too

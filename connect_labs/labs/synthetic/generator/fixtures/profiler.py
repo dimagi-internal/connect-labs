@@ -88,6 +88,56 @@ def profile_over_limit_rate(all_visits: list[dict]) -> float:
     return min(0.5, round(n / len(all_visits), 3))
 
 
+def _profile_presence_by_form(visits: list[dict], min_visits: int = 5) -> dict[str, dict[str, float]]:
+    """For every field the source records, the share of each form's visits it is on
+    (see BeneficiaryCohort.presence_by_form). Forms with fewer than ``min_visits``
+    visits are left out; a field is listed under a form only where that form records
+    it. Paths, forms and shares only -- no values."""
+    per_form: Counter = Counter()
+    hits: dict[str, Counter] = defaultdict(Counter)
+
+    def walk(node: Any, prefix: str, form: str, seen: set[str]) -> None:
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if k.startswith(("@", "#")) or k == "meta":
+                    continue
+                walk(v, f"{prefix}.{k}" if prefix else k, form, seen)
+        elif not isinstance(node, list) and node not in (None, ""):
+            seen.add(prefix)
+
+    for v in visits:
+        fj = v.get("form_json") or {}
+        form = str((fj.get("form") or {}).get("@name") or "")
+        if not form:
+            continue
+        per_form[form] += 1
+        seen: set[str] = set()
+        walk(fj.get("form") or {}, "form", form, seen)
+        for path in seen:
+            hits[path][form] += 1
+    return {
+        path: {form: round(c / per_form[form], 4) for form, c in sorted(by.items()) if per_form[form] >= min_visits}
+        for path, by in sorted(hits.items())
+        if any(per_form[form] >= min_visits for form in by)
+    }
+
+
+def profile_status_by_flag(all_visits: list[dict]) -> dict[str, dict[str, float]]:
+    """The source's status mix for its flagged and for its unflagged visits (see
+    Manifest.status_by_flag); a branch with fewer than 5 visits is left out, and the
+    generator's fixed rule stands for it."""
+    counts: dict[str, Counter] = {"flagged": Counter(), "unflagged": Counter()}
+    for v in all_visits:
+        status = v.get("status")
+        if status in ("approved", "pending", "rejected", "over_limit"):
+            counts["flagged" if v.get("flagged") else "unflagged"][status] += 1
+    return {
+        branch: {status: round(n / sum(c.values()), 4) for status, n in sorted(c.items())}
+        for branch, c in counts.items()
+        if sum(c.values()) >= 5
+    }
+
+
 def _profile_flw_personas(
     visits_by_flw: dict[str, list[dict]],
     *,
@@ -519,6 +569,24 @@ def _is_identifier_path(path: str) -> bool:
     leaf = path.rsplit(".", 1)[-1].lower()
     segments = {seg for seg in re.split(r"[^a-z0-9]+", leaf) if seg}
     return bool(segments & _IDENTIFIER_LEAF_TOKENS)
+
+
+def _is_numeric_identifier(visits: list[dict], path: str) -> bool:
+    """A number that names someone rather than measures them: a phone, a national id,
+    a GPS coordinate. The pool replays a case's numbers exactly (case_model.py), and a
+    modelled one is drawn between neighbouring real values, so such a field must never
+    reach it: refused by its leaf name (_IDENTIFIER_LEAF_TOKENS), or by its values --
+    a long run of digits on half its readings or more, whatever it is called."""
+    if _is_identifier_path(path):
+        return True
+    seen = digits = 0
+    for v in visits:
+        raw = _extract_nested(v.get("form_json") or {}, path)
+        if raw in (None, ""):
+            continue
+        seen += 1
+        digits += bool(_IDENTIFIER_VALUE_RE.match(str(raw).strip().split(".")[0]))
+    return seen > 0 and digits >= 0.5 * seen
 
 
 def _discover_replayable_text_paths(visits: list[dict], candidate_paths: set[str]) -> tuple[set[str], set[str]]:
@@ -1072,6 +1140,9 @@ def profile(
     personas = _profile_flw_personas(visits_by_flw, curate=curate, opp_jitter=opp_jitter)
     timeline = _profile_timeline(user_visits, visits_by_flw)
     field_dists = _profile_field_distributions(user_visits, form_json_paths)
+    # A number that names someone is never profiled, in any block: a distribution's
+    # lo/hi are observed percentiles, so a phone number would ship in the manifest.
+    field_dists = {p: d for p, d in field_dists.items() if not _is_numeric_identifier(user_visits, p)}
 
     kinds: dict[str, str] = {}
     computed_paths: set[str] = set()
@@ -1086,7 +1157,11 @@ def profile(
         # auto-discovered, so nothing real is left for the engine's randint(0,10)
         # stub to fill (issue #713 #4). Already-profiled paths are left untouched.
         for path, kind in kinds.items():
-            if kind in {"int", "decimal"} and path not in field_dists:
+            if (
+                kind in {"int", "decimal"}
+                and path not in field_dists
+                and not _is_numeric_identifier(user_visits, path)
+            ):
                 extra = _profile_field_distributions(user_visits, [path])
                 if path in extra:
                     field_dists[path] = extra[path]
@@ -1131,6 +1206,9 @@ def profile(
         "field_distributions": field_dists,
         "progression": "flat",
     }
+    presence_by_form = _profile_presence_by_form(user_visits)
+    if presence_by_form:
+        cohort["presence_by_form"] = presence_by_form
     if correlation is not None:
         cohort["correlation"] = correlation
 
@@ -1145,7 +1223,11 @@ def profile(
     # to persona ids (the same volume ranking _profile_flw_personas uses), so the
     # pool references the manifest's personas and never leaks a real username.
     if mirror or case_timelines:
-        numeric_paths = {p for p, d in field_dists.items() if d.get("distribution") in ("normal", "uniform")}
+        numeric_paths = {
+            p
+            for p, d in field_dists.items()
+            if d.get("distribution") in ("normal", "uniform") and not _is_numeric_identifier(user_visits, p)
+        }
         # Date leaves (e.g. child_dob) carry the longitudinal axis for analyses that
         # compute age = visit_date - dob. They are never numeric, so the transplant
         # pool must capture them explicitly — driven by the schema's date-typed
@@ -1205,11 +1287,13 @@ def profile(
                 continue
             pool.append({**series, "owner": persona})
         if pool:
-            # The pool above is every real case exactly. It is used only to FIT the
-            # case models, here at profile time, and the manifest carries a pool
-            # SAMPLED from them: every case in it is new (case_model.py). The manifest
-            # is what gets saved (bundles in Drive, returned over MCP, served from
-            # generated opps), so it never holds a real case, perturbed or not.
+            # The pool above is every real case exactly. It FITS the case models, here
+            # at profile time, and the manifest carries a pool sampled from them: each
+            # case's numbers replay one real case's, every answer is drawn from the
+            # models (case_model.py). The manifest is what gets saved (bundles in
+            # Drive, returned over MCP, served from generated opps), so it never holds
+            # a real answer, id, name or date -- and no identifier-shaped number
+            # (_is_numeric_identifier) is profiled at all.
             computed_whole = {
                 p
                 for p in computed_paths
@@ -1253,6 +1337,7 @@ def profile(
         # than left to default) so a clone of an opp that never hit its cap records 0.0
         # as a measurement, not as an absence.
         "over_limit_rate": profile_over_limit_rate(user_visits),
+        "status_by_flag": profile_status_by_flag(user_visits),
     }
     geography = _profile_geography(
         visits_by_flw, seed=noise_seed if noise_seed is not None else _mirror_noise_seed(opportunity_id)

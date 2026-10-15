@@ -28,7 +28,9 @@ labs-only. The exception is a synthetic registration on a **real** opp id (below
 
 ## Creating a synthetic opp
 
-Synthetic data is never real. A synthetic opp is made in two steps: **profile** a
+Synthetic data is never a real case: no real answer, id, name or date reaches it,
+though a case's numeric series (weighings and the like) are a real case's, replayed
+(see below). A synthetic opp is made in two steps: **profile** a
 real opportunity into a saved statistical profile, then **generate** a synthetic
 data set from that profile into a labs-only opp. Real rows are read only while
 profiling, on the server; they never land in a folder a synthetic opp serves.
@@ -95,16 +97,23 @@ What a profile holds: per-field distributions (including the real minimum,
 maximum and spread, which is expected), FLW personas, timing, and, with
 `case_timelines=true`, a pool of **modelled cases** so a clone follows cases over
 time the way the source does. Every worker keeps its number of cases and their
-lengths, and each case's growth, visit spacing, per-case constants (birth weight,
-date of birth) and outcomes are drawn from models fitted to the real cases. Outcomes
-are tied to the case's growth, so a slow grower dies as often as in the source. No
-real case is in the pool:
+lengths. Each case's NUMBERS -- its weighings, birth weight, ages, counters and date
+offsets, on the visit days and forms they were recorded on -- are one real case's,
+from the same worker and of the same length, each real case used once: a number
+series identifies nobody, and modelled ones lost the rounding, data-entry slips and
+recording rhythm the reports read off them (2026-10-15). Everything else -- outcomes,
+danger signs, referrals and every other answer -- is drawn from models fitted to the
+real cases, conditioned on the case's own growth, so a slow grower dies as often as
+in the source. What the pool never holds:
 
-- The real cases are used only to fit the models, at profile time.
+- A real answer: the real cases are used only to fit the answer models, at profile time.
+- A number that names someone: a numeric field named like an identifier (phone, id,
+  gps...) or whose values are mostly long digit runs is not profiled at all.
 - A categorical answer seen in fewer than 5 cases is never modelled, nor is a field
   recorded in fewer than 5 cases.
 - Start dates are smoothed.
-- A sampled case that lands on a real one is redrawn.
+- With `replay_numeric=False` (the fully modelled path), a sampled case that lands on
+  a real one is redrawn.
 
 The code is `labs/synthetic/generator/fixtures/case_model.py`. `mirror=true` is the
 old name for the same switch. Profiles saved before 2026-10 in mirror mode held each

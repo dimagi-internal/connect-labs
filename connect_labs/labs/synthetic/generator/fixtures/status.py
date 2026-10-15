@@ -101,6 +101,7 @@ def decide_visit_status(
     rng: random.Random,
     flag_reason_distribution: dict[str, float] | None = None,
     over_limit_rate: float = 0.0,
+    status_by_flag: dict[str, dict[str, float]] | None = None,
 ) -> VisitStatus:
     """Draw a visit's status.
 
@@ -110,6 +111,9 @@ def decide_visit_status(
     not a quality signal, so a flag-driven archetype must not shift when it rises. Many
     opportunities never hit their cap, so 0.0 (no over_limit at all) is the default and
     a legitimate steady state.
+
+    ``status_by_flag`` (the source's own status mix for flagged and for unflagged
+    visits, see Manifest.status_by_flag) replaces both fixed rules where it is given.
     """
     if has_anomaly:
         return VisitStatus(
@@ -119,12 +123,27 @@ def decide_visit_status(
             review_status="pending",
         )
     if rng.random() < persona.flag_rate:
+        learned = (status_by_flag or {}).get("flagged")
+        if learned:
+            status = _draw_status(learned, rng)
+            return VisitStatus(
+                status=status,
+                flagged=True,
+                flag_reason=_pick_reason(rng, flag_reason_distribution),
+                review_status=_REVIEW_FOR.get(status, "approved"),
+            )
         rejected = rng.random() < 0.4
         return VisitStatus(
             status="rejected" if rejected else "pending",
             flagged=True,
             flag_reason=_pick_reason(rng, flag_reason_distribution),
             review_status="rejected" if rejected else "pending",
+        )
+    learned = (status_by_flag or {}).get("unflagged")
+    if learned:
+        status = _draw_status(learned, rng)
+        return VisitStatus(
+            status=status, flagged=False, flag_reason="", review_status=_REVIEW_FOR.get(status, "approved")
         )
     over_limit = over_limit_rate > 0 and rng.random() < over_limit_rate
     return VisitStatus(
@@ -136,6 +155,20 @@ def decide_visit_status(
 
 
 _STATUSES = ("approved", "pending", "rejected", "over_limit")
+# over_limit is good work with a billing-side label: reviewed as approved.
+_REVIEW_FOR = {"approved": "approved", "over_limit": "approved", "pending": "pending", "rejected": "rejected"}
+
+
+def _draw_status(shares: dict[str, float], rng: random.Random) -> str:
+    total = sum(shares.values())
+    r, key = rng.random() * total, "approved"
+    for key, share in sorted(shares.items()):
+        r -= share
+        if r <= 0:
+            return key
+    return key
+
+
 _REVIEW_STATUSES = ("approved", "pending", "rejected")
 
 
