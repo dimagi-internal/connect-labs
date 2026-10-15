@@ -13,7 +13,7 @@
       <p class="text-gray-600 text-sm mt-1">Draw a boundary, make work areas, group them and export the work-area CSV. Microplans here belong to Program #{{ workspace.program_id }}.</p>
       <p class="text-xs text-gray-500 mt-1">
         You are a <b>{{ workspace.role_label }}</b> here{% if workspace.is_program_manager %} — you see every team's microplans{% else %} — you see your team's microplans only, and you and your teammates can change them{% endif %}.
-        {% if workspace.is_program_manager %}<a id="workspace-settings-link" class="text-indigo-600 hover:underline" href="{{ workspace.settings_url }}">Workspace settings</a>{% endif %}
+        {% if workspace.can_manage_access %}<a id="workspace-settings-link" class="text-indigo-600 hover:underline" href="{{ workspace.settings_url }}">Workspace settings</a>{% endif %}
       </p>
       {% else %}
       <p class="text-gray-600 text-sm mt-1">Draw a boundary, make work areas, group them and export the work-area CSV. Every microplan is saved here.</p>

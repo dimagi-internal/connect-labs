@@ -208,7 +208,7 @@ def _workspace_page_context(scope: _Scope, user, plans) -> dict:
     if not scope.in_workspace:
         return {}
     from connect_labs.labs.models import WorkspaceUser
-    from connect_labs.labs.workspaces import fallback_role, team_choices
+    from connect_labs.labs.workspaces import can_manage_access, fallback_role, team_choices
 
     teams = team_choices(scope.workspace, scope.role, user=user)
     if scope.role.is_program_manager:
@@ -220,18 +220,23 @@ def _workspace_page_context(scope: _Scope, user, plans) -> dict:
         )
         teams += [{"slug": t, "name": t} for t in sorted(others - known) if t]
     pid = scope.program_id
-    # Someone a Users entry makes a Network Manager may switch themselves back only
-    # when, without it, they would be a Program Manager (and so could set it again).
-    usual = fallback_role(user, scope.workspace) if scope.role.testing else None
+    # Only a Dimagi user manages access (labs.workspaces.can_manage_access): the
+    # access page, and switching themselves back from a Network Manager entry --
+    # only when, without it, they would be a Program Manager (and so could set it
+    # again). Anyone else's entry is simply their role: no banner, no switch.
+    manages = can_manage_access(user)
+    testing = bool(scope.role.testing and manages)
+    usual = fallback_role(user, scope.workspace) if testing else None
     return {
         "workspace": {
             "program_id": pid,
             "role_label": scope.role.label,
             "is_program_manager": scope.role.is_program_manager,
+            "can_manage_access": bool(manages and scope.role.is_program_manager),
             "teams": teams,
             "team_names": {t["slug"]: t["name"] for t in teams},
-            # A Network Manager by an explicit Users entry (labs.workspaces).
-            "testing": scope.role.testing,
+            # A Dimagi user made a Network Manager by an explicit Users entry.
+            "testing": testing,
             "can_switch_back": bool(usual is not None and usual.is_program_manager),
             "stop_testing_url": reverse("microplans:program_workspace_stop_testing", args=[pid]),
             "settings_url": reverse("microplans:program_workspace_settings", args=[pid]),

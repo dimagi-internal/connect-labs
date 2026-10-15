@@ -489,14 +489,23 @@ def test_a_program_manager_viewing_as_a_network_manager_can_switch_back(client, 
     assert client.get(_settings_url(prog)).status_code == 200
 
 
-def test_someone_who_is_only_a_network_manager_cannot_switch_themselves(client, people, plans, prog):
+@pytest.mark.parametrize("org_admin", [False, True], ids=["in-no-llo", "org-admin"])
+def test_outside_dimagi_an_entry_is_simply_the_role_with_no_banner_or_switch(client, people, plans, prog, org_admin):
     from connect_labs.labs.models import WorkspaceUser
+    from connect_labs.marketplace.models import OrgMembership
 
-    _make_nm_entry(prog, people["stranger"], RIVER[0])  # not Dimagi, in no LLO themselves
-    _login(client, people["stranger"])
-    body = client.get(_url("list", prog)).content.decode()
-    assert "Ask a Program Manager to change your access" in body and "Switch back" not in body
-    client.post(reverse("microplans:program_workspace_stop_testing", args=[prog]))
+    stranger = people["stranger"]  # not Dimagi
+    if org_admin:  # without the entry a Program Manager -- still not theirs to switch
+        OrgMembership.objects.create(org=workspaces.workspace_for_program(prog).org, user=stranger, role="admin")
+    _make_nm_entry(prog, stranger, RIVER[0])
+    _login(client, stranger)
+    resp = client.get(_url("list", prog))
+    assert [p.pk for p in resp.context["plans"]] == [plans["river"].pk]  # the entry's role holds
+    body = resp.content.decode()
+    assert 'id="testing-banner"' not in body and "Viewing as Network Manager" not in body
+    assert "Switch back" not in body and 'id="workspace-settings-link"' not in body
+    resp = client.post(reverse("microplans:program_workspace_stop_testing", args=[prog]))
+    assert resp.status_code == 404
     assert WorkspaceUser.objects.count() == 1
 
 

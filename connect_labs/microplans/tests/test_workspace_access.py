@@ -2,7 +2,8 @@
 
 LLOs are partner Connect organisations: every member of one is a Network Manager
 of it. Users are explicit entries by email address -- any address, signed in yet
-or not -- that win over every other rule. Every name, slug, email and id below is
+or not -- that win over every other rule. Only a Program Manager who signs in with
+a Dimagi address manages either list. Every name, slug, email and id below is
 made up.
 """
 
@@ -329,23 +330,7 @@ def test_an_entry_wins_over_dimagi_staff_and_org_admin(people, ws):
         assert role.role == workspaces.NETWORK_MANAGER and role.teams == (RIVER[0],), who
 
 
-# --- nobody locks themselves out ---------------------------------------------
-
-
-def test_a_program_manager_only_by_their_entry_cannot_demote_or_delete_it(client, people, prog, ws):
-    WorkspaceLLO.objects.create(workspace=ws, slug=RIVER[0])
-    own = WorkspaceUser.objects.create(workspace=ws, email="stranger@example.org", role="program_manager")
-    _login(client, people["stranger"])  # not Dimagi: only the entry makes them a Program Manager
-    resp = client.post(
-        _settings(prog),
-        {"action": "change_user", "entry_id": own.pk, "access": f"network_manager:{RIVER[0]}"},
-        follow=True,
-    )
-    assert b"lose Program Manager access" in resp.content
-    resp = client.post(_settings(prog), {"action": "remove_user", "entry_id": own.pk}, follow=True)
-    assert b"You can&#x27;t delete your own entry" in resp.content
-    own.refresh_from_db()
-    assert own.role == "program_manager"
+# --- switching yourself ---------------------------------------------------------
 
 
 def test_dimagi_staff_can_view_as_a_network_manager_and_land_on_a_page_they_can_open(client, people, prog, ws):
@@ -361,19 +346,18 @@ def test_dimagi_staff_can_view_as_a_network_manager_and_land_on_a_page_they_can_
     assert client.get(_settings(prog)).status_code == 404
 
 
-# --- only Program Managers ------------------------------------------------------
+# --- only Dimagi Program Managers ----------------------------------------------
+
+ACCESS_ACTIONS = [
+    {"action": "add_llo", "slug": "sneaky-org"},
+    {"action": "remove_llo", "slug": RIVER[0]},
+    {"action": "add_user", "email": "me@example.org", "access": "program_manager"},
+    {"action": "change_user", "entry_id": "ENTRY", "access": "program_manager"},
+    {"action": "remove_user", "entry_id": "ENTRY"},
+]
 
 
-@pytest.mark.parametrize(
-    "data",
-    [
-        {"action": "add_llo", "slug": "sneaky-org"},
-        {"action": "remove_llo", "slug": RIVER[0]},
-        {"action": "add_user", "email": "me@example.org", "access": "program_manager"},
-        {"action": "change_user", "entry_id": "ENTRY", "access": "program_manager"},
-        {"action": "remove_user", "entry_id": "ENTRY"},
-    ],
-)
+@pytest.mark.parametrize("data", ACCESS_ACTIONS)
 def test_every_action_is_404_for_anyone_but_a_program_manager(client, people, prog, ws, data):
     WorkspaceLLO.objects.create(workspace=ws, slug=RIVER[0])
     entry = WorkspaceUser.objects.create(
@@ -387,6 +371,40 @@ def test_every_action_is_404_for_anyone_but_a_program_manager(client, people, pr
     entry.refresh_from_db()
     assert (entry.role, entry.team) == ("network_manager", RIVER[0])
     assert WorkspaceUser.objects.count() == 1
+
+
+@pytest.mark.parametrize("how", ["users_entry", "org_admin"])
+@pytest.mark.parametrize("data", ACCESS_ACTIONS)
+def test_a_program_manager_outside_dimagi_cannot_manage_access(client, people, prog, ws, data, how):
+    WorkspaceLLO.objects.create(workspace=ws, slug=RIVER[0])
+    entry = WorkspaceUser.objects.create(
+        workspace=ws, email="hill_member@example.org", role="network_manager", team=RIVER[0]
+    )
+    if how == "users_entry":
+        outsider = people["stranger"]
+        WorkspaceUser.objects.create(workspace=ws, email=outsider.email, role="program_manager")
+    else:
+        outsider = people["org_admin"]
+        OrgMembership.objects.create(org=ws.org, user=outsider, role="admin")
+    assert _role(outsider, ws).is_program_manager  # still one, for everything but access
+    before = WorkspaceUser.objects.count()
+    _login(client, outsider)
+    assert client.get(_settings(prog)).status_code == 404
+    data = {k: (entry.pk if v == "ENTRY" else v) for k, v in data.items()}
+    assert client.post(_settings(prog), data).status_code == 404
+    assert list(WorkspaceLLO.objects.values_list("slug", flat=True)) == [RIVER[0]]
+    entry.refresh_from_db()
+    assert (entry.role, entry.team) == ("network_manager", RIVER[0])
+    assert WorkspaceUser.objects.count() == before
+    # Nor are they shown the way in.
+    body = client.get(_simple_list(prog)).content.decode()
+    assert 'id="workspace-settings-link"' not in body and "Workspace settings" not in body
+
+
+def test_a_dimagi_program_manager_sees_the_way_in(client, people, prog, ws):
+    _login(client, people["pm"])
+    assert 'id="workspace-settings-link"' in client.get(_simple_list(prog)).content.decode()
+    assert client.get(_settings(prog)).status_code == 200
 
 
 # --- the page -------------------------------------------------------------------
