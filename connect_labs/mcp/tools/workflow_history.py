@@ -142,7 +142,10 @@ def _mcp_error(e) -> MCPToolError:
         "period rather than failing every one.\n\n"
         "start defaults to the earliest dated row in the workflow's own case index, and "
         "end to the last COMPLETE period before today. Provide exactly one of "
-        "opportunity_id / program_id, as for workflow_save_snapshot."
+        "opportunity_id / program_id, as for workflow_save_snapshot.\n\n"
+        "A BACKGROUND JOB. The batch runs as a job that a labs deploy does not lose: if it is not "
+        "done within about half a minute the call returns a job_id; follow it with job_status, "
+        "whose `result` is this tool's report."
     ),
     input_schema={
         "type": "object",
@@ -198,6 +201,9 @@ def _mcp_error(e) -> MCPToolError:
     },
     is_write=True,
     wants_progress=True,
+    # Each batch replaces the runs it writes, so a batch a deploy interrupted is safely
+    # run again from the start (connect_labs/mcp/jobs.py).
+    long_running=True,
 )
 def workflow_rebuild_history(
     user,
@@ -341,7 +347,10 @@ def workflow_history_eligibility(
         "left out -- they are most of a snapshot's size and none of a comparison. Pass "
         "include_opportunities=true for per-opportunity cells.\n\n"
         "Eligibility is the same as for workflow_rebuild_history. Provide exactly one of "
-        "opportunity_id / program_id."
+        "opportunity_id / program_id.\n\n"
+        "A BACKGROUND JOB. Grading a large program takes minutes, so it runs as a job that a labs "
+        "deploy does not lose: the call returns a job_id (or the result, if it finishes within "
+        "about half a minute); follow it with job_status, whose `result` is the grading."
     ),
     input_schema={
         "type": "object",
@@ -361,6 +370,8 @@ def workflow_history_eligibility(
     is_write=False,
     # It ensures the visit cache first, which can mean downloading a cold cohort.
     wants_progress=True,
+    # Minutes on a large program; it persists nothing, so a rerun is harmless.
+    long_running=True,
 )
 def workflow_preview_as_of(
     user,

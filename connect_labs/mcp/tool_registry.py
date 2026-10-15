@@ -25,6 +25,25 @@ class Tool:
     #: inline picture) gives a short description here, so the text a non-UI client
     #: reads stays readable and small.
     text: Callable[[dict], str] | None = None
+    #: Run as a durable job instead of inside the request (``connect_labs/mcp/jobs.py``).
+    long_running: bool = False
+    #: Where a long-running tool's job runs: "worker" (the Celery queue) or "standalone"
+    #: (a Fargate task of its own, for jobs of an hour or more).
+    job_runner: str = "worker"
+
+
+JOB_RUNNERS = ("worker", "standalone")
+
+#: The argument every long-running tool takes, added to its schema by ``register``.
+WAIT_PARAM = {
+    "type": "boolean",
+    "default": True,
+    "description": (
+        "true (default): wait briefly (about half a minute) and return the result if the job has "
+        "finished by then; otherwise return a job_id to poll with job_status. false: return the "
+        "job_id at once. The job runs either way, and survives a labs deploy."
+    ),
+}
 
 
 _REGISTRY: dict[str, Tool] = {}
@@ -39,6 +58,8 @@ def register(
     wants_progress: bool = False,
     meta: dict | None = None,
     text: Callable[[dict], str] | None = None,
+    long_running: bool = False,
+    job_runner: str = "worker",
 ) -> Callable[[Callable], Callable]:
     """Decorator that registers a tool handler.
 
@@ -58,20 +79,38 @@ def register(
     ``meta`` is the tool's ``_meta`` as ``tools/list`` advertises it (MCP Apps:
     ``{"ui": {"resourceUri": ..., "visibility": [...]}}``); ``text`` renders the
     result's text content when the JSON dump is not what a reader should get.
+
+    Set long_running=True for a tool that can take minutes. The call then does not run
+    the handler in the web request -- which a deploy, a client timeout or the web
+    tier's request cap can cut off with the result lost -- but queues it as a durable
+    job (``connect_labs/mcp/jobs.py``) that runs AS the caller, under the same
+    restricted-scope rules, and survives a deploy. The call returns
+    ``{job_id, state, poll_with: "job_status"}`` (or the result itself, if the job
+    finishes within a short wait), and the tool gains a ``wait`` argument. The handler
+    is unchanged, but it must be safe to run again from the start: a job interrupted by
+    a deploy is run again. ``job_runner="standalone"`` runs it on a Fargate task of its
+    own instead of the worker service -- only for jobs of an hour or more.
     """
+    if job_runner not in JOB_RUNNERS:
+        raise ValueError(f"job_runner must be one of {JOB_RUNNERS}, not {job_runner!r}")
 
     def decorator(fn: Callable) -> Callable:
         if name in _REGISTRY:
             raise ValueError(f"Tool {name!r} already registered")
+        schema = input_schema
+        if long_running:
+            schema = {**input_schema, "properties": {**input_schema.get("properties", {}), "wait": WAIT_PARAM}}
         _REGISTRY[name] = Tool(
             name=name,
             description=description,
-            input_schema=input_schema,
+            input_schema=schema,
             handler=fn,
             is_write=is_write,
             wants_progress=wants_progress,
             meta=meta,
             text=text,
+            long_running=long_running,
+            job_runner=job_runner,
         )
         return fn
 

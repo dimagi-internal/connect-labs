@@ -610,6 +610,24 @@ SYNTHETIC_ECS_MAX_TASKS = env.int("SYNTHETIC_ECS_MAX_TASKS", default=6)
 # limits do not reach it. Six hours: an 8-opportunity cohort profile was still going
 # at 2h20m on 2026-10-13.
 SYNTHETIC_ECS_MAX_RUNTIME_SECONDS = env.int("SYNTHETIC_ECS_MAX_RUNTIME_SECONDS", default=6 * 3600)
+
+# Long-running MCP tools run as durable jobs (connect_labs/mcp/jobs.py, which explains
+# how a job survives a deploy). Worker jobs run under a soft limit kept below the Redis
+# broker's one-hour visibility timeout; a tool that needs longer declares
+# job_runner="standalone" and runs on a Fargate task of its own, which is available
+# wherever synthetic jobs' is (the worker task definition sets SYNTHETIC_JOBS_ON_ECS).
+MCP_JOBS_RUN_INLINE = env.bool("MCP_JOBS_RUN_INLINE", default=False)
+MCP_JOBS_ON_ECS = env.bool("MCP_JOBS_ON_ECS", default=SYNTHETIC_JOBS_ON_ECS)
+MCP_JOB_SOFT_TIME_LIMIT = env.int("MCP_JOB_SOFT_TIME_LIMIT", default=45 * 60)
+MCP_JOB_WAIT_SECONDS = env.float("MCP_JOB_WAIT_SECONDS", default=30)
+MCP_JOB_LEASE_SECONDS = env.int("MCP_JOB_LEASE_SECONDS", default=120)
+MCP_JOB_HEARTBEAT_SECONDS = env.int("MCP_JOB_HEARTBEAT_SECONDS", default=30)
+MCP_JOB_MAX_ATTEMPTS = env.int("MCP_JOB_MAX_ATTEMPTS", default=3)
+MCP_JOB_MAX_LIVE_PER_USER = env.int("MCP_JOB_MAX_LIVE_PER_USER", default=5)
+MCP_JOB_RETENTION_DAYS = env.int("MCP_JOB_RETENTION_DAYS", default=7)
+MCP_JOB_STANDALONE_CPU = env("MCP_JOB_STANDALONE_CPU", default="4096")
+MCP_JOB_STANDALONE_MEMORY = env("MCP_JOB_STANDALONE_MEMORY", default="16384")
+MCP_JOB_STANDALONE_MAX_RUNTIME_SECONDS = env.int("MCP_JOB_STANDALONE_MAX_RUNTIME_SECONDS", default=6 * 3600)
 # LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID is the Drive folder ID for stock images.
 LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID = env("LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID", default="")
 # Drive folders a workflow pipeline may read (data_source.type "gdrive"). A source's
@@ -788,6 +806,12 @@ CELERY_BEAT_SCHEDULE = {
     # Ten minutes: ECS lists a stopped task for about an hour.
     "reap-synthetic-job-tasks": {
         "task": "connect_labs.labs.synthetic.tasks.reap_synthetic_job_tasks",
+        "schedule": crontab(minute="*/10"),
+    },
+    # Long-running MCP jobs: fail ones that were lost, stop standalone tasks that overran
+    # or record ones whose machine died, prune finished jobs past retention (mcp/jobs.py).
+    "mcp-job-housekeeping": {
+        "task": "connect_labs.mcp.tasks.mcp_job_housekeeping",
         "schedule": crontab(minute="*/10"),
     },
     "heal-dead-pmc-runs": {

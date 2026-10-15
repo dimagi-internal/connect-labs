@@ -10,6 +10,7 @@ from . import campaign  # noqa: F401  -- registers campaign_build_national
 from . import custom_analysis_run  # noqa: F401  -- registers custom_analysis_run
 from . import explorer  # noqa: F401  -- registers explorer_describe, explorer_query
 from . import funds  # noqa: F401
+from . import jobs  # noqa: F401  -- registers job_status, job_cancel (mcp/jobs.py)
 from . import labs_context  # noqa: F401
 from . import marketplace  # noqa: F401  -- registers marketplace_orgs_get, marketplace_rounds_list
 from . import microplans  # noqa: F401  -- list/work_areas/delete_plan/delete_group/transition_plan
