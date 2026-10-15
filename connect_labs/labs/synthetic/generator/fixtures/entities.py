@@ -262,6 +262,13 @@ def plan_mirror_visits(
     # as the largest remaining parity gaps on every KMC opportunity
     # (visit-counter median gap 1.0, child_age 0.10-0.17).
     no_jitter = no_jitter_paths or set()
+    # A MODELLED pool is new cases the case model sampled (case_model.py): each visit
+    # already holds what the source would have recorded there, noise, rounding and
+    # absences included. Jitter and the constant overlay below exist for the retired
+    # mirror mode, whose pool was the real cases; on a modelled pool they undo what was
+    # learned -- jitter took weights off the whole hundreds the source writes (EHA: 99%
+    # on them, the clone 18%), and the overlay put follow-up fields on registrations.
+    modelled = spec.mode == "modelled"
     time_varying = _time_varying_paths(spec.transplant_pool)
     design = _registration_design(spec.transplant_pool)
     planned: list[PlannedVisit] = []
@@ -278,7 +285,9 @@ def plan_mirror_visits(
             series_visits = [v for v in series_visits if start + dt.timedelta(days=int(v["day"])) <= window[1]]
         ranges = _series_ranges(series_visits)
         series_form_names = [v["form"] for v in series_visits if v.get("form")]
-        const_values, const_dates, const_cats = _series_constants(series_visits, time_varying)
+        const_values, const_dates, const_cats = (
+            ({}, {}, {}) if modelled else _series_constants(series_visits, time_varying)
+        )
         for vj, visit in enumerate(sorted(series_visits, key=lambda v: v["day"]), start=1):
             vdate = start + dt.timedelta(days=int(visit["day"]))
             forced: dict[str, Any] = {}
@@ -287,7 +296,7 @@ def plan_mirror_visits(
                 span = hi - lo
                 if path in no_jitter:
                     forced[path] = float(val)
-                elif span > 0 and spec.jitter_frac > 0:
+                elif span > 0 and spec.jitter_frac > 0 and not modelled:
                     jittered = float(val) + rng.gauss(0.0, spec.jitter_frac * span)
                     forced[path] = min(max(jittered, lo), hi)
                 else:

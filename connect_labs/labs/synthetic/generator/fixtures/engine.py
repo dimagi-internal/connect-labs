@@ -215,6 +215,7 @@ def _build_mirror_visits(
         # The source's own first and last day: nothing replays outside them.
         window=(manifest.timeline.start_date, manifest.timeline.end_date),
     )
+    owned = _modelled_paths(longitudinal)
     entity_count = max((pv.beneficiary_idx for pv in planned), default=0)
     owners = {pv.beneficiary_idx: pv.owner for pv in planned}
     household_locations = (
@@ -254,6 +255,7 @@ def _build_mirror_visits(
             period=period,
             forced_values=forced_values,
             mirror=True,
+            owned_paths=owned,
         )
         if location:
             form_json.setdefault("metadata", {})["location"] = location
@@ -344,6 +346,20 @@ def _synthetic_traj_step(traj, sign, entity_state, traj_rng, idx, visit_date):
         st["last"][path] = val
         forced[path] = val
     return forced, st["id"]
+
+
+def _modelled_paths(longitudinal) -> frozenset[str]:
+    """Every field a modelled pool records anywhere: the pool decides each of them on
+    every visit, blank included (see fill_form_json's ``owned_paths``)."""
+    if getattr(longitudinal, "mode", None) != "modelled":
+        return frozenset()
+    return frozenset(
+        path
+        for series in longitudinal.transplant_pool
+        for visit in series.get("visits") or []
+        for kind in ("values", "dates", "cats")
+        for path in visit.get(kind) or {}
+    )
 
 
 def generate(

@@ -381,7 +381,11 @@ def fill_form_json(
     correlated_values: dict[str, Any] | None = None,
     forced_values: dict[str, Any] | None = None,
     mirror: bool = False,
+    owned_paths: frozenset[str] | set[str] = frozenset(),
 ) -> dict[str, Any]:
+    # ``owned_paths``: fields a modelled pool decides (engine._modelled_paths). Where the
+    # pool left one blank the source would have, so it is never filled from a marginal --
+    # a follow-up's danger-sign checklist drawn onto registrations at its overall rate.
     anomaly_paths = {a.field_path for a in anomalies_for_visit if a.field_path}
     # Persona overrides take precedence over cohort distributions. Building a
     # merged map once avoids re-checking the persona on every field.
@@ -426,6 +430,9 @@ def fill_form_json(
             continue  # owned by a repeat array, emitted below
         if spec.json_path in written_forced:
             continue  # already set from the transplanted series
+        if spec.json_path in owned_paths:
+            covered_paths.add(spec.json_path)
+            continue  # the pool left it blank on this visit
         if _under_repeat(spec.json_path, _irrelevant_bases(out, relevance_groups)):
             # The XForm would not have shown this question, so a real submission
             # cannot carry it. Filling it anyway is what let a not-held meeting
@@ -491,6 +498,8 @@ def fill_form_json(
     irrelevant = _irrelevant_bases(out, relevance_groups)
     for path, dist in effective.items():
         if path in covered_paths or path in consumed_keys or _under_repeat(path, repeat_bases):
+            continue
+        if path in owned_paths:
             continue
         if _under_repeat(path, irrelevant):
             continue  # same gate as above — an orphan under a hidden group is still hidden
