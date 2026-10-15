@@ -131,4 +131,8 @@ class TestURLResolution:
         """Ensure we have exactly the expected number of URL patterns (the JSON API is gone: MCP is the API)."""
         from connect_labs.solicitations.urls import urlpatterns
 
-        assert len(urlpatterns) == 11
+        assert len(urlpatterns) == 13
+
+    def test_org_pages_reverse(self):
+        assert reverse("solicitations:org_page", kwargs={"org_slug": "acme"}) == "/solicitations/o/acme/"
+        assert reverse("solicitations:org_manage", kwargs={"org_slug": "acme"}) == "/solicitations/o/acme/manage/"

@@ -1,6 +1,35 @@
 # Solicitations
 
-The Solicitations module manages requests for proposals (RFPs) and expressions of interest (EOIs). Program teams can post solicitations, collect responses from implementing organizations, review and score submissions, and award funding.
+The Solicitations module manages requests for proposals (RFPs) and expressions of interest (EOIs). An organisation posts a call for partners, other organisations respond, and the organisation that posted it reviews and scores the responses and makes an award.
+
+---
+
+## Where Solicitations Live, and Who Sees What
+
+Every call belongs to an **organisation** — the one that posted it. That organisation's members manage the call and are the only people (apart from Dimagi platform support) who can read the responses to it.
+
+| Page | Address | Who can open it |
+| ---- | ------- | --------------- |
+| **All open calls** | `/solicitations/` | Anyone, signed in or not. Every listed call that is still open, each naming the organisation that posted it, with a **Recently closed** section underneath. Search by keyword, or filter by organisation and by type (EOI or RFP). |
+| **A call** | `/solicitations/<number>/` | Anyone, for a listed call. Shows who posted it, the deadline, what it asks and how responses are scored. Long calls have an **On this page** index. |
+| **An organisation's calls** | `/solicitations/o/<organisation>/` | Anyone. The organisation's open calls and its past ones. The marketplace page for an organisation links here when it has listed calls. |
+| **Manage calls** | `/solicitations/o/<organisation>/manage/` | Members of that organisation, and platform support. Every call the organisation owns, including drafts and unlisted calls, with how many responses each has, and a **New call** button. |
+| **Responses, scoring and award** | from the Manage page | Members of the owning organisation, and platform support. Never someone scoring or awarding a response from their own organisation. |
+| **Your response** | linked from the call | The person who submitted it. |
+
+**Solicitations** is in the left-hand menu for everyone. **Manage calls** (`/solicitations/manage/`) lists the organisations you can manage calls for; if there is only one, it takes you straight there. If there are none, it explains how to get access: you are a member of an organisation either through CommCare Connect (when the organisation is registered in labs) or because someone who manages it in labs added you. Seeing an organisation's programme in the context selector does not make you a member of it.
+
+A call that is **not listed** does not appear in the directory or on the organisation's page, but anyone with its link can read it once it is published, and people who already responded keep seeing it. A **draft** is visible only to the organisation that owns it.
+
+**Status shown on every call:**
+
+| Status | Meaning |
+| ------ | ------- |
+| **Open** | Taking responses: published, and the deadline (if there is one) has not passed. A call stays open until the end of its deadline day. |
+| **Closed — deadline passed** | Published, but the deadline has passed. No new responses can be submitted, and drafts can no longer be sent. |
+| **Closed** | Closed by the organisation that posted it. |
+| **Awarded** | A response has been awarded. |
+| **Draft** | Not published yet. |
 
 ---
 
@@ -23,7 +52,7 @@ flowchart TD
 
 ### Creating a Solicitation
 
-Click **Solicitations** in the top navigation, then **Manage Solicitations**, then **Create Solicitation**.
+Click **Solicitations** in the left-hand menu, then **Manage your calls**, pick your organisation, and click **New call**. The form asks which organisation the call is **from**: you can choose any organisation you are a member of. Only that organisation's members (and platform support) will see the responses.
 
 Fill in:
 
@@ -104,7 +133,7 @@ This applies to all coverage maps across the solicitations module.
 
 ### Reviewing Responses
 
-Once the deadline passes, go to the solicitation and click **Responses**.
+Once the deadline passes, open your organisation's **Manage calls** page and click the response count next to the call (or click **Responses** on the call's own page, which only you and your colleagues see).
 
 The page header shows the solicitation's current state. Once a winner has been awarded, the header updates to show **Awarded** so you can see at a glance that the process is complete.
 
@@ -112,39 +141,37 @@ The responses table pins the **Organization** column to the left edge, so firm n
 
 For each response:
 
-1. Click the response to open it
-2. Read the organization's answers to each question
-3. Review the applicant's selected coverage areas — these are shown on the responses list and on the response detail page
-4. Click **Review** to score the submission
+1. Click **Score** on its row. The scoring page shows the answers and selected coverage areas, but not who sent them
+2. Read the answers to each question
+3. Review the applicant's selected coverage areas — these are shown on the responses list and on the scoring page
+4. Score the submission
 5. Score each criterion from 1–10 and add notes — every criterion in the rubric has a score field, including criteria that are not tied to a specific application question (such as Independence or Timeline)
 6. Set your recommendation: Approve / Reject / Needs Revision
 
-Multiple reviewers can score independently — average scores are calculated automatically.
+Multiple reviewers can score independently. Each reviewer has one review per response: scoring the same response again updates your earlier review rather than adding a second one. You cannot score or award a response submitted by your own organisation.
 
 Once a review is saved, the full criterion-by-criterion breakdown is shown on the saved review: each criterion's name, its weight, and the score given out of 10. This replaces the previous single overall number, giving you and other reviewers a clear record of how each dimension was scored.
 
 The responses list shows a **Status** column and a **Recommendation** column for each submission. For an awarded response, **Awarded** appears only in the Status column — the Recommendation column shows your reviewer recommendation as normal, without repeating "Awarded". Where a response has not yet been scored, the Score cell shows a neutral dash (—); the Recommendation column shows the **Pending review** indicator for that submission.
 
-The responses list displays the submitting firm's contact email address in place of a repeated organization name, making it easier to identify individual contacts at a glance when multiple people from the same organization have submitted.
-
 The **Actions** column (containing the Award control) is pinned to the right edge of the responses table. This means it stays visible and reachable even when the table is wide, without needing to scroll horizontally. The Score cell is no longer clipped by the pinned Actions column.
 
 #### Blind Scoring
 
-When a solicitation uses blind scoring, reviewers see each submission identified only as **Response #[number]** — the submitting firm's name is not shown anywhere on the scoring screen. This means reviewers judge the content of the application, not who submitted it.
+Scoring is always blind. The responses list shows each submission only as **Response #[number]**, and its **Score** link opens the scoring page, which shows no name, email or organisation. Reviewers judge the content of the application, not who submitted it.
 
-The firm's identity is revealed only at the award step, once all scoring is complete. At that point, the winner's name becomes visible on the award confirmation screen so you can verify and confirm the award.
-
-Blind scoring is enabled automatically for survey-firm solicitations. Where it is active, the **Rubric locked before publishing** badge on the responses list also confirms that scoring conditions were set before any applications were received.
+The responding organisation's name is revealed at the award step, so you can confirm you are awarding the response you meant to. Where it is active, the **Rubric locked before publishing** badge on the responses list also confirms that scoring conditions were set before any applications were received.
 
 ### Awarding a Response
 
 When the team agrees on a winner:
 
-1. Open the winning response
-2. Click **Award Response**
-3. Confirm the award amount — this is displayed as a formatted currency value (for example, $25,000.00). The confirmation screen also shows the winning review's score and, if blind scoring was active, reveals the firm's name here for the first time so you can verify you are awarding the intended submission
-4. Optionally link the award to a fund to track disbursements over time
+1. On the responses list, click **Award** on the winning response's row
+2. The award page names the organisation (for the first time) and shows its best review score, so you can confirm you are awarding the intended response
+3. Enter the award budget, if any. It is shown in the call's own currency (for example, "500,000 NGN"); a call with no currency set shows the number alone
+4. Click **Award**. If the call is linked to a fund, the award is allocated from it
+
+**Is the organisation told?** Labs emails the award to the contact address on the response when outbound email is switched on for labs. The award page says plainly which happened: "We emailed … to tell them", or "No email was sent — let them know yourself" (for example when email is off, or the response has no contact address). Labs never claims an organisation was notified when it was not.
 
 #### Staged-Contract Award
 
@@ -163,19 +190,6 @@ Formally standing up the awarded survey firm's opportunity on the Connect market
 
 !!! info "Coverage area assignments after award"
 In the current version, the coverage areas selected by an applicant are captured for your review alongside the rest of their response. Formal area assignment to the awarded organization is handled outside Labs as part of your normal award process.
-
-### Access to Labs-Only Solicitations
-
-Some solicitations in Labs are marked as labs-only (also called synthetic opportunities). These are used for pilot programs, testing, and other work that is not part of the main Connect marketplace.
-
-Access to a labs-only solicitation is controlled by an **allowed domains** list — a set of email domains whose users are permitted to see and interact with that solicitation. If your organization's email domain is on the list, you can access the solicitation normally. If it is not, the solicitation will not appear for you, even if you have the direct link.
-
-!!! info "Who always has access"
-Dimagi platform staff and the person who originally created the solicitation retain access regardless of the allowed domains list. A labs-only solicitation with no allowed domains configured remains open to all logged-in users — this is the default when no restriction has been set.
-
-Standard (non-labs-only) solicitations on Connect are not affected by this — access rules for those work as they always have.
-
-If you believe you should have access to a labs-only solicitation but cannot see it, contact your Labs administrator to confirm your email domain has been added to the allowed domains list for that solicitation.
 
 ### Audit Trail
 
@@ -196,7 +210,7 @@ The Audit Trail page is available to Labs administrators only. If you need to re
 
 ### Finding Solicitations
 
-Published solicitations are visible on the Labs solicitations page without logging in. Filter by type (Expression of Interest or Request for Proposals) to find relevant opportunities.
+Open calls are listed at **Solicitations** (`/solicitations/`) — you do not need to sign in to read them. Each card names the organisation that posted the call; click the name to see all of that organisation's calls. Use the search box, or filter by organisation or by type (Expression of Interest or Request for Proposal). Calls whose deadline has passed move to **Recently closed**.
 
 **Filtering by programme:**
 The marketplace now offers two programme-based filters to help you find relevant opportunities:
@@ -218,15 +232,19 @@ Where the rubric was locked before the call was published, a **Rubric locked bef
 
 ### Submitting a Response
 
-1. Open a solicitation and read the full description and scope of work
+1. Open a solicitation and read the full description and scope of work. To respond you need to sign in to labs: the call's **Sign in to respond** button takes you to the labs sign-in and back
 2. Before filling in your answers, review the **Evaluation Criteria** panel shown above the application questions. This panel lists each criterion the program team will use to score responses, including the criterion name, its weight in the overall score, and any scoring guidance provided. Use this to understand what reviewers are looking for before you write your answers
-3. Click **Submit Response**
+3. Click **Respond**, then choose the organisation you are responding for. You can pick any organisation you are a member of, or choose **An organisation not listed here** and give its name and contact email. The organisation that posted the call sees this name and contact
 4. Answer each question in the response template — where present, read the italicised framing above each question to understand what the program team is looking for. Each answer box sizes to fit your content as you type, so your full response is always visible without scrolling inside the box
 5. If the solicitation includes coverage areas, select the areas you can cover by clicking the ward boundaries directly on the map, or by checking the boxes in the checklist alongside it — both controls are kept in sync, so selecting an area in one automatically updates the other. Selected areas are highlighted on the map so you can clearly see which plans you have chosen. You must select at least one plan to submit
 6. If you use the **AI Application Coach** for feedback on your draft answers, the coach will prompt you to support your claims with verifiable evidence — for example, real numbers, named prior projects, back-check rates, or other concrete details. Suggestions are presented with clear headings so you can scan the structured advice at a glance. Responses backed by specific evidence score more strongly against the evaluation rubric
-7. Review your answers, then click **Submit**
+7. Review your answers, then click **Submit response**. The note beside the button says what happens next: your response goes to the organisation that posted the call, who review every response and contact you about the outcome
 
-After you submit, the solicitation page updates to show a **Response submitted** confirmation state. The option to submit another response is no longer shown — this prevents accidental duplicate submissions.
+**Drafts.** Click **Save draft** to finish later. You have one draft per call: saving again updates it, and the call's page offers **Continue your draft** when you come back. A draft is visible only to you, and it is not sent until you submit it.
+
+**Deadlines.** A call takes responses until the end of its deadline day. After that, the call shows **Closed — deadline passed**, the response form is replaced by a message saying the call has closed, and an unsent draft can no longer be submitted.
+
+After you submit, the call's page shows a **Response submitted** confirmation, and you can open **View your response** to see what you sent and its status (Submitted, Under review, Awarded or Not selected). You cannot edit a response after submitting it. If email is switched on for labs, you also get an email confirming your submission, and the call's contact address is told a new response arrived.
 
 !!! info "Selecting coverage areas"
-Each plan is offered as a whole unit. Clicking any part of a plan's boundary on the
+Each plan is offered as a whole unit. Clicking any part of a plan's boundary on the map selects the whole plan, and so does ticking it in the checklist.

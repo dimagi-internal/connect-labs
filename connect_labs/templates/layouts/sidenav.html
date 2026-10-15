@@ -70,13 +70,17 @@ accessibility tree); from md up it is always visible.
         </div>
 
         <!-- Navigation Items -->
-        {# The two sides of the marketplace. The supplier market is public, so it #}
-        {# is offered to everyone; the partners' side needs a labs sign-in.        #}
+        {# The two sides of the marketplace, and calls for partners. The supplier  #}
+        {# market and the solicitations directory are public, so they are offered #}
+        {# to everyone; the partners' side needs a labs sign-in.                  #}
         <div class="mt-5">
             {% if request.user.is_authenticated %}
                 {% url 'marketplace:home' as marketplace_url %}
                 {% include "components/sidenav-items.html" with name='Marketplace' icon='handshake' target=marketplace_url namespace='marketplace' %}
             {% endif %}
+            {# Calls for partners are public too: anyone can read them, signed in or not. #}
+            {% url 'solicitations:public_list' as solicitations_url %}
+            {% include "components/sidenav-items.html" with name='Solicitations' icon='bullhorn' target=solicitations_url namespace='solicitations' %}
             {% url 'supply_chain:market' as supply_market_url %}
             {% include "components/sidenav-items.html" with name='Supply marketplace' icon='store' target=supply_market_url path_prefix=supply_market_url %}
         </div>

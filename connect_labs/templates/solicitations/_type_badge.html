@@ -1,0 +1,6 @@
+{# One badge per call type, the same everywhere. #}
+{% if solicitation.solicitation_type == 'eoi' %}
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-sky-50 text-sky-800 border border-sky-200 whitespace-nowrap"><i class="fa-solid fa-hand text-[10px]"></i>Expression of Interest</span>
+{% else %}
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap"><i class="fa-solid fa-file-contract text-[10px]"></i>Request for Proposal</span>
+{% endif %}

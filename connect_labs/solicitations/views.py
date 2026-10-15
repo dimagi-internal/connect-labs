@@ -1,9 +1,23 @@
+"""Solicitations pages.
+
+Who may see and do what is decided in `access.py` and enforced by
+`SolicitationsDataAccess`; these views only ask it and render the answer. A
+refusal (`PermissionDenied`) becomes a plain 403 page that says why, and a call
+or response the viewer may not see at all is a 404.
+
+The directory, a call's page and an organisation's page are readable without a
+labs login: calls are meant to be sent to organisations outside labs, and
+nothing private is on them. Responding, managing, reviewing and awarding need a
+login.
+"""
+
 import json
 import logging
 
 from django.conf import settings
-from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.core.exceptions import ValidationError
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.db.models import Count, Q
 from django.http import Http404, JsonResponse
 from django.shortcuts import redirect
 from django.urls import reverse
@@ -12,70 +26,167 @@ from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
 
 from connect_labs.microplans.core.solicitation_snapshot import build_plan_snapshot
+from connect_labs.solicitations import access
 from connect_labs.solicitations.data_access import SolicitationsDataAccess
-from connect_labs.solicitations.forms import ReviewForm, SolicitationForm, SolicitationResponseForm
+from connect_labs.solicitations.forms import NEW_ORG, ReviewForm, SolicitationForm, SolicitationResponseForm
+from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
 
 logger = logging.getLogger(__name__)
 
+# How many recently closed calls the directory shows under the open ones.
+RECENTLY_CLOSED_LIMIT = 6
+# A call this long (description + scope, in characters) or with this many
+# sections gets an "On this page" index.
+LONG_CALL_CHARS = 2500
 
-# -- Permission Mixins ------------------------------------------------------
+
+def _get_data_access(request):
+    return SolicitationsDataAccess(request=request)
+
+
+# -- Base classes -------------------------------------------------------------
+
+
+class SolicitationsPage(TemplateView):
+    """A solicitations page: refusals render as a plain 403, missing records as 404."""
+
+    def dispatch(self, request, *args, **kwargs):
+        try:
+            return super().dispatch(request, *args, **kwargs)
+        except PermissionDenied as exc:
+            return forbidden(request, str(exc) or None)
+        except (Solicitation.DoesNotExist, SolicitationResponse.DoesNotExist):
+            raise Http404("Not found")
+
+    def da(self):
+        if not hasattr(self, "_da"):
+            self._da = _get_data_access(self.request)
+        return self._da
 
 
 class LabsLoginRequiredMixin(LoginRequiredMixin):
-    """Redirect to labs login."""
+    """Redirect to the labs login, coming back here afterwards."""
 
     login_url = "/labs/login/"
 
 
-class ManagerRequiredMixin(LabsLoginRequiredMixin, UserPassesTestMixin):
-    """Require authenticated labs user (manager access)."""
-
-    def test_func(self):
-        return self.request.user.is_authenticated
+class SignedInPage(LabsLoginRequiredMixin, SolicitationsPage):
+    pass
 
 
-# -- Helpers ----------------------------------------------------------------
+def forbidden(request, message=None):
+    from django.template.response import TemplateResponse
+
+    response = TemplateResponse(
+        request,
+        "solicitations/forbidden.html",
+        {"message": message or "You don't have access to this page."},
+        status=403,
+    )
+    return response.render()
 
 
-def _has_context(request):
-    """Check if the request has a program_id or organization_id in labs_context."""
-    labs_context = getattr(request, "labs_context", {})
-    return bool(labs_context.get("program_id") or labs_context.get("organization_id"))
+# -- Helpers --------------------------------------------------------------------
 
 
-def _get_data_access(request):
-    """Create data access from request. Works for authed requests."""
-    return SolicitationsDataAccess(request=request)
+def _solicitation_or_404(da, pk):
+    solicitation = da.get_solicitation_by_id(pk)
+    if solicitation is None:
+        raise Http404("Solicitation not found")
+    return solicitation
 
 
-def _find_user_response(da, solicitation_id, request):
-    """Return the current user's most-recent response to a solicitation, or None.
+def _managed_solicitation(da, pk):
+    solicitation = _solicitation_or_404(da, pk)
+    access.require(
+        da.can_manage(solicitation),
+        "Only the organisation that owns this call (or platform support) can manage it.",
+    )
+    return solicitation
 
-    Matches on the submitter email first (what we stamp on every response), then
-    on username. Used to (a) suppress the public "respond / log in to continue"
-    re-invite for an actor who has already submitted, and (b) echo the committed
-    coverage area back to them in a post-submission confirmation banner.
+
+def _response_or_refuse(da, pk):
+    """The response, a 403 if it exists but is not the viewer's to see, else a 404."""
+    response = da.get_response_by_id(pk)
+    if response is None:
+        if da.response_exists(pk):
+            raise PermissionDenied("This response is visible only to the organisation that asked for it.")
+        raise Http404("Response not found")
+    return response
+
+
+def _org_or_404(slug):
+    org = access.resolve_org(slug)
+    if org is None:
+        raise Http404("Organisation not found")
+    return org
+
+
+def _split_open_closed(calls):
+    open_calls = [c for c in calls if c.can_accept_responses]
+    closed = [c for c in calls if not c.can_accept_responses]
+    closed.sort(key=lambda c: (c.application_deadline or c.updated_at.date()), reverse=True)
+    return open_calls, closed
+
+
+def _search(calls, query):
+    words = [w for w in (query or "").lower().split() if w]
+    if not words:
+        return calls
+
+    def haystack(c):
+        return " ".join([c.title, c.description, c.scope_of_work, c.owner_name, c.program_name]).lower()
+
+    return [c for c in calls if all(w in haystack(c) for w in words)]
+
+
+def _email_enabled() -> bool:
+    from connect_labs.utils.email import email_enabled
+
+    return bool(email_enabled())
+
+
+def _with_response_counts(calls):
+    """Annotate each call with `response_count`: submitted (non-draft) responses."""
+    counts = dict(
+        Solicitation.objects.filter(pk__in=[c.pk for c in calls])
+        .annotate(n=Count("responses", filter=~Q(responses__status="draft")))
+        .values_list("pk", "n")
+    )
+    for call in calls:
+        call.response_count = counts.get(call.pk, 0)
+    return calls
+
+
+def _sections(solicitation, show_scope):
+    """The detail page's sections, for the "On this page" index."""
+    sections = [("description", "Description")]
+    if show_scope:
+        sections.append(("scope", "Scope of work"))
+    if solicitation.plans:
+        sections.append(("coverage", "Coverage areas"))
+    if solicitation.questions:
+        sections.append(("questions", "Application questions"))
+    if solicitation.evaluation_criteria:
+        sections.append(("criteria", "How responses are scored"))
+    return sections
+
+
+def _scope_differs(solicitation):
+    """True when scope_of_work adds content beyond the description.
+
+    Synthetic calls sometimes carry a scope that is the description again;
+    rendering both reads as a bug.
     """
-    user = request.user
-    user_email = (getattr(user, "email", "") or "").strip().lower()
-    user_name = (getattr(user, "username", "") or "").strip().lower()
-    try:
-        responses = da.get_responses_for_solicitation(solicitation_id)
-    except Exception:
-        logger.exception("Failed to load responses while resolving user's own response")
-        return None
-    match = None
-    for r in responses:
-        r_email = (r.submitted_by_email or "").strip().lower()
-        r_name = (r.submitted_by_name or "").strip().lower()
-        r_user = ((getattr(r, "data", None) or {}).get("submitted_by_username") or "").strip().lower()
-        if (
-            (user_email and r_email == user_email)
-            or (user_name and r_name and r_name == user_name)
-            or (user_name and r_user and r_user == user_name)
-        ):
-            match = r  # keep last match (most-recent response wins)
-    return match
+    scope = (solicitation.scope_of_work or "").strip()
+    if not scope:
+        return False
+    desc = (solicitation.description or "").strip()
+    if not desc:
+        return True
+    norm_scope = " ".join(scope.lower().split())
+    norm_desc = " ".join(desc.lower().split())
+    return norm_scope not in norm_desc and norm_desc not in norm_scope
 
 
 # -- AI Criteria Generation ------------------------------------------------
@@ -324,132 +435,202 @@ Return ONLY the JSON array, no other text."""
         return JsonResponse({"error": "Failed to generate criteria. Please try again."}, status=500)
 
 
-# -- Marketplace Views (login required) ------------------------------------
-#
-# Historically these were anonymous-accessible with a CLI-token fallback
-# (`_get_public_data_access`). That fallback was a dev-time convenience that
-# was never wired up in the AWS ECS Fargate deployment — there is no
-# `~/.commcare-connect/token.json` on the container — and prod's
-# `LabsRecordDataView` requires `IsAuthenticated + TokenHasScope(['export'])`
-# even for queries that filter to `public=True`. The marketplace therefore
-# always relied on a logged-in OAuth session in practice; making that
-# requirement explicit removes the broken anonymous path and the silent
-# "empty marketplace" failure mode it produced. See gh#198.
+# -- Public pages (no login) ------------------------------------------------------
 
 
-class PublicSolicitationListView(LabsLoginRequiredMixin, TemplateView):
+class PublicSolicitationListView(SolicitationsPage):
+    """Every listed call that is open, plus the recently closed ones."""
+
     template_name = "solicitations/public_list.html"
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        solicitation_type = self.request.GET.get("type")
-        try:
-            da = _get_data_access(self.request)
-            ctx["solicitations"] = da.get_public_solicitations(
-                solicitation_type=solicitation_type,
-            )
-        except Exception:
-            logger.exception("Failed to load public solicitations")
-            ctx["solicitations"] = []
-        ctx["selected_type"] = solicitation_type or ""
+        q = self.request.GET
+        solicitation_type = q.get("type") if q.get("type") in ("eoi", "rfp") else ""
+        owner_slug = (q.get("owner") or "").strip()
+        query = (q.get("q") or "").strip()
+
+        everything = self.da().get_public_solicitations()
+        owners = sorted({c.owner_org for c in everything if c.owner_org_id}, key=lambda o: o.name.lower())
+
+        calls = everything
+        if solicitation_type:
+            calls = [c for c in calls if c.solicitation_type == solicitation_type]
+        if owner_slug:
+            calls = [c for c in calls if c.owner_org_id and c.owner_org.slug == owner_slug]
+        calls = _search(calls, query)
+        open_calls, closed = _split_open_closed(calls)
+
+        ctx.update(
+            {
+                "solicitations": open_calls,
+                "recently_closed": closed[:RECENTLY_CLOSED_LIMIT],
+                "owners": owners,
+                "selected_type": solicitation_type,
+                "selected_owner": owner_slug,
+                "query": query,
+                "filtered": bool(solicitation_type or owner_slug or query),
+                "can_manage_any": bool(self.request.user.is_authenticated and self.da().manageable_orgs()),
+            }
+        )
         return ctx
 
 
-class PublicSolicitationDetailView(LabsLoginRequiredMixin, TemplateView):
+class PublicSolicitationDetailView(SolicitationsPage):
+    """One call: what it asks for, how it is scored, and how to respond."""
+
     template_name = "solicitations/public_detail.html"
-
-    @staticmethod
-    def _scope_differs(solicitation):
-        """True when scope_of_work adds content beyond the description.
-
-        Synthetic solicitations sometimes carry a scope_of_work that is the same
-        sentence as the description; rendering both side by side reads as a bug.
-        Normalize whitespace/case and treat one as a substring of the other as
-        "duplicate" so we only show Scope when it's genuinely additive.
-        """
-        scope = (getattr(solicitation, "scope_of_work", "") or "").strip()
-        if not scope:
-            return False
-        desc = (getattr(solicitation, "description", "") or "").strip()
-        if not desc:
-            return True
-        norm_scope = " ".join(scope.lower().split())
-        norm_desc = " ".join(desc.lower().split())
-        return norm_scope not in norm_desc and norm_desc not in norm_scope
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        pk = kwargs["pk"]
-        try:
-            da = _get_data_access(self.request)
-            solicitation = da.get_solicitation_by_id(pk)
-            if not solicitation:
-                raise Http404("Solicitation not found")
-            ctx["solicitation"] = solicitation
-            ctx["mapbox_token"] = settings.MAPBOX_TOKEN or ""
-
-            # Suppress the public respond/login invite for an actor who already
-            # submitted, and — if they just submitted — show a confirmation banner
-            # echoing the committed coverage area. `?submitted=1` is set by the
-            # RespondView redirect right after a successful submit.
-            my_response = _find_user_response(da, pk, self.request)
-            ctx["my_response"] = my_response
-            ctx["already_responded"] = my_response is not None and my_response.status != "draft"
-            ctx["just_submitted"] = self.request.GET.get("submitted") == "1"
-
-            # Collapse near-verbatim Description / Scope-of-Work duplication: only
-            # render the Scope block when it adds something beyond the description.
-            ctx["show_scope"] = self._scope_differs(solicitation)
-        except Http404:
-            raise
-        except Exception:
-            logger.exception("Failed to load solicitation %s", pk)
-            raise Http404("Solicitation not found")
+        da = self.da()
+        solicitation = _solicitation_or_404(da, kwargs["pk"])
+        my_response = da.get_my_response(solicitation.pk)
+        show_scope = _scope_differs(solicitation)
+        sections = _sections(solicitation, show_scope)
+        length = len(solicitation.description or "") + (len(solicitation.scope_of_work or "") if show_scope else 0)
+        ctx.update(
+            {
+                "solicitation": solicitation,
+                "mapbox_token": settings.MAPBOX_TOKEN or "",
+                "my_response": my_response,
+                "already_responded": my_response is not None and my_response.status != "draft",
+                "has_draft": my_response is not None and my_response.status == "draft",
+                "just_submitted": self.request.GET.get("submitted") == "1",
+                "show_scope": show_scope,
+                "sections": sections,
+                "show_section_nav": len(sections) >= 3 or length > LONG_CALL_CHARS,
+                "can_manage": da.can_manage(solicitation),
+            }
+        )
         return ctx
 
 
-# -- Manager Views (login required) ----------------------------------------
+class OrgSolicitationsView(SolicitationsPage):
+    """One organisation's calls: open, then past."""
+
+    template_name = "solicitations/org_page.html"
+
+    def get(self, request, *args, **kwargs):
+        org = _org_or_404(kwargs["org_slug"])
+        if org.slug != kwargs["org_slug"]:
+            return redirect("solicitations:org_page", org_slug=org.slug)
+        self.org = org
+        return super().get(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        da = self.da()
+        can_manage = access.can_manage_org(da.caller, self.org)
+        calls = [c for c in da.get_solicitations(org=self.org) if access.is_publicly_visible(c)]
+        if not calls and not can_manage:
+            raise Http404("This organisation has no published calls")
+        open_calls, past = _split_open_closed(calls)
+        ctx.update(
+            {
+                "org": self.org,
+                "profile": getattr(self.org, "marketplace_profile", None) if _has_profile(self.org) else None,
+                "open_calls": open_calls,
+                "past_calls": past,
+                "can_manage": can_manage,
+            }
+        )
+        return ctx
 
 
-class ManageSolicitationsView(ManagerRequiredMixin, TemplateView):
-    """List solicitations for the current program with response counts."""
+def _has_profile(org) -> bool:
+    try:
+        return org.marketplace_profile is not None
+    except Exception:  # noqa: BLE001 -- RelatedObjectDoesNotExist: no profile
+        return False
+
+
+# -- Owners' pages (login) ------------------------------------------------------------
+
+
+class ManageSolicitationsView(SignedInPage):
+    """The organisations whose calls you manage. One goes straight to its workspace."""
 
     template_name = "solicitations/manage_list.html"
 
+    def get(self, request, *args, **kwargs):
+        self.orgs = self.da().manageable_orgs()
+        if len(self.orgs) == 1:
+            return redirect("solicitations:org_manage", org_slug=self.orgs[0].slug)
+        return super().get(request, *args, **kwargs)
+
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx["has_context"] = _has_context(self.request)
-        if not ctx["has_context"]:
-            ctx["solicitations"] = []
-            return ctx
-        try:
-            da = _get_data_access(self.request)
-            solicitations = da.get_solicitations()
-            for s in solicitations:
-                try:
-                    responses = da.get_responses_for_solicitation(s.pk)
-                    s.response_count = len(responses)
-                except Exception:
-                    s.response_count = 0
-            ctx["solicitations"] = solicitations
-        except Exception:
-            logger.exception("Failed to load solicitations for manage view")
-            ctx["solicitations"] = []
+        counts = dict(
+            Solicitation.objects.calls()
+            .filter(owner_org__in=self.orgs)
+            .values("owner_org")
+            .annotate(n=Count("pk"))
+            .values_list("owner_org", "n")
+        )
+        for org in self.orgs:
+            org.call_count = counts.get(org.pk, 0)
+        ctx["orgs"] = self.orgs
         return ctx
 
 
-class SolicitationCreateView(ManagerRequiredMixin, TemplateView):
-    """Create a new solicitation."""
+class OrgManageView(SignedInPage):
+    """An organisation's workspace: every call it owns, drafts and unlisted ones included."""
 
-    template_name = "solicitations/solicitation_form.html"
+    template_name = "solicitations/org_manage.html"
+
+    def get(self, request, *args, **kwargs):
+        org = _org_or_404(kwargs["org_slug"])
+        if org.slug != kwargs["org_slug"]:
+            return redirect("solicitations:org_manage", org_slug=org.slug)
+        access.require(
+            access.can_manage_org(self.da().caller, org),
+            f"Only members of {org.name} (or platform support) can manage its calls.",
+        )
+        self.org = org
+        return super().get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx["has_context"] = _has_context(self.request)
-        ctx["is_create"] = True
-        ctx["existing_questions"] = []
-        ctx["existing_criteria"] = []
-        ctx["mapbox_token"] = settings.MAPBOX_TOKEN or ""
+        da = self.da()
+        calls = _with_response_counts(da.get_solicitations(org=self.org))
+        ctx.update(
+            {
+                "org": self.org,
+                "solicitations": calls,
+                "other_orgs": [o for o in da.manageable_orgs() if o.pk != self.org.pk],
+                "is_operator": da.caller.is_operator and not da.caller.is_member(self.org),
+            }
+        )
+        return ctx
+
+
+class SolicitationCreateView(SignedInPage):
+    """Create a call, owned by an organisation the user manages."""
+
+    template_name = "solicitations/solicitation_form.html"
+
+    def _owner_choices(self):
+        user = getattr(self.request, "user", None)
+        if user is None or not user.is_authenticated:
+            return []
+        return self.da().manageable_orgs()
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        orgs = self._owner_choices()
+        wanted = self.request.POST.get("owner_org") or self.request.GET.get("owner") or ""
+        selected = next((o for o in orgs if o.slug == wanted), orgs[0] if len(orgs) == 1 else None)
+        ctx.update(
+            {
+                "is_create": True,
+                "owner_orgs": orgs,
+                "selected_owner": selected.slug if selected else "",
+                "existing_questions": [],
+                "existing_criteria": [],
+                "mapbox_token": settings.MAPBOX_TOKEN or "",
+            }
+        )
 
         snapshot = self._snapshot_from_query()
         if snapshot:
@@ -470,11 +651,7 @@ class SolicitationCreateView(ManagerRequiredMixin, TemplateView):
         return ctx
 
     def _snapshot_from_query(self):
-        """Build a plan snapshot from ?source_program_id=&source_group_id|source_plan_id=.
-
-        Returns None when params are absent or the lookup fails (the form then
-        renders blank — create-from-scratch still works).
-        """
+        """A plan snapshot from ?source_program_id=&source_group_id|source_plan_id=, or None."""
         q = self.request.GET
         program_id = q.get("source_program_id")
         group_id = q.get("source_group_id")
@@ -494,607 +671,416 @@ class SolicitationCreateView(ManagerRequiredMixin, TemplateView):
             return None
 
     def post(self, request, *args, **kwargs):
-        if not _has_context(request):
-            ctx = self.get_context_data(**kwargs)
-            ctx["error"] = (
-                "Please select a program or organization from the context selector before creating a solicitation."
-            )
-            return self.render_to_response(ctx)
-
         form = SolicitationForm(request.POST)
-        if form.is_valid():
-            data = form.to_data_dict()
-            data["created_by"] = request.user.username
-            labs_context = getattr(request, "labs_context", {})
-            data["program_name"] = labs_context.get("program_name", "")
-            # Lock-before-publish: when the owner has reviewed and locked the AI
-            # rubric, stamp it so the weighted criteria are fixed before any firm
-            # responds. The public call then advertises "here is exactly how you'll
-            # be scored" and that promise cannot change mid-window.
-            if request.POST.get("criteria_locked") in ("1", "true", "on", "True"):
-                from django.utils import timezone
+        orgs = self._owner_choices()
+        owner = next((o for o in orgs if o.slug == request.POST.get("owner_org")), None)
+        if owner is None:
+            form.is_valid()
+            form.add_error(None, "Choose the organisation this call is from.")
+        if not form.is_valid():
+            return self._rerender(form, **kwargs)
 
-                data["criteria_locked"] = True
-                data["criteria_locked_at"] = timezone.now().isoformat()
-            try:
-                da = _get_data_access(request)
-                created = da.create_solicitation(data)
-                # Land on the new call's responses page — where the owner watches for
-                # applicants — rather than the generic list. Fall back to the list if
-                # the created record has no id for any reason.
-                if created and getattr(created, "id", None):
-                    # Land on the new call's responses inbox with a published-confirmation
-                    # flag so the page leads with the accomplishment (success banner +
-                    # invite/share action) instead of a bare "No responses yet" inbox.
-                    responses_url = reverse("solicitations:responses_list", kwargs={"pk": created.id})
-                    return redirect(f"{responses_url}?created=1")
-                return redirect("solicitations:manage_list")
-            except ValidationError as e:
-                # Canonical-schema drift caught at the data-access layer.
-                # The form's field-level validators already passed — this
-                # surfaces structural issues (e.g. dangling linked_questions
-                # in evaluation_criteria) that the form doesn't otherwise see.
-                # Attach to the matching form field when one exists so errors
-                # render inline; fall back to non_field_errors for nested paths
-                # (e.g. ``evaluation_criteria[0].linked_questions``).
-                errors = e.message_dict if hasattr(e, "message_dict") else {"__all__": list(e.messages)}
-                form_fields = set(form.fields)
-                for field, msgs in errors.items():
-                    msg_list = msgs if isinstance(msgs, list) else [msgs]
-                    target = field if field in form_fields else None
-                    for msg in msg_list:
-                        form.add_error(target, msg if target else f"{field}: {msg}")
-                ctx = self.get_context_data(**kwargs)
-                ctx["form"] = form
-                return self.render_to_response(ctx)
-            except Exception:
-                logger.exception("Failed to create solicitation")
-                ctx = self.get_context_data(**kwargs)
-                ctx["form"] = form
-                ctx["error"] = "Failed to create solicitation. Please try again."
-                return self.render_to_response(ctx)
-        else:
-            ctx = self.get_context_data(**kwargs)
-            ctx["form"] = form
-            return self.render_to_response(ctx)
+        data = form.to_data_dict()
+        if request.POST.get("criteria_locked") in ("1", "true", "on", "True"):
+            # Lock-before-publish: the weighted criteria are fixed before any
+            # organisation responds, so the call's promise cannot change mid-window.
+            data["criteria_locked"] = True
+        if data.get("source_program_id") and not data.get("program_id"):
+            data["program_id"] = data["source_program_id"]
+        try:
+            created = self.da().create_solicitation(data, owner_org=owner)
+        except ValidationError as e:
+            _attach_errors(form, e)
+            return self._rerender(form, **kwargs)
+        responses_url = reverse("solicitations:responses_list", kwargs={"pk": created.public_id})
+        return redirect(f"{responses_url}?created=1")
+
+    def _rerender(self, form, **kwargs):
+        ctx = self.get_context_data(**kwargs)
+        ctx["form"] = form
+        return self.render_to_response(ctx)
 
 
-class SolicitationEditView(ManagerRequiredMixin, TemplateView):
-    """Edit an existing solicitation."""
+def _attach_errors(form, error: ValidationError) -> None:
+    """Put a data-access ValidationError on the matching form field (or the form)."""
+    errors = error.message_dict if hasattr(error, "message_dict") else {"__all__": list(error.messages)}
+    for field, msgs in errors.items():
+        for msg in msgs if isinstance(msgs, list) else [msgs]:
+            target = field if field in form.fields else None
+            form.add_error(target, msg if target else f"{field}: {msg}")
+
+
+class SolicitationEditView(SignedInPage):
+    """Edit a call. Only what the form sends is changed (edits merge)."""
 
     template_name = "solicitations/solicitation_form.html"
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx["has_context"] = _has_context(self.request)
-        pk = kwargs["pk"]
-        try:
-            da = _get_data_access(self.request)
-            solicitation = da.get_solicitation_by_id(pk)
-            if not solicitation:
-                raise Http404("Solicitation not found")
-            ctx["solicitation"] = solicitation
-            # Populate form with initial data from the existing solicitation
-            initial = {
-                "title": solicitation.title,
-                "description": solicitation.description,
-                "scope_of_work": solicitation.scope_of_work,
-                "solicitation_type": solicitation.solicitation_type,
-                "status": solicitation.status,
-                "is_public": solicitation.is_public,
-                "application_deadline": solicitation.application_deadline,
-                "expected_start_date": solicitation.expected_start_date,
-                "expected_end_date": solicitation.expected_end_date,
-                "estimated_scale": solicitation.estimated_scale,
-                "contact_email": solicitation.contact_email,
+        solicitation = _managed_solicitation(self.da(), kwargs["pk"])
+        ctx.update(
+            {
+                "solicitation": solicitation,
+                "is_create": False,
+                "existing_questions": solicitation.questions or [],
+                "existing_criteria": solicitation.evaluation_criteria or [],
+                "mapbox_token": settings.MAPBOX_TOKEN or "",
+                "snapshot_plans": [],
             }
-            ctx["form"] = SolicitationForm(initial=initial)
-            ctx["is_create"] = False
-            ctx["existing_questions"] = solicitation.questions or []
-            ctx["existing_criteria"] = solicitation.evaluation_criteria or []
-        except Http404:
-            raise
-        except Exception:
-            logger.exception("Failed to load solicitation %s for editing", pk)
-            raise Http404("Solicitation not found")
+        )
+        ctx.setdefault(
+            "form",
+            SolicitationForm(
+                initial={
+                    "title": solicitation.title,
+                    "description": solicitation.description,
+                    "scope_of_work": solicitation.scope_of_work,
+                    "solicitation_type": solicitation.solicitation_type,
+                    "status": solicitation.status,
+                    "is_public": solicitation.is_public,
+                    "application_deadline": solicitation.application_deadline,
+                    "expected_start_date": solicitation.expected_start_date,
+                    "expected_end_date": solicitation.expected_end_date,
+                    "estimated_scale": solicitation.estimated_scale,
+                    "contact_email": solicitation.contact_email,
+                }
+            ),
+        )
         return ctx
 
     def post(self, request, *args, **kwargs):
-        pk = kwargs["pk"]
+        solicitation = _managed_solicitation(self.da(), kwargs["pk"])
         form = SolicitationForm(request.POST)
         if form.is_valid():
-            data = form.to_data_dict()
             try:
-                da = _get_data_access(request)
-                da.update_solicitation(pk, data)
+                self.da().update_solicitation(solicitation.public_id, form.to_data_dict())
+            except ValidationError as e:
+                _attach_errors(form, e)
+            else:
+                if solicitation.owner_org_id:
+                    return redirect("solicitations:org_manage", org_slug=solicitation.owner_org.slug)
                 return redirect("solicitations:manage_list")
-            except Exception:
-                logger.exception("Failed to update solicitation %s", pk)
-                ctx = self.get_context_data(**kwargs)
-                ctx["form"] = form
-                ctx["error"] = "Failed to update solicitation. Please try again."
-                return self.render_to_response(ctx)
-        else:
-            ctx = self.get_context_data(**kwargs)
-            ctx["form"] = form
-            return self.render_to_response(ctx)
+        ctx = self.get_context_data(**kwargs)
+        ctx["form"] = form
+        return self.render_to_response(ctx)
 
 
-class ResponsesListView(ManagerRequiredMixin, TemplateView):
-    """List responses for a solicitation with review data."""
+class ResponsesListView(SignedInPage):
+    """The owner's inbox for one call. Responses are shown by number, not name: scoring is blind."""
 
     template_name = "solicitations/responses_list.html"
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        pk = kwargs["pk"]
-        try:
-            da = _get_data_access(self.request)
-            solicitation = da.get_solicitation_by_id(pk)
-            if not solicitation:
-                raise Http404("Solicitation not found")
-            ctx["solicitation"] = solicitation
-
-            responses = da.get_responses_for_solicitation(pk)
-            for r in responses:
-                try:
-                    reviews = da.get_reviews_for_response(r.pk)
-                    r.latest_review = reviews[-1] if reviews else None
-                except Exception:
-                    r.latest_review = None
-            ctx["responses"] = responses
-            # Once a response is awarded, the call has effectively been awarded —
-            # surface that in the header instead of a stale "Active" badge.
-            ctx["has_awarded"] = any(getattr(r, "status", None) == "awarded" for r in responses)
-            # Fresh-from-publish confirmation: lead with the accomplishment + a
-            # share action instead of a bare "No responses yet" inbox.
-            ctx["just_created"] = self.request.GET.get("created") == "1"
-            ctx["share_url"] = self.request.build_absolute_uri(
-                reverse("solicitations:public_detail", kwargs={"pk": pk})
-            )
-        except Http404:
-            raise
-        except Exception:
-            logger.exception("Failed to load responses for solicitation %s", pk)
-            raise Http404("Solicitation not found")
+        da = self.da()
+        solicitation = _managed_solicitation(da, kwargs["pk"])
+        responses = [r for r in da.get_responses_for_solicitation(solicitation.public_id) if r.status != "draft"]
+        for r in responses:
+            reviews = da.get_reviews_for_response(r.pk)
+            r.latest_review = reviews[-1] if reviews else None
+            r.can_review = access.can_review(da.caller, r)
+        ctx.update(
+            {
+                "solicitation": solicitation,
+                "responses": responses,
+                "has_awarded": solicitation.status == "awarded" or any(r.status == "awarded" for r in responses),
+                "just_created": self.request.GET.get("created") == "1",
+                "share_url": self.request.build_absolute_uri(
+                    reverse("solicitations:public_detail", kwargs={"pk": solicitation.public_id})
+                ),
+            }
+        )
         return ctx
 
 
-# -- Response Views (login required) ---------------------------------------
+# -- Responding (login) -------------------------------------------------------------
 
 
-class RespondView(LabsLoginRequiredMixin, TemplateView):
-    """Submit or save a draft response to a solicitation."""
+class RespondView(SignedInPage):
+    """Answer a call, as an organisation. One draft per person, edited in place."""
 
     template_name = "solicitations/respond.html"
 
-    def get_context_data(self, **kwargs):
-        ctx = super().get_context_data(**kwargs)
-        pk = kwargs["pk"]
-        try:
-            da = _get_data_access(self.request)
-            solicitation = da.get_solicitation_by_id(pk)
-            if not solicitation:
-                raise Http404("Solicitation not found")
-            if not solicitation.can_accept_responses():
-                ctx["not_accepting"] = True
-            ctx["solicitation"] = solicitation
-            ctx["mapbox_token"] = settings.MAPBOX_TOKEN or ""
-            form = SolicitationResponseForm(questions=solicitation.questions, plans=solicitation.plans)
-            ctx["form"] = form
+    def _load(self, pk):
+        da = self.da()
+        solicitation = _solicitation_or_404(da, pk)
+        my_response = da.get_my_response(solicitation.public_id)
+        orgs = access.member_orgs(da.caller)
+        return solicitation, my_response, orgs
 
-            # Build zipped question + field + criteria list for template rendering
-            criteria_by_question = {}
-            for criterion in solicitation.evaluation_criteria:
-                for q_id in criterion.get("linked_questions", []):
-                    criteria_by_question.setdefault(q_id, []).append(criterion)
+    def _form(self, solicitation, orgs, my_response=None, data=None):
+        initial = {}
+        if my_response is not None and my_response.status == "draft":
+            initial = {f"question_{k}": v for k, v in (my_response.responses or {}).items()}
+            if my_response.llo_entity_id and any(o.pk == my_response.llo_entity_id for o in orgs):
+                initial["org"] = my_response.llo_entity.slug
+            elif my_response.org_name:
+                initial.update({"org": NEW_ORG, "new_org_name": my_response.org_name})
+            if my_response.selected_plan_ids:
+                initial["select_plans"] = [str(i) for i in my_response.selected_plan_ids]
+        return SolicitationResponseForm(
+            questions=solicitation.questions,
+            plans=solicitation.plans,
+            org_choices=[(o.slug, o.name) for o in orgs],
+            data=data,
+            initial=initial,
+        )
 
-            question_fields = []
-            for question in solicitation.questions:
-                q_id = question.get("id", "")
-                field_name = f"question_{q_id}"
-                field = form[field_name] if field_name in form.fields else None
-                question_fields.append(
-                    {
-                        "question": question,
-                        "field": field,
-                        "field_name": field_name,
-                        "criteria": criteria_by_question.get(q_id, []),
-                    }
-                )
-            ctx["question_fields"] = question_fields
-        except Http404:
-            raise
-        except Exception:
-            logger.exception("Failed to load solicitation %s for response", pk)
-            raise Http404("Solicitation not found")
+    def _context(self, solicitation, my_response, form, **extra):
+        criteria_by_question = {}
+        for criterion in solicitation.evaluation_criteria or []:
+            for q_id in criterion.get("linked_questions", []):
+                criteria_by_question.setdefault(q_id, []).append(criterion)
+        question_fields = []
+        for question in solicitation.questions or []:
+            field_name = f"question_{question.get('id', '')}"
+            question_fields.append(
+                {
+                    "question": question,
+                    "field": form[field_name] if field_name in form.fields else None,
+                    "field_name": field_name,
+                    "criteria": criteria_by_question.get(question.get("id", ""), []),
+                }
+            )
+        ctx = self.get_context_data(
+            solicitation=solicitation,
+            my_response=my_response,
+            already_submitted=my_response is not None and my_response.status != "draft",
+            not_accepting=not solicitation.can_accept_responses,
+            form=form,
+            question_fields=question_fields,
+            mapbox_token=settings.MAPBOX_TOKEN or "",
+            **extra,
+        )
         return ctx
 
+    def get(self, request, *args, **kwargs):
+        solicitation, my_response, orgs = self._load(kwargs["pk"])
+        form = self._form(solicitation, orgs, my_response)
+        return self.render_to_response(self._context(solicitation, my_response, form))
+
     def post(self, request, *args, **kwargs):
-        pk = kwargs["pk"]
-        try:
-            da = _get_data_access(request)
-            solicitation = da.get_solicitation_by_id(pk)
-            if not solicitation:
-                raise Http404("Solicitation not found")
-        except Http404:
-            raise
-        except Exception:
-            logger.exception("Failed to load solicitation %s for response POST", pk)
-            raise Http404("Solicitation not found")
+        solicitation, my_response, orgs = self._load(kwargs["pk"])
+        form = self._form(solicitation, orgs, data=request.POST)
+        if not solicitation.can_accept_responses:
+            ctx = self._context(solicitation, my_response, form)
+            response = self.render_to_response(ctx)
+            response.status_code = 403
+            return response
+        if my_response is not None and my_response.status != "draft":
+            return redirect("solicitations:public_detail", pk=solicitation.public_id)
 
-        if not solicitation.can_accept_responses():
-            return redirect("solicitations:public_detail", pk=pk)
-
-        form = SolicitationResponseForm(questions=solicitation.questions, plans=solicitation.plans, data=request.POST)
+        status = "draft" if "save_draft" in request.POST else "submitted"
         if form.is_valid():
-            # Determine status based on which button was pressed
-            if "save_draft" in request.POST:
-                status = "draft"
-            else:
-                status = "submitted"
-
-            selected_plan_ids, selected_plan_names = form.get_selected_plans(solicitation.plans)
-
-            # Submitting a plans-based solicitation requires choosing >=1 plan.
-            if status == "submitted" and solicitation.plans and not selected_plan_ids:
-                form.add_error(None, "Select at least one coverage area to submit.")
-                ctx = self.get_context_data(**kwargs)
-                ctx["form"] = form
-                return self.render_to_response(ctx)
-
-            # Pull org info from context for display on responses list
-            labs_context = getattr(request, "labs_context", {})
-            org = labs_context.get("organization", {})
-
-            # Applicant identity: a firm answering a public call names the
-            # organization it applies on behalf of. Prefer the firm name/email
-            # the applicant entered; fall back to the logged-in account only when
-            # left blank, so the owner always reviews/awards a named firm rather
-            # than the individual account that submitted the form.
-            firm_name = (form.cleaned_data.get("firm_name") or "").strip()
-            firm_email = (form.cleaned_data.get("firm_email") or "").strip()
-            account_name = (request.user.name or "").strip() or request.user.username
-
-            data = {
-                "solicitation_id": pk,
-                "responses": form.get_responses_dict(),
-                "status": status,
-                "submitted_by_name": firm_name or account_name,
-                "submitted_by_email": firm_email or request.user.email,
-                # The authenticated account that submitted the form — distinct from
-                # the firm identity above. _find_user_response matches on this so
-                # the detail page can suppress the respond re-invite even when the
-                # firm's name/email differ from the account's.
-                "submitted_by_username": request.user.username,
-                "org_id": org.get("id", ""),
-                "org_name": firm_name or org.get("name", ""),
-                "submission_date": timezone.now().isoformat(),
-            }
+            org_slug, new_name, new_email = form.responding_org()
+            selected_ids, selected_names = form.get_selected_plans(solicitation.plans or [])
+            if status == "submitted":
+                if not org_slug and not new_name:
+                    form.add_error("new_org_name", "Name the organisation you are responding for.")
+                if solicitation.plans and not selected_ids:
+                    form.add_error(None, "Select at least one coverage area to submit.")
+        if form.is_valid():
+            data = {"responses": form.get_responses_dict(), "status": status}
+            if new_name:
+                data["org_name"] = new_name
+                data["llo_entity_name"] = new_name
+            if new_email:
+                data["submitted_by_email"] = new_email
             if solicitation.plans:
-                data["selected_plan_ids"] = selected_plan_ids
-                data["selected_plan_names"] = selected_plan_names
-
+                data["selected_plan_ids"] = selected_ids
+                data["selected_plan_names"] = selected_names
             try:
-                da.create_response(
-                    solicitation_id=pk,
-                    llo_entity_id="individual",
-                    data=data,
-                )
-                # Route a *submitted* response to a real confirmation: land back on
-                # the detail page with ?submitted=1, which renders a success banner
-                # and suppresses the public respond/login re-invite. Drafts skip the
-                # confirmation (nothing's been committed yet).
-                detail_url = reverse("solicitations:public_detail", kwargs={"pk": pk})
+                self.da().create_response(solicitation.public_id, llo_entity_id=org_slug, data=data)
+            except ValidationError as e:
+                _attach_errors(form, e)
+            else:
+                detail_url = reverse("solicitations:public_detail", kwargs={"pk": solicitation.public_id})
                 if status == "submitted":
-                    detail_url = f"{detail_url}?submitted=1"
-                return redirect(detail_url)
-            except Exception:
-                logger.exception("Failed to create response for solicitation %s", pk)
-                ctx = self.get_context_data(**kwargs)
-                ctx["form"] = form
-                ctx["error"] = "Failed to submit response. Please try again."
-                return self.render_to_response(ctx)
-        else:
-            ctx = self.get_context_data(**kwargs)
-            ctx["form"] = form
-            return self.render_to_response(ctx)
+                    return redirect(f"{detail_url}?submitted=1")
+                return redirect(f"{reverse('solicitations:respond', kwargs={'pk': solicitation.public_id})}?saved=1")
+        return self.render_to_response(self._context(solicitation, my_response, form))
 
 
-class ResponseDetailView(LabsLoginRequiredMixin, TemplateView):
-    """View details of a single response with Q&A pairs and reviews."""
+class ResponseDetailView(SignedInPage):
+    """One response, named. The owner sees it with its reviews; the respondent sees their own."""
 
     template_name = "solicitations/response_detail.html"
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        pk = kwargs["pk"]
-        try:
-            da = _get_data_access(self.request)
-            response = da.get_response_by_id(pk)
-            if not response:
-                raise Http404("Response not found")
-            ctx["response"] = response
-
-            # Load parent solicitation
-            solicitation = da.get_solicitation_by_id(response.solicitation_id)
-            ctx["solicitation"] = solicitation
-
-            # Load reviews. Attach readable per-criterion rows so the record
-            # shows the rubric's work, not just the collapsed overall score.
-            reviews = da.get_reviews_for_response(pk)
-            criteria_by_id = {c.get("id"): c for c in (solicitation.evaluation_criteria if solicitation else [])}
-            for rev in reviews:
-                rows = []
-                for c_id, c_score in (rev.criteria_scores or {}).items():
-                    criterion = criteria_by_id.get(c_id) or {}
-                    rows.append(
-                        {
-                            "name": criterion.get("name", c_id),
-                            "weight": criterion.get("weight"),
-                            "score": c_score,
-                        }
-                    )
-                rev.criteria_score_rows = rows
-            ctx["reviews"] = reviews
-
-            # Build Q&A pairs
-            qa_pairs = []
-            if solicitation and solicitation.questions:
-                for question in solicitation.questions:
-                    q_id = question.get("id", "")
-                    qa_pairs.append(
-                        {
-                            "question": question.get("text", ""),
-                            "answer": response.responses.get(q_id, ""),
-                        }
-                    )
-            ctx["qa_pairs"] = qa_pairs
-        except Http404:
-            raise
-        except Exception:
-            logger.exception("Failed to load response %s", pk)
-            raise Http404("Response not found")
+        da = self.da()
+        response = _response_or_refuse(da, kwargs["pk"])
+        solicitation = response.solicitation
+        reviews = da.get_reviews_for_response(response.pk)
+        criteria_by_id = {c.get("id"): c for c in (solicitation.evaluation_criteria or [])}
+        for rev in reviews:
+            rev.criteria_score_rows = [
+                {
+                    "name": (criteria_by_id.get(c_id) or {}).get("name", c_id),
+                    "weight": (criteria_by_id.get(c_id) or {}).get("weight"),
+                    "score": c_score,
+                }
+                for c_id, c_score in (rev.criteria_scores or {}).items()
+            ]
+        ctx.update(
+            {
+                "response": response,
+                "solicitation": solicitation,
+                "reviews": reviews,
+                "is_owner": da.can_manage(solicitation),
+                "is_respondent": access.is_respondent(da.caller, response),
+                "can_review": access.can_review(da.caller, response),
+                "can_edit": access.can_edit_response(da.caller, response) and bool(solicitation.can_accept_responses),
+                "qa_pairs": [
+                    {"question": q.get("text", ""), "answer": (response.responses or {}).get(q.get("id", ""), "")}
+                    for q in solicitation.questions or []
+                ],
+            }
+        )
         return ctx
 
 
-# -- Award Views (manager required) ----------------------------------------
+# -- Award and review (owner or platform support, never your own side) ------------------
 
 
-class AwardView(ManagerRequiredMixin, TemplateView):
-    """Award a response — record the award and confirm the org was notified.
-
-    Awarding is the shipped end-state here: it records the decision (status,
-    budget, org) and stamps that the awardee was notified. Standing up a live
-    Connect opportunity *from* the award is a separate, not-yet-built next step;
-    the template keeps that downstream provisioning honestly framed as deferred.
-    """
+class AwardView(SignedInPage):
+    """Award a response: record the decision and email the awardee if mail is on."""
 
     template_name = "solicitations/award.html"
 
     def _summary(self, da, response, solicitation):
-        """Readable award summary: org NAME (never a slug), coverage, score."""
-        # Highest reviewer score (if any) — shown so the manager confirms they're
-        # awarding the firm they meant to.
-        score = None
-        try:
-            reviews = da.get_reviews_for_response(response.pk)
-            scores = [r.score for r in reviews if r.score is not None]
-            if scores:
-                score = max(scores)
-        except Exception:
-            logger.exception("Failed to load reviews for response %s", response.pk)
-        # Coverage area names come off the response (resolved micro-plan names),
-        # falling back to the solicitation's plans if the response didn't carry them.
+        reviews = da.get_reviews_for_response(response.pk)
+        scores = [r.score for r in reviews if r.score is not None]
         coverage = list(response.selected_plan_names or [])
-        if not coverage and solicitation and solicitation.plans:
+        if not coverage and solicitation.plans:
             coverage = [p.get("name", "") for p in solicitation.plans if p.get("name")]
-        # Resolve a REAL display name for the awardee: prefer the resolved LLO
-        # entity name, then the org name, then the submitter's own name. Never
-        # emit the literal placeholder "this organization" — it reads as a bug.
-        org_display = (
-            (response.llo_entity_name or "").strip()
-            or (response.org_name or "").strip()
-            or (response.submitted_by_name or "").strip()
-            or (response.submitted_by_email or "").strip()
-            or "the selected organization"
-        )
         return {
-            "org_display": org_display,
+            "org_display": response.display_name or "the selected organisation",
             "contact_name": response.submitted_by_name,
             "contact_email": response.submitted_by_email,
             "coverage_areas": [c for c in coverage if c],
-            "score": score,
+            "score": max(scores) if scores else None,
         }
+
+    def _load(self, pk):
+        da = self.da()
+        response = _response_or_refuse(da, pk)
+        access.require(
+            access.can_award(da.caller, response),
+            "Only the organisation that owns this call (or platform support) can award it, "
+            "and never a response from your own side.",
+        )
+        return da, response
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        pk = kwargs["pk"]
-        try:
-            da = _get_data_access(self.request)
-            response = da.get_response_by_id(pk)
-            if not response:
-                raise Http404("Response not found")
-            ctx["response"] = response
-
-            solicitation = da.get_solicitation_by_id(response.solicitation_id)
-            ctx["solicitation"] = solicitation
-            ctx["summary"] = self._summary(da, response, solicitation)
-            # When the response is already awarded, the page renders the
-            # confirmation state instead of the form.
-            ctx["awarded"] = response.is_awarded
-        except Http404:
-            raise
-        except Exception:
-            logger.exception("Failed to load response %s for award", pk)
-            raise Http404("Response not found")
+        da, response = self._load(kwargs["pk"])
+        solicitation = response.solicitation
+        ctx.update(
+            {
+                "response": response,
+                "solicitation": solicitation,
+                "summary": self._summary(da, response, solicitation),
+                "awarded": response.is_awarded,
+                "currency": solicitation.currency,
+                "is_operator": da.caller.is_operator,
+                "email_on": _email_enabled(),
+            }
+        )
         return ctx
 
     def post(self, request, *args, **kwargs):
-        pk = kwargs["pk"]
+        da, response = self._load(kwargs["pk"])
         try:
-            da = _get_data_access(request)
-            reward_budget = int(request.POST.get("reward_budget") or 0)
-            org_id = request.POST.get("org_id", "")
-            award_stage = request.POST.get("award_stage", "verification")
-            da.award_response(pk, reward_budget=reward_budget, org_id=org_id, award_stage=award_stage)
-        except Exception:
-            logger.exception("Failed to award response %s", pk)
+            reward_budget = int(request.POST.get("reward_budget") or 0) or None
+        except ValueError:
             ctx = self.get_context_data(**kwargs)
-            ctx["awarded"] = False
-            ctx["error"] = "Failed to award response. Please try again."
+            ctx["error"] = "The award budget must be a whole number."
             return self.render_to_response(ctx)
+        org_id = request.POST.get("org_id", "") if da.caller.is_operator else response.org_id
+        da.award_response(
+            response.pk,
+            reward_budget=reward_budget,
+            org_id=org_id,
+            award_stage=request.POST.get("award_stage", "verification"),
+        )
+        return redirect("solicitations:award", pk=response.pk)
 
-        # Render the confirmation state in place — "✓ Awarded to <org> — the
-        # organization has been notified." — rather than bouncing back to the list.
-        ctx = self.get_context_data(**kwargs)
-        return self.render_to_response(ctx)
 
-
-# -- Review Views (manager required) ---------------------------------------
-
-
-class ReviewView(ManagerRequiredMixin, TemplateView):
-    """Create or update a review for a response."""
+class ReviewView(SignedInPage):
+    """Score a response blind: by number, with no name, email or organisation shown."""
 
     template_name = "solicitations/review_form.html"
 
+    def _load(self, pk):
+        da = self.da()
+        response = _response_or_refuse(da, pk)
+        access.require(
+            access.can_review(da.caller, response),
+            "Only the organisation that owns this call (or platform support) can review it, "
+            "and never a response from your own side.",
+        )
+        return da, response
+
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        pk = kwargs["pk"]
-        try:
-            da = _get_data_access(self.request)
-            response = da.get_response_by_id(pk)
-            if not response:
-                raise Http404("Response not found")
-            ctx["response"] = response
-
-            # Load parent solicitation
-            solicitation = da.get_solicitation_by_id(response.solicitation_id)
-            ctx["solicitation"] = solicitation
-
-            # Blind scoring: the reviewer scores by response id, never by firm name.
-            ctx["blind_label"] = response.blind_label
-            # AI-proposed per-criterion scores, revealed only after the reviewer
-            # records their own score for that criterion (anti-anchoring).
-            ctx["ai_proposed_scores"] = response.ai_proposed_scores
-
-            # Build criteria-by-question lookup
-            criteria_by_question = {}
-            eval_criteria = solicitation.evaluation_criteria if solicitation else []
-            for criterion in eval_criteria:
-                for q_id in criterion.get("linked_questions", []):
-                    criteria_by_question.setdefault(q_id, []).append(criterion)
-
-            # Build Q&A pairs with linked criteria for inline scoring
-            qa_pairs = []
-            if solicitation and solicitation.questions:
-                for question in solicitation.questions:
-                    q_id = question.get("id", "")
-                    qa_pairs.append(
-                        {
-                            "question": question.get("text", ""),
-                            "answer": response.responses.get(q_id, ""),
-                            "question_id": q_id,
-                            "criteria": criteria_by_question.get(q_id, []),
-                        }
-                    )
-            ctx["qa_pairs"] = qa_pairs
-
-            # Criteria not linked to any question still belong on the rubric —
-            # render them in their own section so every generated criterion is
-            # scoreable (the ReviewForm already builds a field for each).
-            linked_ids = {c.get("id") for pairs in criteria_by_question.values() for c in pairs}
-            ctx["unlinked_criteria"] = [c for c in eval_criteria if c.get("id") not in linked_ids]
-
-            # Check for existing review by current user
-            reviews = da.get_reviews_for_response(pk)
-            reviewer_username = self.request.user.username
-            existing_review = None
-            for review in reviews:
-                if review.reviewer_username == reviewer_username:
-                    existing_review = review
-                    break
-
-            if existing_review:
-                ctx["existing_review"] = existing_review
-                ctx["is_update"] = True
-                ctx["form"] = ReviewForm(
-                    evaluation_criteria=eval_criteria,
-                    initial={
-                        "score": existing_review.score,
-                        "recommendation": existing_review.recommendation,
-                        "notes": existing_review.notes,
-                        "tags": existing_review.tags,
-                    },
-                )
-            else:
-                ctx["is_update"] = False
-                ctx["form"] = ReviewForm(evaluation_criteria=eval_criteria)
-        except Http404:
-            raise
-        except Exception:
-            logger.exception("Failed to load response %s for review", pk)
-            raise Http404("Response not found")
+        da, response = self._load(kwargs["pk"])
+        solicitation = response.solicitation
+        eval_criteria = solicitation.evaluation_criteria or []
+        criteria_by_question = {}
+        for criterion in eval_criteria:
+            for q_id in criterion.get("linked_questions", []):
+                criteria_by_question.setdefault(q_id, []).append(criterion)
+        linked_ids = {c.get("id") for pairs in criteria_by_question.values() for c in pairs}
+        existing = da.get_my_review(response.pk)
+        ctx.update(
+            {
+                "response": response,
+                "solicitation": solicitation,
+                "blind_label": response.blind_label,
+                "ai_proposed_scores": response.ai_proposed_scores,
+                "qa_pairs": [
+                    {
+                        "question": q.get("text", ""),
+                        "answer": (response.responses or {}).get(q.get("id", ""), ""),
+                        "question_id": q.get("id", ""),
+                        "criteria": criteria_by_question.get(q.get("id", ""), []),
+                    }
+                    for q in solicitation.questions or []
+                ],
+                "unlinked_criteria": [c for c in eval_criteria if c.get("id") not in linked_ids],
+                "existing_review": existing,
+                "is_update": existing is not None,
+            }
+        )
+        if "form" not in ctx:
+            initial = {}
+            if existing is not None:
+                initial = {
+                    "score": existing.score,
+                    "recommendation": existing.recommendation,
+                    "notes": existing.notes,
+                    "tags": existing.tags,
+                    **{f"criteria_score_{k}": v for k, v in (existing.criteria_scores or {}).items()},
+                }
+            ctx["form"] = ReviewForm(evaluation_criteria=eval_criteria, initial=initial)
         return ctx
 
     def post(self, request, *args, **kwargs):
-        pk = kwargs["pk"]
-        try:
-            da = _get_data_access(request)
-            response = da.get_response_by_id(pk)
-            if not response:
-                raise Http404("Response not found")
-        except Http404:
-            raise
-        except Exception:
-            logger.exception("Failed to load response %s for review POST", pk)
-            raise Http404("Response not found")
-
-        # Load solicitation for evaluation criteria
-        try:
-            solicitation = da.get_solicitation_by_id(response.solicitation_id)
-            eval_criteria = solicitation.evaluation_criteria if solicitation else []
-        except Exception:
-            eval_criteria = []
-
-        form = ReviewForm(eval_criteria, request.POST)
+        da, response = self._load(kwargs["pk"])
+        form = ReviewForm(response.solicitation.evaluation_criteria or [], request.POST)
         if form.is_valid():
-            reviewer_username = request.user.username
-            data = {
-                "response_id": pk,
-                "llo_entity_id": response.llo_entity_id,
-                "score": form.cleaned_data["score"],
-                "recommendation": form.cleaned_data["recommendation"],
-                "notes": form.cleaned_data["notes"],
-                "tags": form.cleaned_data["tags"],
-                "reviewer_username": reviewer_username,
-                "review_date": timezone.now().isoformat(),
-                "criteria_scores": form.get_criteria_scores(),
-            }
-
-            try:
-                # Check for existing review by this user
-                reviews = da.get_reviews_for_response(pk)
-                existing_review = None
-                for review in reviews:
-                    if review.reviewer_username == reviewer_username:
-                        existing_review = review
-                        break
-
-                if existing_review:
-                    da.update_review(existing_review.pk, data)
-                else:
-                    da.create_review(response_id=pk, data=data)
-
-                return redirect("solicitations:response_detail", pk=pk)
-            except Exception:
-                logger.exception("Failed to save review for response %s", pk)
-                ctx = self.get_context_data(**kwargs)
-                ctx["form"] = form
-                ctx["error"] = "Failed to save review. Please try again."
-                return self.render_to_response(ctx)
-        else:
-            ctx = self.get_context_data(**kwargs)
-            ctx["form"] = form
-            return self.render_to_response(ctx)
+            da.create_review(
+                response.pk,
+                {
+                    "score": form.cleaned_data["score"],
+                    "recommendation": form.cleaned_data["recommendation"],
+                    "notes": form.cleaned_data["notes"],
+                    "tags": form.cleaned_data["tags"],
+                    "review_date": timezone.now().isoformat(),
+                    "criteria_scores": form.get_criteria_scores(),
+                },
+            )
+            return redirect("solicitations:responses_list", pk=response.solicitation.public_id)
+        ctx = self.get_context_data(form=form, **kwargs)
+        return self.render_to_response(ctx)

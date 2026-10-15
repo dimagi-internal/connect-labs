@@ -27,7 +27,7 @@ from django.shortcuts import get_object_or_404, render
 from connect_labs.labs.chrome import page_chrome
 from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace import programs, queries
-from connect_labs.solicitations.local_models import SolicitationResponse
+from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
 
 # Nothing in the marketplace is scoped by the labs context selector, and on a
 # phone it was the largest thing on the screen. The Pulse widget takes its
@@ -392,6 +392,11 @@ def organisation(request, slug):
                 r.solicitation.delivery_type for r in responses if programs.is_program(r.solicitation.delivery_type)
             ),
             "visits": sum(o.lifetime_visit_count for o in opportunities),
+            # Calls for partners this organisation owns and lists publicly:
+            # the header links to its solicitations page when there are any.
+            "listed_calls": (
+                Solicitation.objects.calls().filter(owner_org=org, listed=True).exclude(status="draft").count()
+            ),
         },
     )
 

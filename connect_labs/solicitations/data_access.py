@@ -439,6 +439,15 @@ class SolicitationsDataAccess:
             return None
         return response
 
+    @staticmethod
+    def response_exists(response_id) -> bool:
+        """Whether a response with this id exists at all, readable or not.
+
+        Lets a page answer "not yours" (403) rather than "no such thing" (404)
+        for a response it will not show.
+        """
+        return by_public_id(SolicitationResponse.objects.all(), response_id) is not None
+
     def get_my_response(self, solicitation_id: int) -> SolicitationResponse | None:
         """The caller's draft if they have one, else their latest response."""
         if self.caller.user_pk is None:

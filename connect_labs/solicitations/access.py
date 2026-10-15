@@ -209,6 +209,15 @@ def manageable_orgs(subject) -> list[LabsOrg]:
     return list(LabsOrg.objects.filter(pk__in=ids).order_by("name"))
 
 
+def member_orgs(subject) -> list[LabsOrg]:
+    """Organisations the caller belongs to by grant -- who they may respond as.
+
+    `manageable_orgs` minus what staff manage only as platform support.
+    """
+    caller = caller_for(subject)
+    return [org for org in manageable_orgs(caller) if caller.is_member(org)]
+
+
 def _connect_org_ids(caller) -> set[int]:
     from connect_labs.supply_chain.identity import caller_org_ids
 

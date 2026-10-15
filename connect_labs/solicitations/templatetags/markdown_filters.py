@@ -1,7 +1,11 @@
+import html as html_lib
+
 import markdown as md
 import nh3
 from django import template
+from django.utils.html import strip_tags
 from django.utils.safestring import mark_safe
+from django.utils.text import Truncator
 
 register = template.Library()
 
@@ -45,3 +49,13 @@ def get_criteria_field(form, criterion_id):
     if hasattr(form, "fields") and field_name in form.fields:
         return form[field_name]
     return ""
+
+
+@register.filter(name="plain_preview")
+def plain_preview(value, words=40):
+    """Markdown as plain text for a card preview: no `**`, `#` or link syntax, whitespace collapsed."""
+    if not value:
+        return ""
+    text = " ".join(strip_tags(md.markdown(str(value))).split())
+    # Unescaped here, escaped again by the template: the preview is text, never markup.
+    return Truncator(html_lib.unescape(text)).words(int(words), truncate="…")

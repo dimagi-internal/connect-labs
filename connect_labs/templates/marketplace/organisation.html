@@ -28,6 +28,12 @@ refuses to open. <details> needs no JavaScript at all.
       {% endif %}
       {% if org.short_name %}<span class="text-sm text-gray-400">{{ org.short_name }}</span>{% endif %}
     </div>
+    {% if listed_calls %}
+    <a href="{% url 'solicitations:org_page' org_slug=org.slug %}" class="inline-flex items-center gap-1.5 mt-3 text-sm font-medium text-brand-indigo hover:text-brand-deep-purple">
+      <i class="fa-solid fa-bullhorn"></i>{{ listed_calls }} call{{ listed_calls|pluralize }} for partners from {{ org.name }}
+      <i class="fa-solid fa-arrow-right text-xs"></i>
+    </a>
+    {% endif %}
   </div>
 
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
