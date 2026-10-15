@@ -1010,6 +1010,9 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
     resid_pairs: dict[str, list[tuple[float, float]]] = defaultdict(list)
     # Each reading's departure from the line through its two neighbours (see resid_pool).
     local_resid: dict[str, list[float]] = defaultdict(list)
+    # path -> [consecutive readings, of which exactly equal]: a setting repeats, a
+    # measurement rarely does (see the driver's candidates).
+    repeats: dict[str, list[int]] = defaultdict(lambda: [0, 0])
     day_patterns: dict[int, list[tuple[float, tuple[int, ...]]]] = defaultdict(list)
     day_patterns_by_forms: dict[tuple, list[tuple[float, tuple[int, ...]]]] = defaultdict(list)
     case_consts: list[tuple[str, dict[str, float]]] = []
@@ -1063,6 +1066,9 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
                 # Falls through: if neither identity holds it is modelled like any
                 # other field (a trend, or a per-case constant).
             if path in time_varying:
+                for (_, _, va), (_, _, vb) in zip(pts, pts[1:]):
+                    repeats[path][0] += 1
+                    repeats[path][1] += int(va == vb)
                 for (da, _, va), (db, _, vb), (dc, _, vc) in zip(pts, pts[1:], pts[2:]):
                     if da < db < dc:
                         wc = (db - da) / (dc - da)
@@ -1212,7 +1218,11 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
             # An XForm attribute (a build number, a repeat's index) is the form's own
             # bookkeeping, not something measured: chosen by outcome evidence, a repeat
             # index tied to how a case closes "explained" its ending.
-            and not c.rsplit(".", 1)[-1].startswith("@") and float(np.ptp(margins[c].values)) > 0
+            and not c.rsplit(".", 1)[-1].startswith("@")
+            # A field that mostly repeats from one reading to the next is a setting (an
+            # app version), not a measurement: its slopes are near-zero noise that
+            # happened to line up with how EHA's cases ended.
+            and repeats[c[2:]][1] <= 0.5 * max(repeats[c[2:]][0], 1) and float(np.ptp(margins[c].values)) > 0
         ),
         key=lambda c: -len(margins[c].values),
     )

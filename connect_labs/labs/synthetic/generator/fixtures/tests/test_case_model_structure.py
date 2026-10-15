@@ -189,4 +189,6 @@ def test_a_field_whose_slope_is_mostly_flat_never_drives_outcomes():
         step = rng.random() < (0.4 if died else 0.05)
         for i, v in enumerate(case["visits"]):
             v["values"]["form.app_version"] = float(40 + (step and i >= 3))
+            # ... and a build stamp that drifts by a hair, never quite flat.
+            v["values"]["version"] = 3.0 + (0.001 * i * (-1 if died else 1) if step else 0.0)
     assert cm.fit_case_model(pool).driver == "s:form.w"
