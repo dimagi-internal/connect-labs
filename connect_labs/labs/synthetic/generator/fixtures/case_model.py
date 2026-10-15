@@ -162,6 +162,9 @@ class _PathModel:
     # How the readings off the grid are rounded, by persona or "*": [(unit, share)] for
     # each unit a reading is written to beyond chance (see _fit_heaping).
     heaping: dict[str, list[tuple[float, float]]] = field(default_factory=dict)
+    # The same over EVERY reading, for one the grid would take but has no value near
+    # (a sparse stretch of it, or a slip on an uneven grid).
+    heaping_all: dict[str, list[tuple[float, float]]] = field(default_factory=dict)
 
 
 @dataclass
@@ -191,6 +194,8 @@ class _CatModel:
 _NONE = "\x00none"
 #: The growth band of a case whose readings show no growth (see _tercile).
 _NO_BAND = -2
+#: A combination of endings fewer than K_MIN cases share (see joint_endings).
+_RARE = ("\x00rare",)
 
 
 @dataclass
@@ -242,6 +247,10 @@ class CaseModel:
     # entered as an exact copy by persona or "*", the other first readings' differences
     # from it, sorted). See _fit_anchors.
     anchors: dict[str, tuple[str, dict[str, float], np.ndarray]] = field(default_factory=dict)
+    # How cases END, as whole combinations of terminal answers (see _ending_signature):
+    # key -> signature counts, keys as for _CatModel.ending_by_shape / ending prefixed
+    # "s" / "t"; _RARE stands for combinations fewer than K_MIN cases share.
+    joint_endings: dict[tuple, Counter] = field(default_factory=dict)
     # path -> the path it is a second name for on the same visit (see _fit_aliases).
     aliases: dict[str, str] = field(default_factory=dict)
     # alias -> (form, the value under the main name for a category, else None) ->
@@ -677,7 +686,9 @@ def _fit_anchors(
     equal, and 3.1% of babies' first weight under 60% of their birthweight (the
     "inconsistent" flag) against the source's 0.3%. A constant anchors a field when the
     source copies it into the first reading (5%+ of cases) or the first readings sit
-    tighter around it than half their own spread; the one copied most often wins. Kept
+    tighter around it than three quarters of their own spread (PIPN's first weighings
+    sit 25-824 g over the registration weight, 0.6 of their spread); the one copied
+    most often wins. Kept
     where 10 x K_MIN cases have both; the copy share by persona where K_MIN of its cases do.
     """
     out: dict[str, tuple[str, dict[str, float], np.ndarray]] = {}
@@ -709,7 +720,7 @@ def _fit_anchors(
             share = sum(equal) / len(pairs)
             diffs = sorted(f - c for (_, f, c), eq in zip(pairs, equal) if not eq)
             spread = _robust_sd(diffs) if len(diffs) >= K_MIN else math.inf
-            if share < 0.05 and not spread < 0.5 * own_spread:
+            if share < 0.05 and not spread < 0.75 * own_spread:
                 continue
             score = (share, -spread)
             if best is None or score > best[0]:
@@ -863,8 +874,9 @@ def _fit_heaping(grid, by_owner: dict[str, list[float]], unit: float) -> dict[st
     return out if any(out.values()) else {}
 
 
-def _heap(value: float, pm: _PathModel, owner: str, rng: random.Random) -> float:
-    levels = pm.heaping.get(owner) or pm.heaping.get("*") or []
+def _heap(value: float, pm: _PathModel, owner: str, rng: random.Random, every: bool = False) -> float:
+    table = pm.heaping_all if every else pm.heaping
+    levels = table.get(owner) or table.get("*") or []
     r = rng.random()
     for step, p in levels:
         if r < p:
@@ -878,6 +890,15 @@ def _on_grid(value: float, pm: _PathModel, owner: str, rng: random.Random) -> fl
     nearest grid value, never one further than half the spacing there. One left off
     the grid is rounded as the source rounds its own (see _fit_heaping)."""
     if not pm.grid or rng.random() >= pm.grid_share.get(owner, pm.grid_share.get("*", 0.0)):
+        i = int(np.searchsorted(pm.grid, value)) if pm.grid else 0
+        if pm.grid and i < len(pm.grid) and pm.grid[i] == value:
+            # On a grid value without being put there: a draw from a margin every worker
+            # shares lands on its ties (half of them whole hundreds when half the workers
+            # round), and a worker who reads the scale does not write those. Read off
+            # the scale instead, within half the spacing.
+            gaps = [b - a for a, b in zip(pm.grid[max(i - 1, 0) : i + 1], pm.grid[i : i + 2]) if b > a]
+            if gaps:
+                value += rng.uniform(-0.5, 0.5) * min(gaps)
         return _heap(value, pm, owner, rng) if pm.heaping else value
     grid = pm.grid
     i = int(np.searchsorted(grid, value))
@@ -893,7 +914,12 @@ def _on_grid(value: float, pm: _PathModel, owner: str, rng: random.Random) -> fl
         # Beyond the grid's ends the worker rounds the same way: a 1,250 g reading below
         # the lowest common weight is still written in whole hundreds.
         best = grid[0] + round((value - grid[0]) / pm.grid_step) * pm.grid_step
-    return value if best is None else float(best)
+    if best is None:
+        # Taken for the grid but with no grid value near it (a sparse stretch -- BERI has
+        # too few babies at 1,100 or 1,200 g for either to be one -- or beyond an uneven
+        # grid's ends): rounded as the source rounds its readings overall.
+        return _heap(value, pm, owner, rng, every=True)
+    return float(best)
 
 
 def _sample_days(
@@ -1097,6 +1123,8 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
                 obs, num_obs_owner[path], value_cases[path], 1.0 if whole else 10.0**-places
             )
             model.heaping = _fit_heaping(model.grid, num_obs_owner[path], 1.0 if whole else 10.0**-places)
+            if model.grid:
+                model.heaping_all = _fit_heaping((), num_obs_owner[path], 1.0 if whole else 10.0**-places)
         if model.grid and model.resid_sd > 0:
             # The source's residuals already hold its rounding (a reading put on a grid
             # spaced d apart is off by a uniform error of variance d^2/12), and the grid
@@ -1158,7 +1186,11 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
         ),
         key=lambda c: -len(margins[c].values),
     )
-    driver = slope_cols[0] if slope_cols else "n"
+    bands = 5 if len(series_list) >= 40 * K_MIN else 3
+    # How each case ended, read off a first fit of the answers.
+    probe, _ = _fit_cats(series_list, rows, "n", (), time_varying)
+    signatures = [_ending_signature(s, probe) for s in series_list]
+    driver = _choose_driver(slope_cols, slope_fits, signatures, bands)
     # Answers are fitted, and drawn, by the growth a case's readings SHOW: the raw slope
     # through them (slips left out), not the shrunk one modelled as its true growth.
     # Sampling bands a case the same way (_observed_driver).
@@ -1170,10 +1202,10 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
             banded[ri][driver] = raw
     driver_vals = np.array([row[driver] for row in banded if driver in row], dtype=float)
     # Growth bands: fifths when there are enough cases to fill them, else thirds.
-    bands = 5 if len(series_list) >= 40 * K_MIN else 3
     cuts = tuple(float(np.quantile(driver_vals, q / bands)) for q in range(1, bands))
 
     cats, suppressed = _fit_cats(series_list, banded, driver, cuts, time_varying)
+    joint_endings = _fit_joint_endings(series_list, banded, driver, cuts, cats)
     report["categorical_values_suppressed"] = suppressed
 
     rare_first: Counter = Counter()
@@ -1216,6 +1248,7 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
         presence_groups=presence_groups,
         presence_masks=presence_masks,
         anchors=_fit_anchors(series_list, numeric, slips, frozen_paths),
+        joint_endings=joint_endings,
         numeric=numeric,
         dates=dates,
         cats=cats,
@@ -1311,6 +1344,78 @@ def _shape(forms) -> tuple:
         if form and form not in seen:
             seen.append(form)
     return tuple(seen)
+
+
+def _ending_signature(case: dict[str, Any], cats: dict[str, _CatModel]) -> tuple:
+    """The terminal answers a case ends on, as one sorted tuple (empty if none)."""
+    last = case["visits"][-1].get("cats") or {}
+    return tuple(
+        sorted(
+            (p, str(last[p])) for p, cm in cats.items() if cm.terminal and p in last and str(last[p]) in cm.terminal
+        )
+    )
+
+
+def _choose_driver(slope_cols: list[str], slope_fits, signatures: list[tuple], bands: int) -> str:
+    """The time-varying field whose growth the cases' outcomes follow most.
+
+    The field with the most slopes is not the one outcomes follow: at EHA it was the
+    app's build number (on every form, rising by a step a release), its bands meant
+    nothing, and deaths ran at 10.8% of cases against the source's 3.9%. The field
+    chosen is the one whose growth bands separate how cases END the most -- the largest
+    likelihood-ratio statistic between band and ending, over the cases with a slope --
+    where that is significant (p < 0.001); else none ("n": cases are banded by length).
+    """
+    from scipy.stats import chi2
+
+    shared = Counter(signatures)
+    ending = [sig if shared[sig] >= K_MIN else _RARE for sig in signatures]
+    if len(set(ending)) < 2:
+        return slope_cols[0] if slope_cols else "n"
+    best, best_g = "n", 0.0
+    for col in slope_cols:
+        fits = slope_fits.get(col[2:], [])
+        if len(fits) < 10 * K_MIN:
+            continue
+        raw = np.array([f[4] for f in fits], dtype=float)
+        cuts = np.unique(np.quantile(raw, [q / bands for q in range(1, bands)]))
+        table: dict[tuple[int, tuple], int] = Counter()
+        for f, x in zip(fits, raw):
+            table[(int(np.searchsorted(cuts, x, side="left")), ending[f[0]])] += 1
+        rows_, cols_ = Counter(), Counter()
+        for (b, e), c in table.items():
+            rows_[b] += c
+            cols_[e] += c
+        if len(rows_) < 2 or len(cols_) < 2:
+            continue
+        total = sum(table.values())
+        g = 2.0 * sum(c * math.log(c * total / (rows_[b] * cols_[e])) for (b, e), c in table.items() if c)
+        df = (len(rows_) - 1) * (len(cols_) - 1)
+        if chi2.sf(g, df) < 0.001 and g > best_g:
+            best, best_g = col, g
+    return best
+
+
+def _fit_joint_endings(series_list, rows, driver, cuts, cats) -> dict[tuple, Counter]:
+    """How cases end, as whole combinations of terminal answers.
+
+    Drawn one field at a time, a case could end both died and discharged, and closure
+    fields that always go together came apart. A combination is kept where K_MIN cases
+    share it (the rest is _RARE, drawn field by field), by the same keys as a single
+    field's ending: shape and band and length, then band and length, then overall.
+    """
+    sigs = [_ending_signature(s, cats) for s in series_list]
+    shared = Counter(sigs)
+    median_n = float(np.median([len(s["visits"]) for s in series_list]))
+    out: dict[tuple, Counter] = defaultdict(Counter)
+    for s, row, sig in zip(series_list, rows, sigs):
+        terc = _tercile(row.get(driver, math.nan), cuts)
+        long = int(len(s["visits"]) > median_n)
+        shape = _shape(v.get("form") for v in s["visits"])
+        key = sig if shared[sig] >= K_MIN else _RARE
+        for k in (("s", shape, terc, long), ("s", shape, -1, long), ("t", terc, long), ("t", -1, -1)):
+            out[k][key] += 1
+    return dict(out)
 
 
 def _fit_cats(series_list, rows, driver, cuts, time_varying) -> tuple[dict[str, _CatModel], int]:
@@ -1643,6 +1748,8 @@ def _sample_case(
                     slip = _on_grid(min(max(trend + e, pm.lo), pm.hi), pm, owner, rng) * rng.choice(pm.slip_ratios)
                     if pm.grid_step and rng.random() < pm.slip_on_grid:
                         slip = round(slip / pm.grid_step) * pm.grid_step
+                    elif not pm.grid_step and pm.heaping_all:
+                        slip = _heap(slip, pm, owner, rng, every=True)
                     values[path] = float(round(slip)) if pm.whole else round(slip, pm.places)
                     if model.driver == f"s:{path}":
                         slipped.add(idx - 1)
@@ -1663,9 +1770,19 @@ def _sample_case(
     long = int(n > model.median_n)
     prev_cat: dict[str, str | None] = {}
     const_cat: dict[str, str | None] = {}
-    # Each terminal-valued path's ending for this case, decided up front.
+    # Each terminal-valued path's ending for this case, decided up front: one of the
+    # source's whole combinations where it has one (see _fit_joint_endings).
     endings: dict[str, str | None] = {}
-    for path, cm in model.cats.items():
+    joint = None
+    for key in (("s", shape, terc, long), ("s", shape, -1, long), ("t", terc, long), ("t", -1, -1)):
+        counts = model.joint_endings.get(key)
+        if counts and sum(counts.values()) >= K_MIN:
+            joint = _draw_mask(counts, rng)
+            break
+    if joint is not None and joint != _RARE:
+        endings = {path: None for path, cm in model.cats.items() if cm.terminal}
+        endings.update({path: val for path, val in joint if model.presence.get(path, {}).get(forms[-1], 0.0) > 0})
+    for path, cm in ({} if joint is not None and joint != _RARE else model.cats).items():
         # Only a case whose last form records the path can end on it: a child only
         # ever screened has no treatment outcome to end with.
         if cm.terminal and model.presence.get(path, {}).get(forms[-1], 0.0) > 0:

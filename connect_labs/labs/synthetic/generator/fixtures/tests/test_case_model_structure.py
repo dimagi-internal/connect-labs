@@ -87,3 +87,48 @@ def test_readings_are_rounded_to_each_unit_the_source_rounds_to():
     out = [cm._on_grid(rng.uniform(1200, 3500), pm, "flw_002", rng) for _ in range(3000)]
     assert abs(sum(x % 100 == 0 for x in out) / len(out) - 0.25) < 0.04
     assert abs(sum(x % 10 == 0 for x in out) / len(out) - 0.60) < 0.05
+
+
+def _outcome_pool(seed=5, cases=400):
+    """Slow growers die; every form also carries a build number that rises now and then
+    and says nothing about the baby. A case ends died (alive=no, status=closed) or
+    discharged (status=discharged), never both."""
+    rng = random.Random(seed)
+    pool = []
+    for c in range(cases):
+        slope = rng.gauss(18, 6)
+        died = rng.random() < (0.35 if slope < 14 else 0.03)
+        discharged = not died and rng.random() < 0.3
+        build = rng.choice([3, 4, 5])
+        visits = []
+        for i in range(5):
+            day = 7 * i
+            build += rng.random() < 0.15
+            cats = {"form.alive": "yes", "form.status": "open"}
+            if i == 4 and died:
+                cats = {"form.alive": "no", "form.status": "closed"}
+            elif i == 4 and discharged:
+                cats = {"form.alive": "yes", "form.status": "discharged"}
+            values = {"form.w": float(round(1600 + slope * day + rng.gauss(0, 20))), "form.@version": float(build)}
+            visits.append({"day": day, "form": VISIT, "values": values, "cats": cats})
+        pool.append({"owner": f"flw_{c % 8:03d}", "start_date": "2026-04-01", "visits": visits})
+    return pool
+
+
+def test_outcomes_follow_the_growth_they_depend_on_not_the_commonest_series():
+    model = cm.fit_case_model(_outcome_pool())
+    assert model.driver == "s:form.w"
+
+
+def test_a_case_ends_on_one_of_the_sources_whole_combinations():
+    real = _outcome_pool()
+    out, _ = cm.synthesize_case_pool(real, seed=6)
+    ends = collections.Counter(
+        (s["visits"][-1].get("cats") or {}).get("form.alive", "-")
+        + "/"
+        + (s["visits"][-1].get("cats") or {}).get("form.status", "-")
+        for s in out
+    )
+    assert set(ends) <= {"yes/open", "no/closed", "yes/discharged"}, ends
+    real_died = sum(1 for s in real if s["visits"][-1]["cats"]["form.alive"] == "no") / len(real)
+    assert abs(ends["no/closed"] / len(out) - real_died) < 0.04
