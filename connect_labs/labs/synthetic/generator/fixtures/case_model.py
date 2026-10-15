@@ -1433,6 +1433,14 @@ def _sample_case(
             visit["form"] = form
         visits.append(visit)
     shifts = [d for d in range(-START_SMOOTH_DAYS, START_SMOOTH_DAYS + 1) if d != 0]
+    if donor:
+        # A replayed schedule keeps its own start, moved a few days so no real start
+        # ships. Placed on another case's start instead, a case still open when the
+        # source was read -- its schedule cut by the source's last day -- had the cut
+        # land weeks before that day, and a baby still in follow-up read as lost (61%
+        # lost by day 28 on a clone of an opportunity still enrolling, against 20%:
+        # KMC PIPN, 2026-10-15).
+        start_ordinal = dt.date.fromisoformat(donor[1]["start_date"]).toordinal()
     start = start_ordinal + rng.choice(shifts)
     if model.window:
         start = place_in_window(start, days[-1], *model.window)

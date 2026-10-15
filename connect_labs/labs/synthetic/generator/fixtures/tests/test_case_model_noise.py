@@ -1,5 +1,6 @@
 """A few real data-entry slips must not set the noise on every synthetic weighing."""
 
+import datetime as dt
 import random
 
 from connect_labs.labs.synthetic.generator.fixtures import case_model as cm
@@ -464,3 +465,36 @@ def test_a_data_entry_slip_is_a_slip_not_a_trajectory():
         plain[9 * len(plain) // 10],
     )
     assert abs(wild - slips / readings) < 0.012, f"{wild:.1%} wild readings, source {slips / readings:.1%}"
+
+
+def test_a_case_still_open_when_the_source_was_read_stays_open():
+    """A case still being visited when the source was read has a schedule cut off by that
+    day. Placed on another case's start, or moved earlier, the cut lands before the
+    source's last day, and a baby still in follow-up reads as lost: 61% lost by day 28
+    on the clone of an opportunity still enrolling, against 20% (KMC PIPN, 2026-10-15)."""
+    rng = random.Random(31)
+    end = dt.date(2026, 6, 30).toordinal()
+    pool = []
+    for c in range(400):
+        start = end - rng.randint(0, 120)
+        days = [d for d in range(0, 43, 7) if start + d <= end]
+        visits = [{"day": d, "form": "Visit", "values": {"form.w": 2000.0 + 20 * d}} for d in days]
+        pool.append(
+            {"owner": f"flw_{c % 8:03d}", "start_date": dt.date.fromordinal(start).isoformat(), "visits": visits}
+        )
+
+    out, _report = cm.synthesize_case_pool(pool, seed=14)
+
+    def lost(cases, as_of):
+        eligible = lost = 0
+        for case in cases:
+            start = dt.date.fromisoformat(case["start_date"]).toordinal()
+            seen = [start + int(v["day"]) for v in case["visits"] if start + int(v["day"]) <= as_of]
+            if seen and as_of - seen[0] >= 28:
+                eligible += 1
+                lost += seen[-1] - seen[0] < 28
+        return lost / eligible
+
+    as_of = end - 3
+    assert abs(lost(out, as_of) - lost(pool, as_of)) < 0.03, (lost(out, as_of), lost(pool, as_of))
+    assert all(dt.date.fromisoformat(c["start_date"]).toordinal() + int(c["visits"][-1]["day"]) <= end for c in out)
