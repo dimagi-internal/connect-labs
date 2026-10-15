@@ -64,7 +64,7 @@ class TestEditsToAFollower:
         assert "render_source to null" in str(e.value)
 
     def test_an_edit_to_a_workflow_with_its_own_copy_is_allowed(self):
-        rs.refuse_edit_if_following(_definition())
+        assert rs.refuse_edit_if_following(_definition()) is None
 
 
 class TestChoosingARenderSource:

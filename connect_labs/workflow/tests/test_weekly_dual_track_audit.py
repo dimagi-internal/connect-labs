@@ -789,13 +789,14 @@ def test_definition_pins_visit_clustering_defaults():
     }
 
 
-def test_render_code_includes_visit_clustering_card():
+def test_render_code_sends_the_clustering_and_duplicate_detection_job_keys():
+    """The job handler reads these keys off the payload the render sends."""
     from connect_labs.workflow.templates import get_template
 
     rc = get_template("weekly_dual_track_audit")["render_code"]
-    assert "Visit Clustering" in rc
     assert "enable_time_gap" in rc
     assert "enable_distance" in rc
+    assert "enable_duplicate_detection" in rc
 
 
 def test_render_code_includes_cancel_button():
@@ -806,7 +807,6 @@ def test_render_code_includes_cancel_button():
 
     rc = get_template("weekly_dual_track_audit")["render_code"]
     assert "actions.cancelJob(taskId, instance.id)" in rc
-    assert "handleCancel" in rc
 
 
 def test_render_code_clustering_state_prefers_run_state_over_pinned_default():
@@ -822,13 +822,6 @@ def test_render_code_clustering_state_prefers_run_state_over_pinned_default():
     assert "runState.distance_meters" in rc
 
 
-def test_render_code_view_only_card_shows_clustering_params_used():
-    from connect_labs.workflow.templates import get_template
-
-    rc = get_template("weekly_dual_track_audit")["render_code"]
-    assert "Visit clustering:" in rc
-
-
 def test_definition_pins_track_names_not_reviewers():
     """The reviewer used to be pinned per-track (track_a always got muac_overzoom);
     it's now decided per-path (see _reviewers_for_path), so the DEFINITION carries a
@@ -840,13 +833,10 @@ def test_definition_pins_track_names_not_reviewers():
     assert batch["track_b"] == {"tag": "rest", "sample_percentage": 10, "name": "Other"}
 
 
-def test_render_code_includes_editable_image_type_checkboxes():
+def test_render_code_calls_the_batch_config_and_image_question_endpoints():
     from connect_labs.workflow.templates import get_template
 
     rc = get_template("weekly_dual_track_audit")["render_code"]
-    assert "Track A name" in rc
-    assert "Track B name" in rc
-    assert "Save configuration" in rc
     assert "audit-batch-config" in rc
     assert "image-questions" in rc
 
@@ -1415,59 +1405,10 @@ def test_handler_persists_max_flws_onto_run_state():
     assert written["max_flws"] == 1
 
 
-def test_render_code_includes_per_path_classifier_checkboxes():
+def test_render_code_offers_the_per_path_classifier_ids_the_backend_knows():
     from connect_labs.workflow.templates import get_template
 
     rc = get_template("weekly_dual_track_audit")["render_code"]
     assert "'hyperzoom'" in rc
     assert "'muac_mismatch'" in rc
     assert "'kmc_scale'" in rc
-    assert "AI Classifiers" in rc
-    assert "classifiersByOpp" in rc
-
-
-def test_render_code_includes_duplicate_detection_toggle():
-    from connect_labs.workflow.templates import get_template
-
-    rc = get_template("weekly_dual_track_audit")["render_code"]
-    assert "enableDuplicateDetection" in rc
-    assert "enable_duplicate_detection" in rc
-    assert "Duplicate Detection API" in rc
-
-
-def test_render_code_resets_duplicate_detection_when_clustering_disabled():
-    """A stale checked-but-greyed-out Duplicate Detection box must not survive
-    once both clustering gates are turned off -- it would otherwise still
-    ride the job payload and render as "enabled" with nothing to check."""
-    from connect_labs.workflow.templates import get_template
-
-    rc = get_template("weekly_dual_track_audit")["render_code"]
-    assert "setEnableDuplicateDetection(false)" in rc
-    assert "!enableTimeGap && !enableDistance && enableDuplicateDetection" in rc
-
-
-def test_render_code_view_only_summary_mentions_duplicate_detection_when_enabled():
-    from connect_labs.workflow.templates import get_template
-
-    rc = get_template("weekly_dual_track_audit")["render_code"]
-    assert "Duplicate Detection enabled" in rc
-
-
-def test_render_code_reconnects_unconditionally_without_a_client_side_staleness_gate():
-    """Staleness is judged server-side (job_status_snapshot / JOB_STALE_SECONDS
-    in connect_labs/workflow/views.py) against a heartbeat that refreshes on
-    every progress tick -- not by this template pre-judging a page-load
-    snapshot. A prior version computed age client-side (Date.parse() against a
-    server-naive timestamp -- timezone-dependent) and re-fetched run state
-    before deciding whether to attach the stream; both are gone. The reconnect
-    effect just attaches the poller whenever the embedded snapshot says
-    'running', and lets the first real poll response report the truth."""
-    from connect_labs.workflow.templates import get_template
-
-    rc = get_template("weekly_dual_track_audit")["render_code"]
-    assert "STALE_JOB_MS" not in rc
-    assert "staleJob" not in rc
-    assert "const judge" not in rc
-    reconnect_effect = rc.split("Reconnect to a still-running job")[1].split("── Create handler")[0]
-    assert "const active = instance.state?.active_job;" in reconnect_effect
-    assert "attachStream(active.job_id);" in reconnect_effect

@@ -129,7 +129,7 @@ def test_paginate_supports_absolute_path_or_endpoint(client, httpx_mock):
         url="https://connect.example.com/export/opportunity/42/user_visits/?page_size=2500",
         json={"next": None, "results": []},
     )
-    list(client.paginate("export/opportunity/42/user_visits/"))
+    assert list(client.paginate("export/opportunity/42/user_visits/")) == [[]]
 
 
 def test_context_manager_closes_underlying_client():

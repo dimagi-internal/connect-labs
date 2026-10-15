@@ -594,7 +594,7 @@ class TestSnapshotSizeCap:
     def test_under_soft_cap_passes_silently(self):
         from connect_labs.workflow.templates import _check_snapshot_size
 
-        _check_snapshot_size("tiny", {"state": {"a": 1}})  # no raise
+        assert _check_snapshot_size("tiny", {"state": {"a": 1}}) is None  # no raise
 
     def test_between_caps_warns_but_passes(self, caplog):
         import logging

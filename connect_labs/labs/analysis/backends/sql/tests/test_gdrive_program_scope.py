@@ -123,8 +123,8 @@ def test_schema_save_in_a_program_scope_stamps_for_the_program_and_keeps_it():
 
 
 def test_a_member_of_the_owning_organization_may_read(tree):
-    gf.check_gdrive_access(_program_source(), None, pipeline_id=7)
-    gf.check_gdrive_access(_program_source(), OPP, pipeline_id=7)  # the opp asked for is irrelevant
+    assert gf.check_gdrive_access(_program_source(), None, pipeline_id=7) is None
+    assert gf.check_gdrive_access(_program_source(), OPP, pipeline_id=7) is None  # the opp asked for is irrelevant
 
 
 def test_membership_in_one_of_the_programs_opportunities_is_not_enough(tree):

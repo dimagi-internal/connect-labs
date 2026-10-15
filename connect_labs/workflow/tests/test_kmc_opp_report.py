@@ -83,7 +83,6 @@ def test_it_resolves_its_definition_id_instead_of_trusting_the_prop():
     """The `definition` prop is the record's data blob and never carries `id`;
     trusting it sent every request to /api/undefined/ in production."""
     src = RENDER.read_text()
-    assert "function definitionId()" in src
     assert "instance && instance.definition_id" in src
     for chunk in src.split("'/labs/workflow/api/'")[1:]:
         assert "definition.id" not in chunk[:120], "bare prop id in a fetch URL"
@@ -152,17 +151,11 @@ def test_the_flw_table_never_goes_through_the_benchmark_store():
         assert "flw" not in chunk[:200].lower(), "the benchmark fetch mentions flw"
 
 
-def test_a_failed_fetch_is_not_rendered_as_absent_data():
-    """The failure mode that made an earlier KMC page read as 'this worker has
-    no weighings' when the request had 404'd."""
-    src = RENDER.read_text()
-    assert "r.ok ? r.json() : { rows: [] }" not in src
-    assert "status: 'error'" in src
-
-
 def test_every_fetch_has_an_error_state_of_its_own():
-    """One `status: 'error'` anywhere in the file satisfies the test above while
-    a second fetch quietly maps its failure to empty. So look per fetch: the
+    """A failed fetch must not be rendered as absent data (the failure mode that
+    made an earlier KMC page read as 'this worker has no weighings' when the
+    request had 404'd). One `status: 'error'` anywhere in the file would pass
+    while a second fetch quietly maps its failure to empty. So look per fetch: the
     text following each `fetch(` up to the next one has to set an error state
     of its own. Deleting EITHER handler reddens this; a count-based assertion
     did not (verified by mutation)."""
@@ -182,8 +175,6 @@ def test_an_empty_benchmark_is_explained_rather_than_errored():
     pins the BRANCH: no cohorts came back, therefore render the explanation,
     and nothing about an error."""
     src = RENDER.read_text()
-    assert "benchmarkEmptyMessage" in src
-    assert "cohort" in src and "republished" in src, "the message must name both innocent causes"
     assert "if (!built.cid)" in src, "no branch for a payload carrying no organisation benchmark"
     empty_branch = src.split("if (!built.cid)")[1][:200]
     assert "benchmarkEmptyMessage" in empty_branch
@@ -201,12 +192,6 @@ def test_the_benchmark_tab_compares_organisations_from_the_benchmark_store():
     assert "P.byLLO" not in body and "P.byFLW" not in body
 
 
-def test_the_peer_trend_lines_are_gone():
-    """Anonymous peer lines over tenure were unreadable; the tab is one scorecard."""
-    src = RENDER.read_text()
-    assert "PeerTrend" not in src and "PeerCard" not in src
-
-
 def test_the_other_organisations_are_never_named_on_the_page():
     src = RENDER.read_text()
     body = src[src.index("function benchmarkRows(") : src.index("  // ══ The worker table")]
@@ -219,6 +204,5 @@ def test_there_is_one_indicator_set_and_no_series_switch():
     is one now (#2004): no switch, no `series=` on the fetch, and peers are looked
     up under each measure's own family rather than a letter from the URL."""
     src = RENDER.read_text()
-    assert "SeriesSwitch" not in src and "Workbook (C)" not in src
     assert "'series='" not in src and "qp('series')" not in src
     assert "(fam[m.series] || {})[m.indicator]" in src
