@@ -301,7 +301,12 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up the pytest environment
+        id: setup
         uses: ./.github/actions/setup-pytest
+        with:
+          # Restores the migrated test DB template (test_postgres_tpl, from the
+          # `postgres` database in DATABASE_URL) from cache; see the action.
+          postgres-container: ${{ job.services.postgres.id }}
 
       - name: Run tests
         # Whole test tree, not a hand-maintained app list — the old explicit list
@@ -322,6 +327,28 @@ jobs:
         # Postgres, so it wants every vCPU the runner reports.
         run: |
           .venv/bin/pytest connect_labs/ -n logical
+
+      # On a cache miss this run migrated the template itself; keep it for the
+      # next run. Only after a GREEN suite: a dump from a run that failed may be
+      # of a template a broken migration produced, and caching it would hand
+      # that to every later run with the same migrations. (The key is computed
+      # by the setup action and is empty on `schedule`, which never saves.)
+      - name: Dump the migrated test database
+        id: db-dump
+        if: success() && steps.setup.outputs.db-template-key != '' && steps.setup.outputs.db-template-hit != 'true'
+        env:
+          DUMP: ${{ steps.setup.outputs.db-template-dump }}
+        run: |
+          bash .github/actions/setup-pytest/test-db-template.sh save \
+            "${{ job.services.postgres.id }}" test_postgres_tpl "$DUMP"
+          if [ -s "$DUMP" ]; then echo "made=true" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Cache the test database dump
+        if: success() && steps.db-dump.outputs.made == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.setup.outputs.db-template-dump }}
+          key: ${{ steps.setup.outputs.db-template-key }}
 
   # THE SAME SUITE, ON ANOTHER DAY. On 2026-10-13 main went red because a test
   # passed only on the weekday it was written on; several more passed only
@@ -399,6 +426,9 @@ jobs:
 
       - name: Set up the pytest environment
         uses: ./.github/actions/setup-pytest
+        with:
+          # Restore only; the `pytest` job is the one that saves the dump.
+          postgres-container: ${{ job.services.postgres.id }}
 
       - name: Choose the day
         id: shift
