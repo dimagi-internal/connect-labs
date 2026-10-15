@@ -904,6 +904,12 @@ class TestHistoryNamesThePartner:
         assert (call.channel, call.acting_org_id, call.actor) == ("supplier", world["eha"]["id"], None)
         # The submission row is part of what the partner did, recorded against the same call.
         submission = UpdateLinkSubmission.objects.get()
-        assert Revision.objects.get(object_id=str(submission.pk), action="create").call == call
+        # Filtered by model too: another model's revision can share the pk, depending on
+        # which tests ran first on this database (a collision, not a second submission).
+        from django.contrib.contenttypes.models import ContentType
+
+        submission_type = ContentType.objects.get_for_model(UpdateLinkSubmission)
+        revision = Revision.objects.get(content_type=submission_type, object_id=str(submission.pk), action="create")
+        assert revision.call == call
         entries = timeline_for_contract(world["contract"]["id"], program_id=PROGRAM)
         assert "Supplier · EHA Clinics" in {entry.actor for entry in entries}
