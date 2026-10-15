@@ -503,7 +503,7 @@ def _on_grid(value: float, pm: _PathModel, owner: str, rng: random.Random) -> fl
 
 
 def _sample_days(
-    model: CaseModel, n: int, mean_gap: float, nrng: np.random.Generator, forms: tuple | None = None
+    model: CaseModel, n: int, u: float, nrng: np.random.Generator, forms: tuple | None = None
 ) -> list[int] | None:
     """A whole visit schedule from the source's cases of this length, or None.
 
@@ -511,8 +511,11 @@ def _sample_days(
     schedule's total length is tight even when single gaps are not. Drawing each gap on
     its own (gap_ratios) kept the gaps' spread but lost that, and a clone's cases ended
     early or ran long -- "lost by day 28" read 46% against the source's 19%. The schedule
-    taken is one whose mean gap is near the case's sampled mean gap (so the gap keeps its
-    place in the copula), and every visit between the first and the last moves by up to
+    taken is one at the case's sampled mean-gap RANK among source cases of the same kind
+    (same forms, else same length), so the gap keeps its place in the copula while each
+    kind keeps its own spread. Matching the gap's VALUE drawn across every case length
+    gave a five-visit case a two-visit case's gaps: 30% of them ended before day 28,
+    against 5% in the source (EHA, 2026-10-14). Every visit between the first and the last moves by up to
     a day so no source schedule is reproduced exactly. The last stays put: the length of
     follow-up is what the outcome indicators measure (seen at day 28 or lost), and the
     case's start date is jittered on its own.
@@ -520,8 +523,7 @@ def _sample_days(
     pats = (model.day_patterns_by_forms.get(forms) if forms is not None else None) or model.day_patterns.get(n)
     if not pats:
         return None
-    gaps = np.array([g for g, _ in pats])
-    i = int(np.searchsorted(gaps, mean_gap))
+    i = int(min(max(u, 0.0), 1.0) * (len(pats) - 1) + 0.5)
     lo, hi = max(0, i - 3), min(len(pats), i + 4)
     _, days = pats[int(nrng.integers(lo, hi))]
     # The jitter never makes a gap shorter than the schedule's own shortest: a source
@@ -1008,7 +1010,12 @@ def _sample_params(model: CaseModel, n: int, rng: np.random.Generator) -> dict[s
     w, v = np.linalg.eigh((cov + cov.T) / 2.0)
     z = mu + (v * np.sqrt(np.clip(w, 0, None))) @ rng.standard_normal(len(others))
     for i, zi in zip(others, z):
-        params[cols[i]] = model.margins[cols[i]].ppf(float(norm.cdf(zi)))
+        u = float(norm.cdf(zi))
+        params[cols[i]] = model.margins[cols[i]].ppf(u)
+        if cols[i] == "mean_gap":
+            # Its rank too: a schedule is picked by where the case falls among cases
+            # of its own kind (see _sample_days), not by the gap's value across all.
+            params["u:mean_gap"] = u
     return params
 
 
@@ -1058,7 +1065,7 @@ def _sample_case(
     # Visit days: a whole schedule of a source case with these forms (else this length,
     # see _sample_days); failing both, the case's mean gap times pooled per-position ratios.
     mean_gap = max(params.get("mean_gap", 0.0), 0.0)
-    days = _sample_days(model, n, mean_gap, nrng, forms=tuple(forms)) or [0]
+    days = _sample_days(model, n, params.get("u:mean_gap", 0.5), nrng, forms=tuple(forms)) or [0]
     for i in range(len(days), n):
         ratios = model.gap_ratios.get(_bucket(i))
         if ratios is None:

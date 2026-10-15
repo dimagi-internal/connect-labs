@@ -317,3 +317,42 @@ def test_a_reading_saved_under_two_names_stays_one_reading():
     assert both > 300
     assert differ == 0, f"{differ} of {both} visits carry two different readings"
     assert alone == 0, f"{alone} visits record one name without the other"
+
+
+def test_each_kind_of_case_keeps_its_own_schedule_length():
+    """Half the cases are seen twice a few days apart; the rest five times, nearly all to
+    day 28 (one in ten closes early).
+    A schedule matched on a mean gap drawn across both kinds gave the long cases the
+    short ones' gaps: 30% of five-visit cases ended before day 28 against 5% in the
+    source (KMC EHA, 2026-10-14)."""
+    rng = random.Random(17)
+    pool = []
+    for c in range(600):
+        if c % 2:
+            days = [0, rng.choice([1, 2, 3])]
+        elif c % 20 == 0:  # a few five-visit cases really are short
+            days = [0, 2, 4, 6, 8]
+        else:
+            days = [
+                0,
+                rng.choice([6, 7, 8]),
+                rng.choice([13, 14, 15]),
+                rng.choice([20, 21, 22]),
+                rng.choice([28, 29, 30]),
+            ]
+        visits = [
+            {
+                "day": d,
+                "form": "Register" if i == 0 else "Visit",
+                "values": {"form.w": 1800.0 + 20 * d + rng.gauss(0, 10)},
+            }
+            for i, d in enumerate(days)
+        ]
+        pool.append({"owner": f"flw_{c % 6:03d}", "start_date": "2026-03-02", "visits": visits})
+
+    out, _report = cm.synthesize_case_pool(pool, seed=12)
+
+    long_cases = [c for c in out if len(c["visits"]) == 5]
+    assert len(long_cases) > 200
+    short = sum(1 for c in long_cases if c["visits"][-1]["day"] - c["visits"][0]["day"] < 27) / len(long_cases)
+    assert short < 0.2, f"{short:.0%} of five-visit cases end before day 27; the source has 10%"
