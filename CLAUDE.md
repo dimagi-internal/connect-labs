@@ -288,13 +288,16 @@ reproduce it on a clean `origin/main` worktree.
 
 Two more ways a red check is not what it looks like:
 
-- **CI runs `pytest connect_labs/ -n logical` and nothing else.** Anything outside
-  that path — `tools/tests/` in particular — can never go red in CI, so a test
-  there passing is not evidence it runs (#1391, #1431). Run it yourself.
+- **CI runs `pytest connect_labs/ -n logical` and nothing else**, split over three
+  runners (`--shard=1/3` … `3/3`, whole files per slice); the required `pytest`
+  check is green only when every `pytest (K/3)` slice is. A failure names its
+  slice — reproduce it with the same `--shard` or just run the file. Anything
+  outside that path — `tools/tests/` in particular — can never go red in CI, so a
+  test there passing is not evidence it runs (#1391, #1431). Run it yourself.
 - **`main` can itself fail `pre-commit run --all-files`** (#1520). When it does,
   every open PR shows a red linter for files nobody on that PR touched. Check
   whether the failing files are yours before chasing it.
-- **`pytest-shifted-clock`** (after each merge, nightly, or a PR labelled
+- **`pytest-shifted-clock`** (nightly, or a PR labelled
   `clock-shift`) runs the suite with Python's clock moved 1-400 days forward
   (`pytest --clock-shift=+30d`). Red there means a test depends on the date;
   reproduce with `make test CLOCK_SHIFT=+<N>d` (the job summary gives N). Anchor

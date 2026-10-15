@@ -248,8 +248,26 @@ jobs:
           node_digest: ${{ steps.bases.outputs.node_digest }}
           app_release: ${{ github.sha }}
 
-  pytest:
+  # THE SUITE, IN THREE SLICES ON THREE RUNNERS. One runner was the ceiling:
+  # four shared vCPUs with Postgres in a container on the same box, running
+  # ~13,500 tests that each cost little. No single test or file is worth
+  # cutting (the slowest file is ~15s of a ~450s local total, measured
+  # 2026-10-15) -- the time is the sum, so the way to shrink it is more boxes.
+  # `--shard=K/3` deals whole files to slices, balanced by test count
+  # (connect_labs/testing/shard.py). Each slice repeats setup and collection
+  # (~1.5 min), so this costs runner minutes to buy wall clock: the merge path
+  # is the one people wait on.
+  #
+  # The required status check is named `pytest`, so the slices report under
+  # their own names and the `pytest` job below gathers them into that check.
+  pytest-shard:
+    name: pytest (${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
+    strategy:
+      # Every slice reports its failures, not just the first slice to fail.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     permissions:
       contents: read
       packages: read # pull the mirrored postgis service image from GHCR
@@ -326,29 +344,47 @@ jobs:
         # slower with no change to any test. This suite is mostly waiting on
         # Postgres, so it wants every vCPU the runner reports.
         run: |
-          .venv/bin/pytest connect_labs/ -n logical
+          .venv/bin/pytest connect_labs/ -n logical --shard=${{ matrix.shard }}/3
 
-      # On a cache miss this run migrated the template itself; keep it for the
-      # next run. Only after a GREEN suite: a dump from a run that failed may be
+      # On a cache miss this run built the template itself; keep it for the
+      # next run. Only after a GREEN slice: a dump from a run that failed may be
       # of a template a broken migration produced, and caching it would hand
-      # that to every later run with the same migrations. (The key is computed
-      # by the setup action and is empty on `schedule`, which never saves.)
+      # that to every later run with the same migrations. (A broken migration
+      # fails every slice, slice 1 included.) One slice saves, so three runners
+      # do not race to write the same key. (The key is computed by the setup
+      # action and is empty on `schedule`, which never saves.)
       - name: Dump the migrated test database
         id: db-dump
-        if: success() && steps.setup.outputs.db-template-key != '' && steps.setup.outputs.db-template-hit != 'true'
+        if: success() && matrix.shard == 1 && steps.setup.outputs.db-template-key != '' && steps.setup.outputs.db-template-hit != 'true'
         env:
           DUMP: ${{ steps.setup.outputs.db-template-dump }}
         run: |
           bash .github/actions/setup-pytest/test-db-template.sh save \
-            "${{ job.services.postgres.id }}" test_postgres_tpl "$DUMP"
+            "${{ job.services.postgres.id }}" test_postgres_tpl "$DUMP" \
+            "${{ steps.setup.outputs.db-template-current }}"
           if [ -s "$DUMP" ]; then echo "made=true" >> "$GITHUB_OUTPUT"; fi
 
       - name: Cache the test database dump
         if: success() && steps.db-dump.outputs.made == 'true'
         uses: actions/cache/save@v4
         with:
-          path: ${{ steps.setup.outputs.db-template-dump }}
+          path: |
+            ${{ steps.setup.outputs.db-template-dump }}
+            ${{ steps.setup.outputs.db-template-manifest }}
           key: ${{ steps.setup.outputs.db-template-key }}
+
+  # The required check. Green only when every slice is green; `always()` so a
+  # failed or cancelled slice still produces a red `pytest`, never a missing one
+  # (a required check that never reports leaves the PR waiting forever).
+  pytest:
+    needs: pytest-shard
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every slice passed
+        run: |
+          echo "Slices: ${{ needs.pytest-shard.result }}"
+          [ "${{ needs.pytest-shard.result }}" = success ]
 
   # THE SAME SUITE, ON ANOTHER DAY. On 2026-10-13 main went red because a test
   # passed only on the weekday it was written on; several more passed only
@@ -367,22 +403,27 @@ jobs:
   # or hung the suite. clock_shift.py says more.)
   #
   # When it runs, and why not on every PR: the `pytest` job is the critical
-  # path of every merge, and this one costs the same again. So it runs after a
-  # merge (push to main), nightly, and on a PR only when it carries the
-  # `clock-shift` label -- for a change that is itself about dates. (The label
+  # path of every merge, and this one costs the same again. So it runs nightly,
+  # and on a PR only when it carries the `clock-shift` label -- for a change
+  # that is itself about dates. It used to run on every push to main as well:
+  # ~25 full-suite runs a day, ~200 runner-minutes, to test the date-dependence
+  # of code that had mostly not changed since the last run. A date-dependent
+  # test is a slow-burning failure, not a breaking one; a day's latency costs
+  # nothing, and the nightly shift (seeded by the date) still walks a new day
+  # every night. (The label
   # is read on the next push: adding one is not an event this workflow takes,
   # deliberately, or every label would re-run the whole of CI.) It is NOT a
   # required check: a red here means "some test depends on the date", which is
   # usually not the PR in hand. Fix forward, like any red on main.
   #
-  # The shift is derived from the commit (or, nightly, the date), so a re-run
-  # reproduces it, and successive merges walk across weekdays, month ends and
-  # year ends. The step summary prints the faked date and the local command.
+  # The shift is derived from the date (or, on a labelled PR, the commit), so a
+  # re-run reproduces it, and successive nights walk across weekdays, month ends
+  # and year ends. The step summary prints the faked date and the local command.
+  # It runs the whole suite on ONE runner, unsliced: nobody waits on it.
   pytest-shifted-clock:
-    # The unshifted suite takes ~12 minutes; a hang must not hold a runner for six hours.
+    # The whole suite on one runner takes ~10 minutes; a hang must not hold a runner for six hours.
     timeout-minutes: 40
     if: >-
-      github.event_name == 'push' ||
       github.event_name == 'schedule' ||
       (github.event_name == 'pull_request' &&
        contains(github.event.pull_request.labels.*.name, 'clock-shift'))
