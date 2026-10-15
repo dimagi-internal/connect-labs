@@ -182,7 +182,7 @@ You do not need to do anything differently — Claude handles the checking autom
 | `job_status` | Checks the progress of a running job and returns the result when it is done. Called with no id, it lists your recent jobs — useful if a job id has been lost. |
 | `job_cancel` | Stops a job that is still running. |
 
-**Only you can see your own jobs and their results.** Results are kept for one week after the job finishes.
+**Only you can see your own jobs and their results.** Results are kept for one week after the job finishes. This privacy rule applies to all background jobs, including microplans actions such as map previews, regrouping, reassigning, regenerating a plan, and finding comparable surrounding wards.
 
 !!! tip "If a long-running task seems to have disappeared"
     Ask Claude to run `job_status` with no id to list your recent jobs. The job is most likely still running or has finished and its result is waiting.
@@ -239,4 +239,4 @@ You can also choose the home page from **Settings → Labs**, which shows a list
 
 Anyone who can change the Settings of the organisation, program, or opportunity that owns a page can edit it. In the workflow list, those people see an **Edit page** link next to the workflow. People who can view the page but cannot change its Settings do not see the link, and Labs will refuse their edits even if they navigate directly to the editor's address.
 
-**Dimagi staff** — anyone signed in with a @dimagi.com or @dimagi-ai.com email — can change Settings and edit pages for any scope, including labs-only organisations. Previously, a Dimagi
+**Dimagi staff** — anyone signed in
