@@ -138,6 +138,10 @@ class _PathModel:
     # hundreds), and per persona or "*" the share of readings put on one (see _fit_grid).
     grid: tuple[float, ...] = ()
     grid_share: dict[str, float] = field(default_factory=dict)
+    # Data-entry slips (2,500 typed as 25,000): the share of readings that are one, and
+    # each slip's size relative to the cohort's usual reading that day (see _find_slips).
+    slip_rate: float = 0.0
+    slip_ratios: tuple[float, ...] = ()
 
 
 @dataclass
@@ -249,6 +253,73 @@ def _fit_line(points: list[tuple[float, float]]) -> tuple[float, float, list[flo
     slope, intercept = np.polyfit(xs, ys, 1)
     resid = (ys - (intercept + slope * xs)).tolist()
     return float(intercept), float(slope), resid
+
+
+_SLIP_MADS = 6.0
+
+
+def _find_slips(series_list: list[dict[str, Any]], time_varying: set[str]) -> dict[str, dict[tuple[int, int], float]]:
+    """The readings of each time-varying field that are data-entry slips.
+
+    One weighing in fifty is 2,500 typed as 25,000 (or 250). Fitted into its case's
+    line, a slip made a trajectory of it -- slopes of 1,400 g a day, intercepts of
+    -19 kg -- and the clone's weights spread from 1.6 kg to 9.5 kg where the source's
+    run 2.1 to 3.7 (KMC EHA, 2026-10-15). A reading is a slip when its log ratio to the
+    cohort's median reading that week of the case lies _SLIP_MADS robust spreads out:
+    far beyond one baby being small, nowhere near a decimal slip. Returns path ->
+    {(case index, visit index): reading / that median}; each slip comes back as a slip,
+    at the source's rate, the same size relative to its case (see _sample_case).
+    A slip is also off its OWN case: under half or over double the case's other
+    readings, where it has any -- a baby small all along is a small baby. Fields the app
+    computes never slip, and are not passed in.
+    """
+    pts: dict[str, list[tuple[int, float, int, int]]] = defaultdict(list)
+    for ci, s in enumerate(series_list):
+        d0 = int(s["visits"][0]["day"])
+        for vi, v in enumerate(s["visits"]):
+            for path, val in (v.get("values") or {}).items():
+                if path in time_varying:
+                    pts[path].append(((int(v["day"]) - d0) // 7, float(val), ci, vi))
+    out: dict[str, dict[tuple[int, int], float]] = {}
+    for path, readings in pts.items():
+        if len(readings) < 10 * K_MIN or sum(val > 0 for _, val, _, _ in readings) < 0.99 * len(readings):
+            continue
+        by_week: dict[int, list[float]] = defaultdict(list)
+        for week, val, _, _ in readings:
+            if val > 0:
+                by_week[week].append(val)
+        weeks = sorted(w for w, vals in by_week.items() if len(vals) >= K_MIN)
+        if not weeks:
+            continue
+        medians = {w: float(np.median(by_week[w])) for w in weeks}
+
+        def usual(week: int) -> float:
+            return medians[min(weeks, key=lambda w: abs(w - week))]
+
+        lr = np.array([math.log(val / usual(week)) if val > 0 else -math.inf for week, val, _, _ in readings])
+        finite = lr[np.isfinite(lr)]
+        centre = float(np.median(finite))
+        spread = 1.4826 * float(np.median(np.abs(finite - centre)))
+        if spread <= 0:
+            continue
+        by_case: dict[int, list[tuple[int, float]]] = defaultdict(list)
+        for _, val, ci, vi in readings:
+            by_case[ci].append((vi, val))
+
+        def off_its_case(ci: int, vi: int, val: float) -> bool:
+            others = [x for j, x in by_case[ci] if j != vi and x > 0]
+            if not others or val <= 0:
+                return True
+            return abs(math.log(val / float(np.median(others)))) > math.log(2)
+
+        found = {
+            (ci, vi): val / usual(week)
+            for (week, val, ci, vi), x in zip(readings, lr)
+            if (not np.isfinite(x) or abs(x - centre) > _SLIP_MADS * spread) and off_its_case(ci, vi, val)
+        }
+        if found:
+            out[path] = found
+    return out
 
 
 def _shrink_slopes(
@@ -674,8 +745,9 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
     # path -> (row index, mean day, mean value, spread of days, fitted slope) per case
     slope_fits: dict[str, list[tuple[int, float, float, float, float]]] = defaultdict(list)
     day_offset_consistent: dict[str, list[bool]] = defaultdict(list)
+    slips = _find_slips(series_list, time_varying - set(frozen_paths))
 
-    for s in series_list:
+    for ci, s in enumerate(series_list):
         visits = s["visits"]
         row: dict[str, float] = {"n": float(len(visits))}
         days = [int(v["day"]) for v in visits]
@@ -703,6 +775,8 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
         per_path: dict[str, list[tuple[int, int, float]]] = defaultdict(list)  # (day, index, value)
         for idx, v in enumerate(visits, start=1):
             for path, val in (v.get("values") or {}).items():
+                if (ci, idx - 1) in slips.get(path, {}):
+                    continue  # a slip is no part of its case's trend (see _find_slips)
                 per_path[path].append((int(v["day"]), idx, float(val)))
                 num_obs[path].append(float(val))
                 num_obs_owner[path][s["owner"]].append(float(val))
@@ -795,6 +869,10 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
             model.resid_ar = _ar_coefficient(resid_pairs[path], model.resid_sd)
         if kind == "varying":
             _shrink_slopes(rows, path, slope_fits[path], _robust_sd(resid[path]))
+            found = slips.get(path, {})
+            if len(found) >= K_MIN:
+                model.slip_rate = len(found) / (len(obs) + len(found))
+                model.slip_ratios = tuple(sorted(found.values()))
         numeric[path] = model
     dates: dict[str, _PathModel] = {}
     for path, obs in date_obs.items():
@@ -1243,8 +1321,13 @@ def _sample_case(
                 fresh = nrng.normal(0.0, pm.resid_sd)
                 e = fresh if prev is None else pm.resid_ar * prev + math.sqrt(1 - pm.resid_ar**2) * fresh
                 last_resid[path] = e
-                v = params[f"b:{path}"] + params.get(f"s:{path}", 0.0) * day + e
-                values[path] = _round_clamp(_on_grid(v, pm, owner, rng), pm)
+                trend = params[f"b:{path}"] + params.get(f"s:{path}", 0.0) * day
+                if pm.slip_rate and rng.random() < pm.slip_rate:
+                    # A slip: what the worker would have written, mistyped (see _find_slips).
+                    slip = _on_grid(min(max(trend + e, pm.lo), pm.hi), pm, owner, rng) * rng.choice(pm.slip_ratios)
+                    values[path] = float(round(slip)) if pm.whole else round(slip, pm.places)
+                else:
+                    values[path] = _round_clamp(_on_grid(trend + e, pm, owner, rng), pm)
             elif f"c:{path}" in params:
                 values[path] = _round_clamp(params[f"c:{path}"], pm)
         dates: dict[str, int] = {}

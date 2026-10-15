@@ -431,3 +431,36 @@ def test_a_slope_from_two_close_readings_is_not_taken_for_growth():
 
     (r10, r90), (s10, s90) = spread(pool, 28), spread(out, 28)
     assert s10 >= r10 - 150 and s90 <= r90 + 150, f"late weights {s10:.0f}-{s90:.0f}, source {r10:.0f}-{r90:.0f}"
+
+
+def test_a_data_entry_slip_is_a_slip_not_a_trajectory():
+    """One weighing in fifty is a slip -- 2,500 typed as 25,000. Fitted into its case's
+    line, a slip made a trajectory of it: slopes of 1,400 g a day, intercepts of -19 kg,
+    and clones whose tenth of weights sat at 1.6 kg and top tenth at 9.5 kg where the
+    source's ran 2.1 to 3.7 (KMC EHA, 2026-10-15). A slip is taken out of its case's
+    trend and comes back as a slip, at the source's rate."""
+    rng = random.Random(23)
+    pool = []
+    readings = slips = 0
+    for c in range(400):
+        start_w, gain = rng.gauss(2000, 150), rng.gauss(20, 4)
+        visits = []
+        for d in (0, 7, 14, 21, 28):
+            w = float(round((start_w + gain * d + rng.gauss(0, 60)) / 10) * 10)
+            if rng.random() < 0.02:
+                w *= 10
+                slips += 1
+            readings += 1
+            visits.append({"day": d, "form": "Visit", "values": {"form.w": w}})
+        pool.append({"owner": f"flw_{c % 8:03d}", "start_date": "2026-03-02", "visits": visits})
+
+    out, _report = cm.synthesize_case_pool(pool, seed=8)
+
+    ws = sorted(v["values"]["form.w"] for case in out for v in case["visits"] if "form.w" in v["values"])
+    wild = sum(1 for w in ws if w > 8000) / len(ws)
+    plain = [w for w in ws if w <= 8000]
+    assert plain[len(plain) // 10] > 1700 and plain[9 * len(plain) // 10] < 3000, (
+        plain[len(plain) // 10],
+        plain[9 * len(plain) // 10],
+    )
+    assert abs(wild - slips / readings) < 0.012, f"{wild:.1%} wild readings, source {slips / readings:.1%}"
