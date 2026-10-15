@@ -316,6 +316,9 @@ class TestContractTimeline:
                 AUG_20,
                 data={"contract_id": order["contract"]["id"], "reference": f"SH-B{n}", "source": "we_recorded"},
             )
+        # Warm the process-wide ContentType cache first: cold, it is one more query,
+        # so the count depended on which test ran earlier in the xdist worker.
+        timeline_for_contract(order["contract"]["id"], program_id=PROGRAM)
         with django_assert_max_num_queries(QUERY_BOUND_CONTRACT):
             entries = timeline_for_contract(order["contract"]["id"], program_id=PROGRAM)
         assert len(entries) >= 5

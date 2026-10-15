@@ -198,6 +198,22 @@ def test_the_row_fetches_resolve_the_definition_id_instead_of_trusting_the_prop(
         assert "definition.id" not in m.group(1), f"bare prop id in a fetch URL: {m.group(1).strip()!r}"
 
 
+def test_a_failed_row_fetch_is_an_error_not_an_empty_cohort():
+    """A 404/500 must not be laundered into `{rows: []}` -- that is what once
+    rendered a broken URL as "No weighings recorded." and blank danger signs,
+    indistinguishable from a worker who really has none. Checked per fetch: the
+    shared reader throws on a non-OK answer, and every row read has an error
+    state of its own, so deleting EITHER loader's handler reddens this."""
+    src = RENDER.read_text()
+    plain = src[src.index("function plain(") : src.index("return r.json();", src.index("function plain("))]
+    assert "if (!r.ok)" in plain and "throw new Error(" in plain, "a non-OK answer must fail, not resolve"
+    calls = src.split("fetchRowsWithProgress(")[2:]  # [0] is before the definition, [1] its body
+    assert len(calls) >= 2, "expected the children read and the visits read"
+    for i, chunk in enumerate(calls):
+        handler = chunk[chunk.index(".catch(") :][:400]
+        assert "status: 'error'" in handler, f"row read #{i + 1} maps its failure to something other than an error"
+
+
 def _legacy_block(path):
     src = path.read_text()
     start = src.index("  var LEGACY_ID = {")
