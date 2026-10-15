@@ -156,3 +156,21 @@ def test_a_field_seen_in_too_few_cases_is_not_modelled():
     synthetic, report = synthesize_case_pool(copy.deepcopy(real), seed=1, frozen_paths=FROZEN)
     assert "form.rare_measure" in report["fields_not_modelled"]
     assert not any("form.rare_measure" in v["values"] for s in synthetic for v in s["visits"])
+
+
+def test_a_short_case_never_carries_a_rare_real_series():
+    """The distance gate starts at three visits; five two-visit cases with five distinct
+    weights leave the model only those weights to draw. A sampled case may repeat real
+    numbers exactly only where K_MIN real cases share them; otherwise it is redrawn or
+    dropped, never shipped (CodeRabbit on #2560)."""
+    real = [
+        {
+            "owner": f"flw_{i:03d}",
+            "start_date": f"2026-03-{i + 1:02d}",
+            "visits": [{"day": 0, "values": {WEIGHT: float(w)}}, {"day": 7, "values": {WEIGHT: float(w)}}],
+        }
+        for i, w in enumerate(range(1001, 1006))
+    ]
+    synthetic, _ = synthesize_case_pool(copy.deepcopy(real), seed=5)
+    shipped = {tuple(v["values"].get(WEIGHT) for v in s["visits"]) for s in synthetic}
+    assert not shipped & {(float(w), float(w)) for w in range(1001, 1006)}

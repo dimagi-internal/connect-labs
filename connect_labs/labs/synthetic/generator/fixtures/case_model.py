@@ -1531,7 +1531,13 @@ class _Gate:
     # (n x n x columns) array at once.
     _BLOCK = 256
 
-    def __init__(self, real: list[dict]):
+    def __init__(self, real: list[dict], frozen_paths: set[str] | frozenset = frozenset()):
+        # Any length, the gate's other half: a case whose measured numbers are exactly a
+        # real case's is refused unless K_MIN real cases share them. The distance test
+        # starts at three visits, and a short case of rare values (five two-visit cases,
+        # five distinct weights) would carry a real case's series whole.
+        self._frozen = frozenset(frozen_paths)
+        self._exact = Counter(self._measured(s) for s in real)
         grouped: dict[tuple, list[dict]] = defaultdict(list)
         for s in real:
             if len(s["visits"]) >= _GATE_MIN_VISITS:
@@ -1572,7 +1578,17 @@ class _Gate:
         with np.errstate(invalid="ignore", divide="ignore"):
             return np.where(count > 0, total / np.maximum(count, 1), np.nan)
 
+    def _measured(self, case: dict) -> tuple:
+        """A case's measured numbers in visit order (what the app computes left out)."""
+        return tuple(
+            tuple(sorted((p, x) for p, x in (v.get("values") or {}).items() if p not in self._frozen))
+            for v in case["visits"]
+        )
+
     def too_close(self, case: dict) -> bool:
+        key = self._measured(case)
+        if any(key) and 0 < self._exact.get(key, 0) < K_MIN:
+            return True
         if len(case["visits"]) < _GATE_MIN_VISITS:
             return False
         found = self._shapes.get(tuple(v["day"] for v in case["visits"]))
@@ -1604,7 +1620,7 @@ def synthesize_case_pool(
     model = fit_case_model(real, frozen_paths=frozen_paths)
     rng = random.Random(seed)
     nrng = np.random.default_rng(seed)
-    gate = _Gate(real)
+    gate = _Gate(real, frozen_paths)
 
     out: list[dict[str, Any]] = []
     redrawn = 0
