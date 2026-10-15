@@ -153,6 +153,15 @@ class _PathModel:
     # each slip's size relative to the cohort's usual reading that day (see _find_slips).
     slip_rate: float = 0.0
     slip_ratios: tuple[float, ...] = ()
+    # The grid's spacing when its values are evenly spaced (whole hundreds: 100), else 0.
+    # A reading beyond the grid's ends is rounded at that spacing (see _on_grid).
+    grid_step: float = 0.0
+    # The share of the source's slips that sit on the grid's spacing (25,000 typed for
+    # 2,500 is still whole hundreds).
+    slip_on_grid: float = 0.0
+    # How the readings off the grid are rounded, by persona or "*": [(unit, share)] for
+    # each unit a reading is written to beyond chance (see _fit_heaping).
+    heaping: dict[str, list[tuple[float, float]]] = field(default_factory=dict)
 
 
 @dataclass
@@ -224,6 +233,15 @@ class CaseModel:
     # path -> (form, days since the path was last recorded in the case, bucketed;
     # -1 for never) -> P(recorded), where K_MIN or more visits back it.
     presence_by_gap: dict[str, dict[tuple[str | None, int], float]] = field(default_factory=dict)
+    # Which visits of a case record a field, as whole-case patterns (see
+    # _fit_presence_masks): path -> its group, and group -> form sequence -> pattern
+    # counts (None for the share left to the per-visit draw).
+    presence_groups: dict[str, int] = field(default_factory=dict)
+    presence_masks: dict[int, dict[tuple, Counter]] = field(default_factory=dict)
+    # varying path -> (the per-case constant its first reading is entered from, the share
+    # entered as an exact copy by persona or "*", the other first readings' differences
+    # from it, sorted). See _fit_anchors.
+    anchors: dict[str, tuple[str, dict[str, float], np.ndarray]] = field(default_factory=dict)
     # path -> the path it is a second name for on the same visit (see _fit_aliases).
     aliases: dict[str, str] = field(default_factory=dict)
     # alias -> (form, the value under the main name for a category, else None) ->
@@ -589,8 +607,141 @@ def _fit_presence_by_gap(
     return out
 
 
-def _present(model: CaseModel, path: str, form: str | None, last: dict[str, int], day: int, rng) -> bool:
-    """Draw whether ``path`` is recorded on this visit (see _fit_presence_by_gap)."""
+def _fit_presence_masks(
+    series_list: list[dict[str, Any]], paths
+) -> tuple[dict[str, int], dict[int, dict[tuple, Counter]]]:
+    """Which visits of a case record each field, as whole patterns per form sequence.
+
+    Drawn visit by visit -- by form, and by days since the field was last recorded -- a
+    clone weighed the right share of visits but not the right ones: EHA weighs three
+    visits of a four-visit case (the median and the 75th percentile are both 3) and the
+    clone weighed two to five, its weighings ran weeks later (the 90th percentile span 62
+    days against 40), and fewer babies had the two weighings in their first three weeks
+    that early growth needs (62% computable against 72%). Fields recorded on exactly the
+    same visits form one group and share a pattern, so a weighing and the KMC hours taken
+    with it stay together. A pattern is kept where K_MIN cases of the form sequence share
+    it; the rest of the sequence's cases, and every sequence fewer than K_MIN cases have,
+    are drawn visit by visit as before.
+    """
+    recorded = [[_visit_paths(v) for v in s["visits"]] for s in series_list]
+    seqs = [tuple(v.get("form") for v in s["visits"]) for s in series_list]
+    by_vector: dict[tuple, list[str]] = defaultdict(list)
+    for path in sorted(paths):
+        by_vector[tuple(tuple(path in r for r in case) for case in recorded)].append(path)
+    groups: dict[str, int] = {}
+    masks: dict[int, dict[tuple, Counter]] = {}
+    for gid, (vector, members) in enumerate(by_vector.items()):
+        by_forms: dict[tuple, Counter] = defaultdict(Counter)
+        for seq, mask in zip(seqs, vector):
+            by_forms[seq][mask] += 1
+        kept: dict[tuple, Counter] = {}
+        for seq, counts in by_forms.items():
+            if sum(counts.values()) < K_MIN:
+                continue
+            shared = Counter({mask: c for mask, c in counts.items() if c >= K_MIN})
+            if not shared:
+                continue
+            rest = sum(counts.values()) - sum(shared.values())
+            if rest:
+                shared[None] = rest
+            kept[seq] = shared
+        if kept:
+            masks[gid] = kept
+            for path in members:
+                groups[path] = gid
+    return groups, masks
+
+
+def _draw_mask(counts: Counter, rng: random.Random) -> tuple[bool, ...] | None:
+    total = sum(counts.values())
+    r = rng.random() * total
+    for mask, c in counts.items():
+        r -= c
+        if r <= 0:
+            return mask
+    return None
+
+
+def _fit_anchors(
+    series_list: list[dict[str, Any]],
+    numeric: dict[str, _PathModel],
+    slips: dict[str, dict[tuple[int, int], float]],
+    frozen_paths,
+) -> dict[str, tuple[str, dict[str, float], np.ndarray]]:
+    """The per-case constant each time-varying field's FIRST reading is entered from.
+
+    A baby's first visit weight is written off its registration weight -- copied outright
+    by many workers (NAMA: 71% of first weighings equal it), within a few hundred grams
+    by the rest. Drawn as an intercept of its own, correlated with the registration
+    weight through the copula, the first weighing sat a kilogram either side of it: 9%
+    equal, and 3.1% of babies' first weight under 60% of their birthweight (the
+    "inconsistent" flag) against the source's 0.3%. A constant anchors a field when the
+    source copies it into the first reading (5%+ of cases) or the first readings sit
+    tighter around it than half their own spread; the one copied most often wins. Kept
+    where 10 x K_MIN cases have both; the copy share by persona where K_MIN of its cases do.
+    """
+    out: dict[str, tuple[str, dict[str, float], np.ndarray]] = {}
+    consts = [p for p, pm in numeric.items() if pm.kind == "const" and p not in frozen_paths]
+    case_const = [
+        {p: float(x) for v in s["visits"] for p, x in (v.get("values") or {}).items() if p in consts}
+        for s in series_list
+    ]
+    for path, pm in numeric.items():
+        if pm.kind != "varying" or path in frozen_paths:
+            continue
+        unit = 1.0 if pm.whole else 10.0**-pm.places
+        firsts: dict[int, tuple[str, float]] = {}
+        for ci, s in enumerate(series_list):
+            for vi, v in enumerate(s["visits"]):
+                x = (v.get("values") or {}).get(path)
+                if x is not None and (ci, vi) not in slips.get(path, {}):
+                    firsts[ci] = (s["owner"], float(x))
+                    break
+        if len(firsts) < 10 * K_MIN:
+            continue
+        own_spread = _robust_sd([f for _, f in firsts.values()])
+        best = None
+        for const in consts:
+            pairs = [(owner, f, case_const[ci][const]) for ci, (owner, f) in firsts.items() if const in case_const[ci]]
+            if len(pairs) < 10 * K_MIN:
+                continue
+            equal = [abs(f - c) < unit / 2 for _, f, c in pairs]
+            share = sum(equal) / len(pairs)
+            diffs = sorted(f - c for (_, f, c), eq in zip(pairs, equal) if not eq)
+            spread = _robust_sd(diffs) if len(diffs) >= K_MIN else math.inf
+            if share < 0.05 and not spread < 0.5 * own_spread:
+                continue
+            score = (share, -spread)
+            if best is None or score > best[0]:
+                by_owner: dict[str, list[bool]] = defaultdict(list)
+                for (owner, _, _), eq in zip(pairs, equal):
+                    by_owner[owner].append(eq)
+                shares = {"*": share}
+                shares.update({o: sum(es) / len(es) for o, es in by_owner.items() if len(es) >= K_MIN})
+                best = (score, const, shares, np.array(diffs if len(diffs) >= K_MIN else [], dtype=float))
+        if best:
+            out[path] = best[1:]
+    return out
+
+
+def _present(
+    model: CaseModel,
+    path: str,
+    form: str | None,
+    last: dict[str, int],
+    day: int,
+    rng,
+    idx: int | None = None,
+    masks: dict[int, tuple[bool, ...]] | None = None,
+) -> bool:
+    """Draw whether ``path`` is recorded on this visit: by the case's whole pattern when
+    it drew one (see _fit_presence_masks), else visit by visit (_fit_presence_by_gap)."""
+    gid = model.presence_groups.get(path)
+    if masks and idx is not None and gid in masks:
+        recorded = masks[gid][idx - 1]
+        if recorded:
+            last[path] = day
+        return recorded
     base = model.presence.get(path, {}).get(form, 0.0)
     if base <= 0:
         return False
@@ -667,11 +818,67 @@ def _fit_grid(
     return tuple(round(k * unit, places) for k in grid_keys), shares
 
 
+#: Units a reading may be rounded to, as multiples of the field's precision; each
+#: divides the next, so a reading's share at each is a mixture that can be solved.
+_HEAP_CHAIN = (1, 5, 10, 50, 100, 500, 1000)
+
+
+def _fit_heaping(grid, by_owner: dict[str, list[float]], unit: float) -> dict[str, list[tuple[float, float]]]:
+    """The units the readings OFF the grid are rounded to, by persona.
+
+    Workers round to more than one unit: at PIPN a quarter of weights are whole hundreds
+    and three in five whole tens, with gram-precise readings between -- no one grid. Over
+    a chain of units each dividing the next, the share of readings divisible by a unit is
+    the share rounded to it or coarser, plus each finer rounding's chance of landing on
+    it (a tenth of those rounded to tens are whole hundreds), so the shares rounded to
+    each unit solve exactly. Kept by persona where 10 x K_MIN of its readings are off
+    the grid, else for everyone ("*")."""
+    if unit <= 0:
+        return {}
+    grid_units = {int(round(g / unit)) for g in grid}
+
+    def levels(values: list[float]) -> list[tuple[float, float]]:
+        ks = [int(round(x / unit)) for x in values]
+        ks = [k for k in ks if k not in grid_units]
+        if len(ks) < 10 * K_MIN:
+            return []
+        span = max(ks) - min(ks)
+        chain = [c for c in _HEAP_CHAIN if c == 1 or 2 * c <= span]
+        if len(chain) < 2:
+            return []
+        shares = np.array([sum(1 for k in ks if k % c == 0) / len(ks) for c in chain])
+        mix = np.array(
+            [[1.0 if j >= i else chain[j] / chain[i] for j in range(len(chain))] for i in range(len(chain))]
+        )
+        p = np.clip(np.linalg.solve(mix, shares), 0.0, None)
+        p = p / p.sum() if p.sum() > 0 else p
+        return [(chain[j] * unit, float(p[j])) for j in range(len(chain) - 1, 0, -1) if p[j] > 0.005]
+
+    every = [x for values in by_owner.values() for x in values]
+    out = {"*": levels(every)}
+    for owner, values in by_owner.items():
+        found = levels(values)
+        if found:
+            out[owner] = found
+    return out if any(out.values()) else {}
+
+
+def _heap(value: float, pm: _PathModel, owner: str, rng: random.Random) -> float:
+    levels = pm.heaping.get(owner) or pm.heaping.get("*") or []
+    r = rng.random()
+    for step, p in levels:
+        if r < p:
+            return round(value / step) * step
+        r -= p
+    return value
+
+
 def _on_grid(value: float, pm: _PathModel, owner: str, rng: random.Random) -> float:
     """A reading put on the field's grid at its persona's rate (see _fit_grid): the
-    nearest grid value, never one further than half the spacing there."""
+    nearest grid value, never one further than half the spacing there. One left off
+    the grid is rounded as the source rounds its own (see _fit_heaping)."""
     if not pm.grid or rng.random() >= pm.grid_share.get(owner, pm.grid_share.get("*", 0.0)):
-        return value
+        return _heap(value, pm, owner, rng) if pm.heaping else value
     grid = pm.grid
     i = int(np.searchsorted(grid, value))
     best = None
@@ -682,6 +889,10 @@ def _on_grid(value: float, pm: _PathModel, owner: str, rng: random.Random) -> fl
                 spacing = min(spacing, grid[j] - grid[j - 1])
             if abs(grid[j] - value) <= spacing / 2 and (best is None or abs(grid[j] - value) < abs(best - value)):
                 best = grid[j]
+    if best is None and pm.grid_step and (value < grid[0] or value > grid[-1]):
+        # Beyond the grid's ends the worker rounds the same way: a 1,250 g reading below
+        # the lowest common weight is still written in whole hundreds.
+        best = grid[0] + round((value - grid[0]) / pm.grid_step) * pm.grid_step
     return value if best is None else float(best)
 
 
@@ -885,6 +1096,7 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
             model.grid, model.grid_share = _fit_grid(
                 obs, num_obs_owner[path], value_cases[path], 1.0 if whole else 10.0**-places
             )
+            model.heaping = _fit_heaping(model.grid, num_obs_owner[path], 1.0 if whole else 10.0**-places)
         if model.grid and model.resid_sd > 0:
             # The source's residuals already hold its rounding (a reading put on a grid
             # spaced d apart is off by a uniform error of variance d^2/12), and the grid
@@ -900,6 +1112,15 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
             if len(found) >= K_MIN:
                 model.slip_rate = len(found) / (len(obs) + len(found))
                 model.slip_ratios = tuple(sorted(found.values()))
+        if len(model.grid) >= 3:
+            steps = np.diff(np.array(model.grid))
+            step = float(np.median(steps))
+            if step > 0 and float(np.mean(np.abs(steps - step) < 1e-9 * max(1.0, step))) >= 0.8:
+                model.grid_step = step
+                found = slips.get(path, {}) if kind == "varying" else {}
+                typed = [float(series_list[ci]["visits"][vi]["values"][path]) for ci, vi in found]
+                if len(typed) >= K_MIN:
+                    model.slip_on_grid = sum(abs(x / step - round(x / step)) < 1e-6 for x in typed) / len(typed)
         numeric[path] = model
     dates: dict[str, _PathModel] = {}
     for path, obs in date_obs.items():
@@ -971,6 +1192,7 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
     for path, by_form in path_in_form.items():
         presence[path] = {f: min(1.0, by_form[f] / form_seen[f]) for f in by_form if form_seen[f]}
     presence_by_gap = _fit_presence_by_gap(series_list, presence)
+    presence_groups, presence_masks = _fit_presence_masks(series_list, presence)
 
     aliases = _fit_aliases(series_list)
     return CaseModel(
@@ -991,6 +1213,9 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
         rare_trans=dict(rare_trans),
         presence=presence,
         presence_by_gap=presence_by_gap,
+        presence_groups=presence_groups,
+        presence_masks=presence_masks,
+        anchors=_fit_anchors(series_list, numeric, slips, frozen_paths),
         numeric=numeric,
         dates=dates,
         cats=cats,
@@ -1362,6 +1587,15 @@ def _sample_case(
     alias_groups: dict[str, list[str]] = defaultdict(list)
     for alias, primary in model.aliases.items():
         alias_groups[primary].append(alias)
+    # Which visits record each field, as one of the source's whole patterns for this
+    # form sequence where it has one (see _fit_presence_masks).
+    masks: dict[int, tuple[bool, ...]] = {}
+    for gid, by_forms in model.presence_masks.items():
+        counts = by_forms.get(tuple(forms))
+        if counts:
+            mask = _draw_mask(counts, rng)
+            if mask is not None:
+                masks[gid] = mask
     # Numbers first, for the whole case: its answers are drawn by the growth its own
     # readings show (see _observed_driver).
     numbers: list[tuple[dict[str, float], dict[str, int]]] = []
@@ -1370,7 +1604,27 @@ def _sample_case(
         values: dict[str, float] = {}
         dates: dict[str, int] = {}
         for path, pm in model.numeric.items():
-            if not _present(model, path, form, last_seen, day, rng):
+            if not _present(model, path, form, last_seen, day, rng, idx, masks):
+                continue
+            anchor = model.anchors.get(path)
+            if (
+                anchor
+                and pm.kind == "varying"
+                and f"b:{path}" in params
+                and path not in last_resid
+                and f"c:{anchor[0]}" in params
+            ):
+                # The first reading, entered off its anchor (see _fit_anchors): copied, or
+                # off it by one of the source's differences; the case's line runs from it.
+                const, shares, diffs = anchor
+                first = params[f"c:{anchor[0]}"]
+                copied = rng.random() < shares.get(owner, shares["*"]) or not len(diffs)
+                if not copied:
+                    u = rng.random() * (len(diffs) - 1)
+                    first = _on_grid(first + float(np.interp(u, np.arange(len(diffs)), diffs)), pm, owner, rng)
+                params[f"b:{path}"] = first - params.get(f"s:{path}", 0.0) * day
+                last_resid[path] = 0.0
+                values[path] = float(first) if copied else _round_clamp(first, pm)
                 continue
             if pm.kind == "index":
                 values[path] = float(idx + pm.index_k)
@@ -1387,6 +1641,8 @@ def _sample_case(
                 if pm.slip_rate and rng.random() < pm.slip_rate:
                     # A slip: what the worker would have written, mistyped (see _find_slips).
                     slip = _on_grid(min(max(trend + e, pm.lo), pm.hi), pm, owner, rng) * rng.choice(pm.slip_ratios)
+                    if pm.grid_step and rng.random() < pm.slip_on_grid:
+                        slip = round(slip / pm.grid_step) * pm.grid_step
                     values[path] = float(round(slip)) if pm.whole else round(slip, pm.places)
                     if model.driver == f"s:{path}":
                         slipped.add(idx - 1)
@@ -1395,7 +1651,7 @@ def _sample_case(
             elif f"c:{path}" in params:
                 values[path] = _round_clamp(params[f"c:{path}"], pm)
         for path, pm in model.dates.items():
-            if not _present(model, path, form, last_seen, day, rng):
+            if not _present(model, path, form, last_seen, day, rng, idx, masks):
                 continue
             if f"dd:{path}" in params:
                 dates[path] = int(round(params[f"dd:{path}"] + day))
@@ -1432,7 +1688,7 @@ def _sample_case(
                 cats[path] = endings[path]
                 last_seen[path] = day
                 continue
-            if not _present(model, path, form, last_seen, day, rng):
+            if not _present(model, path, form, last_seen, day, rng, idx, masks):
                 continue
             if not cm.varying:
                 if path not in const_cat:
