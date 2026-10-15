@@ -2688,6 +2688,9 @@ class ProgramBulkCreatePlansView(_ProgramScopeMixin, LoginRequiredMixin, View):
             actor=request.user.get_username() if hasattr(request.user, "get_username") else str(request.user),
             team=team,
         )
+        from connect_labs.microplans.models import BulkCreateTask
+
+        BulkCreateTask.record(task.id, request.user)
         return JsonResponse(
             {
                 "status": "queued",
@@ -2701,11 +2704,16 @@ class ProgramBulkCreatePlansView(_ProgramScopeMixin, LoginRequiredMixin, View):
 class ProgramBulkCreateStatusView(LoginRequiredMixin, View):
     """Poll a bulk-create task — returns incremental per-ward results so the page can
     flip each row's pill as its ward finishes (queued | running | completed |
-    failed). Mirrors PreviewStatusView's lifecycle mapping."""
+    failed). Mirrors PreviewStatusView's lifecycle mapping. Only the user who started
+    the task can read it; anyone else gets the same 404 as an unknown id."""
 
     def get(self, request, task_id):
         from celery.result import AsyncResult
 
+        from connect_labs.microplans.models import BulkCreateTask
+
+        if not BulkCreateTask.owned_by(task_id, request.user):
+            return JsonResponse({"state": "failed", "detail": "Not found."}, status=404)
         result = AsyncResult(task_id)
         state = result.state
         info = result.info if isinstance(result.info, dict) else {}

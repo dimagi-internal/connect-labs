@@ -1896,8 +1896,14 @@ def test_bulk_create_empty_plans_400(client, django_user_model):
     assert resp.status_code == 400
 
 
+def _own_task(user, task_id):
+    from connect_labs.microplans.models import BulkCreateTask
+
+    BulkCreateTask.record(task_id, user)
+
+
 def test_bulk_create_status_running_carries_results(client, django_user_model, monkeypatch):
-    _login(client, django_user_model)
+    _own_task(_login(client, django_user_model), "abc")
     meta = {"results": [{"index": 0, "status": "ok", "plan_id": 5}], "created": 1, "total": 2}
     monkeypatch.setattr(
         "celery.result.AsyncResult", lambda tid: SimpleNamespace(state="PROGRESS", info=meta, result=None)
@@ -1909,7 +1915,7 @@ def test_bulk_create_status_running_carries_results(client, django_user_model, m
 
 
 def test_bulk_create_status_completed(client, django_user_model, monkeypatch):
-    _login(client, django_user_model)
+    _own_task(_login(client, django_user_model), "abc")
     res = {"status": "ok", "results": [{"index": 0, "status": "ok", "plan_id": 5}], "created": 1, "total": 1}
     monkeypatch.setattr(
         "celery.result.AsyncResult", lambda tid: SimpleNamespace(state="SUCCESS", info=res, result=res)
@@ -1917,6 +1923,33 @@ def test_bulk_create_status_completed(client, django_user_model, monkeypatch):
     resp = client.get(reverse("microplans:bulk_create_status", kwargs={"task_id": "abc"}))
     body = resp.json()
     assert body["state"] == "completed" and body["created"] == 1
+
+
+def test_bulk_create_page_starter_can_poll_and_nobody_else_can(client, django_user_model, monkeypatch):
+    """The page's enqueue records the starter; its poll_url answers them and 404s anyone else."""
+    _login(client, django_user_model)
+    from connect_labs.microplans.tasks import bulk_create_plans_task
+
+    monkeypatch.setattr(bulk_create_plans_task, "delay", _fake_delay("bulk-mine"))
+    enq = client.post(
+        reverse("microplans:program_bulk_create", kwargs={"program_id": 1}),
+        data=json.dumps({"plans": [{"boundary_id": "b", "name": "B"}], "mode": "coverage"}),
+        content_type="application/json",
+    ).json()
+    res = {"results": [{"index": 0, "status": "ok", "plan_id": 5}], "created": 1, "total": 1}
+    monkeypatch.setattr(
+        "celery.result.AsyncResult", lambda tid: SimpleNamespace(state="SUCCESS", info=res, result=res)
+    )
+    mine = client.get(enq["poll_url"])
+    assert mine.status_code == 200 and mine.json()["results"][0]["plan_id"] == 5
+
+    stranger = django_user_model.objects.create(username="stranger", email="s@example.com")
+    client.force_login(stranger)
+    theirs = client.get(enq["poll_url"])
+    unknown = client.get(reverse("microplans:bulk_create_status", kwargs={"task_id": "never-queued"}))
+    assert theirs.status_code == unknown.status_code == 404
+    assert theirs.json() == unknown.json()
+    assert "results" not in theirs.json()
 
 
 class TestProgramMapSeed:
