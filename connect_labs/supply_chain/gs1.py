@@ -1,7 +1,6 @@
 """GS1 identifier helpers — check digits, key construction, Digital Link.
 
-Ported from connect_labs/supply/gs1.py (the OES satellite site, being retired).
-Copied rather than imported because that app is going away.
+Ported from the since-removed OES demo satellite's gs1.py.
 
 Its RUTF unit-ladder constants were deliberately NOT ported: a carton holding 150
 sachets is a fact about one commodity, not about GS1, and it lives on

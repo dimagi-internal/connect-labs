@@ -25,7 +25,6 @@ from . import scope_config  # noqa: F401  -- registers labs_config_*
 from . import semantic  # noqa: F401
 from . import solicitations  # noqa: F401
 from . import supply_chain  # noqa: F401  -- registers supply_* from the operation registry
-from . import supply_demo  # noqa: F401  -- registers supply_demo_reseed
 from . import synthetic  # noqa: F401  -- registers synthetic_*, incl. synthetic_env_{list,get,ensure}
 from . import synthetic_tasks  # noqa: F401  -- registers task_create_synthetic
 from . import templates  # noqa: F401

@@ -247,8 +247,7 @@ labs-only programme are still governed by visibility, so quotes and prices are
 readable by anyone who can see the programme (H3: give every declared
 programme a non-empty `allowed_domains` — the seeded examples do); `resolve_org`
 ignores `OrgMembership` for a partner's own organisation (M4; no longer used to
-authorise anything); pin the OES satellite's privileged-domain signup block
-with a test.
+authorise anything).
 
 ## 9. Follow-ups closed (2026-10-14)
 
@@ -262,8 +261,7 @@ with a test.
   issued before #2458.
 - **M4.** Left as is, deliberately: `resolve_org` names who a partner is for
   attribution and no longer authorises anything (§5's `standing` does).
-- **OES signup.** The OES satellite's refusal of Dimagi addresses is pinned by
-  `supply/tests/test_auth.py::test_signup_refuses_a_dimagi_address`.
+- **OES signup.** Moot: the OES satellite and its signup were removed on 2026-10-14.
 - **A screen for support.** `/supply/runner/` (`runner/views.py`): staff declare or
   change the running organisation; the Overview links to it for staff.
 - **A team, and how it grows (2026-10-14).** A running organisation takes no

@@ -12,10 +12,8 @@ user is allowed to see (see labs.context._merge_labs_only_opps). That keeps the
 local view honest — it shows synthetic programmes and nothing else.
 
 Wired only when settings.DEBUG, and it raises Http404 otherwise, so it cannot
-exist in a deployed environment. Precedent: the OES satellite's
-/oes/dev-login/, which this now matches in the one respect that matters -- it
-signs in a user the seeder already created and REFUSES if there is none,
-rather than creating one.
+exist in a deployed environment. It signs in a user the seeder already
+created and REFUSES if there is none, rather than creating one.
 
 That distinction is the whole safety argument. An earlier version called
 get_or_create with is_superuser=True, so a single misconfiguration

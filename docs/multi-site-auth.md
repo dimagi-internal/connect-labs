@@ -1,7 +1,7 @@
 # Multi-site authentication contract
 
-Labs and each standalone satellite site — `supply`, `campaign`, and any future
-site — run inside **one Django project**, against **one `users.User` table**,
+Labs and each standalone satellite site — `campaign`, and any future site —
+run inside **one Django project**, against **one `users.User` table**,
 behind **one session cookie**. That has one consequence you must design around:
 
 > **Authentication is global. Authorization is per-surface.**
@@ -23,7 +23,7 @@ request:
 
 Labs access therefore requires a **labs OAuth session**, which only the labs
 OAuth flow (`/labs/login/` → `/labs/callback/`) establishes. A satellite's own
-login (e.g. `/oes/login/`, a plain Django password login) never sets
+login (e.g. a plain Django password login on a satellite) never sets
 `labs_oauth`, so a satellite session is torn down the instant it touches a labs
 path (`/labs/*`, `/microplans/*`, `/funder/*`, `/solicitations/*`, …). The
 boundary is **fail-closed**: any path that isn't explicitly skip-listed is
@@ -38,7 +38,7 @@ This is why a satellite login cannot become a labs login, and it's verified by
 | User | Has `labs_oauth` (did labs OAuth)? | Satellite membership? | Labs access | Satellite access |
 |------|:---:|:---:|:---:|:---:|
 | Labs-only (most Dimagi staff) | yes | no | ✅ | ❌ (no satellite membership) |
-| Satellite-only (e.g. a supplier who self-registered) | no | yes | ❌ (logged out on labs paths) | ✅ (via the satellite's own auth) |
+| Satellite-only (e.g. a user who self-registered on a satellite) | no | yes | ❌ (logged out on labs paths) | ✅ (via the satellite's own auth) |
 | Both (e.g. you) | yes | yes | ✅ | ✅ |
 
 One person can hold several authorizations at once; each surface checks its own.
@@ -60,18 +60,18 @@ the shared user table via `get_user_model()` / `settings.AUTH_USER_MODEL`).
 3. **Enforce site N's own authorization** — do **not** rely on Django's global
    authentication alone. Gate every state-changing / data view on membership in
    site N (a decorator/mixin that checks your own membership model, the way
-   `supply` uses `@require_perm` + `SupplierMember` and `campaign` uses
-   `@campaign_login_required` + `CampaignUser`). Global `is_authenticated` is
+   `campaign` uses `@campaign_login_required` + `CampaignUser`). Global `is_authenticated` is
    satisfied by a login on *any* site.
 4. **Don't let open signup mint privileged identities.** If site N has open
    self-registration into the shared user table, reject email domains that grant
    elevated access elsewhere (labs derives Dimagi/admin from the email domain —
-   see `connect_labs/utils/dimagi_user.py`). `supply` does this in
-   `SignupForm.clean_email`; mirror it. Otherwise an anonymous signup can claim a
+   see `connect_labs/utils/dimagi_user.py`) in the signup form's
+   `clean_email`. Otherwise an anonymous signup can claim a
    privileged identity, or squat a real user's username, in the shared table.
 5. **Add a host-integration test** — assert your prefix is in
    `oauth_session.get_skip_path_prefixes()` (see
-   `connect_labs/supply/tests/test_host_integration.py`) so a future change can't
+   `test_satellite_paths_are_skipped` in
+   `connect_labs/labs/tests/test_oauth_session_middleware.py`) so a future change can't
    silently break the contract.
 
 ## Defense in depth, not a single point of failure

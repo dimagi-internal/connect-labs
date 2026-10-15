@@ -42,10 +42,9 @@ logger = logging.getLogger(__name__)
 BUNDLE_CSS_RELDIR = Path("connect_labs") / "static" / "bundles" / "css"
 
 # The stylesheets the runner page actually links (`connect_labs/templates/
-# base.html`). Deliberately NOT a `*.css` glob of the bundle directory: other
-# builds drop sheets in there that the page never loads — `webpack/
-# build-supply.js` writes `supply-bundle.css`, which defines `.btn`, `.card`,
-# `.field`. Globbing would let a render_code using `btn` read as "available"
+# base.html`). Deliberately NOT a `*.css` glob of the bundle directory: a build
+# can drop a sheet in there that the page never loads (one defining `.btn`,
+# `.card`, `.field`, say). Globbing would let a render_code using `btn` read as "available"
 # while rendering completely unstyled, which is a MISSED warning of exactly the
 # class this module exists to catch.
 RUNNER_STYLESHEETS = ("vendors.css", "tailwind.css")
