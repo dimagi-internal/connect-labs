@@ -20,6 +20,18 @@ Two things fall out of this that are worth having on their own:
   that does not exist, in a way that names neither migrations nor the database.
 * `--create-db` still rebuilds everything, template included.
 
+**On CI the template usually does not get built here at all.** The migrate
+that builds it was still ~55s of every pytest job, so CI caches a ``pg_dump``
+of the migrated template and restores it into the service container before
+pytest starts (``.github/actions/setup-pytest``, ``test-db-template.sh``). The
+template then already exists, ``--reuse-db`` trusts it, and every worker just
+clones it. The cache key hashes every file under a migrations directory (data
+migrations included), the modules migrations import, the requirements, the
+settings and this file, so any change that could alter what a migrate produces
+is a cache miss: that run migrates cold, as below, and saves a fresh dump once
+the suite is green. The nightly ``schedule`` run never restores, so the cold
+path is exercised every day.
+
 Non-Postgres backends, `--no-migrations`, and serial runs fall back to
 pytest-django's own behaviour: there is nothing to share when there is one
 database.
