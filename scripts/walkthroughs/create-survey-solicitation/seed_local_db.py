@@ -2,13 +2,14 @@
 
 The deployed-labs seeder (``ensure_demo.py``) writes to labs prod via the
 ``connect_labs`` MCP. For a LOCAL render (against ``runserver`` with un-merged
-affordance code) the records must live in the local ``LabsLocalRecord`` table
-instead — labs-only records (program id >= 10_000) are served by
-``labs.synthetic.local_records_backend``, not over HTTP.
+affordance code) this writes the same fixture straight into the local
+solicitation tables, as a local platform-staff user (``dev-solicitations-seed``,
+no usable password), owned by the invented demo organisation that
+``solicitations_seed_demo`` creates.
 
 This script:
-  1. Registers program 10008 as a labs-only ``SyntheticOpportunity`` locally so
-     ``LabsRecordAPIClient`` routes its reads/writes to the local backend.
+  1. Registers program 10008 as a labs-only ``SyntheticOpportunity`` locally (the
+     microplan scenes read it) and ensures the demo organisation.
   2. Sweeps any prior seeded R6 solicitations (source_group_id == 4492).
   3. Creates the matured review-stage call — criteria LOCKED before publish — with
      three firm responses (two pre-scored competitors + Sahel), and stamps Sahel's
@@ -34,12 +35,12 @@ import django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.local")
 django.setup()
 
+from django.contrib.auth import get_user_model  # noqa: E402
+
 from connect_labs.labs.synthetic.models import SyntheticOpportunity  # noqa: E402
-from connect_labs.solicitations.data_access import (  # noqa: E402
-    RESPONSE_TYPE,
-    SOLICITATION_TYPE,
-    SolicitationsDataAccess,
-)
+from connect_labs.solicitations import demo  # noqa: E402
+from connect_labs.solicitations.data_access import SolicitationsDataAccess  # noqa: E402
+from connect_labs.solicitations.local_models import Solicitation  # noqa: E402
 
 PROGRAM_ID = 10008
 SOURCE_GROUP_ID = 4492
@@ -248,22 +249,19 @@ def main() -> int:
         opp.save()
     print(f"[seed_local] SyntheticOpportunity {PROGRAM_ID} labs_only registered (created={created})")
 
-    da = SolicitationsDataAccess(program_id=str(PROGRAM_ID), access_token="local-dummy-token")
+    org = demo.ensure_org()
+    seeder, _ = get_user_model().objects.get_or_create(
+        username="dev-solicitations-seed", defaults={"email": "seed@labs.example", "is_staff": True}
+    )
+    seeder.is_staff = True
+    seeder.set_unusable_password()
+    seeder.save()
+    da = SolicitationsDataAccess(user=seeder, program_id=PROGRAM_ID)
 
-    # (2) Sweep prior seeded R6 solicitations to stay idempotent.
-    from connect_labs.labs.synthetic import local_records_backend as backend
-
-    doomed = backend.get_records(program_id=PROGRAM_ID, type=SOLICITATION_TYPE)
-    swept = []
-    for s in doomed:
-        if (s.data or {}).get("source_group_id") == SOURCE_GROUP_ID:
-            resp_rows = backend.get_records(type=RESPONSE_TYPE, labs_record_id=s.pk)
-            child_ids = [r.pk for r in resp_rows]
-            for r in resp_rows:
-                rev_rows = backend.get_records(type="solicitation_review", labs_record_id=r.pk)
-                child_ids += [rv.pk for rv in rev_rows]
-            backend.delete_records(record_ids=[s.pk] + child_ids)
-            swept.append(s.pk)
+    # (2) Sweep prior seeded R6 solicitations to stay idempotent (responses and reviews cascade).
+    doomed = Solicitation.objects.calls().filter(source_group_id=SOURCE_GROUP_ID)
+    swept = list(doomed.values_list("pk", flat=True))
+    doomed.delete()
     print(f"[seed_local] swept prior R6 solicitations: {swept}")
 
     # (3) Create the matured, LOCKED review-stage call.
@@ -299,7 +297,8 @@ def main() -> int:
             "criteria_locked": True,
             "criteria_locked_at": datetime.now(timezone.utc).isoformat(),
             "is_public": True,
-        }
+        },
+        owner_org=org,
     )
     review_sol_id = int(sol.pk)
     print(f"[seed_local] created LOCKED review-stage solicitation {review_sol_id}")
@@ -313,14 +312,13 @@ def main() -> int:
             "submitted_by_name": spec_r["org"],
             "submitted_by_email": spec_r["email"],
             "org_name": spec_r["org"],
-            "llo_entity_id": "individual",
             "submission_date": (datetime.now(timezone.utc) - timedelta(days=9 - 3 * idx)).isoformat(),
             "selected_plan_ids": [SOURCE_PLAN_ID],
             "selected_plan_names": ["R6 — Attakar × Gura"],
         }
         if spec_r.get("ai_proposed_scores"):
             data["ai_proposed_scores"] = spec_r["ai_proposed_scores"]
-        resp = da.create_response(solicitation_id=review_sol_id, llo_entity_id="individual", data=data)
+        resp = da.create_response(solicitation_id=review_sol_id, llo_entity_id="individual", data=data, on_behalf=True)
         outputs[spec_r["key"]] = int(resp.pk)
         print(f"[seed_local]   response {resp.pk} — {spec_r['org']}")
 
@@ -328,8 +326,6 @@ def main() -> int:
         da.create_review(
             response_id=outputs[key],
             data={
-                "response_id": outputs[key],
-                "llo_entity_id": "individual",
                 "score": review["score"],
                 "recommendation": review["recommendation"],
                 "criteria_scores": review["criteria_scores"],

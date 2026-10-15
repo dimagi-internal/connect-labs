@@ -24,6 +24,7 @@ from . import sample_ids  # noqa: F401
 from . import scope_config  # noqa: F401  -- registers labs_config_*
 from . import semantic  # noqa: F401
 from . import solicitations  # noqa: F401
+from . import solicitations_import  # noqa: F401  -- registers solicitations_import_records (staff)
 from . import supply_chain  # noqa: F401  -- registers supply_* from the operation registry
 from . import synthetic  # noqa: F401  -- registers synthetic_*, incl. synthetic_env_{list,get,ensure}
 from . import synthetic_tasks  # noqa: F401  -- registers task_create_synthetic
