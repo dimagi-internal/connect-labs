@@ -116,3 +116,37 @@ class SimpleMicroplan(models.Model):
 
     def __str__(self) -> str:
         return self.name
+
+
+class BulkCreateTask(models.Model):
+    """Who started a bulk-create Celery task, so only they can read its status.
+
+    A Celery task id is a bare handle: anyone holding it can ask the result backend
+    for the task's progress and per-ward results. Both ways in -- the bulk-create page
+    and the ``microplans_bulk_create_plans`` MCP tool -- record the starter here at
+    enqueue time, and both status readers refuse anyone else with the same answer as
+    an unknown id, so a guessed id reveals nothing. ``restricted`` mirrors
+    ``MCPJob.restricted``: a "no user visit data" MCP call sees only tasks a restricted
+    call started.
+    """
+
+    task_id = models.CharField(max_length=255, primary_key=True)
+    user = models.ForeignKey("users.User", on_delete=models.CASCADE, related_name="microplans_bulk_create_tasks")
+    restricted = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    @classmethod
+    def record(cls, task_id, user, *, restricted: bool = False) -> None:
+        cls.objects.update_or_create(task_id=str(task_id), defaults={"user": user, "restricted": bool(restricted)})
+
+    @classmethod
+    def owned_by(cls, task_id, user, *, restricted: bool = False) -> bool:
+        if not getattr(user, "pk", None):
+            return False
+        qs = cls.objects.filter(task_id=str(task_id), user=user)
+        if restricted:
+            qs = qs.filter(restricted=True)
+        return qs.exists()
+
+    def __str__(self) -> str:
+        return f"{self.task_id} ({self.user_id})"

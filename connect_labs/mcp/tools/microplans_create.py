@@ -36,6 +36,13 @@ def _access_token_for(user, program_id: int) -> str:
     return require_connect_token(user)
 
 
+def _restricted_call() -> bool:
+    """This MCP call's "no user visit data" answer, as ``job_status`` scopes jobs by it."""
+    from .. import server
+
+    return server.restricted_call(server.get_access_token())
+
+
 @register(
     name="microplans_bulk_create_plans",
     description=(
@@ -157,6 +164,10 @@ def microplans_bulk_create_plans(
         actor=actor,
         team=team,
     )
+    # Only the caller may read this task's status (microplans_bulk_create_status).
+    from connect_labs.microplans.models import BulkCreateTask
+
+    BulkCreateTask.record(task.id, user, restricted=_restricted_call())
     return {
         "program_id": int(program_id),
         "task_id": task.id,
@@ -171,7 +182,8 @@ def microplans_bulk_create_plans(
 @register(
     name="microplans_bulk_create_status",
     description=(
-        "Poll a microplans_bulk_create_plans task by task_id. Returns the run state "
+        "Poll a microplans_bulk_create_plans task by task_id. Only the account that "
+        "started the task can read it. Returns the run state "
         "(queued|running|completed|failed) with incremental per-ward results — each "
         "row carries {index, name, boundary_id, status, plan_id?, work_areas?, detail?} "
         "— plus created/total counts and the run_id. Call repeatedly until state is "
@@ -187,6 +199,12 @@ def microplans_bulk_create_plans(
 def microplans_bulk_create_status(user, *, task_id):
     from celery.result import AsyncResult
 
+    from connect_labs.microplans.models import BulkCreateTask
+
+    # An unknown id and somebody else's get the same answer, so a guessed id reveals
+    # nothing, not even that the task exists.
+    if not BulkCreateTask.owned_by(task_id, user, restricted=_restricted_call()):
+        raise MCPToolError("NOT_FOUND", f"No bulk-create task {task_id!r} started by your account.")
     result = AsyncResult(str(task_id))
     state = result.state
     info = result.info if isinstance(result.info, dict) else {}

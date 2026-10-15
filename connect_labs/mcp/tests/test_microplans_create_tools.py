@@ -96,10 +96,70 @@ def test_bulk_create_status_maps_states(user, monkeypatch):
     monkeypatch.setattr(mc, "AsyncResult", lambda tid: fake, raising=False)
     # AsyncResult is imported inside the handler, so patch the celery symbol it binds.
     monkeypatch.setattr("celery.result.AsyncResult", lambda tid: fake)
+    from connect_labs.microplans.models import BulkCreateTask
+
+    BulkCreateTask.record("task-xyz", user)
     out = get_tool("microplans_bulk_create_status").handler(user=user, task_id="task-xyz")
     assert out["state"] == "completed"
     assert out["created"] == 1 and out["run_id"] == "bulk-abc"
     assert out["results"][0]["plan_id"] == 7
+
+
+def _succeeded(monkeypatch):
+    """A finished task whose results name a plan -- what a stranger must not see."""
+    fake = SimpleNamespace(
+        state="SUCCESS",
+        info={},
+        result={"results": [{"boundary_id": "w1", "status": "ok", "plan_id": 7}], "created": 1, "total": 1},
+    )
+    monkeypatch.setattr("celery.result.AsyncResult", lambda tid: fake)
+
+
+@pytest.mark.django_db
+def test_bulk_create_records_the_starter_and_only_they_can_poll(user, synthetic_opp, monkeypatch):
+    from connect_labs.microplans import tasks
+
+    monkeypatch.setattr(tasks.bulk_create_plans_task, "delay", lambda *a, **k: SimpleNamespace(id="task-own"))
+    get_tool("microplans_bulk_create_plans").handler(user=user, program_id=PROG, boundary_ids=["w1"])
+    _succeeded(monkeypatch)
+
+    status = get_tool("microplans_bulk_create_status").handler
+    assert status(user=user, task_id="task-own")["results"][0]["plan_id"] == 7
+
+    stranger = get_user_model().objects.create_user(username="other", password="p")
+    with pytest.raises(MCPToolError) as exc:
+        status(user=stranger, task_id="task-own")
+    assert exc.value.code == "NOT_FOUND"
+
+
+@pytest.mark.django_db
+def test_bulk_create_status_hides_another_users_task_like_an_unknown_one(user, monkeypatch):
+    from connect_labs.microplans.models import BulkCreateTask
+
+    owner = get_user_model().objects.create_user(username="owner", password="p")
+    BulkCreateTask.record("task-theirs", owner)
+    _succeeded(monkeypatch)
+    status = get_tool("microplans_bulk_create_status").handler
+
+    with pytest.raises(MCPToolError) as theirs:
+        status(user=user, task_id="task-theirs")
+    with pytest.raises(MCPToolError) as unknown:
+        status(user=user, task_id="task-nobody")
+    assert theirs.value.code == unknown.value.code == "NOT_FOUND"
+    assert "plan_id" not in theirs.value.message and "task-theirs" in theirs.value.message
+
+
+@pytest.mark.django_db
+def test_a_restricted_call_cannot_poll_a_task_a_full_access_call_started(user, monkeypatch):
+    import connect_labs.mcp.tools.microplans_create as mc
+    from connect_labs.microplans.models import BulkCreateTask
+
+    BulkCreateTask.record("task-full", user, restricted=False)
+    _succeeded(monkeypatch)
+    monkeypatch.setattr(mc, "_restricted_call", lambda: True)
+    with pytest.raises(MCPToolError) as exc:
+        get_tool("microplans_bulk_create_status").handler(user=user, task_id="task-full")
+    assert exc.value.code == "NOT_FOUND"
 
 
 @pytest.mark.django_db
