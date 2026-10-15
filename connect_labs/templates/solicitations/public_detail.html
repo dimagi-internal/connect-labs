@@ -19,7 +19,7 @@
         </a>
         {% if solicitation.owner_org_id %}
         <i class="fa-solid fa-chevron-right text-xs"></i>
-        <a href="{% url 'solicitations:org_page' org_slug=solicitation.owner_org.slug %}" class="hover:text-brand-cornflower-blue transition-colors truncate max-w-[14rem]">{{ solicitation.owner_name }}</a>
+        <a href="{% url 'solicitations:org_page' org_slug=solicitation.owner_org.slug %}" class="hover:text-brand-cornflower-blue transition-colors min-w-0 break-words">{{ solicitation.owner_name }}</a>
         {% endif %}
     </nav>
 
@@ -103,14 +103,14 @@
                 {{ solicitation.expected_start_date|date:"M Y"|default:"TBD" }} – {{ solicitation.expected_end_date|date:"M Y"|default:"TBD" }}
             </p>
         </div>
-        <div class="bg-white p-4 min-w-0">
+        <div class="bg-white p-4 min-w-0 col-span-2 lg:col-span-1">
             <p class="text-xs text-gray-400 uppercase tracking-wider mb-1">Scale</p>
             <p class="text-sm text-gray-700 break-words">{{ solicitation.estimated_scale|default:"Not stated" }}</p>
         </div>
-        <div class="bg-white p-4 min-w-0">
+        <div class="bg-white p-4 min-w-0 col-span-2 lg:col-span-1">
             <p class="text-xs text-gray-400 uppercase tracking-wider mb-1">Contact</p>
             {% if solicitation.contact_email %}
-            <a href="mailto:{{ solicitation.contact_email }}" class="text-sm text-brand-cornflower-blue hover:underline break-all">{{ solicitation.contact_email }}</a>
+            <a href="mailto:{{ solicitation.contact_email }}" class="text-sm text-brand-cornflower-blue hover:underline break-words">{{ solicitation.contact_email }}</a>
             {% else %}
             <p class="text-sm text-gray-400">Not stated</p>
             {% endif %}

@@ -101,7 +101,8 @@
             <!-- Who is responding: an organisation, not the account filling in the form -->
             <fieldset class="bg-white rounded-xl shadow-sm p-5 sm:p-6"
                       x-data="{ org: '{{ form.org.value|default_if_none:''|escapejs }}' }">
-              <legend class="text-sm font-semibold text-gray-800 px-1">Your organisation</legend>
+              <legend class="sr-only">Your organisation</legend>
+              <h2 class="text-base font-semibold text-brand-deep-purple mb-1" aria-hidden="true">Your organisation</h2>
               <p class="text-xs text-gray-500 mb-4">The organisation you are responding for. {{ solicitation.owner_name|default:"The organisation" }} sees this name and contact on your response.</p>
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div class="sm:col-span-2">
@@ -180,10 +181,10 @@
                                 {% if qf.criteria %}
                                 <div class="mb-2 p-3 bg-indigo-50 rounded-lg border border-indigo-100">
                                     {% for criterion in qf.criteria %}
-                                    <div class="flex items-center gap-2 text-xs text-indigo-700">
+                                    <div class="flex flex-wrap items-center gap-x-2 text-xs text-indigo-700">
                                         <i class="fa-solid fa-scale-balanced"></i>
                                         <span class="font-semibold">{{ criterion.name }} ({{ criterion.weight }}%)</span>
-                                        <span class="text-indigo-500">— {{ criterion.scoring_guide }}</span>
+                                        {% if criterion.scoring_guide %}<span class="text-indigo-500">— {{ criterion.scoring_guide }}</span>{% endif %}
                                     </div>
                                     {% endfor %}
                                 </div>
