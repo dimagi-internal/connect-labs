@@ -8,7 +8,7 @@ out. This seeder supplies that, and says on every record that it is invented:
 
 - the catalogue item, a central store and a partner store, and opening stock;
 - the RUTF dispensing rule, on the released app's own paths
-  (`stock_from_visits.PATHS`, design §9), so visits post consumption;
+  (`PATHS` below, design §9), so visits post consumption;
 - a worker supply point for every worker who submitted a visit;
 - every two weeks, the last a week before the seed ran, a distribution topping
   each active worker up to a few weeks' cover at the pace their visits gave RUTF
@@ -37,7 +37,26 @@ from decimal import ROUND_CEILING, Decimal
 
 from django.utils import timezone
 
-from connect_labs.supply_chain.demo.stock_from_visits import FORM_SCREENING, FORM_VISIT, PATHS, XMLNS
+# The released RUTF deliver app's form names (`@name`) and the Screening's identifier
+# (`@xmlns`): a form's name can be retranslated, its xmlns cannot.
+FORM_SCREENING, FORM_VISIT = "Screening", "Visit Form"
+XMLNS = {
+    FORM_SCREENING: "http://openrosa.org/formdesigner/92026AF7-291B-4E25-A60B-82486FD0C799",
+    FORM_VISIT: "http://openrosa.org/formdesigner/991BB731-417A-46D2-B1F5-1E4CD65C8D89",
+}
+# form_json paths, copied verbatim from the released app's definition (design §9).
+PATHS = {
+    # Screening: the deduction is already the total (the ration, or 1 for an appetite test alone).
+    "rutf_screening_total": "form.screening_outcome.rutf_stock_deduction",
+    # Visit Form: the ration plus the appetite test's sachet (1 only when no ration was given).
+    "rutf_visit": "form.rutf_dispensing.rutf_sachets_dispensed",
+    "appetite_visit": "form.var.appetite_test_stock_deduction",
+    # The worker's own stock, when the app records it.
+    "balance": "form.var.new_stock_balance",
+    "received": "form.current_stock.sachets_received",
+    "received_on": "form.current_stock.date_received",
+    "remaining": "form.stock_balance.sachets_remaining",
+}
 
 # Deliveries come every CADENCE_DAYS, and the last one before the seed ran was
 # LAST_DELIVERY_DAYS_AGO days before it: half-way through a cycle on whatever day it
