@@ -31,8 +31,13 @@ jobs:
     strategy:
       matrix:
         include:
-          - source: postgis/postgis:17-3.5
+          - source: docker.io/postgis/postgis:17-3.5
             target: ghcr.io/dimagi-internal/connect-labs-ci-postgis:17-3.5
+          # public.ecr.aws's anonymous pulls are rate-limited too: a pytest slice
+          # failed on "toomanyrequests: Data limit exceeded" pulling redis there
+          # (2026-10-15), and splitting pytest into three slices triples the pulls.
+          - source: public.ecr.aws/docker/library/redis:6
+            target: ghcr.io/dimagi-internal/connect-labs-ci-redis:6
     steps:
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
@@ -41,5 +46,5 @@ jobs:
         # imagetools copies every platform of the manifest list registry-to-registry,
         # without pulling layers onto the runner.
         run: |
-          docker buildx imagetools create --tag "${{ matrix.target }}" "docker.io/${{ matrix.source }}"
+          docker buildx imagetools create --tag "${{ matrix.target }}" "${{ matrix.source }}"
           docker buildx imagetools inspect "${{ matrix.target }}"
