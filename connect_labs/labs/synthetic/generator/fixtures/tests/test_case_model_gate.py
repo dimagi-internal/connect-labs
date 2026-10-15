@@ -20,7 +20,15 @@ def _reference_nn(real):
     return grouped, out
 
 
-def _reference_too_close(grouped, nn, case):
+def _numbers(case):
+    return tuple(tuple(sorted((v.get("values") or {}).items())) for v in case["visits"])
+
+
+def _reference_too_close(grouped, nn, case, real=()):
+    # A case whose numbers are exactly fewer than K_MIN real cases' is refused at any length.
+    shared = sum(_numbers(r) == _numbers(case) for r in real)
+    if any(_numbers(case)) and 0 < shared < cm.K_MIN:
+        return True
     if len(case["visits"]) < cm._GATE_MIN_VISITS:
         return False
     for real in grouped.get(tuple(v["day"] for v in case["visits"]), []):
@@ -71,12 +79,23 @@ def test_the_vectorised_gate_matches_the_per_pair_definition():
         base = {"w": rng.uniform(1500, 2500), "h": rng.uniform(40, 50), "muac": rng.uniform(8, 11)}
         probes.append(_case(rng, rng.choice(shapes), paths, base, jitter=0.05))
     verdicts = [gate.too_close(p) for p in probes]
-    assert verdicts == [_reference_too_close(grouped, nn, p) for p in probes]
+    assert verdicts == [_reference_too_close(grouped, nn, p, real) for p in probes]
     assert any(verdicts) and not all(verdicts)
 
 
 def test_a_case_of_an_unseen_shape_or_too_few_visits_is_never_too_close():
-    real = [{"owner": "a", "visits": [{"day": d, "values": {"w": 2000.0}} for d in (0, 7, 14)]}] * 3
+    # Numbers K_MIN real cases share: only the distance test could refuse them.
+    real = [{"owner": "a", "visits": [{"day": d, "values": {"w": 2000.0}} for d in (0, 7, 14)]}] * cm.K_MIN
     gate = cm._Gate(real)
     assert not gate.too_close({"visits": [{"day": d, "values": {"w": 2000.0}} for d in (0, 5, 14)]})
     assert not gate.too_close({"visits": [{"day": d, "values": {"w": 2000.0}} for d in (0, 7)]})
+
+
+def test_numbers_fewer_than_k_min_real_cases_share_are_refused_at_any_length():
+    def case(days, weights):
+        return {"owner": "a", "visits": [{"day": d, "values": {"w": w}} for d, w in zip(days, weights)]}
+
+    gate = cm._Gate([case((0, 7), (2000.0, 2350.0))] * (cm.K_MIN - 1))
+    # The same two readings, on other days: still that case's series.
+    assert gate.too_close(case((0, 9), (2000.0, 2350.0)))
+    assert not gate.too_close(case((0, 7), (2010.0, 2350.0)))

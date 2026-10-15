@@ -29,7 +29,7 @@ def test_residual_spread_ignores_a_few_typos():
 
 def test_synthetic_weights_stay_plausible_when_the_source_has_typos():
     pool = _pool()
-    out, _report = cm.synthesize_case_pool(pool, seed=11, replay_numeric=False)
+    out, _report = cm.synthesize_case_pool(pool, seed=11)
     weights = [v["values"]["form.w"] for case in out for v in case["visits"] if "form.w" in v.get("values", {})]
     assert weights
     implausible = sum(1 for w in weights if w < 800 or w > 5000) / len(weights)
@@ -57,7 +57,7 @@ def test_a_rare_outcome_survives_modelling():
         pool.append({"owner": f"flw_{c % 10:03d}", "start_date": "2026-06-01", "visits": visits})
     real = sum(1 for c in pool if c["visits"][-1]["cats"]["form.child_alive"] == "no")
 
-    out, _report = cm.synthesize_case_pool(pool, seed=1, replay_numeric=False)
+    out, _report = cm.synthesize_case_pool(pool, seed=1)
     died = [c for c in out if any((v.get("cats") or {}).get("form.child_alive") == "no" for v in c["visits"])]
 
     assert 0.6 * real <= len(died) <= 1.4 * real, f"{len(died)} synthetic deaths for {real} real"
@@ -126,7 +126,7 @@ def test_a_modelled_programme_keeps_the_sources_shape():
     batch: span_28 fell from 100% to 78% and copying from 17% to 2%."""
     real_pool = _kmc_like_pool()
     real = _shares(real_pool)
-    out, _report = cm.synthesize_case_pool(real_pool, seed=2, replay_numeric=False)
+    out, _report = cm.synthesize_case_pool(real_pool, seed=2)
     syn = _shares(out)
     assert syn["span_28"] >= real["span_28"] - 0.1, (real, syn)
     assert abs(syn["copied"] - real["copied"]) <= 0.08, (real, syn)
@@ -161,7 +161,7 @@ def test_a_common_outcome_and_an_end_only_field_end_the_case():
             )
         pool.append({"owner": f"flw_{c % 8:03d}", "start_date": "2026-03-02", "visits": visits})
 
-    out, _report = cm.synthesize_case_pool(pool, seed=4, replay_numeric=False)
+    out, _report = cm.synthesize_case_pool(pool, seed=4)
 
     for path in ("form.status", "form.discontinuation.reason"):
         ended = mid = 0
@@ -192,7 +192,7 @@ def test_a_schedule_goes_with_its_forms():
         ]
         pool.append({"owner": f"flw_{c % 8:03d}", "start_date": "2026-03-02", "visits": visits})
 
-    out, _report = cm.synthesize_case_pool(pool, seed=6, replay_numeric=False)
+    out, _report = cm.synthesize_case_pool(pool, seed=6)
 
     for first, short in (("Register", False), ("Visit", True)):
         spans = [
@@ -220,7 +220,7 @@ def test_a_copy_held_in_two_fields_is_copied_once():
         ]
         pool.append({"owner": f"flw_{c % 6:03d}", "start_date": "2026-03-02", "visits": visits})
 
-    out, _report = cm.synthesize_case_pool(pool, seed=8, replay_numeric=False)
+    out, _report = cm.synthesize_case_pool(pool, seed=8)
 
     firsts = [c["visits"][0]["values"] for c in out]
     both = [v for v in firsts if "form.bw" in v and "form.enrol" in v]
@@ -246,7 +246,7 @@ def test_readings_take_the_grid_the_source_writes_on_and_only_that():
         return sum(1 for x in vals if x % 100 == 0) / len(vals)
 
     real_pool = _kmc_like_pool(n_cases=900)
-    out, _report = cm.synthesize_case_pool(real_pool, seed=3, replay_numeric=False)
+    out, _report = cm.synthesize_case_pool(real_pool, seed=3)
     rounders, precise = {"flw_000", "flw_001", "flw_002"}, {"flw_003", "flw_004", "flw_005"}
     assert hundreds(out, rounders) >= 0.85, hundreds(out, rounders)
     assert hundreds(out, precise) <= 0.05, hundreds(out, precise)
@@ -281,7 +281,7 @@ def test_a_field_is_recorded_on_the_sources_rhythm():
             gaps += [b - a for a, b in zip(days, days[1:])]
         return sum(1 for g in gaps if g < 4) / len(gaps)
 
-    out, _report = cm.synthesize_case_pool(pool, seed=5, replay_numeric=False)
+    out, _report = cm.synthesize_case_pool(pool, seed=5)
     assert close_share(pool) == 0
     assert close_share(out) < 0.1, f"{close_share(out):.0%} of synthetic weighings follow one under 4 days earlier"
 
@@ -304,7 +304,7 @@ def test_a_reading_saved_under_two_names_stays_one_reading():
             visits.append({"day": day, "form": "Register" if i == 0 else "Visit", "values": values})
         pool.append({"owner": f"flw_{c % 6:03d}", "start_date": "2026-03-02", "visits": visits})
 
-    out, _report = cm.synthesize_case_pool(pool, seed=9, replay_numeric=False)
+    out, _report = cm.synthesize_case_pool(pool, seed=9)
 
     both = alone = differ = 0
     for case in out:
@@ -352,7 +352,7 @@ def test_each_kind_of_case_keeps_its_own_schedule_length():
         ]
         pool.append({"owner": f"flw_{c % 6:03d}", "start_date": "2026-03-02", "visits": visits})
 
-    out, _report = cm.synthesize_case_pool(pool, seed=12, replay_numeric=False)
+    out, _report = cm.synthesize_case_pool(pool, seed=12)
 
     long_cases = [c for c in out if len(c["visits"]) == 5]
     assert len(long_cases) > 200
@@ -379,7 +379,7 @@ def test_a_second_name_is_recorded_only_on_the_forms_that_carry_it():
             visits.append({"day": day, "form": form, "values": {}, "cats": cats})
         pool.append({"owner": f"flw_{c % 6:03d}", "start_date": "2026-03-02", "visits": visits})
 
-    out, _report = cm.synthesize_case_pool(pool, seed=4, replay_numeric=False)
+    out, _report = cm.synthesize_case_pool(pool, seed=4)
 
     def share(cases, path, form):
         vs = [v for case in cases for v in case["visits"] if v.get("form") == form]
@@ -419,7 +419,7 @@ def test_a_slope_from_two_close_readings_is_not_taken_for_growth():
         ]
         pool.append({"owner": f"flw_{c % 8:03d}", "start_date": "2026-03-02", "visits": visits})
 
-    out, _report = cm.synthesize_case_pool(pool, seed=6, replay_numeric=False)
+    out, _report = cm.synthesize_case_pool(pool, seed=6)
 
     def spread(cases, last_day_min):
         ws = sorted(
@@ -456,7 +456,7 @@ def test_a_data_entry_slip_is_a_slip_not_a_trajectory():
             visits.append({"day": d, "form": "Visit", "values": {"form.w": w}})
         pool.append({"owner": f"flw_{c % 8:03d}", "start_date": "2026-03-02", "visits": visits})
 
-    out, _report = cm.synthesize_case_pool(pool, seed=8, replay_numeric=False)
+    out, _report = cm.synthesize_case_pool(pool, seed=8)
 
     ws = sorted(v["values"]["form.w"] for case in out for v in case["visits"] if "form.w" in v["values"])
     wild = sum(1 for w in ws if w > 8000) / len(ws)

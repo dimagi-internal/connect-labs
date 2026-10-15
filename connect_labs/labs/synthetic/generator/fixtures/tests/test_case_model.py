@@ -74,10 +74,9 @@ def test_every_worker_keeps_its_caseload_and_case_lengths(pools):
 
 
 def test_no_modelled_case_is_a_real_case():
-    """The privacy gate guards MODELLED numbers (replay_numeric=False); replayed ones are
-    the source's by design (see test_a_case_replays_one_real_cases_numbers)."""
+    """The privacy gate: no sampled case sits on a real one."""
     real = kmc_like_pool(7)
-    synthetic, report = synthesize_case_pool(copy.deepcopy(real), seed=107, frozen_paths=FROZEN, replay_numeric=False)
+    synthetic, report = synthesize_case_pool(copy.deepcopy(real), seed=107, frozen_paths=FROZEN)
     check = nearest_real_case_report(synthetic, real)
     assert check["on_a_real_case"] == 0
     assert check["exact_copies_of_a_real_case"] == 0
@@ -88,22 +87,29 @@ def test_no_modelled_case_is_a_real_case():
     assert {s["start_date"] for s in synthetic} != real_starts
 
 
-def test_a_case_replays_one_real_cases_numbers(pools):
-    """Each sampled case's numbers are one real case's -- same worker, same length, each
-    real case once -- while its start date is its own (Jonathan, 2026-10-15)."""
-    real, synthetic, report = pools
+def test_no_case_carries_a_real_cases_numbers(pools):
+    """A baby's weighings single it out to anyone holding the real data, so no sampled
+    case carries a real case's numbers -- not as a whole, and not one varying series
+    of them (for one day, 2026-10-15, every case did)."""
+    real, synthetic, _ = pools
 
     def numbers(case):
         return tuple(tuple(sorted((v.get("values") or {}).items())) for v in case["visits"])
 
-    assert report["numeric_series_replayed"] == len(real)
-    by_owner = collections.defaultdict(list)
-    for s in real:
-        by_owner[s["owner"]].append(numbers(s))
-    for s in synthetic:
-        assert numbers(s) in by_owner[s["owner"]]
-        by_owner[s["owner"]].remove(numbers(s))
-    assert not any(by_owner.values())
+    def series(case):
+        by_path = collections.defaultdict(list)
+        for v in case["visits"]:
+            for path, x in (v.get("values") or {}).items():
+                by_path[path].append(x)
+        # A path the app computes from the visit's own day (an age) follows the schedule;
+        # what is measured is what must be new.
+        return {(path, tuple(xs)) for path, xs in by_path.items() if path not in FROZEN and len(set(xs)) > 2}
+
+    real_numbers = {numbers(s) for s in real}
+    real_series = set().union(*(series(s) for s in real))
+    assert real_series
+    assert not any(numbers(s) in real_numbers for s in synthetic)
+    assert not set().union(*(series(s) for s in synthetic)) & real_series
 
 
 def test_growth_birth_weight_and_spacing_are_reproduced(pools):
@@ -150,3 +156,21 @@ def test_a_field_seen_in_too_few_cases_is_not_modelled():
     synthetic, report = synthesize_case_pool(copy.deepcopy(real), seed=1, frozen_paths=FROZEN)
     assert "form.rare_measure" in report["fields_not_modelled"]
     assert not any("form.rare_measure" in v["values"] for s in synthetic for v in s["visits"])
+
+
+def test_a_short_case_never_carries_a_rare_real_series():
+    """The distance gate starts at three visits; five two-visit cases with five distinct
+    weights leave the model only those weights to draw. A sampled case may repeat real
+    numbers exactly only where K_MIN real cases share them; otherwise it is redrawn or
+    dropped, never shipped (CodeRabbit on #2560)."""
+    real = [
+        {
+            "owner": f"flw_{i:03d}",
+            "start_date": f"2026-03-{i + 1:02d}",
+            "visits": [{"day": 0, "values": {WEIGHT: float(w)}}, {"day": 7, "values": {WEIGHT: float(w)}}],
+        }
+        for i, w in enumerate(range(1001, 1006))
+    ]
+    synthetic, _ = synthesize_case_pool(copy.deepcopy(real), seed=5)
+    shipped = {tuple(v["values"].get(WEIGHT) for v in s["visits"]) for s in synthetic}
+    assert not shipped & {(float(w), float(w)) for w in range(1001, 1006)}

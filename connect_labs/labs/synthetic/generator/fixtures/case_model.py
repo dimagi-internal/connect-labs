@@ -37,16 +37,13 @@ What the models keep, because analyses depend on it:
   fit. Without it, start smoothing and sampled gaps put 10113's visits up to five
   weeks past the source's last day -- visits that had not happened yet.
 
-**Numeric series are replayed, not modelled** (``replay_numeric``, the default). A
-case's numbers -- every weighing, its birth weight, ages, counters, KMC hours, date
-offsets -- and the visit days and forms they sit on are taken whole from a real case of
-the same worker and length (each real case donates once). A weight series identifies
-nobody, and modelled ones could not keep what reports read off them: the source's
-rounding, its data-entry slips, the copies a form saves under a second name, which
-visits are weighed at all (Jonathan, 2026-10-15). Everything categorical -- outcomes,
-danger signs, referrals -- is still drawn from the models below, conditioned on the
-donor's own growth; ids, names and start dates are new. ``replay_numeric=False`` keeps
-the fully modelled path.
+**Numbers are modelled too, never replayed.** For one day (2026-10-15) each case's
+numbers were a real case's, whole: a baby's weighings on its visit days single that
+baby out to anyone holding the real data, and the clone held every real baby's series
+while labs serves generated data to callers kept from real visits. What reports read
+off the numbers is modelled instead: the source's rounding (each worker's grid), its
+data-entry slips, the copies a form saves under a second name, which visits are
+weighed at all.
 
 What keeps it safe:
 
@@ -55,8 +52,7 @@ What keeps it safe:
   than ``K_MIN`` cases is not modelled at all.
 * **No real start date** -- start dates are each worker's dates, smoothed by a
   non-zero shift.
-* **A privacy gate** (distance to closest record, ``_Gate``), for MODELLED numbers
-  only (``replay_numeric=False``) -- a sampled case of 3+
+* **A privacy gate** (distance to closest record, ``_Gate``) -- a sampled case of 3+
   visits that lands on a real case (same visit days, numbers within 1% on average,
   and much closer to it than any other real case is) is redrawn; one the gate keeps
   refusing is dropped, never emitted. Counts are reported, and
@@ -181,6 +177,8 @@ class _CatModel:
 
 
 _NONE = "\x00none"
+#: The growth band of a case whose readings show no growth (see _tercile).
+_NO_BAND = -2
 
 
 @dataclass
@@ -231,9 +229,6 @@ class CaseModel:
     # Which per-case constants were entered equal (one copied from another), as whole
     # patterns: persona or "*" -> [(groups of equal paths, share of cases)].
     copies: dict[str, list[tuple[tuple[tuple[str, ...], ...], float]]] = field(default_factory=dict)
-    # Each real case's fitted parameter row, in the pool's order: a case whose numbers
-    # are replayed from a real one draws its answers from that case's row (its growth).
-    case_rows: list[dict[str, float]] = field(default_factory=list)
 
 
 def _decimals(value: float) -> int:
@@ -375,8 +370,14 @@ def _shrink_slopes(
         pred = X @ coef
         resid_var = _robust_sd((slopes - pred).tolist()) ** 2
         true_var = max(resid_var - float(np.median(err)), 0.05 * resid_var)
+    # Each slope is DRAWN from what its readings leave possible (its posterior), not set
+    # at the posterior's mean: set at the mean, a two-weighing case's growth was exactly
+    # what its birth weight predicts, and growth followed birth weight more closely than
+    # in the source (0.47 against 0.42). Seeded on the data, so a fit is repeatable.
+    draw = np.random.default_rng(len(fits) * 7919 + int(abs(float(slopes.sum())) * 1000) % 7919)
     for (ri, mean_day, mean_val, _sxx, slope), e, p in zip(fits, err, pred):
-        shrunk = p + true_var / (true_var + e) * (slope - p)
+        share = true_var / (true_var + e)
+        shrunk = p + share * (slope - p) + draw.normal(0.0, math.sqrt(true_var * (1 - share)))
         rows[ri][f"s:{path}"] = float(shrunk)
         rows[ri][f"b:{path}"] = float(mean_val - shrunk * mean_day)
 
@@ -934,12 +935,21 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
         key=lambda c: -len(margins[c].values),
     )
     driver = slope_cols[0] if slope_cols else "n"
-    driver_vals = margins[driver].values
+    # Answers are fitted, and drawn, by the growth a case's readings SHOW: the raw slope
+    # through them (slips left out), not the shrunk one modelled as its true growth.
+    # Sampling bands a case the same way (_observed_driver).
+    banded = [dict(row) for row in rows]
+    if driver.startswith("s:"):
+        for row in banded:
+            row.pop(driver, None)
+        for ri, *_rest, raw in slope_fits[driver[2:]]:
+            banded[ri][driver] = raw
+    driver_vals = np.array([row[driver] for row in banded if driver in row], dtype=float)
     # Growth bands: fifths when there are enough cases to fill them, else thirds.
     bands = 5 if len(series_list) >= 40 * K_MIN else 3
     cuts = tuple(float(np.quantile(driver_vals, q / bands)) for q in range(1, bands))
 
-    cats, suppressed = _fit_cats(series_list, rows, driver, cuts, time_varying)
+    cats, suppressed = _fit_cats(series_list, banded, driver, cuts, time_varying)
     report["categorical_values_suppressed"] = suppressed
 
     rare_first: Counter = Counter()
@@ -961,7 +971,6 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
 
     aliases = _fit_aliases(series_list)
     return CaseModel(
-        case_rows=rows,
         real_starts=frozenset(d for starts in owner_starts.values() for d in starts),
         day_patterns={n: sorted(pats) for n, pats in day_patterns.items() if len(pats) >= K_MIN},
         day_patterns_by_forms={f: sorted(pats) for f, pats in day_patterns_by_forms.items() if len(pats) >= K_MIN},
@@ -1030,8 +1039,39 @@ def _correlation(rows: list[dict[str, float]], columns: list[str], margins: dict
     return nearest_psd(corr)
 
 
+def _observed_slope(points: list[tuple[float, float]]) -> float | None:
+    """The least-squares slope through (day, value) points, None under two distinct days."""
+    if len({d for d, _ in points}) < 2:
+        return None
+    return _fit_line(points)[1]
+
+
+def _observed_driver(model: CaseModel, params: dict[str, float], days, numbers, slipped: set[int]) -> float:
+    """The growth a sampled case's own readings show, for its growth band.
+
+    A case's answers follow the band its readings put it in, measured as on the real
+    cases (_fit_cats): the slope through its readings, slips left out. Banding the
+    case's modelled TRUE growth on odds learnt from real cases' measured growth
+    flattened deaths across bands -- a two-weighing slope is mostly scale error, so in
+    the source the measured bands mix fast and slow growers -- and slow growers died
+    little more often than fast ones (0.18 against the source's 0.24 apart)."""
+    if not model.driver or not model.driver.startswith("s:"):
+        return params.get(model.driver or "n", params["n"])
+    path = model.driver[2:]
+    points = [
+        (float(d), vals[path])
+        for i, (d, (vals, _)) in enumerate(zip(days, numbers))
+        if path in vals and i not in slipped
+    ]
+    slope = _observed_slope(points)
+    return math.nan if slope is None else slope
+
+
 def _tercile(value: float, cuts: tuple[float, ...]) -> int:
-    """The growth band ``value`` falls in (0 = slowest), given the band cut points."""
+    """The growth band ``value`` falls in (0 = slowest), given the band cut points; a case
+    whose growth cannot be read (fewer than two days weighed) is a band of its own, -2."""
+    if value is None or not math.isfinite(value):
+        return _NO_BAND
     return int(sum(1 for cut in cuts if value > cut))
 
 
@@ -1058,7 +1098,7 @@ def _fit_cats(series_list, rows, driver, cuts, time_varying) -> tuple[dict[str, 
     # path did not end on it, which the ending odds must count (see below).
     case_keys: list[tuple[int, int, tuple, set[str]]] = []
     for ci, (s, row) in enumerate(zip(series_list, rows)):
-        terc = _tercile(row[driver], cuts) if driver in row else 1
+        terc = _tercile(row.get(driver, math.nan), cuts)
         long = int(len(s["visits"]) > median_n)
         shape = _shape(v.get("form") for v in s["visits"])
         per_path: dict[str, list[str]] = defaultdict(list)
@@ -1218,13 +1258,17 @@ def _sample_params(model: CaseModel, n: int, rng: np.random.Generator) -> dict[s
     cov = model.corr[np.ix_(others, others)] - np.outer(r_on, r_on)
     w, v = np.linalg.eigh((cov + cov.T) / 2.0)
     z = mu + (v * np.sqrt(np.clip(w, 0, None))) @ rng.standard_normal(len(others))
-    for i, zi in zip(others, z):
+    for k, (i, zi) in enumerate(zip(others, z)):
         u = float(norm.cdf(zi))
         params[cols[i]] = model.margins[cols[i]].ppf(u)
         if cols[i] == "mean_gap":
-            # Its rank too: a schedule is picked by where the case falls among cases
-            # of its own kind (see _sample_days), not by the gap's value across all.
-            params["u:mean_gap"] = u
+            # Its rank too: a schedule is picked by where the case falls among cases of
+            # its own kind (see _sample_days), so the rank is the one GIVEN its length.
+            # The rank among every case put each two-visit case on the tightest
+            # two-visit schedules (two-visit cases have the shortest gaps of all), and
+            # two weighings 2 days apart read as noise, not growth.
+            sd = math.sqrt(max(float(cov[k, k]), 1e-12))
+            params["u:mean_gap"] = float(norm.cdf((zi - mu[k]) / sd))
     return params
 
 
@@ -1252,17 +1296,15 @@ def _sample_case(
     start_ordinal: int,
     rng: random.Random,
     nrng: np.random.Generator,
-    donor: tuple[int, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """One new case. With a ``donor`` (index, real case) its visit days, forms and every
-    number are the donor's (see the module doc); everything else is sampled."""
-    params = dict(model.case_rows[donor[0]]) if donor else _sample_params(model, n, nrng)
+    """One new case, every part of it sampled (see the module doc)."""
+    params = _sample_params(model, n, nrng)
     # Forms: a whole sequence drawn from the source's cases of this length, so a long
     # case is a long case's kind (screened, then followed up), not a short case's
     # Screening repeated. A length whose sequences are too rare to keep falls back to
     # the position-by-position chain.
     seqs = model.form_seqs.get(n)
-    seq = tuple(v.get("form") for v in donor[1]["visits"]) if donor else _draw_sequence(seqs, rng)
+    seq = _draw_sequence(seqs, rng)
     if seq is not None:
         forms: list[str | None] = list(seq)
     else:
@@ -1282,10 +1324,7 @@ def _sample_case(
     # Visit days: a whole schedule of a source case with these forms (else this length,
     # see _sample_days); failing both, the case's mean gap times pooled per-position ratios.
     mean_gap = max(params.get("mean_gap", 0.0), 0.0)
-    if donor:
-        days = [int(v["day"]) for v in donor[1]["visits"]]
-    else:
-        days = _sample_days(model, n, params.get("u:mean_gap", 0.5), nrng, forms=tuple(forms)) or [0]
+    days = _sample_days(model, n, params.get("u:mean_gap", 0.5), nrng, forms=tuple(forms)) or [0]
     for i in range(len(days), n):
         ratios = model.gap_ratios.get(_bucket(i))
         if ratios is None:
@@ -1295,27 +1334,6 @@ def _sample_case(
     if model.window:
         days = fit_days(days, model.window[1] - model.window[0])
 
-    driver_value = params.get(model.driver, params["n"]) if model.driver else params["n"]
-    terc = _tercile(driver_value, model.driver_cuts)
-    long = int(n > model.median_n)
-    prev_cat: dict[str, str | None] = {}
-    const_cat: dict[str, str | None] = {}
-    # Each terminal-valued path's ending for this case, decided up front.
-    endings: dict[str, str | None] = {}
-    for path, cm in model.cats.items():
-        # Only a case whose last form records the path can end on it: a child only
-        # ever screened has no treatment outcome to end with.
-        if cm.terminal and model.presence.get(path, {}).get(forms[-1], 0.0) > 0:
-            for counts in (
-                cm.ending_by_shape.get((shape, terc, long)),
-                cm.ending_by_shape.get((shape, -1, long)),
-                cm.ending.get((terc, long)),
-                cm.ending.get((-1, -1), Counter()),
-            ):
-                if counts and sum(counts.values()) >= K_MIN:
-                    break
-            end = _draw(counts, rng)
-            endings[path] = None if end in (None, _NONE) else end
     # Per-case constants copied where the source's workers copy one field into another
     # (see _fit_copies).
     # A per-case constant is written once, so it is put on its grid once (see _fit_grid),
@@ -1339,17 +1357,14 @@ def _sample_case(
     alias_groups: dict[str, list[str]] = defaultdict(list)
     for alias, primary in model.aliases.items():
         alias_groups[primary].append(alias)
-    visits = []
+    # Numbers first, for the whole case: its answers are drawn by the growth its own
+    # readings show (see _observed_driver).
+    numbers: list[tuple[dict[str, float], dict[str, int]]] = []
+    slipped: set[int] = set()
     for idx, (day, form) in enumerate(zip(days, forms), start=1):
         values: dict[str, float] = {}
         dates: dict[str, int] = {}
-        if donor:
-            source = donor[1]["visits"][idx - 1]
-            # Only fields the model keeps (recorded in K_MIN cases or more): a field few
-            # cases record is left out here exactly as it is from a modelled case.
-            values = {path: float(x) for path, x in (source.get("values") or {}).items() if path in model.numeric}
-            dates = {path: int(x) for path, x in (source.get("dates") or {}).items() if path in model.dates}
-        for path, pm in ({} if donor else model.numeric).items():
+        for path, pm in model.numeric.items():
             if not _present(model, path, form, last_seen, day, rng):
                 continue
             if pm.kind == "index":
@@ -1368,17 +1383,44 @@ def _sample_case(
                     # A slip: what the worker would have written, mistyped (see _find_slips).
                     slip = _on_grid(min(max(trend + e, pm.lo), pm.hi), pm, owner, rng) * rng.choice(pm.slip_ratios)
                     values[path] = float(round(slip)) if pm.whole else round(slip, pm.places)
+                    if model.driver == f"s:{path}":
+                        slipped.add(idx - 1)
                 else:
                     values[path] = _round_clamp(_on_grid(trend + e, pm, owner, rng), pm)
             elif f"c:{path}" in params:
                 values[path] = _round_clamp(params[f"c:{path}"], pm)
-        for path, pm in ({} if donor else model.dates).items():
+        for path, pm in model.dates.items():
             if not _present(model, path, form, last_seen, day, rng):
                 continue
             if f"dd:{path}" in params:
                 dates[path] = int(round(params[f"dd:{path}"] + day))
             elif f"d:{path}" in params:
                 dates[path] = int(round(params[f"d:{path}"]))
+        numbers.append((values, dates))
+
+    terc = _tercile(_observed_driver(model, params, days, numbers, slipped), model.driver_cuts)
+    long = int(n > model.median_n)
+    prev_cat: dict[str, str | None] = {}
+    const_cat: dict[str, str | None] = {}
+    # Each terminal-valued path's ending for this case, decided up front.
+    endings: dict[str, str | None] = {}
+    for path, cm in model.cats.items():
+        # Only a case whose last form records the path can end on it: a child only
+        # ever screened has no treatment outcome to end with.
+        if cm.terminal and model.presence.get(path, {}).get(forms[-1], 0.0) > 0:
+            for counts in (
+                cm.ending_by_shape.get((shape, terc, long)),
+                cm.ending_by_shape.get((shape, -1, long)),
+                cm.ending.get((terc, long)),
+                cm.ending.get((-1, -1), Counter()),
+            ):
+                if counts and sum(counts.values()) >= K_MIN:
+                    break
+            end = _draw(counts, rng)
+            endings[path] = None if end in (None, _NONE) else end
+    visits = []
+    for idx, (day, form) in enumerate(zip(days, forms), start=1):
+        values, dates = numbers[idx - 1]
         cats: dict[str, str] = {}
         for path, cm in model.cats.items():
             if idx == n and endings.get(path):
@@ -1403,7 +1445,7 @@ def _sample_case(
         # When one of the names is a per-case constant its value is the one written:
         # it carries the case's own relations (an enrolment weight copied from the
         # birth weight), and the reading under the other name follows it.
-        for group in (cats,) if donor else (values, dates, cats):
+        for group in (values, dates, cats):
             for primary, names in alias_groups.items():
                 if primary not in group:
                     for name in names:
@@ -1441,14 +1483,6 @@ def _sample_case(
             visit["form"] = form
         visits.append(visit)
     shifts = [d for d in range(-START_SMOOTH_DAYS, START_SMOOTH_DAYS + 1) if d != 0]
-    if donor:
-        # A replayed schedule keeps its own start, moved a few days so no real start
-        # ships. Placed on another case's start instead, a case still open when the
-        # source was read -- its schedule cut by the source's last day -- had the cut
-        # land weeks before that day, and a baby still in follow-up read as lost (61%
-        # lost by day 28 on a clone of an opportunity still enrolling, against 20%:
-        # KMC PIPN, 2026-10-15).
-        start_ordinal = dt.date.fromisoformat(donor[1]["start_date"]).toordinal()
     start = start_ordinal + rng.choice(shifts)
     if model.window:
         start = place_in_window(start, days[-1], *model.window)
@@ -1497,7 +1531,13 @@ class _Gate:
     # (n x n x columns) array at once.
     _BLOCK = 256
 
-    def __init__(self, real: list[dict]):
+    def __init__(self, real: list[dict], frozen_paths: set[str] | frozenset = frozenset()):
+        # Any length, the gate's other half: a case whose measured numbers are exactly a
+        # real case's is refused unless K_MIN real cases share them. The distance test
+        # starts at three visits, and a short case of rare values (five two-visit cases,
+        # five distinct weights) would carry a real case's series whole.
+        self._frozen = frozenset(frozen_paths)
+        self._exact = Counter(self._measured(s) for s in real)
         grouped: dict[tuple, list[dict]] = defaultdict(list)
         for s in real:
             if len(s["visits"]) >= _GATE_MIN_VISITS:
@@ -1538,7 +1578,17 @@ class _Gate:
         with np.errstate(invalid="ignore", divide="ignore"):
             return np.where(count > 0, total / np.maximum(count, 1), np.nan)
 
+    def _measured(self, case: dict) -> tuple:
+        """A case's measured numbers in visit order (what the app computes left out)."""
+        return tuple(
+            tuple(sorted((p, x) for p, x in (v.get("values") or {}).items() if p not in self._frozen))
+            for v in case["visits"]
+        )
+
     def too_close(self, case: dict) -> bool:
+        key = self._measured(case)
+        if any(key) and 0 < self._exact.get(key, 0) < K_MIN:
+            return True
         if len(case["visits"]) < _GATE_MIN_VISITS:
             return False
         found = self._shapes.get(tuple(v["day"] for v in case["visits"]))
@@ -1562,7 +1612,6 @@ def synthesize_case_pool(
     *,
     seed: int,
     frozen_paths: set[str] | frozenset = frozenset(),
-    replay_numeric: bool = True,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Fit models to the real ``pool`` and return ``(new_pool, report)``. See the module doc."""
     real = [dict(s, visits=list(s.get("visits") or [])) for s in pool if s.get("visits")]
@@ -1571,29 +1620,26 @@ def synthesize_case_pool(
     model = fit_case_model(real, frozen_paths=frozen_paths)
     rng = random.Random(seed)
     nrng = np.random.default_rng(seed)
-    gate = _Gate(real)
-
-    # Donors: each real case once, to a sampled case of the same worker and length.
-    donors: dict[tuple[str, int], list[int]] = defaultdict(list)
-    if replay_numeric:
-        for i, s in enumerate(real):
-            donors[(s["owner"], len(s["visits"]))].append(i)
-        for key in sorted(donors):
-            rng.shuffle(donors[key])
+    gate = _Gate(real, frozen_paths)
 
     out: list[dict[str, Any]] = []
-    redrawn = replayed = 0
+    redrawn = 0
     for owner in sorted(model.owners):
         starts = model.owner_starts[owner]
+        # A case starts near the start of one of its worker's real cases of the same
+        # length, each once. Length and start go together: a case still being visited
+        # when the source was read is short BECAUSE it started late, and a short
+        # schedule put on an early start reads as a baby lost to follow-up (lost by day
+        # 28: 41% on a clone against the source's 19%, KMC 2026-10-14).
+        by_length: dict[int, list[int]] = defaultdict(list)
+        for n, start in zip(model.owners[owner], starts):
+            by_length[n].append(start)
+        for pile in by_length.values():
+            rng.shuffle(pile)
         for n in model.owners[owner]:
-            free = donors.get((owner, n))
-            if free:
-                i = free.pop()
-                out.append(_sample_case(model, owner, n, rng.choice(starts), rng, nrng, donor=(i, real[i])))
-                replayed += 1
-                continue
+            anchor = by_length[n].pop() if by_length[n] else rng.choice(starts)
             for _ in range(_GATE_MAX_TRIES):
-                case = _sample_case(model, owner, n, rng.choice(starts), rng, nrng)
+                case = _sample_case(model, owner, n, anchor, rng, nrng)
                 if not gate.too_close(case):
                     break
                 redrawn += 1
@@ -1603,7 +1649,6 @@ def synthesize_case_pool(
     report = {
         **model.report,
         "synthetic_cases": len(out),
-        "numeric_series_replayed": replayed,
         "redrawn_by_privacy_gate": redrawn,
     }
     return out, report
