@@ -1107,6 +1107,29 @@ function WorkflowUI({
     return { lat: lat, lon: lon };
   }
 
+  // Approximate a circle of a given radius (meters) around a lat/lon as a
+  // closed GeoJSON polygon ring -- Mapbox GL's own 'circle' layer draws in
+  // SCREEN pixels, not ground meters, so it can't represent "GPS accuracy
+  // was N meters" at a fixed real-world size across zoom levels. A polygon
+  // can, at the cost of being an approximation (flat-earth per-degree
+  // conversion, fine at the accuracy radii -- tens of meters -- this
+  // dashboard ever plots).
+  function makeGeoCirclePolygon(lat, lon, radiusMeters, numPoints) {
+    numPoints = numPoints || 48;
+    var distanceX = radiusMeters / (111320 * Math.cos((lat * Math.PI) / 180));
+    var distanceY = radiusMeters / 110540;
+    var ring = [];
+    for (var i = 0; i < numPoints; i++) {
+      var theta = (i / numPoints) * (2 * Math.PI);
+      ring.push([
+        lon + distanceX * Math.cos(theta),
+        lat + distanceY * Math.sin(theta),
+      ]);
+    }
+    ring.push(ring[0]);
+    return ring;
+  }
+
   // Standard great-circle (haversine) distance in meters. Used for
   // enrichedRows' distance_from_prev_visit_m (UAT Comparison tab) -- same
   // underlying math as the pipeline engine's own lag_haversine window
@@ -1403,6 +1426,7 @@ function WorkflowUI({
           visits.push({
             lat: pt.lat,
             lon: pt.lon,
+            accuracy: parseGpsAccuracyMeters(row.gps_normalized_location),
             username: row.username,
             visitDatetime: row.visit_datetime,
             formName: row.form_name,
@@ -1412,6 +1436,11 @@ function WorkflowUI({
         });
 
         var regPt = parseGpsLatLon(motherRegistrationGps[motherCaseId]);
+        if (regPt) {
+          regPt.accuracy = parseGpsAccuracyMeters(
+            motherRegistrationGps[motherCaseId],
+          );
+        }
         if (!regPt && visits.length === 0) return; // nothing to plot
 
         // Color the whole chain (registration + every visit) by the FLW of
@@ -2602,7 +2631,7 @@ function WorkflowUI({
     },
     {
       title: 'GPS Map Tab',
-      body: 'Plots one "chain" per mother on a Mapbox GL map (window.ConnectMap.createMap, the same properly-licensed basemap pipeline the rest of this app uses -- NOT raw Leaflet + OpenStreetMap tiles, which this tab used at first until OSM\'s volunteer-run tile servers started blocking the traffic): a circle at her registration GPS point, fanned out with a straight line to a square at each of her visit GPS points. Built from the SAME displayRows every other tab uses (eligibility + verification-block-present + exclude-registration-visits), so a visit excluded there is also absent here -- a mother whose only visit was excluded as "conducted at registration" shows just her registration circle, no squares, no lines.',
+      body: 'Plots one "chain" per mother on a Mapbox GL map (window.ConnectMap.createMap, the same properly-licensed basemap pipeline the rest of this app uses -- NOT raw Leaflet + OpenStreetMap tiles, which this tab used at first until OSM\'s volunteer-run tile servers started blocking the traffic): a circle at her registration GPS point, fanned out with a straight line to a square at each of her visit GPS points. Each point also gets a faint shaded accuracy ring, sized to the GPS accuracy (meters) reported for that exact reading -- a bigger ring means the device was less sure of its own position, independent of whether the visit itself passed or failed GPS verification. Built from the SAME displayRows every other tab uses (eligibility + verification-block-present + exclude-registration-visits), so a visit excluded there is also absent here -- a mother whose only visit was excluded as "conducted at registration" shows just her registration circle, no squares, no lines.',
       items: [
         {
           name: 'FLW filter',
@@ -2618,15 +2647,21 @@ function WorkflowUI({
         },
         {
           name: 'Registration point (circle)',
-          def: 'The GPS location captured on the Register Mother form itself, at registration time. Hovering shows the mother ID, the registration datetime, how the FLW categorized the REGISTRATION location (Home / Health facility / Other), and the FLW.',
+          def: 'The GPS location captured on the Register Mother form itself, at registration time. Hovering shows the mother ID, the registration datetime, how the FLW categorized the REGISTRATION location (Home / Health facility / Other), the FLW, and (when present) the GPS accuracy of that reading.',
           field:
             "motherRegistrationGps[mother_case_id] -- pipeline mother_registration_prod, field home_gps OR health_facility_gps (case.properties.home_gps / case.properties.health_facility_gps -- mutually exclusive siblings on the Register Mother form, gated on registration_location_type being 'home' vs 'health_facility' respectively; the GPS-outcome distance calculations compare a VISIT's location against whichever one the mother's registration actually populated). Raw geopoint string, parsed client-side via parseGpsLatLon (indices 0/1 of \"lat lon altitude accuracy\" -- same string format as gps_normalized_location, parsed by parseGpsAccuracyMeters for index 3 elsewhere on this dashboard). The tooltip's datetime comes from the same pipeline's registration_datetime field (case.date_opened -- a built-in CommCare Case API v2 attribute, not a custom property). The tooltip's location comes from registration_location_type (case.properties.where_is_the_registration_being_conducted -- the Register Mother form's own \"Where is the registration being conducted?\" answer, rendered via registrationLocationTypeLabel() since it uses a DIFFERENT value vocabulary -- home/health_facility/others -- than a visit's own where_is_the_visit_being_conducted). A mother registered at 'others' has neither GPS field populated (CommCare never captured one) and plots no circle -- a real data gap, not a bug.",
         },
         {
           name: 'Visit points (squares)',
-          def: "Every visit still in the current filter, for this mother. Hovering shows the visit type/number, its datetime, how the FLW categorized the visit location (Home / Health facility / Other -- see locationTypeLabel()), the mother ID, and the FLW. A visit with no parseable GPS plots nothing (not a point at the origin) -- quietly dropped, not shown as an error, since that's governed by the same verification-block-present gate as the rest of the dashboard.",
+          def: "Every visit still in the current filter, for this mother. Hovering shows the visit type/number, its datetime, how the FLW categorized the visit location (Home / Health facility / Other -- see locationTypeLabel()), the mother ID, the FLW, and (when present) the GPS accuracy of that reading. A visit with no parseable GPS plots nothing (not a point at the origin) -- quietly dropped, not shown as an error, since that's governed by the same verification-block-present gate as the rest of the dashboard.",
           field:
             "gps_normalized_location per row (same field the GPS Verification scatter plot on the Failed Verification Analysis tab reads for its X-axis companion fields), parsed via parseGpsLatLon. Location type is where_is_the_visit_being_conducted (same field as the Table tab's 'GPS location' column and gpsOutcome()/gpsDistanceMeters(), carried onto the visit object as locationType), rendered via locationTypeLabel() for a plain-words tooltip rather than the raw CommCare value. Mother ID in the tooltip is chain.motherCaseId (the same chain the point belongs to), not a per-visit field.",
+        },
+        {
+          name: 'Accuracy rings',
+          def: "A faint shaded circle around every registration point and visit point, radius equal to that exact reading's GPS accuracy in meters -- device-reported uncertainty in its own position, not a pass/fail signal and not the same thing as the 200m GPS-match distance used elsewhere on this dashboard. A point with no accuracy value on its raw geopoint draws no ring (just the circle/square marker). Purely visual -- not filterable, not part of any pass/fail computation.",
+          field:
+            'parseGpsAccuracyMeters(gps_normalized_location) for visits / parseGpsAccuracyMeters(home_gps or health_facility_gps) for registration -- index 3 of the same raw "lat lon altitude accuracy" geopoint string parseGpsLatLon reads indices 0/1 of. Rendered as an approximated circle polygon (makeGeoCirclePolygon, ~48-sided, flat-earth per-degree conversion) in a single GeoJSON fill layer (gps-map-accuracy), colored per-feature by the same chain color as its marker, added UNDER the lines layer so lines and DOM markers draw on top of it. Mapbox GL\'s built-in circle layer type was not used because its radius is in screen pixels, not ground meters, so it can\'t hold a fixed real-world size across zoom levels the way \"accuracy was 12m\" requires.',
         },
         {
           name: 'Lines',
@@ -3340,6 +3375,19 @@ function WorkflowUI({
       function draw() {
         var allPoints = [];
         var lineFeatures = [];
+        var accuracyFeatures = [];
+
+        function pushAccuracyCircle(lat, lon, accuracy, color) {
+          if (typeof accuracy !== 'number' || !(accuracy > 0)) return;
+          accuracyFeatures.push({
+            type: 'Feature',
+            properties: { color: color },
+            geometry: {
+              type: 'Polygon',
+              coordinates: [makeGeoCirclePolygon(lat, lon, accuracy)],
+            },
+          });
+        }
 
         filteredMotherGpsChains.forEach(function (chain) {
           var regLngLat = chain.registration
@@ -3351,6 +3399,12 @@ function WorkflowUI({
               type: 'Feature',
               geometry: { type: 'Point', coordinates: regLngLat },
             });
+            pushAccuracyCircle(
+              chain.registration.lat,
+              chain.registration.lon,
+              chain.registration.accuracy,
+              chain.color,
+            );
             var regEl = document.createElement('div');
             regEl.style.cssText =
               'width:14px;height:14px;border-radius:9999px;background:' +
@@ -3364,7 +3418,12 @@ function WorkflowUI({
               '\nLocation: ' +
               registrationLocationTypeLabel(chain.registrationLocationType) +
               '\nFLW: ' +
-              (chain.flwUsername || 'unknown');
+              (chain.flwUsername || 'unknown') +
+              (typeof chain.registration.accuracy === 'number'
+                ? '\nGPS accuracy: ~' +
+                  Math.round(chain.registration.accuracy) +
+                  'm'
+                : '');
             markers.push(
               new window.mapboxgl.Marker({ element: regEl, anchor: 'center' })
                 .setLngLat(regLngLat)
@@ -3378,6 +3437,12 @@ function WorkflowUI({
               type: 'Feature',
               geometry: { type: 'Point', coordinates: visitLngLat },
             });
+            pushAccuracyCircle(
+              visit.lat,
+              visit.lon,
+              visit.accuracy,
+              chain.color,
+            );
 
             if (regLngLat) {
               lineFeatures.push({
@@ -3406,7 +3471,10 @@ function WorkflowUI({
               '\nMother: ' +
               chain.motherCaseId +
               '\nFLW: ' +
-              (visit.username || 'unknown');
+              (visit.username || 'unknown') +
+              (typeof visit.accuracy === 'number'
+                ? '\nGPS accuracy: ~' + Math.round(visit.accuracy) + 'm'
+                : '');
             markers.push(
               new window.mapboxgl.Marker({
                 element: visitEl,
@@ -3417,6 +3485,23 @@ function WorkflowUI({
             );
           });
         });
+
+        CM.setSource(map, 'gps-map-accuracy', {
+          type: 'FeatureCollection',
+          features: accuracyFeatures,
+        });
+        if (!map.getLayer('gps-map-accuracy')) {
+          map.addLayer({
+            id: 'gps-map-accuracy',
+            type: 'fill',
+            source: 'gps-map-accuracy',
+            paint: {
+              'fill-color': ['get', 'color'],
+              'fill-opacity': 0.12,
+              'fill-outline-color': ['get', 'color'],
+            },
+          });
+        }
 
         CM.setSource(map, 'gps-map-lines', {
           type: 'FeatureCollection',
