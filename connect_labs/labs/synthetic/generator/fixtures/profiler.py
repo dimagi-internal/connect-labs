@@ -1243,11 +1243,13 @@ def profile(
                 continue
             pool.append({**series, "owner": persona})
         if pool:
-            # The pool above is every real case exactly. It is used only to FIT the
-            # case models, here at profile time, and the manifest carries a pool
-            # SAMPLED from them: every case in it is new (case_model.py). The manifest
-            # is what gets saved (bundles in Drive, returned over MCP, served from
-            # generated opps), so it never holds a real case, perturbed or not.
+            # The pool above is every real case exactly. It FITS the case models, here
+            # at profile time, and the manifest carries a pool sampled from them: each
+            # case's numbers replay one real case's, every answer is drawn from the
+            # models (case_model.py). The manifest is what gets saved (bundles in
+            # Drive, returned over MCP, served from generated opps), so it never holds
+            # a real answer, id, name or date -- and no identifier-shaped number
+            # (_is_numeric_identifier) is profiled at all.
             computed_whole = {
                 p
                 for p in computed_paths
