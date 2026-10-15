@@ -37,6 +37,17 @@ What the models keep, because analyses depend on it:
   fit. Without it, start smoothing and sampled gaps put 10113's visits up to five
   weeks past the source's last day -- visits that had not happened yet.
 
+**Numeric series are replayed, not modelled** (``replay_numeric``, the default). A
+case's numbers -- every weighing, its birth weight, ages, counters, KMC hours, date
+offsets -- and the visit days and forms they sit on are taken whole from a real case of
+the same worker and length (each real case donates once). A weight series identifies
+nobody, and modelled ones could not keep what reports read off them: the source's
+rounding, its data-entry slips, the copies a form saves under a second name, which
+visits are weighed at all (Jonathan, 2026-10-15). Everything categorical -- outcomes,
+danger signs, referrals -- is still drawn from the models below, conditioned on the
+donor's own growth; ids, names and start dates are new. ``replay_numeric=False`` keeps
+the fully modelled path.
+
 What keeps it safe:
 
 * **k-anonymity on everything categorical** -- an answer seen in fewer than
@@ -44,7 +55,8 @@ What keeps it safe:
   than ``K_MIN`` cases is not modelled at all.
 * **No real start date** -- start dates are each worker's dates, smoothed by a
   non-zero shift.
-* **A privacy gate** (distance to closest record, ``_Gate``) -- a sampled case of 3+
+* **A privacy gate** (distance to closest record, ``_Gate``), for MODELLED numbers
+  only (``replay_numeric=False``) -- a sampled case of 3+
   visits that lands on a real case (same visit days, numbers within 1% on average,
   and much closer to it than any other real case is) is redrawn; one the gate keeps
   refusing is dropped, never emitted. Counts are reported, and
@@ -219,6 +231,9 @@ class CaseModel:
     # Which per-case constants were entered equal (one copied from another), as whole
     # patterns: persona or "*" -> [(groups of equal paths, share of cases)].
     copies: dict[str, list[tuple[tuple[tuple[str, ...], ...], float]]] = field(default_factory=dict)
+    # Each real case's fitted parameter row, in the pool's order: a case whose numbers
+    # are replayed from a real one draws its answers from that case's row (its growth).
+    case_rows: list[dict[str, float]] = field(default_factory=list)
 
 
 def _decimals(value: float) -> int:
@@ -938,6 +953,7 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
 
     aliases = _fit_aliases(series_list)
     return CaseModel(
+        case_rows=rows,
         real_starts=frozenset(d for starts in owner_starts.values() for d in starts),
         day_patterns={n: sorted(pats) for n, pats in day_patterns.items() if len(pats) >= K_MIN},
         day_patterns_by_forms={f: sorted(pats) for f, pats in day_patterns_by_forms.items() if len(pats) >= K_MIN},
@@ -1222,15 +1238,23 @@ def _round_clamp(value: float, pm: _PathModel) -> float:
 
 
 def _sample_case(
-    model: CaseModel, owner: str, n: int, start_ordinal: int, rng: random.Random, nrng: np.random.Generator
+    model: CaseModel,
+    owner: str,
+    n: int,
+    start_ordinal: int,
+    rng: random.Random,
+    nrng: np.random.Generator,
+    donor: tuple[int, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    params = _sample_params(model, n, nrng)
+    """One new case. With a ``donor`` (index, real case) its visit days, forms and every
+    number are the donor's (see the module doc); everything else is sampled."""
+    params = dict(model.case_rows[donor[0]]) if donor else _sample_params(model, n, nrng)
     # Forms: a whole sequence drawn from the source's cases of this length, so a long
     # case is a long case's kind (screened, then followed up), not a short case's
     # Screening repeated. A length whose sequences are too rare to keep falls back to
     # the position-by-position chain.
     seqs = model.form_seqs.get(n)
-    seq = _draw_sequence(seqs, rng)
+    seq = tuple(v.get("form") for v in donor[1]["visits"]) if donor else _draw_sequence(seqs, rng)
     if seq is not None:
         forms: list[str | None] = list(seq)
     else:
@@ -1250,7 +1274,10 @@ def _sample_case(
     # Visit days: a whole schedule of a source case with these forms (else this length,
     # see _sample_days); failing both, the case's mean gap times pooled per-position ratios.
     mean_gap = max(params.get("mean_gap", 0.0), 0.0)
-    days = _sample_days(model, n, params.get("u:mean_gap", 0.5), nrng, forms=tuple(forms)) or [0]
+    if donor:
+        days = [int(v["day"]) for v in donor[1]["visits"]]
+    else:
+        days = _sample_days(model, n, params.get("u:mean_gap", 0.5), nrng, forms=tuple(forms)) or [0]
     for i in range(len(days), n):
         ratios = model.gap_ratios.get(_bucket(i))
         if ratios is None:
@@ -1307,7 +1334,14 @@ def _sample_case(
     visits = []
     for idx, (day, form) in enumerate(zip(days, forms), start=1):
         values: dict[str, float] = {}
-        for path, pm in model.numeric.items():
+        dates: dict[str, int] = {}
+        if donor:
+            source = donor[1]["visits"][idx - 1]
+            # Only fields the model keeps (recorded in K_MIN cases or more): a field few
+            # cases record is left out here exactly as it is from a modelled case.
+            values = {path: float(x) for path, x in (source.get("values") or {}).items() if path in model.numeric}
+            dates = {path: int(x) for path, x in (source.get("dates") or {}).items() if path in model.dates}
+        for path, pm in ({} if donor else model.numeric).items():
             if not _present(model, path, form, last_seen, day, rng):
                 continue
             if pm.kind == "index":
@@ -1330,8 +1364,7 @@ def _sample_case(
                     values[path] = _round_clamp(_on_grid(trend + e, pm, owner, rng), pm)
             elif f"c:{path}" in params:
                 values[path] = _round_clamp(params[f"c:{path}"], pm)
-        dates: dict[str, int] = {}
-        for path, pm in model.dates.items():
+        for path, pm in ({} if donor else model.dates).items():
             if not _present(model, path, form, last_seen, day, rng):
                 continue
             if f"dd:{path}" in params:
@@ -1362,7 +1395,7 @@ def _sample_case(
         # When one of the names is a per-case constant its value is the one written:
         # it carries the case's own relations (an enrolment weight copied from the
         # birth weight), and the reading under the other name follows it.
-        for group in (values, dates, cats):
+        for group in (cats,) if donor else (values, dates, cats):
             for primary, names in alias_groups.items():
                 if primary not in group:
                     for name in names:
@@ -1509,7 +1542,11 @@ class _Gate:
 
 
 def synthesize_case_pool(
-    pool: list[dict[str, Any]], *, seed: int, frozen_paths: set[str] | frozenset = frozenset()
+    pool: list[dict[str, Any]],
+    *,
+    seed: int,
+    frozen_paths: set[str] | frozenset = frozenset(),
+    replay_numeric: bool = True,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Fit models to the real ``pool`` and return ``(new_pool, report)``. See the module doc."""
     real = [dict(s, visits=list(s.get("visits") or [])) for s in pool if s.get("visits")]
@@ -1520,11 +1557,25 @@ def synthesize_case_pool(
     nrng = np.random.default_rng(seed)
     gate = _Gate(real)
 
+    # Donors: each real case once, to a sampled case of the same worker and length.
+    donors: dict[tuple[str, int], list[int]] = defaultdict(list)
+    if replay_numeric:
+        for i, s in enumerate(real):
+            donors[(s["owner"], len(s["visits"]))].append(i)
+        for key in sorted(donors):
+            rng.shuffle(donors[key])
+
     out: list[dict[str, Any]] = []
-    redrawn = 0
+    redrawn = replayed = 0
     for owner in sorted(model.owners):
         starts = model.owner_starts[owner]
         for n in model.owners[owner]:
+            free = donors.get((owner, n))
+            if free:
+                i = free.pop()
+                out.append(_sample_case(model, owner, n, rng.choice(starts), rng, nrng, donor=(i, real[i])))
+                replayed += 1
+                continue
             for _ in range(_GATE_MAX_TRIES):
                 case = _sample_case(model, owner, n, rng.choice(starts), rng, nrng)
                 if not gate.too_close(case):
@@ -1533,7 +1584,12 @@ def synthesize_case_pool(
             else:
                 continue  # never emit a case the gate kept refusing
             out.append(case)
-    report = {**model.report, "synthetic_cases": len(out), "redrawn_by_privacy_gate": redrawn}
+    report = {
+        **model.report,
+        "synthetic_cases": len(out),
+        "numeric_series_replayed": replayed,
+        "redrawn_by_privacy_gate": redrawn,
+    }
     return out, report
 
 

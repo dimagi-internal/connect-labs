@@ -521,6 +521,24 @@ def _is_identifier_path(path: str) -> bool:
     return bool(segments & _IDENTIFIER_LEAF_TOKENS)
 
 
+def _is_numeric_identifier(visits: list[dict], path: str) -> bool:
+    """A number that names someone rather than measures them: a phone, a national id,
+    a GPS coordinate. The pool replays a case's numbers exactly (case_model.py), and a
+    modelled one is drawn between neighbouring real values, so such a field must never
+    reach it: refused by its leaf name (_IDENTIFIER_LEAF_TOKENS), or by its values --
+    a long run of digits on half its readings or more, whatever it is called."""
+    if _is_identifier_path(path):
+        return True
+    seen = digits = 0
+    for v in visits:
+        raw = _extract_nested(v.get("form_json") or {}, path)
+        if raw in (None, ""):
+            continue
+        seen += 1
+        digits += bool(_IDENTIFIER_VALUE_RE.match(str(raw).strip().split(".")[0]))
+    return seen > 0 and digits >= 0.5 * seen
+
+
 def _discover_replayable_text_paths(visits: list[dict], candidate_paths: set[str]) -> tuple[set[str], set[str]]:
     """Split text-typed paths into (date-like, enumerable) so mirror can replay them.
 
@@ -1145,7 +1163,11 @@ def profile(
     # to persona ids (the same volume ranking _profile_flw_personas uses), so the
     # pool references the manifest's personas and never leaks a real username.
     if mirror or case_timelines:
-        numeric_paths = {p for p, d in field_dists.items() if d.get("distribution") in ("normal", "uniform")}
+        numeric_paths = {
+            p
+            for p, d in field_dists.items()
+            if d.get("distribution") in ("normal", "uniform") and not _is_numeric_identifier(user_visits, p)
+        }
         # Date leaves (e.g. child_dob) carry the longitudinal axis for analyses that
         # compute age = visit_date - dob. They are never numeric, so the transplant
         # pool must capture them explicitly — driven by the schema's date-typed

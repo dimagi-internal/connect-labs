@@ -73,8 +73,11 @@ def test_every_worker_keeps_its_caseload_and_case_lengths(pools):
     assert shape(synthetic) == shape(real)
 
 
-def test_no_sampled_case_is_a_real_case(pools):
-    real, synthetic, report = pools
+def test_no_modelled_case_is_a_real_case():
+    """The privacy gate guards MODELLED numbers (replay_numeric=False); replayed ones are
+    the source's by design (see test_a_case_replays_one_real_cases_numbers)."""
+    real = kmc_like_pool(7)
+    synthetic, report = synthesize_case_pool(copy.deepcopy(real), seed=107, frozen_paths=FROZEN, replay_numeric=False)
     check = nearest_real_case_report(synthetic, real)
     assert check["on_a_real_case"] == 0
     assert check["exact_copies_of_a_real_case"] == 0
@@ -83,6 +86,24 @@ def test_no_sampled_case_is_a_real_case(pools):
     # Starts are smoothed per worker; some may coincide with another real case's date,
     # but no case keeps its own: check per worker that not every start is a real one.
     assert {s["start_date"] for s in synthetic} != real_starts
+
+
+def test_a_case_replays_one_real_cases_numbers(pools):
+    """Each sampled case's numbers are one real case's -- same worker, same length, each
+    real case once -- while its start date is its own (Jonathan, 2026-10-15)."""
+    real, synthetic, report = pools
+
+    def numbers(case):
+        return tuple(tuple(sorted((v.get("values") or {}).items())) for v in case["visits"])
+
+    assert report["numeric_series_replayed"] == len(real)
+    by_owner = collections.defaultdict(list)
+    for s in real:
+        by_owner[s["owner"]].append(numbers(s))
+    for s in synthetic:
+        assert numbers(s) in by_owner[s["owner"]]
+        by_owner[s["owner"]].remove(numbers(s))
+    assert not any(by_owner.values())
 
 
 def test_growth_birth_weight_and_spacing_are_reproduced(pools):
