@@ -274,16 +274,23 @@ class SolicitationsDataAccess:
         if program_id is not None:
             from connect_labs.supply_chain.runner import running_org
 
+            # A declared runner owns its programme's calls; whether this caller
+            # may create one is asked by create_solicitation, as for any owner.
             org = running_org(program_id)
             if org is not None:
                 return org
+            # Otherwise the programme's own organisation -- but only for someone
+            # who could manage it anyway: seeing a programme is not owning it.
+            org = access.programme_owner(self.caller, program_id)
+            if org is not None and access.can_manage_org(self.caller, org):
+                return org
+            reason = (
+                f"program {program_id} belongs to {org.name}, which you are not a member of"
+                if org is not None
+                else f"program {program_id} has no running organisation and no organisation labs knows"
+            )
             raise ValidationError(
-                {
-                    "org_slug": (
-                        f"program {program_id} has no running organisation, so it cannot own this call. "
-                        "Name the owning organisation with org_slug."
-                    )
-                }
+                {"org_slug": f"{reason}, so it cannot own this call. Name the owning organisation with org_slug."}
             )
         raise ValidationError({"org_slug": "Name the organisation that owns this call (org_slug)."})
 

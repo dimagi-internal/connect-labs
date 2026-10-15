@@ -237,3 +237,93 @@ def resolve_org(key) -> LabsOrg | None:
     if org is not None:
         return org
     return LabsOrg.objects.filter(aliases__contains=[text]).first()
+
+
+def caller_org_tree(subject) -> dict:
+    """The caller's Connect organisations / programmes / opportunities ({} if unknowable).
+
+    From the session when there is a request (`labs.context.get_org_data`,
+    which folds in labs-only programmes the caller may see), else from the
+    user's stored Connect token -- the same two routes Supply's identity uses.
+    """
+    caller = caller_for(subject)
+    if not caller.is_authenticated:
+        return {}
+    request = caller.request
+    if request is not None and hasattr(request, "session"):
+        from connect_labs.labs.context import get_org_data
+
+        try:
+            data = get_org_data(request) or {}
+        except Exception:  # noqa: BLE001 -- an unreadable session tells us nothing
+            data = {}
+        if data.get("programs") or data.get("organizations"):
+            return data
+    try:
+        from connect_labs.labs.connect_tokens import get_valid_access_token
+        from connect_labs.labs.integrations.connect.oauth import fetch_user_organization_data
+
+        token = get_valid_access_token(caller.user)
+        return fetch_user_organization_data(token, owner=getattr(caller.user, "username", None)) or {}
+    except Exception:  # noqa: BLE001 -- no token, no tree
+        logger.info("solicitations: could not read the Connect org tree for %s", caller.user)
+        return {}
+
+
+def programme_owner(subject, program_id) -> LabsOrg | None:
+    """The organisation a programme's calls belong to, before asking who may use it.
+
+    1. the programme's declared running organisation (Supply's `ProgrammeRunner`);
+    2. a labs-only programme (id >= 10,000): its synthetic opportunity's labs organisation;
+    3. otherwise the programme's Connect organisation, as the caller's own org
+       tree names it, matched to a `LabsOrg` by Connect id, then Connect slug.
+
+    Returns None when none of these names one. Whether the caller may create a
+    call for the result is `can_manage_org`, asked by the caller of this.
+    """
+    from connect_labs.labs.synthetic.models import LABS_ONLY_OPP_ID_FLOOR, SyntheticOpportunity
+
+    try:
+        program_id = int(program_id)
+    except (TypeError, ValueError):
+        return None
+    org = runner.running_org(program_id)
+    if org is not None:
+        return org
+    if program_id >= LABS_ONLY_OPP_ID_FLOOR:
+        from django.db.models import Q
+
+        opp = (
+            SyntheticOpportunity.objects.filter(labs_only=True, labs_org__isnull=False)
+            .filter(Q(program_id=program_id) | Q(program_id__isnull=True, opportunity_id=program_id))
+            .select_related("labs_org")
+            .order_by("pk")
+            .first()
+        )
+        return opp.labs_org if opp is not None else None
+
+    org_data = caller_org_tree(subject)
+    programme = next(
+        (p for p in org_data.get("programs") or [] if str(p.get("id")) == str(program_id)),
+        None,
+    )
+    if programme is None:
+        return None
+    org_key = programme.get("organization")
+    if org_key in (None, ""):
+        return None
+    entry = next(
+        (o for o in org_data.get("organizations") or [] if org_key in (o.get("slug"), o.get("id"))),
+        None,
+    )
+    connect_id = entry.get("id") if entry else (org_key if str(org_key).isdigit() else None)
+    if connect_id is not None and str(connect_id).isdigit():
+        org = LabsOrg.objects.filter(connect_organization_id=int(connect_id)).first()
+        if org is not None:
+            return org
+    slug = entry.get("slug") if entry else org_key
+    if slug and not str(slug).isdigit():
+        return (
+            LabsOrg.objects.filter(connect_organization_slug=slug).first() or LabsOrg.objects.filter(slug=slug).first()
+        )
+    return None

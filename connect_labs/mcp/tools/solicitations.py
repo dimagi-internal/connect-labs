@@ -389,7 +389,8 @@ def _validation_error_to_mcp(exc: ValidationError) -> MCPToolError:
     description=(
         "Create a solicitation (a call for partners) owned by an organisation. Name the owner with "
         "org_slug (preferred: a labs organisation slug you belong to); or pass program_id and the "
-        "programme's running organisation owns it -- a programme with none is refused with a message "
+        "programme's running organisation owns it, else the programme's own organisation if you belong "
+        "to it (a labs-only programme: its synthetic organisation) -- otherwise refused with a message "
         "naming org_slug. Fields are flat -- do NOT wrap them in a `data` object. Unknown fields are "
         "rejected. Set is_public=true to list it on the public /solicitations/ directory (its content "
         "is public-facing by design; do NOT include PII or pipeline-derived data). Schema is enforced "
@@ -405,7 +406,8 @@ def _validation_error_to_mcp(exc: ValidationError) -> MCPToolError:
             "program_id": {
                 "type": "string",
                 "description": (
-                    "Connect programme this call is for. Without org_slug, its running organisation owns the call."
+                    "Connect programme this call is for. Without org_slug, its running organisation (else its "
+                    "own organisation, if you belong to it) owns the call."
                 ),
             },
             "organization_id": {
