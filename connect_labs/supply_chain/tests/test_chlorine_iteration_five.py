@@ -17,7 +17,7 @@ from decimal import Decimal
 import pytest
 from django.urls import reverse
 
-from connect_labs.supply_chain.tests import test_screens_polish as polish
+from connect_labs.supply_chain.tests import chlorine_world as polish
 
 # The same programme, account and award as the screen-polish tests.
 account = polish.account

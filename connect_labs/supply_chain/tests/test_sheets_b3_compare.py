@@ -19,7 +19,7 @@ from django.urls import reverse
 
 from connect_labs.supply_chain.models import Award
 from connect_labs.supply_chain.standing import deadline_note
-from connect_labs.supply_chain.tests import test_screens_polish as polish
+from connect_labs.supply_chain.tests import chlorine_world as polish
 
 account = polish.account
 client_in_programme = polish.client_in_programme

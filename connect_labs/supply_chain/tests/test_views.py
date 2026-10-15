@@ -932,7 +932,7 @@ def test_the_tender_detail_page_links_each_supplier_it_names(client, sophie):
     # The quotes table names each quote's supplier as a link to the quote. The Suppliers
     # table is built from the tender record itself (procurement/status.py), which this
     # mocked page has none of: its supplier links are pinned on a real tender in
-    # test_unanswered_round_1004_batch1_pages.py.
+    # test_tender_suppliers_table.py.
     assert reverse("supply_chain:procurement_quote_detail", args=[10]) in body
 
 

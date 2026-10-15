@@ -15,8 +15,7 @@ gaps:
   resolved: 'Shipped: seed.py --sahel-replies records Sahel''s emailed quote with
     its source (quote_record + outreach_update carrying ref, excerpt and sender),
     and the round''s history shows it with a Source email toggle and a Replies only
-    filter (connect_labs/templates/supply_chain/_timeline.html; tests in connect_labs/supply_chain/tests/test_unanswered_round_batch2.py
-    and test_unanswered_round_ddd002_batch3.py).'
+    filter (connect_labs/templates/supply_chain/_timeline.html; tests in connect_labs/supply_chain/tests/test_history_email_events.py).'
   claim_ref: S3
   proposed_action: 'seed.py --sahel-replies: the AI records Sahel''s emailed quote
     (quote_record + outreach_update with source ref, excerpt and sender) over the
@@ -38,8 +37,8 @@ gaps:
   resolved: 'Shipped (PR 2165): Tender.duty_terms, set by commitment_resolve(duty_terms=...)
     from the owed-answer form or by tender_set_duty_terms (connect_labs/supply_chain/procurement/operations.py),
     honoured by the comparison (services/comparison.py landed_basis_words) and the
-    overview; tests in connect_labs/supply_chain/tests/test_unanswered_round_v11_duty_terms.py.
-    The comparison names the answer that set the terms (test_unanswered_round_ddd003_batch2.py).'
+    overview; tests in connect_labs/supply_chain/tests/test_tender_duty_terms_screens.py.
+    The comparison names the answer that set the terms (test_comparison_screen.py).'
   claim_ref: S5
   proposed_action: Tender duty terms (not settled / buyer_waiver / buyer_pays / supplier_ddp),
     set from the owed-answer form ([data-testid=answer-duty-terms]) or the tender's

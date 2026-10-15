@@ -22,9 +22,8 @@ from connect_labs.supply_chain.history.timeline import Entry, _fold_bookkeeping,
 from connect_labs.supply_chain.models import Tender
 from connect_labs.supply_chain.templatetags.supply_chain_extras import record_kind_lead, record_kind_lead_price
 from connect_labs.supply_chain.tests import test_tracking_reality as reality
+from connect_labs.supply_chain.tests.rehearsal_world import _quote, _tender_page
 from connect_labs.supply_chain.tests.test_tracking_reality import op
-from connect_labs.supply_chain.tests.test_unanswered_round_batch1 import _tender_page
-from connect_labs.supply_chain.tests.test_unanswered_round_v11_duty_terms import _quote
 
 da = reality.da
 world = reality.world
