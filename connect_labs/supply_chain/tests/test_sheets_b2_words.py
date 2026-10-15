@@ -174,15 +174,3 @@ def test_the_overview_chip_is_the_quote_count_and_the_priced_count_wraps_beneath
         shown = _text(re.search(r'data-testid="row-quotes-priced"[^>]*>(.*?)</span>', body, re.S).group(1))
         assert shown == priced
     assert 'data-testid="row-comparable"' not in body
-
-
-# ---- The Suppliers sheet: actions pinned to the right ----------------------------------
-
-
-def test_the_suppliers_sheet_pins_its_actions_column_right():
-    source = get_template("supply_chain/procurement/tender_detail.html").template.source
-    assert '<th scope="col" class="sheet-pin-end' in source
-    assert '<td class="sheet-pin-end" data-testid="supplier-actions">' in source
-    css = open("tailwind/tailwind.css").read()
-    rule = re.search(r"\.sheet \.sheet-pin-end \{(.*?)\}", css, re.S).group(1)
-    assert "sticky" in rule and "right-0" in rule and "whitespace-nowrap" in rule

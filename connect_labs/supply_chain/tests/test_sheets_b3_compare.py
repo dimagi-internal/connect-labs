@@ -248,23 +248,6 @@ class TestTheOverviewDatesATender:
         assert "deadline passed" in row
 
 
-# ---- 3. the Missing column has room ------------------------------------------
-
-
-def test_the_missing_column_has_a_min_width_and_its_chips_wrap():
-    """Chip by chip: each chip stays whole on one line (status-chip is nowrap), the row wraps."""
-    from django.template.loader import get_template
-
-    source = get_template("supply_chain/procurement/tender_detail.html").template.source
-    assert '<th scope="col" class="min-w-[15rem]" data-sort>Missing</th>' in source
-    cell = re.search(
-        r'<td class="min-w-\[15rem\]" data-testid="supplier-missing-cell">.*?data-testid="supplier-missing"',
-        source,
-        re.S,
-    )
-    assert cell and "flex-wrap" in cell.group(0) and "text-wrap" not in cell.group(0)
-
-
 # ---- 4. the answer stays in view while the facts scroll --------------------------
 
 

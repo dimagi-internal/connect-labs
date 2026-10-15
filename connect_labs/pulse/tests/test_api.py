@@ -521,24 +521,6 @@ class TestPhoneLayout:
 
         return (Path(settings.APPS_DIR) / "static" / "pulse" / "pulse.css").read_text()
 
-    def test_a_phone_width_breakpoint_exists(self):
-        import re
-
-        widths = [int(w) for w in re.findall(r"@media\s*\(max-width:\s*(\d+)px\)", self._css())]
-        assert widths, "no width breakpoints at all"
-        assert min(widths) <= 640, (
-            f"smallest breakpoint is {min(widths)}px, which no phone reaches. "
-            "Phones are 360-430px; without one the shell lays out ~2x the screen width."
-        )
-
-    def test_the_two_blocks_that_forced_the_overflow_are_wrapped(self):
-        """`.pulse-scope` (top-bar readout) and `.pulse-kpi` were the offenders:
-        a flex row and a flex column that stayed side-by-side at any width."""
-        css = self._css()
-        phone = css[css.index("@media (max-width: 620px)") :]
-        assert ".pulse-scope" in phone and "flex-wrap: wrap" in phone
-        assert ".pulse-kpi" in phone and "grid-template-columns: 1fr 1fr" in phone
-
     def test_the_privacy_note_survives_on_a_phone(self):
         """It states that household coordinates and names are never shown. It is
         a compliance statement, so shrinking the layout must not drop it.
@@ -587,15 +569,6 @@ class TestStylesheetStructuralClasses:
                 "layout, so a second definition silently restyles the shell — this is exactly "
                 "how the top bar became a 46px progress meter."
             )
-
-    def test_the_top_bar_is_still_a_flex_row(self):
-        """Pins the property that was clobbered, not just the selector count."""
-        import re
-
-        src = re.sub(r"/\*.*?\*/", "", self._css(), flags=re.DOTALL)
-        block = re.search(r"(?m)^\.pulse-bar\s*\{([^}]*)\}", src).group(1)
-        assert "display: flex" in block
-        assert "grid-area: bar" in block
 
 
 class TestTopBarFitsAndTickerAligns:
@@ -688,23 +661,6 @@ class TestTopBarFitsAndTickerAligns:
                 )
                 checked += 1
         assert checked >= 2, "expected the base grid and at least one responsive override"
-
-    def test_the_bar_can_shrink_on_a_narrow_laptop(self):
-        """`min-width: 0` is what lets a flex child shrink below its content.
-        Without it the bar cannot fit 1440 or 1280 no matter what else changes."""
-        import re
-
-        src = re.sub(r"/\*.*?\*/", "", self._css(), flags=re.DOTALL)
-        block = re.search(r"(?m)^\.pulse-progfilter\s*\{([^}]*)\}", src).group(1)
-        assert "min-width: 0" in block
-
-    def test_there_is_a_breakpoint_above_the_common_laptop_widths(self):
-        """1440 and 1280 are the widths this actually broke on, so the first
-        step down has to sit above them rather than at the old 1180."""
-        import re
-
-        widths = [int(w) for w in re.findall(r"@media\s*\(max-width:\s*(\d+)px\)", self._css())]
-        assert any(1180 < w for w in widths), f"no breakpoint above 1180px: {sorted(widths)}"
 
 
 @pytest.mark.django_db

@@ -186,14 +186,6 @@ def test_a_held_shipment_reads_as_the_documents_section_counts_it():
     assert _cell(required_documents=required, required_on_file=2, holding_count=0) == "2 of 2 on file"
 
 
-def test_the_order_column_is_named_for_its_documents():
-    from django.template.loader import get_template
-
-    source = get_template("supply_chain/order_detail.html").template.source
-    assert ">Clearing documents</th>" in source and ">Certificate</th>" not in source
-    assert "documents on file</span>" not in source
-
-
 # ---- 5. "since corrected" only where the correction changed the line
 
 

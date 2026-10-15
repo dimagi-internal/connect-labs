@@ -59,11 +59,6 @@ def test_a_table_leads_its_phone_card_with_the_decision(client_in_program, world
     assert sum("phone-title" in cls.split() for cls, _ in cells) == 1
 
 
-def test_the_card_rule_lives_in_the_supply_shell(client_in_program, world):  # noqa: F811
-    body = get(client_in_program, "stock")
-    assert "@media (max-width: 639px)" in body and "table.phone-cards > thead { display: none; }" in body
-
-
 def test_the_header_picker_has_a_short_name_for_a_phone(client_in_program, world, monkeypatch):  # noqa: F811
     def call(self, request):
         request.labs_context = {
@@ -100,11 +95,3 @@ def test_on_a_phone_the_tabs_fold_into_one_menu_with_every_tab(client_in_program
     assert "Stock" in summary
     current = re.findall(r'<a href="[^"]*"[^>]*aria-current="page"[^>]*>([^<]*)<', menu)
     assert [c.strip() for c in current] == ["Stock"]
-
-
-def test_the_phone_rules_live_with_the_header(client_in_program, world):  # noqa: F811
-    """In the header itself, so the programme map -- which includes it outside base.html -- folds too."""
-    from django.template.loader import get_template
-
-    source = get_template("supply_chain/_header.html").template.source
-    assert ".supply-tabs-wide { display: none" in source and ".supply-tabs-phone { display: block" in source

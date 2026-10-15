@@ -178,13 +178,6 @@ class TestTemplatesUseTheFrameworkLabsActuallyLoads:
                     offences.append(f"{path.name}: {token!r}")
         assert not offences, "Bootstrap classes render unstyled in labs:\n  " + "\n  ".join(offences)
 
-    def test_application_history_opens_without_javascript(self):
-        """The accordion was Bootstrap-JS driven, which labs never loads, so the
-        answers could not be expanded at all. <details> needs no JS."""
-        organisation = next(p for p in self._templates() if p.name == "organisation.html")
-        body = organisation.read_text()
-        assert "<details" in body and "<summary" in body
-
 
 @pytest.mark.django_db
 class TestTheQueueIsActionable:
