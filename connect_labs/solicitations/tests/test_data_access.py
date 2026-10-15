@@ -364,7 +364,7 @@ def test_award_notifies_when_email_on(world):
         awarded = da(world["owner"]).award_response(response.pk, reward_budget=100)
     assert awarded.awardee_notified is True
     subject, message, recipients = send.call_args[0]
-    assert recipients == ["applicant@firm.example"]
+    assert recipients == [world["applicant"].email]
     assert "KES" in message
 
 
@@ -457,3 +457,109 @@ def test_only_reviewer_or_staff_updates_a_review(world):
     with pytest.raises(PermissionDenied):
         da(colleague).update_review(review.pk, {"notes": "mine now"})
     assert da(world["staff"]).update_review(review.pk, {"notes": "support fix"}).notes == "support fix"
+
+
+# --- review findings -----------------------------------------------------------
+
+
+def test_one_submitted_response_per_user_per_call(world):
+    call = make_call(world["owner_org"])
+    mine = da(world["applicant"])
+    mine.create_response(call.pk, "firm-org", {"responses": {"q1": "first"}, "status": "submitted"})
+    with pytest.raises(ValidationError, match="already responded"):
+        mine.create_response(call.pk, "firm-org", {"responses": {"q1": "second"}, "status": "submitted"})
+    with pytest.raises(ValidationError, match="already responded"):
+        mine.create_response(call.pk, "firm-org", {"responses": {"q1": "a draft"}, "status": "draft"})
+    assert call.responses.count() == 1
+
+
+@override_settings(LABS_EMAIL_ENABLED=True)
+def test_receipt_goes_only_to_the_signed_in_account(world):
+    call = make_call(world["owner_org"])
+    with patch("connect_labs.utils.email.send_labs_email", return_value=MagicMock()) as send:
+        response = da(world["applicant"]).create_response(
+            call.pk, None, {"status": "submitted", "org_name": "Typed Co", "submitted_by_email": "victim@else.example"}
+        )
+    sent_to = [address for c in send.call_args_list for address in c[0][2]]
+    assert "victim@else.example" not in sent_to
+    assert world["applicant"].email in sent_to
+    assert response.submitted_by_email == "victim@else.example"  # kept as a contact, never mailed
+
+
+@override_settings(LABS_EMAIL_ENABLED=True)
+def test_award_mail_goes_to_the_respondents_account(world):
+    response = make_response(make_call(world["owner_org"]), world["applicant"], submitted_by_email="x@typed.example")
+    with patch("connect_labs.utils.email.send_labs_email", return_value=MagicMock()) as send:
+        da(world["owner"]).award_response(response.pk, reward_budget=100)
+    assert send.call_args[0][2] == [world["applicant"].email]
+
+
+def test_award_twice_is_refused_without_a_second_allocation(world):
+    from connect_labs.solicitations.data_access import AlreadyAwarded
+
+    call = make_call(world["owner_org"], fund_id=9)
+    response = make_response(call, world["applicant"])
+    with patch("connect_labs.funder_dashboard.data_access.FunderDashboardDataAccess") as fda:
+        da(world["owner"], access_token="tok").award_response(response.pk, reward_budget=10)
+        with patch.object(SolicitationsDataAccess, "_notify_awarded") as notify:
+            with pytest.raises(AlreadyAwarded, match="already been awarded"):
+                da(world["owner"], access_token="tok").award_response(response.pk, reward_budget=20)
+        notify.assert_not_called()
+    assert fda.return_value.add_allocation.call_count == 1
+    response.refresh_from_db()
+    assert response.reward_budget == 10
+
+
+def test_one_draft_per_user_is_a_database_constraint(world):
+    from django.db import IntegrityError, transaction
+
+    call = make_call(world["owner_org"])
+    make_response(call, world["applicant"], status="draft")
+    with pytest.raises(IntegrityError), transaction.atomic():
+        make_response(call, world["applicant"], status="draft")
+    make_response(call, None, status="draft")  # on-behalf drafts have no user and never collide
+    make_response(call, None, status="draft")
+
+
+def test_racing_draft_save_lands_on_the_existing_draft(world):
+    call = make_call(world["owner_org"])
+    draft = make_response(call, world["applicant"], status="draft", responses={"q1": "old"})
+    # The first look misses the draft (another request is creating it); the
+    # insert then hits the constraint, and the save goes to the draft instead.
+    with patch.object(SolicitationsDataAccess, "_find_draft", side_effect=[None, draft]):
+        saved = da(world["applicant"]).create_response(call.pk, None, {"responses": {"q1": "new"}, "status": "draft"})
+    assert saved.pk == draft.pk
+    assert call.responses.count() == 1
+    draft.refresh_from_db()
+    assert draft.responses == {"q1": "new"}
+
+
+def test_switching_from_an_org_to_a_typed_name_clears_the_org(world):
+    call = make_call(world["owner_org"])
+    mine = da(world["applicant"])
+    first = mine.create_response(call.pk, "firm-org", {"status": "draft"})
+    assert first.llo_entity == world["firm_org"]
+    typed = mine.create_response(
+        call.pk, None, {"status": "draft", "org_name": "Typed Co", "llo_entity_name": "Typed Co"}
+    )
+    assert typed.pk == first.pk
+    assert typed.llo_entity is None
+    assert typed.display_name == "Typed Co"
+    back = mine.create_response(call.pk, "firm-org", {"status": "draft"})
+    assert back.llo_entity == world["firm_org"]
+    assert back.org_name == "Firm Org"
+
+
+def test_directory_rounds_are_not_reachable_as_calls(world):
+    from connect_labs.solicitations.local_models import SOURCE_DIRECTORY
+
+    round_ = make_call(world["owner_org"], source=SOURCE_DIRECTORY, slug="eoi-round-1")
+    submission = make_response(round_, None)
+    staff = da(world["staff"])
+    assert staff.get_solicitation_by_id(round_.pk) is None
+    assert staff.get_response_by_id(submission.pk) is None
+    with pytest.raises(Solicitation.DoesNotExist):
+        staff.update_solicitation(round_.pk, {"title": "changed"})
+    with pytest.raises(Solicitation.DoesNotExist):
+        staff.delete_solicitation(round_.pk, force=True)
+    assert Solicitation.objects.filter(pk=round_.pk, title=round_.title).exists()

@@ -26,8 +26,8 @@ from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
 
 from connect_labs.microplans.core.solicitation_snapshot import build_plan_snapshot
-from connect_labs.solicitations import access
-from connect_labs.solicitations.data_access import SolicitationsDataAccess
+from connect_labs.solicitations import access, demo
+from connect_labs.solicitations.data_access import AlreadyAwarded, SolicitationsDataAccess
 from connect_labs.solicitations.forms import NEW_ORG, ReviewForm, SolicitationForm, SolicitationResponseForm
 from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
 
@@ -105,12 +105,12 @@ def _managed_solicitation(da, pk):
     return solicitation
 
 
-def _response_or_refuse(da, pk):
-    """The response, a 403 if it exists but is not the viewer's to see, else a 404."""
+def _response_or_404(da, pk):
+    """The response, or a 404 -- the same for one that is not the viewer's as for
+    one that does not exist, so ids cannot be probed for. (A refusal on a call is
+    still a 403: its existence is no secret when it is public anyway.)"""
     response = da.get_response_by_id(pk)
     if response is None:
-        if da.response_exists(pk):
-            raise PermissionDenied("This response is visible only to the organisation that asked for it.")
         raise Http404("Response not found")
     return response
 
@@ -501,6 +501,7 @@ class PublicSolicitationDetailView(SolicitationsPage):
                 "sections": sections,
                 "show_section_nav": len(sections) >= 3 or length > LONG_CALL_CHARS,
                 "can_manage": da.can_manage(solicitation),
+                "is_demo": demo.is_demo_org(solicitation.owner_org),
             }
         )
         return ctx
@@ -850,6 +851,7 @@ class RespondView(SignedInPage):
             form=form,
             question_fields=question_fields,
             mapbox_token=settings.MAPBOX_TOKEN or "",
+            is_demo=demo.is_demo_org(solicitation.owner_org),
             **extra,
         )
         return ctx
@@ -909,7 +911,7 @@ class ResponseDetailView(SignedInPage):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         da = self.da()
-        response = _response_or_refuse(da, kwargs["pk"])
+        response = _response_or_404(da, kwargs["pk"])
         solicitation = response.solicitation
         reviews = da.get_reviews_for_response(response.pk)
         criteria_by_id = {c.get("id"): c for c in (solicitation.evaluation_criteria or [])}
@@ -956,15 +958,19 @@ class AwardView(SignedInPage):
             coverage = [p.get("name", "") for p in solicitation.plans if p.get("name")]
         return {
             "org_display": response.display_name or "the selected organisation",
+            "unverified_org": response.llo_entity_id is None,
             "contact_name": response.submitted_by_name,
             "contact_email": response.submitted_by_email,
+            # Where the award email goes: the respondent's account, never the
+            # address typed on the form.
+            "notify_email": response.account_email,
             "coverage_areas": [c for c in coverage if c],
             "score": max(scores) if scores else None,
         }
 
     def _load(self, pk):
         da = self.da()
-        response = _response_or_refuse(da, pk)
+        response = _response_or_404(da, pk)
         access.require(
             access.can_award(da.caller, response),
             "Only the organisation that owns this call (or platform support) can award it, "
@@ -998,12 +1004,19 @@ class AwardView(SignedInPage):
             ctx["error"] = "The award budget must be a whole number."
             return self.render_to_response(ctx)
         org_id = request.POST.get("org_id", "") if da.caller.is_operator else response.org_id
-        da.award_response(
-            response.pk,
-            reward_budget=reward_budget,
-            org_id=org_id,
-            award_stage=request.POST.get("award_stage", "verification"),
-        )
+        try:
+            da.award_response(
+                response.pk,
+                reward_budget=reward_budget,
+                org_id=org_id,
+                award_stage=request.POST.get("award_stage", "verification"),
+            )
+        except AlreadyAwarded as exc:
+            ctx = self.get_context_data(**kwargs)
+            ctx["error"] = str(exc)
+            page = self.render_to_response(ctx)
+            page.status_code = 409
+            return page
         return redirect("solicitations:award", pk=response.pk)
 
 
@@ -1014,7 +1027,7 @@ class ReviewView(SignedInPage):
 
     def _load(self, pk):
         da = self.da()
-        response = _response_or_refuse(da, pk)
+        response = _response_or_404(da, pk)
         access.require(
             access.can_review(da.caller, response),
             "Only the organisation that owns this call (or platform support) can review it, "

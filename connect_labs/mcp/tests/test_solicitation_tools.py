@@ -367,3 +367,33 @@ def test_award_with_fund_needs_a_connect_token(world):
         {"response_id": response.pk, "reward_budget": 1, "org_id": "7", "fund_id": 5},
     )
     assert err(envelope) == "PERMISSION_DENIED"
+
+
+@pytest.mark.django_db
+def test_respondent_never_sees_owner_working_fields(world):
+    call = make_call(world["owner_org"])
+    response = make_response(call, world["applicant"], ai_proposed_scores={"c1": {"score": 3}}, org_id="77")
+    mine = ok(call_tool(world["applicant_pat"], "get_response", {"response_id": response.pk}))
+    assert "ai_proposed_scores" not in mine and "org_id" not in mine
+    listed = ok(call_tool(world["applicant_pat"], "list_responses", {"solicitation_id": call.pk}))["responses"]
+    assert all("ai_proposed_scores" not in r and "org_id" not in r for r in listed)
+    owner = ok(call_tool(world["owner_pat"], "get_response", {"response_id": response.pk}))
+    assert owner["ai_proposed_scores"] == {"c1": {"score": 3}}
+    assert owner["org_id"] == "77"
+
+
+@pytest.mark.django_db
+def test_create_response_twice_is_refused(world):
+    call = make_call(world["owner_org"])
+    args = {"solicitation_id": call.pk, "llo_entity_id": "firm-org", "responses": {"q1": "x"}}
+    ok(call_tool(world["applicant_pat"], "create_response", args))
+    assert call_tool(world["applicant_pat"], "create_response", args)["result"]["isError"] is True
+    assert call.responses.count() == 1
+
+
+@pytest.mark.django_db
+def test_award_response_twice_is_refused(world):
+    response = make_response(make_call(world["owner_org"]), world["applicant"])
+    args = {"response_id": response.pk, "reward_budget": 500, "org_id": "7"}
+    ok(call_tool(world["owner_pat"], "award_response", args))
+    assert err(call_tool(world["owner_pat"], "award_response", args)) == "FAILED_PRECONDITION"

@@ -19,7 +19,9 @@ Every call belongs to an **organisation** — the one that posted it. That organ
 
 **Solicitations** is in the left-hand menu for everyone. **Manage calls** (`/solicitations/manage/`) lists the organisations you can manage calls for; if there is only one, it takes you straight there. If there are none, it explains how to get access: you are a member of an organisation either through CommCare Connect (when the organisation is registered in labs) or because someone who manages it in labs added you. Seeing an organisation's programme in the context selector does not make you a member of it.
 
-A call that is **not listed** does not appear in the directory or on the organisation's page, but anyone with its link can read it once it is published, and people who already responded keep seeing it. A **draft** is visible only to the organisation that owns it.
+A call that is **not listed** does not appear in the directory or on the organisation's page; only the organisation that owns it, platform support, and people who already responded to it can open it. A **draft** is visible only to the organisation that owns it. A response that is not yours looks exactly like one that does not exist ("not found").
+
+**The demo organisation.** `solicitations_seed_demo` makes an invented organisation, "Kestrel Community Health (demo)", with three open calls for showing the module to others. Its calls are **not listed**, so nobody finds and answers them by accident, but anyone you send a link to can open them, at the call's own address or the demo organisation's page (`/solicitations/o/<demo organisation>/`). Every one carries a **Demo call — invented organisation** banner.
 
 **Status shown on every call:**
 
@@ -171,7 +173,11 @@ When the team agrees on a winner:
 3. Enter the award budget, if any. It is shown in the call's own currency (for example, "500,000 NGN"); a call with no currency set shows the number alone
 4. Click **Award**. If the call is linked to a fund, the award is allocated from it
 
-**Is the organisation told?** Labs emails the award to the contact address on the response when outbound email is switched on for labs. The award page says plainly which happened: "We emailed … to tell them", or "No email was sent — let them know yourself" (for example when email is off, or the response has no contact address). Labs never claims an organisation was notified when it was not.
+A response can be awarded once. Awarding it again is refused with a message saying it was already awarded, so the fund is never allocated twice and the organisation is never emailed twice.
+
+**Is the organisation told?** When outbound email is switched on for labs, Labs emails the award to the labs account of the person who submitted the response (for a response entered on a firm's behalf, to the address entered with it). It never mails the contact address typed on the form, which is there for you to read. The award page says plainly which happened: "We emailed … to tell them", or "No email was sent — let them know yourself" (for example when email is off, or there is no address to send to). Labs never claims an organisation was notified when it was not.
+
+**Unverified organisation.** A response made under a typed name ("An organisation not listed here") rather than as an organisation registered in labs is marked **Unverified organisation** on the response and award pages: nobody has confirmed the person belongs to it. A response submitted by a member of your own organisation counts as your own side whatever name it was submitted under, so you cannot score or award it.
 
 #### Staged-Contract Award
 
@@ -244,7 +250,7 @@ Where the rubric was locked before the call was published, a **Rubric locked bef
 
 **Deadlines.** A call takes responses until the end of its deadline day. After that, the call shows **Closed — deadline passed**, the response form is replaced by a message saying the call has closed, and an unsent draft can no longer be submitted.
 
-After you submit, the call's page shows a **Response submitted** confirmation, and you can open **View your response** to see what you sent and its status (Submitted, Under review, Awarded or Not selected). You cannot edit a response after submitting it. If email is switched on for labs, you also get an email confirming your submission, and the call's contact address is told a new response arrived.
+After you submit, the call's page shows a **Response submitted** confirmation, and you can open **View your response** to see what you sent and its status (Submitted, Under review, Awarded or Not selected). You cannot edit a response after submitting it, and a call takes one response from each person: once yours is submitted, you cannot send another. If email is switched on for labs, you also get an email at your labs account's address confirming your submission (never at the contact address you typed), and the call's contact address is told a new response arrived.
 
 !!! info "Selecting coverage areas"
 Each plan is offered as a whole unit. Clicking any part of a plan's boundary on the map selects the whole plan, and so does ticking it in the checklist.

@@ -5,6 +5,10 @@ THIS REPOSITORY IS PUBLIC -- nothing here names a real applicant, and a demo
 built on this never shows a real firm's answers. Deadlines are computed from
 the day it runs, so the calls are always open.
 
+The calls are unlisted -- shared by link (``/solicitations/<id>/`` or the demo
+organisation's ``/solicitations/o/<slug>/``), never in the directory -- and every
+page showing one carries a "Demo call" banner, so nobody applies by mistake.
+
 Idempotent: everything is keyed by fixed slugs (calls) and invented addresses
 (responses), and a re-run refreshes dates and text in place.
 """
@@ -97,10 +101,10 @@ FIRMS = [
 
 def ensure_org():
     """The demo organisation: a labs-only row under a fixed key this seeder owns."""
-    from connect_labs.labs.models import LABS_ONLY_ORG_PREFIX, LabsOrg
+    from connect_labs.labs.models import LabsOrg
 
     org, _ = LabsOrg.objects.get_or_create(
-        slug=f"{LABS_ONLY_ORG_PREFIX}demo-{ORG_KEY}", defaults={"name": ORG_NAME, "labs_only": True, "notes": NOTE}
+        slug=demo_org_slug(), defaults={"name": ORG_NAME, "labs_only": True, "notes": NOTE}
     )
     if not org.labs_only or org.connect_organization_id is not None:
         raise ValueError(f"{org.slug} is not a labs-only organisation this seeder made; refusing to use it")
@@ -125,7 +129,10 @@ def seed(*, today: date | None = None, admin=None) -> dict:
             defaults={
                 "source": SOURCE_LABS,
                 "owner_org": org,
-                "listed": True,
+                # Unlisted: out of the directory, where someone real might
+                # answer an invented call. Reachable by its link and on the demo
+                # organisation's page, both of which say it is a demo.
+                "listed": False,
                 "status": "active",
                 "title": spec["title"],
                 "description": spec["description"],
@@ -165,3 +172,14 @@ def seed(*, today: date | None = None, admin=None) -> dict:
         )
         responses.append(response.pk)
     return {"organisation": org.slug, "calls": calls, "responses": responses}
+
+
+def demo_org_slug() -> str:
+    from connect_labs.labs.models import LABS_ONLY_ORG_PREFIX
+
+    return f"{LABS_ONLY_ORG_PREFIX}demo-{ORG_KEY}"
+
+
+def is_demo_org(org) -> bool:
+    """The invented organisation this module seeds -- so pages can say so."""
+    return bool(org is not None and org.labs_only and org.slug == demo_org_slug())

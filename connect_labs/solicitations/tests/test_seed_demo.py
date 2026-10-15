@@ -17,7 +17,10 @@ def test_seed_demo_is_idempotent_open_and_invented():
     assert SolicitationResponse.objects.filter(solicitation__in=calls).count() == 2
     org = calls.first().owner_org
     assert org.labs_only and "(demo)" in org.name
-    assert len(SolicitationsDataAccess().get_public_solicitations(open_only=True)) == 3
+    # Unlisted: kept out of the directory, so nobody real finds and answers them.
+    assert not calls.filter(listed=True).exists()
+    assert SolicitationsDataAccess().get_public_solicitations(open_only=True) == []
+    assert all(SolicitationsDataAccess().get_solicitation_by_id(c.pk) == c for c in calls)
     # the --admin member manages the demo calls and reads their responses
     access = SolicitationsDataAccess(user=admin)
     survey = calls.get(slug="demo-solicitations-household-survey")

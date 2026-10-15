@@ -36,6 +36,19 @@ def raise_id_sequences(apps, schema_editor):
                 cursor.execute("SELECT setval(%s, %s, true)", [sequence, target])
 
 
+def fill_null_source_rows(apps, schema_editor):
+    """Reverse only: give each web submission a sheet row before NOT NULL returns.
+
+    Before 0014 every response came from a directory sheet row; a response
+    made in labs has none. `-id` is unique per call (the (solicitation,
+    source_row) constraint holds) and can never be a real row number.
+    """
+    from django.db.models import F
+
+    SolicitationResponse = apps.get_model("solicitations", "SolicitationResponse")
+    SolicitationResponse.objects.filter(source_row__isnull=True).update(source_row=-F("id"))
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -221,6 +234,9 @@ class Migration(migrations.Migration):
             name="source_row",
             field=models.IntegerField(blank=True, null=True),
         ),
+        # Reverse runs last-first: this fills the NULLs a labs-made response
+        # leaves before the AlterField above puts NOT NULL back.
+        migrations.RunPython(migrations.RunPython.noop, fill_null_source_rows, hints={"run_on_secondary": False}),
         migrations.AlterField(
             model_name="solicitationresponse",
             name="status",

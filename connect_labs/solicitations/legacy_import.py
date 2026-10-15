@@ -157,12 +157,37 @@ def fetch_records(client, program_ids=()) -> dict:
     return {"solicitations": solicitations, "responses": responses, "reviews": reviews}
 
 
+class IdFloorCollision(ValueError):
+    """A prod record id at or above `LOCAL_ID_FLOOR`, where local ids live."""
+
+
+def _refuse_ids_above_floor(records: dict) -> None:
+    """Prod ids become /solicitations/<id>/ URLs, resolved before local pks; one at or
+    above the floor could shadow (or be shadowed by) a call made in labs."""
+    clashes = sorted(
+        (kind, record_id)
+        for kind, rows in records.items()
+        for record_id in (rows or {})
+        if _int(record_id) is not None and _int(record_id) >= LOCAL_ID_FLOOR
+    )
+    if clashes:
+        listed = ", ".join(f"{kind} {record_id}" for kind, record_id in clashes[:10])
+        raise IdFloorCollision(
+            f"Prod record ids at or above the local id floor ({LOCAL_ID_FLOOR:,}) cannot be imported: "
+            f"{listed}{' ...' if len(clashes) > 10 else ''}. Their links would collide with calls made in "
+            "labs. Raise LOCAL_ID_FLOOR (and the id sequences, as migration 0014 does) before importing."
+        )
+
+
 def import_records(records: dict, *, default_owner=None, dry_run=False, progress=NULL_PROGRESS) -> dict:
     """Upsert fetched prod records into the labs tables. Returns counts.
 
     With ``dry_run`` everything is computed inside a transaction that is rolled
-    back, so the counts are exactly what a real run would do.
+    back, so the counts are exactly what a real run would do. Refuses
+    (`IdFloorCollision`, before writing anything) any prod id at or above
+    `LOCAL_ID_FLOOR`.
     """
+    _refuse_ids_above_floor(records)
     from connect_labs.supply_chain.runner import running_org
 
     stats = {
@@ -265,7 +290,15 @@ def import_records(records: dict, *, default_owner=None, dry_run=False, progress
                     response.org_name or response.llo_entity_name, response.submitted_by_email
                 )
             stats["responses"]["matched_to_org"] += int(response.llo_entity_id is not None)
-            response.save()
+            try:
+                with transaction.atomic():
+                    response.save()
+            except IntegrityError:
+                # A second prod draft by one person on one call: labs holds one
+                # draft per person (`uniq_draft_per_respondent`), so keep this
+                # one without the person, as an unattributed draft.
+                response.submitted_by = None
+                response.save()
             imported_responses[record.id] = response
             stats["responses"]["created" if created else "updated"] += 1
             safe_call(progress, done, total, f"response {record.id}")

@@ -116,8 +116,18 @@ def can_manage_org(subject, org) -> bool:
 
 
 def is_publicly_visible(solicitation) -> bool:
-    """Readable by anyone: listed, and published (not a draft)."""
-    return bool(solicitation.listed) and solicitation.status != "draft"
+    """Readable by anyone: published (not a draft), and listed.
+
+    The invented demo organisation's calls are the one exception: they are
+    unlisted, so they stay out of the directory where someone real might answer
+    one, but anyone sent a link (to the call or the demo organisation's page)
+    can read them.
+    """
+    if solicitation.status == "draft":
+        return False
+    from connect_labs.solicitations import demo
+
+    return bool(solicitation.listed) or demo.is_demo_org(solicitation.owner_org if solicitation.owner_org_id else None)
 
 
 def is_respondent(subject, response) -> bool:
@@ -152,11 +162,18 @@ def can_edit_response(subject, response) -> bool:
 
 
 def _is_own_side(subject, response) -> bool:
-    """The respondent, or a member of the organisation that responded."""
+    """The respondent; a member of the organisation that responded; or, for a
+    member of the owning organisation, a response a colleague submitted --
+    whatever name it was submitted under (a typed name proves nothing)."""
     caller = caller_for(subject)
     if is_respondent(caller, response):
         return True
-    return bool(response.llo_entity_id and caller.is_member(response.llo_entity))
+    if response.llo_entity_id and caller.is_member(response.llo_entity):
+        return True
+    owner_org = response.solicitation.owner_org if response.solicitation.owner_org_id else None
+    if response.submitted_by_id and owner_org is not None and caller.is_member(owner_org):
+        return Caller(user=response.submitted_by).is_member(owner_org)
+    return False
 
 
 def can_review(subject, response) -> bool:
@@ -177,10 +194,12 @@ def require(allowed: bool, message: str) -> None:
 def manageable_orgs(subject) -> list[LabsOrg]:
     """Organisations whose calls this caller may manage, by name.
 
-    The same rules as `runner.is_member`, evaluated once for every candidate:
-    grants, the Connect organisations the caller belongs to (fetched once), and
-    Dimagi for a Dimagi address. Staff manage every organisation that owns a
-    call, so their workspace switcher lists those.
+    Candidates are gathered cheaply -- grants, the Connect organisations the
+    caller belongs to (fetched once), Dimagi -- and each is then kept only if
+    the caller `is_member` of it, so this list and every per-call check agree
+    (a membership row on Dimagi is not Dimagi membership; a Dimagi address is).
+    Staff manage every organisation that owns a call, so their workspace
+    switcher lists those too.
     """
     from connect_labs.marketplace.models import OrgMembership
     from connect_labs.utils.dimagi_user import is_dimagi_user
@@ -202,11 +221,13 @@ def manageable_orgs(subject) -> list[LabsOrg]:
         )
     if is_dimagi_user(caller.user):
         ids.add(runner.dimagi_org().pk)
+    orgs = [org for org in LabsOrg.objects.filter(pk__in=ids).order_by("name") if caller.is_member(org)]
     if caller.is_operator:
         from connect_labs.solicitations.local_models import Solicitation
 
-        ids |= set(Solicitation.objects.exclude(owner_org=None).values_list("owner_org_id", flat=True))
-    return list(LabsOrg.objects.filter(pk__in=ids).order_by("name"))
+        owners = set(Solicitation.objects.calls().exclude(owner_org=None).values_list("owner_org_id", flat=True))
+        return list(LabsOrg.objects.filter(pk__in=owners | {org.pk for org in orgs}).order_by("name"))
+    return orgs
 
 
 def member_orgs(subject) -> list[LabsOrg]:

@@ -330,7 +330,9 @@ def test_respondent_sees_own_response_only(client, world):
     resp = client.get(url("response_detail", pk=mine.pk))
     assert resp.status_code == 200
     assert "Firm Org" in resp.content.decode()
-    assert client.get(url("response_detail", pk=theirs.pk)).status_code == 403
+    # Someone else's response is as missing as one that never existed: no enumeration.
+    assert client.get(url("response_detail", pk=theirs.pk)).status_code == 404
+    assert client.get(url("response_detail", pk=999_999_999)).status_code == 404
     assert client.get(url("responses_list", pk=world["call"].public_id)).status_code == 403
 
 
@@ -361,7 +363,7 @@ def test_responses_list_is_blind_and_links_to_review(client, world):
 def test_non_owner_refused_review_and_award(client, world, name):
     response = make_response(world["call"], world["applicant"])
     login(client, world["outsider"])
-    assert client.get(url(name, pk=response.pk)).status_code == 403
+    assert client.get(url(name, pk=response.pk)).status_code == 404
 
 
 def test_respondent_cannot_review_own_response_even_as_owner(client, world):
@@ -433,3 +435,47 @@ def test_marketplace_org_page_links_its_calls(client, world):
     assert url("org_page", org_slug="owner-org") in body
     body = client.get(reverse("marketplace:organisation", kwargs={"slug": "firm-org"})).content.decode()
     assert url("org_page", org_slug="firm-org") not in body
+
+
+def test_owner_pages_flag_a_response_with_no_registered_organisation(client, world):
+    typed = make_response(world["call"], world["outsider"], org_name="Typed Co")
+    registered = make_response(world["call"], world["applicant"], llo_entity=world["firm_org"])
+    login(client, world["owner"])
+    assert "Unverified organisation" in client.get(url("response_detail", pk=typed.pk)).content.decode()
+    assert "Unverified organisation" in client.get(url("award", pk=typed.pk)).content.decode()
+    assert "Unverified organisation" not in client.get(url("response_detail", pk=registered.pk)).content.decode()
+
+
+def test_award_page_refuses_a_second_award(client, world):
+    response = make_response(world["call"], world["applicant"], org_name="Firm Org")
+    login(client, world["owner"])
+    client.post(url("award", pk=response.pk), {"reward_budget": "500", "award_stage": "verification"})
+    resp = client.post(url("award", pk=response.pk), {"reward_budget": "900", "award_stage": "full"})
+    assert resp.status_code == 409
+    assert "already been awarded" in resp.content.decode()
+    response.refresh_from_db()
+    assert response.reward_budget == 500 and response.award_stage == "verification"
+
+
+def test_demo_calls_are_unlisted_reachable_and_bannered(client):
+    from django.core.management import call_command
+
+    from connect_labs.solicitations.local_models import Solicitation
+
+    call_command("solicitations_seed_demo")
+    calls = Solicitation.objects.filter(slug__startswith="demo-solicitations-")
+    assert calls.count() == 3 and not calls.filter(listed=True).exists()
+    directory = client.get(url("public_list")).content.decode()
+    assert "(demo)" not in directory
+    org = calls.first().owner_org
+    page = client.get(url("org_page", org_slug=org.slug))
+    assert page.status_code == 200 and "Household coverage survey" in page.content.decode()
+    survey = calls.get(slug="demo-solicitations-household-survey")
+    detail = client.get(url("public_detail", pk=survey.public_id))
+    assert detail.status_code == 200
+    assert "Demo call — invented organisation" in detail.content.decode()
+    login(client, make_user("passer-by"))
+    assert "Demo call — invented organisation" in client.get(url("respond", pk=survey.public_id)).content.decode()
+    # an ordinary call carries no such banner
+    real = make_call(make_org("real-org"))
+    assert "Demo call" not in client.get(url("public_detail", pk=real.public_id)).content.decode()

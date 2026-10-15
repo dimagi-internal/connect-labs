@@ -119,3 +119,13 @@ def test_marketplace_reads_only_directory_rounds():
     assert queries.network_totals()["applications"] == 1
     assert SolicitationResponse.objects.directory_rounds().count() == 1
     assert org.solicitation_responses.count() == 2  # the relation itself is unchanged
+
+
+def test_response_owner_working_fields_only_for_the_owner_view():
+    response = make_response(make_call(), ai_proposed_scores={"c1": {"score": 7}}, org_id="77")
+    record = response.to_record_dict()
+    assert "ai_proposed_scores" not in record and "org_id" not in record
+    assert "ai_proposed_scores" not in response.to_data()
+    owner = response.to_record_dict(owner_view=True)
+    assert owner["ai_proposed_scores"] == {"c1": {"score": 7}}
+    assert owner["org_id"] == "77"

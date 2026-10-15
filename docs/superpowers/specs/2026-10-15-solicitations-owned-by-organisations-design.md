@@ -103,7 +103,9 @@ anything downstream being rewritten". This change does that migration.
    safe. Prod records are left untouched.
 10. **Demo.** `solicitations_seed_demo` (management command) creates a labs-only
     demo organisation with three open calls and a few responses, so external
-    demos never show real applicants.
+    demos never show real applicants. The calls are unlisted (out of the
+    directory) but readable by link and on the demo organisation's page, each
+    with a "Demo call — invented organisation" banner, so nobody real applies.
 
 ## Page fixes carried in the same change
 

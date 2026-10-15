@@ -22,6 +22,14 @@
     </nav>
 
     {% if awarded %}
+    {% if error %}
+        <div class="bg-red-50 border-l-4 border-red-400 p-4 mb-4" role="alert">
+            <div class="flex items-center">
+                <i class="fa-solid fa-exclamation-circle text-red-400 mr-3"></i>
+                <p class="text-sm text-red-700">{{ error }}</p>
+            </div>
+        </div>
+    {% endif %}
     <!-- ============================ CONFIRMATION STATE ============================ -->
     <div class="bg-white rounded-xl shadow-sm overflow-hidden">
         <div class="bg-green-600 px-5 sm:px-8 py-6 flex items-center gap-4">
@@ -31,7 +39,7 @@
             <div>
                 <h1 class="text-xl font-semibold text-white">Awarded to {{ summary.org_display }}</h1>
                 <p class="text-sm text-green-50 mt-0.5">
-                    {% if response.awardee_notified %}We emailed {{ summary.contact_email|default:summary.org_display }} to tell them.{% else %}No email was sent{% if not summary.contact_email %} (there is no contact address on the response){% endif %}. Let {{ summary.org_display }} know yourself.{% endif %}
+                    {% if response.awardee_notified %}We emailed {{ summary.notify_email|default:summary.org_display }} to tell them.{% else %}No email was sent{% if not summary.notify_email %} (there is no address to send it to){% endif %}. Let {{ summary.org_display }} know yourself.{% endif %}
                 </p>
             </div>
         </div>
@@ -40,7 +48,7 @@
             <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5 text-sm">
                 <div>
                     <dt class="text-gray-500">Awarded organization</dt>
-                    <dd class="font-medium text-gray-900">{{ summary.org_display }}</dd>
+                    <dd class="font-medium text-gray-900">{{ summary.org_display }}{% if summary.unverified_org %} {% include "solicitations/_unverified_org.html" %}{% endif %}</dd>
                 </div>
                 <div>
                     <dt class="text-gray-500">Contract stage</dt>
@@ -157,7 +165,7 @@
             <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
                 <div>
                     <dt class="text-gray-500">Organization</dt>
-                    <dd class="font-medium text-gray-900">{{ summary.org_display }}</dd>
+                    <dd class="font-medium text-gray-900">{{ summary.org_display }}{% if summary.unverified_org %} {% include "solicitations/_unverified_org.html" %}{% endif %}</dd>
                 </div>
                 {% if summary.contact_name %}
                 <div>
@@ -187,7 +195,7 @@
             <div class="flex items-start gap-3">
                 <i class="fa-solid fa-circle-info text-amber-500 mt-0.5"></i>
                 <p class="text-sm text-amber-800">
-                    Awarding records the decision{% if email_on and summary.contact_email %} and <strong>emails {{ summary.contact_email }}</strong> to tell {{ summary.org_display }} they were selected{% else %}. Labs will not email {{ summary.org_display }}{% if not summary.contact_email %} (there is no contact address on the response){% endif %}, so let them know yourself{% endif %}.
+                    Awarding records the decision{% if email_on and summary.notify_email %} and <strong>emails {{ summary.notify_email }}</strong> to tell {{ summary.org_display }} they were selected{% else %}. Labs will not email {{ summary.org_display }}{% if not summary.notify_email %} (there is no address to send it to){% endif %}, so let them know yourself{% endif %}.
                 </p>
             </div>
         </div>

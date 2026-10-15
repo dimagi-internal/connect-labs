@@ -21,14 +21,15 @@ import logging
 from datetime import date, datetime
 
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.http import HttpRequest
 from django.utils import timezone
 
-from connect_labs.solicitations import access
+from connect_labs.solicitations import access, demo
 from connect_labs.solicitations.local_models import (
     AWARD_STAGES,
+    SOURCE_DIRECTORY,
     SOURCE_LABS,
     Solicitation,
     SolicitationResponse,
@@ -72,6 +73,11 @@ _RESPONDENT_FIELDS = (
 )
 _RESPONDENT_STATUSES = ("draft", "submitted")
 _OWNER_RESPONSE_STATUSES = ("submitted", "under_review", "rejected")
+
+
+class AlreadyAwarded(Exception):
+    """An award of a response that was already awarded: refused, so no second
+    fund allocation and no second email."""
 
 
 class HasResponses(Exception):
@@ -194,7 +200,9 @@ class SolicitationsDataAccess:
                 return []
             qs = qs.filter(owner_org=org)
             if not access.can_manage_org(self.caller, org):
-                qs = qs.filter(listed=True).exclude(status="draft")
+                qs = qs.exclude(status="draft")
+                if not demo.is_demo_org(org):
+                    qs = qs.filter(listed=True)
         elif not self.caller.is_operator:
             scope = Q(owner_org__in=[o.pk for o in access.manageable_orgs(self.caller)])
             if include_listed:
@@ -241,7 +249,7 @@ class SolicitationsDataAccess:
 
     def get_solicitation_by_id(self, solicitation_id: int) -> Solicitation | None:
         """A call by its public id (prod id if imported, else pk), or None if missing or not readable."""
-        solicitation = by_public_id(Solicitation.objects.select_related("owner_org", "created_by"), solicitation_id)
+        solicitation = by_public_id(self._calls(), solicitation_id)
         if solicitation is None or not access.can_read(self.caller, solicitation):
             return None
         return solicitation
@@ -385,7 +393,7 @@ class SolicitationsDataAccess:
         return {"solicitations": 1, "responses": responses, "reviews": reviews}
 
     def _managed_solicitation(self, solicitation_id) -> Solicitation:
-        solicitation = by_public_id(Solicitation.objects.select_related("owner_org"), solicitation_id)
+        solicitation = by_public_id(self._calls(), solicitation_id)
         if solicitation is None or not access.can_read(self.caller, solicitation):
             raise Solicitation.DoesNotExist(f"Solicitation {solicitation_id} not found")
         access.require(
@@ -429,8 +437,10 @@ class SolicitationsDataAccess:
         return list(qs.order_by("submission_date", "pk"))
 
     def get_response_by_id(self, response_id: int) -> SolicitationResponse | None:
+        # Responses to owned calls only: a directory round's submissions are the
+        # marketplace's, never managed through these paths.
         response = by_public_id(
-            SolicitationResponse.objects.select_related(
+            SolicitationResponse.objects.exclude(solicitation__source=SOURCE_DIRECTORY).select_related(
                 "solicitation", "solicitation__owner_org", "llo_entity", "submitted_by"
             ),
             response_id,
@@ -438,15 +448,6 @@ class SolicitationsDataAccess:
         if response is None or not access.can_read_response(self.caller, response):
             return None
         return response
-
-    @staticmethod
-    def response_exists(response_id) -> bool:
-        """Whether a response with this id exists at all, readable or not.
-
-        Lets a page answer "not yours" (403) rather than "no such thing" (404)
-        for a response it will not show.
-        """
-        return by_public_id(SolicitationResponse.objects.all(), response_id) is not None
 
     def get_my_response(self, solicitation_id: int) -> SolicitationResponse | None:
         """The caller's draft if they have one, else their latest response."""
@@ -468,8 +469,9 @@ class SolicitationsDataAccess:
     ) -> SolicitationResponse:
         """Respond to a call, as the caller and the organisation they name.
 
-        One draft per (call, user): saving a draft again, or submitting one,
-        edits it in place. Refused once the call stops accepting responses.
+        One response per (call, user): saving a draft again, or submitting one,
+        edits it in place, and once it is submitted another is refused. Refused
+        once the call stops accepting responses.
 
         `on_behalf=True` is for an owner or operator entering a firm's response
         (seeding, a paper submission): it has no respondent user, may name any
@@ -496,33 +498,57 @@ class SolicitationsDataAccess:
         if status not in _RESPONDENT_STATUSES:
             raise ValidationError({"status": f"{status!r} must be one of {list(_RESPONDENT_STATUSES)}"})
 
-        with transaction.atomic():
-            response = None
-            if not on_behalf:
-                response = (
-                    solicitation.responses.select_for_update()
-                    .filter(submitted_by_id=self.caller.user_pk, status="draft")
-                    .order_by("-pk")
-                    .first()
-                )
-            if response is None:
-                response = SolicitationResponse(
-                    solicitation=solicitation, submitted_by=None if on_behalf else self.user, status="draft"
-                )
-            self._apply_respondent_fields(response, data, llo_entity_id, on_behalf=on_behalf)
-            if on_behalf:
-                if "ai_proposed_scores" in data:
-                    response.ai_proposed_scores = data["ai_proposed_scores"] or {}
-                if data.get("org_id"):
-                    response.org_id = str(data["org_id"])
-            response.status = status
-            if status == "submitted" or data.get("submission_date"):
-                response.submission_date = _parse_datetime(data.get("submission_date")) or timezone.now()
-            response.save()
+        for attempt in range(2):
+            try:
+                with transaction.atomic():
+                    response = None
+                    if not on_behalf:
+                        self._refuse_second_response(solicitation)
+                        response = self._find_draft(solicitation)
+                    if response is None:
+                        response = SolicitationResponse(
+                            solicitation=solicitation, submitted_by=None if on_behalf else self.user, status="draft"
+                        )
+                    self._apply_respondent_fields(response, data, llo_entity_id, on_behalf=on_behalf)
+                    if on_behalf:
+                        if "ai_proposed_scores" in data:
+                            response.ai_proposed_scores = data["ai_proposed_scores"] or {}
+                        if data.get("org_id"):
+                            response.org_id = str(data["org_id"])
+                    response.status = status
+                    if status == "submitted" or data.get("submission_date"):
+                        response.submission_date = _parse_datetime(data.get("submission_date")) or timezone.now()
+                    response.save()
+                break
+            except IntegrityError:
+                # Another request made this person's draft between our look and
+                # our insert (`uniq_draft_per_respondent`): look again, and save
+                # into that draft instead.
+                if on_behalf or attempt:
+                    raise
 
         if status == "submitted" and not on_behalf:
             self._notify_submitted(response)
         return response
+
+    def _find_draft(self, solicitation) -> SolicitationResponse | None:
+        """The caller's draft on this call, locked for the save."""
+        return (
+            solicitation.responses.select_for_update()
+            .filter(submitted_by_id=self.caller.user_pk, status="draft")
+            .order_by("-pk")
+            .first()
+        )
+
+    def _refuse_second_response(self, solicitation, *, exclude_pk=None) -> None:
+        """One response per person per call: once theirs is submitted, no other."""
+        sent = solicitation.responses.filter(submitted_by_id=self.caller.user_pk).exclude(status="draft")
+        if exclude_pk is not None:
+            sent = sent.exclude(pk=exclude_pk)
+        if sent.exists():
+            raise ValidationError(
+                {"status": "You have already responded to this call; a call takes one response from each person."}
+            )
 
     def update_response(self, response_id: int, data: dict) -> SolicitationResponse:
         """Merge `data` into a response.
@@ -543,6 +569,7 @@ class SolicitationsDataAccess:
                     bool(response.solicitation.can_accept_responses),
                     "This call is not accepting responses any more.",
                 )
+                self._refuse_second_response(response.solicitation, exclude_pk=response.pk)
             self._apply_respondent_fields(response, data, data.get("llo_entity_id"), on_behalf=False)
             response.status = status
             if status == "submitted":
@@ -592,14 +619,25 @@ class SolicitationsDataAccess:
                 getattr(self.user, "name", "") or self.user.username
             )
 
+        # Whichever the caller names now -- a registered organisation or a typed
+        # name -- replaces the other, so a draft switched from one to the other
+        # never keeps the old organisation underneath the new name.
+        sent_name = (data.get("llo_entity_name") or "").strip()
+        sent_org_name = (data.get("org_name") or "").strip()
         org_key = data.get("llo_entity", llo_entity_key)
         if org_key in (None, "", "individual"):
+            typed = sent_org_name or sent_name
+            if typed:
+                response.llo_entity = None
+                response.llo_entity_name = sent_name or typed
             return
         org = access.resolve_org(org_key)
         if org is None:
             # A name nobody has registered: keep it as typed; the directory
             # import's exact matching can attach it later.
-            response.org_name = response.org_name or str(org_key)
+            response.llo_entity = None
+            response.llo_entity_name = sent_name
+            response.org_name = sent_org_name or str(org_key)
             return
         if not on_behalf:
             access.require(
@@ -607,8 +645,8 @@ class SolicitationsDataAccess:
                 f"You can respond only for an organisation you belong to, and you are not a member of {org.name}.",
             )
         response.llo_entity = org
-        response.llo_entity_name = response.llo_entity_name or org.name
-        response.org_name = response.org_name or org.name
+        response.llo_entity_name = sent_name or org.name
+        response.org_name = sent_org_name or org.name
 
     def award_response(
         self,
@@ -635,6 +673,12 @@ class SolicitationsDataAccess:
             "Only the organisation that owns this call (or platform support) can award it, "
             "and never a response from your own side.",
         )
+        if response.is_awarded:
+            raise AlreadyAwarded(
+                "This response has already been awarded"
+                + (f" ({response.awarded_at:%d %b %Y})" if response.awarded_at else "")
+                + "; awarding it again would allocate the fund and email the awardee twice."
+            )
         response.status = "awarded"
         response.reward_budget = _int_or_none(reward_budget)
         response.org_id = str(org_id or "")
@@ -763,7 +807,9 @@ class SolicitationsDataAccess:
                 + ".\n\nYour response has been submitted. The organisation reviews the responses "
                 "and will contact you about the outcome."
             ),
-            [response.submitted_by_email],
+            # The signed-in account only: the address typed on the form is a
+            # contact for the owner, and could be anyone's.
+            [response.submitted_by.email if response.submitted_by_id else ""],
         )
         self._send(
             f"New response to {solicitation.title}",
@@ -785,7 +831,7 @@ class SolicitationsDataAccess:
                 f"{solicitation.title}.{amount}\n\nThey will contact you about next steps."
                 + (f" Questions: {solicitation.contact_email}" if solicitation.contact_email else "")
             ),
-            [response.submitted_by_email],
+            [response.account_email],
         )
 
     @staticmethod

@@ -438,6 +438,13 @@ class SolicitationResponse(models.Model):
         ordering = ["-submission_date", "source_row"]
         constraints = [
             models.UniqueConstraint(fields=["solicitation", "source_row"], name="uniq_response_per_source_row"),
+            # One draft per person per call: a second save edits the first,
+            # even when two requests race (`create_response` re-fetches).
+            models.UniqueConstraint(
+                fields=["solicitation", "submitted_by"],
+                condition=models.Q(status="draft"),
+                name="uniq_draft_per_respondent",
+            ),
         ]
         indexes = [models.Index(fields=["match_state"])]
 
@@ -470,8 +477,28 @@ class SolicitationResponse(models.Model):
             or (self.submitted_by_email or "").strip()
         )
 
-    def to_data(self) -> dict:
-        return {
+    @property
+    def account_email(self) -> str:
+        """Where mail about this response goes: the respondent's own account.
+
+        Never the address typed on the form (``submitted_by_email``), which is a
+        contact for the owner to read and could be anyone's. A response entered
+        on a firm's behalf has no account, and its address was typed by the
+        owner, so that one is used.
+        """
+        if self.submitted_by_id:
+            return self.submitted_by.email or ""
+        return self.submitted_by_email or ""
+
+    # The owner's working fields: what an AI reviewer proposed, and the Connect
+    # organisation the awarder named for the contract. Never shown to anyone
+    # who cannot manage the call, the respondent included.
+    OWNER_ONLY_FIELDS = ("ai_proposed_scores", "org_id")
+
+    def to_data(self, *, owner_view: bool = False) -> dict:
+        """The response's fields. `owner_view` adds the owner's working fields:
+        pass it only for a caller who can manage the call."""
+        data = {
             "solicitation_id": self.solicitation_id,
             "llo_entity_id": self.llo_entity.slug if self.llo_entity_id else "",
             "llo_entity_name": self.llo_entity_name,
@@ -491,10 +518,14 @@ class SolicitationResponse(models.Model):
             "awardee_notified": self.awardee_notified,
             "ai_proposed_scores": self.ai_proposed_scores or {},
         }
+        if not owner_view:
+            for name in self.OWNER_ONLY_FIELDS:
+                data.pop(name)
+        return data
 
-    def to_record_dict(self) -> dict:
+    def to_record_dict(self, *, owner_view: bool = False) -> dict:
         """Flat dict in the shape the MCP tools always returned (envelope + data)."""
-        data = self.to_data()
+        data = self.to_data(owner_view=owner_view)
         return {
             "id": self.pk,
             "experiment": data["llo_entity_id"] or "individual",

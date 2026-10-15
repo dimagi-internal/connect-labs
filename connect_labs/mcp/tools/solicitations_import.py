@@ -57,7 +57,7 @@ def solicitations_import_records(
 ) -> dict:
     from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClient
     from connect_labs.solicitations.access import resolve_org
-    from connect_labs.solicitations.legacy_import import fetch_records, import_records
+    from connect_labs.solicitations.legacy_import import IdFloorCollision, fetch_records, import_records
 
     if not (getattr(user, "is_staff", False) or getattr(user, "is_superuser", False)):
         raise MCPToolError("PERMISSION_DENIED", "solicitations_import_records is for platform staff only.")
@@ -73,6 +73,9 @@ def solicitations_import_records(
         records = fetch_records(client, program_ids or ())
     finally:
         client.close()
-    stats = import_records(records, default_owner=default_owner, dry_run=dry_run, progress=progress)
+    try:
+        stats = import_records(records, default_owner=default_owner, dry_run=dry_run, progress=progress)
+    except IdFloorCollision as exc:
+        raise MCPToolError("FAILED_PRECONDITION", str(exc)) from exc
     stats["read"] = {kind: len(rows) for kind, rows in records.items()}
     return stats

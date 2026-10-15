@@ -26,6 +26,7 @@
         </p>
         <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
             <h1 class="text-xl sm:text-2xl font-semibold text-brand-deep-purple break-words min-w-0">{{ response.display_name|default:response.blind_label }}</h1>
+            {% if is_owner and not response.llo_entity_id %}{% include "solicitations/_unverified_org.html" %}{% endif %}
             {% if response.status == 'awarded' %}
                 <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800"><i class="fa-solid fa-trophy text-green-500 mr-1"></i>Awarded</span>
             {% elif response.status == 'draft' %}

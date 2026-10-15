@@ -165,3 +165,29 @@ def test_resolve_org_by_keys():
     assert access.resolve_org("acme") == org
     assert access.resolve_org("acme-ng") == org
     assert access.resolve_org("nobody") is None
+
+
+def test_manageable_orgs_are_membership_by_grant_only(world):
+    """A membership row on Dimagi is not Dimagi membership: only a Dimagi address is."""
+    from connect_labs.solicitations.data_access import SolicitationsDataAccess
+    from connect_labs.supply_chain.runner import dimagi_org
+
+    dimagi = dimagi_org()
+    grant(world["outsider"], dimagi)
+    hidden = make_call(dimagi, listed=False, title="Dimagi's unlisted call")
+    assert dimagi not in access.manageable_orgs(world["outsider"])
+    assert hidden not in SolicitationsDataAccess(user=world["outsider"]).get_solicitations()
+    person = make_user("dimagi-person", email="someone@dimagi.com")
+    assert dimagi in access.manageable_orgs(person)
+    assert hidden in SolicitationsDataAccess(user=person).get_solicitations()
+
+
+def test_owning_org_member_responding_under_a_typed_name_is_own_side(world):
+    colleague = make_user("colleague")
+    grant(colleague, world["owner_org"])
+    response = make_response(world["call"], colleague, org_name="A Name Nobody Registered")
+    assert response.llo_entity_id is None
+    assert not access.can_review(world["owner"], response)
+    assert not access.can_award(world["owner"], response)
+    # Platform support is not on the owner's side.
+    assert access.can_review(world["staff"], response)

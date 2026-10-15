@@ -234,3 +234,26 @@ def test_local_calls_are_untouched(setup):
     import_records(records(), default_owner=setup["default"])
     mine.refresh_from_db()
     assert mine.title == "Local call"
+
+
+def test_import_refuses_prod_ids_at_or_above_the_local_floor(setup):
+    data = records()
+    data["responses"][LOCAL_ID_FLOOR] = rec(LOCAL_ID_FLOOR, "solicitation_response", {}, labs_record_id=2841)
+    with pytest.raises(ValueError, match="local id floor"):
+        import_records(data, default_owner=setup["default"])
+    assert not Solicitation.objects.exists()
+    assert not SolicitationResponse.objects.exists()
+
+
+def test_tool_reports_a_prod_id_above_the_floor(setup):
+    staff = make_user("support", staff=True)
+    UserConnectToken.objects.create(user=staff, access_token="tok", expires_at=timezone.now() + timedelta(hours=1))
+    client = MagicMock()
+    big = LOCAL_ID_FLOOR + 1
+    client.get_records.side_effect = lambda type, **kw: (
+        [rec(big, "solicitation", {})] if type == "solicitation" else []
+    )
+    with patch("connect_labs.labs.integrations.connect.api_client.LabsRecordAPIClient", return_value=client):
+        with pytest.raises(MCPToolError, match="local id floor") as exc:
+            _tool().handler(staff)
+    assert exc.value.code == "FAILED_PRECONDITION"

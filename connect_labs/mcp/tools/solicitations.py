@@ -16,7 +16,8 @@ import logging
 from django.core.exceptions import PermissionDenied, ValidationError
 
 from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClient
-from connect_labs.solicitations.data_access import HasResponses, SolicitationsDataAccess
+from connect_labs.solicitations import access
+from connect_labs.solicitations.data_access import AlreadyAwarded, HasResponses, SolicitationsDataAccess
 from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
 from connect_labs.solicitations.validation import (
     QUESTION_TYPES,
@@ -36,6 +37,11 @@ def _serialize_record(record) -> dict:
     return record.to_record_dict()
 
 
+def _serialize_response(record, user) -> dict:
+    """A response, with the owner's working fields only for someone who manages its call."""
+    return record.to_record_dict(owner_view=access.can_manage(user, record.solicitation))
+
+
 def _da(user, program_id=None, organization_id=None, access_token=None) -> SolicitationsDataAccess:
     return SolicitationsDataAccess(
         user=user, program_id=program_id, organization_id=organization_id, access_token=access_token
@@ -49,7 +55,7 @@ def _mcp_error(exc: Exception) -> MCPToolError:
         return MCPToolError("PERMISSION_DENIED", str(exc) or "Not allowed")
     if isinstance(exc, (Solicitation.DoesNotExist, SolicitationResponse.DoesNotExist)):
         return MCPToolError("NOT_FOUND", str(exc))
-    if isinstance(exc, HasResponses):
+    if isinstance(exc, (HasResponses, AlreadyAwarded)):
         return MCPToolError("FAILED_PRECONDITION", str(exc))
     raise exc
 
@@ -200,7 +206,7 @@ def list_responses(
     if da.get_solicitation_by_id(solicitation_id) is None:
         raise MCPToolError("NOT_FOUND", f"Solicitation {solicitation_id} not found")
     records = da.get_responses_for_solicitation(solicitation_id)
-    return {"responses": [_serialize_record(r) for r in records]}
+    return {"responses": [_serialize_response(r, user) for r in records]}
 
 
 @register(
@@ -238,7 +244,7 @@ def get_response(
     record = _da(user).get_response_by_id(response_id)
     if record is None:
         raise MCPToolError("NOT_FOUND", f"Response {response_id} not found")
-    return _serialize_record(record)
+    return _serialize_response(record, user)
 
 
 # ---------------------------------------------------------------------------
@@ -459,7 +465,8 @@ def create_solicitation(
         "(named firms with per-question answers): when the caller manages the call (its owner or "
         "platform support) the response is entered on the firm's behalf -- no respondent user, any "
         "named organisation, deadline ignored. Anyone else responds as themselves, to an open call, "
-        "for an organisation they belong to (llo_entity_id: its labs slug; 'individual' for none). "
+        "for an organisation they belong to (llo_entity_id: its labs slug; 'individual' for none), once: "
+        "a second response after theirs is submitted is refused. "
         "`responses` maps question id -> answer text."
     ),
     input_schema={
@@ -549,7 +556,7 @@ def create_response(
         )
     except (ValidationError, PermissionDenied, Solicitation.DoesNotExist) as e:
         raise _mcp_error(e) from e
-    return _serialize_record(record)
+    return _serialize_response(record, user)
 
 
 @register(
@@ -673,6 +680,7 @@ def delete_solicitation(
         "Award a solicitation response: marks it awarded with reward_budget and org_id, and emails the "
         "awardee when labs email is on (awardee_notified says whether it was sent). Only the call's "
         "owning organisation or platform support may award, and never a response from their own side. "
+        "A response that is already awarded is refused (FAILED_PRECONDITION): no second allocation or email. "
         "If fund_id is provided, appends an allocation entry to that fund's allocations array."
     ),
     input_schema={
@@ -727,7 +735,7 @@ def award_response(
         response = _da(user).award_response(
             response_id, reward_budget=reward_budget, org_id=org_id, allocate_fund=False
         )
-    except (PermissionDenied, SolicitationResponse.DoesNotExist) as e:
+    except (PermissionDenied, SolicitationResponse.DoesNotExist, AlreadyAwarded) as e:
         raise _mcp_error(e) from e
 
     if fund_id:
@@ -746,4 +754,4 @@ def award_response(
             _add_allocation_to_fund(client, fund_id, allocation)
         finally:
             client.close()
-    return _serialize_record(response)
+    return _serialize_response(response, user)
