@@ -35,11 +35,10 @@
         </div>
         {% if other_orgs %}
         <div class="mt-4 flex flex-wrap items-center gap-2 text-sm">
-            <label for="org-switch" class="text-gray-500 whitespace-nowrap">Switch organisation</label>
-            <select id="org-switch" class="base-dropdown max-w-xs min-w-0" onchange="if (this.value) window.location = this.value">
-                <option value="" selected>{{ org.name }}</option>
-                {% for other in other_orgs %}<option value="{% url 'solicitations:org_manage' org_slug=other.slug %}">{{ other.name }}</option>{% endfor %}
-            </select>
+            <span class="text-gray-500 whitespace-nowrap">Switch organisation:</span>
+            {% for other in other_orgs %}
+            <a href="{% url 'solicitations:org_manage' org_slug=other.slug %}" class="px-2.5 py-1 rounded-full border border-gray-300 text-gray-700 hover:bg-gray-50">{{ other.name }}</a>
+            {% endfor %}
         </div>
         {% endif %}
     </div>
