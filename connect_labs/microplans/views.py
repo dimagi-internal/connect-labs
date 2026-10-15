@@ -235,7 +235,7 @@ class PreviewFrameView(_ProgramScopeMixin, LoginRequiredMixin, View):
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        return _queued(generate_frame_task.delay(areas, config_payload))
+        return _queued(generate_frame_task.delay(areas, config_payload), request)
 
 
 class PreviewCoverageView(_ProgramScopeMixin, LoginRequiredMixin, View):
@@ -260,7 +260,7 @@ class PreviewCoverageView(_ProgramScopeMixin, LoginRequiredMixin, View):
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        return _queued(generate_coverage_task.delay(areas, config_payload))
+        return _queued(generate_coverage_task.delay(areas, config_payload), request)
 
 
 class PreviewFootprintsView(_ProgramScopeMixin, LoginRequiredMixin, View):
@@ -283,7 +283,7 @@ class PreviewFootprintsView(_ProgramScopeMixin, LoginRequiredMixin, View):
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        return _queued(fetch_footprints_task.delay(areas))
+        return _queued(fetch_footprints_task.delay(areas), request)
 
 
 class PreviewAreaStatsView(_ProgramScopeMixin, LoginRequiredMixin, View):
@@ -306,7 +306,17 @@ class PreviewAreaStatsView(_ProgramScopeMixin, LoginRequiredMixin, View):
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        return _queued(preview_area_stats_task.delay(areas, min_confidence))
+        return _queued(preview_area_stats_task.delay(areas, min_confidence), request)
+
+
+def _not_your_task(request, task_id):
+    """The 404 a status poll gets for a task this user did not queue -- the same
+    answer as an unknown id, so a guessed id reveals nothing. None when it is theirs."""
+    from connect_labs.microplans.models import TaskOwner
+
+    if TaskOwner.owned_by(task_id, request.user):
+        return None
+    return JsonResponse({"state": "failed", "detail": "Not found."}, status=404)
 
 
 class PreviewStatusView(LoginRequiredMixin, View):
@@ -316,14 +326,16 @@ class PreviewStatusView(LoginRequiredMixin, View):
     On completion the task's own response envelope — which carries its own
     ``status`` of ``ok`` / ``error`` plus the data — is returned under
     ``result``. A failed task returns a generic message (no internal leak); the
-    full traceback is logged server-side. Task ids are unguessable uuids and the
-    payloads are non-sensitive (public building footprints / cluster polygons),
-    so login is the only gate.
+    full traceback is logged server-side. Only the user who queued the task can
+    read it (plan mutations return the whole plan); anyone else gets the same 404
+    as an unknown id.
     """
 
     def get(self, request, task_id):
         from celery.result import AsyncResult
 
+        if (denied := _not_your_task(request, task_id)) is not None:
+            return denied
         result = AsyncResult(task_id)
         state = result.state
         info = result.info if isinstance(result.info, dict) else {}
@@ -367,7 +379,10 @@ class CompareSurroundingView(_ProgramScopeMixin, LoginRequiredMixin, View):
 
         from django.urls import reverse
 
+        from connect_labs.microplans.models import TaskOwner
+
         task = compare_surrounding_wards_task.delay(selected, config_payload)
+        TaskOwner.record(task.id, request.user)
         return JsonResponse(
             {
                 "status": "queued",
@@ -384,11 +399,13 @@ class CompareSurroundingStatusView(LoginRequiredMixin, View):
     Unlike ``PreviewStatusView`` (message only), this forwards the growing ranked
     ``results`` + ``reference`` from the task meta while it runs, so the panel can
     render each neighbour's match the moment it's scored — the same incremental
-    pattern as the bulk-create status view."""
+    pattern as the bulk-create status view. Only the user who queued it can read it."""
 
     def get(self, request, task_id):
         from celery.result import AsyncResult
 
+        if (denied := _not_your_task(request, task_id)) is not None:
+            return denied
         result = AsyncResult(task_id)
         state = result.state
         info = result.info if isinstance(result.info, dict) else {}
@@ -1346,7 +1363,10 @@ class ProgramGroupGenerateView(_ProgramScopeMixin, LoginRequiredMixin, View):
             # Two-arm studies sample with size-stratified PPS by default so the arms
             # are comparable on cluster size by construction (see sample.select_psus).
             config.setdefault("size_balance_bands", 3)
+        from connect_labs.microplans.models import TaskOwner
+
         task = generate_group_samples_task.delay(int(program_id), int(group_id), config, access_token)
+        TaskOwner.record(task.id, request.user)
         return JsonResponse(
             {
                 "status": "queued",
@@ -2688,9 +2708,9 @@ class ProgramBulkCreatePlansView(_ProgramScopeMixin, LoginRequiredMixin, View):
             actor=request.user.get_username() if hasattr(request.user, "get_username") else str(request.user),
             team=team,
         )
-        from connect_labs.microplans.models import BulkCreateTask
+        from connect_labs.microplans.models import TaskOwner
 
-        BulkCreateTask.record(task.id, request.user)
+        TaskOwner.record(task.id, request.user)
         return JsonResponse(
             {
                 "status": "queued",
@@ -2710,10 +2730,8 @@ class ProgramBulkCreateStatusView(LoginRequiredMixin, View):
     def get(self, request, task_id):
         from celery.result import AsyncResult
 
-        from connect_labs.microplans.models import BulkCreateTask
-
-        if not BulkCreateTask.owned_by(task_id, request.user):
-            return JsonResponse({"state": "failed", "detail": "Not found."}, status=404)
+        if (denied := _not_your_task(request, task_id)) is not None:
+            return denied
         result = AsyncResult(task_id)
         state = result.state
         info = result.info if isinstance(result.info, dict) else {}
