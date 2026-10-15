@@ -89,9 +89,14 @@ def _program_map_seed(plans) -> dict | None:
     return None
 
 
-def _queued(task):
-    """202 envelope for an enqueued generation task: id + where to poll it."""
+def _queued(task, request):
+    """202 envelope for an enqueued generation task: id + where to poll it. Records
+    the caller as the task's owner -- only they can poll it."""
     from django.urls import reverse
+
+    from connect_labs.microplans.models import TaskOwner
+
+    TaskOwner.record(task.id, request.user)
 
     return JsonResponse(
         {
@@ -168,8 +173,6 @@ def _enqueue_plan_mutation(request, op, program_id, plan_id, params):
     and reads the task's result (``plan_to_json`` on success, or a
     ``{status: conflict|error}`` envelope). The worker writes via the LabsRecord
     API, so it needs the caller's OAuth token (same pattern as bulk-create)."""
-    from django.urls import reverse
-
     from connect_labs.microplans.tasks import apply_plan_mutation_task
 
     access_token = (request.session.get("labs_oauth") or {}).get("access_token")
@@ -180,7 +183,4 @@ def _enqueue_plan_mutation(request, op, program_id, plan_id, params):
     task = apply_plan_mutation_task.delay(
         op, int(program_id), int(plan_id), params, request.user.get_username(), access_token
     )
-    return JsonResponse(
-        {"status": "queued", "task_id": task.id, "poll_url": reverse("microplans:preview_status", args=[task.id])},
-        status=202,
-    )
+    return _queued(task, request)

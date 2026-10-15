@@ -96,6 +96,27 @@ def _fake_delay(task_id):
     return lambda *a, **k: SimpleNamespace(id=task_id)
 
 
+def _own_task(user, task_id):
+    from connect_labs.microplans.models import TaskOwner
+
+    TaskOwner.record(task_id, user)
+
+
+def _assert_only_the_starter_can_poll(client, django_user_model, monkeypatch, poll_url, unknown_url):
+    """The starter (logged in now) reads ``poll_url``; another user gets the same 404 as an unknown id."""
+    done = {"status": "ok", "results": [{"index": 0, "plan_id": 5}]}
+    monkeypatch.setattr(
+        "celery.result.AsyncResult", lambda tid: SimpleNamespace(state="SUCCESS", info=done, result=done)
+    )
+    mine = client.get(poll_url)
+    assert mine.status_code == 200 and mine.json()["state"] == "completed"
+
+    client.force_login(django_user_model.objects.create(username="stranger", email="s@example.com"))
+    theirs, unknown = client.get(poll_url), client.get(unknown_url)
+    assert theirs.status_code == unknown.status_code == 404
+    assert theirs.json() == unknown.json() and "plan_id" not in theirs.content.decode()
+
+
 def test_preview_frame_enqueues(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     from connect_labs.microplans.tasks import generate_frame_task
@@ -319,7 +340,7 @@ def test_preview_status_requires_login(client):
 
 
 def test_preview_status_running(client, django_user_model, monkeypatch):
-    _login(client, django_user_model)
+    _own_task(_login(client, django_user_model), "abc")
     _patch_async_result(
         monkeypatch,
         SimpleNamespace(state="PROGRESS", info={"message": "Fetching building footprints…"}, result=None),
@@ -332,7 +353,7 @@ def test_preview_status_running(client, django_user_model, monkeypatch):
 
 
 def test_preview_status_completed_passes_envelope(client, django_user_model, monkeypatch):
-    _login(client, django_user_model)
+    _own_task(_login(client, django_user_model), "abc")
     envelope = {"status": "ok", "areas": {"type": "FeatureCollection", "features": []}, "stats": []}
     _patch_async_result(monkeypatch, SimpleNamespace(state="SUCCESS", info=envelope, result=envelope))
     resp = client.get(reverse("microplans:preview_status", kwargs={"task_id": "abc"}))
@@ -343,7 +364,7 @@ def test_preview_status_completed_passes_envelope(client, django_user_model, mon
 
 
 def test_preview_status_failed_hides_internals(client, django_user_model, monkeypatch):
-    _login(client, django_user_model)
+    _own_task(_login(client, django_user_model), "abc")
     err = RuntimeError("overture down — secret internals")
     _patch_async_result(monkeypatch, SimpleNamespace(state="FAILURE", info=err, result=err))
     resp = client.get(reverse("microplans:preview_status", kwargs={"task_id": "abc"}))
@@ -1896,12 +1917,6 @@ def test_bulk_create_empty_plans_400(client, django_user_model):
     assert resp.status_code == 400
 
 
-def _own_task(user, task_id):
-    from connect_labs.microplans.models import BulkCreateTask
-
-    BulkCreateTask.record(task_id, user)
-
-
 def test_bulk_create_status_running_carries_results(client, django_user_model, monkeypatch):
     _own_task(_login(client, django_user_model), "abc")
     meta = {"results": [{"index": 0, "status": "ok", "plan_id": 5}], "created": 1, "total": 2}
@@ -1950,6 +1965,62 @@ def test_bulk_create_page_starter_can_poll_and_nobody_else_can(client, django_us
     assert theirs.status_code == unknown.status_code == 404
     assert theirs.json() == unknown.json()
     assert "results" not in theirs.json()
+
+
+def test_preview_poll_is_readable_only_by_its_starter(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    from connect_labs.microplans.tasks import fetch_footprints_task
+
+    monkeypatch.setattr(fetch_footprints_task, "delay", _fake_delay("fp-1"))
+    enq = client.post(
+        reverse("microplans:preview_footprints", kwargs={"opp_id": 123}),
+        data=json.dumps({"areas": [{"geometry": {"type": "Polygon", "coordinates": []}}]}),
+        content_type="application/json",
+    ).json()
+    unknown = reverse("microplans:preview_status", kwargs={"task_id": "never-queued"})
+    _assert_only_the_starter_can_poll(client, django_user_model, monkeypatch, enq["poll_url"], unknown)
+
+
+def test_plan_mutation_poll_is_readable_only_by_its_starter(client, django_user_model, monkeypatch):
+    """A regenerate's result is the whole plan -- only the person who asked may read it."""
+    _login(client, django_user_model)
+    from connect_labs.microplans.tasks import apply_plan_mutation_task
+
+    monkeypatch.setattr(apply_plan_mutation_task, "delay", _fake_delay("regen-own"))
+    enq = client.post(
+        reverse("microplans:program_plan_regenerate", kwargs={"program_id": 25, "plan_id": 1}),
+        data=json.dumps({"mode": "coverage", "coverage_areas": _HULL_FC, "grouping": {"strategy": "bbox"}}),
+        content_type="application/json",
+    ).json()
+    unknown = reverse("microplans:preview_status", kwargs={"task_id": "never-queued"})
+    _assert_only_the_starter_can_poll(client, django_user_model, monkeypatch, enq["poll_url"], unknown)
+
+
+def test_compare_surrounding_poll_is_readable_only_by_its_starter(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    from connect_labs.microplans.tasks import compare_surrounding_wards_task
+
+    monkeypatch.setattr(compare_surrounding_wards_task, "delay", _fake_delay("cmp-own"))
+    enq = client.post(
+        reverse("microplans:compare_surrounding", kwargs={"opp_id": 123}),
+        data=json.dumps({"selected": {"boundary_id": "NGA-ward-1"}, "config": {}}),
+        content_type="application/json",
+    ).json()
+    unknown = reverse("microplans:compare_surrounding_status", kwargs={"task_id": "never-queued"})
+    _assert_only_the_starter_can_poll(client, django_user_model, monkeypatch, enq["poll_url"], unknown)
+
+
+def test_group_generate_poll_is_readable_by_its_starter(client, django_user_model, monkeypatch):
+    """Group "Generate" polls bulk_create_status, so it must record its starter too
+    (#2547 gated that endpoint and left this enqueue without an owner)."""
+    _login(client, django_user_model)
+    _make_fake_program_da(monkeypatch, {}, {7: _FakeGroup(7, "Study", [501], kind="study")})
+    from connect_labs.microplans.tasks import generate_group_samples_task
+
+    monkeypatch.setattr(generate_group_samples_task, "delay", _fake_delay("gen-own"))
+    enq = client.post(reverse("microplans:program_group_generate", kwargs={"program_id": 25, "group_id": 7})).json()
+    unknown = reverse("microplans:bulk_create_status", kwargs={"task_id": "never-queued"})
+    _assert_only_the_starter_can_poll(client, django_user_model, monkeypatch, enq["poll_url"], unknown)
 
 
 class TestProgramMapSeed:

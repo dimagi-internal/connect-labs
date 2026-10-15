@@ -96,9 +96,9 @@ def test_bulk_create_status_maps_states(user, monkeypatch):
     monkeypatch.setattr(mc, "AsyncResult", lambda tid: fake, raising=False)
     # AsyncResult is imported inside the handler, so patch the celery symbol it binds.
     monkeypatch.setattr("celery.result.AsyncResult", lambda tid: fake)
-    from connect_labs.microplans.models import BulkCreateTask
+    from connect_labs.microplans.models import TaskOwner
 
-    BulkCreateTask.record("task-xyz", user)
+    TaskOwner.record("task-xyz", user)
     out = get_tool("microplans_bulk_create_status").handler(user=user, task_id="task-xyz")
     assert out["state"] == "completed"
     assert out["created"] == 1 and out["run_id"] == "bulk-abc"
@@ -134,10 +134,10 @@ def test_bulk_create_records_the_starter_and_only_they_can_poll(user, synthetic_
 
 @pytest.mark.django_db
 def test_bulk_create_status_hides_another_users_task_like_an_unknown_one(user, monkeypatch):
-    from connect_labs.microplans.models import BulkCreateTask
+    from connect_labs.microplans.models import TaskOwner
 
     owner = get_user_model().objects.create_user(username="owner", password="p")
-    BulkCreateTask.record("task-theirs", owner)
+    TaskOwner.record("task-theirs", owner)
     _succeeded(monkeypatch)
     status = get_tool("microplans_bulk_create_status").handler
 
@@ -152,9 +152,9 @@ def test_bulk_create_status_hides_another_users_task_like_an_unknown_one(user, m
 @pytest.mark.django_db
 def test_a_restricted_call_cannot_poll_a_task_a_full_access_call_started(user, monkeypatch):
     import connect_labs.mcp.tools.microplans_create as mc
-    from connect_labs.microplans.models import BulkCreateTask
+    from connect_labs.microplans.models import TaskOwner
 
-    BulkCreateTask.record("task-full", user, restricted=False)
+    TaskOwner.record("task-full", user, restricted=False)
     _succeeded(monkeypatch)
     monkeypatch.setattr(mc, "_restricted_call", lambda: True)
     with pytest.raises(MCPToolError) as exc:

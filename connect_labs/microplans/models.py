@@ -118,20 +118,20 @@ class SimpleMicroplan(models.Model):
         return self.name
 
 
-class BulkCreateTask(models.Model):
-    """Who started a bulk-create Celery task, so only they can read its status.
+class TaskOwner(models.Model):
+    """Who started a microplans Celery task, so only they can read its status.
 
     A Celery task id is a bare handle: anyone holding it can ask the result backend
-    for the task's progress and per-ward results. Both ways in -- the bulk-create page
-    and the ``microplans_bulk_create_plans`` MCP tool -- record the starter here at
-    enqueue time, and both status readers refuse anyone else with the same answer as
-    an unknown id, so a guessed id reveals nothing. ``restricted`` mirrors
-    ``MCPJob.restricted``: a "no user visit data" MCP call sees only tasks a restricted
-    call started.
+    for the task's progress and result. Every microplans enqueue -- the previews, plan
+    mutations, the surrounding-ward comparison, group sampling, bulk create (page and
+    the ``microplans_bulk_create_plans`` MCP tool) -- records the starter here, and
+    every status reader refuses anyone else with the same answer as an unknown id, so
+    a guessed id reveals nothing. ``restricted`` mirrors ``MCPJob.restricted``: a
+    "no user visit data" MCP call sees only tasks a restricted call started.
     """
 
     task_id = models.CharField(max_length=255, primary_key=True)
-    user = models.ForeignKey("users.User", on_delete=models.CASCADE, related_name="microplans_bulk_create_tasks")
+    user = models.ForeignKey("users.User", on_delete=models.CASCADE, related_name="microplans_tasks")
     restricted = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 

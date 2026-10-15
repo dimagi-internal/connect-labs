@@ -165,9 +165,9 @@ def microplans_bulk_create_plans(
         team=team,
     )
     # Only the caller may read this task's status (microplans_bulk_create_status).
-    from connect_labs.microplans.models import BulkCreateTask
+    from connect_labs.microplans.models import TaskOwner
 
-    BulkCreateTask.record(task.id, user, restricted=_restricted_call())
+    TaskOwner.record(task.id, user, restricted=_restricted_call())
     return {
         "program_id": int(program_id),
         "task_id": task.id,
@@ -199,11 +199,11 @@ def microplans_bulk_create_plans(
 def microplans_bulk_create_status(user, *, task_id):
     from celery.result import AsyncResult
 
-    from connect_labs.microplans.models import BulkCreateTask
+    from connect_labs.microplans.models import TaskOwner
 
     # An unknown id and somebody else's get the same answer, so a guessed id reveals
     # nothing, not even that the task exists.
-    if not BulkCreateTask.owned_by(task_id, user, restricted=_restricted_call()):
+    if not TaskOwner.owned_by(task_id, user, restricted=_restricted_call()):
         raise MCPToolError("NOT_FOUND", f"No bulk-create task {task_id!r} started by your account.")
     result = AsyncResult(str(task_id))
     state = result.state
