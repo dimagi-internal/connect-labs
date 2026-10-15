@@ -132,3 +132,61 @@ def test_a_case_ends_on_one_of_the_sources_whole_combinations():
     assert set(ends) <= {"yes/open", "no/closed", "yes/discharged"}, ends
     real_died = sum(1 for s in real if s["visits"][-1]["cats"]["form.alive"] == "no") / len(real)
     assert abs(ends["no/closed"] / len(out) - real_died) < 0.04
+
+
+def test_a_scales_heavy_tailed_errors_keep_their_tails():
+    """Most readings within 20 g of the line, one in ten off by 150 g: the robust spread
+    sees only the first, and Gaussian draws at it left the large steps out."""
+    rng = random.Random(8)
+    pool = []
+    for c in range(300):
+        start, slope = rng.gauss(1800, 200), rng.gauss(20, 3)
+        visits = []
+        for i in range(6):
+            err = rng.gauss(0, 150) if rng.random() < 0.1 else rng.gauss(0, 20)
+            visits.append(
+                {"day": 5 * i, "form": VISIT, "values": {"form.w": float(round(start + slope * 5 * i + err))}}
+            )
+        pool.append({"owner": f"flw_{c % 6:03d}", "start_date": "2026-04-01", "visits": visits})
+
+    def big_steps(cases):
+        steps = [
+            abs((b["values"]["form.w"] - a["values"]["form.w"]) - 100)
+            for s in cases
+            for a, b in zip(s["visits"], s["visits"][1:])
+        ]
+        return sum(1 for x in steps if x > 150) / len(steps)
+
+    out, _ = cm.synthesize_case_pool(pool, seed=9)
+    assert big_steps(out) > 0.6 * big_steps(pool)
+
+
+def test_an_ending_falls_on_cases_that_ran_as_long_as_the_sources_did():
+    """Short cases are discharged, long ones run on: drawn without the span, discharges
+    fell on long cases as often."""
+    rng = random.Random(10)
+    pool = []
+    for c in range(400):
+        short = rng.random() < 0.3
+        days = [0, 3, 6, 10] if short else [0, 10, 20, 30]
+        visits = [{"day": d, "form": VISIT, "values": {}, "cats": {"form.status": "open"}} for d in days]
+        if short and rng.random() < 0.6:
+            visits[-1]["cats"]["form.status"] = "discharged"
+        pool.append({"owner": f"flw_{c % 6:03d}", "start_date": "2026-04-01", "visits": visits})
+    out, _ = cm.synthesize_case_pool(pool, seed=11)
+    discharged = [s for s in out if s["visits"][-1].get("cats", {}).get("form.status") == "discharged"]
+    assert discharged
+    assert sum(1 for s in discharged if s["visits"][-1]["day"] - s["visits"][0]["day"] < 15) / len(discharged) > 0.9
+
+
+def test_a_field_whose_slope_is_mostly_flat_never_drives_outcomes():
+    """An app version is the same all through most cases; where it steps, it can even
+    line up with how cases end. Its bands are all one value, so it is never the driver."""
+    rng = random.Random(12)
+    pool = _outcome_pool()
+    for case in pool:
+        died = case["visits"][-1]["cats"]["form.alive"] == "no"
+        step = rng.random() < (0.4 if died else 0.05)
+        for i, v in enumerate(case["visits"]):
+            v["values"]["form.app_version"] = float(40 + (step and i >= 3))
+    assert cm.fit_case_model(pool).driver == "s:form.w"

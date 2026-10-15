@@ -145,6 +145,9 @@ class _PathModel:
     # impossible steps between close visits, and a random walk where they do not blurs
     # each case's slope (see _ar_coefficient).
     resid_ar: float = 0.0
+    # The source's own departures from trend, sorted and scaled to resid_sd: a fresh
+    # departure is drawn from these, so its tails are the source's (see _sample_case).
+    resid_pool: np.ndarray | None = None
     # The values the source's readings gather on beyond chance (a weight written in whole
     # hundreds), and per persona or "*" the share of readings put on one (see _fit_grid).
     grid: tuple[float, ...] = ()
@@ -251,6 +254,9 @@ class CaseModel:
     # key -> signature counts, keys as for _CatModel.ending_by_shape / ending prefixed
     # "s" / "t"; _RARE stands for combinations fewer than K_MIN cases share.
     joint_endings: dict[tuple, Counter] = field(default_factory=dict)
+    # Quartile cuts of the source's case spans (days first to last visit), the first
+    # key of a joint ending (see _fit_joint_endings).
+    span_cuts: tuple[float, ...] = ()
     # path -> the path it is a second name for on the same visit (see _fit_aliases).
     aliases: dict[str, str] = field(default_factory=dict)
     # alias -> (form, the value under the main name for a category, else None) ->
@@ -1002,6 +1008,8 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
     date_cases: Counter = Counter()
     resid: dict[str, list[float]] = defaultdict(list)
     resid_pairs: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    # Each reading's departure from the line through its two neighbours (see resid_pool).
+    local_resid: dict[str, list[float]] = defaultdict(list)
     day_patterns: dict[int, list[tuple[float, tuple[int, ...]]]] = defaultdict(list)
     day_patterns_by_forms: dict[tuple, list[tuple[float, tuple[int, ...]]]] = defaultdict(list)
     case_consts: list[tuple[str, dict[str, float]]] = []
@@ -1055,6 +1063,11 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
                 # Falls through: if neither identity holds it is modelled like any
                 # other field (a trend, or a per-case constant).
             if path in time_varying:
+                for (da, _, va), (db, _, vb), (dc, _, vc) in zip(pts, pts[1:], pts[2:]):
+                    if da < db < dc:
+                        wc = (db - da) / (dc - da)
+                        wa = 1.0 - wc
+                        local_resid[path].append((vb - wa * va - wc * vc) / math.sqrt(1 + wa * wa + wc * wc))
                 b, sl, res = _fit_line([(d, val) for d, _, val in pts])
                 row[f"b:{path}"] = b
                 if len({d for d, _, _ in pts}) >= 2:
@@ -1134,6 +1147,19 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
             model.resid_sd = math.sqrt(max(model.resid_sd**2 - rounding, (0.25 * model.resid_sd) ** 2))
         if kind == "varying" and len(resid_pairs[path]) >= K_MIN:
             model.resid_ar = _ar_coefficient(resid_pairs[path], model.resid_sd)
+        if kind == "varying" and model.resid_sd > 0 and len(local_resid[path]) >= 10 * K_MIN:
+            # A scale's errors are heavy-tailed: NAMA's steps between weighings run -25
+            # to +58 g/kg/day at the 2nd and 98th percentiles, and Gaussian draws at the
+            # robust spread (which slips must not set) ran -7 to +45, so a third of the
+            # source's impossible steps never happened. Drawn from the source's own
+            # departures instead, rescaled to the spread fitted above. Departures from
+            # the line through each reading's NEIGHBOURS (scaled for the two readings
+            # that line uses): from the case's one line, a growth curve's bend over two
+            # months read as scale error, and impossible steps overshot (12% against 10%).
+            raw = np.array(local_resid[path], dtype=float)
+            spread = _robust_sd(raw.tolist())
+            if spread > 0:
+                model.resid_pool = np.sort(raw - float(np.median(raw))) * (model.resid_sd / spread)
         if kind == "varying":
             _shrink_slopes(rows, path, slope_fits[path], _robust_sd(resid[path]))
             found = slips.get(path, {})
@@ -1182,7 +1208,11 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
         (
             c
             for c in columns
-            if c.startswith("s:") and c[2:] not in frozen_paths and float(np.ptp(margins[c].values)) > 0
+            if c.startswith("s:") and c[2:] not in frozen_paths
+            # An XForm attribute (a build number, a repeat's index) is the form's own
+            # bookkeeping, not something measured: chosen by outcome evidence, a repeat
+            # index tied to how a case closes "explained" its ending.
+            and not c.rsplit(".", 1)[-1].startswith("@") and float(np.ptp(margins[c].values)) > 0
         ),
         key=lambda c: -len(margins[c].values),
     )
@@ -1205,7 +1235,7 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
     cuts = tuple(float(np.quantile(driver_vals, q / bands)) for q in range(1, bands))
 
     cats, suppressed = _fit_cats(series_list, banded, driver, cuts, time_varying)
-    joint_endings = _fit_joint_endings(series_list, banded, driver, cuts, cats)
+    joint_endings, span_cuts = _fit_joint_endings(series_list, banded, driver, cuts, cats)
     report["categorical_values_suppressed"] = suppressed
 
     rare_first: Counter = Counter()
@@ -1249,6 +1279,7 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
         presence_masks=presence_masks,
         anchors=_fit_anchors(series_list, numeric, slips, frozen_paths),
         joint_endings=joint_endings,
+        span_cuts=span_cuts,
         numeric=numeric,
         dates=dates,
         cats=cats,
@@ -1365,6 +1396,7 @@ def _choose_driver(slope_cols: list[str], slope_fits, signatures: list[tuple], b
     chosen is the one whose growth bands separate how cases END the most -- the largest
     likelihood-ratio statistic between band and ending, over the cases with a slope --
     where that is significant (p < 0.001); else none ("n": cases are banded by length).
+    A field whose slopes cannot fill the bands (most cases share one) is not a candidate.
     """
     from scipy.stats import chi2
 
@@ -1379,6 +1411,11 @@ def _choose_driver(slope_cols: list[str], slope_fits, signatures: list[tuple], b
             continue
         raw = np.array([f[4] for f in fits], dtype=float)
         cuts = np.unique(np.quantile(raw, [q / bands for q in range(1, bands)]))
+        if len(cuts) < bands - 1:
+            # Its slopes do not split the cases into bands: a version number is the same
+            # all through most cases, every cut falls on zero, and the bands it made at
+            # EHA put deaths at 11% of cases against 3.9%.
+            continue
         table: dict[tuple[int, tuple], int] = Counter()
         for f, x in zip(fits, raw):
             table[(int(np.searchsorted(cuts, x, side="left")), ending[f[0]])] += 1
@@ -1396,26 +1433,81 @@ def _choose_driver(slope_cols: list[str], slope_fits, signatures: list[tuple], b
     return best
 
 
-def _fit_joint_endings(series_list, rows, driver, cuts, cats) -> dict[tuple, Counter]:
-    """How cases end, as whole combinations of terminal answers.
+def _span(days) -> int:
+    return int(days[-1]) - int(days[0]) if len(days) else 0
+
+
+#: How many cases' weight a broader cell's ending mix carries into a finer one's (see
+#: _draw_joint_ending).
+_ENDING_PRIOR = 2 * K_MIN
+
+
+def _draw_joint_ending(model: CaseModel, keys, rng: random.Random):
+    """One of the source's ending combinations, from the finest cell this case falls in,
+    each cell's mix shrunk towards the broader one around it.
+
+    Taken from the first cell with K_MIN cases, a cell of five decided its cases' ends
+    alone: generated cases gather in some cells more than real ones do, and wherever
+    they gathered in a cell whose five happened to die, deaths ran high (EHA 10%
+    against 4%). Each cell's mix is its counts plus _ENDING_PRIOR cases' worth of the
+    broader cell's, from overall down to the case's own span, shape and band."""
+    mix: dict[tuple, float] | None = None
+    for key in keys:
+        counts = model.joint_endings.get(key)
+        if not counts:
+            continue
+        n = sum(counts.values())
+        if mix is None:
+            mix = {sig: c / n for sig, c in counts.items()}
+            continue
+        merged = {sig: _ENDING_PRIOR * q for sig, q in mix.items()}
+        for sig, c in counts.items():
+            merged[sig] = merged.get(sig, 0.0) + c
+        total = n + _ENDING_PRIOR
+        mix = {sig: v / total for sig, v in merged.items()}
+    if not mix:
+        return None
+    r = rng.random()
+    for sig, q in mix.items():
+        r -= q
+        if r <= 0:
+            return sig
+    return next(iter(mix))
+
+
+def _fit_joint_endings(series_list, rows, driver, cuts, cats) -> tuple[dict[tuple, Counter], tuple[float, ...]]:
+    """How cases end, as whole combinations of terminal answers, and the span cuts.
 
     Drawn one field at a time, a case could end both died and discharged, and closure
     fields that always go together came apart. A combination is kept where K_MIN cases
-    share it (the rest is _RARE, drawn field by field), by the same keys as a single
-    field's ending: shape and band and length, then band and length, then overall.
+    share it (the rest is _RARE, drawn field by field). Keyed first by how long the case
+    ran (its span's quarter among the source's cases) with its shape and band: drawn
+    without the span, a discharge fell on long cases as often as short ones, and
+    discharges in the first four weeks ran at half the source's rate (1.7% against 3.4%).
+    Then by shape and band and length, band and length, and overall.
     """
     sigs = [_ending_signature(s, cats) for s in series_list]
     shared = Counter(sigs)
     median_n = float(np.median([len(s["visits"]) for s in series_list]))
+    spans = [_span([v["day"] for v in s["visits"]]) for s in series_list]
+    span_cuts = tuple(float(x) for x in np.unique(np.quantile(spans, [0.25, 0.5, 0.75]))) if spans else ()
     out: dict[tuple, Counter] = defaultdict(Counter)
-    for s, row, sig in zip(series_list, rows, sigs):
+    for s, row, sig, span in zip(series_list, rows, sigs, spans):
         terc = _tercile(row.get(driver, math.nan), cuts)
         long = int(len(s["visits"]) > median_n)
         shape = _shape(v.get("form") for v in s["visits"])
         key = sig if shared[sig] >= K_MIN else _RARE
-        for k in (("s", shape, terc, long), ("s", shape, -1, long), ("t", terc, long), ("t", -1, -1)):
+        sb = _tercile(float(span), span_cuts)
+        for k in (
+            ("x", shape, terc, sb),
+            ("x", shape, -1, sb),
+            ("s", shape, terc, long),
+            ("s", shape, -1, long),
+            ("t", terc, long),
+            ("t", -1, -1),
+        ):
             out[k][key] += 1
-    return dict(out)
+    return dict(out), span_cuts
 
 
 def _fit_cats(series_list, rows, driver, cuts, time_varying) -> tuple[dict[str, _CatModel], int]:
@@ -1739,7 +1831,14 @@ def _sample_case(
                 # Departure from the case's trend, carried from the previous reading as
                 # much as the source's carry (resid_ar); same spread whatever the carry.
                 prev = last_resid.get(path)
-                fresh = nrng.normal(0.0, pm.resid_sd)
+                if pm.resid_pool is not None:
+                    fresh = float(
+                        np.interp(
+                            nrng.uniform() * (len(pm.resid_pool) - 1), np.arange(len(pm.resid_pool)), pm.resid_pool
+                        )
+                    )
+                else:
+                    fresh = nrng.normal(0.0, pm.resid_sd)
                 e = fresh if prev is None else pm.resid_ar * prev + math.sqrt(1 - pm.resid_ar**2) * fresh
                 last_resid[path] = e
                 trend = params[f"b:{path}"] + params.get(f"s:{path}", 0.0) * day
@@ -1773,12 +1872,14 @@ def _sample_case(
     # Each terminal-valued path's ending for this case, decided up front: one of the
     # source's whole combinations where it has one (see _fit_joint_endings).
     endings: dict[str, str | None] = {}
-    joint = None
-    for key in (("s", shape, terc, long), ("s", shape, -1, long), ("t", terc, long), ("t", -1, -1)):
-        counts = model.joint_endings.get(key)
-        if counts and sum(counts.values()) >= K_MIN:
-            joint = _draw_mask(counts, rng)
-            break
+    sb = _tercile(float(_span(days)), model.span_cuts)
+    joint = _draw_joint_ending(
+        model,
+        # Broad to fine, the growth band kept at every step after the first: a step
+        # that dropped it pulled slow and fast growers' deaths together.
+        (("t", -1, -1), ("t", terc, long), ("s", shape, terc, long), ("x", shape, terc, sb)),
+        rng,
+    )
     if joint is not None and joint != _RARE:
         endings = {path: None for path, cm in model.cats.items() if cm.terminal}
         endings.update({path: val for path, val in joint if model.presence.get(path, {}).get(forms[-1], 0.0) > 0})
