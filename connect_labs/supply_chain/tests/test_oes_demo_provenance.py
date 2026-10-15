@@ -17,6 +17,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from django.db import transaction
 from django.test import Client
 from django.urls import reverse
 
@@ -282,12 +283,32 @@ def _reference(module, access, document):
     )
 
 
-@pytest.fixture
-def seeded(access):
+def _seed_chain(access):
     module = _load_seed_remote()
     module.op = _Recorded()
     reference = _reference(module, access, _DOCUMENT)
     return module, reference, module.seed_chc_chain(access, _DOCUMENT, reference)
+
+
+@pytest.fixture
+def seeded(access):
+    return _seed_chain(access)
+
+
+def _once_per_class(django_db_blocker, build):
+    """Seed ONCE for a read-only test class, in an outer transaction rolled back at class end.
+
+    Each test still runs in its own savepoint (the `db` fixture nests inside this),
+    so a test's writes roll back as before.
+    """
+    with django_db_blocker.unblock():
+        outer = transaction.atomic()
+        outer.__enter__()
+        try:
+            yield build(SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM))
+        finally:
+            transaction.set_rollback(True)
+            outer.__exit__(None, None, None)
 
 
 def _keys(value):
@@ -302,6 +323,14 @@ def _keys(value):
 
 @pytest.mark.django_db
 class TestTheChainCarriesItsProvenance:
+    @pytest.fixture(scope="class")
+    def _chain_once(self, django_db_setup, django_db_blocker):
+        yield from _once_per_class(django_db_blocker, _seed_chain)
+
+    @pytest.fixture
+    def seeded(self, _chain_once, db):
+        return _chain_once
+
     def test_what_they_told_us_is_recorded_by_us_and_not_witnessed(self, seeded):
         """Tier 1: our hand, their word. The row the demo exists to show."""
         _, reference, chain = seeded
@@ -551,10 +580,9 @@ def test_an_operation_the_seed_cannot_place_is_refused_not_guessed(seeded):
 # ---- the third tier, which only the partner's own link can write ---------
 
 
-@pytest.fixture
-def linked(access, seeded):
+def _seed_linked(access):
     """The chain, plus the partner links and everything entered through them."""
-    module, reference, chain = seeded
+    module, reference, chain = _seed_chain(access)
     links = module.seed_partner_links(access, _DOCUMENT, reference, chain)
     return module, reference, chain, links
 
@@ -605,6 +633,14 @@ def _told_by_cells(body, heading):
 
 @pytest.mark.django_db
 class TestTheThirdTier:
+    @pytest.fixture(scope="class")
+    def _linked_once(self, django_db_setup, django_db_blocker):
+        yield from _once_per_class(django_db_blocker, _seed_linked)
+
+    @pytest.fixture
+    def linked(self, _linked_once, db):
+        return _linked_once
+
     def test_what_the_partner_entered_is_recorded_as_the_partner(self, linked):
         """The whole point: `recorded_by_org` is THEIRS, not ours.
 

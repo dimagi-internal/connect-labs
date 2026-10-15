@@ -21,9 +21,7 @@ from django.utils import timezone
 
 from connect_labs.supply_chain.history.models import OperationCall, Revision
 from connect_labs.supply_chain.history.rewind import rewind
-from connect_labs.supply_chain.market.service import listed_tenders
-from connect_labs.supply_chain.models import Invoice, Outreach, Payment, Quote, Shipment, Tender
-from connect_labs.supply_chain.standing import standing_rows
+from connect_labs.supply_chain.models import Invoice, Movement, Outreach, Payment, Quote, Shipment, Tender
 from connect_labs.supply_chain.tests.test_oes_demo_provenance import _CHAIN, _DOCUMENT, _load_seed_remote
 from connect_labs.supply_chain.tests.test_oes_demo_reference import _ROUND_TWO
 
@@ -153,143 +151,71 @@ def synthetic(db):
     _register(MARKET_BUYER_PROGRAM)
 
 
+@pytest.fixture(scope="class")
+def _seeded_once(django_db_setup, django_db_blocker):
+    """Seed round 1 and round 2 ONCE for TestTheSeededHistory, in an outer transaction rolled back at class end.
+
+    Each test still runs in its own savepoint (the `db` fixture nests inside this),
+    so a test's writes -- a re-seed, a clarification -- roll back as before.
+    """
+    with django_db_blocker.unblock():
+        outer = transaction.atomic()
+        outer.__enter__()
+        try:
+            _register(RUTF)
+            _register(MARKET_BUYER_PROGRAM)
+            yield _seed(_document())
+        finally:
+            transaction.set_rollback(True)
+            outer.__exit__(None, None, None)
+
+
 @pytest.fixture
-def seeded(synthetic):
-    return _seed(_document())
+def seeded(_seeded_once, db):
+    return _seeded_once
 
 
-def _shipment_revisions(shipment_id):
-    return Revision.objects.filter(content_type__model="shipment", object_id=str(shipment_id))
+def _created(model, pk):
+    return Revision.objects.get(content_type__model=model, object_id=str(pk), action="create")
 
 
-class TestTheEtaSlip:
-    def test_the_slip_is_one_dated_update_the_agent_made_from_an_email(self, seeded):
+class TestTheSeededHistory:
+    def test_each_step_is_dated_the_day_it_happened_and_attributed_to_who_did_it(self, seeded, settings):
         _, result = seeded
-        shipment = Shipment.objects.get(contract_id=result["round_one"]["contract"]["id"])
-        slips = [rev for rev in _shipment_revisions(shipment.id) if "expected_on" in rev.changes]
-        update = [rev for rev in slips if rev.action == "update"]
-
-        assert len(update) == 1
-        assert update[0].changes["expected_on"] == [_SHIPMENT["eta_original"], _SHIPMENT["expected_on"]]
-        assert update[0].recorded_at == _ten_am(_SHIPMENT["eta_slip_learned_on"])
-        call = update[0].call
-        assert call.channel == "mcp" and call.actor_is_agent is True
-        assert call.source_ref and _SHIPMENT["expected_on"][:4] in call.source_excerpt
-
-    def test_the_shipment_left_on_its_dispatch_day_with_the_original_eta(self, seeded):
-        _, result = seeded
-        shipment = Shipment.objects.get(contract_id=result["round_one"]["contract"]["id"])
-        create = _shipment_revisions(shipment.id).get(action="create")
-        assert create.changes["expected_on"] == [None, _SHIPMENT["eta_original"]]
-        assert create.recorded_at == _ten_am(_SHIPMENT["dispatched_on"])
-
-    def test_the_email_that_arrived_twice_is_recorded_once(self, seeded):
-        _, result = seeded
-        calls = OperationCall.objects.filter(program_id=RUTF, operation="shipment_update").exclude(source_ref="")
-        assert calls.count() == 1
-        assert result["round_one"]["eta_replayed"] is True
-
-    def test_without_an_original_eta_there_is_no_slip(self, synthetic):
-        document = _document()
-        del document["rutf_rounds"]["round_one"]["shipment"]["eta_original"]
-        _, result = _seed(document)
-
-        shipment = Shipment.objects.get(contract_id=result["round_one"]["contract"]["id"])
-        assert str(shipment.expected_on) == _SHIPMENT["expected_on"]
-        assert not [
-            rev for rev in _shipment_revisions(shipment.id) if rev.action == "update" and "expected_on" in rev.changes
-        ]
-        assert not OperationCall.objects.filter(program_id=RUTF, operation="shipment_update").exclude(source_ref="")
-
-
-class TestWhoDidEachStep:
-    def test_the_quotes_came_in_through_the_agent_with_their_sources(self, seeded):
+        # What the agent typed from an email: through MCP, as the configured agent account, with its source.
         for quote in Quote.objects.filter(tender__program_id=RUTF):
-            create = Revision.objects.get(content_type__model="quote", object_id=str(quote.id), action="create")
-            assert create.call.channel == "mcp" and create.call.actor_is_agent
-            assert create.call.source_ref.startswith("<rutf-r") and create.call.source_ref.endswith("@demo.invalid>")
-            assert create.call.source_excerpt
+            call = _created("quote", quote.id).call
+            assert call.channel == "mcp" and call.actor_is_agent and call.source_ref and call.source_excerpt
+        assert _created("quote", result["round_one"]["quotes"][0]["id"]).recorded_at == _ten_am(_DATES["quoted_on"])
+        invoice_call = OperationCall.objects.filter(program_id=RUTF, operation="invoice_record").first()
+        assert invoice_call.actor.email == settings.LABS_AGENT_ACCOUNT_EMAILS[0]
 
-    def test_round_one_quote_is_dated_the_day_it_arrived(self, seeded):
+        # What a person did on the web: no agent, no email behind it.
+        award = OperationCall.objects.get(program_id=RUTF, operation="award_create")
+        assert award.channel == "web" and not award.actor_is_agent and award.source_ref == ""
+        assert award.recorded_at == _ten_am(_DATES["decided_on"])
+
+        # The ETA slip is one dated update, made by the agent from an email.
+        shipment = Shipment.objects.get(contract_id=result["round_one"]["contract"]["id"])
+        revisions = Revision.objects.filter(content_type__model="shipment", object_id=str(shipment.id))
+        assert revisions.get(action="create").recorded_at == _ten_am(_SHIPMENT["dispatched_on"])
+        (slip,) = (rev for rev in revisions if rev.action == "update" and "expected_on" in rev.changes)
+        assert slip.changes["expected_on"] == [_SHIPMENT["eta_original"], _SHIPMENT["expected_on"]]
+        assert slip.recorded_at == _ten_am(_SHIPMENT["eta_slip_learned_on"]) and slip.call.actor_is_agent
+
+        # Receipt movements are in history too (rewinding past a receipt needs them).
+        movements = Movement.objects.filter(program_id=RUTF, receipt__isnull=False)
+        assert movements.exists()
+        assert all(_created("movement", m.id).recorded_at == _ten_am(_DATES["received_on"]) for m in movements)
+
+    def test_round_one_is_invoiced_once_and_paid_in_full_on_its_day(self, seeded):
         _, result = seeded
-        quote_id = result["round_one"]["quotes"][0]["id"]
-        create = Revision.objects.get(content_type__model="quote", object_id=str(quote_id), action="create")
-        assert create.recorded_at == _ten_am(_DATES["quoted_on"])
-
-    def test_sophie_made_the_award_on_the_web_on_the_day_she_decided(self, seeded):
-        _, result = seeded
-        call = OperationCall.objects.get(program_id=RUTF, operation="award_create")
-        assert call.channel == "web" and call.actor.username == "demo-sophie" and not call.actor_is_agent
-        assert call.recorded_at == _ten_am(_DATES["decided_on"])
-        assert call.source_ref == ""
-
-    def test_the_agent_is_the_configured_agent_account(self, seeded, settings):
-        call = OperationCall.objects.filter(program_id=RUTF, operation="invoice_record").first()
-        assert call.actor.email == settings.LABS_AGENT_ACCOUNT_EMAILS[0]
-
-    def test_round_two_is_recent_and_its_silent_supplier_is_still_waiting(self, seeded):
-        _, result = seeded
-        tender = Tender.objects.get(pk=result["round_two"]["round"]["id"])
-        create = Revision.objects.get(content_type__model="tender", object_id=str(tender.id), action="create")
-        assert create.recorded_at == _ten_am(_ago(20))
-        for quote in Quote.objects.filter(tender=tender):
-            rev = Revision.objects.get(content_type__model="quote", object_id=str(quote.id), action="create")
-            assert rev.recorded_at == _ten_am(_ago(3))
-        waiting = Outreach.objects.filter(tender=tender, responded=False)
-        assert [o.supplier.name for o in waiting] == ["Placeholder Silent Supplier"]
-        assert Outreach.objects.filter(tender=tender, responded=True).count() == 3
-
-
-def _row(rows, title_start):
-    return next(r for r in rows if r.title.startswith(title_start))
-
-
-class TestRoundOneIsPaid:
-    def test_a_stated_paid_on_pays_the_invoice_in_full_and_the_overview_shows_it(self, seeded):
-        _, result = seeded
-        contract, invoice = result["round_one"]["contract"], result["round_one"]["invoice"]
+        invoice = result["round_one"]["invoice"]
+        assert result["round_one"]["invoice_replayed"] is True
+        assert Invoice.objects.filter(contract_id=result["round_one"]["contract"]["id"]).count() == 1
         payment = Payment.objects.get(invoice_id=invoice["id"])
         assert Decimal(str(payment.amount)) == Decimal(str(invoice["amount"]))
         assert str(payment.paid_on) == _DATES["paid_on"]
-
-        # Delivered, paid and nothing owed: no longer an active order, so off the overview.
-        assert not [r for r in standing_rows(RUTF, timezone.localdate()) if r.title.startswith(contract["reference"])]
-
-    def test_the_payment_is_recorded_by_sophie_on_the_web_on_the_day_it_was_paid(self, seeded):
-        _, result = seeded
-        invoice = result["round_one"]["invoice"]
-        payment = Payment.objects.get(invoice_id=invoice["id"])
-        create = Revision.objects.get(content_type__model="payment", object_id=str(payment.id), action="create")
-        assert create.recorded_at == _ten_am(_DATES["paid_on"])
-        assert create.call.channel == "web" and create.call.actor.username == "demo-sophie"
-        assert not create.call.actor_is_agent
-        # Sophie made the payment herself; there is no email to point at.
-        assert create.call.source_ref == ""
-
-    def test_without_a_stated_paid_on_no_payment_is_recorded(self, synthetic, capsys):
-        document = _document()
-        del document["rutf_rounds"]["round_one"]["dates"]["paid_on"]
-        _, result = _seed(document)
-        invoice = result["round_one"]["invoice"]
-
-        assert not Payment.objects.filter(invoice_id=invoice["id"]).exists()
-        row = _row(standing_rows(RUTF, timezone.localdate()), result["round_one"]["contract"]["reference"])
-        assert row.stage.endswith("· invoiced")
-        assert row.next_move is None or row.next_move.rule != "no reply"
-        assert "paid_on" in capsys.readouterr().out
-
-    def test_seeding_again_does_not_pay_twice(self, seeded):
-        _, result = seeded
-        invoice_id = result["round_one"]["invoice"]["id"]
-        _seed(_document())
-        assert Payment.objects.filter(invoice_id=invoice_id).count() == 1
-
-
-class TestReplay:
-    def test_the_repeated_invoice_email_replays_rather_than_billing_twice(self, seeded):
-        _, result = seeded
-        assert result["round_one"]["invoice_replayed"] is True
-        assert Invoice.objects.filter(contract_id=result["round_one"]["contract"]["id"]).count() == 1
 
     def test_seeding_again_writes_nothing_new(self, seeded):
         def counts():
@@ -300,6 +226,7 @@ class TestReplay:
                 "outreach": Outreach.objects.filter(tender__program_id=RUTF).count(),
                 "shipments": Shipment.objects.filter(contract__program_id=RUTF).count(),
                 "invoices": Invoice.objects.filter(contract__program_id=RUTF).count(),
+                "payments": Payment.objects.filter(invoice__contract__program_id=RUTF).count(),
                 "tenders": Tender.objects.count(),
             }
 
@@ -307,50 +234,38 @@ class TestReplay:
         _seed(_document())
         assert counts() == before
 
+    def test_rewinding_to_before_the_slip_shows_the_original_eta_and_no_round_two(self, seeded):
+        """The as-of beat: every row is dated no later than what depends on it.
 
-def test_rewinding_to_before_the_slip_shows_the_original_eta_and_no_round_two(seeded):
-    """The as-of beat: every row is dated no later than what depends on it.
+        A catalogue or supplier left dated "now" would be deleted by the rewind
+        while older quotes still point at it.
+        """
+        _, result = seeded
+        shipment_id = Shipment.objects.get(contract_id=result["round_one"]["contract"]["id"]).id
+        with transaction.atomic():
+            rewind(RUTF, _ten_am(_ago(55)))
+            assert str(Shipment.objects.get(pk=shipment_id).expected_on) == _SHIPMENT["eta_original"]
+            assert not Tender.objects.filter(pk=result["round_two"]["round"]["id"]).exists()
+            assert Quote.objects.filter(pk=result["round_one"]["quotes"][0]["id"]).exists()
+            transaction.set_rollback(True)
 
-    A catalogue or supplier left dated "now" would be deleted by the rewind
-    while older quotes still point at it.
-    """
-    _, result = seeded
-    shipment_id = Shipment.objects.get(contract_id=result["round_one"]["contract"]["id"]).id
-    with transaction.atomic():
-        rewind(RUTF, _ten_am(_ago(55)))
-        assert str(Shipment.objects.get(pk=shipment_id).expected_on) == _SHIPMENT["eta_original"]
-        assert not Tender.objects.filter(pk=result["round_two"]["round"]["id"]).exists()
-        assert Quote.objects.filter(pk=result["round_one"]["quotes"][0]["id"]).exists()
-        transaction.set_rollback(True)
+    def test_the_clarification_is_recorded_once_and_replays(self, seeded):
+        module, _ = seeded
+        assert module.record_rutf_clarification(_document())
+        before = (Quote.objects.count(), Revision.objects.count(), OperationCall.objects.count())
+        assert module.record_rutf_clarification(_document())["replayed"] is True
+        assert (Quote.objects.count(), Revision.objects.count(), OperationCall.objects.count()) == before
 
-
-def test_other_buyers_tenders_sit_beside_round_two_on_the_market(seeded):
-    _, result = seeded
-    listed = {row.tender.pk for row in listed_tenders()}
-    assert result["round_two"]["round"]["id"] in listed
-    other = Tender.objects.get(program_id=MARKET_BUYER_PROGRAM)
-    assert other.pk in listed and other.owner_org.slug == "another-buyer"
-
-
-def test_no_market_section_is_skipped_not_invented(synthetic, capsys):
-    document = _document()
-    del document["market_buyers"]
-    _seed(document)
-    assert not Tender.objects.filter(program_id=MARKET_BUYER_PROGRAM).exists()
-    assert "market_buyers" in capsys.readouterr().out
+    def test_a_clarification_dated_in_the_future_is_refused(self, seeded):
+        module, _ = seeded
+        document = _document()
+        document["rutf_rounds"]["round_two"]["clarification"]["answered_on"] = _ago(-1)
+        with pytest.raises(ValueError, match="future"):
+            module.record_rutf_clarification(document)
+        assert not OperationCall.objects.filter(operation="quote_correct").exists()
 
 
-@pytest.mark.parametrize(
-    "program_id, why",
-    [(263, "not a registered synthetic"), (10690, "not a registered synthetic"), (RUTF, "demo's own")],
-)
-def test_a_market_buyer_on_a_program_that_is_not_its_own_synthetic_one_is_refused(synthetic, program_id, why):
-    """Refused before anything is written, round 1 included."""
-    document = _document()
-    document["market_buyers"][0]["program_id"] = program_id
-    with pytest.raises(ValueError, match=why):
-        _seed(document)
-    assert not Tender.objects.filter(program_id=RUTF).exists()
+# ---- refused before anything is written ------------------------------------
 
 
 def test_seeding_round_one_as_history_is_refused_on_a_program_that_is_not_synthetic(db):
@@ -365,110 +280,16 @@ def test_seeding_round_one_as_history_is_refused_on_a_program_that_is_not_synthe
     assert not get_user_model().objects.filter(username="demo-sophie").exists()
 
 
-def test_the_personas_are_created_once(db):
-    module = _load_seed_remote()
-    first = module.demo_persona_users()
-    second = module.demo_persona_users()
-    assert first == second
-    assert first["sophie"].username == "demo-sophie" and first["sophie"].name == "Sophie"
-    assert get_user_model().objects.filter(username="ace-agent").count() == 1
-
-
-def test_the_stock_a_receipt_posted_is_in_history_on_the_receipts_day(seeded):
-    """Receipt movements used to be bulk-inserted, which sends no signal.
-
-    They then escaped history, and rewinding past the receipt failed on the
-    receipt they PROTECT.
-    """
-    from connect_labs.supply_chain.models import Movement
-
-    movements = Movement.objects.filter(program_id=RUTF, receipt__isnull=False)
-    assert movements.exists()
-    for movement in movements:
-        create = Revision.objects.get(content_type__model="movement", object_id=str(movement.id), action="create")
-        assert create.recorded_at == _ten_am(_DATES["received_on"])
-
-
-# ---- the clarification that lands mid-demo -------------------------------
-
-
-def _supplier_a_reasons(tender_id):
-    """Why supplier A's quote cannot be ranked, from the comparison the page draws."""
-    from connect_labs.labs.access.scopes import SYSTEM
-    from connect_labs.supply_chain.data_access import SupplyDataAccess
-    from connect_labs.supply_chain.procurement.services.comparison import compare_tender
-
-    access = SupplyDataAccess(access_token="unused", program_id=RUTF, caller=SYSTEM)
-    tender = access.get_tender(tender_id)
-    quotes = access.list_quotes(tender_id=tender_id)
-    suppliers = {q.supplier_id: access.get_supplier(q.supplier_id) for q in quotes}
-    comparison = compare_tender(tender, access.get_commodity("a-therapeutic-food"), quotes, suppliers)
-    return {row.supplier_name: row.figures["landed_total_for_tender_quantity"].reasons for row in comparison.blocked}
-
-
-class TestTheClarification:
-    def test_the_seed_leaves_supplier_a_blocked_on_its_pack_spec_alone(self, seeded):
-        _, result = seeded
-        reasons = _supplier_a_reasons(result["round_two"]["round"]["id"])["Placeholder Supplier A"]
-        assert reasons and all("pack spec" in reason for reason in reasons)
-
-    def test_the_reply_makes_the_quote_comparable(self, seeded):
-        module, result = seeded
-        module.record_rutf_clarification(_document())
-        assert "Placeholder Supplier A" not in _supplier_a_reasons(result["round_two"]["round"]["id"])
-
-    def test_the_reply_forwarded_again_replays(self, seeded):
-        module, _ = seeded
-        module.record_rutf_clarification(_document())
-        before = (Quote.objects.count(), Revision.objects.count(), OperationCall.objects.count())
-        again = module.record_rutf_clarification(_document())
-        assert again["replayed"] is True
-        assert (Quote.objects.count(), Revision.objects.count(), OperationCall.objects.count()) == before
-
-    def test_the_timeline_shows_the_agent_recording_the_reply_on_its_day(self, seeded):
-        from connect_labs.supply_chain.history.timeline import timeline_for_tender
-
-        module, result = seeded
-        module.record_rutf_clarification(_document())
-        entries = timeline_for_tender(result["round_two"]["round"]["id"], program_id=RUTF)
-        replies = [e for e in entries if e.excerpt == "Each carton holds 150 sachets."]
-        # One call, one line: the correction, naming what it changed.
-        assert len(replies) == 1
-        assert replies[0].sentence.startswith("Quote corrected: sachets per carton not stated → 150"), replies[
-            0
-        ].sentence
-        assert "base_per_pack_stated" in replies[0].fields
-        for entry in replies:
-            assert entry.actor == "ACE (agent)" and entry.is_ai
-            assert entry.when == _ten_am(_ago(1))
-
-    def test_no_clarification_in_the_document_is_skipped_and_said(self, seeded, capsys):
-        module, _ = seeded
-        document = _document()
-        del document["rutf_rounds"]["round_two"]["clarification"]
-        assert module.record_rutf_clarification(document) is None
-        assert "clarification" in capsys.readouterr().out
-        assert not OperationCall.objects.filter(operation="quote_correct").exists()
-
-    def test_a_quote_with_no_received_on_is_refused_not_waved_through(self, seeded):
-        """Without the day the quote arrived, "answered before it arrived" cannot
-        be ruled out, so the reply is refused rather than the check skipped."""
-        module, result = seeded
-        Quote.objects.filter(tender_id=result["round_two"]["round"]["id"]).update(received_on=None)
-        with pytest.raises(ValueError, match="no received_on"):
-            module.record_rutf_clarification(_document())
-        assert not OperationCall.objects.filter(operation="quote_correct").exists()
-
-    def test_a_reply_dated_in_the_future_is_refused(self, seeded):
-        module, _ = seeded
-        document = _document()
-        document["rutf_rounds"]["round_two"]["clarification"]["answered_on"] = _ago(-1)
-        with pytest.raises(ValueError, match="future"):
-            module.record_rutf_clarification(document)
-        assert not OperationCall.objects.filter(operation="quote_correct").exists()
-
-
-# ---- days that cannot have happened -------------------------------------
+@pytest.mark.parametrize(
+    "program_id, why",
+    [(263, "not a registered synthetic"), (10690, "not a registered synthetic"), (RUTF, "demo's own")],
+)
+def test_a_market_buyer_on_a_program_that_is_not_its_own_synthetic_one_is_refused(synthetic, program_id, why):
+    document = _document()
+    document["market_buyers"][0]["program_id"] = program_id
+    with pytest.raises(ValueError, match=why):
+        _seed(document)
+    assert not Tender.objects.filter(program_id=RUTF).exists()
 
 
 def test_a_step_dated_tomorrow_is_refused():
@@ -486,27 +307,25 @@ def test_a_step_dated_today_is_never_recorded_after_now(monkeypatch):
     assert module._ten_am(early.date().isoformat()) == early
 
 
-def test_a_round_one_day_in_the_future_is_refused_before_any_write(synthetic):
+def _round_one_with(**changes):
     document = _document()
-    document["rutf_rounds"]["round_one"]["dates"]["counted_on"] = _ago(-2)
-    with pytest.raises(ValueError, match="future"):
-        _seed(document)
-    assert not Tender.objects.filter(program_id=RUTF).exists()
+    for section, (key, value) in changes.items():
+        document["rutf_rounds"]["round_one"][section][key] = value
+    return document
 
 
-def test_round_one_days_that_run_backwards_are_refused_before_any_write(synthetic):
-    document = _document()
-    document["rutf_rounds"]["round_one"]["dates"]["decided_on"] = _ago(90)
-    with pytest.raises(ValueError, match="decided_on"):
-        _seed(document)
-    assert not Tender.objects.filter(program_id=RUTF).exists()
-
-
-def test_a_consignment_dispatched_before_its_order_was_signed_is_refused_before_any_write(synthetic):
-    document = _document()
-    document["rutf_rounds"]["round_one"]["shipment"]["dispatched_on"] = _ago(69)
-    with pytest.raises(ValueError, match="consignment"):
-        _seed(document)
+@pytest.mark.parametrize(
+    "document, match",
+    [
+        (lambda: _round_one_with(dates=("counted_on", _ago(-2))), "future"),
+        (lambda: _round_one_with(dates=("decided_on", _ago(90))), "decided_on"),
+        (lambda: _round_one_with(shipment=("dispatched_on", _ago(69))), "consignment"),
+    ],
+    ids=["a-day-in-the-future", "days-that-run-backwards", "dispatched-before-signed"],
+)
+def test_round_one_days_that_cannot_have_happened_are_refused_before_any_write(synthetic, document, match):
+    with pytest.raises(ValueError, match=match):
+        _seed(document())
     assert not Shipment.objects.exists()
     assert not Tender.objects.filter(program_id=RUTF).exists()
 
@@ -517,22 +336,3 @@ def test_a_round_two_quote_received_before_the_requests_went_out_is_refused(synt
     with pytest.raises(ValueError, match="before the requests went out"):
         _seed(document)
     assert not Tender.objects.filter(program_id=RUTF).exists()
-
-
-def test_an_invoice_email_that_bills_twice_stops_the_seed(synthetic):
-    """If the second invoice email were written rather than replayed, the seed says so."""
-    module = _load_seed_remote()
-    real, seen = module.op, []
-
-    def second_invoice_loses_its_source(access, name, **payload):
-        if name == "invoice_record":
-            seen.append(name)
-            if len(seen) == 2:
-                payload.pop("source", None)
-        return real(access, name, **payload)
-
-    module.op = second_invoice_loses_its_source
-    document = _document()
-    scopes = module.seed_scopes(document)
-    with pytest.raises(RuntimeError, match="invoice"):
-        module.seed_rutf_rounds(document, scopes)

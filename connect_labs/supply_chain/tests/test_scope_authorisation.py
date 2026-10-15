@@ -185,9 +185,6 @@ def test_the_system_escape_hatch_is_greppable():
         "supply_chain/management/commands/supply_ingest_visit_consumption.py",
         # The visit-reader beat task: no user, synthetic programmes only, a real one skipped by name.
         "supply_chain/stock/services/visit_reader.py",
-        # The stock-from-visits seeder: operator-run through its command, and
-        # it writes only its own registered labs-only programme (purge refuses others).
-        "supply_chain/demo/stock_from_visits.py",
         # The clone's supply seeder: operator-run through its command; refuses any programme that is not a
         # labs-only one, and any opportunity not filed under it, before it reads a visit.
         "supply_chain/demo/clone_supply.py",
