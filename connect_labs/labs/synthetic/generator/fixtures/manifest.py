@@ -710,6 +710,16 @@ class Manifest(BaseModel):
     # Capped at 0.5 rather than 1.0: over_limit is an edge condition, and a manifest
     # asking for a majority of visits to be over-cap is a typo, not a scenario.
     over_limit_rate: float = Field(ge=0, le=0.5, default=0.0)
+    # The source's own status mix, for flagged and for unflagged visits:
+    # {"flagged": {status: share}, "unflagged": {...}} (profiler.profile_status_by_flag).
+    # When present it decides a visit's status in place of the fixed rules in
+    # status.decide_visit_status. Connect flags a visit and still approves it: at KMC
+    # EHA 98% of flagged visits were approved or over the cap, where the fixed rule
+    # made them 60% pending and 40% rejected -- 17% of the clone's visits left out of
+    # every report that counts valid visits.
+    status_by_flag: dict[
+        Literal["flagged", "unflagged"], dict[Literal["approved", "pending", "rejected", "over_limit"], float]
+    ] = Field(default_factory=dict)
 
     @classmethod
     def from_yaml(cls, source: str | bytes) -> Manifest:

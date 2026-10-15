@@ -265,6 +265,7 @@ def _build_mirror_visits(
             rng=rng,
             flag_reason_distribution=manifest.flag_reason_distribution,
             over_limit_rate=manifest.over_limit_rate,
+            status_by_flag=manifest.status_by_flag,
         )
         # A pool that authored this visit's review outcome wins over the draw. The draw
         # still runs, so the rng stream -- and every other visit -- is unchanged.
@@ -460,6 +461,7 @@ def generate(
             rng=rng,
             flag_reason_distribution=manifest.flag_reason_distribution,
             over_limit_rate=manifest.over_limit_rate,
+            status_by_flag=manifest.status_by_flag,
         )
         # One beneficiary index per visit, reused for the display name AND the
         # household GPS so repeat visits to the same beneficiary share a location.

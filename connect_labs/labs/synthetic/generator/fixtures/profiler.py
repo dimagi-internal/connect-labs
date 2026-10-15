@@ -88,6 +88,22 @@ def profile_over_limit_rate(all_visits: list[dict]) -> float:
     return min(0.5, round(n / len(all_visits), 3))
 
 
+def profile_status_by_flag(all_visits: list[dict]) -> dict[str, dict[str, float]]:
+    """The source's status mix for its flagged and for its unflagged visits (see
+    Manifest.status_by_flag); a branch with fewer than 5 visits is left out, and the
+    generator's fixed rule stands for it."""
+    counts: dict[str, Counter] = {"flagged": Counter(), "unflagged": Counter()}
+    for v in all_visits:
+        status = v.get("status")
+        if status in ("approved", "pending", "rejected", "over_limit"):
+            counts["flagged" if v.get("flagged") else "unflagged"][status] += 1
+    return {
+        branch: {status: round(n / sum(c.values()), 4) for status, n in sorted(c.items())}
+        for branch, c in counts.items()
+        if sum(c.values()) >= 5
+    }
+
+
 def _profile_flw_personas(
     visits_by_flw: dict[str, list[dict]],
     *,
@@ -1275,6 +1291,7 @@ def profile(
         # than left to default) so a clone of an opp that never hit its cap records 0.0
         # as a measurement, not as an absence.
         "over_limit_rate": profile_over_limit_rate(user_visits),
+        "status_by_flag": profile_status_by_flag(user_visits),
     }
     geography = _profile_geography(
         visits_by_flw, seed=noise_seed if noise_seed is not None else _mirror_noise_seed(opportunity_id)
