@@ -505,6 +505,12 @@ class MopupCreateRunView(LoginRequiredMixin, View):
                 r1_opportunity_id = int(r1_opportunity_id)
                 if r1_opportunity_id == target_opportunity_id:
                     raise ValueError("the R1 opportunity must differ from the opportunity being reviewed")
+                # The task reads this opportunity's work areas with the
+                # user's token and drops every match, so a wrong id would
+                # silently remove candidates: only this program's own.
+                program_opp_ids = {opp.get("id") for opp in _program_opportunities(request, program_id)}
+                if r1_opportunity_id not in program_opp_ids:
+                    raise ValueError("the R1 opportunity is not in this program")
         except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 

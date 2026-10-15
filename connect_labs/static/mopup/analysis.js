@@ -148,7 +148,7 @@ window.MopupAnalysis = (function () {
       const cfg = indicatorConfigs[def.key] || { enabled: true };
       return `<tr class="border-b border-gray-50 ${
         cfg.enabled ? '' : 'opacity-50'
-      }" data-key="${def.key}">
+      }" data-key="${esc(def.key)}">
           <td class="py-2 pr-2"><input type="checkbox" class="ind-enabled" ${
             cfg.enabled ? 'checked' : ''
           }></td>

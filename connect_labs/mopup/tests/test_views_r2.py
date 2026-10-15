@@ -237,3 +237,15 @@ def test_microplans_hub_links_to_wa_revisit_r2(client, django_user_model):
     resp = client.get(reverse("microplans:hub"))
     assert resp.status_code == 200
     assert b"/wa-revisit/r2/program/" in resp.content
+
+
+def test_create_run_rejects_an_r1_opportunity_outside_the_program(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _make_fake_run_da(monkeypatch)
+    resp = client.post(
+        reverse("mopup:create_run", kwargs={"program_id": 217}),
+        data={"opportunity_id": 2156, "round": "r2", "r1_opportunity_id": 9999},
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+    assert b"not in this program" in resp.content
