@@ -87,8 +87,11 @@ class SimpleMicroplan(models.Model):
 
     Two kinds, told apart by ``program_id``:
 
-      * NULL -- a quick test plan that belongs to no program. Every user who can
-        open the creator sees the list at `/microplans/simple/`.
+      * NULL -- a global plan, listed at `/microplans/simple/`. It records the labs
+        context (organisation / program / opportunity) picked when it was made, and
+        whoever can pick that context may open and change it
+        (``simple_views.ContextAccess``). One made with nothing picked (and every
+        plan from before contexts) is its creator's, and Dimagi staff's, only.
       * set -- a plan in a WORKSPACE program (``labs.workspaces``), made at
         `/microplans/program/<id>/simple/` and filed under ``team`` (a Connect org
         slug; blank = Program Managers only). It follows the workspace's roles and
@@ -96,10 +99,20 @@ class SimpleMicroplan(models.Model):
     """
 
     name = models.CharField(max_length=200)
-    # The labs-only workspace program this plan belongs to; NULL for a global test plan.
+    # The labs-only workspace program this plan belongs to; NULL for a global plan.
     program_id = models.IntegerField(null=True, blank=True, db_index=True)
     # Workspace plans only: the Connect org slug of the team that owns it ("" = PMs only).
     team = models.CharField(max_length=200, blank=True, default="")
+    # Global plans only: the context picked when the plan was made (any may be blank).
+    # Kept apart from ``program_id``, which files a plan inside a workspace program.
+    # Names are copied in so the plan can say where it belongs to someone whose own
+    # Connect tree does not hold that organisation / program / opportunity.
+    organization_slug = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    organization_name = models.CharField(max_length=255, blank=True, default="")
+    context_program_id = models.IntegerField(null=True, blank=True, db_index=True)
+    program_name = models.CharField(max_length=255, blank=True, default="")
+    opportunity_id = models.IntegerField(null=True, blank=True, db_index=True)
+    opportunity_name = models.CharField(max_length=255, blank=True, default="")
     created_by = models.ForeignKey(
         "users.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="simple_microplans"
     )
@@ -116,6 +129,14 @@ class SimpleMicroplan(models.Model):
 
     def __str__(self) -> str:
         return self.name
+
+    @property
+    def context_names(self) -> list[str]:
+        """The recorded organisation, program and opportunity names, in that order."""
+        names = [self.organization_name or self.organization_slug]
+        names.append(self.program_name or (f"Program #{self.context_program_id}" if self.context_program_id else ""))
+        names.append(self.opportunity_name or (f"Opportunity #{self.opportunity_id}" if self.opportunity_id else ""))
+        return [n for n in names if n]
 
 
 class TaskOwner(models.Model):

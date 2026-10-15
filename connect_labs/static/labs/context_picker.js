@@ -110,6 +110,10 @@
         '/custom_analysis/': ['orgs', 'programs', 'opps'],
         '/funder/': ['orgs', 'programs', 'opps'],
         '/labs/synthetic/': ['orgs', 'programs', 'opps'],
+        // The global Simple Microplan list + editor: plans belong to the context
+        // they were made in. A workspace program's own pages
+        // (/microplans/program/<id>/simple/) are not matched and stay unchanged.
+        '/microplans/simple/': ['orgs', 'programs', 'opps'],
       },
 
       pathSupports(filter) {

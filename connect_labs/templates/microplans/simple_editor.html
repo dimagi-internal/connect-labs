@@ -21,6 +21,9 @@
         <button class="link-btn" id="mp-rename-btn">Rename</button>
       </div>
       <p class="muted" id="mp-meta"></p>
+      {% if not in_workspace %}
+      <p class="muted" id="mp-context">{% if plan.context_names %}Context: {{ plan.context_names|join:" / " }}{% else %}No context: only its creator and Dimagi staff can open it{% endif %}</p>
+      {% endif %}
       <p class="readonly-note" id="mp-readonly" style="display:none">
         View only &mdash; only the person who created this microplan can change it. You can still export the CSV.
       </p>

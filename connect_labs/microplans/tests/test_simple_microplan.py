@@ -75,15 +75,16 @@ def test_create_without_name_is_refused(client, owner):
     assert not SimpleMicroplan.objects.exists()
 
 
-def test_list_shows_every_plan_with_its_creator(client, plan, other):
-    client.force_login(other)
+def test_with_nothing_picked_the_list_shows_only_your_own_plans(client, plan, owner, other):
+    client.force_login(owner)
     resp = client.get(reverse("microplans:simple_list"))
-    assert resp.status_code == 200
+    assert list(resp.context["plans"]) == [plan]
     body = resp.content.decode()
-    assert "Kaduna test" in body
     assert "Owner" in body
-    # someone else's plan: no delete button
-    assert reverse("microplans:simple_delete", kwargs={"plan_id": plan.pk}) not in body
+    assert reverse("microplans:simple_delete", kwargs={"plan_id": plan.pk}) in body
+    # A plan with no context is its creator's (and Dimagi staff's) only.
+    client.force_login(other)
+    assert list(client.get(reverse("microplans:simple_list")).context["plans"]) == []
 
 
 def test_editor_carries_saved_state(client, plan, owner):
@@ -134,11 +135,10 @@ def test_bad_body_is_400(client, plan, owner):
     assert _post_api(client, plan, {"data": {"rows": "not a list"}}).status_code == 400
 
 
-def test_someone_else_opens_read_only_and_cannot_change_it(client, plan, other):
+def test_someone_else_cannot_open_or_change_a_plan_with_no_context(client, plan, other):
     client.force_login(other)
-    resp = client.get(reverse("microplans:simple_editor", kwargs={"plan_id": plan.pk}))
-    assert resp.context["plan_state"]["editable"] is False
-    assert _post_api(client, plan, {"name": "hijacked"}).status_code == 403
+    assert client.get(reverse("microplans:simple_editor", kwargs={"plan_id": plan.pk})).status_code == 404
+    assert _post_api(client, plan, {"name": "hijacked"}).status_code == 404
     assert client.post(reverse("microplans:simple_delete", kwargs={"plan_id": plan.pk})).status_code == 404
     plan.refresh_from_db()
     assert plan.name == "Kaduna test"

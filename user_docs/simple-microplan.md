@@ -11,11 +11,11 @@ Open it from the Labs overview: **Microplans → Simple Microplan**.
 
 ## Getting started
 
-1. On the **Simple Microplans** page, type a name in **New microplan** and click **Create**. The name and your name (as the creator) are saved straight away.
+1. Pick the organization, program or opportunity the microplan is for in the context picker at the top right (see **Who can see and change a microplan** below). Then, on the **Simple Microplans** page, type a name in **New microplan** and click **Create**. The name, your name (as the creator) and what is picked in the context picker are saved straight away.
 2. The microplan opens on a map, with the steps on the right: **Find a place**, then **1 Boundary**, **2 Work areas**, **3 Grouping** and **4 Export**.
 3. Work through the steps in order. With several boundaries, do steps 2 and 3 for each one (click it in the **Boundaries** list first), then export once in step 4. Your work saves automatically; you can also click **Save** (or press Ctrl/⌘ + S) at any time.
 
-The list on the Simple Microplans page shows every saved microplan, who created it, when it was created and last saved, and how many work areas it has. Click a name to open it.
+The list on the Simple Microplans page shows the microplans of what is picked in the context picker, with the organization, program and opportunity each belongs to, who created it, when it was created and last saved, and how many work areas it has. Click a name to open it.
 
 ## Find a place
 
@@ -157,9 +157,14 @@ Connect will not import a work area with a blank Ward, LGA or State. Most work a
 
 ## Who can see and change a microplan
 
-- Everyone who can open Simple Microplan sees every saved microplan and who created it.
-- Only the person who created a microplan (and Dimagi staff) can change, rename or delete it.
-- Anyone else opens it **view only**: they can look around the map, see the groups and download both CSVs, but cannot change it.
+Simple Microplan uses the **context picker** (the organization, program and opportunity selector at the top right of the page). You do not need anyone to give you a role: what you can see follows the organizations, programs and opportunities your Connect account gives you.
+
+- **A new microplan belongs to what is picked** when you click **Create**: the organization, the program and the opportunity, whichever of them are picked. The list shows them in the **Context** column, and the microplan shows them under its name.
+- **The list shows the microplans of what is picked now.** The most specific choice wins: with an opportunity picked, you see that opportunity's microplans; otherwise, with a program picked, that program's; otherwise, with an organization picked, that organization's. With nothing picked, you see only the microplans you created.
+- **Who can open and change a microplan**: anyone who can pick its context in their own context picker (its opportunity; or, if it has none, its program; or, if it has neither, its organization), the person who created it, and Dimagi staff. They can open it, change it and rename it.
+- **A microplan made with nothing picked** (including every microplan made before Simple Microplan used the context picker) has no context. Only the person who created it and Dimagi staff can open or change it, and it is listed for its creator when nothing is picked.
+- **Only the person who created a microplan, or Dimagi staff, can delete it.** The **Delete** button is shown only to them.
+- A microplan you cannot open does not appear in your list, and its link says the page is not found.
 
 ### In a program with workspace roles (for example Auto-Connect or CLP Stage 4)
 

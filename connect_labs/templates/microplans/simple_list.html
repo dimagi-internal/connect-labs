@@ -17,6 +17,10 @@
       </p>
       {% else %}
       <p class="text-gray-600 text-sm mt-1">Draw a boundary, make work areas, group them and export the work-area CSV. Every microplan is saved here.</p>
+      <p id="mp-picked-context" class="text-xs text-gray-500 mt-1">
+        {% if picked_context %}Showing the microplans of <b>{{ picked_context }}</b> (from the context picker at the top right). A new microplan belongs to what is picked there.
+        {% else %}Nothing is picked in the context picker, so you see only the microplans you created. Pick an organization, program or opportunity at the top right to see its microplans; a new microplan belongs to what is picked.{% endif %}
+      </p>
       {% endif %}
     </div>
   </div>
@@ -71,7 +75,7 @@
       <thead class="bg-gray-50 text-gray-600 text-left">
         <tr>
           <th class="px-4 py-3 font-semibold">Name</th>
-          {% if workspace %}<th class="px-4 py-3 font-semibold">Team</th>{% endif %}
+          {% if workspace %}<th class="px-4 py-3 font-semibold">Team</th>{% else %}<th class="px-4 py-3 font-semibold">Context</th>{% endif %}
           <th class="px-4 py-3 font-semibold">Created by</th>
           <th class="px-4 py-3 font-semibold">Created</th>
           <th class="px-4 py-3 font-semibold">Last saved</th>
@@ -85,7 +89,8 @@
           <td class="px-4 py-3 font-medium">
             <a href="{{ plan.editor_url }}" class="text-indigo-700 hover:underline">{{ plan.name }}</a>
           </td>
-          {% if workspace %}<td class="px-4 py-3 text-gray-700">{{ plan.team_name|default:"Program Managers only" }}</td>{% endif %}
+          {% if workspace %}<td class="px-4 py-3 text-gray-700">{{ plan.team_name|default:"Program Managers only" }}</td>
+          {% else %}<td class="px-4 py-3 text-gray-700">{% for n in plan.context_names %}{% if not forloop.first %} <span class="text-gray-400">/</span> {% endif %}{{ n }}{% empty %}<span class="text-gray-400" title="Made with nothing picked in the context picker: only its creator and Dimagi staff can open it">None (creator only)</span>{% endfor %}</td>{% endif %}
           <td class="px-4 py-3 text-gray-700">{{ plan.created_by_name|default:"—" }}</td>
           <td class="px-4 py-3 text-gray-600 whitespace-nowrap">{{ plan.created_at|date:"j M Y, H:i" }}</td>
           <td class="px-4 py-3 text-gray-600 whitespace-nowrap">{{ plan.updated_at|date:"j M Y, H:i" }}</td>
@@ -105,7 +110,7 @@
     </table>
     </div>
     {% else %}
-    <p class="p-6 text-sm text-gray-500">No microplans yet. Name one above to start.</p>
+    <p class="p-6 text-sm text-gray-500">{% if picked_context %}No microplans for {{ picked_context }} yet.{% else %}No microplans yet.{% endif %} Name one above to start.</p>
     {% endif %}
   </div>
 </div>
