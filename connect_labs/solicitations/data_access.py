@@ -673,7 +673,10 @@ class SolicitationsDataAccess:
             "Only the organisation that owns this call (or platform support) can award it, "
             "and never a response from your own side.",
         )
-        if response.is_awarded:
+        # The one re-award allowed is the staged upgrade: a verification contract
+        # that went well becomes the full engagement (a new allocation for it).
+        upgrading = response.is_awarded and response.award_stage == "verification" and award_stage == "full"
+        if response.is_awarded and not upgrading:
             raise AlreadyAwarded(
                 "This response has already been awarded"
                 + (f" ({response.awarded_at:%d %b %Y})" if response.awarded_at else "")

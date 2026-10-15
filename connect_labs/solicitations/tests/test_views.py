@@ -450,11 +450,14 @@ def test_award_page_refuses_a_second_award(client, world):
     response = make_response(world["call"], world["applicant"], org_name="Firm Org")
     login(client, world["owner"])
     client.post(url("award", pk=response.pk), {"reward_budget": "500", "award_stage": "verification"})
-    resp = client.post(url("award", pk=response.pk), {"reward_budget": "900", "award_stage": "full"})
+    resp = client.post(url("award", pk=response.pk), {"reward_budget": "500", "award_stage": "verification"})
     assert resp.status_code == 409
     assert "already been awarded" in resp.content.decode()
+    client.post(url("award", pk=response.pk), {"reward_budget": "900", "award_stage": "full"})  # the staged upgrade
+    resp = client.post(url("award", pk=response.pk), {"reward_budget": "1", "award_stage": "full"})
+    assert resp.status_code == 409
     response.refresh_from_db()
-    assert response.reward_budget == 500 and response.award_stage == "verification"
+    assert response.reward_budget == 900 and response.award_stage == "full"
 
 
 def test_demo_calls_are_unlisted_reachable_and_bannered(client):

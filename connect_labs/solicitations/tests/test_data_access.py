@@ -510,6 +510,21 @@ def test_award_twice_is_refused_without_a_second_allocation(world):
     assert response.reward_budget == 10
 
 
+def test_verification_award_can_be_upgraded_to_full_once(world):
+    from connect_labs.solicitations.data_access import AlreadyAwarded
+
+    call = make_call(world["owner_org"], fund_id=9)
+    response = make_response(call, world["applicant"])
+    with patch("connect_labs.funder_dashboard.data_access.FunderDashboardDataAccess") as fda:
+        da(world["owner"], access_token="tok").award_response(response.pk, reward_budget=10)
+        da(world["owner"], access_token="tok").award_response(response.pk, reward_budget=90, award_stage="full")
+        with pytest.raises(AlreadyAwarded):
+            da(world["owner"], access_token="tok").award_response(response.pk, reward_budget=5, award_stage="full")
+    assert fda.return_value.add_allocation.call_count == 2
+    response.refresh_from_db()
+    assert (response.award_stage, response.reward_budget) == ("full", 90)
+
+
 def test_one_draft_per_user_is_a_database_constraint(world):
     from django.db import IntegrityError, transaction
 
