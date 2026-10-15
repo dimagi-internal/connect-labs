@@ -161,6 +161,34 @@ If you submit a request that is identical to one already running, Labs returns t
 
 ---
 
+## Long-Running Tools
+
+Some MCP tools — such as grading a programme's indicators as of a past date or rebuilding a report's full history — can take several minutes to complete. These tools run as **background jobs** so that they survive a Labs update mid-run and do not hold the connection open.
+
+### How it works
+
+When you ask Claude to run one of these tools:
+
+1. Labs starts the work in the background and returns a **job id** straight away.
+2. If the job finishes within about 30 seconds, the result comes back immediately, just as it always did.
+3. If it is still running after 30 seconds, Claude uses the `job_status` tool to check on it periodically and reports progress to you. When the job is done, `job_status` returns the full result.
+
+You do not need to do anything differently — Claude handles the checking automatically.
+
+### Job tools
+
+| Tool | What it does |
+| --- | --- |
+| `job_status` | Checks the progress of a running job and returns the result when it is done. Called with no id, it lists your recent jobs — useful if a job id has been lost. |
+| `job_cancel` | Stops a job that is still running. |
+
+**Only you can see your own jobs and their results.** Results are kept for one week after the job finishes.
+
+!!! tip "If a long-running task seems to have disappeared"
+    Ask Claude to run `job_status` with no id to list your recent jobs. The job is most likely still running or has finished and its result is waiting.
+
+---
+
 ## SQL Explorer
 
 The SQL explorer at [labs.connect.dimagi.com/labs/explorer/](https://labs.connect.dimagi.com/labs/explorer/) lets you query live visit data for the opportunities you have access to, without needing a developer to write reports.
@@ -211,36 +239,4 @@ You can also choose the home page from **Settings → Labs**, which shows a list
 
 Anyone who can change the Settings of the organisation, program, or opportunity that owns a page can edit it. In the workflow list, those people see an **Edit page** link next to the workflow. People who can view the page but cannot change its Settings do not see the link, and Labs will refuse their edits even if they navigate directly to the editor's address.
 
-**Dimagi staff** — anyone signed in with a @dimagi.com or @dimagi-ai.com email — can change Settings and edit pages for any scope, including labs-only organisations. Previously, a Dimagi person opening such a scope's Settings would be told that Dimagi staff could change it, and was then refused. The message now correctly reflects the rule.
-
-### Opening a page vs. creating a run
-
-In the workflow list, a page workflow shows **Open page** rather than **Create Run**. This applies to all pages, including any workflow created from the blank page template before pages were formally introduced. The MCP tools will also refuse to start a run on a page-type workflow — open it in your browser instead.
-
----
-
-## Microplans Access for Labs-Only Programs
-
-Microplans (the portfolio, plan, group, review, compare, and create pages, and all their actions) follow the same access rules as the rest of Connect Labs for labs-only (synthetic) programs.
-
-For a **labs-only program**, those pages are visible only to:
-
-- The person who created the program
-- Dimagi staff (anyone signed in with a @dimagi.com or @dimagi-ai.com email)
-- Users whose email domain the program explicitly allows
-
-Anyone else who navigates to a microplans page for a labs-only program will see a "not found" page rather than an error or partial view.
-
-**Real Connect programs are not affected** — their microplans pages continue to follow the same access rules they always have.
-
-### Workspace programs with
-
----
-
-## PMC State Selection
-
-The PMC page helps you identify the best states to target for a perennial malaria chemoprevention (PMC) programme.
-
-### Candidate states: where SMC doesn't run
-
-PMC is typically deployed in states where seasonal malaria chemoprev
+**Dimagi staff** — anyone signed in with a @dimagi.com or @dimagi-ai.com email — can change Settings and edit pages for any scope, including labs-only organisations. Previously, a Dimagi
