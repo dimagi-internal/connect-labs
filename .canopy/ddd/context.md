@@ -17,7 +17,7 @@ perfect demo (Jonathan, 2026-09-28). That is why this repo runs DDD with `loop.o
 (`.canopy/ddd/config.yaml`): the demo is the probe; product findings decide.
 
 Other supply narratives (`supply-sophie-rutf`, `supply-test-kits`, `supply-chc-copacks`,
-`supply-chlorine-stopgap`, `supply-dispenser-import`, `supply-iptsc-shortfall`, `oes-supply-base`)
+`supply-chlorine-stopgap`, `supply-dispenser-import`, `supply-iptsc-shortfall`)
 and older ones (`nutrition-demo`, microplans, solicitations) live in `docs/walkthroughs/`.
 
 ## base_url

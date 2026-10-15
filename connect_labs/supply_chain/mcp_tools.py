@@ -64,11 +64,8 @@ def _make_handler(operation):
 # they do. Renaming is a breaking change to 73 tool names, taken once, rather
 # than carrying a lie in every one of them.
 #
-# `supply_` alone would collide: the OES demo app already registers
-# `supply_demo_reseed`, and the parity test -- which asserts that every tool
-# under this prefix came from this registry -- caught it immediately. The app
-# label is `supply_chain`, so that is the prefix, and it is one character
-# longer than the wrong name it replaces.
+# The app label is `supply_chain`, so that is the prefix. (Plain `supply_`
+# was taken when this was chosen, by a since-removed demo app's tool.)
 TOOL_PREFIX = "supply_chain_"
 
 

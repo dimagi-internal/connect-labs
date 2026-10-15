@@ -51,14 +51,14 @@ class TestAvailableClasses:
         assert "zzzprobe-vendor" in available_classes(directory)
 
     def test_ignores_bundles_the_runner_page_does_not_load(self, tmp_path):
-        """`webpack/build-supply.js` writes supply-bundle.css into the same
-        directory, but `templates/base.html` never links it. Reading it would
+        """A build can write another sheet into the same directory that
+        `templates/base.html` never links. Reading it would
         let a render_code using one of its classes (`btn`, `card`, `field`)
         pass as available while rendering completely unstyled — a MISSED
         warning of exactly the class this module exists to catch."""
         directory = _bundle(tmp_path)
-        (directory / "supply-bundle.css").write_text(".zzzprobe-supply { color: teal; }", encoding="utf-8")
-        assert "zzzprobe-supply" not in available_classes(directory)
+        (directory / "other-bundle.css").write_text(".zzzprobe-other { color: teal; }", encoding="utf-8")
+        assert "zzzprobe-other" not in available_classes(directory)
 
     def test_cache_is_published_as_one_entry(self, tmp_path):
         """Two writes left a window where a reader saw a fresh key with a stale

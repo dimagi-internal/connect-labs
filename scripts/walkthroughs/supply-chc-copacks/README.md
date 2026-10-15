@@ -5,7 +5,7 @@ The recipe is `docs/walkthroughs/supply-chc-copacks.recipe.yaml`, and canopy-web
 
 - **Programme:** labs-only 10601, registered through `synthetic_create_labs_only` (opportunity 10070).
 - **Setup:** `ensure_demo.py` runs `seed_remote.py` on the labs worker over ECS exec. It needs `AWS_PROFILE=labs`. The setup purges 10601 and seeds it again through `call_operation`. Then it writes `.realized.json`, which is gitignored because it holds the update link's raw token.
-- **Auth:** this is core labs, not the `/oes/` form login. Render with a labs session, either `--storage-state ~/.ace/labs-session.json` or, when other narratives are rendering at the same time, a session minted just for this one. The programme context lives in the server session, so two renders sharing a session switch each other's programme mid-take. `/supply/u/<token>/` needs no login.
+- **Auth:** this is core labs. Render with a labs session, either `--storage-state ~/.ace/labs-session.json` or, when other narratives are rendering at the same time, a session minted just for this one. The programme context lives in the server session, so two renders sharing a session switch each other's programme mid-take. `/supply/u/<token>/` needs no login.
 - **Needs deployed:** the seed uses `payment_terms`, `award_create(decided_on=…)`, a round line's `components` and release-rated stores. Run it only against a labs that has them.
 
 What each scene performs:

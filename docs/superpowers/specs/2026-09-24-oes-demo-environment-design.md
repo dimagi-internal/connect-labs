@@ -399,8 +399,7 @@ the comparison engine, the approval gate, the stock ledger.
 
 ## 11. Open question, not resolved here
 
-`connect_labs/supply/README.md` describes Operation End Starvation as "an
-invented multi-country famine-response initiative". OES is a real
-organisation and a live prospect, and that sentence is in a public
-repository. It should be corrected or the framing reconsidered, separately
-from this work.
+Resolved 2026-10-14: the old OES demo app (`connect_labs/supply/`), whose README
+described Operation End Starvation as "an invented multi-country famine-response
+initiative", was removed from the repo along with that sentence. OES is a real
+organisation and a live prospect.

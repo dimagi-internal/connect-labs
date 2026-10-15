@@ -82,7 +82,7 @@ _LABS_SKIP_PATH_PREFIXES = (
 # `LABS_SATELLITE_URL_PREFIXES` setting (alongside their INSTALLED_APPS + urls
 # entries) rather than importing labs — see docs/multi-site-auth.md. Kept as a
 # host setting so a new site is one config line, not an edit to this module.
-_DEFAULT_SATELLITE_URL_PREFIXES = ("/oes/", "/campaign/")
+_DEFAULT_SATELLITE_URL_PREFIXES = ("/campaign/",)
 
 
 def get_skip_path_prefixes() -> tuple[str, ...]:

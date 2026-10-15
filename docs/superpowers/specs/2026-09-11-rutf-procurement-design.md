@@ -45,8 +45,8 @@ antimalarials, rapid diagnostic tests, dewormers, MUAC tapes, scales — without
 second app.
 
 It lives at **`/supply/`**, because procurement is one sub-component of the supply
-domain and tracking and distribution follow it. The OES demo site, which held that
-address, moves to `/oes/`.
+domain and tracking and distribution follow it. The invented OES demo site, which held that
+address, moved to `/oes/` and was later removed from the repo on 2026-10-14.
 
 ## 1. Why now
 
@@ -75,27 +75,23 @@ screens. That is the seam that makes the second sub-component cheap.
 The API is **domain-level, not per sub-component**: one endpoint dispatches the whole
 registry, so a tracking operation added later needs no routing work.
 
-`/supply/` is currently the OES demo satellite. It moves to `/oes/` — URL prefix,
-namespace, its own tests, and the four live walkthrough recipes. Its Python package
-stays `connect_labs/supply/` and its Django app label stays `supply`: renaming the
-package would rewrite ~16k lines of internal imports and renaming the label would
-orphan its migration history, both for an app slated for retirement. Historical
-artifacts that record a rendered run — the DDD run reports, narrative locks, the
-2026-07-25 design doc — are **not** rewritten; editing them would falsify history.
+`/supply/` was the OES demo satellite (`connect_labs/supply/`, app label `supply`). It
+moved to `/oes/` when this shipped, and the whole app — code, tables, walkthroughs and
+its design doc — was removed from the repo on 2026-10-14.
 
 **In:** commodity catalogue, supplier registry, quote rounds, outreach tracking,
 quote capture, honest normalisation, spec compliance, award with rationale, recorded
 purchases, cost library. Web UI, HTTP API and MCP tools over all of it.
 
-**Out of v1:** the two-stage EOI → qualification → RFP → per-lot bid scoring in
-`connect_labs/supply/` (that models competitive tendering; this models chasing nine
+**Out of v1:** the two-stage EOI → qualification → RFP → per-lot bid scoring the old OES
+demo app modelled (that models competitive tendering; this models chasing nine
 manufacturers for a reply). EPCIS ingestion, flow maps, funder views, facilities as
 supply nodes. Payment execution — LLOs transact; we record what they paid.
 
 ## 3. Relationship to prior work
 
-**`connect_labs/supply/`** (the OES satellite site, now served at `/oes/`) stays as a
-design reference and is expected to be retired once this ships.
+**The OES satellite site** (`connect_labs/supply/`, served at `/oes/`, removed from the repo on 2026-10-14) was a
+design reference.
 Three principles carry over: derived values are never typed in, the
 sachet → carton → course unit ladder, and one module computes a given figure so every
 screen agrees. Nothing is imported — it has zero cross-app imports by design and
@@ -354,9 +350,9 @@ GDSN/GDD-compatible so we could join later without a migration.
 vocabulary (`epcClass`, `bizStep`, `disposition`, `readPoint`, `bizLocation`) is the shape
 that log wants, and inventing a parallel vocabulary would be a straight loss.
 
-**Implementation note.** `connect_labs/supply/gs1.py` already implements the mod-10 check
+**Implementation note.** The old OES app's `gs1.py` implemented the mod-10 check
 digit, GTIN/GLN/SSCC construction, `is_valid()`, and Digital Link build/parse in 100
-lines. It is **ported, not imported** — the OES app is being retired — and its
+lines. It was **ported, not imported** — that app has since been removed — and its
 `SACHETS_PER_CARTON = 150` / `SACHET_GRAMS = 92` / `CARTONS_PER_CHILD_TREATED = 1`
 constants are **dropped**: hardcoding the ladder is exactly what this design refuses, and
 those values now live on `commodity.base_per_pack`, `base_unit_grams` and
