@@ -7,6 +7,8 @@ Used by both the in-app AI chat panel and the Celery task runner.
 import logging
 from dataclasses import dataclass
 
+from asgiref.sync import sync_to_async
+from django.core.exceptions import PermissionDenied, ValidationError
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.settings import ModelSettings
 
@@ -24,6 +26,10 @@ You can:
 - Create new solicitations with all required details
 - Update existing solicitations
 - List responses to solicitations
+
+Every solicitation is owned by an organisation. When creating one, use the
+organisation the user names (its labs slug, as org_slug); if they name none,
+the selected programme's running organisation owns it.
 
 When creating a solicitation, ask for key details if not provided:
 - Title and description
@@ -46,13 +52,21 @@ class SolicitationAgentDeps:
 
 
 def _get_data_access(ctx: RunContext[SolicitationAgentDeps]) -> SolicitationsDataAccess:
-    """Create a SolicitationsDataAccess from agent context."""
+    """Data access as the user the agent is acting for (their standing applies)."""
     deps = ctx.deps.user_deps
     program_id = str(deps.program_id) if deps.program_id else None
     return SolicitationsDataAccess(
         request=deps.request,
+        user=deps.user,
         program_id=program_id,
     )
+
+
+def _refusal(exc: Exception) -> str:
+    if isinstance(exc, ValidationError):
+        detail = exc.message_dict if hasattr(exc, "message_dict") else exc.messages
+        return f"Could not save the solicitation: {detail}"
+    return f"Not allowed: {exc}"
 
 
 def _serialize_solicitation(s) -> dict:
@@ -64,6 +78,7 @@ def _serialize_solicitation(s) -> dict:
         "solicitation_type": s.solicitation_type,
         "status": s.status,
         "is_public": s.is_public,
+        "owner": s.owner_name,
         "program_name": s.program_name,
         "application_deadline": str(s.application_deadline) if s.application_deadline else None,
         "expected_start_date": str(s.expected_start_date) if s.expected_start_date else None,
@@ -97,9 +112,12 @@ def create_solicitation_agent_with_model(model: str) -> Agent[SolicitationAgentD
             status: Filter by status ('active', 'closed', 'draft', 'awarded').
             solicitation_type: Filter by type ('eoi', 'rfp').
         """
-        da = _get_data_access(ctx)
-        results = da.get_solicitations(status=status, solicitation_type=solicitation_type)
-        serialized = [_serialize_solicitation(s) for s in results]
+
+        def run():
+            results = _get_data_access(ctx).get_solicitations(status=status, solicitation_type=solicitation_type)
+            return [_serialize_solicitation(s) for s in results]
+
+        serialized = await sync_to_async(run)()
         if not serialized:
             return "No solicitations found."
         return f"Found {len(serialized)} solicitations: {serialized}"
@@ -114,11 +132,15 @@ def create_solicitation_agent_with_model(model: str) -> Agent[SolicitationAgentD
         Args:
             solicitation_id: The solicitation record ID.
         """
-        da = _get_data_access(ctx)
-        result = da.get_solicitation_by_id(solicitation_id)
-        if not result:
+
+        def run():
+            result = _get_data_access(ctx).get_solicitation_by_id(solicitation_id)
+            return _serialize_solicitation(result) if result else None
+
+        serialized = await sync_to_async(run)()
+        if not serialized:
             return f"Solicitation {solicitation_id} not found."
-        return f"Solicitation details: {_serialize_solicitation(result)}"
+        return f"Solicitation details: {serialized}"
 
     @agent.tool
     async def create_solicitation(
@@ -134,6 +156,7 @@ def create_solicitation_agent_with_model(model: str) -> Agent[SolicitationAgentD
         expected_end_date: str | None = None,
         estimated_scale: str = "",
         contact_email: str = "",
+        org_slug: str | None = None,
     ) -> str:
         """Create a new solicitation.
 
@@ -149,8 +172,8 @@ def create_solicitation_agent_with_model(model: str) -> Agent[SolicitationAgentD
             expected_end_date: Expected end date (YYYY-MM-DD format).
             estimated_scale: Scale description (e.g. '1000 beneficiaries').
             contact_email: Contact email for inquiries.
+            org_slug: The owning organisation's labs slug (defaults to the programme's running organisation).
         """
-        deps = ctx.deps.user_deps
         data = {
             "title": title,
             "description": description,
@@ -163,11 +186,21 @@ def create_solicitation_agent_with_model(model: str) -> Agent[SolicitationAgentD
             "expected_end_date": expected_end_date,
             "estimated_scale": estimated_scale,
             "contact_email": contact_email,
-            "created_by": deps.user.username if deps.user else "",
         }
-        da = _get_data_access(ctx)
-        result = da.create_solicitation(data)
-        return f"Created solicitation '{result.title}' (ID: {result.pk}, status: {result.status})"
+        if org_slug:
+            data["org_slug"] = org_slug
+
+        def run():
+            try:
+                result = _get_data_access(ctx).create_solicitation(data)
+            except (ValidationError, PermissionDenied) as e:
+                return _refusal(e)
+            return (
+                f"Created solicitation '{result.title}' for {result.owner_name} "
+                f"(ID: {result.pk}, status: {result.status})"
+            )
+
+        return await sync_to_async(run)()
 
     @agent.tool
     async def update_solicitation(
@@ -221,9 +254,16 @@ def create_solicitation_agent_with_model(model: str) -> Agent[SolicitationAgentD
         if not data:
             return "No fields provided to update."
 
-        da = _get_data_access(ctx)
-        result = da.update_solicitation(solicitation_id, data)
-        return f"Updated solicitation '{result.title}' (ID: {result.pk}). Changed fields: {list(data.keys())}"
+        def run():
+            try:
+                result = _get_data_access(ctx).update_solicitation(solicitation_id, data)
+            except (ValidationError, PermissionDenied) as e:
+                return _refusal(e)
+            except Exception:
+                return f"Solicitation {solicitation_id} not found."
+            return f"Updated solicitation '{result.title}' (ID: {result.pk}). Changed fields: {list(data.keys())}"
+
+        return await sync_to_async(run)()
 
     @agent.tool
     async def list_responses(
@@ -235,19 +275,21 @@ def create_solicitation_agent_with_model(model: str) -> Agent[SolicitationAgentD
         Args:
             solicitation_id: The solicitation record ID.
         """
-        da = _get_data_access(ctx)
-        results = da.get_responses_for_solicitation(solicitation_id)
-        if not results:
+
+        def run():
+            return [
+                {
+                    "id": r.pk,
+                    "status": r.status,
+                    "submitted_by": r.submitted_by_name,
+                    "llo_entity": r.llo_entity_name,
+                }
+                for r in _get_data_access(ctx).get_responses_for_solicitation(solicitation_id)
+            ]
+
+        serialized = await sync_to_async(run)()
+        if not serialized:
             return f"No responses found for solicitation {solicitation_id}."
-        serialized = [
-            {
-                "id": r.pk,
-                "status": r.status,
-                "submitted_by": r.submitted_by_name,
-                "llo_entity": r.llo_entity_name,
-            }
-            for r in results
-        ]
         return f"Found {len(serialized)} responses: {serialized}"
 
     @agent.tool

@@ -1,382 +1,146 @@
-"""Tests for migrated review MCP tools (B.3).
-
-Covers all 4 tools: list_reviews, get_review (reads), create_review, update_review (writes).
-"""
-
-from datetime import timedelta
-from unittest.mock import MagicMock, patch
+"""The 4 review MCP tools, on the labs database: only a call's owner reviews it."""
 
 import pytest
-from django.utils import timezone
 
-from connect_labs.labs.models import UserConnectToken
 from connect_labs.mcp.models import MCPAccessToken
 from connect_labs.mcp.testing import call_tool
 from connect_labs.mcp.tool_registry import get_tool
-from connect_labs.users.models import User
+from connect_labs.solicitations.tests.factories import (
+    grant,
+    make_call,
+    make_org,
+    make_response,
+    make_review,
+    make_user,
+)
 
-# ---------------------------------------------------------------------------
-# Fixtures and helpers
-# ---------------------------------------------------------------------------
+
+def pat(user):
+    _, raw = MCPAccessToken.create_token(user, name="t")
+    return raw
+
+
+def ok(envelope):
+    assert envelope["result"]["isError"] is False, envelope
+    return envelope["result"]["structuredContent"]
+
+
+def err(envelope):
+    return envelope["result"]["structuredContent"]["error"]["code"]
 
 
 @pytest.fixture
-def auth_user(db):
-    """User with a PAT AND a UserConnectToken (fully set up for tool calls)."""
-    user = User.objects.create(username="rev-test")
-    _, raw = MCPAccessToken.create_token(user, name="t")
-    UserConnectToken.objects.create(
-        user=user,
-        access_token="connect-tok",
-        expires_at=timezone.now() + timedelta(hours=1),
-    )
-    return user, raw
+def world(db):
+    owner_org = make_org("owner-org")
+    owner = make_user("owner")
+    grant(owner, owner_org)
+    applicant = make_user("applicant")
+    response = make_response(make_call(owner_org), applicant)
+    return {
+        "owner": owner,
+        "owner_pat": pat(owner),
+        "applicant": applicant,
+        "applicant_pat": pat(applicant),
+        "outsider_pat": pat(make_user("outsider")),
+        "owner_org": owner_org,
+        "response": response,
+    }
 
 
-def _call_tool(client, raw_pat, tool_name, arguments):
-    # client is unused: the MCP protocol endpoint is now a FastMCP ASGI app,
-    # not a Django view. call_tool drives the same auth/handler/audit/rate-limit
-    # path in-process and returns the same JSON-RPC-shaped envelope.
-    return call_tool(raw_pat, tool_name, arguments)
-
-
-def _make_mock_record(record_id, rtype, experiment="llo-entity-1", labs_record_id=None, data=None):
-    """Build a MagicMock that mimics a LocalLabsRecord."""
-    rec = MagicMock()
-    rec.id = record_id
-    rec.type = rtype
-    rec.experiment = experiment
-    rec.labs_record_id = labs_record_id
-    rec.data = data or {}
-    return rec
-
-
-# ---------------------------------------------------------------------------
-# Registry tests — is_write flags
-# ---------------------------------------------------------------------------
-
-
-def test_write_tools_flagged_is_write():
-    """Write tools must be registered with is_write=True so rate limiting and audit apply."""
+def test_registered_with_write_flags():
     for name in ("create_review", "update_review"):
-        tool = get_tool(name)
-        assert tool is not None, f"{name} not registered"
-        assert tool.is_write is True, f"{name} should have is_write=True"
-
-
-def test_read_tools_not_flagged_is_write():
-    """Read tools must NOT be flagged as writes."""
+        assert get_tool(name).is_write is True
     for name in ("list_reviews", "get_review"):
-        tool = get_tool(name)
-        assert tool is not None, f"{name} not registered"
-        assert tool.is_write is False, f"{name} should have is_write=False"
-
-
-# ---------------------------------------------------------------------------
-# list_reviews
-# ---------------------------------------------------------------------------
+        assert get_tool(name).is_write is False
 
 
 @pytest.mark.django_db
-@patch("connect_labs.mcp.tools.reviews.LabsRecordAPIClient")
-def test_list_reviews_happy_path(mock_client_cls, client, auth_user):
-    """Returns {reviews: [...]} scoped by response_id via labs_record_id."""
-    _, raw = auth_user
-    mock_client = MagicMock()
-    mock_client_cls.return_value = mock_client
-    mock_client.get_records.return_value = [
-        _make_mock_record(1, "solicitation_review", labs_record_id=10, data={"recommendation": "approved"}),
-        _make_mock_record(2, "solicitation_review", labs_record_id=10, data={"recommendation": "under_review"}),
-    ]
-
-    data = _call_tool(client, raw, "list_reviews", {"response_id": 10})
-
-    assert data["result"]["isError"] is False, data
-    content = data["result"]["structuredContent"]
-    assert "reviews" in content
-    assert len(content["reviews"]) == 2
-    first = content["reviews"][0]
-    assert first["id"] == 1
-    assert first["recommendation"] == "approved"
-    assert first["labs_record_id"] == 10
-
-    mock_client.get_records.assert_called_once_with(
-        type="solicitation_review",
-        labs_record_id=10,
-    )
-
-
-# ---------------------------------------------------------------------------
-# get_review
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-@patch("connect_labs.mcp.tools.reviews.LabsRecordAPIClient")
-def test_get_review_found(mock_client_cls, client, auth_user):
-    """Returns the flat record dict when found."""
-    _, raw = auth_user
-    mock_client = MagicMock()
-    mock_client_cls.return_value = mock_client
-    mock_client.get_record_by_id.return_value = _make_mock_record(
-        42, "solicitation_review", labs_record_id=10, data={"recommendation": "approved", "score": 85}
-    )
-
-    data = _call_tool(client, raw, "get_review", {"review_id": 42})
-
-    assert data["result"]["isError"] is False, data
-    content = data["result"]["structuredContent"]
-    assert content["id"] == 42
-    assert content["recommendation"] == "approved"
-    assert content["score"] == 85
-    mock_client.get_record_by_id.assert_called_once_with(42, type="solicitation_review")
-
-
-@pytest.mark.django_db
-@patch("connect_labs.mcp.tools.reviews.LabsRecordAPIClient")
-def test_get_review_not_found(mock_client_cls, client, auth_user):
-    """Returns an error when the record is missing."""
-    _, raw = auth_user
-    mock_client = MagicMock()
-    mock_client_cls.return_value = mock_client
-    mock_client.get_record_by_id.return_value = None
-
-    data = _call_tool(client, raw, "get_review", {"review_id": 999})
-
-    assert data["result"]["isError"] is True, data
-    assert data["result"]["structuredContent"]["error"]["code"] == "NOT_FOUND"
-
-
-# ---------------------------------------------------------------------------
-# create_review
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-@patch("connect_labs.mcp.tools.reviews.LabsRecordAPIClient")
-def test_create_review_happy_path(mock_client_cls, client, auth_user):
-    """Creates a review record and returns its serialized form."""
-    _, raw = auth_user
-    mock_client = MagicMock()
-    mock_client_cls.return_value = mock_client
-    mock_client.create_record.return_value = _make_mock_record(
-        77,
-        "solicitation_review",
-        experiment="llo-entity-1",
-        labs_record_id=10,
-        data={
-            "response_id": 10,
-            "llo_entity_id": "llo-entity-1",
-            "recommendation": "approved",
-            "score": 90,
-            "notes": "Great work",
-        },
-    )
-
-    data = _call_tool(
-        client,
-        raw,
+def test_create_review_requires_acknowledgment(world):
+    envelope = call_tool(
+        world["owner_pat"],
         "create_review",
-        {
-            "public_record_acknowledged": True,
-            "response_id": 10,
-            "llo_entity_id": "llo-entity-1",
-            "score": 90,
-            "recommendation": "approved",
-            "notes": "Great work",
-        },
+        {"public_record_acknowledged": False, "response_id": world["response"].pk, "llo_entity_id": "x"},
     )
+    assert err(envelope) == "POLICY_VIOLATION"
 
-    assert data["result"]["isError"] is False, data
-    content = data["result"]["structuredContent"]
-    assert content["id"] == 77
+
+@pytest.mark.django_db
+def test_create_review_shape_and_weighted_score(world):
+    content = ok(
+        call_tool(
+            world["owner_pat"],
+            "create_review",
+            {
+                "public_record_acknowledged": True,
+                "response_id": world["response"].pk,
+                "llo_entity_id": "individual",
+                "score": 10,
+                "recommendation": "approved",
+                "criteria_scores": {"c1": 10, "c2": 5},
+                "notes": "Strong methodology.",
+                "tags": "shortlist",
+            },
+        )
+    )
+    assert content["type"] == "solicitation_review"
+    assert content["labs_record_id"] == world["response"].pk
+    assert content["response_id"] == world["response"].pk
+    assert content["score"] == 80  # weighted from criteria, not the 10 sent
+    assert content["reviewer_username"] == "owner"
     assert content["recommendation"] == "approved"
-    assert content["score"] == 90
-    assert content["notes"] == "Great work"
-
-    # Verify create_record was called with correct args
-    mock_client.create_record.assert_called_once()
-    call_kwargs = mock_client.create_record.call_args.kwargs
-    assert call_kwargs["experiment"] == "llo-entity-1"
-    assert call_kwargs["type"] == "solicitation_review"
-    assert call_kwargs["labs_record_id"] == 10
-    assert call_kwargs["public"] is True
-    record_data = call_kwargs["data"]
-    assert record_data["recommendation"] == "approved"
-    assert record_data["score"] == 90
-    assert record_data["notes"] == "Great work"
-    assert "review_date" in record_data
 
 
 @pytest.mark.django_db
-@patch("connect_labs.mcp.tools.reviews.LabsRecordAPIClient")
-def test_create_review_minimal_params(mock_client_cls, client, auth_user):
-    """Creates a review with only the required params (defaults applied)."""
-    _, raw = auth_user
-    mock_client = MagicMock()
-    mock_client_cls.return_value = mock_client
-    mock_client.create_record.return_value = _make_mock_record(
-        78,
-        "solicitation_review",
-        experiment="llo-entity-2",
-        labs_record_id=20,
-        data={"response_id": 20, "llo_entity_id": "llo-entity-2", "recommendation": "under_review"},
-    )
-
-    data = _call_tool(
-        client,
-        raw,
-        "create_review",
-        {"public_record_acknowledged": True, "response_id": 20, "llo_entity_id": "llo-entity-2"},
-    )
-
-    assert data["result"]["isError"] is False, data
-    call_kwargs = mock_client.create_record.call_args.kwargs
-    # Default recommendation should be "under_review"
-    assert call_kwargs["data"]["recommendation"] == "under_review"
-    # Optional fields should not be present when not supplied
-    assert "score" not in call_kwargs["data"]
-    assert "notes" not in call_kwargs["data"]
-    assert "tags" not in call_kwargs["data"]
+def test_second_create_updates_the_same_review(world):
+    args = {"public_record_acknowledged": True, "response_id": world["response"].pk, "llo_entity_id": "x"}
+    first = ok(call_tool(world["owner_pat"], "create_review", {**args, "notes": "first"}))
+    second = ok(call_tool(world["owner_pat"], "create_review", {**args, "recommendation": "rejected"}))
+    assert first["id"] == second["id"]
+    assert second["notes"] == "first"
 
 
 @pytest.mark.django_db
-def test_create_review_requires_public_acknowledgment(client, auth_user):
-    """create_review raises POLICY_VIOLATION when public_record_acknowledged is false."""
-    _, raw = auth_user
-    data = _call_tool(
-        client,
-        raw,
-        "create_review",
-        {"public_record_acknowledged": False, "response_id": 1, "llo_entity_id": "llo-entity-1"},
-    )
-    assert data["result"]["structuredContent"]["error"]["code"] == "POLICY_VIOLATION"
-
-
-# ---------------------------------------------------------------------------
-# update_review
-# ---------------------------------------------------------------------------
+def test_respondent_and_outsider_cannot_review(world):
+    args = {"public_record_acknowledged": True, "response_id": world["response"].pk, "llo_entity_id": "x"}
+    assert err(call_tool(world["applicant_pat"], "create_review", args)) in ("PERMISSION_DENIED", "NOT_FOUND")
+    assert err(call_tool(world["outsider_pat"], "create_review", args)) == "NOT_FOUND"
+    grant(world["applicant"], world["owner_org"])  # even as a member of the owner
+    assert err(call_tool(world["applicant_pat"], "create_review", args)) == "PERMISSION_DENIED"
 
 
 @pytest.mark.django_db
-@patch("connect_labs.mcp.tools.reviews.LabsRecordAPIClient")
-def test_update_review_happy_path(mock_client_cls, client, auth_user):
-    """Merges update_data into existing data and returns the updated record."""
-    _, raw = auth_user
-    mock_client = MagicMock()
-    mock_client_cls.return_value = mock_client
-
-    existing = _make_mock_record(
-        42,
-        "solicitation_review",
-        experiment="llo-entity-1",
-        labs_record_id=10,
-        data={"recommendation": "under_review", "score": 50},
+def test_list_and_get_reviews_only_for_owner(world):
+    review = make_review(world["response"], world["owner"], score=55)
+    listed = ok(call_tool(world["owner_pat"], "list_reviews", {"response_id": world["response"].pk}))
+    assert [r["id"] for r in listed["reviews"]] == [review.pk]
+    assert (
+        ok(call_tool(world["applicant_pat"], "list_reviews", {"response_id": world["response"].pk}))["reviews"] == []
     )
-    mock_client.get_record_by_id.return_value = existing
+    assert ok(call_tool(world["owner_pat"], "get_review", {"review_id": review.pk}))["score"] == 55
+    assert err(call_tool(world["applicant_pat"], "get_review", {"review_id": review.pk})) == "NOT_FOUND"
 
-    updated = _make_mock_record(
-        42,
-        "solicitation_review",
-        experiment="llo-entity-1",
-        labs_record_id=10,
-        data={"recommendation": "approved", "score": 88},
+
+@pytest.mark.django_db
+def test_update_review_merges(world):
+    review = make_review(world["response"], world["owner"], score=55, notes="keep me")
+    content = ok(
+        call_tool(
+            world["owner_pat"],
+            "update_review",
+            {"review_id": review.pk, "update_data": {"recommendation": "approved", "is_public": True}},
+        )
     )
-    mock_client.update_record.return_value = updated
-
-    data = _call_tool(
-        client,
-        raw,
-        "update_review",
-        {"review_id": 42, "update_data": {"recommendation": "approved", "score": 88}},
-    )
-
-    assert data["result"]["isError"] is False, data
-    content = data["result"]["structuredContent"]
-    assert content["id"] == 42
     assert content["recommendation"] == "approved"
-    assert content["score"] == 88
-
-    # Verify merged data passed to update_record
-    mock_client.update_record.assert_called_once()
-    call_kwargs = mock_client.update_record.call_args.kwargs
-    assert call_kwargs["record_id"] == 42
-    assert call_kwargs["experiment"] == existing.experiment
-    assert call_kwargs["type"] == existing.type
-    merged = call_kwargs["data"]
-    assert merged["recommendation"] == "approved"
-    assert merged["score"] == 88
+    assert content["notes"] == "keep me"
+    assert err(call_tool(world["owner_pat"], "update_review", {"review_id": 999_999_999, "update_data": {}})) == (
+        "NOT_FOUND"
+    )
 
 
 @pytest.mark.django_db
-@patch("connect_labs.mcp.tools.reviews.LabsRecordAPIClient")
-def test_update_review_not_found(mock_client_cls, client, auth_user):
-    """Returns NOT_FOUND error when the review does not exist."""
-    _, raw = auth_user
-    mock_client = MagicMock()
-    mock_client_cls.return_value = mock_client
-    mock_client.get_record_by_id.return_value = None
-
-    data = _call_tool(
-        client,
-        raw,
-        "update_review",
-        {"review_id": 999, "update_data": {"recommendation": "rejected"}},
-    )
-
-    assert data["result"]["isError"] is True, data
-    assert data["result"]["structuredContent"]["error"]["code"] == "NOT_FOUND"
-
-
-@pytest.mark.django_db
-@patch("connect_labs.mcp.tools.reviews.LabsRecordAPIClient")
-def test_update_review_strips_public_flag(mock_client_cls, client, auth_user):
-    """update_review strips is_public/public from update_data before merging."""
-    _, raw = auth_user
-    mock_client = MagicMock()
-    mock_client_cls.return_value = mock_client
-
-    existing = _make_mock_record(
-        42,
-        "solicitation_review",
-        experiment="llo-entity-1",
-        labs_record_id=10,
-        data={"recommendation": "under_review", "score": 50},
-    )
-    mock_client.get_record_by_id.return_value = existing
-    mock_client.update_record.return_value = existing
-
-    _call_tool(
-        client,
-        raw,
-        "update_review",
-        {"review_id": 42, "update_data": {"score": 80, "is_public": True, "public": True}},
-    )
-
-    call_kwargs = mock_client.update_record.call_args.kwargs
-    merged = call_kwargs["data"]
-    assert "is_public" not in merged, "is_public must be stripped before merge"
-    assert "public" not in merged, "public must be stripped before merge"
-
-
-# ---------------------------------------------------------------------------
-# Missing Connect token
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_review_tools_require_connect_token(client, db):
-    """All review tools fail with PERMISSION_DENIED when the user has no Connect token."""
-    user = User.objects.create(username="no-conn-rev")
-    _, raw = MCPAccessToken.create_token(user, name="t")
-
-    for name, args in [
-        ("list_reviews", {"response_id": 1}),
-        ("get_review", {"review_id": 1}),
-        ("create_review", {"public_record_acknowledged": True, "response_id": 1, "llo_entity_id": "llo-entity-1"}),
-        ("update_review", {"review_id": 1, "update_data": {"recommendation": "approved"}}),
-    ]:
-        resp_data = _call_tool(client, raw, name, args)
-        assert (
-            resp_data["result"]["structuredContent"]["error"]["code"] == "PERMISSION_DENIED"
-        ), f"{name} should return PERMISSION_DENIED without a Connect token"
+def test_only_the_reviewer_updates(world):
+    review = make_review(world["response"], world["owner"], score=55)
+    colleague = make_user("colleague")
+    grant(colleague, world["owner_org"])
+    envelope = call_tool(pat(colleague), "update_review", {"review_id": review.pk, "update_data": {"notes": "x"}})
+    assert err(envelope) == "PERMISSION_DENIED"

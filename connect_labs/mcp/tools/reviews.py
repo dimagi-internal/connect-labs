@@ -1,18 +1,20 @@
-"""Review tools — migrated from _pending_migration/review_tools.py.
+"""Review tools: an owner's scoring of the responses to its call.
 
-Reviews are LabsRecord entries with type="solicitation_review".
-Scoped by llo_entity_id (see CLAUDE.md record-type conventions).
-The labs_record FK on a review points to the response record, not the solicitation.
+Reviews live in the labs database (``SolicitationReview``) and are the owning
+organisation's working notes: only its members and platform support read or
+write them, and never on a response from their own side (see
+``solicitations/access.py``). One review per reviewer per response.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 
-from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClient
+from django.core.exceptions import PermissionDenied
 
-from ..connect_token import require_connect_token
+from connect_labs.solicitations.data_access import SolicitationsDataAccess
+from connect_labs.solicitations.local_models import SolicitationResponse, SolicitationReview
+
 from ..tool_registry import MCPToolError, register  # noqa: F401
 
 logger = logging.getLogger(__name__)
@@ -21,66 +23,26 @@ REVIEW_TYPE = "solicitation_review"
 
 
 def _serialize_record(record) -> dict:
-    """Flatten a LocalLabsRecord into a plain dict matching the original shape.
-
-    Merges the record's ``data`` dict into the outer envelope, giving callers
-    a single flat dict with id/experiment/type/labs_record_id plus all
-    application-level fields at the top level.
-    """
-    data = record.data or {}
-    return {
-        "id": record.id,
-        "experiment": record.experiment,
-        "type": record.type,
-        "labs_record_id": record.labs_record_id,
-        **data,
-    }
+    """The flat envelope + data dict the review tools have always returned."""
+    return record.to_record_dict()
 
 
 _SCOPE_PROPS = {
     "program_id": {
         "type": ["integer", "string"],
-        "description": (
-            "Program ID owning the reviewed response. Required to reach a labs-only "
-            "synthetic program's local backend (id >= the labs-only floor)."
-        ),
+        "description": "Accepted for compatibility; not needed.",
     },
     "organization_id": {
         "type": ["integer", "string"],
-        "description": "Organization ID alternative to program_id for scoping.",
+        "description": "Accepted for compatibility; not needed.",
     },
 }
 
 
-def _scoped_client(token: str, program_id=None, organization_id=None) -> LabsRecordAPIClient:
-    """LabsRecordAPIClient with labs-only routing resolved from program_id.
-
-    The local-records backend keys writes on opportunity_id, and a labs-only
-    synthetic program's program_id == its opportunity_id — mirror the
-    SolicitationsDataAccess resolution so review reads/writes on labs-only
-    programs route locally instead of 404ing (or violating the local table's
-    NOT NULL opportunity_id) via prod.
-    """
-
-    def _coerce(v):
-        try:
-            return int(v) if v not in (None, "") else None
-        except (TypeError, ValueError):
-            return None
-
-    pid = _coerce(program_id)
-    opp_id = None
-    if pid is not None:
-        from connect_labs.labs.synthetic.local_records_backend import is_labs_only_opportunity_id
-
-        if is_labs_only_opportunity_id(pid):
-            opp_id = pid
-    return LabsRecordAPIClient(
-        access_token=token,
-        opportunity_id=opp_id,
-        program_id=pid,
-        organization_id=_coerce(organization_id),
-    )
+def _errors(exc):
+    if isinstance(exc, PermissionDenied):
+        return MCPToolError("PERMISSION_DENIED", str(exc) or "Not allowed")
+    return MCPToolError("NOT_FOUND", str(exc))
 
 
 # ---------------------------------------------------------------------------
@@ -107,17 +69,9 @@ def _scoped_client(token: str, program_id=None, organization_id=None) -> LabsRec
     },
 )
 def list_reviews(user, response_id: int, program_id=None, organization_id=None) -> dict:
-    """List all reviews for a response (child records linked by labs_record_id)."""
-    token = require_connect_token(user)
-    client = _scoped_client(token, program_id, organization_id)
-    try:
-        records = client.get_records(
-            type=REVIEW_TYPE,
-            labs_record_id=response_id,
-        )
-        return {"reviews": [_serialize_record(r) for r in records]}
-    finally:
-        client.close()
+    """Reviews of a response -- empty unless the caller manages the call."""
+    records = SolicitationsDataAccess(user=user).get_reviews_for_response(response_id)
+    return {"reviews": [_serialize_record(r) for r in records]}
 
 
 @register(
@@ -138,15 +92,10 @@ def list_reviews(user, response_id: int, program_id=None, organization_id=None) 
 )
 def get_review(user, review_id: int, program_id=None, organization_id=None) -> dict:
     """Get a single review by ID. Returns the record or raises NOT_FOUND."""
-    token = require_connect_token(user)
-    client = _scoped_client(token, program_id, organization_id)
-    try:
-        record = client.get_record_by_id(review_id, type=REVIEW_TYPE)
-        if record is None:
-            raise MCPToolError("NOT_FOUND", f"Review {review_id} not found")
-        return _serialize_record(record)
-    finally:
-        client.close()
+    record = SolicitationsDataAccess(user=user).get_review_by_id(review_id)
+    if record is None:
+        raise MCPToolError("NOT_FOUND", f"Review {review_id} not found")
+    return _serialize_record(record)
 
 
 # ---------------------------------------------------------------------------
@@ -155,9 +104,9 @@ def get_review(user, review_id: int, program_id=None, organization_id=None) -> d
 
 
 _REVIEW_PUBLIC_WARNING = (
-    "This review record is PUBLIC — the reviewed organisation can read it. "
-    "Do not embed PII in the 'notes' field (patient names, dates of birth, "
-    "phone numbers, addresses, clinical observations, or any health data). "
+    "Reviews are read by the call's owning organisation and platform support, not by the "
+    "reviewed organisation -- but still do not embed PII in 'notes' (patient names, dates of "
+    "birth, phone numbers, addresses, clinical observations, or any health data). "
     "Safe fields: score, recommendation, criteria_scores, tags, reviewer_username."
 )
 
@@ -165,11 +114,11 @@ _REVIEW_PUBLIC_WARNING = (
 @register(
     name="create_review",
     description=(
-        "Create a review for a solicitation response. "
-        "The review is linked to the response via labs_record_id and scoped by llo_entity_id. "
-        "IMPORTANT: Review records are PUBLIC — readable by the reviewed organisation. "
-        "You MUST pass public_record_acknowledged=true and confirm the 'notes' field "
-        "contains no PII before calling this tool."
+        "Create (or, for a reviewer who already reviewed it, update) your review of a solicitation "
+        "response. Only the call's owning organisation and platform support review, and never a "
+        "response from their own side. When the call has weighted evaluation criteria and you send "
+        "criteria_scores, the overall score is computed from them. You MUST pass "
+        "public_record_acknowledged=true and confirm the 'notes' field contains no PII."
     ),
     input_schema={
         "type": "object",
@@ -189,7 +138,7 @@ _REVIEW_PUBLIC_WARNING = (
             },
             "llo_entity_id": {
                 "type": "string",
-                "description": "LLO entity ID (used as experiment for API scoping).",
+                "description": "Accepted for compatibility; the response already names its organisation.",
             },
             "score": {
                 "type": "integer",
@@ -223,14 +172,11 @@ _REVIEW_PUBLIC_WARNING = (
             },
             "program_id": {
                 "type": ["integer", "string"],
-                "description": (
-                    "Program ID owning the reviewed response. Required to reach a "
-                    "labs-only synthetic program's local backend (id >= the labs-only floor)."
-                ),
+                "description": "Accepted for compatibility; not needed.",
             },
             "organization_id": {
                 "type": ["integer", "string"],
-                "description": "Organization ID alternative to program_id for scoping.",
+                "description": "Accepted for compatibility; not needed.",
             },
         },
         "required": ["public_record_acknowledged", "response_id", "llo_entity_id"],
@@ -259,14 +205,8 @@ def create_review(
             "public_record_acknowledged must be true. Review the field descriptions, "
             "confirm 'notes' contains no PII, then retry with public_record_acknowledged=true.",
         )
-    logger.warning("create_review: creating public record. %s", _REVIEW_PUBLIC_WARNING)
 
-    data: dict = {
-        "response_id": response_id,
-        "llo_entity_id": llo_entity_id,
-        "recommendation": recommendation,
-        "review_date": datetime.now(timezone.utc).isoformat(),
-    }
+    data: dict = {"recommendation": recommendation}
     if score is not None:
         data["score"] = score
     if notes:
@@ -277,22 +217,13 @@ def create_review(
         data["reviewer_username"] = reviewer_username
     if tags:
         data["tags"] = tags
-
-    token = require_connect_token(user)
-    client = _scoped_client(token, program_id, organization_id)
     try:
-        record = client.create_record(
-            experiment=llo_entity_id,
-            type=REVIEW_TYPE,
-            data=data,
-            labs_record_id=response_id,
-            public=True,
-        )
-        result = _serialize_record(record)
-        result["_public_warning"] = _REVIEW_PUBLIC_WARNING
-        return result
-    finally:
-        client.close()
+        record = SolicitationsDataAccess(user=user).create_review(response_id, data)
+    except (PermissionDenied, SolicitationResponse.DoesNotExist) as e:
+        raise _errors(e) from e
+    result = _serialize_record(record)
+    result["_public_warning"] = _REVIEW_PUBLIC_WARNING
+    return result
 
 
 @register(
@@ -321,27 +252,10 @@ def create_review(
     is_write=True,
 )
 def update_review(user, review_id: int, update_data: dict, program_id=None, organization_id=None) -> dict:
-    """Update an existing review by merging update_data into its data dict."""
-    token = require_connect_token(user)
-    client = _scoped_client(token, program_id, organization_id)
+    """Merge update_data into your review; keys you do not send are kept."""
+    data = {k: v for k, v in dict(update_data).items() if k not in ("is_public", "public")}
     try:
-        current = client.get_record_by_id(review_id, type=REVIEW_TYPE)
-        if current is None:
-            raise MCPToolError("NOT_FOUND", f"Review {review_id} not found")
-
-        merged_data = dict(current.data or {})
-        update_data.pop("is_public", None)
-        update_data.pop("public", None)
-        merged_data.update(update_data)
-
-        record = client.update_record(
-            record_id=review_id,
-            experiment=current.experiment,
-            type=current.type,
-            data=merged_data,
-            current_record=current,
-            labs_record_id=current.labs_record_id,
-        )
-        return _serialize_record(record)
-    finally:
-        client.close()
+        record = SolicitationsDataAccess(user=user).update_review(review_id, data)
+    except (PermissionDenied, SolicitationReview.DoesNotExist) as e:
+        raise _errors(e) from e
+    return _serialize_record(record)

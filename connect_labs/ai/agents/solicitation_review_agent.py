@@ -67,6 +67,73 @@ class SolicitationReviewAgentDeps:
     access_token: str | None = None
 
 
+def _fetch_solicitation_data(deps, solicitation_id: int) -> str:
+    """Sync: the ORM cannot run on the agent's event loop."""
+    from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+    try:
+        # As the user: only the call's owning organisation (or platform
+        # support) reads its responses, so the review sees exactly what they may.
+        da = SolicitationsDataAccess(
+            access_token=deps.access_token,
+            request=deps.user_deps.request,
+            user=deps.user_deps.user,
+            program_id=str(deps.user_deps.program_id) if deps.user_deps.program_id else None,
+        )
+
+        solicitation = da.get_solicitation_by_id(solicitation_id)
+        if not solicitation:
+            return f"Solicitation {solicitation_id} not found."
+        if not da.can_manage(solicitation):
+            return "Only the organisation that owns this solicitation can review its responses."
+
+        responses = da.get_responses_for_solicitation(solicitation_id)
+
+        # Format solicitation info
+        result = f"# Solicitation: {solicitation.title}\n\n"
+        result += f"**Type:** {solicitation.solicitation_type}\n"
+        result += f"**Description:** {solicitation.description}\n"
+        if solicitation.scope_of_work:
+            result += f"**Scope of Work:** {solicitation.scope_of_work}\n"
+
+        # Evaluation criteria
+        criteria = solicitation.evaluation_criteria
+        if criteria:
+            result += "\n## Evaluation Criteria\n"
+            for c in criteria:
+                name = c.get("name", "")
+                weight = c.get("weight", "")
+                desc = c.get("description", "")
+                result += f"- **{name}** (weight: {weight}): {desc}\n"
+
+        # Questions
+        questions = solicitation.questions
+        if questions:
+            result += "\n## Questions Asked\n"
+            for i, q in enumerate(questions, 1):
+                q_text = q.get("question_text", q.get("text", ""))
+                result += f"{i}. {q_text}\n"
+
+        # Responses
+        result += f"\n## Responses ({len(responses)} total)\n\n"
+        for resp in responses:
+            result += f"### Applicant: {resp.submitted_by_name or resp.org_name or 'Anonymous'}\n"
+            result += f"**Organization:** {resp.org_name or 'Not specified'}\n"
+            result += f"**Status:** {resp.status}\n"
+            answers = resp.responses or {}
+            if answers:
+                result += "**Answers:**\n"
+                for key, val in answers.items():
+                    result += f"  - {key}: {val}\n"
+            result += "\n"
+
+        return result
+
+    except Exception as e:
+        logger.error(f"[Solicitation Review] Error fetching data: {e}", exc_info=True)
+        return f"Error fetching solicitation data: {str(e)}"
+
+
 def create_solicitation_review_agent_with_model(model: str) -> Agent[SolicitationReviewAgentDeps, str]:
     """Create the solicitation review agent with a specific model."""
     logger.info(f"[Solicitation Review Agent] Creating agent with model: {model}")
@@ -89,62 +156,8 @@ def create_solicitation_review_agent_with_model(model: str) -> Agent[Solicitatio
         Args:
             solicitation_id: ID of the solicitation to review
         """
-        from connect_labs.solicitations.data_access import SolicitationsDataAccess
+        from asgiref.sync import sync_to_async
 
-        try:
-            da = SolicitationsDataAccess(
-                access_token=ctx.deps.access_token,
-                program_id=str(ctx.deps.user_deps.program_id) if ctx.deps.user_deps.program_id else None,
-            )
-
-            solicitation = da.get_solicitation_by_id(solicitation_id)
-            if not solicitation:
-                return f"Solicitation {solicitation_id} not found."
-
-            responses = da.get_responses_for_solicitation(solicitation_id)
-
-            # Format solicitation info
-            result = f"# Solicitation: {solicitation.title}\n\n"
-            result += f"**Type:** {solicitation.solicitation_type}\n"
-            result += f"**Description:** {solicitation.description}\n"
-            if solicitation.scope_of_work:
-                result += f"**Scope of Work:** {solicitation.scope_of_work}\n"
-
-            # Evaluation criteria
-            criteria = solicitation.evaluation_criteria
-            if criteria:
-                result += "\n## Evaluation Criteria\n"
-                for c in criteria:
-                    name = c.get("name", "")
-                    weight = c.get("weight", "")
-                    desc = c.get("description", "")
-                    result += f"- **{name}** (weight: {weight}): {desc}\n"
-
-            # Questions
-            questions = solicitation.questions
-            if questions:
-                result += "\n## Questions Asked\n"
-                for i, q in enumerate(questions, 1):
-                    q_text = q.get("question_text", q.get("text", ""))
-                    result += f"{i}. {q_text}\n"
-
-            # Responses
-            result += f"\n## Responses ({len(responses)} total)\n\n"
-            for resp in responses:
-                result += f"### Applicant: {resp.submitted_by_name or resp.org_name or 'Anonymous'}\n"
-                result += f"**Organization:** {resp.org_name or 'Not specified'}\n"
-                result += f"**Status:** {resp.status}\n"
-                answers = resp.responses or {}
-                if answers:
-                    result += "**Answers:**\n"
-                    for key, val in answers.items():
-                        result += f"  - {key}: {val}\n"
-                result += "\n"
-
-            return result
-
-        except Exception as e:
-            logger.error(f"[Solicitation Review] Error fetching data: {e}", exc_info=True)
-            return f"Error fetching solicitation data: {str(e)}"
+        return await sync_to_async(_fetch_solicitation_data)(ctx.deps, solicitation_id)
 
     return agent

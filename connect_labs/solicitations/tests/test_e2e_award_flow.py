@@ -4,7 +4,7 @@ End-to-end integration tests for the award flow.
 Walks through the demo scenario: view responses list → view response
 detail → award response → verify awarded status.
 
-Uses Django's test client with mocked LabsRecordAPIClient.
+Uses RequestFactory with a mocked SolicitationsDataAccess.
 
 Run:
     pytest connect_labs/solicitations/tests/test_e2e_award_flow.py -v
@@ -14,72 +14,41 @@ from unittest.mock import MagicMock, patch
 
 from django.test import RequestFactory
 
-from connect_labs.solicitations.data_access import RESPONSE_TYPE, REVIEW_TYPE, SOLICITATION_TYPE
-from connect_labs.solicitations.models import ResponseRecord, ReviewRecord, SolicitationRecord
+from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse, SolicitationReview
 from connect_labs.solicitations.views import AwardView, ResponseDetailView, ResponsesListView
 
 # =========================================================================
-# Helpers
+# Helpers -- unsaved model instances (the views get them from a mocked DA)
 # =========================================================================
 
 
 def _make_solicitation(pk=1, title="Neonatal Care RFP", status="active"):
-    return SolicitationRecord(
-        {
-            "id": pk,
-            "experiment": "prog_42",
-            "type": SOLICITATION_TYPE,
-            "data": {
-                "title": title,
-                "description": "A test solicitation",
-                "solicitation_type": "rfp",
-                "status": status,
-                "questions": [],
-            },
-            "opportunity_id": 0,
-        }
+    return Solicitation(
+        pk=pk, title=title, description="A test solicitation", solicitation_type="rfp", status=status, questions=[]
     )
 
 
 def _make_response(pk=10, solicitation_id=1, status="submitted", org_id="", reward_budget=None):
-    data = {
-        "solicitation_id": solicitation_id,
-        "submitted_by_name": "Jane Doe",
-        "submitted_by_email": "jane@example.org",
-        "llo_entity_name": "Health Org",
-        "status": status,
-        "answers": {},
-    }
-    if org_id:
-        data["org_id"] = org_id
-    if reward_budget is not None:
-        data["reward_budget"] = reward_budget
-    return ResponseRecord(
-        {
-            "id": pk,
-            "experiment": "prog_42",
-            "type": RESPONSE_TYPE,
-            "data": data,
-            "opportunity_id": 0,
-        }
+    return SolicitationResponse(
+        pk=pk,
+        solicitation_id=solicitation_id,
+        submitted_by_name="Jane Doe",
+        submitted_by_email="jane@example.org",
+        llo_entity_name="Health Org",
+        status=status,
+        org_id=org_id,
+        reward_budget=reward_budget,
     )
 
 
 def _make_review(pk=20, response_id=10, recommendation="approved", score=85):
-    return ReviewRecord(
-        {
-            "id": pk,
-            "experiment": "prog_42",
-            "type": REVIEW_TYPE,
-            "data": {
-                "response_id": response_id,
-                "recommendation": recommendation,
-                "score": score,
-                "reviewer_username": "reviewer1",
-                "notes": "Good proposal",
-            },
-            "opportunity_id": 0,
-        }
+    return SolicitationReview(
+        pk=pk,
+        response_id=response_id,
+        recommendation=recommendation,
+        score=score,
+        reviewer_name="reviewer1",
+        notes="Good proposal",
     )
 
 

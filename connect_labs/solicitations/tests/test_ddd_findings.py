@@ -18,8 +18,7 @@ from unittest.mock import MagicMock, patch
 
 from django.test import RequestFactory
 
-from connect_labs.solicitations.data_access import RESPONSE_TYPE, SOLICITATION_TYPE
-from connect_labs.solicitations.models import ResponseRecord, SolicitationRecord
+from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
 from connect_labs.solicitations.views import AwardView, PublicSolicitationDetailView, ResponsesListView
 
 _CONTEXT_PATCH = patch.multiple(
@@ -34,22 +33,15 @@ _CONTEXT_PATCH = patch.multiple(
 
 
 def _make_solicitation(pk=1, status="active", description="A test solicitation", scope_of_work=""):
-    return SolicitationRecord(
-        {
-            "id": pk,
-            "experiment": "prog_42",
-            "type": SOLICITATION_TYPE,
-            "data": {
-                "title": "Neonatal Care RFP",
-                "description": description,
-                "scope_of_work": scope_of_work,
-                "solicitation_type": "rfp",
-                "status": status,
-                "questions": [],
-                "plans": [],
-            },
-            "opportunity_id": 0,
-        }
+    return Solicitation(
+        pk=pk,
+        title="Neonatal Care RFP",
+        description=description,
+        scope_of_work=scope_of_work,
+        solicitation_type="rfp",
+        status=status,
+        questions=[],
+        plans=[],
     )
 
 
@@ -63,22 +55,15 @@ def _make_response(
     org_name="",
     selected_plan_names=None,
 ):
-    return ResponseRecord(
-        {
-            "id": pk,
-            "experiment": "individual",
-            "type": RESPONSE_TYPE,
-            "data": {
-                "solicitation_id": solicitation_id,
-                "submitted_by_name": submitted_by_name,
-                "submitted_by_email": submitted_by_email,
-                "llo_entity_name": llo_entity_name,
-                "org_name": org_name,
-                "status": status,
-                "selected_plan_names": selected_plan_names or [],
-            },
-            "opportunity_id": 0,
-        }
+    return SolicitationResponse(
+        pk=pk,
+        solicitation_id=solicitation_id,
+        submitted_by_name=submitted_by_name,
+        submitted_by_email=submitted_by_email,
+        llo_entity_name=llo_entity_name,
+        org_name=org_name,
+        status=status,
+        selected_plan_names=selected_plan_names or [],
     )
 
 

@@ -50,10 +50,10 @@ def test_get_sample_ids_happy_path(mock_client_cls, client, auth_user):
     }
     mock_client.http_client.get.return_value = mock_org_resp
 
-    # Mock solicitations from get_records(type="solicitation")
-    mock_sol = MagicMock()
-    mock_sol.id = 101
-    mock_sol.data = {"title": "Test Solicitation"}
+    # A listed solicitation in the labs database
+    from connect_labs.solicitations.tests.factories import make_call
+
+    sol = make_call(None, title="Test Solicitation")
 
     # Mock funds from get_records(type="fund")
     mock_fund = MagicMock()
@@ -61,8 +61,6 @@ def test_get_sample_ids_happy_path(mock_client_cls, client, auth_user):
     mock_fund.data = {"name": "Test Fund"}
 
     def _get_records_side_effect(**kwargs):
-        if kwargs.get("type") == "solicitation":
-            return [mock_sol]
         if kwargs.get("type") == "fund":
             return [mock_fund]
         return []
@@ -79,11 +77,10 @@ def test_get_sample_ids_happy_path(mock_client_cls, client, auth_user):
     assert set(content.keys()) == {"funds", "solicitations", "programs"}
 
     assert content["programs"] == [{"id": 25, "name": "Test Program"}]
-    assert content["solicitations"] == [{"id": 101, "name": "Test Solicitation"}]
+    assert content["solicitations"] == [{"id": sol.pk, "name": "Test Solicitation"}]
     assert content["funds"] == [{"id": 201, "name": "Test Fund"}]
 
-    # Verify solicitations were scoped by the first program_id
-    mock_client.get_records.assert_any_call(type="solicitation", program_id=25)
+    # Funds are scoped by the first program_id
     mock_client.get_records.assert_any_call(type="fund", program_id=25)
 
 

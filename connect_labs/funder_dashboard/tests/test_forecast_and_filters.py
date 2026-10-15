@@ -21,22 +21,18 @@ async def _drain(response):
 class TestSolicitationCrossLink:
     """Test the solicitation-to-fund cross-link (Feature #4)."""
 
+    @pytest.mark.django_db
     def test_get_solicitations_by_fund_id(self):
-        """SolicitationsDataAccess.get_solicitations_by_fund_id queries with fund_id filter."""
+        """Calls linked to a fund, as far as the viewer may see them (listed ones for anyone)."""
         from connect_labs.solicitations.data_access import SolicitationsDataAccess
+        from connect_labs.solicitations.tests.factories import make_call, make_org
 
-        with patch.object(SolicitationsDataAccess, "__init__", return_value=None):
-            da = SolicitationsDataAccess.__new__(SolicitationsDataAccess)
-            da.labs_api = MagicMock()
-            da.labs_api.get_records.return_value = []
-            da.experiment = "test"
+        org = make_org("fund-owner")
+        linked = make_call(org, fund_id=42)
+        make_call(org, fund_id=42, listed=False)
+        make_call(org, fund_id=7)
 
-            result = da.get_solicitations_by_fund_id(fund_id=42)
-            assert result == []
-            da.labs_api.get_records.assert_called_once()
-            call_kwargs = da.labs_api.get_records.call_args[1]
-            assert call_kwargs["fund_id"] == "42"
-            assert call_kwargs["public"] is True
+        assert SolicitationsDataAccess().get_solicitations_by_fund_id(fund_id=42) == [linked]
 
     def test_portfolio_context_carries_a_solicitation_count_per_fund(self):
         """One entry per fund, keyed by pk — the template indexes by fund.pk."""

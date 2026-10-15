@@ -19,12 +19,13 @@ What this script does, per render, **before** the recorder starts:
    its own fresh call, so the prior render's call + responses are cleared before
    the next is minted, keeping the portfolio from accumulating duplicate R6 calls.
 
-**Transport — the MCP, not AWS/ECS.** Records on program 10008 are labs-only
-synthetic records (opp id >= 10_000) living in the labs prod DB behind the
-local-records backend. As of PR #678 the ``connect_labs`` MCP tools route
-labs-only opps to that backend and grant access to opted-in callers, so this
-script talks to the MCP over HTTP (same transport as the verified-monitoring
-``regenerate.py`` seeder) instead of firing a one-off ``aws ecs run-task``. No AWS
+**Transport — the MCP, not AWS/ECS.** Solicitations live in the labs database,
+owned by an organisation; this script talks to the ``connect_labs`` MCP over HTTP
+(same transport as the verified-monitoring ``regenerate.py`` seeder). The seeded
+call is owned by ``ORG_SLUG`` (``SOLICITATION_ORG_SLUG`` env; default: the demo
+organisation ``manage.py solicitations_seed_demo`` creates), so the caller must be
+a member of it or platform staff. Because the caller manages the call, the
+responses it seeds are entered on the firms' behalf (no respondent user). No AWS
 session is required.
 
 Requirements:
@@ -37,12 +38,13 @@ Usage::
 
     python scripts/walkthroughs/create-survey-solicitation/ensure_demo.py
 
-Env overrides: LABS_MCP_URL, LABS_MCP_TOKEN.
+Env overrides: LABS_MCP_URL, LABS_MCP_TOKEN, SOLICITATION_ORG_SLUG.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -54,6 +56,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _mcp_client import call, session, token  # noqa: E402
 
 PROGRAM_ID = 10008
+# The organisation that owns the seeded review-stage call.
+ORG_SLUG = os.environ.get("SOLICITATION_ORG_SLUG", "labs-synthetic-demo-solicitations")
 SOURCE_GROUP_ID = 4492  # R6 — Attakar × Gura study group scenes 1-2 solicit from
 SOURCE_PLAN_ID = 4494  # the R6 plan snapshotted as the coverage area
 
@@ -335,6 +339,7 @@ def main() -> int:
             h,
             "create_solicitation",
             {
+                "org_slug": ORG_SLUG,
                 "program_id": str(PROGRAM_ID),
                 # The view-side read path (public detail / responses list) only
                 # resolves public-envelope records — the UI-minted call ends up
