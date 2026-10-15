@@ -83,6 +83,7 @@ def pool(longitudinal):
 
 def test_the_pool_is_modelled_not_mirrored(longitudinal):
     assert longitudinal["mode"] == "modelled"
+    assert longitudinal["numbers"] == "modelled"  # what provenance reads as generated
 
 
 def test_each_worker_keeps_its_caseload(pool):
@@ -98,18 +99,19 @@ def test_the_saved_profile_holds_no_real_first_visit_date(pool):
     assert not ({series["start_date"] for series in pool} & real_starts)
 
 
-def test_the_saved_profile_replays_each_real_weight_series_once(pool):
-    """A case's numbers are replayed from one real case (Jonathan, 2026-10-15: a weight
-    series identifies nobody); each real case donates once, so the cohort's series are
-    the source's, neither duplicated nor dropped."""
-    real_series = sorted(tuple(1500.0 + 100 * i + 13 * e for i in range(3)) for e in range(8))
-    shipped = sorted(tuple(v["values"]["form.weight"] for v in s["visits"]) for s in pool)
-    assert shipped == real_series
+def test_no_real_weight_series_reaches_the_saved_profile(pool):
+    """A baby's weighings single it out to anyone holding the real data, so the saved
+    pool's weights are modelled: no shipped case carries a real case's series (for one
+    day, 2026-10-15, every case did)."""
+    real_series = {tuple(1500.0 + 100 * i + 13 * e for i in range(3)) for e in range(8)}
+    shipped = {tuple(v["values"]["form.weight"] for v in s["visits"]) for s in pool}
+    assert shipped and not shipped & real_series
 
 
 def test_a_number_that_names_someone_never_reaches_the_profile():
-    """Numbers are replayed exactly, so a phone or an id the app types as a number must
-    never be one of them -- refused by its name, or by its values (long runs of digits)."""
+    """A modelled number is drawn between observed ones, so a phone or an id the app types
+    as a number must never be profiled -- refused by its name, or by its values (long
+    runs of digits)."""
     visits = _source()
     for i, v in enumerate(visits):
         v["form_json"]["form"]["mothers_phone_number"] = float(256700000000 + 7919 * (i // 3))

@@ -266,6 +266,11 @@ class LongitudinalSpec(BaseModel):
     # mode whose pool was the real cases lightly perturbed; old manifests still carry
     # it, and provenance.replays_real_cases keeps their data from counting as generated.
     mode: Literal["modelled", "mirror", "synthetic"] = "synthetic"
+    # "modelled" on a modelled pool whose numbers are modelled as well. Profiles saved on
+    # 2026-10-15 replayed each real case's numbers into a "modelled" pool and carry no
+    # such mark, so a "modelled" pool without it is treated as replaying real cases
+    # (provenance.replays_real_cases): re-profile it.
+    numbers: Literal["modelled"] | None = None
     # Transplant jitter as a fraction of each field's range, applied at replay time.
     jitter_frac: float = Field(ge=0, default=0.03)
     transplant_pool: list[dict[str, Any]] = Field(default_factory=list)

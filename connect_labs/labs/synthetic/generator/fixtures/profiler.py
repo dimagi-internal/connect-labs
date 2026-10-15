@@ -1289,10 +1289,10 @@ def profile(
         if pool:
             # The pool above is every real case exactly. It FITS the case models, here
             # at profile time, and the manifest carries a pool sampled from them: each
-            # case's numbers replay one real case's, every answer is drawn from the
-            # models (case_model.py). The manifest is what gets saved (bundles in
-            # Drive, returned over MCP, served from generated opps), so it never holds
-            # a real answer, id, name or date -- and no identifier-shaped number
+            # case, numbers and answers alike, is drawn from the models (case_model.py).
+            # The manifest is what gets saved (bundles in Drive, returned over MCP,
+            # served from generated opps), so it never holds a real case's numbers or a
+            # real answer, id, name or date -- and no identifier-shaped number
             # (_is_numeric_identifier) is profiled at all.
             computed_whole = {
                 p
@@ -1311,7 +1311,7 @@ def profile(
             )
             logger.info("case timelines for opp %s: %s", opportunity_id, model_report)
             if pool:
-                cohort["longitudinal"] = {"mode": "modelled", "transplant_pool": pool}
+                cohort["longitudinal"] = {"mode": "modelled", "numbers": "modelled", "transplant_pool": pool}
 
     # Seed deliberate QA anomalies (only under curation) so dashboards/evals have
     # something to find. Faithful profiling leaves this empty.

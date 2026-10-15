@@ -212,7 +212,11 @@ def test_restricted_synthetic_calls_that_are_allowed(tool, arguments):
 
 def test_a_retired_mirror_manifest_is_recognised_and_a_modelled_one_is_not():
     assert replays_real_cases({"entities": [{"longitudinal": {"mode": "mirror", "transplant_pool": [{}]}}]})
-    assert not replays_real_cases({"entities": [{"longitudinal": {"mode": "modelled", "transplant_pool": [{}]}}]})
+    assert not replays_real_cases(
+        {"entities": [{"longitudinal": {"mode": "modelled", "numbers": "modelled", "transplant_pool": [{}]}}]}
+    )
+    # A modelled pool saved without the mark replayed each real case's numbers (2026-10-15).
+    assert replays_real_cases({"entities": [{"longitudinal": {"mode": "modelled", "transplant_pool": [{}]}}]})
     assert not replays_real_cases({"entities": [{"longitudinal": {"mode": "synthetic", "transplant_pool": []}}]})
 
 

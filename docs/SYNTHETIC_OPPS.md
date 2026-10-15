@@ -97,23 +97,23 @@ What a profile holds: per-field distributions (including the real minimum,
 maximum and spread, which is expected), FLW personas, timing, and, with
 `case_timelines=true`, a pool of **modelled cases** so a clone follows cases over
 time the way the source does. Every worker keeps its number of cases and their
-lengths. Each case's NUMBERS -- its weighings, birth weight, ages, counters and date
-offsets, on the visit days and forms they were recorded on -- are one real case's,
-from the same worker and of the same length, each real case used once: a number
-series identifies nobody, and modelled ones lost the rounding, data-entry slips and
-recording rhythm the reports read off them (2026-10-15). Everything else -- outcomes,
-danger signs, referrals and every other answer -- is drawn from models fitted to the
-real cases, conditioned on the case's own growth, so a slow grower dies as often as
-in the source. What the pool never holds:
+lengths. Every case is drawn from models fitted to the real cases: its numbers
+(weighings, birth weight, ages, counters), its visit days, and its answers
+(outcomes, danger signs, referrals), each conditioned on the case's own growth, so a
+slow grower dies as often as in the source. What reports read off the numbers is
+modelled too: each worker's rounding, data-entry slips, copies a form saves under a
+second name. What the pool never holds:
 
-- A real answer: the real cases are used only to fit the answer models, at profile time.
+- A real case: the real cases are used only to fit the models, at profile time.
+- A real case's numbers. A baby's weighings single it out to anyone holding the real
+  data. For one day (2026-10-15) each case's numbers were a real case's; profiles
+  saved then carry no `numbers: modelled` mark, so data generated from one never
+  counts as generated. Re-profile them.
 - A number that names someone: a numeric field named like an identifier (phone, id,
   gps...) or whose values are mostly long digit runs is not profiled at all.
 - A categorical answer seen in fewer than 5 cases is never modelled, nor is a field
   recorded in fewer than 5 cases.
-- Start dates are smoothed.
-- With `replay_numeric=False` (the fully modelled path), a sampled case that lands on
-  a real one is redrawn.
+- Start dates are smoothed, and a sampled case that lands on a real one is redrawn.
 
 The code is `labs/synthetic/generator/fixtures/case_model.py`. `mirror=true` is the
 old name for the same switch. Profiles saved before 2026-10 in mirror mode held each
