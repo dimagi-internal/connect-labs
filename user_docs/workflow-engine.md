@@ -148,6 +148,15 @@ The **Verification Summary** tab shows an overview of visit verification statuse
 
 The **Visits Over Time** chart displays a weekly bar chart of visits broken down by outcome — **Passed**, **Pending Audit**, and **Failed** — stacked with Passed at the bottom. Each bar represents one calendar week, so you can see at a glance whether pass rates are trending up, down, or holding steady over the reporting period, rather than only seeing the current snapshot totals.
 
+### GPS Map tab
+
+The **GPS Map** tab on the MBW Visit Verification dashboard plots every registration point and visit point on an interactive map. Each point now displays a faint shaded ring around it, sized to the GPS accuracy that the device reported at the moment it captured that reading. A larger ring means the phone was less certain of its exact position when it recorded that location.
+
+Hovering over any point shows its accuracy in meters alongside the existing details — worker name, visit date, and verification outcome.
+
+!!! note "Accuracy rings are informational only"
+    The size of the ring has no effect on whether a visit passed or failed verification, and does not change any totals or filters elsewhere on the dashboard. It is purely a visual aid to help you judge how precise a given GPS reading was at the time it was taken.
+
 ### Indicator definition popup
 
 In KMC reports (program, opportunity, and worker review) and the generic indicator reports, you can click an indicator's name to open a popup with its full definition. The popup has been restyled to make it easier to read:
@@ -207,14 +216,4 @@ Pages can now be built with the full set of workflow tools. They can show pipeli
 
 ### Actions on a page
 
-A page can have buttons that trigger actions — the same types of actions a report can trigger — scoped to the organisation, program, or opportunity the page belongs to:
-
-- **Create follow-up tasks** for workers
-- **Start an AI coaching conversation** with workers
-
-When you click one of these buttons, Labs opens its confirmation dialog showing you exactly which workers are affected and what will be sent. Nothing happens until you confirm. This is the same "nothing happens until you confirm" protection that applies to protected workflows.
-
-!!! note "Coaching from a page vs. coaching from a report"
-    When coaching is triggered from a page, the message sent is the one the page itself declares. Briefings, pictures, and case conversations — which are drawn from a report's saved figures — are only available from reports, not from pages.
-
-### Access to workflows shown on a page
+A page can have buttons that trigger
