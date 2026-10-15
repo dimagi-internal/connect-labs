@@ -95,28 +95,35 @@ scenes:
   pace: teach
   title: "Receiving and checking the phones"
   url: /supply/orders/ORDER_ID/?program_id=PROGRAM_ID
-  show: "The order: half paid in advance, delivered, 1,194 accepted and 6 rejected at inspection, and an invoice for all 1,200."
-  concept_claim: "The order shows the advance paid, the delivery received with 1,194 phones accepted and 6 rejected because they would not power on, and an invoice that still bills 1,200."
+  show: "The order: half paid in advance, delivered, 1,194 accepted and 6 refused at inspection, an invoice for all 1,200, and what is safe to pay now."
+  concept_claim: "The order shows the advance paid, the delivery received with 1,194 phones accepted and 6 refused because they would not power on, an invoice that still bills 1,200, and the amount safe to pay now."
   provenance: "supply_chain OrderDetailView, phones demo"
   narrative: >-
     This is a quick overview of how we receive the phones. We paid half in advance, and the
-    order was delivered to our office. At inspection we accepted 1,194 phones and rejected
-    six that would not switch on. The invoice still bills all 1,200, so the order shows the
-    difference before we pay the balance.
+    order was delivered to our office. At inspection we accepted 1,194 phones and refused
+    six that would not switch on. The invoice still bills all 1,200, so the order works out
+    what is safe to pay now, before we pay the balance.
   actions:
   - kind: wait_for
     target: text:TCN-PO-0001
   - kind: hold
     seconds: 3.0
-  - kind: scroll_to
-    target: text:rejected
   - kind: hover
-    target: text:rejected
+    target: text:1,194 / 1,200
     seconds: 4.0
+  - kind: click
+    target: text:Cost, billing and payment
+  - kind: hold
+    seconds: 1.5
   - kind: scroll_to
     target: text:PMD-INV-0931
   - kind: hover
     target: text:PMD-INV-0931
+    seconds: 3.5
+  - kind: scroll_to
+    target: text:safe to pay now
+  - kind: hover
+    target: text:safe to pay now
     seconds: 4.0
   - kind: snapshot
 - id: phones-workers
@@ -182,7 +189,7 @@ scenes:
   concept_claim: "The map draws the office store and each field worker where their handover visits were, with the phones that moved between them."
   provenance: "supply_chain ProgrammeMapView, phones demo"
   narrative: >-
-    This is a quick overview of where the phones are. Our office store is in Kilifi, and
+    This is a quick overview of how we see where the phones are. Our office store is in Kilifi, and
     each field worker is drawn in the village where their handover visits happened. The
     lines are phones moving from the store to the workers, and the panel on the right sums
     up what is still open.
