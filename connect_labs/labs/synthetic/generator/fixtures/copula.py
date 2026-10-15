@@ -10,9 +10,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.stats import norm
 
 from .manifest import CategoricalDistribution, CorrelationSpec, NormalDistribution
+
+
+def _norm():
+    """scipy.stats, on first use. It costs ~0.9s to import, and this package is on
+    every Django process's startup path (MCP tools -> synthetic -> clone_from_prod
+    -> engine/fidelity -> here), so a top-level import made every web, celery and
+    test worker pay for statistics almost none of them compute. Keep scipy out of
+    the top of every module in this package for the same reason."""
+    from scipy.stats import norm
+
+    return norm
 
 
 def nearest_psd(matrix: np.ndarray) -> np.ndarray:
@@ -38,7 +48,7 @@ class NumericMargin:
 
     def value_from_uniform(self, u: float) -> float:
         # u = Phi(z); Normal ppf gives back the standard normal, then scale/shift.
-        z = norm.ppf(min(max(u, 1e-9), 1 - 1e-9))
+        z = _norm().ppf(min(max(u, 1e-9), 1 - 1e-9))
         value = self.mean + self.stddev * z
         # Clamp to the field's observed bounds so the copula can't emit impossible
         # values (matches the independent-draw path in fields._clamp_normal).
@@ -86,7 +96,7 @@ class CopulaSampler:
 
     def draw(self) -> dict:
         z = self._chol @ self._rng.standard_normal(len(self.fields))
-        u = norm.cdf(z)
+        u = _norm().cdf(z)
         return {f: m.value_from_uniform(float(ui)) for f, m, ui in zip(self.fields, self._margins, u)}
 
 

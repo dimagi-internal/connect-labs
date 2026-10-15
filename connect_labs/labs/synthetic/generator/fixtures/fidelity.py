@@ -12,8 +12,9 @@ from __future__ import annotations
 import statistics
 
 import numpy as np
-from scipy.stats import wasserstein_distance
 
+# scipy.stats is imported where it is used, never here: ~0.9s, and this module is on
+# every Django process's startup path (see copula.py).
 from .manifest import CategoricalDistribution, Manifest, NormalDistribution
 from .mirror import profile_entity_structure
 from .profiler import _profile_correlation  # reuse the same estimator
@@ -116,6 +117,8 @@ def compare_to_source(source_visits: list[dict], clone_visits: list[dict], *, nu
     """Score a clone against its real source. Returns per-field marginal +
     out-of-range metrics, structural-ratio distances, per-field trajectory slopes,
     and an overall 0–1 fidelity score (1 = indistinguishable on these axes)."""
+    from scipy.stats import wasserstein_distance
+
     src = profile_entity_structure(source_visits, numeric_paths=numeric_paths)
     cln = profile_entity_structure(clone_visits, numeric_paths=numeric_paths)
 
