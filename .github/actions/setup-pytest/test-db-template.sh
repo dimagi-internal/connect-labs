@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Restore or save the migrated test database template, as a pg_dump.
 #
-#   test-db-template.sh restore <postgres-container> <template-db> <dump-file>
-#   test-db-template.sh save    <postgres-container> <template-db> <dump-file>
+#   test-db-template.sh tune          <postgres-container>
+#   test-db-template.sh restore       <postgres-container> <template-db> <dump-file>
+#   test-db-template.sh restore-older <postgres-container> <template-db> <dump-file> <its-manifest> <this-manifest>
+#   test-db-template.sh save          <postgres-container> <template-db> <dump-file> [<manifest-to-store>]
 #
 # WHY: building the template is running every migration, and on a CI runner that
 # was ~55s of the pytest job's critical path -- one worker migrates while the
@@ -25,8 +27,8 @@ set -uo pipefail
 
 mode=${1:?mode}
 container=${2:?postgres container id}
-template=${3:?template database name}
-dump=${4:?dump file}
+template=${3:-}
+dump=${4:-}
 
 psql() { docker exec -i "$container" psql -U postgres -v ON_ERROR_STOP=1 -qtA "$@"; }
 
@@ -43,12 +45,11 @@ wait_for_postgres() {
   return 1
 }
 
-case "$mode" in
-restore)
-  [ -s "$dump" ] || { echo "No dump at $dump"; exit 0; }
-  wait_for_postgres || exit 0
+restore_dump() {
+  [ -s "$dump" ] || { echo "No dump at $dump"; return 1; }
+  wait_for_postgres || return 1
   start=$(date +%s%3N)
-  psql -c "DROP DATABASE IF EXISTS \"$template\"" -c "CREATE DATABASE \"$template\"" || exit 0
+  psql -c "DROP DATABASE IF EXISTS \"$template\"" -c "CREATE DATABASE \"$template\"" || return 1
   # --single-transaction: all of it or none of it. A half-restored template
   # would be trusted by --reuse-db and cloned into every worker.
   if docker exec -i "$container" pg_restore -U postgres -d "$template" \
@@ -57,6 +58,60 @@ restore)
     echo "Restored $template from cache in $(($(date +%s%3N) - start))ms ($rows migrations recorded)"
   else
     echo "::warning::Restoring the test database template failed; pytest will migrate from scratch"
+    psql -c "DROP DATABASE IF EXISTS \"$template\"" || true
+    return 1
+  fi
+}
+
+case "$mode" in
+tune)
+  # A throwaway database on a throwaway runner: nothing here needs to survive a
+  # crash, so stop paying for durability. Every commit (TransactionTestCase and
+  # transaction=True tests commit, then flush every table) otherwise waits on
+  # an fsync to the runner's disk. All three settings take effect on reload.
+  wait_for_postgres || exit 0
+  psql -c "ALTER SYSTEM SET fsync = off" \
+    -c "ALTER SYSTEM SET synchronous_commit = off" \
+    -c "ALTER SYSTEM SET full_page_writes = off" \
+    -c "SELECT pg_reload_conf()" >/dev/null &&
+    echo "Postgres durability off: $(psql -c 'SHOW fsync') fsync, $(psql -c 'SHOW synchronous_commit') synchronous_commit"
+  ;;
+restore)
+  restore_dump
+  ;;
+restore-older)
+  # A dump cached under an OLDER key: the migrations have moved on since it was
+  # made. About half of all runs used to land here -- 25 of 146 commits to main
+  # over three days changed a migration or a setting -- and each paid a full
+  # cold migrate (1-2 minutes) for the sake of the one or two migrations that
+  # were new. Instead: restore the old template and apply just those.
+  #
+  # Only when that is provably what a cold migrate would give. Each manifest
+  # lists the sha256 of every input to the cache key. Every file the old dump
+  # was built from must be byte-identical now, and every file that is new must
+  # be a new migration. An EDITED migration (already recorded as applied, so
+  # migrate would not re-run it), a changed setting, requirement or helper
+  # module, or a deleted migration all fall through to the cold path.
+  old=${5:?manifest of the cached dump}
+  new=${6:?manifest of this checkout}
+  [ -s "$old" ] && [ -s "$new" ] || { echo "No manifest to compare; migrating from scratch"; exit 0; }
+  changed=$(comm -23 <(sort "$old") <(sort "$new"))
+  added=$(comm -13 <(cut -c67- "$old" | sort) <(cut -c67- "$new" | sort))
+  not_migrations=$(printf '%s\n' "$added" | grep -v '^$' | grep -v '/migrations/' || true)
+  if [ -n "$changed" ] || [ -n "$not_migrations" ]; then
+    echo "The cached template was built from files that have changed since; migrating from scratch:"
+    printf '%s\n' "$changed" "$not_migrations" | grep -v '^$' | sed 's/^/  /' | head -20
+    exit 0
+  fi
+  echo "New since the cached template:"
+  printf '%s\n' "$added" | sed 's/^/  /'
+  restore_dump || exit 0
+  start=$(date +%s%3N)
+  if DATABASE_URL="postgres://postgres:postgres@localhost:5432/$template" \
+    DJANGO_SETTINGS_MODULE=config.settings.test .venv/bin/python manage.py migrate --noinput; then
+    echo "Applied the new migrations to $template in $(($(date +%s%3N) - start))ms"
+  else
+    echo "::warning::Migrating the cached test database template forward failed; pytest will migrate from scratch"
     psql -c "DROP DATABASE IF EXISTS \"$template\"" || true
   fi
   ;;
@@ -67,8 +122,14 @@ save)
     exit 0
   fi
   mkdir -p "$(dirname "$dump")"
+  # An older dump restored from cache may be sitting here. It must not survive a
+  # failed dump and be cached under this run's key.
+  rm -f "$dump" "$(dirname "$dump")/manifest.txt"
+  manifest=${5:-}
   if docker exec "$container" pg_dump -U postgres -Fc -d "$template" >"$dump.tmp"; then
     mv "$dump.tmp" "$dump"
+    # What this dump was built from, for a later run's restore-older to compare.
+    if [ -n "$manifest" ]; then cp "$manifest" "$(dirname "$dump")/manifest.txt"; fi
     echo "Dumped $template: $(du -h "$dump" | cut -f1)"
   else
     echo "::warning::pg_dump of $template failed; not caching it"

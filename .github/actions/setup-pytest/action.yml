@@ -25,6 +25,12 @@ outputs:
   db-template-dump:
     description: Path of the template dump file on the runner.
     value: ${{ steps.db-template-key.outputs.dump }}
+  db-template-manifest:
+    description: Path the dump's manifest is cached at, next to the dump.
+    value: ${{ steps.db-template-key.outputs.manifest }}
+  db-template-current:
+    description: Manifest of this checkout's cache-key inputs, to store with a fresh dump.
+    value: ${{ steps.db-template-key.outputs.current }}
 
 runs:
   using: composite
@@ -152,30 +158,56 @@ runs:
     # under a migrations directory (data migrations included), the few modules
     # migrations import code from, the dependency set (third-party migrations:
     # auth, contenttypes, sites, celery beat ...), the settings, and the
-    # template builder itself. Change any of them and the key misses, pytest
-    # migrates cold, and the job that passes saves the new dump. Exact key
-    # only -- NO restore-keys: a prefix match would hand pytest an older schema,
-    # which --reuse-db would then trust.
+    # template builder itself. Change any of them and the exact key misses.
+    #
+    # A miss is NOT a cold migrate unless it has to be. The key is the hash of a
+    # manifest (sha256 per input file), and the manifest is cached with the
+    # dump. On a miss the newest older dump is restored by prefix, and
+    # `restore-older` applies only the new migrations to it -- but only when
+    # every file that dump was built from is unchanged and everything added is
+    # a migration. Anything else (an edited migration, a changed setting) is
+    # dropped and pytest migrates cold, as before. A prefix match is never
+    # trusted as-is: --reuse-db would believe an older schema.
     #
     # `pg17-3.5` is the postgis service image in ci.yml; bump it with the image.
     #
     # Not on `schedule`: the nightly run migrates from scratch, so the path
     # every cache miss relies on is exercised at least once a day.
+    - name: Tune the test Postgres
+      if: inputs.postgres-container != ''
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/test-db-template.sh" tune "${{ inputs.postgres-container }}"
+
     - name: Compute the test database cache key
       id: db-template-key
       if: inputs.postgres-container != '' && github.event_name != 'schedule'
       shell: bash
       run: |
-        echo "key=test-db-v1-${{ runner.os }}-pg17-3.5-${{ hashFiles('connect_labs/**/migrations/**', 'connect_labs/program/utils.py', 'connect_labs/opportunity/visit_import.py', 'connect_labs/users/models.py', 'requirements/base.txt', 'requirements/dev.txt', 'config/settings/base.py', 'config/settings/test.py', 'connect_labs/testing/db_template.py', '.github/actions/setup-pytest/test-db-template.sh') }}" >> "$GITHUB_OUTPUT"
-        echo "dump=${{ runner.temp }}/test-db-template/template.dump" >> "$GITHUB_OUTPUT"
+        dir="${{ runner.temp }}/test-db-template"
+        mkdir -p "$dir"
+        # Tracked files only, sorted, so the manifest is the same on every runner.
+        git ls-files -z -- ':(glob)connect_labs/**/migrations/**' \
+          connect_labs/program/utils.py connect_labs/opportunity/visit_import.py \
+          connect_labs/users/models.py requirements/base.txt requirements/dev.txt \
+          config/settings/base.py config/settings/test.py \
+          connect_labs/testing/db_template.py .github/actions/setup-pytest/test-db-template.sh \
+          | sort -z | xargs -0 sha256sum > "$dir/manifest.current"
+        echo "key=test-db-v2-${{ runner.os }}-pg17-3.5-$(sha256sum < "$dir/manifest.current" | cut -c1-64)" >> "$GITHUB_OUTPUT"
+        echo "prefix=test-db-v2-${{ runner.os }}-pg17-3.5-" >> "$GITHUB_OUTPUT"
+        echo "dump=$dir/template.dump" >> "$GITHUB_OUTPUT"
+        echo "manifest=$dir/manifest.txt" >> "$GITHUB_OUTPUT"
+        echo "current=$dir/manifest.current" >> "$GITHUB_OUTPUT"
 
     - name: Restore the test database dump
       id: db-template-cache
       if: steps.db-template-key.outputs.key != ''
       uses: actions/cache/restore@v4
       with:
-        path: ${{ steps.db-template-key.outputs.dump }}
+        path: |
+          ${{ steps.db-template-key.outputs.dump }}
+          ${{ steps.db-template-key.outputs.manifest }}
         key: ${{ steps.db-template-key.outputs.key }}
+        restore-keys: ${{ steps.db-template-key.outputs.prefix }}
 
     - name: Load the migrated test database template
       if: steps.db-template-cache.outputs.cache-hit == 'true'
@@ -184,3 +216,13 @@ runs:
         bash "$GITHUB_ACTION_PATH/test-db-template.sh" restore
         "${{ inputs.postgres-container }}" test_postgres_tpl
         "${{ steps.db-template-key.outputs.dump }}"
+
+    - name: Load an older template and apply the new migrations
+      if: steps.db-template-cache.outputs.cache-hit != 'true' && steps.db-template-cache.outputs.cache-matched-key != ''
+      shell: bash
+      run: >-
+        bash "$GITHUB_ACTION_PATH/test-db-template.sh" restore-older
+        "${{ inputs.postgres-container }}" test_postgres_tpl
+        "${{ steps.db-template-key.outputs.dump }}"
+        "${{ steps.db-template-key.outputs.manifest }}"
+        "${{ steps.db-template-key.outputs.current }}"
