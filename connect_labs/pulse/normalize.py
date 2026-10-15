@@ -122,6 +122,8 @@ SERVICE_LABELS.update(
         # a category rather than the thing an organisation applies to deliver.
         "nutrition": "Ready-to-Use Therapeutic Food (RUTF)",
         "interview": "Interviews",
+        # Confirmed by Jonathan 2026-10-15.
+        "rs": "Rooftop Sampling",
         # Chlorine dispensers and the rest of safe-water delivery. Confirmed by
         # Jonathan 2026-09-17 when the 2025 Chlorine EOI needed a program:
         # this is a NEW type, so it may carry no Connect opportunities yet and

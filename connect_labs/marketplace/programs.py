@@ -116,12 +116,13 @@ def hue(slug: str | None) -> str:
 #   connect.dimagi.com/portfolio's own, each used only for the program it
 #   actually pictures: a borrowed photo of a different program would say
 #   something false about this one. `chlorine` shares water.svg because that
-#   file IS the portfolio's chlorine-dispenser graphic.
+#   file IS the portfolio's chlorine-dispenser graphic, and `rs` (Rooftop
+#   Sampling) is the portfolio's building-sampling graphic.
 # - Where the portfolio has nothing, an illustration drawn for this page in
 #   the same style (same scene, same field worker) stands in, showing what the
-#   program's name says and no more. `rs` and `non-managed-opportunity` are
-#   codes nobody has named as programs, so theirs show a plain field visit
-#   rather than a guess at what the program is.
+#   program's name says and no more. `non-managed-opportunity` is a code
+#   nobody has named as a program, so it shows a plain field visit rather
+#   than a guess at what the program is.
 #
 # Each carries the CSS object-position that keeps its people in frame: the
 # card crops every picture to one wide band, and a centred crop of a portrait
