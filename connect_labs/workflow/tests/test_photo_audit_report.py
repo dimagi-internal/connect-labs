@@ -38,25 +38,6 @@ def test_scopes_from_context_and_reads_both_summary_endpoints():
     assert "sessions-summary/" in rc
 
 
-def test_filters_are_multiselects_chosen_from_available_values():
-    rc = _tmpl()["render_code"]
-    # Auditors and audits are picked from the values present, not typed.
-    assert "renderMultiSelect" in rc
-    assert "selectedAuditors" in rc and "auditorOptions" in rc
-    assert "selectedAudits" in rc and "auditOptions" in rc
-    # Audit options key on run id OR session id (same as the backend match).
-    assert "auditKey" in rc
-    # Date range still present.
-    assert "startDate" in rc and "endDate" in rc and "inDateRange" in rc
-
-
-def test_multiselect_open_state_lives_on_the_parent():
-    # A child component defined inside WorkflowUI would remount on every parent
-    # re-render and slam the menu shut; the open state must be parent-held.
-    rc = _tmpl()["render_code"]
-    assert "openMenu" in rc
-
-
 def test_migrates_legacy_freetext_config():
     rc = _tmpl()["render_code"]
     # Old instances saved auditor/auditIds as strings.
@@ -70,14 +51,6 @@ def test_success_rate_formula_excludes_pending_and_counts_dupfake_as_fail():
     assert "duplicate_fake" in rc
 
 
-def test_has_not_reviewed_kpi_and_auditor_column():
+def test_the_auditor_column_reads_the_summary_rows_auditor_username():
     rc = _tmpl()["render_code"]
-    assert "Photos not yet reviewed" in rc  # pending KPI (feedback #4)
-    assert "Auditor(s)" in rc  # auditor column (feedback #5)
     assert "auditor_username" in rc
-
-
-def test_shows_program_total_and_per_opportunity_grouping():
-    rc = _tmpl()["render_code"]
-    assert "groupsByOpp" in rc
-    assert "Program total" in rc

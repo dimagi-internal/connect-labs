@@ -123,6 +123,8 @@ def test_s1_staff_and_system_still_merge(victims_org, attackers_org):
     a = LabsOrg.objects.create(slug="a-ngo", name="A")
     b = LabsOrg.objects.create(slug="b-ngo", name="B")
     call_operation("org_merge", SupplyDataAccess(caller=SYSTEM), {"keep_id": a.pk, "merge_id": b.pk})
+    assert not LabsOrg.objects.filter(pk__in=[attackers_org.pk, b.pk]).exists()
+    assert LabsOrg.objects.filter(pk__in=[victims_org.pk, a.pk]).count() == 2
 
 
 def test_s1_nobody_but_staff_changes_a_labs_only_row(victims_org, victim):

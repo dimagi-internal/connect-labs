@@ -79,14 +79,14 @@ def test_verify_release_names_what_is_available(monkeypatch):
 def test_verify_release_is_quiet_when_the_pin_is_live(monkeypatch):
     monkeypatch.setattr(overture, "available_releases", lambda con=None: [overture.OVERTURE_RELEASE, "old"])
 
-    overture.verify_release()  # must not raise
+    assert overture.verify_release() is None  # must not raise
 
 
 def test_verify_release_does_not_guess_when_the_bucket_cannot_be_listed(monkeypatch):
     """No network, no opinion — a listing failure must not look like an expired pin."""
     monkeypatch.setattr(overture, "available_releases", lambda con=None: [])
 
-    overture.verify_release()  # must not raise
+    assert overture.verify_release() is None  # must not raise
 
 
 def test_a_stale_extract_warns_on_the_fetch_path_not_only_in_a_cli(caplog, monkeypatch):

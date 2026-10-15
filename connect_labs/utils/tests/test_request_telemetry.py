@@ -782,7 +782,8 @@ class TestRetryWaitIsNotOurCpu:
     def test_recording_outside_a_request_is_a_noop(self):
         """Celery, management commands and the shell have no stats context."""
         request_telemetry._stats.set(None)
-        request_telemetry.record_retry_wait(50.0)  # must not raise
+        assert request_telemetry.record_retry_wait(50.0) is None  # must not raise
+        assert request_telemetry._stats.get() is None
 
     def test_self_ms_never_goes_negative_when_the_wait_dominates(self, request_obj, caplog):
         """A wait longer than the measured duration must clamp, not underflow."""

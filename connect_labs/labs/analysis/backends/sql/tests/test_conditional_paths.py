@@ -193,9 +193,11 @@ class TestPythonMatchesSql:
 
 class TestDeclaration:
     def test_conditional_paths_alone_satisfy_the_path_requirement(self):
-        FieldComputation(
+        field = FieldComputation(
             name="x", conditional_paths=[{"when_path": "form.@name", "when_value": "F", "paths": ["form.a"]}]
         )
+        assert not field.path
+        assert field.conditional_paths[0]["paths"] == ["form.a"]
 
     @pytest.mark.parametrize(
         "entry,needle",

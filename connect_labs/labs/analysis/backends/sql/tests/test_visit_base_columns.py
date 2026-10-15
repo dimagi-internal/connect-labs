@@ -184,7 +184,8 @@ class TestEndToEndAgainstPostgres:
 
         self._seed(30016)
         (row,) = self._run(30016)
-        _json.dumps(_with_passthrough_columns(row, {"muac_cm": row.get("muac_cm")}))
+        computed = _with_passthrough_columns(row, {"muac_cm": row.get("muac_cm")})
+        assert _json.loads(_json.dumps(computed)) == computed
 
     def test_submission_time_is_separable_from_meeting_date(self, db):
         """`visit_date` is when the meeting happened; `date_created` is when it
@@ -193,14 +194,6 @@ class TestEndToEndAgainstPostgres:
         (row,) = self._run(30011)
         assert str(row["visit_date"]) == "2026-08-01"
         assert row["date_created"].startswith("2026-08-03T14:30:00")
-
-    def test_date_created_comes_back_json_serializable(self, db):
-        """A datetime here would blow up the ComputedVisitCache JSONField write."""
-        import json
-
-        self._seed(30012)
-        (row,) = self._run(30012)
-        json.dumps({"date_created": row["date_created"], "flag_reason": row["flag_reason"]})
 
     def test_review_status_reaches_the_row(self, db):
         self._seed(30013)

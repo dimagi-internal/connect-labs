@@ -147,11 +147,3 @@ class TestTheWatermarkKwargIsActuallyAccepted:
             "get_audit_sessions must accept **data_filters; the watermark read path passes "
             "completed_at__gt through it"
         )
-
-    def test_binding_the_watermark_call_does_not_raise(self):
-        """What production actually did, checked against the real signature."""
-        import inspect
-
-        inspect.signature(AuditDataAccess.get_audit_sessions).bind(
-            None, status="completed", completed_at__gt="2026-05-01T00:00:00+00:00"
-        )

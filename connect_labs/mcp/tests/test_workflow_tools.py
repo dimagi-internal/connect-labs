@@ -1817,12 +1817,12 @@ class TestRegistrySourceBinding:
     def test_a_named_on_disk_registry_needs_no_database_read(self):
         from connect_labs.mcp.tools.workflows import _validate_registry_source
 
-        _validate_registry_source({"name": "kmc"}, None)
+        assert _validate_registry_source({"name": "kmc"}, None) is None
 
     def test_empty_dict_is_the_builtin_and_is_valid(self):
         from connect_labs.mcp.tools.workflows import _validate_registry_source
 
-        _validate_registry_source({}, None)
+        assert _validate_registry_source({}, None) is None
 
 
 class TestSnapshotInputsAcceptsABuilderSpec:
@@ -1845,18 +1845,21 @@ class TestSnapshotInputsAcceptsABuilderSpec:
         return _validate_snapshot_inputs(value)
 
     def test_a_builder_spec_is_accepted(self):
-        self._validate(
-            {
-                "builder": "semantic_snapshot",
-                "series": "KMC",
-                "scopes": ["programme", "flw"],
-                "pipelines": ["children", "visits"],
-                "case_index": {"pipeline": "children", "fields": ["entity_id"]},
-                "visits_pipeline": "visits",
-                "credibility": {"mortality": "mortality_recording_credible"},
-                "min_denominator_default": 25,
-                "workers": False,
-            }
+        assert (
+            self._validate(
+                {
+                    "builder": "semantic_snapshot",
+                    "series": "KMC",
+                    "scopes": ["programme", "flw"],
+                    "pipelines": ["children", "visits"],
+                    "case_index": {"pipeline": "children", "fields": ["entity_id"]},
+                    "visits_pipeline": "visits",
+                    "credibility": {"mortality": "mortality_recording_credible"},
+                    "min_denominator_default": 25,
+                    "workers": False,
+                }
+            )
+            is None
         )
 
     def test_an_unregistered_builder_is_refused_by_name(self):

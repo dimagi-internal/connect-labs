@@ -190,7 +190,8 @@ def test_an_empty_tag_does_not_crash_the_reader():
     raw = bytearray(_tiff(np.zeros((2, 2), dtype="f4")))
     i = raw.find(struct.pack(">HHI", 277, 3, 1))
     raw[i + 4 : i + 8] = struct.pack(">I", 0)  # count -> 0
-    geotiff.read(bytes(raw))  # falls back to the default of one sample
+    r = geotiff.read(bytes(raw))  # falls back to the default of one sample
+    assert (r.height, r.width) == (2, 2)
 
 
 # --------------------------------------------------------------------------

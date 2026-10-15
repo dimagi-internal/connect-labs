@@ -423,7 +423,7 @@ class TestSupplyPoint:
             point.full_clean()
 
     def test_a_store_needs_no_user(self, store):
-        store.full_clean()
+        assert store.full_clean() is None
 
 
 class TestNegativeBalance:

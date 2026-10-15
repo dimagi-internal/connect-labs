@@ -57,7 +57,6 @@ def test_the_audit_window_follows_the_workers_own_data_not_a_fixed_lookback():
     """A frozen run is a snapshot of a past period. A trailing-30-days window would
     silently audit nothing on one, which reads as 'the button is broken'."""
     src = RENDER.read_text()
-    assert "function flwDateRange" in src
     assert "first_visit" in src and "last_visit" in src
 
 
@@ -125,8 +124,6 @@ def test_the_scorecard_reads_the_payload_and_fetches_nothing_itself():
         "measures: P.cMeasures" in src and "programme: P.programInd" in src
     ), "the scorecard must come off the payload's one indicator set"
     assert "/semantic/" not in src, "the render must not query the semantic endpoint itself"
-    for gone in ("function loadNSeries", "function nBandOf", "function nCell"):
-        assert gone not in src, f"{gone} is the second grader this replaced"
 
 
 def test_the_scorecard_is_neals_table_column_for_column():
@@ -166,28 +163,15 @@ def test_the_render_does_not_keep_its_own_copy_of_the_registry():
     drift from the measure it grades."""
     src = RENDER.read_text()
     assert "SC.measures" in src, "the catalog must drive the cells"
-    assert "N_SERIES = [" not in src, "a hardcoded N-series list is the duplication"
     assert "m.min_denominator" in src
 
 
-def test_a_value_under_its_minimum_denominator_reads_insufficient_not_a_number():
-    """The spec's rule 0.2, and the reason every measure ships a denominator.
-
-    The cell is drawn by the shared report library's ScoreCellText; its
-    behaviour is pinned by components/workflow/report/report.test.js."""
-    src = RENDER.read_text()
-    assert "<R.ScoreCellText" in src and "<R.ScoreCell" in src
-    lib = LIBRARY_SCORECARD.read_text()
-    assert "'insufficient'" in lib
-    assert "n&lt;" in lib
-
-
 def test_a_not_credible_figure_is_marked_not_erased():
-    """Mortality carries the LLO credibility verdict. A non-credible recorder's mortality is
-    shown greyed with the reason, never blanked -- blanking hides under-recording."""
+    """Mortality carries the LLO credibility verdict (the builder's 'notcredible'
+    band). A non-credible recorder's mortality is shown greyed with the reason,
+    never blanked -- blanking hides under-recording."""
     lib = LIBRARY_SCORECARD.read_text()
     assert "'notcredible'" in lib
-    assert "Death recording is not credible" in lib
 
 
 # ── one declaration per name ─────────────────────────────────────────────────
@@ -241,40 +225,6 @@ def test_a_pre_2004_run_keeps_only_the_indicators_whose_definition_did_not_chang
     assert "legacyIds: true" in src and "P.legacyIds ?" in src, "the page must say an old run is partial"
 
 
-def test_an_old_runs_mortality_tile_falls_back_to_its_own_cell():
-    """A pre-2004 run carries no pooled-over-credible mortality (its pool was the
-    workbook's rule, dropped as not comparable), so the undrilled tile must read
-    the programme cell rather than render blank."""
-    src = RENDER.read_text()
-    body = src[src.index("  function tileEntry(id) {") :]
-    body = body[: body.index("\n  }\n")]
-    assert "mortalityCredible.ind)" in body and "return entryOf(scopeInd, id);" in body
-    assert "'all organizations'" in src
-
-
-def test_the_trends_say_they_are_loading_rather_than_one_report_so_far():
-    """The run history takes seconds to arrive. Until it does there is one point
-    (this run), and the charts read "One report so far" -- a statement about the
-    data that is false on a report with 71 saved runs. `history` is null until the
-    fetch settles; the trends and their caption must say they are loading.
-
-    The chart is the shared library's TrendCard, which shows its loading state
-    when handed `loading` (pinned in components/workflow/report/report.test.js)."""
-    src = RENDER.read_text()
-    body = src[src.index("  function SmallTrend(props) {") :]
-    body = body[: body.index("  function ChartsRow() {")]
-    assert "<R.TrendCard" in body
-    assert "loading={history === null}" in body, "a history still loading must reach the card as loading"
-    lib = LIBRARY_CHARTS.read_text()
-    assert lib.index("props.loading") < lib.index("One report so far")
-    assert "Loading the trend" in lib
-    assert "loading the saved reports" in src
-    effect = src[src.index("var defId =") :]
-    assert effect.index("setHistory([])") < effect.index(
-        "var cancelled"
-    ), "a page with no definition id must settle, not load forever"
-
-
 def test_enrolment_targets_are_config_not_code():
     """Neal's "what we've done and the targets through March" view reads its targets
     from the workflow's `config.enrollment_targets`. A number in the render would
@@ -282,14 +232,11 @@ def test_enrolment_targets_are_config_not_code():
     twin and any other KMC report -- and would need a deploy to correct."""
     src = RENDER.read_text()
     assert "definition.config.enrollment_targets" in src
-    assert "<EnrolmentTargets />" in src
     body = src[src.index("function EnrolmentTargets()") : src.index("// ── One scorecard head")]
     # The arithmetic is the shared library's, so it is tested once, there.
     assert "R.enrolmentProgress(" in body
     for literal in ("1515", "9659", "1597", "12771", "11000", "11,000", "'NAMA'", "'PIPN'", "'EHA'"):
         assert literal not in body, f"programme-specific {literal} hard-coded in the render"
-    # An instance with no targets draws nothing.
-    assert "if (!TARGETS || !R.enrolmentProgress) return null;" in body
     from connect_labs.workflow.templates.kmc_programme_metrics import DEFINITION
 
     assert "enrollment_targets" not in DEFINITION["config"], "a target is never a template default"

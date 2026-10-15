@@ -394,8 +394,7 @@ class TestWindowFieldValidation:
         """visit_datetime / visit_date / etc. are base columns on
         labs_raw_visit_cache and are valid references without being
         in fields[]."""
-        # Should NOT raise
-        AnalysisPipelineConfig(
+        config = AnalysisPipelineConfig(
             grouping_key="username",
             terminal_stage=CacheStage.VISIT_LEVEL,
             fields=[
@@ -414,6 +413,7 @@ class TestWindowFieldValidation:
                 ),
             ],
         )
+        assert [w.order_by for w in config.window_fields] == ["visit_date"]
 
     def test_window_field_name_cannot_inject_sql(self):
         """A crafted window-field name must not break out of the SELECT alias.

@@ -522,7 +522,7 @@ def test_require_access_allows_dimagi_internal_across_domain(user):
         allowed_domains=["@dimagi.com"],  # does NOT include @dimagi-ai.com
     )
     # Allowed via the Dimagi-internal operator carve-out. Does not raise.
-    _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, labs_only_id)
+    assert _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, labs_only_id) is None
 
 
 @pytest.mark.django_db
@@ -563,7 +563,7 @@ def test_require_access_allows_partner_within_allowed_domains(user):
         enabled=True,
         allowed_domains=["@partner-y.com"],
     )
-    _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, labs_only_id)  # does not raise
+    assert _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, labs_only_id) is None  # does not raise
 
 
 @pytest.mark.django_db
@@ -584,7 +584,7 @@ def test_require_access_allows_registered_visible_labs_only_opp(user):
     )
 
     # Does not raise (visible via path 1).
-    _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, labs_only_id)
+    assert _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, labs_only_id) is None
 
 
 @pytest.mark.django_db
@@ -757,7 +757,7 @@ def test_truncated_list_does_not_deny_access_production_confirms(user, monkeypat
 
     monkeypatch.setattr(syn, "_fetch_endpoint", lambda *a, **k: {"id": 523, "name": "NAMA"})
     # 523 is absent from the list, but production confirms it — must be allowed.
-    _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, 523)
+    assert _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, 523) is None
     syn._ACCESS_CACHE.clear()
     syn._PROBE_CACHE.clear()
 

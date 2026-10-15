@@ -26,52 +26,55 @@ def _minimal_valid() -> dict:
 
 
 def test_minimal_payload_passes():
-    validate_solicitation_payload(_minimal_valid())
+    assert validate_solicitation_payload(_minimal_valid()) is None
 
 
 def test_full_canonical_payload_passes():
     """The fully-shaped payload ACE should send round-trips cleanly."""
-    validate_solicitation_payload(
-        {
-            "title": "Full",
-            "description": "Why this matters",
-            "scope_of_work": "- bullet one\n- bullet two",
-            "solicitation_type": "eoi",
-            "status": "active",
-            "application_deadline": "2026-06-30",
-            "expected_start_date": "2026-07-01",
-            "expected_end_date": "2026-08-30",
-            "estimated_scale": "30 visits",
-            "contact_email": "ace@dimagi.com",
-            "program_name": "Malaria SBC",
-            "connect_opportunity_id": 1821,
-            "fund_id": 42,
-            "questions": [
-                {"id": "q1", "text": "Languages?", "type": "text", "required": True},
-                {"id": "q2", "text": "Pick", "type": "multiple_choice", "options": ["A", "B"]},
-            ],
-            "evaluation_criteria": [
-                {
-                    "id": "ec1",
-                    "name": "Capacity",
-                    "weight": 60,
-                    "linked_questions": ["q1"],
-                },
-                {
-                    "id": "ec2",
-                    "name": "Approach",
-                    "weight": 40,
-                    "scoring_guide": "10 = strong",
-                    "linked_questions": ["q2"],
-                },
-            ],
-        }
+    assert (
+        validate_solicitation_payload(
+            {
+                "title": "Full",
+                "description": "Why this matters",
+                "scope_of_work": "- bullet one\n- bullet two",
+                "solicitation_type": "eoi",
+                "status": "active",
+                "application_deadline": "2026-06-30",
+                "expected_start_date": "2026-07-01",
+                "expected_end_date": "2026-08-30",
+                "estimated_scale": "30 visits",
+                "contact_email": "ace@dimagi.com",
+                "program_name": "Malaria SBC",
+                "connect_opportunity_id": 1821,
+                "fund_id": 42,
+                "questions": [
+                    {"id": "q1", "text": "Languages?", "type": "text", "required": True},
+                    {"id": "q2", "text": "Pick", "type": "multiple_choice", "options": ["A", "B"]},
+                ],
+                "evaluation_criteria": [
+                    {
+                        "id": "ec1",
+                        "name": "Capacity",
+                        "weight": 60,
+                        "linked_questions": ["q1"],
+                    },
+                    {
+                        "id": "ec2",
+                        "name": "Approach",
+                        "weight": 40,
+                        "scoring_guide": "10 = strong",
+                        "linked_questions": ["q2"],
+                    },
+                ],
+            }
+        )
+        is None
     )
 
 
 def test_is_public_alongside_data_is_tolerated():
     """is_public lives on the LabsRecord envelope; we don't flag it as drift."""
-    validate_solicitation_payload({**_minimal_valid(), "is_public": True})
+    assert validate_solicitation_payload({**_minimal_valid(), "is_public": True}) is None
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +151,7 @@ def test_invalid_date_string():
 
 def test_empty_date_string_tolerated():
     """Empty string is treated as 'not set' — matches form-to-API roundtrip."""
-    validate_solicitation_payload({**_minimal_valid(), "expected_start_date": ""})
+    assert validate_solicitation_payload({**_minimal_valid(), "expected_start_date": ""}) is None
 
 
 # ---------------------------------------------------------------------------
@@ -168,10 +171,6 @@ def test_email_validator_rejects_malformed_shapes(bad):
     with pytest.raises(ValidationError) as exc_info:
         validate_solicitation_payload({**_minimal_valid(), "contact_email": bad})
     assert "contact_email" in exc_info.value.message_dict
-
-
-def test_valid_email_passes():
-    validate_solicitation_payload({**_minimal_valid(), "contact_email": "ace@dimagi.com"})
 
 
 # ---------------------------------------------------------------------------
@@ -230,18 +229,21 @@ def test_question_rejects_unknown_keys():
 
 def test_question_framing_passes_when_present():
     """Optional 'why we're asking' preface accepts non-empty strings."""
-    validate_solicitation_payload(
-        {
-            **_minimal_valid(),
-            "questions": [
-                {
-                    "id": "q1",
-                    "text": "Propose your per-HH FLW rate.",
-                    "type": "text",
-                    "framing": "Helps us calibrate against the payment band.",
-                }
-            ],
-        }
+    assert (
+        validate_solicitation_payload(
+            {
+                **_minimal_valid(),
+                "questions": [
+                    {
+                        "id": "q1",
+                        "text": "Propose your per-HH FLW rate.",
+                        "type": "text",
+                        "framing": "Helps us calibrate against the payment band.",
+                    }
+                ],
+            }
+        )
+        is None
     )
 
 
@@ -334,10 +336,6 @@ def test_connect_opportunity_id_must_be_int():
         validate_solicitation_payload({**_minimal_valid(), "connect_opportunity_id": "1821"})
 
 
-def test_connect_opportunity_id_int_passes():
-    validate_solicitation_payload({**_minimal_valid(), "connect_opportunity_id": 1821})
-
-
 def test_fund_id_must_be_int():
     with pytest.raises(ValidationError):
         validate_solicitation_payload({**_minimal_valid(), "fund_id": "42"})
@@ -350,7 +348,7 @@ def test_fund_id_must_be_int():
 
 def test_partial_skips_required_fields():
     """Update payloads only carry the fields being changed — required not enforced."""
-    validate_solicitation_payload({"status": "closed"}, partial=True)
+    assert validate_solicitation_payload({"status": "closed"}, partial=True) is None
 
 
 def test_partial_still_rejects_unknown_fields():
@@ -383,7 +381,7 @@ def test_partial_validates_nested_shapes():
 
 def test_partial_empty_dict_passes():
     """No-op update is a valid (if uninteresting) partial payload."""
-    validate_solicitation_payload({}, partial=True)
+    assert validate_solicitation_payload({}, partial=True) is None
 
 
 def test_partial_does_not_require_solicitation_type():
@@ -419,14 +417,14 @@ def test_plans_full_entry_passes():
     payload["source_program_id"] = 25
     payload["source_group_id"] = 88
     payload["source_plan_ids"] = [123, 124]
-    validate_solicitation_payload(payload)
+    assert validate_solicitation_payload(payload) is None
 
 
 def test_plans_minimal_entry_passes():
     payload = _minimal_valid()
     payload["plans"] = [{"plan_id": 1, "name": "Solo"}]
     payload["source_group_id"] = None  # single-plan origin
-    validate_solicitation_payload(payload)
+    assert validate_solicitation_payload(payload) is None
 
 
 def test_plans_must_be_list():
@@ -468,7 +466,7 @@ def test_plan_boundaries_geometry_passes():
     geom = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]}
     payload = _minimal_valid()
     payload["plans"] = [_plan_entry(boundaries=[{"name": "North", "arm": "intervention", "geometry": geom}])]
-    validate_solicitation_payload(payload)
+    assert validate_solicitation_payload(payload) is None
 
 
 def test_plan_boundary_unknown_key_rejected():

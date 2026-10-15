@@ -3,9 +3,17 @@
 Per the design spec, KYC provider, payment disbursement, and live CommCare reads are
 **stubbed** for the demo — "approve payment" persists a local DB state and nothing
 leaves the box. These tests (1) pin that contract — a payment approval makes NO
-outbound HTTP, so the demo can't accidentally move money — and (2) leave a greppable,
-skipped placeholder per seam that should turn into a real integration test when the
-external system is wired. Grep `pytest.mark.stub` to find the whole frontier.
+outbound HTTP, so the demo can't accidentally move money — and (2) list the seams
+that still need a real integration test once the external system is wired:
+
+- payment-gateway disbursement (spec §2/§11): approve → gateway called with the
+  correct amount/account; gateway failure rolls back to `hold`; idempotency.
+- KYC provider submission (spec §2): submit → provider called; result maps to
+  approved/pending/rejected; fraud signals surface from the provider response.
+- live CommCare worker/case reads (spec §11): bootstrap sources workers from the
+  CommCare Case/Form API using the user's campaign_oauth token.
+
+Grep `pytest.mark.stub` to find the whole frontier.
 """
 
 from __future__ import annotations
@@ -47,24 +55,3 @@ def test_kyc_decision_makes_no_outbound_http():
     hp.assert_not_called()
     worker.refresh_from_db()
     assert worker.kyc == "review"
-
-
-# --- Greppable placeholders for the real integrations (not built yet) -------------
-
-
-@pytest.mark.skip(reason="STUB: real payment-gateway disbursement is not built (spec §2/§11)")
-def test_real_payment_disbursement_integration():
-    """When a payment gateway is wired, assert: approve → gateway called with the
-    correct amount/account; gateway failure rolls back to `hold`; idempotency."""
-
-
-@pytest.mark.skip(reason="STUB: real KYC provider submission is not built (spec §2)")
-def test_real_kyc_provider_submission_integration():
-    """When a KYC provider is wired, assert: submit → provider called; result maps to
-    approved/pending/rejected; fraud signals surface from the provider response."""
-
-
-@pytest.mark.skip(reason="STUB: live CommCare worker/case reads are not built — data is seeded (spec §11)")
-def test_live_commcare_worker_reads_integration():
-    """When live CommCare reads replace the seeder, assert: bootstrap sources workers
-    from the CommCare Case/Form API using the user's campaign_oauth token."""

@@ -51,11 +51,6 @@ def _fake_keys(monkeypatch):
 
 
 @pytest.mark.parametrize("module_name", _agent_modules())
-def test_every_agent_module_imports(module_name):
-    importlib.import_module(f"connect_labs.ai.agents.{module_name}")
-
-
-@pytest.mark.parametrize("module_name", _agent_modules())
 def test_every_agent_factory_still_builds_an_agent(module_name):
     module = importlib.import_module(f"connect_labs.ai.agents.{module_name}")
     built = 0
