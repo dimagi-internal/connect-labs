@@ -145,8 +145,8 @@ class _PathModel:
     # impossible steps between close visits, and a random walk where they do not blurs
     # each case's slope (see _ar_coefficient).
     resid_ar: float = 0.0
-    # The source's own departures from trend, sorted and scaled to resid_sd: a fresh
-    # departure is drawn from these, so its tails are the source's (see _sample_case).
+    # The source's own departures from trend, sorted: a fresh departure is drawn from
+    # these, so its tails are the source's (see fit_case_model).
     resid_pool: np.ndarray | None = None
     # The values the source's readings gather on beyond chance (a weight written in whole
     # hundreds), and per persona or "*" the share of readings put on one (see _fit_grid).
@@ -1158,14 +1158,14 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
             # to +58 g/kg/day at the 2nd and 98th percentiles, and Gaussian draws at the
             # robust spread (which slips must not set) ran -7 to +45, so a third of the
             # source's impossible steps never happened. Drawn from the source's own
-            # departures instead, rescaled to the spread fitted above. Departures from
-            # the line through each reading's NEIGHBOURS (scaled for the two readings
-            # that line uses): from the case's one line, a growth curve's bend over two
-            # months read as scale error, and impossible steps overshot (12% against 10%).
+            # departures instead, as they are: departures from the line through each
+            # reading's NEIGHBOURS (scaled for the two readings that line uses), since
+            # from the case's one line a growth curve's bend over two months read as
+            # scale error. Not rescaled to a robust spread: where nearly every reading
+            # is a whole hundred most departures are 0, the robust spread is tiny, and
+            # rescaling to it multiplied the rest (EHA's impossible steps 11% against 3%).
             raw = np.array(local_resid[path], dtype=float)
-            spread = _robust_sd(raw.tolist())
-            if spread > 0:
-                model.resid_pool = np.sort(raw - float(np.median(raw))) * (model.resid_sd / spread)
+            model.resid_pool = np.sort(raw - float(np.median(raw)))
         if kind == "varying":
             _shrink_slopes(rows, path, slope_fits[path], _robust_sd(resid[path]))
             found = slips.get(path, {})
