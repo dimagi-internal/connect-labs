@@ -10,7 +10,7 @@ docs/OUTBOUND_EMAIL.md):
       --cluster labs-jj-cluster --task <task-id> --container web --interactive \\
       --command "python manage.py supply_seed_phones"
 
-Server-side on purpose, like supply_seed_stock_from_visits: it uploads the
+Server-side on purpose: it uploads the
 handover visits to Drive with the labs service account and dates history with
 seed_overrides. See connect_labs/supply_chain/demo/phones.py.
 """

@@ -311,6 +311,16 @@ def _once_per_class(django_db_blocker, build):
             outer.__exit__(None, None, None)
 
 
+@pytest.fixture(scope="class")
+def _chain_once(django_db_setup, django_db_blocker):
+    yield from _once_per_class(django_db_blocker, _seed_chain)
+
+
+@pytest.fixture(scope="class")
+def _linked_once(django_db_setup, django_db_blocker):
+    yield from _once_per_class(django_db_blocker, _seed_linked)
+
+
 def _keys(value):
     if isinstance(value, dict):
         for key, item in value.items():
@@ -323,10 +333,6 @@ def _keys(value):
 
 @pytest.mark.django_db
 class TestTheChainCarriesItsProvenance:
-    @pytest.fixture(scope="class")
-    def _chain_once(self, django_db_setup, django_db_blocker):
-        yield from _once_per_class(django_db_blocker, _seed_chain)
-
     @pytest.fixture
     def seeded(self, _chain_once, db):
         return _chain_once
@@ -633,10 +639,6 @@ def _told_by_cells(body, heading):
 
 @pytest.mark.django_db
 class TestTheThirdTier:
-    @pytest.fixture(scope="class")
-    def _linked_once(self, django_db_setup, django_db_blocker):
-        yield from _once_per_class(django_db_blocker, _seed_linked)
-
     @pytest.fixture
     def linked(self, _linked_once, db):
         return _linked_once
@@ -743,6 +745,10 @@ class TestTheThirdTier:
 
 @pytest.mark.django_db
 class TestTheLinkIsTheOnlyWayIn:
+    @pytest.fixture
+    def seeded(self, _chain_once, db):
+        return _chain_once
+
     def test_a_link_that_follows_its_organisation_cannot_reach_another_organisations_store(self, access, seeded):
         """Why the distributor's link is a listed one, pinned so it stays that way.
 
