@@ -72,8 +72,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from scipy.stats import norm
 
+# scipy.stats is imported where it is used, never here: ~0.9s, and this module is on
+# every Django process's startup path (see copula.py).
 from .copula import nearest_psd
 from .entities import _time_varying_paths, place_in_window
 
@@ -119,6 +120,8 @@ class _Margin:
 
     def cdf_scores(self, x: np.ndarray) -> np.ndarray:
         """Normal scores of ``x`` by mid-rank within this margin (ties share a rank)."""
+        from scipy.stats import norm
+
         m = len(self.values)
         left = np.searchsorted(self.values, x, side="left")
         right = np.searchsorted(self.values, x, side="right")
@@ -1240,6 +1243,8 @@ def _backoff(model: _CatModel, terc: int, prev: str | None, shape: tuple | None 
 
 
 def _sample_params(model: CaseModel, n: int, rng: np.random.Generator) -> dict[str, float]:
+    from scipy.stats import norm
+
     cols = model.columns
     i_n = cols.index("n")
     m_n = model.margins["n"]
