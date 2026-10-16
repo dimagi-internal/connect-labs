@@ -29,7 +29,8 @@ export interface Tile {
   progressColour?: string;
   /** 0..100: a tick on the progress bar where the target sits. */
   progressTarget?: number | null;
-  /** 'lower' shows a "lower is better" chip beside the label. */
+  /** 'lower' shows a "lower is better" chip beside the label (on its own
+   * line when the two do not fit). */
   direction?: string | null;
   /** Makes the label a button (e.g. to open the indicator's definition). */
   onLabelClick?: () => void;
@@ -100,27 +101,40 @@ export function HeadlineTiles(props: { tiles: Tile[] }) {
             key={t.id}
             className="bg-white border border-gray-200 rounded-xl px-4 pt-3 pb-3"
           >
+            {/* The label is the indicator's NAME, so it wraps rather than
+                truncates ("TRANSFER …" names nothing). The direction chip wraps
+                onto its own line when the two do not fit side by side, instead
+                of squeezing the label. */}
             <div
-              className="flex items-center justify-between text-xs whitespace-nowrap"
-              style={{ minWidth: 0, gap: 4 }}
+              data-tile-head="1"
+              className="flex flex-wrap items-start justify-between text-xs"
+              // Two lines tall whether or not the chip wrapped, so every
+              // tile's value sits at the same height across the row.
+              style={{ minWidth: 0, columnGap: 4, rowGap: 2, minHeight: 34 }}
             >
               {tile.onLabelClick ? (
                 <button
                   type="button"
-                  className="font-semibold uppercase tracking-wide text-gray-500 truncate text-left hover:text-indigo-700 underline decoration-dotted decoration-gray-300 underline-offset-2"
-                  style={{ minWidth: 0 }}
+                  data-tile-label="1"
+                  className="font-semibold uppercase tracking-wide text-gray-500 text-left break-words hover:text-indigo-700 underline decoration-dotted decoration-gray-300 underline-offset-2"
+                  style={{ minWidth: 0, maxWidth: '100%' }}
                   onClick={tile.onLabelClick}
                 >
                   {t.label}
                 </button>
               ) : (
-                <span className="font-semibold uppercase tracking-wide text-gray-500 truncate">
+                <span
+                  data-tile-label="1"
+                  className="font-semibold uppercase tracking-wide text-gray-500 break-words"
+                  style={{ minWidth: 0, maxWidth: '100%' }}
+                >
                   {t.label}
                 </span>
               )}
               {tile.direction === 'lower' ? (
                 <span
-                  className="rounded bg-gray-100 text-gray-600"
+                  data-direction-chip="1"
+                  className="rounded bg-gray-100 text-gray-600 whitespace-nowrap"
                   style={{
                     padding: '0 4px',
                     fontSize: 11,

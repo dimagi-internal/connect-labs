@@ -69,5 +69,5 @@ WorkflowRunView._add_page_agent). At the end of the body: `javascript` renders i
 {% endcomment %}
 {% block inline_javascript %}
 {{ block.super }}
-{% if canopy_panel %}{% include "canopy_host/panel.html" %}{% endif %}
+{% if canopy_panel %}{% include "workflow/_agent_launcher_reserve.html" %}{% include "canopy_host/panel.html" %}{% endif %}
 {% endblock inline_javascript %}

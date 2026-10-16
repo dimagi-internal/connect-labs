@@ -745,12 +745,18 @@ function WorkflowUI({
     lastVisitDay && asOfDay > lastVisitDay ? gapDays(lastVisitDay, asOfDay) : 0;
   var selDone = selCase ? isDone(selCase) : false;
   var openGap = !selDone && openGapDays > GAP_DAYS;
-  var gapCount =
-    visits.rows.filter(function (v, i) {
-      return (
-        i > 0 && gapDays(visits.rows[i - 1].visit_date, v.visit_date) > GAP_DAYS
-      );
-    }).length + (openGap ? 1 : 0);
+  // The header counts the gaps BETWEEN visits -- exactly the "Days since
+  // previous" cells marked over the threshold, so the count can be checked
+  // against the rows it sits over -- and names the open silence since the last
+  // visit separately, with its length. Folding the open gap into the count
+  // read "5 gaps" over four marked intervals whenever the chart (the only
+  // place the open gap is drawn) was absent.
+  var closedGapCount = visits.rows.filter(function (v, i) {
+    return (
+      i > 0 && gapDays(visits.rows[i - 1].visit_date, v.visit_date) > GAP_DAYS
+    );
+  }).length;
+  var gapCount = closedGapCount + (openGap ? 1 : 0);
   // "Days since previous" is a column only when it varies.
   var sinceVals = visits.rows.slice(1).map(function (v, i) {
     return gapDays(visits.rows[i].visit_date, v.visit_date);
@@ -1499,19 +1505,31 @@ function WorkflowUI({
                       (visitFlags.length
                         ? ' · ' + flaggedCount + ' flagged'
                         : '') +
-                      (gapCount
+                      (closedGapCount
                         ? ' · ' +
-                          gapCount +
-                          (gapCount === 1 ? ' gap' : ' gaps') +
+                          closedGapCount +
+                          (closedGapCount === 1 ? ' gap' : ' gaps') +
                           ' over ' +
                           GAP_DAYS +
                           ' days'
+                        : '') +
+                      (openGap
+                        ? ' · no visit for ' +
+                          openGapDays +
+                          ' days since ' +
+                          R.dateLbl(lastVisitDay)
                         : '')}
                     {uniformStatus ? (
                       <span
+                        data-review-status={uniformStatus}
                         style={statusStyle(uniformStatus, { marginLeft: 8 })}
+                        title={
+                          "Connect's review of each visit. It is not the visit's " +
+                          'own fields (e.g. whether it is payable), which are ' +
+                          'shown per visit.'
+                        }
                       >
-                        {'status: all ' + uniformStatus}
+                        {'review status: all ' + uniformStatus}
                       </span>
                     ) : null}
                     {constantFields.map(function (f) {
@@ -1564,7 +1582,7 @@ function WorkflowUI({
                     </div>
                     {gapCount ? (
                       <div className="flex flex-wrap gap-4 text-xs text-gray-600">
-                        {gapCount > (openGap ? 1 : 0) ? (
+                        {closedGapCount ? (
                           <span>
                             <span
                               className="inline-block mr-1 align-middle"
@@ -1608,7 +1626,7 @@ function WorkflowUI({
                         </th>
                       ) : null}
                       {uniformStatus ? null : (
-                        <th className="px-2 py-1.5 text-left">Status</th>
+                        <th className="px-2 py-1.5 text-left">Review status</th>
                       )}
                       {reading ? (
                         <th className="px-2 py-1.5 text-right">

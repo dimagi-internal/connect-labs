@@ -25,9 +25,12 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LabsReport } from '../../../../components/workflow/report/index';
 import {
+  clippedTileLabels,
   constantColumns,
   contrastFailures,
+  gapCountMismatches,
   gapsOverVisits,
+  unreachableBandAffordances,
   unstatedBandRules,
 } from './render_guards.js';
 
@@ -115,6 +118,8 @@ function allGuards(el) {
     constantColumns: constantColumns(el),
     unstatedBandRules: unstatedBandRules(el),
     gapsOverVisits: gapsOverVisits(el),
+    clippedTileLabels: clippedTileLabels(el),
+    gapCountMismatches: gapCountMismatches(el),
   };
   if (process.env.GUARD_DEBUG) {
     const seen = {};
@@ -143,6 +148,8 @@ const NONE = {
   constantColumns: [],
   unstatedBandRules: [],
   gapsOverVisits: [],
+  clippedTileLabels: [],
+  gapCountMismatches: [],
 };
 
 // ── The programme report ────────────────────────────────────────────────────
@@ -379,8 +386,8 @@ describe('the worker review', () => {
   test('a status or field equal on every visit is said once, not as a column', async () => {
     const { el, firstCase } = await mountWorker();
     await click(byText(el, 'td', firstCase.entity_id).closest('tr'));
-    expect(el.textContent).toContain('status: all approved');
-    expect(byText(el, 'th', 'Status')).toBeUndefined();
+    expect(el.textContent).toContain('review status: all approved');
+    expect(byText(el, 'th', 'Review status')).toBeUndefined();
     expect(el.textContent).toContain('Men attending: 12 at every visit');
     expect(byText(el, 'th', 'Men attending')).toBeUndefined();
     expect(byText(el, 'th', 'Women attending')).toBeTruthy();
@@ -502,8 +509,9 @@ describe('the worker review, second promotion', () => {
     expect(open.getAttribute('data-gap')).toBe('27');
     expect(el.textContent).toContain('still open (no visit since)');
     expect(el.textContent).toContain('no visit for over 7 days');
+    // The two marked intervals, then the open silence with its length.
     expect(el.textContent).toContain(
-      '7 visits · 1 flagged · 3 gaps over 7 days',
+      '7 visits · 1 flagged · 2 gaps over 7 days · no visit for 27 days since 7 Sep',
     );
     expect(el.textContent).toContain('as of 4 Oct 2026');
     expect(gapsOverVisits(el)).toEqual([]);
@@ -557,7 +565,9 @@ describe('the worker review, second promotion', () => {
     ).map((g) => g.getAttribute('data-gap'));
     // Only the 21-day gap is over 14 days; the 14-day one is not.
     expect(closed).toEqual(['21']);
-    expect(el.textContent).toContain('2 gaps over 14 days');
+    expect(el.textContent).toContain(
+      '1 gap over 14 days · no visit for 27 days since 7 Sep',
+    );
   });
 
   test('indicators sit under category rows with the direction said once', async () => {
@@ -725,6 +735,7 @@ describe('a finished case is not stale', () => {
     expect(el.textContent).not.toContain('still open (no visit since)');
     // the gaps BETWEEN its visits are still gaps
     expect(el.textContent).toContain('2 gaps over 7 days');
+    expect(el.textContent).not.toMatch(/no visit for \d+ days since/);
     expect(el.querySelectorAll('[data-finished]').length).toBe(2); // row + heading
     expect(allGuards(el)).toEqual(NONE);
     await React.act(async () => {
@@ -735,8 +746,180 @@ describe('a finished case is not stale', () => {
 
     el = await openCase(finishedPayload()); // WORKER's case not finished
     expect(el.querySelector('rect[data-gap-open]')).toBeTruthy();
-    expect(el.textContent).toContain('3 gaps over 7 days');
+    expect(el.textContent).toContain(
+      '2 gaps over 7 days · no visit for 27 days since 7 Sep',
+    );
     expect(el.querySelector('[data-finished]')).toBeNull();
+  });
+});
+
+// ── The ACE Kaduna demo render (connect-labs#2578) ──────────────────────────
+// Four defects the DDD judges found on the deployed templates over a registry
+// with NO bands or targets (kaduna-graduation/20261015-1411). Each fix is
+// general; the controls below hold that a registry WITH bands (this fixture,
+// KMC, Spark) renders as before.
+
+/** The fixture with every band and target taken out, as a registry that grades
+ * nothing would produce it (snapshot.band_of -> "unbanded"). */
+function unbandedPayload() {
+  const p = JSON.parse(JSON.stringify(PAYLOAD));
+  p.cMeasures.forEach(function (m) {
+    m.bands = null;
+    m.target = null;
+  });
+  (function walk(x) {
+    if (Array.isArray(x)) return x.forEach(walk);
+    if (!x || typeof x !== 'object') return;
+    if (x.band === 'red' || x.band === 'yellow' || x.band === 'green')
+      x.band = 'unbanded';
+    if ('reds' in x) x.reds = 0;
+    if ('yellows' in x) x.yellows = 0;
+    Object.values(x).forEach(walk);
+  })(p);
+  return p;
+}
+
+function withSnapshot(props, payload) {
+  props.view = { isCompleted: true, state: { snapshot: payload } };
+  return props;
+}
+
+/** Every body row of every table spans exactly its header's columns. */
+function raggedRows(el) {
+  const out = [];
+  el.querySelectorAll('table').forEach(function (t) {
+    const heads = t.querySelectorAll('thead tr');
+    if (!heads.length) return;
+    const width = (tr) =>
+      Array.from(tr.children).reduce(
+        (n, c) => n + Number(c.getAttribute('colspan') || 1),
+        0,
+      );
+    const w = width(heads[heads.length - 1]);
+    t.querySelectorAll('tbody > tr').forEach(function (tr) {
+      if (width(tr) !== w) out.push({ want: w, got: width(tr) });
+    });
+  });
+  return out;
+}
+
+function anyBanded(payload) {
+  return payload.cMeasures.some(
+    (m) => Array.isArray(m.bands) && m.bands.length,
+  );
+}
+
+describe('the ACE Kaduna demo findings (#2578)', () => {
+  test('1. a headline tile shows its whole label; the direction chip can take its own line', async () => {
+    const el = await mount('indicator_report_render.js', {
+      url: '/labs/workflow/1/run/?program_id=1&run_id=11',
+      props: programmeProps(),
+      routes: {},
+    });
+    const heads = el.querySelectorAll('[data-tile-head]');
+    expect(heads.length).toBeGreaterThan(0);
+    // one label per tile, so the guard below cannot pass on an empty set
+    expect(el.querySelectorAll('[data-tile-label]').length).toBe(heads.length);
+    expect(el.querySelectorAll('[data-direction-chip]').length).toBeGreaterThan(
+      0,
+    );
+    expect(clippedTileLabels(el)).toEqual([]);
+  });
+
+  test('3. a registry with no bands draws no band legend and no Attention column', async () => {
+    const payload = unbandedPayload();
+    expect(anyBanded(payload)).toBe(false);
+    const el = await mount('indicator_report_render.js', {
+      url: '/labs/workflow/1/run/?program_id=1&run_id=11',
+      props: withSnapshot(programmeProps(), payload),
+      routes: {},
+    });
+    expect(el.textContent).toContain('Partner A');
+    expect(unreachableBandAffordances(el, false)).toEqual([]);
+    expect(raggedRows(el)).toEqual([]);
+    // the rest of the legend line stays
+    expect(el.textContent).toContain('Click a column name for its definition');
+    expect(allGuards(el)).toEqual(NONE);
+    // drilled to one organisation: its opportunity and worker tables too
+    await click(byText(el, 'div', 'Partner A').closest('tr'));
+    expect(unreachableBandAffordances(el, false)).toEqual([]);
+    expect(raggedRows(el)).toEqual([]);
+  });
+
+  test('3. the opportunity report drops them too when nothing is banded', async () => {
+    const el = await mount('indicator_report_render.js', {
+      url: '/labs/workflow/2/run/?opportunity_id=10097&run_id=12',
+      props: withSnapshot(oppProps(), unbandedPayload()),
+      routes: {},
+    });
+    expect(unreachableBandAffordances(el, false)).toEqual([]);
+    expect(raggedRows(el)).toEqual([]);
+  });
+
+  test('3, control: one banded indicator keeps the legend and the Attention column', async () => {
+    // The fixture bands two of its indicators and leaves the rest unbanded,
+    // as KMC and Spark registries do.
+    expect(anyBanded(PAYLOAD)).toBe(true);
+    const el = await mount('indicator_report_render.js', {
+      url: '/labs/workflow/1/run/?program_id=1&run_id=11',
+      props: programmeProps(),
+      routes: {},
+    });
+    expect(unreachableBandAffordances(el, false)).toEqual([
+      { legend: 'Off target' },
+      { legend: 'Watch' },
+      { legend: 'Uncoloured: on target or no target' },
+      { column: 'Attention' },
+    ]);
+    expect(unreachableBandAffordances(el, anyBanded(PAYLOAD))).toEqual([]);
+    expect(raggedRows(el)).toEqual([]);
+    await click(byText(el, 'div', 'Partner A').closest('tr'));
+    expect(
+      Array.from(el.querySelectorAll('th')).some((th) =>
+        /^Attention/.test(th.textContent.trim()),
+      ),
+    ).toBe(true);
+    expect(raggedRows(el)).toEqual([]);
+  });
+
+  test('4. with no reading chart, the gap count is the marked intervals and the open silence is named apart', async () => {
+    // A registry with no `display.reading` draws no chart -- the only place
+    // the open gap was shown -- so counting it in "N gaps" read one more gap
+    // than the column marks.
+    const payload = JSON.parse(JSON.stringify(PAYLOAD));
+    delete payload.display.reading;
+    const firstCase = payload.cases[WORKER.rows[0]];
+    const el = await mount('indicator_worker_review_render.js', {
+      url:
+        '/labs/workflow/3/run/?program_id=1&flw=' +
+        encodeURIComponent(WORKER.key) +
+        '&source_run=11',
+      props: workerProps(),
+      routes: {
+        '/snapshot/preview/': {
+          snapshot: { state: { snapshot: payload } },
+          source: 'stored',
+        },
+        '/pipeline-rows/': { rows: visitRows(firstCase.entity_id) },
+        '/visit-images/': { visit_images: {} },
+      },
+    });
+    await click(byText(el, 'td', firstCase.entity_id).closest('tr'));
+    expect(el.querySelector('svg rect[data-gap]')).toBeNull();
+    expect(el.querySelectorAll('[data-over-gap]').length).toBe(2);
+    expect(el.textContent).toContain(
+      '2 gaps over 7 days · no visit for 27 days since 7 Sep',
+    );
+    expect(gapCountMismatches(el)).toEqual([]);
+    expect(allGuards(el)).toEqual(NONE);
+  });
+
+  test('4. a uniform review status says it is the review, not the visit fields', async () => {
+    const { el, firstCase } = await mountWorker();
+    await click(byText(el, 'td', firstCase.entity_id).closest('tr'));
+    const chip = el.querySelector('[data-review-status]');
+    expect(chip.textContent).toBe('review status: all approved');
+    expect(chip.getAttribute('title')).toMatch(/review of each visit/);
   });
 });
 
@@ -786,6 +969,54 @@ describe('the guards themselves', () => {
         html(cell + '<span title="Watch: Regularity 60%–80%">Watch</span>'),
       ),
     ).toEqual([]);
+  });
+  test('tile label: a truncating label, or a chip that cannot wrap, is reported', () => {
+    // the pre-#2578 markup: label truncates, chip pinned beside it
+    const before =
+      '<div data-tile-head="1" class="flex items-center justify-between text-xs whitespace-nowrap">' +
+      '<span data-tile-label="1" class="font-semibold uppercase truncate">Transfer not arrived</span>' +
+      '<span>lower is better</span></div>';
+    expect(clippedTileLabels(html(before))).toEqual([
+      { label: 'Transfer not arrived', reason: 'clips' },
+    ]);
+    const pinned =
+      '<div data-tile-head="1" class="flex items-center justify-between text-xs">' +
+      '<span data-tile-label="1">Short visits</span><span>lower is better</span></div>';
+    expect(clippedTileLabels(html(pinned))).toEqual([
+      { label: 'Short visits', reason: 'shares a line it cannot leave' },
+    ]);
+    const after =
+      '<div data-tile-head="1" class="flex flex-wrap items-start text-xs">' +
+      '<span data-tile-label="1" class="break-words">Short visits</span><span>lower is better</span></div>';
+    expect(clippedTileLabels(html(after))).toEqual([]);
+  });
+  test('gap count: a header counting more gaps than its rows mark is reported', () => {
+    const card = (n) =>
+      '<div><span>5 visits · ' +
+      n +
+      ' gaps over 7 days</span><table><thead><tr><th>Date</th><th>Days since previous</th></tr></thead>' +
+      '<tbody>' +
+      [32, 17, 43, 10]
+        .map(
+          (d) =>
+            '<tr><td>x</td><td><span data-over-gap="1">' +
+            d +
+            '</span></td></tr>',
+        )
+        .join('') +
+      '</tbody></table></div>';
+    expect(gapCountMismatches(html(card(5)))).toEqual([{ said: 5, marked: 4 }]);
+    expect(gapCountMismatches(html(card(4)))).toEqual([]);
+  });
+  test('band affordances: reported only when nothing is banded', () => {
+    const page =
+      '<span>Off target</span><span>Watch</span><table><thead><tr><th>Attention</th></tr></thead></table>';
+    expect(unreachableBandAffordances(html(page), false)).toEqual([
+      { legend: 'Off target' },
+      { legend: 'Watch' },
+      { column: 'Attention' },
+    ]);
+    expect(unreachableBandAffordances(html(page), true)).toEqual([]);
   });
   test('gap shading: a band across a visit is reported', () => {
     expect(
