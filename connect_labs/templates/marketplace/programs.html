@@ -113,7 +113,7 @@ always worded "up to" — see `queries.committed_by_program`.
           <article class="pg-card bg-white border border-brand-border-light rounded-[10px] overflow-hidden pl-5 pr-4 sm:pl-6 sm:pr-5 pt-0 pb-4 flex flex-col gap-4 transition"
                    style="--hue: {{ c.hue }}">
 
-            {# The program's picture from connect.dimagi.com/portfolio; its colour where there is none. #}
+            {# The program's picture (see programs._IMAGES); its colour where there is none. #}
             <div class="pg-photo -ml-5 -mr-4 sm:-ml-6 sm:-mr-5 h-44">
               {% if c.image %}<img src="{% static c.image.src %}" alt="" loading="lazy" class="w-full h-full object-cover" style="object-position: {{ c.image.focus }}">{% endif %}
             </div>

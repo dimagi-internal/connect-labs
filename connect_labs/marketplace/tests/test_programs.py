@@ -171,3 +171,38 @@ class TestEveryLiveProgramHasAName:
         # comparing against `.upper()` calls a named program unnamed.
         unnamed = live - programs.known_slugs()
         assert unnamed == set(), f"these production delivery types have no name: {sorted(unnamed)}"
+
+
+class TestPictures:
+    def test_every_program_card_seen_in_production_has_a_picture(self):
+        """A card with no picture is a blank band of colour. These are the
+        program cards the marketplace page showed on 2026-10-15."""
+        cards = {
+            "chc",
+            "kmc",
+            "mbw",
+            "readers",
+            "ecd",
+            "nutrition",
+            "water",
+            "interview",
+            "chlorine",
+            "tms",
+            "non-managed-opportunity",
+            "malaria",
+            "cholera",
+            "ivp",
+            "hhs",
+            "wellme",
+            "conversation",
+            "rs",
+        }
+        missing = {slug for slug in cards if programs.image(slug) is None}
+        assert missing == set(), f"these program cards have no picture: {sorted(missing)}"
+
+    def test_every_registered_picture_is_a_static_file(self):
+        from django.contrib.staticfiles import finders
+
+        for slug in programs._IMAGES:
+            src = programs.image(slug)["src"]
+            assert finders.find(src), f"{slug}: {src} is not in static/"

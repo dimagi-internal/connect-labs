@@ -96,6 +96,11 @@ _HUES = {
     "tms": "#a17a1c",
     "conversation": "#b04f8a",
     "interview": "#5d6678",
+    "chlorine": "#0f7a9e",
+    # Codes on rounds that nobody has named as a program yet. They get a hue
+    # so their card is not the brand default, and nothing more.
+    "rs": "#5b6f91",
+    "non-managed-opportunity": "#55707a",
 }
 
 
@@ -103,12 +108,21 @@ def hue(slug: str | None) -> str:
     return _HUES.get(slug or "", "#3843d0")
 
 
-# The picture connect.dimagi.com/portfolio shows for the same program, copied
-# into static/images/programs/ rather than hotlinked: the public site serves
-# them under content-hashed names that change on every deploy there. Only the
-# programs the portfolio actually pictures are listed — a borrowed photo of a
-# different program would say something false about this one, so the rest
-# show their colour instead.
+# A picture for every program card, copied into static/images/programs/ rather
+# than hotlinked: the public site serves its files under content-hashed names
+# that change on every deploy there. Two kinds, and the difference matters:
+#
+# - The photos (.jpg) and three graphics (nutrition, water, interview) are
+#   connect.dimagi.com/portfolio's own, each used only for the program it
+#   actually pictures: a borrowed photo of a different program would say
+#   something false about this one. `chlorine` shares water.svg because that
+#   file IS the portfolio's chlorine-dispenser graphic, and `rs` (Rooftop
+#   Sampling) is the portfolio's building-sampling graphic.
+# - Where the portfolio has nothing, an illustration drawn for this page in
+#   the same style (same scene, same field worker) stands in, showing what the
+#   program's name says and no more. `non-managed-opportunity` is a code
+#   nobody has named as a program, so it shows a plain field visit rather
+#   than a guess at what the program is.
 #
 # Each carries the CSS object-position that keeps its people in frame: the
 # card crops every picture to one wide band, and a centred crop of a portrait
@@ -121,12 +135,22 @@ _IMAGES = {
     "ecd": ("ecd.jpg", "70% 25%"),
     "nutrition": ("nutrition.svg", "50% 50%"),
     "water": ("water.svg", "50% 50%"),
+    "chlorine": ("water.svg", "50% 50%"),
     "interview": ("interview.svg", "50% 50%"),
+    "malaria": ("malaria.svg", "50% 50%"),
+    "cholera": ("cholera.svg", "50% 50%"),
+    "ivp": ("ivp.svg", "50% 50%"),
+    "hhs": ("hhs.svg", "50% 50%"),
+    "wellme": ("wellme.svg", "50% 50%"),
+    "tms": ("tms.svg", "50% 50%"),
+    "conversation": ("conversation.svg", "50% 50%"),
+    "rs": ("rs.svg", "50% 50%"),
+    "non-managed-opportunity": ("non-managed-opportunity.svg", "50% 50%"),
 }
 
 
 def image(slug: str | None) -> dict | None:
-    """The program's portfolio picture — static path and focal point — if it has one."""
+    """The program's picture — static path and focal point — if it has one."""
     entry = _IMAGES.get(slug or "")
     return {"src": f"images/programs/{entry[0]}", "focus": entry[1]} if entry else None
 
