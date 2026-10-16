@@ -709,6 +709,16 @@ def _contract_lateness(contract, match, as_of):
     outstanding = match.get("outstanding")
     if outstanding is not None and not isinstance(outstanding, Unconfirmed) and outstanding.amount <= 0:
         return None
+    # Refused at inspection is not still on its way. `outstanding` is ordered
+    # less ACCEPTED, so six phones refused at the door read as six phones the
+    # supplier had not delivered, and the order stayed "late" -- counted to
+    # today -- weeks after everything arrived (TCN-PO-0001: due 7 Sep,
+    # received 15 Sep, shown 38 days late). When the match can say what has
+    # not arrived at all and it is nothing, the delivery is over; how late it
+    # came is measured to its receipt by the order's own page, not here.
+    still_to_arrive = match.get("still_to_arrive")
+    if isinstance(still_to_arrive, Quantity) and still_to_arrive.amount <= 0:
+        return None
     expected_on = contract.signed_on + timedelta(days=contract.promised_lead_time_days)
     today = as_of or date.today()
     if expected_on >= today:

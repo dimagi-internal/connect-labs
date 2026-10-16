@@ -184,3 +184,29 @@ def test_quantities_are_whole_phones():
     for issue in world.issues:
         assert all(isinstance(q, int) and q >= 0 for q in issue["lines"].values())
     assert Decimal(phones.ADULTS) == Decimal(1200)
+
+
+@pytest.mark.real_standing
+def test_the_programme_map_shows_only_what_the_story_means_it_to(seeded):
+    """A tidy demo: the open checks are the store's six phones short and the worker one phone short.
+
+    The map's panel draws every check as a blocker. It read six -- an order 30-odd days
+    "late" that had arrived (refusals counted as undelivered), a VAT with no amount, a
+    delivery and a consignment with no paperwork -- on a demo that has two real stories,
+    and "1 never reported stock" for an office store nobody had counted.
+    """
+    from connect_labs.labs.access.scopes import SYSTEM
+    from connect_labs.supply_chain.checks import run_checks
+    from connect_labs.supply_chain.data_access import SupplyDataAccess
+    from connect_labs.supply_chain.stock.services.visit_source import SYNTHETIC_TOKEN
+    from connect_labs.supply_chain.summary import chain_summary
+
+    program_id = seeded["program_id"]
+    access = SupplyDataAccess(
+        access_token=SYNTHETIC_TOKEN, program_id=program_id, opportunity_id=program_id, caller=SYSTEM
+    )
+    kinds = sorted(c["kind"] for c in run_checks(access, as_of=TODAY))
+    assert "contract_delivery_overdue" not in kinds
+    assert set(kinds) <= {"stock_stockout", "stock_variance"}, kinds
+    network = chain_summary(access)["deliver"]["network"]
+    assert network["never_reported"] == 0

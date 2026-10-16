@@ -75,6 +75,7 @@ WORKERS = {
 # The worker whose phone app counts one fewer than the ledger: a handset unaccounted for.
 ONE_SHORT = "chw-faraji"
 REJECTED = 6  # dead on arrival at inspection
+VAT_RATE = Decimal("0.16")  # Kenya's standard rate; the quotes are per phone with VAT shown separately
 FIRST_ISSUE = 100  # to each worker in week 0
 WEEKS = 4
 HANDOVERS_PER_DAY = 7  # a worker's working day, Monday to Saturday
@@ -304,6 +305,14 @@ def seed(*, drive, reset: bool = False, today: date | None = None, admin=None) -
                         for u, q in issue["lines"].items() if q
                     ],
                 })  # fmt: skip
+                if issue is world.issues[-1]:
+                    # The last phones out of the office: the store counted empty that evening, so the
+                    # store is a counted place and not one that "never reported stock".
+                    op(issue["on"], 17, "stock_count_record", data={
+                        "supply_point_id": store_id, "item_id": item_id, "commodity_slug": SLUG,
+                        "kind": "physical_count", "counted_on": issue["on"].isoformat(), "quantity": "0",
+                        "quantity_unit": "phone", "source": "we_recorded", "note": NOTE,
+                    })  # fmt: skip
         last_day = first_day + timedelta(days=6)
         report = op(last_day, 20, "visit_consumption_ingest", opportunity_id=opp_id, until=last_day.isoformat())
         weeks.append({"week_of": first_day.isoformat(), "posted": report["posted"]})
@@ -320,6 +329,17 @@ def seed(*, drive, reset: bool = False, today: date | None = None, admin=None) -
         "orders": chain["orders"],
         "weeks": weeks,
     }
+
+
+def _attach(op, day, kind, shipment_id, title, source):
+    """A document on the shipment: a short text file that says it is invented."""
+    import base64
+
+    op(day, 15, "document_attach", data={
+        "kind": kind, "shipment_id": shipment_id, "title": f"{title} (invented for the demo)",
+        "filename": f"{kind.replace('_', '-')}-demo.txt", "content_type": "text/plain",
+        "content_base64": base64.b64encode(NOTE.encode()).decode(), "source": source, "note": NOTE,
+    })  # fmt: skip
 
 
 def _procure(op, org, start):
@@ -396,7 +416,8 @@ def _procure(op, org, start):
         "item_id": item["id"], "buyer_of_record": "programme_org", "buyer_org_id": org.pk,
         "reference": "TCN-PO-0001", "status": "placed", "currency": "KES", "quantity": ADULTS,
         "quantity_unit": "phone", "unit_price": str(price), "unit_price_unit": "per_pack", "freight_basis": "included",
-        "duties_basis": "included", "vat_basis": "excluded", "incoterm": "DAP Kilifi",
+        "duties_basis": "included", "vat_basis": "excluded", "vat_amount": str(goods * VAT_RATE),
+        "incoterm": "DAP Kilifi",
         "delivery_supply_point_id": store["id"], "promised_lead_time_days": 14, "payment_terms": "advance",
         "source": "we_recorded", "signed_on": awarded.isoformat(), "note": NOTE,
     })["id"]  # fmt: skip
@@ -411,8 +432,14 @@ def _procure(op, org, start):
         "carrier": "Coast Couriers", "source": "supplier_reported", "note": NOTE,
         "lines": [{"item_id": item["id"], "batch": "PMD-A13-2609", "quantity": ADULTS, "quantity_unit": "phone"}],
     })["id"]  # fmt: skip
+    # The paperwork a tidy delivery carries, so the checks read only what the story means them to:
+    # the distributor's certificate of conformity with the consignment, and our signed delivery note.
+    _attach(op, dispatched, "certificate_of_conformity", shipment, "Certificate of conformity, PMD-A13-2609",
+            "supplier_reported")  # fmt: skip
     received_on = start - timedelta(days=2)
     op(received_on, 9, "shipment_update", shipment_id=shipment, data={"status": "delivered"})
+    _attach(op, received_on, "proof_of_delivery", shipment, "Delivery note signed at the Kilifi office",
+            "we_recorded")  # fmt: skip
     op(received_on, 10, "receipt_record", data={
         "contract_id": order, "shipment_id": shipment, "supply_point_id": store["id"],
         "received_on": received_on.isoformat(), "reference": "TCN-GRN-0001", "source": "we_recorded",

@@ -11,7 +11,7 @@ Every input is the operations' dict shape (`contract_get`, `contract_match`,
 `shipment_list`, ...), so the page needs no second read of its own.
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 from connect_labs.supply_chain.records import IN_TRANSIT_STATUSES, latest_moving_shipment
 from connect_labs.supply_chain.values import day_text, money_digits, quantity_digits, unit_noun
@@ -51,6 +51,17 @@ def _money(cell) -> str:
 
 def _dispatched(shipment) -> bool:
     return bool(shipment.get("dispatched_on")) or shipment.get("status") in (*IN_TRANSIT_STATUSES, "delivered")
+
+
+def _due_on(contract):
+    """The day the contract's goods were due: signed on, plus the promised lead time. None unless both are stated."""
+    signed, lead = contract.get("signed_on"), contract.get("promised_lead_time_days")
+    if not signed or lead in (None, ""):
+        return None
+    try:
+        return date.fromisoformat(str(signed)[:10]) + timedelta(days=int(lead))
+    except (TypeError, ValueError):
+        return None
 
 
 def _stage_states(index: int, count: int = 6) -> list[str]:
@@ -231,10 +242,20 @@ def order_status(
             "lines": lines,
         }
     else:
+        # Nothing late is open. Once the goods are in, how late they were is a
+        # settled fact measured to the receipt -- never to today, which grows
+        # forever on an order that arrived weeks ago.
+        due = _due_on(contract)
+        arrived = date.fromisoformat(last_receipt[:10]) if received_full and last_receipt else None
+        came_late = (arrived - due).days if due is not None and arrived is not None else 0
         late_tile = {
             "label": "Days late",
-            "value": "0",
-            "sub": "on time" if not received_full else "arrived",
+            "value": str(max(0, came_late)),
+            "sub": (
+                f"due {day_text(due)} · arrived {day_text(arrived)}"
+                if came_late > 0
+                else "on time" if not received_full else "arrived"
+            ),
             "tone": "",
         }
 
