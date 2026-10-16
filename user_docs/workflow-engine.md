@@ -170,6 +170,28 @@ In KMC reports (program, opportunity, and worker review) and the generic indicat
 - **Thresholds** are displayed as small chips rather than inline text.
 - The **underlying query** sits below a divider and wraps onto multiple lines, so long queries are no longer cut off at the right edge of the popup.
 
+### Indicator reports
+
+The generic indicator reports (and KMC reports that use the shared tiles) have four display improvements.
+
+#### Headline tile labels
+
+Long indicator names in the headline tiles now wrap onto as many lines as needed. Previously, names could be cut off (for example, "TRANSFER …" or "SHORT VISI…") because a **lower is better** chip sat on the same line and forced the name to truncate. The chip now moves to its own line when the name and chip do not fit side by side, and every tile's figure stays at the same height regardless of name length.
+
+#### "Ask an agent" launcher no longer covers the report
+
+On pages that show the agent panel, a strip at the bottom of the window is reserved for the launcher — the same way the Labs header reserves a strip at the top. Report content scrolls out of view above the launcher, and the bottom of the page can scroll fully clear of it, so the launcher no longer sits over readable content.
+
+#### Band legend and Attention column appear only when targets are set
+
+If no indicator in the report's registry has performance bands, nothing can be **Off target** or on **Watch**, so the "Off target / Watch / Uncoloured" legend and the **Attention** column (which counts those) are hidden. The moment any one indicator has a band defined, both the legend and the column return as before.
+
+#### Visit card counts match its rows
+
+The visit card header previously counted the gap since the last visit as an extra interval, which could produce a mismatch such as "5 gaps over 7 days" sitting above only four marked intervals. The count now matches the rows shown — for example, **"4 gaps over 7 days · no visit for 9 days since 2 Oct"**.
+
+The status chip on the visit card now reads **"review status: all approved"** (with a tooltip explaining that this is Connect's review of each visit, not a visit field such as "Payable").
+
 ### MUAC/Age Plausibility report
 
 The MUAC/Age Plausibility report has three updates.
@@ -184,33 +206,4 @@ Because WHO's +3 SD values are typically 0.5–1.5 cm higher than the old fixed 
 
 #### Every column and tile explains itself
 
-Hover over any column title or tile label marked **ⓘ** to see a one- or two-sentence definition. The **"How readings are classified"** section at the bottom of the report now shows WHO's too-high and below-−2SD reference values for each age band, so you can see exactly which thresholds were applied.
-
-#### MUAC index column
-
-A new **MUAC index** column shows how many of Neal's six MUAC distribution checks each row passes — for example, **5/6**. These checks assess whether a worker's recorded MUAC values form one smooth, plausible distribution (a single hump). They come from the MUAC Index feature report.
-
-- Click the **▸** on any row to expand it and see the 1 cm histogram alongside which specific checks failed.
-- The **Lowest MUAC index** sort option puts the rows with the weakest scores first, making it easy to identify workers whose MUAC measurements warrant closer review.
-- Because the checks are designed for a single field worker's readings, any row that pools data across multiple workers — such as an LLO or ward row — is labelled as **pooled** rather than showing an index score.
-
----
-
-## Pages
-
-A **page** is a screen built with the same workflow tools as a regular workflow, but it has no runs. Instead of collecting data over a date range and producing a run to review, a page simply displays what an organisation, program, or opportunity holds — with links into each — and can show the latest run of any workflow you are able to open.
-
-Pages are useful for landing screens and summary views that you want to keep permanently visible without starting a new run each time.
-
-### How pages are different from workflows
-
-| | Regular workflow | Page |
-|---|---|---|
-| Has runs | Yes | No |
-| Workflows list button | **Start run** | **Open page** |
-| Built with workflow tools | Yes | Yes |
-| Can show pipeline data and worker details | Yes | Yes |
-| Can open visit photos and draw maps | Yes | Yes |
-| Can create tasks or audits (with confirmation) | Yes | Yes |
-| Can start AI coaching conversations (with confirmation) | Yes | Yes |
-| Can save run state or complete a run | Yes | No |
+Hover over any column title or tile label marked **ⓘ** to see a one- or two-sentence definition. The **"How readings are classified"** section at the bottom of the report now shows WHO's too-high and below-−2SD reference values for each age band, so you can see exactly which thresholds were applied
