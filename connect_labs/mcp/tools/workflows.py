@@ -237,7 +237,7 @@ def workflow_get(
         "registry": registry_binding(definition),
         # The opportunities a multi-opp workflow reads, and -- when they follow its
         # program (workflow/program_opportunities.py) -- the rule that resolved them.
-        "opportunity_ids": definition.opportunity_ids,
+        "opportunity_ids": definition.data.get("opportunity_ids") or [],
         "opportunity_source": definition.data.get("opportunity_source"),
     }
 

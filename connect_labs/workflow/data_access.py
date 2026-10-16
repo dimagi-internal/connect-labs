@@ -744,7 +744,9 @@ class WorkflowDataAccess(BaseDataAccess):
         # takes its program's opportunities gets them from the viewer's tree
         # (workflow/program_opportunities.py).
         return program_opportunities.resolve_all(
-            apply_to_records(self.labs_api, records), self.request, self.access_token
+            apply_to_records(self.labs_api, records),
+            getattr(self, "request", None),
+            getattr(self, "access_token", None),
         )
 
     def get_definition(self, definition_id: int) -> WorkflowDefinitionRecord | None:
@@ -764,7 +766,9 @@ class WorkflowDataAccess(BaseDataAccess):
                 model_class=WorkflowDefinitionRecord,
             ),
         )
-        return program_opportunities.resolve(record, self.request, self.access_token)
+        return program_opportunities.resolve(
+            record, getattr(self, "request", None), getattr(self, "access_token", None)
+        )
 
     def create_definition(self, name: str, description: str, **kwargs) -> WorkflowDefinitionRecord:
         """

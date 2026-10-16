@@ -106,6 +106,7 @@ def test_get_definition_resolves(_fetch):
                 "experiment": "workflow",
                 "type": "workflow_definition",
                 "data": {"name": "R", "opportunity_source": {"program_id": 217}, "opportunity_ids": [2154]},
+                "opportunity_id": None,
                 "program_id": 217,
             }
         )
