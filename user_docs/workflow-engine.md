@@ -78,6 +78,9 @@ This means each workflow appears in exactly one place. If you cannot find a work
 
     If you have recently opened a per-opportunity run in another tab (for example, by clicking an "open run ↗" link"), that should no longer affect Create Run on program-owned workflows. The program view keeps the program context in place, so Create Run on a program-owned workflow will always create the run under the program — not under whichever opportunity you last visited. If you do see a "Workflow not found" error, try refreshing the program workflow list page and clicking Create Run again.
 
+!!! note "Opening a program report link after visiting another opportunity"
+    If you follow a direct link to a program report — or click a worker drill-through link inside a program report — the report now opens correctly even if your session was last looking at a different opportunity. Previously, this could show a "Workflow definition … not found under opportunity …" error. The link now detects that the workflow belongs to the program and loads it under the program context automatically, with no manual steps required.
+
 !!! note "Drilling into worker visits from a program-level report"
     When you open a worker's case in the worker review from a programme report created at program level, their visits now load correctly. Previously, this could show a "pipeline not found" error; this has been fixed and visit data loads as expected.
 
@@ -211,9 +214,3 @@ Pages are useful for landing screens and summary views that you want to keep per
 | Can create tasks or audits (with confirmation) | Yes | Yes |
 | Can start AI coaching conversations (with confirmation) | Yes | Yes |
 | Can save run state or complete a run | Yes | No |
-
-Pages can now be built with the full set of workflow tools. They can show pipeline data and worker details, open visit photos, draw maps with admin boundaries and map tiles, and create tasks or audits — with Labs asking for confirmation first, the same way a protected workflow does. The only things a page cannot do are those that require a run: saving run state, completing a run, running a declared action, or running a background job.
-
-### Actions on a page
-
-A page can have buttons that trigger
