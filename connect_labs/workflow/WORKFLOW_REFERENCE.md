@@ -1593,6 +1593,10 @@ The engine does not deduplicate rows across opps. Single-opp templates receive `
 
 Multi-opp workflow run pages show an "Opportunities: N selected [Edit]" control. Editing posts to `POST /labs/workflow/api/<definition_id>/opportunity-ids/` (view: `UpdateOpportunityIdsView`). The endpoint validates each submitted ID against `user_opportunities`, rejects empty lists, rejects updates against non-multi-opp workflows, and updates `definition.data.opportunity_ids`. The page reloads after save so pipeline data re-streams against the new opp set. The primary opp cannot be changed through this endpoint.
 
+### Following a program's opportunities
+
+A written-down `opportunity_ids` goes stale the moment a program adds an opportunity (a revisit round, a new partner). Set `opportunity_source: {"program_id": <id>}` on the definition (`workflow_update_definition`, optionally with `exclude_opportunity_ids: [...]`) and the list is resolved on every definition read from the **viewer's own** organisation tree: every opportunity under that program they can access, ascending. Nothing reads beyond what the viewer may see, and a new opportunity appears the next time the report is opened. The resolution happens in `WorkflowDataAccess.get_definition` / `list_definitions` (`workflow/program_opportunities.py`), so every reader of `opportunity_ids` gets it for free. The resolved list is also stored, and is what stands when the tree cannot be read. While a source is set, the opp-set editor and `workflow_update_opportunity_ids` refuse to write a list; set the source to `null` to go back to a fixed one. Render code that maps opportunity ids to labels (pairs, LLO names) still has to handle ids it has not seen.
+
 ### Reference implementation
 
 `connect_labs/workflow/templates/performance_review.py` is the canonical multi-opp template. Its table includes an **Opp** column rendering `worker.opportunity_id`. See also `docs/superpowers/specs/2026-04-17-multi-opp-workflows-design.md` for the design notes that led to the current contract.
