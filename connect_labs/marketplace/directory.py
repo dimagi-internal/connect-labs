@@ -21,6 +21,7 @@ import re
 from dataclasses import dataclass, field
 from urllib.parse import quote
 
+from connect_labs.marketplace import programs
 from connect_labs.marketplace.countries import parse_cell as parse_countries
 
 DIRECTORY_ID = "19sqU7xpSb_0VX6H_QZK2dcRz0RvXiQ1En9kvSZkEiY8"
@@ -436,7 +437,7 @@ def parse_rounds(rows: list[list[str]]) -> tuple[list[DirectoryRound], list[str]
                 # Connect's own delivery_type, decided by a human — the sheet is
                 # the master, so labs reads this rather than guessing a program
                 # from the round's title.
-                delivery_type=cols.get(row, "Connect Programme").strip().lower(),
+                delivery_type=programs.canonical(cols.get(row, "Connect Programme")),
                 source_row=index,
                 owned_columns=dict(owned),
             )

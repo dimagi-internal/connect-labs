@@ -41,6 +41,7 @@ PROGRAM_NONE_LABEL = "Cross-program"
 
 def label(slug: str | None) -> str:
     """Display text for one program tag."""
+    slug = canonical(slug) if slug else slug
     if slug == PROGRAM_NONE:
         return PROGRAM_NONE_LABEL
     return service_label(slug)
@@ -52,7 +53,23 @@ def label(slug: str | None) -> str:
 # funder is buying. Its opportunities carry placeholder budgets (17 live ones
 # held $68k against $143 ever paid), so leaving it in inflated every figure it
 # touched.
-NOT_DELIVERY = frozenset({PROGRAM_NONE, "other", "ace"})
+#
+# `non-managed-opportunity` is an opportunity run outside any program: real
+# delivery, but not a program anyone can apply to or fund as one, so it is no
+# card and no tag (Jonathan, 2026-10-15).
+NOT_DELIVERY = frozenset({PROGRAM_NONE, "other", "ace", "non-managed-opportunity"})
+
+# Two tags for one program. The 2025 Chlorine EOI was tagged `water` before
+# Connect had a delivery type for it; Connect's opportunities now say
+# `chlorine`. Same program (Jonathan, 2026-10-15), so `water` reads as
+# `chlorine` wherever a tag is read or imported.
+ALIASES = {"water": "chlorine"}
+
+
+def canonical(slug: str | None) -> str:
+    """The one tag a program goes by."""
+    slug = (slug or "").strip().lower()
+    return ALIASES.get(slug, slug)
 
 
 def is_program(slug: str | None) -> bool:
@@ -86,7 +103,6 @@ _HUES = {
     "readers": "#c07a0a",
     "malaria": "#0e8585",
     "nutrition": "#3d8a52",
-    "water": "#1b8fc4",
     "ecd": "#7b46c9",
     "mbw": "#d0573f",
     "cholera": "#a8412e",
@@ -100,7 +116,6 @@ _HUES = {
     # Codes on rounds that nobody has named as a program yet. They get a hue
     # so their card is not the brand default, and nothing more.
     "rs": "#5b6f91",
-    "non-managed-opportunity": "#55707a",
 }
 
 
@@ -112,7 +127,7 @@ def hue(slug: str | None) -> str:
 # than hotlinked: the public site serves its files under content-hashed names
 # that change on every deploy there. Two kinds, and the difference matters:
 #
-# - The photos (.jpg) and three graphics (nutrition, water, interview) are
+# - The photos (.jpg) and three graphics (nutrition, water.svg, interview) are
 #   connect.dimagi.com/portfolio's own, each used only for the program it
 #   actually pictures: a borrowed photo of a different program would say
 #   something false about this one. `chlorine` shares water.svg because that
@@ -120,9 +135,7 @@ def hue(slug: str | None) -> str:
 #   Sampling) is the portfolio's building-sampling graphic.
 # - Where the portfolio has nothing, an illustration drawn for this page in
 #   the same style (same scene, same field worker) stands in, showing what the
-#   program's name says and no more. `non-managed-opportunity` is a code
-#   nobody has named as a program, so it shows a plain field visit rather
-#   than a guess at what the program is.
+#   program's name says and no more.
 #
 # Each carries the CSS object-position that keeps its people in frame: the
 # card crops every picture to one wide band, and a centred crop of a portrait
@@ -134,7 +147,6 @@ _IMAGES = {
     "readers": ("readers.jpg", "50% 35%"),
     "ecd": ("ecd.jpg", "70% 25%"),
     "nutrition": ("nutrition.svg", "50% 50%"),
-    "water": ("water.svg", "50% 50%"),
     "chlorine": ("water.svg", "50% 50%"),
     "interview": ("interview.svg", "50% 50%"),
     "malaria": ("malaria.svg", "50% 50%"),
@@ -145,7 +157,6 @@ _IMAGES = {
     "tms": ("tms.svg", "50% 50%"),
     "conversation": ("conversation.svg", "50% 50%"),
     "rs": ("rs.svg", "50% 50%"),
-    "non-managed-opportunity": ("non-managed-opportunity.svg", "50% 50%"),
 }
 
 
