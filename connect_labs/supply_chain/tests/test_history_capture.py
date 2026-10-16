@@ -11,6 +11,7 @@ up in `history/capture.py`, and the `write_context`/`seed_overrides`/
 from decimal import Decimal
 
 import pytest
+from django.contrib.contenttypes.models import ContentType
 
 from connect_labs.supply_chain.history.context import capture_suspended, seed_overrides, write_context
 from connect_labs.supply_chain.history.models import OperationCall, Revision
@@ -99,7 +100,10 @@ def test_cascade_delete_writes_child_revisions_with_program():
 
     tender.delete()
 
-    quote_deletes = Revision.objects.filter(object_id=quote_id, action="delete")
+    # By type as well as id: in a fresh database the tender and the quote can share a pk.
+    quote_deletes = Revision.objects.filter(
+        content_type=ContentType.objects.get_for_model(Quote), object_id=quote_id, action="delete"
+    )
     assert quote_deletes.count() == 1
     rev = quote_deletes.get()
     assert rev.program_id == PROGRAM
