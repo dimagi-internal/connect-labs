@@ -1612,3 +1612,49 @@ class TestPipelineStreamSpeaksBeforeItBlocks:
             ), "the probe read a pipeline definition before reporting progress"
 
         assert "data source" in (first.get("message") or "").lower()
+
+
+class TestWorkflowRunViewRecoversAProgramOwnedDefinition:
+    """A program-owned report opened while the session still holds an unrelated
+    opportunity: read in that opportunity's scope the definition is not found at
+    all, and the page said "Workflow definition 9027 not found under opportunity
+    10065" -- for a link the program report itself builds (its drill links carry
+    `owning_program_id`). The view looks for it in the program the link names and
+    redirects there."""
+
+    def _get(self, rf, user, url, *, in_program):
+        from connect_labs.workflow.views import WorkflowRunView
+
+        request = rf.get(url)
+        request.user = user
+        request.labs_context = {"opportunity_id": 10065}
+        request.session = {"labs_oauth": {"access_token": "t"}}
+        program_def = MagicMock(program_id=10121, opportunity_id=None)
+
+        def access(*args, program_id=None, **kwargs):
+            wda = MagicMock()
+            wda.get_definition.return_value = program_def if (in_program and program_id == 10121) else None
+            return wda
+
+        with (
+            patch("connect_labs.workflow.views.WorkflowDataAccess", side_effect=access),
+            patch("connect_labs.workflow.views.get_org_data", return_value={}),
+        ):
+            view = WorkflowRunView()
+            view.setup(request, definition_id=9027)
+            return view.get(request, definition_id=9027)
+
+    def test_a_link_naming_the_owning_program_redirects_to_it(self, dimagi_user, rf: RequestFactory):
+        response = self._get(
+            rf, dimagi_user, "/labs/workflow/9027/run/?run_id=10021&owning_program_id=10121", in_program=True
+        )
+        assert response.status_code == 302
+        assert "program_id=10121" in response["Location"]
+        assert "opportunity_id" not in response["Location"]
+
+    def test_no_redirect_when_the_named_program_does_not_own_it(self, dimagi_user, rf: RequestFactory):
+        with patch("connect_labs.workflow.views.WorkflowRunView.get_context_data", return_value={}):
+            response = self._get(
+                rf, dimagi_user, "/labs/workflow/9027/run/?run_id=10021&owning_program_id=10121", in_program=False
+            )
+        assert response.status_code != 302
