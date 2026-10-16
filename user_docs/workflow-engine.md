@@ -192,6 +192,12 @@ The visit card header previously counted the gap since the last visit as an extr
 
 The status chip on the visit card now reads **"review status: all approved"** (with a tooltip explaining that this is Connect's review of each visit, not a visit field such as "Payable").
 
+#### Readable labels for stored field codes
+
+Case and visit fields can now display human-readable labels in place of the raw codes that CommCare stores internally. For example, a visit-outcome field that stores `met`, `not_home`, and `left` can instead show **Met her**, **Not at home**, and **Left the programme** in the Indicator Worker Review's visit list and in the case tables of the Indicator Programme, Opportunity, and Worker reports.
+
+These labels are set up by your program administrator in the report's registry. If a stored code has no label defined, the raw code continues to show as before. If a field has no labels configured at all, nothing changes.
+
 ### MUAC/Age Plausibility report
 
 The MUAC/Age Plausibility report has three updates.
@@ -200,10 +206,4 @@ The MUAC/Age Plausibility report has three updates.
 
 A reading is flagged as **too high** when it exceeds WHO's +3 standard deviations for the child's completed month of age and sex — a threshold that about 1 healthy child in 750 exceeds. Previously, a single fixed ceiling applied to all children within a broad age band, which could hold the oldest children in that band to as little as +2 SD. **Below −2SD** is now calculated the same way, using the WHO value for the child's exact month.
 
-6–11 month olds are now included in the check. Previously they had only a provisional 20 cm ceiling.
-
-Because WHO's +3 SD values are typically 0.5–1.5 cm higher than the old fixed ceilings, **you can expect to see fewer readings flagged as "too high"** after this change.
-
-#### Every column and tile explains itself
-
-Hover over any column title or tile label marked **ⓘ** to see a one- or two-sentence definition. The **"How readings are classified"** section at the bottom of the report now shows WHO's too-high and below-−2SD reference values for each age band, so you can see exactly which thresholds were applied
+6–11 month olds are now included in the
