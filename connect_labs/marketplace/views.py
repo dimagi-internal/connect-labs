@@ -23,10 +23,12 @@ from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
+from django.urls import reverse
 
 from connect_labs.labs.chrome import page_chrome
 from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace import programs, queries
+from connect_labs.solicitations import past_calls
 from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
 
 # Nothing in the marketplace is scoped by the labs context selector, and on a
@@ -323,6 +325,11 @@ def round_detail(request, slug):
             "unresolved_count": sum(1 for a in applicants if a["outcome"] == "unresolved"),
             "questions": (round_.questions or [])[:8],
             "question_total": len(round_.questions or []),
+            # Its public page on Solicitations, once it has stopped taking
+            # applications: anyone can read that one, so it is the link to send.
+            "public_call_url": (
+                reverse("solicitations:past_detail", args=[round_.slug]) if past_calls.is_past_call(round_) else ""
+            ),
             # This round, and the organisations that answered it. Naming the
             # round in the resource is what makes "draft an email for each of
             # these orgs to submit to THIS EOI" answerable without the visitor

@@ -27,7 +27,7 @@
 
     <!-- Search and filters: one compact block so the calls stay above the fold on a phone -->
     <form method="get" class="bg-white rounded-lg shadow-sm p-3 sm:p-4 mb-6" role="search">
-        <div class="grid grid-cols-2 md:grid-cols-[minmax(0,1fr)_12rem_14rem_auto] gap-2 items-center">
+        <div class="grid grid-cols-2 md:grid-cols-[minmax(0,1fr)_11rem_13rem_12rem_auto] gap-2 items-center">
             <label class="sr-only" for="sol-q">Search</label>
             <input id="sol-q" type="search" name="q" value="{{ query }}" placeholder="Search calls"
                    class="base-input col-span-2 md:col-span-1 min-w-0">
@@ -44,7 +44,14 @@
                 <option value="{{ org.slug }}" {% if selected_owner == org.slug %}selected{% endif %}>{{ org.name }}</option>
                 {% endfor %}
             </select>
-            <div class="col-span-2 md:col-span-1 flex items-center gap-3">
+            <label class="sr-only" for="sol-program">Program</label>
+            <select id="sol-program" name="program" class="base-dropdown min-w-0" onchange="this.form.submit()">
+                <option value="" {% if not selected_program %}selected{% endif %}>All programs</option>
+                {% for program in programs %}
+                <option value="{{ program.slug }}" {% if selected_program == program.slug %}selected{% endif %}>{{ program.label }}</option>
+                {% endfor %}
+            </select>
+            <div class="md:col-span-1 flex items-center gap-3">
                 <button type="submit" class="button button-sm primary-dark">Search</button>
                 {% if filtered %}<a href="{% url 'solicitations:public_list' %}" class="text-sm text-brand-cornflower-blue hover:underline whitespace-nowrap">Clear</a>{% endif %}
             </div>
@@ -61,7 +68,7 @@
             {% endfor %}
         </div>
     {% else %}
-        <div class="bg-white rounded-lg shadow-sm text-center py-10 px-4 mb-10">
+        <div class="bg-white rounded-lg shadow-sm text-center py-8 sm:py-10 px-4 mb-10">
             <i class="fa-solid fa-box-open text-4xl text-gray-300 mb-3"></i>
             <h3 class="card_title mb-2">
                 {% if filtered %}No open calls match{% else %}No calls are open right now{% endif %}
@@ -80,6 +87,17 @@
                 {% include "solicitations/_card.html" %}
             {% endfor %}
         </div>
+    </section>
+    {% endif %}
+
+    {% if past_years %}
+    <section aria-labelledby="past-calls" class="mt-2">
+        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-1">
+            <h2 id="past-calls" class="text-lg font-semibold text-brand-deep-purple">Past calls</h2>
+            <span class="text-sm text-gray-500">{{ past_count }} call{{ past_count|pluralize }} {{ past_owner.name }} ran on the Connect marketplace</span>
+        </div>
+        <p class="text-sm text-gray-500 mb-4 max-w-2xl">An archive: these calls are closed and no longer take responses. Each links to its public announcement.</p>
+        {% include "solicitations/_past_calls.html" with years=past_years %}
     </section>
     {% endif %}
 

@@ -24,7 +24,7 @@
                 </p>
                 {% endif %}
                 <p class="text-sm text-gray-500 mt-2">
-                    {{ open_calls|length }} open call{{ open_calls|length|pluralize }}{% if past_calls %} · {{ past_calls|length }} past{% endif %}
+                    {{ open_calls|length }} open call{{ open_calls|length|pluralize }}{% if past_calls or archive_count %} · {{ past_calls|length|add:archive_count }} past{% endif %}
                 </p>
             </div>
             {% if can_manage %}
@@ -49,13 +49,20 @@
         </div>
     {% endif %}
 
-    {% if past_calls %}
+    {% if past_calls or archive_years %}
     <h2 class="text-lg font-semibold text-brand-deep-purple mb-3">Past calls</h2>
+    {% if past_calls %}
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-8">
         {% for solicitation in past_calls %}
             {% include "solicitations/_card.html" with hide_owner=True %}
         {% endfor %}
     </div>
+    {% endif %}
+    {% if archive_years %}
+    <div class="mb-8">
+        {% include "solicitations/_past_calls.html" with years=archive_years hide_owner=True %}
+    </div>
+    {% endif %}
     {% endif %}
 </div>
 {% endblock %}

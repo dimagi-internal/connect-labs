@@ -26,8 +26,8 @@ from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
 
 from connect_labs.microplans.core.solicitation_snapshot import build_plan_snapshot
-from connect_labs.solicitations import access, demo
-from connect_labs.solicitations.data_access import AlreadyAwarded, SolicitationsDataAccess
+from connect_labs.solicitations import access, demo, past_calls
+from connect_labs.solicitations.data_access import AlreadyAwarded, SolicitationsDataAccess, by_public_id
 from connect_labs.solicitations.forms import NEW_ORG, ReviewForm, SolicitationForm, SolicitationResponseForm
 from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
 
@@ -439,7 +439,8 @@ Return ONLY the JSON array, no other text."""
 
 
 class PublicSolicitationListView(SolicitationsPage):
-    """Every listed call that is open, plus the recently closed ones."""
+    """Every listed call that is open, the recently closed ones, and the past
+    calls (the marketplace's historical rounds), grouped by year."""
 
     template_name = "solicitations/public_list.html"
 
@@ -448,28 +449,52 @@ class PublicSolicitationListView(SolicitationsPage):
         q = self.request.GET
         solicitation_type = q.get("type") if q.get("type") in ("eoi", "rfp") else ""
         owner_slug = (q.get("owner") or "").strip()
+        program = (q.get("program") or "").strip()
         query = (q.get("q") or "").strip()
 
         everything = self.da().get_public_solicitations()
-        owners = sorted({c.owner_org for c in everything if c.owner_org_id}, key=lambda o: o.name.lower())
+        past = self.da().get_past_calls()
+        ran_by = past_calls.owner()
+        dimagi_slug = past_calls.owner_slug()
+
+        owners = {c.owner_org.slug: c.owner_org for c in everything if c.owner_org_id}
+        if past and dimagi_slug not in owners:
+            owners[dimagi_slug] = past_calls.Owner(name=ran_by.name, slug=dimagi_slug)
+        owners = sorted(owners.values(), key=lambda o: o.name.lower())
+        programs = sorted(
+            {(c.delivery_type, c.program_label) for c in [*everything, *past] if c.delivery_type and c.program_label},
+            key=lambda p: p[1].lower(),
+        )
 
         calls = everything
         if solicitation_type:
             calls = [c for c in calls if c.solicitation_type == solicitation_type]
+            past = [c for c in past if c.solicitation_type == solicitation_type]
         if owner_slug:
             calls = [c for c in calls if c.owner_org_id and c.owner_org.slug == owner_slug]
+            if owner_slug != dimagi_slug:
+                past = []
+        if program:
+            calls = [c for c in calls if c.delivery_type == program]
+            past = [c for c in past if c.delivery_type == program]
         calls = _search(calls, query)
+        past = _search_past(past, query)
         open_calls, closed = _split_open_closed(calls)
 
         ctx.update(
             {
                 "solicitations": open_calls,
                 "recently_closed": closed[:RECENTLY_CLOSED_LIMIT],
+                "past_years": past_calls.by_year(past),
+                "past_count": len(past),
+                "past_owner": ran_by,
                 "owners": owners,
+                "programs": [{"slug": slug, "label": label} for slug, label in programs],
                 "selected_type": solicitation_type,
                 "selected_owner": owner_slug,
+                "selected_program": program,
                 "query": query,
-                "filtered": bool(solicitation_type or owner_slug or query),
+                "filtered": bool(solicitation_type or owner_slug or program or query),
                 "can_manage_any": bool(self.request.user.is_authenticated and self.da().manageable_orgs()),
             }
         )
@@ -480,6 +505,16 @@ class PublicSolicitationDetailView(SolicitationsPage):
     """One call: what it asks for, how it is scored, and how to respond."""
 
     template_name = "solicitations/public_detail.html"
+
+    def get(self, request, *args, **kwargs):
+        # A past call (a marketplace directory round) has its own read-only page;
+        # its id here leads there. Only when no call answers to this id at all.
+        pk = kwargs["pk"]
+        if by_public_id(Solicitation.objects.calls(), pk) is None:
+            past = self.da().get_past_call(pk)
+            if past is not None:
+                return redirect("solicitations:past_detail", slug=past.slug)
+        return super().get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -524,7 +559,10 @@ class OrgSolicitationsView(SolicitationsPage):
         da = self.da()
         can_manage = access.can_manage_org(da.caller, self.org)
         calls = [c for c in da.get_solicitations(org=self.org) if access.is_publicly_visible(c)]
-        if not calls and not can_manage:
+        # Dimagi ran every marketplace directory round, so its page lists them
+        # as past calls -- display only: they stay unowned and unmanaged.
+        archive = da.get_past_calls() if self.org.slug == past_calls.owner_slug() else []
+        if not calls and not archive and not can_manage:
             raise Http404("This organisation has no published calls")
         open_calls, past = _split_open_closed(calls)
         ctx.update(
@@ -533,10 +571,56 @@ class OrgSolicitationsView(SolicitationsPage):
                 "profile": getattr(self.org, "marketplace_profile", None) if _has_profile(self.org) else None,
                 "open_calls": open_calls,
                 "past_calls": past,
+                "archive_years": past_calls.by_year(archive),
+                "archive_count": len(archive),
                 "can_manage": can_manage,
             }
         )
         return ctx
+
+
+class PastCallDetailView(SolicitationsPage):
+    """A past call: one of the marketplace's historical rounds, read-only.
+
+    Addressed by slug, or by id (which redirects to the slug). Shows the call
+    and its announcement; never the application form, the response sheet, the
+    import's notes, or who applied. Someone signed in sees how many
+    organisations applied and a link to the marketplace's round page (itself
+    behind the login); anonymous visitors see neither.
+    """
+
+    template_name = "solicitations/past_detail.html"
+
+    def get(self, request, *args, **kwargs):
+        call = self.da().get_past_call(kwargs["slug"])
+        if call is None:
+            raise Http404("Past call not found")
+        if call.slug != kwargs["slug"]:
+            return redirect("solicitations:past_detail", slug=call.slug)
+        self.call = call
+        return super().get(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        call = self.call
+        signed_in = self.request.user.is_authenticated
+        ctx.update(
+            {
+                "solicitation": call,
+                "past_owner": past_calls.owner(),
+                "show_scope": _scope_differs(call),
+                "applicant_count": self.da().past_call_applicant_count(call),
+                "marketplace_url": reverse("marketplace:round", args=[call.slug]) if signed_in else "",
+            }
+        )
+        return ctx
+
+
+def _search_past(calls, query):
+    words = [w for w in (query or "").lower().split() if w]
+    if not words:
+        return calls
+    return [c for c in calls if all(w in past_calls.haystack(c) for w in words)]
 
 
 def _has_profile(org) -> bool:

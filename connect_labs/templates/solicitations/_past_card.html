@@ -1,0 +1,39 @@
+{% load static %}
+{% comment %}
+A past call in a list: one of the marketplace's historical rounds, read-only.
+The program's picture (marketplace.programs.image) heads the card, or its hue
+where it has none. Never the application form, the response sheet, or who applied.
+{% endcomment %}
+<article class="rounded-lg bg-white shadow-sm flex flex-col h-full min-w-0 overflow-hidden hover:shadow-lg transition-shadow duration-300 relative">
+    <div class="h-24 sm:h-28 shrink-0 relative" style="background-color: {{ solicitation.past_program.hue }}">
+        {% if solicitation.past_program.image %}
+        <img src="{% static solicitation.past_program.image.src %}" alt="" loading="lazy" class="w-full h-full object-cover" style="object-position: {{ solicitation.past_program.image.focus }}">
+        {% endif %}
+    </div>
+    <div class="p-4 sm:p-5 flex flex-col flex-1 min-w-0">
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+            {% include "solicitations/_type_badge.html" %}
+            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>Closed</span>
+        </div>
+        {% if not hide_owner %}
+        <p class="text-xs text-gray-500 mb-1 truncate">
+            <i class="fa-solid fa-building mr-1"></i>{% if past_owner.slug %}<a href="{% url 'solicitations:org_page' org_slug=past_owner.slug %}" class="relative z-10 hover:underline hover:text-brand-cornflower-blue">{{ past_owner.name }}</a>{% else %}{{ past_owner.name }}{% endif %}
+        </p>
+        {% endif %}
+        <h3 class="card_title mb-2 break-words">
+            <a href="{% url 'solicitations:past_detail' slug=solicitation.slug %}" class="after:absolute after:inset-0 hover:text-brand-cornflower-blue">{{ solicitation.title }}</a>
+        </h3>
+        {% if solicitation.past_program.label %}
+        <p class="text-sm font-medium mb-1 flex items-center gap-1.5 min-w-0" style="color: {{ solicitation.past_program.hue }}">
+            <span class="w-2 h-2 rounded-full shrink-0" style="background-color: {{ solicitation.past_program.hue }}"></span><span class="truncate">{{ solicitation.past_program.label }}</span>
+        </p>
+        {% endif %}
+        {% if solicitation.target_countries %}
+        <p class="text-sm text-gray-600 mb-3 line-clamp-2 break-words"><i class="fa-solid fa-earth-africa mr-1 text-gray-400"></i>{{ solicitation.target_countries }}</p>
+        {% endif %}
+        <div class="mt-auto pt-3 border-t border-gray-100 text-sm text-gray-600 whitespace-nowrap">
+            <i class="fa-regular fa-calendar mr-1"></i>
+            {% if solicitation.past_dated_by == "published" %}Published {{ solicitation.published_on|date:"j M Y" }}{% elif solicitation.past_dated_by == "deadline" %}Deadline {{ solicitation.application_deadline|date:"j M Y" }}{% else %}<span class="text-gray-400">Date not recorded</span>{% endif %}
+        </div>
+    </div>
+</article>
