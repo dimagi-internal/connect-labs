@@ -36,6 +36,11 @@ export interface CaseField {
   label: string;
   format?: 'date' | 'count' | 'number' | 'text';
   unit?: string;
+  /**
+   * Stored value -> the label a reader sees, e.g. `{not_home: 'Not at home'}`
+   * (VERSION 10). A value it does not name prints as stored.
+   */
+  values?: Record<string, string>;
 }
 
 export interface Display {
@@ -340,6 +345,16 @@ export function scorecardLayout(
 /** One case-table cell, as its field's format says. */
 export function fmtCaseField(f: CaseField, value: unknown): string {
   if (value === null || value === undefined || value === '') return '—';
+  // The registry's label for a stored code (`values`), printed as is: a label
+  // is words, so it takes no format and no unit.
+  const values = f.values;
+  if (
+    values &&
+    typeof values === 'object' &&
+    Object.prototype.hasOwnProperty.call(values, String(value)) &&
+    typeof values[String(value)] === 'string'
+  )
+    return values[String(value)];
   if (f.format === 'date') return dateLbl(value) || '—';
   if (f.format === 'count') return nCount(value) + (f.unit ? ' ' + f.unit : '');
   if (f.format === 'number') {

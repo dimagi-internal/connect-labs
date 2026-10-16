@@ -46,6 +46,8 @@ PER REGISTRY (`display:` in the indicators document)::
       reading: {column: weight_g, label: Weight, unit: g}   # charted per case
       visit_fields:                                # extra columns in one case's visit list
         - {field: weight_g, label: Weight, format: count, unit: g}
+        - {field: visit_outcome, label: Outcome,     # `values`: stored code -> label shown
+           values: {met: Met her, not_home: Not at home}}
       visit_flags:                                 # per-visit review flags, shown by name
         - {column: repeat_counts_flag, label: Repeat count}   # flagged when 'yes'/true/1
         - {column: risk_level, label: High risk, value: high} # or when it equals `value`
@@ -76,6 +78,13 @@ own review flag, which is a different thing. A flag's optional `fields` names th
 previous visit's is marked (a repeat-count flag points at the repeated counts). Its
 optional `description` is the sentence the Flags column's tooltip gives for it.
 
+A `case_fields` / `visit_fields` entry's optional `values` maps a STORED value (a
+form's choice code, e.g. `not_home`) to the label a reader sees ("Not at home").
+Keys and labels are strings (quote a numeric code: `'1': Yes`), at most
+`FIELD_VALUES_MAX` entries; a value the map does not name renders as stored, and
+the map changes only what is printed -- flags and comparisons still read the
+stored value.
+
 `resolve_display` fills every default so readers never branch on absence, and
 `display_problems` is the save-time gate (`validation.validate_registry` calls it).
 """
@@ -88,6 +97,10 @@ from typing import Any
 HEADLINE_COUNT = 5
 _FIELD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 CASE_FIELD_FORMATS = ("date", "count", "number", "text")
+# A field's `values` map (stored value -> label): bounded so a registry cannot
+# carry a whole code book into every snapshot.
+FIELD_VALUES_MAX = 100
+FIELD_VALUE_LEN_MAX = 120
 _DISPLAY_KEYS = {
     "title",
     "entity",
@@ -120,10 +133,38 @@ def _fields(raw: Any) -> list[dict[str, Any]]:
             "label": str(f.get("label") or f["field"]),
             "format": f.get("format") if f.get("format") in CASE_FIELD_FORMATS else "text",
             **({"unit": str(f["unit"])} if f.get("unit") else {}),
+            **({"values": _values(f.get("values"))} if _values(f.get("values")) else {}),
         }
         for f in raw or []
         if isinstance(f, dict) and isinstance(f.get("field"), str)
     ]
+
+
+def _values(raw: Any) -> dict[str, str]:
+    """A field's stored-value -> label map, keeping only string -> string pairs."""
+    if not isinstance(raw, dict):
+        return {}
+    return {k: v for k, v in raw.items() if isinstance(k, str) and k and isinstance(v, str) and v}
+
+
+def _values_problems(where: str, raw: Any, problems: list[str]) -> None:
+    if raw is None:
+        return
+    if not isinstance(raw, dict) or not raw:
+        problems.append(f"{where}: must be a non-empty map of stored value -> label")
+        return
+    if len(raw) > FIELD_VALUES_MAX:
+        problems.append(f"{where}: {len(raw)} entries; at most {FIELD_VALUES_MAX}")
+    for k, v in raw.items():
+        if not isinstance(k, str) or not k or len(k) > FIELD_VALUE_LEN_MAX:
+            problems.append(
+                f"{where}: key {k!r} must be a non-empty string of at most {FIELD_VALUE_LEN_MAX} "
+                "characters (quote a numeric code)"
+            )
+        elif not isinstance(v, str) or not v.strip() or len(v) > FIELD_VALUE_LEN_MAX:
+            problems.append(
+                f"{where}.{k}: the label must be a non-empty string of at most {FIELD_VALUE_LEN_MAX} characters"
+            )
 
 
 def _visit_flags(raw: Any) -> list[dict[str, Any]]:
@@ -152,6 +193,7 @@ def _fields_problems(key: str, fields: Any, problems: list[str]) -> None:
             continue
         if f.get("format") is not None and f["format"] not in CASE_FIELD_FORMATS:
             problems.append(f"display.{key}[{i}].format: {f['format']!r} is not one of {list(CASE_FIELD_FORMATS)}")
+        _values_problems(f"display.{key}[{i}].values", f.get("values"), problems)
 
 
 def _noun(value: Any, name: str, plural: str) -> dict[str, str]:

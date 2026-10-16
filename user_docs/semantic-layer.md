@@ -408,11 +408,15 @@ display:
   reading: { column: weight_g, label: Weight, unit: g }        # charted per case in the worker review
   visit_fields:                                    # extra columns of one case's visit list
     - { field: weight_g, label: Weight, format: count, unit: g }
+    - { field: visit_outcome, label: Outcome,                  # values: stored code -> what a reader sees
+        values: { met: Met her, not_home: Not at home, left: Left the programme } }
   visit_flags:                                     # review flags marked on each visit
     - { column: repeat_counts_flag, label: Repeat count }       # flagged when yes / true / 1
     - { column: risk_level, label: High risk, value: high }     # or when it equals `value`
   targets_note: 'Targets from the 2026 workplan.'
 ```
+
+**Value labels.** Any `case_fields` or `visit_fields` entry can carry `values`, a map from a value as it is STORED (a form's choice code, such as `not_home`) to the label a reader sees ("Not at home"). The case table, the worker review's visit list and its "… at every visit" header chip all print the label. A value the map does not name prints as stored, so a map can cover only the codes that need words. Keys and labels are strings: quote a numeric code (`'1': Yes`). A map holds at most 100 entries of at most 120 characters each, and saving refuses anything else. The map changes only what is printed: `visit_flags` and the "same as the previous visit" marks still compare the stored value. A saved run keeps the display it was frozen with, so a new map shows on the live report and on runs saved after the change.
 
 `entity.label_field` is how a case is NAMED rather than identified. It names a field of the case index (a column of the entity pipeline): the case table's first column and the worker review's case heading show its value, falling back to the case id when a case has none. Connect carries each visit's case name in `entity_name`, which every pipeline row already has, so `label_field: entity_name` works on any programme with no pipeline change; a form field works too (declare it in the entity pipeline, e.g. `{name: child_name, path: form.child_name}`, and name that). The builder adds the field to the case index it derives, and a run keeps the labels it was built with. It is a label, never a key: selecting a case and reading its visits still go by `entity_id`.
 
