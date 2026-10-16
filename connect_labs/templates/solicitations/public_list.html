@@ -1,111 +1,86 @@
 {% extends "base.html" %}
 
+{% block title %}Open calls for partners · Solicitations{% endblock %}
+
 {% block content %}
-<div class="max-w-screen-xl mx-auto px-4 py-6">
+<div class="max-w-screen-xl mx-auto px-0 sm:px-4 py-4 sm:py-6">
 
     <!-- Page Header -->
-    <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
-        <div class="flex flex-col gap-4">
-            <span class="text-sm font-medium text-brand-cornflower-blue">
-                <i class="fa-solid fa-bullhorn mr-1"></i> Partnership Opportunities
-            </span>
-            <div class="flex-1">
-                <h1 class="text-2xl font-semibold text-brand-deep-purple mb-2">Open Solicitations</h1>
+    <div class="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-4">
+        <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+            <div class="min-w-0">
+                <span class="text-sm font-medium text-brand-cornflower-blue">
+                    <i class="fa-solid fa-bullhorn mr-1"></i> Calls for partners
+                </span>
+                <h1 class="text-2xl font-semibold text-brand-deep-purple mt-1 mb-1">Open solicitations</h1>
                 <p class="text-sm text-gray-600 max-w-2xl">
-                    Browse current partnership opportunities including Expressions of Interest and Requests for Proposals.
+                    Expressions of Interest and Requests for Proposal from organisations looking for partners. Anyone can read them; sign in to respond.
                 </p>
             </div>
+            {% if can_manage_any %}
+            <a href="{% url 'solicitations:manage_list' %}" class="button button-sm outline-style self-start sm:self-auto whitespace-nowrap">
+                <i class="fa-solid fa-briefcase mr-1"></i> Manage your calls
+            </a>
+            {% endif %}
         </div>
     </div>
 
-    <!-- Type Filter -->
-    <div class="card_bg mb-8">
-        <div class="flex flex-wrap gap-2">
-            <a href="{% url 'solicitations:public_list' %}"
-               class="button button-sm {% if selected_type == '' %}primary-dark{% else %}outline-style{% endif %}">
-                All
-            </a>
-            <a href="{% url 'solicitations:public_list' %}?type=rfp"
-               class="button button-sm {% if selected_type == 'rfp' %}primary-dark{% else %}outline-style{% endif %}">
-                <i class="fa-solid fa-file-contract mr-1"></i> Requests for Proposal
-            </a>
-            <a href="{% url 'solicitations:public_list' %}?type=eoi"
-               class="button button-sm {% if selected_type == 'eoi' %}primary-dark{% else %}outline-style{% endif %}">
-                <i class="fa-solid fa-hand mr-1"></i> Expressions of Interest
-            </a>
+    <!-- Search and filters: one compact block so the calls stay above the fold on a phone -->
+    <form method="get" class="bg-white rounded-lg shadow-sm p-3 sm:p-4 mb-6" role="search">
+        <div class="grid grid-cols-2 md:grid-cols-[minmax(0,1fr)_12rem_14rem_auto] gap-2 items-center">
+            <label class="sr-only" for="sol-q">Search</label>
+            <input id="sol-q" type="search" name="q" value="{{ query }}" placeholder="Search calls"
+                   class="base-input col-span-2 md:col-span-1 min-w-0">
+            <label class="sr-only" for="sol-type">Type</label>
+            <select id="sol-type" name="type" class="base-dropdown min-w-0" onchange="this.form.submit()">
+                <option value="" {% if not selected_type %}selected{% endif %}>All types</option>
+                <option value="eoi" {% if selected_type == 'eoi' %}selected{% endif %}>Expressions of Interest</option>
+                <option value="rfp" {% if selected_type == 'rfp' %}selected{% endif %}>Requests for Proposal</option>
+            </select>
+            <label class="sr-only" for="sol-owner">Organisation</label>
+            <select id="sol-owner" name="owner" class="base-dropdown min-w-0" onchange="this.form.submit()">
+                <option value="" {% if not selected_owner %}selected{% endif %}>All organisations</option>
+                {% for org in owners %}
+                <option value="{{ org.slug }}" {% if selected_owner == org.slug %}selected{% endif %}>{{ org.name }}</option>
+                {% endfor %}
+            </select>
+            <div class="col-span-2 md:col-span-1 flex items-center gap-3">
+                <button type="submit" class="button button-sm primary-dark">Search</button>
+                {% if filtered %}<a href="{% url 'solicitations:public_list' %}" class="text-sm text-brand-cornflower-blue hover:underline whitespace-nowrap">Clear</a>{% endif %}
+            </div>
         </div>
-    </div>
+    </form>
 
-    <!-- Solicitations Grid -->
+    <!-- Open calls -->
+    <h2 class="sr-only">Open calls</h2>
     {% if solicitations %}
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+        <p class="text-sm text-gray-500 mb-3">{{ solicitations|length }} open call{{ solicitations|length|pluralize }}</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-10">
             {% for solicitation in solicitations %}
-                <a href="{% url 'solicitations:public_detail' pk=solicitation.pk %}"
-                   class="card_bg hover:shadow-lg transition-all duration-300 block">
-
-                    <!-- Card Header -->
-                    <div class="mb-4">
-                        <div class="flex items-start justify-between mb-3">
-                            <span class="badge badge-md {% if solicitation.solicitation_type == 'eoi' %}primary-light{% else %}warning-light{% endif %}">
-                                {{ solicitation.type_label }}
-                            </span>
-                        </div>
-
-                        {% if solicitation.program_name %}
-                            <p class="text-xs text-gray-500 mb-1">
-                                <i class="fa-solid fa-building mr-1"></i>{{ solicitation.program_name }}
-                            </p>
-                        {% endif %}
-
-                        <h3 class="card_title mb-2">{{ solicitation.title }}</h3>
-
-                        <p class="card_description mb-3 line-clamp-3">
-                            {{ solicitation.description|truncatewords:30 }}
-                        </p>
-                    </div>
-
-                    <!-- Card Footer -->
-                    <div class="pt-4 border-t border-gray-100">
-                        <div class="flex items-center justify-between text-sm text-gray-600">
-                            <div>
-                                {% if solicitation.application_deadline %}
-                                    <i class="fa-regular fa-clock mr-1"></i>
-                                    <span class="font-medium">Deadline:</span>
-                                    {{ solicitation.application_deadline|date:"M d, Y" }}
-                                {% else %}
-                                    <span class="text-gray-400">No deadline set</span>
-                                {% endif %}
-                            </div>
-                            {% if solicitation.estimated_scale %}
-                                <div>
-                                    <i class="fa-solid fa-chart-bar mr-1"></i>
-                                    {{ solicitation.estimated_scale }}
-                                </div>
-                            {% endif %}
-                        </div>
-                    </div>
-                </a>
+                {% include "solicitations/_card.html" %}
             {% endfor %}
         </div>
     {% else %}
-        <!-- Empty State -->
-        <div class="text-center py-12">
-            <i class="fa-solid fa-box-open text-5xl text-gray-400 mx-auto mb-4"></i>
-            <h3 class="card_title mb-2">No solicitations available</h3>
-            <p class="card_description mb-6">
-                {% if selected_type %}
-                    No {{ selected_type|upper }} solicitations are currently open. Try viewing all types.
-                {% else %}
-                    Check back soon for new partnership opportunities.
-                {% endif %}
+        <div class="bg-white rounded-lg shadow-sm text-center py-10 px-4 mb-10">
+            <i class="fa-solid fa-box-open text-4xl text-gray-300 mb-3"></i>
+            <h3 class="card_title mb-2">
+                {% if filtered %}No open calls match{% else %}No calls are open right now{% endif %}
+            </h3>
+            <p class="card_description">
+                {% if filtered %}Try a different search, or <a href="{% url 'solicitations:public_list' %}" class="text-brand-cornflower-blue hover:underline">see every open call</a>.{% else %}Check back soon for new partnership opportunities.{% endif %}
             </p>
-            {% if selected_type %}
-                <a href="{% url 'solicitations:public_list' %}"
-                   class="button button-md primary-dark">
-                    View All Solicitations
-                </a>
-            {% endif %}
         </div>
+    {% endif %}
+
+    {% if recently_closed %}
+    <section aria-labelledby="recently-closed">
+        <h2 id="recently-closed" class="text-lg font-semibold text-brand-deep-purple mb-3">Recently closed</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-8 opacity-90">
+            {% for solicitation in recently_closed %}
+                {% include "solicitations/_card.html" %}
+            {% endfor %}
+        </div>
+    </section>
     {% endif %}
 
 </div>

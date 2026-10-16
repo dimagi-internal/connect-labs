@@ -7,16 +7,24 @@
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
 {% endblock css %}
 
+{% block title %}{% if is_create %}New call{% else %}Edit: {{ solicitation.title }}{% endif %} · Solicitations{% endblock %}
+
 {% block content %}
 <!-- AI Chat Mount Point -->
 <div id="solicitation-chat-root"></div>
-<div class="max-w-4xl mx-auto px-4 py-6">
+<div class="max-w-4xl mx-auto px-0 sm:px-4 py-4 sm:py-6">
 
     <!-- Breadcrumb -->
     <nav class="flex items-center gap-2 text-sm text-gray-500 mb-6">
-        <a href="{% url 'solicitations:manage_list' %}" class="hover:text-brand-cornflower-blue transition-colors">
-            <i class="fa-solid fa-list mr-1"></i> Manage
+        {% if solicitation.owner_org_id %}
+        <a href="{% url 'solicitations:org_manage' org_slug=solicitation.owner_org.slug %}" class="hover:text-brand-cornflower-blue transition-colors">
+            <i class="fa-solid fa-briefcase mr-1"></i> {{ solicitation.owner_name }}
         </a>
+        {% else %}
+        <a href="{% url 'solicitations:manage_list' %}" class="hover:text-brand-cornflower-blue transition-colors">
+            <i class="fa-solid fa-briefcase mr-1"></i> Manage calls
+        </a>
+        {% endif %}
         <i class="fa-solid fa-chevron-right text-xs"></i>
         <span class="text-gray-700 font-medium">
             {% if is_create %}Create Solicitation{% else %}Edit Solicitation{% endif %}
@@ -24,7 +32,7 @@
     </nav>
 
     <h1 class="text-2xl font-semibold text-brand-deep-purple mb-6">
-        {% if is_create %}Create New Solicitation{% else %}Edit Solicitation{% endif %}
+        {% if is_create %}New call for partners{% else %}Edit call{% endif %}
     </h1>
 
     {% if error %}
@@ -36,28 +44,44 @@
         </div>
     {% endif %}
 
-    {% if not has_context %}
-        <div class="bg-blue-50 border border-blue-200 rounded-lg shadow-sm p-12 text-center">
-            <i class="fa-solid fa-building text-5xl text-blue-400 mb-4"></i>
-            <h3 class="text-xl font-semibold text-blue-900 mb-2">No context selected</h3>
-            <p class="text-blue-700 mb-6">Please select a program or organization from the context selector above before creating a solicitation.</p>
-            <a href="{% url 'solicitations:manage_list' %}"
-               class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition">
-                Back to Manage
-            </a>
+    {% if form.non_field_errors %}
+        <div class="bg-red-50 border-l-4 border-red-400 p-4 mb-6" role="alert">
+            {% for err in form.non_field_errors %}<p class="text-sm text-red-700">{{ err }}</p>{% endfor %}
+        </div>
+    {% endif %}
+
+    {% if is_create and not owner_orgs %}
+        <div class="bg-white rounded-lg shadow-sm p-6 sm:p-8">
+            <h2 class="text-lg font-semibold text-gray-900 mb-2">You need to belong to an organisation to post a call</h2>
+            <p class="text-sm text-gray-700">A call is posted by an organisation, and only its members can read the responses. Ask an administrator of your organisation, or your Dimagi contact, to add you as a member; then come back here.</p>
+            <a href="{% url 'solicitations:public_list' %}" class="inline-block mt-5 text-sm text-brand-cornflower-blue hover:underline"><i class="fa-solid fa-arrow-left mr-1"></i> All open calls</a>
         </div>
     {% else %}
     <form method="post" id="solicitation-form" class="space-y-8">
         {% csrf_token %}
 
         <!-- Basic Information -->
-        <div class="bg-white rounded-xl shadow-sm p-8">
+        <div class="bg-white rounded-xl shadow-sm p-5 sm:p-8">
             <h2 class="text-xl font-semibold text-brand-deep-purple mb-6 pb-2 border-b border-gray-200">
                 <i class="fa-solid fa-info-circle mr-2"></i>
                 Basic Information
             </h2>
 
             <div class="space-y-4">
+                {% if is_create %}
+                <div>
+                    <label for="id_owner_org" class="block text-sm font-medium text-gray-700 mb-1">From (the organisation posting this call)</label>
+                    <select name="owner_org" id="id_owner_org" class="base-dropdown" required>
+                        {% if owner_orgs|length != 1 %}<option value="" {% if not selected_owner %}selected{% endif %} disabled>Choose an organisation</option>{% endif %}
+                        {% for org in owner_orgs %}
+                        <option value="{{ org.slug }}" {% if org.slug == selected_owner %}selected{% endif %}>{{ org.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <p class="mt-1 text-xs text-gray-500">Responses are visible only to members of this organisation (and platform support).</p>
+                </div>
+                {% elif solicitation.owner_org_id %}
+                <p class="text-sm text-gray-600"><i class="fa-solid fa-building mr-1 text-gray-400"></i>From <strong>{{ solicitation.owner_name }}</strong></p>
+                {% endif %}
                 <div>
                     <label for="id_title" class="block text-sm font-medium text-gray-700 mb-1">{{ form.title.label }}</label>
                     {{ form.title }}
@@ -113,7 +137,7 @@
         </div>
 
         <!-- Dates & Details -->
-        <div class="bg-white rounded-xl shadow-sm p-8">
+        <div class="bg-white rounded-xl shadow-sm p-5 sm:p-8">
             <h2 class="text-xl font-semibold text-brand-deep-purple mb-6 pb-2 border-b border-gray-200">
                 <i class="fa-solid fa-calendar mr-2"></i>
                 Dates & Details
@@ -165,7 +189,7 @@
         </div>
 
         <!-- Application Questions (Alpine.js question builder) -->
-        <div class="bg-white rounded-xl shadow-sm p-8"
+        <div class="bg-white rounded-xl shadow-sm p-5 sm:p-8"
              x-data="questionBuilder()">
 
             <h2 class="text-xl font-semibold text-brand-deep-purple mb-6 pb-2 border-b border-gray-200">
@@ -250,7 +274,7 @@
         {{ form.source_plan_ids_json }}
 
         {% if snapshot_plans %}
-        <div class="bg-white rounded-xl shadow-sm p-8" id="coverage-card">
+        <div class="bg-white rounded-xl shadow-sm p-5 sm:p-8" id="coverage-card">
             <h2 class="text-xl font-semibold text-brand-deep-purple mb-6 pb-2 border-b border-gray-200">
                 <i class="fa-solid fa-map-location-dot mr-2"></i>
                 Coverage areas (from micro-plan)
@@ -289,7 +313,7 @@
         {% endif %}
 
         <!-- Evaluation Criteria Builder -->
-        <div class="bg-white rounded-xl shadow-sm p-8"
+        <div class="bg-white rounded-xl shadow-sm p-5 sm:p-8"
              x-data="criteriaBuilder()">
 
             <h2 class="text-xl font-semibold text-brand-deep-purple mb-6 pb-2 border-b border-gray-200">

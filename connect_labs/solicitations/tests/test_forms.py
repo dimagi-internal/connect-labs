@@ -165,7 +165,31 @@ class TestSolicitationForm:
         )
         assert form.is_valid(), form.errors
         data = form.to_data_dict()
-        assert data["questions"] == []
+        # An empty hidden field means the editor never wrote it: not sent, so an
+        # edit cannot wipe the call's questions (edits merge).
+        assert "questions" not in data
+        assert "evaluation_criteria" not in data
+
+    def test_to_data_dict_sends_only_fields_in_the_post(self):
+        form = SolicitationForm(data={"title": "T", "description": "D", "solicitation_type": "rfp", "status": "draft"})
+        assert form.is_valid(), form.errors
+        data = form.to_data_dict()
+        assert "contact_email" not in data
+        assert "estimated_scale" not in data
+        assert data["is_public"] is False  # an unticked checkbox is absent, and means False
+
+    def test_to_data_dict_explicit_empty_list_clears(self):
+        form = SolicitationForm(
+            data={
+                "title": "T",
+                "description": "D",
+                "solicitation_type": "rfp",
+                "status": "draft",
+                "questions_json": "[]",
+            }
+        )
+        assert form.is_valid(), form.errors
+        assert form.to_data_dict()["questions"] == []
 
     def test_to_data_dict_omits_none_dates(self):
         form = SolicitationForm(
@@ -293,6 +317,37 @@ class TestSolicitationResponseForm:
         form = SolicitationResponseForm(questions=questions, data={"question_q1": "Invalid"})
         assert not form.is_valid()
         assert "question_q1" in form.errors
+
+    def test_responding_org_picked_from_the_users_orgs(self):
+        form = SolicitationResponseForm(
+            questions=self._questions(),
+            org_choices=[("firm-org", "Firm Org")],
+            data={"question_q1": "x", "org": "firm-org"},
+        )
+        assert form.is_valid(), form.errors
+        assert form.responding_org() == ("firm-org", "", "")
+
+    def test_responding_org_new_by_name_and_email(self):
+        form = SolicitationResponseForm(
+            questions=self._questions(),
+            data={
+                "question_q1": "x",
+                "org": "__new__",
+                "new_org_name": " New Firm ",
+                "new_org_email": "a@new.example",
+            },
+        )
+        assert form.is_valid(), form.errors
+        assert form.responding_org() == (None, "New Firm", "a@new.example")
+
+    def test_responding_org_rejects_an_org_not_offered(self):
+        form = SolicitationResponseForm(
+            questions=self._questions(),
+            org_choices=[("firm-org", "Firm Org")],
+            data={"question_q1": "x", "org": "someone-else"},
+        )
+        assert not form.is_valid()
+        assert "org" in form.errors
 
     def test_get_responses_dict(self):
         form = SolicitationResponseForm(

@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}{{ org.name }} · Solicitations{% endblock %}
+
+{% block content %}
+<div class="max-w-screen-xl mx-auto px-0 sm:px-4 py-4 sm:py-6">
+
+    <nav class="flex items-center gap-2 text-sm text-gray-500 mb-4 sm:mb-6">
+        <a href="{% url 'solicitations:public_list' %}" class="hover:text-brand-cornflower-blue transition-colors">
+            <i class="fa-solid fa-bullhorn mr-1"></i> Solicitations
+        </a>
+    </nav>
+
+    <div class="bg-white rounded-xl shadow-sm p-5 sm:p-6 mb-6 relative overflow-hidden">
+        <div class="absolute inset-x-0 top-0 h-1.5 bg-brand-mango"></div>
+        <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div class="min-w-0">
+                <p class="text-sm font-medium text-brand-cornflower-blue mb-1"><i class="fa-solid fa-building mr-1"></i>Calls for partners from</p>
+                <h1 class="text-2xl font-semibold text-brand-deep-purple break-words">{{ org.name }}</h1>
+                {% if profile and profile.website or profile and profile.countries %}
+                <p class="text-sm text-gray-600 mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                    {% if profile.countries %}<span><i class="fa-solid fa-earth-africa mr-1 text-gray-400"></i>{{ profile.countries|join:", " }}</span>{% endif %}
+                    {% if profile.website_url %}<a href="{{ profile.website_url }}" rel="noopener" class="text-brand-cornflower-blue hover:underline break-all"><i class="fa-solid fa-globe mr-1"></i>{{ profile.website }}</a>{% elif profile.website %}<span class="break-all"><i class="fa-solid fa-globe mr-1 text-gray-400"></i>{{ profile.website }}</span>{% endif %}
+                </p>
+                {% endif %}
+                <p class="text-sm text-gray-500 mt-2">
+                    {{ open_calls|length }} open call{{ open_calls|length|pluralize }}{% if past_calls %} · {{ past_calls|length }} past{% endif %}
+                </p>
+            </div>
+            {% if can_manage %}
+            <a href="{% url 'solicitations:org_manage' org_slug=org.slug %}" class="button button-sm primary-dark self-start whitespace-nowrap">
+                <i class="fa-solid fa-briefcase mr-1"></i> Manage calls
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-3">Open calls</h2>
+    {% if open_calls %}
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-10">
+            {% for solicitation in open_calls %}
+                {% include "solicitations/_card.html" with hide_owner=True %}
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="bg-white rounded-lg shadow-sm p-6 mb-10 text-sm text-gray-600">
+            {{ org.name }} has no calls open right now.
+            {% if can_manage %}Drafts and unlisted calls are on the <a href="{% url 'solicitations:org_manage' org_slug=org.slug %}" class="text-brand-cornflower-blue hover:underline">manage page</a>.{% endif %}
+        </div>
+    {% endif %}
+
+    {% if past_calls %}
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-3">Past calls</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-8">
+        {% for solicitation in past_calls %}
+            {% include "solicitations/_card.html" with hide_owner=True %}
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

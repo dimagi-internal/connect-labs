@@ -1,13 +1,15 @@
 {% extends "base.html" %}
 {% load humanize %}
 
+{% block title %}Award · {{ solicitation.title }}{% endblock %}
+
 {% block content %}
-<div class="max-w-4xl mx-auto px-4 py-6">
+<div class="max-w-4xl mx-auto px-0 sm:px-4 py-4 sm:py-6">
 
     <!-- Breadcrumb -->
-    <nav class="flex items-center gap-2 text-sm text-gray-500 mb-6">
+    <nav class="flex flex-wrap items-center gap-2 text-sm text-gray-500 mb-6 min-w-0">
         {% if solicitation %}
-            <a href="{% url 'solicitations:responses_list' pk=solicitation.pk %}" class="hover:text-brand-cornflower-blue transition-colors">
+            <a href="{% url 'solicitations:responses_list' pk=solicitation.public_id %}" class="hover:text-brand-cornflower-blue transition-colors">
                 <i class="fa-solid fa-list mr-1"></i> Responses
             </a>
             <i class="fa-solid fa-chevron-right text-xs"></i>
@@ -20,32 +22,42 @@
     </nav>
 
     {% if awarded %}
+    {% if error %}
+        <div class="bg-red-50 border-l-4 border-red-400 p-4 mb-4" role="alert">
+            <div class="flex items-center">
+                <i class="fa-solid fa-exclamation-circle text-red-400 mr-3"></i>
+                <p class="text-sm text-red-700">{{ error }}</p>
+            </div>
+        </div>
+    {% endif %}
     <!-- ============================ CONFIRMATION STATE ============================ -->
     <div class="bg-white rounded-xl shadow-sm overflow-hidden">
-        <div class="bg-green-600 px-8 py-6 flex items-center gap-4">
+        <div class="bg-green-600 px-5 sm:px-8 py-6 flex items-center gap-4">
             <div class="w-12 h-12 bg-white/15 rounded-full flex items-center justify-center shrink-0">
                 <i class="fa-solid fa-check text-white text-xl"></i>
             </div>
             <div>
                 <h1 class="text-xl font-semibold text-white">Awarded to {{ summary.org_display }}</h1>
-                <p class="text-sm text-green-50 mt-0.5">The organization has been notified.</p>
+                <p class="text-sm text-green-50 mt-0.5">
+                    {% if response.awardee_notified %}We emailed {{ summary.notify_email|default:summary.org_display }} to tell them.{% else %}No email was sent{% if not summary.notify_email %} (there is no address to send it to){% endif %}. Let {{ summary.org_display }} know yourself.{% endif %}
+                </p>
             </div>
         </div>
 
-        <div class="p-8">
+        <div class="p-5 sm:p-8">
             <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5 text-sm">
                 <div>
                     <dt class="text-gray-500">Awarded organization</dt>
-                    <dd class="font-medium text-gray-900">{{ summary.org_display }}</dd>
+                    <dd class="font-medium text-gray-900">{{ summary.org_display }}{% if summary.unverified_org %} {% include "solicitations/_unverified_org.html" %}{% endif %}</dd>
                 </div>
                 <div>
                     <dt class="text-gray-500">Contract stage</dt>
                     <dd class="font-medium text-gray-900">
                         {% if response.award_stage == 'full' %}
-                            <i class="fa-solid fa-layer-group text-indigo-500 mr-1"></i> Full survey
+                            <i class="fa-solid fa-layer-group text-indigo-500 mr-1"></i> Full engagement
                         {% else %}
                             <i class="fa-solid fa-flag-checkered text-indigo-500 mr-1"></i> Verification contract
-                            <span class="block text-xs font-normal text-gray-500 mt-0.5">A small, confirmable first contract — the full survey follows once performance is confirmed.</span>
+                            <span class="block text-xs font-normal text-gray-500 mt-0.5">A small, confirmable first contract — the full engagement follows once performance is confirmed.</span>
                         {% endif %}
                     </dd>
                 </div>
@@ -60,7 +72,7 @@
                 {% endif %}
                 {% if solicitation %}
                 <div>
-                    <dt class="text-gray-500">Survey call</dt>
+                    <dt class="text-gray-500">Call</dt>
                     <dd class="font-medium text-gray-900">{{ solicitation.title }}</dd>
                 </div>
                 {% endif %}
@@ -73,7 +85,7 @@
                 {% if response.reward_budget %}
                 <div>
                     <dt class="text-gray-500">Award budget</dt>
-                    <dd class="font-medium text-gray-900">₦{{ response.reward_budget|intcomma }}</dd>
+                    <dd class="font-medium text-gray-900">{{ response.reward_budget|intcomma }}{% if currency %} {{ currency }}{% endif %}</dd>
                 </div>
                 {% endif %}
                 {% if summary.coverage_areas %}
@@ -84,14 +96,32 @@
                 {% endif %}
                 {% if response.awarded_at %}
                 <div class="sm:col-span-2">
-                    <dt class="text-gray-500">Awarded &amp; notified</dt>
+                    <dt class="text-gray-500">Awarded</dt>
                     <dd class="font-medium text-gray-900">
-                        <i class="fa-solid fa-bell text-green-600 mr-1"></i>
-                        {{ response.awarded_at|date:"M d, Y H:i T" }} — notification sent to {{ summary.org_display }}
+                        {{ response.awarded_at|date:"j M Y H:i T" }}
+                        {% if response.awardee_notified %}<span class="text-green-700"><i class="fa-solid fa-envelope-circle-check ml-1 mr-1"></i>award email sent</span>{% else %}<span class="text-gray-500">— no email sent</span>{% endif %}
                     </dd>
                 </div>
                 {% endif %}
             </dl>
+
+            {% if response.award_stage != 'full' %}
+            <!-- The staged upgrade: once the verification contract has gone well -->
+            <form method="post" class="mt-7 border border-indigo-200 rounded-lg p-4 bg-indigo-50/50 flex flex-wrap items-end gap-3">
+                {% csrf_token %}
+                <input type="hidden" name="award_stage" value="full">
+                <div class="flex-1 min-w-[12rem]">
+                    <p class="text-sm font-semibold text-gray-900">Verification went well?</p>
+                    <p class="text-xs text-gray-600 mb-2">Award {{ summary.org_display }} the full engagement. This allocates the new budget and emails them again.</p>
+                    <label for="full_budget" class="sr-only">Full engagement budget</label>
+                    <input type="number" name="reward_budget" id="full_budget" placeholder="Full engagement budget{% if currency %} ({{ currency }}){% endif %}"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <button type="submit" class="inline-flex items-center px-4 py-2 bg-brand-indigo text-white text-sm font-medium rounded-lg hover:opacity-90 transition">
+                    <i class="fa-solid fa-layer-group mr-2"></i>Award the full engagement
+                </button>
+            </form>
+            {% endif %}
 
             <!-- HONEST boundary: award is shipped; provisioning the live opportunity is next -->
             <div class="mt-7 border-l-4 border-amber-400 rounded-lg p-4 bg-amber-50">
@@ -101,14 +131,14 @@
                         <p class="font-semibold text-amber-900 mb-1">Next step — not yet built</p>
                         <p class="leading-relaxed">Standing up {{ summary.org_display }}'s live Connect opportunity from this award (so their
                            field teams can start delivering) is a separate step that isn't automated here yet. This award
-                           records the decision and confirms the firm was notified.</p>
+                           records the decision{% if response.awardee_notified %} and the email telling them{% endif %}.</p>
                     </div>
                 </div>
             </div>
 
-            <div class="flex justify-end gap-4 pt-6 mt-2 border-t border-gray-200">
+            <div class="flex flex-wrap justify-end gap-3 pt-6 mt-2 border-t border-gray-200">
                 {% if solicitation %}
-                <a href="{% url 'solicitations:responses_list' pk=solicitation.pk %}"
+                <a href="{% url 'solicitations:responses_list' pk=solicitation.public_id %}"
                    class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition">
                     <i class="fa-solid fa-arrow-left mr-2"></i>
                     Back to responses
@@ -124,13 +154,13 @@
 
     {% else %}
     <!-- ============================ AWARD FORM STATE ============================ -->
-    <div class="bg-white rounded-xl shadow-sm p-8">
+    <div class="bg-white rounded-xl shadow-sm p-5 sm:p-8">
         <div class="flex items-center gap-3 mb-2">
             <div class="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center">
                 <i class="fa-solid fa-trophy text-green-600"></i>
             </div>
             <div>
-                <h1 class="text-2xl font-semibold text-brand-deep-purple">Award this survey firm</h1>
+                <h1 class="text-xl sm:text-2xl font-semibold text-brand-deep-purple">Award this response</h1>
                 <p class="text-sm text-gray-600">
                     Awarding <strong>{{ summary.org_display }}</strong>
                     {% if solicitation %}for <strong>{{ solicitation.title }}</strong>{% endif %}
@@ -153,7 +183,7 @@
             <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
                 <div>
                     <dt class="text-gray-500">Organization</dt>
-                    <dd class="font-medium text-gray-900">{{ summary.org_display }}</dd>
+                    <dd class="font-medium text-gray-900">{{ summary.org_display }}{% if summary.unverified_org %} {% include "solicitations/_unverified_org.html" %}{% endif %}</dd>
                 </div>
                 {% if summary.contact_name %}
                 <div>
@@ -183,8 +213,7 @@
             <div class="flex items-start gap-3">
                 <i class="fa-solid fa-circle-info text-amber-500 mt-0.5"></i>
                 <p class="text-sm text-amber-800">
-                    Awarding records the decision and <strong>notifies {{ summary.org_display }}</strong> that they've been
-                    selected. You can update the budget later if needed.
+                    Awarding records the decision{% if email_on and summary.notify_email %} and <strong>emails {{ summary.notify_email }}</strong> to tell {{ summary.org_display }} they were selected{% else %}. Labs will not email {{ summary.org_display }}{% if not summary.notify_email %} (there is no address to send it to){% endif %}, so let them know yourself{% endif %}.
                 </p>
             </div>
         </div>
@@ -196,9 +225,9 @@
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Contract stage</label>
                 <p class="text-xs text-gray-500 mb-3">
-                    Connect lets you start the firm on a small, verifiable contract to confirm quality
-                    before scaling to the full survey — so the award is a first, confirmable step, and
-                    firms demonstrate full performance of the tasks, not just their written response.
+                    Connect lets you start the organisation on a small, verifiable contract to confirm quality
+                    before scaling to the full engagement — so the award is a first, confirmable step, and
+                    the organisation demonstrates performance of the tasks, not just their written response.
                 </p>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <label class="relative flex cursor-pointer rounded-lg border border-indigo-300 bg-indigo-50/40 p-4 has-[:checked]:border-indigo-500 has-[:checked]:ring-2 has-[:checked]:ring-indigo-400">
@@ -211,7 +240,7 @@
                     <label class="relative flex cursor-pointer rounded-lg border border-gray-300 bg-white p-4 has-[:checked]:border-indigo-500 has-[:checked]:ring-2 has-[:checked]:ring-indigo-400">
                         <input type="radio" name="award_stage" value="full" class="mt-0.5 mr-3">
                         <span>
-                            <span class="block text-sm font-semibold text-gray-900">Award the full survey</span>
+                            <span class="block text-sm font-semibold text-gray-900">Award the full engagement</span>
                             <span class="block text-xs text-gray-600 mt-0.5">Commit the whole engagement now.</span>
                         </span>
                     </label>
@@ -220,28 +249,30 @@
 
             <div>
                 <label for="reward_budget" class="block text-sm font-medium text-gray-700 mb-1">
-                    Award budget <span class="text-gray-400 font-normal">(optional)</span>
+                    Award budget{% if currency %} ({{ currency }}){% endif %} <span class="text-gray-400 font-normal">(optional)</span>
                 </label>
                 <input type="number" name="reward_budget" id="reward_budget"
                        {% if response.reward_budget %}value="{{ response.reward_budget }}"{% endif %}
                        placeholder="e.g. 500000"
                        class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-                <p class="mt-1 text-xs text-gray-500">Budget allocated to this firm. Leave blank to record the award without a budget.</p>
+                <p class="mt-1 text-xs text-gray-500">Budget allocated to this organisation. Leave blank to record the award without a budget.</p>
             </div>
 
-            <!-- Connect org id is an implementation detail; keep it but de-emphasized + optional -->
+            {% if is_operator %}
+            <!-- Platform support only: wiring an award to a Connect organisation -->
             <details class="text-sm">
-                <summary class="cursor-pointer text-gray-500 hover:text-gray-700 select-none">Advanced: Connect organization ID</summary>
+                <summary class="cursor-pointer text-gray-500 hover:text-gray-700 select-none">Platform support: Connect organisation ID</summary>
                 <div class="mt-2">
                     <input type="text" name="org_id" id="org_id"
                            value="{{ response.org_id }}"
-                           placeholder="Connect org ID for the grantee"
+                           placeholder="Connect organisation ID"
                            class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-                    <p class="mt-1 text-xs text-gray-500">Internal Connect organization ID — only needed when wiring up downstream provisioning.</p>
+                    <p class="mt-1 text-xs text-gray-500">Only needed when setting up the awardee in Connect.</p>
                 </div>
             </details>
+            {% endif %}
 
-            <div class="flex justify-end gap-4 pt-4 border-t border-gray-200">
+            <div class="flex flex-wrap justify-end gap-3 pt-4 border-t border-gray-200">
                 <a href="{% url 'solicitations:response_detail' pk=response.pk %}"
                    class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition">
                     <i class="fa-solid fa-times mr-2"></i>
@@ -250,7 +281,7 @@
                 <button type="submit"
                         class="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition">
                     <i class="fa-solid fa-trophy mr-2"></i>
-                    Award &amp; notify {{ summary.org_display }}
+                    Award to {{ summary.org_display }}
                 </button>
             </div>
         </form>

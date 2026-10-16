@@ -1,73 +1,83 @@
 {% extends "base.html" %}
 
+{% block title %}{% if is_owner %}{{ response.display_name|default:response.blind_label }}{% else %}Your response{% endif %} · {{ solicitation.title }}{% endblock %}
+
 {% block content %}
-<div class="max-w-4xl mx-auto px-4 py-6">
+<div class="max-w-4xl mx-auto px-0 sm:px-4 py-4 sm:py-6">
 
     <!-- Breadcrumb -->
-    <nav class="flex items-center gap-2 text-sm text-gray-500 mb-6">
-        {% if solicitation %}
-            <a href="{% url 'solicitations:responses_list' pk=solicitation.pk %}" class="hover:text-brand-cornflower-blue transition-colors">
-                <i class="fa-solid fa-list mr-1"></i> Responses
+    <nav class="flex flex-wrap items-center gap-2 text-sm text-gray-500 mb-6 min-w-0">
+        {% if is_owner %}
+            <a href="{% url 'solicitations:responses_list' pk=solicitation.public_id %}" class="hover:text-brand-cornflower-blue transition-colors">
+                <i class="fa-solid fa-inbox mr-1"></i> Responses
             </a>
-            <i class="fa-solid fa-chevron-right text-xs"></i>
+        {% else %}
+            <a href="{% url 'solicitations:public_detail' pk=solicitation.public_id %}" class="hover:text-brand-cornflower-blue transition-colors truncate max-w-[16rem]">
+                <i class="fa-solid fa-bullhorn mr-1"></i> {{ solicitation.title }}
+            </a>
         {% endif %}
-        <span class="text-gray-700 font-medium">{{ response.llo_entity_name|default:"Response Detail" }}</span>
     </nav>
 
     <!-- Header -->
-    <div class="bg-white rounded-xl shadow-sm p-8 mb-6">
-        <div class="flex items-center justify-between mb-4">
-            <h1 class="text-2xl font-semibold text-brand-deep-purple">{{ response.llo_entity_name }}</h1>
-            {% if response.status == 'submitted' %}
-                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
-                    Submitted
-                </span>
+    <div class="bg-white rounded-xl shadow-sm p-5 sm:p-8 mb-6">
+        <p class="text-sm text-gray-500 mb-1">
+            {% if is_owner %}Response to{% else %}Your response to{% endif %}
+            <a href="{% url 'solicitations:public_detail' pk=solicitation.public_id %}" class="text-brand-cornflower-blue hover:underline">{{ solicitation.title }}</a>
+        </p>
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <h1 class="text-xl sm:text-2xl font-semibold text-brand-deep-purple break-words min-w-0">{{ response.display_name|default:response.blind_label }}</h1>
+            {% if is_owner and not response.llo_entity_id %}{% include "solicitations/_unverified_org.html" %}{% endif %}
+            {% if response.status == 'awarded' %}
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800"><i class="fa-solid fa-trophy text-green-500 mr-1"></i>Awarded</span>
             {% elif response.status == 'draft' %}
-                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800">
-                    Draft
-                </span>
-            {% elif response.status == 'reviewed' %}
-                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-800">
-                    Reviewed
-                </span>
-            {% elif response.status == 'awarded' %}
-                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                    <i class="fa-solid fa-trophy text-green-500 mr-1"></i>
-                    Awarded
-                </span>
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800">Draft — not submitted</span>
+            {% elif response.status == 'under_review' %}
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-800">Under review</span>
+            {% elif response.status == 'rejected' %}
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-50 text-red-700">Not selected</span>
             {% else %}
-                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-600">
-                    {{ response.status|title }}
-                </span>
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">Submitted</span>
             {% endif %}
         </div>
 
         <dl class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div>
-                <dt class="text-gray-500">Submitted By</dt>
-                <dd class="font-medium text-gray-900">
+            <div class="min-w-0">
+                <dt class="text-gray-500">Submitted by</dt>
+                <dd class="font-medium text-gray-900 break-words">
                     {{ response.submitted_by_name|default:"-" }}
                     {% if response.submitted_by_email %}
-                        <span class="text-gray-500">({{ response.submitted_by_email }})</span>
+                        <span class="text-gray-500 break-all">({{ response.submitted_by_email }})</span>
                     {% endif %}
                 </dd>
             </div>
             <div>
-                <dt class="text-gray-500">Submission Date</dt>
+                <dt class="text-gray-500">Submission date</dt>
                 <dd class="font-medium text-gray-900">
-                    {% if response.submission_date %}
-                        {{ response.submission_date|date:"M d, Y H:i" }}
+                    {% if response.submission_date and response.status != 'draft' %}
+                        {{ response.submission_date|date:"j M Y H:i" }}
                     {% else %}
-                        <span class="text-gray-400">-</span>
+                        <span class="text-gray-400">Not submitted yet</span>
                     {% endif %}
                 </dd>
             </div>
         </dl>
+        {% if is_respondent and not is_owner %}
+        <p class="text-sm text-gray-600 mt-4">
+            {% if response.status == 'draft' %}
+                This draft is visible only to you.
+                {% if can_edit %}<a href="{% url 'solicitations:respond' pk=solicitation.public_id %}" class="text-brand-cornflower-blue hover:underline font-medium">Continue and submit it</a>.{% else %}The call is no longer taking responses.{% endif %}
+            {% elif response.status == 'awarded' %}
+                {{ solicitation.owner_name|default:"The organisation" }} selected your response. They will contact you about next steps.
+            {% else %}
+                {{ solicitation.owner_name|default:"The organisation" }} has your response and will contact you about the outcome.
+            {% endif %}
+        </p>
+        {% endif %}
     </div>
 
     <!-- Selected Coverage Areas (from micro-plan response) -->
     {% if response.selected_plan_names %}
-    <div class="bg-white rounded-xl shadow-sm p-8 mb-6">
+    <div class="bg-white rounded-xl shadow-sm p-5 sm:p-8 mb-6">
           <h4 class="text-sm font-semibold text-gray-700">Selected coverage areas</h4>
           <p class="text-sm text-gray-600">{{ response.selected_plan_names|join:", " }}</p>
     </div>
@@ -75,7 +85,7 @@
 
     <!-- Q&A Pairs -->
     {% if qa_pairs %}
-        <div class="bg-white rounded-xl shadow-sm p-8 mb-6">
+        <div class="bg-white rounded-xl shadow-sm p-5 sm:p-8 mb-6">
             <h2 class="text-lg font-semibold text-brand-deep-purple mb-4">
                 <i class="fa-solid fa-clipboard-list mr-2"></i>
                 Responses
@@ -84,7 +94,7 @@
                 {% for qa in qa_pairs %}
                     <div class="{% if not forloop.last %}pb-4 border-b border-gray-100{% endif %}">
                         <p class="text-sm font-medium text-gray-700 mb-1">{{ qa.question }}</p>
-                        <p class="text-sm text-gray-900 whitespace-pre-line">{{ qa.answer|default:"No answer provided" }}</p>
+                        <p class="text-sm text-gray-900 whitespace-pre-line break-words">{{ qa.answer|default:"No answer provided" }}</p>
                     </div>
                 {% endfor %}
             </div>
@@ -93,7 +103,7 @@
 
     <!-- Reviews -->
     {% if reviews %}
-        <div class="bg-white rounded-xl shadow-sm p-8 mb-6">
+        <div class="bg-white rounded-xl shadow-sm p-5 sm:p-8 mb-6">
             <h2 class="text-lg font-semibold text-brand-deep-purple mb-4">
                 <i class="fa-solid fa-clipboard-check mr-2"></i>
                 Reviews
@@ -146,16 +156,21 @@
     {% endif %}
 
     <!-- Actions -->
-    <div class="flex items-center justify-between pt-2">
-        {% if solicitation %}
-            <a href="{% url 'solicitations:responses_list' pk=solicitation.pk %}" class="text-sm text-brand-cornflower-blue hover:underline">
-                <i class="fa-solid fa-arrow-left mr-1"></i> Back to Responses
+    <div class="flex flex-wrap items-center justify-between gap-3 pt-2 pb-8">
+        {% if is_owner %}
+            <a href="{% url 'solicitations:responses_list' pk=solicitation.public_id %}" class="text-sm text-brand-cornflower-blue hover:underline">
+                <i class="fa-solid fa-arrow-left mr-1"></i> Back to responses
+            </a>
+        {% else %}
+            <a href="{% url 'solicitations:public_detail' pk=solicitation.public_id %}" class="text-sm text-brand-cornflower-blue hover:underline">
+                <i class="fa-solid fa-arrow-left mr-1"></i> Back to the call
             </a>
         {% endif %}
-        <div class="flex items-center gap-3">
+        {% if can_review %}
+        <div class="flex flex-wrap items-center gap-3">
             {% if response.status != 'awarded' %}
                 <a href="{% url 'solicitations:award' pk=response.pk %}"
-                   class="inline-flex items-center px-6 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition">
+                   class="inline-flex items-center px-5 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition">
                     <i class="fa-solid fa-trophy mr-2"></i> Award
                 </a>
             {% else %}
@@ -164,10 +179,11 @@
                 </span>
             {% endif %}
             <a href="{% url 'solicitations:review' pk=response.pk %}"
-               class="inline-flex items-center px-6 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition">
-                <i class="fa-solid fa-clipboard-check mr-2"></i> Add Review
+               class="inline-flex items-center px-5 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition">
+                <i class="fa-solid fa-clipboard-check mr-2"></i> Score (blind)
             </a>
         </div>
+        {% endif %}
     </div>
 
 </div>

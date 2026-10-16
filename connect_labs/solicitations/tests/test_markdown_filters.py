@@ -4,7 +4,7 @@ The filter renders author-supplied free text (``description`` / ``scope_of_work`
 that is shown to other labs users, so its output must be sanitized against XSS.
 """
 
-from connect_labs.solicitations.templatetags.markdown_filters import render_markdown
+from connect_labs.solicitations.templatetags.markdown_filters import plain_preview, render_markdown
 
 
 def test_renders_basic_markdown():
@@ -39,3 +39,12 @@ def test_strips_javascript_url_in_link():
 def test_keeps_safe_http_links():
     html = render_markdown("[ok](https://example.com)")
     assert 'href="https://example.com"' in html
+
+
+def test_plain_preview_strips_markdown_and_markup():
+    text = plain_preview("## Overview\n\n**Bold** claim with a [link](https://x.example) & <b>tag</b>.", 40)
+    assert text == "Overview Bold claim with a link & tag."
+
+
+def test_plain_preview_truncates_words():
+    assert plain_preview("one two three four", 2) == "one two…"

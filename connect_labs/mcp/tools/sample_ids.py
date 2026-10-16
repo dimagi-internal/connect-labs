@@ -6,7 +6,8 @@ Preserves the original response shape.
 Implementation notes:
 - Programs are fetched from /export/opp_org_program_list/ (not covered by
   LabsRecordAPIClient), so we use client.http_client directly for that call.
-- Solicitations and funds use client.get_records(type=...) with an optional
+- Solicitations come from the labs database (the calls the caller manages plus
+  listed ones); funds use client.get_records(type="fund") with an optional
   program_id scope derived from the first program found.
 - All errors are caught and logged individually (same graceful-degradation
   strategy as the original): a failure in one category doesn't prevent the
@@ -63,17 +64,12 @@ def get_sample_ids(user):
         except Exception as e:
             logger.warning(f"Failed to fetch programs: {e}")
 
-        # 2. Fetch solicitations (scoped by first program if available)
+        # 2. Solicitations the caller can see (labs DB)
         try:
-            sol_records = client.get_records(
-                type="solicitation",
-                program_id=first_program_id,
-            )
-            for rec in sol_records[:MAX_PER_CATEGORY]:
-                rec_id = rec.id
-                data = rec.data or {}
-                title = data.get("title") or data.get("name") or f"Solicitation {rec_id}"
-                solicitations.append({"id": rec_id, "name": title})
+            from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+            for sol in SolicitationsDataAccess(user=user).get_solicitations(include_listed=True)[:MAX_PER_CATEGORY]:
+                solicitations.append({"id": sol.public_id, "name": sol.title or f"Solicitation {sol.public_id}"})
         except Exception as e:
             logger.warning(f"Failed to fetch solicitations: {e}")
 

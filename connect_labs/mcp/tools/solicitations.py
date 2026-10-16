@@ -1,58 +1,63 @@
-"""Solicitation tools — migrated from _pending_migration/solicitation_tools.py.
+"""Solicitation tools: calls for partners, their responses and awards.
 
-Solicitations are LabsRecord entries with type="solicitation".
-Responses are LabsRecord entries with type="solicitation_response".
+Solicitations live in the labs database, owned by an organisation
+(``solicitations/local_models.py``). Every tool runs as the caller through
+``SolicitationsDataAccess``, which enforces standing (``solicitations/access.py``):
+the owning organisation's members and platform support manage a call and read its
+responses; a respondent reads their own; everyone reads listed calls. Tool names,
+arguments and output shapes are unchanged from the LabsRecord era; ``program_id``
+and ``organization_id`` are accepted where they always were, as filters.
 """
 
 from __future__ import annotations
 
 import logging
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 
 from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClient
-from connect_labs.solicitations.data_access import SolicitationsDataAccess
+from connect_labs.solicitations import access
+from connect_labs.solicitations.data_access import AlreadyAwarded, HasResponses, SolicitationsDataAccess
+from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
 from connect_labs.solicitations.validation import (
     QUESTION_TYPES,
     VALID_SOLICITATION_TYPES,
     VALID_STATUSES,
-    validate_solicitation_payload,
 )
 
 from ..connect_token import require_connect_token
 from ..tool_registry import MCPToolError, register  # noqa: F401
-from .funds import _add_allocation_to_fund
+from .funds import FUND_TYPE, _add_allocation_to_fund
 
 logger = logging.getLogger(__name__)
 
 
 def _serialize_record(record) -> dict:
-    """Flatten a LocalLabsRecord into a plain dict matching the original shape.
-
-    The original code merged the record's ``data`` dict into the outer envelope,
-    giving callers a single flat dict with id/experiment/type/program_id/labs_record_id
-    plus all application-level fields (title, status, etc.) at the top level.
-
-    ``is_public`` is the canonical name for the public-listing flag and is
-    sourced from ``record.public`` (the server-side LabsRecord.public column).
-    Any stale ``is_public`` inside ``data`` from legacy records is dropped
-    before the spread, so the response has exactly one source of truth.
-    """
-    data = {k: v for k, v in (record.data or {}).items() if k != "is_public"}
-    return {
-        "id": record.id,
-        "experiment": record.experiment,
-        "type": record.type,
-        "program_id": record.program_id,
-        "labs_record_id": record.labs_record_id,
-        **data,
-        "is_public": bool(record.public),
-    }
+    """The flat envelope + data dict every solicitation tool has always returned."""
+    return record.to_record_dict()
 
 
-# ---------------------------------------------------------------------------
-# Read tools (is_write=False)
-# ---------------------------------------------------------------------------
+def _serialize_response(record, user) -> dict:
+    """A response, with the owner's working fields only for someone who manages its call."""
+    return record.to_record_dict(owner_view=access.can_manage(user, record.solicitation))
+
+
+def _da(user, program_id=None, organization_id=None, access_token=None) -> SolicitationsDataAccess:
+    return SolicitationsDataAccess(
+        user=user, program_id=program_id, organization_id=organization_id, access_token=access_token
+    )
+
+
+def _mcp_error(exc: Exception) -> MCPToolError:
+    if isinstance(exc, ValidationError):
+        return _validation_error_to_mcp(exc)
+    if isinstance(exc, PermissionDenied):
+        return MCPToolError("PERMISSION_DENIED", str(exc) or "Not allowed")
+    if isinstance(exc, (Solicitation.DoesNotExist, SolicitationResponse.DoesNotExist)):
+        return MCPToolError("NOT_FOUND", str(exc))
+    if isinstance(exc, (HasResponses, AlreadyAwarded)):
+        return MCPToolError("FAILED_PRECONDITION", str(exc))
+    raise exc
 
 
 def _coerce_id(value: str | int | None) -> int | None:
@@ -65,30 +70,35 @@ def _coerce_id(value: str | int | None) -> int | None:
         return None
 
 
+_SCOPE_NOTE = (
+    "program_id narrows to calls for that Connect programme; organization_id (an organisation "
+    "slug or Connect id) to calls that organisation owns."
+)
+
+
+# ---------------------------------------------------------------------------
+# Read tools (is_write=False)
+# ---------------------------------------------------------------------------
+
+
 @register(
     name="list_solicitations",
     description=(
-        "List solicitations from the Labs Record API. "
-        "Pass program_id or organization_id to scope the read so the prod-side "
-        "membership check authorizes non-public records — without scope, only "
-        "is_public=true records are returned."
+        "List solicitations (calls for partners). Returns the calls the caller's organisations own "
+        "(platform support: every call) plus every publicly listed call. " + _SCOPE_NOTE
     ),
     input_schema={
         "type": "object",
         "properties": {
             "program_id": {
                 "type": "string",
-                "description": (
-                    "Program ID to scope the listing. Used both as an experiment "
-                    "filter and as the prod-side membership scope that authorizes "
-                    "non-public records."
-                ),
+                "description": "Only calls for this Connect programme.",
             },
             "organization_id": {
                 "type": "string",
                 "description": (
-                    "Organization ID to scope the listing when program_id is absent. "
-                    "Authorizes non-public records via org membership."
+                    "Only calls owned by this organisation (labs org slug, Connect slug or Connect id). "
+                    "Unlisted ones appear only if you belong to it."
                 ),
             },
             "status": {
@@ -97,7 +107,7 @@ def _coerce_id(value: str | int | None) -> int | None:
             },
             "solicitation_type": {
                 "type": "string",
-                "description": "Filter by solicitation_type field inside the data JSON.",
+                "description": "Filter by solicitation_type ('eoi' or 'rfp').",
             },
         },
         "additionalProperties": False,
@@ -110,56 +120,37 @@ def list_solicitations(
     status: str | None = None,
     solicitation_type: str | None = None,
 ) -> dict:
-    """List solicitations from the Labs Record API."""
-    token = require_connect_token(user)
-    client = LabsRecordAPIClient(
-        access_token=token,
+    da = _da(user)
+    records = da.get_solicitations(
+        status=status,
+        solicitation_type=solicitation_type,
+        org=organization_id or None,
         program_id=_coerce_id(program_id),
-        organization_id=_coerce_id(organization_id),
+        include_listed=True,
     )
-    try:
-        kwargs: dict = {"type": "solicitation"}
-        experiment = program_id or organization_id
-        if experiment:
-            kwargs["experiment"] = experiment
-        if status:
-            kwargs["status"] = status
-        if solicitation_type:
-            kwargs["solicitation_type"] = solicitation_type
-
-        records = client.get_records(**kwargs)
-        return {"solicitations": [_serialize_record(r) for r in records]}
-    finally:
-        client.close()
+    return {"solicitations": [_serialize_record(r) for r in records]}
 
 
 @register(
     name="get_solicitation",
     description=(
-        "Get a single solicitation by its Labs Record ID. "
-        "Pass program_id (or organization_id) to read non-public records — without "
-        "scope, prod returns only is_public=true solicitations."
+        "Get a single solicitation by id (a prod LabsRecord id for an imported call, else its labs id). "
+        "Unlisted calls are readable by their owner and by anyone who responded to them."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "solicitation_id": {
                 "type": "integer",
-                "description": "The Labs Record ID of the solicitation.",
+                "description": "The solicitation's id.",
             },
             "program_id": {
                 "type": "string",
-                "description": (
-                    "Program ID that owns the solicitation. Required to read non-public "
-                    "records (prod authorizes via program membership)."
-                ),
+                "description": "Accepted for compatibility; not needed.",
             },
             "organization_id": {
                 "type": "string",
-                "description": (
-                    "Organization ID alternative to program_id when the solicitation is "
-                    "scoped to an org rather than a program."
-                ),
+                "description": "Accepted for compatibility; not needed.",
             },
         },
         "required": ["solicitation_id"],
@@ -172,46 +163,33 @@ def get_solicitation(
     program_id: str | None = None,
     organization_id: str | None = None,
 ) -> dict:
-    """Get a single solicitation by ID. Returns the record or raises NOT_FOUND."""
-    token = require_connect_token(user)
-    client = LabsRecordAPIClient(
-        access_token=token,
-        program_id=_coerce_id(program_id),
-        organization_id=_coerce_id(organization_id),
-    )
-    try:
-        record = client.get_record_by_id(solicitation_id, type="solicitation")
-        if record is None:
-            raise MCPToolError("NOT_FOUND", f"Solicitation {solicitation_id} not found")
-        return _serialize_record(record)
-    finally:
-        client.close()
+    record = _da(user).get_solicitation_by_id(solicitation_id)
+    if record is None:
+        raise MCPToolError("NOT_FOUND", f"Solicitation {solicitation_id} not found")
+    return _serialize_record(record)
 
 
 @register(
     name="list_responses",
     description=(
-        "List all responses submitted for a given solicitation. Pass program_id "
-        "(or organization_id) to scope the read to a labs-only synthetic program — "
-        "without a scope id the read targets production and 404s for labs-only opps."
+        "List the responses to a solicitation. The owning organisation (and platform support) sees "
+        "every submitted response; anyone else sees only their own. Responses are confidential to the "
+        "owner: an applicant's answers, name and email are never shown to other applicants."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "solicitation_id": {
                 "type": "integer",
-                "description": "The Labs Record ID of the parent solicitation.",
+                "description": "The parent solicitation's id.",
             },
             "program_id": {
                 "type": ["integer", "string"],
-                "description": (
-                    "Program ID owning the solicitation. Required to reach a labs-only "
-                    "synthetic program's local backend (id >= the labs-only floor)."
-                ),
+                "description": "Accepted for compatibility; not needed.",
             },
             "organization_id": {
                 "type": ["integer", "string"],
-                "description": "Organization ID alternative to program_id for scoping.",
+                "description": "Accepted for compatibility; not needed.",
             },
         },
         "required": ["solicitation_id"],
@@ -224,51 +202,33 @@ def list_responses(
     program_id: str | None = None,
     organization_id: str | None = None,
 ) -> dict:
-    """List responses for a solicitation (child records linked by labs_record_id).
-
-    Pass ``program_id`` (or ``organization_id``) so the client routes to the
-    labs-only local backend for synthetic programs; without a scope id the read
-    targets production and 404s for labs-only opps.
-    """
-    token = require_connect_token(user)
-    client = LabsRecordAPIClient(
-        access_token=token,
-        program_id=_coerce_id(program_id),
-        organization_id=_coerce_id(organization_id),
-    )
-    try:
-        records = client.get_records(
-            type="solicitation_response",
-            labs_record_id=solicitation_id,
-        )
-        return {"responses": [_serialize_record(r) for r in records]}
-    finally:
-        client.close()
+    da = _da(user)
+    if da.get_solicitation_by_id(solicitation_id) is None:
+        raise MCPToolError("NOT_FOUND", f"Solicitation {solicitation_id} not found")
+    records = da.get_responses_for_solicitation(solicitation_id)
+    return {"responses": [_serialize_response(r, user) for r in records]}
 
 
 @register(
     name="get_response",
     description=(
-        "Get a single solicitation response by its Labs Record ID. Pass program_id "
-        "(or organization_id) to reach a labs-only synthetic program's local backend."
+        "Get a single solicitation response by id. Readable by the call's owner (and platform support) "
+        "once submitted, and by the respondent."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "response_id": {
                 "type": "integer",
-                "description": "The Labs Record ID of the response.",
+                "description": "The response's id.",
             },
             "program_id": {
                 "type": ["integer", "string"],
-                "description": (
-                    "Program ID owning the response. Required to reach a labs-only "
-                    "synthetic program's local backend (id >= the labs-only floor)."
-                ),
+                "description": "Accepted for compatibility; not needed.",
             },
             "organization_id": {
                 "type": ["integer", "string"],
-                "description": "Organization ID alternative to program_id for scoping.",
+                "description": "Accepted for compatibility; not needed.",
             },
         },
         "required": ["response_id"],
@@ -281,20 +241,10 @@ def get_response(
     program_id: str | None = None,
     organization_id: str | None = None,
 ) -> dict:
-    """Get a single response by ID. Returns the record or raises NOT_FOUND."""
-    token = require_connect_token(user)
-    client = LabsRecordAPIClient(
-        access_token=token,
-        program_id=_coerce_id(program_id),
-        organization_id=_coerce_id(organization_id),
-    )
-    try:
-        record = client.get_record_by_id(response_id, type="solicitation_response")
-        if record is None:
-            raise MCPToolError("NOT_FOUND", f"Response {response_id} not found")
-        return _serialize_record(record)
-    finally:
-        client.close()
+    record = _da(user).get_response_by_id(response_id)
+    if record is None:
+        raise MCPToolError("NOT_FOUND", f"Response {response_id} not found")
+    return _serialize_response(record, user)
 
 
 # ---------------------------------------------------------------------------
@@ -331,6 +281,10 @@ _CANONICAL_FIELD_PROPERTIES = {
     "fund_id": {
         "type": "integer",
         "description": "Optional fund ID for downstream allocation when a response is awarded.",
+    },
+    "currency": {
+        "type": "string",
+        "description": "ISO 4217 code the award is paid in (e.g. 'USD', 'KES'); shown on the award page.",
     },
     "questions": {
         "type": "array",
@@ -439,28 +393,32 @@ def _validation_error_to_mcp(exc: ValidationError) -> MCPToolError:
 @register(
     name="create_solicitation",
     description=(
-        "Create a new solicitation via the Labs Record API. Fields are flat — "
-        "do NOT wrap them in a `data` object. Unknown fields are rejected. "
-        "Requires either program_id or organization_id for scoping. "
-        "Set is_public=true to surface the record on the public /solicitations/ "
-        "marketplace; this flips the server-side `public` ACL flag (the field "
-        "the marketplace query actually filters on). Solicitations are an "
-        "exception to the broader MCP no-public-records policy because their "
-        "content is public-facing by design. Do NOT include PII or pipeline-"
-        "derived data. Schema is enforced server-side at the data-access "
-        "layer (connect_labs.solicitations.validation) — the UI form, "
-        "HTTP API, and this MCP tool all share the same contract."
+        "Create a solicitation (a call for partners) owned by an organisation. Name the owner with "
+        "org_slug (preferred: a labs organisation slug you belong to); or pass program_id and the "
+        "programme's running organisation owns it, else the programme's own organisation if you belong "
+        "to it (a labs-only programme: its synthetic organisation) -- otherwise refused with a message "
+        "naming org_slug. Fields are flat -- do NOT wrap them in a `data` object. Unknown fields are "
+        "rejected. Set is_public=true to list it on the public /solicitations/ directory (its content "
+        "is public-facing by design; do NOT include PII or pipeline-derived data). Schema is enforced "
+        "at the data-access layer (connect_labs.solicitations.validation), shared with the UI form."
     ),
     input_schema={
         "type": "object",
         "properties": {
+            "org_slug": {
+                "type": "string",
+                "description": "The owning organisation: a labs org slug (or Connect slug/id) you belong to.",
+            },
             "program_id": {
                 "type": "string",
-                "description": "Program ID to scope the record (used as experiment and program_id).",
+                "description": (
+                    "Connect programme this call is for. Without org_slug, its running organisation (else its "
+                    "own organisation, if you belong to it) owns the call."
+                ),
             },
             "organization_id": {
                 "type": "string",
-                "description": "Organization ID to scope the record when program_id is absent.",
+                "description": "Alternative to org_slug: the owning organisation's Connect id or slug.",
             },
             "is_public": {"type": "boolean", "default": False},
             **_CANONICAL_FIELD_PROPERTIES,
@@ -472,78 +430,64 @@ def _validation_error_to_mcp(exc: ValidationError) -> MCPToolError:
 )
 def create_solicitation(
     user,
+    org_slug: str | None = None,
     program_id: str | None = None,
     organization_id: str | None = None,
     is_public: bool = False,
     **fields,
 ) -> dict:
-    """Create a new solicitation by delegating to SolicitationsDataAccess.
+    """Thin shim over SolicitationsDataAccess.create_solicitation (validation lives there).
 
-    Thin shim. All shape validation lives in
-    :func:`connect_labs.solicitations.validation.validate_solicitation_payload`,
-    invoked inside ``SolicitationsDataAccess.create_solicitation``. The UI form
-    view, the HTTP API, and this tool all flow through that same chokepoint.
-
-    The ``**fields`` catch-all keeps unknown top-level kwargs from raising
-    TypeError at the transport's ``**arguments`` unpack — they get forwarded
-    into the data dict where the validator catches them with a clean
-    INVALID_SCHEMA error.
+    ``**fields`` keeps unknown top-level kwargs from raising TypeError at the
+    transport's unpack -- the validator rejects them with INVALID_SCHEMA.
     """
-    if not program_id and not organization_id:
-        raise MCPToolError("INVALID_SCHEMA", "Either program_id or organization_id is required")
     if not isinstance(is_public, bool):
         raise MCPToolError("INVALID_SCHEMA", "is_public must be a boolean")
-
-    # Stamp created_by from the authenticated user so the record carries
-    # provenance the UI form view sets the same way (views.py SolicitationCreateView).
     data = dict(fields)
-    data.setdefault("created_by", getattr(user, "username", "") or "")
-    data["is_public"] = is_public  # stripped by data_access and forwarded to envelope
-
-    token = require_connect_token(user)
-    da = SolicitationsDataAccess(
-        access_token=token,
-        program_id=program_id,
-        organization_id=organization_id,
-    )
+    data.pop("created_by", None)  # the caller is the creator
+    data["is_public"] = is_public
+    if org_slug:
+        data["org_slug"] = org_slug
+    if organization_id:
+        data["organization_id"] = organization_id
+    if program_id:
+        data["program_id"] = program_id
     try:
-        record = da.create_solicitation(data)
-        return _serialize_record(record)
-    except ValidationError as e:
-        raise _validation_error_to_mcp(e) from e
-    finally:
-        da.labs_api.close()
+        return _serialize_record(_da(user).create_solicitation(data))
+    except (ValidationError, PermissionDenied) as e:
+        raise _mcp_error(e) from e
 
 
 @register(
     name="create_response",
     description=(
-        "Create a solicitation response (type=solicitation_response) linked to a "
-        "solicitation. Built for server-side seeding of demo/synthetic responses "
-        "(named firms with per-question answers) — the same write path the public "
-        "respond form uses (SolicitationsDataAccess.create_response). Pass "
-        "program_id (or organization_id) so labs-only synthetic programs route to "
-        "the local backend. `responses` maps question id -> answer text."
+        "Create a solicitation response. Built for server-side seeding of demo/synthetic responses "
+        "(named firms with per-question answers): when the caller manages the call (its owner or "
+        "platform support) the response is entered on the firm's behalf -- no respondent user, any "
+        "named organisation, deadline ignored. Anyone else responds as themselves, to an open call, "
+        "for an organisation they belong to (llo_entity_id: its labs slug; 'individual' for none), once: "
+        "a second response after theirs is submitted is refused. "
+        "`responses` maps question id -> answer text."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "solicitation_id": {
                 "type": "integer",
-                "description": "Labs Record ID of the solicitation being responded to.",
+                "description": "Id of the solicitation being responded to.",
             },
             "program_id": {
                 "type": ["integer", "string"],
-                "description": "Program ID owning the solicitation (labs-only routing).",
+                "description": "Accepted for compatibility; not needed.",
             },
             "organization_id": {
                 "type": ["integer", "string"],
-                "description": "Organization ID alternative to program_id for scoping.",
+                "description": "Accepted for compatibility; not needed.",
             },
             "llo_entity_id": {
                 "type": "string",
                 "default": "individual",
-                "description": "LLO entity id used as the record's experiment scope.",
+                "description": "The responding organisation's labs slug, or 'individual'.",
             },
             "responses": {
                 "type": "object",
@@ -586,67 +530,55 @@ def create_response(
     selected_plan_ids: list | None = None,
     selected_plan_names: list | None = None,
 ) -> dict:
-    """Create a solicitation response via SolicitationsDataAccess.create_response."""
-    from django.utils import timezone
-
-    if not program_id and not organization_id:
-        raise MCPToolError("INVALID_SCHEMA", "Either program_id or organization_id is required")
-
     data = {
-        "solicitation_id": solicitation_id,
         "responses": responses or {},
         "status": status,
         "submitted_by_name": submitted_by_name,
         "submitted_by_email": submitted_by_email,
         "org_name": org_name or submitted_by_name,
         "org_id": org_id,
-        "submission_date": submission_date or timezone.now().isoformat(),
+        "submission_date": submission_date,
     }
     if selected_plan_ids:
         data["selected_plan_ids"] = selected_plan_ids
     if selected_plan_names:
         data["selected_plan_names"] = selected_plan_names
-
-    token = require_connect_token(user)
-    da = SolicitationsDataAccess(
-        access_token=token,
-        program_id=str(program_id) if program_id else None,
-        organization_id=str(organization_id) if organization_id else None,
-    )
+    da = _da(user)
+    solicitation = da.get_solicitation_by_id(solicitation_id)
+    if solicitation is None:
+        raise MCPToolError("NOT_FOUND", f"Solicitation {solicitation_id} not found")
     try:
         record = da.create_response(
             solicitation_id=solicitation_id,
             llo_entity_id=llo_entity_id,
             data=data,
+            on_behalf=da.can_manage(solicitation),
         )
-        return _serialize_record(record)
-    finally:
-        da.labs_api.close()
+    except (ValidationError, PermissionDenied, Solicitation.DoesNotExist) as e:
+        raise _mcp_error(e) from e
+    return _serialize_response(record, user)
 
 
 @register(
     name="update_solicitation",
     description=(
-        "Update an existing solicitation. Merges update_data into the existing data dict; "
-        "keys present in update_data overwrite existing values, all other keys are preserved. "
-        "Pass program_id (or organization_id) for non-public records — the merge starts with "
-        "a get_record_by_id that needs scope to authorize the read. Setting `is_public` in "
-        "update_data also flips the server-side `public` ACL flag (the one the marketplace "
-        "filters on); omit `is_public` to leave the existing visibility unchanged. "
-        "update_data is validated against the same canonical schema as create_solicitation "
-        "(partial mode — required fields not enforced). Unknown fields are rejected."
+        "Update a solicitation you manage (its owning organisation, or platform support). Merges "
+        "update_data into the call; fields you do not send are kept. Setting `is_public` lists or "
+        "unlists it; omit it to leave visibility unchanged. Validated against the same canonical "
+        "schema as create_solicitation (partial mode). Once the rubric is locked "
+        "(criteria_locked), evaluation_criteria cannot change and the lock cannot be lifted."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "solicitation_id": {
                 "type": "integer",
-                "description": "The Labs Record ID of the solicitation to update.",
+                "description": "The id of the solicitation to update.",
             },
             "update_data": {
                 "type": "object",
                 "description": (
-                    "Fields to update. Merged (shallow) into the existing data dict. "
+                    "Fields to update. Merged (shallow) into the call. "
                     "Same canonical shape as create_solicitation, all fields optional."
                 ),
                 "properties": {
@@ -657,17 +589,11 @@ def create_response(
             },
             "program_id": {
                 "type": "string",
-                "description": (
-                    "Program ID that owns the solicitation. Required for non-public "
-                    "records so prod authorizes the underlying read."
-                ),
+                "description": "Accepted for compatibility; not needed.",
             },
             "organization_id": {
                 "type": "string",
-                "description": (
-                    "Organization ID alternative to program_id when the solicitation is "
-                    "org-scoped rather than program-scoped."
-                ),
+                "description": "Accepted for compatibility; not needed.",
             },
         },
         "required": ["solicitation_id", "update_data"],
@@ -682,106 +608,35 @@ def update_solicitation(
     program_id: str | None = None,
     organization_id: str | None = None,
 ) -> dict:
-    """Update an existing solicitation by merging update_data into its data dict.
-
-    Validates ``update_data`` against the canonical schema in partial mode
-    (required fields not enforced; everything else applies) BEFORE merging,
-    so drift surfaces with a pointed error at the field the caller sent
-    wrong — not after merge where it'd be harder to attribute. This is the
-    same validator the create path uses, just with ``partial=True``.
-
-    Visibility (``is_public``) lives on the LabsRecord envelope as a separate ACL
-    column, not inside the JSON ``data``. When ``update_data`` includes
-    ``is_public``, we capture it before stripping the key from the merge and
-    forward it as ``public=`` to the server, so the public marketplace listing
-    actually sees the change. The redundant ``public`` key is also stripped to
-    prevent the envelope name from being shadowed inside ``data``.
-    """
-    token = require_connect_token(user)
-    client = LabsRecordAPIClient(
-        access_token=token,
-        program_id=_coerce_id(program_id),
-        organization_id=_coerce_id(organization_id),
-    )
+    data = {k: v for k, v in dict(update_data).items() if k != "public"}
     try:
-        # Fetch current record to read current data and metadata
-        current = client.get_record_by_id(solicitation_id, type="solicitation")
-        if current is None:
-            raise MCPToolError("NOT_FOUND", f"Solicitation {solicitation_id} not found")
-
-        # Capture envelope-level is_public BEFORE stripping it from the merge —
-        # otherwise the propagation check below always sees a missing key.
-        public_override: bool | None = None
-        if "is_public" in update_data:
-            public_override = bool(update_data["is_public"])
-
-        # Merge: existing data wins on unspecified keys; update_data wins on overlapping keys.
-        # Strip visibility keys from BOTH sides — flag lives on the envelope, not in JSON.
-        # Stripping current.data lets legacy records migrate naturally on first update.
-        merged_data = {k: v for k, v in (current.data or {}).items() if k not in ("is_public", "public")}
-        update_data.pop("is_public", None)
-        update_data.pop("public", None)
-        merged_data.update(update_data)
-
-        # Validate the MERGED shape, not the partial. The validator's
-        # cross-field checks (evaluation_criteria.linked_questions must
-        # reference declared question ids) need to see both sides — and
-        # for a partial update that only touches one side, the other
-        # side comes from the existing record. Validating just the
-        # partial would over-reject any criteria-only or questions-only
-        # update where the existing-record's matching half was needed
-        # to satisfy the cross-check.
-        try:
-            validate_solicitation_payload(merged_data, partial=True)
-        except ValidationError as e:
-            raise _validation_error_to_mcp(e) from e
-
-        update_kwargs: dict = {
-            "record_id": solicitation_id,
-            "experiment": current.experiment,
-            "type": current.type,
-            "data": merged_data,
-            "current_record": current,
-        }
-        if public_override is not None:
-            update_kwargs["public"] = public_override
-
-        record = client.update_record(**update_kwargs)
-        return _serialize_record(record)
-    finally:
-        client.close()
+        return _serialize_record(_da(user).update_solicitation(solicitation_id, data))
+    except (ValidationError, PermissionDenied, Solicitation.DoesNotExist) as e:
+        raise _mcp_error(e) from e
 
 
 @register(
     name="delete_solicitation",
     description=(
-        "Delete a solicitation and cascade-delete its associated responses and "
-        "reviews. Refuses to delete solicitations with non-zero responses or "
-        "reviews unless force=true. Cascade count is reported in the response. "
-        "Status field is not consulted — the gate is the actual cascade, not "
-        "a status proxy. IRREVERSIBLE — used by ACE sweep to clean up orphan "
-        "dogfood solicitations."
+        "Delete a solicitation you manage and cascade-delete its responses and reviews. Refuses a "
+        "solicitation with any responses or reviews unless force=true; the cascade count is reported. "
+        "Status is not consulted -- the gate is the actual cascade. IRREVERSIBLE -- used by ACE sweep "
+        "to clean up orphan dogfood solicitations."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "solicitation_id": {
                 "type": "integer",
-                "description": "The Labs Record ID of the solicitation to delete.",
+                "description": "The id of the solicitation to delete.",
             },
             "program_id": {
                 "type": "string",
-                "description": (
-                    "Program ID that owns the solicitation. Required for non-public "
-                    "records so prod authorizes the underlying read."
-                ),
+                "description": "Accepted for compatibility; not needed.",
             },
             "organization_id": {
                 "type": "string",
-                "description": (
-                    "Organization ID alternative to program_id when the solicitation is "
-                    "org-scoped rather than program-scoped."
-                ),
+                "description": "Accepted for compatibility; not needed.",
             },
             "force": {
                 "type": "boolean",
@@ -804,82 +659,38 @@ def delete_solicitation(
     organization_id: str | None = None,
     force: bool = False,
 ) -> dict:
-    """Delete a solicitation plus its child responses and reviews.
-
-    Cascade guard: refuses when responses or reviews exist unless ``force=True``.
-    The status field is intentionally not consulted — a freshly-published
-    solicitation lands in 'active' with an empty cascade, and an admin can
-    flip a populated solicitation to 'closed', so status is not a reliable
-    proxy for whether destroying the record would lose engagement data.
-    """
-    token = require_connect_token(user)
-    client = LabsRecordAPIClient(
-        access_token=token,
-        program_id=_coerce_id(program_id),
-        organization_id=_coerce_id(organization_id),
-    )
     try:
-        solicitation = client.get_record_by_id(solicitation_id, type="solicitation")
-        if solicitation is None:
-            raise MCPToolError("NOT_FOUND", f"Solicitation {solicitation_id} not found")
-
-        # Collect cascade first so the gate can compare against actual engagement
-        # data rather than the status proxy.
-        responses = client.get_records(
-            type="solicitation_response",
-            labs_record_id=solicitation_id,
-        )
-        response_ids = [r.id for r in responses]
-
-        review_ids: list[int] = []
-        for response_id in response_ids:
-            reviews = client.get_records(
-                type="solicitation_review",
-                labs_record_id=response_id,
-            )
-            review_ids.extend(r.id for r in reviews)
-
-        if (response_ids or review_ids) and not force:
-            raise MCPToolError(
-                "FAILED_PRECONDITION",
-                (
-                    f"Cannot delete solicitation {solicitation_id}: "
-                    f"{len(response_ids)} responses + {len(review_ids)} reviews "
-                    f"would be destroyed. Pass force=true to override."
-                ),
-            )
-
-        # Bottom-up delete so a partial failure never leaves dangling parents.
-        if review_ids:
-            client.delete_records(review_ids)
-        if response_ids:
-            client.delete_records(response_ids)
-        client.delete_record(solicitation_id)
-
-        return {
-            "solicitation_id": solicitation_id,
-            "deleted": {
-                "solicitations": 1,
-                "responses": len(response_ids),
-                "reviews": len(review_ids),
-            },
-        }
-    finally:
-        client.close()
+        deleted = _da(user).delete_solicitation(solicitation_id, force=force)
+    except HasResponses as e:
+        raise MCPToolError(
+            "FAILED_PRECONDITION",
+            (
+                f"Cannot delete solicitation {solicitation_id}: {e.responses} responses + {e.reviews} reviews "
+                "would be destroyed. Pass force=true to override."
+            ),
+        ) from e
+    except (PermissionDenied, Solicitation.DoesNotExist) as e:
+        raise _mcp_error(e) from e
+    return {"solicitation_id": solicitation_id, "deleted": deleted}
 
 
 @register(
     name="award_response",
     description=(
-        "Award a solicitation response: marks it as awarded with reward_budget and org_id. "
-        "If fund_id is provided, appends an allocation entry to that fund's allocations array."
+        "Award a solicitation response: marks it awarded with reward_budget and org_id, and emails the "
+        "awardee when labs email is on (awardee_notified says whether it was sent). Only the call's "
+        "owning organisation or platform support may award, and never a response from their own side. "
+        "A response that is already awarded is refused (FAILED_PRECONDITION): no second allocation or email. "
+        "If fund_id is provided, appends an allocation entry to that fund's allocations array: the fund "
+        "is checked first (NOT_FOUND, nothing awarded), and if the allocation fails after the award the "
+        "awarded response comes back with an allocation_error field."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "response_id": {
                 "type": "integer",
-                "description": "The Labs Record ID of the response to award.",
+                "description": "The id of the response to award.",
             },
             "reward_budget": {
                 "type": "integer",
@@ -899,15 +710,11 @@ def delete_solicitation(
             },
             "program_id": {
                 "type": ["integer", "string"],
-                "description": (
-                    "Program ID owning the response. Required to award a labs-only "
-                    "synthetic program's response (id >= the labs-only floor); without "
-                    "it the read/write targets production and 404s for labs-only opps."
-                ),
+                "description": "Accepted for compatibility; not needed.",
             },
             "organization_id": {
                 "type": ["integer", "string"],
-                "description": "Organization ID alternative to program_id for scoping.",
+                "description": "Accepted for compatibility; not needed.",
             },
         },
         "required": ["response_id", "reward_budget", "org_id"],
@@ -924,83 +731,45 @@ def award_response(
     program_id: str | None = None,
     organization_id: str | None = None,
 ) -> dict:
-    """Award a response: mark as awarded and optionally allocate from a fund.
+    """Award a response, and allocate from `fund_id` (a prod fund record) when given.
 
-    Flow:
-    1. Fetch the current response record.
-    2. Update response: set status=awarded, reward_budget, org_id.
-    3. If fund_id: fetch fund record, append allocation, update fund.
-    4. Return serialized updated response.
-
-    Pass ``program_id`` (or ``organization_id``) so the client routes to the
-    labs-only local backend for synthetic programs; without a scope id the
-    fetch/update targets production and 404s for labs-only opps.
+    The fund is checked before the award (a missing fund is NOT_FOUND and nothing
+    is awarded). Once awarded, a failed allocation is reported in
+    `allocation_error` rather than raised: a retry would be refused as already
+    awarded, so raising would leave the caller believing the award failed.
     """
-    token = require_connect_token(user)
-    client = LabsRecordAPIClient(
-        access_token=token,
-        program_id=_coerce_id(program_id),
-        organization_id=_coerce_id(organization_id),
-    )
+    client = LabsRecordAPIClient(access_token=require_connect_token(user)) if fund_id else None
     try:
-        # 1. Fetch current response
-        current_response = client.get_record_by_id(response_id, type="solicitation_response")
-        if current_response is None:
-            raise MCPToolError("NOT_FOUND", f"Response {response_id} not found")
+        if client is not None and client.get_record_by_id(fund_id, type=FUND_TYPE) is None:
+            raise MCPToolError("NOT_FOUND", f"No fund with id {fund_id}")
+        try:
+            response = _da(user).award_response(
+                response_id, reward_budget=reward_budget, org_id=org_id, allocate_fund=False
+            )
+        except (PermissionDenied, SolicitationResponse.DoesNotExist, AlreadyAwarded) as e:
+            raise _mcp_error(e) from e
 
-        # 2. Update response status
-        updated_data = dict(current_response.data or {})
-        updated_data["status"] = "awarded"
-        updated_data["reward_budget"] = reward_budget
-        updated_data["org_id"] = org_id
-
-        updated_response_record = client.update_record(
-            record_id=response_id,
-            experiment=current_response.experiment,
-            type=current_response.type,
-            data=updated_data,
-            current_record=current_response,
-            public=True,
-        )
-        updated_response = _serialize_record(updated_response_record)
-
-        # 3. Auto-allocate from fund if fund_id provided
-        if fund_id:
-            solicitation_id = updated_data.get("solicitation_id")
-            solicitation_title = ""
-            org_name = updated_data.get("llo_entity_name", "")
-
-            # Try to get solicitation title for the allocation notes
-            if solicitation_id:
-                try:
-                    sol_record = client.get_record_by_id(int(solicitation_id), type="solicitation")
-                    if sol_record:
-                        solicitation_title = (sol_record.data or {}).get("title", "")
-                except Exception:
-                    logger.warning(
-                        "Could not fetch solicitation %s to get title for fund allocation",
-                        solicitation_id,
-                    )
-
+        allocation_error = None
+        if client is not None:
+            solicitation = response.solicitation
             allocation = {
                 "amount": reward_budget,
                 "type": "award",
-                "solicitation_id": solicitation_id,
-                "response_id": response_id,
+                "solicitation_id": solicitation.public_id,
+                "response_id": response.pk,
                 "org_id": org_id,
-                "org_name": org_name,
-                "notes": f"Award from {solicitation_title}" if solicitation_title else "Award",
+                "org_name": response.display_name,
+                "notes": f"Award from {solicitation.title}" if solicitation.title else "Award",
             }
-
-            _add_allocation_to_fund(client, fund_id, allocation)
-
-        warning_msg = (
-            "award_response sets the response record to public=True so the "
-            "awarded organisation can read their own award status. Do not embed "
-            "PII from pipeline previews or form data in the response record fields."
-        )
-        logger.warning("award_response: %s", warning_msg)
-        updated_response["_warning"] = warning_msg
-        return updated_response
+            try:
+                _add_allocation_to_fund(client, fund_id, allocation)
+            except Exception as e:  # noqa: BLE001 -- reported to the caller, never raised past the award
+                logger.exception("award of response %s: allocation to fund %s failed", response.pk, fund_id)
+                allocation_error = f"The response is awarded, but the allocation to fund {fund_id} failed: {e}"
     finally:
-        client.close()
+        if client is not None:
+            client.close()
+    result = _serialize_response(response, user)
+    if allocation_error:
+        result["allocation_error"] = allocation_error
+    return result

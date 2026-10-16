@@ -27,7 +27,7 @@ from django.shortcuts import get_object_or_404, render
 from connect_labs.labs.chrome import page_chrome
 from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace import programs, queries
-from connect_labs.solicitations.local_models import SolicitationResponse
+from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
 
 # Nothing in the marketplace is scoped by the labs context selector, and on a
 # phone it was the largest thing on the screen. The Pulse widget takes its
@@ -174,7 +174,8 @@ def home(request):
                 "services": sum(c["services"] for c in cards),
                 "applied": len(
                     set(
-                        SolicitationResponse.objects.exclude(llo_entity=None)
+                        SolicitationResponse.objects.directory_rounds()
+                        .exclude(llo_entity=None)
                         .exclude(solicitation__delivery_type="")
                         .values_list("llo_entity_id", flat=True)
                     )
@@ -342,7 +343,9 @@ def round_detail(request, slug):
 @MARKETPLACE_CHROME
 def organisation(request, slug):
     org = get_object_or_404(LabsOrg.objects.select_related("marketplace_profile"), slug=slug)
-    responses = list(org.solicitation_responses.select_related("solicitation").order_by("-submission_date"))
+    responses = list(
+        org.solicitation_responses.directory_rounds().select_related("solicitation").order_by("-submission_date")
+    )
 
     # Pair each question with its answer here rather than in the template: the
     # question list belongs to the round and the answers to the submission, and
@@ -389,6 +392,11 @@ def organisation(request, slug):
                 r.solicitation.delivery_type for r in responses if programs.is_program(r.solicitation.delivery_type)
             ),
             "visits": sum(o.lifetime_visit_count for o in opportunities),
+            # Calls for partners this organisation owns and lists publicly:
+            # the header links to its solicitations page when there are any.
+            "listed_calls": (
+                Solicitation.objects.calls().filter(owner_org=org, listed=True).exclude(status="draft").count()
+            ),
         },
     )
 
@@ -405,7 +413,8 @@ def unmatched(request):
     from connect_labs.marketplace.directory import DIRECTORY_ID, RESPONSE_MAPPING_TAB
 
     rows = (
-        SolicitationResponse.objects.filter(match_state=SolicitationResponse.MATCH_UNMATCHED)
+        SolicitationResponse.objects.directory_rounds()
+        .filter(match_state=SolicitationResponse.MATCH_UNMATCHED)
         .select_related("solicitation")
         .order_by("solicitation__slug", "source_row")
     )
@@ -416,8 +425,8 @@ def unmatched(request):
             "rows": rows,
             "mapping_tab": RESPONSE_MAPPING_TAB,
             "directory_url": f"https://docs.google.com/spreadsheets/d/{DIRECTORY_ID}/edit",
-            "decided_count": SolicitationResponse.objects.filter(
-                match_state__in=[SolicitationResponse.MATCH_HUMAN, SolicitationResponse.MATCH_NOT_LLO]
-            ).count(),
+            "decided_count": SolicitationResponse.objects.directory_rounds()
+            .filter(match_state__in=[SolicitationResponse.MATCH_HUMAN, SolicitationResponse.MATCH_NOT_LLO])
+            .count(),
         },
     )

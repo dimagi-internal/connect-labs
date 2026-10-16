@@ -1,0 +1,32 @@
+{% load markdown_filters %}
+{# A call in a list: type, status, owner, title, a plain-text preview, deadline and scale. #}
+<article class="card_bg flex flex-col h-full min-w-0 hover:shadow-lg transition-shadow duration-300 relative">
+    <div class="flex flex-wrap items-center gap-2 mb-3">
+        {% include "solicitations/_type_badge.html" %}
+        {% include "solicitations/_status_chip.html" %}
+    </div>
+    {% if solicitation.owner_org_id and not hide_owner %}
+    <p class="text-xs text-gray-500 mb-1 truncate">
+        <i class="fa-solid fa-building mr-1"></i><a href="{% url 'solicitations:org_page' org_slug=solicitation.owner_org.slug %}" class="relative z-10 hover:underline hover:text-brand-cornflower-blue">{{ solicitation.owner_name }}</a>
+    </p>
+    {% endif %}
+    <h3 class="card_title mb-2 break-words">
+        <a href="{% url 'solicitations:public_detail' pk=solicitation.public_id %}" class="after:absolute after:inset-0 hover:text-brand-cornflower-blue">{{ solicitation.title }}</a>
+    </h3>
+    <p class="card_description mb-4 line-clamp-3 break-words">{{ solicitation.description|plain_preview:40 }}</p>
+    <div class="mt-auto pt-3 border-t border-gray-100 flex flex-col gap-1 text-sm text-gray-600 min-w-0">
+        <div class="whitespace-nowrap">
+            <i class="fa-regular fa-clock mr-1"></i>
+            {% if solicitation.application_deadline %}
+                <span class="font-medium">Deadline</span> {{ solicitation.application_deadline|date:"j M Y" }}
+            {% else %}
+                <span class="text-gray-400">No deadline</span>
+            {% endif %}
+        </div>
+        {% if solicitation.estimated_scale %}
+        <div class="truncate" title="{{ solicitation.estimated_scale }}">
+            <i class="fa-solid fa-chart-bar mr-1"></i>{{ solicitation.estimated_scale }}
+        </div>
+        {% endif %}
+    </div>
+</article>

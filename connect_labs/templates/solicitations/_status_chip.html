@@ -1,0 +1,12 @@
+{# Where a call stands, in the words an applicant needs: Open / Closed — deadline passed / Awarded / Draft. #}
+{% if solicitation.status == 'draft' %}
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>Draft</span>
+{% elif solicitation.status == 'awarded' %}
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 whitespace-nowrap"><i class="fa-solid fa-trophy text-[10px]"></i>Awarded</span>
+{% elif solicitation.can_accept_responses %}
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>Open</span>
+{% elif solicitation.status == 'active' and solicitation.deadline_passed %}
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>Closed — deadline passed</span>
+{% else %}
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>Closed</span>
+{% endif %}

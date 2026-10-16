@@ -7,162 +7,155 @@
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
 {% endblock css %}
 
+{% block title %}{{ solicitation.title }} · Solicitations{% endblock %}
+
 {% block content %}
-<div class="max-w-screen-xl mx-auto px-4 py-6">
+<div class="max-w-screen-xl mx-auto px-0 sm:px-4 py-4 sm:py-6">
 
     <!-- Breadcrumb -->
-    <nav class="flex items-center gap-2 text-sm text-gray-500 mb-6">
+    <nav class="flex flex-wrap items-center gap-2 text-sm text-gray-500 mb-4 sm:mb-6 min-w-0">
         <a href="{% url 'solicitations:public_list' %}" class="hover:text-brand-cornflower-blue transition-colors">
             <i class="fa-solid fa-bullhorn mr-1"></i> Solicitations
         </a>
+        {% if solicitation.owner_org_id %}
         <i class="fa-solid fa-chevron-right text-xs"></i>
-        <span class="text-gray-700 font-medium">{{ solicitation.title|truncatewords:8 }}</span>
+        <a href="{% url 'solicitations:org_page' org_slug=solicitation.owner_org.slug %}" class="hover:text-brand-cornflower-blue transition-colors min-w-0 break-words">{{ solicitation.owner_name }}</a>
+        {% endif %}
     </nav>
 
     {% if just_submitted %}
-    <!-- Post-submission confirmation — the actor just submitted a response. -->
-    <div class="bg-green-50 border border-green-200 rounded-xl p-6 mb-6 flex items-start gap-4">
+    <!-- Post-submission confirmation -->
+    <div class="bg-green-50 border border-green-200 rounded-xl p-4 sm:p-6 mb-6 flex items-start gap-4">
         <div class="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center shrink-0">
             <i class="fa-solid fa-check text-white"></i>
         </div>
-        <div class="flex-1">
+        <div class="flex-1 min-w-0">
             <h2 class="text-lg font-semibold text-green-900">Response submitted</h2>
             <p class="text-sm text-green-800 mt-0.5">
                 Thanks — your response to <strong>{{ solicitation.title }}</strong> has been received.
                 {% if my_response.selected_plan_names %}
-                    You committed to cover
-                    <strong>{{ my_response.selected_plan_names|join:", " }}</strong>.
+                    You committed to cover <strong>{{ my_response.selected_plan_names|join:", " }}</strong>.
                 {% endif %}
             </p>
             <p class="text-sm text-green-700 mt-2">
                 <i class="fa-solid fa-circle-info mr-1"></i>
-                Next step: the program team will review responses and reach out if you're selected. No further action is needed from you right now.
+                What happens next: {{ solicitation.owner_name|default:"the organisation" }} reviews every response after the deadline and contacts you about the outcome. You can see your response's status at any time from this page.
             </p>
         </div>
     </div>
     {% elif already_responded %}
-    <!-- Already responded (returning visit) — acknowledge it instead of re-inviting. -->
-    <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex items-center gap-3">
+    <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex flex-wrap items-center gap-3">
         <i class="fa-solid fa-circle-check text-blue-600"></i>
-        <p class="text-sm text-blue-800">
-            You've already submitted a response to this solicitation.
+        <p class="text-sm text-blue-800 flex-1 min-w-0">
+            You responded to this call. Status: <strong>{{ my_response.get_status_display }}</strong>.
             {% if my_response.selected_plan_names %}
                 Coverage committed: <strong>{{ my_response.selected_plan_names|join:", " }}</strong>.
             {% endif %}
         </p>
+        <a href="{% url 'solicitations:response_detail' pk=my_response.pk %}" class="text-sm text-blue-800 font-medium hover:underline">View your response</a>
+    </div>
+    {% elif has_draft and solicitation.can_accept_responses %}
+    <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 flex flex-wrap items-center gap-3">
+        <i class="fa-solid fa-pen-to-square text-amber-600"></i>
+        <p class="text-sm text-amber-900 flex-1 min-w-0">You have a draft response that has not been submitted yet.</p>
+        <a href="{% url 'solicitations:respond' pk=solicitation.public_id %}" class="text-sm text-amber-900 font-medium hover:underline">Continue your draft</a>
     </div>
     {% endif %}
 
+    {% include "solicitations/_demo_banner.html" %}
+
     <!-- Header Card -->
-    <div class="bg-white rounded-xl shadow-sm p-8 relative mb-6 overflow-hidden">
+    <div class="bg-white rounded-xl shadow-sm p-5 sm:p-8 relative mb-4 overflow-hidden">
         <div class="absolute inset-x-0 top-0 h-1.5 bg-brand-mango"></div>
-
-        <div class="flex items-center gap-3 mb-4">
-            <span class="badge badge-md {% if solicitation.solicitation_type == 'eoi' %}primary-light{% else %}warning-light{% endif %}">
-                {{ solicitation.type_label }}
-            </span>
-            {% if solicitation.status == 'active' %}
-                <div class="flex items-center gap-1.5 text-sm text-green-600">
-                    <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <span class="font-medium">Accepting Responses</span>
-                </div>
-            {% elif solicitation.status == 'closed' %}
-                <div class="flex items-center gap-1.5 text-sm text-red-500">
-                    <div class="w-2 h-2 bg-red-500 rounded-full"></div>
-                    <span class="font-medium">Closed</span>
-                </div>
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+            {% include "solicitations/_type_badge.html" %}
+            {% include "solicitations/_status_chip.html" %}
+            {% if not solicitation.listed and can_manage %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700"><i class="fa-solid fa-eye-slash text-[10px]"></i>Not listed publicly</span>
             {% endif %}
         </div>
-
-        {% if solicitation.program_name %}
-            <p class="text-sm text-gray-400 mb-2">
-                <i class="fa-solid fa-building mr-1"></i>{{ solicitation.program_name }}
-            </p>
+        {% if solicitation.owner_org_id %}
+        <p class="text-sm text-gray-500 mb-2">
+            <i class="fa-solid fa-building mr-1"></i>From
+            <a href="{% url 'solicitations:org_page' org_slug=solicitation.owner_org.slug %}" class="font-medium text-gray-700 hover:text-brand-cornflower-blue hover:underline">{{ solicitation.owner_name }}</a>
+            {% if solicitation.program_name %}<span class="text-gray-400">· {{ solicitation.program_name }}</span>{% endif %}
+        </p>
         {% endif %}
-
-        <h1 class="text-2xl font-semibold text-brand-deep-purple mb-4 leading-tight max-w-4xl">{{ solicitation.title }}</h1>
+        <h1 class="text-xl sm:text-2xl font-semibold text-brand-deep-purple leading-tight max-w-4xl break-words">{{ solicitation.title }}</h1>
+        {% if can_manage %}
+        <div class="mt-4 flex flex-wrap gap-2">
+            <a href="{% url 'solicitations:responses_list' pk=solicitation.public_id %}" class="button button-sm primary-dark"><i class="fa-solid fa-inbox mr-1"></i> Responses</a>
+            <a href="{% url 'solicitations:edit' pk=solicitation.public_id %}" class="button button-sm outline-style"><i class="fa-solid fa-pen mr-1"></i> Edit</a>
+        </div>
+        {% endif %}
     </div>
 
-    <!-- Key Details Bar -->
-    <div class="bg-white rounded-xl shadow-sm mb-8">
-        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 divide-x divide-gray-100">
-            <div class="p-5">
-                <p class="text-xs text-gray-400 uppercase tracking-wider mb-1.5">Application Deadline</p>
-                <p class="text-sm font-semibold text-gray-900">
-                    <i class="fa-regular fa-clock mr-1.5 text-brand-mango"></i>
-                    {{ solicitation.application_deadline|date:"F j, Y"|default:"No deadline" }}
-                </p>
-            </div>
-            <div class="p-5">
-                <p class="text-xs text-gray-400 uppercase tracking-wider mb-1.5">Timeline</p>
-                <p class="text-sm text-gray-700">
-                    <i class="fa-regular fa-calendar mr-1.5 text-brand-cornflower-blue"></i>
-                    {{ solicitation.expected_start_date|date:"M Y"|default:"TBD" }} — {{ solicitation.expected_end_date|date:"M Y"|default:"TBD" }}
-                </p>
-            </div>
-            {% if solicitation.estimated_scale %}
-            <div class="p-5">
-                <p class="text-xs text-gray-400 uppercase tracking-wider mb-1.5">Scale</p>
-                <p class="text-sm text-gray-700">
-                    <i class="fa-solid fa-chart-line mr-1.5 text-green-500"></i>
-                    {{ solicitation.estimated_scale }}
-                </p>
-            </div>
-            {% endif %}
+    <!-- Key facts -->
+    <div class="bg-white rounded-xl shadow-sm mb-4 grid grid-cols-2 lg:grid-cols-5 gap-px bg-gray-100 overflow-hidden">
+        <div class="bg-white p-4">
+            <p class="text-xs text-gray-400 uppercase tracking-wider mb-1">Deadline</p>
+            <p class="text-sm font-semibold text-gray-900">
+                <i class="fa-regular fa-clock mr-1 text-brand-mango"></i>
+                {{ solicitation.application_deadline|date:"j M Y"|default:"None" }}
+            </p>
+        </div>
+        <div class="bg-white p-4">
+            <p class="text-xs text-gray-400 uppercase tracking-wider mb-1">Timeline</p>
+            <p class="text-sm text-gray-700">
+                {{ solicitation.expected_start_date|date:"M Y"|default:"TBD" }} – {{ solicitation.expected_end_date|date:"M Y"|default:"TBD" }}
+            </p>
+        </div>
+        <div class="bg-white p-4 min-w-0 col-span-2 lg:col-span-1">
+            <p class="text-xs text-gray-400 uppercase tracking-wider mb-1">Scale</p>
+            <p class="text-sm text-gray-700 break-words">{{ solicitation.estimated_scale|default:"Not stated" }}</p>
+        </div>
+        <div class="bg-white p-4 min-w-0 col-span-2 lg:col-span-1">
+            <p class="text-xs text-gray-400 uppercase tracking-wider mb-1">Contact</p>
             {% if solicitation.contact_email %}
-            <div class="p-5">
-                <p class="text-xs text-gray-400 uppercase tracking-wider mb-1.5">Contact</p>
-                <p class="text-sm">
-                    <a href="mailto:{{ solicitation.contact_email }}" class="text-brand-cornflower-blue hover:underline">
-                        <i class="fa-regular fa-envelope mr-1.5"></i>{{ solicitation.contact_email }}
-                    </a>
-                </p>
-            </div>
+            <a href="mailto:{{ solicitation.contact_email }}" class="text-sm text-brand-cornflower-blue hover:underline break-words">{{ solicitation.contact_email }}</a>
+            {% else %}
+            <p class="text-sm text-gray-400">Not stated</p>
             {% endif %}
-            <div class="p-5 flex items-center">
-                {% if already_responded or just_submitted %}
-                    <p class="text-sm text-green-700 text-center w-full font-medium">
-                        <i class="fa-solid fa-circle-check mr-1"></i>Response submitted
-                    </p>
-                {% elif solicitation.status == 'active' %}
-                    <a href="{% url 'solicitations:respond' pk=solicitation.pk %}"
-                       class="w-full inline-flex items-center justify-center px-5 py-2.5 bg-brand-indigo text-white text-sm font-semibold rounded-lg hover:bg-brand-deep-purple transition-colors">
-                        <i class="fa-solid fa-paper-plane mr-2"></i>
-                        Respond
-                    </a>
-                {% else %}
-                    <p class="text-sm text-gray-400 text-center w-full">
-                        <i class="fa-solid fa-circle-xmark mr-1"></i>Closed
-                    </p>
-                {% endif %}
-            </div>
+        </div>
+        <div class="bg-white p-4 col-span-2 lg:col-span-1 flex items-center">
+            {% include "solicitations/_respond_cta.html" %}
         </div>
     </div>
+
+    {% if show_section_nav %}
+    <!-- On this page -->
+    <nav aria-label="On this page" class="bg-white rounded-xl shadow-sm px-4 py-3 mb-6 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+        <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">On this page</span>
+        {% for anchor, label in sections %}
+        <a href="#{{ anchor }}" class="text-brand-cornflower-blue hover:underline">{{ label }}</a>
+        {% endfor %}
+    </nav>
+    {% endif %}
 
     <!-- Content -->
     <div class="space-y-8">
 
         <!-- Description -->
-        <div class="bg-white rounded-xl shadow-sm p-8">
+        <div id="description" class="bg-white rounded-xl shadow-sm p-5 sm:p-8 scroll-mt-20">
             <h2 class="text-lg font-semibold text-brand-deep-purple mb-6 pb-3 border-b border-gray-100">
                 <i class="fa-solid fa-file-lines mr-2 text-brand-cornflower-blue"></i>Description
             </h2>
-            <div class="markdown-content">{{ solicitation.description|markdown }}</div>
+            <div class="markdown-content break-words">{{ solicitation.description|markdown }}</div>
         </div>
 
         <!-- Scope of Work — only when it adds content beyond the Description -->
         {% if show_scope %}
-        <div class="bg-white rounded-xl shadow-sm p-8">
+        <div id="scope" class="bg-white rounded-xl shadow-sm p-5 sm:p-8 scroll-mt-20">
             <h2 class="text-lg font-semibold text-brand-deep-purple mb-6 pb-3 border-b border-gray-100">
                 <i class="fa-solid fa-list-check mr-2 text-brand-cornflower-blue"></i>Scope of Work
             </h2>
-            <div class="markdown-content">{{ solicitation.scope_of_work|markdown }}</div>
+            <div class="markdown-content break-words">{{ solicitation.scope_of_work|markdown }}</div>
         </div>
         {% endif %}
 
         <!-- Coverage Areas (from micro-plan) -->
         {% if solicitation.plans %}
-        <div class="bg-white rounded-xl shadow-sm p-8">
+        <div id="coverage" class="bg-white rounded-xl shadow-sm p-5 sm:p-8 scroll-mt-20">
             <h2 class="text-lg font-semibold text-brand-deep-purple mb-6 pb-3 border-b border-gray-100">
                 <i class="fa-solid fa-map-location-dot mr-2 text-brand-cornflower-blue"></i>Coverage areas
             </h2>
@@ -181,7 +174,7 @@
 
         <!-- Application Questions -->
         {% if solicitation.questions %}
-        <div class="bg-white rounded-xl shadow-sm p-8">
+        <div id="questions" class="bg-white rounded-xl shadow-sm p-5 sm:p-8 scroll-mt-20">
             <h2 class="text-lg font-semibold text-brand-deep-purple mb-2 pb-3 border-b border-gray-100">
                 <i class="fa-solid fa-clipboard-list mr-2 text-brand-cornflower-blue"></i>Application Questions
             </h2>
@@ -190,7 +183,7 @@
             </p>
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {% for question in solicitation.questions %}
-                <div class="flex items-start gap-4 p-5 rounded-lg border border-gray-100 bg-gray-50/50">
+                <div class="flex items-start gap-3 sm:gap-4 p-4 sm:p-5 rounded-lg border border-gray-100 bg-gray-50/50 min-w-0">
                     <span class="flex-shrink-0 w-8 h-8 bg-brand-indigo text-white text-sm font-bold rounded-full flex items-center justify-center">
                         {{ forloop.counter }}
                     </span>
@@ -226,9 +219,9 @@
 
         <!-- Evaluation Criteria -->
         {% if solicitation.evaluation_criteria %}
-        <div class="bg-white rounded-xl shadow-sm p-8">
+        <div id="criteria" class="bg-white rounded-xl shadow-sm p-5 sm:p-8 scroll-mt-20">
             <h2 class="text-lg font-semibold text-brand-deep-purple mb-2 pb-3 border-b border-gray-100">
-                <i class="fa-solid fa-scale-balanced mr-2 text-brand-cornflower-blue"></i>Evaluation Criteria
+                <i class="fa-solid fa-scale-balanced mr-2 text-brand-cornflower-blue"></i>How responses are scored
                 {% if solicitation.criteria_locked %}
                 <span class="ml-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 align-middle">
                     <i class="fa-solid fa-lock text-indigo-500"></i> Locked before publishing
@@ -296,29 +289,21 @@
         {% endif %}
 
         <!-- Bottom CTA -->
-        {% if already_responded %}
-        <div class="bg-green-50 border border-green-200 rounded-xl p-8 text-center">
-            <h3 class="text-lg font-semibold text-green-900 mb-2">
-                <i class="fa-solid fa-circle-check mr-1"></i>You've responded to this solicitation
-            </h3>
-            <p class="text-sm text-green-800">The program team will review responses and reach out if you're selected.</p>
-        </div>
-        {% elif solicitation.status == 'active' and not just_submitted %}
-        <div class="bg-brand-indigo/5 border border-brand-indigo/10 rounded-xl p-8 text-center">
+        {% if solicitation.can_accept_responses and not already_responded and not just_submitted %}
+        <div class="bg-brand-indigo/5 border border-brand-indigo/10 rounded-xl p-6 sm:p-8 text-center">
             <h3 class="text-lg font-semibold text-brand-deep-purple mb-2">Ready to respond?</h3>
-            <p class="text-sm text-gray-600 mb-5">Submit your proposal for this solicitation.</p>
-            <a href="{% url 'solicitations:respond' pk=solicitation.pk %}"
-               class="inline-flex items-center px-6 py-3 bg-brand-indigo text-white text-sm font-semibold rounded-lg hover:bg-brand-deep-purple transition-colors">
-                <i class="fa-solid fa-paper-plane mr-2"></i>
-                Respond
-            </a>
+            <p class="text-sm text-gray-600 mb-5">
+                {% if solicitation.application_deadline %}Responses close at the end of {{ solicitation.application_deadline|date:"j F Y" }}.{% else %}This call has no deadline.{% endif %}
+                You can save a draft and come back to it.
+            </p>
+            <div class="max-w-xs mx-auto">{% include "solicitations/_respond_cta.html" %}</div>
         </div>
         {% endif %}
 
         <!-- Back Link -->
         <div class="pt-2 pb-8">
             <a href="{% url 'solicitations:public_list' %}" class="text-sm text-brand-cornflower-blue hover:underline">
-                <i class="fa-solid fa-arrow-left mr-1"></i> Back to all solicitations
+                <i class="fa-solid fa-arrow-left mr-1"></i> All open calls
             </a>
         </div>
 

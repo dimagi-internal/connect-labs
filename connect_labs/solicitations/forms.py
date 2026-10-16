@@ -1,9 +1,9 @@
 """
 Forms for solicitations.
 
-These forms work with the LabsRecord API pattern — they produce dicts
-via to_data_dict() / get_responses_dict() for the data access layer.
-No Django ORM models are involved.
+These forms produce plain dicts (to_data_dict() / get_responses_dict()) for
+SolicitationsDataAccess, which owns validation against the store and who may
+do what.
 """
 
 import json
@@ -28,6 +28,9 @@ _SELECT_CLASSES = "base-dropdown"
 # SOLICITATION_TYPE_CHOICES and STATUS_CHOICES are the canonical source in
 # solicitations.validation; imported above so the form's ChoiceFields and the
 # validator stay in lockstep.
+
+# The respond form's "an organisation not listed here" choice.
+NEW_ORG = "__new__"
 
 RECOMMENDATION_CHOICES = [
     ("under_review", "Under Review"),
@@ -165,43 +168,30 @@ class SolicitationForm(forms.Form):
     def to_data_dict(self) -> dict:
         """Convert cleaned form data to a dict for the data access layer.
 
-        Serializes date fields to ISO strings, parses questions_json and
-        evaluation_criteria_json into Python lists, and parses plans_json
-        plus source-reference fields (source_program_id, source_group_id,
-        source_plan_ids), omitting them when absent.
+        Edits MERGE (data_access), so only what this POST actually carried is
+        returned: a field absent from the submission is left out rather than
+        sent as empty, and an empty ``questions_json`` /
+        ``evaluation_criteria_json`` (the editor's script never ran) is "not
+        sent", never "no questions". ``is_public`` is a checkbox, whose absence
+        means unchecked, so it is always sent. Dates are ISO strings or None;
+        plans and source refs appear only when given.
         """
         data = self.cleaned_data.copy()
+        sent = set(self.data.keys()) if self.is_bound else set(data)
 
-        # Serialize date fields to ISO strings or None
         for date_field in ("application_deadline", "expected_start_date", "expected_end_date"):
             value = data.get(date_field)
-            if value:
-                data[date_field] = value.isoformat()
-            else:
-                data[date_field] = None
+            data[date_field] = value.isoformat() if value else None
 
-        # Parse questions_json into a list
-        raw_questions = data.pop("questions_json", "")
-        if raw_questions:
-            try:
-                data["questions"] = json.loads(raw_questions)
-            except (json.JSONDecodeError, TypeError):
-                data["questions"] = []
-        else:
-            data["questions"] = []
+        for raw_key, key in (("questions_json", "questions"), ("evaluation_criteria_json", "evaluation_criteria")):
+            raw = data.pop(raw_key, "")
+            if raw:
+                try:
+                    data[key] = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    pass
 
-        # Parse evaluation_criteria_json into a list
-        raw_criteria = data.pop("evaluation_criteria_json", "")
-        if raw_criteria:
-            try:
-                data["evaluation_criteria"] = json.loads(raw_criteria)
-            except (json.JSONDecodeError, TypeError):
-                data["evaluation_criteria"] = []
-        else:
-            data["evaluation_criteria"] = []
-
-        # Plans snapshot + origin refs (create-from-microplan). Only emit keys
-        # when present so back-compat payloads stay byte-identical to before.
+        # Plans snapshot + origin refs (create-from-microplan): only when present.
         raw_plans = data.pop("plans_json", "")
         source_program_id = data.pop("source_program_id", None)
         source_group_id = data.pop("source_group_id", None)
@@ -226,6 +216,10 @@ class SolicitationForm(forms.Form):
             if parsed_ids:
                 data["source_plan_ids"] = parsed_ids
 
+        plain_fields = {name for name in self.fields if not name.endswith("_json") and not name.startswith("source_")}
+        for name in plain_fields - {"is_public"}:
+            if name not in sent:
+                data.pop(name, None)
         return data
 
 
@@ -242,25 +236,32 @@ class SolicitationResponseForm(forms.Form):
     and dynamically creates form fields based on each question's type.
     """
 
-    def __init__(self, questions=None, plans=None, *args, **kwargs):
+    def __init__(self, questions=None, plans=None, *args, org_choices=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.questions = questions or []
         self.plans = plans or []
 
-        # Applicant identity. A firm answering a public call identifies the
-        # organization on whose behalf it is applying — the program owner
-        # reviews and awards a named firm, not the individual account that
-        # happened to submit the form. Pre-fillable; falls back to the
-        # logged-in account in the view when left blank.
-        self.fields["firm_name"] = forms.CharField(
-            label="Survey firm / organization",
+        # Who is applying: an organisation the respondent belongs to, or a new
+        # one named here. The owner reviews and awards an organisation, not the
+        # account that happened to fill in the form.
+        self.org_choices = list(org_choices or [])
+        self.fields["org"] = forms.ChoiceField(
+            label="Responding as",
             required=False,
+            choices=[*self.org_choices, (NEW_ORG, "An organisation not listed here")],
+            initial=self.org_choices[0][0] if self.org_choices else NEW_ORG,
+            widget=forms.Select(attrs={"class": _SELECT_CLASSES}),
+        )
+        self.fields["new_org_name"] = forms.CharField(
+            label="Organisation name",
+            required=False,
+            max_length=300,
             widget=forms.TextInput(attrs={"class": _INPUT_CLASSES, "placeholder": "e.g. Sahel Field Research"}),
         )
-        self.fields["firm_email"] = forms.EmailField(
-            label="Contact email",
+        self.fields["new_org_email"] = forms.EmailField(
+            label="Organisation contact email",
             required=False,
-            widget=forms.EmailInput(attrs={"class": _INPUT_CLASSES, "placeholder": "contact@yourfirm.org"}),
+            widget=forms.EmailInput(attrs={"class": _INPUT_CLASSES, "placeholder": "contact@yourorganisation.org"}),
         )
 
         if self.plans:
@@ -312,6 +313,20 @@ class SolicitationResponseForm(forms.Form):
                 )
 
             self.fields[field_name] = field
+
+    def responding_org(self) -> tuple[str | None, str, str]:
+        """(org slug or None, new organisation name, its contact email) from the cleaned form.
+
+        Naming one is required to SUBMIT, not to save a draft; the view checks.
+        """
+        choice = self.cleaned_data.get("org") or NEW_ORG
+        if choice != NEW_ORG:
+            return choice, "", ""
+        return (
+            None,
+            (self.cleaned_data.get("new_org_name") or "").strip(),
+            self.cleaned_data.get("new_org_email") or "",
+        )
 
     def get_responses_dict(self) -> dict:
         """Return a ``{question_id: answer}`` dict from the cleaned data."""

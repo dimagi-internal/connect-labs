@@ -1,345 +1,131 @@
-from connect_labs.solicitations.models import ResponseRecord, ReviewRecord, SolicitationRecord
+"""The local solicitation tables: the proxy vocabulary they keep, and what they add."""
+
+from datetime import timedelta
+
+import pytest
+from django.utils import timezone
+
+from connect_labs.solicitations.local_models import (
+    LOCAL_ID_FLOOR,
+    SOURCE_DIRECTORY,
+    Solicitation,
+    SolicitationResponse,
+    weighted_score,
+)
+from connect_labs.solicitations.tests.factories import make_call, make_org, make_response, make_review, make_user
+
+pytestmark = pytest.mark.django_db
 
 
-class TestSolicitationRecord:
-    def _make(self, **overrides):
-        data = {
-            "title": "Test Solicitation",
-            "description": "A test",
-            "scope_of_work": "Do the work",
-            "solicitation_type": "rfp",
-            "status": "active",
-            "questions": [{"id": "q1", "text": "Why?", "type": "text", "required": True}],
-            "application_deadline": "2026-06-01",
-            "expected_start_date": "2026-07-01",
-            "expected_end_date": "2026-12-31",
-            "estimated_scale": "1000 beneficiaries",
-            "contact_email": "test@example.com",
-            "created_by": "testuser",
-            "program_name": "Test Program",
-        }
-        data.update(overrides.pop("data", {}))
-        defaults = {
-            "id": 1,
-            "experiment": "test_program",
-            "type": "solicitation",
-            "data": data,
-            "opportunity_id": 0,
-            # is_public is sourced from the LabsRecord.public envelope flag,
-            # not from the JSON data column.
-            "public": True,
-        }
-        defaults.update(overrides)
-        return SolicitationRecord(defaults)
-
-    def test_title(self):
-        rec = self._make()
-        assert rec.title == "Test Solicitation"
-
-    def test_solicitation_type(self):
-        rec = self._make()
-        assert rec.solicitation_type == "rfp"
-
-    def test_type_label_spells_out_codes(self):
-        assert self._make(data={"solicitation_type": "eoi"}).type_label == "Expression of Interest"
-        assert self._make(data={"solicitation_type": "rfp"}).type_label == "Request for Proposal"
-        # Unknown codes fall back to upper-case rather than rendering blank.
-        assert self._make(data={"solicitation_type": "other"}).type_label == "OTHER"
-
-    def test_is_public(self):
-        rec = self._make()
-        assert rec.is_public is True
-
-    def test_application_deadline_parses(self):
-        rec = self._make()
-        from datetime import date
-
-        assert rec.application_deadline == date(2026, 6, 1)
-
-    def test_application_deadline_none(self):
-        rec = self._make(data={"application_deadline": None})
-        assert rec.application_deadline is None
-
-    def test_questions(self):
-        rec = self._make()
-        assert len(rec.questions) == 1
-        assert rec.questions[0]["id"] == "q1"
-
-    def test_can_accept_responses(self):
-        rec = self._make(data={"status": "active"})
-        assert rec.can_accept_responses() is True
-        rec2 = self._make(data={"status": "closed"})
-        assert rec2.can_accept_responses() is False
-
-    def test_description(self):
-        rec = self._make()
-        assert rec.description == "A test"
-
-    def test_scope_of_work(self):
-        rec = self._make()
-        assert rec.scope_of_work == "Do the work"
-
-    def test_status_default(self):
-        self._make(data={"status": None})
-        # When status is None, data.get("status", "draft") returns None, not "draft"
-        # But our default should handle missing keys gracefully
-        rec2 = self._make()
-        rec2.data.pop("status", None)
-        assert rec2.status == "draft"
-
-    def test_expected_start_date(self):
-        rec = self._make()
-        from datetime import date
-
-        assert rec.expected_start_date == date(2026, 7, 1)
-
-    def test_expected_end_date(self):
-        rec = self._make()
-        from datetime import date
-
-        assert rec.expected_end_date == date(2026, 12, 31)
-
-    def test_estimated_scale(self):
-        rec = self._make()
-        assert rec.estimated_scale == "1000 beneficiaries"
-
-    def test_contact_email(self):
-        rec = self._make()
-        assert rec.contact_email == "test@example.com"
-
-    def test_created_by(self):
-        rec = self._make()
-        assert rec.created_by == "testuser"
-
-    def test_program_name(self):
-        rec = self._make()
-        assert rec.program_name == "Test Program"
-
-    def test_evaluation_criteria_property(self):
-        criteria = [{"id": "c1", "name": "Quality", "weight": 0.5}]
-        rec = self._make(data={"evaluation_criteria": criteria})
-        assert rec.evaluation_criteria == criteria
-
-    def test_evaluation_criteria_default_empty(self):
-        rec = self._make()
-        rec.data.pop("evaluation_criteria", None)
-        assert rec.evaluation_criteria == []
-
-    def test_solicitation_plans_accessors_default_empty(self):
-        rec = self._make()
-        assert rec.plans == []
-        assert rec.source_program_id is None
-        assert rec.source_group_id is None
-        assert rec.source_plan_ids == []
-
-    def test_solicitation_plans_accessors_read_data(self):
-        rec = self._make(
-            data={
-                "plans": [{"plan_id": 7, "name": "P"}],
-                "source_program_id": 25,
-                "source_group_id": 88,
-                "source_plan_ids": [7],
-            }
-        )
-        assert rec.plans == [{"plan_id": 7, "name": "P"}]
-        assert rec.source_program_id == 25
-        assert rec.source_group_id == 88
-        assert rec.source_plan_ids == [7]
+def test_slug_generated_and_unique_for_web_calls():
+    a = make_call(title="Same title")
+    b = make_call(title="Same title")
+    assert a.slug.startswith("same-title-")
+    assert a.slug != b.slug
 
 
-class TestSolicitationRecordFundId:
-    def test_fund_id(self):
-        record = SolicitationRecord(
-            {"id": 1, "experiment": "p", "type": "solicitation_new", "data": {"fund_id": 42}, "opportunity_id": 0}
-        )
-        assert record.fund_id == 42
-
-    def test_fund_id_default_none(self):
-        record = SolicitationRecord(
-            {"id": 1, "experiment": "p", "type": "solicitation_new", "data": {}, "opportunity_id": 0}
-        )
-        assert record.fund_id is None
+def test_directory_slug_is_kept():
+    call = Solicitation.objects.create(slug="eoi-2025-chc", title="CHC EOI")
+    assert call.slug == "eoi-2025-chc"
+    assert call.source == SOURCE_DIRECTORY
 
 
-class TestResponseRecordOrgFields:
-    def test_org_id(self):
-        record = ResponseRecord(
-            {
-                "id": 1,
-                "experiment": "e",
-                "type": "solicitation_new_response",
-                "data": {"org_id": "org_42"},
-                "opportunity_id": 0,
-            }
-        )
-        assert record.org_id == "org_42"
-
-    def test_org_name(self):
-        record = ResponseRecord(
-            {
-                "id": 1,
-                "experiment": "e",
-                "type": "solicitation_new_response",
-                "data": {"org_name": "Test Org"},
-                "opportunity_id": 0,
-            }
-        )
-        assert record.org_name == "Test Org"
+def test_ids_start_above_prod_record_ids():
+    assert make_call().pk >= LOCAL_ID_FLOOR
+    assert make_response(make_call()).pk >= LOCAL_ID_FLOOR
 
 
-class TestReviewRecordRewardBudget:
-    def test_reward_budget(self):
-        record = ReviewRecord(
-            {
-                "id": 1,
-                "experiment": "e",
-                "type": "solicitation_new_review",
-                "data": {"reward_budget": 500000},
-                "opportunity_id": 0,
-            }
-        )
-        assert record.reward_budget == 500000
-
-    def test_reward_budget_default_none(self):
-        record = ReviewRecord(
-            {"id": 1, "experiment": "e", "type": "solicitation_new_review", "data": {}, "opportunity_id": 0}
-        )
-        assert record.reward_budget is None
+def test_deadline_closes_a_call():
+    today = timezone.localdate()
+    open_call = make_call(application_deadline=today)
+    past = make_call(application_deadline=today - timedelta(days=1))
+    assert open_call.can_accept_responses
+    assert open_call.can_accept_responses() is True  # the proxy's method form still works
+    assert not past.can_accept_responses
+    assert past.can_accept_responses() is False
+    assert past.status_label == "Closed — deadline passed"
+    assert not make_call(status="draft").can_accept_responses
 
 
-class TestResponseRecord:
-    def _make(self, **overrides):
-        data = {
-            "solicitation_id": 1,
-            "llo_entity_id": "llo_entity_123",
-            "llo_entity_name": "Test Org",
-            "responses": {"q1": "Because"},
-            "status": "submitted",
-            "submitted_by_name": "Jane Doe",
-            "submitted_by_email": "jane@example.com",
-            "submission_date": "2026-05-15T10:00:00Z",
-        }
-        data.update(overrides.pop("data", {}))
-        defaults = {
-            "id": 10,
-            "experiment": "llo_entity_123",
-            "type": "solicitation_response",
-            "data": data,
-            "opportunity_id": 0,
-        }
-        defaults.update(overrides)
-        return ResponseRecord(defaults)
-
-    def test_solicitation_id(self):
-        rec = self._make()
-        assert rec.solicitation_id == 1
-
-    def test_llo_entity_name(self):
-        rec = self._make()
-        assert rec.llo_entity_name == "Test Org"
-
-    def test_responses_dict(self):
-        rec = self._make()
-        assert rec.responses == {"q1": "Because"}
-
-    def test_status(self):
-        rec = self._make()
-        assert rec.status == "submitted"
-
-    def test_llo_entity_id(self):
-        rec = self._make()
-        assert rec.llo_entity_id == "llo_entity_123"
-
-    def test_submitted_by_name(self):
-        rec = self._make()
-        assert rec.submitted_by_name == "Jane Doe"
-
-    def test_submitted_by_email(self):
-        rec = self._make()
-        assert rec.submitted_by_email == "jane@example.com"
-
-    def test_submission_date_parses_the_z_suffix_to_utc(self):
-        """`is not None` was the old assertion, which passed for any truthy
-        return. The property hand-rolls `.replace("Z", "+00:00")` before
-        fromisoformat, so the offset is the part that can silently break."""
-        from datetime import datetime, timezone
-
-        assert self._make().submission_date == datetime(2026, 5, 15, 10, 0, tzinfo=timezone.utc)
-
-    def test_submission_date_is_none_when_unparseable(self):
-        """The property swallows ValueError and returns None — pin that, or a
-        malformed date reads as 'never submitted' with nothing to show why."""
-        assert self._make(data={"submission_date": "not-a-date"}).submission_date is None
-
-    def test_response_selected_plan_accessors_default_empty(self):
-        rec = self._make()
-        assert rec.selected_plan_ids == []
-        assert rec.selected_plan_names == []
-
-    def test_response_selected_plan_accessors_read_data(self):
-        rec = self._make(data={"selected_plan_ids": [7, 8], "selected_plan_names": ["A", "B"]})
-        assert rec.selected_plan_ids == [7, 8]
-        assert rec.selected_plan_names == ["A", "B"]
+def test_proxy_vocabulary():
+    org = make_org("owner-org", name="Owner Org")
+    call = make_call(org, listed=True, program_id=25, criteria_locked_at=timezone.now())
+    assert call.is_public is True
+    assert call.criteria_locked is True
+    assert call.owner_name == "Owner Org"
+    assert call.type_label == "Request for Proposal"
+    record = call.to_record_dict()
+    assert record["id"] == call.pk
+    assert record["type"] == "solicitation"
+    assert record["program_id"] == 25
+    assert record["experiment"] == "25"
+    assert record["is_public"] is True
+    assert record["owner_org"] == "owner-org"
+    assert record["title"] == call.title
+    assert record["criteria_locked"] is True
 
 
-class TestReviewRecord:
-    def _make(self, **overrides):
-        data = {
-            "response_id": 10,
-            "score": 85,
-            "recommendation": "approved",
-            "notes": "Looks good",
-            "tags": "experienced,local",
-            "reviewer_username": "reviewer1",
-            "review_date": "2026-05-20T14:00:00Z",
-        }
-        data.update(overrides.pop("data", {}))
-        defaults = {
-            "id": 20,
-            "experiment": "llo_entity_123",
-            "type": "solicitation_review",
-            "data": data,
-            "opportunity_id": 0,
-        }
-        defaults.update(overrides)
-        return ReviewRecord(defaults)
+def test_response_vocabulary():
+    user = make_user("applicant")
+    org = make_org("firm-org", name="Firm Org")
+    response = make_response(make_call(), user, llo_entity=org, reward_budget=500)
+    assert response.blind_label == f"Response #{response.pk}"
+    assert response.submitted_by_username == "applicant"
+    assert response.display_name == "Firm Org"
+    assert response.award_stage == "verification"
+    assert response.source_row is None
+    record = response.to_record_dict()
+    assert record["type"] == "solicitation_response"
+    assert record["labs_record_id"] == response.solicitation_id
+    assert record["llo_entity_id"] == "firm-org"
+    assert record["reward_budget"] == 500
 
-    def test_score(self):
-        rec = self._make()
-        assert rec.score == 85
 
-    def test_recommendation(self):
-        rec = self._make()
-        assert rec.recommendation == "approved"
+def test_many_web_responses_without_source_row():
+    call = make_call()
+    make_response(call)
+    make_response(call)
+    assert call.responses.count() == 2
 
-    def test_reviewer_username(self):
-        rec = self._make()
-        assert rec.reviewer_username == "reviewer1"
 
-    def test_response_id(self):
-        rec = self._make()
-        assert rec.response_id == 10
+def test_review_vocabulary():
+    reviewer = make_user("reviewer")
+    review = make_review(make_response(make_call()), reviewer, score=70, criteria_scores={"c1": 7})
+    assert review.reviewer_username == "reviewer"
+    imported = make_review(review.response, None, reviewer_name="someone")
+    assert imported.reviewer_username == "someone"
+    assert review.to_record_dict()["labs_record_id"] == review.response_id
 
-    def test_notes(self):
-        rec = self._make()
-        assert rec.notes == "Looks good"
 
-    def test_tags(self):
-        rec = self._make()
-        assert rec.tags == "experienced,local"
+def test_weighted_score():
+    criteria = [{"id": "c1", "weight": 60}, {"id": "c2", "weight": 40}]
+    assert weighted_score({"c1": 10, "c2": 5}, criteria) == 80
+    assert weighted_score({"c1": 7}, criteria) == 70  # unscored criteria left out
+    assert weighted_score({}, criteria) is None
+    assert weighted_score({"zz": 9}, criteria) is None
 
-    def test_review_date_parses_the_z_suffix_to_utc(self):
-        """Same shape as ResponseRecord.submission_date — see the note there."""
-        from datetime import datetime, timezone
 
-        assert self._make().review_date == datetime(2026, 5, 20, 14, 0, tzinfo=timezone.utc)
+def test_marketplace_reads_only_directory_rounds():
+    """A response to an owned call is confidential: the marketplace (any signed-in user) never sees it."""
+    from connect_labs.marketplace import queries
 
-    def test_criteria_scores_property(self):
-        scores = {"c1": 4, "c2": 5}
-        rec = self._make(data={"criteria_scores": scores})
-        assert rec.criteria_scores == scores
+    org = make_org("applicant-org")
+    round_ = Solicitation.objects.create(slug="eoi-round", title="EOI round")
+    SolicitationResponse.objects.create(solicitation=round_, source_row=2, llo_entity=org)
+    call = make_call(make_org("owner-org"))
+    make_response(call, llo_entity=org)
 
-    def test_criteria_scores_default_empty(self):
-        rec = self._make()
-        rec.data.pop("criteria_scores", None)
-        assert rec.criteria_scores == {}
+    assert list(queries.rounds_with_counts().values_list("slug", flat=True)) == ["eoi-round"]
+    assert queries.network_totals()["applications"] == 1
+    assert SolicitationResponse.objects.directory_rounds().count() == 1
+    assert org.solicitation_responses.count() == 2  # the relation itself is unchanged
+
+
+def test_response_owner_working_fields_only_for_the_owner_view():
+    response = make_response(make_call(), ai_proposed_scores={"c1": {"score": 7}}, org_id="77")
+    record = response.to_record_dict()
+    assert "ai_proposed_scores" not in record and "org_id" not in record
+    assert "ai_proposed_scores" not in response.to_data()
+    owner = response.to_record_dict(owner_view=True)
+    assert owner["ai_proposed_scores"] == {"c1": {"score": 7}}
+    assert owner["org_id"] == "77"

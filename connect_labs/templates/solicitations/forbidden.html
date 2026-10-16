@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}No access · Solicitations{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto px-4 py-12">
+    <div class="bg-white rounded-xl shadow-sm p-8">
+        <div class="w-10 h-10 bg-amber-50 rounded-full flex items-center justify-center mb-4">
+            <i class="fa-solid fa-lock text-amber-600"></i>
+        </div>
+        <h1 class="text-xl font-semibold text-brand-deep-purple mb-2">You don't have access to this</h1>
+        <p class="text-sm text-gray-700">{{ message }}</p>
+        <p class="text-sm text-gray-500 mt-4">
+            If you think you should, ask someone in the organisation that owns the call to add you as a member.
+        </p>
+        <div class="mt-6">
+            <a href="{% url 'solicitations:public_list' %}" class="text-sm text-brand-cornflower-blue hover:underline">
+                <i class="fa-solid fa-arrow-left mr-1"></i> All open calls
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
