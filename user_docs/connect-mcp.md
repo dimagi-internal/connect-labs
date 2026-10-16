@@ -225,14 +225,15 @@ Solicitations (Expressions of Interest and Requests for Proposal) are calls for 
 
 ### Public directory
 
-The solicitations directory at `/solicitations/` is public — no login is required. It lists every open call, showing the organisation behind each one. You can search and filter by organisation and type. A "Recently closed" section appears below the open calls. You can share a link to any call directly with outside organisations.
+The solicitations directory at `/solicitations/` is public — no login is required. It lists every open call, showing the organisation behind each one. You can search and filter by organisation, type, and program. A "Recently closed" section appears below the open calls. You can share a link to any call directly with outside organisations.
 
 Each organisation also has its own page at `/solicitations/o/<organisation>/` listing its open and past calls. Calls close automatically when their deadline passes and are shown as "Closed — deadline passed" afterwards; nobody can respond to a closed call.
 
-### Managing your organisation's calls
+### Past calls
 
-If you manage calls for an organisation, your workspace is at `/solicitations/o/<organisation>/manage/`, where you can see every call — including drafts — alongside response counts. Go to `/solicitations/manage/` to reach the organisations you can manage, or to find out how to request access.
+A **Past calls** section at the bottom of the directory lists the calls for partners Dimagi ran on the Connect marketplace before calls were posted here. They are grouped by the year they ran. Each card shows the program the call was for (including the program's picture), the countries it covered, and when it was published. The existing type, organisation, and search filters cover past calls, and there is also a **program** filter.
 
-### Responding to a call
+Each past call has its own page at `/solicitations/past/<name>/`. Anyone can open it — no login needed. The page shows:
 
-You respond as one of your organisations, or by naming a new one. You can save one draft and return to it before submitting. After you submit, the form confirms what happens next and sends you a receipt by email. You can see only your own application — organisations cannot see or review responses from their own members.
+- The call's type, program, and countries
+- Its published,

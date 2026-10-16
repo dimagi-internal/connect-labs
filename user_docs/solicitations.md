@@ -24,7 +24,7 @@ A call that is **not listed** does not appear in the directory or on the organis
 
 **The demo organisation.** `solicitations_seed_demo` makes an invented organisation, "Kestrel Community Health (demo)", with three open calls for showing the module to others. Its calls are **not listed**, so nobody finds and answers them by accident, but anyone you send a link to can open them, at the call's own address or the demo organisation's page (`/solicitations/o/<demo organisation>/`). Every one carries a **Demo call — invented organisation** banner.
 
-**Past calls.** The calls for partners Dimagi ran on the Connect marketplace (the expressions of interest and requests for proposal recorded in the LLO Directory) are listed under **Past calls** at the bottom of `/solicitations/`, grouped by the year they ran, and on Dimagi's organisation page. Each card shows the program it was for, with the program's picture, the countries it covered and when it was published. A past call's page shows its dates and a **Read the announcement** link to the original public announcement. They are an archive: nobody can respond to, edit, review or award one here, and nothing about who applied is shown. If you are signed in you also see how many organisations applied, and a link to the call's page on the marketplace (which lists the applicants, behind the labs login). The marketplace's page for a finished call links back here with **Public call page** — that is the link to send to someone outside labs.
+**Past calls.** The calls for partners Dimagi ran on the Connect marketplace (the expressions of interest and requests for proposal recorded in the LLO Directory) are listed under **Past calls** at the bottom of `/solicitations/`, grouped by the year they ran, and on Dimagi's organisation page. Each card shows the program it was for, with the program's picture, the countries it covered and when it was published. The existing keyword search and the organisation and type filters all cover past calls, and there is a dedicated **program** filter for them. A past call's page shows its type, program, countries, and its published, deadline and decision dates, along with a **Read the announcement** button that opens the original public announcement. They are an archive: nobody can respond to, edit, review or award one here, and nothing about who applied is shown. If you are signed in you also see how many organisations applied, and a link to the call's page on the marketplace (which lists the applicants, behind the labs login). The marketplace's page for a finished call links back here with **Public call page** — that is the link to send to someone outside labs.
 
 **Status shown on every call:**
 
@@ -190,20 +190,4 @@ This is the recommended approach for managing conflict-of-interest risk in indep
 
 To use staged contracting:
 
-1. At the award step, choose **Verification contract** instead of the full award
-2. Set the verification contract amount and scope
-3. After the verification period, return to the solicitation and issue the **Full award** to the same firm
-
-!!! info "Setting up the live Connect opportunity after award"
-Formally standing up the awarded survey firm's opportunity on the Connect marketplace is a next step that is not yet built into Labs. After completing the award, follow your programme's standard process for setting up the Connect opportunity.
-
-!!! info "Coverage area assignments after award"
-In the current version, the coverage areas selected by an applicant are captured for your review alongside the rest of their response. Formal area assignment to the awarded organization is handled outside Labs as part of your normal award process.
-
-### Audit Trail
-
-Labs keeps a complete, tamper-evident record of activity across all program data — including solicitations, responses, and awards. Every time a record is viewed, edited, or deleted, a visit export is run, a login succeeds or fails, or access is denied, the event is logged automatically with who performed it, what they did, when, where they connected from, and whether the action succeeded.
-
-Labs administrators can review this log on the **Audit Trail** page, linked from **Labs Admin**. The page includes:
-
-- **Anomaly cards** that surface patterns worth investigating — for example, a burst of failed login attempts, an unusual spike in bulk data exports, or activity at unexpected
+1. At the
