@@ -47,7 +47,7 @@ When creating a solicitation (RFP or EOI), you can paste in a program descriptio
 - Recommended scoring weights for each criterion
 - Sample questions for the response template
 
-Review and edit these suggestions before saving. See [Solicitations](solicitations.md) for the full process.
+Review and edit these suggestions before saving. The AI drafts criteria for your organisation's call — other organisations running their own calls through the public directory go through the same process when they create theirs. See [Solicitations](solicitations.md) for the full process.
 
 ---
 
@@ -60,6 +60,8 @@ When filling out a response to a solicitation, the **AI Application Coach** is a
 - Offer guidance on how to address specific evaluation criteria
 
 For survey-firm solicitations specifically, the coach also pushes applicants to back up claims with **verifiable evidence** — real numbers, named prior projects, and back-check rates — rather than general assertions. This helps reviewers assess submissions fairly and consistently.
+
+The coach is available whether you are responding to your own organisation's call or to a call posted by another organisation in the public directory. It works the same way in both cases.
 
 See [Solicitations](solicitations.md) for the full process.
 
@@ -81,13 +83,18 @@ Before you publish the call, you review the AI-drafted weighted criteria and **l
 
 While you are scoring responses, firms are shown only as **"Response #\<number\>"** — never by name. The firm's identity is revealed only at the award step, after scores are recorded. This ensures reviewers are judging the application, not the applicant.
 
+!!! info "Conflict of interest protection"
+    Reviewers cannot score or award a response submitted by their own organisation. The platform blocks this automatically.
+
 ### Anti-Anchoring on AI Scores
 
 For each scoring criterion, the AI provides a suggested score — but that suggestion is **hidden until after you record your own score** for that criterion. Once you submit your score, the AI's score is revealed so you can compare. This prevents the AI from anchoring your judgment before you've formed your own view.
 
 ### Staged-Contract Award
 
-Rather than awarding the full survey contract immediately, you can issue a small **verification contract** first. This lets you confirm that the firm performs as expected on the ground before committing to the full scope. Staged contracting is how the platform handles performance risk: start small, verify, then scale.
+Rather than awarding the full survey contract immediately, you can issue a small **verification contract** first. This lets you confirm that the firm performs as expected on the ground before committing to the full scope. A verification contract can later be upgraded to the full engagement. Staged contracting is how the platform handles performance risk: start small, verify, then scale.
+
+When an award is made, the winning organisation is notified by email. The award page shows clearly whether that email was sent successfully.
 
 !!! info "Award to a Connect opportunity"
     Connecting the awarded contract to a live Connect opportunity is not yet available. The award page notes this as a planned next step.
@@ -131,3 +138,6 @@ Connect Labs uses Claude (made by Anthropic) as the AI for workflow editing, pip
 
 **Why does the AI reply appear word by word instead of all at once?**
 AI responses now stream in as they are written, so you see the answer building in real time rather than waiting for the full reply to arrive. This is normal — you do not need to wait for the response to finish before you start reading.
+
+**Can the Application Coach see responses submitted by other organisations?**
+No. Applications are private. Each organisation can see only the responses submitted to its own calls, and applicants can see only their own submission. The coach works only within the form you are filling in — it has no access to anyone else's responses.

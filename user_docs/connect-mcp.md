@@ -219,23 +219,20 @@ This means you can ask Claude questions like "show me hospital vs home births br
 
 ---
 
-## Pages in Workflows
+## Solicitations
 
-Some workflows are **pages** — a blank canvas for charts, maps, or custom content — rather than a standard run-based report. Pages behave differently from ordinary workflows in a few ways worth knowing.
+Solicitations (Expressions of Interest and Requests for Proposal) are calls for partners that organisations post when they are looking for implementing teams. MCP can read solicitation data through both the restricted and full-access addresses.
 
-### Managing pages for a scope
+### Public directory
 
-An organisation, program, or opportunity can now have several pages. Each scope has a **Pages list** (at `/labs/p/<org|program|opportunity>/<key>/pages/`) that shows every page belonging to that scope, where each one lives, and which one is the home page. Anyone who can use the scope can view this list.
+The solicitations directory at `/solicitations/` is public — no login is required. It lists every open call, showing the organisation behind each one. You can search and filter by organisation and type. A "Recently closed" section appears below the open calls. You can share a link to any call directly with outside organisations.
 
-People who can change the scope's Settings also get two additional actions:
+Each organisation also has its own page at `/solicitations/o/<organisation>/` listing its open and past calls. Calls close automatically when their deadline passes and are shown as "Closed — deadline passed" afterwards; nobody can respond to a closed call.
 
-- **New page** — enter a title and address, and the new page starts from the blank page template and opens immediately in the editor. You can optionally set it as the home page at creation time.
-- **Make home** — available on each row of the list, this sets that page as the one the scope opens on.
+### Managing your organisation's calls
 
-When you are already viewing a page, its editors see **Pages** and **Make this the home page** links next to the Settings button. A scope that has no home page set points visitors to its Pages list instead.
+If you manage calls for an organisation, your workspace is at `/solicitations/o/<organisation>/manage/`, where you can see every call — including drafts — alongside response counts. Go to `/solicitations/manage/` to reach the organisations you can manage, or to find out how to request access.
 
-You can also choose the home page from **Settings → Labs**, which shows a list of the scope's pages to pick from. The JSON editor is still available underneath, under **Advanced: edit as JSON**.
+### Responding to a call
 
-### Who can edit pages and Settings
-
-Anyone who can change the Settings of the organisation
+You respond as one of your organisations, or by naming a new one. You can save one draft and return to it before submitting. After you submit, the form confirms what happens next and sends you a receipt by email. You can see only your own application — organisations cannot see or review responses from their own members.

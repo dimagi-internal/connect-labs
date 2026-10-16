@@ -1,6 +1,6 @@
 # Solicitations
 
-The Solicitations module manages requests for proposals (RFPs) and expressions of interest (EOIs). An organisation posts a call for partners, other organisations respond, and the organisation that posted it reviews and scores the responses and makes an award.
+The Solicitations module manages requests for proposals (RFPs) and expressions of interest (EOIs). An organisation posts a call for partners, other organisations respond, and the organisation that posted it reviews and scores the responses and makes an award. Any organisation can run its own calls, the same way any organisation can run a programme in Supply.
 
 ---
 
@@ -11,7 +11,7 @@ Every call belongs to an **organisation** — the one that posted it. That organ
 | Page | Address | Who can open it |
 | ---- | ------- | --------------- |
 | **All open calls** | `/solicitations/` | Anyone, signed in or not. Every listed call that is still open, each naming the organisation that posted it, with a **Recently closed** section underneath. Search by keyword, or filter by organisation and by type (EOI or RFP). |
-| **A call** | `/solicitations/<number>/` | Anyone, for a listed call. Shows who posted it, the deadline, what it asks and how responses are scored. Long calls have an **On this page** index. |
+| **A call** | `/solicitations/<number>/` | Anyone, for a listed call. Shows who posted it, the deadline, what it asks and how responses are scored. Long calls have a key-facts strip and an **On this page** index. |
 | **An organisation's calls** | `/solicitations/o/<organisation>/` | Anyone. The organisation's open calls and its past ones. The marketplace page for an organisation links here when it has listed calls. |
 | **Manage calls** | `/solicitations/o/<organisation>/manage/` | Members of that organisation, and platform support. Every call the organisation owns, including drafts and unlisted calls, with how many responses each has, and a **New call** button. |
 | **Responses, scoring and award** | from the Manage page | Members of the owning organisation, and platform support. Never someone scoring or awarding a response from their own organisation. |
@@ -203,54 +203,4 @@ Labs keeps a complete, tamper-evident record of activity across all program data
 
 Labs administrators can review this log on the **Audit Trail** page, linked from **Labs Admin**. The page includes:
 
-- **Anomaly cards** that surface patterns worth investigating — for example, a burst of failed login attempts, an unusual spike in bulk data exports, or activity at unexpected hours
-- **Filters** to narrow the log by user, action type, date range, or outcome
-- A **Mark reviewed** button on each anomaly that records the fact that a compliance review was carried out, creating a clear audit record of your oversight work
-
-!!! info "Who can access the Audit Trail"
-The Audit Trail page is available to Labs administrators only. If you need to review a specific event and do not have administrator access, contact your Labs administrator.
-
----
-
-## For Implementing Organizations (Submitting)
-
-### Finding Solicitations
-
-Open calls are listed at **Solicitations** (`/solicitations/`) — you do not need to sign in to read them. Each card names the organisation that posted the call; click the name to see all of that organisation's calls. Use the search box, or filter by organisation or by type (Expression of Interest or Request for Proposal). Calls whose deadline has passed move to **Recently closed**.
-
-**Filtering by programme:**
-The marketplace now offers two programme-based filters to help you find relevant opportunities:
-
-| Filter | What it shows |
-| ------ | ------------- |
-| **Has delivered** | Solicitations from programs your organization has completed delivery work on |
-| **Has applied for** | Solicitations from programs your organization has applied for, whether or not you were selected |
-
-Both filters use Connect's standard programme names — Kangaroo Mother Care, Child Health Campaign, Readers Distribution, Malaria, and so on — the same names you see everywhere else in Connect. The two filters are kept separate because an organization that has applied for a programme but never delivered it is often exactly who a new round is looking for.
-
-Every solicitation displays its programme tag on the marketplace home page, the solicitation page, and the organization page. Round titles include enough detail to tell similar rounds apart — for example, "CHC 2024 — Northern Nigeria" and "CHC 2025 — East & Southern Africa" appear as distinct entries.
-
-Where a solicitation was created from micro-plans, the specific geographic areas on offer are shown on a map with ward boundaries drawn, as well as in a list, on the solicitation page. The map includes a legend showing intervention areas in green and comparison areas in blue.
-
-Solicitations created for finished study programs clearly state their purpose — recruiting an independent survey firm to measure the program's outcomes — and display the number of coverage wards at a readable size.
-
-Where the rubric was locked before the call was published, a **Rubric locked before publishing** badge is shown on the solicitation page. This means the evaluation criteria were fixed before any applications came in and will not change during the open period.
-
-### Submitting a Response
-
-1. Open a solicitation and read the full description and scope of work. To respond you need to sign in to labs: the call's **Sign in to respond** button takes you to the labs sign-in and back
-2. Before filling in your answers, review the **Evaluation Criteria** panel shown above the application questions. This panel lists each criterion the program team will use to score responses, including the criterion name, its weight in the overall score, and any scoring guidance provided. Use this to understand what reviewers are looking for before you write your answers
-3. Click **Respond**, then choose the organisation you are responding for. You can pick any organisation you are a member of, or choose **An organisation not listed here** and give its name and contact email. The organisation that posted the call sees this name and contact
-4. Answer each question in the response template — where present, read the italicised framing above each question to understand what the program team is looking for. Each answer box sizes to fit your content as you type, so your full response is always visible without scrolling inside the box
-5. If the solicitation includes coverage areas, select the areas you can cover by clicking the ward boundaries directly on the map, or by checking the boxes in the checklist alongside it — both controls are kept in sync, so selecting an area in one automatically updates the other. Selected areas are highlighted on the map so you can clearly see which plans you have chosen. You must select at least one plan to submit
-6. If you use the **AI Application Coach** for feedback on your draft answers, the coach will prompt you to support your claims with verifiable evidence — for example, real numbers, named prior projects, back-check rates, or other concrete details. Suggestions are presented with clear headings so you can scan the structured advice at a glance. Responses backed by specific evidence score more strongly against the evaluation rubric
-7. Review your answers, then click **Submit response**. The note beside the button says what happens next: your response goes to the organisation that posted the call, who review every response and contact you about the outcome
-
-**Drafts.** Click **Save draft** to finish later. You have one draft per call: saving again updates it, and the call's page offers **Continue your draft** when you come back. A draft is visible only to you, and it is not sent until you submit it.
-
-**Deadlines.** A call takes responses until the end of its deadline day. After that, the call shows **Closed — deadline passed**, the response form is replaced by a message saying the call has closed, and an unsent draft can no longer be submitted.
-
-After you submit, the call's page shows a **Response submitted** confirmation, and you can open **View your response** to see what you sent and its status (Submitted, Under review, Awarded or Not selected). You cannot edit a response after submitting it, and a call takes one response from each person: once yours is submitted, you cannot send another. If email is switched on for labs, you also get an email at your labs account's address confirming your submission (never at the contact address you typed), and the call's contact address is told a new response arrived.
-
-!!! info "Selecting coverage areas"
-Each plan is offered as a whole unit. Clicking any part of a plan's boundary on the map selects the whole plan, and so does ticking it in the checklist.
+- **Anomaly cards** that surface patterns worth investigating — for example, a burst of failed login attempts, an unusual spike in bulk data exports, or activity at unexpected
