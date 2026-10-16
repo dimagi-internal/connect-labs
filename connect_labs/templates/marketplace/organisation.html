@@ -65,8 +65,8 @@ refuses to open. <details> needs no JavaScript at all.
               {% if profile.team_size %}<div><dt class="text-gray-500">Team size</dt><dd class="text-gray-900">{{ profile.team_size }}</dd></div>{% endif %}
               {% if profile.website %}
                 <div><dt class="text-gray-500">Website</dt>
-                  <dd><a href="{{ profile.website }}" target="_blank" rel="noopener noreferrer"
-                         class="text-brand-indigo hover:text-brand-deep-purple break-all">{{ profile.website|truncatechars:40 }}</a></dd>
+                  <dd>{% if profile.website_url %}<a href="{{ profile.website_url }}" target="_blank" rel="noopener noreferrer"
+                         class="text-brand-indigo hover:text-brand-deep-purple break-all">{{ profile.website|truncatechars:40 }}</a>{% else %}<span class="text-gray-900 break-all">{{ profile.website|truncatechars:40 }}</span>{% endif %}</dd>
                 </div>
               {% endif %}
               {% if profile.joined_at %}

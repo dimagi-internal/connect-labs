@@ -20,7 +20,7 @@
                 {% if profile and profile.website or profile and profile.countries %}
                 <p class="text-sm text-gray-600 mt-1 flex flex-wrap gap-x-4 gap-y-1">
                     {% if profile.countries %}<span><i class="fa-solid fa-earth-africa mr-1 text-gray-400"></i>{{ profile.countries|join:", " }}</span>{% endif %}
-                    {% if profile.website %}<a href="{{ profile.website }}" rel="noopener" class="text-brand-cornflower-blue hover:underline break-all"><i class="fa-solid fa-globe mr-1"></i>{{ profile.website }}</a>{% endif %}
+                    {% if profile.website_url %}<a href="{{ profile.website_url }}" rel="noopener" class="text-brand-cornflower-blue hover:underline break-all"><i class="fa-solid fa-globe mr-1"></i>{{ profile.website }}</a>{% elif profile.website %}<span class="break-all"><i class="fa-solid fa-globe mr-1 text-gray-400"></i>{{ profile.website }}</span>{% endif %}
                 </p>
                 {% endif %}
                 <p class="text-sm text-gray-500 mt-2">

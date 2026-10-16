@@ -1003,13 +1003,20 @@ class AwardView(SignedInPage):
             ctx = self.get_context_data(**kwargs)
             ctx["error"] = "The award budget must be a whole number."
             return self.render_to_response(ctx)
-        org_id = request.POST.get("org_id", "") if da.caller.is_operator else response.org_id
+        award_stage = request.POST.get("award_stage", "verification")
+        if response.is_awarded and award_stage == "full" and reward_budget is None:
+            # The upgrade allocates the new budget: without one there is nothing to award.
+            ctx = self.get_context_data(**kwargs)
+            ctx["error"] = "Enter the full engagement budget to award the full engagement."
+            return self.render_to_response(ctx)
+        # The upgrade form sends no org id: keep the one the first award recorded.
+        org_id = (request.POST.get("org_id") or response.org_id) if da.caller.is_operator else response.org_id
         try:
             da.award_response(
                 response.pk,
                 reward_budget=reward_budget,
                 org_id=org_id,
-                award_stage=request.POST.get("award_stage", "verification"),
+                award_stage=award_stage,
             )
         except AlreadyAwarded as exc:
             ctx = self.get_context_data(**kwargs)

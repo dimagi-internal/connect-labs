@@ -27,7 +27,7 @@ from connect_labs.solicitations.validation import (
 
 from ..connect_token import require_connect_token
 from ..tool_registry import MCPToolError, register  # noqa: F401
-from .funds import _add_allocation_to_fund
+from .funds import FUND_TYPE, _add_allocation_to_fund
 
 logger = logging.getLogger(__name__)
 
@@ -681,7 +681,9 @@ def delete_solicitation(
         "awardee when labs email is on (awardee_notified says whether it was sent). Only the call's "
         "owning organisation or platform support may award, and never a response from their own side. "
         "A response that is already awarded is refused (FAILED_PRECONDITION): no second allocation or email. "
-        "If fund_id is provided, appends an allocation entry to that fund's allocations array."
+        "If fund_id is provided, appends an allocation entry to that fund's allocations array: the fund "
+        "is checked first (NOT_FOUND, nothing awarded), and if the allocation fails after the award the "
+        "awarded response comes back with an allocation_error field."
     ),
     input_schema={
         "type": "object",
@@ -729,29 +731,45 @@ def award_response(
     program_id: str | None = None,
     organization_id: str | None = None,
 ) -> dict:
-    """Award a response, and allocate from `fund_id` (a prod fund record) when given."""
-    token = require_connect_token(user) if fund_id else None
-    try:
-        response = _da(user).award_response(
-            response_id, reward_budget=reward_budget, org_id=org_id, allocate_fund=False
-        )
-    except (PermissionDenied, SolicitationResponse.DoesNotExist, AlreadyAwarded) as e:
-        raise _mcp_error(e) from e
+    """Award a response, and allocate from `fund_id` (a prod fund record) when given.
 
-    if fund_id:
-        solicitation = response.solicitation
-        allocation = {
-            "amount": reward_budget,
-            "type": "award",
-            "solicitation_id": solicitation.public_id,
-            "response_id": response.pk,
-            "org_id": org_id,
-            "org_name": response.display_name,
-            "notes": f"Award from {solicitation.title}" if solicitation.title else "Award",
-        }
-        client = LabsRecordAPIClient(access_token=token)
+    The fund is checked before the award (a missing fund is NOT_FOUND and nothing
+    is awarded). Once awarded, a failed allocation is reported in
+    `allocation_error` rather than raised: a retry would be refused as already
+    awarded, so raising would leave the caller believing the award failed.
+    """
+    client = LabsRecordAPIClient(access_token=require_connect_token(user)) if fund_id else None
+    try:
+        if client is not None and client.get_record_by_id(fund_id, type=FUND_TYPE) is None:
+            raise MCPToolError("NOT_FOUND", f"No fund with id {fund_id}")
         try:
-            _add_allocation_to_fund(client, fund_id, allocation)
-        finally:
+            response = _da(user).award_response(
+                response_id, reward_budget=reward_budget, org_id=org_id, allocate_fund=False
+            )
+        except (PermissionDenied, SolicitationResponse.DoesNotExist, AlreadyAwarded) as e:
+            raise _mcp_error(e) from e
+
+        allocation_error = None
+        if client is not None:
+            solicitation = response.solicitation
+            allocation = {
+                "amount": reward_budget,
+                "type": "award",
+                "solicitation_id": solicitation.public_id,
+                "response_id": response.pk,
+                "org_id": org_id,
+                "org_name": response.display_name,
+                "notes": f"Award from {solicitation.title}" if solicitation.title else "Award",
+            }
+            try:
+                _add_allocation_to_fund(client, fund_id, allocation)
+            except Exception as e:  # noqa: BLE001 -- reported to the caller, never raised past the award
+                logger.exception("award of response %s: allocation to fund %s failed", response.pk, fund_id)
+                allocation_error = f"The response is awarded, but the allocation to fund {fund_id} failed: {e}"
+    finally:
+        if client is not None:
             client.close()
-    return _serialize_response(response, user)
+    result = _serialize_response(response, user)
+    if allocation_error:
+        result["allocation_error"] = allocation_error
+    return result

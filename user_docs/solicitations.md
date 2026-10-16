@@ -173,7 +173,7 @@ When the team agrees on a winner:
 3. Enter the award budget, if any. It is shown in the call's own currency (for example, "500,000 NGN"); a call with no currency set shows the number alone
 4. Click **Award**. If the call is linked to a fund, the award is allocated from it
 
-A response can be awarded once. Awarding it again is refused with a message saying it was already awarded, so the fund is never allocated twice and the organisation is never emailed twice.
+A response can be awarded once, with one exception: a **verification** award can be upgraded once to the **full** engagement (see Staged-Contract Award below), which allocates the new budget you enter and emails the organisation again. Any other second award is refused with a message saying it was already awarded, so the fund is never allocated twice for the same award and the organisation is never emailed twice. Once awarded, a response's status can no longer be changed (for example back to rejected).
 
 **Is the organisation told?** When outbound email is switched on for labs, Labs emails the award to the labs account of the person who submitted the response (for a response entered on a firm's behalf, to the address entered with it). It never mails the contact address typed on the form, which is there for you to read. The award page says plainly which happened: "We emailed … to tell them", or "No email was sent — let them know yourself" (for example when email is off, or there is no address to send to). Labs never claims an organisation was notified when it was not.
 

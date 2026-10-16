@@ -397,3 +397,43 @@ def test_award_response_twice_is_refused(world):
     args = {"response_id": response.pk, "reward_budget": 500, "org_id": "7"}
     ok(call_tool(world["owner_pat"], "award_response", args))
     assert err(call_tool(world["owner_pat"], "award_response", args)) == "FAILED_PRECONDITION"
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.solicitations._add_allocation_to_fund")
+@patch("connect_labs.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_award_with_a_missing_fund_fails_before_awarding(client_cls, add_allocation, world):
+    UserConnectToken.objects.create(
+        user=world["owner"], access_token="connect-tok", expires_at=timezone.now() + timedelta(hours=1)
+    )
+    client_cls.return_value.get_record_by_id.return_value = None
+    response = make_response(make_call(world["owner_org"]), world["applicant"])
+    envelope = call_tool(
+        world["owner_pat"],
+        "award_response",
+        {"response_id": response.pk, "reward_budget": 1, "org_id": "7", "fund_id": 404},
+    )
+    assert err(envelope) == "NOT_FOUND"
+    add_allocation.assert_not_called()
+    response.refresh_from_db()
+    assert response.status != "awarded"
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.solicitations._add_allocation_to_fund", side_effect=RuntimeError("prod down"))
+@patch("connect_labs.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_award_reports_a_failed_allocation_instead_of_raising(client_cls, add_allocation, world):
+    UserConnectToken.objects.create(
+        user=world["owner"], access_token="connect-tok", expires_at=timezone.now() + timedelta(hours=1)
+    )
+    client_cls.return_value = MagicMock()
+    response = make_response(make_call(world["owner_org"]), world["applicant"])
+    content = ok(
+        call_tool(
+            world["owner_pat"],
+            "award_response",
+            {"response_id": response.pk, "reward_budget": 1, "org_id": "7", "fund_id": 55},
+        )
+    )
+    assert content["status"] == "awarded"
+    assert "prod down" in content["allocation_error"]

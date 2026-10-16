@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.test import override_settings
+from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from connect_labs.solicitations.data_access import HasResponses, SolicitationsDataAccess
@@ -24,8 +24,17 @@ from connect_labs.solicitations.tests.factories import (
 pytestmark = pytest.mark.django_db
 
 
+class _CommittingDataAccess(SolicitationsDataAccess):
+    """Runs an award's after-commit work (email, allocation) as a real commit
+    would: the test transaction never commits, so it is captured and run."""
+
+    def award_response(self, *args, **kwargs):
+        with TestCase.captureOnCommitCallbacks(execute=True):
+            return super().award_response(*args, **kwargs)
+
+
 def da(user=None, **kw):
-    return SolicitationsDataAccess(user=user, **kw)
+    return _CommittingDataAccess(user=user, **kw)
 
 
 @pytest.fixture
@@ -578,3 +587,87 @@ def test_directory_rounds_are_not_reachable_as_calls(world):
     with pytest.raises(Solicitation.DoesNotExist):
         staff.delete_solicitation(round_.pk, force=True)
     assert Solicitation.objects.filter(pk=round_.pk, title=round_.title).exists()
+
+
+# --- CodeRabbit round: races and the award lifecycle ------------------------------
+
+
+def _for_update_on(queries, model):
+    table = model._meta.db_table
+    return [q["sql"] for q in queries if "FOR UPDATE" in q["sql"] and f'FROM "{table}"' in q["sql"]]
+
+
+def test_award_checks_and_writes_under_a_row_lock(world):
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    response = make_response(make_call(world["owner_org"]), world["applicant"])
+    with CaptureQueriesContext(connection) as ctx:
+        da(world["owner"]).award_response(response.pk, reward_budget=10)
+    assert _for_update_on(ctx.captured_queries, SolicitationResponse)
+
+
+@override_settings(LABS_EMAIL_ENABLED=True)
+def test_award_email_and_allocation_wait_for_the_commit(world, django_capture_on_commit_callbacks):
+    call = make_call(world["owner_org"], fund_id=9)
+    response = make_response(call, world["applicant"])
+    with (
+        patch("connect_labs.utils.email.send_labs_email", return_value=MagicMock()) as send,
+        patch("connect_labs.funder_dashboard.data_access.FunderDashboardDataAccess") as fda,
+    ):
+        with django_capture_on_commit_callbacks(execute=False) as callbacks:
+            SolicitationsDataAccess(user=world["owner"], access_token="tok").award_response(
+                response.pk, reward_budget=10
+            )
+        send.assert_not_called()
+        fda.return_value.add_allocation.assert_not_called()
+        response.refresh_from_db()
+        assert response.status == "awarded" and response.awardee_notified is False
+        for callback in callbacks:
+            callback()
+    send.assert_called_once()
+    assert fda.return_value.add_allocation.call_count == 1
+    response.refresh_from_db()
+    assert response.awardee_notified is True
+
+
+def test_an_awarded_response_cannot_change_status(world):
+    from connect_labs.solicitations.data_access import AlreadyAwarded
+
+    call = make_call(world["owner_org"], fund_id=9)
+    response = make_response(call, world["applicant"])
+    with patch("connect_labs.funder_dashboard.data_access.FunderDashboardDataAccess") as fda:
+        da(world["owner"], access_token="tok").award_response(response.pk, reward_budget=10)
+        with pytest.raises(ValidationError, match="awarded"):
+            da(world["owner"]).update_response(response.pk, {"status": "rejected"})
+        with pytest.raises(AlreadyAwarded):
+            da(world["owner"], access_token="tok").award_response(response.pk, reward_budget=10)
+    assert fda.return_value.add_allocation.call_count == 1
+    response.refresh_from_db()
+    assert response.status == "awarded"
+    # Scores can still be attached; only the status is frozen.
+    da(world["owner"]).update_response(response.pk, {"ai_proposed_scores": {"c1": 1}})
+
+
+def test_first_submission_locks_the_call(world):
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    call = make_call(world["owner_org"])
+    with CaptureQueriesContext(connection) as ctx:
+        da(world["applicant"]).create_response(call.pk, "firm-org", {"status": "submitted"})
+    assert _for_update_on(ctx.captured_queries, Solicitation)
+
+
+def test_staged_upgrade_keeps_budget_and_org_id_it_was_not_given(world):
+    call = make_call(world["owner_org"], fund_id=9)
+    response = make_response(call, world["applicant"])
+    with patch("connect_labs.funder_dashboard.data_access.FunderDashboardDataAccess") as fda:
+        da(world["owner"], access_token="tok").award_response(response.pk, reward_budget=10, org_id="77")
+        da(world["owner"], access_token="tok").award_response(
+            response.pk, reward_budget=None, org_id="", award_stage="full"
+        )
+    response.refresh_from_db()
+    assert (response.award_stage, response.reward_budget, response.org_id) == ("full", 10, "77")
+    # No new budget, nothing new to allocate.
+    assert fda.return_value.add_allocation.call_count == 1

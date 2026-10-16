@@ -76,6 +76,16 @@ class OrgProfile(models.Model):
     class Meta:
         verbose_name = "organisation profile"
 
+    @property
+    def website_url(self) -> str:
+        """The website as a link target: an http(s) address only, or "".
+
+        The cell is typed by hand on the directory sheet and never validated, so
+        a `javascript:` value must not reach an href on a public page.
+        """
+        value = (self.website or "").strip()
+        return value if value.lower().startswith(("http://", "https://")) else ""
+
     def __str__(self) -> str:
         return f"profile of {self.org.name}"
 

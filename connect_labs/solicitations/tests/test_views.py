@@ -482,3 +482,36 @@ def test_demo_calls_are_unlisted_reachable_and_bannered(client):
     # an ordinary call carries no such banner
     real = make_call(make_org("real-org"))
     assert "Demo call" not in client.get(url("public_detail", pk=real.public_id)).content.decode()
+
+
+def test_staff_upgrade_keeps_the_connect_org_id(client, world):
+    response = make_response(world["call"], world["applicant"], org_name="Firm Org")
+    login(client, world["staff"])
+    client.post(url("award", pk=response.pk), {"reward_budget": "500", "award_stage": "verification", "org_id": "77"})
+    client.post(
+        url("award", pk=response.pk), {"reward_budget": "900", "award_stage": "full"}
+    )  # upgrade form: no org_id
+    response.refresh_from_db()
+    assert (response.award_stage, response.reward_budget, response.org_id) == ("full", 900, "77")
+
+
+def test_upgrade_without_a_budget_is_refused(client, world):
+    response = make_response(world["call"], world["applicant"], org_name="Firm Org")
+    login(client, world["owner"])
+    client.post(url("award", pk=response.pk), {"reward_budget": "500", "award_stage": "verification"})
+    resp = client.post(url("award", pk=response.pk), {"reward_budget": "", "award_stage": "full"})
+    assert "full engagement budget" in resp.content.decode()
+    response.refresh_from_db()
+    assert (response.award_stage, response.reward_budget) == ("verification", 500)
+
+
+@pytest.mark.parametrize(
+    "website,linked",
+    [("https://firm.example", True), ("http://firm.example", True), ("javascript:alert(1)", False)],
+)
+def test_org_page_links_only_a_web_address(client, world, website, linked):
+    from connect_labs.marketplace.models import OrgProfile
+
+    OrgProfile.objects.create(org=world["owner_org"], website=website)
+    body = client.get(url("org_page", org_slug="owner-org")).content.decode()
+    assert (f'href="{website}"' in body) is linked

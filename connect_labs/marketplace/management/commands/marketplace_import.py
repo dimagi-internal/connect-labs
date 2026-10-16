@@ -283,6 +283,10 @@ class Command(BaseCommand):
         for line in skipped:
             self.stdout.write(self.style.WARNING(f"  round skipped: {line}"))
         stats = eoi.upsert_rounds(rounds)
+        for slug in stats["collisions"]:
+            self.stdout.write(
+                self.style.WARNING(f"  round skipped: slug {slug!r} belongs to a solicitation that is not a round")
+            )
         self.stdout.write(self.style.SUCCESS(f"{stats['rounds']} rounds"))
 
         results = eoi.check_access(directory.read_tab, write_back_to=rounds, spreadsheet_id=sid)

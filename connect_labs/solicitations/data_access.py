@@ -503,6 +503,10 @@ class SolicitationsDataAccess:
                 with transaction.atomic():
                     response = None
                     if not on_behalf:
+                        # Serialise this caller's submissions to the call: a first
+                        # submit has no draft row to lock, and the one-draft
+                        # constraint does not cover submitted rows.
+                        Solicitation.objects.select_for_update().filter(pk=solicitation.pk).first()
                         self._refuse_second_response(solicitation)
                         response = self._find_draft(solicitation)
                     if response is None:
@@ -587,6 +591,10 @@ class SolicitationsDataAccess:
             access.require(
                 access.can_review(self.caller, response), "You cannot move your own organisation's response along."
             )
+            if response.is_awarded:
+                # Un-awarding would let a second award allocate the fund and
+                # email the awardee again, with the first allocation still made.
+                raise ValidationError({"status": "This response has been awarded; its status can no longer change."})
             if data["status"] not in _OWNER_RESPONSE_STATUSES:
                 allowed = list(_OWNER_RESPONSE_STATUSES)
                 raise ValidationError({"status": f"{data['status']!r} must be one of {allowed} (award separately)"})
@@ -660,6 +668,8 @@ class SolicitationsDataAccess:
     ) -> SolicitationResponse:
         """Award a response: record the decision and tell the awardee.
 
+        The check and the write happen under a row lock; the award email and
+        the fund allocation follow once the transaction commits.
         `awardee_notified` is set only if the award email was handed to the
         mail path (labs email enabled and an address to send to). Allocates
         from `fund_id`, or the call's own fund when `allocate_fund`; a failed
@@ -673,30 +683,49 @@ class SolicitationsDataAccess:
             "Only the organisation that owns this call (or platform support) can award it, "
             "and never a response from your own side.",
         )
-        # The one re-award allowed is the staged upgrade: a verification contract
-        # that went well becomes the full engagement (a new allocation for it).
-        upgrading = response.is_awarded and response.award_stage == "verification" and award_stage == "full"
-        if response.is_awarded and not upgrading:
-            raise AlreadyAwarded(
-                "This response has already been awarded"
-                + (f" ({response.awarded_at:%d %b %Y})" if response.awarded_at else "")
-                + "; awarding it again would allocate the fund and email the awardee twice."
-            )
-        response.status = "awarded"
-        response.reward_budget = _int_or_none(reward_budget)
-        response.org_id = str(org_id or "")
-        response.award_stage = award_stage if award_stage in AWARD_STAGES else "verification"
-        response.awarded_at = timezone.now()
-        response.awardee_notified = self._notify_awarded(response)
-        response.save()
-        if solicitation.status in ("active", "closed"):
-            solicitation.status = "awarded"
-            solicitation.save(update_fields=["status", "updated_at"])
+        new_budget = _int_or_none(reward_budget)
+        with transaction.atomic():
+            # Check and write under a row lock, so two concurrent awards (a
+            # double-click) cannot both pass the AlreadyAwarded check.
+            response = SolicitationResponse.objects.select_for_update().get(pk=response.pk)
+            response.solicitation = solicitation
+            # The one re-award allowed is the staged upgrade: a verification contract
+            # that went well becomes the full engagement (a new allocation for it).
+            upgrading = response.is_awarded and response.award_stage == "verification" and award_stage == "full"
+            if response.is_awarded and not upgrading:
+                raise AlreadyAwarded(
+                    "This response has already been awarded"
+                    + (f" ({response.awarded_at:%d %b %Y})" if response.awarded_at else "")
+                    + "; awarding it again would allocate the fund and email the awardee twice."
+                )
+            response.status = "awarded"
+            # An upgrade keeps what it was not given (the upgrade form sends no
+            # org id, and may send no budget).
+            if new_budget is not None or not upgrading:
+                response.reward_budget = new_budget
+            response.org_id = str(org_id or response.org_id or "")
+            response.award_stage = award_stage if award_stage in AWARD_STAGES else "verification"
+            response.awarded_at = timezone.now()
+            response.awardee_notified = False
+            response.save()
+            if solicitation.status in ("active", "closed"):
+                solicitation.status = "awarded"
+                solicitation.save(update_fields=["status", "updated_at"])
 
-        target_fund = fund_id or (solicitation.fund_id if allocate_fund else None)
+            target_fund = fund_id or (solicitation.fund_id if allocate_fund else None)
+            if upgrading and new_budget is None:
+                target_fund = None  # no new budget, nothing new to allocate
+            # Mail and money only once the award is committed: never a "you were
+            # selected" email, or an allocation, for an award that rolled back.
+            transaction.on_commit(lambda: self._after_award(response, solicitation, target_fund), robust=True)
+        return response
+
+    def _after_award(self, response, solicitation, target_fund) -> None:
+        if self._notify_awarded(response):
+            response.awardee_notified = True
+            response.save(update_fields=["awardee_notified"])
         if target_fund:
             self._allocate(target_fund, solicitation, response)
-        return response
 
     def _allocate(self, fund_id, solicitation, response) -> None:
         if not self.access_token:

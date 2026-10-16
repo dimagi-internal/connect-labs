@@ -395,3 +395,18 @@ class TestTheNextStepColumnSaysWhoseTurnItIs:
     def test_a_readable_tagged_round_not_yet_ingested_is_labs_turn(self):
         step = eoi.next_step_for(self._round(last_ingested_at=None))
         assert step.startswith("LABS:")
+
+
+@pytest.mark.django_db
+def test_a_round_slug_owned_by_a_call_is_reported_not_imported():
+    from connect_labs.solicitations.local_models import SOURCE_LABS
+
+    call = Solicitation.objects.create(slug="demo-2026", title="An owner's call", source=SOURCE_LABS)
+    rows = ROUND_ROWS + [[("other-2026" if i == 0 else c) for i, c in enumerate(ROUND_ROWS[1])]]
+    rounds, _ = parse_rounds(rows)
+    stats = upsert_rounds(rounds)
+    assert stats["rounds"] == 1
+    assert stats["collisions"] == ["demo-2026"]
+    call.refresh_from_db()
+    assert call.title == "An owner's call" and call.source == SOURCE_LABS
+    assert Solicitation.objects.directory_rounds().filter(slug="other-2026").exists()

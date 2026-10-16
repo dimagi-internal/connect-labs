@@ -50,9 +50,19 @@ def _date(raw):
 
 
 def upsert_rounds(rounds) -> dict:
-    """Create or update a Solicitation per round row. Never deletes."""
-    stats = {"rounds": 0}
+    """Create or update a Solicitation per round row. Never deletes.
+
+    A row whose slug already belongs to a call that is not a directory round
+    (made or imported for an owner) is skipped and listed in
+    `stats["collisions"]`: the slug is unique across both, and the import must
+    neither stop on it nor touch that call.
+    """
+    stats = {"rounds": 0, "collisions": []}
+    taken = set(Solicitation.objects.calls().filter(slug__in=[r.slug for r in rounds]).values_list("slug", flat=True))
     for row in rounds:
+        if row.slug in taken:
+            stats["collisions"].append(row.slug)
+            continue
         defaults = {
             "title": row.title,
             "solicitation_type": row.solicitation_type,
