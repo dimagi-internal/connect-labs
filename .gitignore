@@ -407,8 +407,10 @@ scripts/walkthroughs/**/scenes.json
 .claude/settings.local.json
 .superpowers/
 
-# Canopy tool state. Only the DDD loop's inputs are versioned -- config.yaml,
-# context.md and learnings.md, which the loop and scripts/walkthroughs read.
+# Canopy tool state. Only the DDD loop's inputs are versioned -- config.yaml
+# and context.md, which the loop and scripts/walkthroughs read. learnings.md was
+# retired 2026-10-16: a product lesson becomes a fix or real documentation here,
+# a lesson about DDD itself a canopy fix/issue, so it stays ignored.
 # Everything a run WRITES stays local: run records, verdicts, specs, clips,
 # decks, triage logs. The published package on canopy-web is the record; this
 # repo is public, and run output carried share tokens, real addresses and a
@@ -418,7 +420,6 @@ scripts/walkthroughs/**/scenes.json
 .canopy/ddd/*
 !.canopy/ddd/config.yaml
 !.canopy/ddd/context.md
-!.canopy/ddd/learnings.md
 
 # Botched redirect target (CLI token accidentally written to "-")
 /-
