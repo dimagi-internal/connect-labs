@@ -9,6 +9,8 @@ urlpatterns = [
     path("", views.PublicSolicitationListView.as_view(), name="public_list"),
     path("<int:pk>/", views.PublicSolicitationDetailView.as_view(), name="public_detail"),
     path("o/<str:org_slug>/", views.OrgSolicitationsView.as_view(), name="org_page"),
+    # A past call: one of the marketplace's historical rounds, read-only (slug or id).
+    path("past/<str:slug>/", views.PastCallDetailView.as_view(), name="past_detail"),
     # An owner's workspace (login; members of the owning organisation, or staff).
     path("manage/", views.ManageSolicitationsView.as_view(), name="manage_list"),
     path("o/<str:org_slug>/manage/", views.OrgManageView.as_view(), name="org_manage"),

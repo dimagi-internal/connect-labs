@@ -18,7 +18,9 @@ Membership is Supply's (`supply_chain.runner.is_member`): an `OrgMembership`
 granted for the organisation, Connect's own membership of an organisation
 Connect knows, or a Dimagi address for Dimagi. An organisation being *visible*
 in someone's labs context is not membership. An unowned historical round has
-no owner, so only staff manage it -- there is no Dimagi fallback.
+no owner, so only staff manage it -- there is no Dimagi fallback. A marketplace
+directory round is managed by nobody here (`is_directory_round`): it is shown
+read-only as a past call.
 
 Every check fails closed: a membership that cannot be established is none.
 """
@@ -94,8 +96,22 @@ def caller_for(subject) -> Caller:
     return Caller(user=subject)
 
 
+def is_directory_round(solicitation) -> bool:
+    """A marketplace EOI round imported from the LLO Directory sheet.
+
+    Shown read-only as a past call (`past_calls.py`); nobody manages, reviews,
+    awards or responds to one from the solicitations side -- staff included,
+    and Dimagi's members included, although Dimagi ran every one of them.
+    """
+    from connect_labs.solicitations.local_models import SOURCE_DIRECTORY
+
+    return getattr(solicitation, "source", None) == SOURCE_DIRECTORY
+
+
 def standing(subject, solicitation) -> str:
-    """`owner`, `operator` or `public` on this call."""
+    """`owner`, `operator` or `public` on this call. Always `public` on a directory round."""
+    if is_directory_round(solicitation):
+        return PUBLIC
     caller = caller_for(subject)
     if solicitation.owner_org_id and caller.is_member(solicitation.owner_org):
         return OWNER

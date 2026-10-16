@@ -437,3 +437,22 @@ def test_award_reports_a_failed_allocation_instead_of_raising(client_cls, add_al
     )
     assert content["status"] == "awarded"
     assert "prod down" in content["allocation_error"]
+
+
+@pytest.mark.django_db
+def test_directory_rounds_stay_out_of_the_solicitation_tools(world):
+    """Past directory rounds are shown read-only on the Solicitations pages, but
+    the MCP solicitation tools are the API for calls that can be managed and
+    answered: a round there would invite get/list_responses/award calls that
+    must all be refused. Agents read rounds through `marketplace_rounds_list`."""
+    from connect_labs.solicitations.local_models import SOURCE_DIRECTORY
+
+    round_ = make_call(None, source=SOURCE_DIRECTORY, slug="chc-2025", status="closed", listed=False)
+    submission = make_response(round_, None, source_row=2)
+    staff_pat = pat(world["staff"])
+    for token in (world["owner_pat"], world["outsider_pat"], staff_pat):
+        listed = ok(call_tool(token, "list_solicitations", {}))
+        assert round_.pk not in {s["id"] for s in listed["solicitations"]}
+        assert err(call_tool(token, "get_solicitation", {"solicitation_id": round_.pk})) == "NOT_FOUND"
+        assert err(call_tool(token, "list_responses", {"solicitation_id": round_.pk})) == "NOT_FOUND"
+        assert err(call_tool(token, "get_response", {"response_id": submission.pk})) == "NOT_FOUND"

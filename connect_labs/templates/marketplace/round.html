@@ -164,6 +164,11 @@
           <span class="text-xs font-semibold text-brand-deep-purple tracking-wide">THE CALL</span>
         </div>
         <div class="px-[18px] py-3.5 flex flex-col gap-2.5">
+          {% if public_call_url %}
+            <a href="{{ public_call_url }}" class="text-[13px] text-brand-indigo hover:text-brand-deep-purple flex items-center gap-2">
+              <i class="fa-solid fa-bullhorn text-[11px]"></i> Public call page
+            </a>
+          {% endif %}
           {% if round.announcement_url %}
             <a href="{{ round.announcement_url }}" target="_blank" rel="noopener noreferrer" class="text-[13px] text-brand-indigo hover:text-brand-deep-purple flex items-center gap-2">
               <i class="fa-solid fa-up-right-from-square text-[11px]"></i> Public announcement

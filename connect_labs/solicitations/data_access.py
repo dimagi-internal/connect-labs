@@ -254,6 +254,35 @@ class SolicitationsDataAccess:
             return None
         return solicitation
 
+    # --- past calls: the marketplace's historical rounds, read-only -----------
+
+    def get_past_calls(self) -> list[Solicitation]:
+        """Directory rounds that have finished, newest first, for anyone.
+
+        Read-only: no method here edits, deletes, answers or awards one --
+        every other path reads `_calls()`, which leaves them out.
+        """
+        from connect_labs.solicitations import past_calls
+
+        return past_calls.all_past_calls()
+
+    def get_past_call(self, key) -> Solicitation | None:
+        """One past call by slug or id, or None."""
+        from connect_labs.solicitations import past_calls
+
+        return past_calls.get(key)
+
+    def past_call_applicant_count(self, call) -> int | None:
+        """How many organisations applied -- to someone signed in; None otherwise.
+
+        Never who: applicants are the marketplace's, behind its login.
+        """
+        if not self.caller.is_authenticated:
+            return None
+        from connect_labs.solicitations import past_calls
+
+        return past_calls.organisations_applied(call)
+
     def standing(self, solicitation) -> str:
         return access.standing(self.caller, solicitation)
 

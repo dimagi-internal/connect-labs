@@ -1,0 +1,12 @@
+{% comment %}
+Past calls grouped by year. Expects `years` ([{year, calls}]) and `past_owner`;
+`hide_owner` on an organisation's own page.
+{% endcomment %}
+{% for group in years %}
+<h3 class="text-sm font-semibold text-gray-500 tracking-wide mb-3 {% if not forloop.first %}mt-6{% endif %}">{% if group.year %}{{ group.year }}{% else %}Undated{% endif %}</h3>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+    {% for solicitation in group.calls %}
+        {% include "solicitations/_past_card.html" %}
+    {% endfor %}
+</div>
+{% endfor %}

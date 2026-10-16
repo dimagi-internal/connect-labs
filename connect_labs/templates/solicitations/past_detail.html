@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% load static markdown_filters %}
+
+{% block title %}{{ solicitation.title }} · Past call · Solicitations{% endblock %}
+
+{% block content %}
+{% comment %}
+A past call: one of the marketplace's historical rounds, read-only. What the
+call was, and its public announcement. Never the application form, the
+response sheet, the import's notes, or who applied; a signed-in user sees how
+many organisations applied and a link to the marketplace's round page.
+{% endcomment %}
+<div class="max-w-screen-lg mx-auto px-0 sm:px-4 py-4 sm:py-6">
+
+    <nav class="flex flex-wrap items-center gap-2 text-sm text-gray-500 mb-4 sm:mb-6 min-w-0">
+        <a href="{% url 'solicitations:public_list' %}" class="hover:text-brand-cornflower-blue transition-colors">
+            <i class="fa-solid fa-bullhorn mr-1"></i> Solicitations
+        </a>
+        <i class="fa-solid fa-chevron-right text-xs"></i>
+        <a href="{% url 'solicitations:public_list' %}#past-calls" class="hover:text-brand-cornflower-blue transition-colors">Past calls</a>
+    </nav>
+
+    <div class="bg-white rounded-xl shadow-sm mb-4 overflow-hidden">
+        <div class="h-32 sm:h-44 relative" style="background-color: {{ solicitation.past_program.hue }}">
+            {% if solicitation.past_program.image %}
+            <img src="{% static solicitation.past_program.image.src %}" alt="" class="w-full h-full object-cover" style="object-position: {{ solicitation.past_program.image.focus }}">
+            {% endif %}
+        </div>
+        <div class="p-5 sm:p-8">
+            <div class="flex flex-wrap items-center gap-2 mb-3">
+                {% include "solicitations/_type_badge.html" %}
+                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>Closed</span>
+            </div>
+            <p class="text-sm text-gray-500 mb-2">
+                <i class="fa-solid fa-building mr-1"></i>Run by
+                {% if past_owner.slug %}<a href="{% url 'solicitations:org_page' org_slug=past_owner.slug %}" class="font-medium text-gray-700 hover:text-brand-cornflower-blue hover:underline">{{ past_owner.name }}</a>{% else %}<span class="font-medium text-gray-700">{{ past_owner.name }}</span>{% endif %}
+                {% if solicitation.past_program.label %}
+                <span class="text-gray-400">·</span>
+                <span class="font-medium" style="color: {{ solicitation.past_program.hue }}"><span class="inline-block w-2 h-2 rounded-full mr-1 align-middle" style="background-color: {{ solicitation.past_program.hue }}"></span>{{ solicitation.past_program.label }}</span>
+                {% endif %}
+            </p>
+            <h1 class="text-xl sm:text-2xl font-semibold text-brand-deep-purple leading-tight break-words">{{ solicitation.title }}</h1>
+            {% if solicitation.target_countries %}
+            <p class="text-sm text-gray-600 mt-2 break-words"><i class="fa-solid fa-earth-africa mr-1 text-gray-400"></i>{{ solicitation.target_countries }}</p>
+            {% endif %}
+
+            <div class="mt-5 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">
+                {% if solicitation.past_announcement %}
+                <a href="{{ solicitation.past_announcement }}" target="_blank" rel="noopener noreferrer" class="button button-sm primary-dark justify-center whitespace-nowrap self-start">
+                    <i class="fa-solid fa-up-right-from-square mr-1.5"></i> Read the announcement
+                </a>
+                {% else %}
+                <p class="text-sm text-gray-500">The announcement for this call was not recorded.</p>
+                {% endif %}
+                {% if marketplace_url %}
+                <a href="{{ marketplace_url }}" class="text-sm text-brand-cornflower-blue hover:underline"><i class="fa-solid fa-store mr-1"></i>This round on the marketplace</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm mb-4 grid grid-cols-2 {% if applicant_count is not None %}sm:grid-cols-4{% else %}sm:grid-cols-3{% endif %} gap-px bg-gray-100 overflow-hidden">
+        <div class="bg-white p-4">
+            <p class="text-xs text-gray-400 uppercase tracking-wider mb-1">Published</p>
+            <p class="text-sm font-semibold text-gray-900">{{ solicitation.published_on|date:"j M Y"|default:"Not recorded" }}</p>
+        </div>
+        <div class="bg-white p-4">
+            <p class="text-xs text-gray-400 uppercase tracking-wider mb-1">Deadline</p>
+            <p class="text-sm font-semibold text-gray-900">{{ solicitation.application_deadline|date:"j M Y"|default:"None" }}</p>
+        </div>
+        <div class="bg-white p-4 {% if applicant_count is None %}col-span-2 sm:col-span-1{% endif %}">
+            <p class="text-xs text-gray-400 uppercase tracking-wider mb-1">Decision</p>
+            <p class="text-sm font-semibold text-gray-900">{{ solicitation.decision_on|date:"j M Y"|default:"Not recorded" }}</p>
+        </div>
+        {% if applicant_count is not None %}
+        <div class="bg-white p-4">
+            <p class="text-xs text-gray-400 uppercase tracking-wider mb-1">Responses</p>
+            <p class="text-sm font-semibold text-gray-900">{{ applicant_count }} organisation{{ applicant_count|pluralize }} applied</p>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if solicitation.description %}
+    <section class="bg-white rounded-xl shadow-sm p-5 sm:p-8 mb-4">
+        <h2 class="text-lg font-semibold text-brand-deep-purple mb-3">Description</h2>
+        <div class="markdown-content break-words">{{ solicitation.description|markdown }}</div>
+    </section>
+    {% endif %}
+    {% if show_scope %}
+    <section class="bg-white rounded-xl shadow-sm p-5 sm:p-8 mb-4">
+        <h2 class="text-lg font-semibold text-brand-deep-purple mb-3">Scope of work</h2>
+        <div class="markdown-content break-words">{{ solicitation.scope_of_work|markdown }}</div>
+    </section>
+    {% endif %}
+
+    <p class="text-sm text-gray-500 px-1">
+        <i class="fa-solid fa-circle-info mr-1"></i>
+        This call is closed and no longer takes responses. Looking for a call you can answer now? <a href="{% url 'solicitations:public_list' %}" class="text-brand-cornflower-blue hover:underline">See the open calls</a>.
+    </p>
+</div>
+{% endblock %}
