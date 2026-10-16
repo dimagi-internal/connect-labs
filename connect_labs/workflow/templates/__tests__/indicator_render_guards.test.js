@@ -923,6 +923,100 @@ describe('the ACE Kaduna demo findings (#2578)', () => {
   });
 });
 
+describe('a field value map (#2578)', () => {
+  const OUTCOMES = {
+    met: 'Met her',
+    not_home: 'Not at home',
+    left: 'Left the programme',
+  };
+  const CODES = ['met', 'not_home', 'met', 'left', 'met', 'not_home', 'moved'];
+
+  function payloadWith(map) {
+    const payload = JSON.parse(JSON.stringify(PAYLOAD));
+    payload.display.visit_fields = payload.display.visit_fields.concat([
+      Object.assign(
+        { field: 'visit_outcome', label: 'Outcome', format: 'text' },
+        map ? { values: map } : {},
+      ),
+    ]);
+    payload.display.case_fields = payload.display.case_fields.concat([
+      Object.assign(
+        { field: 'enrolment_status', label: 'Status', format: 'text' },
+        map ? { values: { active: 'Still enrolled' } } : {},
+      ),
+    ]);
+    WORKER.rows.forEach(function (i) {
+      payload.cases[i].enrolment_status = 'active';
+    });
+    return payload;
+  }
+
+  async function mountWith(payload) {
+    const firstCase = payload.cases[WORKER.rows[0]];
+    const el = await mount('indicator_worker_review_render.js', {
+      url:
+        '/labs/workflow/3/run/?program_id=1&flw=' +
+        encodeURIComponent(WORKER.key) +
+        '&source_run=11',
+      props: workerProps(),
+      routes: {
+        '/snapshot/preview/': {
+          snapshot: { state: { snapshot: payload } },
+          source: 'stored',
+        },
+        '/pipeline-rows/': {
+          rows: visitRows(firstCase.entity_id).map(function (v, i) {
+            return Object.assign(v, { visit_outcome: CODES[i] });
+          }),
+        },
+        '/visit-images/': { visit_images: {} },
+      },
+    });
+    return { el, firstCase };
+  }
+
+  function columnCells(el, header) {
+    const table = Array.from(el.querySelectorAll('table')).find((t) =>
+      Array.from(t.querySelectorAll('th')).some(
+        (th) => th.textContent.trim() === header,
+      ),
+    );
+    expect(table, 'a table with a ' + header + ' column').toBeTruthy();
+    const ths = Array.from(table.querySelectorAll('thead th'));
+    const col = ths.findIndex((th) => th.textContent.trim() === header);
+    return Array.from(table.querySelectorAll('tbody tr'))
+      .map((tr) => tr.querySelectorAll('td')[col])
+      .filter(Boolean)
+      .map((td) => td.textContent.trim());
+  }
+
+  test('the visit list and the case table print the label, an unmapped code as stored', async () => {
+    const { el, firstCase } = await mountWith(payloadWith(OUTCOMES));
+    // the case table: a case-index code is labelled (the same value on every
+    // row of this worker's cases, so it is a column of one label)
+    expect(new Set(columnCells(el, 'Status'))).toEqual(
+      new Set(['Still enrolled']),
+    );
+    await click(byText(el, 'td', firstCase.entity_id).closest('tr'));
+    const shown = columnCells(el, 'Outcome');
+    expect(new Set(shown)).toEqual(
+      new Set(['Met her', 'Not at home', 'Left the programme', 'moved']),
+    );
+    expect(shown.length).toBe(CODES.length);
+    expect(el.textContent).not.toContain('not_home');
+    expect(allGuards(el)).toEqual(NONE);
+  });
+
+  test('control: with no map the same codes print as stored', async () => {
+    const { el, firstCase } = await mountWith(payloadWith(null));
+    expect(new Set(columnCells(el, 'Status'))).toEqual(new Set(['active']));
+    await click(byText(el, 'td', firstCase.entity_id).closest('tr'));
+    expect(new Set(columnCells(el, 'Outcome'))).toEqual(
+      new Set(['met', 'not_home', 'left', 'moved']),
+    );
+  });
+});
+
 // ── The guards catch what they are for ──────────────────────────────────────
 // Each guard against the defect it exists to catch, so a guard that silently
 // stops matching (a renamed class, a moved attribute) fails here rather than

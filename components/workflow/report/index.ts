@@ -92,7 +92,7 @@ import {
   SectionTitle,
 } from './Layout';
 
-export const VERSION = 9;
+export const VERSION = 10;
 
 export const LabsReport = {
   VERSION,
@@ -153,6 +153,7 @@ export const LabsReport = {
   headlineSpecs,
   scorecardLayout,
   targetValue,
+  // prints a field's `values` label for a stored code (VERSION 10)
   fmtCaseField,
   nounCount,
   cap,

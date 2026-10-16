@@ -469,6 +469,39 @@ class TestItemLevelUpdate:
         assert data["version"] == 8
         assert "items_changed" not in out
 
+    def test_a_display_value_map_is_validated_and_saved_through(self, monkeypatch):
+        """A field's `values` map (#2578) rides the whole-document path into the
+        record, and semantic_registry_validate accepts it."""
+        from connect_labs.mcp.tools import semantic as tools
+
+        access, record = self._access()
+        doc = copy.deepcopy(record.indicators_doc)
+        outcomes = {"met": "Met her", "not_home": "Not at home", "left": "Left the programme"}
+        doc.setdefault("display", {})["visit_fields"] = [
+            {"field": "visit_outcome", "label": "Outcome", "values": outcomes}
+        ]
+
+        assert tools.semantic_registry_validate(None, record.properties_doc, doc, record.deployment) == {
+            "valid": True,
+            "errors": [],
+        }
+        self._update(monkeypatch, access, indicators_doc=doc)
+        assert self._written(access)["indicators"]["display"]["visit_fields"][0]["values"] == outcomes
+
+    def test_a_malformed_display_value_map_is_refused(self, monkeypatch):
+        from connect_labs.mcp.tools import semantic as tools
+
+        access, record = self._access()
+        doc = copy.deepcopy(record.indicators_doc)
+        doc.setdefault("display", {})["visit_fields"] = [{"field": "visit_outcome", "values": {"met": 1}}]
+
+        out = tools.semantic_registry_validate(None, record.properties_doc, doc, record.deployment)
+        assert out["valid"] is False and any("visit_fields[0].values.met" in e for e in out["errors"])
+        with pytest.raises(MCPToolError) as exc:
+            self._update(monkeypatch, access, indicators_doc=doc)
+        assert exc.value.code == "INVALID_SCHEMA"
+        access.labs_api.update_record.assert_not_called()
+
     @pytest.mark.django_db
     def test_the_published_schema_accepts_item_edits(self, auth_user):
         _, raw = auth_user

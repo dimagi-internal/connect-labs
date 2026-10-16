@@ -590,6 +590,61 @@ describe('the registry display contract (VERSION 3)', () => {
     expect(R.fmtCaseField({ field: 'x', label: 'X' }, null)).toBe('—');
     expect(R.nounCount(1, { name: 'baby', plural: 'babies' })).toBe('1 baby');
   });
+  test('a field with a values map prints the label for a stored code (VERSION 10, #2578)', () => {
+    expect(R.VERSION).toBeGreaterThanOrEqual(10);
+    const outcome = {
+      field: 'visit_outcome',
+      label: 'Outcome',
+      values: {
+        met: 'Met her',
+        not_home: 'Not at home',
+        left: 'Left the programme',
+      },
+    };
+    expect(R.fmtCaseField(outcome, 'not_home')).toBe('Not at home');
+    expect(R.fmtCaseField(outcome, 'left')).toBe('Left the programme');
+    // a value the map does not name prints as stored; an empty one is a dash
+    expect(R.fmtCaseField(outcome, 'moved')).toBe('moved');
+    expect(R.fmtCaseField(outcome, '')).toBe('—');
+    // an inherited name is not a label
+    expect(R.fmtCaseField(outcome, 'toString')).toBe('toString');
+    // a numeric code matches its string key, and a label takes no unit
+    expect(
+      R.fmtCaseField(
+        {
+          field: 'n',
+          label: 'N',
+          format: 'count',
+          unit: 'g',
+          values: { 1: 'One' },
+        },
+        1,
+      ),
+    ).toBe('One');
+    expect(
+      R.fmtCaseField(
+        {
+          field: 'n',
+          label: 'N',
+          format: 'count',
+          unit: 'g',
+          values: { 1: 'One' },
+        },
+        2500,
+      ),
+    ).toBe('2,500 g');
+  });
+  test('control: with no values map a code prints exactly as before', () => {
+    expect(
+      R.fmtCaseField({ field: 'visit_outcome', label: 'Outcome' }, 'not_home'),
+    ).toBe('not_home');
+    expect(
+      R.fmtCaseField(
+        { field: 'visit_outcome', label: 'Outcome', format: 'text' },
+        'not_home',
+      ),
+    ).toBe('not_home');
+  });
   test('the reading chart and the insufficient-coverage noun', () => {
     const svg = html(
       h(R.ReadingChart, {

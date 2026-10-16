@@ -98,6 +98,16 @@ def test_a_declared_headline_replaces_the_default():
         ({"display": {"visit_flags": [{"column": "f", "description": 3}]}}, "visit_flags[0].description"),
         ({"display": {"entity": {"name": "child", "label_field": "child name"}}}, "display.entity.label_field"),
         ({"display": {"entity": {"label_field": 3}}}, "display.entity.label_field"),
+        ({"display": {"visit_fields": [{"field": "o", "values": ["met"]}]}}, "visit_fields[0].values"),
+        ({"display": {"visit_fields": [{"field": "o", "values": {}}]}}, "visit_fields[0].values"),
+        ({"display": {"visit_fields": [{"field": "o", "values": {"met": 3}}]}}, "visit_fields[0].values.met"),
+        ({"display": {"visit_fields": [{"field": "o", "values": {"met": " "}}]}}, "visit_fields[0].values.met"),
+        ({"display": {"case_fields": [{"field": "o", "values": {1: "Yes"}}]}}, "case_fields[0].values"),
+        ({"display": {"case_fields": [{"field": "o", "values": {"x" * 121: "X"}}]}}, "case_fields[0].values"),
+        (
+            {"display": {"case_fields": [{"field": "o", "values": {f"v{i}": "V" for i in range(101)}}]}},
+            "at most 100",
+        ),
     ],
 )
 def test_a_malformed_display_block_is_refused(vq, patch, message):
@@ -235,3 +245,44 @@ def test_a_done_property_that_is_not_a_bool_property_is_refused(vq, name, messag
     # without the properties document only the shape is checked
     shape_only = display_problems(doc)
     assert bool(shape_only) == (not isinstance(name, str) or " " in name)
+
+
+# ── A field's stored-value -> label map (#2578) ────────────────────────────────
+
+OUTCOMES = {"met": "Met her", "not_home": "Not at home", "left": "Left the programme"}
+
+
+def test_a_fields_value_map_validates_and_resolves_into_the_display(vq):
+    props, inds = vq
+    doc = {
+        **copy.deepcopy(inds),
+        "display": {
+            "case_fields": [{"field": "status", "label": "Status", "values": {"active": "Active"}}],
+            "visit_fields": [{"field": "visit_outcome", "label": "Outcome", "values": OUTCOMES}],
+        },
+    }
+    assert validate_registry(props, doc, {}) == []
+    d = resolve_display(props, doc)
+    assert d["visit_fields"] == [{"field": "visit_outcome", "label": "Outcome", "format": "text", "values": OUTCOMES}]
+    assert d["case_fields"] == [
+        {"field": "status", "label": "Status", "format": "text", "values": {"active": "Active"}}
+    ]
+
+
+def test_a_field_without_a_value_map_resolves_without_the_key(vq):
+    """Control: no `values` declared, none carried -- so a snapshot of a registry
+    that never uses it is byte-for-byte what it was."""
+    props, inds = vq
+    doc = {**copy.deepcopy(inds), "display": {"visit_fields": [{"field": "visit_outcome"}]}}
+    assert "values" not in resolve_display(props, doc)["visit_fields"][0]
+
+
+def test_resolve_keeps_only_the_string_pairs_of_a_value_map(vq):
+    """The save gate refuses a bad map; a record that predates it still resolves,
+    carrying only the pairs a render can print."""
+    props, inds = vq
+    doc = {
+        **copy.deepcopy(inds),
+        "display": {"visit_fields": [{"field": "o", "values": {"met": "Met her", "x": 3, 1: "One"}}]},
+    }
+    assert resolve_display(props, doc)["visit_fields"][0]["values"] == {"met": "Met her"}
