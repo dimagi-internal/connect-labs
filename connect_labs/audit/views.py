@@ -49,6 +49,7 @@ from connect_labs.labs import s3_export
 from connect_labs.labs.analysis.data_access import get_flw_names_for_opportunity
 from connect_labs.labs.analysis.sse_streaming import CeleryTaskStreamView
 from connect_labs.labs.context import get_org_data
+from connect_labs.labs.integrations.connect.api_client import LabsAPIError
 from connect_labs.opportunity.models import VisitValidationStatus
 from connect_labs.utils.json_safe import safe_json_for_script
 from connect_labs.utils.tables import get_validated_page_size
@@ -590,6 +591,31 @@ class ExperimentSaveAuditView(LoginRequiredMixin, View):
             finally:
                 data_access.close()
 
+        except LabsAPIError as e:
+            # Connect REFUSED the write (e.g. 403). That is not a labs fault, and
+            # reporting it as one was how a single tab's autosave loop paged
+            # labs-jj-alb-target-5xx-high (#2575). Pass the 4xx through so the
+            # page can stop retrying and tell the auditor their work is unsaved.
+            if e.status_code is not None and 400 <= e.status_code < 500:
+                logger.warning(
+                    "Audit save for session %s refused upstream (%s): %s",
+                    session_id,
+                    e.status_code,
+                    (e.body or "")[:300],
+                )
+                return JsonResponse(
+                    {
+                        "error": (
+                            f"Connect refused to save this audit (HTTP {e.status_code}). "
+                            "Your latest changes are NOT saved. Keep this tab open and "
+                            "contact the labs team."
+                        ),
+                        "upstream_status": e.status_code,
+                    },
+                    status=e.status_code,
+                )
+            logger.exception("Failed to save audit session")
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
         except Exception:
             logger.exception("Failed to load audit session data")
             return JsonResponse({"error": "An internal error occurred"}, status=500)

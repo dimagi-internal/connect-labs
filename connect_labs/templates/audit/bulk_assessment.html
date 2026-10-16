@@ -1031,9 +1031,10 @@
           <span x-show="autoSaveStatus === 'saved' && !hasUnsavedChanges" class="text-sm text-green-600 font-medium">
             <i class="fa-solid fa-circle-check mr-1"></i>All changes saved
           </span>
-          <span x-show="hasUnsavedChanges && autoSaveStatus === 'error'" class="text-sm text-orange-600 font-medium">
+          <span x-show="hasUnsavedChanges && autoSaveStatus === 'error' && !autoSaveRefused" class="text-sm text-orange-600 font-medium">
             <i class="fa-solid fa-exclamation-triangle mr-1"></i>Unsaved changes — retrying…
           </span>
+          <span x-show="hasUnsavedChanges && autoSaveRefused" class="text-sm text-red-700 font-semibold" x-text="autoSaveRefused"></span>
         </div>
       </div>
     </div>
@@ -1349,6 +1350,8 @@ function bulkAssessmentInterface() {
     saving: false,
     autoSaveTimer: null,
     autoSaveStatus: 'idle', // idle | saving | saved | error
+    autoSaveRefused: '', // server refused the save (4xx): stop retrying, show this
+    autoSaveFailures: 0, // consecutive transient failures, drives the backoff
     showApplyModal: false,
     showSuccessModal: false,
     applyingResults: false,
@@ -2346,12 +2349,15 @@ function bulkAssessmentInterface() {
         this.saving = false;
       }
     },
-    scheduleAutoSave() {
+    scheduleAutoSave(delay = 1500) {
       // Debounce a silent save of the current tagging so a closed tab or
       // timeout no longer loses pass/fail/duplicate/notes edits.
       if (this.isReadOnly) return;
+      // A new edit retries a save the server refused, rather than leaving the
+      // auditor stuck; the next refusal stops it again.
+      this.autoSaveRefused = '';
       if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
-      this.autoSaveTimer = setTimeout(() => this.autoSave(), 1500);
+      this.autoSaveTimer = setTimeout(() => this.autoSave(), delay);
     },
     async autoSave() {
       if (this.isReadOnly || !this.hasUnsavedChanges) return;
@@ -2365,18 +2371,32 @@ function bulkAssessmentInterface() {
       try {
         const formData = this.buildSavePayload();
         const response = await fetch(this.saveUrl, { method: 'POST', body: formData });
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
+        if (response.status >= 400 && response.status < 500) {
+          // The server refused this save and will refuse it again: retrying on
+          // a timer only hammers it (one tab sent ~1,200 refused saves an hour
+          // and paged the 5xx alarm, #2575). Stop, and say so persistently.
+          this.autoSaveStatus = 'error';
+          this.autoSaveRefused = data.error || `Save refused (HTTP ${response.status}). Your changes are NOT saved.`;
+          this.autoSaveFailures = 0;
+          return;
+        }
         if (!response.ok || !data.success) {
           throw new Error(data.error || 'Failed to auto-save');
         }
         this.hasUnsavedChanges = false;
         this.autoSaveStatus = 'saved';
+        this.autoSaveFailures = 0;
       } catch (error) {
-        // Leave hasUnsavedChanges set so the tab-close warning still fires; no
-        // alert (autosave is silent). Retry after the debounce interval.
+        // Transient (5xx / network): leave hasUnsavedChanges set so the
+        // tab-close warning still fires, and retry with capped exponential
+        // backoff -- 3s, 6s, 12s ... 60s -- instead of a fixed 1.5s loop.
         this.autoSaveStatus = 'error';
         console.error('Auto-save failed:', error);
-        this.scheduleAutoSave();
+        this.autoSaveFailures = (this.autoSaveFailures || 0) + 1;
+        const delay = Math.min(60000, 1500 * 2 ** this.autoSaveFailures);
+        if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
+        this.autoSaveTimer = setTimeout(() => this.autoSave(), delay);
       } finally {
         this.saving = false;
       }
