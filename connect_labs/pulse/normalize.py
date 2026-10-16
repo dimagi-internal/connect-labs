@@ -124,11 +124,11 @@ SERVICE_LABELS.update(
         "interview": "Interviews",
         # Confirmed by Jonathan 2026-10-15.
         "rs": "Rooftop Sampling",
-        # Chlorine dispensers and the rest of safe-water delivery. Confirmed by
-        # Jonathan 2026-09-17 when the 2025 Chlorine EOI needed a program:
-        # this is a NEW type, so it may carry no Connect opportunities yet and
-        # show only on the "applied for" side until it does.
-        "water": "Water",
+        # Chlorine dispensers at hand pumps. The 2025 Chlorine EOI was first
+        # tagged `water`; it is the same program (marketplace.programs.ALIASES).
+        # Confirmed by Jonathan 2026-10-15.
+        "chlorine": "Water Chlorination Hand Pumps",
+        "water": "Water Chlorination Hand Pumps",
         # The last three real delivery types that had no name and rendered as
         # TMS, CONVERSATION and CHOLERA — codes above correct numbers, which is
         # the state this table exists to make visible rather than paper over.

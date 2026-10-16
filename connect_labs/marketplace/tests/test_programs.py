@@ -107,31 +107,47 @@ class TestThePagesShowTheTags:
         assert "FLWS" not in body
 
 
-class TestWaterIsAKnownProgram:
-    """Chlorine dispensers needed a program and Connect had none that fitted.
-    `water` was added deliberately rather than the round being tagged `cholera`,
-    which was the nearest guess and would have been wrong.
+class TestChlorineIsOneProgram:
+    """The 2025 Chlorine EOI was tagged `water` before Connect had a delivery
+    type for it; Connect's opportunities say `chlorine`. One program, one card.
     """
 
-    def test_water_reads_as_a_name_not_a_code(self):
-        assert programs.label("water") == "Water"
+    def test_chlorine_reads_as_a_name_not_a_code(self):
+        assert programs.label("chlorine") == "Water Chlorination Hand Pumps"
+        assert programs.label("water") == "Water Chlorination Hand Pumps"
 
-    def test_water_is_a_real_program_so_it_can_be_filtered_on(self):
-        assert programs.is_program("water")
-        assert programs.chips(["water"]) == [{"slug": "water", "label": "Water"}]
+    def test_water_is_read_as_chlorine(self):
+        assert programs.canonical(" Water ") == "chlorine"
+        assert programs.canonical("chc") == "chc"
 
-    def test_a_new_type_with_no_opportunities_yet_still_works_on_the_applied_side(self, db):
-        """`water` is new, so pulse may carry no opportunities under it for a
-        while. The round's tag must not depend on delivery having happened."""
+    def test_the_directory_import_stores_the_one_tag(self):
+        from connect_labs.marketplace.directory import parse_rounds
+        from connect_labs.marketplace.tests.test_eoi import ROUND_ROWS
+
+        header, row = list(ROUND_ROWS[0]), list(ROUND_ROWS[1])
+        at = next(i for i, h in enumerate(header) if h.startswith("Connect Programme"))
+        row += [""] * (len(header) - len(row))
+        row[at] = "Water"
+        rounds, _ = parse_rounds([header, row])
+        assert rounds[0].delivery_type == "chlorine"
+
+    def test_non_managed_opportunities_are_not_a_program(self):
+        assert not programs.is_program("non-managed-opportunity")
+        assert programs.chips(["non-managed-opportunity", "chc"]) == [
+            {"slug": "chc", "label": "Child Health Campaign"}
+        ]
+
+    def test_a_round_still_works_on_the_applied_side_without_delivery(self, db):
+        """The round's tag must not depend on delivery having happened."""
         org = make_partner("Riverbank Water Trust", "RWT", countries=["Nigeria"])
         round_ = Solicitation.objects.create(
-            slug="chlorine-2025", title="Chlorine 2025", status="closed", delivery_type="water"
+            slug="chlorine-2025", title="Chlorine 2025", status="closed", delivery_type="chlorine"
         )
         SolicitationResponse.objects.create(
             solicitation=round_, llo_entity=org, source_row=2, org_name=org.name, match_state="name"
         )
         fetched = next(o for o in queries.all_rows_with_rounds() if o.pk == org.pk)
-        assert queries.applied_programs_of(fetched) == {"water"}
+        assert queries.applied_programs_of(fetched) == {"chlorine"}
         assert queries.delivered_programs_by_org_name().get("Riverbank Water Trust") is None
 
 
@@ -184,11 +200,9 @@ class TestPictures:
             "readers",
             "ecd",
             "nutrition",
-            "water",
             "interview",
             "chlorine",
             "tms",
-            "non-managed-opportunity",
             "malaria",
             "cholera",
             "ivp",
