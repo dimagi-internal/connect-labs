@@ -1051,7 +1051,10 @@ def synthetic_set_allowed_domains(user, *, opportunity_id: int, allowed_domains:
         "new opp_id from the 10_000+ range). The caller must already be able to see "
         "the source (its labs-only allowlist, or Connect membership for a real-backed "
         "source), because the clone re-exposes the source's folder to a new audience. "
-        "The clone counts as generated data only if the source does."
+        "The clone counts as generated data only if the source does. Records are "
+        "copied (the same folder), never regenerated. Pass program_id to file the "
+        "copy under an existing labs-only program, so several opps copied from one "
+        "cascade stay in ONE program; omit it and the copy is its own program."
     ),
     input_schema={
         "type": "object",
@@ -1064,6 +1067,14 @@ def synthetic_set_allowed_domains(user, *, opportunity_id: int, allowed_domains:
             },
             "org_name": {"type": ["string", "null"], "default": None},
             "program_name": {"type": ["string", "null"], "default": None},
+            "program_id": {
+                "type": ["integer", "null"],
+                "default": None,
+                "description": "Labs-only program the copy joins (reserved >= 10_000). The caller must "
+                "already be able to see that program. Set it to keep several copied opps (e.g. every "
+                "partner opp of one cascade) in one program. Unset = the copy is its own program "
+                "(program_id = opportunity_id).",
+            },
             "allowed_domains": {
                 "type": "array",
                 "items": {"type": "string"},
@@ -1086,6 +1097,7 @@ def synthetic_clone_to_labs_only(
     label: str | None = None,
     org_name: str | None = None,
     program_name: str | None = None,
+    program_id: int | None = None,
     allowed_domains: list[str] | None = None,
 ) -> dict[str, Any]:
     try:
@@ -1105,11 +1117,16 @@ def synthetic_clone_to_labs_only(
     # real-backed one. Without this a caller could re-expose any registered folder
     # under an allowlist of their choosing.
     _require_opportunity_access(user, source_opportunity_id)
+    # A program is a read scope, so joining one is checked exactly as
+    # synthetic_create_labs_only checks it: an existing program must already be yours.
+    if program_id is not None:
+        _require_labs_only_program(user, program_id)
     row = register_labs_only_opp(
         label=label or f"Clone of {source.label or source.opportunity_id}",
         gdrive_folder_id=source.gdrive_folder_id,
         org_name=org_name or source.org_name or "Labs Synthetic",
         program_name=program_name or source.program_name or "Labs Synthetic",
+        program_id=program_id,
         allowed_domains=(allowed_domains if allowed_domains is not None else ["@dimagi.com", "@dimagi-ai.com"]),
         enabled=True,
         created_by=user,
@@ -1128,6 +1145,7 @@ def synthetic_clone_to_labs_only(
         "gdrive_folder_id": row.gdrive_folder_id,
         "org_name": row.org_name,
         "program_name": row.program_name,
+        "program_id": row.program_id,
         "allowed_domains": list(row.allowed_domains),
         "labs_only": True,
     }

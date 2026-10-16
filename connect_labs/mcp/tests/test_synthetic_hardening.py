@@ -263,6 +263,83 @@ def test_clone_to_labs_only_refuses_a_real_backed_source_without_connect_access(
     assert exc.value.code == "PERMISSION_DENIED"
 
 
+def _partners_opp(opportunity_id, partner, **extra):
+    return SyntheticOpportunity.objects.create(
+        opportunity_id=opportunity_id,
+        gdrive_folder_id=f"folder-{opportunity_id}",
+        labs_only=True,
+        allowed_domains=["@partner.org"],
+        created_by=partner,
+        **extra,
+    )
+
+
+def test_clone_to_labs_only_joins_a_program_the_caller_can_see(partner):
+    """Several partner opps copied from one cascade stay in ONE program (#2571)."""
+    _partners_opp(21_700, partner, program_id=21_700)
+    source = _partners_opp(21_710, partner, program_id=21_705)
+    mark_generated(source.opportunity_id, source.gdrive_folder_id)
+
+    out = get_tool("synthetic_clone_to_labs_only").handler(
+        partner, source_opportunity_id=21_710, program_id=21_700, allowed_domains=["@partner.org"]
+    )
+
+    row = SyntheticOpportunity.objects.get(opportunity_id=out["opportunity_id"])
+    assert out["program_id"] == row.program_id == 21_700
+    # Copied, not regenerated: the same folder, and the generated mark travels with it.
+    assert row.gdrive_folder_id == "folder-21710"
+    assert is_generated(row)
+
+
+def test_two_clones_into_one_program_share_it(partner):
+    _partners_opp(21_720, partner, program_id=21_720)
+    for src in (21_730, 21_731):
+        _partners_opp(src, partner, program_id=21_725)
+    clone = get_tool("synthetic_clone_to_labs_only").handler
+    ids = [
+        clone(partner, source_opportunity_id=src, program_id=21_720, allowed_domains=["@partner.org"])[
+            "opportunity_id"
+        ]
+        for src in (21_730, 21_731)
+    ]
+    rows = SyntheticOpportunity.objects.filter(opportunity_id__in=ids)
+    assert {r.program_id for r in rows} == {21_720}
+    assert {r.gdrive_folder_id for r in rows} == {"folder-21730", "folder-21731"}
+
+
+def test_clone_to_labs_only_without_program_id_is_its_own_program(partner):
+    _partners_opp(21_740, partner, program_id=21_745)
+    out = get_tool("synthetic_clone_to_labs_only").handler(
+        partner, source_opportunity_id=21_740, allowed_domains=["@partner.org"]
+    )
+    row = SyntheticOpportunity.objects.get(opportunity_id=out["opportunity_id"])
+    assert out["program_id"] is None
+    assert row.program_id is None
+    assert row.gdrive_folder_id == "folder-21740"
+
+
+def test_clone_to_labs_only_refuses_another_tenants_program(partner):
+    """A program is a read scope: joining theirs would open their program's records to you."""
+    _other_tenants_opp(21_750, program_id=21_760)
+    _partners_opp(21_770, partner)
+    before = SyntheticOpportunity.objects.count()
+    with pytest.raises(MCPToolError) as exc:
+        get_tool("synthetic_clone_to_labs_only").handler(
+            partner, source_opportunity_id=21_770, program_id=21_760, allowed_domains=["@partner.org"]
+        )
+    assert exc.value.code == "PERMISSION_DENIED"
+    assert SyntheticOpportunity.objects.count() == before
+
+
+def test_clone_to_labs_only_refuses_a_program_id_below_the_labs_only_floor(partner):
+    _partners_opp(21_780, partner)
+    before = SyntheticOpportunity.objects.count()
+    with pytest.raises(MCPToolError) as exc:
+        get_tool("synthetic_clone_to_labs_only").handler(partner, source_opportunity_id=21_780, program_id=25)
+    assert exc.value.code == "PERMISSION_DENIED"
+    assert SyntheticOpportunity.objects.count() == before
+
+
 def test_profile_from_prod_is_registered_as_the_request_facing_tool():
     """The decorator used to sit on the request-less inner function, whose signature
     has no ``user`` — so the tool raised TypeError on every call."""
