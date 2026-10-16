@@ -229,5 +229,5 @@ END of the body, not in `javascript`: that block renders inside <head>, where
 {% endcomment %}
 {% block inline_javascript %}
 {{ block.super }}
-{% if canopy_panel %}{% include "canopy_host/panel.html" %}{% endif %}
+{% if canopy_panel %}{% include "workflow/_agent_launcher_reserve.html" %}{% include "canopy_host/panel.html" %}{% endif %}
 {% endblock inline_javascript %}

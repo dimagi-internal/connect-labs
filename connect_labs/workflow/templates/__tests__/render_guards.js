@@ -364,3 +364,112 @@ export function gapsOverVisits(root) {
   });
   return out;
 }
+
+// ── Names cut short ─────────────────────────────────────────────────────────
+
+const CLIPS = /\b(truncate|text-ellipsis|whitespace-nowrap|line-clamp-\d)\b/;
+
+function clipsText(e) {
+  const cls = e.getAttribute('class') || '';
+  const st = e.getAttribute('style') || '';
+  return (
+    CLIPS.test(cls) ||
+    /text-overflow:\s*ellipsis/.test(st) ||
+    /white-space:\s*nowrap/.test(st)
+  );
+}
+
+/**
+ * Headline-tile labels (`[data-tile-label]`) that can be cut short. A tile's
+ * label is the indicator's NAME: "TRANSFER …" and "SHORT VISI…" (the ACE
+ * Kaduna render, #2578) name nothing. happy-dom does no layout, so this reads
+ * the cause instead of the pixels: a label, or anything between it and its
+ * tile head, that truncates or refuses to wrap, or a head that holds a chip
+ * beside the label without letting the chip wrap onto its own line.
+ */
+export function clippedTileLabels(root) {
+  const out = [];
+  root.querySelectorAll('[data-tile-label]').forEach(function (label) {
+    const head = label.closest('[data-tile-head]') || label.parentElement;
+    let reason = null;
+    for (let e = label; e && !reason; e = e.parentElement) {
+      if (clipsText(e)) reason = 'clips';
+      if (e === head) break;
+    }
+    if (
+      !reason &&
+      head &&
+      head.children.length > 1 &&
+      !/\bflex-wrap\b/.test(head.getAttribute('class') || '')
+    )
+      reason = 'shares a line it cannot leave';
+    if (reason) out.push({ label: cellText(label), reason });
+  });
+  return out;
+}
+
+// ── A count that disagrees with the rows under it ───────────────────────────
+
+/**
+ * Visit cards whose header gap count ("N gaps over D days") differs from the
+ * number of "Days since previous" cells the card marks over the threshold
+ * (`[data-over-gap]`). The chip summarises the rows it sits over; when it
+ * counts something the rows do not show, a reader checking it finds a
+ * mismatch and stops trusting the other counts (#2578: "5 gaps over 7 days"
+ * over four marked intervals). Only cards that show the column are checked.
+ */
+export function gapCountMismatches(root) {
+  const out = [];
+  const re = /(\d+) gaps? over (\d+) days/;
+  Array.from(root.querySelectorAll('*'))
+    .filter(function (e) {
+      return (
+        re.test(e.textContent) &&
+        !Array.from(e.children).some((c) => re.test(c.textContent))
+      );
+    })
+    .forEach(function (e) {
+      // The card: the nearest ancestor holding a "Days since previous" head.
+      let card = e.parentElement;
+      while (
+        card &&
+        !Array.from(card.querySelectorAll('th')).some(
+          (th) => cellText(th) === 'Days since previous',
+        )
+      )
+        card = card.parentElement;
+      if (!card) return;
+      const said = Number(e.textContent.match(re)[1]);
+      const marked = card.querySelectorAll('[data-over-gap]').length;
+      if (said !== marked) out.push({ said, marked });
+    });
+  return out;
+}
+
+// ── Affordances for states the registry cannot produce ──────────────────────
+
+/**
+ * With NO indicator banded (no measure has `bands`), no cell can be Off target
+ * or Watch, so a legend for those states and an Attention column counting them
+ * explain and count nothing (#2578). `banded` is whether the payload bands any
+ * indicator; when it does, nothing is reported -- the legend and the column
+ * are the page's job then.
+ */
+export function unreachableBandAffordances(root, banded) {
+  if (banded) return [];
+  const out = [];
+  ['Off target', 'Watch', 'Uncoloured: on target or no target'].forEach(
+    function (word) {
+      if (
+        Array.from(root.querySelectorAll('span')).some(
+          (s) => cellText(s) === word,
+        )
+      )
+        out.push({ legend: word });
+    },
+  );
+  root.querySelectorAll('th').forEach(function (th) {
+    if (/^Attention\b/.test(cellText(th))) out.push({ column: 'Attention' });
+  });
+  return out;
+}

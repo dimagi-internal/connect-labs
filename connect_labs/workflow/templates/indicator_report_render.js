@@ -610,6 +610,15 @@ function WorkflowUI({
       off: c.label + ' < ' + lo,
     };
   }
+  // Whether the registry grades ANY indicator. A measure with no `bands` is
+  // never Off target or Watch (snapshot.band_of: "unbanded"), so a registry
+  // that bands nothing can draw neither: the Off target / Watch / Uncoloured
+  // legend and the Attention column (its count of Off target and Watch cells)
+  // would explain and count states that cannot occur. Both are dropped then,
+  // and kept exactly as they were as soon as one indicator defines a band.
+  var BANDED = MEASURES.some(function (m) {
+    return Array.isArray(m.bands) && m.bands.length > 0;
+  });
   // Each band's rule rides on its legend chip as a tooltip, built from the
   // measures' own thresholds.
   var BAND_RULES = COLS.map(bandRule).filter(Boolean);
@@ -627,26 +636,34 @@ function WorkflowUI({
     return (
       <div className="px-4 py-2 text-sm text-gray-700 border-b border-gray-100 space-y-1">
         <div className="flex items-center gap-x-4 gap-y-1 flex-wrap">
-          <span
-            className={'whitespace-nowrap' + (OFF_RULE ? ' cursor-help' : '')}
-            title={OFF_RULE}
-          >
-            <span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-100 border border-red-400 mr-1 align-middle"></span>
-            Off target
-          </span>
-          <span
-            className="whitespace-nowrap cursor-help"
-            title={
-              'Short of target, not yet off target' +
-              (WATCH_RULE ? ' — ' + WATCH_RULE : '')
-            }
-          >
-            <span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-100 border border-amber-400 mr-1 align-middle"></span>
-            Watch
-          </span>
-          <span className="whitespace-nowrap">
-            Uncoloured: on target or no target
-          </span>
+          {BANDED ? (
+            <span
+              data-band-legend="red"
+              className={'whitespace-nowrap' + (OFF_RULE ? ' cursor-help' : '')}
+              title={OFF_RULE}
+            >
+              <span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-100 border border-red-400 mr-1 align-middle"></span>
+              Off target
+            </span>
+          ) : null}
+          {BANDED ? (
+            <span
+              data-band-legend="yellow"
+              className="whitespace-nowrap cursor-help"
+              title={
+                'Short of target, not yet off target' +
+                (WATCH_RULE ? ' — ' + WATCH_RULE : '')
+              }
+            >
+              <span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-100 border border-amber-400 mr-1 align-middle"></span>
+              Watch
+            </span>
+          ) : null}
+          {BANDED ? (
+            <span data-band-legend="none" className="whitespace-nowrap">
+              Uncoloured: on target or no target
+            </span>
+          ) : null}
           <span className="whitespace-nowrap">
             {'n<' + props.minDenominator + ': too few records'}
           </span>
@@ -688,6 +705,7 @@ function WorkflowUI({
     );
   }
   function AttnCell(props) {
+    if (!BANDED) return null;
     if (props.reds || props.yellows)
       return <R.AttentionCell reds={props.reds} yellows={props.yellows} />;
     return (
@@ -1228,7 +1246,9 @@ function WorkflowUI({
       title:
         'Indicators Off target (red count); if none, indicators on Watch (amber count)',
     },
-  ];
+  ].filter(function (t) {
+    return BANDED || t.sortKey !== 'attn';
+  });
   // Which marks a table's rows actually carry, so the legend lists only those:
   // the oldest red Last-visit date, and whether any cell shows "—".
   function dashEntry(c, e) {
@@ -1362,8 +1382,9 @@ function WorkflowUI({
         <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
           <td className="px-3 py-2 whitespace-nowrap">{'All ' + ORG.plural}</td>
           {cells(P.programInd)}
-          <td></td>
-          <td></td>
+          {TRAIL.map(function (t) {
+            return <td key={t.sortKey}></td>;
+          })}
         </tr>
       </Table>
     );
@@ -1621,7 +1642,7 @@ function WorkflowUI({
       list.every(function (w) {
         return w.n === list[0].n;
       });
-    var width = (sameN ? 1 : 2) + COLS.length + 2;
+    var width = (sameN ? 1 : 2) + COLS.length + TRAIL.length;
     // Drilled to one organisation or opportunity: a caption row names it, its
     // size and the indicator it is flagged on.
     var caption = null;
