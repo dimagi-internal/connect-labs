@@ -235,6 +235,8 @@ The `## Product Description` section drives automated documentation updates and 
 
 - `gh pr merge <N> --squash` (or with no flag — squash is the only allowed method) **lands the commit immediately** once the PR's own checks are green. The branch does not have to be up to date with `main`.
 - **`main` is tested after the fact.** CI runs the full suite on every push to `main`. If a merge that was green on its PR goes red on `main` (a semantic conflict with something that merged in between), that push run is the signal, within ~3 minutes. **Fix forward**: a follow-up PR, not a revert-and-wait.
+- **Migration numbers race.** Two branches cut from the same `main` both add `00NN_*`; each is green alone and `main` goes red with conflicting leaf migrations once both land. Right before opening a migration PR, check `git fetch origin main && git ls-tree --name-only origin/main <app>/migrations/` and renumber if your number is taken.
+- **If the required checks never appear, the branch is conflicting.** GitHub does not run `pull_request` workflows on an unmergeable branch, so a PR in conflict with `main` shows no `linter`/`pytest` at all and `gh pr merge` refuses in a way that reads like a permissions problem. Check `gh pr view <N> --json mergeable` first (`CONFLICTING`) and rebase, rather than re-pushing or recreating the PR.
 - Confirm a merge actually landed before deploying: `git fetch origin main && git log origin/main --oneline -5`. "Deploy only from `main`" (above) depends on this.
 - `ci.yml` keeps its `merge_group` trigger, inert, so the queue can be switched back on without the deadlock its comment describes.
 
