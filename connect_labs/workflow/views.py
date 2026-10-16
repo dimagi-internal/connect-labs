@@ -869,7 +869,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 # drill links carry `owning_program_id` -- so look there before
                 # telling the user it does not exist ("Workflow definition 9027 not
                 # found under opportunity 10065", for a link the report built).
-                definition = self._definition_in_hinted_program(definition_id)
+                definition = self._definition_in_hinted_program(request, definition_id)
             def_program_id = getattr(definition, "program_id", None) if definition else None
             def_opportunity_id = getattr(definition, "opportunity_id", None) if definition else None
             if def_program_id and not def_opportunity_id:
@@ -930,14 +930,15 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             logger.warning("Could not read definition %s to see if it is a page", definition_id, exc_info=True)
             return None
 
-    def _definition_in_hinted_program(self, definition_id):
+    @staticmethod
+    def _definition_in_hinted_program(request, definition_id):
         """The definition, read in the program the URL names (`program_id`, or the
         `owning_program_id` the program report's links carry), or None."""
-        hint = self.request.GET.get("program_id") or self.request.GET.get("owning_program_id") or ""
+        hint = request.GET.get("program_id") or request.GET.get("owning_program_id") or ""
         if not re.fullmatch(r"\d+", hint.strip()):
             return None
         try:
-            return WorkflowDataAccess(request=self.request, program_id=int(hint)).get_definition(definition_id)
+            return WorkflowDataAccess(request=request, program_id=int(hint)).get_definition(definition_id)
         except Exception:
             logger.info("Scope recovery: definition %s not found in program %s", definition_id, hint)
             return None
