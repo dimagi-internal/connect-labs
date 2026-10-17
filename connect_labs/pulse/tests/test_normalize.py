@@ -256,6 +256,7 @@ class TestScaffolding:
         "slug,expected",
         [
             ("ai-demo-space", True),
+            ("ace-nm-org", True),
             ("ccc-delivery-sandbox", True),
             ("test_nm_246", True),
             ("march-demo", True),

@@ -729,6 +729,44 @@ class TestBudgetComesFromThePerOpportunityEndpoint:
 
         assert ingest.refresh_budget(object(), opp) is False
 
+    def test_a_failed_or_empty_read_goes_to_the_back_of_the_queue(self, monkeypatch):
+        """The sweep used to pick "budget still null" oldest first and stamp
+        nothing on a 404 or an unset budget, so those rows held the front of
+        every sweep and a live opportunity behind them was never read."""
+        from connect_labs.pulse import client as pulse_client
+        from connect_labs.pulse import ingest
+
+        deleted = self._opp(opportunity_id=1)
+        unset = self._opp(opportunity_id=2)
+        live = self._opp(opportunity_id=3)
+
+        def fake(_client, path):
+            if path == "/export/opportunity/1/":
+                raise RuntimeError("404 Not Found")
+            if path == "/export/opportunity/2/":
+                return {"total_budget": None}
+            return {"total_budget": 208_292_500, "currency": "NGN"}
+
+        monkeypatch.setattr(pulse_client, "fetch_json", fake)
+
+        assert ingest.refresh_budgets(object(), limit=2) == 0
+        assert ingest.refresh_budgets(object(), limit=2) == 1
+
+        live.refresh_from_db()
+        assert live.total_budget == 208_292_500
+        for opp in (deleted, unset, live):
+            opp.refresh_from_db()
+            assert opp.budget_read_at is not None
+
+    def test_test_opportunities_are_not_read(self, monkeypatch):
+        from connect_labs.pulse import ingest
+
+        self._opp(opportunity_id=9, is_test=True)
+        seen = self._client(monkeypatch, {"total_budget": 1})
+
+        ingest.refresh_budgets(object(), limit=5)
+        assert seen == []
+
     def test_a_missing_currency_does_not_wipe_the_one_on_file(self, monkeypatch):
         """The cheap tier sets currency from the program; a sparse payload
         must not undo that."""

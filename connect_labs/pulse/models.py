@@ -246,6 +246,11 @@ class PulseOpportunity(models.Model):
     total_budget = models.BigIntegerField(null=True, blank=True)
     budget_per_user = models.BigIntegerField(null=True, blank=True)
     max_visits_per_user = models.BigIntegerField(null=True, blank=True)
+    # When the budget was last ASKED for, whether or not the read succeeded or
+    # changed anything. The sweep takes the least recently asked first, so an
+    # opportunity Connect 404s or leaves unset goes to the back of the queue
+    # instead of holding its place at the front forever.
+    budget_read_at = models.DateTimeField(null=True, blank=True)
 
     # USD per unit of this opportunity's own currency, taken from prod's own
     # conversion rather than an FX table: a completed work carries both

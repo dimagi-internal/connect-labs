@@ -530,6 +530,36 @@ def refresh_budget(client, opp: PulseOpportunity) -> bool:
     return True
 
 
+def refresh_budgets(client, limit: int) -> int:
+    """Read the budgets of the `limit` opportunities least recently asked about.
+
+    Every attempt is stamped on `budget_read_at`, including one that fails or
+    finds nothing to change. Ordering by "budget still null" instead, as this
+    used to, starved the queue: an opportunity Connect has deleted 404s, one
+    with no budget set returns null, neither was ever saved, so the same rows
+    sat at the front of every sweep while 2230 -- a live RUTF opportunity with
+    a 208M NGN budget -- waited 78th and the marketplace showed nothing funded.
+
+    Test opportunities are skipped: no figure reads their budget.
+
+    Returns how many budgets actually changed.
+    """
+    from django.db.models import F
+
+    changed = 0
+    queue = PulseOpportunity.objects.filter(is_test=False).order_by(
+        F("budget_read_at").asc(nulls_first=True), "opportunity_id"
+    )
+    for opp in list(queue[:limit]):
+        try:
+            if refresh_budget(client, opp):
+                changed += 1
+        except Exception as exc:  # noqa: BLE001 — one opp must not kill the sweep
+            logger.warning("[pulse] budget refresh failed for opp %s: %s", opp.opportunity_id, exc)
+        PulseOpportunity.objects.filter(pk=opp.pk).update(budget_read_at=timezone.now())
+    return changed
+
+
 def refresh_invoices(client, opp: PulseOpportunity) -> int:
     """Mirror one opportunity's invoices, as Connect exports them.
 
