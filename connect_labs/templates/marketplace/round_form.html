@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% comment %}Tailwind, not Bootstrap. Brand values from tailwind/tailwind.css.{% endcomment %}
+{% block title %}Form · {{ round.title }}{% endblock %}
+
+{% block content %}
+<div class="max-w-screen-md mx-auto px-0 sm:px-6 lg:px-8 py-5 sm:py-6">
+
+  <div class="text-[12.5px] text-gray-500 mb-3.5">
+    <a href="{% url 'marketplace:rounds' %}" class="hover:text-gray-700">Expressions of interest</a> ·
+    <a href="{% url 'marketplace:round' round.slug %}" class="hover:text-gray-700">{{ round.title }}</a> ·
+    <span class="text-gray-900">Form</span>
+  </div>
+
+  <div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-6 py-5 mb-4.5">
+    <div class="text-xl sm:text-2xl font-semibold text-brand-deep-purple">{{ round.title }}</div>
+    {% if round.target_countries %}
+      <div class="text-[13px] text-gray-600 mt-1.5 leading-relaxed">{{ round.target_countries }}</div>
+    {% endif %}
+    <div class="text-[12px] text-gray-400 mt-2">
+      What applicants were asked, from the response sheet{% if round.last_ingested_at %} as read {{ round.last_ingested_at|date:"j M Y" }}{% endif %}. A preview: nothing is submitted from this page.
+      {% if round.form_url %}<a href="{{ round.form_url }}" target="_blank" rel="noopener noreferrer" class="text-brand-indigo hover:text-brand-deep-purple">Open the Google Form</a>{% endif %}
+    </div>
+  </div>
+
+  <div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-6 py-5">
+    <form class="flex flex-col gap-5" onsubmit="return false">
+      {% for q in questions %}
+        <label class="flex flex-col gap-1.5">
+          <span class="text-[13px] text-gray-800"><span class="text-gray-400 tabular-nums mr-1.5">{{ forloop.counter }}.</span>{{ q.text }}</span>
+          <textarea rows="2" disabled class="w-full rounded-md border border-gray-200 bg-gray-50 text-sm px-3 py-2 resize-none"></textarea>
+        </label>
+      {% empty %}
+        <div class="text-sm text-gray-500">{% if round.was_ingested %}This round's sheet had no questions.{% else %}This round has never been read.{% endif %}</div>
+      {% endfor %}
+    </form>
+  </div>
+</div>
+{% endblock %}

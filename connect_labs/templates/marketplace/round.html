@@ -58,6 +58,18 @@
           <div class="text-[22px] sm:text-[25px] font-semibold {% if unresolved_count %}text-brand-sunset{% else %}text-gray-300{% endif %} tabular-nums">{{ unresolved_count }}</div>
           <div class="text-[11px] text-gray-400 tracking-wide">NEED A VERDICT</div>
         </div>
+        <div title="No sign the organization was in the network before this round opened">
+          <div class="text-[22px] sm:text-[25px] font-semibold text-brand-indigo tabular-nums">{{ mix.new }}</div>
+          <div class="text-[11px] text-gray-400 tracking-wide">NEW TO THE NETWORK</div>
+        </div>
+        <div title="Answered an earlier round, joined the directory earlier, or was already delivering on Connect">
+          <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ mix.returning }}</div>
+          <div class="text-[11px] text-gray-400 tracking-wide">RETURNING</div>
+        </div>
+        <div>
+          <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ mix.country_count }}</div>
+          <div class="text-[11px] text-gray-400 tracking-wide">COUNTR{{ mix.country_count|pluralize:"Y,IES" }}</div>
+        </div>
         {% endif %}
       </div>
     </div>
@@ -130,16 +142,22 @@
                                {% if a.outcome == 'after' %}bg-green-100 text-green-800{% else %}bg-gray-100 text-gray-500{% endif %}">
                     {{ a.name|slice:":2"|upper }}
                   </span>
-                  {% if a.org %}
+                  {% comment %}The name opens what they submitted; the organization's own page is the second link.{% endcomment %}
                   <div class="flex flex-col">
-                    <a href="{% url 'marketplace:organisation' a.org.slug %}" class="text-[13.5px] font-medium text-brand-deep-purple hover:text-brand-indigo">{{ a.name }}</a>
-                    {% if a.submissions > 1 %}
-                      <span class="text-[11px] text-gray-400">submitted {{ a.submissions }} times</span>
+                    {% if a.response.source_row %}
+                    <a href="{% url 'marketplace:round_response' round.slug a.response.source_row %}"
+                       class="text-[13.5px] font-medium {% if a.org %}text-brand-deep-purple{% else %}text-gray-500 italic{% endif %} hover:text-brand-indigo">{{ a.name }}</a>
+                    {% else %}
+                    <span class="text-[13.5px] font-medium {% if a.org %}text-brand-deep-purple{% else %}text-gray-500 italic{% endif %}">{{ a.name }}</span>
+                    {% endif %}
+                    {% if a.org or a.submissions > 1 %}
+                      <span class="text-[11px] text-gray-400">
+                        {% if a.org %}<a href="{% url 'marketplace:organisation' a.org.slug %}" class="hover:text-brand-indigo">organization</a>{% endif %}
+                        {% if a.org and a.submissions > 1 %} · {% endif %}
+                        {% if a.submissions > 1 %}submitted {{ a.submissions }} times{% endif %}
+                      </span>
                     {% endif %}
                   </div>
-                  {% else %}
-                    <span class="text-[13.5px] text-gray-500 italic">{{ a.name }}</span>
-                  {% endif %}
                 </div>
               </td>
               <td class="hidden sm:table-cell px-4 sm:px-5 py-3 text-[12.5px] text-gray-600">{{ a.country|default:"—"|truncatechars:30 }}</td>
@@ -176,19 +194,26 @@
           <span class="text-xs font-semibold text-brand-deep-purple tracking-wide">THE CALL</span>
         </div>
         <div class="px-[18px] py-3.5 flex flex-col gap-2.5">
+          <div class="text-[10.5px] font-semibold text-gray-400 tracking-wider">IN LABS</div>
+          <a href="{% url 'marketplace:round_form' round.slug %}" class="text-[13px] text-brand-indigo hover:text-brand-deep-purple flex items-center gap-2">
+            <i class="fa-regular fa-rectangle-list text-[11px]"></i> The form
+          </a>
           {% if public_call_url %}
             <a href="{{ public_call_url }}" class="text-[13px] text-brand-indigo hover:text-brand-deep-purple flex items-center gap-2">
               <i class="fa-solid fa-bullhorn text-[11px]"></i> Public call page
             </a>
           {% endif %}
+          {% if round.announcement_url or round.form_url or can_read and round.response_spreadsheet_id %}
+            <div class="text-[10.5px] font-semibold text-gray-400 tracking-wider pt-1.5">ON GOOGLE</div>
+          {% endif %}
           {% if round.announcement_url %}
             <a href="{{ round.announcement_url }}" target="_blank" rel="noopener noreferrer" class="text-[13px] text-brand-indigo hover:text-brand-deep-purple flex items-center gap-2">
-              <i class="fa-solid fa-up-right-from-square text-[11px]"></i> Public announcement
+              <i class="fa-solid fa-up-right-from-square text-[11px]"></i> Announcement
             </a>
           {% endif %}
           {% if round.form_url %}
             <a href="{{ round.form_url }}" target="_blank" rel="noopener noreferrer" class="text-[13px] text-brand-indigo hover:text-brand-deep-purple flex items-center gap-2">
-              <i class="fa-solid fa-up-right-from-square text-[11px]"></i> Application form
+              <i class="fa-solid fa-up-right-from-square text-[11px]"></i> Google Form
             </a>
           {% endif %}
           {% if can_read and round.response_spreadsheet_id %}
@@ -203,21 +228,19 @@
         </div>
       </div>
 
-      {% if questions %}
+      {% if mix.countries %}
         <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
           <div class="px-[18px] py-3 border-b border-gray-100">
-            <span class="text-xs font-semibold text-brand-deep-purple tracking-wide">WHAT THIS ROUND ASKED</span>
+            <span class="text-xs font-semibold text-brand-deep-purple tracking-wide">WHERE APPLICANTS WORK</span>
           </div>
-          <div class="px-[18px] py-3.5 flex flex-col gap-2.5">
-            {% for q in questions %}
-              <div class="flex gap-2.5 items-start">
-                <span class="text-[11px] text-gray-400 tabular-nums shrink-0 pt-px">{{ forloop.counter|stringformat:"02d" }}</span>
-                <span class="text-[12.5px] text-gray-600 leading-snug">{{ q.text|truncatechars:90 }}</span>
+          <div class="px-[18px] py-3.5 flex flex-col gap-2">
+            {% for country, count in mix.countries %}
+              <div class="flex items-baseline justify-between gap-3 text-[12.5px]">
+                <span class="{% if country == 'Not stated' %}text-gray-400 italic{% else %}text-gray-700{% endif %}">{{ country }}</span>
+                <span class="text-gray-900 font-medium tabular-nums">{{ count }}</span>
               </div>
             {% endfor %}
-            {% if question_total > questions|length %}
-              <div class="text-[12px] text-gray-400 pt-1">{{ question_total }} questions in total</div>
-            {% endif %}
+            <div class="text-[11px] text-gray-400 pt-1 leading-snug">Organizations, not submissions. One working in two countries counts in each.</div>
           </div>
         </div>
       {% endif %}

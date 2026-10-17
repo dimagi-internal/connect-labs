@@ -784,6 +784,74 @@ def round_applicants(round_: Solicitation, first_service: dict):
     return out
 
 
+def round_opened(round_: Solicitation):
+    """When the round started taking applications: published, else its first submission."""
+    if round_.published_on:
+        return round_.published_on
+    first = round_.responses.exclude(submission_date=None).order_by("submission_date").first()
+    return _as_date(first.submission_date) if first else None
+
+
+def round_mix(round_: Solicitation, applicants: list[dict]) -> dict:
+    """Who among a round's applicants was new to the network, and where they work.
+
+    Returning means there is evidence the organisation was in the network before
+    the round opened: it answered an earlier round, the directory dates its
+    joining earlier, or it was already delivering on Connect. Anything else is
+    new, including every submission nobody has matched yet: an organisation the
+    directory cannot place is not one it already knew.
+
+    Countries count organisations, not submissions, and an organisation that
+    works in two countries counts in both, so the counts can sum past the total.
+    """
+    opened = round_opened(round_)
+    org_ids = [a["org"].pk for a in applicants if a["org"] is not None]
+    earlier = set()
+    if opened is not None and org_ids:
+        earlier = set(
+            SolicitationResponse.objects.directory_rounds()
+            .filter(llo_entity_id__in=org_ids, submission_date__date__lt=opened)
+            .exclude(solicitation=round_)
+            .values_list("llo_entity_id", flat=True)
+        )
+
+    returning = 0
+    countries: dict[str, int] = {}
+    for a in applicants:
+        org = a["org"]
+        profile = getattr(org, "marketplace_profile", None) if org else None
+        if org is not None and opened is not None:
+            joined = profile.joined_at if profile else None
+            if (
+                org.pk in earlier
+                or (joined is not None and joined < opened)
+                or (a["started"] is not None and _as_date(a["started"]) < opened)
+            ):
+                returning += 1
+        named = (profile.countries if profile and profile.countries else []) or [
+            c.strip() for c in (a["response"].country_as_submitted or "").split(",") if c.strip()
+        ]
+        for country in named or ["Not stated"]:
+            countries[country] = countries.get(country, 0) + 1
+
+    return {
+        "new": len(applicants) - returning,
+        "returning": returning,
+        "country_count": len([c for c in countries if c != "Not stated"]),
+        # Most applicants first; "Not stated" last whatever its size.
+        "countries": sorted(countries.items(), key=lambda kv: (kv[0] == "Not stated", -kv[1], kv[0])),
+    }
+
+
+def form_questions(round_: Solicitation) -> list[dict]:
+    """The round's questions as its form asked them.
+
+    The response sheet's header is the question list, and Google Forms puts a
+    Timestamp column at the front that nobody was asked to fill in.
+    """
+    return [q for q in (round_.questions or []) if q.get("text", "").strip().lower() != "timestamp"]
+
+
 def _as_date(value):
     return value.date() if hasattr(value, "date") else value
 

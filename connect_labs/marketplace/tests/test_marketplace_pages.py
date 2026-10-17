@@ -219,11 +219,14 @@ class TestRoundPage:
         assert response.context["never_count"] == 1
         assert response.context["unresolved_count"] == 1
 
-    def test_shows_what_the_round_asked(self, client, user, marketplace):
+    def test_the_form_it_asked_is_a_page_of_its_own(self, client, user, marketplace):
+        """A list of eight truncated headers on the round said little; the form
+        is linked from The Call and shows every question."""
         client.force_login(user)
         body = client.get(reverse("marketplace:round", args=["chc-2025"])).content.decode()
-        assert "WHAT THIS ROUND ASKED" in body
-        assert "Annual budget" in body
+        assert reverse("marketplace:round_form", args=["chc-2025"]) in body
+        form = client.get(reverse("marketplace:round_form", args=["chc-2025"])).content.decode()
+        assert "Annual budget" in form
 
     def test_an_unresolved_applicant_links_to_the_queue(self, client, user, marketplace):
         client.force_login(user)
