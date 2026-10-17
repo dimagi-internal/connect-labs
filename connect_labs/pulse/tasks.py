@@ -82,7 +82,6 @@ def poll_slow_maintenance(rate_sample_limit: int = 25) -> dict:
     regardless of whether anything differs, so the cadence is what matters.
     """
     rated = 0
-    budgeted = 0
     try:
         with get_client() as client:
             active = PulseOpportunity.objects.filter(is_active=True).order_by("updated_at")[:rate_sample_limit]
@@ -94,16 +93,9 @@ def poll_slow_maintenance(rate_sample_limit: int = 25) -> dict:
                     logger.warning("[pulse] rate refresh failed for opp %s: %s", opp.opportunity_id, exc)
 
             # Budgets come from a different endpoint and move even more slowly,
-            # so they ride the same bounded oldest-first slice rather than
-            # getting a sweep of their own. Opportunities never read carry a
-            # null total_budget, so those come first and the backlog drains.
-            unread = PulseOpportunity.objects.filter(total_budget=None).order_by("updated_at")
-            for opp in list(unread[:rate_sample_limit]) or list(active):
-                try:
-                    if ingest.refresh_budget(client, opp):
-                        budgeted += 1
-                except Exception as exc:  # noqa: BLE001 — one opp must not kill the sweep
-                    logger.warning("[pulse] budget refresh failed for opp %s: %s", opp.opportunity_id, exc)
+            # so they ride the same bounded slice: least recently asked first,
+            # every opportunity re-read on a rolling basis.
+            budgeted = ingest.refresh_budgets(client, rate_sample_limit)
 
             # Invoices: unread first, then the oldest-read, so every
             # opportunity is re-read on a rolling basis and a new invoice

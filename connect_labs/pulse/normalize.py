@@ -239,7 +239,10 @@ _TEST_OPPORTUNITY = re.compile(r"\b(test|sandbox|dummy|uat|e2e)\b", re.I)
 # nutrition, interview) under program names like "Malaria ITN FGD Pilot" that
 # no name rule can tell from real work. Left in, they were the *whole* of the
 # Nutrition and Interviews figures and 31 of Malaria's "live" opportunities.
-TEST_ORGS = frozenset({"ai-demo-space"})
+# `ace-nm-org` is the network-manager org ACE's runs are held by: every
+# opportunity in it is a timestamped run, one of them a "PM→NM probe" tagged
+# nutrition that made a third live RUTF opportunity.
+TEST_ORGS = frozenset({"ai-demo-space", "ace-nm-org"})
 
 
 def looks_like_test(program_name: str | None) -> bool:
