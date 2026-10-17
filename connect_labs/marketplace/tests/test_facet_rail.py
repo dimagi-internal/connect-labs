@@ -12,11 +12,12 @@ from django.urls import reverse
 from connect_labs.marketplace import queries
 from connect_labs.marketplace.testing import make_partner
 from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
+from connect_labs.supply_chain.runner import dimagi_org
 
 
 @pytest.fixture
 def user(db, django_user_model):
-    return django_user_model.objects.create_user(username="staff", password="x")
+    return django_user_model.objects.create_user(username="staff", password="x", email="staff@dimagi.com")
 
 
 @pytest.fixture
@@ -26,7 +27,12 @@ def network(db):
     ke = make_partner("Fenwick Community Trust", "FCT", countries=["Kenya"], delivers=["kmc", "readers"])
 
     chc = Solicitation.objects.create(
-        slug="chc-2025", title="CHC", status="closed", sa_access_state="ok", delivery_type="chc"
+        owner_org=dimagi_org(),
+        slug="chc-2025",
+        title="CHC",
+        status="closed",
+        sa_access_state="ok",
+        delivery_type="chc",
     )
     for i, org in enumerate([ug, ke], start=2):
         SolicitationResponse.objects.create(

@@ -137,6 +137,9 @@ SERVICE_LABELS.update(
         # `tms` surveys turmeric on sale for lead contamination; the label is
         # what the acronym stands for, because "lead" alone reads as the verb.
         "tms": "Turmeric Market Survey",
+        # Lead-acid battery collection and recycling, scoped by the 2026 ULAB
+        # EOI. Confirmed by Jonathan, 2026-10-17.
+        "ulab": "Lead-Acid Battery Recycling",
         # `conversation` collects speech in languages with little written data.
         "conversation": "Low-resource languages",
         "cholera": "Cholera",

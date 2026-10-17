@@ -5,9 +5,11 @@ it. The page declares only a SELECTION (slugs plus the tool that resolves them),
 and the agent calls in here for the substance — so one place decides what a row
 says, and the copy on the screen cannot go stale between render and use.
 
-``marketplace_round_responses`` is the exception to "anyone may read it": a
-round's answers are what organisations told Dimagi, so only the round's owner
-(Dimagi) and platform support read them (``access.can_read_round_responses``).
+A round's submissions are not "anyone may read it": who answered a round and
+what they said are what organisations told the round's owner, so only its
+members and platform support read them (``access.can_read_round_responses``).
+That covers ``marketplace_round_responses``, ``include_applicants`` on
+``marketplace_rounds_list`` and the ``applied_programs`` an org row carries.
 
 Read-only, all of it. Writing to the directory is the LLO Directory sheet's job
 (``marketplace_import``), and a tool that wrote here would be a second source of
@@ -54,7 +56,7 @@ def _contact(contact) -> dict[str, Any]:
     }
 
 
-def _org(org, *, delivered_by_name, include_contacts: bool) -> dict[str, Any]:
+def _org(org, *, delivered_by_name, readable, include_contacts: bool) -> dict[str, Any]:
     profile = getattr(org, "marketplace_profile", None)
     out = {
         "slug": org.slug,
@@ -65,7 +67,7 @@ def _org(org, *, delivered_by_name, include_contacts: bool) -> dict[str, Any]:
         # deliver. The gap between the two is the thing a person scanning this
         # page is looking for, so an agent should see it the same way.
         "delivered_programs": sorted(p["label"] for p in programs.chips(delivered_by_name.get(org.name, ()))),
-        "applied_programs": sorted(p["label"] for p in programs.chips(queries.applied_programs_of(org))),
+        "applied_programs": sorted(p["label"] for p in programs.chips(queries.applied_programs_of(org, readable))),
     }
     if profile is not None:
         out.update(
@@ -141,13 +143,16 @@ def marketplace_orgs_get(user, slugs: list[str], include_contacts: bool = False)
     wanted = [str(s).strip() for s in slugs if str(s).strip()]
     rows = LabsOrg.objects.filter(slug__in=wanted).select_related("marketplace_profile").prefetch_related("contacts")
     by_slug = {org.slug: org for org in rows}
+    from connect_labs.solicitations import access
+
     delivered_by_name = queries.delivered_programs_by_org_name()
+    readable = access.readable_round_ids(user)
 
     # Slugs that matched nothing are reported rather than dropped: a page and the
     # directory can disagree after an import, and an agent silently drafting
     # nine emails when it was asked for ten is the bad failure here.
     found = [
-        _org(by_slug[s], delivered_by_name=delivered_by_name, include_contacts=include_contacts)
+        _org(by_slug[s], delivered_by_name=delivered_by_name, readable=readable, include_contacts=include_contacts)
         for s in wanted
         if s in by_slug
     ]
@@ -208,6 +213,16 @@ def marketplace_rounds_list(
     rounds = queries.open_rounds() if open_only else queries.rounds_with_counts()
     if slug:
         rounds = rounds.filter(slug=slug)
+    if include_applicants:
+        from connect_labs.solicitations import access
+
+        round_ = rounds.select_related("owner_org").first()
+        if round_ is not None and not access.can_read_round_responses(user, round_):
+            raise MCPToolError(
+                "PERMISSION_DENIED",
+                f"Only members of the organisation that ran {slug!r} "
+                f"({round_.owner_name or 'its owner'}) may see who applied to it.",
+            )
 
     out = []
     first_service = queries.first_service_by_org_name() if include_applicants else {}

@@ -403,7 +403,11 @@ STATES = (
 def _state(card: dict) -> str:
     """Live work wins: a program with a live opportunity is delivering, whatever
     else is true of it. Past delivery with nothing live is waiting on money,
-    not finished — which is why that section does not say "complete"."""
+    not finished — which is why that section does not say "complete".
+    A program someone has said is still in design (`programs.IN_DESIGN`) is
+    there before any of that."""
+    if card["slug"] in programs.IN_DESIGN:
+        return "design"
     if card["live"]:
         return "delivering"
     if card["services"] or card["spent"] or card["delivering"]:
@@ -611,8 +615,12 @@ def facet_counts(rows, delivering: set[str]) -> dict[str, list[dict]]:
     }
 
 
-def network_orgs():
+def network_orgs(readable=None):
     """The organisations that make up the network, as a queryset.
+
+    `readable` (round pks, from `access.readable_round_ids`) limits "answered a
+    round" to rounds the viewer may read: that an organisation applied is part
+    of its submission. None counts every round, for totals that name nobody.
 
     `LabsOrg` is labs' ONE registry of organisations, so it also holds the
     companies supply chain buys from — manufacturers, couriers, clearing
@@ -631,8 +639,10 @@ def network_orgs():
     to share it: a demo seed's own copy of a real partner showed up beside
     the directory's row, delivering the same programs.
     """
-    applied = SolicitationResponse.objects.directory_rounds().exclude(llo_entity=None).values("llo_entity")
-    return LabsOrg.objects.filter(Q(marketplace_profile__isnull=False) | Q(pk__in=applied))
+    applied = SolicitationResponse.objects.directory_rounds().exclude(llo_entity=None)
+    if readable is not None:
+        applied = applied.filter(solicitation_id__in=readable)
+    return LabsOrg.objects.filter(Q(marketplace_profile__isnull=False) | Q(pk__in=applied.values("llo_entity")))
 
 
 def network_totals() -> dict:
@@ -926,8 +936,14 @@ def facet_rail(facets: dict, selected: dict, querydict) -> list[dict]:
     return out
 
 
-def all_rows_with_rounds():
+def all_rows_with_rounds(readable=None):
     """Every organisation in the network, its profile and its rounds, in ONE trip.
+
+    Only the rounds in `readable` (round pks, `access.readable_round_ids`) are
+    fetched and counted, so what an organisation applied to -- its programs,
+    its rounds, whether it came back -- shows only to people who may read
+    those submissions. A page always passes it; None (every round) is for
+    code that shows no one anything.
 
     The network page filters the same population five ways — the list, each of
     the three facet dimensions, and the globe. Re-running the query for each is
@@ -948,8 +964,11 @@ def all_rows_with_rounds():
     # Responses to owned calls are confidential to their owner; only directory
     # rounds are counted here (the prefetch above is filtered the same way).
     directory = Q(solicitation_responses__solicitation__source=SOURCE_DIRECTORY)
+    if readable is not None:
+        responses = responses.filter(solicitation_id__in=readable)
+        directory &= Q(solicitation_responses__solicitation_id__in=readable)
     return list(
-        network_orgs()
+        network_orgs(readable)
         .select_related("marketplace_profile")
         .prefetch_related(Prefetch("solicitation_responses", queryset=responses))
         .annotate(
@@ -965,17 +984,20 @@ def all_rows_with_rounds():
     )
 
 
-def applied_programs_of(org) -> set[str]:
+def applied_programs_of(org, readable=None) -> set[str]:
     """The delivery types this organisation has applied to work on.
 
     Reads the prefetch. An untagged round contributes nothing rather than an
     empty-string facet — "we have not decided what program this round is" is
-    not a program anybody can filter on.
+    not a program anybody can filter on. `readable` (round pks) drops rounds
+    the viewer may not read; None trusts a prefetch already filtered by them.
     """
     return {
         r.solicitation.delivery_type
         for r in org.solicitation_responses.all()
-        if r.solicitation.source == SOURCE_DIRECTORY and programs.is_program(r.solicitation.delivery_type)
+        if r.solicitation.source == SOURCE_DIRECTORY
+        and (readable is None or r.solicitation_id in readable)
+        and programs.is_program(r.solicitation.delivery_type)
     }
 
 

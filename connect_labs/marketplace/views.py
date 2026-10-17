@@ -11,7 +11,10 @@ drawn on the same globe the wall display uses.
 
 Login-gated throughout. Submission text is what an organisation wrote about
 itself while applying for work; it is not public, and there is no anonymous
-view of it.
+view of it. Signed in is not enough either: who answered a round, and what they
+said, shows only to members of the organisation that ran it (and platform
+support) -- `access.can_read_round_responses`. Everyone else sees the call and
+how many answered it.
 """
 
 from __future__ import annotations
@@ -28,7 +31,7 @@ from django.urls import reverse
 from connect_labs.labs.chrome import page_chrome
 from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace import programs, queries
-from connect_labs.solicitations import past_calls
+from connect_labs.solicitations import access, past_calls
 from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
 
 # Nothing in the marketplace is scoped by the labs context selector, and on a
@@ -63,7 +66,7 @@ def _population(request) -> dict:
     never be added.
     """
     selected = _controls(request)
-    everyone = queries.all_rows_with_rounds()
+    everyone = queries.all_rows_with_rounds(access.readable_round_ids(request))
     delivering = queries.delivering_names()
     delivered_by_name = queries.delivered_programs_by_org_name()
 
@@ -303,14 +306,18 @@ def rounds(request):
 @MARKETPLACE_CHROME
 def round_detail(request, slug):
     """One round: who answered it, what it asked, and what became of them."""
-    round_ = get_object_or_404(queries.rounds_with_counts(), slug=slug)
-    applicants = queries.round_applicants(round_, queries.first_service_by_org_name())
-    trend = queries.submission_trend(round_)
+    round_ = get_object_or_404(queries.rounds_with_counts().select_related("owner_org"), slug=slug)
+    # Who applied, when, and what became of each is the submissions talking:
+    # only the round's owner reads it. Anyone else gets the call and the count.
+    can_read = access.can_read_round_responses(request, round_)
+    applicants = queries.round_applicants(round_, queries.first_service_by_org_name()) if can_read else []
+    trend = queries.submission_trend(round_) if can_read else []
     return render(
         request,
         "marketplace/round.html",
         {
             "round": round_,
+            "can_read": can_read,
             "applicants": applicants,
             "trend": trend,
             "span_end": trend[-1]["start"] + datetime.timedelta(days=trend[-1]["days"] - 1) if trend else None,
@@ -350,8 +357,13 @@ def round_detail(request, slug):
 @MARKETPLACE_CHROME
 def organisation(request, slug):
     org = get_object_or_404(LabsOrg.objects.select_related("marketplace_profile"), slug=slug)
+    # Only the rounds this viewer may read: an application history is the
+    # organisation's submissions, and those belong to whoever ran each round.
     responses = list(
-        org.solicitation_responses.directory_rounds().select_related("solicitation").order_by("-submission_date")
+        org.solicitation_responses.directory_rounds()
+        .filter(solicitation_id__in=access.readable_round_ids(request))
+        .select_related("solicitation")
+        .order_by("-submission_date")
     )
 
     # Pair each question with its answer here rather than in the template: the
@@ -419,8 +431,10 @@ def unmatched(request):
     """
     from connect_labs.marketplace.directory import DIRECTORY_ID, RESPONSE_MAPPING_TAB
 
+    readable = access.readable_round_ids(request)
     rows = (
         SolicitationResponse.objects.directory_rounds()
+        .filter(solicitation_id__in=readable)
         .filter(match_state=SolicitationResponse.MATCH_UNMATCHED)
         .select_related("solicitation")
         .order_by("solicitation__slug", "source_row")
@@ -433,6 +447,7 @@ def unmatched(request):
             "mapping_tab": RESPONSE_MAPPING_TAB,
             "directory_url": f"https://docs.google.com/spreadsheets/d/{DIRECTORY_ID}/edit",
             "decided_count": SolicitationResponse.objects.directory_rounds()
+            .filter(solicitation_id__in=readable)
             .filter(match_state__in=[SolicitationResponse.MATCH_HUMAN, SolicitationResponse.MATCH_NOT_LLO])
             .count(),
         },

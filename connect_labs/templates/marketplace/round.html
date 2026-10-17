@@ -46,6 +46,7 @@
             <div class="text-[11px] text-gray-400 mt-0.5">from {{ round.applications }} submissions</div>
           {% endif %}
         </div>
+        {% if can_read %}
         <div>
           <div class="text-[22px] sm:text-[25px] font-semibold text-green-700 tabular-nums">{{ after_count }}</div>
           <div class="text-[11px] text-gray-400 tracking-wide">STARTED AFTER</div>
@@ -57,6 +58,7 @@
           <div class="text-[22px] sm:text-[25px] font-semibold {% if unresolved_count %}text-brand-sunset{% else %}text-gray-300{% endif %} tabular-nums">{{ unresolved_count }}</div>
           <div class="text-[11px] text-gray-400 tracking-wide">NEED A VERDICT</div>
         </div>
+        {% endif %}
       </div>
     </div>
 
@@ -88,6 +90,15 @@
 
   <div class="grid grid-cols-1 xl:grid-cols-[1fr_296px] gap-4.5 items-start">
 
+    {% if not can_read %}
+    {% comment %}
+    Who answered, and what they said, is the submissions: only members of the
+    organisation that ran the round read them (access.can_read_round_responses).
+    {% endcomment %}
+    <div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-5 py-12 text-center text-sm text-gray-500">
+      Responses to this round are visible only to members of {{ round.owner_name|default:"the organization that ran it" }}.
+    </div>
+    {% else %}
     <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
       <div class="px-4 sm:px-5 py-3.5 border-b border-brand-border-light">
         <span class="text-sm font-semibold text-brand-deep-purple">Who applied</span>
@@ -157,6 +168,7 @@
       </table>
       </div>
     </div>
+    {% endif %}
 
     <div class="flex flex-col gap-4">
       <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
@@ -179,7 +191,7 @@
               <i class="fa-solid fa-up-right-from-square text-[11px]"></i> Application form
             </a>
           {% endif %}
-          {% if round.response_spreadsheet_id %}
+          {% if can_read and round.response_spreadsheet_id %}
             <a href="https://docs.google.com/spreadsheets/d/{{ round.response_spreadsheet_id }}" target="_blank" rel="noopener noreferrer" class="text-[13px] text-brand-indigo hover:text-brand-deep-purple flex items-center gap-2">
               <i class="fa-solid fa-up-right-from-square text-[11px]"></i> Response sheet
             </a>

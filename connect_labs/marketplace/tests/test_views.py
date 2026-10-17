@@ -6,6 +6,7 @@ from django.urls import reverse
 from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace.models import OrgContact, OrgProfile
 from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
+from connect_labs.supply_chain.runner import dimagi_org
 
 
 @pytest.fixture
@@ -18,7 +19,7 @@ def registry(db):
     OrgProfile.objects.create(org=bench, countries=["Nigeria"])
 
     round_ = Solicitation.objects.create(
-        slug="demo-2026", title="Demo round", solicitation_type="eoi", delivery_type="chc"
+        owner_org=dimagi_org(), slug="demo-2026", title="Demo round", solicitation_type="eoi", delivery_type="chc"
     )
     SolicitationResponse.objects.create(
         solicitation=round_,
@@ -39,7 +40,7 @@ def registry(db):
 
 @pytest.fixture
 def user(db, django_user_model):
-    return django_user_model.objects.create_user(username="staff", password="x")
+    return django_user_model.objects.create_user(username="staff", password="x", email="staff@dimagi.com")
 
 
 @pytest.mark.django_db

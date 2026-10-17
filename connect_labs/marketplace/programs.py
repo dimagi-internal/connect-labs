@@ -66,6 +66,12 @@ NOT_DELIVERY = frozenset({PROGRAM_NONE, "other", "ace", "non-managed-opportunity
 ALIASES = {"water": "chlorine"}
 
 
+# Programs still being designed, whatever Connect holds under their tag: a
+# pilot's visits are not a program that is delivering or waiting on money.
+# A product decision, not derivable from the figures (Jonathan, 2026-10-17).
+IN_DESIGN = frozenset({"rs", "tms", "ulab"})
+
+
 def canonical(slug: str | None) -> str:
     """The one tag a program goes by."""
     slug = (slug or "").strip().lower()
@@ -116,6 +122,7 @@ _HUES = {
     # Codes on rounds that nobody has named as a program yet. They get a hue
     # so their card is not the brand default, and nothing more.
     "rs": "#5b6f91",
+    "ulab": "#8a5a2b",
 }
 
 
