@@ -47,3 +47,24 @@ wait for the replacements of the rejected phones.
 
 Where to look: Overview, the tender, the order (receipt and invoice), Map,
 Workers, Where it went. Walkthrough: `docs/walkthroughs/supply-phones-every-adult.yaml`.
+
+# The RUTF clone that supply walkthroughs film
+
+Supply walkthroughs (`docs/walkthroughs/supply-sophie-*`) film **program 10112 /
+opportunity 10113**, a synthetic clone of the real RUTF opportunity 2230 made
+2026-10-07 with GPS (#2296: each worker's area moved 3-8 km and jittered), so its
+workers and stores appear on Supply → Map (#2293, #2295) and "Where it went"
+(`/supply/flow/`, #2294) follows the RUTF out to the visits (#2298).
+
+- The older clone, program 10110 / opportunity 10111, has no GPS and draws nothing
+  on the map. 10110 also holds the nutrition demo's opportunities, so leave it alone.
+- Its supply chain is seeded by `manage.py supply_seed_clone_supply` (#2254) and
+  topped up every Monday by beat (#2270).
+- **How much RUTF each worker _received_ is invented** (every Distribution's note
+  says so). What each visit _gave out_ is the clone's. Narration must never present
+  the deliveries as recorded.
+- The walkthrough persona's session is scoped to its own program. A scene on
+  another program needs that program to be reachable for the persona.
+- **A labs deploy restarts the Celery worker and kills synthetic clone jobs in
+  flight** (since #2265 the job reads "Labs restarted ... start it again"). Before
+  deploying, check `/labs/synthetic/jobs/`.
