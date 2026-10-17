@@ -24,7 +24,9 @@ A call that is **not listed** does not appear in the directory or on the organis
 
 **The demo organisation.** `solicitations_seed_demo` makes an invented organisation, "Kestrel Community Health (demo)", with three open calls for showing the module to others. Its calls are **not listed**, so nobody finds and answers them by accident, but anyone you send a link to can open them, at the call's own address or the demo organisation's page (`/solicitations/o/<demo organisation>/`). Every one carries a **Demo call — invented organisation** banner.
 
-**Past calls.** The calls for partners Dimagi ran on the Connect marketplace (the expressions of interest and requests for proposal recorded in the LLO Directory) are listed under **Past calls** at the bottom of `/solicitations/`, grouped by the year they ran, and on Dimagi's organisation page. Each card shows the program it was for, with the program's picture, the countries it covered and when it was published. The existing keyword search and the organisation and type filters all cover past calls, and there is a dedicated **program** filter for them. A past call's page shows its type, program, countries, and its published, deadline and decision dates, along with a **Read the announcement** button that opens the original public announcement. They are an archive: nobody can respond to, edit, review or award one here, and nothing about who applied is shown. If you are signed in you also see how many organisations applied, and a link to the call's page on the marketplace (which lists the applicants, behind the labs login). The marketplace's page for a finished call links back here with **Public call page** — that is the link to send to someone outside labs.
+**Past calls.** The calls for partners Dimagi ran on the Connect marketplace (the expressions of interest and requests for proposal recorded in the LLO Directory) are listed under **Past calls** at the bottom of `/solicitations/`, grouped by the year they ran, and on Dimagi's organisation page. Dimagi owns every one of these past rounds — CHC, KMC, Readers, malaria, RUTF, chlorine, and any new round added to the LLO Directory's EOI/RFP tab. Each card shows the program it was for, with the program's picture, the countries it covered and when it was published. The existing keyword search and the organisation and type filters all cover past calls, and there is a dedicated **program** filter for them. A past call's page shows its type, program, countries, and its published, deadline and decision dates, along with a **Read the announcement** button that opens the original public announcement. They are an archive: nobody can respond to, edit, review or award one here, and nothing about who applied is shown. If you are signed in you also see how many organisations applied, and a link to the call's page on the marketplace (which lists the applicants, behind the labs login). The marketplace's page for a finished call links back here with **Public call page** — that is the link to send to someone outside labs.
+
+**Who belongs to the Dimagi organisation.** Anyone with a `@dimagi.com`, `@dimagi-ai.com`, or `@dimagi-associate.com` address is automatically a member of the Dimagi organisation in Solicitations. This means Dimagi associates can manage Dimagi's calls and, because Dimagi owns all past EOI/RFP rounds, can access responses to those rounds through the same Manage calls page that any organisation member uses. Being a member of the Dimagi organisation in Solicitations does not grant access to admin pages, Settings, or any other staff-only area — those remain unchanged.
 
 **Status shown on every call:**
 
@@ -167,6 +169,15 @@ Scoring is always blind. The responses list shows each submission only as **Resp
 
 The responding organisation's name is revealed at the award step, so you can confirm you are awarding the response you meant to. Where it is active, the **Rubric locked before publishing** badge on the responses list also confirms that scoring conditions were set before any applications were received.
 
+#### Reading Round Responses with ACE
+
+Dimagi's members (including associates) and platform support can ask ACE to summarise the submissions to any past EOI/RFP round and recommend a shortlist. ACE reads each applicant's answers and the directory organisation it matched, then returns a structured summary.
+
+!!! info "Contact details are not included by default"
+ACE leaves out the contact person's name, email, phone number and signature unless you explicitly ask for them. If you need that information for a specific applicant, ask ACE to include it in your follow-up question.
+
+Everyone outside Dimagi's organisation and platform support is refused access to round responses through ACE.
+
 ### Awarding a Response
 
 When the team agrees on a winner:
@@ -176,18 +187,4 @@ When the team agrees on a winner:
 3. Enter the award budget, if any. It is shown in the call's own currency (for example, "500,000 NGN"); a call with no currency set shows the number alone
 4. Click **Award**. If the call is linked to a fund, the award is allocated from it
 
-A response can be awarded once, with one exception: a **verification** award can be upgraded once to the **full** engagement (see Staged-Contract Award below), which allocates the new budget you enter and emails the organisation again. Any other second award is refused with a message saying it was already awarded, so the fund is never allocated twice for the same award and the organisation is never emailed twice. Once awarded, a response's status can no longer be changed (for example back to rejected).
-
-**Is the organisation told?** When outbound email is switched on for labs, Labs emails the award to the labs account of the person who submitted the response (for a response entered on a firm's behalf, to the address entered with it). It never mails the contact address typed on the form, which is there for you to read. The award page says plainly which happened: "We emailed … to tell them", or "No email was sent — let them know yourself" (for example when email is off, or there is no address to send to). Labs never claims an organisation was notified when it was not.
-
-**Unverified organisation.** A response made under a typed name ("An organisation not listed here") rather than as an organisation registered in labs is marked **Unverified organisation** on the response and award pages: nobody has confirmed the person belongs to it. A response submitted by a member of your own organisation counts as your own side whatever name it was submitted under, so you cannot score or award it.
-
-#### Staged-Contract Award
-
-For survey-firm procurements, Labs supports a staged award process. Rather than committing the full contract value immediately, you can first issue a small **verification contract** to confirm the selected firm's performance on the ground, then scale to the full survey award once you are satisfied.
-
-This is the recommended approach for managing conflict-of-interest risk in independent survey procurement: start with a limited engagement, verify the firm performs as expected, then proceed with the full scope.
-
-To use staged contracting:
-
-1. At the
+A response can be awarded once, with one exception: a **verification** award can be upgraded once to the **full** engagement (see Staged-Contract Award below), which allocates the new budget you enter and emails the organisation again. Any other second award is refused with a message saying it was already awarded, so the fund is never allocated twice for the same award and the organisation is never emailed twice. Once awarded, a response's status can no longer be
