@@ -21,6 +21,7 @@ from django.http import HttpRequest
 
 from connect_labs.labs.integrations.connect.api_client import LabsAPIError, LabsRecordAPIClient
 from connect_labs.labs.models import LocalLabsRecord
+from connect_labs.workflow import program_opportunities
 from connect_labs.workflow.run_snapshot_store import stored_form
 from connect_labs.workflow.template_workflows import (
     apply_to_record,
@@ -739,16 +740,24 @@ class WorkflowDataAccess(BaseDataAccess):
                     records.append(r)
 
         # A follower of a template workflow is read with the template's config and
-        # snapshot_inputs under its own (workflow/template_workflows.py).
-        return apply_to_records(self.labs_api, records)
+        # snapshot_inputs under its own (workflow/template_workflows.py); one that
+        # takes its program's opportunities gets them from the viewer's tree
+        # (workflow/program_opportunities.py).
+        return program_opportunities.resolve_all(
+            apply_to_records(self.labs_api, records),
+            getattr(self, "request", None),
+            getattr(self, "access_token", None),
+        )
 
     def get_definition(self, definition_id: int) -> WorkflowDefinitionRecord | None:
         """Get a workflow definition by ID.
 
         A follower of a template workflow comes back EFFECTIVE: the template's
         config and snapshot_inputs under its own; the raw record is `own_data`.
+        One with an ``opportunity_source`` comes back with its program's
+        opportunities as the viewer sees them (workflow/program_opportunities.py).
         """
-        return apply_to_record(
+        record = apply_to_record(
             self.labs_api,
             self.labs_api.get_record_by_id(
                 record_id=definition_id,
@@ -756,6 +765,9 @@ class WorkflowDataAccess(BaseDataAccess):
                 type="workflow_definition",
                 model_class=WorkflowDefinitionRecord,
             ),
+        )
+        return program_opportunities.resolve(
+            record, getattr(self, "request", None), getattr(self, "access_token", None)
         )
 
     def create_definition(self, name: str, description: str, **kwargs) -> WorkflowDefinitionRecord:
