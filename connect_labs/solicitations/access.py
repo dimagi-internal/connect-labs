@@ -23,7 +23,8 @@ no owner, so only staff manage it -- there is no Dimagi fallback.
 A marketplace directory round (`is_directory_round`) is owned by Dimagi, which
 ran every one of them, but it is a record kept in the LLO Directory sheet: nobody
 edits, reviews or awards one here. Its owner -- and platform support -- may read
-its responses (`can_read_round_responses`); everyone else sees the call only.
+its responses (`can_read_round_responses`, `readable_round_ids`); everyone else
+sees the call and how many answered it, never who answered or what they said.
 
 Every check fails closed: a membership that cannot be established is none.
 """
@@ -122,6 +123,22 @@ def can_read_round_responses(subject, solicitation) -> bool:
     if solicitation.owner_org_id and caller.is_member(solicitation.owner_org):
         return True
     return caller.is_operator
+
+
+def readable_round_ids(subject) -> frozenset:
+    """The directory rounds whose submissions this caller may read, by pk.
+
+    One answer per page, so a page that draws on every round (the network, an
+    organisation's history) filters by it instead of asking round by round.
+    Membership is cached on the caller, so this is one check per owning org.
+    """
+    from connect_labs.solicitations.local_models import Solicitation
+
+    caller = caller_for(subject)
+    if not caller.is_authenticated:
+        return frozenset()
+    rounds = Solicitation.objects.directory_rounds().select_related("owner_org")
+    return frozenset(r.pk for r in rounds if can_read_round_responses(caller, r))
 
 
 def standing(subject, solicitation) -> str:

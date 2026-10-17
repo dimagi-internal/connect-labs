@@ -17,13 +17,14 @@ from connect_labs.marketplace.testing import make_partner
 from connect_labs.mcp.tool_registry import MCPToolError, get_tool
 from connect_labs.mcp.tools import marketplace as tools
 from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
+from connect_labs.supply_chain.runner import dimagi_org
 
 pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
 def user(django_user_model):
-    return django_user_model.objects.create(username="agent")
+    return django_user_model.objects.create(username="agent", email="agent@dimagi.com")
 
 
 @pytest.fixture
@@ -45,6 +46,7 @@ def directory():
     beta = make_partner("Beta Care Collective", "BCC", countries=["Malawi"])
 
     round_ = Solicitation.objects.create(
+        owner_org=dimagi_org(),
         slug="matching-grant-2026",
         title="Matching Grant Pilot",
         solicitation_type="eoi",
@@ -61,6 +63,7 @@ def directory():
         solicitation=round_, source_row=3, org_name="Unattributed Org", match_state="unmatched"
     )
     closed = Solicitation.objects.create(
+        owner_org=dimagi_org(),
         slug="chc-2025",
         title="Community Health Campaign",
         solicitation_type="eoi",

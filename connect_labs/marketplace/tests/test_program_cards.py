@@ -174,6 +174,16 @@ class TestTheCards:
         assert not kmc["live"]
         assert kmc["state"] == "funding"
 
+    def test_a_program_said_to_be_in_design_stays_there_whatever_it_ran(self, market, monkeypatch):
+        """A pilot's live work does not make a program delivering: whether it
+        is still in design is decided by a person (`programs.IN_DESIGN`)."""
+        from connect_labs.marketplace import programs
+
+        monkeypatch.setattr(programs, "IN_DESIGN", frozenset({"chc"}))
+        chc = _cards()["chc"]
+        assert chc["live"]
+        assert chc["state"] == "design"
+
     def test_the_note_is_derived_from_the_figures(self, market):
         """Generated, never written: a hand-written line is true the day it is
         written and quietly false after."""

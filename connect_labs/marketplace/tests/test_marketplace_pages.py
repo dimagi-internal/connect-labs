@@ -16,11 +16,12 @@ from connect_labs.marketplace.models import OrgContact
 from connect_labs.marketplace.testing import make_partner
 from connect_labs.pulse.models import PulseEvent, PulseOpportunity
 from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
+from connect_labs.supply_chain.runner import dimagi_org
 
 
 @pytest.fixture
 def user(db, django_user_model):
-    return django_user_model.objects.create_user(username="staff", password="x")
+    return django_user_model.objects.create_user(username="staff", password="x", email="staff@dimagi.com")
 
 
 @pytest.fixture
@@ -68,6 +69,7 @@ def marketplace(db):
     )
 
     closed = Solicitation.objects.create(
+        owner_org=dimagi_org(),
         slug="chc-2025",
         title="Community Health Campaign",
         solicitation_type="eoi",
@@ -89,6 +91,7 @@ def marketplace(db):
     )
 
     live_round = Solicitation.objects.create(
+        owner_org=dimagi_org(),
         slug="matching-grant-2026",
         title="Matching Grant Pilot",
         solicitation_type="eoi",
@@ -163,7 +166,9 @@ class TestHome:
         page. The truth about an unread round has to survive somewhere, and
         that somewhere is the round's own applicant list; see the round page
         test below."""
-        Solicitation.objects.create(slug="blocked", title="Blocked round", status="closed", sa_access_state="denied")
+        Solicitation.objects.create(
+            owner_org=dimagi_org(), slug="blocked", title="Blocked round", status="closed", sa_access_state="denied"
+        )
         client.force_login(user)
         body = client.get(reverse("marketplace:home")).content.decode()
         for noise in ("not ingested", "could not be read", "awaiting a verdict"):
@@ -230,7 +235,9 @@ class TestRoundPage:
         """The banner is gone from every page, but this claim cannot go with
         it: an empty applicant list means "nobody applied" unless the page says
         otherwise, and for these rounds that would be false."""
-        Solicitation.objects.create(slug="blocked", title="Blocked", status="closed", sa_access_state="denied")
+        Solicitation.objects.create(
+            owner_org=dimagi_org(), slug="blocked", title="Blocked", status="closed", sa_access_state="denied"
+        )
         client.force_login(user)
         body = client.get(reverse("marketplace:round", args=["blocked"])).content.decode()
         assert "never been read" in body
@@ -238,7 +245,12 @@ class TestRoundPage:
     def test_a_round_that_was_read_and_drew_nobody_says_that_instead(self, client, user, marketplace):
         """The other half of the same distinction."""
         Solicitation.objects.create(
-            slug="quiet", title="Quiet", status="closed", sa_access_state="ok", last_ingested_at=timezone.now()
+            owner_org=dimagi_org(),
+            slug="quiet",
+            title="Quiet",
+            status="closed",
+            sa_access_state="ok",
+            last_ingested_at=timezone.now(),
         )
         client.force_login(user)
         body = client.get(reverse("marketplace:round", args=["quiet"])).content.decode()
@@ -315,7 +327,12 @@ class TestASubmissionIsNotAnApplicant:
         org = make_partner("Munafa Federation", "MF", countries=["Sierra Leone"])
         other = make_partner("Lakeside Trust", "LT", countries=["Kenya"])
         round_ = Solicitation.objects.create(
-            slug="chc-2025", title="CHC 2025", status="closed", sa_access_state="ok", delivery_type="chc"
+            owner_org=dimagi_org(),
+            slug="chc-2025",
+            title="CHC 2025",
+            status="closed",
+            sa_access_state="ok",
+            delivery_type="chc",
         )
         for row, date in ((99, dt.date(2025, 5, 22)), (100, dt.date(2025, 5, 22))):
             SolicitationResponse.objects.create(
@@ -371,7 +388,7 @@ class TestASubmissionIsNotAnApplicant:
 
     def test_applying_to_a_second_round_does_count(self, client, user, twice):
         second = Solicitation.objects.create(
-            slug="rutf-2026", title="RUTF", status="closed", delivery_type="nutrition"
+            owner_org=dimagi_org(), slug="rutf-2026", title="RUTF", status="closed", delivery_type="nutrition"
         )
         SolicitationResponse.objects.create(
             solicitation=second, llo_entity=twice["org"], source_row=2, org_name="Munafa", match_state="name"
@@ -398,6 +415,7 @@ class TestTheRoundPageDoesNotClaimCausation:
         early = make_partner("Early Bird Trust", "EBT", countries=["Kenya"])
         late = make_partner("Latecomer Health", "LH", countries=["Kenya"])
         round_ = Solicitation.objects.create(
+            owner_org=dimagi_org(),
             slug="timed-2025",
             title="Timed",
             status="closed",
@@ -461,7 +479,9 @@ class TestTheSubmissionTrend:
         import datetime as dt
 
         org = make_partner("Trend Trust", "TT", countries=["Kenya"])
-        round_ = Solicitation.objects.create(slug="spread-2025", title="Spread", status="closed", sa_access_state="ok")
+        round_ = Solicitation.objects.create(
+            owner_org=dimagi_org(), slug="spread-2025", title="Spread", status="closed", sa_access_state="ok"
+        )
 
         # Two bursts three months apart — the shape a total cannot show.
         def at(y, m, d):
@@ -491,7 +511,7 @@ class TestTheSubmissionTrend:
     def test_a_short_round_buckets_by_day(self, db):
         import datetime as dt
 
-        round_ = Solicitation.objects.create(slug="short-2025", title="Short", status="closed")
+        round_ = Solicitation.objects.create(owner_org=dimagi_org(), slug="short-2025", title="Short", status="closed")
         march = [dt.datetime(2025, 3, d, 9, tzinfo=dt.timezone.utc) for d in (1, 2, 3)]
         for i, day in enumerate(march):
             SolicitationResponse.objects.create(
@@ -502,7 +522,7 @@ class TestTheSubmissionTrend:
     def test_a_round_with_one_submission_draws_nothing(self, db):
         import datetime as dt
 
-        round_ = Solicitation.objects.create(slug="one-2025", title="One", status="closed")
+        round_ = Solicitation.objects.create(owner_org=dimagi_org(), slug="one-2025", title="One", status="closed")
         SolicitationResponse.objects.create(
             solicitation=round_,
             source_row=2,

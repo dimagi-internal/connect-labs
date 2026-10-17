@@ -9,6 +9,7 @@ from django.urls import reverse
 from connect_labs.marketplace import programs, queries
 from connect_labs.marketplace.testing import make_partner
 from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
+from connect_labs.supply_chain.runner import dimagi_org
 
 
 class TestTheVocabulary:
@@ -45,14 +46,18 @@ class TestTheVocabulary:
 
 @pytest.fixture
 def user(db, django_user_model):
-    return django_user_model.objects.create_user(username="staff", password="x")
+    return django_user_model.objects.create_user(username="staff", password="x", email="staff@dimagi.com")
 
 
 @pytest.fixture
 def one_org(db):
     org = make_partner("Lakeside Health Trust", "LHT", countries=["Kenya"], delivers=["kmc", "other"])
     round_ = Solicitation.objects.create(
-        slug="rutf-2026", title="RUTF 2026 — Nigeria", status="closed", delivery_type="nutrition"
+        owner_org=dimagi_org(),
+        slug="rutf-2026",
+        title="RUTF 2026 — Nigeria",
+        status="closed",
+        delivery_type="nutrition",
     )
     SolicitationResponse.objects.create(
         solicitation=round_, llo_entity=org, source_row=2, org_name=org.name, match_state="name"
@@ -141,7 +146,11 @@ class TestChlorineIsOneProgram:
         """The round's tag must not depend on delivery having happened."""
         org = make_partner("Riverbank Water Trust", "RWT", countries=["Nigeria"])
         round_ = Solicitation.objects.create(
-            slug="chlorine-2025", title="Chlorine 2025", status="closed", delivery_type="chlorine"
+            owner_org=dimagi_org(),
+            slug="chlorine-2025",
+            title="Chlorine 2025",
+            status="closed",
+            delivery_type="chlorine",
         )
         SolicitationResponse.objects.create(
             solicitation=round_, llo_entity=org, source_row=2, org_name=org.name, match_state="name"

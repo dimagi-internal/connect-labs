@@ -605,19 +605,22 @@
   }
 
   /* A header marked data-sort is a button (static/supply_chain/sheet_sort.js): it reads as
-     the header it was, with an arrow saying which way the rows are in order by it. */
-  .sheet > thead th > .sheet-sort {
+     the header it was, on a sheet or on any other table marked .sortable, with an arrow saying which way the rows are in order by it. */
+  .sheet > thead th > .sheet-sort,
+  .sortable > thead th > .sheet-sort {
     @apply inline-flex cursor-pointer flex-wrap items-baseline gap-1 border-0 bg-transparent p-0 text-left hover:text-gray-900;
     font: inherit;
     color: inherit;
   }
 
-  .sheet > thead th[aria-sort='ascending'] > .sheet-sort::after {
+  .sheet > thead th[aria-sort='ascending'] > .sheet-sort::after,
+  .sortable > thead th[aria-sort='ascending'] > .sheet-sort::after {
     content: '▲';
     @apply text-[0.6rem] text-gray-700;
   }
 
-  .sheet > thead th[aria-sort='descending'] > .sheet-sort::after {
+  .sheet > thead th[aria-sort='descending'] > .sheet-sort::after,
+  .sortable > thead th[aria-sort='descending'] > .sheet-sort::after {
     content: '▼';
     @apply text-[0.6rem] text-gray-700;
   }

@@ -18,11 +18,12 @@ from connect_labs.marketplace import queries
 from connect_labs.marketplace.testing import make_partner
 from connect_labs.pulse.models import PulseEvent, PulseOpportunity
 from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
+from connect_labs.supply_chain.runner import dimagi_org
 
 
 @pytest.fixture
 def user(db, django_user_model):
-    return django_user_model.objects.create_user(username="staff", password="x")
+    return django_user_model.objects.create_user(username="staff", password="x", email="staff@dimagi.com")
 
 
 def _org(i, round_):
@@ -49,10 +50,20 @@ def _org(i, round_):
 def many(db):
     """Enough organisations that a per-row query is visible in the count."""
     round_ = Solicitation.objects.create(
-        slug="chc-2025", title="CHC", status="closed", sa_access_state="ok", delivery_type="chc"
+        owner_org=dimagi_org(),
+        slug="chc-2025",
+        title="CHC",
+        status="closed",
+        sa_access_state="ok",
+        delivery_type="chc",
     )
     other = Solicitation.objects.create(
-        slug="rutf", title="RUTF", status="closed", sa_access_state="ok", delivery_type="nutrition"
+        owner_org=dimagi_org(),
+        slug="rutf",
+        title="RUTF",
+        status="closed",
+        sa_access_state="ok",
+        delivery_type="nutrition",
     )
     orgs = [_org(i, round_) for i in range(25)]
     for i, org in enumerate(orgs[:10]):
@@ -116,7 +127,7 @@ class TestTheRowLoopDoesNotQueryPerRow:
         org = make_partner("Busy Organisation", "BO", countries=["Kenya"])
         for i in range(3):
             round_ = Solicitation.objects.create(
-                slug=f"kmc-{i}", title=f"KMC {i}", status="closed", delivery_type="kmc"
+                owner_org=dimagi_org(), slug=f"kmc-{i}", title=f"KMC {i}", status="closed", delivery_type="kmc"
             )
             SolicitationResponse.objects.create(
                 solicitation=round_, llo_entity=org, source_row=1, org_name=org.name, match_state="name"
