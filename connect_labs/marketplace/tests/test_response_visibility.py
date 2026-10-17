@@ -92,7 +92,9 @@ class TestTheRoundPage:
 
     def test_anyone_else_sees_the_call_and_the_count_only(self, client, round_, outsider):
         body = _page(client, outsider, "marketplace:round", "battery-2026")
-        assert "Battery scoping" in body and "How would you find households?" in body
+        assert "Battery scoping" in body
+        # The questions are the form, which anyone who sees the call may read.
+        assert reverse("marketplace:round_form", args=["battery-2026"]) in body
         assert "Fenwick Trust" not in body and "Unclaimed Group" not in body
         assert "sheet-id-invalid" not in body, "the response sheet is the submissions"
         assert "visible only to members of Dimagi" in body
@@ -143,3 +145,47 @@ class TestTheTools:
         (mine,) = tools.marketplace_orgs_get(member, slugs=["fenwick"])["organizations"]
         (theirs,) = tools.marketplace_orgs_get(outsider, slugs=["fenwick"])["organizations"]
         assert mine["applied_programs"] and theirs["applied_programs"] == []
+
+
+class TestOneResponse:
+    def test_the_owner_opens_a_submission_from_the_round(self, client, round_, member):
+        body = _page(client, member, "marketplace:round", "battery-2026")
+        assert reverse("marketplace:round_response", args=["battery-2026", 2]) in body
+        body = _page(client, member, "marketplace:round_response", "battery-2026", 2)
+        assert ANSWER in body and "How would you find households?" in body
+
+    def test_to_anyone_else_it_does_not_exist(self, client, round_, outsider):
+        client.force_login(outsider)
+        response = client.get(reverse("marketplace:round_response", args=["battery-2026", 2]))
+        assert response.status_code == 404
+
+    def test_the_form_shows_the_questions_and_no_answers(self, client, round_, outsider):
+        body = _page(client, outsider, "marketplace:round_form", "battery-2026")
+        assert "How would you find households?" in body
+        assert ANSWER not in body
+
+
+class TestTheRoundMix:
+    def test_new_returning_and_countries(self, client, round_, member):
+        earlier = Solicitation.objects.create(
+            owner_org=dimagi_org(), slug="older-2024", title="Older", solicitation_type="eoi", status="closed"
+        )
+        SolicitationResponse.objects.create(
+            solicitation=earlier,
+            llo_entity=LabsOrg.objects.get(slug="quietwater"),
+            source_row=2,
+            submission_date="2024-03-01T00:00:00Z",
+            match_state=SolicitationResponse.MATCH_EMAIL,
+        )
+        round_.published_on = "2026-10-01"
+        round_.save()
+        client.force_login(member)
+        mix = client.get(reverse("marketplace:round", args=["battery-2026"])).context["mix"]
+        # Quietwater answered a 2024 round; Fenwick and the unmatched one are new.
+        assert (mix["new"], mix["returning"]) == (2, 1)
+        assert mix["countries"] == [("Ghana", 1), ("Not stated", 2)]
+        assert mix["country_count"] == 1
+
+    def test_an_outsider_gets_no_mix(self, client, round_, outsider):
+        client.force_login(outsider)
+        assert client.get(reverse("marketplace:round", args=["battery-2026"])).context["mix"] == {}
