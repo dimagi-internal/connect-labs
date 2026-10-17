@@ -66,6 +66,9 @@ class TestUpsertRounds:
         assert round_.published_on.isoformat() == "2026-03-01"
         assert round_.response_spreadsheet_id == "1abcDEFghiJKLmnoPQRstuVWxyz0123456789"
 
+    def test_every_round_is_owned_by_dimagi(self, round_):
+        assert round_.owner_org.slug == "dimagi"
+
     def test_is_idempotent(self, round_):
         rounds, _ = parse_rounds(ROUND_ROWS)
         upsert_rounds(rounds)

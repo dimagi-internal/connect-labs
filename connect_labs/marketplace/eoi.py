@@ -52,12 +52,19 @@ def _date(raw):
 def upsert_rounds(rounds) -> dict:
     """Create or update a Solicitation per round row. Never deletes.
 
+    Every round is owned by Dimagi.
+
     A row whose slug already belongs to a call that is not a directory round
     (made or imported for an owner) is skipped and listed in
     `stats["collisions"]`: the slug is unique across both, and the import must
     neither stop on it nor touch that call.
     """
+    from connect_labs.supply_chain.runner import dimagi_org
+
     stats = {"rounds": 0, "collisions": []}
+    # Dimagi ran every round in the directory (product owner, 2026-10-15), so it
+    # owns them: that is what lets its members read the responses.
+    owner = dimagi_org()
     taken = set(Solicitation.objects.calls().filter(slug__in=[r.slug for r in rounds]).values_list("slug", flat=True))
     for row in rounds:
         if row.slug in taken:
@@ -75,6 +82,7 @@ def upsert_rounds(rounds) -> dict:
             "column_map": row.column_map,
             "notes": row.notes,
             "delivery_type": row.delivery_type,
+            "owner_org": owner,
         }
         for name in DATE_FIELDS:
             defaults[name] = _date(getattr(row, name))

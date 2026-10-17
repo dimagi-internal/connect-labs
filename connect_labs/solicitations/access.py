@@ -18,9 +18,12 @@ Membership is Supply's (`supply_chain.runner.is_member`): an `OrgMembership`
 granted for the organisation, Connect's own membership of an organisation
 Connect knows, or a Dimagi address for Dimagi. An organisation being *visible*
 in someone's labs context is not membership. An unowned historical round has
-no owner, so only staff manage it -- there is no Dimagi fallback. A marketplace
-directory round is managed by nobody here (`is_directory_round`): it is shown
-read-only as a past call.
+no owner, so only staff manage it -- there is no Dimagi fallback.
+
+A marketplace directory round (`is_directory_round`) is owned by Dimagi, which
+ran every one of them, but it is a record kept in the LLO Directory sheet: nobody
+edits, reviews or awards one here. Its owner -- and platform support -- may read
+its responses (`can_read_round_responses`); everyone else sees the call only.
 
 Every check fails closed: a membership that cannot be established is none.
 """
@@ -101,11 +104,24 @@ def is_directory_round(solicitation) -> bool:
 
     Shown read-only as a past call (`past_calls.py`); nobody manages, reviews,
     awards or responds to one from the solicitations side -- staff included,
-    and Dimagi's members included, although Dimagi ran every one of them.
+    and Dimagi's members included. Its owner may read its responses
+    (`can_read_round_responses`); the sheet stays the place it is edited.
     """
     from connect_labs.solicitations.local_models import SOURCE_DIRECTORY
 
     return getattr(solicitation, "source", None) == SOURCE_DIRECTORY
+
+
+def can_read_round_responses(subject, solicitation) -> bool:
+    """Read the submissions to a directory round: a member of its owning
+    organisation (Dimagi), or platform support. Never anyone else, and never a
+    call that is not a directory round -- those are `can_read_response`'s."""
+    if not is_directory_round(solicitation):
+        return False
+    caller = caller_for(subject)
+    if solicitation.owner_org_id and caller.is_member(solicitation.owner_org):
+        return True
+    return caller.is_operator
 
 
 def standing(subject, solicitation) -> str:
@@ -218,7 +234,7 @@ def manageable_orgs(subject) -> list[LabsOrg]:
     switcher lists those too.
     """
     from connect_labs.marketplace.models import OrgMembership
-    from connect_labs.utils.dimagi_user import is_dimagi_user
+    from connect_labs.utils.dimagi_user import is_dimagi_org_member
 
     caller = caller_for(subject)
     if not caller.is_authenticated:
@@ -235,7 +251,7 @@ def manageable_orgs(subject) -> list[LabsOrg]:
                 "pk", flat=True
             )
         )
-    if is_dimagi_user(caller.user):
+    if is_dimagi_org_member(caller.user):
         ids.add(runner.dimagi_org().pk)
     orgs = [org for org in LabsOrg.objects.filter(pk__in=ids).order_by("name") if caller.is_member(org)]
     if caller.is_operator:

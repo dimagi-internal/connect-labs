@@ -5,6 +5,10 @@ it. The page declares only a SELECTION (slugs plus the tool that resolves them),
 and the agent calls in here for the substance — so one place decides what a row
 says, and the copy on the screen cannot go stale between render and use.
 
+``marketplace_round_responses`` is the exception to "anyone may read it": a
+round's answers are what organisations told Dimagi, so only the round's owner
+(Dimagi) and platform support read them (``access.can_read_round_responses``).
+
 Read-only, all of it. Writing to the directory is the LLO Directory sheet's job
 (``marketplace_import``), and a tool that wrote here would be a second source of
 truth for rows a human maintains.
@@ -24,10 +28,12 @@ on ``/labs/marketplace/org/<slug>/``. Two consequences worth holding onto:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace import programs, queries
+from connect_labs.marketplace.responses import Question, detect_columns
 
 from ..tool_registry import MCPToolError, register
 
@@ -245,3 +251,104 @@ def marketplace_rounds_list(
     if slug and not out:
         raise MCPToolError("NOT_FOUND", f"No marketplace round with slug {slug!r}.")
     return {"rounds": out, "count": len(out)}
+
+
+#: One round's submissions. The largest round (CHC 2025) has a little over a
+#: hundred, so a single page covers every round there is.
+MAX_RESPONSES = 200
+
+# Personal fields the column detector does not name: a phone number, and the
+# declaration's "Name, Role, and Date" signature line.
+_PERSONAL_HEADER = re.compile(r"\b(phone|telephone|whatsapp|mobile)\b|^name,? (and )?(role|title)|signature", re.I)
+
+
+def _personal_question_ids(questions: list[dict], column_map: dict) -> set[str]:
+    """The answers that are a person's contact details rather than the organisation's."""
+    parsed = [Question(id=q["id"], text=q.get("text", ""), column=q.get("column", 0)) for q in questions]
+    found = detect_columns(parsed, column_map or None)
+    ids = {found[f] for f in ("email", "contact_name") if f in found}
+    return ids | {q.id for q in parsed if _PERSONAL_HEADER.search(q.text.strip())}
+
+
+@register(
+    name="marketplace_round_responses",
+    description=(
+        "Read every submission to one marketplace EOI/RFP round: each applicant's "
+        "answers to every question, in the form's order, with the directory "
+        "organisation it was matched to (slug, or null when unmatched). Use it to "
+        "summarise a round, compare applicants and recommend a shortlist; pair it "
+        "with `marketplace_orgs_get` on the matched slugs for each organisation's "
+        "history (what it applied to before, what it delivered). Only the round's "
+        "owner (Dimagi) and platform support may read it. The contact person's "
+        "name, email, phone and signature are left out unless `include_contacts` "
+        "is true — ask for them only when you are going to write to them. Read-only."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "slug": {"type": "string", "description": "The round's slug, from `marketplace_rounds_list`."},
+            "include_contacts": {
+                "type": "boolean",
+                "description": "Include each submission's contact name, emails, phone and signature line.",
+            },
+        },
+        "required": ["slug"],
+        "additionalProperties": False,
+    },
+)
+def marketplace_round_responses(user, slug: str, include_contacts: bool = False) -> dict[str, Any]:
+    from connect_labs.solicitations import access
+    from connect_labs.solicitations.local_models import Solicitation
+
+    round_ = Solicitation.objects.directory_rounds().select_related("owner_org").filter(slug=slug).first()
+    if round_ is None:
+        raise MCPToolError("NOT_FOUND", f"No marketplace round with slug {slug!r}.")
+    if not access.can_read_round_responses(user, round_):
+        raise MCPToolError(
+            "PERMISSION_DENIED",
+            f"Only members of the organisation that ran {slug!r} "
+            f"({round_.owner_name or 'its owner'}) may read its responses.",
+        )
+
+    questions = list(round_.questions or [])
+    personal = set() if include_contacts else _personal_question_ids(questions, round_.column_map)
+    shown = [q for q in questions if q["id"] not in personal]
+
+    rows = round_.responses.select_related("llo_entity").order_by("source_row")
+    total = rows.count()
+    out = []
+    for response in rows[:MAX_RESPONSES]:
+        answers = response.responses or {}
+        row = {
+            "source_row": response.source_row,
+            "org_name": response.org_name,
+            # The directory organisation, only where the import was certain;
+            # an unmatched submission says so rather than borrowing a near name.
+            "org_slug": response.llo_entity.slug if response.llo_entity_id else None,
+            "match_state": response.match_state,
+            "submitted_at": response.submission_date.isoformat() if response.submission_date else None,
+            "country": response.country_as_submitted,
+            "website": response.website_as_submitted,
+            "answers": [{"question": q["text"], "answer": answers.get(q["id"], "")} for q in shown],
+        }
+        if include_contacts:
+            row["contact"] = {"name": response.submitted_by_name, "emails": response.submitted_by_email}
+        out.append(row)
+
+    return {
+        "round": {
+            "slug": round_.slug,
+            "title": round_.title,
+            "type": round_.get_solicitation_type_display(),
+            "owner": round_.owner_name,
+            "application_deadline": (round_.application_deadline.isoformat() if round_.application_deadline else None),
+            "target_countries": round_.target_countries or "",
+            "announcement_url": round_.announcement_url or "",
+            "last_ingested_at": round_.last_ingested_at.isoformat() if round_.last_ingested_at else None,
+            "questions_withheld": len(questions) - len(shown),
+        },
+        "responses": out,
+        "count": len(out),
+        "total": total,
+        "truncated": total > len(out),
+    }
