@@ -191,3 +191,46 @@ def test_owning_org_member_responding_under_a_typed_name_is_own_side(world):
     assert not access.can_award(world["owner"], response)
     # Platform support is not on the owner's side.
     assert access.can_review(world["staff"], response)
+
+
+def test_a_dimagi_associate_belongs_to_dimagi_but_is_not_staff():
+    from connect_labs.supply_chain.runner import dimagi_org
+    from connect_labs.utils.dimagi_user import is_dimagi_staff, is_dimagi_user
+
+    associate = make_user("associate", email="someone@dimagi-associate.com")
+    call = make_call(dimagi_org())
+    assert access.standing(associate, call) == access.OWNER
+    assert dimagi_org() in access.manageable_orgs(associate)
+    assert not is_dimagi_user(associate) and not is_dimagi_staff(associate)
+
+
+def test_a_lookalike_domain_is_not_dimagi():
+    from connect_labs.supply_chain.runner import dimagi_org
+
+    for email in ("someone@notdimagi.com", "someone@dimagi.com.example", "someone@dimagi-associates.com"):
+        assert access.standing(make_user(email.split("@")[1], email=email), make_call(dimagi_org())) == access.PUBLIC
+
+
+def test_dimagi_reads_its_directory_rounds_responses_and_nobody_manages_them():
+    from connect_labs.solicitations.local_models import SOURCE_DIRECTORY
+    from connect_labs.supply_chain.runner import dimagi_org
+
+    round_ = make_call(dimagi_org(), source=SOURCE_DIRECTORY, slug="old-round")
+    dimagi, associate = make_user("d", email="d@dimagi.com"), make_user("a", email="a@dimagi-associate.com")
+    outsider, staff = make_user("outsider"), make_user("support", staff=True)
+
+    assert access.can_read_round_responses(dimagi, round_)
+    assert access.can_read_round_responses(associate, round_)
+    assert access.can_read_round_responses(staff, round_)
+    assert not access.can_read_round_responses(outsider, round_)
+    assert not access.can_read_round_responses(None, round_)
+    # Owned, but still a record kept in the sheet: nobody edits, reviews or awards it.
+    for person in (dimagi, associate, staff):
+        assert access.standing(person, round_) == access.PUBLIC
+        assert not access.can_manage(person, round_)
+
+
+def test_round_responses_rule_never_covers_an_owned_call():
+    from connect_labs.supply_chain.runner import dimagi_org
+
+    assert not access.can_read_round_responses(make_user("d", email="d@dimagi.com"), make_call(dimagi_org()))

@@ -134,6 +134,8 @@ NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         # from the org's first visit (a date, not a visit).
         "marketplace_orgs_get",
         "marketplace_rounds_list",
+        # An organisation's answers to a round (owner-gated in the tool).
+        "marketplace_round_responses",
         # Targeting: population and burden data, not visits.
         "targeting_indicators",
         "targeting_select",

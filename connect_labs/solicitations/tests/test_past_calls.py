@@ -149,7 +149,7 @@ def test_past_calls_follow_the_type_program_owner_filters_and_search(client, wor
     assert "Other org call" in other_only and "Community health partners 2025" not in other_only
 
 
-def test_dimagi_is_display_only(client, world):
+def test_reading_the_pages_never_changes_a_rounds_owner(client, world):
     client.get(url("public_list"))
     client.get(url("past_detail", slug="chc-2025"))
     world["round"].refresh_from_db()

@@ -11,10 +11,12 @@ sheet and tab, the column map, the import notes, or anything about who
 applied. A signed-in user may see how many organisations applied; nobody sees
 which.
 
-Dimagi is the owner for DISPLAY only. ``owner_org`` stays empty on these rows,
+Dimagi owns these rows (``owner_org``, set by ``marketplace.eoi.upsert_rounds``),
 and nothing here grants a right: ``access.standing`` treats every directory
 round as one nobody manages on the solicitations side, and the data access
-reaches them only through the read-only functions below.
+reaches them only through the read-only functions below. Owning one lets
+Dimagi's members read its responses (``access.can_read_round_responses``) --
+through the marketplace tools, never through these pages.
 """
 
 from __future__ import annotations

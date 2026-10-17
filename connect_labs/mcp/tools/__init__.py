@@ -12,7 +12,7 @@ from . import explorer  # noqa: F401  -- registers explorer_describe, explorer_q
 from . import funds  # noqa: F401
 from . import jobs  # noqa: F401  -- registers job_status, job_cancel (mcp/jobs.py)
 from . import labs_context  # noqa: F401
-from . import marketplace  # noqa: F401  -- registers marketplace_orgs_get, marketplace_rounds_list
+from . import marketplace  # noqa: F401  -- registers marketplace_* (orgs_get, rounds_list, round_responses)
 from . import microplans  # noqa: F401  -- list/work_areas/delete_plan/delete_group/transition_plan
 from . import microplans_create  # noqa: F401  -- registers microplans_bulk_create_plans/_status/coverage_param_schema
 from . import microplans_study  # noqa: F401  -- registers microplans_study_ensure, microplans_study_reset_round
