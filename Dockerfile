@@ -30,8 +30,11 @@ RUN [ -d /app/connect_labs/static/bundles/js ] || npm run build
 # Served login-gated at /labs/docs/help/ by connect_labs/labs/help_site.py.
 # Not --strict here: the docs bot commits straight to main, and a broken doc link
 # must not block a deploy. The strict check runs on PRs (docs-deploy.yml).
+# Built on BASE_IMAGE, which a deploy points at labs' own ECR: this stage pulling
+# public.ecr.aws anonymously failed deploys on "toomanyrequests: Data limit
+# exceeded" (2026-10-18, three in a row). Locally it falls back to the public image.
 # ---------------------------------------------------------------------------
-FROM public.ecr.aws/docker/library/python:3.13-slim-bookworm AS build-docs
+FROM ${BASE_IMAGE} AS build-docs
 
 RUN pip install --no-cache-dir mkdocs==1.6.1 mkdocs-material==9.7.7
 WORKDIR /docs
