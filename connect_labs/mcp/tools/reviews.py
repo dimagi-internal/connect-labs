@@ -351,3 +351,26 @@ def update_review(user, review_id: int, update_data: dict, program_id=None, orga
     except ValidationError as e:
         raise MCPToolError("BAD_REQUEST", "; ".join(e.messages)) from e
     return _serialize_record(record)
+
+
+@register(
+    name="delete_review",
+    description=(
+        "Delete one of your own reviews (or, as platform support, anyone's). It cannot be undone. "
+        "Reviews that agreed with or added to it keep their own content and lose the link. "
+        "Get the requester's approval first."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {"review_id": {"type": "integer", "description": "The review to delete."}},
+        "required": ["review_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def delete_review(user, review_id: int) -> dict:
+    try:
+        response_id = SolicitationsDataAccess(user=user).delete_review(review_id)
+    except (PermissionDenied, SolicitationReview.DoesNotExist) as e:
+        raise _errors(e) from e
+    return {"deleted": review_id, "response_id": response_id}

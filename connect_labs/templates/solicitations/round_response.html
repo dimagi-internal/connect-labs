@@ -153,7 +153,7 @@ Below lg the two are tabs.
               </div>
             {% endif %}
             {% if rev.flags or rev.stance == 'adds' and rev.based_on.flags %}
-              <div class="flex flex-wrap gap-1.5 mb-3">{% if rev.stance == 'adds' %}{% for flag in rev.based_on.flags %}<span class="px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">{{ flag }}</span>{% endfor %}{% endif %}{% for flag in rev.flags %}<span class="px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">{% if rev.stance == 'adds' %}+ {% endif %}{{ flag }}</span>{% endfor %}</div>
+              <div class="flex flex-wrap gap-1.5 mb-3">{% if rev.stance == 'adds' %}{% for flag in rev.base_flag_chips %}<span class="px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-800" title="{{ flag.definition }}">{{ flag.label }}</span>{% endfor %}{% endif %}{% for flag in rev.flag_chips %}<span class="px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-800" title="{{ flag.definition }}">{% if rev.stance == 'adds' %}+ {% endif %}{{ flag.label }}</span>{% endfor %}</div>
             {% endif %}
             {% if rev.notes %}<p class="text-sm text-gray-600 whitespace-pre-line mb-3">{{ rev.notes }}</p>{% endif %}
 
@@ -164,6 +164,14 @@ Below lg the two are tabs.
                 <a href="{% url 'solicitations:review' pk=response.pk %}?from={{ rev.pk }}&stance=adds" class="inline-flex items-center px-3 py-1.5 border border-indigo-200 text-brand-indigo text-xs font-medium rounded-lg hover:bg-indigo-50" title="Keep {% if rev.kind == 'ai' %}the AI's{% else %}this{% endif %} review as it is and add your own reasons, passages and questions, marked as yours"><i class="fa-solid fa-plus mr-1.5"></i> Add to it</a>
                 <a href="{% url 'solicitations:review' pk=response.pk %}?from={{ rev.pk }}" class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50" title="Start your own review from a copy you can change throughout"><i class="fa-solid fa-copy mr-1.5"></i> Copy and edit as mine</a>
                 <a href="{% url 'solicitations:review' pk=response.pk %}?from={{ rev.pk }}&stance=disagrees" class="inline-flex items-center px-3 py-1.5 border border-red-200 text-red-700 text-xs font-medium rounded-lg hover:bg-red-50"><i class="fa-solid fa-xmark mr-1.5"></i> I disagree</a>
+              </div>
+              {% else %}
+              <div class="sticky bottom-0 bg-white pt-3 pb-1 border-t border-gray-100 flex flex-wrap items-center gap-2">
+                <a href="{% url 'solicitations:review' pk=response.pk %}" class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50"><i class="fa-solid fa-pen mr-1.5"></i> Edit my review</a>
+                <form method="post" action="{% url 'solicitations:review_delete' pk=rev.pk %}" onsubmit="return confirm('Delete your review of this response? This cannot be undone.');" data-testid="delete-review">
+                  {% csrf_token %}
+                  <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-red-200 text-red-700 text-xs font-medium rounded-lg hover:bg-red-50"><i class="fa-solid fa-trash-can mr-1.5"></i> Delete my review</button>
+                </form>
               </div>
               {% endif %}
             {% endif %}

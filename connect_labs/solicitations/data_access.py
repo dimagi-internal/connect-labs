@@ -915,6 +915,24 @@ class SolicitationsDataAccess:
         review.save()
         return review
 
+    def delete_review(self, review_id: int) -> int:
+        """Delete a review; returns the response it was on. Only its reviewer, or platform support.
+
+        Reviews built on it (agreeing with it, adding to it) keep their own
+        content and lose the link: `based_on` is SET_NULL.
+        """
+        review = self.get_review_by_id(review_id)
+        if review is None:
+            raise SolicitationReview.DoesNotExist(f"Review {review_id} not found")
+        access.require(
+            access.can_review(self.caller, review.response)
+            and (review.reviewer_id == self.caller.user_pk or self.caller.is_operator),
+            "Only the reviewer (or platform support) can delete this review.",
+        )
+        response_id = review.response_id
+        review.delete()
+        return response_id
+
     def _apply_review_fields(self, review, data: dict, response) -> None:
         for name in ("recommendation", "notes", "tags", "strengths", "concerns", "ask_next"):
             if name in data:
