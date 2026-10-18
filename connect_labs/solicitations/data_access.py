@@ -34,6 +34,7 @@ from connect_labs.solicitations.local_models import (
     REVIEW_HUMAN,
     SOURCE_LABS,
     STANCES,
+    RubricVersion,
     Solicitation,
     SolicitationResponse,
     SolicitationReview,
@@ -89,6 +90,32 @@ class HasResponses(Exception):
     def __init__(self, responses: int, reviews: int):
         self.responses, self.reviews = responses, reviews
         super().__init__(f"{responses} responses + {reviews} reviews would be destroyed")
+
+
+def _clean_criteria(criteria) -> list[dict]:
+    """A round's criteria as stored: {id, name, weight, scoring_guide, rationale}, weights summing to 100."""
+    cleaned, seen = [], set()
+    for raw in criteria or []:
+        cid = str(raw.get("id") or "").strip()
+        name = str(raw.get("name") or "").strip()
+        if not cid or not name:
+            raise ValidationError({"criteria": "Every criterion needs an id and a name."})
+        if cid in seen:
+            raise ValidationError({"criteria": f"Criterion id {cid!r} appears twice."})
+        seen.add(cid)
+        cleaned.append(
+            {
+                "id": cid,
+                "name": name,
+                "weight": float(raw.get("weight") or 0),
+                "scoring_guide": str(raw.get("scoring_guide") or ""),
+                "rationale": str(raw.get("rationale") or ""),
+            }
+        )
+    total = sum(c["weight"] for c in cleaned)
+    if cleaned and abs(total - 100) > 0.5:
+        raise ValidationError({"criteria": f"Weights add up to {total:g}, not 100."})
+    return cleaned
 
 
 def _parse_date(value):
@@ -312,32 +339,22 @@ class SolicitationsDataAccess:
             access.can_set_round_criteria(self.caller, round_),
             "Only members of the organisation that ran this round may set its criteria.",
         )
-        cleaned, seen = [], set()
-        for raw in criteria or []:
-            cid = str(raw.get("id") or "").strip()
-            name = str(raw.get("name") or "").strip()
-            if not cid or not name:
-                raise ValidationError({"criteria": "Every criterion needs an id and a name."})
-            if cid in seen:
-                raise ValidationError({"criteria": f"Criterion id {cid!r} appears twice."})
-            seen.add(cid)
-            cleaned.append(
-                {
-                    "id": cid,
-                    "name": name,
-                    "weight": float(raw.get("weight") or 0),
-                    "scoring_guide": str(raw.get("scoring_guide") or ""),
-                    "rationale": str(raw.get("rationale") or ""),
-                }
-            )
-        total = sum(c["weight"] for c in cleaned)
-        if cleaned and abs(total - 100) > 0.5:
-            raise ValidationError({"criteria": f"Weights add up to {total:g}, not 100."})
+        cleaned = _clean_criteria(criteria)
         previous = _int_or_none((round_.rubric_version or "v0").lstrip("v")) or 0
+        # The highest version any earlier rubric used: a deleted version's
+        # number is never reused, so a review's version always means one thing.
+        used = [_int_or_none(v.lstrip("v")) or 0 for v in round_.rubric_versions.values_list("version", flat=True)]
         round_.evaluation_criteria = cleaned
         round_.criteria_basis = basis or ""
-        round_.rubric_version = f"v{previous + 1}"
+        round_.rubric_version = f"v{max([previous, *used]) + 1}"
         round_.save(update_fields=["evaluation_criteria", "criteria_basis", "rubric_version"])
+        RubricVersion.objects.create(
+            solicitation=round_,
+            version=round_.rubric_version,
+            criteria=cleaned,
+            basis=basis or "",
+            created_by=self.user,
+        )
         return round_
 
     def get_past_call(self, key) -> Solicitation | None:
@@ -489,7 +506,7 @@ class SolicitationsDataAccess:
         """Delete a call and, with `force`, its responses and reviews. Returns the counts."""
         solicitation = self._managed_solicitation(solicitation_id)
         responses = solicitation.responses.count()
-        reviews = SolicitationReview.objects.filter(response__solicitation=solicitation).count()
+        reviews = SolicitationReview.all_versions.filter(response__solicitation=solicitation).count()
         if (responses or reviews) and not force:
             raise HasResponses(responses, reviews)
         solicitation.delete()  # responses and reviews cascade
@@ -893,6 +910,15 @@ class SolicitationsDataAccess:
         )
         kind = REVIEW_AI if data.get("kind") == REVIEW_AI else REVIEW_HUMAN
         review = response.reviews.filter(reviewer_id=self.caller.user_pk, kind=kind).first() if self.user else None
+        # An AI pass on newer criteria keeps the earlier one as history rather
+        # than writing over it; a re-run on the same criteria replaces it.
+        incoming = str(
+            (data.get("provenance") or {}).get("rubric_version") or response.solicitation.rubric_version or ""
+        )
+        if review is not None and kind == REVIEW_AI and review.rubric_version and review.rubric_version != incoming:
+            review.superseded_at = timezone.now()
+            review.save(update_fields=["superseded_at"])
+            review = None
         if review is None:
             review = SolicitationReview(response=response, reviewer=self.user, kind=kind)
         self._apply_review_fields(review, dict(data), response)
@@ -933,7 +959,88 @@ class SolicitationsDataAccess:
         review.delete()
         return response_id
 
-    def _apply_review_fields(self, review, data: dict, response) -> None:
+    def get_round_versions(self, slug: str) -> tuple[Solicitation, list[RubricVersion]]:
+        """A round and every version of its criteria, oldest first. Owner only."""
+        round_ = self._readable_round(slug)
+        return round_, list(round_.rubric_versions.all())
+
+    def archive_round_version(
+        self, slug: str, version: str, reviews: list, criteria: list | None = None, basis: str = ""
+    ) -> dict:
+        """Put an earlier criteria version, and the AI reviews scored on it, back into the round's history.
+
+        For history kept outside labs (a round whose criteria were replaced
+        before labs kept versions). `criteria` is needed the first time a
+        version is archived. Each review is {response_id, criteria_scores,
+        outcome, claims, flags, ask_next, notes, provenance, review_date}; it is
+        stored as a superseded AI review, scored on that version's weights, and
+        replaces one already archived for the same response and version.
+        """
+        round_ = self._readable_round(slug, write=True)
+        if version == round_.rubric_version:
+            raise ValidationError(
+                {"version": f"{version} is the round's current criteria; archive earlier ones only."}
+            )
+        record = round_.rubric_versions.filter(version=version).first()
+        if record is None:
+            if not criteria:
+                raise ValidationError({"criteria": f"{version} is not in the round's history yet: send its criteria."})
+            record = RubricVersion.objects.create(
+                solicitation=round_,
+                version=version,
+                criteria=_clean_criteria(criteria),
+                basis=basis or "",
+                created_by=self.user,
+            )
+        written = 0
+        responses = {r.pk: r for r in round_.responses.all()}
+        for raw in reviews or []:
+            response = responses.get(_int_or_none(raw.get("response_id")))
+            if response is None:
+                raise ValidationError({"reviews": f"Response {raw.get('response_id')} is not in {slug}."})
+            SolicitationReview.all_versions.filter(
+                response=response,
+                kind=REVIEW_AI,
+                reviewer=self.user,
+                superseded_at__isnull=False,
+                provenance__rubric_version=version,
+            ).delete()
+            review = SolicitationReview(response=response, reviewer=self.user, kind=REVIEW_AI)
+            data = {k: raw[k] for k in raw if k not in ("response_id", "kind", "based_on", "stance")}
+            data["provenance"] = {**(raw.get("provenance") or {}), "rubric_version": version}
+            self._apply_review_fields(review, data, response, criteria=record.criteria)
+            review.superseded_at = timezone.now()
+            review.save()
+            written += 1
+        return {"version": version, "reviews": written}
+
+    def delete_round_version(self, slug: str, version: str) -> dict:
+        """Delete an earlier criteria version and every review scored on it. Never the current one."""
+        round_ = self._readable_round(slug, write=True)
+        if version == round_.rubric_version:
+            raise ValidationError({"version": f"{version} is the round's current criteria and cannot be deleted."})
+        record = round_.rubric_versions.filter(version=version).first()
+        reviews = SolicitationReview.all_versions.filter(
+            response__solicitation=round_, provenance__rubric_version=version
+        )
+        if record is None and not reviews.exists():
+            raise RubricVersion.DoesNotExist(f"{slug} has no criteria version {version}.")
+        by_people = reviews.exclude(kind=REVIEW_AI).count()
+        count = reviews.count()
+        reviews.delete()
+        if record is not None:
+            record.delete()
+        return {"version": version, "reviews_deleted": count, "by_people": by_people}
+
+    def _readable_round(self, slug: str, write: bool = False) -> Solicitation:
+        round_ = Solicitation.objects.directory_rounds().select_related("owner_org").filter(slug=slug).first()
+        if round_ is None:
+            raise Solicitation.DoesNotExist(f"No marketplace round with slug {slug!r}")
+        allowed = access.can_set_round_criteria if write else access.can_read_round_responses
+        access.require(allowed(self.caller, round_), "Only members of the organisation that ran this round.")
+        return round_
+
+    def _apply_review_fields(self, review, data: dict, response, criteria: list | None = None) -> None:
         for name in ("recommendation", "notes", "tags", "strengths", "concerns", "ask_next"):
             if name in data:
                 setattr(review, name, data[name] or "")
@@ -972,7 +1079,7 @@ class SolicitationsDataAccess:
             review.claims = evidence.resolve(
                 data["claims"],
                 evidence.answers_of(response, questions),
-                [c.get("id") for c in solicitation.evaluation_criteria or []],
+                [c.get("id") for c in (criteria if criteria is not None else solicitation.evaluation_criteria) or []],
             )
             # The claims are the review's statements; the flat fields repeat them.
             if review.claims:
@@ -999,7 +1106,9 @@ class SolicitationsDataAccess:
         version = response.solicitation.rubric_version
         if "criteria_scores" in data and version and not (data.get("provenance") or {}).get("rubric_version"):
             review.provenance = {**(review.provenance or {}), "rubric_version": version}
-        computed = weighted_score(review.criteria_scores, response.solicitation.evaluation_criteria)
+        computed = weighted_score(
+            review.criteria_scores, criteria if criteria is not None else response.solicitation.evaluation_criteria
+        )
         if computed is not None:
             review.score = computed
         elif "score" in data:

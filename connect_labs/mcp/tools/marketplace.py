@@ -365,29 +365,8 @@ def marketplace_round_responses(user, slug: str, include_contacts: bool = False)
     }
 
 
-@register(
-    name="marketplace_round_scores",
-    description=(
-        "How one marketplace EOI/RFP round scored: every applicant against every evaluation "
-        "criterion, plus summary figures per criterion (how many scored, mean, median, the "
-        "spread over 1-10, and the mean for picks and backups against everyone else; a small "
-        "gap means the criterion did not decide the slate). Each applicant carries its lead "
-        "review: a person's when one exists, else the AI first pass, the same one the round "
-        "page shows, with the rubric_version it scored against. The same figures as the "
-        "round's Scores page in labs. Only the round's owner may read it. Read-only."
-    ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "slug": {"type": "string", "description": "The round's slug, from `marketplace_rounds_list`."},
-        },
-        "required": ["slug"],
-        "additionalProperties": False,
-    },
-)
-def marketplace_round_scores(user, slug: str) -> dict[str, Any]:
-    from connect_labs.marketplace import queries
-    from connect_labs.solicitations import access, vocabulary
+def _round_or_refuse(user, slug: str):
+    from connect_labs.solicitations import access
     from connect_labs.solicitations.local_models import Solicitation
 
     round_ = Solicitation.objects.directory_rounds().select_related("owner_org").filter(slug=slug).first()
@@ -396,19 +375,74 @@ def marketplace_round_scores(user, slug: str) -> dict[str, Any]:
     if not access.can_read_round_responses(user, round_):
         raise MCPToolError(
             "PERMISSION_DENIED",
-            f"Only members of the organisation that ran {slug!r} "
-            f"({round_.owner_name or 'its owner'}) may read its scores.",
+            f"Only members of the organisation that ran {slug!r} ({round_.owner_name or 'its owner'}) may read it.",
         )
-    applicants = queries.round_applicants(round_, queries.first_service_by_org_name())
-    reviewed = queries.review_status(round_, applicants)
-    summary = queries.round_scores(round_, applicants)
+    return round_
+
+
+def _applicant_row(a) -> dict:
     return {
+        "response_id": a["response"].pk,
+        "org_slug": a["org"].slug if a["org"] else None,
+        "name": a["name"],
+        "country": a["country"] or "",
+        "outcome": a["review"]["outcome"],
+        "score": a["review"]["score"],
+        "criteria_scores": a["review"]["criteria_scores"],
+        "flags": a["review"]["flags"],
+        "checked_by_person": a["review"]["by_person"],
+        "has_ai": a["review"]["has_ai"],
+        "rubric_version": a["review"]["rubric_version"],
+    }
+
+
+@register(
+    name="marketplace_round_scores",
+    description=(
+        "How one marketplace EOI/RFP round scored: every applicant against every evaluation "
+        "criterion, plus summary figures per criterion (how many scored, mean, median, the "
+        "spread over 1-10, and the mean for the shortlist (recommended + backup) against "
+        "everyone else; a small gap means the criterion did not decide the shortlist). Each "
+        "applicant carries its lead review: a person's when one exists, else the AI's. "
+        "`version` reads an earlier criteria version (its criteria and the reviews scored on "
+        "it; `marketplace_round_versions` lists them); `compare_with` adds what changed between "
+        "the two versions: whose recommendation moved, the mean score shift, and each "
+        "criterion's weight, mean and shortlist gap in both. The same figures as the round's "
+        "Scores page in labs. Only the round's owner may read it. Read-only."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "slug": {"type": "string", "description": "The round's slug, from `marketplace_rounds_list`."},
+            "version": {"type": "string", "description": "A criteria version, e.g. v1. Default: current."},
+            "compare_with": {"type": "string", "description": "Another version to compare with, e.g. v1."},
+        },
+        "required": ["slug"],
+        "additionalProperties": False,
+    },
+)
+def marketplace_round_scores(user, slug: str, version: str = "", compare_with: str = "") -> dict[str, Any]:
+    from connect_labs.marketplace import queries
+    from connect_labs.solicitations import vocabulary
+
+    round_ = _round_or_refuse(user, slug)
+    names = [v.version for v in round_.rubric_versions.all()]
+    for asked in (version, compare_with):
+        if asked and asked not in names:
+            raise MCPToolError("NOT_FOUND", f"{slug} has no criteria version {asked!r}; it has {names}.")
+    shown = version or round_.rubric_version
+    first_service = queries.first_service_by_org_name()
+    applicants, reviewed, summary, criteria = queries.scores_at(round_, shown, first_service)
+    out = {
         "round": {
             "slug": round_.slug,
             "title": round_.title,
             "rubric_version": round_.rubric_version or "",
             "summary_url": round_.summary_url or "",
         },
+        "version": shown,
+        "versions": names,
+        "evaluation_criteria": criteria,
         # What each outcome and flag key means, as the page shows it.
         "vocabulary": {"outcomes": vocabulary.OUTCOMES, "flags": vocabulary.FLAGS},
         "criteria": summary["criteria"],
@@ -417,23 +451,130 @@ def marketplace_round_scores(user, slug: str) -> dict[str, Any]:
         "flags": dict(summary["flags"]),
         "rubric_versions": dict(summary["versions"]),
         "reviewed": {"people": reviewed["people"], "ai_only": reviewed["ai_only"], "none": reviewed["none"]},
-        "applicants": [
-            {
-                "response_id": a["response"].pk,
-                "org_slug": a["org"].slug if a["org"] else None,
-                "name": a["name"],
-                "country": a["country"] or "",
-                "outcome": a["review"]["outcome"],
-                "score": a["review"]["score"],
-                "criteria_scores": a["review"]["criteria_scores"],
-                "flags": a["review"]["flags"],
-                "checked_by_person": a["review"]["by_person"],
-                "has_ai": a["review"]["has_ai"],
-                "rubric_version": a["review"]["rubric_version"],
-            }
-            for a in applicants
+        "applicants": [_applicant_row(a) for a in applicants],
+    }
+    if compare_with and compare_with != shown:
+        first, second = sorted([compare_with, shown], key=names.index)
+        comparison = queries.compare_at(round_, first, second, first_service)
+        out["comparison"] = {
+            **comparison,
+            "moved": [
+                {
+                    "response_id": m["applicant"]["response"].pk,
+                    "name": m["applicant"]["name"],
+                    "from": m["from_key"],
+                    "to": m["to_key"],
+                    "score_from": m["score_from"],
+                    "score_to": m["score_to"],
+                }
+                for m in comparison["moved"]
+            ],
+        }
+    return out
+
+
+@register(
+    name="marketplace_round_versions",
+    description=(
+        "Every criteria version of one marketplace round, oldest first: its criteria, basis, who "
+        "wrote it and when, whether it is current, and how many AI and people's reviews were "
+        "scored on it. A round keeps every version: rewriting the criteria adds one, and an AI "
+        "re-score on new criteria keeps the earlier AI review as history. Owner only. Read-only."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {"slug": {"type": "string", "description": "The round's slug."}},
+        "required": ["slug"],
+        "additionalProperties": False,
+    },
+)
+def marketplace_round_versions(user, slug: str) -> dict[str, Any]:
+    from connect_labs.marketplace import queries
+
+    round_ = _round_or_refuse(user, slug)
+    return {
+        "slug": round_.slug,
+        "current": round_.rubric_version or "",
+        "versions": [
+            {**v, "created_at": v["created_at"].isoformat() if v["created_at"] else None}
+            for v in queries.version_history(round_)
         ],
     }
+
+
+@register(
+    name="marketplace_round_version_archive",
+    description=(
+        "Put an earlier criteria version, and the AI reviews scored on it, back into a round's "
+        "history: for history kept outside labs, e.g. a round whose criteria were replaced before "
+        "labs kept versions. `criteria` ({id, name, weight, scoring_guide, rationale}) is needed "
+        "the first time a version is archived; send reviews in batches. Each review is "
+        "{response_id, criteria_scores, outcome, claims, flags, ask_next, notes, provenance, "
+        "review_date} as `create_review` takes it; it is stored as a superseded AI review scored "
+        "on that version's weights. Never the current version. Owner only. Get approval first."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "slug": {"type": "string"},
+            "version": {"type": "string", "description": "The earlier version, e.g. v1."},
+            "criteria": {"type": "array", "items": {"type": "object"}},
+            "basis": {"type": "string"},
+            "reviews": {"type": "array", "items": {"type": "object"}},
+        },
+        "required": ["slug", "version", "reviews"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def marketplace_round_version_archive(
+    user, slug: str, version: str, reviews: list, criteria: list | None = None, basis: str = ""
+) -> dict[str, Any]:
+    from django.core.exceptions import PermissionDenied, ValidationError
+
+    from connect_labs.solicitations.data_access import SolicitationsDataAccess
+    from connect_labs.solicitations.local_models import Solicitation
+
+    try:
+        return SolicitationsDataAccess(user=user).archive_round_version(slug, version, reviews, criteria, basis)
+    except Solicitation.DoesNotExist as e:
+        raise MCPToolError("NOT_FOUND", str(e)) from e
+    except PermissionDenied as e:
+        raise MCPToolError("PERMISSION_DENIED", str(e)) from e
+    except ValidationError as e:
+        raise MCPToolError("BAD_REQUEST", "; ".join(e.messages)) from e
+
+
+@register(
+    name="marketplace_round_version_delete",
+    description=(
+        "Delete an earlier criteria version of a round and EVERY review scored on it (AI and "
+        "people's, standing or superseded). It cannot be undone and never touches the current "
+        "version. Returns how many reviews went, and how many of those were people's. Owner only. "
+        "Get the requester's approval first, naming the counts from `marketplace_round_versions`."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {"slug": {"type": "string"}, "version": {"type": "string"}},
+        "required": ["slug", "version"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def marketplace_round_version_delete(user, slug: str, version: str) -> dict[str, Any]:
+    from django.core.exceptions import PermissionDenied, ValidationError
+
+    from connect_labs.solicitations.data_access import SolicitationsDataAccess
+    from connect_labs.solicitations.local_models import RubricVersion, Solicitation
+
+    try:
+        return SolicitationsDataAccess(user=user).delete_round_version(slug, version)
+    except (Solicitation.DoesNotExist, RubricVersion.DoesNotExist) as e:
+        raise MCPToolError("NOT_FOUND", str(e)) from e
+    except PermissionDenied as e:
+        raise MCPToolError("PERMISSION_DENIED", str(e)) from e
+    except ValidationError as e:
+        raise MCPToolError("BAD_REQUEST", "; ".join(e.messages)) from e
 
 
 @register(

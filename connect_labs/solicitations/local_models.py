@@ -567,6 +567,39 @@ STANCES = [
 OUTCOMES = [(key, meaning["label"]) for key, meaning in vocabulary.OUTCOMES.items()]
 
 
+class RubricVersion(models.Model):
+    """One version of a round's criteria, kept when the next replaces it.
+
+    The round itself carries only the current criteria (`evaluation_criteria`,
+    `rubric_version`); each version, current included, has a row here, so a
+    review scored on an earlier version can still be read against the criteria
+    it was given on, and two versions compared.
+    """
+
+    solicitation = models.ForeignKey(Solicitation, on_delete=models.CASCADE, related_name="rubric_versions")
+    version = models.CharField(max_length=40)
+    criteria = models.JSONField(default=list, blank=True)
+    basis = models.TextField(blank=True, default="")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["created_at", "pk"]
+        constraints = [models.UniqueConstraint(fields=["solicitation", "version"], name="uniq_rubric_version")]
+
+    def __str__(self) -> str:
+        return f"{self.solicitation_id} criteria {self.version}"
+
+
+class CurrentReviews(models.Manager):
+    """Reviews that stand: not replaced by a re-score on newer criteria."""
+
+    def get_queryset(self):
+        return super().get_queryset().filter(superseded_at__isnull=True)
+
+
 class SolicitationReview(models.Model):
     """One reviewer's scoring of one response.
 
@@ -613,14 +646,32 @@ class SolicitationReview(models.Model):
     review_date = models.DateTimeField(default=timezone.now)
     legacy_record_id = models.IntegerField(null=True, blank=True, unique=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # Set when a re-score on newer criteria took its place. A superseded review
+    # is history: read only through `all_versions`, never by the round's pages
+    # or tools unless they ask for that version.
+    superseded_at = models.DateTimeField(null=True, blank=True)
+
+    # The first manager is the default, so related managers (`response.reviews`)
+    # and every query see only the reviews that stand.
+    objects = CurrentReviews()
+    all_versions = models.Manager()
 
     class Meta:
         ordering = ["review_date", "pk"]
+        base_manager_name = "all_versions"
         constraints = [
-            # One review of each kind per reviewer: an AI pass run as a person
-            # never takes the place of that person's own review.
-            models.UniqueConstraint(fields=["response", "reviewer", "kind"], name="uniq_review_per_reviewer_kind"),
+            # One standing review of each kind per reviewer: an AI pass run as a
+            # person never takes the place of that person's own review.
+            models.UniqueConstraint(
+                fields=["response", "reviewer", "kind"],
+                condition=models.Q(superseded_at__isnull=True),
+                name="uniq_review_per_reviewer_kind",
+            ),
         ]
+
+    @property
+    def rubric_version(self) -> str:
+        return str((self.provenance or {}).get("rubric_version") or "")
 
     def __str__(self) -> str:
         return f"review of response {self.response_id} by {self.reviewer_username or 'unknown'}"

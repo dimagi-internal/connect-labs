@@ -387,6 +387,16 @@ def _score_cell(score) -> dict:
     return {"score": score if isinstance(score, (int, float)) else None, "style": score_shade(score)}
 
 
+def _outcome_chip(key: str) -> str:
+    """The classes of an outcome's chip, the same on every page."""
+    return {
+        "pick": "bg-green-100 text-green-800",
+        "backup": "bg-teal-100 text-teal-800",
+        "waitlist": "bg-amber-50 text-amber-800",
+        "pass": "bg-gray-100 text-gray-600",
+    }.get(key, "bg-white text-gray-400 border border-brand-border-light")
+
+
 def _flag_chips(keys: list[str]) -> list[dict]:
     """Each flag with the label and definition a reader sees."""
     return [
@@ -418,6 +428,30 @@ def round_summary(request, slug):
 
 
 @login_required
+@require_POST
+def round_version_delete(request, slug, version):
+    """Delete an earlier criteria version and every review scored on it, by hand."""
+    from django.core.exceptions import PermissionDenied, ValidationError
+
+    from connect_labs.solicitations.data_access import SolicitationsDataAccess
+    from connect_labs.solicitations.local_models import RubricVersion
+
+    try:
+        result = SolicitationsDataAccess(request=request).delete_round_version(slug, version)
+    except (Solicitation.DoesNotExist, RubricVersion.DoesNotExist, PermissionDenied) as e:
+        raise Http404("No such version") from e
+    except ValidationError as e:
+        messages.error(request, " ".join(e.messages))
+    else:
+        messages.success(
+            request,
+            f"Deleted criteria version {version.lstrip('v')} and the {result['reviews_deleted']} "
+            f"review{'s' if result['reviews_deleted'] != 1 else ''} scored on it.",
+        )
+    return redirect("marketplace:round_scores", slug=slug)
+
+
+@login_required
 @MARKETPLACE_CHROME
 def round_scores(request, slug):
     """A round's scores side by side: every applicant against every criterion, to filter and compare."""
@@ -426,9 +460,22 @@ def round_scores(request, slug):
     # anyone else this page does not exist, as a submission does not.
     if not access.can_read_round_responses(request, round_):
         raise Http404("No such round")
-    applicants = queries.round_applicants(round_, queries.first_service_by_org_name())
-    reviewed = queries.review_status(round_, applicants)
-    summary = queries.round_scores(round_, applicants)
+    history = queries.version_history(round_)
+    names = [v["version"] for v in history]
+    shown = request.GET.get("version") if request.GET.get("version") in names else round_.rubric_version
+    first_service = queries.first_service_by_org_name()
+    applicants, reviewed, summary, _ = queries.scores_at(round_, shown, first_service)
+    # Compared with the version before the one shown, unless another is asked for.
+    earlier = [n for n in names if n != shown]
+    compare_with = request.GET.get("compare") if request.GET.get("compare") in earlier else None
+    if compare_with is None and shown in names and names.index(shown) > 0:
+        compare_with = names[names.index(shown) - 1]
+    comparison = None
+    if compare_with:
+        first, second = sorted([compare_with, shown], key=names.index)
+        comparison = queries.compare_at(round_, first, second, first_service)
+        for move in comparison["moved"]:
+            move["from_style"], move["to_style"] = (_outcome_chip(move["from_key"]), _outcome_chip(move["to_key"]))
     for a in applicants:
         a["cells"] = [_score_cell(a["review"]["criteria_scores"].get(c["id"])) for c in summary["criteria"]]
         a["flag_chips"] = _flag_chips(a["review"]["flags"])
@@ -450,6 +497,11 @@ def round_scores(request, slug):
             "applicants": applicants,
             "reviewed": reviewed,
             "summary": summary,
+            "history": history,
+            "shown_version": shown,
+            "is_current": shown == round_.rubric_version,
+            "compare_with": compare_with,
+            "comparison": comparison,
             "criteria_rows": criteria_rows,
             "countries": countries,
             "flag_counts": [
