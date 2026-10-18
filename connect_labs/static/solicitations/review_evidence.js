@@ -471,6 +471,10 @@
     var box = root.querySelector('[data-claims-editor]');
     if (!box) return;
     box.textContent = '';
+    // A criterion's reasons sit under its score; everything else in the general list.
+    root.querySelectorAll('[data-claims-for]').forEach(function (slot) {
+      slot.textContent = '';
+    });
     claims.forEach(function (claim, index) {
       var card = el('div', {
         'data-claim': claim.id,
@@ -486,8 +490,8 @@
       });
       about.addEventListener('change', function () {
         claim.about = about.value;
-        card.style.borderLeft = '4px solid ' + colourOf(claim.about);
         save();
+        renderEditor(); // a reason moves to its criterion's slot
         paint();
       });
       var drop = el(
@@ -595,7 +599,9 @@
       });
       chips.appendChild(attach);
       card.appendChild(chips);
-      box.appendChild(card);
+      (
+        root.querySelector('[data-claims-for="' + claim.about + '"]') || box
+      ).appendChild(card);
     });
   }
 
@@ -616,6 +622,20 @@
         paint();
       });
     }
+    root.querySelectorAll('[data-add-claim-for]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        claims.push({
+          id: nextId(),
+          about: btn.getAttribute('data-add-claim-for'),
+          text: '',
+          basis: 'synthesized',
+          cites: [],
+        });
+        save();
+        renderEditor();
+        paint();
+      });
+    });
     document.addEventListener('mouseup', function () {
       setTimeout(captureSelection, 0);
     });

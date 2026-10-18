@@ -799,7 +799,9 @@ def review_status(round_: Solicitation, applicants: list[dict]) -> dict:
 
     A person's review outranks the AI's: an applicant shows the outcome of its
     latest human review when it has one, else the AI's, marked as unchecked.
-    Sets `a["review"]` on each applicant to {outcome, label, by_person, reviews}.
+    Sets `a["review"]` on each applicant to {outcome, label, by_person, people,
+    has_ai, score, sort}, and once any review exists re-orders `applicants`
+    picks first.
     """
     from connect_labs.solicitations.local_models import REVIEW_AI, SolicitationReview
 
@@ -822,8 +824,6 @@ def review_status(round_: Solicitation, applicants: list[dict]) -> dict:
             # Sorts pick, backup, waitlist, pass, then unreviewed; best score first within each.
             "sort": _review_sort_key(lead),
         }
-        if not people and counts["next_pk"] is None:
-            counts["next_pk"] = a["response"].pk
         if people:
             counts["people"] += 1
         elif ai:
@@ -832,6 +832,12 @@ def review_status(round_: Solicitation, applicants: list[dict]) -> dict:
             counts["none"] += 1
         if lead and lead.outcome:
             counts["outcomes"][lead.outcome] = counts["outcomes"].get(lead.outcome, 0) + 1
+    # Once anything is reviewed the list is a shortlist: picks first, best score
+    # first. Sorted in place, so the round page, "Next to check" and the
+    # response page's previous/next all walk the same order.
+    if by_response:
+        applicants.sort(key=lambda a: a["review"]["sort"])
+    counts["next_pk"] = next((a["response"].pk for a in applicants if not a["review"]["by_person"]), None)
     return counts
 
 

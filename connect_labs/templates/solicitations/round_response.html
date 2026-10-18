@@ -95,7 +95,7 @@ Below lg the two are tabs.
           {% for rev in reviews %}
             <button type="button" data-review-tab="{{ rev.pk }}"
                     class="px-2.5 py-1 rounded-full text-xs font-medium border {% if forloop.first %}bg-indigo-600 text-white border-indigo-600{% else %}border-gray-200 text-gray-700{% endif %}">
-              {% if rev.kind == 'ai' %}<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>AI first pass{% else %}{{ rev.reviewer_username }}{% endif %}
+              {% if rev.kind == 'ai' %}<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>AI first pass{% else %}{{ rev.reviewer_username }}{% if rev.stance %} · {% if rev.stance == 'agrees' %}agrees{% elif rev.stance == 'disagrees' %}disagrees{% else %}amended{% endif %}{% endif %}{% endif %}{% if rev.outcome %} · {{ rev.get_outcome_display }}{% endif %}
             </button>
           {% endfor %}
         </div>
@@ -130,7 +130,7 @@ Below lg the two are tabs.
                           class="w-full text-left text-sm text-gray-800 px-2 py-1.5 rounded-md hover:bg-gray-50 border border-transparent flex gap-2 items-start">
                     <span class="flex-1">{{ claim.text }}</span>
                     <span class="shrink-0 text-[11px] text-gray-400 tabular-nums pt-0.5">
-                      {% if claim.basis == 'synthesized' %}≈{% endif %}{% with n=claim.cites|length %}{% if n %} {{ n }}{% endif %}{% endwith %}
+                      {% if claim.basis == 'synthesized' %}<span title="Drawn from across the response">≈</span>{% endif %}{% with n=claim.cites|length %}{% if n %} <span title="{{ n }} cited passage{{ n|pluralize }}">{{ n }} cited</span>{% endif %}{% endwith %}
                     </span>
                   </button>
                   {% for cite in claim.cites %}{% if cite.source %}
