@@ -75,7 +75,10 @@ def running_org(program_id) -> LabsOrg | None:
 
 
 def declare(program_id, org, *, by=None, note="") -> None:
-    """Record who runs a programme. For seeders, commands and `programme_runner_set` -- never a partner path."""
+    """Record who runs a programme. For seeders, commands and `programme_runner_set` -- never a partner path.
+
+    Who may ask for it is `runner.declaring.require_may_declare`.
+    """
     from connect_labs.supply_chain.runner.models import ProgrammeRunner
 
     ProgrammeRunner.objects.update_or_create(
@@ -236,8 +239,9 @@ def refusal(access, held: Standing) -> str:
     who = held.runner.name if held.runner is not None else "no organisation yet"
     if held.runner is None:
         return (
-            f"program {getattr(access, 'program_id', '?')} has no running organisation, so only platform "
-            "support can change it. Ask support to declare one (supply_chain_programme_runner_set)."
+            f"program {getattr(access, 'program_id', '?')} has no running organisation yet, so nobody acts as the "
+            "program. A member of the organisation that manages it in Connect declares one "
+            "(supply_chain_programme_runner_set); platform support can too."
         )
     return (
         f"only {who}, which runs program {getattr(access, 'program_id', '?')}, can change it. You can read it; "

@@ -179,7 +179,11 @@ class TestWrites:
 
 
 class TestWhoDeclares:
-    def test_not_even_the_running_organisation_reassigns_its_programme(self, kilele, kilele_admin, outsider):
+    def test_the_running_organisation_may_not_hand_its_programme_to_a_labs_only_name(
+        self, kilele, kilele_admin, outsider
+    ):
+        # Its admin may change who runs it (runner/declaring.py), but only to an
+        # organisation the evidence ties to the programme -- never a labs-only row.
         other = LabsOrg.objects.get(slug="labs-synthetic-baobab")
         with pytest.raises(PermissionDenied):
             op(_access(kilele_admin, KILELE_PROGRAM), "programme_runner_set", org_id=other.pk)

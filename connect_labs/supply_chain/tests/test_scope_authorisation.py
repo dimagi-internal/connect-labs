@@ -28,6 +28,8 @@ def test_a_caller_may_use_a_programme_they_hold():
     assert access.program_id == 176
 
 
+# A refusal asks whether the caller runs the programme, which is a database read.
+@pytest.mark.django_db
 def test_a_caller_may_not_use_a_programme_they_do_not_hold():
     """The other side of the same fixture -- so the gate cannot pass as always-deny."""
     with pytest.raises(PermissionDenied):
@@ -62,6 +64,8 @@ def test_the_system_caller_is_allowed():
     assert access.program_id == 176
 
 
+# A refusal asks whether the caller runs the programme, which is a database read.
+@pytest.mark.django_db
 def test_a_scope_inherited_from_labs_context_is_authorised_too():
     """The constructor merges request.labs_context, so the merged value -- not
     just the argument -- is what has to pass. A scope that arrives by
@@ -111,6 +115,8 @@ def test_the_mcp_surface_serves_a_programme_the_caller_holds(monkeypatch):
     assert _mcp_call(monkeypatch, ORG_DATA, program_id=176) == {"program_id": 176}
 
 
+# A refusal asks whether the caller runs the programme, which is a database read.
+@pytest.mark.django_db
 def test_the_mcp_surface_refuses_a_programme_the_caller_does_not_hold(monkeypatch):
     """The MCP route is where scope is most freely caller-supplied: the tool
     schema invites organization_id and program_id as plain arguments, and the

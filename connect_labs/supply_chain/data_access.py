@@ -32,7 +32,7 @@ from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Q
 
-from connect_labs.labs.access.scopes import Caller, may_use
+from connect_labs.labs.access.scopes import UNKNOWABLE, Caller, may_use
 from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain import scopes
 from connect_labs.supply_chain.fulfilment.repository import FulfilmentRepositoryMixin
@@ -260,6 +260,27 @@ def _copy_of(obj, overrides: dict) -> dict:
     return {**plain, **overrides}
 
 
+def _runs_programme(caller, program_id) -> bool:
+    """Whether `caller` is a member of the organisation declared to run `program_id`.
+
+    Dimagi is excluded: its membership is a whole email domain, and a Dimagi
+    address that Connect does not list a Dimagi-run programme to keeps not
+    holding it, as before.
+    """
+    from connect_labs.supply_chain.runner import DIMAGI_ORG_SLUG, is_member, running_org
+
+    if caller is None or caller.is_system:
+        return False
+    org = running_org(program_id)
+    if org is None or org.slug == DIMAGI_ORG_SLUG:
+        return False
+    try:
+        return is_member(caller, org)
+    except Exception:  # noqa: BLE001 -- unknowable membership grants nothing
+        logger.info("supply access: could not establish membership of %s", org)
+        return False
+
+
 def _guard_running_org(access, org) -> None:
     """A supplier edit must not re-key or rename an organisation that runs a programme (#2458)."""
     from connect_labs.supply_chain.org_access import require_change
@@ -321,6 +342,12 @@ class SupplyDataAccess(
             program_id=program_id,
             opportunity_id=opportunity_id,
         )
+        if denied and denied != UNKNOWABLE and program_id is not None and _runs_programme(caller, program_id):
+            # Connect lists a programme only to the organisation that owns it, so
+            # an organisation that programme's manager declared to run its supply
+            # chain (an awarded implementer) would otherwise run a programme it
+            # cannot open. The opportunity, if one was named, is still checked.
+            denied = may_use(caller, opportunity_id=opportunity_id)
         if denied:
             raise PermissionDenied(denied)
 
