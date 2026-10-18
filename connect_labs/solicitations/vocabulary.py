@@ -108,6 +108,20 @@ LEGACY_FLAGS = {
     "thin-sampling-plan": "incomplete",
     "cost-outlier": "cost",
     "start-before-contract": "early-start",
+    "start-before-award": "early-start",
+    "concurrent-dimagi-work": "capacity",
+    "timeline-cost-mismatch": "inconsistent",
+    "registration-year-mismatch": "inconsistent",
+    "unverified-connect-claim": "unsupported",
+    "multi-state-spread": "out-of-scope",
+    "cost-no-currency": "cost",
+    "cost-unclear": "cost",
+    "no-cost": "cost",
+    "no-cost-figure": "cost",
+    "incomplete-answers": "incomplete",
+    "thin-answers": "incomplete",
+    "no-geography": "incomplete",
+    "no-named-site": "incomplete",
 }
 
 
