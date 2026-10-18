@@ -10,6 +10,7 @@ import json
 
 from django import forms
 
+from connect_labs.solicitations.local_models import OUTCOMES, STANCES
 from connect_labs.solicitations.validation import SOLICITATION_TYPE_CHOICES, STATUS_CHOICES
 
 # =========================================================================
@@ -403,9 +404,10 @@ class ReviewForm(forms.Form):
         widget=forms.NumberInput(attrs={"placeholder": "e.g. 500000", "class": _INPUT_CLASSES}),
     )
 
-    def __init__(self, evaluation_criteria=None, *args, **kwargs):
+    def __init__(self, evaluation_criteria=None, *args, for_round=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.evaluation_criteria = evaluation_criteria or []
+        self.for_round = for_round
         for criterion in self.evaluation_criteria:
             field_name = f"criteria_score_{criterion['id']}"
             self.fields[field_name] = forms.IntegerField(
@@ -415,6 +417,64 @@ class ReviewForm(forms.Form):
                 required=False,
                 widget=forms.NumberInput(attrs={"class": _INPUT_CLASSES, "placeholder": "1-10"}),
             )
+        if for_round:
+            self._round_fields()
+
+    def _round_fields(self):
+        """A marketplace round is decided outside labs: an outcome, not a recommendation or an award.
+
+        The score is the weighted criteria when there are criteria, so it is
+        asked for only when there are none.
+        """
+        del self.fields["recommendation"]
+        del self.fields["reward_budget"]
+        if self.evaluation_criteria:
+            del self.fields["score"]
+        else:
+            self.fields["score"].required = False
+        for criterion in self.evaluation_criteria:
+            self.fields[f"criteria_note_{criterion['id']}"] = forms.CharField(
+                required=False,
+                widget=forms.TextInput(attrs={"class": _INPUT_CLASSES, "placeholder": "Why, citing their answer"}),
+            )
+        self.fields["outcome"] = forms.ChoiceField(
+            label="Outcome",
+            choices=[("", "Choose…"), *OUTCOMES],
+            required=True,
+            widget=forms.Select(attrs={"class": _SELECT_CLASSES}),
+        )
+        for name, label, help_text in (
+            ("strengths", "Strengths", ""),
+            ("concerns", "Concerns", ""),
+            ("ask_next", "Ask them", "What to ask before deciding"),
+        ):
+            self.fields[name] = forms.CharField(
+                label=label,
+                help_text=help_text,
+                required=False,
+                widget=forms.Textarea(attrs={"rows": 3, "class": _TEXTAREA_CLASSES}),
+            )
+        self.fields["flags"] = forms.CharField(
+            label="Flags",
+            required=False,
+            help_text="Comma-separated, e.g. generic-or-ai-drafted, cost-outlier, safety",
+            widget=forms.TextInput(attrs={"class": _INPUT_CLASSES}),
+        )
+        self.fields["based_on"] = forms.IntegerField(required=False, widget=forms.HiddenInput())
+        self.fields["stance"] = forms.ChoiceField(
+            label="Compared with the review you started from",
+            choices=[("", "—"), *STANCES],
+            required=False,
+            widget=forms.Select(attrs={"class": _SELECT_CLASSES}),
+        )
+
+    def get_criteria_notes(self) -> dict:
+        notes = {}
+        for criterion in self.evaluation_criteria:
+            value = (self.cleaned_data.get(f"criteria_note_{criterion['id']}") or "").strip()
+            if value:
+                notes[criterion["id"]] = value
+        return notes
 
     def get_criteria_scores(self) -> dict:
         """Return a ``{criterion_id: score}`` dict from the cleaned criteria fields."""

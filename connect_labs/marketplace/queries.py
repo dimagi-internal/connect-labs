@@ -784,6 +784,42 @@ def round_applicants(round_: Solicitation, first_service: dict):
     return out
 
 
+def review_status(round_: Solicitation, applicants: list[dict]) -> dict:
+    """Where each applicant stands in review, and how far the round has got.
+
+    A person's review outranks the AI's: an applicant shows the outcome of its
+    latest human review when it has one, else the AI's, marked as unchecked.
+    Sets `a["review"]` on each applicant to {outcome, label, by_person, reviews}.
+    """
+    from connect_labs.solicitations.local_models import REVIEW_AI, SolicitationReview
+
+    by_response: dict[int, list] = {}
+    for review in SolicitationReview.objects.filter(response__solicitation=round_).order_by("review_date", "pk"):
+        by_response.setdefault(review.response_id, []).append(review)
+    counts = {"people": 0, "ai_only": 0, "none": 0, "outcomes": {}}
+    for a in applicants:
+        reviews = by_response.get(a["response"].pk, [])
+        people = [r for r in reviews if r.kind != REVIEW_AI]
+        ai = [r for r in reviews if r.kind == REVIEW_AI]
+        lead = (people or ai or [None])[-1]
+        a["review"] = {
+            "outcome": lead.outcome if lead else "",
+            "label": lead.get_outcome_display() if lead and lead.outcome else "",
+            "by_person": bool(people),
+            "people": len(people),
+            "has_ai": bool(ai),
+        }
+        if people:
+            counts["people"] += 1
+        elif ai:
+            counts["ai_only"] += 1
+        else:
+            counts["none"] += 1
+        if lead and lead.outcome:
+            counts["outcomes"][lead.outcome] = counts["outcomes"].get(lead.outcome, 0) + 1
+    return counts
+
+
 def round_opened(round_: Solicitation):
     """When the round started taking applications: published, else its first submission."""
     if round_.published_on:

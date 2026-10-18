@@ -455,4 +455,6 @@ def test_directory_rounds_stay_out_of_the_solicitation_tools(world):
         assert round_.pk not in {s["id"] for s in listed["solicitations"]}
         assert err(call_tool(token, "get_solicitation", {"solicitation_id": round_.pk})) == "NOT_FOUND"
         assert err(call_tool(token, "list_responses", {"solicitation_id": round_.pk})) == "NOT_FOUND"
-        assert err(call_tool(token, "get_response", {"response_id": submission.pk})) == "NOT_FOUND"
+        if token is not staff_pat:
+            # Platform support may read a round's submissions (to review them); nobody else here.
+            assert err(call_tool(token, "get_response", {"response_id": submission.pk})) == "NOT_FOUND"

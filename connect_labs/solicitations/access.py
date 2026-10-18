@@ -21,10 +21,11 @@ in someone's labs context is not membership. An unowned historical round has
 no owner, so only staff manage it -- there is no Dimagi fallback.
 
 A marketplace directory round (`is_directory_round`) is owned by Dimagi, which
-ran every one of them, but it is a record kept in the LLO Directory sheet: nobody
-edits, reviews or awards one here. Its owner -- and platform support -- may read
-its responses (`can_read_round_responses`, `readable_round_ids`); everyone else
-sees the call and how many answered it, never who answered or what they said.
+ran every one of them, but the call itself is a record kept in the LLO Directory
+sheet: nobody edits or awards one here. Its owner -- and platform support -- may
+read its responses and review them (`can_read_round_responses`,
+`readable_round_ids`, `can_review`); everyone else sees the call and how many
+answered it, never who answered or what they said.
 
 Every check fails closed: a membership that cannot be established is none.
 """
@@ -201,6 +202,8 @@ def can_read(subject, solicitation) -> bool:
 def can_read_response(subject, response) -> bool:
     if is_respondent(subject, response):
         return True
+    if is_directory_round(response.solicitation):
+        return can_read_round_responses(subject, response.solicitation)
     # An owner sees what was submitted, never someone's unsent draft.
     return response.status != "draft" and can_manage(subject, response.solicitation)
 
@@ -225,13 +228,32 @@ def _is_own_side(subject, response) -> bool:
     return False
 
 
+def can_read_reviews(subject, solicitation) -> bool:
+    """See the reviews of a call's responses: whoever may review them."""
+    return can_manage(subject, solicitation) or can_read_round_responses(subject, solicitation)
+
+
 def can_review(subject, response) -> bool:
-    """Owner or operator of the call -- and never on their own response."""
-    return can_manage(subject, response.solicitation) and not _is_own_side(subject, response)
+    """Owner or operator of the call -- and never on their own response.
+
+    A directory round is reviewed by whoever may read its responses: the round
+    is decided outside labs, but the reading and scoring happen here.
+    """
+    if is_directory_round(response.solicitation):
+        allowed = can_read_round_responses(subject, response.solicitation)
+    else:
+        allowed = can_manage(subject, response.solicitation)
+    return allowed and not _is_own_side(subject, response)
+
+
+def can_set_round_criteria(subject, solicitation) -> bool:
+    """Write a directory round's evaluation criteria: whoever reviews it."""
+    return can_read_round_responses(subject, solicitation)
 
 
 def can_award(subject, response) -> bool:
-    return can_review(subject, response)
+    """Never on a directory round: those are decided, and contracted, outside labs."""
+    return can_manage(subject, response.solicitation) and not _is_own_side(subject, response)
 
 
 def require(allowed: bool, message: str) -> None:
