@@ -659,3 +659,15 @@ class TestScores:
         assert tool["criteria"] == page["criteria"] and tool["outcomes"] == page["outcomes"]
         fenwick = next(a for a in tool["applicants"] if a["org_slug"] == "fenwick")
         assert fenwick["criteria_scores"] == {"reach": 8, "cost": 5} and fenwick["rubric_version"] == "v1"
+
+
+def test_a_persons_review_records_the_criteria_it_scored_against(client, scored, member):
+    from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+    submission, ai = scored
+    mine = SolicitationsDataAccess(user=member).create_review(
+        submission.pk, {"based_on": ai.pk, "stance": "agrees", "criteria_scores": {"reach": 8, "cost": 5}}
+    )
+    assert mine.provenance["rubric_version"] == "v1"
+    body = _page(client, member, "marketplace:round_scores", "battery-2026")
+    assert 'data-testid="stale"' not in body and 'data-testid="unrecorded"' not in body

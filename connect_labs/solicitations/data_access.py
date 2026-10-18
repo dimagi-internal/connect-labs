@@ -951,6 +951,12 @@ class SolicitationsDataAccess:
             review.reviewer_name = str(data["reviewer_username"])[:200]
         elif not review.reviewer_name and self.user is not None:
             review.reviewer_name = self.user.username
+        # Scores mean something only against the criteria they were given on,
+        # and a round's criteria are replaced in place: stamp the version unless
+        # the caller named one (an AI pass records its own).
+        version = response.solicitation.rubric_version
+        if "criteria_scores" in data and version and not (data.get("provenance") or {}).get("rubric_version"):
+            review.provenance = {**(review.provenance or {}), "rubric_version": version}
         computed = weighted_score(review.criteria_scores, response.solicitation.evaluation_criteria)
         if computed is not None:
             review.score = computed
