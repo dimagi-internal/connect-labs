@@ -77,9 +77,11 @@ def test_dimagi_reads_every_answer_in_row_order(round_, email):
     first, second = out["responses"]
     assert (first["source_row"], first["org_slug"]) == (2, "fenwick-trust")
     assert second["org_slug"] is None, "an unmatched submission is not given a near name"
-    assert {"question": "How would you find households?", "answer": "Through solar vendors' customer lists."} in (
-        first["answers"]
-    )
+    assert {
+        "question_id": "how_would_you_find_households",
+        "question": "How would you find households?",
+        "answer": "Through solar vendors' customer lists.",
+    } in first["answers"]
     assert out["round"]["owner"] == "Dimagi"
 
 

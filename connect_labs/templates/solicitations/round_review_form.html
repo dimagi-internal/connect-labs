@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% load static markdown_filters %}
+{% comment %}
+Reviewing a marketplace round's response: the response on the left, your review
+on the right. Each statement in the review can cite passages from the response;
+select text on the left and attach it, or remove a passage with ×
+(static/solicitations/review_evidence.js, data-mode="edit").
+{% endcomment %}
+
+{% block title %}Review · {{ response.display_name|default:blind_label }} · {{ solicitation.title }}{% endblock %}
+
+{% block content %}
+<div class="max-w-screen-2xl mx-auto px-0 sm:px-4 py-4" data-evidence-root data-mode="edit">
+
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+    <div class="min-w-0">
+      <a href="{% url 'solicitations:response_detail' pk=response.pk %}" class="text-sm text-gray-500 hover:text-brand-cornflower-blue">
+        <i class="fa-solid fa-arrow-left mr-1"></i> {{ response.display_name|default:blind_label }}
+      </a>
+      <h1 class="text-xl sm:text-2xl font-semibold text-brand-deep-purple">
+        {% if source %}Your review, starting from {% if source.kind == 'ai' %}the AI first pass{% else %}{{ source.reviewer_username }}'s review{% endif %}{% elif is_update %}Edit your review{% else %}Your review{% endif %}
+      </h1>
+    </div>
+  </div>
+
+  {% if source %}
+    <div class="bg-indigo-50 border border-indigo-100 rounded-lg px-4 py-3 mb-3 text-sm text-indigo-900" data-testid="starting-from">
+      Everything is copied in for you to change, including the passages each statement cites. Saving creates your own review; the one you started from stays exactly as it was.
+      {% if form.stance.value == 'agrees' %}It is marked as agreeing — just save if that is all you want to say.{% elif form.stance.value == 'disagrees' %}It is marked as disagreeing — change what you disagree with before saving.{% endif %}
+    </div>
+  {% elif ai_proposed_scores %}
+    <div class="text-xs text-gray-500 mb-3"><i class="fa-solid fa-lock text-gray-400 mr-1"></i>The AI's score for each criterion stays hidden until you enter your own, so it can't anchor you.</div>
+  {% endif %}
+
+  {% if form.errors %}
+    <div class="bg-red-50 border-l-4 border-red-400 p-3 mb-3 text-sm text-red-700">
+      {% for field, errors in form.errors.items %}{% for err in errors %}<div>{{ err }}</div>{% endfor %}{% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="lg:hidden flex gap-1 mb-3 bg-gray-100 rounded-lg p-1" role="tablist">
+    <button type="button" data-pane-tab="answers" class="flex-1 py-1.5 text-sm font-medium rounded-md">Response</button>
+    <button type="button" data-pane-tab="review" class="flex-1 py-1.5 text-sm font-medium rounded-md bg-white shadow-sm">Your review</button>
+  </div>
+
+  <form method="post">
+    {% csrf_token %}
+    {{ form.claims_json }}
+    {{ form.based_on }}
+    <div class="lg:grid lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:gap-4">
+
+      <div class="relative">
+      <div data-margin-map class="hidden lg:block absolute left-0 top-10 bottom-0 w-1.5 z-20 rounded-l-xl overflow-hidden"></div>
+      <section data-pane="answers" class="hidden lg:block bg-white rounded-xl shadow-sm lg:h-[calc(100vh-190px)] lg:overflow-y-auto">
+        <div class="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-gray-100 px-4 sm:px-6 py-2 flex flex-wrap items-center gap-2 text-xs">
+          <span class="text-gray-500 font-medium">Evidence</span>
+          <div class="inline-flex rounded-md border border-gray-200 overflow-hidden">
+            <button type="button" data-evidence-mode="off" class="px-2.5 py-1">Off</button>
+            <button type="button" data-evidence-mode="selected" class="px-2.5 py-1 border-l border-gray-200">Selected</button>
+            <button type="button" data-evidence-mode="all" class="px-2.5 py-1 border-l border-gray-200">All</button>
+          </div>
+          <span data-evidence-status class="text-gray-400"></span>
+          <span class="text-gray-400 ml-auto hidden sm:inline">Select text to cite it</span>
+        </div>
+        <div class="px-4 sm:px-6 py-4 space-y-4">
+          {% for qa in answers %}
+            <div data-question="{{ qa.id }}" class="pl-3 border-l-4 border-transparent rounded-sm">
+              <p class="text-xs font-medium text-gray-500 mb-1">{{ forloop.counter }}. {{ qa.question }}</p>
+              <p data-answer class="text-sm text-gray-900 whitespace-pre-line break-words leading-relaxed">{% if qa.answer %}{{ qa.answer }}{% endif %}</p>
+              {% if not qa.answer %}<p class="text-sm text-gray-300">No answer</p>{% endif %}
+              <p data-absent-note class="hidden text-xs text-gray-500 mt-1"></p>
+            </div>
+          {% endfor %}
+        </div>
+      </section>
+      </div>
+
+      <section data-pane="review" class="bg-white rounded-xl shadow-sm px-4 py-4 lg:h-[calc(100vh-190px)] lg:overflow-y-auto space-y-5">
+
+        {% if unlinked_criteria %}
+          <div>
+            <h2 class="text-sm font-semibold text-brand-deep-purple mb-2">Scores (1–10)</h2>
+            {% for criterion in unlinked_criteria %}
+              <div class="flex items-start gap-3 py-1.5">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-gray-800">{{ criterion.name }} <span class="text-gray-400 text-xs">({{ criterion.weight|floatformat:"-1" }}%)</span></p>
+                  {% if criterion.scoring_guide %}<p class="text-[11px] text-gray-500 leading-snug">{{ criterion.scoring_guide }}</p>{% endif %}
+                  <div class="ai-suggest mt-1" data-criterion="{{ criterion.id }}">
+                    <span class="ai-locked hidden items-center gap-1 text-[11px] text-gray-400"><i class="fa-solid fa-lock"></i> AI score hidden until you score</span>
+                    <button type="button" class="ai-reveal-btn hidden items-center gap-1 px-2 py-0.5 text-[11px] rounded bg-indigo-100 text-indigo-700">Reveal the AI's score</button>
+                    <span class="ai-revealed hidden text-[11px]"><span class="font-semibold text-indigo-700">AI: <span class="ai-score"></span>/10</span> <span class="text-gray-500 ai-rationale"></span></span>
+                  </div>
+                </div>
+                <div class="w-16 shrink-0">{{ form|get_criteria_field:criterion.id }}</div>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        <div>
+          <div class="flex items-center justify-between gap-2 mb-2">
+            <h2 class="text-sm font-semibold text-brand-deep-purple">Statements and evidence</h2>
+            <span class="flex items-center gap-1">
+              <select data-add-claim-about class="base-dropdown !py-1 text-xs">
+                {% for row in evidence.legend %}<option value="{{ row.about }}"{% if row.about == 'concern' %} selected{% endif %}>{{ row.label }}</option>{% endfor %}
+              </select>
+              <button type="button" data-add-claim class="text-xs font-medium text-brand-indigo hover:underline whitespace-nowrap">+ Add</button>
+            </span>
+          </div>
+          <p class="text-[11px] text-gray-500 mb-2">Your reason for each score, strengths and concerns. Click one to see the passages it cites; select text on the left and “Attach” it to cite more, or × to drop one. A statement with no passages is a judgement drawn from the whole response.</p>
+          <p data-pending class="hidden text-[11px] text-indigo-700 bg-indigo-50 rounded px-2 py-1 mb-2"></p>
+          <div data-claims-editor></div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{ form.outcome.label }}</label>
+            {{ form.outcome }}
+          </div>
+          {% if form.based_on.value %}
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">{{ form.stance.label }}</label>
+              {{ form.stance }}
+            </div>
+          {% endif %}
+          {% if form.score %}
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">{{ form.score.label }}</label>
+              {{ form.score }}
+            </div>
+          {% endif %}
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ form.ask_next.label }}</label>
+          {{ form.ask_next }}
+          <p class="text-xs text-gray-400 mt-1">{{ form.ask_next.help_text }}</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ form.flags.label }}</label>
+          {{ form.flags }}
+          <p class="text-xs text-gray-400 mt-1">{{ form.flags.help_text }}</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ form.notes.label }}</label>
+          {{ form.notes }}
+        </div>
+
+        <div class="sticky bottom-0 bg-white pt-3 border-t border-gray-100 flex justify-end gap-3">
+          <a href="{% url 'solicitations:response_detail' pk=response.pk %}" class="inline-flex items-center px-5 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm font-medium">Cancel</a>
+          <button type="submit" class="inline-flex items-center px-4 py-2 bg-brand-indigo text-white text-sm font-semibold rounded-lg hover:bg-brand-deep-purple">
+            <i class="fa-solid fa-save mr-2"></i> Save my review
+          </button>
+        </div>
+      </section>
+    </div>
+  </form>
+</div>
+{{ evidence|json_script:"evidence-data" }}
+{{ ai_proposed_scores|json_script:"ai-proposed-scores" }}
+{% endblock %}
+
+{% block inline_javascript %}
+<script src="{% static 'solicitations/review_evidence.js' %}"></script>
+<script>
+// Anti-anchoring: an AI score stays hidden until you enter your own for that criterion.
+document.addEventListener('DOMContentLoaded', function () {
+  var hidden = {};
+  try { hidden = JSON.parse(document.getElementById('ai-proposed-scores').textContent) || {}; } catch (e) { hidden = {}; }
+  document.querySelectorAll('.ai-suggest').forEach(function (box) {
+    var id = box.getAttribute('data-criterion');
+    var proposal = hidden[id];
+    var input = document.querySelector('input[name="criteria_score_' + id + '"]');
+    if (!proposal || !input) return;
+    var locked = box.querySelector('.ai-locked'), btn = box.querySelector('.ai-reveal-btn'), shown = box.querySelector('.ai-revealed');
+    function gate() {
+      if (!shown.classList.contains('hidden')) return;
+      var v = parseInt(input.value, 10), mine = !isNaN(v) && v >= 1 && v <= 10;
+      locked.style.display = mine ? 'none' : 'inline-flex';
+      btn.style.display = mine ? 'inline-flex' : 'none';
+    }
+    input.addEventListener('input', gate);
+    btn.addEventListener('click', function () {
+      box.querySelector('.ai-score').textContent = proposal.score;
+      if (proposal.rationale) box.querySelector('.ai-rationale').textContent = '— ' + proposal.rationale;
+      btn.style.display = 'none'; locked.style.display = 'none';
+      shown.classList.remove('hidden'); shown.style.display = 'inline';
+    });
+    gate();
+  });
+});
+</script>
+{% endblock %}

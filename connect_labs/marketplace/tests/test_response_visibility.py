@@ -5,6 +5,8 @@ owner, not every labs user (`access.can_read_round_responses`). Everyone else
 still sees the call and how many answered it.
 """
 
+import json
+
 import pytest
 from django.urls import reverse
 
@@ -281,6 +283,15 @@ class TestReviewingARound:
         url = reverse("solicitations:review", args=[submission.pk])
         page = client.get(url, {"from": ai.pk}).content.decode()
         assert "starting from the AI first pass" in page and "A real channel to households." in page
+        claims = [
+            {
+                "id": "c1",
+                "about": "criterion:reach",
+                "text": "Lists are thin outside the city.",
+                "cites": [{"question": "how", "quote": "customer lists of solar vendors"}],
+            },
+            {"id": "c2", "about": "strength", "text": "A real channel to households."},
+        ]
         response = client.post(
             url,
             {
@@ -288,14 +299,17 @@ class TestReviewingARound:
                 "stance": "amended",
                 "criteria_score_reach": 6,
                 "criteria_score_cost": 5,
-                "criteria_note_reach": "Lists are thin outside the city.",
                 "outcome": "backup",
-                "strengths": "A real channel to households.",
+                "claims_json": json.dumps(claims),
             },
         )
         assert response.status_code == 302
         mine = submission.reviews.get(kind="human")
         assert (mine.based_on_id, mine.stance, mine.outcome, mine.score) == (ai.pk, "amended", "backup", 56)
+        assert mine.criteria_notes == {"reach": "Lists are thin outside the city."}
+        assert mine.strengths == "- A real channel to households."
+        cite = mine.claims[0]["cites"][0]
+        assert ANSWER[cite["start"] : cite["end"]] == "customer lists of solar vendors"
         ai.refresh_from_db()
         assert ai.outcome == "pick" and ai.criteria_scores == {"reach": 8, "cost": 5}
 
@@ -358,3 +372,131 @@ class TestReviewingARound:
         assert again["id"] == ai.pk, "re-running the AI pass replaces it"
         set_ = tools.marketplace_round_criteria_set(ace, "battery-2026", CRITERIA, "again")
         assert set_["rubric_version"] == "v2"
+
+
+class TestEvidence:
+    def _ai(self, ace, submission, claims):
+        from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+        return SolicitationsDataAccess(user=ace).create_review(submission.pk, {"kind": "ai", "claims": claims})
+
+    def test_quotes_are_checked_and_located(self, scored, ace):
+        submission, _ = scored
+        review = self._ai(
+            ace,
+            submission,
+            [
+                # Case, spacing and a curly apostrophe differ from the answer; still found.
+                {
+                    "about": "criterion:reach",
+                    "text": "Has a channel.",
+                    "cites": [{"question": "how", "quote": "THE  customer lists"}],
+                },
+                {"about": "concern", "text": "Generic text throughout.", "basis": "synthesized"},
+                {"about": "concern", "text": "Names no buyer.", "cites": [{"question": "how", "absent": True}]},
+                {
+                    "about": "strength",
+                    "text": "Delivered before.",
+                    "cites": [{"source": "labs", "detail": "2 programmes"}],
+                },
+            ],
+        )
+        quoted = review.claims[0]["cites"][0]
+        assert ANSWER[quoted["start"] : quoted["end"]] == "the customer lists"
+        assert quoted["quote"] == "the customer lists", "the stored quote is the applicant's own text"
+        assert review.claims[1]["basis"] == "synthesized" and review.claims[1]["cites"] == []
+        assert review.concerns == "- Generic text throughout.\n- Names no buyer."
+        assert review.criteria_notes == {"reach": "Has a channel."}
+
+    def test_a_quote_the_applicant_never_wrote_refuses_the_review(self, scored, ace):
+        from django.core.exceptions import ValidationError
+
+        submission, ai = scored
+        with pytest.raises(ValidationError) as caught:
+            self._ai(
+                ace,
+                submission,
+                [
+                    {
+                        "about": "strength",
+                        "text": "x",
+                        "cites": [{"question": "how", "quote": "door to door canvassing"}],
+                    },
+                    {"about": "criterion:nope", "text": "y"},
+                    {"about": "concern", "text": "z", "cites": [{"source": "web", "detail": "no link"}]},
+                ],
+            )
+        problems = " ".join(caught.value.messages)
+        assert "door to door canvassing" in problems and "criterion:nope" in problems and "url" in problems
+        ai.refresh_from_db()
+        assert ai.claims == [], "nothing was saved"
+
+    def test_the_mcp_tool_says_which_quotes_failed(self, scored, ace):
+        from connect_labs.mcp.tools import reviews as review_tools
+
+        submission, _ = scored
+        with pytest.raises(tools.MCPToolError) as caught:
+            review_tools.create_review(
+                ace,
+                True,
+                submission.pk,
+                "",
+                kind="ai",
+                claims=[{"about": "strength", "text": "x", "cites": [{"question": "how", "quote": "invented words"}]}],
+            )
+        assert caught.value.code == "BAD_REQUEST" and "invented words" in str(caught.value)
+        answers = tools.marketplace_round_responses(ace, "battery-2026")["responses"][0]["answers"]
+        assert answers[0]["question_id"] == "how"
+
+    def test_the_response_page_is_split_and_carries_the_evidence(self, client, scored, member, ace):
+        submission, _ = scored
+        self._ai(
+            ace,
+            submission,
+            [
+                {
+                    "about": "criterion:reach",
+                    "text": "Has a channel.",
+                    "cites": [{"question": "how", "quote": "solar vendors"}],
+                },
+            ],
+        )
+        client.force_login(member)
+        response = client.get(reverse("solicitations:response_detail", args=[submission.pk]))
+        assert response.templates[0].name == "solicitations/round_response.html"
+        payload = response.context["evidence"]
+        cite = payload["reviews"][0]["claims"][0]["cites"][0]
+        assert ANSWER[cite["start"] : cite["end"]] == "solar vendors"
+        body = response.content.decode()
+        assert 'data-claim="c1"' in body and "review_evidence.js" in body and 'data-evidence-mode="all"' in body
+
+    def test_a_review_written_before_claims_still_shows_its_statements(self, client, round_, member):
+        from connect_labs.solicitations.local_models import SolicitationReview
+
+        submission = round_.responses.get(source_row=2)
+        SolicitationReview.objects.create(
+            response=submission, reviewer=None, reviewer_name="old", strengths="- Knows the area", concerns="Costly"
+        )
+        client.force_login(member)
+        payload = client.get(reverse("solicitations:response_detail", args=[submission.pk])).context["evidence"]
+        texts = [c["text"] for c in payload["reviews"][0]["claims"]]
+        assert texts == ["Knows the area", "Costly"]
+
+    def test_the_copy_carries_its_evidence_into_the_form(self, client, scored, member, ace):
+        submission, _ = scored
+        ai = self._ai(
+            ace,
+            submission,
+            [
+                {
+                    "about": "criterion:reach",
+                    "text": "Has a channel.",
+                    "cites": [{"question": "how", "quote": "solar vendors"}],
+                },
+            ],
+        )
+        client.force_login(member)
+        response = client.get(reverse("solicitations:review", args=[submission.pk]), {"from": ai.pk})
+        assert response.templates[0].name == "solicitations/round_review_form.html"
+        carried = json.loads(response.context["form"].initial["claims_json"])
+        assert carried[0]["cites"][0]["quote"] == "solar vendors"

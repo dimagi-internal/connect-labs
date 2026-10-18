@@ -918,6 +918,24 @@ class SolicitationsDataAccess:
             ]
         if "provenance" in data:
             review.provenance = data["provenance"] or {}
+        if "claims" in data:
+            from connect_labs.solicitations import evidence, past_calls
+
+            solicitation = response.solicitation
+            questions = (
+                past_calls.form_questions(solicitation)
+                if access.is_directory_round(solicitation)
+                else solicitation.questions or []
+            )
+            review.claims = evidence.resolve(
+                data["claims"],
+                evidence.answers_of(response, questions),
+                [c.get("id") for c in solicitation.evaluation_criteria or []],
+            )
+            # The claims are the review's statements; the flat fields repeat them.
+            if review.claims:
+                for name, value in evidence.flatten(review.claims).items():
+                    setattr(review, name, value)
         if "based_on" in data:
             # Only a review of the same response, and never itself.
             source = _int_or_none(data["based_on"])

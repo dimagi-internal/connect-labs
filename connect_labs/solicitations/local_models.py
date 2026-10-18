@@ -601,6 +601,8 @@ class SolicitationReview(models.Model):
     flags = models.JSONField(default=list, blank=True)
     # For an AI review: model, skill and version, rubric version, sources.
     provenance = models.JSONField(default=dict, blank=True)
+    # Its statements, each with the response text it rests on (`evidence.py`).
+    claims = models.JSONField(default=list, blank=True)
     # 1-100. Computed from the weighted criteria when there are any
     # (`weighted_score`); otherwise the score the reviewer gave.
     score = models.IntegerField(null=True, blank=True)
@@ -651,6 +653,7 @@ class SolicitationReview(models.Model):
             "ask_next": self.ask_next,
             "flags": list(self.flags or []),
             "provenance": self.provenance or {},
+            "claims": list(self.claims or []),
         }
 
     def to_record_dict(self) -> dict:
