@@ -426,7 +426,7 @@ def marketplace_round_scores(user, slug: str, version: str = "", compare_with: s
     from connect_labs.solicitations import vocabulary
 
     round_ = _round_or_refuse(user, slug)
-    names = [v.version for v in round_.rubric_versions.all()]
+    names = sorted(round_.rubric_versions.values_list("version", flat=True), key=queries.version_number)
     for asked in (version, compare_with):
         if asked and asked not in names:
             raise MCPToolError("NOT_FOUND", f"{slug} has no criteria version {asked!r}; it has {names}.")
