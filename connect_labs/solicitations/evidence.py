@@ -201,11 +201,36 @@ def claims_of(review) -> list[dict]:
     return [{"id": f"c{n}", "basis": "synthesized", "cites": [], **c} for n, c in enumerate(out, 1)]
 
 
-def panel(review, criteria) -> list[dict]:
+def shown_claims(review) -> list[dict]:
+    """The claims a reader sees for a review.
+
+    A review that adds to another (`stance == "adds"`) stores only its own
+    additions; it is read as the review it started from with those additions
+    marked, so nothing the original said is lost or restated. The original's
+    claim ids are prefixed so the two never collide in the page's script.
+    """
+    own = claims_of(review)
+    base = review.based_on if review.stance == "adds" and review.based_on_id else None
+    if base is None:
+        return own
+    inherited = [{**c, "id": f"base-{c.get('id', n)}", "origin": "base"} for n, c in enumerate(claims_of(base), 1)]
+    return inherited + [{**c, "origin": "added"} for c in own]
+
+
+def panel(review, criteria, questions=None) -> list[dict]:
     """A review's claims grouped the way the side panel lists them: each
-    criterion with its score, then strengths, concerns and flags."""
-    claims = claims_of(review)
+    criterion with its score, then strengths, concerns and flags.
+
+    `questions` (id and text, in the form's order) numbers the questions each
+    claim draws on, so a statement says where in the response it comes from.
+    """
+    numbers = {q["id"]: (n, q.get("question", "")) for n, q in enumerate(questions or [], 1)}
+    claims = []
+    for claim in shown_claims(review):
+        drawn = sorted({numbers[c["question"]] for c in claim.get("cites") or [] if c.get("question") in numbers})
+        claims.append({**claim, "drawn_from": [{"n": n, "text": text} for n, text in drawn]})
     colours = {row["about"]: row["colour"] for row in legend(criteria)}
+    base_scores = (review.based_on.criteria_scores or {}) if review.stance == "adds" and review.based_on_id else {}
     groups = []
     for c in criteria or []:
         about = f"criterion:{c['id']}"
@@ -214,6 +239,8 @@ def panel(review, criteria) -> list[dict]:
                 "label": c.get("name", c["id"]),
                 "weight": c.get("weight"),
                 "score": (review.criteria_scores or {}).get(c["id"]),
+                # Shown only when an addition changed the score it started from.
+                "base_score": base_scores.get(c["id"]),
                 "colour": colours.get(about),
                 "claims": [x for x in claims if x["about"] == about],
             }

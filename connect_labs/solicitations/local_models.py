@@ -554,6 +554,7 @@ REVIEW_KINDS = [(REVIEW_AI, "AI"), (REVIEW_HUMAN, "Person")]
 STANCES = [
     ("agrees", "Agrees"),
     ("amended", "Amended it"),
+    ("adds", "Added to it"),
     ("disagrees", "Disagrees"),
 ]
 
@@ -572,8 +573,9 @@ class SolicitationReview(models.Model):
 
     A review is a person's or an AI's (`kind`). Several people may review the
     same response. A person can start from another review (`based_on`): either
-    say whether they agree with it (`stance`, little else filled in) or copy it
-    and edit the copy as their own. The review they started from is never
+    say whether they agree with it (`stance`, little else filled in), copy it
+    and edit the copy as their own, or add to it (`adds`: the review stores
+    only the additions, and is read as the original plus them). The review they started from is never
     changed, so what the AI said stays readable beside what people made of it.
     """
 
