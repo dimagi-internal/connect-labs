@@ -79,12 +79,14 @@ select text on the left and attach it, or remove a passage with ×
 
         {% if unlinked_criteria %}
           <div>
-            <h2 class="text-sm font-semibold text-brand-deep-purple mb-2">Scores (1–10)</h2>
+            <h2 class="text-sm font-semibold text-brand-deep-purple mb-1">Scores and reasons</h2>
+            <p class="text-[11px] text-gray-500 mb-2">Score each criterion 1–10 and say why. Click a reason to see the passages it cites on the left.</p>
             {% for criterion in unlinked_criteria %}
-              <div class="flex items-start gap-3 py-1.5">
+              <div class="py-2 border-t border-gray-100 first:border-t-0">
+              <div class="flex items-start gap-3">
                 <div class="flex-1 min-w-0">
                   <p class="text-sm text-gray-800">{{ criterion.name }} <span class="text-gray-400 text-xs">({{ criterion.weight|floatformat:"-1" }}%)</span></p>
-                  {% if criterion.scoring_guide %}<p class="text-[11px] text-gray-500 leading-snug">{{ criterion.scoring_guide }}</p>{% endif %}
+                  {% if criterion.scoring_guide %}<details class="text-[11px] text-gray-500 leading-snug"><summary class="cursor-pointer text-gray-400 hover:text-brand-indigo">How to score</summary><p class="mt-1">{{ criterion.scoring_guide }}</p></details>{% endif %}
                   <div class="ai-suggest mt-1" data-criterion="{{ criterion.id }}">
                     <span class="ai-locked hidden items-center gap-1 text-[11px] text-gray-400"><i class="fa-solid fa-lock"></i> AI score hidden until you score</span>
                     <button type="button" class="ai-reveal-btn hidden items-center gap-1 px-2 py-0.5 text-[11px] rounded bg-indigo-100 text-indigo-700">Reveal the AI's score</button>
@@ -93,21 +95,24 @@ select text on the left and attach it, or remove a passage with ×
                 </div>
                 <div class="w-16 shrink-0">{{ form|get_criteria_field:criterion.id }}</div>
               </div>
+              <div data-claims-for="criterion:{{ criterion.id }}" class="mt-1.5"></div>
+              <button type="button" data-add-claim-for="criterion:{{ criterion.id }}" class="text-[11px] text-brand-indigo hover:underline">+ Add a reason</button>
+              </div>
             {% endfor %}
           </div>
         {% endif %}
 
         <div>
           <div class="flex items-center justify-between gap-2 mb-2">
-            <h2 class="text-sm font-semibold text-brand-deep-purple">Statements and evidence</h2>
+            <h2 class="text-sm font-semibold text-brand-deep-purple">Strengths, concerns and flags</h2>
             <span class="flex items-center gap-1">
               <select data-add-claim-about class="base-dropdown !py-1 text-xs">
-                {% for row in evidence.legend %}<option value="{{ row.about }}"{% if row.about == 'concern' %} selected{% endif %}>{{ row.label }}</option>{% endfor %}
+                {% for row in evidence.legend %}{% if not row.about|slice:":10" == "criterion:" %}<option value="{{ row.about }}"{% if row.about == 'concern' %} selected{% endif %}>{{ row.label }}</option>{% endif %}{% endfor %}
               </select>
               <button type="button" data-add-claim class="text-xs font-medium text-brand-indigo hover:underline whitespace-nowrap">+ Add</button>
             </span>
           </div>
-          <p class="text-[11px] text-gray-500 mb-2">Your reason for each score, strengths and concerns. Click one to see the passages it cites; select text on the left and “Attach” it to cite more, or × to drop one. A statement with no passages is a judgement drawn from the whole response.</p>
+          <p class="text-[11px] text-gray-500 mb-2">To cite a passage, select it on the left, then “Attach selected text” on a statement; × drops one. A statement with no passages is a judgement drawn from the whole response.</p>
           <p data-pending class="hidden text-[11px] text-indigo-700 bg-indigo-50 rounded px-2 py-1 mb-2"></p>
           <div data-claims-editor></div>
         </div>

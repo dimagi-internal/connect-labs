@@ -111,7 +111,9 @@ def _round_reading_context(solicitation, response) -> dict:
     personal = personal_question_ids(questions, solicitation.column_map)
     stored = response.responses or {}
     rows = [{"id": q["id"], "question": q.get("text", ""), "answer": stored.get(q["id"], "")} for q in questions]
-    order = [a["response"].pk for a in queries.round_applicants(solicitation, {})]
+    applicants = queries.round_applicants(solicitation, {})
+    queries.review_status(solicitation, applicants)  # the round page's order
+    order = [a["response"].pk for a in applicants]
     at = order.index(response.pk) if response.pk in order else None
     return {
         "answers": [r for r in rows if r["id"] not in personal],

@@ -520,3 +520,12 @@ class TestReadingForReview:
         client.force_login(member)
         body = client.get(reverse("marketplace:round", args=["battery-2026"])).content.decode()
         assert "Start reviewing" in body and "None checked by a person yet" in body
+
+    def test_once_reviewed_the_list_is_a_shortlist_and_the_response_pages_follow_it(self, client, scored, member):
+        """Picks first, best score first; previous/next walk the same order."""
+        submission, _ = scored
+        client.force_login(member)
+        applicants = client.get(reverse("marketplace:round", args=["battery-2026"])).context["applicants"]
+        assert applicants[0]["response"].pk == submission.pk, "the AI pick leads the list"
+        context = client.get(reverse("solicitations:response_detail", args=[submission.pk])).context
+        assert context["position"] == 1 and context["next_pk"] == applicants[1]["response"].pk
