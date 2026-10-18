@@ -221,27 +221,30 @@ def test_an_unknown_past_call_is_404(client, world):
 def test_access_never_lets_anyone_manage_a_directory_round(world):
     for who in (None, world["user"], world["staff"]):
         assert access.can_manage(who, world["round"]) is False
-        assert access.can_review(who, world["response"]) is False
         assert access.can_award(who, world["response"]) is False
+    for who in (None, world["user"]):
+        assert access.can_review(who, world["response"]) is False
         assert access.can_read_response(who, world["response"]) is False
+    # Platform support reads and reviews a round's responses, as its owner does;
+    # nobody edits or awards one.
+    assert access.can_review(world["staff"], world["response"]) is True
+    assert access.can_read_response(world["staff"], world["response"]) is True
     assert access.standing(world["staff"], world["round"]) == access.PUBLIC
 
 
-def test_edit_responses_award_review_refused_on_a_directory_round(client, world):
+def test_edit_responses_award_refused_on_a_directory_round(client, world):
     round_, response = world["round"], world["response"]
     login(client, world["staff"])
-    for path in (
-        url("edit", pk=round_.pk),
-        url("responses_list", pk=round_.pk),
-        url("response_detail", pk=response.pk),
-        url("award", pk=response.pk),
-        url("review", pk=response.pk),
-    ):
+    for path in (url("edit", pk=round_.pk), url("responses_list", pk=round_.pk)):
         assert client.get(path).status_code == 404, path
+    # Its responses are read and reviewed here; never awarded.
+    assert client.get(url("response_detail", pk=response.pk)).status_code == 200
+    assert client.get(url("review", pk=response.pk)).status_code == 200
+    assert client.get(url("award", pk=response.pk)).status_code == 403
     # Its form shows, read-only; nothing answers a round here.
     assert client.get(url("respond", pk=round_.pk)).status_code == 200
     assert client.post(url("respond", pk=round_.pk), {"org_choice": "x"}).status_code == 403
-    assert client.post(url("award", pk=response.pk), {"reward_budget": "5"}).status_code == 404
+    assert client.post(url("award", pk=response.pk), {"reward_budget": "5"}).status_code == 403
     response.refresh_from_db()
     assert response.status == "submitted" and response.reward_budget is None
 

@@ -3,14 +3,15 @@
 Reviews live in the labs database (``SolicitationReview``) and are the owning
 organisation's working notes: only its members and platform support read or
 write them, and never on a response from their own side (see
-``solicitations/access.py``). One review per reviewer per response.
+``solicitations/access.py``). Each reviewer has at most one review of each
+kind (``ai``, ``human``) per response, and several people may review one.
 """
 
 from __future__ import annotations
 
 import logging
 
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 
 from connect_labs.solicitations.data_access import SolicitationsDataAccess
 from connect_labs.solicitations.local_models import SolicitationResponse, SolicitationReview
@@ -116,9 +117,13 @@ _REVIEW_PUBLIC_WARNING = (
     description=(
         "Create (or, for a reviewer who already reviewed it, update) your review of a solicitation "
         "response. Only the call's owning organisation and platform support review, and never a "
-        "response from their own side. When the call has weighted evaluation criteria and you send "
-        "criteria_scores, the overall score is computed from them. You MUST pass "
-        "public_record_acknowledged=true and confirm the 'notes' field contains no PII."
+        "response from their own side; for a marketplace EOI round that is the round's owner "
+        "(responses come from `marketplace_round_responses`, which gives each `response_id`). "
+        "When the call has weighted evaluation criteria and you send criteria_scores, the overall "
+        "score is computed from them. An AI first pass is `kind='ai'`: one per response per caller, "
+        "re-running replaces it, and it never takes the place of a person's own review. A person "
+        "starting from another review passes `based_on` and, to say what they make of it, `stance`. "
+        "You MUST pass public_record_acknowledged=true and confirm no field contains PII or contact details."
     ),
     input_schema={
         "type": "object",
@@ -170,6 +175,36 @@ _REVIEW_PUBLIC_WARNING = (
                 "type": "string",
                 "description": "Comma-separated tags.",
             },
+            "kind": {"type": "string", "enum": ["ai", "human"], "description": "Who wrote it. Default human."},
+            "based_on": {"type": "integer", "description": "The review (of this response) this one started from."},
+            "stance": {
+                "type": "string",
+                "enum": ["agrees", "amended", "disagrees", ""],
+                "description": "What this reviewer makes of the review in `based_on`.",
+            },
+            "criteria_notes": {
+                "type": "object",
+                "description": "criterion_id -> one line on why it scored that, citing the answer.",
+                "additionalProperties": True,
+            },
+            "outcome": {
+                "type": "string",
+                "enum": ["pick", "backup", "waitlist", "pass", ""],
+                "description": "For a marketplace round: where this applicant lands.",
+            },
+            "strengths": {"type": "string", "description": "Strengths, citing the answers."},
+            "concerns": {"type": "string", "description": "Concerns, citing the answers."},
+            "ask_next": {"type": "string", "description": "Questions to ask the applicant before deciding."},
+            "flags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Short markers, e.g. generic-or-ai-drafted, cost-outlier, inflated-numbers, safety.",
+            },
+            "provenance": {
+                "type": "object",
+                "description": "For an AI review: model, skill, skill_version, rubric_version, sources.",
+                "additionalProperties": True,
+            },
             "program_id": {
                 "type": ["integer", "string"],
                 "description": "Accepted for compatibility; not needed.",
@@ -195,6 +230,16 @@ def create_review(
     criteria_scores: dict | None = None,
     reviewer_username: str = "",
     tags: str = "",
+    kind: str = "human",
+    based_on: int | None = None,
+    stance: str = "",
+    criteria_notes: dict | None = None,
+    outcome: str = "",
+    strengths: str = "",
+    concerns: str = "",
+    ask_next: str = "",
+    flags: list | None = None,
+    provenance: dict | None = None,
     program_id: str | int | None = None,
     organization_id: str | int | None = None,
 ) -> dict:
@@ -217,10 +262,26 @@ def create_review(
         data["reviewer_username"] = reviewer_username
     if tags:
         data["tags"] = tags
+    data["kind"] = kind
+    for name, value in (
+        ("based_on", based_on),
+        ("stance", stance),
+        ("criteria_notes", criteria_notes),
+        ("outcome", outcome),
+        ("strengths", strengths),
+        ("concerns", concerns),
+        ("ask_next", ask_next),
+        ("flags", flags),
+        ("provenance", provenance),
+    ):
+        if value:
+            data[name] = value
     try:
         record = SolicitationsDataAccess(user=user).create_review(response_id, data)
     except (PermissionDenied, SolicitationResponse.DoesNotExist) as e:
         raise _errors(e) from e
+    except ValidationError as e:
+        raise MCPToolError("BAD_REQUEST", "; ".join(e.messages)) from e
     result = _serialize_record(record)
     result["_public_warning"] = _REVIEW_PUBLIC_WARNING
     return result
@@ -258,4 +319,6 @@ def update_review(user, review_id: int, update_data: dict, program_id=None, orga
         record = SolicitationsDataAccess(user=user).update_review(review_id, data)
     except (PermissionDenied, SolicitationReview.DoesNotExist) as e:
         raise _errors(e) from e
+    except ValidationError as e:
+        raise MCPToolError("BAD_REQUEST", "; ".join(e.messages)) from e
     return _serialize_record(record)

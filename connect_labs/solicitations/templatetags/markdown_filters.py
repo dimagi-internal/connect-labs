@@ -51,6 +51,15 @@ def get_criteria_field(form, criterion_id):
     return ""
 
 
+@register.filter(name="get_criteria_note_field")
+def get_criteria_note_field(form, criterion_id):
+    """The reason-for-the-score field beside a criterion, when the form has one."""
+    field_name = f"criteria_note_{criterion_id}"
+    if hasattr(form, "fields") and field_name in form.fields:
+        return form[field_name]
+    return ""
+
+
 @register.filter(name="plain_preview")
 def plain_preview(value, words=40):
     """Markdown as plain text for a card preview: no `**`, `#` or link syntax, whitespace collapsed."""

@@ -581,7 +581,9 @@ def test_directory_rounds_are_not_reachable_as_calls(world):
     submission = make_response(round_, None)
     staff = da(world["staff"])
     assert staff.get_solicitation_by_id(round_.pk) is None
-    assert staff.get_response_by_id(submission.pk) is None
+    # Its submissions are read (and reviewed) by platform support and the
+    # round's owner; the call itself is never managed.
+    assert staff.get_response_by_id(submission.pk) == submission
     with pytest.raises(Solicitation.DoesNotExist):
         staff.update_solicitation(round_.pk, {"title": "changed"})
     with pytest.raises(Solicitation.DoesNotExist):

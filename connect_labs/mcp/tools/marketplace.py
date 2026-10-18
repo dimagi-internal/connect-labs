@@ -335,6 +335,8 @@ def marketplace_round_responses(user, slug: str, include_contacts: bool = False)
     for response in rows[:MAX_RESPONSES]:
         answers = response.responses or {}
         row = {
+            # What `create_review` and `list_reviews` take.
+            "response_id": response.pk,
             "source_row": response.source_row,
             "org_name": response.org_name,
             # The directory organisation, only where the import was certain;
@@ -360,10 +362,72 @@ def marketplace_round_responses(user, slug: str, include_contacts: bool = False)
             "target_countries": round_.target_countries or "",
             "announcement_url": round_.announcement_url or "",
             "last_ingested_at": round_.last_ingested_at.isoformat() if round_.last_ingested_at else None,
+            "evaluation_criteria": round_.evaluation_criteria or [],
+            "rubric_version": round_.rubric_version or "",
+            "criteria_basis": round_.criteria_basis or "",
             "questions_withheld": len(questions) - len(shown),
         },
         "responses": out,
         "count": len(out),
         "total": total,
         "truncated": total > len(out),
+    }
+
+
+@register(
+    name="marketplace_round_criteria_set",
+    description=(
+        "Set (replace) the evaluation criteria for one marketplace EOI/RFP round. A round's form "
+        "went out without published criteria, so they are written after reading its submissions. "
+        "Each criterion is {id, name, weight, scoring_guide, rationale}: `id` a short snake_case "
+        "slug, `weight` a percentage (all weights sum to 100), `scoring_guide` the anchors for a "
+        "1-10 score, `rationale` why it separates this pool of applicants. `basis` says how the "
+        "criteria were derived and what was considered and dropped. Every replacement bumps "
+        "`rubric_version`; reviews keep the version they scored against. Only members of the "
+        "organisation that ran the round may set them. Get the requester's approval first."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "slug": {"type": "string", "description": "The round's slug, from `marketplace_rounds_list`."},
+            "criteria": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "name": {"type": "string"},
+                        "weight": {"type": "number"},
+                        "scoring_guide": {"type": "string"},
+                        "rationale": {"type": "string"},
+                    },
+                    "required": ["id", "name", "weight"],
+                },
+            },
+            "basis": {"type": "string", "description": "How the criteria were arrived at."},
+        },
+        "required": ["slug", "criteria"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def marketplace_round_criteria_set(user, slug: str, criteria: list, basis: str = "") -> dict[str, Any]:
+    from django.core.exceptions import PermissionDenied, ValidationError
+
+    from connect_labs.solicitations.data_access import SolicitationsDataAccess
+    from connect_labs.solicitations.local_models import Solicitation
+
+    try:
+        round_ = SolicitationsDataAccess(user=user).set_round_criteria(slug, criteria, basis)
+    except Solicitation.DoesNotExist as e:
+        raise MCPToolError("NOT_FOUND", str(e)) from e
+    except PermissionDenied as e:
+        raise MCPToolError("PERMISSION_DENIED", str(e)) from e
+    except ValidationError as e:
+        raise MCPToolError("BAD_REQUEST", "; ".join(e.messages)) from e
+    return {
+        "slug": round_.slug,
+        "rubric_version": round_.rubric_version,
+        "evaluation_criteria": round_.evaluation_criteria,
+        "criteria_basis": round_.criteria_basis,
     }

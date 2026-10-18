@@ -16,7 +16,6 @@ urlpatterns = [
     path("network/points/", views.network_points, name="network_points"),
     path("rounds/", views.rounds, name="rounds"),
     path("rounds/<slug:slug>/", views.round_detail, name="round"),
-    path("rounds/<slug:slug>/responses/<int:row>/", views.round_response, name="round_response"),
     path("unmatched/", views.unmatched, name="unmatched"),
     path("org/<slug:slug>/", views.organisation, name="organisation"),
 ]

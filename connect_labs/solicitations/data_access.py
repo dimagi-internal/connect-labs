@@ -29,8 +29,11 @@ from django.utils import timezone
 from connect_labs.solicitations import access, demo
 from connect_labs.solicitations.local_models import (
     AWARD_STAGES,
-    SOURCE_DIRECTORY,
+    OUTCOMES,
+    REVIEW_AI,
+    REVIEW_HUMAN,
     SOURCE_LABS,
+    STANCES,
     Solicitation,
     SolicitationResponse,
     SolicitationReview,
@@ -278,6 +281,47 @@ class SolicitationsDataAccess:
             return None
         return by_public_id(Solicitation.objects.directory_rounds(), solicitation_id)
 
+    def set_round_criteria(self, slug: str, criteria: list, basis: str = "") -> Solicitation:
+        """Replace a directory round's evaluation criteria, and bump its rubric version.
+
+        Each criterion is {id, name, weight, scoring_guide, rationale}; weights
+        are percentages. Reviews already scored keep the version they scored.
+        """
+        round_ = Solicitation.objects.directory_rounds().select_related("owner_org").filter(slug=slug).first()
+        if round_ is None:
+            raise Solicitation.DoesNotExist(f"No marketplace round with slug {slug!r}")
+        access.require(
+            access.can_set_round_criteria(self.caller, round_),
+            "Only members of the organisation that ran this round may set its criteria.",
+        )
+        cleaned, seen = [], set()
+        for raw in criteria or []:
+            cid = str(raw.get("id") or "").strip()
+            name = str(raw.get("name") or "").strip()
+            if not cid or not name:
+                raise ValidationError({"criteria": "Every criterion needs an id and a name."})
+            if cid in seen:
+                raise ValidationError({"criteria": f"Criterion id {cid!r} appears twice."})
+            seen.add(cid)
+            cleaned.append(
+                {
+                    "id": cid,
+                    "name": name,
+                    "weight": float(raw.get("weight") or 0),
+                    "scoring_guide": str(raw.get("scoring_guide") or ""),
+                    "rationale": str(raw.get("rationale") or ""),
+                }
+            )
+        total = sum(c["weight"] for c in cleaned)
+        if cleaned and abs(total - 100) > 0.5:
+            raise ValidationError({"criteria": f"Weights add up to {total:g}, not 100."})
+        previous = _int_or_none((round_.rubric_version or "v0").lstrip("v")) or 0
+        round_.evaluation_criteria = cleaned
+        round_.criteria_basis = basis or ""
+        round_.rubric_version = f"v{previous + 1}"
+        round_.save(update_fields=["evaluation_criteria", "criteria_basis", "rubric_version"])
+        return round_
+
     def get_past_call(self, key) -> Solicitation | None:
         """One past call by slug or id, or None."""
         from connect_labs.solicitations import past_calls
@@ -478,10 +522,10 @@ class SolicitationsDataAccess:
         return list(qs.order_by("submission_date", "pk"))
 
     def get_response_by_id(self, response_id: int) -> SolicitationResponse | None:
-        # Responses to owned calls only: a directory round's submissions are the
-        # marketplace's, never managed through these paths.
+        # A directory round's submissions are read and reviewed here by its
+        # owner (`access.can_read_response`); nothing edits or awards them.
         response = by_public_id(
-            SolicitationResponse.objects.exclude(solicitation__source=SOURCE_DIRECTORY).select_related(
+            SolicitationResponse.objects.select_related(
                 "solicitation", "solicitation__owner_org", "llo_entity", "submitted_by"
             ),
             response_id,
@@ -797,37 +841,42 @@ class SolicitationsDataAccess:
     # =========================================================================
 
     def get_reviews_for_response(self, response_id: int) -> list[SolicitationReview]:
-        """Reviews are the owner's working notes: only an owner or operator reads them."""
+        """Reviews are the owner's working notes: only those who may review read them."""
         response = self.get_response_by_id(response_id)
-        if response is None or not access.can_manage(self.caller, response.solicitation):
+        if response is None or not access.can_read_reviews(self.caller, response.solicitation):
             return []
-        return list(response.reviews.select_related("reviewer").order_by("review_date", "pk"))
+        return list(response.reviews.select_related("reviewer", "based_on").order_by("review_date", "pk"))
 
     def get_review_by_id(self, review_id: int) -> SolicitationReview | None:
         review = by_public_id(
             SolicitationReview.objects.select_related("response", "response__solicitation", "reviewer"), review_id
         )
-        if review is None or not access.can_manage(self.caller, review.response.solicitation):
+        if review is None or not access.can_read_reviews(self.caller, review.response.solicitation):
             return None
         return review
 
-    def get_my_review(self, response_id: int) -> SolicitationReview | None:
+    def get_my_review(self, response_id: int, kind: str = REVIEW_HUMAN) -> SolicitationReview | None:
         response = self.get_response_by_id(response_id)
         if response is None or self.caller.user_pk is None:
             return None
-        return response.reviews.filter(reviewer_id=self.caller.user_pk).first()
+        return response.reviews.filter(reviewer_id=self.caller.user_pk, kind=kind).first()
 
     def create_review(self, response_id: int, data: dict) -> SolicitationReview:
-        """Score a response. One review per reviewer: a second call updates the first."""
+        """Score a response. One review of each kind per reviewer: a second call updates the first.
+
+        `kind` is "human" unless the data says "ai": an AI pass run under a
+        person's account is kept apart from that person's own review.
+        """
         response = self._response_or_missing(response_id)
         access.require(
             access.can_review(self.caller, response),
             "Only the organisation that owns this call (or platform support) can review it, "
             "and never a response from your own side.",
         )
-        review = response.reviews.filter(reviewer_id=self.caller.user_pk).first() if self.user else None
+        kind = REVIEW_AI if data.get("kind") == REVIEW_AI else REVIEW_HUMAN
+        review = response.reviews.filter(reviewer_id=self.caller.user_pk, kind=kind).first() if self.user else None
         if review is None:
-            review = SolicitationReview(response=response, reviewer=self.user)
+            review = SolicitationReview(response=response, reviewer=self.user, kind=kind)
         self._apply_review_fields(review, dict(data), response)
         review.save()
         if response.status == "submitted":
@@ -849,11 +898,35 @@ class SolicitationsDataAccess:
         return review
 
     def _apply_review_fields(self, review, data: dict, response) -> None:
-        for name in ("recommendation", "notes", "tags"):
+        for name in ("recommendation", "notes", "tags", "strengths", "concerns", "ask_next"):
             if name in data:
                 setattr(review, name, data[name] or "")
+        for name, choices in (("outcome", OUTCOMES), ("stance", STANCES)):
+            if name in data:
+                value = data[name] or ""
+                if value and value not in dict(choices):
+                    raise ValidationError({name: f"{value!r} must be one of {list(dict(choices))}"})
+                setattr(review, name, value)
         if "criteria_scores" in data:
             review.criteria_scores = data["criteria_scores"] or {}
+        if "criteria_notes" in data:
+            review.criteria_notes = data["criteria_notes"] or {}
+        if "flags" in data:
+            flags = data["flags"] or []
+            review.flags = [
+                f.strip() for f in (flags.split(",") if isinstance(flags, str) else flags) if str(f).strip()
+            ]
+        if "provenance" in data:
+            review.provenance = data["provenance"] or {}
+        if "based_on" in data:
+            # Only a review of the same response, and never itself.
+            source = _int_or_none(data["based_on"])
+            if source is None:
+                review.based_on = None
+            else:
+                review.based_on = response.reviews.exclude(pk=review.pk).filter(pk=source).first()
+                if review.based_on is None:
+                    raise ValidationError({"based_on": f"Review {source} is not a review of this response."})
         if "review_date" in data:
             review.review_date = _parse_datetime(data["review_date"]) or timezone.now()
         if data.get("reviewer_username"):

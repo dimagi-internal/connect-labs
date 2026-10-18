@@ -149,15 +149,19 @@ class TestTheTools:
 
 class TestOneResponse:
     def test_the_owner_opens_a_submission_from_the_round(self, client, round_, member):
+        submission = round_.responses.get(source_row=2)
         body = _page(client, member, "marketplace:round", "battery-2026")
-        assert reverse("marketplace:round_response", args=["battery-2026", 2]) in body
-        body = _page(client, member, "marketplace:round_response", "battery-2026", 2)
+        assert reverse("solicitations:response_detail", args=[submission.pk]) in body
+        body = _page(client, member, "solicitations:response_detail", submission.pk)
         assert ANSWER in body and "How would you find households?" in body
+        assert "Write my own review" in body
+        assert reverse("solicitations:award", args=[submission.pk]) not in body, "a round is decided outside labs"
 
     def test_to_anyone_else_it_does_not_exist(self, client, round_, outsider):
         client.force_login(outsider)
-        response = client.get(reverse("marketplace:round_response", args=["battery-2026", 2]))
-        assert response.status_code == 404
+        submission = round_.responses.get(source_row=2)
+        for name in ("solicitations:response_detail", "solicitations:review"):
+            assert client.get(reverse(name, args=[submission.pk])).status_code == 404
 
     def test_the_form_shows_the_questions_and_no_answers(self, client, round_, outsider):
         body = _page(client, outsider, "solicitations:respond", round_.public_id)
@@ -205,3 +209,152 @@ class TestTheRoundMix:
     def test_an_outsider_gets_no_mix(self, client, round_, outsider):
         client.force_login(outsider)
         assert client.get(reverse("marketplace:round", args=["battery-2026"])).context["mix"] == {}
+
+
+CRITERIA = [
+    {"id": "reach", "name": "Reach to households", "weight": 60, "rationale": "Half name no channel."},
+    {"id": "cost", "name": "Cost fit", "weight": 40, "rationale": "Quotes vary tenfold."},
+]
+
+
+@pytest.fixture
+def ace(django_user_model):
+    return django_user_model.objects.create_user(username="ace", password="x", email="ace@dimagi-ai.com")
+
+
+@pytest.fixture
+def scored(round_, ace):
+    """The round with criteria and an AI first pass on Fenwick."""
+    from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+    SolicitationsDataAccess(user=ace).set_round_criteria("battery-2026", CRITERIA, "Read all three.")
+    submission = round_.responses.get(source_row=2)
+    ai = SolicitationsDataAccess(user=ace).create_review(
+        submission.pk,
+        {
+            "kind": "ai",
+            "criteria_scores": {"reach": 8, "cost": 5},
+            "criteria_notes": {"reach": "Names solar vendors' lists."},
+            "outcome": "pick",
+            "strengths": "A real channel to households.",
+            "provenance": {"model": "test", "rubric_version": "v1"},
+        },
+    )
+    return submission, ai
+
+
+class TestReviewingARound:
+    def test_criteria_are_versioned_and_must_add_up(self, round_, ace):
+        from django.core.exceptions import ValidationError
+
+        from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+        da = SolicitationsDataAccess(user=ace)
+        assert da.set_round_criteria("battery-2026", CRITERIA).rubric_version == "v1"
+        assert da.set_round_criteria("battery-2026", CRITERIA).rubric_version == "v2"
+        with pytest.raises(ValidationError):
+            da.set_round_criteria("battery-2026", [{"id": "a", "name": "A", "weight": 50}])
+
+    def test_an_outsider_cannot_set_them(self, round_, outsider):
+        from django.core.exceptions import PermissionDenied
+
+        from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+        with pytest.raises(PermissionDenied):
+            SolicitationsDataAccess(user=outsider).set_round_criteria("battery-2026", CRITERIA)
+
+    def test_the_ai_review_is_scored_on_the_round_criteria(self, scored):
+        _, ai = scored
+        assert ai.kind == "ai" and ai.score == 68  # (8*60 + 5*40) / 100 * 10
+
+    def test_the_page_shows_it_as_unchecked_with_ways_to_respond(self, client, scored, member):
+        submission, ai = scored
+        body = _page(client, member, "solicitations:response_detail", submission.pk)
+        assert "AI first pass" in body and "no one has checked it yet" in body
+        assert f"?from={ai.pk}&stance=agrees" in body
+        assert f"?from={ai.pk}" in body
+        assert "Names solar vendors" in body
+
+    def test_copying_it_prefills_everything_and_leaves_the_original(self, client, scored, member):
+        submission, ai = scored
+        client.force_login(member)
+        url = reverse("solicitations:review", args=[submission.pk])
+        page = client.get(url, {"from": ai.pk}).content.decode()
+        assert "starting from the AI first pass" in page and "A real channel to households." in page
+        response = client.post(
+            url,
+            {
+                "based_on": ai.pk,
+                "stance": "amended",
+                "criteria_score_reach": 6,
+                "criteria_score_cost": 5,
+                "criteria_note_reach": "Lists are thin outside the city.",
+                "outcome": "backup",
+                "strengths": "A real channel to households.",
+            },
+        )
+        assert response.status_code == 302
+        mine = submission.reviews.get(kind="human")
+        assert (mine.based_on_id, mine.stance, mine.outcome, mine.score) == (ai.pk, "amended", "backup", 56)
+        ai.refresh_from_db()
+        assert ai.outcome == "pick" and ai.criteria_scores == {"reach": 8, "cost": 5}
+
+    def test_agreeing_is_one_save(self, client, scored, member):
+        submission, ai = scored
+        client.force_login(member)
+        url = reverse("solicitations:review", args=[submission.pk])
+        form = client.get(url, {"from": ai.pk, "stance": "agrees"}).context["form"]
+        data = {k: v for k, v in form.initial.items() if v not in (None, "")}
+        assert client.post(url, data).status_code == 302
+        mine = submission.reviews.get(kind="human")
+        assert (mine.stance, mine.outcome, mine.score) == ("agrees", "pick", ai.score)
+
+    def test_several_people_review_and_the_round_page_counts_them(self, client, scored, member, django_user_model):
+        from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+        submission, ai = scored
+        second = django_user_model.objects.create_user(username="second", password="x", email="s@dimagi.com")
+        for person in (member, second):
+            SolicitationsDataAccess(user=person).create_review(
+                submission.pk, {"outcome": "waitlist", "based_on": ai.pk, "stance": "disagrees"}
+            )
+        assert submission.reviews.filter(kind="human").count() == 2
+        client.force_login(member)
+        response = client.get(reverse("marketplace:round", args=["battery-2026"]))
+        assert response.context["reviewed"]["people"] == 1
+        fenwick = next(a for a in response.context["applicants"] if a["response"].pk == submission.pk)
+        assert fenwick["review"] == {
+            "outcome": "waitlist",
+            "label": "Waitlist",
+            "by_person": True,
+            "people": 2,
+            "has_ai": True,
+        }
+        body = response.content.decode()
+        assert "HOW RESPONSES ARE SCORED" in body and "Half name no channel." in body
+
+    def test_a_review_cannot_start_from_another_responses_review(self, scored, member, round_):
+        from django.core.exceptions import ValidationError
+
+        from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+        _, ai = scored
+        other = round_.responses.get(source_row=3)
+        with pytest.raises(ValidationError):
+            SolicitationsDataAccess(user=member).create_review(other.pk, {"based_on": ai.pk})
+
+    def test_the_mcp_tools_carry_it(self, scored, ace):
+        from connect_labs.mcp.tools import reviews as review_tools
+
+        submission, ai = scored
+        rows = tools.marketplace_round_responses(ace, "battery-2026")
+        assert rows["round"]["rubric_version"] == "v1"
+        assert submission.pk in {r["response_id"] for r in rows["responses"]}
+        listed = review_tools.list_reviews(ace, submission.pk)["reviews"]
+        assert listed[0]["kind"] == "ai" and listed[0]["criteria_notes"]["reach"].startswith("Names")
+        again = review_tools.create_review(
+            ace, True, submission.pk, "fenwick", kind="ai", outcome="backup", criteria_scores={"reach": 7}
+        )
+        assert again["id"] == ai.pk, "re-running the AI pass replaces it"
+        set_ = tools.marketplace_round_criteria_set(ace, "battery-2026", CRITERIA, "again")
+        assert set_["rubric_version"] == "v2"

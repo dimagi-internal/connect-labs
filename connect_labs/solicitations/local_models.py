@@ -189,6 +189,13 @@ class Solicitation(models.Model):
     contact_email = models.EmailField(max_length=320, blank=True, default="")
     questions = models.JSONField(default=list, blank=True)
     evaluation_criteria = models.JSONField(default=list, blank=True)
+    # A marketplace round's criteria are written after its submissions are
+    # read, not published with the call: the Google Form went out without
+    # them. `rubric_version` changes whenever they are replaced, so a review
+    # can say which version it scored against; `criteria_basis` says how they
+    # were arrived at and what was considered and dropped.
+    rubric_version = models.CharField(max_length=40, blank=True, default="")
+    criteria_basis = models.TextField(blank=True, default="")
 
     # Connect's own `delivery_type` — the same vocabulary the pulse spine tags
     # every opportunity with, so "applied to a malaria round" and "delivered
@@ -539,8 +546,36 @@ class SolicitationResponse(models.Model):
         }
 
 
+REVIEW_AI = "ai"
+REVIEW_HUMAN = "human"
+REVIEW_KINDS = [(REVIEW_AI, "AI"), (REVIEW_HUMAN, "Person")]
+
+# A reviewer's reaction to the review theirs started from (`based_on`).
+STANCES = [
+    ("agrees", "Agrees"),
+    ("amended", "Amended it"),
+    ("disagrees", "Disagrees"),
+]
+
+# Where a marketplace round's applicant lands. Calls run on labs keep
+# `recommendation` and the award flow; a round is decided outside labs.
+OUTCOMES = [
+    ("pick", "Pick"),
+    ("backup", "Backup"),
+    ("waitlist", "Waitlist"),
+    ("pass", "Pass"),
+]
+
+
 class SolicitationReview(models.Model):
-    """One reviewer's scoring of one response."""
+    """One reviewer's scoring of one response.
+
+    A review is a person's or an AI's (`kind`). Several people may review the
+    same response. A person can start from another review (`based_on`): either
+    say whether they agree with it (`stance`, little else filled in) or copy it
+    and edit the copy as their own. The review they started from is never
+    changed, so what the AI said stays readable beside what people made of it.
+    """
 
     response = models.ForeignKey(SolicitationResponse, on_delete=models.CASCADE, related_name="reviews")
     reviewer = models.ForeignKey(
@@ -549,7 +584,23 @@ class SolicitationReview(models.Model):
     # Who the review says reviewed it, for imported reviews whose user labs
     # does not know. A live review carries its reviewer's username.
     reviewer_name = models.CharField(max_length=200, blank=True, default="")
+    kind = models.CharField(max_length=8, choices=REVIEW_KINDS, default=REVIEW_HUMAN)
+    based_on = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="derived_reviews"
+    )
+    stance = models.CharField(max_length=12, choices=STANCES, blank=True, default="")
     criteria_scores = models.JSONField(default=dict, blank=True)
+    # criterion id -> the reason for its score, citing the answer.
+    criteria_notes = models.JSONField(default=dict, blank=True)
+    outcome = models.CharField(max_length=12, choices=OUTCOMES, blank=True, default="")
+    strengths = models.TextField(blank=True, default="")
+    concerns = models.TextField(blank=True, default="")
+    # What to ask the applicant before deciding.
+    ask_next = models.TextField(blank=True, default="")
+    # Short markers: "generic-or-ai-drafted", "cost-outlier", "safety", ...
+    flags = models.JSONField(default=list, blank=True)
+    # For an AI review: model, skill and version, rubric version, sources.
+    provenance = models.JSONField(default=dict, blank=True)
     # 1-100. Computed from the weighted criteria when there are any
     # (`weighted_score`); otherwise the score the reviewer gave.
     score = models.IntegerField(null=True, blank=True)
@@ -563,7 +614,9 @@ class SolicitationReview(models.Model):
     class Meta:
         ordering = ["review_date", "pk"]
         constraints = [
-            models.UniqueConstraint(fields=["response", "reviewer"], name="uniq_review_per_reviewer"),
+            # One review of each kind per reviewer: an AI pass run as a person
+            # never takes the place of that person's own review.
+            models.UniqueConstraint(fields=["response", "reviewer", "kind"], name="uniq_review_per_reviewer_kind"),
         ]
 
     def __str__(self) -> str:
@@ -588,6 +641,16 @@ class SolicitationReview(models.Model):
             "reviewer_username": self.reviewer_username,
             "criteria_scores": self.criteria_scores or {},
             "review_date": _iso(self.review_date),
+            "kind": self.kind,
+            "based_on": self.based_on_id,
+            "stance": self.stance,
+            "criteria_notes": self.criteria_notes or {},
+            "outcome": self.outcome,
+            "strengths": self.strengths,
+            "concerns": self.concerns,
+            "ask_next": self.ask_next,
+            "flags": list(self.flags or []),
+            "provenance": self.provenance or {},
         }
 
     def to_record_dict(self) -> dict:

@@ -29,7 +29,7 @@ from connect_labs.microplans.core.solicitation_snapshot import build_plan_snapsh
 from connect_labs.solicitations import access, demo, past_calls
 from connect_labs.solicitations.data_access import AlreadyAwarded, SolicitationsDataAccess, by_public_id
 from connect_labs.solicitations.forms import NEW_ORG, ReviewForm, SolicitationForm, SolicitationResponseForm
-from connect_labs.solicitations.local_models import SOURCE_DIRECTORY, Solicitation, SolicitationResponse
+from connect_labs.solicitations.local_models import REVIEW_AI, SOURCE_DIRECTORY, Solicitation, SolicitationResponse
 
 logger = logging.getLogger(__name__)
 
@@ -1019,21 +1019,28 @@ class ResponseDetailView(SignedInPage):
                     "name": (criteria_by_id.get(c_id) or {}).get("name", c_id),
                     "weight": (criteria_by_id.get(c_id) or {}).get("weight"),
                     "score": c_score,
+                    "note": (rev.criteria_notes or {}).get(c_id, ""),
                 }
                 for c_id, c_score in (rev.criteria_scores or {}).items()
             ]
+        is_round = access.is_directory_round(solicitation)
+        my_review = next((r for r in reviews if r.kind != REVIEW_AI and r.reviewer_id == da.caller.user_pk), None)
         ctx.update(
             {
                 "response": response,
                 "solicitation": solicitation,
                 "reviews": reviews,
-                "is_owner": da.can_manage(solicitation),
+                "is_round": is_round,
+                "my_review": my_review,
+                "ai_reviews": [r for r in reviews if r.kind == REVIEW_AI],
+                "is_owner": da.can_manage(solicitation)
+                or (is_round and access.can_read_reviews(da.caller, solicitation)),
                 "is_respondent": access.is_respondent(da.caller, response),
                 "can_review": access.can_review(da.caller, response),
                 "can_edit": access.can_edit_response(da.caller, response) and bool(solicitation.can_accept_responses),
                 "qa_pairs": [
                     {"question": q.get("text", ""), "answer": (response.responses or {}).get(q.get("id", ""), "")}
-                    for q in solicitation.questions or []
+                    for q in (past_calls.form_questions(solicitation) if is_round else solicitation.questions or [])
                 ],
             }
         )
@@ -1126,7 +1133,15 @@ class AwardView(SignedInPage):
 
 
 class ReviewView(SignedInPage):
-    """Score a response blind: by number, with no name, email or organisation shown."""
+    """Score a response: by number, with no name, email or organisation shown.
+
+    Three ways in. Plain, it is your own review, written blind: an AI review's
+    per-criterion scores stay hidden until you enter yours, so they cannot
+    anchor you. `?from=<review>` starts your review as a copy of another one --
+    usually the AI's -- to edit as your own. `?from=<review>&stance=agrees` is
+    the same copy, already marked as agreeing, for when you only want to say it
+    is right. Whichever way, the review you started from is unchanged.
+    """
 
     template_name = "solicitations/review_form.html"
 
@@ -1140,10 +1155,16 @@ class ReviewView(SignedInPage):
         )
         return da, response
 
+    def _source(self, da, response, key):
+        """The review this one starts from: another review of the same response."""
+        review = da.get_review_by_id(int(key)) if str(key or "").isdigit() else None
+        return review if review is not None and review.response_id == response.pk else None
+
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         da, response = self._load(kwargs["pk"])
         solicitation = response.solicitation
+        is_round = access.is_directory_round(solicitation)
         eval_criteria = solicitation.evaluation_criteria or []
         criteria_by_question = {}
         for criterion in eval_criteria:
@@ -1151,12 +1172,29 @@ class ReviewView(SignedInPage):
                 criteria_by_question.setdefault(q_id, []).append(criterion)
         linked_ids = {c.get("id") for pairs in criteria_by_question.values() for c in pairs}
         existing = da.get_my_review(response.pk)
+        source = self._source(da, response, self.request.GET.get("from") or self.request.POST.get("based_on"))
+        ai_review = next((r for r in da.get_reviews_for_response(response.pk) if r.kind == REVIEW_AI), None)
+        # What the reveal-after-you-score boxes show: the AI review's scores and
+        # reasons when there is one, else the older per-response proposal. A
+        # copy already shows everything, so it hides nothing.
+        if source is not None:
+            hidden = {}
+        elif ai_review is not None:
+            hidden = {
+                cid: {"score": score, "rationale": (ai_review.criteria_notes or {}).get(cid, "")}
+                for cid, score in (ai_review.criteria_scores or {}).items()
+            }
+        else:
+            hidden = response.ai_proposed_scores
+        questions = past_calls.form_questions(solicitation) if is_round else solicitation.questions or []
         ctx.update(
             {
                 "response": response,
                 "solicitation": solicitation,
+                "is_round": is_round,
                 "blind_label": response.blind_label,
-                "ai_proposed_scores": response.ai_proposed_scores,
+                "ai_proposed_scores": hidden,
+                "source": source,
                 "qa_pairs": [
                     {
                         "question": q.get("text", ""),
@@ -1164,7 +1202,7 @@ class ReviewView(SignedInPage):
                         "question_id": q.get("id", ""),
                         "criteria": criteria_by_question.get(q.get("id", ""), []),
                     }
-                    for q in solicitation.questions or []
+                    for q in questions
                 ],
                 "unlinked_criteria": [c for c in eval_criteria if c.get("id") not in linked_ids],
                 "existing_review": existing,
@@ -1172,33 +1210,54 @@ class ReviewView(SignedInPage):
             }
         )
         if "form" not in ctx:
+            start = source or existing
             initial = {}
-            if existing is not None:
+            if start is not None:
                 initial = {
-                    "score": existing.score,
-                    "recommendation": existing.recommendation,
-                    "notes": existing.notes,
-                    "tags": existing.tags,
-                    **{f"criteria_score_{k}": v for k, v in (existing.criteria_scores or {}).items()},
+                    "score": start.score,
+                    "recommendation": start.recommendation,
+                    "notes": start.notes,
+                    "tags": start.tags,
+                    "outcome": start.outcome,
+                    "strengths": start.strengths,
+                    "concerns": start.concerns,
+                    "ask_next": start.ask_next,
+                    "flags": ", ".join(start.flags or []),
+                    **{f"criteria_score_{k}": v for k, v in (start.criteria_scores or {}).items()},
+                    **{f"criteria_note_{k}": v for k, v in (start.criteria_notes or {}).items()},
                 }
-            ctx["form"] = ReviewForm(evaluation_criteria=eval_criteria, initial=initial)
+                if start is existing and existing.based_on_id:
+                    initial.update({"based_on": existing.based_on_id, "stance": existing.stance})
+            if source is not None:
+                initial.update({"based_on": source.pk, "stance": self.request.GET.get("stance") or "amended"})
+            ctx["form"] = ReviewForm(evaluation_criteria=eval_criteria, initial=initial, for_round=is_round)
         return ctx
 
     def post(self, request, *args, **kwargs):
         da, response = self._load(kwargs["pk"])
-        form = ReviewForm(response.solicitation.evaluation_criteria or [], request.POST)
+        is_round = access.is_directory_round(response.solicitation)
+        form = ReviewForm(response.solicitation.evaluation_criteria or [], request.POST, for_round=is_round)
         if form.is_valid():
-            da.create_review(
-                response.pk,
-                {
-                    "score": form.cleaned_data["score"],
-                    "recommendation": form.cleaned_data["recommendation"],
-                    "notes": form.cleaned_data["notes"],
-                    "tags": form.cleaned_data["tags"],
-                    "review_date": timezone.now().isoformat(),
-                    "criteria_scores": form.get_criteria_scores(),
-                },
-            )
+            data = {
+                "notes": form.cleaned_data["notes"],
+                "tags": form.cleaned_data["tags"],
+                "review_date": timezone.now().isoformat(),
+                "criteria_scores": form.get_criteria_scores(),
+            }
+            if "score" in form.fields:
+                data["score"] = form.cleaned_data["score"]
+            if is_round:
+                for name in ("outcome", "strengths", "concerns", "ask_next", "flags", "stance"):
+                    data[name] = form.cleaned_data[name]
+                data["criteria_notes"] = form.get_criteria_notes()
+                data["based_on"] = form.cleaned_data["based_on"]
+                if not data["based_on"]:
+                    data["stance"] = ""
+            else:
+                data["recommendation"] = form.cleaned_data["recommendation"]
+            da.create_review(response.pk, data)
+            if is_round:
+                return redirect("solicitations:response_detail", pk=response.pk)
             return redirect("solicitations:responses_list", pk=response.solicitation.public_id)
         ctx = self.get_context_data(form=form, **kwargs)
         return self.render_to_response(ctx)

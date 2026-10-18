@@ -24,7 +24,7 @@ import datetime
 from canopy_sdk.django.pages import panel_context as canopy_panel_context
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
-from django.http import Http404, JsonResponse
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 
@@ -313,6 +313,7 @@ def round_detail(request, slug):
     applicants = queries.round_applicants(round_, queries.first_service_by_org_name()) if can_read else []
     trend = queries.submission_trend(round_) if can_read else []
     mix = queries.round_mix(round_, applicants) if can_read else {}
+    reviewed = queries.review_status(round_, applicants) if can_read else {}
     return render(
         request,
         "marketplace/round.html",
@@ -332,6 +333,7 @@ def round_detail(request, slug):
             "never_count": sum(1 for a in applicants if a["outcome"] == "never"),
             "unresolved_count": sum(1 for a in applicants if a["outcome"] == "unresolved"),
             "mix": mix,
+            "reviewed": reviewed,
             # Its public page on Solicitations, once it has stopped taking
             # applications: anyone can read that one, so it is the link to send.
             "public_call_url": (
@@ -349,35 +351,6 @@ def round_detail(request, slug):
                 filters={"round": round_.slug},
                 path=request.path,
             ),
-        },
-    )
-
-
-@login_required
-@MARKETPLACE_CHROME
-def round_response(request, slug, row):
-    """One submission to a round, every answer as it was given.
-
-    Only the round's owner reads it, and to anyone else it does not exist:
-    a 403 would confirm that this row of this round is somebody's submission.
-    """
-    round_ = get_object_or_404(Solicitation.objects.directory_rounds().select_related("owner_org"), slug=slug)
-    if not access.can_read_round_responses(request, round_):
-        raise Http404
-    response = get_object_or_404(
-        round_.responses.select_related("llo_entity", "llo_entity__marketplace_profile"), source_row=row
-    )
-    answers = response.responses or {}
-    return render(
-        request,
-        "marketplace/round_response.html",
-        {
-            "round": round_,
-            "response": response,
-            "org": response.llo_entity,
-            "name": (response.llo_entity.name if response.llo_entity else response.org_name)
-            or "(organization name not given)",
-            "answers": [(q.get("text", ""), answers.get(q.get("id"), "")) for q in past_calls.form_questions(round_)],
         },
     )
 

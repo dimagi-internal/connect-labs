@@ -8,9 +8,15 @@
 
     <!-- Breadcrumb -->
     <nav class="flex items-center gap-2 text-sm text-gray-500 mb-6">
+        {% if is_round %}
+        <a href="{% url 'solicitations:response_detail' pk=response.pk %}" class="hover:text-brand-cornflower-blue transition-colors">
+            <i class="fa-solid fa-arrow-left mr-1"></i> {{ response.display_name|default:blind_label }}
+        </a>
+        {% else %}
         <a href="{% url 'solicitations:responses_list' pk=solicitation.public_id %}" class="hover:text-brand-cornflower-blue transition-colors">
             <i class="fa-solid fa-inbox mr-1"></i> Responses
         </a>
+        {% endif %}
         <i class="fa-solid fa-chevron-right text-xs"></i>
         <span class="text-gray-700 font-medium">{% if is_update %}Update{% else %}Add{% endif %} Review</span>
     </nav>
@@ -19,7 +25,19 @@
         {% if is_update %}Update Review{% else %}Review Response{% endif %}
     </h1>
 
+    {% if source %}
+    <div class="bg-indigo-50 border border-indigo-100 rounded-lg p-4 mb-6 text-sm text-indigo-900" data-testid="starting-from">
+        <p class="font-semibold mb-1">
+            <i class="fa-solid fa-copy mr-1"></i>
+            Your review, starting from {% if source.kind == 'ai' %}the AI first pass{% else %}{{ source.reviewer_username }}'s review{% endif %}
+        </p>
+        <p class="text-indigo-800">Everything below is copied in for you to change. Saving creates your own review; the one you started from stays exactly as it was.
+        {% if form.stance.value == 'agrees' %}It is marked as agreeing — just save if that is all you want to say.{% elif form.stance.value == 'disagrees' %}It is marked as disagreeing — change what you disagree with before saving.{% endif %}</p>
+    </div>
+    {% endif %}
+
     <!-- Blind + anti-anchoring banner -->
+    {% if not source %}
     <div class="flex flex-col sm:flex-row sm:items-center gap-2 mb-6">
         <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
             <i class="fa-solid fa-user-secret text-slate-500"></i>
@@ -30,6 +48,7 @@
             The AI's suggested score for each criterion stays hidden until you record your own, so it can't anchor you.
         </span>
     </div>
+    {% endif %}
 
     {% if error %}
         <div class="bg-red-50 border-l-4 border-red-400 p-4 mb-6">
@@ -86,6 +105,7 @@
                             {{ form|get_criteria_field:criterion.id }}
                         </div>
                     </div>
+                    {% with note=form|get_criteria_note_field:criterion.id %}{% if note %}<div class="mt-2">{{ note }}</div>{% endif %}{% endwith %}
                     <div class="ai-suggest mt-2" data-criterion="{{ criterion.id }}">
                         <span class="ai-locked inline-flex items-center gap-1.5 text-xs text-gray-400">
                             <i class="fa-solid fa-lock"></i> AI suggestion hidden — enter your score to compare
@@ -125,6 +145,7 @@
                             {{ form|get_criteria_field:criterion.id }}
                         </div>
                     </div>
+                    {% with note=form|get_criteria_note_field:criterion.id %}{% if note %}<div class="mt-2">{{ note }}</div>{% endif %}{% endwith %}
                     <div class="ai-suggest mt-2" data-criterion="{{ criterion.id }}">
                         <span class="ai-locked inline-flex items-center gap-1.5 text-xs text-gray-400">
                             <i class="fa-solid fa-lock"></i> AI suggestion hidden — enter your score to compare
@@ -149,15 +170,49 @@
                 Overall Assessment
             </h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                {% if form.score %}
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">{{ form.score.label }}</label>
                     {{ form.score }}
                 </div>
+                {% endif %}
+                {% if form.recommendation %}
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">{{ form.recommendation.label }}</label>
                     {{ form.recommendation }}
                 </div>
+                {% endif %}
+                {% if form.outcome %}
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">{{ form.outcome.label }}</label>
+                    {{ form.outcome }}
+                    <p class="text-xs text-gray-400 mt-1">Pick, backup, waitlist or pass{% if unlinked_criteria %}; the score comes from the criteria above{% endif %}.</p>
+                </div>
+                {% endif %}
+                {% if form.stance and form.based_on.value %}
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">{{ form.stance.label }}</label>
+                    {{ form.stance }}
+                </div>
+                {% endif %}
             </div>
+            {% if form.based_on %}{{ form.based_on }}{% endif %}
+            {% if form.strengths %}
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                {% for field in form %}{% if field.name == 'strengths' or field.name == 'concerns' or field.name == 'ask_next' %}
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.help_text %}<p class="text-xs text-gray-400 mt-1">{{ field.help_text }}</p>{% endif %}
+                </div>
+                {% endif %}{% endfor %}
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">{{ form.flags.label }}</label>
+                {{ form.flags }}
+                <p class="text-xs text-gray-400 mt-1">{{ form.flags.help_text }}</p>
+            </div>
+            {% endif %}
             <div class="mb-4">
                 <label class="block text-sm font-medium text-gray-700 mb-1">{{ form.notes.label }}</label>
                 {{ form.notes }}
@@ -171,7 +226,7 @@
 
         <!-- Submit -->
         <div class="flex flex-wrap justify-end gap-3">
-            <a href="{% url 'solicitations:responses_list' pk=solicitation.public_id %}"
+            <a href="{% if is_round %}{% url 'solicitations:response_detail' pk=response.pk %}{% else %}{% url 'solicitations:responses_list' pk=solicitation.public_id %}{% endif %}"
                class="inline-flex items-center px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition text-sm font-medium">
                 Cancel
             </a>
