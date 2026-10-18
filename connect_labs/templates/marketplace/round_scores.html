@@ -22,8 +22,20 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
       <div class="w-full xl:max-w-xl xl:flex-1">
         <div class="flex items-center gap-2.5 flex-wrap">
           <h1 class="text-xl sm:text-2xl font-semibold text-brand-deep-purple">How applicants scored</h1>
-          {% if summary.current_version %}<a href="{% url 'marketplace:round' round.slug %}#criteria" title="The scores are given against this version of the round's criteria. Each time the criteria are rewritten, the version goes up." class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-semibold bg-indigo-50 text-brand-indigo">Criteria version {{ summary.current_version|slice:"1:" }}</a>{% endif %}
+          {% if history|length > 1 %}
+            <form method="get" class="inline-flex items-center" data-testid="version-picker">
+              <select name="version" onchange="this.form.submit()" title="The scores are given against this version of the round's criteria. Each time the criteria are rewritten, the version goes up." class="rounded-full text-[12px] font-semibold bg-indigo-50 text-brand-indigo" style="border: 0; padding: 2px 28px 2px 10px">
+                {% for v in history %}<option value="{{ v.version }}" {% if v.version == shown_version %}selected{% endif %}>Criteria version {{ v.number }}{% if v.current %} (current){% endif %}</option>{% endfor %}
+              </select>
+            </form>
+          {% elif shown_version %}<a href="{% url 'marketplace:round' round.slug %}#criteria" title="The scores are given against this version of the round's criteria. Each time the criteria are rewritten, the version goes up." class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-semibold bg-indigo-50 text-brand-indigo">Criteria version {{ shown_version|slice:"1:" }}</a>{% endif %}
         </div>
+        {% if not is_current %}
+          <div class="text-[12.5px] text-amber-800 bg-amber-50 rounded-lg px-3 py-2 mt-2" data-testid="earlier-version">
+            An earlier version of the criteria. These are the reviews scored on version {{ shown_version|slice:"1:" }}; the round now uses version {{ round.rubric_version|slice:"1:" }}.
+            <a href="{% url 'marketplace:round_scores' round.slug %}" class="text-brand-indigo hover:text-brand-deep-purple ml-1">See the current scores →</a>
+          </div>
+        {% endif %}
         <div class="text-[13px] text-gray-600 mt-1.5 leading-relaxed">
           Every applicant against every criterion. Where a person has reviewed an applicant, their review is shown; otherwise the AI's.
         </div>
@@ -45,7 +57,7 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
             </details>
           {% endif %}
         </div>
-        {% if messages %}{% for message in messages %}<div class="text-[12px] text-red-800 mt-1.5">{{ message }}</div>{% endfor %}{% endif %}
+        {% if messages %}{% for message in messages %}<div class="text-[12px] {% if message.tags == 'error' %}text-red-800{% else %}text-green-800{% endif %} mt-1.5">{{ message }}</div>{% endfor %}{% endif %}
       </div>
       <div class="w-full xl:w-auto">
         <div class="flex flex-wrap gap-x-7 gap-y-4 sm:gap-8" data-testid="outcomes">
@@ -88,6 +100,77 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
       </div>
     </details>
   </div>
+
+  {% if comparison %}
+  <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-4.5" data-testid="comparison">
+    <div class="px-4 sm:px-5 py-3.5 border-b border-brand-border-light flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <span class="text-sm font-semibold text-brand-deep-purple">What changed from version {{ comparison.earlier|slice:"1:" }} to version {{ comparison.later|slice:"1:" }}</span>
+        <div class="text-[12px] text-gray-500 mt-0.5">
+          {{ comparison.moved|length }} recommendation{{ comparison.moved|length|pluralize }} changed{% if comparison.mean_shift is not None %} · scores moved {% if comparison.mean_shift >= 0 %}+{% endif %}{{ comparison.mean_shift|floatformat:1 }} on average across {{ comparison.compared }}{% endif %}.
+        </div>
+      </div>
+      {% if history|length > 2 %}
+        <form method="get" class="text-[11px] text-gray-500 flex items-center gap-1.5">
+          <input type="hidden" name="version" value="{{ shown_version }}">
+          COMPARE WITH
+          <select name="compare" onchange="this.form.submit()" class="border border-brand-border-light rounded-lg px-2 py-1 text-[12.5px] text-gray-800 bg-white">
+            {% for v in history %}{% if v.version != shown_version %}<option value="{{ v.version }}" {% if v.version == compare_with %}selected{% endif %}>Version {{ v.number }}</option>{% endif %}{% endfor %}
+          </select>
+        </form>
+      {% endif %}
+    </div>
+    <div class="grid grid-cols-1 xl:grid-cols-[1fr_1fr] gap-0">
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50"><tr>
+            <th class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Recommendation changed</th>
+            <th class="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Version {{ comparison.earlier|slice:"1:" }} → {{ comparison.later|slice:"1:" }}</th>
+            <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Score</th>
+          </tr></thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for m in comparison.moved %}
+              <tr class="hover:bg-gray-50 cursor-pointer" data-href="{% url 'solicitations:response_detail' m.applicant.response.pk %}">
+                <td class="px-4 sm:px-5 py-2 text-[13px] text-brand-deep-purple font-medium">{{ m.applicant.name }}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-[11.5px]">
+                  <span class="inline-flex px-2 py-0.5 rounded-full font-semibold {{ m.from_style }}">{{ m.from }}</span>
+                  <span class="text-gray-400 mx-1">→</span>
+                  <span class="inline-flex px-2 py-0.5 rounded-full font-semibold {{ m.to_style }}">{{ m.to }}</span>
+                </td>
+                <td class="px-4 sm:px-5 py-2 text-right text-[12.5px] text-gray-700 tabular-nums whitespace-nowrap">{{ m.score_from|default_if_none:"—" }} → {{ m.score_to|default_if_none:"—" }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="3" class="px-4 sm:px-5 py-6 text-[12.5px] text-gray-500">No recommendation changed.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="overflow-x-auto border-t xl:border-t-0 xl:border-l border-brand-border-light">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50"><tr>
+            <th class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Criterion</th>
+            <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Weight</th>
+            <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Mean</th>
+            <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Shortlist mean minus everyone else's, in each version. Near zero: the criterion did not decide who was shortlisted.">Difference</th>
+          </tr></thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for c in comparison.criteria %}
+              <tr>
+                <td class="px-4 sm:px-5 py-2 text-[12.5px] text-gray-800">{{ c.name }}{% if c.weight_from is None %} <span class="text-[11px] text-green-700">new</span>{% endif %}</td>
+                <td class="px-3 py-2 text-right text-[12px] tabular-nums whitespace-nowrap {% if c.weight_from != c.weight_to %}font-semibold text-gray-900{% else %}text-gray-500{% endif %}">{% if c.weight_from is not None %}{{ c.weight_from|floatformat:"-1" }} → {% endif %}{{ c.weight_to|floatformat:"-1" }}%</td>
+                <td class="px-3 py-2 text-right text-[12px] text-gray-700 tabular-nums whitespace-nowrap">{{ c.mean_from|floatformat:1|default:"—" }} → {{ c.mean_to|floatformat:1|default:"—" }}</td>
+                <td class="px-4 sm:px-5 py-2 text-right text-[12px] text-gray-700 tabular-nums whitespace-nowrap">{{ c.gap_from|floatformat:1|default:"—" }} → {{ c.gap_to|floatformat:1|default:"—" }}</td>
+              </tr>
+            {% endfor %}
+            {% for c in comparison.dropped %}
+              <tr><td class="px-4 sm:px-5 py-2 text-[12.5px] text-gray-400 line-through" colspan="4">{{ c.name }} (dropped)</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
   {% if summary.criteria %}
   <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-4.5">
@@ -255,6 +338,39 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
     </table>
     </div>
   </div>
+
+  {% if can_edit and history %}
+    <details class="bg-white border border-brand-border-light rounded-lg mt-4.5 px-4 sm:px-5 py-3" data-testid="versions">
+      <summary class="cursor-pointer text-[13px] font-semibold text-brand-deep-purple">Criteria versions ({{ history|length }})</summary>
+      <table class="min-w-full divide-y divide-gray-100 mt-2">
+        <thead><tr>
+          <th class="py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Version</th>
+          <th class="py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Written</th>
+          <th class="py-2 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">AI reviews</th>
+          <th class="py-2 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">People's reviews</th>
+          <th class="py-2"></th>
+        </tr></thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for v in history %}
+            <tr>
+              <td class="py-2 text-[12.5px]"><a href="?version={{ v.version }}" class="text-brand-indigo hover:text-brand-deep-purple">Version {{ v.number }}</a>{% if v.current %} <span class="text-[11px] text-gray-500">current</span>{% endif %}</td>
+              <td class="py-2 text-[12.5px] text-gray-600">{{ v.created_at|date:"j M Y" }}{% if v.created_by %} · {{ v.created_by }}{% endif %}</td>
+              <td class="py-2 text-right text-[12.5px] text-gray-700 tabular-nums">{{ v.ai_reviews }}</td>
+              <td class="py-2 text-right text-[12.5px] text-gray-700 tabular-nums">{{ v.person_reviews }}</td>
+              <td class="py-2 text-right">
+                {% if not v.current %}
+                  <form method="post" action="{% url 'marketplace:round_version_delete' round.slug v.version %}" onsubmit="return confirm('Delete criteria version {{ v.number }} and the {{ v.ai_reviews|add:v.person_reviews }} reviews scored on it{% if v.person_reviews %}, including {{ v.person_reviews }} by people{% endif %}? This cannot be undone.');">
+                    {% csrf_token %}
+                    <button type="submit" class="text-[12px] text-red-700 hover:text-red-800"><i class="fa-solid fa-trash-can mr-1"></i>Delete with its reviews</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+  {% endif %}
 
   {% if summary.stale or summary.unrecorded %}
     {% comment %}Record-keeping, for whoever maintains the round: below the table, not above the scores.{% endcomment %}

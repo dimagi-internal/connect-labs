@@ -767,3 +767,107 @@ class TestDeletingAReview:
 
         submission, ai = scored
         assert review_tools.delete_review(ace, ai.pk) == {"deleted": ai.pk, "response_id": submission.pk}
+
+
+CRITERIA_V2 = [
+    {"id": "reach", "name": "Reach to households", "weight": 70},
+    {"id": "cost", "name": "Cost fit", "weight": 30},
+]
+
+
+class TestVersions:
+    """Every criteria version is kept, with the reviews scored on it, until someone deletes it."""
+
+    @pytest.fixture
+    def rescored(self, scored, ace):
+        """v1 with an AI pick on Fenwick; then v2, re-scored as a backup."""
+        from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+        submission, ai_v1 = scored
+        da = SolicitationsDataAccess(user=ace)
+        da.set_round_criteria("battery-2026", CRITERIA_V2, "Reach matters more.")
+        ai_v2 = da.create_review(
+            submission.pk,
+            {
+                "kind": "ai",
+                "criteria_scores": {"reach": 6, "cost": 5},
+                "outcome": "backup",
+                "provenance": {"rubric_version": "v2"},
+            },
+        )
+        return submission, ai_v1, ai_v2
+
+    def test_rewriting_the_criteria_keeps_the_earlier_version(self, rescored, round_):
+        assert list(round_.rubric_versions.values_list("version", "criteria__0__weight")) == [
+            ("v1", 60.0),
+            ("v2", 70.0),
+        ]
+
+    def test_a_rescore_on_new_criteria_keeps_the_earlier_ai_review(self, rescored):
+        from connect_labs.solicitations.local_models import SolicitationReview
+
+        submission, ai_v1, ai_v2 = rescored
+        assert ai_v1.pk != ai_v2.pk
+        assert list(submission.reviews.all()) == [ai_v2], "only the current one stands"
+        old = SolicitationReview.all_versions.get(pk=ai_v1.pk)
+        assert old.superseded_at is not None and old.outcome == "pick" and old.score == 68
+
+    def test_the_page_reads_an_earlier_version_and_says_what_changed(self, client, rescored, member):
+        client.force_login(member)
+        context = client.get(reverse("marketplace:round_scores", args=["battery-2026"]), {"version": "v1"}).context
+        assert not context["is_current"] and context["summary"]["outcomes"]["pick"] == 1
+        current = client.get(reverse("marketplace:round_scores", args=["battery-2026"])).context
+        moved = current["comparison"]["moved"]
+        assert [(m["applicant"]["name"], m["from"], m["to"]) for m in moved] == [
+            ("Fenwick Trust", "Recommended", "Backup")
+        ]
+        weights = {c["id"]: (c["weight_from"], c["weight_to"]) for c in current["comparison"]["criteria"]}
+        assert weights == {"reach": (60.0, 70.0), "cost": (40.0, 30.0)}
+
+    def test_the_mcp_tools_carry_versions_and_the_comparison(self, rescored, ace):
+        versions = tools.marketplace_round_versions(ace, "battery-2026")
+        assert [(v["version"], v["current"], v["ai_reviews"]) for v in versions["versions"]] == [
+            ("v1", False, 1),
+            ("v2", True, 1),
+        ]
+        scores = tools.marketplace_round_scores(ace, "battery-2026", version="v2", compare_with="v1")
+        assert scores["comparison"]["moved"][0]["from"] == "pick"
+
+    def test_earlier_history_is_archived_into_an_earlier_version(self, rescored, ace, round_):
+        from connect_labs.solicitations.local_models import SolicitationReview
+
+        other = round_.responses.get(source_row=3)
+        result = tools.marketplace_round_version_archive(
+            ace,
+            "battery-2026",
+            "v1",
+            [{"response_id": other.pk, "criteria_scores": {"reach": 2, "cost": 4}, "outcome": "pass"}],
+        )
+        assert result == {"version": "v1", "reviews": 1}
+        archived = SolicitationReview.all_versions.get(response=other, provenance__rubric_version="v1")
+        assert archived.superseded_at is not None and archived.score == 28, "scored on v1's 60/40 weights"
+        with pytest.raises(MCPToolError):
+            tools.marketplace_round_version_archive(ace, "battery-2026", "v2", [])
+
+    def test_an_earlier_version_is_deleted_with_its_reviews_and_never_the_current(
+        self, client, rescored, member, outsider
+    ):
+        from connect_labs.solicitations.local_models import SolicitationReview
+
+        submission, ai_v1, ai_v2 = rescored
+        client.force_login(outsider)
+        url = reverse("marketplace:round_version_delete", args=["battery-2026", "v1"])
+        assert client.post(url).status_code == 404
+        client.force_login(member)
+        assert client.post(url).status_code == 302
+        assert not SolicitationReview.all_versions.filter(pk=ai_v1.pk).exists()
+        assert SolicitationReview.objects.filter(pk=ai_v2.pk).exists()
+        assert list(submission.solicitation.rubric_versions.values_list("version", flat=True)) == ["v2"]
+        client.post(reverse("marketplace:round_version_delete", args=["battery-2026", "v2"]))
+        assert submission.solicitation.rubric_versions.filter(version="v2").exists()
+
+    def test_a_deleted_version_number_is_never_reused(self, rescored, ace, round_):
+        from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+        tools.marketplace_round_version_delete(ace, "battery-2026", "v1")
+        assert SolicitationsDataAccess(user=ace).set_round_criteria("battery-2026", CRITERIA).rubric_version == "v3"

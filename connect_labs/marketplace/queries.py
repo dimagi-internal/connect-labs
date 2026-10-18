@@ -819,7 +819,7 @@ def _effective_flags(review) -> list[str]:
     return list(dict.fromkeys(vocabulary.flag_key(f) or str(f) for f in flags))
 
 
-def review_status(round_: Solicitation, applicants: list[dict]) -> dict:
+def review_status(round_: Solicitation, applicants: list[dict], version: str | None = None) -> dict:
     """Where each applicant stands in review, and how far the round has got.
 
     A person's review outranks the AI's: an applicant shows the outcome of its
@@ -831,7 +831,13 @@ def review_status(round_: Solicitation, applicants: list[dict]) -> dict:
     from connect_labs.solicitations.local_models import REVIEW_AI, SolicitationReview
 
     by_response: dict[int, list] = {}
-    reviews = SolicitationReview.objects.filter(response__solicitation=round_).select_related("based_on")
+    if version and version != round_.rubric_version:
+        # An earlier version: the reviews scored on it, standing or since replaced.
+        reviews = SolicitationReview.all_versions.filter(
+            response__solicitation=round_, provenance__rubric_version=version
+        ).select_related("based_on")
+    else:
+        reviews = SolicitationReview.objects.filter(response__solicitation=round_).select_related("based_on")
     for review in reviews.order_by("review_date", "pk"):
         by_response.setdefault(review.response_id, []).append(review)
     counts = {"people": 0, "ai_only": 0, "none": 0, "outcomes": {}, "next_pk": None}
@@ -1198,7 +1204,7 @@ def _mean(values: list[float]):
     return sum(values) / len(values) if values else None
 
 
-def round_scores(round_: Solicitation, applicants: list[dict]) -> dict:
+def round_scores(round_: Solicitation, applicants: list[dict], criteria: list | None = None) -> dict:
     """How a round's applicants scored, criterion by criterion. Call after `review_status`.
 
     Each criterion carries how many applicants were scored on it, the mean and
@@ -1210,8 +1216,9 @@ def round_scores(round_: Solicitation, applicants: list[dict]) -> dict:
     from connect_labs.solicitations import vocabulary
 
     shortlisted = set(vocabulary.SHORTLIST)
+    rubric = (round_.evaluation_criteria if criteria is None else criteria) or []
     criteria = []
-    for c in round_.evaluation_criteria or []:
+    for c in rubric:
         scored = [
             (a, float(a["review"]["criteria_scores"][c["id"]]))
             for a in applicants
@@ -1265,4 +1272,120 @@ def round_scores(round_: Solicitation, applicants: list[dict]) -> dict:
             sorted(v for v in versions if v not in (round_.rubric_version or "", "unrecorded"))
         ),
         "unrecorded": versions.get("unrecorded", 0),
+    }
+
+
+def compare_versions(earlier: list[dict], later: list[dict], earlier_scores: dict, later_scores: dict) -> dict:
+    """What changed between two criteria versions of one round.
+
+    `earlier` and `later` are the same applicants read at each version
+    (`review_status(..., version=)`); the scores are each version's
+    `round_scores`. Says whose recommendation moved, by how much each overall
+    score moved, and, criterion by criterion, how the two versions separate the
+    shortlist from everyone else.
+    """
+    from connect_labs.solicitations import vocabulary
+
+    before = {a["response"].pk: a["review"] for a in earlier}
+    moved, shifts = [], []
+    for a in later:
+        old, new = before.get(a["response"].pk), a["review"]
+        if old is None:
+            continue
+        if old["score"] is not None and new["score"] is not None:
+            shifts.append(new["score"] - old["score"])
+        if old["outcome"] != new["outcome"]:
+            moved.append(
+                {
+                    "applicant": a,
+                    "from": vocabulary.outcome_label(old["outcome"]),
+                    "to": vocabulary.outcome_label(new["outcome"]),
+                    "from_key": old["outcome"],
+                    "to_key": new["outcome"],
+                    "score_from": old["score"],
+                    "score_to": new["score"],
+                }
+            )
+    rank = {"pick": 0, "backup": 1, "waitlist": 2, "pass": 3, "": 4}
+    moved.sort(key=lambda m: (rank.get(m["to_key"], 4), rank.get(m["from_key"], 4)))
+    earlier_by_id = {c["id"]: c for c in earlier_scores["criteria"]}
+    criteria = []
+    for c in later_scores["criteria"]:
+        old = earlier_by_id.get(c["id"])
+        criteria.append(
+            {
+                "id": c["id"],
+                "name": c["name"],
+                "weight_from": old["weight"] if old else None,
+                "weight_to": c["weight"],
+                "gap_from": old["gap"] if old else None,
+                "gap_to": c["gap"],
+                "mean_from": old["mean"] if old else None,
+                "mean_to": c["mean"],
+            }
+        )
+    return {
+        "moved": moved,
+        "compared": len(shifts),
+        "mean_shift": _mean(shifts),
+        "criteria": criteria,
+        "dropped": [
+            c for c in earlier_scores["criteria"] if c["id"] not in {x["id"] for x in later_scores["criteria"]}
+        ],
+    }
+
+
+def version_history(round_: Solicitation) -> list[dict]:
+    """Every criteria version of a round, oldest first, with how many reviews were scored on each."""
+    from connect_labs.solicitations.local_models import REVIEW_AI, SolicitationReview
+
+    counts: dict[str, dict] = {}
+    rows = SolicitationReview.all_versions.filter(response__solicitation=round_).values_list("provenance", "kind")
+    for provenance, kind in rows:
+        version = str((provenance or {}).get("rubric_version") or "")
+        tally = counts.setdefault(version, {"ai": 0, "people": 0})
+        tally["ai" if kind == REVIEW_AI else "people"] += 1
+    out = []
+    for record in round_.rubric_versions.select_related("created_by"):
+        tally = counts.get(record.version, {"ai": 0, "people": 0})
+        out.append(
+            {
+                "version": record.version,
+                "number": record.version.lstrip("v"),
+                "current": record.version == round_.rubric_version,
+                "created_at": record.created_at,
+                "created_by": record.created_by.username if record.created_by_id else "",
+                "criteria": record.criteria,
+                "basis": record.basis,
+                "ai_reviews": tally["ai"],
+                "person_reviews": tally["people"],
+            }
+        )
+    return out
+
+
+def scores_at(round_: Solicitation, version: str | None = None, first_service: dict | None = None):
+    """The round's applicants and scores as read at one criteria version (the current one by default).
+
+    Returns (applicants, reviewed, summary, criteria). At an earlier version the
+    criteria are that version's and each applicant's lead review is the one
+    scored on it.
+    """
+    current = not version or version == round_.rubric_version
+    record = None if current else round_.rubric_versions.filter(version=version).first()
+    criteria = round_.evaluation_criteria if current or record is None else record.criteria
+    applicants = round_applicants(round_, first_service if first_service is not None else first_service_by_org_name())
+    reviewed = review_status(round_, applicants, None if current else version)
+    return applicants, reviewed, round_scores(round_, applicants, criteria), criteria
+
+
+def compare_at(round_: Solicitation, earlier: str, later: str, first_service: dict | None = None) -> dict:
+    """`compare_versions` for two versions of one round, by name."""
+    first_service = first_service if first_service is not None else first_service_by_org_name()
+    old_applicants, _, old_scores, _ = scores_at(round_, earlier, first_service)
+    new_applicants, _, new_scores, _ = scores_at(round_, later, first_service)
+    return {
+        "earlier": earlier,
+        "later": later,
+        **compare_versions(old_applicants, new_applicants, old_scores, new_scores),
     }
