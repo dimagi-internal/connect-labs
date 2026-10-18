@@ -10,6 +10,7 @@ import json
 
 from django import forms
 
+from connect_labs.solicitations import vocabulary
 from connect_labs.solicitations.local_models import OUTCOMES, STANCES
 from connect_labs.solicitations.validation import SOLICITATION_TYPE_CHOICES, STATUS_CHOICES
 
@@ -448,11 +449,12 @@ class ReviewForm(forms.Form):
         # each with the passages it cites, edited beside the response by
         # static/solicitations/review_evidence.js.
         self.fields["claims_json"] = forms.CharField(required=False, widget=forms.HiddenInput())
-        self.fields["flags"] = forms.CharField(
+        self.fields["flags"] = forms.MultipleChoiceField(
             label="Flags",
             required=False,
-            help_text="Comma-separated, e.g. generic-or-ai-drafted, cost-outlier, safety",
-            widget=forms.TextInput(attrs={"class": _INPUT_CLASSES}),
+            help_text="Things to check before relying on this response. A flag costs no points by itself.",
+            choices=[(key, meaning["label"]) for key, meaning in vocabulary.FLAGS.items()],
+            widget=forms.CheckboxSelectMultiple,
         )
         self.fields["based_on"] = forms.IntegerField(required=False, widget=forms.HiddenInput())
         self.fields["stance"] = forms.ChoiceField(

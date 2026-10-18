@@ -34,6 +34,7 @@ from django.utils import timezone
 from django.utils.text import slugify
 
 from connect_labs.labs.models import LabsOrg
+from connect_labs.solicitations import vocabulary
 
 SOLICITATION_TYPES = [("eoi", "Expression of Interest"), ("rfp", "Request for Proposal")]
 STATUSES = [("draft", "Draft"), ("active", "Active"), ("closed", "Closed"), ("awarded", "Awarded")]
@@ -196,6 +197,9 @@ class Solicitation(models.Model):
     # were arrived at and what was considered and dropped.
     rubric_version = models.CharField(max_length=40, blank=True, default="")
     criteria_basis = models.TextField(blank=True, default="")
+    # The round's written summary (a shortlist report, usually a Google Doc):
+    # the reasoning lives there, so the round links to it rather than copying it.
+    summary_url = models.URLField(max_length=500, blank=True, default="")
 
     # Connect's own `delivery_type` — the same vocabulary the pulse spine tags
     # every opportunity with, so "applied to a malaria round" and "delivered
@@ -560,12 +564,7 @@ STANCES = [
 
 # Where a marketplace round's applicant lands. Calls run on labs keep
 # `recommendation` and the award flow; a round is decided outside labs.
-OUTCOMES = [
-    ("pick", "Pick"),
-    ("backup", "Backup"),
-    ("waitlist", "Waitlist"),
-    ("pass", "Pass"),
-]
+OUTCOMES = [(key, meaning["label"]) for key, meaning in vocabulary.OUTCOMES.items()]
 
 
 class SolicitationReview(models.Model):

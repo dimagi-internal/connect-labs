@@ -396,7 +396,13 @@ class TestReviewingARound:
         assert response.context["reviewed"]["people"] == 1
         fenwick = next(a for a in response.context["applicants"] if a["response"].pk == submission.pk)
         review = {k: fenwick["review"][k] for k in ("outcome", "label", "by_person", "people", "has_ai")}
-        assert review == {"outcome": "waitlist", "label": "Waitlist", "by_person": True, "people": 2, "has_ai": True}
+        assert review == {
+            "outcome": "waitlist",
+            "label": "Keep in view",
+            "by_person": True,
+            "people": 2,
+            "has_ai": True,
+        }
         assert response.context["reviewed"]["next_pk"] != submission.pk, "the next to check is one nobody has"
         body = response.content.decode()
         assert "HOW RESPONSES ARE SCORED" in body and "Half name no channel." in body
@@ -616,13 +622,13 @@ class TestScores:
         assert (reach["scored"], reach["mean"], reach["gap"]) == (2, 6.0, 4.0), "the pick out-reached the pass"
         assert cost["gap"] == 0.0, "cost did not separate them"
         assert summary["outcomes"] == {"pick": 1, "backup": 0, "waitlist": 0, "pass": 1, "undecided": 1}
-        assert summary["flags"] == [("generic-or-ai-drafted", 1)]
+        assert summary["flags"] == [("padded", 1)], "a flag written before the list reads as the one it meant"
 
     def test_every_applicant_is_a_row_with_its_scores(self, client, two_scored, member):
         body = _page(client, member, "marketplace:round_scores", "battery-2026")
         assert body.count('data-href="/solicitations/response/') == 3
         assert 'data-scores="8|5"' in body and 'data-scores="4|5"' in body and 'data-scores="|"' in body
-        assert "Reach to households" in body and 'data-flags="generic-or-ai-drafted"' in body
+        assert "Reach to households" in body and 'data-flags="padded"' in body and "Long but thin" in body
 
     def test_it_says_when_reviews_predate_the_current_criteria(self, client, two_scored, member, ace):
         from connect_labs.solicitations.data_access import SolicitationsDataAccess
@@ -671,3 +677,60 @@ def test_a_persons_review_records_the_criteria_it_scored_against(client, scored,
     assert mine.provenance["rubric_version"] == "v1"
     body = _page(client, member, "marketplace:round_scores", "battery-2026")
     assert 'data-testid="stale"' not in body and 'data-testid="unrecorded"' not in body
+
+
+class TestTerms:
+    """Every outcome and flag a reviewer reads is a defined word with its meaning."""
+
+    def test_a_pick_reads_as_recommended(self, client, scored, member):
+        body = _page(client, member, "marketplace:round_scores", "battery-2026")
+        assert "Recommended" in body and "Proposed for one of the round" in body and ">Pick<" not in body
+
+    def test_flags_come_from_the_list(self, scored, ace):
+        from django.core.exceptions import ValidationError
+
+        from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+        submission, ai = scored
+        da = SolicitationsDataAccess(user=ace)
+        assert da.update_review(ai.pk, {"flags": ["cost-outlier", "safety"]}).flags == ["cost", "safety"]
+        with pytest.raises(ValidationError):
+            da.update_review(ai.pk, {"flags": ["vibes-off"]})
+
+    def test_the_review_form_offers_the_flags_with_their_meanings(self, client, scored, member):
+        submission, _ = scored
+        body = _page(client, member, "solicitations:review", submission.pk)
+        assert 'data-testid="flag-choices"' in body and "Starts before contract" in body
+        assert "Plans to begin work before a contract is in place." in body
+
+    def test_scores_are_banded_green_amber_red(self):
+        from connect_labs.marketplace.views import score_shade
+
+        assert "#bbf7d0" in score_shade(8) and "#fef08a" in score_shade(5) and "#fecaca" in score_shade(2)
+        assert score_shade(None) == ""
+
+
+class TestSummaryLink:
+    URL = "https://docs.google.com/document/d/example-invalid/edit"
+
+    def test_the_owner_links_it_by_hand_and_both_pages_show_it(self, client, scored, member):
+        client.force_login(member)
+        response = client.post(
+            reverse("marketplace:round_summary", args=["battery-2026"]),
+            {"summary_url": self.URL, "next": reverse("marketplace:round_scores", args=["battery-2026"])},
+        )
+        assert response.status_code == 302 and response.url.endswith("/scores/")
+        assert self.URL in _page(client, member, "marketplace:round_scores", "battery-2026")
+        assert 'data-testid="summary-link"' in _page(client, member, "marketplace:round", "battery-2026")
+
+    def test_only_an_https_link(self, scored, ace):
+        with pytest.raises(MCPToolError):
+            tools.marketplace_round_summary_set(ace, "battery-2026", "javascript:alert(1)")
+        assert tools.marketplace_round_summary_set(ace, "battery-2026", self.URL)["summary_url"] == self.URL
+
+    def test_nobody_else_sets_it(self, client, scored, outsider):
+        client.force_login(outsider)
+        response = client.post(reverse("marketplace:round_summary", args=["battery-2026"]), {"summary_url": self.URL})
+        assert response.status_code == 404
+        with pytest.raises(MCPToolError):
+            tools.marketplace_round_summary_set(outsider, "battery-2026", self.URL)

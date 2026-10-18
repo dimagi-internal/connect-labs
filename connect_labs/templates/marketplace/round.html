@@ -153,7 +153,7 @@
           <tr>
             <th data-sort="text" class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Organization</th>
             <th data-sort="text" class="hidden sm:table-cell px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Country</th>
-            <th data-sort="text" class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="The latest person's review, else the AI first pass. Sorts picks first.">Review</th>
+            <th data-sort="text" class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="The latest person's review, else the AI's. Sorts recommended first.">Recommendation</th>
             <th data-sort="text" class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Whether the organization first delivered on Connect before or after this round closed{% if since %} ({{ since|date:'j M Y' }}){% endif %}. It says which came first, not that one caused the other.">Delivery on Connect</th>
           </tr>
         </thead>
@@ -228,6 +228,11 @@
           <span class="text-xs font-semibold text-brand-deep-purple tracking-wide">THE CALL</span>
         </div>
         <div class="px-[18px] py-3.5 flex flex-col gap-2.5">
+          {% if can_read and round.summary_url %}
+            <a href="{{ round.summary_url }}" target="_blank" rel="noopener noreferrer" data-testid="summary-link" class="text-[13px] font-medium text-brand-indigo hover:text-brand-deep-purple flex items-center gap-2">
+              <i class="fa-regular fa-file-lines text-[11px]"></i> The round's summary
+            </a>
+          {% endif %}
           <div class="text-[10.5px] font-semibold text-gray-400 tracking-wider">IN LABS</div>
           <a href="{% url 'solicitations:respond' round.public_id %}" class="text-[13px] text-brand-indigo hover:text-brand-deep-purple flex items-center gap-2">
             <i class="fa-regular fa-rectangle-list text-[11px]"></i> The form

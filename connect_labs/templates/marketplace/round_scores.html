@@ -2,7 +2,8 @@
 {% load static %}
 {% comment %}
 Tailwind, not Bootstrap. Only classes some template already uses are compiled
-into the stylesheet, so anything else here is an inline style.
+into the stylesheet, so anything else here is an inline style. Every outcome
+and flag word comes from solicitations/vocabulary.py, with its definition.
 {% endcomment %}
 {% block title %}Scores · {{ round.title }}{% endblock %}
 
@@ -18,81 +19,117 @@ into the stylesheet, so anything else here is an inline style.
 
   <div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-6 py-5 mb-4.5">
     <div class="flex flex-wrap items-start justify-between gap-5 sm:gap-7">
-      <div>
+      <div class="w-full xl:max-w-xl xl:flex-1">
         <div class="flex items-center gap-2.5 flex-wrap">
-          <span class="text-xl sm:text-2xl font-semibold text-brand-deep-purple">Scores</span>
-          {% if summary.current_version %}<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-semibold bg-indigo-50 text-brand-indigo">criteria {{ summary.current_version }}</span>{% endif %}
+          <h1 class="text-xl sm:text-2xl font-semibold text-brand-deep-purple">How applicants scored</h1>
+          {% if summary.current_version %}<a href="{% url 'marketplace:round' round.slug %}#criteria" title="The scores are given against this version of the round's criteria. Each time the criteria are rewritten, the version goes up." class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-semibold bg-indigo-50 text-brand-indigo">Criteria version {{ summary.current_version|slice:"1:" }}</a>{% endif %}
         </div>
         <div class="text-[13px] text-gray-600 mt-1.5 leading-relaxed">
-          Every applicant against every criterion. Each row is its lead review: a person's when one exists, else the AI first pass.
+          Every applicant against every criterion. Where a person has reviewed an applicant, their review is shown; otherwise the AI's.
         </div>
-        {% if summary.stale %}
-          <div class="text-[12px] text-amber-800 mt-1.5" data-testid="stale">{{ summary.stale }} review{{ summary.stale|pluralize }} scored on {{ summary.older_versions }}, not the current criteria ({{ summary.current_version|default:"none" }}). Re-score {{ summary.stale|pluralize:"it,them" }} to compare like with like.</div>
-        {% endif %}
-        {% if summary.unrecorded %}
-          <div class="text-[12px] text-gray-500 mt-1" data-testid="unrecorded">{{ summary.unrecorded }} review{{ summary.unrecorded|pluralize }} {{ summary.unrecorded|pluralize:"does,do" }} not say which criteria {{ summary.unrecorded|pluralize:"it,they" }} scored against: saved before reviews recorded it.</div>
-        {% endif %}
+        <div class="flex flex-wrap items-center gap-2 mt-3" data-testid="summary">
+          {% if round.summary_url %}
+            <a href="{{ round.summary_url }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center px-3.5 py-2 bg-indigo-600 text-white text-[13px] font-medium rounded-lg hover:bg-indigo-700">
+              <i class="fa-regular fa-file-lines mr-2 text-[12px]"></i> Read the round's summary
+            </a>
+          {% endif %}
+          {% if can_edit %}
+            <details class="text-[12px]">
+              <summary class="cursor-pointer text-brand-indigo hover:text-brand-deep-purple py-2">{% if round.summary_url %}Change the summary link{% else %}Link the round's summary{% endif %}</summary>
+              <form method="post" action="{% url 'marketplace:round_summary' round.slug %}" class="flex flex-wrap items-center gap-2 mt-1.5">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.path }}">
+                <input type="url" name="summary_url" value="{{ round.summary_url }}" placeholder="https://docs.google.com/…" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800" style="width: 22rem; max-width: 100%">
+                <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-brand-border-light text-brand-indigo text-[12.5px] font-medium rounded-lg hover:bg-gray-50">Save</button>
+              </form>
+            </details>
+          {% endif %}
+        </div>
+        {% if messages %}{% for message in messages %}<div class="text-[12px] text-red-800 mt-1.5">{{ message }}</div>{% endfor %}{% endif %}
       </div>
-      <div class="flex flex-wrap gap-x-7 gap-y-4 sm:gap-8" data-testid="outcomes">
-        <div><div class="text-[22px] sm:text-[25px] font-semibold text-green-700 tabular-nums" data-count="pick">{{ summary.outcomes.pick }}</div><div class="text-[11px] text-gray-400 tracking-wide">PICK</div></div>
-        <div><div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums" data-count="backup">{{ summary.outcomes.backup }}</div><div class="text-[11px] text-gray-400 tracking-wide">BACKUP</div></div>
-        <div><div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums" data-count="waitlist">{{ summary.outcomes.waitlist }}</div><div class="text-[11px] text-gray-400 tracking-wide">WAITLIST</div></div>
-        <div><div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums" data-count="pass">{{ summary.outcomes.pass }}</div><div class="text-[11px] text-gray-400 tracking-wide">PASS</div></div>
-        <div><div class="text-[22px] sm:text-[25px] font-semibold text-gray-300 tabular-nums" data-count="">{{ summary.outcomes.undecided }}</div><div class="text-[11px] text-gray-400 tracking-wide">UNDECIDED</div></div>
-        <div title="Mean overall score of the applicants shown">
-          <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums" data-stat="total-mean">{{ summary.total_mean|floatformat:0|default:"—" }}</div>
-          <div class="text-[11px] text-gray-400 tracking-wide">MEAN SCORE</div>
-          <div class="text-[11px] text-gray-400 mt-0.5">median <span data-stat="total-median">{{ summary.total_median|floatformat:0|default:"—" }}</span></div>
+      <div class="w-full xl:w-auto">
+        <div class="flex flex-wrap gap-x-7 gap-y-4 sm:gap-8" data-testid="outcomes">
+          {% for o in outcomes %}
+            <div title="{{ o.definition }}">
+              <div class="text-[22px] sm:text-[25px] font-semibold tabular-nums {% if o.key == 'pick' %}text-green-700{% elif not o.key %}text-gray-400{% else %}text-gray-900{% endif %}" data-count="{{ o.key }}">{{ o.count }}</div>
+              <div class="text-[11px] text-gray-400 tracking-wide">{{ o.label|upper }}</div>
+            </div>
+          {% endfor %}
+          <div title="Mean overall score (0–100) of the applicants shown">
+            <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums" data-stat="total-mean">{{ summary.total_mean|floatformat:0|default:"—" }}</div>
+            <div class="text-[11px] text-gray-400 tracking-wide">MEAN SCORE</div>
+            <div class="text-[11px] text-gray-400 mt-0.5">median <span data-stat="total-median">{{ summary.total_median|floatformat:0|default:"—" }}</span> of 100</div>
+          </div>
         </div>
-        <div>
-          <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ reviewed.people }}<span class="text-gray-300 text-[16px]">/{{ applicants|length }}</span></div>
-          <div class="text-[11px] text-gray-400 tracking-wide">CHECKED BY A PERSON</div>
+        <div class="text-[11.5px] text-gray-500 mt-2" data-testid="who-decided">
+          {% if set_by_people %}{{ set_by_people }} recommendation{{ set_by_people|pluralize }} set by a person, the rest by the AI.{% else %}All recommendations are the AI's; no person has set one yet.{% endif %}
+          {{ reviewed.people }} of {{ applicants|length }} checked by a person.
         </div>
       </div>
     </div>
+    <details class="mt-4 text-[12px] text-gray-600" data-testid="glossary">
+      <summary class="cursor-pointer text-brand-indigo hover:text-brand-deep-purple">What the recommendations, colours and flags mean</summary>
+      <div class="grid grid-cols-1 xl:grid-cols-[1fr_1fr] gap-x-8 gap-y-3 mt-2.5">
+        <div class="flex flex-col gap-1.5">
+          <div class="text-[10.5px] font-semibold text-gray-400 tracking-wider">RECOMMENDATIONS</div>
+          {% for o in outcomes %}<div><span class="font-medium text-gray-800">{{ o.label }}</span> · {{ o.definition }}</div>{% endfor %}
+          <div class="text-[10.5px] font-semibold text-gray-400 tracking-wider pt-2">SCORES, 1 TO 10 PER CRITERION</div>
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="inline-block rounded text-[12px] font-semibold px-2" style="background:#bbf7d0;color:#166534">7–10</span> strong
+            <span class="inline-block rounded text-[12px] font-semibold px-2" style="background:#fef08a;color:#854d0e">4–6</span> partial
+            <span class="inline-block rounded text-[12px] font-semibold px-2" style="background:#fecaca;color:#991b1b">1–3</span> weak or not answered
+          </div>
+          <div>The overall score is the criteria weighted, out of 100.</div>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <div class="text-[10.5px] font-semibold text-gray-400 tracking-wider">FLAGS · THINGS TO CHECK, NOT PENALTIES</div>
+          {% for key, meaning in flag_vocabulary %}<div><span class="font-medium text-gray-800">{{ meaning.label }}</span> · {{ meaning.definition }}</div>{% endfor %}
+        </div>
+      </div>
+    </details>
   </div>
 
   {% if summary.criteria %}
   <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-4.5">
     <div class="px-4 sm:px-5 py-3.5 border-b border-brand-border-light">
       <span class="text-sm font-semibold text-brand-deep-purple">By criterion</span>
-      <div class="text-[12px] text-gray-500 mt-0.5">For the applicants shown below. A small gap between picks and backups and everyone else means the criterion did not decide who was kept.</div>
+      <div class="text-[12px] text-gray-500 mt-0.5">For the applicants shown below.</div>
     </div>
     <div class="overflow-x-auto">
     <table class="min-w-full divide-y divide-gray-200" data-testid="criteria-summary">
       <thead class="bg-gray-50">
         <tr>
           <th class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Criterion</th>
-          <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Weight</th>
-          <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Scored</th>
-          <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Mean</th>
-          <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Median</th>
-          <th class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="How many applicants got each score, 1 on the left to 10 on the right">Spread 1–10</th>
-          <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Mean for applicants picked or kept as backups">Picks &amp; backups</th>
-          <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Everyone else</th>
-          <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Gap</th>
+          <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Weight</th>
+          <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Applicants given a score on this criterion">Scored</th>
+          <th class="px-3 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Mean</th>
+          <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Median</th>
+          <th class="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="How many applicants got each score, 1 on the left to 10 on the right">Spread 1–10</th>
+          <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Mean score of applicants recommended or kept as backup">Shortlist</th>
+          <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Everyone else</th>
+          <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Shortlist mean minus everyone else's. Near zero: this criterion did not decide who was shortlisted.">Difference</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
-        {% for c in summary.criteria %}
+        {% for c in criteria_rows %}
           <tr data-criterion="{{ c.id }}">
             <td class="px-4 sm:px-5 py-2.5 text-[13px] text-gray-800 font-medium">
               {{ c.name }}
               {% if c.scoring_guide %}<details class="text-[11.5px] text-gray-500 font-normal leading-snug mt-0.5"><summary class="cursor-pointer text-gray-400 hover:text-brand-indigo">How it is scored</summary><p class="mt-1 whitespace-pre-line" style="max-width: 36rem">{{ c.scoring_guide }}</p></details>{% endif %}
             </td>
-            <td class="px-4 sm:px-5 py-2.5 text-right text-[12.5px] text-gray-500 tabular-nums">{{ c.weight|floatformat:"-1" }}%</td>
-            <td class="px-4 sm:px-5 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="scored">{{ c.scored }}</td>
-            <td class="px-4 sm:px-5 py-2.5 text-right text-[12.5px] text-gray-900 font-medium tabular-nums" data-stat="mean">{{ c.mean|floatformat:1|default:"—" }}</td>
-            <td class="px-4 sm:px-5 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="median">{{ c.median|floatformat:"-1"|default:"—" }}</td>
-            <td class="px-4 sm:px-5 py-2.5">
+            <td class="px-3 py-2.5 text-right text-[12.5px] text-gray-500 tabular-nums">{{ c.weight|floatformat:"-1" }}%</td>
+            <td class="px-3 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="scored">{{ c.scored }}</td>
+            <td class="px-3 py-2.5 text-center"><span class="inline-block rounded text-[12.5px] font-semibold tabular-nums" style="min-width: 2.75rem; padding: 2px 0; {{ c.mean_style }}" data-stat="mean">{{ c.mean|floatformat:1|default:"—" }}</span></td>
+            <td class="px-3 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="median">{{ c.median|floatformat:"-1"|default:"—" }}</td>
+            <td class="px-3 py-2.5">
               <div class="flex items-end" style="gap: 2px; height: 24px" data-stat="spread">
                 {% for b in c.spread %}
-                  <div title="{{ b.count }} scored {{ b.score }}" data-score="{{ b.score }}" style="width: 7px; height: {% if b.count %}{{ b.pct }}%{% else %}2px{% endif %}; min-height: 2px; border-radius: 1px 1px 0 0; background: {% if b.count %}rgba(79, 70, 229, 0.7){% else %}#f3f4f6{% endif %}"></div>
+                  <div title="{{ b.count }} scored {{ b.score }}" data-score="{{ b.score }}" style="width: 7px; height: {% if b.count %}{{ b.pct }}%{% else %}2px{% endif %}; min-height: 2px; border-radius: 1px 1px 0 0; background: {{ b.colour }}"></div>
                 {% endfor %}
               </div>
             </td>
-            <td class="px-4 sm:px-5 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="kept">{{ c.kept_mean|floatformat:1|default:"—" }}</td>
-            <td class="px-4 sm:px-5 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="rest">{{ c.rest_mean|floatformat:1|default:"—" }}</td>
+            <td class="px-3 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="kept">{{ c.kept_mean|floatformat:1|default:"—" }}</td>
+            <td class="px-3 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="rest">{{ c.rest_mean|floatformat:1|default:"—" }}</td>
             <td class="px-4 sm:px-5 py-2.5 text-right text-[12.5px] font-medium tabular-nums" data-stat="gap">{% if c.gap is not None %}{% if c.gap >= 0 %}+{% endif %}{{ c.gap|floatformat:1 }}{% else %}—{% endif %}</td>
           </tr>
         {% endfor %}
@@ -103,26 +140,26 @@ into the stylesheet, so anything else here is an inline style.
   {% endif %}
 
   <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
-    <div class="px-4 sm:px-5 py-3.5 border-b border-brand-border-light flex flex-wrap items-end gap-3" data-testid="filters">
+    <div class="px-4 sm:px-5 pt-3.5 flex flex-wrap items-baseline gap-x-3">
+      <span class="text-sm font-semibold text-brand-deep-purple">Applicants</span>
+      <span class="text-[12px] text-gray-500" data-testid="shown"><span data-stat="shown">{{ applicants|length }}</span> of {{ applicants|length }} shown · click a row to read the response and its review</span>
+    </div>
+    <div class="px-4 sm:px-5 pt-2.5 pb-3.5 border-b border-brand-border-light flex flex-wrap items-end gap-3" data-testid="filters">
       <label class="text-[11px] text-gray-500 flex flex-col gap-1">SEARCH
         <input type="search" data-filter="text" placeholder="Organization" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800" style="width: 12rem">
       </label>
-      <label class="text-[11px] text-gray-500 flex flex-col gap-1">OUTCOME
+      <label class="text-[11px] text-gray-500 flex flex-col gap-1">RECOMMENDATION
         <select data-filter="outcome" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800 bg-white">
           <option value="">Any</option>
-          <option value="pick">Pick</option>
-          <option value="backup">Backup</option>
-          <option value="kept">Pick or backup</option>
-          <option value="waitlist">Waitlist</option>
-          <option value="pass">Pass</option>
-          <option value="none">Undecided</option>
+          <option value="kept">Shortlist (recommended or backup)</option>
+          {% for o in outcomes %}<option value="{{ o.key|default:'none' }}">{{ o.label }}</option>{% endfor %}
         </select>
       </label>
-      <label class="text-[11px] text-gray-500 flex flex-col gap-1">REVIEW
+      <label class="text-[11px] text-gray-500 flex flex-col gap-1">REVIEWED BY
         <select data-filter="review" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800 bg-white">
-          <option value="">Any</option>
-          <option value="person">Checked by a person</option>
-          <option value="ai">AI first pass only</option>
+          <option value="">Anyone</option>
+          <option value="person">A person</option>
+          <option value="ai">The AI only</option>
           <option value="none">Not reviewed</option>
         </select>
       </label>
@@ -134,12 +171,12 @@ into the stylesheet, so anything else here is an inline style.
         </select>
       </label>
       {% endif %}
-      {% if summary.flags %}
+      {% if flag_counts %}
       <label class="text-[11px] text-gray-500 flex flex-col gap-1">FLAG
         <select data-filter="flag" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800 bg-white">
           <option value="">Any</option>
           <option value="__none">No flags</option>
-          {% for flag, count in summary.flags %}<option value="{{ flag }}">{{ flag }} ({{ count }})</option>{% endfor %}
+          {% for f in flag_counts %}<option value="{{ f.key }}" title="{{ f.definition }}">{{ f.label }} ({{ f.count }})</option>{% endfor %}
         </select>
       </label>
       {% endif %}
@@ -158,8 +195,7 @@ into the stylesheet, so anything else here is an inline style.
         </span>
       </label>
       {% endif %}
-      <button type="button" data-filter="reset" class="text-[12.5px] text-brand-indigo hover:text-brand-deep-purple py-1.5">Reset</button>
-      <span class="text-[12px] text-gray-500 py-1.5 ml-auto" data-testid="shown"><span data-stat="shown">{{ applicants|length }}</span> of {{ applicants|length }} shown</span>
+      <button type="button" data-filter="reset" class="text-[12.5px] text-brand-indigo hover:text-brand-deep-purple py-1.5">Clear filters</button>
     </div>
 
     <div class="overflow-x-auto">
@@ -168,12 +204,12 @@ into the stylesheet, so anything else here is an inline style.
         <tr>
           <th data-sort="text" class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Organization</th>
           <th data-sort="text" class="hidden sm:table-cell px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Country</th>
-          <th data-sort="text" class="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Sorts picks first">Outcome</th>
-          <th data-sort="number" class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Score</th>
+          <th data-sort="text" class="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Sorts recommended first">Recommendation</th>
+          <th data-sort="number" class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="The criteria weighted, out of 100">Score</th>
           {% for c in summary.criteria %}
-            <th data-sort="number" class="px-2 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider" style="max-width: 7rem; white-space: normal; line-height: 1.2" title="{{ c.name }} · {{ c.weight|floatformat:'-1' }}%">{{ c.name }}<div class="text-[10px] text-gray-400 font-normal normal-case">{{ c.weight|floatformat:"-1" }}%</div></th>
+            <th data-sort="number" class="px-2 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider" style="max-width: 7rem; white-space: normal; line-height: 1.2" title="{{ c.name }} · {{ c.weight|floatformat:'-1' }}% of the score">{{ c.name }}<div class="text-[10px] text-gray-400 font-normal normal-case">{{ c.weight|floatformat:"-1" }}%</div></th>
           {% endfor %}
-          <th class="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Flags</th>
+          <th class="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Things to check before relying on the response; not penalties">Flags</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
@@ -190,9 +226,9 @@ into the stylesheet, so anything else here is an inline style.
             <td class="px-4 sm:px-5 py-2.5" data-sort-value="{{ a.name|lower }}">
               <a href="{% url 'solicitations:response_detail' a.response.pk %}" class="text-[13.5px] font-medium {% if a.org %}text-brand-deep-purple{% else %}text-gray-500 italic{% endif %} hover:text-brand-indigo">{{ a.name }}</a>
               {% if a.review.by_person %}
-                <span class="text-[11px] text-gray-500 ml-1" title="Checked by {{ a.review.people }} {{ a.review.people|pluralize:'person,people' }}"><i class="fa-solid fa-user-check"></i></span>
+                <span class="text-[11px] text-gray-500 ml-1" title="Reviewed by {{ a.review.people }} {{ a.review.people|pluralize:'person,people' }}"><i class="fa-solid fa-user-check"></i></span>
               {% elif a.review.has_ai %}
-                <span class="text-[11px] text-indigo-600 ml-1" title="AI first pass; no person has checked it yet"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
+                <span class="text-[11px] text-indigo-600 ml-1" title="The AI's review; no person has checked it yet"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
               {% endif %}
             </td>
             <td class="hidden sm:table-cell px-3 py-2.5 text-[12.5px] text-gray-600">{{ a.country|default:"—"|truncatechars:24 }}</td>
@@ -209,7 +245,7 @@ into the stylesheet, so anything else here is an inline style.
               </td>
             {% endfor %}
             <td class="px-3 py-2.5">
-              <div class="flex flex-wrap gap-1">{% for flag in a.review.flags %}<span class="px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">{{ flag }}</span>{% endfor %}</div>
+              <div class="flex flex-wrap gap-1">{% for flag in a.flag_chips %}<span class="px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-800" title="{{ flag.definition }}">{{ flag.label }}</span>{% endfor %}</div>
             </td>
           </tr>
         {% empty %}
@@ -220,11 +256,20 @@ into the stylesheet, so anything else here is an inline style.
     </div>
   </div>
 
+  {% if summary.stale or summary.unrecorded %}
+    {% comment %}Record-keeping, for whoever maintains the round: below the table, not above the scores.{% endcomment %}
+    <div class="text-[11.5px] text-gray-400 mt-3 px-1">
+      {% if summary.stale %}<div data-testid="stale">{{ summary.stale }} review{{ summary.stale|pluralize }} scored on {{ summary.older_versions }}, not the current criteria ({{ summary.current_version|default:"none" }}). Re-score {{ summary.stale|pluralize:"it,them" }} to compare like with like.</div>{% endif %}
+      {% if summary.unrecorded %}<div data-testid="unrecorded">{{ summary.unrecorded }} review{{ summary.unrecorded|pluralize }} {{ summary.unrecorded|pluralize:"does,do" }} not say which criteria {{ summary.unrecorded|pluralize:"it,they" }} scored against: saved before reviews recorded it.</div>{% endif %}
+    </div>
+  {% endif %}
+
 </div>
 {% endblock %}
 
 {% block inline_javascript %}
   <script src="{% static 'supply_chain/sheet_sort.js' %}"></script>
+  {{ shade_scale|json_script:"shade-scale" }}
   <script>
     (function () {
       // A row opens that applicant's submission, as on the round page.
@@ -236,6 +281,7 @@ into the stylesheet, so anything else here is an inline style.
         });
       });
 
+      var shades = JSON.parse(document.getElementById("shade-scale").textContent);
       var rows = Array.prototype.slice.call(document.querySelectorAll("table[data-testid=scores] tbody tr[data-href]"));
       var control = function (name) { return document.querySelector("[data-filter=" + name + "]"); };
       var KEPT = ["pick", "backup"];
@@ -272,9 +318,11 @@ into the stylesheet, so anything else here is an inline style.
         return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
       }
       function fmt(x, digits) { return x === null ? "—" : (Math.round(x * Math.pow(10, digits)) / Math.pow(10, digits)).toFixed(digits); }
+      function shade(x) { return x === null ? null : shades[String(Math.min(Math.max(Math.round(x), 1), 10))]; }
       function setText(scope, stat, value) {
         var el = scope.querySelector("[data-stat=" + stat + "]");
         if (el) el.textContent = value;
+        return el;
       }
 
       // The summaries follow the filter: the figures above are always for the rows below.
@@ -301,7 +349,9 @@ into the stylesheet, so anything else here is an inline style.
             (KEPT.indexOf(r.dataset.outcome) !== -1 ? kept : rest).push(s);
           });
           setText(line, "scored", scored.length);
-          setText(line, "mean", fmt(mean(scored), 1));
+          var meanEl = setText(line, "mean", fmt(mean(scored), 1));
+          var tone = shade(mean(scored));
+          if (meanEl) { meanEl.style.background = tone ? tone[0] : ""; meanEl.style.color = tone ? tone[1] : ""; }
           setText(line, "median", median(scored) === null ? "—" : String(median(scored)));
           setText(line, "kept", fmt(mean(kept), 1));
           setText(line, "rest", fmt(mean(rest), 1));
@@ -312,7 +362,7 @@ into the stylesheet, so anything else here is an inline style.
           var tallest = Math.max.apply(null, counts) || 1;
           line.querySelectorAll("[data-stat=spread] [data-score]").forEach(function (bar, b) {
             bar.style.height = counts[b] ? Math.round(100 * counts[b] / tallest) + "%" : "2px";
-            bar.style.background = counts[b] ? "rgba(79, 70, 229, 0.7)" : "#f3f4f6";
+            bar.style.background = counts[b] ? shades[String(b + 1)][0] : "#f3f4f6";
             bar.title = counts[b] + " scored " + (b + 1);
           });
         });
