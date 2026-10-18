@@ -337,13 +337,9 @@ class TestReviewingARound:
         response = client.get(reverse("marketplace:round", args=["battery-2026"]))
         assert response.context["reviewed"]["people"] == 1
         fenwick = next(a for a in response.context["applicants"] if a["response"].pk == submission.pk)
-        assert fenwick["review"] == {
-            "outcome": "waitlist",
-            "label": "Waitlist",
-            "by_person": True,
-            "people": 2,
-            "has_ai": True,
-        }
+        review = {k: fenwick["review"][k] for k in ("outcome", "label", "by_person", "people", "has_ai")}
+        assert review == {"outcome": "waitlist", "label": "Waitlist", "by_person": True, "people": 2, "has_ai": True}
+        assert response.context["reviewed"]["next_pk"] != submission.pk, "the next to check is one nobody has"
         body = response.content.decode()
         assert "HOW RESPONSES ARE SCORED" in body and "Half name no channel." in body
 
@@ -500,3 +496,27 @@ class TestEvidence:
         assert response.templates[0].name == "solicitations/round_review_form.html"
         carried = json.loads(response.context["form"].initial["claims_json"])
         assert carried[0]["cites"][0]["quote"] == "solar vendors"
+
+
+class TestReadingForReview:
+    def test_contact_details_are_folded_away_and_the_round_can_be_walked(self, client, round_, member):
+        round_.questions = [
+            {"id": "how", "text": "How would you find households?", "column": 1},
+            {"id": "phone", "text": "Phone", "column": 2},
+        ]
+        round_.save()
+        first, second = round_.responses.get(source_row=2), round_.responses.get(source_row=3)
+        first.responses = {"how": ANSWER, "phone": "0800 000 000"}
+        first.save()
+        client.force_login(member)
+        context = client.get(reverse("solicitations:response_detail", args=[first.pk])).context
+        assert [a["id"] for a in context["answers"]] == ["how"]
+        assert [c["id"] for c in context["contact"]] == ["phone"]
+        assert context["applicant_count"] == 3
+        assert second.pk in (context["previous_pk"], context["next_pk"])
+        assert context["page_chrome"].labs_context is False
+
+    def test_the_round_page_says_where_to_start(self, client, round_, member):
+        client.force_login(member)
+        body = client.get(reverse("marketplace:round", args=["battery-2026"])).content.decode()
+        assert "Start reviewing" in body and "None checked by a person yet" in body

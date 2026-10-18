@@ -30,12 +30,11 @@ on ``/labs/marketplace/org/<slug>/``. Two consequences worth holding onto:
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
 from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace import programs, queries
-from connect_labs.marketplace.responses import Question, detect_columns
+from connect_labs.marketplace.responses import personal_question_ids
 
 from ..tool_registry import MCPToolError, register
 
@@ -272,18 +271,6 @@ def marketplace_rounds_list(
 #: hundred, so a single page covers every round there is.
 MAX_RESPONSES = 200
 
-# Personal fields the column detector does not name: a phone number, and the
-# declaration's "Name, Role, and Date" signature line.
-_PERSONAL_HEADER = re.compile(r"\b(phone|telephone|whatsapp|mobile)\b|^name,? (and )?(role|title)|signature", re.I)
-
-
-def _personal_question_ids(questions: list[dict], column_map: dict) -> set[str]:
-    """The answers that are a person's contact details rather than the organisation's."""
-    parsed = [Question(id=q["id"], text=q.get("text", ""), column=q.get("column", 0)) for q in questions]
-    found = detect_columns(parsed, column_map or None)
-    ids = {found[f] for f in ("email", "contact_name") if f in found}
-    return ids | {q.id for q in parsed if _PERSONAL_HEADER.search(q.text.strip())}
-
 
 @register(
     name="marketplace_round_responses",
@@ -326,7 +313,7 @@ def marketplace_round_responses(user, slug: str, include_contacts: bool = False)
         )
 
     questions = list(round_.questions or [])
-    personal = set() if include_contacts else _personal_question_ids(questions, round_.column_map)
+    personal = set() if include_contacts else personal_question_ids(questions, round_.column_map)
     shown = [q for q in questions if q["id"] not in personal]
 
     rows = round_.responses.select_related("llo_entity").order_by("source_row")

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 {% comment %}Tailwind, not Bootstrap. Brand values from tailwind/tailwind.css.{% endcomment %}
 {% block title %}{{ round.title }}{% endblock %}
 
@@ -56,7 +57,7 @@
         </div>
         <div>
           <div class="text-[22px] sm:text-[25px] font-semibold {% if unresolved_count %}text-brand-sunset{% else %}text-gray-300{% endif %} tabular-nums">{{ unresolved_count }}</div>
-          <div class="text-[11px] text-gray-400 tracking-wide">NEED A VERDICT</div>
+          <div class="text-[11px] text-gray-400 tracking-wide" title="Submissions not yet matched to an organization in the directory">NOT MATCHED</div>
         </div>
         <div title="Applicants a person has reviewed; the rest have only the AI first pass, or nothing">
           <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ reviewed.people }}<span class="text-gray-300 text-[16px]">/{{ applicants|length }}</span></div>
@@ -81,30 +82,6 @@
 
   </div>
 
-  {% if trend %}
-    {% comment %}
-    Server-rendered bars rather than a chart library: it is one series with no
-    interaction, and the round page loads no JavaScript at all today. Heights
-    are percentages of the busiest bucket, so the shape survives any column
-    width.
-    {% endcomment %}
-    <div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-6 py-[18px] mb-4.5">
-      <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 mb-3">
-        <span class="text-sm font-semibold text-brand-deep-purple">When the submissions arrived</span>
-        <span class="text-[11.5px] text-gray-400">
-          {{ trend.0.start|date:"j M Y" }} – {{ span_end|date:"j M Y" }}
-        </span>
-      </div>
-      <div class="flex items-end gap-px sm:gap-[3px] h-[60px] sm:h-[76px]">
-        {% for bucket in trend %}
-          <div class="flex-1 rounded-t-sm {% if bucket.count %}bg-brand-indigo/70{% else %}bg-gray-100{% endif %}"
-               style="height: {% if bucket.count %}{{ bucket.pct }}%{% else %}2px{% endif %}; min-height: 2px;"
-               title="{{ bucket.count }} submission{{ bucket.count|pluralize }} from {{ bucket.start|date:'j M Y' }}"></div>
-        {% endfor %}
-      </div>
-    </div>
-  {% endif %}
-
   <div class="grid grid-cols-1 xl:grid-cols-[1fr_296px] gap-4.5 items-start">
 
     {% if not can_read %}
@@ -117,32 +94,35 @@
     </div>
     {% else %}
     <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
-      <div class="px-4 sm:px-5 py-3.5 border-b border-brand-border-light">
-        <span class="text-sm font-semibold text-brand-deep-purple">Who applied</span>
-        <div class="text-[11.5px] text-gray-500 mt-1 leading-relaxed">
-          <strong class="font-medium">Delivery on Connect</strong> compares each organization's first verified
-          service with{% if since %} {{ since|date:"j M Y" }}, when this round closed{% else %} this round{% endif %} —
-          it reports which came first, not that one caused the other.
-          <strong class="font-medium">Needs a verdict</strong> means the submission could not be matched to any
-          organization in the directory, so a person has to say who sent it.
+      <div class="px-4 sm:px-5 py-3.5 border-b border-brand-border-light flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <span class="text-sm font-semibold text-brand-deep-purple">Who applied</span>
+          <div class="text-[12px] text-gray-500 mt-0.5" data-testid="review-progress">
+            {% if reviewed.people %}{{ reviewed.people }} checked by a person{% else %}None checked by a person yet{% endif %}{% if reviewed.ai_only %} · {{ reviewed.ai_only }} with an AI first pass only{% endif %}{% if reviewed.none %} · {{ reviewed.none }} not reviewed{% endif %}
+          </div>
         </div>
+        {% if reviewed.next_pk %}
+          <a href="{% url 'solicitations:response_detail' reviewed.next_pk %}" class="inline-flex items-center px-3.5 py-2 bg-indigo-600 text-white text-[13px] font-medium rounded-lg hover:bg-indigo-700">
+            {% if reviewed.people %}Next to check{% else %}Start reviewing{% endif %} <i class="fa-solid fa-arrow-right ml-2 text-[11px]"></i>
+          </a>
+        {% endif %}
       </div>
 
       {# Organization and outcome are the row; country returns at sm. #}
       <div class="overflow-x-auto">
-      <table class="min-w-full divide-y divide-gray-200">
+      <table class="sortable min-w-full divide-y divide-gray-200" data-testid="applicants">
         <thead class="bg-gray-50">
           <tr>
-            <th class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Organization</th>
-            <th class="hidden sm:table-cell px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Country</th>
-            <th class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Review</th>
-            <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Delivery on Connect</th>
+            <th data-sort="text" class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Organization</th>
+            <th data-sort="text" class="hidden sm:table-cell px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Country</th>
+            <th data-sort="text" class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="The latest person's review, else the AI first pass. Sorts picks first.">Review</th>
+            <th data-sort="text" class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Whether the organization first delivered on Connect before or after this round closed{% if since %} ({{ since|date:'j M Y' }}){% endif %}. It says which came first, not that one caused the other.">Delivery on Connect</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
           {% for a in applicants %}
             <tr class="hover:bg-gray-50 transition">
-              <td class="px-4 sm:px-5 py-3">
+              <td class="px-4 sm:px-5 py-3" data-sort-value="{{ a.name|lower }}">
                 <div class="flex items-center gap-2.5">
                   <span class="w-[26px] h-[26px] rounded-md inline-flex items-center justify-center text-[10px] font-semibold shrink-0
                                {% if a.outcome == 'after' %}bg-green-100 text-green-800{% else %}bg-gray-100 text-gray-500{% endif %}">
@@ -163,11 +143,12 @@
                 </div>
               </td>
               <td class="hidden sm:table-cell px-4 sm:px-5 py-3 text-[12.5px] text-gray-600">{{ a.country|default:"—"|truncatechars:30 }}</td>
-              <td class="px-4 sm:px-5 py-3 whitespace-nowrap">
+              <td class="px-4 sm:px-5 py-3 whitespace-nowrap" data-sort-value="{{ a.review.sort }}">
                 {% if a.review.outcome %}
                   <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-semibold
                     {% if a.review.outcome == 'pick' %}bg-green-100 text-green-800{% elif a.review.outcome == 'backup' %}bg-teal-100 text-teal-800{% elif a.review.outcome == 'waitlist' %}bg-amber-50 text-amber-800{% else %}bg-gray-100 text-gray-600{% endif %}">{{ a.review.label }}</span>
                 {% endif %}
+                {% if a.review.score %}<span class="text-[11.5px] text-gray-500 tabular-nums ml-1">{{ a.review.score }}</span>{% endif %}
                 {% if a.review.by_person %}
                   <span class="text-[11px] text-gray-500 ml-1" title="Reviewed by {{ a.review.people }} {{ a.review.people|pluralize:'person,people' }}"><i class="fa-solid fa-user-check"></i>{% if a.review.people > 1 %} {{ a.review.people }}{% endif %}</span>
                 {% elif a.review.has_ai %}
@@ -188,7 +169,7 @@
                 {% elif a.outcome == 'never' %}
                   <span class="inline-flex items-center whitespace-nowrap px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-amber-50 text-amber-800">never activated</span>
                 {% else %}
-                  <a href="{% url 'marketplace:unmatched' %}" class="inline-flex items-center whitespace-nowrap px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-red-50 text-red-800 hover:bg-red-100">needs a verdict</a>
+                  <a href="{% url 'marketplace:unmatched' %}" title="Not matched to an organization in the directory yet; say who sent it" class="inline-flex items-center whitespace-nowrap px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-red-50 text-red-800 hover:bg-red-100">not matched</a>
                 {% endif %}
               </td>
             </tr>
@@ -256,7 +237,7 @@
                   <span class="text-gray-800 font-medium">{{ c.name }}</span>
                   <span class="text-gray-500 tabular-nums">{{ c.weight|floatformat:"-1" }}%</span>
                 </div>
-                {% if c.rationale %}<div class="text-[11.5px] text-gray-500 leading-snug mt-0.5">{{ c.rationale }}</div>{% endif %}
+                {% if c.rationale %}<details class="text-[11.5px] text-gray-500 leading-snug mt-0.5"><summary class="cursor-pointer text-gray-400 hover:text-brand-indigo">Why this criterion</summary><p class="mt-1">{{ c.rationale }}</p>{% if c.scoring_guide %}<p class="mt-1 text-gray-400">{{ c.scoring_guide }}</p>{% endif %}</details>{% endif %}
               </div>
             {% empty %}
               <div class="text-[12.5px] text-gray-500 leading-snug">
@@ -288,6 +269,30 @@
       {% endif %}
     </div>
   </div>
+  {% if trend %}
+    {% comment %}
+    Server-rendered bars rather than a chart library: it is one series with no
+    interaction, and the round page loads no JavaScript at all today. Heights
+    are percentages of the busiest bucket, so the shape survives any column
+    width.
+    {% endcomment %}
+    <div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-6 py-[18px] mt-4.5">
+      <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 mb-3">
+        <span class="text-sm font-semibold text-brand-deep-purple">When the submissions arrived</span>
+        <span class="text-[11.5px] text-gray-400">
+          {{ trend.0.start|date:"j M Y" }} – {{ span_end|date:"j M Y" }}
+        </span>
+      </div>
+      <div class="flex items-end gap-px sm:gap-[3px] h-[60px] sm:h-[76px]">
+        {% for bucket in trend %}
+          <div class="flex-1 rounded-t-sm {% if bucket.count %}bg-brand-indigo/70{% else %}bg-gray-100{% endif %}"
+               style="height: {% if bucket.count %}{{ bucket.pct }}%{% else %}2px{% endif %}; min-height: 2px;"
+               title="{{ bucket.count }} submission{{ bucket.count|pluralize }} from {{ bucket.start|date:'j M Y' }}"></div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
 </div>
 {% endblock %}
 
@@ -296,5 +301,6 @@ The agent panel goes at the END of the body: the `javascript` block renders
 inside <head>, where `document.body` is still null.
 {% endcomment %}
 {% block inline_javascript %}
+  <script src="{% static 'supply_chain/sheet_sort.js' %}"></script>
   {% include "canopy_host/panel.html" %}
 {% endblock %}

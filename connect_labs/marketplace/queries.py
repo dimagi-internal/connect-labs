@@ -784,6 +784,16 @@ def round_applicants(round_: Solicitation, first_service: dict):
     return out
 
 
+_OUTCOME_RANK = {"pick": 0, "backup": 1, "waitlist": 2, "pass": 3, "": 4}
+
+
+def _review_sort_key(review) -> str:
+    """Text that sorts pick, backup, waitlist, pass, then unreviewed; best score first within each."""
+    if review is None:
+        return "5-999"
+    return f"{_OUTCOME_RANK.get(review.outcome, 4)}-{999 - (review.score or 0):03d}"
+
+
 def review_status(round_: Solicitation, applicants: list[dict]) -> dict:
     """Where each applicant stands in review, and how far the round has got.
 
@@ -796,7 +806,7 @@ def review_status(round_: Solicitation, applicants: list[dict]) -> dict:
     by_response: dict[int, list] = {}
     for review in SolicitationReview.objects.filter(response__solicitation=round_).order_by("review_date", "pk"):
         by_response.setdefault(review.response_id, []).append(review)
-    counts = {"people": 0, "ai_only": 0, "none": 0, "outcomes": {}}
+    counts = {"people": 0, "ai_only": 0, "none": 0, "outcomes": {}, "next_pk": None}
     for a in applicants:
         reviews = by_response.get(a["response"].pk, [])
         people = [r for r in reviews if r.kind != REVIEW_AI]
@@ -808,7 +818,12 @@ def review_status(round_: Solicitation, applicants: list[dict]) -> dict:
             "by_person": bool(people),
             "people": len(people),
             "has_ai": bool(ai),
+            "score": lead.score if lead else None,
+            # Sorts pick, backup, waitlist, pass, then unreviewed; best score first within each.
+            "sort": _review_sort_key(lead),
         }
+        if not people and counts["next_pk"] is None:
+            counts["next_pk"] = a["response"].pk
         if people:
             counts["people"] += 1
         elif ai:

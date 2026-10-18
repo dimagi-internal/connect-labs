@@ -27,12 +27,21 @@ Below lg the two are tabs.
         {% endif %}
       </div>
     </div>
-    {% if can_review %}
-      <a href="{% url 'solicitations:review' pk=response.pk %}"
-         class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition">
-        <i class="fa-solid fa-pen mr-2"></i> {% if my_review %}Edit my review{% else %}Write my own review{% endif %}
-      </a>
-    {% endif %}
+    <div class="flex flex-wrap items-center gap-2">
+      {% if position %}
+        <span class="inline-flex items-center rounded-lg border border-gray-200 bg-white text-sm" aria-label="Applicants in this round">
+          {% if previous_pk %}<a href="{% url 'solicitations:response_detail' pk=previous_pk %}" class="px-2.5 py-2 text-gray-500 hover:text-brand-indigo" title="Previous applicant"><i class="fa-solid fa-chevron-left"></i></a>{% else %}<span class="px-2.5 py-2 text-gray-200"><i class="fa-solid fa-chevron-left"></i></span>{% endif %}
+          <span class="px-1 text-gray-600 tabular-nums">{{ position }} of {{ applicant_count }}</span>
+          {% if next_pk %}<a href="{% url 'solicitations:response_detail' pk=next_pk %}" class="px-2.5 py-2 text-gray-500 hover:text-brand-indigo" title="Next applicant"><i class="fa-solid fa-chevron-right"></i></a>{% else %}<span class="px-2.5 py-2 text-gray-200"><i class="fa-solid fa-chevron-right"></i></span>{% endif %}
+        </span>
+      {% endif %}
+      {% if can_review %}
+        <a href="{% url 'solicitations:review' pk=response.pk %}"
+           class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition">
+          <i class="fa-solid fa-pen mr-2"></i> {% if my_review %}Edit my review{% else %}Write my own review{% endif %}
+        </a>
+      {% endif %}
+    </div>
   </div>
 
   {# Phone: one pane at a time. #}
@@ -47,16 +56,26 @@ Below lg the two are tabs.
     <div class="relative">
     <div data-margin-map class="hidden lg:block absolute left-0 top-10 bottom-0 w-1.5 z-20 rounded-l-xl overflow-hidden" title="Where the cited passages are"></div>
     <section data-pane="answers" class="bg-white rounded-xl shadow-sm lg:h-[calc(100vh-170px)] lg:overflow-y-auto">
+      {% if reviews %}
       <div class="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-gray-100 px-4 sm:px-6 py-2 flex flex-wrap items-center gap-2 text-xs">
-        <span class="text-gray-500 font-medium">Evidence</span>
+        <span class="text-gray-500 font-medium" title="The passages the open review cites">Highlight</span>
         <div class="inline-flex rounded-md border border-gray-200 overflow-hidden" role="radiogroup" aria-label="Evidence">
-          <button type="button" data-evidence-mode="off" class="px-2.5 py-1">Off</button>
-          <button type="button" data-evidence-mode="selected" class="px-2.5 py-1 border-l border-gray-200">Selected claim</button>
-          <button type="button" data-evidence-mode="all" class="px-2.5 py-1 border-l border-gray-200">All</button>
+          <button type="button" data-evidence-mode="off" class="px-2.5 py-1">Nothing</button>
+          <button type="button" data-evidence-mode="selected" class="px-2.5 py-1 border-l border-gray-200">The statement I click</button>
+          <button type="button" data-evidence-mode="all" class="px-2.5 py-1 border-l border-gray-200">Everything the review cites</button>
         </div>
         <span data-evidence-status class="text-gray-400"></span>
       </div>
+      {% endif %}
       <div class="px-4 sm:px-6 py-4 space-y-4">
+        {% if contact %}
+          <details class="text-xs text-gray-500 border border-gray-100 rounded-lg px-3 py-2">
+            <summary class="cursor-pointer select-none">Contact person (from the form)</summary>
+            <dl class="mt-2 space-y-1">
+              {% for row in contact %}<div><dt class="inline text-gray-400">{{ row.question }}:</dt> <dd class="inline text-gray-700 break-all">{{ row.answer }}</dd></div>{% endfor %}
+            </dl>
+          </details>
+        {% endif %}
         {% for qa in answers %}
           <div data-question="{{ qa.id }}" class="pl-3 border-l-4 border-transparent rounded-sm transition-colors">
             <p class="text-xs font-medium text-gray-500 mb-1">{{ forloop.counter }}. {{ qa.question }}</p>
@@ -143,9 +162,13 @@ Below lg the two are tabs.
           </div>
         {% endfor %}
       {% else %}
-        <div class="px-4 py-10 text-center text-sm text-gray-500">
-          No one has reviewed this response yet.
-          {% if not solicitation.evaluation_criteria %}<br>This round has no evaluation criteria yet, so a review is an outcome and notes only.{% endif %}
+        <div class="px-6 py-10 text-sm text-gray-600 max-w-sm mx-auto">
+          <p class="font-semibold text-gray-800 mb-2">No reviews yet</p>
+          <p class="mb-2">A review scores this response on the round's criteria{% if solicitation.evaluation_criteria %} ({{ solicitation.evaluation_criteria|length }}, listed on the round page){% endif %} and links each judgement to the passages it rests on.</p>
+          <p class="mb-4">ACE can write a first pass for every response — ask in the agent panel — or you can write your own now.</p>
+          {% if can_review %}
+            <a href="{% url 'solicitations:review' pk=response.pk %}" class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700"><i class="fa-solid fa-pen mr-2"></i> Write my own review</a>
+          {% endif %}
         </div>
       {% endif %}
     </section>

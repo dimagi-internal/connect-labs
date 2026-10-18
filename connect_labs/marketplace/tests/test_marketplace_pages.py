@@ -232,7 +232,7 @@ class TestRoundPage:
     def test_an_unresolved_applicant_links_to_the_queue(self, client, user, marketplace):
         client.force_login(user)
         body = client.get(reverse("marketplace:round", args=["chc-2025"])).content.decode()
-        assert "needs a verdict" in body
+        assert "not matched" in body
         assert reverse("marketplace:unmatched") in body
 
     def test_an_unread_round_says_so_rather_than_looking_unpopular(self, client, user, marketplace):
@@ -470,10 +470,12 @@ class TestTheRoundPageDoesNotClaimCausation:
         assert "not that one caused the other" in body
         assert "already delivering" in body
 
-    def test_needs_a_verdict_is_explained_where_it_is_read(self, client, user, timed):
+    def test_not_matched_is_explained_where_it_is_read(self, client, user, timed):
+        """Called "needs a verdict" until reviewing moved onto the page, where it
+        read as "needs a review decision"."""
         client.force_login(user)
         body = client.get(reverse("marketplace:round", args=["timed-2025"])).content.decode()
-        assert "could not be matched to any" in body
+        assert "not yet matched to an organization in the directory" in body
 
 
 @pytest.mark.django_db
