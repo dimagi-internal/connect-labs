@@ -365,6 +365,70 @@ def marketplace_round_responses(user, slug: str, include_contacts: bool = False)
 
 
 @register(
+    name="marketplace_round_scores",
+    description=(
+        "How one marketplace EOI/RFP round scored: every applicant against every evaluation "
+        "criterion, plus summary figures per criterion (how many scored, mean, median, the "
+        "spread over 1-10, and the mean for picks and backups against everyone else; a small "
+        "gap means the criterion did not decide the slate). Each applicant carries its lead "
+        "review: a person's when one exists, else the AI first pass, the same one the round "
+        "page shows, with the rubric_version it scored against. The same figures as the "
+        "round's Scores page in labs. Only the round's owner may read it. Read-only."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "slug": {"type": "string", "description": "The round's slug, from `marketplace_rounds_list`."},
+        },
+        "required": ["slug"],
+        "additionalProperties": False,
+    },
+)
+def marketplace_round_scores(user, slug: str) -> dict[str, Any]:
+    from connect_labs.marketplace import queries
+    from connect_labs.solicitations import access
+    from connect_labs.solicitations.local_models import Solicitation
+
+    round_ = Solicitation.objects.directory_rounds().select_related("owner_org").filter(slug=slug).first()
+    if round_ is None:
+        raise MCPToolError("NOT_FOUND", f"No marketplace round with slug {slug!r}.")
+    if not access.can_read_round_responses(user, round_):
+        raise MCPToolError(
+            "PERMISSION_DENIED",
+            f"Only members of the organisation that ran {slug!r} "
+            f"({round_.owner_name or 'its owner'}) may read its scores.",
+        )
+    applicants = queries.round_applicants(round_, queries.first_service_by_org_name())
+    reviewed = queries.review_status(round_, applicants)
+    summary = queries.round_scores(round_, applicants)
+    return {
+        "round": {"slug": round_.slug, "title": round_.title, "rubric_version": round_.rubric_version or ""},
+        "criteria": summary["criteria"],
+        "total": {"mean": summary["total_mean"], "median": summary["total_median"]},
+        "outcomes": summary["outcomes"],
+        "flags": dict(summary["flags"]),
+        "rubric_versions": dict(summary["versions"]),
+        "reviewed": {"people": reviewed["people"], "ai_only": reviewed["ai_only"], "none": reviewed["none"]},
+        "applicants": [
+            {
+                "response_id": a["response"].pk,
+                "org_slug": a["org"].slug if a["org"] else None,
+                "name": a["name"],
+                "country": a["country"] or "",
+                "outcome": a["review"]["outcome"],
+                "score": a["review"]["score"],
+                "criteria_scores": a["review"]["criteria_scores"],
+                "flags": a["review"]["flags"],
+                "checked_by_person": a["review"]["by_person"],
+                "has_ai": a["review"]["has_ai"],
+                "rubric_version": a["review"]["rubric_version"],
+            }
+            for a in applicants
+        ],
+    }
+
+
+@register(
     name="marketplace_round_criteria_set",
     description=(
         "Set (replace) the evaluation criteria for one marketplace EOI/RFP round. A round's form "

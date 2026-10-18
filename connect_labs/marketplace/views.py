@@ -24,7 +24,7 @@ import datetime
 from canopy_sdk.django.pages import panel_context as canopy_panel_context
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
-from django.http import JsonResponse
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 
@@ -347,6 +347,55 @@ def round_detail(request, slug):
                 request,
                 resource=f"labs-marketplace://rounds/{round_.slug}",
                 backing_tool="marketplace_rounds_list",
+                visible_ids=[a["org"].slug for a in applicants if a.get("org")],
+                filters={"round": round_.slug},
+                path=request.path,
+            ),
+        },
+    )
+
+
+def _score_cell(score) -> dict:
+    """A criterion score and its shade: darker is higher, so a column reads at a glance."""
+    if not isinstance(score, (int, float)):
+        return {"score": None, "style": ""}
+    strength = min(max(float(score), 0), 10) / 10
+    text = "#ffffff" if strength >= 0.75 else "#1e1b4b"
+    return {
+        "score": score,
+        "style": f"background: rgba(79, 70, 229, {0.08 + 0.8 * strength:.2f}); color: {text}",
+    }
+
+
+@login_required
+@MARKETPLACE_CHROME
+def round_scores(request, slug):
+    """A round's scores side by side: every applicant against every criterion, to filter and compare."""
+    round_ = get_object_or_404(queries.rounds_with_counts().select_related("owner_org"), slug=slug)
+    # The scores are the submissions read and judged: the owner's only. To
+    # anyone else this page does not exist, as a submission does not.
+    if not access.can_read_round_responses(request, round_):
+        raise Http404("No such round")
+    applicants = queries.round_applicants(round_, queries.first_service_by_org_name())
+    reviewed = queries.review_status(round_, applicants)
+    summary = queries.round_scores(round_, applicants)
+    for a in applicants:
+        a["cells"] = [_score_cell(a["review"]["criteria_scores"].get(c["id"])) for c in summary["criteria"]]
+    countries = sorted({a["country"] for a in applicants if a["country"]})
+    return render(
+        request,
+        "marketplace/round_scores.html",
+        {
+            "round": round_,
+            "applicants": applicants,
+            "reviewed": reviewed,
+            "summary": summary,
+            "countries": countries,
+            # The same figures an agent reads through `marketplace_round_scores`.
+            "canopy_panel": canopy_panel_context(
+                request,
+                resource=f"labs-marketplace://rounds/{round_.slug}/scores",
+                backing_tool="marketplace_round_scores",
                 visible_ids=[a["org"].slug for a in applicants if a.get("org")],
                 filters={"round": round_.slug},
                 path=request.path,

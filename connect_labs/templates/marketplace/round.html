@@ -132,11 +132,18 @@
             {% if reviewed.people %}{{ reviewed.people }} checked by a person{% else %}None checked by a person yet{% endif %}{% if reviewed.ai_only %} · {{ reviewed.ai_only }} with an AI first pass only{% endif %}{% if reviewed.none %} · {{ reviewed.none }} not reviewed{% endif %}
           </div>
         </div>
+        <div class="flex flex-wrap items-center gap-2">
+        {% if round.evaluation_criteria %}
+          <a href="{% url 'marketplace:round_scores' round.slug %}" data-testid="scores-link" class="inline-flex items-center px-3.5 py-2 border border-brand-border-light text-brand-indigo text-[13px] font-medium rounded-lg hover:bg-gray-50">
+            <i class="fa-solid fa-table-cells mr-2 text-[11px]"></i> Compare scores
+          </a>
+        {% endif %}
         {% if reviewed.next_pk %}
           <a href="{% url 'solicitations:response_detail' reviewed.next_pk %}" class="inline-flex items-center px-3.5 py-2 bg-indigo-600 text-white text-[13px] font-medium rounded-lg hover:bg-indigo-700">
             {% if reviewed.people %}Next to check{% else %}Start reviewing{% endif %} <i class="fa-solid fa-arrow-right ml-2 text-[11px]"></i>
           </a>
         {% endif %}
+        </div>
       </div>
 
       {# Organization and outcome are the row; country returns at sm. #}
@@ -275,6 +282,9 @@
                 No criteria yet. This round's form went out without them, so they are written after reading the submissions — ask ACE to propose them.
               </div>
             {% endfor %}
+            {% if round.evaluation_criteria %}
+              <a href="{% url 'marketplace:round_scores' round.slug %}" class="text-[12px] text-brand-indigo hover:text-brand-deep-purple">How applicants scored on each →</a>
+            {% endif %}
             {% if round.criteria_basis %}
               <details class="text-[11.5px] text-gray-500"><summary class="cursor-pointer text-brand-indigo">How these were chosen</summary><p class="mt-1 leading-snug whitespace-pre-line">{{ round.criteria_basis }}</p></details>
             {% endif %}
