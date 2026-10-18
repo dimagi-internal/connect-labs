@@ -706,7 +706,7 @@ class TestTerms:
     def test_scores_are_banded_green_amber_red(self):
         from connect_labs.marketplace.views import score_shade
 
-        assert "#bbf7d0" in score_shade(8) and "#fef08a" in score_shade(5) and "#fecaca" in score_shade(2)
+        assert "#86efac" in score_shade(8) and "#fef3c7" in score_shade(5) and "#fca5a5" in score_shade(2)
         assert score_shade(None) == ""
 
 

@@ -358,19 +358,20 @@ def round_detail(request, slug):
     )
 
 
-# A score's band and shade: green 7-10, amber 4-6, red 1-3, deeper further from
-# the middle, so strong and weak cells draw the eye and a column reads at a glance.
+# A score's band and shade: green 7-10, amber 4-6, red 1-3. Colour deepens
+# toward the ends of the scale (10 and 1) and stays pale in the middle, so the
+# strongest and weakest cells draw the eye, not the middling ones.
 _SHADES = {
-    1: ("#fca5a5", "#7f1d1d"),
-    2: ("#fecaca", "#991b1b"),
-    3: ("#fee2e2", "#991b1b"),
-    4: ("#fef9c3", "#854d0e"),
-    5: ("#fef08a", "#854d0e"),
-    6: ("#fde047", "#713f12"),
-    7: ("#dcfce7", "#166534"),
-    8: ("#bbf7d0", "#166534"),
-    9: ("#86efac", "#14532d"),
-    10: ("#4ade80", "#14532d"),
+    1: ("#f87171", "#450a0a"),
+    2: ("#fca5a5", "#7f1d1d"),
+    3: ("#fecaca", "#991b1b"),
+    4: ("#fde68a", "#78350f"),
+    5: ("#fef3c7", "#92400e"),
+    6: ("#fefce8", "#854d0e"),
+    7: ("#bbf7d0", "#14532d"),
+    8: ("#86efac", "#14532d"),
+    9: ("#4ade80", "#052e16"),
+    10: ("#22c55e", "#052e16"),
 }
 
 
