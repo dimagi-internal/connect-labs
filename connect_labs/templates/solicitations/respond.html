@@ -44,7 +44,7 @@
                         {% if solicitation.status == 'active' and solicitation.deadline_passed %}This call closed on {{ solicitation.application_deadline|date:"j F Y" }}{% elif solicitation.status == 'awarded' %}This call has been awarded{% else %}This call is not taking responses{% endif %}
                     </h2>
                     <p class="text-sm text-gray-700">
-                        New responses can no longer be submitted.
+                        {% if is_directory_round %}Responses to this call were collected on its Google Form; this is a copy of what it asked.{% else %}New responses can no longer be submitted.{% endif %}
                         {% if my_response and my_response.status == 'draft' %}Your draft was not submitted, so it will not be reviewed.{% endif %}
                         {% if solicitation.contact_email %}Questions: <a href="mailto:{{ solicitation.contact_email }}" class="text-brand-cornflower-blue hover:underline">{{ solicitation.contact_email }}</a>.{% endif %}
                     </p>
@@ -56,6 +56,12 @@
                 </a>
             </div>
         </div>
+        {% if question_fields %}
+            {% comment %}What the call asked, so a closed call still shows its form. Every field is disabled and there is no submit.{% endcomment %}
+            <div class="mt-6 space-y-8">
+                {% include "solicitations/_respond_questions.html" %}
+            </div>
+        {% endif %}
     {% elif already_submitted %}
         <div class="bg-white rounded-xl shadow-sm p-6 sm:p-8">
             <h2 class="text-lg font-semibold text-gray-900 mb-1"><i class="fa-solid fa-circle-check text-green-600 mr-1"></i>You have already responded</h2>
@@ -147,59 +153,7 @@
             </fieldset>
             {% endif %}
 
-            <!-- Questions Section — only when the solicitation defines custom questions -->
-            {% if question_fields %}
-                <div class="bg-white rounded-xl shadow-sm p-5 sm:p-8">
-                    <h2 class="text-xl font-semibold text-brand-deep-purple mb-6 pb-2 border-b border-gray-200">
-                        <i class="fa-solid fa-clipboard-list mr-2"></i>
-                        Application Questions
-                    </h2>
-
-                    {% if solicitation.evaluation_criteria %}
-                    <div class="mb-6 p-4 bg-indigo-50 rounded-lg border border-indigo-100">
-                        <div class="flex items-center gap-2 text-sm font-semibold text-indigo-800 mb-2">
-                            <i class="fa-solid fa-scale-balanced"></i>
-                            How your response will be scored
-                        </div>
-                        <div class="space-y-1">
-                            {% for criterion in solicitation.evaluation_criteria %}
-                            <div class="text-xs text-indigo-700">
-                                <span class="font-semibold">{{ criterion.name }} ({{ criterion.weight }}%)</span>
-                                {% if criterion.scoring_guide %}<span class="text-indigo-500">— {{ criterion.scoring_guide }}</span>{% endif %}
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-                    {% endif %}
-
-                    <div class="space-y-6">
-                        {% for qf in question_fields %}
-                            <div class="mb-6" data-question>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">
-                                    {{ qf.question.text }}
-                                    {% if qf.question.required %}<span class="text-red-500 ml-1">*</span>{% endif %}
-                                </label>
-
-                                {% if qf.criteria %}
-                                <div class="mb-2 p-3 bg-indigo-50 rounded-lg border border-indigo-100">
-                                    {% for criterion in qf.criteria %}
-                                    <div class="flex flex-wrap items-center gap-x-2 text-xs text-indigo-700">
-                                        <i class="fa-solid fa-scale-balanced"></i>
-                                        <span class="font-semibold">{{ criterion.name }} ({{ criterion.weight }}%)</span>
-                                        {% if criterion.scoring_guide %}<span class="text-indigo-500">— {{ criterion.scoring_guide }}</span>{% endif %}
-                                    </div>
-                                    {% endfor %}
-                                </div>
-                                {% endif %}
-
-                                {% if qf.field %}
-                                    {{ qf.field }}
-                                {% endif %}
-                            </div>
-                        {% endfor %}
-                    </div>
-                </div>
-            {% endif %}
+            {% include "solicitations/_respond_questions.html" %}
 
             <!-- AI Coach Panel — only when the solicitation has written-answer
                  questions for it to review. A coverage-only application (just the

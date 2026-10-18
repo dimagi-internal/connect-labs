@@ -94,7 +94,7 @@ class TestTheRoundPage:
         body = _page(client, outsider, "marketplace:round", "battery-2026")
         assert "Battery scoping" in body
         # The questions are the form, which anyone who sees the call may read.
-        assert reverse("marketplace:round_form", args=["battery-2026"]) in body
+        assert reverse("solicitations:respond", args=[round_.public_id]) in body
         assert "Fenwick Trust" not in body and "Unclaimed Group" not in body
         assert "sheet-id-invalid" not in body, "the response sheet is the submissions"
         assert "visible only to members of Dimagi" in body
@@ -160,9 +160,25 @@ class TestOneResponse:
         assert response.status_code == 404
 
     def test_the_form_shows_the_questions_and_no_answers(self, client, round_, outsider):
-        body = _page(client, outsider, "marketplace:round_form", "battery-2026")
+        body = _page(client, outsider, "solicitations:respond", round_.public_id)
         assert "How would you find households?" in body
         assert ANSWER not in body
+        assert "<textarea" in body and "disabled" in body
+
+    def test_nothing_answers_a_round_from_its_form(self, client, round_, outsider):
+        """Its responses came through the Google Form; this copy is read-only."""
+        client.force_login(outsider)
+        before = round_.responses.count()
+        response = client.post(
+            reverse("solicitations:respond", args=[round_.public_id]),
+            {"org": "__new__", "new_org_name": "Somebody", "question_how": "door to door"},
+        )
+        assert response.status_code == 403
+        assert round_.responses.count() == before
+
+    def test_signed_out_it_asks_you_to_sign_in(self, client, round_):
+        response = client.get(reverse("solicitations:respond", args=[round_.public_id]))
+        assert response.status_code == 302
 
 
 class TestTheRoundMix:

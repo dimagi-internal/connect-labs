@@ -843,15 +843,6 @@ def round_mix(round_: Solicitation, applicants: list[dict]) -> dict:
     }
 
 
-def form_questions(round_: Solicitation) -> list[dict]:
-    """The round's questions as its form asked them.
-
-    The response sheet's header is the question list, and Google Forms puts a
-    Timestamp column at the front that nobody was asked to fill in.
-    """
-    return [q for q in (round_.questions or []) if q.get("text", "").strip().lower() != "timestamp"]
-
-
 def _as_date(value):
     return value.date() if hasattr(value, "date") else value
 

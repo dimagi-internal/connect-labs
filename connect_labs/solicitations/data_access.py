@@ -260,11 +260,23 @@ class SolicitationsDataAccess:
         """Directory rounds that have finished, newest first, for anyone.
 
         Read-only: no method here edits, deletes, answers or awards one --
-        every other path reads `_calls()`, which leaves them out.
+        every other path reads `_calls()`, which leaves them out, except
+        `get_round_form`, which shows a round's questions and nothing else.
         """
         from connect_labs.solicitations import past_calls
 
         return past_calls.all_past_calls()
+
+    def get_round_form(self, solicitation_id) -> Solicitation | None:
+        """A directory round, by public id, for its form only -- to someone signed in.
+
+        The round's questions are its application form, which it put in front
+        of anyone it wanted answers from. Its responses came through that
+        Google Form, so this is read-only: nothing answers a round here.
+        """
+        if not self.caller.is_authenticated:
+            return None
+        return by_public_id(Solicitation.objects.directory_rounds(), solicitation_id)
 
     def get_past_call(self, key) -> Solicitation | None:
         """One past call by slug or id, or None."""

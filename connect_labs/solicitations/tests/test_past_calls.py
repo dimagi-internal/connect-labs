@@ -227,11 +227,10 @@ def test_access_never_lets_anyone_manage_a_directory_round(world):
     assert access.standing(world["staff"], world["round"]) == access.PUBLIC
 
 
-def test_respond_edit_responses_award_review_refused_on_a_directory_round(client, world):
+def test_edit_responses_award_review_refused_on_a_directory_round(client, world):
     round_, response = world["round"], world["response"]
     login(client, world["staff"])
     for path in (
-        url("respond", pk=round_.pk),
         url("edit", pk=round_.pk),
         url("responses_list", pk=round_.pk),
         url("response_detail", pk=response.pk),
@@ -239,7 +238,9 @@ def test_respond_edit_responses_award_review_refused_on_a_directory_round(client
         url("review", pk=response.pk),
     ):
         assert client.get(path).status_code == 404, path
-    assert client.post(url("respond", pk=round_.pk), {"org_choice": "x"}).status_code == 404
+    # Its form shows, read-only; nothing answers a round here.
+    assert client.get(url("respond", pk=round_.pk)).status_code == 200
+    assert client.post(url("respond", pk=round_.pk), {"org_choice": "x"}).status_code == 403
     assert client.post(url("award", pk=response.pk), {"reward_budget": "5"}).status_code == 404
     response.refresh_from_db()
     assert response.status == "submitted" and response.reward_budget is None

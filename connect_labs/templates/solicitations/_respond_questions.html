@@ -1,0 +1,54 @@
+{% comment %}The call's questions, as fields. Shared by the live form and the read-only copy a closed call shows.{% endcomment %}
+<!-- Questions Section — only when the solicitation defines custom questions -->
+{% if question_fields %}
+    <div class="bg-white rounded-xl shadow-sm p-5 sm:p-8">
+        <h2 class="text-xl font-semibold text-brand-deep-purple mb-6 pb-2 border-b border-gray-200">
+            <i class="fa-solid fa-clipboard-list mr-2"></i>
+            Application Questions
+        </h2>
+
+        {% if solicitation.evaluation_criteria %}
+        <div class="mb-6 p-4 bg-indigo-50 rounded-lg border border-indigo-100">
+            <div class="flex items-center gap-2 text-sm font-semibold text-indigo-800 mb-2">
+                <i class="fa-solid fa-scale-balanced"></i>
+                How your response will be scored
+            </div>
+            <div class="space-y-1">
+                {% for criterion in solicitation.evaluation_criteria %}
+                <div class="text-xs text-indigo-700">
+                    <span class="font-semibold">{{ criterion.name }} ({{ criterion.weight }}%)</span>
+                    {% if criterion.scoring_guide %}<span class="text-indigo-500">— {{ criterion.scoring_guide }}</span>{% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="space-y-6">
+            {% for qf in question_fields %}
+                <div class="mb-6" data-question>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        {{ qf.question.text }}
+                        {% if qf.question.required %}<span class="text-red-500 ml-1">*</span>{% endif %}
+                    </label>
+
+                    {% if qf.criteria %}
+                    <div class="mb-2 p-3 bg-indigo-50 rounded-lg border border-indigo-100">
+                        {% for criterion in qf.criteria %}
+                        <div class="flex flex-wrap items-center gap-x-2 text-xs text-indigo-700">
+                            <i class="fa-solid fa-scale-balanced"></i>
+                            <span class="font-semibold">{{ criterion.name }} ({{ criterion.weight }}%)</span>
+                            {% if criterion.scoring_guide %}<span class="text-indigo-500">— {{ criterion.scoring_guide }}</span>{% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
+                    {% if qf.field %}
+                        {{ qf.field }}
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+{% endif %}

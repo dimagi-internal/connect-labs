@@ -6,10 +6,11 @@ announcement was public (confirmed by the product owner, 2026-10-15), so the
 *call* -- title, type, program, countries, dates, the announcement -- is shown
 on the Solicitations pages to anyone.
 
-What this module never hands a page: the application form, the response
+What this module never hands a page: the Google Form's address, the response
 sheet and tab, the column map, the import notes, or anything about who
-applied. A signed-in user may see how many organisations applied; nobody sees
-which.
+applied. The form's QUESTIONS are another matter: a signed-in user reads them,
+read-only, on the call's own respond page (`views.RespondView`). A signed-in
+user may see how many organisations applied; nobody sees which.
 
 Dimagi owns these rows (``owner_org``, set by ``marketplace.eoi.upsert_rounds``),
 and nothing here grants a right: ``access.standing`` treats every directory
@@ -47,6 +48,15 @@ def _still_open() -> Q:
 def queryset():
     """Every directory round that has finished taking applications."""
     return Solicitation.objects.directory_rounds().exclude(_still_open())
+
+
+def form_questions(call) -> list[dict]:
+    """The round's questions as its form asked them.
+
+    The response sheet's header is the question list, and Google Forms puts a
+    Timestamp column at the front that nobody was asked to fill in.
+    """
+    return [q for q in (call.questions or []) if q.get("text", "").strip().lower() != "timestamp"]
 
 
 def ran_on(call) -> datetime.date | None:
