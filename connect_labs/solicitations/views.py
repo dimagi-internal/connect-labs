@@ -1079,13 +1079,13 @@ class ResponseDetailView(SignedInPage):
                     {
                         "id": r.pk,
                         "label": "AI first pass" if r.kind == REVIEW_AI else r.reviewer_username,
-                        "claims": evidence.claims_of(r),
+                        "claims": evidence.shown_claims(r),
                     }
                     for r in reviews
                 ],
             }
             for r in reviews:
-                r.panel = evidence.panel(r, solicitation.evaluation_criteria)
+                r.panel = evidence.panel(r, solicitation.evaluation_criteria, ctx["answers"])
         ctx.update(
             {
                 "response": response,
@@ -1295,10 +1295,26 @@ class ReviewView(SignedInPage):
                     initial.update({"based_on": existing.based_on_id, "stance": existing.stance})
             if source is not None:
                 initial.update({"based_on": source.pk, "stance": self.request.GET.get("stance") or "amended"})
+                if initial["stance"] == "adds":
+                    # Adding to a review keeps it whole: the scores and outcome
+                    # start as its, and everything written here is an addition.
+                    initial.update({"claims_json": "[]", "ask_next": "", "flags": "", "notes": ""})
             ctx["form"] = ReviewForm(evaluation_criteria=eval_criteria, initial=initial, for_round=is_round)
         if is_round:
             ctx.update(_round_reading_context(solicitation, response))
             ctx["evidence"] = {"legend": evidence.legend(eval_criteria)}
+            # What an addition is added to: shown read-only beside each criterion.
+            form = ctx["form"]
+            base = source if source is not None else (existing.based_on if existing and existing.based_on_id else None)
+            if base is not None and (form["stance"].value() or "") == "adds":
+                inherited = [{**c, "id": f"base-{c.get('id')}"} for c in evidence.claims_of(base)]
+                ctx["adds_to"] = base
+                ctx["evidence"]["base_claims"] = inherited
+                ctx["unlinked_criteria"] = [
+                    {**c, "base_claims": [x for x in inherited if x["about"] == f"criterion:{c.get('id')}"]}
+                    for c in ctx["unlinked_criteria"]
+                ]
+                ctx["base_other_claims"] = [x for x in inherited if not x["about"].startswith("criterion:")]
         return ctx
 
     def post(self, request, *args, **kwargs):

@@ -313,6 +313,64 @@ class TestReviewingARound:
         ai.refresh_from_db()
         assert ai.outcome == "pick" and ai.criteria_scores == {"reach": 8, "cost": 5}
 
+    def test_adding_to_it_keeps_the_original_whole(self, client, scored, member):
+        """'Add to it' stores only what the person adds; the page reads the
+        original with the additions marked, and the original is untouched."""
+        submission, ai = scored
+        client.force_login(member)
+        url = reverse("solicitations:review", args=[submission.pk])
+        response = client.get(url, {"from": ai.pk, "stance": "adds"})
+        form = response.context["form"]
+        assert json.loads(form.initial["claims_json"]) == [], "only additions are written here"
+        assert form.initial["outcome"] == "pick" and form.initial["criteria_score_reach"] == 8
+        page = response.content.decode()
+        assert "Your additions to the AI first pass" in page and "Names solar vendors" in page
+        added = [{"id": "c1", "about": "criterion:reach", "text": "Lists exist in two towns only."}]
+        data = {k: v for k, v in form.initial.items() if v not in (None, "")}
+        data.update({"claims_json": json.dumps(added), "ask_next": "Which towns?"})
+        assert client.post(url, data).status_code == 302
+
+        mine = submission.reviews.get(kind="human")
+        assert (mine.stance, mine.based_on_id, mine.outcome) == ("adds", ai.pk, "pick")
+        assert [c["text"] for c in mine.claims] == ["Lists exist in two towns only."]
+        ai.refresh_from_db()
+        assert ai.criteria_notes == {"reach": "Names solar vendors' lists."}
+
+        detail = client.get(reverse("solicitations:response_detail", args=[submission.pk]))
+        panel = next(r.panel for r in detail.context["reviews"] if r.pk == mine.pk)
+        reach = next(g for g in panel if g["label"] == "Reach to households")
+        assert [(c["origin"], c["text"]) for c in reach["claims"]] == [
+            ("base", "Names solar vendors' lists."),
+            ("added", "Lists exist in two towns only."),
+        ]
+        body = detail.content.decode()
+        assert "added to it" in body and "Which towns?" in body
+        assert f"?from={ai.pk}&stance=adds" in body
+
+    def test_each_statement_names_the_questions_it_draws_on(self, client, scored, member, ace):
+        from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+        submission, _ = scored
+        SolicitationsDataAccess(user=ace).create_review(
+            submission.pk,
+            {
+                "kind": "ai",
+                "claims": [
+                    {
+                        "about": "criterion:reach",
+                        "text": "Has a channel.",
+                        "cites": [{"question": "how", "quote": "solar vendors"}],
+                    }
+                ],
+            },
+        )
+        client.force_login(member)
+        detail = client.get(reverse("solicitations:response_detail", args=[submission.pk]))
+        claim = detail.context["reviews"][0].panel[0]["claims"][0]
+        number = 1 + [a["id"] for a in detail.context["answers"]].index("how")
+        assert claim["drawn_from"][0]["n"] == number
+        assert f"Q{number}</span>" in detail.content.decode()
+
     def test_agreeing_is_one_save(self, client, scored, member):
         submission, ai = scored
         client.force_login(member)

@@ -6,8 +6,9 @@
  * whose quote cites carry [start, end) offsets into that text. Nothing from a
  * response is ever inserted as HTML: segments are text nodes.
  *
- * data-mode="view"  the response page: switch reviews, click a statement to
- *                   see its passages, evidence off / selected / all.
+ * data-mode="view"  the response page: switch reviews; every cited passage
+ *                   shows until a statement is clicked, which shows only its
+ *                   own (click it again, or "Show all", to go back).
  * data-mode="edit"  the review form: the same, plus editing the review's own
  *                   statements -- remove a cited passage, or select text in an
  *                   answer and attach it. The claims travel in the form's
@@ -48,6 +49,8 @@
 
   var claimsInput = editing ? root.querySelector('[name="claims_json"]') : null;
   var claims = [];
+  // Adding to a review: what it adds to, shown and highlighted but never edited.
+  var baseClaims = data.base_claims || [];
   var selected = {};
   var evidenceMode = 'all';
   var pending = null; // edit mode: the text selected in an answer, waiting to be attached
@@ -90,13 +93,17 @@
 
   // ---- painting the answers --------------------------------------------------
 
+  function everyClaim() {
+    return baseClaims.concat(claims);
+  }
+
   function shown() {
     if (evidenceMode === 'off') return [];
     if (evidenceMode === 'selected')
-      return claims.filter(function (c) {
+      return everyClaim().filter(function (c) {
         return selected[c.id];
       });
-    return claims;
+    return everyClaim();
   }
 
   function paint() {
@@ -134,7 +141,7 @@
       }
       var cited = spans.length || bar || missing.length;
       a.el.style.opacity =
-        evidenceMode === 'all' && claims.length && !cited ? '0.55' : '';
+        evidenceMode === 'all' && everyClaim().length && !cited ? '0.55' : '';
       if (a.p) renderSegments(a, spans);
     });
     drawMap();
@@ -148,17 +155,25 @@
           }).length
         );
       }, 0);
+      var plural = n === 1 ? '' : 's';
       status.textContent =
         evidenceMode === 'off'
-          ? ''
-          : evidenceMode === 'selected' && !anySelected()
-            ? 'click a statement'
-            : n + ' passage' + (n === 1 ? '' : 's');
+          ? 'Highlights hidden'
+          : evidenceMode === 'selected'
+            ? n
+              ? 'Showing the ' + n + ' passage' + plural + ' for one statement'
+              : 'This statement draws on the response as a whole'
+            : n
+              ? 'All ' +
+                n +
+                ' passage' +
+                plural +
+                ' the review cites · click a statement for its own'
+              : '';
     }
     root.querySelectorAll('[data-evidence-mode]').forEach(function (b) {
-      var on = b.getAttribute('data-evidence-mode') === evidenceMode;
-      b.style.background = on ? '#4f46e5' : '';
-      b.style.color = on ? '#fff' : '';
+      b.style.display =
+        b.getAttribute('data-evidence-mode') === evidenceMode ? 'none' : '';
     });
   }
 
@@ -247,15 +262,28 @@
   // ---- choosing what to look at ------------------------------------------------
 
   function select(ids, scroll) {
+    // Clicking the statement already on its own goes back to everything.
+    var again =
+      evidenceMode === 'selected' &&
+      ids.length === Object.keys(selected).length &&
+      ids.every(function (id) {
+        return selected[id];
+      });
     selected = {};
-    ids.forEach(function (id) {
-      selected[id] = true;
-    });
-    if (evidenceMode === 'off') evidenceMode = 'selected';
+    if (again) {
+      evidenceMode = 'all';
+      scroll = false;
+    } else {
+      ids.forEach(function (id) {
+        selected[id] = true;
+      });
+      evidenceMode = 'selected';
+    }
     paint();
     root.querySelectorAll('[data-claim]').forEach(function (b) {
       var on = !!selected[b.getAttribute('data-claim')] && isCurrent(b);
-      b.style.borderColor = on ? '#4f46e5' : '';
+      // An outline, not the border: an addition keeps its own left rule.
+      b.style.outline = on ? '1.5px solid #4f46e5' : '';
       b.style.background = on ? '#eef2ff' : '';
     });
     if (scroll) {
@@ -326,7 +354,12 @@
     var modeBtn = ev.target.closest('[data-evidence-mode]');
     if (modeBtn) {
       evidenceMode = modeBtn.getAttribute('data-evidence-mode');
+      selected = {};
       paint();
+      root.querySelectorAll('[data-claim]').forEach(function (b) {
+        b.style.outline = '';
+        b.style.background = '';
+      });
       return;
     }
     var tab = ev.target.closest('[data-review-tab]');
@@ -351,6 +384,7 @@
     });
     claims = review ? review.claims || [] : [];
     selected = {};
+    if (evidenceMode === 'selected') evidenceMode = 'all';
     root.querySelectorAll('[data-review-panel]').forEach(function (p) {
       p.classList.toggle(
         'hidden',

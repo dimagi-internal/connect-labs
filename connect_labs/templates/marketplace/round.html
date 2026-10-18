@@ -38,18 +38,28 @@
           no interaction. Heights are percentages of the busiest bucket, so the
           shape survives any column width.
           {% endcomment %}
-          <div class="mt-4" data-testid="arrivals">
-            <div class="flex flex-wrap items-baseline justify-between gap-x-3 text-[11px] text-gray-400 mb-1">
-              <span class="tracking-wide">SUBMISSIONS PER {% if trend.0.days == 1 %}DAY{% else %}WEEK{% endif %}</span>
-              <span>{{ trend.0.start|date:"j M" }} – {{ span_end|date:"j M Y" }}</span>
-            </div>
-            <div class="flex items-end gap-px sm:gap-[3px] h-[44px]">
+          {% comment %}
+          Bars are a fixed width and the row only as wide as they need: a
+          six-day round stretched across the header reads as a flat line. The
+          height is inline because an arbitrary Tailwind height is not in the
+          compiled stylesheet unless some template already used it.
+          {% endcomment %}
+          <div class="mt-4 inline-block max-w-full" data-testid="arrivals">
+            <div class="text-[11px] text-gray-400 tracking-wide mb-1.5">SUBMISSIONS PER {% if trend.0.days == 1 %}DAY{% else %}WEEK{% endif %}</div>
+            <div class="flex items-end gap-1 overflow-x-auto">
               {% for bucket in trend %}
-                <div class="flex-1 rounded-t-sm {% if bucket.count %}bg-brand-indigo/70{% else %}bg-gray-100{% endif %}"
-                     style="height: {% if bucket.count %}{{ bucket.pct }}%{% else %}2px{% endif %}; min-height: 2px;"
-                     title="{{ bucket.count }} submission{{ bucket.count|pluralize }} {% if bucket.days == 1 %}on{% else %}in the week from{% endif %} {{ bucket.start|date:'j M Y' }}"></div>
+                <div class="flex flex-col items-center shrink-0" style="width: {% if trend|length > 16 %}12px{% else %}30px{% endif %}"
+                     title="{{ bucket.count }} submission{{ bucket.count|pluralize }} {% if bucket.days == 1 %}on{% else %}in the week from{% endif %} {{ bucket.start|date:'j M Y' }}">
+                  {% if trend|length <= 16 %}<span class="text-[10.5px] text-gray-500 tabular-nums mb-1" style="line-height:1">{{ bucket.count|default:"" }}</span>{% endif %}
+                  <div class="w-full flex items-end" style="height: 44px">
+                    <div class="w-full rounded-t-sm {% if bucket.count %}bg-brand-indigo/70{% else %}bg-gray-100{% endif %}"
+                         style="height: {% if bucket.count %}{{ bucket.pct }}%{% else %}2px{% endif %}; min-height: 2px;"></div>
+                  </div>
+                  {% if trend|length <= 16 %}<span class="text-[10px] text-gray-400 mt-1 whitespace-nowrap" style="line-height:1">{% if bucket.days == 1 %}{{ bucket.start|date:"j M" }}{% else %}{{ bucket.start|date:"j M" }}{% endif %}</span>{% endif %}
+                </div>
               {% endfor %}
             </div>
+            {% if trend|length > 16 %}<div class="text-[10.5px] text-gray-400 mt-1">{{ trend.0.start|date:"j M" }} – {{ span_end|date:"j M Y" }}</div>{% endif %}
           </div>
         {% endif %}
       </div>

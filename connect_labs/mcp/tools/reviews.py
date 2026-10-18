@@ -179,8 +179,11 @@ _REVIEW_PUBLIC_WARNING = (
             "based_on": {"type": "integer", "description": "The review (of this response) this one started from."},
             "stance": {
                 "type": "string",
-                "enum": ["agrees", "amended", "disagrees", ""],
-                "description": "What this reviewer makes of the review in `based_on`.",
+                "enum": ["agrees", "amended", "adds", "disagrees", ""],
+                "description": (
+                    "What this reviewer makes of the review in `based_on`. "
+                    "`adds` stores only the additions; readers see the original with them marked."
+                ),
             },
             "criteria_notes": {
                 "type": "object",
