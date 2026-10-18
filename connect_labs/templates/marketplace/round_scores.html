@@ -1,0 +1,335 @@
+{% extends "base.html" %}
+{% load static %}
+{% comment %}
+Tailwind, not Bootstrap. Only classes some template already uses are compiled
+into the stylesheet, so anything else here is an inline style.
+{% endcomment %}
+{% block title %}Scores · {{ round.title }}{% endblock %}
+
+{% block content %}
+<div class="max-w-screen-2xl mx-auto px-0 sm:px-6 lg:px-8 py-5 sm:py-6">
+
+  <div class="text-[12.5px] text-gray-500 mb-3.5">
+    <a href="{% url 'marketplace:home' %}" class="hover:text-gray-700">Marketplace</a> ·
+    <a href="{% url 'marketplace:rounds' %}" class="hover:text-gray-700">Expressions of interest</a> ·
+    <a href="{% url 'marketplace:round' round.slug %}" class="hover:text-gray-700">{{ round.title }}</a> ·
+    <span class="text-gray-900">Scores</span>
+  </div>
+
+  <div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-6 py-5 mb-4.5">
+    <div class="flex flex-wrap items-start justify-between gap-5 sm:gap-7">
+      <div>
+        <div class="flex items-center gap-2.5 flex-wrap">
+          <span class="text-xl sm:text-2xl font-semibold text-brand-deep-purple">Scores</span>
+          {% if summary.current_version %}<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-semibold bg-indigo-50 text-brand-indigo">criteria {{ summary.current_version }}</span>{% endif %}
+        </div>
+        <div class="text-[13px] text-gray-600 mt-1.5 leading-relaxed">
+          Every applicant against every criterion. Each row is its lead review: a person's when one exists, else the AI first pass.
+        </div>
+        {% if summary.stale %}
+          <div class="text-[12px] text-amber-800 mt-1.5" data-testid="stale">{{ summary.stale }} review{{ summary.stale|pluralize }} scored on {{ summary.older_versions }}, not the current criteria ({{ summary.current_version|default:"none" }}). Re-score {{ summary.stale|pluralize:"it,them" }} to compare like with like.</div>
+        {% endif %}
+      </div>
+      <div class="flex flex-wrap gap-x-7 gap-y-4 sm:gap-8" data-testid="outcomes">
+        <div><div class="text-[22px] sm:text-[25px] font-semibold text-green-700 tabular-nums" data-count="pick">{{ summary.outcomes.pick }}</div><div class="text-[11px] text-gray-400 tracking-wide">PICK</div></div>
+        <div><div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums" data-count="backup">{{ summary.outcomes.backup }}</div><div class="text-[11px] text-gray-400 tracking-wide">BACKUP</div></div>
+        <div><div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums" data-count="waitlist">{{ summary.outcomes.waitlist }}</div><div class="text-[11px] text-gray-400 tracking-wide">WAITLIST</div></div>
+        <div><div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums" data-count="pass">{{ summary.outcomes.pass }}</div><div class="text-[11px] text-gray-400 tracking-wide">PASS</div></div>
+        <div><div class="text-[22px] sm:text-[25px] font-semibold text-gray-300 tabular-nums" data-count="">{{ summary.outcomes.undecided }}</div><div class="text-[11px] text-gray-400 tracking-wide">UNDECIDED</div></div>
+        <div title="Mean overall score of the applicants shown">
+          <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums" data-stat="total-mean">{{ summary.total_mean|floatformat:0|default:"—" }}</div>
+          <div class="text-[11px] text-gray-400 tracking-wide">MEAN SCORE</div>
+          <div class="text-[11px] text-gray-400 mt-0.5">median <span data-stat="total-median">{{ summary.total_median|floatformat:0|default:"—" }}</span></div>
+        </div>
+        <div>
+          <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ reviewed.people }}<span class="text-gray-300 text-[16px]">/{{ applicants|length }}</span></div>
+          <div class="text-[11px] text-gray-400 tracking-wide">CHECKED BY A PERSON</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if summary.criteria %}
+  <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-4.5">
+    <div class="px-4 sm:px-5 py-3.5 border-b border-brand-border-light">
+      <span class="text-sm font-semibold text-brand-deep-purple">By criterion</span>
+      <div class="text-[12px] text-gray-500 mt-0.5">For the applicants shown below. A small gap between picks and backups and everyone else means the criterion did not decide who was kept.</div>
+    </div>
+    <div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-gray-200" data-testid="criteria-summary">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Criterion</th>
+          <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Weight</th>
+          <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Scored</th>
+          <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Mean</th>
+          <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Median</th>
+          <th class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="How many applicants got each score, 1 on the left to 10 on the right">Spread 1–10</th>
+          <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Mean for applicants picked or kept as backups">Picks &amp; backups</th>
+          <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Everyone else</th>
+          <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Gap</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for c in summary.criteria %}
+          <tr data-criterion="{{ c.id }}">
+            <td class="px-4 sm:px-5 py-2.5 text-[13px] text-gray-800 font-medium">
+              {{ c.name }}
+              {% if c.scoring_guide %}<details class="text-[11.5px] text-gray-500 font-normal leading-snug mt-0.5"><summary class="cursor-pointer text-gray-400 hover:text-brand-indigo">How it is scored</summary><p class="mt-1 whitespace-pre-line" style="max-width: 36rem">{{ c.scoring_guide }}</p></details>{% endif %}
+            </td>
+            <td class="px-4 sm:px-5 py-2.5 text-right text-[12.5px] text-gray-500 tabular-nums">{{ c.weight|floatformat:"-1" }}%</td>
+            <td class="px-4 sm:px-5 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="scored">{{ c.scored }}</td>
+            <td class="px-4 sm:px-5 py-2.5 text-right text-[12.5px] text-gray-900 font-medium tabular-nums" data-stat="mean">{{ c.mean|floatformat:1|default:"—" }}</td>
+            <td class="px-4 sm:px-5 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="median">{{ c.median|floatformat:"-1"|default:"—" }}</td>
+            <td class="px-4 sm:px-5 py-2.5">
+              <div class="flex items-end" style="gap: 2px; height: 24px" data-stat="spread">
+                {% for b in c.spread %}
+                  <div title="{{ b.count }} scored {{ b.score }}" data-score="{{ b.score }}" style="width: 7px; height: {% if b.count %}{{ b.pct }}%{% else %}2px{% endif %}; min-height: 2px; border-radius: 1px 1px 0 0; background: {% if b.count %}rgba(79, 70, 229, 0.7){% else %}#f3f4f6{% endif %}"></div>
+                {% endfor %}
+              </div>
+            </td>
+            <td class="px-4 sm:px-5 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="kept">{{ c.kept_mean|floatformat:1|default:"—" }}</td>
+            <td class="px-4 sm:px-5 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="rest">{{ c.rest_mean|floatformat:1|default:"—" }}</td>
+            <td class="px-4 sm:px-5 py-2.5 text-right text-[12.5px] font-medium tabular-nums" data-stat="gap">{% if c.gap is not None %}{% if c.gap >= 0 %}+{% endif %}{{ c.gap|floatformat:1 }}{% else %}—{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+    <div class="px-4 sm:px-5 py-3.5 border-b border-brand-border-light flex flex-wrap items-end gap-3" data-testid="filters">
+      <label class="text-[11px] text-gray-500 flex flex-col gap-1">SEARCH
+        <input type="search" data-filter="text" placeholder="Organization" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800" style="width: 12rem">
+      </label>
+      <label class="text-[11px] text-gray-500 flex flex-col gap-1">OUTCOME
+        <select data-filter="outcome" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800 bg-white">
+          <option value="">Any</option>
+          <option value="pick">Pick</option>
+          <option value="backup">Backup</option>
+          <option value="kept">Pick or backup</option>
+          <option value="waitlist">Waitlist</option>
+          <option value="pass">Pass</option>
+          <option value="none">Undecided</option>
+        </select>
+      </label>
+      <label class="text-[11px] text-gray-500 flex flex-col gap-1">REVIEW
+        <select data-filter="review" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800 bg-white">
+          <option value="">Any</option>
+          <option value="person">Checked by a person</option>
+          <option value="ai">AI first pass only</option>
+          <option value="none">Not reviewed</option>
+        </select>
+      </label>
+      {% if countries %}
+      <label class="text-[11px] text-gray-500 flex flex-col gap-1">COUNTRY
+        <select data-filter="country" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800 bg-white">
+          <option value="">Any</option>
+          {% for country in countries %}<option value="{{ country }}">{{ country }}</option>{% endfor %}
+        </select>
+      </label>
+      {% endif %}
+      {% if summary.flags %}
+      <label class="text-[11px] text-gray-500 flex flex-col gap-1">FLAG
+        <select data-filter="flag" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800 bg-white">
+          <option value="">Any</option>
+          <option value="__none">No flags</option>
+          {% for flag, count in summary.flags %}<option value="{{ flag }}">{{ flag }} ({{ count }})</option>{% endfor %}
+        </select>
+      </label>
+      {% endif %}
+      {% if summary.criteria %}
+      <label class="text-[11px] text-gray-500 flex flex-col gap-1">CRITERION
+        <span class="flex items-center gap-1.5">
+          <select data-filter="criterion" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800 bg-white">
+            <option value="">Any</option>
+            {% for c in summary.criteria %}<option value="{{ forloop.counter0 }}">{{ c.name }}</option>{% endfor %}
+          </select>
+          <select data-filter="op" class="border border-brand-border-light rounded-lg px-2 py-1.5 text-[13px] text-gray-800 bg-white">
+            <option value="min">at least</option>
+            <option value="max">at most</option>
+          </select>
+          <input type="number" min="0" max="10" step="1" value="7" data-filter="threshold" class="border border-brand-border-light rounded-lg px-2 py-1.5 text-[13px] text-gray-800" style="width: 4rem">
+        </span>
+      </label>
+      {% endif %}
+      <button type="button" data-filter="reset" class="text-[12.5px] text-brand-indigo hover:text-brand-deep-purple py-1.5">Reset</button>
+      <span class="text-[12px] text-gray-500 py-1.5 ml-auto" data-testid="shown"><span data-stat="shown">{{ applicants|length }}</span> of {{ applicants|length }} shown</span>
+    </div>
+
+    <div class="overflow-x-auto">
+    <table class="sortable min-w-full divide-y divide-gray-200" data-testid="scores">
+      <thead class="bg-gray-50">
+        <tr>
+          <th data-sort="text" class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Organization</th>
+          <th data-sort="text" class="hidden sm:table-cell px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Country</th>
+          <th data-sort="text" class="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Sorts picks first">Outcome</th>
+          <th data-sort="number" class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Score</th>
+          {% for c in summary.criteria %}
+            <th data-sort="number" class="px-2 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider" style="max-width: 7rem; white-space: normal; line-height: 1.2" title="{{ c.name }} · {{ c.weight|floatformat:'-1' }}%">{{ c.name }}<div class="text-[10px] text-gray-400 font-normal normal-case">{{ c.weight|floatformat:"-1" }}%</div></th>
+          {% endfor %}
+          <th class="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Flags</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for a in applicants %}
+          <tr class="hover:bg-gray-50 transition cursor-pointer"
+              data-href="{% url 'solicitations:response_detail' a.response.pk %}"
+              data-name="{{ a.name|lower }}"
+              data-outcome="{{ a.review.outcome }}"
+              data-review="{% if a.review.by_person %}person{% elif a.review.has_ai %}ai{% else %}none{% endif %}"
+              data-country="{{ a.country|default:'' }}"
+              data-flags="{{ a.review.flags|join:'|' }}"
+              data-total="{{ a.review.score|default_if_none:'' }}"
+              data-scores="{% for cell in a.cells %}{{ cell.score|default_if_none:'' }}{% if not forloop.last %}|{% endif %}{% endfor %}">
+            <td class="px-4 sm:px-5 py-2.5" data-sort-value="{{ a.name|lower }}">
+              <a href="{% url 'solicitations:response_detail' a.response.pk %}" class="text-[13.5px] font-medium {% if a.org %}text-brand-deep-purple{% else %}text-gray-500 italic{% endif %} hover:text-brand-indigo">{{ a.name }}</a>
+              {% if a.review.by_person %}
+                <span class="text-[11px] text-gray-500 ml-1" title="Checked by {{ a.review.people }} {{ a.review.people|pluralize:'person,people' }}"><i class="fa-solid fa-user-check"></i></span>
+              {% elif a.review.has_ai %}
+                <span class="text-[11px] text-indigo-600 ml-1" title="AI first pass; no person has checked it yet"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
+              {% endif %}
+            </td>
+            <td class="hidden sm:table-cell px-3 py-2.5 text-[12.5px] text-gray-600">{{ a.country|default:"—"|truncatechars:24 }}</td>
+            <td class="px-3 py-2.5 whitespace-nowrap" data-sort-value="{{ a.review.sort }}">
+              {% if a.review.outcome %}
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-semibold
+                  {% if a.review.outcome == 'pick' %}bg-green-100 text-green-800{% elif a.review.outcome == 'backup' %}bg-teal-100 text-teal-800{% elif a.review.outcome == 'waitlist' %}bg-amber-50 text-amber-800{% else %}bg-gray-100 text-gray-600{% endif %}">{{ a.review.label }}</span>
+              {% else %}<span class="text-[11.5px] text-gray-300">—</span>{% endif %}
+            </td>
+            <td class="px-3 py-2.5 text-right text-[13px] font-semibold text-gray-900 tabular-nums" data-sort-value="{{ a.review.score|default_if_none:'' }}">{{ a.review.score|default_if_none:"—" }}</td>
+            {% for cell in a.cells %}
+              <td class="px-1 py-1 text-center" data-sort-value="{{ cell.score|default_if_none:'' }}">
+                {% if cell.score is not None %}<span class="inline-block rounded text-[12px] font-semibold tabular-nums" style="min-width: 2.25rem; padding: 3px 0; {{ cell.style }}">{{ cell.score|floatformat:"-1" }}</span>{% else %}<span class="text-[12px] text-gray-300">—</span>{% endif %}
+              </td>
+            {% endfor %}
+            <td class="px-3 py-2.5">
+              <div class="flex flex-wrap gap-1">{% for flag in a.review.flags %}<span class="px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">{{ flag }}</span>{% endfor %}</div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="{{ summary.criteria|length|add:5 }}" class="px-4 sm:px-5 py-12 text-center text-sm text-gray-500">No applications recorded for this round.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+  <script src="{% static 'supply_chain/sheet_sort.js' %}"></script>
+  <script>
+    (function () {
+      // A row opens that applicant's submission, as on the round page.
+      document.querySelectorAll("tr[data-href]").forEach(function (row) {
+        row.addEventListener("click", function (event) {
+          if (event.target.closest("a") || String(window.getSelection())) return;
+          if (event.metaKey || event.ctrlKey) window.open(row.dataset.href, "_blank");
+          else window.location.href = row.dataset.href;
+        });
+      });
+
+      var rows = Array.prototype.slice.call(document.querySelectorAll("table[data-testid=scores] tbody tr[data-href]"));
+      var control = function (name) { return document.querySelector("[data-filter=" + name + "]"); };
+      var KEPT = ["pick", "backup"];
+
+      function scoresOf(row) {
+        return row.dataset.scores.split("|").map(function (v) { return v === "" ? null : Number(v); });
+      }
+      function matches(row) {
+        var v = function (name) { var el = control(name); return el ? el.value : ""; };
+        var text = v("text").trim().toLowerCase();
+        if (text && row.dataset.name.indexOf(text) === -1) return false;
+        var outcome = v("outcome");
+        if (outcome === "kept" && KEPT.indexOf(row.dataset.outcome) === -1) return false;
+        if (outcome === "none" && row.dataset.outcome) return false;
+        if (outcome && outcome !== "kept" && outcome !== "none" && row.dataset.outcome !== outcome) return false;
+        if (v("review") && row.dataset.review !== v("review")) return false;
+        if (v("country") && row.dataset.country !== v("country")) return false;
+        var flags = row.dataset.flags ? row.dataset.flags.split("|") : [];
+        if (v("flag") === "__none" && flags.length) return false;
+        if (v("flag") && v("flag") !== "__none" && flags.indexOf(v("flag")) === -1) return false;
+        if (v("criterion") !== "") {
+          var score = scoresOf(row)[Number(v("criterion"))];
+          var threshold = Number(v("threshold"));
+          if (score === null) return false;
+          if (v("op") === "max" ? score > threshold : score < threshold) return false;
+        }
+        return true;
+      }
+      function mean(xs) { return xs.length ? xs.reduce(function (a, b) { return a + b; }, 0) / xs.length : null; }
+      function median(xs) {
+        if (!xs.length) return null;
+        var s = xs.slice().sort(function (a, b) { return a - b; });
+        var m = Math.floor(s.length / 2);
+        return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+      }
+      function fmt(x, digits) { return x === null ? "—" : (Math.round(x * Math.pow(10, digits)) / Math.pow(10, digits)).toFixed(digits); }
+      function setText(scope, stat, value) {
+        var el = scope.querySelector("[data-stat=" + stat + "]");
+        if (el) el.textContent = value;
+      }
+
+      // The summaries follow the filter: the figures above are always for the rows below.
+      function refresh() {
+        var shown = rows.filter(function (row) {
+          var ok = matches(row);
+          row.style.display = ok ? "" : "none";
+          return ok;
+        });
+        setText(document, "shown", shown.length);
+        var totals = shown.map(function (r) { return r.dataset.total; }).filter(function (t) { return t !== ""; }).map(Number);
+        setText(document, "total-mean", fmt(mean(totals), 0));
+        setText(document, "total-median", fmt(median(totals), 0));
+        document.querySelectorAll("[data-count]").forEach(function (el) {
+          var key = el.dataset.count;
+          el.textContent = shown.filter(function (r) { return r.dataset.outcome === key; }).length;
+        });
+        document.querySelectorAll("tr[data-criterion]").forEach(function (line, i) {
+          var scored = [], kept = [], rest = [];
+          shown.forEach(function (r) {
+            var s = scoresOf(r)[i];
+            if (s === null) return;
+            scored.push(s);
+            (KEPT.indexOf(r.dataset.outcome) !== -1 ? kept : rest).push(s);
+          });
+          setText(line, "scored", scored.length);
+          setText(line, "mean", fmt(mean(scored), 1));
+          setText(line, "median", median(scored) === null ? "—" : String(median(scored)));
+          setText(line, "kept", fmt(mean(kept), 1));
+          setText(line, "rest", fmt(mean(rest), 1));
+          var gap = kept.length && rest.length ? mean(kept) - mean(rest) : null;
+          setText(line, "gap", gap === null ? "—" : (gap >= 0 ? "+" : "") + fmt(gap, 1));
+          var counts = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+          scored.forEach(function (s) { counts[Math.min(Math.max(Math.round(s), 1), 10) - 1] += 1; });
+          var tallest = Math.max.apply(null, counts) || 1;
+          line.querySelectorAll("[data-stat=spread] [data-score]").forEach(function (bar, b) {
+            bar.style.height = counts[b] ? Math.round(100 * counts[b] / tallest) + "%" : "2px";
+            bar.style.background = counts[b] ? "rgba(79, 70, 229, 0.7)" : "#f3f4f6";
+            bar.title = counts[b] + " scored " + (b + 1);
+          });
+        });
+      }
+
+      document.querySelectorAll("[data-filter]").forEach(function (el) {
+        if (el.dataset.filter === "reset") {
+          el.addEventListener("click", function () {
+            document.querySelectorAll("[data-filter]").forEach(function (c) {
+              if (c.tagName === "SELECT") c.selectedIndex = 0;
+              else if (c.dataset.filter === "text") c.value = "";
+            });
+            refresh();
+          });
+        } else {
+          el.addEventListener("input", refresh);
+          el.addEventListener("change", refresh);
+        }
+      });
+    })();
+  </script>
+  {% include "canopy_host/panel.html" %}
+{% endblock %}

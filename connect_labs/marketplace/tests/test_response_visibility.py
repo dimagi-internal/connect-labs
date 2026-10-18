@@ -587,3 +587,75 @@ class TestReadingForReview:
         assert applicants[0]["response"].pk == submission.pk, "the AI pick leads the list"
         context = client.get(reverse("solicitations:response_detail", args=[submission.pk])).context
         assert context["position"] == 1 and context["next_pk"] == applicants[1]["response"].pk
+
+
+class TestScores:
+    """The round's scores side by side, for the owner to filter and compare."""
+
+    @pytest.fixture
+    def two_scored(self, scored, ace):
+        from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+        other = scored[0].solicitation.responses.get(source_row=3)
+        SolicitationsDataAccess(user=ace).create_review(
+            other.pk,
+            {
+                "kind": "ai",
+                "criteria_scores": {"reach": 4, "cost": 5},
+                "outcome": "pass",
+                "flags": ["generic-or-ai-drafted"],
+                "provenance": {"model": "test", "rubric_version": "v1"},
+            },
+        )
+        return scored
+
+    def test_each_criterion_says_whether_it_decided_the_slate(self, client, two_scored, member):
+        client.force_login(member)
+        summary = client.get(reverse("marketplace:round_scores", args=["battery-2026"])).context["summary"]
+        reach, cost = summary["criteria"]
+        assert (reach["scored"], reach["mean"], reach["gap"]) == (2, 6.0, 4.0), "the pick out-reached the pass"
+        assert cost["gap"] == 0.0, "cost did not separate them"
+        assert summary["outcomes"] == {"pick": 1, "backup": 0, "waitlist": 0, "pass": 1, "undecided": 1}
+        assert summary["flags"] == [("generic-or-ai-drafted", 1)]
+
+    def test_every_applicant_is_a_row_with_its_scores(self, client, two_scored, member):
+        body = _page(client, member, "marketplace:round_scores", "battery-2026")
+        assert body.count('data-href="/solicitations/response/') == 3
+        assert 'data-scores="8|5"' in body and 'data-scores="4|5"' in body and 'data-scores="|"' in body
+        assert "Reach to households" in body and 'data-flags="generic-or-ai-drafted"' in body
+
+    def test_it_says_when_reviews_predate_the_current_criteria(self, client, two_scored, member, ace):
+        from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+        SolicitationsDataAccess(user=ace).set_round_criteria("battery-2026", CRITERIA, "v2")
+        body = _page(client, member, "marketplace:round_scores", "battery-2026")
+        assert "2 reviews scored on v1, not the current criteria (v2)" in body
+
+    def test_adding_to_the_ai_review_keeps_its_scores(self, client, scored, member):
+        submission, ai = scored
+        from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+        SolicitationsDataAccess(user=member).create_review(
+            submission.pk, {"based_on": ai.pk, "stance": "adds", "criteria_scores": {"cost": 7}, "outcome": "pick"}
+        )
+        client.force_login(member)
+        applicants = client.get(reverse("marketplace:round_scores", args=["battery-2026"])).context["applicants"]
+        lead = next(a for a in applicants if a["response"].pk == submission.pk)
+        assert lead["review"]["criteria_scores"] == {"reach": 8, "cost": 7} and lead["review"]["by_person"]
+
+    def test_the_round_page_links_to_it(self, client, scored, member):
+        assert 'data-testid="scores-link"' in _page(client, member, "marketplace:round", "battery-2026")
+
+    def test_only_the_owner_sees_it(self, client, scored, outsider):
+        client.force_login(outsider)
+        assert client.get(reverse("marketplace:round_scores", args=["battery-2026"])).status_code == 404
+        with pytest.raises(MCPToolError):
+            tools.marketplace_round_scores(outsider, "battery-2026")
+
+    def test_the_mcp_tool_reads_the_same_figures(self, client, two_scored, member, ace):
+        client.force_login(member)
+        page = client.get(reverse("marketplace:round_scores", args=["battery-2026"])).context["summary"]
+        tool = tools.marketplace_round_scores(ace, "battery-2026")
+        assert tool["criteria"] == page["criteria"] and tool["outcomes"] == page["outcomes"]
+        fenwick = next(a for a in tool["applicants"] if a["org_slug"] == "fenwick")
+        assert fenwick["criteria_scores"] == {"reach": 8, "cost": 5} and fenwick["rubric_version"] == "v1"

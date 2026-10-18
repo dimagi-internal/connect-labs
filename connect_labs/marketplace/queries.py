@@ -794,6 +794,26 @@ def _review_sort_key(review) -> str:
     return f"{_OUTCOME_RANK.get(review.outcome, 4)}-{999 - (review.score or 0):03d}"
 
 
+def _effective_scores(review) -> dict:
+    """A review's score per criterion. One that adds to the AI's keeps the AI's where it set none."""
+    if review is None:
+        return {}
+    scores = dict(review.criteria_scores or {})
+    if review.stance == "adds" and review.based_on is not None:
+        scores = {**(review.based_on.criteria_scores or {}), **scores}
+    return scores
+
+
+def _effective_flags(review) -> list[str]:
+    """A review's flags, the AI's included when it adds to the AI's review."""
+    if review is None:
+        return []
+    flags = list(review.flags or [])
+    if review.stance == "adds" and review.based_on is not None:
+        flags = [f for f in review.based_on.flags or [] if f not in flags] + flags
+    return [str(f) for f in flags]
+
+
 def review_status(round_: Solicitation, applicants: list[dict]) -> dict:
     """Where each applicant stands in review, and how far the round has got.
 
@@ -806,7 +826,8 @@ def review_status(round_: Solicitation, applicants: list[dict]) -> dict:
     from connect_labs.solicitations.local_models import REVIEW_AI, SolicitationReview
 
     by_response: dict[int, list] = {}
-    for review in SolicitationReview.objects.filter(response__solicitation=round_).order_by("review_date", "pk"):
+    reviews = SolicitationReview.objects.filter(response__solicitation=round_).select_related("based_on")
+    for review in reviews.order_by("review_date", "pk"):
         by_response.setdefault(review.response_id, []).append(review)
     counts = {"people": 0, "ai_only": 0, "none": 0, "outcomes": {}, "next_pk": None}
     for a in applicants:
@@ -823,6 +844,11 @@ def review_status(round_: Solicitation, applicants: list[dict]) -> dict:
             "score": lead.score if lead else None,
             # Sorts pick, backup, waitlist, pass, then unreviewed; best score first within each.
             "sort": _review_sort_key(lead),
+            "criteria_scores": _effective_scores(lead),
+            "flags": _effective_flags(lead),
+            # The criteria version it scored against, so a page can say when
+            # the round's criteria have moved on since.
+            "rubric_version": str((lead.provenance or {}).get("rubric_version") or "") if lead else "",
         }
         if people:
             counts["people"] += 1
@@ -1153,3 +1179,80 @@ def supply_tenders_open() -> int:
     from connect_labs.supply_chain.models import Tender
 
     return Tender.objects.filter(status="open", visibility="public").count()
+
+
+def _median(values: list[float]):
+    ordered = sorted(values)
+    if not ordered:
+        return None
+    middle = len(ordered) // 2
+    return ordered[middle] if len(ordered) % 2 else (ordered[middle - 1] + ordered[middle]) / 2
+
+
+def _mean(values: list[float]):
+    return sum(values) / len(values) if values else None
+
+
+def round_scores(round_: Solicitation, applicants: list[dict]) -> dict:
+    """How a round's applicants scored, criterion by criterion. Call after `review_status`.
+
+    Each criterion carries how many applicants were scored on it, the mean and
+    median, how the scores spread over 1-10, and the mean for those picked or
+    kept as backups against everyone else: a criterion whose two means sit
+    together is not what decided the slate. Every figure is the lead review's
+    (a person's, else the AI's), the same one the round page shows.
+    """
+    shortlisted = {"pick", "backup"}
+    criteria = []
+    for c in round_.evaluation_criteria or []:
+        scored = [
+            (a, float(a["review"]["criteria_scores"][c["id"]]))
+            for a in applicants
+            if isinstance(a["review"]["criteria_scores"].get(c["id"]), (int, float))
+        ]
+        values = [v for _, v in scored]
+        buckets = [0] * 10
+        for v in values:
+            buckets[min(max(int(round(v)), 1), 10) - 1] += 1
+        tallest = max(buckets) or 1
+        kept = [v for a, v in scored if a["review"]["outcome"] in shortlisted]
+        rest = [v for a, v in scored if a["review"]["outcome"] not in shortlisted]
+        criteria.append(
+            {
+                "id": c["id"],
+                "name": c["name"],
+                "weight": c.get("weight") or 0,
+                "scoring_guide": c.get("scoring_guide") or "",
+                "scored": len(values),
+                "mean": _mean(values),
+                "median": _median(values),
+                "spread": [
+                    {"score": i + 1, "count": n, "pct": round(100 * n / tallest)} for i, n in enumerate(buckets)
+                ],
+                "kept_mean": _mean(kept),
+                "rest_mean": _mean(rest),
+                "gap": (_mean(kept) - _mean(rest)) if kept and rest else None,
+            }
+        )
+    totals = [a["review"]["score"] for a in applicants if a["review"]["score"] is not None]
+    outcomes = {key: 0 for key in ("pick", "backup", "waitlist", "pass", "undecided")}
+    flags: dict[str, int] = {}
+    versions: dict[str, int] = {}
+    for a in applicants:
+        outcomes[a["review"]["outcome"] if a["review"]["outcome"] in outcomes else "undecided"] += 1
+        for flag in a["review"]["flags"]:
+            flags[str(flag)] = flags.get(str(flag), 0) + 1
+        if a["review"]["outcome"] or a["review"]["score"] is not None:
+            version = a["review"]["rubric_version"] or "unrecorded"
+            versions[version] = versions.get(version, 0) + 1
+    return {
+        "criteria": criteria,
+        "total_mean": _mean(totals),
+        "total_median": _median(totals),
+        "outcomes": outcomes,
+        "flags": sorted(flags.items(), key=lambda item: (-item[1], item[0])),
+        "versions": sorted(versions.items()),
+        "current_version": round_.rubric_version or "",
+        "stale": sum(n for v, n in versions.items() if v != (round_.rubric_version or "")),
+        "older_versions": ", ".join(sorted(v for v in versions if v != (round_.rubric_version or ""))),
+    }
