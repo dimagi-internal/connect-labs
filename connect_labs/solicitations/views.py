@@ -26,7 +26,7 @@ from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
 
 from connect_labs.microplans.core.solicitation_snapshot import build_plan_snapshot
-from connect_labs.solicitations import access, demo, past_calls
+from connect_labs.solicitations import access, demo, evidence, past_calls
 from connect_labs.solicitations.data_access import AlreadyAwarded, SolicitationsDataAccess, by_public_id
 from connect_labs.solicitations.forms import NEW_ORG, ReviewForm, SolicitationForm, SolicitationResponseForm
 from connect_labs.solicitations.local_models import REVIEW_AI, SOURCE_DIRECTORY, Solicitation, SolicitationResponse
@@ -1002,9 +1002,23 @@ class RespondView(SignedInPage):
 
 
 class ResponseDetailView(SignedInPage):
-    """One response, named. The owner sees it with its reviews; the respondent sees their own."""
+    """One response, named. The owner sees it with its reviews; the respondent sees their own.
+
+    A marketplace round's response is read beside its reviews: the answers on
+    one side, a review on the other, and every statement in the review linked
+    to the passages it rests on (`evidence.py`, `round_response.html`).
+    """
 
     template_name = "solicitations/response_detail.html"
+
+    def get_template_names(self):
+        if self._is_round:
+            return ["solicitations/round_response.html"]
+        return [self.template_name]
+
+    def get(self, request, *args, **kwargs):
+        self._is_round = False
+        return super().get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -1024,7 +1038,28 @@ class ResponseDetailView(SignedInPage):
                 for c_id, c_score in (rev.criteria_scores or {}).items()
             ]
         is_round = access.is_directory_round(solicitation)
+        self._is_round = is_round
         my_review = next((r for r in reviews if r.kind != REVIEW_AI and r.reviewer_id == da.caller.user_pk), None)
+        if is_round:
+            from connect_labs.solicitations import evidence
+
+            ctx["answers"] = [
+                {"id": q["id"], "question": q.get("text", ""), "answer": (response.responses or {}).get(q["id"], "")}
+                for q in past_calls.form_questions(solicitation)
+            ]
+            ctx["evidence"] = {
+                "legend": evidence.legend(solicitation.evaluation_criteria),
+                "reviews": [
+                    {
+                        "id": r.pk,
+                        "label": "AI first pass" if r.kind == REVIEW_AI else r.reviewer_username,
+                        "claims": evidence.claims_of(r),
+                    }
+                    for r in reviews
+                ],
+            }
+            for r in reviews:
+                r.panel = evidence.panel(r, solicitation.evaluation_criteria)
         ctx.update(
             {
                 "response": response,
@@ -1145,6 +1180,11 @@ class ReviewView(SignedInPage):
 
     template_name = "solicitations/review_form.html"
 
+    def get_template_names(self):
+        if getattr(self, "_is_round", False):
+            return ["solicitations/round_review_form.html"]
+        return [self.template_name]
+
     def _load(self, pk):
         da = self.da()
         response = _response_or_404(da, pk)
@@ -1153,6 +1193,7 @@ class ReviewView(SignedInPage):
             "Only the organisation that owns this call (or platform support) can review it, "
             "and never a response from your own side.",
         )
+        self._is_round = access.is_directory_round(response.solicitation)
         return da, response
 
     def _source(self, da, response, key):
@@ -1219,18 +1260,22 @@ class ReviewView(SignedInPage):
                     "notes": start.notes,
                     "tags": start.tags,
                     "outcome": start.outcome,
-                    "strengths": start.strengths,
-                    "concerns": start.concerns,
                     "ask_next": start.ask_next,
                     "flags": ", ".join(start.flags or []),
+                    "claims_json": json.dumps(evidence.claims_of(start)),
                     **{f"criteria_score_{k}": v for k, v in (start.criteria_scores or {}).items()},
-                    **{f"criteria_note_{k}": v for k, v in (start.criteria_notes or {}).items()},
                 }
                 if start is existing and existing.based_on_id:
                     initial.update({"based_on": existing.based_on_id, "stance": existing.stance})
             if source is not None:
                 initial.update({"based_on": source.pk, "stance": self.request.GET.get("stance") or "amended"})
             ctx["form"] = ReviewForm(evaluation_criteria=eval_criteria, initial=initial, for_round=is_round)
+        if is_round:
+            ctx["answers"] = [
+                {"id": q["id"], "question": q.get("text", ""), "answer": (response.responses or {}).get(q["id"], "")}
+                for q in questions
+            ]
+            ctx["evidence"] = {"legend": evidence.legend(eval_criteria)}
         return ctx
 
     def post(self, request, *args, **kwargs):
@@ -1247,15 +1292,22 @@ class ReviewView(SignedInPage):
             if "score" in form.fields:
                 data["score"] = form.cleaned_data["score"]
             if is_round:
-                for name in ("outcome", "strengths", "concerns", "ask_next", "flags", "stance"):
+                for name in ("outcome", "ask_next", "flags", "stance"):
                     data[name] = form.cleaned_data[name]
-                data["criteria_notes"] = form.get_criteria_notes()
+                claims = form.cleaned_data["claims_json"]
+                data["claims"] = claims
+                if not claims:
+                    data.update({"strengths": "", "concerns": "", "criteria_notes": {}})
                 data["based_on"] = form.cleaned_data["based_on"]
                 if not data["based_on"]:
                     data["stance"] = ""
             else:
                 data["recommendation"] = form.cleaned_data["recommendation"]
-            da.create_review(response.pk, data)
+            try:
+                da.create_review(response.pk, data)
+            except ValidationError as e:
+                form.add_error(None, e.messages)
+                return self.render_to_response(self.get_context_data(form=form, **kwargs))
             if is_round:
                 return redirect("solicitations:response_detail", pk=response.pk)
             return redirect("solicitations:responses_list", pk=response.solicitation.public_id)

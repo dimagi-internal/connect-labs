@@ -432,28 +432,22 @@ class ReviewForm(forms.Form):
             del self.fields["score"]
         else:
             self.fields["score"].required = False
-        for criterion in self.evaluation_criteria:
-            self.fields[f"criteria_note_{criterion['id']}"] = forms.CharField(
-                required=False,
-                widget=forms.TextInput(attrs={"class": _INPUT_CLASSES, "placeholder": "Why, citing their answer"}),
-            )
         self.fields["outcome"] = forms.ChoiceField(
             label="Outcome",
             choices=[("", "Choose…"), *OUTCOMES],
             required=True,
             widget=forms.Select(attrs={"class": _SELECT_CLASSES}),
         )
-        for name, label, help_text in (
-            ("strengths", "Strengths", ""),
-            ("concerns", "Concerns", ""),
-            ("ask_next", "Ask them", "What to ask before deciding"),
-        ):
-            self.fields[name] = forms.CharField(
-                label=label,
-                help_text=help_text,
-                required=False,
-                widget=forms.Textarea(attrs={"rows": 3, "class": _TEXTAREA_CLASSES}),
-            )
+        self.fields["ask_next"] = forms.CharField(
+            label="Ask them",
+            help_text="What to ask before deciding",
+            required=False,
+            widget=forms.Textarea(attrs={"rows": 3, "class": _TEXTAREA_CLASSES}),
+        )
+        # The review's statements -- reasons per criterion, strengths, concerns --
+        # each with the passages it cites, edited beside the response by
+        # static/solicitations/review_evidence.js.
+        self.fields["claims_json"] = forms.CharField(required=False, widget=forms.HiddenInput())
         self.fields["flags"] = forms.CharField(
             label="Flags",
             required=False,
@@ -468,13 +462,16 @@ class ReviewForm(forms.Form):
             widget=forms.Select(attrs={"class": _SELECT_CLASSES}),
         )
 
-    def get_criteria_notes(self) -> dict:
-        notes = {}
-        for criterion in self.evaluation_criteria:
-            value = (self.cleaned_data.get(f"criteria_note_{criterion['id']}") or "").strip()
-            if value:
-                notes[criterion["id"]] = value
-        return notes
+    def clean_claims_json(self):
+        raw = self.cleaned_data.get("claims_json") or "[]"
+        try:
+            claims = json.loads(raw)
+        except ValueError as e:
+            raise forms.ValidationError("The review's statements could not be read.") from e
+        if not isinstance(claims, list):
+            raise forms.ValidationError("The review's statements could not be read.")
+        # A statement left empty is one the reviewer started and abandoned.
+        return [c for c in claims if isinstance(c, dict) and str(c.get("text") or "").strip()]
 
     def get_criteria_scores(self) -> dict:
         """Return a ``{criterion_id: score}`` dict from the cleaned criteria fields."""

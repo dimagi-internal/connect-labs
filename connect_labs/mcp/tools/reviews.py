@@ -205,6 +205,19 @@ _REVIEW_PUBLIC_WARNING = (
                 "description": "For an AI review: model, skill, skill_version, rubric_version, sources.",
                 "additionalProperties": True,
             },
+            "claims": {
+                "type": "array",
+                "description": (
+                    "The review's statements, each with the response text it rests on. Each is "
+                    "{id, about: 'criterion:<id>'|'strength'|'concern'|'flag'|'outcome', text, "
+                    "basis: 'quoted'|'synthesized', cites: [...]}; a cite is {question, quote} (exact "
+                    "words from that answer, checked on save), {question, absent: true}, "
+                    "{question, whole: true}, or {source: 'labs'|'web', detail, url}. A synthesized "
+                    "claim may cite nothing. When sent, strengths, concerns and criteria_notes are "
+                    "written from the claims. A quote not found in its answer refuses the review."
+                ),
+                "items": {"type": "object", "additionalProperties": True},
+            },
             "program_id": {
                 "type": ["integer", "string"],
                 "description": "Accepted for compatibility; not needed.",
@@ -240,6 +253,7 @@ def create_review(
     ask_next: str = "",
     flags: list | None = None,
     provenance: dict | None = None,
+    claims: list | None = None,
     program_id: str | int | None = None,
     organization_id: str | int | None = None,
 ) -> dict:
@@ -273,6 +287,7 @@ def create_review(
         ("ask_next", ask_next),
         ("flags", flags),
         ("provenance", provenance),
+        ("claims", claims),
     ):
         if value:
             data[name] = value

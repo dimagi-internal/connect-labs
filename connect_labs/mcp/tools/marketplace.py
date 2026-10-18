@@ -346,7 +346,10 @@ def marketplace_round_responses(user, slug: str, include_contacts: bool = False)
             "submitted_at": response.submission_date.isoformat() if response.submission_date else None,
             "country": response.country_as_submitted,
             "website": response.website_as_submitted,
-            "answers": [{"question": q["text"], "answer": answers.get(q["id"], "")} for q in shown],
+            # `question_id` is what a review's evidence cites (`create_review` claims).
+            "answers": [
+                {"question_id": q["id"], "question": q["text"], "answer": answers.get(q["id"], "")} for q in shown
+            ],
         }
         if include_contacts:
             row["contact"] = {"name": response.submitted_by_name, "emails": response.submitted_by_email}
