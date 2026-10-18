@@ -1335,6 +1335,12 @@ def compare_versions(earlier: list[dict], later: list[dict], earlier_scores: dic
     }
 
 
+def version_number(version: str) -> int:
+    """v12 -> 12: versions sort by number, not by when their row was written (an archived v1 comes later)."""
+    digits = "".join(ch for ch in str(version) if ch.isdigit())
+    return int(digits) if digits else 0
+
+
 def version_history(round_: Solicitation) -> list[dict]:
     """Every criteria version of a round, oldest first, with how many reviews were scored on each."""
     from connect_labs.solicitations.local_models import REVIEW_AI, SolicitationReview
@@ -1346,7 +1352,7 @@ def version_history(round_: Solicitation) -> list[dict]:
         tally = counts.setdefault(version, {"ai": 0, "people": 0})
         tally["ai" if kind == REVIEW_AI else "people"] += 1
     out = []
-    for record in round_.rubric_versions.select_related("created_by"):
+    for record in sorted(round_.rubric_versions.select_related("created_by"), key=lambda r: version_number(r.version)):
         tally = counts.get(record.version, {"ai": 0, "people": 0})
         out.append(
             {

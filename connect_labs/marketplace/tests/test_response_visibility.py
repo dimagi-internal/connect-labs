@@ -871,3 +871,22 @@ class TestVersions:
 
         tools.marketplace_round_version_delete(ace, "battery-2026", "v1")
         assert SolicitationsDataAccess(user=ace).set_round_criteria("battery-2026", CRITERIA).rubric_version == "v3"
+
+
+def test_versions_sort_by_number_not_by_when_they_were_archived(scored, ace):
+    from connect_labs.solicitations.data_access import SolicitationsDataAccess
+    from connect_labs.solicitations.local_models import RubricVersion
+
+    da = SolicitationsDataAccess(user=ace)
+    da.set_round_criteria("battery-2026", CRITERIA_V2)
+    da.set_round_criteria("battery-2026", CRITERIA)
+    v1 = RubricVersion.objects.get(version="v1")
+    v1.delete()
+    tools.marketplace_round_version_archive(ace, "battery-2026", "v1", [], CRITERIA)
+    assert [v["version"] for v in tools.marketplace_round_versions(ace, "battery-2026")["versions"]] == [
+        "v1",
+        "v2",
+        "v3",
+    ]
+    comparison = tools.marketplace_round_scores(ace, "battery-2026", compare_with="v1")["comparison"]
+    assert (comparison["earlier"], comparison["later"]) == ("v1", "v3")
