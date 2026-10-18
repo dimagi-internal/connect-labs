@@ -734,3 +734,36 @@ class TestSummaryLink:
         assert response.status_code == 404
         with pytest.raises(MCPToolError):
             tools.marketplace_round_summary_set(outsider, "battery-2026", self.URL)
+
+
+class TestDeletingAReview:
+    def test_the_reviewer_deletes_it_and_reviews_built_on_it_stay(self, client, scored, member):
+        from connect_labs.solicitations.data_access import SolicitationsDataAccess
+        from connect_labs.solicitations.local_models import SolicitationReview
+
+        submission, ai = scored
+        mine = SolicitationsDataAccess(user=member).create_review(
+            submission.pk, {"based_on": ai.pk, "stance": "agrees", "outcome": "pick"}
+        )
+        body = _page(client, member, "solicitations:response_detail", submission.pk)
+        assert 'data-testid="delete-review"' in body
+        response = client.post(reverse("solicitations:review_delete", args=[mine.pk]))
+        assert response.status_code == 302 and not SolicitationReview.objects.filter(pk=mine.pk).exists()
+        assert SolicitationReview.objects.filter(pk=ai.pk).exists()
+
+    def test_nobody_else_deletes_it(self, client, scored, member, outsider):
+        from connect_labs.mcp.tools import reviews as review_tools
+        from connect_labs.solicitations.local_models import SolicitationReview
+
+        _, ai = scored
+        client.force_login(member)
+        assert client.post(reverse("solicitations:review_delete", args=[ai.pk])).status_code == 404
+        with pytest.raises(MCPToolError):
+            review_tools.delete_review(outsider, ai.pk)
+        assert SolicitationReview.objects.filter(pk=ai.pk).exists()
+
+    def test_the_mcp_tool_deletes_your_own(self, scored, ace):
+        from connect_labs.mcp.tools import reviews as review_tools
+
+        submission, ai = scored
+        assert review_tools.delete_review(ace, ai.pk) == {"deleted": ai.pk, "response_id": submission.pk}

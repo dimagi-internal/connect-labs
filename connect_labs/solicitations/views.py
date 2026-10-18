@@ -15,6 +15,7 @@ import json
 import logging
 
 from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Count, Q
@@ -29,7 +30,13 @@ from connect_labs.microplans.core.solicitation_snapshot import build_plan_snapsh
 from connect_labs.solicitations import access, demo, evidence, past_calls, vocabulary
 from connect_labs.solicitations.data_access import AlreadyAwarded, SolicitationsDataAccess, by_public_id
 from connect_labs.solicitations.forms import NEW_ORG, ReviewForm, SolicitationForm, SolicitationResponseForm
-from connect_labs.solicitations.local_models import REVIEW_AI, SOURCE_DIRECTORY, Solicitation, SolicitationResponse
+from connect_labs.solicitations.local_models import (
+    REVIEW_AI,
+    SOURCE_DIRECTORY,
+    Solicitation,
+    SolicitationResponse,
+    SolicitationReview,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -914,6 +921,20 @@ class ResponsesListView(SignedInPage):
         return ctx
 
 
+class DeleteReviewView(SignedInPage):
+    """Delete your own review of a response: what `delete_review` does for an agent."""
+
+    http_method_names = ["post"]
+
+    def post(self, request, *args, **kwargs):
+        try:
+            response_id = self.da().delete_review(kwargs["pk"])
+        except (SolicitationReview.DoesNotExist, PermissionDenied) as e:
+            raise Http404("Review not found") from e
+        messages.success(request, "Your review was deleted.")
+        return redirect("solicitations:response_detail", pk=response_id)
+
+
 # -- Responding (login) -------------------------------------------------------------
 
 
@@ -1059,6 +1080,16 @@ class ResponseDetailView(SignedInPage):
         reviews = da.get_reviews_for_response(response.pk)
         criteria_by_id = {c.get("id"): c for c in (solicitation.evaluation_criteria or [])}
         for rev in reviews:
+            # Each flag as the reader sees it: its defined label and meaning.
+            rev.flag_chips = [
+                vocabulary.FLAGS.get(vocabulary.flag_key(f) or "", {"label": f, "definition": ""})
+                for f in rev.flags or []
+            ]
+            if rev.stance == "adds" and rev.based_on is not None:
+                rev.base_flag_chips = [
+                    vocabulary.FLAGS.get(vocabulary.flag_key(f) or "", {"label": f, "definition": ""})
+                    for f in rev.based_on.flags or []
+                ]
             rev.criteria_score_rows = [
                 {
                     "name": (criteria_by_id.get(c_id) or {}).get("name", c_id),

@@ -23,6 +23,7 @@ urlpatterns = [
     # Award and blind review (owner or staff, never on your own side).
     path("response/<int:pk>/award/", views.AwardView.as_view(), name="award"),
     path("response/<int:pk>/review/", views.ReviewView.as_view(), name="review"),
+    path("review/<int:pk>/delete/", views.DeleteReviewView.as_view(), name="review_delete"),
     # AI-assisted criteria generation for the create form.
     path("api/generate-criteria/", views.generate_criteria_api, name="generate_criteria"),
 ]
