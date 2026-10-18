@@ -1253,6 +1253,9 @@ def round_scores(round_: Solicitation, applicants: list[dict]) -> dict:
         "flags": sorted(flags.items(), key=lambda item: (-item[1], item[0])),
         "versions": sorted(versions.items()),
         "current_version": round_.rubric_version or "",
-        "stale": sum(n for v, n in versions.items() if v != (round_.rubric_version or "")),
-        "older_versions": ", ".join(sorted(v for v in versions if v != (round_.rubric_version or ""))),
+        "stale": sum(n for v, n in versions.items() if v not in (round_.rubric_version or "", "unrecorded")),
+        "older_versions": ", ".join(
+            sorted(v for v in versions if v not in (round_.rubric_version or "", "unrecorded"))
+        ),
+        "unrecorded": versions.get("unrecorded", 0),
     }

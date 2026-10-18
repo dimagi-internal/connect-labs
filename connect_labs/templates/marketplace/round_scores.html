@@ -29,6 +29,9 @@ into the stylesheet, so anything else here is an inline style.
         {% if summary.stale %}
           <div class="text-[12px] text-amber-800 mt-1.5" data-testid="stale">{{ summary.stale }} review{{ summary.stale|pluralize }} scored on {{ summary.older_versions }}, not the current criteria ({{ summary.current_version|default:"none" }}). Re-score {{ summary.stale|pluralize:"it,them" }} to compare like with like.</div>
         {% endif %}
+        {% if summary.unrecorded %}
+          <div class="text-[12px] text-gray-500 mt-1" data-testid="unrecorded">{{ summary.unrecorded }} review{{ summary.unrecorded|pluralize }} {{ summary.unrecorded|pluralize:"does,do" }} not say which criteria {{ summary.unrecorded|pluralize:"it,they" }} scored against: saved before reviews recorded it.</div>
+        {% endif %}
       </div>
       <div class="flex flex-wrap gap-x-7 gap-y-4 sm:gap-8" data-testid="outcomes">
         <div><div class="text-[22px] sm:text-[25px] font-semibold text-green-700 tabular-nums" data-count="pick">{{ summary.outcomes.pick }}</div><div class="text-[11px] text-gray-400 tracking-wide">PICK</div></div>
