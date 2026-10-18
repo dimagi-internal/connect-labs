@@ -377,25 +377,8 @@ def round_response(request, slug, row):
             "org": response.llo_entity,
             "name": (response.llo_entity.name if response.llo_entity else response.org_name)
             or "(organization name not given)",
-            "answers": [(q.get("text", ""), answers.get(q.get("id"), "")) for q in queries.form_questions(round_)],
+            "answers": [(q.get("text", ""), answers.get(q.get("id"), "")) for q in past_calls.form_questions(round_)],
         },
-    )
-
-
-@login_required
-@MARKETPLACE_CHROME
-def round_form(request, slug):
-    """The round's form, drawn from its questions: what applicants were asked.
-
-    Shown to the same people as the link to the Google Form itself: a form is
-    what a round puts in front of anyone it wants answers from. It is a preview;
-    nothing is submitted from it.
-    """
-    round_ = get_object_or_404(Solicitation.objects.directory_rounds(), slug=slug)
-    return render(
-        request,
-        "marketplace/round_form.html",
-        {"round": round_, "questions": queries.form_questions(round_)},
     )
 
 

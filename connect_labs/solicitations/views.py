@@ -29,7 +29,7 @@ from connect_labs.microplans.core.solicitation_snapshot import build_plan_snapsh
 from connect_labs.solicitations import access, demo, past_calls
 from connect_labs.solicitations.data_access import AlreadyAwarded, SolicitationsDataAccess, by_public_id
 from connect_labs.solicitations.forms import NEW_ORG, ReviewForm, SolicitationForm, SolicitationResponseForm
-from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
+from connect_labs.solicitations.local_models import SOURCE_DIRECTORY, Solicitation, SolicitationResponse
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +94,11 @@ def _solicitation_or_404(da, pk):
     if solicitation is None:
         raise Http404("Solicitation not found")
     return solicitation
+
+
+def _is_round(solicitation) -> bool:
+    """A marketplace EOI round: answered on its Google Form, never here."""
+    return solicitation.source == SOURCE_DIRECTORY
 
 
 def _managed_solicitation(da, pk):
@@ -888,7 +893,11 @@ class RespondView(SignedInPage):
 
     def _load(self, pk):
         da = self.da()
-        solicitation = _solicitation_or_404(da, pk)
+        # A marketplace round has no call here, but it does have a form: its
+        # questions, shown read-only (`_is_round`).
+        solicitation = da.get_solicitation_by_id(pk) or da.get_round_form(pk)
+        if solicitation is None:
+            raise Http404("Solicitation not found")
         my_response = da.get_my_response(solicitation.public_id)
         orgs = access.member_orgs(da.caller)
         return solicitation, my_response, orgs
@@ -917,7 +926,11 @@ class RespondView(SignedInPage):
             for q_id in criterion.get("linked_questions", []):
                 criteria_by_question.setdefault(q_id, []).append(criterion)
         question_fields = []
-        for question in solicitation.questions or []:
+        is_round = _is_round(solicitation)
+        if is_round or not solicitation.can_accept_responses:
+            for field in form.fields.values():
+                field.widget.attrs["disabled"] = True
+        for question in past_calls.form_questions(solicitation) if is_round else solicitation.questions or []:
             field_name = f"question_{question.get('id', '')}"
             question_fields.append(
                 {
@@ -931,7 +944,8 @@ class RespondView(SignedInPage):
             solicitation=solicitation,
             my_response=my_response,
             already_submitted=my_response is not None and my_response.status != "draft",
-            not_accepting=not solicitation.can_accept_responses,
+            not_accepting=is_round or not solicitation.can_accept_responses,
+            is_directory_round=is_round,
             form=form,
             question_fields=question_fields,
             mapbox_token=settings.MAPBOX_TOKEN or "",
@@ -948,7 +962,7 @@ class RespondView(SignedInPage):
     def post(self, request, *args, **kwargs):
         solicitation, my_response, orgs = self._load(kwargs["pk"])
         form = self._form(solicitation, orgs, data=request.POST)
-        if not solicitation.can_accept_responses:
+        if _is_round(solicitation) or not solicitation.can_accept_responses:
             ctx = self._context(solicitation, my_response, form)
             response = self.render_to_response(ctx)
             response.status_code = 403

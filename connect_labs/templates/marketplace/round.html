@@ -195,7 +195,7 @@
         </div>
         <div class="px-[18px] py-3.5 flex flex-col gap-2.5">
           <div class="text-[10.5px] font-semibold text-gray-400 tracking-wider">IN LABS</div>
-          <a href="{% url 'marketplace:round_form' round.slug %}" class="text-[13px] text-brand-indigo hover:text-brand-deep-purple flex items-center gap-2">
+          <a href="{% url 'solicitations:respond' round.public_id %}" class="text-[13px] text-brand-indigo hover:text-brand-deep-purple flex items-center gap-2">
             <i class="fa-regular fa-rectangle-list text-[11px]"></i> The form
           </a>
           {% if public_call_url %}
