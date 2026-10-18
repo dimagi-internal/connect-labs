@@ -6,9 +6,11 @@ contract, order, pay and receive for it -- what `records.BUYER_OF_RECORD`'s
 organisation was Dimagi by construction (`identity.DIMAGI_ORG_SLUG`), so no
 other organisation could run procurement as itself.
 
-Declared, never derived from anything a caller can influence, and changed only
-by Django staff or the system caller: changing it changes who "we" are in the
-programme, which is the authority every provenance rule protects. See
+Declared, never derived from anything a caller can influence: changing it
+changes who "we" are in the programme, which is the authority every provenance
+rule protects. Declared first by a member of the organisation that manages the
+programme in Connect, changed by the running organisation's own admins, and by
+staff or the system caller always (`runner/declaring.py`). See
 `docs/superpowers/specs/2026-10-12-supply-running-organisation-design.md`.
 """
 

@@ -167,6 +167,10 @@ def stamp_provenance(access, operation, payload):
 # Writes governed by `org_access` rather than by a programme: the organisation
 # registry is one for all of labs, and these name no programme to run.
 ORG_REGISTRY_WRITES = frozenset({"org_upsert", "org_merge"})
+# Declaring who runs a programme is how a programme with no runner gets one, so
+# no caller holds programme standing for it yet. It authorises itself
+# (`runner.declaring.require_may_declare`).
+SELF_AUTHORISED_WRITES = frozenset({"programme_runner_set"})
 
 
 def require_programme_standing(access, operation) -> None:
@@ -183,7 +187,7 @@ def require_programme_standing(access, operation) -> None:
 
     from connect_labs.supply_chain.runner import is_system, refusal, standing
 
-    if is_system(access) or operation.name in ORG_REGISTRY_WRITES:
+    if is_system(access) or operation.name in ORG_REGISTRY_WRITES | SELF_AUTHORISED_WRITES:
         return
     if getattr(access, "program_id", None) in (None, ""):
         return

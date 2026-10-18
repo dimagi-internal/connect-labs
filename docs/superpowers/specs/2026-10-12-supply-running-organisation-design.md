@@ -273,3 +273,37 @@ authorise anything).
   Support adds the FIRST admin with `manage.py supply_team_add <program> <email>
   --role admin`, which runs the same operation as the system caller. Dimagi has
   no team list: its people are recognised by their address.
+
+## 10. A programme's managers declare it (2026-10-18)
+
+Staff-only declaration left every new programme with no runner until someone asked
+support, and its own managers partners in it (measured: program 353, `org_id: null`,
+`your_standing: "partner"` for a member of the organisation that manages it). §1's
+"declaring is staff-only" is replaced by `runner/declaring.py`:
+
+- **First declaration:** a member of the organisation that manages the programme in
+  Connect. That is read from Connect's own `opp_org_program_list` for the caller's
+  token (Connect lists a programme only to members of the organisation that owns it),
+  with every labs-only entry removed, so a synthetic registration's name-bucket never
+  counts. A programme made since the cached list is fetched again before refusing.
+- **Changing it:** an admin granted for the current running organisation, or a Connect
+  member of it when Connect knows it (labs cannot see Connect's admin role). A
+  Dimagi-run programme changes only by support: Dimagi's members are a domain.
+- **Whom they may name:** the managing organisation (by Connect id, never slug);
+  Dimagi, when the caller is Dimagi and manages it; an organisation delivering an
+  opportunity in the programme as Connect lists it (by Connect slug, refused when two
+  rows claim it); an organisation awarded a call for the programme by its manager or
+  current runner; the organisation whose call awarded the current runner (handing it
+  back). Never a labs-only row. Support declares anything, as before.
+
+Unchanged: `declared_by` (now any declarer, not only an operator), revoking the new
+runner's update links, the open-to-any-domain refusal, the cached standing reset, and
+a running organisation's row being support-only to change (§8 C1).
+
+Two consequences, both needed for an awarded implementer to run a programme:
+
+- **A declared runner's members hold the programme** (`SupplyDataAccess`), even
+  though Connect lists it only to its manager. Not for Dimagi: a Dimagi address that
+  Connect does not list a Dimagi-run programme to still does not hold it.
+- **A Connect member of a Connect-known runner changes its team**, as its admins do;
+  otherwise nobody but support could add the first person to such a team.

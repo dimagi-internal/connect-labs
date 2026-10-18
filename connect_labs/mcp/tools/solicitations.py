@@ -487,7 +487,12 @@ def create_solicitation(
             "llo_entity_id": {
                 "type": "string",
                 "default": "individual",
-                "description": "The responding organisation's labs slug, or 'individual'.",
+                "description": (
+                    "The responding organisation: its LABS organisation slug (as supply_chain_org_list / "
+                    "supply_chain_org_upsert return it; a Connect slug or id also resolves), or 'individual'. "
+                    "An owner entering a response on a firm's behalf may name any organisation on file; "
+                    "create it first with supply_chain_org_upsert if it is not."
+                ),
             },
             "responses": {
                 "type": "object",
@@ -698,7 +703,13 @@ def delete_solicitation(
             },
             "org_id": {
                 "type": "string",
-                "description": "The organization ID of the winning respondent.",
+                "description": (
+                    "The winning organisation's CONNECT organisation id (Connect's integer id, as a string), "
+                    "which the contract will name in Connect. Recorded on the award as given -- it is not a "
+                    "labs organisation pk or slug, and it does not choose who is awarded: the response's own "
+                    "organisation (its llo_entity) is the awardee, and that is what a programme's manager "
+                    "may later declare to run the programme (supply_chain_programme_runner_set)."
+                ),
             },
             "fund_id": {
                 "type": "integer",
