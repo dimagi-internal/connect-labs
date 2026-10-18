@@ -17,6 +17,7 @@ urlpatterns = [
     path("rounds/", views.rounds, name="rounds"),
     path("rounds/<slug:slug>/", views.round_detail, name="round"),
     path("rounds/<slug:slug>/scores/", views.round_scores, name="round_scores"),
+    path("rounds/<slug:slug>/summary/", views.round_summary, name="round_summary"),
     path("unmatched/", views.unmatched, name="unmatched"),
     path("org/<slug:slug>/", views.organisation, name="organisation"),
 ]

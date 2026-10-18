@@ -26,7 +26,7 @@ from django.db.models import Q
 from django.http import HttpRequest
 from django.utils import timezone
 
-from connect_labs.solicitations import access, demo
+from connect_labs.solicitations import access, demo, vocabulary
 from connect_labs.solicitations.local_models import (
     AWARD_STAGES,
     OUTCOMES,
@@ -280,6 +280,24 @@ class SolicitationsDataAccess:
         if not self.caller.is_authenticated:
             return None
         return by_public_id(Solicitation.objects.directory_rounds(), solicitation_id)
+
+    def set_round_summary(self, slug: str, url: str) -> Solicitation:
+        """Link a directory round to its written summary, or clear the link with an empty url."""
+        from django.core.validators import URLValidator
+
+        round_ = Solicitation.objects.directory_rounds().select_related("owner_org").filter(slug=slug).first()
+        if round_ is None:
+            raise Solicitation.DoesNotExist(f"No marketplace round with slug {slug!r}")
+        access.require(
+            access.can_set_round_criteria(self.caller, round_),
+            "Only members of the organisation that ran this round may link its summary.",
+        )
+        url = (url or "").strip()
+        if url:
+            URLValidator(schemes=["https"])(url)
+        round_.summary_url = url
+        round_.save(update_fields=["summary_url"])
+        return round_
 
     def set_round_criteria(self, slug: str, criteria: list, basis: str = "") -> Solicitation:
         """Replace a directory round's evaluation criteria, and bump its rubric version.
@@ -913,9 +931,15 @@ class SolicitationsDataAccess:
             review.criteria_notes = data["criteria_notes"] or {}
         if "flags" in data:
             flags = data["flags"] or []
-            review.flags = [
-                f.strip() for f in (flags.split(",") if isinstance(flags, str) else flags) if str(f).strip()
+            written = [
+                str(f).strip() for f in (flags.split(",") if isinstance(flags, str) else flags) if str(f).strip()
             ]
+            unknown = [f for f in written if vocabulary.flag_key(f) is None]
+            if unknown:
+                raise ValidationError(
+                    {"flags": f"{unknown} are not flags. Use one of: {', '.join(vocabulary.FLAGS)}."}
+                )
+            review.flags = list(dict.fromkeys(vocabulary.flag_key(f) for f in written))
         if "provenance" in data:
             review.provenance = data["provenance"] or {}
         if "claims" in data:

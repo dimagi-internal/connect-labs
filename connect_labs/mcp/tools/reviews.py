@@ -13,10 +13,21 @@ import logging
 
 from django.core.exceptions import PermissionDenied, ValidationError
 
+from connect_labs.solicitations import vocabulary
 from connect_labs.solicitations.data_access import SolicitationsDataAccess
 from connect_labs.solicitations.local_models import SolicitationResponse, SolicitationReview
 
 from ..tool_registry import MCPToolError, register  # noqa: F401
+
+# Each word with what it means, so an agent writes the same vocabulary a person reads.
+_OUTCOME_HELP = "For a marketplace round, the recommendation: " + "; ".join(
+    f"{key} = {m['label']} ({m['definition']})" for key, m in vocabulary.OUTCOMES.items()
+)
+_FLAG_HELP = (
+    "Things to check before relying on the response; a flag costs no points by itself, and each needs a "
+    "`flag` claim saying what raised it. Only these: "
+    + "; ".join(f"{key} = {m['label']}: {m['definition']}" for key, m in vocabulary.FLAGS.items())
+)
 
 logger = logging.getLogger(__name__)
 
@@ -193,15 +204,15 @@ _REVIEW_PUBLIC_WARNING = (
             "outcome": {
                 "type": "string",
                 "enum": ["pick", "backup", "waitlist", "pass", ""],
-                "description": "For a marketplace round: where this applicant lands.",
+                "description": _OUTCOME_HELP,
             },
             "strengths": {"type": "string", "description": "Strengths, citing the answers."},
             "concerns": {"type": "string", "description": "Concerns, citing the answers."},
             "ask_next": {"type": "string", "description": "Questions to ask the applicant before deciding."},
             "flags": {
                 "type": "array",
-                "items": {"type": "string"},
-                "description": "Short markers, e.g. generic-or-ai-drafted, cost-outlier, inflated-numbers, safety.",
+                "items": {"type": "string", "enum": list(vocabulary.FLAGS)},
+                "description": _FLAG_HELP,
             },
             "provenance": {
                 "type": "object",

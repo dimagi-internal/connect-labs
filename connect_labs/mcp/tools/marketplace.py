@@ -355,6 +355,7 @@ def marketplace_round_responses(user, slug: str, include_contacts: bool = False)
             "evaluation_criteria": round_.evaluation_criteria or [],
             "rubric_version": round_.rubric_version or "",
             "criteria_basis": round_.criteria_basis or "",
+            "summary_url": round_.summary_url or "",
             "questions_withheld": len(questions) - len(shown),
         },
         "responses": out,
@@ -386,7 +387,7 @@ def marketplace_round_responses(user, slug: str, include_contacts: bool = False)
 )
 def marketplace_round_scores(user, slug: str) -> dict[str, Any]:
     from connect_labs.marketplace import queries
-    from connect_labs.solicitations import access
+    from connect_labs.solicitations import access, vocabulary
     from connect_labs.solicitations.local_models import Solicitation
 
     round_ = Solicitation.objects.directory_rounds().select_related("owner_org").filter(slug=slug).first()
@@ -402,7 +403,14 @@ def marketplace_round_scores(user, slug: str) -> dict[str, Any]:
     reviewed = queries.review_status(round_, applicants)
     summary = queries.round_scores(round_, applicants)
     return {
-        "round": {"slug": round_.slug, "title": round_.title, "rubric_version": round_.rubric_version or ""},
+        "round": {
+            "slug": round_.slug,
+            "title": round_.title,
+            "rubric_version": round_.rubric_version or "",
+            "summary_url": round_.summary_url or "",
+        },
+        # What each outcome and flag key means, as the page shows it.
+        "vocabulary": {"outcomes": vocabulary.OUTCOMES, "flags": vocabulary.FLAGS},
         "criteria": summary["criteria"],
         "total": {"mean": summary["total_mean"], "median": summary["total_median"]},
         "outcomes": summary["outcomes"],
@@ -426,6 +434,42 @@ def marketplace_round_scores(user, slug: str) -> dict[str, Any]:
             for a in applicants
         ],
     }
+
+
+@register(
+    name="marketplace_round_summary_set",
+    description=(
+        "Link one marketplace EOI/RFP round to its written summary (the shortlist report, usually a "
+        "Google Doc), or clear the link with an empty url. The round page and its Scores page show "
+        "the link to the round's owners. An https URL only. Only members of the organisation that "
+        "ran the round may set it. Get the requester's approval first."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "slug": {"type": "string", "description": "The round's slug, from `marketplace_rounds_list`."},
+            "url": {"type": "string", "description": "The summary's https URL; empty to clear."},
+        },
+        "required": ["slug", "url"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def marketplace_round_summary_set(user, slug: str, url: str) -> dict[str, Any]:
+    from django.core.exceptions import PermissionDenied, ValidationError
+
+    from connect_labs.solicitations.data_access import SolicitationsDataAccess
+    from connect_labs.solicitations.local_models import Solicitation
+
+    try:
+        round_ = SolicitationsDataAccess(user=user).set_round_summary(slug, url)
+    except Solicitation.DoesNotExist as e:
+        raise MCPToolError("NOT_FOUND", str(e)) from e
+    except PermissionDenied as e:
+        raise MCPToolError("PERMISSION_DENIED", str(e)) from e
+    except ValidationError as e:
+        raise MCPToolError("BAD_REQUEST", "; ".join(e.messages)) from e
+    return {"slug": round_.slug, "summary_url": round_.summary_url}
 
 
 @register(

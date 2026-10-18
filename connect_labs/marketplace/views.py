@@ -23,15 +23,18 @@ import datetime
 
 from canopy_sdk.django.pages import panel_context as canopy_panel_context
 from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import Http404, JsonResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.http import require_POST
 
 from connect_labs.labs.chrome import page_chrome
 from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace import programs, queries
-from connect_labs.solicitations import access, past_calls
+from connect_labs.solicitations import access, past_calls, vocabulary
 from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
 
 # Nothing in the marketplace is scoped by the labs context selector, and on a
@@ -355,16 +358,62 @@ def round_detail(request, slug):
     )
 
 
-def _score_cell(score) -> dict:
-    """A criterion score and its shade: darker is higher, so a column reads at a glance."""
+# A score's band and shade: green 7-10, amber 4-6, red 1-3, deeper further from
+# the middle, so strong and weak cells draw the eye and a column reads at a glance.
+_SHADES = {
+    1: ("#fca5a5", "#7f1d1d"),
+    2: ("#fecaca", "#991b1b"),
+    3: ("#fee2e2", "#991b1b"),
+    4: ("#fef9c3", "#854d0e"),
+    5: ("#fef08a", "#854d0e"),
+    6: ("#fde047", "#713f12"),
+    7: ("#dcfce7", "#166534"),
+    8: ("#bbf7d0", "#166534"),
+    9: ("#86efac", "#14532d"),
+    10: ("#4ade80", "#14532d"),
+}
+
+
+def score_shade(score) -> str:
+    """Inline style for a 1-10 score; empty when there is none."""
     if not isinstance(score, (int, float)):
-        return {"score": None, "style": ""}
-    strength = min(max(float(score), 0), 10) / 10
-    text = "#ffffff" if strength >= 0.75 else "#1e1b4b"
-    return {
-        "score": score,
-        "style": f"background: rgba(79, 70, 229, {0.08 + 0.8 * strength:.2f}); color: {text}",
-    }
+        return ""
+    background, text = _SHADES[min(max(int(round(score)), 1), 10)]
+    return f"background: {background}; color: {text}"
+
+
+def _score_cell(score) -> dict:
+    return {"score": score if isinstance(score, (int, float)) else None, "style": score_shade(score)}
+
+
+def _flag_chips(keys: list[str]) -> list[dict]:
+    """Each flag with the label and definition a reader sees."""
+    return [
+        {"key": key, **vocabulary.FLAGS.get(key, {"label": key, "definition": "Not one of the defined flags."})}
+        for key in keys
+    ]
+
+
+@login_required
+@require_POST
+def round_summary(request, slug):
+    """Link the round to its written summary, by hand: what `marketplace_round_summary_set` does for an agent."""
+    from django.core.exceptions import PermissionDenied, ValidationError
+
+    from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+    back = request.POST.get("next") or reverse("marketplace:round", args=[slug])
+    if not url_has_allowed_host_and_scheme(back, allowed_hosts={request.get_host()}):
+        back = reverse("marketplace:round", args=[slug])
+    try:
+        SolicitationsDataAccess(request=request).set_round_summary(slug, request.POST.get("summary_url", ""))
+    except Solicitation.DoesNotExist as e:
+        raise Http404("No such round") from e
+    except PermissionDenied as e:
+        raise Http404("No such round") from e
+    except ValidationError:
+        messages.error(request, "That is not an https link. Paste the summary's full address.")
+    return redirect(back)
 
 
 @login_required
@@ -381,6 +430,16 @@ def round_scores(request, slug):
     summary = queries.round_scores(round_, applicants)
     for a in applicants:
         a["cells"] = [_score_cell(a["review"]["criteria_scores"].get(c["id"])) for c in summary["criteria"]]
+        a["flag_chips"] = _flag_chips(a["review"]["flags"])
+    # Shades are the page's: the figures stay as `marketplace_round_scores` returns them.
+    criteria_rows = [
+        {
+            **c,
+            "mean_style": score_shade(c["mean"]),
+            "spread": [{**b, "colour": _SHADES[b["score"]][0] if b["count"] else "#f3f4f6"} for b in c["spread"]],
+        }
+        for c in summary["criteria"]
+    ]
     countries = sorted({a["country"] for a in applicants if a["country"]})
     return render(
         request,
@@ -390,7 +449,22 @@ def round_scores(request, slug):
             "applicants": applicants,
             "reviewed": reviewed,
             "summary": summary,
+            "criteria_rows": criteria_rows,
             "countries": countries,
+            "flag_counts": [
+                {**chip, "count": count}
+                for chip, (_, count) in zip(_flag_chips([k for k, _ in summary["flags"]]), summary["flags"])
+            ],
+            "outcomes": [
+                {"key": key, **meaning, "count": summary["outcomes"][key]}
+                for key, meaning in vocabulary.OUTCOMES.items()
+            ]
+            + [{"key": "", **vocabulary.NO_OUTCOME, "count": summary["outcomes"]["undecided"]}],
+            "flag_vocabulary": list(vocabulary.FLAGS.items()),
+            # The same shades for the figures the filter recomputes in the page.
+            "shade_scale": {str(score): list(shade) for score, shade in _SHADES.items()},
+            "set_by_people": sum(1 for a in applicants if a["review"]["by_person"] and a["review"]["outcome"]),
+            "can_edit": access.can_set_round_criteria(request, round_),
             # The same figures an agent reads through `marketplace_round_scores`.
             "canopy_panel": canopy_panel_context(
                 request,

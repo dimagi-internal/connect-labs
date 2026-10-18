@@ -805,13 +805,18 @@ def _effective_scores(review) -> dict:
 
 
 def _effective_flags(review) -> list[str]:
-    """A review's flags, the AI's included when it adds to the AI's review."""
+    """A review's flags as defined flags, the AI's included when it adds to the AI's review.
+
+    Free-text flags written before the list existed read as the flag they meant
+    (`vocabulary.LEGACY_FLAGS`); one that matches nothing is kept as written.
+    """
+    from connect_labs.solicitations import vocabulary
+
     if review is None:
         return []
-    flags = list(review.flags or [])
-    if review.stance == "adds" and review.based_on is not None:
-        flags = [f for f in review.based_on.flags or [] if f not in flags] + flags
-    return [str(f) for f in flags]
+    flags = list(review.based_on.flags or []) if review.stance == "adds" and review.based_on is not None else []
+    flags += list(review.flags or [])
+    return list(dict.fromkeys(vocabulary.flag_key(f) or str(f) for f in flags))
 
 
 def review_status(round_: Solicitation, applicants: list[dict]) -> dict:
@@ -1202,7 +1207,9 @@ def round_scores(round_: Solicitation, applicants: list[dict]) -> dict:
     together is not what decided the slate. Every figure is the lead review's
     (a person's, else the AI's), the same one the round page shows.
     """
-    shortlisted = {"pick", "backup"}
+    from connect_labs.solicitations import vocabulary
+
+    shortlisted = set(vocabulary.SHORTLIST)
     criteria = []
     for c in round_.evaluation_criteria or []:
         scored = [

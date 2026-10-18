@@ -26,7 +26,7 @@ from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
 
 from connect_labs.microplans.core.solicitation_snapshot import build_plan_snapshot
-from connect_labs.solicitations import access, demo, evidence, past_calls
+from connect_labs.solicitations import access, demo, evidence, past_calls, vocabulary
 from connect_labs.solicitations.data_access import AlreadyAwarded, SolicitationsDataAccess, by_public_id
 from connect_labs.solicitations.forms import NEW_ORG, ReviewForm, SolicitationForm, SolicitationResponseForm
 from connect_labs.solicitations.local_models import REVIEW_AI, SOURCE_DIRECTORY, Solicitation, SolicitationResponse
@@ -1287,7 +1287,7 @@ class ReviewView(SignedInPage):
                     "tags": start.tags,
                     "outcome": start.outcome,
                     "ask_next": start.ask_next,
-                    "flags": ", ".join(start.flags or []),
+                    "flags": [k for k in (vocabulary.flag_key(f) for f in start.flags or []) if k],
                     "claims_json": json.dumps(evidence.claims_of(start)),
                     **{f"criteria_score_{k}": v for k, v in (start.criteria_scores or {}).items()},
                 }
@@ -1298,11 +1298,12 @@ class ReviewView(SignedInPage):
                 if initial["stance"] == "adds":
                     # Adding to a review keeps it whole: the scores and outcome
                     # start as its, and everything written here is an addition.
-                    initial.update({"claims_json": "[]", "ask_next": "", "flags": "", "notes": ""})
+                    initial.update({"claims_json": "[]", "ask_next": "", "flags": [], "notes": ""})
             ctx["form"] = ReviewForm(evaluation_criteria=eval_criteria, initial=initial, for_round=is_round)
         if is_round:
             ctx.update(_round_reading_context(solicitation, response))
             ctx["evidence"] = {"legend": evidence.legend(eval_criteria)}
+            ctx["flag_definitions"] = list(vocabulary.FLAGS.items())
             # What an addition is added to: shown read-only beside each criterion.
             form = ctx["form"]
             base = source if source is not None else (existing.based_on if existing and existing.based_on_id else None)
