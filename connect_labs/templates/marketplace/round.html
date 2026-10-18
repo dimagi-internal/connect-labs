@@ -14,7 +14,7 @@
 
   <div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-6 py-5 sm:py-[22px] mb-4.5">
     <div class="flex flex-wrap items-start justify-between gap-5 sm:gap-7">
-      <div class="max-w-2xl">
+      <div class="w-full xl:max-w-xl xl:flex-1">
         <div class="flex items-center gap-2.5 mb-2">
           <span class="text-[10px] font-semibold tracking-wider px-1.5 py-0.5 rounded {% if round.solicitation_type == 'rfp' %}bg-red-50 text-red-800{% else %}bg-indigo-50 text-brand-indigo{% endif %}">{{ round.solicitation_type|upper }}</span>
           {% if round.status == 'active' %}
@@ -32,6 +32,26 @@
         {% if round.target_countries %}
           <div class="text-[13px] text-gray-600 mt-1.5 leading-relaxed">{{ round.target_countries }}</div>
         {% endif %}
+        {% if trend %}
+          {% comment %}
+          Server-rendered bars rather than a chart library: it is one series with
+          no interaction. Heights are percentages of the busiest bucket, so the
+          shape survives any column width.
+          {% endcomment %}
+          <div class="mt-4" data-testid="arrivals">
+            <div class="flex flex-wrap items-baseline justify-between gap-x-3 text-[11px] text-gray-400 mb-1">
+              <span class="tracking-wide">SUBMISSIONS PER {% if trend.0.days == 1 %}DAY{% else %}WEEK{% endif %}</span>
+              <span>{{ trend.0.start|date:"j M" }} – {{ span_end|date:"j M Y" }}</span>
+            </div>
+            <div class="flex items-end gap-px sm:gap-[3px] h-[44px]">
+              {% for bucket in trend %}
+                <div class="flex-1 rounded-t-sm {% if bucket.count %}bg-brand-indigo/70{% else %}bg-gray-100{% endif %}"
+                     style="height: {% if bucket.count %}{{ bucket.pct }}%{% else %}2px{% endif %}; min-height: 2px;"
+                     title="{{ bucket.count }} submission{{ bucket.count|pluralize }} {% if bucket.days == 1 %}on{% else %}in the week from{% endif %} {{ bucket.start|date:'j M Y' }}"></div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
       </div>
 
       <div class="flex flex-wrap gap-x-7 gap-y-4 sm:gap-8 w-full xl:w-auto xl:shrink-0">
@@ -48,17 +68,18 @@
           {% endif %}
         </div>
         {% if can_read %}
-        <div>
-          <div class="text-[22px] sm:text-[25px] font-semibold text-green-700 tabular-nums">{{ after_count }}</div>
-          <div class="text-[11px] text-gray-400 tracking-wide">STARTED AFTER</div>
-          {% if before_count %}
-            <div class="text-[11px] text-gray-400 mt-0.5">{{ before_count }} already delivering</div>
-          {% endif %}
+        <div title="Applicants whose first verified delivery on Connect came after this round{% if since %} closed ({{ since|date:'j M Y' }}){% endif %}. It says which came first, not that the round caused it.">
+          <div class="text-[22px] sm:text-[25px] font-semibold {% if after_count %}text-green-700{% else %}text-gray-300{% endif %} tabular-nums">{{ after_count }}</div>
+          <div class="text-[11px] text-gray-400 tracking-wide">NOW DELIVERING</div>
+          <div class="text-[11px] text-gray-400 mt-0.5">started on Connect after this round{% if before_count %} · {{ before_count }} already were{% endif %}</div>
         </div>
+        {% if unresolved_count %}
         <div>
-          <div class="text-[22px] sm:text-[25px] font-semibold {% if unresolved_count %}text-brand-sunset{% else %}text-gray-300{% endif %} tabular-nums">{{ unresolved_count }}</div>
-          <div class="text-[11px] text-gray-400 tracking-wide" title="Submissions not yet matched to an organization in the directory">NOT MATCHED</div>
+          <div class="text-[22px] sm:text-[25px] font-semibold text-brand-sunset tabular-nums">{{ unresolved_count }}</div>
+          <div class="text-[11px] text-gray-400 tracking-wide">UNIDENTIFIED</div>
+          <a href="{% url 'marketplace:unmatched' %}" class="text-[11px] text-brand-indigo hover:text-brand-deep-purple mt-0.5 block">not linked to a directory org · match</a>
         </div>
+        {% endif %}
         <div title="Applicants a person has reviewed; the rest have only the AI first pass, or nothing">
           <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ reviewed.people }}<span class="text-gray-300 text-[16px]">/{{ applicants|length }}</span></div>
           <div class="text-[11px] text-gray-400 tracking-wide">CHECKED BY A PERSON</div>
@@ -121,7 +142,7 @@
         </thead>
         <tbody class="divide-y divide-gray-100">
           {% for a in applicants %}
-            <tr class="hover:bg-gray-50 transition">
+            <tr class="hover:bg-gray-50 transition cursor-pointer" data-href="{% url 'solicitations:response_detail' a.response.pk %}">
               <td class="px-4 sm:px-5 py-3" data-sort-value="{{ a.name|lower }}">
                 <div class="flex items-center gap-2.5">
                   <span class="w-[26px] h-[26px] rounded-md inline-flex items-center justify-center text-[10px] font-semibold shrink-0
@@ -269,29 +290,6 @@
       {% endif %}
     </div>
   </div>
-  {% if trend %}
-    {% comment %}
-    Server-rendered bars rather than a chart library: it is one series with no
-    interaction, and the round page loads no JavaScript at all today. Heights
-    are percentages of the busiest bucket, so the shape survives any column
-    width.
-    {% endcomment %}
-    <div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-6 py-[18px] mt-4.5">
-      <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 mb-3">
-        <span class="text-sm font-semibold text-brand-deep-purple">When the submissions arrived</span>
-        <span class="text-[11.5px] text-gray-400">
-          {{ trend.0.start|date:"j M Y" }} – {{ span_end|date:"j M Y" }}
-        </span>
-      </div>
-      <div class="flex items-end gap-px sm:gap-[3px] h-[60px] sm:h-[76px]">
-        {% for bucket in trend %}
-          <div class="flex-1 rounded-t-sm {% if bucket.count %}bg-brand-indigo/70{% else %}bg-gray-100{% endif %}"
-               style="height: {% if bucket.count %}{{ bucket.pct }}%{% else %}2px{% endif %}; min-height: 2px;"
-               title="{{ bucket.count }} submission{{ bucket.count|pluralize }} from {{ bucket.start|date:'j M Y' }}"></div>
-        {% endfor %}
-      </div>
-    </div>
-  {% endif %}
 
 </div>
 {% endblock %}
@@ -302,5 +300,17 @@ inside <head>, where `document.body` is still null.
 {% endcomment %}
 {% block inline_javascript %}
   <script src="{% static 'supply_chain/sheet_sort.js' %}"></script>
+  <script>
+    // A row opens that applicant's submission; links inside it (the
+    // organization, "not matched") keep their own targets, and a selection
+    // is someone copying a name, not choosing a row.
+    document.querySelectorAll("tr[data-href]").forEach((row) => {
+      row.addEventListener("click", (event) => {
+        if (event.target.closest("a") || String(window.getSelection())) return;
+        if (event.metaKey || event.ctrlKey) window.open(row.dataset.href, "_blank");
+        else window.location.href = row.dataset.href;
+      });
+    });
+  </script>
   {% include "canopy_host/panel.html" %}
 {% endblock %}

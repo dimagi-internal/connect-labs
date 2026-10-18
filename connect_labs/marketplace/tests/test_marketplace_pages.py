@@ -229,6 +229,13 @@ class TestRoundPage:
         form = client.get(reverse("solicitations:respond", args=[round_.public_id])).content.decode()
         assert "Annual budget" in form
 
+    def test_each_row_opens_that_submission(self, client, user, marketplace):
+        client.force_login(user)
+        round_ = Solicitation.objects.get(slug="chc-2025")
+        body = client.get(reverse("marketplace:round", args=["chc-2025"])).content.decode()
+        for response in round_.responses.all():
+            assert f'data-href="{reverse("solicitations:response_detail", args=[response.pk])}"' in body
+
     def test_an_unresolved_applicant_links_to_the_queue(self, client, user, marketplace):
         client.force_login(user)
         body = client.get(reverse("marketplace:round", args=["chc-2025"])).content.decode()
@@ -470,12 +477,15 @@ class TestTheRoundPageDoesNotClaimCausation:
         assert "not that one caused the other" in body
         assert "already delivering" in body
 
-    def test_not_matched_is_explained_where_it_is_read(self, client, user, timed):
-        """Called "needs a verdict" until reviewing moved onto the page, where it
-        read as "needs a review decision"."""
+    def test_not_matched_is_explained_where_it_is_read(self, client, user, timed, marketplace):
+        """A bare "NOT MATCHED" read as a review decision. The count says what it
+        is and links to where it is fixed, and is gone when there is nothing to fix."""
         client.force_login(user)
+        body = client.get(reverse("marketplace:round", args=["chc-2025"])).content.decode()
+        assert "UNIDENTIFIED" in body
+        assert "not linked to a directory org" in body
         body = client.get(reverse("marketplace:round", args=["timed-2025"])).content.decode()
-        assert "not yet matched to an organization in the directory" in body
+        assert "UNIDENTIFIED" not in body
 
 
 @pytest.mark.django_db
@@ -541,7 +551,7 @@ class TestTheSubmissionTrend:
     def test_the_page_draws_the_trend(self, client, user, spread):
         client.force_login(user)
         body = client.get(reverse("marketplace:round", args=["spread-2025"])).content.decode()
-        assert "When the submissions arrived" in body
+        assert "SUBMISSIONS PER" in body
         assert "submissions from 3 Feb 2025" in body or "submission" in body
 
 
