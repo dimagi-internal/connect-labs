@@ -180,3 +180,20 @@ def parse_submissions(rows: list[list[str]], overrides: dict | None = None) -> t
             )
         )
     return questions, submissions
+
+
+# Personal fields the column detector does not name: a phone number, and the
+# declaration's "Name, Role, and Date" signature line.
+_PERSONAL_HEADER = re.compile(r"\b(phone|telephone|whatsapp|mobile)\b|^name,? (and )?(role|title)|signature", re.I)
+
+
+def personal_question_ids(questions: list[dict], column_map: dict | None = None) -> set[str]:
+    """The answers that are a person's contact details rather than the organisation's.
+
+    Left out of what agents read by default, and folded away on the pages a
+    reviewer reads: judging an application never needs them.
+    """
+    parsed = [Question(id=q["id"], text=q.get("text", ""), column=q.get("column", 0)) for q in questions]
+    found = detect_columns(parsed, column_map or None)
+    ids = {found[f] for f in ("email", "contact_name") if f in found}
+    return ids | {q.id for q in parsed if _PERSONAL_HEADER.search(q.text.strip())}

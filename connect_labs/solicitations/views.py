@@ -96,6 +96,35 @@ def _solicitation_or_404(da, pk):
     return solicitation
 
 
+def _round_reading_context(solicitation, response) -> dict:
+    """What a page needs to show a round's response for reviewing.
+
+    The contact person's details are folded away rather than leading the page:
+    judging an application never needs them. Previous and next follow the round
+    page's own order, so a reviewer can work through the list without going back.
+    """
+    from connect_labs.labs.chrome import PageChrome
+    from connect_labs.marketplace import queries
+    from connect_labs.marketplace.responses import personal_question_ids
+
+    questions = past_calls.form_questions(solicitation)
+    personal = personal_question_ids(questions, solicitation.column_map)
+    stored = response.responses or {}
+    rows = [{"id": q["id"], "question": q.get("text", ""), "answer": stored.get(q["id"], "")} for q in questions]
+    order = [a["response"].pk for a in queries.round_applicants(solicitation, {})]
+    at = order.index(response.pk) if response.pk in order else None
+    return {
+        "answers": [r for r in rows if r["id"] not in personal],
+        "contact": [r for r in rows if r["id"] in personal and r["answer"]],
+        "position": (at + 1) if at is not None else None,
+        "applicant_count": len(order),
+        "previous_pk": order[at - 1] if at else None,
+        "next_pk": order[at + 1] if at is not None and at + 1 < len(order) else None,
+        # A marketplace page, whatever URL it sits at: no labs context picker.
+        "page_chrome": PageChrome(labs_context=False, pulse_widget=False),
+    }
+
+
 def _is_round(solicitation) -> bool:
     """A marketplace EOI round: answered on its Google Form, never here."""
     return solicitation.source == SOURCE_DIRECTORY
@@ -1041,12 +1070,7 @@ class ResponseDetailView(SignedInPage):
         self._is_round = is_round
         my_review = next((r for r in reviews if r.kind != REVIEW_AI and r.reviewer_id == da.caller.user_pk), None)
         if is_round:
-            from connect_labs.solicitations import evidence
-
-            ctx["answers"] = [
-                {"id": q["id"], "question": q.get("text", ""), "answer": (response.responses or {}).get(q["id"], "")}
-                for q in past_calls.form_questions(solicitation)
-            ]
+            ctx.update(_round_reading_context(solicitation, response))
             ctx["evidence"] = {
                 "legend": evidence.legend(solicitation.evaluation_criteria),
                 "reviews": [
@@ -1271,10 +1295,7 @@ class ReviewView(SignedInPage):
                 initial.update({"based_on": source.pk, "stance": self.request.GET.get("stance") or "amended"})
             ctx["form"] = ReviewForm(evaluation_criteria=eval_criteria, initial=initial, for_round=is_round)
         if is_round:
-            ctx["answers"] = [
-                {"id": q["id"], "question": q.get("text", ""), "answer": (response.responses or {}).get(q["id"], "")}
-                for q in questions
-            ]
+            ctx.update(_round_reading_context(solicitation, response))
             ctx["evidence"] = {"legend": evidence.legend(eval_criteria)}
         return ctx
 
