@@ -21,6 +21,7 @@ from connect_labs.labs.synthetic.dump import _fetch_endpoint
 from connect_labs.labs.synthetic.gdrive import DriveClient
 from connect_labs.labs.synthetic.generator.fixtures.engine import generate as _generate
 from connect_labs.labs.synthetic.generator.fixtures.fidelity import compare, compare_to_source
+from connect_labs.labs.synthetic.generator.fixtures.form_flow import FormFlowError
 from connect_labs.labs.synthetic.generator.fixtures.manifest import (
     Manifest,
     ManifestValidationError,
@@ -28,7 +29,10 @@ from connect_labs.labs.synthetic.generator.fixtures.manifest import (
     UniformDistribution,
 )
 from connect_labs.labs.synthetic.generator.fixtures.profiler import profile as _profile
-from connect_labs.labs.synthetic.generator.fixtures.schema_loader import FormSchema, parse_form_schema_from_app_json
+from connect_labs.labs.synthetic.generator.fixtures.schema_loader import (
+    parse_form_schema_from_app_json,
+    parse_form_schemas_from_app_json,
+)
 from connect_labs.labs.synthetic.generator.io.uploader import upload_and_register
 from connect_labs.labs.synthetic.invalidation import invalidate_synthetic_caches
 from connect_labs.labs.synthetic.models import SyntheticOpportunity
@@ -714,27 +718,27 @@ def _load_opportunity_detail(opportunity_id: int, user) -> dict:
         client.close()
 
 
-def _load_form_schema_for_opp(opportunity_id: int, user) -> FormSchema:
-    """Resolve the opp's primary deliver form schema by hitting Connect's app_structure endpoint.
+def _load_app_structure_for_opp(opportunity_id: int, user) -> dict:
+    """The opp's deliver app structure, from Connect's app_structure endpoint.
 
     Calls ``/export/opportunity/<id>/app_structure/?app_type=deliver`` (the same
-    upstream the ``get_opportunity_apps`` MCP tool uses) and translates the
-    deliver app's primary form into ``QuestionSpec`` entries via
-    ``parse_form_schema_from_app_json``.
+    upstream the ``get_opportunity_apps`` MCP tool uses). The caller reads it as one
+    merged schema (``parse_form_schema_from_app_json``) and as its forms one by one
+    (``parse_form_schemas_from_app_json``, for a ``form_flow`` manifest).
 
-    Falls back to an empty FormSchema if the user has no Connect token, the
-    upstream call fails, or the opp has no deliver app. The engine's field
-    filler tolerates an empty schema (no per-question form_json fields are
-    added, but every visit still carries the standard 23 metadata fields).
+    Falls back to ``{}`` -- an empty schema and no forms -- if the user has no
+    Connect token, the upstream call fails, or the opp has no deliver app. The
+    engine's field filler tolerates an empty schema (no per-question form_json
+    fields are added, but every visit still carries the standard 23 metadata fields).
     """
     try:
         token = require_connect_token(user)
     except MCPToolError:
         logger.warning(
-            "synthetic_generate_from_manifest: no Connect token for user; " "using empty form_schema for opp_id=%s",
+            "synthetic_generate_from_manifest: no Connect token for user; using an empty app structure for opp_id=%s",
             opportunity_id,
         )
-        return FormSchema(questions=[])
+        return {}
 
     client = LabsRecordAPIClient(access_token=token)
     try:
@@ -748,15 +752,15 @@ def _load_form_schema_for_opp(opportunity_id: int, user) -> FormSchema:
                 opportunity_id,
                 exc,
             )
-            return FormSchema(questions=[])
+            return {}
         if resp.status_code >= 400:
             logger.warning(
                 "synthetic_generate_from_manifest: app_structure GET %s returned %s; falling back to empty schema.",
                 url,
                 resp.status_code,
             )
-            return FormSchema(questions=[])
-        return parse_form_schema_from_app_json(resp.json(), app_type="deliver")
+            return {}
+        return resp.json()
     finally:
         client.close()
 
@@ -808,8 +812,17 @@ def synthetic_generate_from_manifest(
         )
 
     detail = _load_opportunity_detail(opportunity_id, user)
-    form_schema = _load_form_schema_for_opp(opportunity_id, user)
-    fixtures = _generate(manifest=manifest, opportunity_detail=detail, form_schema=form_schema)
+    app_json = _load_app_structure_for_opp(opportunity_id, user)
+    form_schema = parse_form_schema_from_app_json(app_json, app_type="deliver")
+    try:
+        fixtures = _generate(
+            manifest=manifest,
+            opportunity_detail=detail,
+            form_schema=form_schema,
+            app_forms=parse_form_schemas_from_app_json(app_json, app_type="deliver"),
+        )
+    except FormFlowError as exc:
+        raise MCPToolError("INVALID_SCHEMA", str(exc))
     drive = DriveClient()
     result = upload_and_register(
         drive=drive,

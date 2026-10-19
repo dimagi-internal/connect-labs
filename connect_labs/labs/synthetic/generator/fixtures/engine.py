@@ -20,7 +20,7 @@ from .fields import _outlier, fill_form_json
 from .images import assign_visit_images
 from .manifest import Manifest
 from .opportunity import build_opportunity
-from .schema_loader import FormSchema
+from .schema_loader import AppForm, FormSchema, parse_form_schemas_from_app_json
 from .showcase import build_showcase_visits
 from .status import authored_visit_status, decide_visit_status
 from .tasks import build_task_records
@@ -369,7 +369,10 @@ def generate(
     opportunity_detail: dict[str, Any],
     form_schema: FormSchema,
     app_structure: dict[str, Any] | None = None,
+    app_forms: list[AppForm] | None = None,
 ) -> dict[str, Any]:
+    """``app_forms``: the deliver app's forms one by one, which a ``form_flow`` manifest
+    generates against; read from ``app_structure`` when not given."""
     rng = random.Random(manifest.random_seed)
     personas = manifest.flw_personas
     persona_index = _persona_index(manifest)
@@ -391,6 +394,27 @@ def generate(
             persona_index=persona_index,
             personas=personas,
             deliver_unit_id=deliver_unit_id,
+        )
+        return _assemble(
+            manifest=manifest,
+            visits=visits,
+            personas=personas,
+            payment_units=payment_units,
+            opportunity_detail=opportunity_detail,
+            app_structure=app_structure,
+            rng=rng,
+        )
+
+    if manifest.form_flow is not None:
+        # Imported here: form_flow builds on this module's helpers.
+        from .form_flow import build_form_flow_visits
+
+        visits = build_form_flow_visits(
+            manifest=manifest,
+            cohort=cohort,
+            app_forms=app_forms if app_forms is not None else parse_form_schemas_from_app_json(app_structure or {}),
+            opportunity_detail=opportunity_detail,
+            rng=rng,
         )
         return _assemble(
             manifest=manifest,

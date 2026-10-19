@@ -152,11 +152,8 @@ def test_synthetic_generate_from_manifest_creates_folder_and_row(user, monkeypat
     )
     monkeypatch.setattr(
         syn_tools,
-        "_load_form_schema_for_opp",
-        lambda opp_id, user: __import__(
-            "connect_labs.labs.synthetic.generator.fixtures.schema_loader",
-            fromlist=["FormSchema"],
-        ).FormSchema(questions=[]),
+        "_load_app_structure_for_opp",
+        lambda opp_id, user: {},
     )
 
     from django.test import override_settings
@@ -169,6 +166,23 @@ def test_synthetic_generate_from_manifest_creates_folder_and_row(user, monkeypat
     assert result["folder_url"] == f"https://drive.google.com/drive/folders/{result['folder_id']}"
     assert "user_visits" in result["record_counts"]
     assert SyntheticOpportunity.objects.get(opportunity_id=4242).enabled is True
+
+
+@pytest.mark.django_db
+def test_synthetic_generate_refuses_a_paid_form_whose_deliver_unit_is_unknown(user, monkeypatch):
+    # A form flow that does not fit the opportunity comes back as a schema error,
+    # not a crash -- and nothing is uploaded.
+    from connect_labs.labs.synthetic.generator.fixtures.tests.test_form_flow import APP, DETAIL, _manifest_yaml
+    from connect_labs.mcp.tools import synthetic as syn_tools
+
+    monkeypatch.setattr(syn_tools, "_load_opportunity_detail", lambda opp_id, user: {**DETAIL, "deliver_units": []})
+    monkeypatch.setattr(syn_tools, "_load_app_structure_for_opp", lambda opp_id, user: APP)
+    monkeypatch.setattr(syn_tools, "DriveClient", lambda: pytest.fail("nothing should be uploaded"))
+    tool = get_tool("synthetic_generate_from_manifest")
+    with pytest.raises(MCPToolError) as exc:
+        tool.handler(user=user, opportunity_id=10950, manifest_yaml=_manifest_yaml(size=5))
+    assert exc.value.code == "INVALID_SCHEMA"
+    assert "adult_enrolled" in str(exc.value)
 
 
 @pytest.mark.django_db

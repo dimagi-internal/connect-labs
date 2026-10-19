@@ -691,6 +691,149 @@ class Geography(BaseModel):
         return self
 
 
+# ---------- Form flow (one visit per form, following the app's case flow) ----------
+
+
+class DayRange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    min: NonNegativeInt
+    max: NonNegativeInt
+
+    @model_validator(mode="after")
+    def _check_order(self):
+        if self.min > self.max:
+            raise ValueError(f"day range min ({self.min}) > max ({self.max})")
+        return self
+
+
+# Answer path -> value (or values) the beneficiary's latest answer there must equal.
+Condition = dict[str, str | list[str]]
+
+
+class DeliverUnitRef(BaseModel):
+    """A Connect deliver unit, by any of what Connect knows it by. The opportunity's own
+    ``deliver_units`` fill in the rest; an ``id`` given here is used as it stands."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: PositiveInt | None = None
+    slug: str | None = None  # the <deliver id="..."> of the form's Connect block
+    name: str | None = None
+
+    @model_validator(mode="after")
+    def _check_any(self):
+        if self.id is None and not self.slug and not self.name:
+            raise ValueError("a deliver_unit needs an id, slug or name")
+        return self
+
+
+class ConditionalAnswer(BaseModel):
+    """``value`` at ``path`` on ``share`` of the eligible beneficiaries' visits of this form.
+
+    Eligible: every ``when`` condition holds on the beneficiary's answers so far (this
+    visit's included). Whether a beneficiary is one of the ``share`` is drawn once, at
+    their first eligible visit. No other visit carries ``value`` at ``path``: there the
+    answer is ``otherwise``, or, without one, whatever the field draws unless that is
+    ``value``, in which case the field is left blank.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+    value: str
+    share: float = Field(ge=0, le=1)
+    when: Condition = Field(default_factory=dict)
+    at_most_once: bool = True
+    otherwise: str | None = None
+
+
+class FormSpec(BaseModel):
+    """One form of the app, and when a beneficiary gets a visit of it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # The form's name in the app (a submission's form.@name). The app structure
+    # supplies its questions and xmlns; ``xmlns`` here picks the form out instead.
+    name: str = Field(min_length=1)
+    xmlns: str | None = None
+    # registration: opens a beneficiary, once each. followup: a later visit to one.
+    # survey: not about a beneficiary at all -- ``per_week`` per worker.
+    role: Literal["registration", "followup", "survey"] = "followup"
+    # The Connect deliver unit a visit of this form is paid under: its id, its slug or
+    # name, or the three spelled out. None: Connect does not pay for this form.
+    deliver_unit: PositiveInt | str | DeliverUnitRef | None = None
+    # Forms the beneficiary must already have had; a followup's default is registration.
+    after: list[str] = Field(default_factory=list)
+    when: Condition = Field(default_factory=dict)
+    share: float = Field(ge=0, le=1, default=1.0)
+    delay_days: DayRange = Field(default_factory=lambda: DayRange(min=7, max=21))
+    count: PositiveInt = 1
+    interval_days: DayRange = Field(default_factory=lambda: DayRange(min=7, max=14))
+    per_week: float = Field(ge=0, default=1.0)
+    # Question paths this form records beyond the app structure's (or in place of it,
+    # when the opportunity has none): the cohort's distributions at these paths fill here.
+    fields: list[str] = Field(default_factory=list)
+    field_distributions: dict[str, FieldDistribution] = Field(default_factory=dict)
+    answers: list[ConditionalAnswer] = Field(default_factory=list)
+
+
+class FormFlow(BaseModel):
+    """Generate one visit per form, beneficiary by beneficiary, instead of a stream of
+    visits that each fill every form's questions (connect-labs#2620).
+
+    Each of the cohort's ``size`` beneficiaries is registered once by one worker, on
+    one of that worker's working days, and keeps one ``entity_id`` through every
+    visit after. A visit carries its form's name and xmlns, only that form's
+    questions, and -- on a paid form -- the deliver unit and the Connect
+    <deliver> block it is paid under.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    forms: list[FormSpec] = Field(min_length=1)
+    # Registrations fall in the first N weeks; None spreads them across the timeline.
+    registration_weeks: PositiveInt | None = None
+
+    @model_validator(mode="after")
+    def _check_flow(self):
+        names = [f.name for f in self.forms]
+        duplicate = {n for n in names if names.count(n) > 1}
+        if duplicate:
+            raise ValueError(f"form_flow names a form more than once: {sorted(duplicate)}")
+        registrations = [f.name for f in self.forms if f.role == "registration"]
+        if len(registrations) > 1:
+            raise ValueError(f"form_flow has more than one registration form: {registrations}")
+        if any(f.role == "followup" for f in self.forms) and not registrations:
+            raise ValueError("form_flow has follow-up forms but no registration form to open a beneficiary")
+        roles = {f.name: f.role for f in self.forms}
+        for f in self.forms:
+            for prior in f.after:
+                if prior not in roles:
+                    raise ValueError(f"form {f.name!r} comes after unknown form {prior!r}")
+                if roles[prior] == "survey" or f.role != "followup":
+                    raise ValueError(f"only a follow-up can come after another form ({f.name!r} after {prior!r})")
+        self.ordered()  # raises on a cycle
+        return self
+
+    def prior_forms(self, form: FormSpec) -> list[str]:
+        if form.role != "followup":
+            return []
+        return form.after or [f.name for f in self.forms if f.role == "registration"]
+
+    def ordered(self) -> list[FormSpec]:
+        """Beneficiary forms, every form after the forms it comes after."""
+        pending = [f for f in self.forms if f.role != "survey"]
+        done: list[FormSpec] = []
+        while pending:
+            ready = [f for f in pending if all(p in {d.name for d in done} for p in self.prior_forms(f))]
+            if not ready:
+                raise ValueError(f"form_flow's `after` has a cycle among {[f.name for f in pending]}")
+            done.extend(ready)
+            pending = [f for f in pending if f not in ready]
+        return done
+
+
 # ---------- Top-level manifest ----------
 
 
@@ -729,6 +872,9 @@ class Manifest(BaseModel):
     status_by_flag: dict[
         Literal["flagged", "unflagged"], dict[Literal["approved", "pending", "rejected", "over_limit"], float]
     ] = Field(default_factory=dict)
+    # One visit per form, following the app's case flow (FormFlow). None keeps the
+    # one-stream-of-visits generator every manifest before connect-labs#2620 used.
+    form_flow: FormFlow | None = None
 
     @classmethod
     def from_yaml(cls, source: str | bytes) -> Manifest:
@@ -754,4 +900,9 @@ class Manifest(BaseModel):
         for task in self.tasks:
             if task.flw_id not in flw_ids:
                 raise ValueError(f"task references unknown flw_id={task.flw_id}")
+        longitudinal = self.beneficiary_cohorts[0].longitudinal
+        if self.form_flow is not None and longitudinal is not None and longitudinal.mode != "synthetic":
+            # A replayed pool already carries each real visit's own form; there is no
+            # flow to invent on top of it.
+            raise ValueError(f"form_flow cannot be combined with a {longitudinal.mode!r} longitudinal pool")
         return self

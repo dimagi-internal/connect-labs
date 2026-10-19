@@ -124,6 +124,58 @@ def parse_form_schema_from_app_json(
     return FormSchema(questions=questions)
 
 
+@dataclass(frozen=True)
+class AppForm:
+    """One form of an HQ app, with the identity a submission of it carries."""
+
+    name: str  # the form's name in the app's first language: a submission's form.@name
+    xmlns: str
+    schema: FormSchema
+    # Where the form's Connect <deliver> block sits ("form.connect.deliver"), or None
+    # when it has none -- and a form without one is never paid for by Connect.
+    deliver_path: str | None = None
+
+
+def _form_name(form: dict[str, Any]) -> str:
+    name = form.get("name")
+    if isinstance(name, dict):
+        return str(name.get("en") or next(iter(name.values()), "") or "")
+    return str(name or "")
+
+
+def parse_form_schemas_from_app_json(app_json: dict[str, Any], *, app_type: str = "deliver") -> list[AppForm]:
+    """The app's forms one by one, in module order, each with its own questions.
+
+    ``parse_form_schema_from_app_json`` merges every form into one schema, which is
+    all a stream of identical visits needs. A visit that IS one form needs that
+    form's questions only, and its name and xmlns (connect-labs#2620).
+    """
+    if not isinstance(app_json, dict) or not isinstance(app_json.get(f"{app_type}_app"), dict):
+        return []
+    forms: list[AppForm] = []
+    for module in app_json[f"{app_type}_app"].get("modules") or []:
+        if not isinstance(module, dict):
+            continue
+        for form in module.get("forms") or []:
+            if not isinstance(form, dict):
+                continue
+            schema = _hq_form_to_schema(form)
+            deliver_path = next(
+                (
+                    q.json_path.split(".deliver.", 1)[0] + ".deliver"
+                    for q in schema.questions
+                    if ".deliver." in q.json_path
+                ),
+                None,
+            )
+            forms.append(
+                AppForm(
+                    name=_form_name(form), xmlns=str(form.get("xmlns") or ""), schema=schema, deliver_path=deliver_path
+                )
+            )
+    return forms
+
+
 def _hq_form_to_schema(form: dict[str, Any]) -> FormSchema:
     """Flatten one HQ form's question tree into a FormSchema."""
     questions: list[QuestionSpec] = []

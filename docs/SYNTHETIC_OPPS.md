@@ -227,11 +227,74 @@ beneficiary_cohorts:
 - `entity_names` names entity N with the Nth name (past the end the list repeats
   with a " (2)" suffix). It is written to every visit's `entity_name`, the field
   Connect itself carries a case's name in. Without it a case is "Beneficiary N".
-  For one name per case across visits, use a `longitudinal` cohort: an i.i.d.
-  cohort mints a new entity per visit.
+  For one name per case across visits, use a `longitudinal` cohort or a
+  `form_flow` (below): an i.i.d. cohort mints a new entity per visit.
 - A report shows the case name once its registry says so:
   `display: {entity: {label_field: entity_name}}`
   (`user_docs/semantic-layer.md`, "How a report reads it").
+
+### One visit per form: `form_flow`
+
+Without it, a de-novo manifest makes a stream of visits that each fill every
+question of every form in the app, all filed under the opportunity's first
+deliver unit, each with a new `entity_id`. A multi-form app cannot be shown that
+way (#2620). Add a `form_flow` and each of the cohort's `size` beneficiaries is
+registered once and keeps one `entity_id`. Every later form it gets is its own
+visit, carrying that form's `form.@name`, `form.@xmlns` and `xmlns`, and that
+form's questions only:
+
+```yaml
+form_flow:
+  registration_weeks: 4            # registrations fall in the first 4 weeks (default: whole timeline)
+  forms:
+    - name: Household Registration # the form's name in the app; `xmlns:` picks it out instead
+      role: registration           # opens a beneficiary, once each
+    - name: Adult Enrolment
+      deliver_unit: adult_enrolled # paid: id, slug or name, or {id, slug, name}
+      delay_days: {min: 0, max: 3} # after the forms it follows (default 7-21)
+    - name: ID Confirmation
+      after: [Adult Enrolment]     # default for a follow-up: the registration form
+      deliver_unit: 7318
+      when: {form.has_id: "yes"}   # only beneficiaries whose answers so far say so
+      share: 0.9                   # ...and only this share of them (default 1)
+    - name: Follow-up Contact      # no deliver_unit: unpaid
+      after: [ID Confirmation]
+      count: 2                     # visits per beneficiary, interval_days apart (default 7-14)
+      answers:
+        - path: form.phone_obtained
+          value: handed_over_today
+          share: 0.65              # of eligible beneficiaries, drawn once each
+          when: {form.has_working_phone: "no"}
+          at_most_once: true       # the default
+          otherwise: not_yet       # the answer everywhere it does not fire
+    - name: Phone Stock Count
+      role: survey                 # about no beneficiary: per_week per worker
+      per_week: 1
+```
+
+- A form's questions come from the app structure. A form also records its
+  `fields:` (paths) and its own `field_distributions:`; with no app structure
+  (a labs-only opp), those are all it records. The cohort's
+  `field_distributions` fill a form only at that form's paths.
+- A paid form's visit carries `deliver_unit_id` and the Connect `<deliver>`
+  block (`@id` = the unit's slug, `name`, `entity_id`, `entity_name`) where the
+  app puts it. A slug or name is looked up in the opportunity's
+  `deliver_units`, and a paid form whose unit is not there is refused. Give
+  `{id: ...}` when the opportunity detail lists no units: Connect's export
+  does not include them.
+- An unpaid form's visit carries no deliver unit and makes no completed work.
+  Real Connect makes no visit at all for a form without a `<deliver>` block,
+  so leave out of `forms` any unpaid form that a report should not see.
+- `when` and an answer's `when` read the beneficiary's latest answer at each
+  path from its visits so far (and from this visit's own answers, for an
+  answer). Where an answer does not fire and has no `otherwise`, the field
+  keeps its own draw, or is left blank if that draw is `value`.
+- Workers work the days the timeline's cadence gives them. The volume comes from
+  `size` and the forms, not from `visit_cadence_per_week_per_flw`. A visit
+  the timeline ends before is not made.
+- `form_flow` cannot be combined with a `mirror`/`modelled` pool (a replay
+  already carries each real visit's form). A `synthetic` longitudinal
+  trajectory threads through the forms that record its fields.
 
 ## Updating fixtures
 
