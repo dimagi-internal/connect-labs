@@ -168,6 +168,11 @@
           </div>
         </div>
         <div class="field">
+          <label for="mp-min-bldgs">Minimum buildings per work area</label>
+          <input class="control" id="mp-min-bldgs" type="number" value="0" min="0" step="1">
+          <p class="section-stat">A cell with fewer buildings joins a neighbouring cell until every work area has at least this many. 0 = off.</p>
+        </div>
+        <div class="field">
           <label for="mp-base">Grid base point &mdash; optional (lat, long)</label>
           <div class="inline-row">
             <input class="control" id="mp-base" type="text" autocomplete="off" placeholder="e.g. 11.108, 7.733">

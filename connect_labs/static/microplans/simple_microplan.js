@@ -830,6 +830,7 @@
   const BOUNDARY_FIELDS = {
     cellSize: 'mp-cell',
     ratio: 'mp-ratio',
+    minBldgs: 'mp-min-bldgs',
     base: 'mp-base',
     prefix: 'mp-prefix',
     groupSize: 'mp-group-size',
@@ -2974,19 +2975,101 @@
         'warn',
       );
     }
-    const out = [];
+    const keptCells = [];
     let dropped = 0;
     for (const cell of sorted) {
-      const bc = cell.count || 0;
-      if (dropEmpty && bc === 0) {
+      if (dropEmpty && !(cell.count || 0)) {
         dropped++;
         continue;
       }
-      const [ccx, ccy] = multiPolyCentroid(cell.poly);
-      const [clon, clat] = conv.inverse([ccx, ccy]);
-      const ring = largestExterior(cell.poly).map((pt) =>
-        conv.inverse([pt[0], pt[1]]),
+      keptCells.push(cell);
+    }
+    if (dropEmpty)
+      log(
+        '[grid] Dropped ' +
+          dropped +
+          ' empty cells (' +
+          keptCells.length +
+          ' remaining)',
       );
+
+    // minimum buildings per work area: short cells join a neighbouring cell
+    let areas = keptCells.map((c) => ({ cells: [c], fill: [] }));
+    const minB = params.minBldgs > 0 && buildings.length ? params.minBldgs : 0;
+    if (params.minBldgs > 0 && !buildings.length) {
+      log(
+        '[grid] No building data — ignoring "minimum buildings per work area" for this run.',
+        'warn',
+      );
+    }
+    if (minB) {
+      const byKey = new Map(keptCells.map((c) => [c.ix + ',' + c.iy, c]));
+      const m = window.SimpleMicroplanGrouping.mergeSmallCells(
+        keptCells.map((c) => ({
+          id: c.ix + ',' + c.iy,
+          ix: c.ix,
+          iy: c.iy,
+          count: c.count || 0,
+        })),
+        minB,
+      );
+      areas = m.groups.map((ids, g) => ({
+        cells: ids.map((id) => byKey.get(id)),
+        fill: m.fill[g],
+      }));
+      log(
+        '[grid] Minimum ' +
+          minB +
+          ' buildings per work area: ' +
+          keptCells.length +
+          ' cells → ' +
+          areas.length +
+          ' work areas',
+      );
+      if (m.short)
+        log(
+          '[grid] ' +
+            m.short +
+            ' work areas still have fewer than ' +
+            minB +
+            ' buildings: no neighbouring cell to join.',
+          'warn',
+        );
+    }
+    // merged outlines come from exact lattice corners, so neighbours line up
+    const cs = params.cellSize;
+    const square = (ix, iy) => {
+      const x0 = grid.minX + ix * cs,
+        y0 = grid.minY + iy * cs,
+        x1 = grid.minX + (ix + 1) * cs,
+        y1 = grid.minY + (iy + 1) * cs;
+      return [
+        [
+          [x0, y0],
+          [x1, y0],
+          [x1, y1],
+          [x0, y1],
+          [x0, y0],
+        ],
+      ];
+    };
+
+    const out = [];
+    for (const area of areas) {
+      const bc = area.cells.reduce((s, c) => s + (c.count || 0), 0);
+      let ringProj, ccx, ccy;
+      if (area.cells.length === 1 && !area.fill.length) {
+        [ccx, ccy] = multiPolyCentroid(area.cells[0].poly);
+        ringProj = largestExterior(area.cells[0].poly);
+      } else {
+        const squares = area.cells
+          .map((c) => square(c.ix, c.iy))
+          .concat(area.fill.map(([ix, iy]) => square(ix, iy)));
+        ringProj = largestExterior(polygonClipping.union(...squares));
+        [ccx, ccy] = multiPolyCentroid([[ringProj]]);
+      }
+      const [clon, clat] = conv.inverse([ccx, ccy]);
+      const ring = ringProj.map((pt) => conv.inverse([pt[0], pt[1]]));
       out.push({
         'Area Slug': genSlug(prefix, usedSlugs),
         Ward: ward,
@@ -3000,15 +3083,6 @@
         'Work Area Group Name': group,
       });
     }
-    if (dropEmpty)
-      log(
-        '[grid] Dropped ' +
-          dropped +
-          ' empty cells (' +
-          out.length +
-          ' remaining)',
-      );
-
     if (params.singleton) {
       addSingletonColumns(out);
       const yes = out.filter((r) => r.keepSingleton === 'Yes').length;
@@ -3066,6 +3140,7 @@
     const params = {
       cellSize: Math.max(parseFloat($('mp-cell').value) || 50, 5),
       ratio: Math.max(parseFloat($('mp-ratio').value) || 1.0, 0),
+      minBldgs: Math.max(parseInt($('mp-min-bldgs').value, 10) || 0, 0),
       prefix: $('mp-prefix').value.trim(),
       iso: $('mp-iso').value.trim().toUpperCase(),
       dropEmpty: $('mp-drop-empty').checked,
@@ -3692,6 +3767,7 @@
     iso: 'mp-iso',
     cellSize: 'mp-cell',
     ratio: 'mp-ratio',
+    minBldgs: 'mp-min-bldgs',
     base: 'mp-base',
     snap: 'mp-snap',
     fill: 'mp-fill',

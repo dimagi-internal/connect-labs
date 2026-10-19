@@ -50,7 +50,7 @@ Once a boundary is set, the **Boundaries** list shows each one with its name, si
 
 ## Step 2: Work areas
 
-Work areas are the small areas a field worker visits. With several boundaries, pick the one to work on in the **Boundary** box at the top of the step. The settings in this step (cell size, visit ratio, base point, slug prefix, drop empty cells, singleton columns) are kept separately for each boundary, so one ward can use 50 m cells and another 20 m. A new boundary starts with the settings currently showing.
+Work areas are the small areas a field worker visits. With several boundaries, pick the one to work on in the **Boundary** box at the top of the step. The settings in this step (cell size, visit ratio, minimum buildings, base point, slug prefix, drop empty cells, singleton columns) are kept separately for each boundary, so one ward can use 50 m cells and another 20 m. A new boundary starts with the settings currently showing.
 
 Choose how to make them with the three buttons at the top of the step.
 
@@ -67,6 +67,7 @@ Splits the boundary into square cells and counts the buildings in each one (from
 
 - **Cell size (m)**: the side of each square.
 - **Visit ratio**: Expected Visit Count = buildings × ratio.
+- **Minimum buildings per work area** (0 = off): a cell with fewer buildings than this joins a cell it shares a side with, smallest first, until every work area has at least this many. No building is left out; merged work areas are a few cells joined into one shape. A cell with no neighbour left to join stays as it is, and the log says how many are still under the minimum. With **Drop empty cells** on, empty cells are dropped first.
 - **Grid base point** (optional): makes the cell corners line up with a GPS point. Type it or click **Pick** and click the map.
 - **Drop empty cells**: leaves out cells with no buildings.
 - **Add singleton columns**: adds the keepSingleton columns for cells with only one building.
