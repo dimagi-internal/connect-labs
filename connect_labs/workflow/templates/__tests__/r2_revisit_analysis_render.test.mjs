@@ -295,6 +295,7 @@ test('rrConnectCsv writes the Connect upload columns for the chosen rules', () =
       c6: shape('c6', 'AA00006'),
     },
     rules,
+    { 'Ward B': 1 },
   );
   assert.strictEqual(out.count, 2);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(out.skipped)), [
@@ -303,17 +304,17 @@ test('rrConnectCsv writes the Connect upload columns for the chosen rules', () =
   const lines = out.csv.trim().split('\n');
   assert.strictEqual(
     lines[0],
-    'Area Slug,Ward,Centroid,Boundary,Building Count,Expected Visit Count,Target Population,LGA,State,' +
+    'Area Slug,Present in R1,Ward,Centroid,Boundary,Building Count,Expected Visit Count,Target Population,LGA,State,' +
       'Implementation Area,Work Area Group Name,R2 Reason,Original Expected Visit Count',
   );
   assert.strictEqual(
     lines[1],
-    'AA00001,A,2.5 3.25,"POLYGON ((1 2, 3 2, 3 4, 1 2))",5,13,0,L,S,A,"G, 1",' +
+    'AA00001,No,A,2.5 3.25,"POLYGON ((1 2, 3 2, 3 4, 1 2))",5,13,0,L,S,A,"G, 1",' +
       'R2 Work-Area (R1 thresholds); Suspended worker,10',
   );
   assert.strictEqual(
     lines[2],
-    'AA00006,Ward_B,2.5 3.25,"POLYGON ((1 2, 3 2, 3 4, 1 2))",2,3,0,L,S,Ward_B,"G, 1",' +
+    'AA00006,Yes,Ward_B,2.5 3.25,"POLYGON ((1 2, 3 2, 3 4, 1 2))",2,3,0,L,S,Ward_B,"G, 1",' +
       'Suspended worker; Approved inaccessible,0',
   );
   assert.strictEqual(out.visits, 16);
@@ -330,5 +331,9 @@ test('the Download tab renders before and after the data loads', () => {
   const info = ctx.rrClassifyOrg(fixture(ctx), COLS);
   const tree = ctx.RRDownloadTab({ ...base, byOrg: { X: info } });
   assert.ok(renderTree(tree) > 10);
-  assert.match(JSON.stringify(tree), /Prepare CSV/);
+  const text = JSON.stringify(tree);
+  assert.match(text, /Prepare CSV/);
+  // Ward B has an R1 work area (c7); A does not.
+  assert.match(text, /R1 · 1/);
+  assert.match(text, /Only wards in R1/);
 });

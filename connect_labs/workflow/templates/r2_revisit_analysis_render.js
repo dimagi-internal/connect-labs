@@ -358,6 +358,7 @@ function rrPopupHtml(p) {
 
 var RR_CSV_HEADERS = [
   'Area Slug',
+  'Present in R1',
   'Ward',
   'Centroid',
   'Boundary',
@@ -443,9 +444,12 @@ function rrReasonText(f, rules) {
     .join('; ');
 }
 
-// selected: rrSelectWorkAreas output; shapes: wa_shapes rows keyed by case id.
+// selected: rrSelectWorkAreas output; shapes: wa_shapes rows keyed by case id;
+// wardInR1: {ward: true} for wards with work areas in the R1 opportunity (a
+// work area in the file is never itself in R1, so "Present in R1" is its ward's).
 // Returns {csv, count, visits, skipped: [{slug, why}]}.
-function rrConnectCsv(selected, shapes, rules) {
+function rrConnectCsv(selected, shapes, rules, wardInR1) {
+  wardInR1 = wardInR1 || {};
   var rows = [];
   var skipped = [];
   selected.forEach(function (f) {
@@ -468,6 +472,7 @@ function rrConnectCsv(selected, shapes, rules) {
     lines.push(
       [
         r.s.slug,
+        wardInR1[r.f.ward] ? 'Yes' : 'No',
         ward,
         rrCentroidText(r.s.centroid),
         r.wkt,
@@ -962,9 +967,11 @@ function RRDownloadTab(props) {
   var info = props.byOrg[org];
   var wardOn = {};
   var perWard = {};
+  var wardR1 = {};
   ((info && info.wards) || []).forEach(function (w) {
     wardOn[w.ward] = !wardOff[w.ward];
     perWard[w.ward] = 0;
+    if (w.r1 > 0) wardR1[w.ward] = w.r1;
   });
   var allWards = {};
   Object.keys(perWard).forEach(function (w) {
@@ -1025,7 +1032,7 @@ function RRDownloadTab(props) {
     }
     step(0)
       .then(function () {
-        var out = rrConnectCsv(selected, shapes, rules);
+        var out = rrConnectCsv(selected, shapes, rules, wardR1);
         setPrep(Object.assign({ key: key, state: 'ready' }, out));
       })
       .catch(function (e) {
@@ -1065,12 +1072,16 @@ function RRDownloadTab(props) {
     else next[w] = true;
     setWardOff(next);
   }
-  function setAllWards(on) {
+  // 'all' | 'none' | 'r1' (only wards with R1 work areas) | 'notr1'.
+  function pickWards(mode) {
     var next = {};
-    if (!on)
-      Object.keys(perWard).forEach(function (w) {
-        next[w] = true;
-      });
+    Object.keys(perWard).forEach(function (w) {
+      var keep =
+        mode === 'all' ||
+        (mode === 'r1' && !!wardR1[w]) ||
+        (mode === 'notr1' && !wardR1[w]);
+      if (!keep) next[w] = true;
+    });
     setWardOff(next);
   }
 
@@ -1085,9 +1096,11 @@ function RRDownloadTab(props) {
         Area, Work Area Group Name). Work areas already in R1 are never
         included. Expected Visit Count is the work area’s buildings × its ward’s
         EVC per building in the main opportunity. Slugs, wards, LGA, State and
-        group names are the original opportunity’s. The last two columns (R2
-        Reason, Original Expected Visit Count) are for review; Connect ignores
-        them.
+        group names are the original opportunity’s. Wards tagged R1 have work
+        areas in the R1 revisit opportunity; the file says so in its second
+        column, Present in R1 (Yes/No). That column and the last two (R2 Reason,
+        Original Expected Visit Count) are for review; Connect reads columns by
+        name and ignores them.
       </p>
       <div className="flex flex-wrap items-end gap-4">
         <RRSelect
@@ -1135,26 +1148,36 @@ function RRDownloadTab(props) {
       ) : (
         <div className="border border-gray-200 rounded-lg bg-white">
           <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 text-sm">
-            <span className="font-medium text-gray-900">Wards</span>
+            <span className="font-medium text-gray-900">
+              {'Wards · ' +
+                rrFmt(Object.keys(wardR1).length) +
+                ' of ' +
+                rrFmt(Object.keys(perWard).length) +
+                ' have work areas in R1 '}
+              <span className="ml-1 px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-200 text-amber-900">
+                R1
+              </span>
+            </span>
             <span className="space-x-3">
-              <button
-                type="button"
-                className="text-indigo-600 cursor-pointer"
-                onClick={function () {
-                  setAllWards(true);
-                }}
-              >
-                All
-              </button>
-              <button
-                type="button"
-                className="text-indigo-600 cursor-pointer"
-                onClick={function () {
-                  setAllWards(false);
-                }}
-              >
-                None
-              </button>
+              {[
+                ['all', 'All'],
+                ['none', 'None'],
+                ['r1', 'Only wards in R1'],
+                ['notr1', 'Only wards not in R1'],
+              ].map(function (b) {
+                return (
+                  <button
+                    key={b[0]}
+                    type="button"
+                    className="text-indigo-600 cursor-pointer"
+                    onClick={function () {
+                      pickWards(b[0]);
+                    }}
+                  >
+                    {b[1]}
+                  </button>
+                );
+              })}
             </span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-1 px-4 py-3 text-sm">
@@ -1177,6 +1200,18 @@ function RRDownloadTab(props) {
                     <span className="text-gray-500 tabular-nums">
                       {'(' + rrFmt(perWard[w]) + ')'}
                     </span>
+                    {wardR1[w] ? (
+                      <span
+                        className="px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-200 text-amber-900"
+                        title={
+                          'This ward has ' +
+                          rrFmt(wardR1[w]) +
+                          ' work areas in the R1 revisit opportunity'
+                        }
+                      >
+                        {'R1 · ' + rrFmt(wardR1[w])}
+                      </span>
+                    ) : null}
                   </label>
                 );
               })}
