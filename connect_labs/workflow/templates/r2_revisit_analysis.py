@@ -13,6 +13,9 @@ and shows two tabs:
   Map   — the selected ward's boundary and its work areas, coloured by the first
           reason that applies, with a legend that hides categories and a popup
           with each work area's numbers.
+  Download CSV — one organisation's R2 work areas, for the chosen wards and rules,
+          in Connect's work-area upload format (microplans' CSV_HEADERS), with
+          a new Expected Visit Count: buildings × the ward's EVC per building.
 
 R1 work areas carry no link to their original (new slug, no case id) but were
 uploaded with the original boundary unchanged, so "in R1" is an exact centroid
@@ -81,6 +84,20 @@ COLUMNS = [
         "Every work area not in R1 that is an R2 Work-Area, belongs to a suspended worker, is approved "
         "inaccessible, or has a rejected visit, each counted once.",
     ],
+    [
+        "evc_ratio",
+        "Ward EVC per building (main opp)",
+        "The ward’s total Expected Visit Count divided by its total building count, over the original "
+        "opportunity’s work areas (Excluded ones left out). Organisation and overall rows divide their "
+        "own totals.",
+    ],
+    [
+        "evc_r2",
+        "Expected visits for R2 WAs",
+        "The new Expected Visit Count of the ward’s R2 work areas (the ward-total column), added up. Each "
+        "work area’s is its building count × the ward’s EVC per building, rounded. The Download CSV tab "
+        "writes the same per-work-area value.",
+    ],
 ]
 
 DEFINITION = {
@@ -116,7 +133,8 @@ DEFINITION = {
         "text": {
             "intro": "Work areas missed in R1 that are likely to have children and that workers can visit "
             "again, by organisation and ward. Click the ⓘ next to a column for what it counts, or the map "
-            "icon next to a ward to see it on the Map tab. “Not in R1” means the work area is not already "
+            "icon next to a ward to see it on the Map tab. The Download CSV tab saves an organisation’s R2 "
+            "work areas in Connect’s work-area upload format. “Not in R1” means the work area is not already "
             "in the R1 revisit opportunity (matched on its exact location).",
             "reload": "Reload, reusing data Labs fetched in the last hour",
             "hard": "Ignore cached data and download everything again (takes several minutes)",
@@ -232,6 +250,10 @@ WA_SHAPES_SCHEMA = {
         {"name": "ward", "path": "work_area.ward", "aggregation": "first"},
         {"name": "slug", "path": "work_area.slug", "aggregation": "first"},
         {"name": "boundary", "path": "work_area.boundary", "aggregation": "first"},
+        {"name": "centroid", "path": "work_area.centroid", "aggregation": "first"},
+        {"name": "lga", "path": "work_area.case_properties.lga", "aggregation": "first"},
+        {"name": "state", "path": "work_area.case_properties.state", "aggregation": "first"},
+        {"name": "grp", "path": "work_area.work_area_group_name", "aggregation": "first"},
     ],
 }
 
@@ -273,7 +295,8 @@ PIPELINE_SCHEMAS = [
     {
         "alias": "wa_shapes",
         "name": "R2 Revisit Analysis — Work-area shapes (Connect)",
-        "description": "One row per work area with its boundary polygon; read on demand by the Map tab",
+        "description": "One row per work area with its boundary, centroid, LGA/State and group; read on demand "
+        "by the Map and Download CSV tabs",
         "schema": WA_SHAPES_SCHEMA,
     },
     {

@@ -7,6 +7,9 @@
 //            "not in R1" where it matters, with a de-duplicated ward total.
 //   Map   -- the selected ward's boundary and every one of its work areas,
 //            coloured by why it is (or is not) an R2 work area.
+//   Download CSV -- one organisation's R2 work areas (chosen wards and rules)
+//            in Connect's work-area upload format, with a new Expected Visit
+//            Count: buildings x the ward's EVC per building in the main opp.
 //
 // Layout of this file:
 //   1. Pure calculation functions (rr*) -- no React, no DOM; tested by
@@ -139,7 +142,7 @@ function rrClassifyOrg(d, columns, al) {
   });
   function row(name) {
     if (!wards[name]) {
-      wards[name] = { ward: name, raws: {} };
+      wards[name] = { ward: name, raws: {}, tot_bld: 0, tot_evc: 0 };
       columns.forEach(function (c) {
         wards[name][c[0]] = 0;
       });
@@ -151,7 +154,9 @@ function rrClassifyOrg(d, columns, al) {
     var hit = !!(w.k && inR1[w.k]);
     var v = d.visits[w.c] || [0, 0, 0, 0];
     var f = {
+      c: w.c,
       ward: w.w,
+      raw: w.raw,
       st: w.st,
       o: w.o,
       e: w.e,
@@ -165,6 +170,8 @@ function rrClassifyOrg(d, columns, al) {
     };
     r.raws[w.raw] = 1;
     r.main++;
+    r.tot_bld += w.b;
+    r.tot_evc += w.e;
     if (f.susp) {
       r.susp++;
       if (!hit) r.susp_not_r1++;
@@ -175,12 +182,23 @@ function rrClassifyOrg(d, columns, al) {
       if (!hit) r.rejected_not_r1++;
     }
     if (f.algo) r.algo_add++;
-    if (!hit && (f.susp || f.inacc || f.rej || f.algo)) r.total_r2++;
+    f.r2 = !hit && (f.susp || f.inacc || f.rej || f.algo);
+    if (f.r2) r.total_r2++;
     f.cat = rrCategory(f);
     if (w.c) was[w.c] = f;
   });
   d.wa_r1.forEach(function (w) {
     row(w.w).r1++;
+  });
+  // A new expected visit count for each R2 work area: its buildings times the
+  // ward's EVC per building in the main opportunity.
+  Object.keys(wards).forEach(function (k) {
+    wards[k].evc_ratio = rrRatio(wards[k]);
+  });
+  Object.keys(was).forEach(function (id) {
+    var f = was[id];
+    f.evc2 = f.r2 ? Math.round(f.b * wards[f.ward].evc_ratio) : 0;
+    wards[f.ward].evc_r2 = (wards[f.ward].evc_r2 || 0) + f.evc2;
   });
   return {
     wards: Object.keys(wards)
@@ -201,14 +219,29 @@ function rrCategory(f) {
   return 'none';
 }
 
+function rrRatio(r) {
+  return r.tot_bld ? r.tot_evc / r.tot_bld : 0;
+}
+
 function rrSum(rows, columns) {
   var t = {};
-  columns.forEach(function (c) {
-    t[c[0]] = rows.reduce(function (s, r) {
-      return s + (r[c[0]] || 0);
-    }, 0);
-  });
+  columns
+    .map(function (c) {
+      return c[0];
+    })
+    .concat(['tot_bld', 'tot_evc'])
+    .forEach(function (k) {
+      t[k] = rows.reduce(function (s, r) {
+        return s + (r[k] || 0);
+      }, 0);
+    });
+  // A ratio is not summed: it is recomputed from the totals.
+  t.evc_ratio = rrRatio(t);
   return t;
+}
+
+function rrCell(key, v) {
+  return key === 'evc_ratio' ? Number(v || 0).toFixed(2) : rrFmt(v);
 }
 
 // Work-area shape rows + the org's classification -> a FeatureCollection.
@@ -314,6 +347,150 @@ function rrPopupHtml(p) {
       .join('') +
     '</div>'
   );
+}
+
+// ---------------------------------------------------------------- Connect CSV
+//
+// The work-area file Connect's "upload work areas" takes (the same columns as
+// microplans' export, microplans/core/workarea.py CSV_HEADERS): 9 required
+// columns, then Implementation Area and Work Area Group Name. Connect ignores
+// unknown columns, so the last two are for the person reviewing the file.
+
+var RR_CSV_HEADERS = [
+  'Area Slug',
+  'Ward',
+  'Centroid',
+  'Boundary',
+  'Building Count',
+  'Expected Visit Count',
+  'Target Population',
+  'LGA',
+  'State',
+  'Implementation Area',
+  'Work Area Group Name',
+  'R2 Reason',
+  'Original Expected Visit Count',
+];
+
+var RR_RULES = [
+  { key: 'algo', label: 'R2 Work-Area (R1 thresholds)' },
+  { key: 'susp', label: 'Suspended worker' },
+  { key: 'inacc', label: 'Approved inaccessible' },
+  { key: 'rej', label: 'Rejected HSD/NCF visit' },
+];
+
+// Connect accepts a Polygon only. A MultiPolygon of one part is that polygon;
+// anything else is refused (null) so the whole upload does not fail on it.
+function rrPolygonWkt(raw) {
+  var g = rrGeometry(raw);
+  if (!g) return null;
+  var rings = null;
+  if (g.type === 'Polygon') rings = g.coordinates;
+  else if (g.type === 'MultiPolygon' && g.coordinates.length === 1)
+    rings = g.coordinates[0];
+  if (!rings || !rings.length) return null;
+  return (
+    'POLYGON ((' +
+    rings
+      .map(function (ring) {
+        return ring
+          .map(function (p) {
+            return p[0] + ' ' + p[1];
+          })
+          .join(', ');
+      })
+      .join('), (') +
+    '))'
+  );
+}
+
+// "lon lat", as Connect reads it.
+function rrCentroidText(raw) {
+  var g = rrGeometry(raw);
+  return g && g.coordinates ? g.coordinates[0] + ' ' + g.coordinates[1] : '';
+}
+
+function rrCsvCell(v) {
+  var s = String(v == null ? '' : v);
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+// The work areas the file should carry: not in R1, in a chosen ward, and
+// selected by at least one chosen rule.
+function rrSelectWorkAreas(was, wardOn, rules) {
+  return Object.keys(was)
+    .map(function (id) {
+      return was[id];
+    })
+    .filter(function (f) {
+      if (f.r1 || !wardOn[f.ward]) return false;
+      return RR_RULES.some(function (r) {
+        return rules[r.key] && f[r.key];
+      });
+    })
+    .sort(function (a, b) {
+      return a.ward < b.ward ? -1 : a.ward > b.ward ? 1 : 0;
+    });
+}
+
+function rrReasonText(f, rules) {
+  return RR_RULES.filter(function (r) {
+    return rules[r.key] && f[r.key];
+  })
+    .map(function (r) {
+      return r.label;
+    })
+    .join('; ');
+}
+
+// selected: rrSelectWorkAreas output; shapes: wa_shapes rows keyed by case id.
+// Returns {csv, count, visits, skipped: [{slug, why}]}.
+function rrConnectCsv(selected, shapes, rules) {
+  var rows = [];
+  var skipped = [];
+  selected.forEach(function (f) {
+    var s = shapes[f.c];
+    if (!s) return skipped.push({ slug: f.c, why: 'no shape in Connect' });
+    var wkt = rrPolygonWkt(s.boundary);
+    if (!wkt)
+      return skipped.push({ slug: s.slug, why: 'boundary is not one polygon' });
+    rows.push({ f: f, s: s, wkt: wkt });
+  });
+  // Connect takes Work Area Group Name for every row or for none.
+  var groups = rows.every(function (r) {
+    return r.s.grp;
+  });
+  var visits = 0;
+  var lines = [RR_CSV_HEADERS.map(rrCsvCell).join(',')];
+  rows.forEach(function (r) {
+    var ward = r.s.ward || r.f.raw;
+    visits += r.f.evc2;
+    lines.push(
+      [
+        r.s.slug,
+        ward,
+        rrCentroidText(r.s.centroid),
+        r.wkt,
+        r.f.b,
+        r.f.evc2,
+        0,
+        r.s.lga || '',
+        r.s.state || '',
+        ward,
+        groups ? r.s.grp : '',
+        rrReasonText(r.f, rules),
+        r.f.e,
+      ]
+        .map(rrCsvCell)
+        .join(','),
+    );
+  });
+  return {
+    csv: lines.join('\n') + '\n',
+    count: rows.length,
+    visits: visits,
+    skipped: skipped,
+  };
 }
 
 // ===========================================================================
@@ -511,7 +688,7 @@ function RRTable(props) {
                         key={c[0]}
                         className="px-3 py-1.5 text-right tabular-nums"
                       >
-                        {rrFmt(r[c[0]])}
+                        {rrCell(c[0], r[c[0]])}
                       </td>
                     );
                   })}
@@ -755,6 +932,311 @@ function RRMapTab(props) {
         already in R1 is green whatever else applies). Click a work area for its
         numbers. The dashed line is the ward boundary from Connect.
       </p>
+    </div>
+  );
+}
+
+// Download one organisation's R2 work areas as Connect's upload file. Two
+// steps, because a download must follow the click directly and fetching the
+// shapes can take longer than that: Prepare fetches, Download saves.
+function RRDownloadTab(props) {
+  var orgNames = props.orgs.map(function (o) {
+    return o.org;
+  });
+  var OS = React.useState(props.org || orgNames[0]),
+    org = OS[0],
+    setOrg = OS[1];
+  var WS = React.useState({}),
+    wardOff = WS[0],
+    setWardOff = WS[1];
+  var RS = React.useState({ algo: true, susp: true, inacc: true, rej: true }),
+    rules = RS[0],
+    setRules = RS[1];
+  var PS = React.useState({ key: '', state: 'idle' }),
+    prep = PS[0],
+    setPrep = PS[1];
+
+  var o = props.orgs.filter(function (x) {
+    return x.org === org;
+  })[0];
+  var info = props.byOrg[org];
+  var wardOn = {};
+  var perWard = {};
+  ((info && info.wards) || []).forEach(function (w) {
+    wardOn[w.ward] = !wardOff[w.ward];
+    perWard[w.ward] = 0;
+  });
+  var allWards = {};
+  Object.keys(perWard).forEach(function (w) {
+    allWards[w] = true;
+  });
+  // Counts per ward for the chosen rules, whether or not the ward is ticked.
+  if (info)
+    rrSelectWorkAreas(info.was, allWards, rules).forEach(function (f) {
+      perWard[f.ward]++;
+    });
+  var selected = info ? rrSelectWorkAreas(info.was, wardOn, rules) : [];
+  var visits = selected.reduce(function (n, f) {
+    return n + f.evc2;
+  }, 0);
+  var key = org + '|' + JSON.stringify(wardOff) + '|' + JSON.stringify(rules);
+  var ready = prep.key === key && prep.state === 'ready';
+  var busy = prep.key === key && prep.state === 'loading';
+
+  function prepare() {
+    var ids = selected.map(function (f) {
+      return f.c;
+    });
+    var chunks = [];
+    for (var i = 0; i < ids.length; i += 400)
+      chunks.push(ids.slice(i, i + 400));
+    var shapes = {};
+    var done = 0;
+    setPrep({ key: key, state: 'loading', msg: 'Fetching work-area shapes…' });
+    function onStatus(msg) {
+      setPrep({ key: key, state: 'loading', msg: String(msg) });
+    }
+    function step(n) {
+      if (n >= chunks.length) return Promise.resolve();
+      return props.actions
+        .queryPipelineRows('wa_shapes', {
+          filters: { wa_case_id: chunks[n] },
+          limit: 500,
+          opportunity_id: o.main,
+          onStatus: onStatus,
+        })
+        .then(function (res) {
+          (res.rows || []).forEach(function (r) {
+            shapes[r.wa_case_id] = r;
+          });
+          done += chunks[n].length;
+          setPrep({
+            key: key,
+            state: 'loading',
+            msg:
+              'Fetched ' +
+              rrFmt(done) +
+              ' of ' +
+              rrFmt(ids.length) +
+              ' work areas…',
+          });
+          return step(n + 1);
+        });
+    }
+    step(0)
+      .then(function () {
+        var out = rrConnectCsv(selected, shapes, rules);
+        setPrep(Object.assign({ key: key, state: 'ready' }, out));
+      })
+      .catch(function (e) {
+        setPrep({
+          key: key,
+          state: 'error',
+          msg: 'Could not fetch the shapes: ' + ((e && e.message) || e),
+        });
+      });
+  }
+
+  function download() {
+    var d = new Date().toISOString().slice(0, 10);
+    var name =
+      'R2_work_areas_' +
+      org.replace(/[^A-Za-z0-9_-]+/g, '_') +
+      '_' +
+      d +
+      '.csv';
+    props.actions
+      .download({ filename: name, mime: 'text/csv', bytes: prep.csv })
+      .catch(function (e) {
+        setPrep(
+          Object.assign({}, prep, {
+            msg:
+              'Download refused: ' +
+              ((e && e.message) || e) +
+              ' (click Download again)',
+          }),
+        );
+      });
+  }
+
+  function toggleWard(w) {
+    var next = Object.assign({}, wardOff);
+    if (next[w]) delete next[w];
+    else next[w] = true;
+    setWardOff(next);
+  }
+  function setAllWards(on) {
+    var next = {};
+    if (!on)
+      Object.keys(perWard).forEach(function (w) {
+        next[w] = true;
+      });
+    setWardOff(next);
+  }
+
+  var btn =
+    'px-3 py-2 text-sm rounded-md border disabled:opacity-50 cursor-pointer ';
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-600">
+        One organisation’s R2 work areas in the file Connect’s “Upload work
+        areas” takes (Area Slug, Ward, Centroid, Boundary, Building Count,
+        Expected Visit Count, Target Population, LGA, State, Implementation
+        Area, Work Area Group Name). Work areas already in R1 are never
+        included. Expected Visit Count is the work area’s buildings × its ward’s
+        EVC per building in the main opportunity. Slugs, wards, LGA, State and
+        group names are the original opportunity’s. The last two columns (R2
+        Reason, Original Expected Visit Count) are for review; Connect ignores
+        them.
+      </p>
+      <div className="flex flex-wrap items-end gap-4">
+        <RRSelect
+          label="Organisation"
+          value={org}
+          onPick={function (v) {
+            setOrg(v);
+            setWardOff({});
+          }}
+          options={orgNames.map(function (n) {
+            return [n, n];
+          })}
+        />
+        <div className="text-sm">
+          <span className="block text-gray-600 mb-1">
+            Include work areas with
+          </span>
+          <div className="flex flex-wrap gap-3">
+            {RR_RULES.map(function (r) {
+              return (
+                <label
+                  key={r.key}
+                  className="inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!rules[r.key]}
+                    onChange={function () {
+                      var next = Object.assign({}, rules);
+                      next[r.key] = !next[r.key];
+                      setRules(next);
+                    }}
+                  />
+                  {r.label}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      {!info ? (
+        <div className="border border-gray-200 rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-700">
+          {'Waiting for ' + org + '’s data to load…'}
+        </div>
+      ) : (
+        <div className="border border-gray-200 rounded-lg bg-white">
+          <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 text-sm">
+            <span className="font-medium text-gray-900">Wards</span>
+            <span className="space-x-3">
+              <button
+                type="button"
+                className="text-indigo-600 cursor-pointer"
+                onClick={function () {
+                  setAllWards(true);
+                }}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                className="text-indigo-600 cursor-pointer"
+                onClick={function () {
+                  setAllWards(false);
+                }}
+              >
+                None
+              </button>
+            </span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-1 px-4 py-3 text-sm">
+            {Object.keys(perWard)
+              .sort()
+              .map(function (w) {
+                return (
+                  <label
+                    key={w}
+                    className="inline-flex items-center gap-2 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!!wardOn[w]}
+                      onChange={function () {
+                        toggleWard(w);
+                      }}
+                    />
+                    <span>{w}</span>
+                    <span className="text-gray-500 tabular-nums">
+                      {'(' + rrFmt(perWard[w]) + ')'}
+                    </span>
+                  </label>
+                );
+              })}
+          </div>
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="text-sm text-gray-800">
+          <b>{rrFmt(selected.length)}</b>
+          {' work areas · '}
+          <b>{rrFmt(visits)}</b>
+          {' expected visits'}
+        </div>
+        <button
+          type="button"
+          className={btn + 'border-gray-300 bg-white'}
+          disabled={
+            !info ||
+            !selected.length ||
+            busy ||
+            !props.actions.queryPipelineRows
+          }
+          onClick={prepare}
+        >
+          <i className="fa-solid fa-gears mr-1" />
+          {ready ? 'Prepare again' : 'Prepare CSV'}
+        </button>
+        <button
+          type="button"
+          className={btn + 'border-indigo-600 bg-indigo-600 text-white'}
+          disabled={!ready || !props.actions.download}
+          onClick={download}
+        >
+          <i className="fa-solid fa-file-csv mr-1" />
+          {ready
+            ? 'Download CSV (' + rrFmt(prep.count) + ' rows)'
+            : 'Download CSV'}
+        </button>
+      </div>
+      {prep.key === key && prep.msg ? (
+        <div className="text-sm text-gray-700">{prep.msg}</div>
+      ) : null}
+      {ready && prep.skipped.length ? (
+        <div className="border border-amber-200 bg-amber-50 rounded-md px-3 py-2 text-sm text-amber-900">
+          {rrFmt(prep.skipped.length) + ' work areas left out of the file: '}
+          {prep.skipped
+            .slice(0, 20)
+            .map(function (x) {
+              return x.slug + ' (' + x.why + ')';
+            })
+            .join(', ')}
+          {prep.skipped.length > 20 ? ' …' : ''}
+        </div>
+      ) : null}
+      {prep.key && prep.key !== key ? (
+        <div className="text-xs text-gray-500">
+          The choices changed since the last Prepare: prepare again to download
+          them.
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1223,9 +1705,17 @@ function WorkflowUI(props) {
       <div className="flex gap-1 border-b border-gray-200">
         {tabButton('table', 'Table', 'fa-table')}
         {tabButton('map', 'Map', 'fa-map')}
+        {tabButton('download', 'Download CSV', 'fa-file-csv')}
       </div>
       {tab === 'table' ? (
         <RRTable rows={trs} columns={COLS} text={TX} onMap={showOnMap} />
+      ) : tab === 'download' ? (
+        <RRDownloadTab
+          orgs={ORGS}
+          byOrg={byOrg}
+          actions={actions}
+          org={orgF !== 'ALL' ? orgF : null}
+        />
       ) : (
         <RRMapTab
           message={mapMessage}
