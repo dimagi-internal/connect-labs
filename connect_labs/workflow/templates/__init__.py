@@ -98,6 +98,7 @@ SANDBOX_CHECKED = frozenset(
         "photo_audit_report",
         "program_admin_report",
         "program_audit_creator",
+        "r2_revisit_analysis",
         "rutf_ciff_kpis",
         "sam_followup",
         "supply_stock_forecast",
