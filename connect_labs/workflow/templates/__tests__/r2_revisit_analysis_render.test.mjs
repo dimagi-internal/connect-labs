@@ -76,6 +76,8 @@ const COLS = [
   'rejected',
   'rejected_not_r1',
   'total_r2',
+  'evc_ratio',
+  'evc_r2',
 ].map((k) => [k, k, k]);
 
 const cen = (x) => JSON.stringify({ type: 'Point', coordinates: [x, 9.5] });
@@ -135,10 +137,21 @@ test('rrClassifyOrg counts every column per ward', () => {
   const out = ctx.rrClassifyOrg(fixture(ctx), COLS);
   const byWard = Object.fromEntries(out.wards.map((w) => [w.ward, w]));
   const row = (w) => COLS.map((c) => byWard[w][c[0]]).join('|');
+  const head = (w) => row(w).split('|').slice(0, 9).join('|');
   // main|r1|algo|susp|susp_not_r1|inacc_not_r1|rejected|rejected_not_r1|total
-  assert.strictEqual(row('A'), '5|0|2|1|1|0|0|0|2');
-  assert.strictEqual(row('Ward B'), '3|1|0|1|1|1|1|1|2');
-  assert.strictEqual(row('C'), '0|1|0|0|0|0|0|0|0');
+  assert.strictEqual(head('A'), '5|0|2|1|1|0|0|0|2');
+  assert.strictEqual(head('Ward B'), '3|1|0|1|1|1|1|1|2');
+  assert.strictEqual(head('C'), '0|1|0|0|0|0|0|0|0');
+  // A: 50 EVC over 19 buildings; R2 = c1 (5 bld -> 13) + c5 (3 bld -> 8).
+  assert.strictEqual(byWard['A'].evc_ratio.toFixed(4), (50 / 19).toFixed(4));
+  assert.strictEqual(byWard['A'].evc_r2, 21);
+  // Ward B: 20 EVC over 12 buildings; R2 = c6 (2 -> 3) + c8 (5 -> 8); c7 is in R1.
+  assert.strictEqual(byWard['Ward B'].evc_r2, 11);
+  assert.strictEqual(byWard['C'].evc_r2, 0);
+  // Totals recompute the ratio rather than adding ratios up.
+  const t = ctx.rrSum(out.wards, COLS);
+  assert.strictEqual(t.evc_ratio.toFixed(4), (70 / 31).toFixed(4));
+  assert.strictEqual(t.evc_r2, 32);
   assert.deepStrictEqual(Object.keys(byWard['Ward B'].raws), ['Ward_B']);
 });
 
@@ -228,4 +241,94 @@ test('the page renders the Map tab without a ward or a map library', () => {
   const tree = ctx.WorkflowUI(props());
   assert.ok(renderTree(tree) > 5);
   assert.match(JSON.stringify(tree), /Pick an organisation and a ward/);
+});
+
+test('rrConnectCsv writes the Connect upload columns for the chosen rules', () => {
+  const ctx = load(makeReact());
+  const was = ctx.rrClassifyOrg(fixture(ctx), COLS).was;
+  const rules = { algo: true, susp: true, inacc: true, rej: false };
+  const sel = ctx.rrSelectWorkAreas(was, { A: true, 'Ward B': true }, rules);
+  // c1 (susp, algo), c5 (algo), c6 (susp, inacc); c8 only rejected: off.
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sel.map((f) => f.c))), [
+    'c1',
+    'c5',
+    'c6',
+  ]);
+  const square = {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [1, 2],
+        [3, 2],
+        [3, 4],
+        [1, 2],
+      ],
+    ],
+  };
+  const shape = (c, slug, extra = {}) => ({
+    wa_case_id: c,
+    slug,
+    ward: c === 'c6' ? 'Ward_B' : 'A',
+    boundary: JSON.stringify(square),
+    centroid: '{"type":"Point","coordinates":[2.5,3.25]}',
+    lga: 'L',
+    state: 'S',
+    grp: 'G, 1',
+    ...extra,
+  });
+  const out = ctx.rrConnectCsv(
+    sel,
+    {
+      c1: shape('c1', 'AA00001'),
+      c5: shape('c5', 'AA00005', {
+        boundary: JSON.stringify({
+          type: 'MultiPolygon',
+          coordinates: [
+            [
+              [0, 0],
+              [1, 1],
+            ],
+            [[2, 2]],
+          ],
+        }),
+      }),
+      c6: shape('c6', 'AA00006'),
+    },
+    rules,
+  );
+  assert.strictEqual(out.count, 2);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(out.skipped)), [
+    { slug: 'AA00005', why: 'boundary is not one polygon' },
+  ]);
+  const lines = out.csv.trim().split('\n');
+  assert.strictEqual(
+    lines[0],
+    'Area Slug,Ward,Centroid,Boundary,Building Count,Expected Visit Count,Target Population,LGA,State,' +
+      'Implementation Area,Work Area Group Name,R2 Reason,Original Expected Visit Count',
+  );
+  assert.strictEqual(
+    lines[1],
+    'AA00001,A,2.5 3.25,"POLYGON ((1 2, 3 2, 3 4, 1 2))",5,13,0,L,S,A,"G, 1",' +
+      'R2 Work-Area (R1 thresholds); Suspended worker,10',
+  );
+  assert.strictEqual(
+    lines[2],
+    'AA00006,Ward_B,2.5 3.25,"POLYGON ((1 2, 3 2, 3 4, 1 2))",2,3,0,L,S,Ward_B,"G, 1",' +
+      'Suspended worker; Approved inaccessible,0',
+  );
+  assert.strictEqual(out.visits, 16);
+});
+
+test('the Download tab renders before and after the data loads', () => {
+  const ctx = load(makeReact());
+  const base = {
+    orgs: [{ org: 'X', main: 1, r1: 2 }],
+    actions: { queryPipelineRows() {}, download() {} },
+    org: 'X',
+  };
+  assert.ok(renderTree(ctx.RRDownloadTab({ ...base, byOrg: {} })) > 3);
+  const info = ctx.rrClassifyOrg(fixture(ctx), COLS);
+  const tree = ctx.RRDownloadTab({ ...base, byOrg: { X: info } });
+  assert.ok(renderTree(tree) > 10);
+  assert.match(JSON.stringify(tree), /Prepare CSV/);
 });
