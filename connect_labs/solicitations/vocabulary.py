@@ -17,11 +17,11 @@ OUTCOMES = {
         "definition": "Proposed for one of the round's places now.",
     },
     "backup": {
-        "label": "Backup",
+        "label": "Recommended backup",
         "definition": "Ready to step in for a named place if a recommended applicant falls through.",
     },
     "waitlist": {
-        "label": "Keep in view",
+        "label": "Waitlist",
         "definition": "Credible, but not needed for this round's places. Worth asking again in a later round.",
     },
     "pass": {
