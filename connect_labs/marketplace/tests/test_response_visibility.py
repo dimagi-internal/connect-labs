@@ -824,6 +824,13 @@ class TestVersions:
         weights = {c["id"]: (c["weight_from"], c["weight_to"]) for c in current["comparison"]["criteria"]}
         assert weights == {"reach": (60.0, 70.0), "cost": (40.0, 30.0)}
 
+    def test_the_comparison_says_what_its_numbers_are(self, client, rescored, member):
+        client.force_login(member)
+        page = client.get(reverse("marketplace:round_scores", args=["battery-2026"])).content.decode()
+        assert "points out of 100 on average" in page and "Mean of 10" in page
+        assert "Shortlist lead" in page and ">Difference<" not in page
+        assert 'data-testid="comparison-note"' in page
+
     def test_the_mcp_tools_carry_versions_and_the_comparison(self, rescored, ace):
         versions = tools.marketplace_round_versions(ace, "battery-2026")
         assert [(v["version"], v["current"], v["ai_reviews"]) for v in versions["versions"]] == [
