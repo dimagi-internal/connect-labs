@@ -411,6 +411,15 @@ function rrCentroidText(raw) {
   return g && g.coordinates ? g.coordinates[0] + ' ' + g.coordinates[1] : '';
 }
 
+// Ward as the upload's Ward column wants it: no spaces ("Banganje South" ->
+// "Banganje_South"). Implementation Area keeps Connect's own name, which is
+// how Connect links a work area to its implementation area.
+function rrWardSlug(w) {
+  return String(w || '')
+    .trim()
+    .replace(/\s+/g, '_');
+}
+
 function rrCsvCell(v) {
   var s = String(v == null ? '' : v);
   return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -473,7 +482,7 @@ function rrConnectCsv(selected, shapes, rules, wardInR1) {
       [
         r.s.slug,
         wardInR1[r.f.ward] ? 'Yes' : 'No',
-        ward,
+        rrWardSlug(ward),
         rrCentroidText(r.s.centroid),
         r.wkt,
         r.f.b,
@@ -1096,11 +1105,12 @@ function RRDownloadTab(props) {
         Area, Work Area Group Name). Work areas already in R1 are never
         included. Expected Visit Count is the work area’s buildings × its ward’s
         EVC per building in the main opportunity. Slugs, wards, LGA, State and
-        group names are the original opportunity’s. Wards tagged R1 have work
-        areas in the R1 revisit opportunity; the file says so in its second
-        column, Present in R1 (Yes/No). That column and the last two (R2 Reason,
-        Original Expected Visit Count) are for review; Connect reads columns by
-        name and ignores them.
+        group names are the original opportunity’s, except that the Ward column
+        has underscores for spaces (Banganje South → Banganje_South). Wards
+        tagged R1 have work areas in the R1 revisit opportunity; the file says
+        so in its second column, Present in R1 (Yes/No). That column and the
+        last two (R2 Reason, Original Expected Visit Count) are for review;
+        Connect reads columns by name and ignores them.
       </p>
       <div className="flex flex-wrap items-end gap-4">
         <RRSelect

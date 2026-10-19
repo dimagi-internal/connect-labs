@@ -201,6 +201,17 @@ test('rrWorkAreaFeatures keeps classified shapes with a geometry', () => {
   assert.match(ctx.rrPopupHtml(fc.features[0].properties), /S5/);
 });
 
+test('rrWardSlug puts underscores for spaces', () => {
+  const ctx = load(makeReact());
+  assert.strictEqual(ctx.rrWardSlug('Banganje South'), 'Banganje_South');
+  assert.strictEqual(
+    ctx.rrWardSlug(' Birin  Fulani West '),
+    'Birin_Fulani_West',
+  );
+  assert.strictEqual(ctx.rrWardSlug('Boh (non-RCT)'), 'Boh_(non-RCT)');
+  assert.strictEqual(ctx.rrWardSlug('Kamo'), 'Kamo');
+});
+
 test('rrWardFeature matches ward names loosely', () => {
   const ctx = load(makeReact());
   const rows = [
@@ -268,7 +279,7 @@ test('rrConnectCsv writes the Connect upload columns for the chosen rules', () =
   const shape = (c, slug, extra = {}) => ({
     wa_case_id: c,
     slug,
-    ward: c === 'c6' ? 'Ward_B' : 'A',
+    ward: c === 'c6' ? 'Ward  B ' : 'A',
     boundary: JSON.stringify(square),
     centroid: '{"type":"Point","coordinates":[2.5,3.25]}',
     lga: 'L',
@@ -314,7 +325,8 @@ test('rrConnectCsv writes the Connect upload columns for the chosen rules', () =
   );
   assert.strictEqual(
     lines[2],
-    'AA00006,Yes,Ward_B,2.5 3.25,"POLYGON ((1 2, 3 2, 3 4, 1 2))",2,3,0,L,S,Ward_B,"G, 1",' +
+    // Ward column: spaces become underscores; Implementation Area keeps Connect's name.
+    'AA00006,Yes,Ward_B,2.5 3.25,"POLYGON ((1 2, 3 2, 3 4, 1 2))",2,3,0,L,S,Ward  B ,"G, 1",' +
       'Suspended worker; Approved inaccessible,0',
   );
   assert.strictEqual(out.visits, 16);
