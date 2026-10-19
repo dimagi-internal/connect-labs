@@ -992,7 +992,10 @@ function WorkflowUI(props) {
 
   React.useEffect(
     function () {
-      if (tab !== 'map' || !mapKey || mapData.key === mapKey) return;
+      // Skip only when this ward's shapes are already here: a fetch cut short
+      // (the tab left, or a failure) leaves none, so coming back starts it again.
+      if (tab !== 'map' || !mapKey) return;
+      if (mapData.key === mapKey && mapData.shapes) return;
       if (!actions.queryPipelineRows) {
         setMapData({
           key: mapKey,
@@ -1016,65 +1019,81 @@ function WorkflowUI(props) {
             return Object.assign({}, p, { msg: String(msg) });
           });
       }
-      function page(offset, acc) {
+      // Every row of an on-demand source, 500 at a time.
+      function pageAll(alias, opts, offset, acc) {
         return actions
-          .queryPipelineRows('wa_shapes', {
-            filters: { ward: raws },
-            limit: 500,
-            offset: offset,
-            opportunity_id: selOrg.main,
-            onStatus: onStatus,
-          })
+          .queryPipelineRows(
+            alias,
+            Object.assign(
+              { limit: 500, offset: offset, opportunity_id: selOrg.main },
+              opts,
+            ),
+          )
           .then(function (res) {
-            var rows = acc.concat(res.rows || []);
-            if (
-              (res.rows || []).length === 500 &&
-              rows.length < (res.total || 0)
-            )
-              return page(offset + 500, rows);
+            var got = res.rows || [];
+            var rows = acc.concat(got);
+            if (got.length === 500 && rows.length < (res.total || 0))
+              return pageAll(alias, opts, offset + 500, rows);
             return rows;
           });
       }
+      // The ward boundary is extra: if it fails, say so and still draw the
+      // work areas. Cached per organisation only once it has loaded.
       function wardBounds() {
         var cached = bounds.current[selOrg.org];
-        if (cached) return Promise.resolve(cached);
-        return actions
-          .queryPipelineRows('ward_bounds', {
-            limit: 500,
-            opportunity_id: selOrg.main,
+        if (cached) return Promise.resolve({ rows: cached });
+        return pageAll('ward_bounds', {}, 0, [])
+          .then(function (rows) {
+            bounds.current[selOrg.org] = rows;
+            return { rows: rows };
           })
-          .then(function (res) {
-            bounds.current[selOrg.org] = res.rows || [];
-            return bounds.current[selOrg.org];
-          })
-          .catch(function () {
-            return [];
+          .catch(function (e) {
+            return { rows: [], error: (e && e.message) || String(e) };
           });
       }
-      Promise.all([page(0, []), wardBounds()])
+      Promise.all([
+        pageAll(
+          'wa_shapes',
+          { filters: { ward: raws }, onStatus: onStatus },
+          0,
+          [],
+        ),
+        wardBounds(),
+      ])
         .then(function (r) {
           if (cancelled) return;
-          var wardFc = rrWardFeature(r[1], sel[1]);
+          var wardFc = rrWardFeature(r[1].rows, sel[1]);
           setMapData({
             key: mapKey,
             shapes: r[0],
             ward: wardFc,
-            msg: wardFc
-              ? ''
-              : 'No ward boundary found in Connect for this ward.',
+            msg: r[1].error
+              ? 'Could not load the ward boundary: ' + r[1].error
+              : wardFc
+                ? ''
+                : 'No ward boundary found in Connect for this ward.',
           });
         })
         .catch(function (e) {
           if (!cancelled)
             setMapData({
               key: mapKey,
-              shapes: [],
+              shapes: null,
               ward: null,
-              msg: 'Could not load map data: ' + ((e && e.message) || e),
+              msg:
+                'Could not load map data: ' +
+                ((e && e.message) || e) +
+                ' (open the Map tab again to retry)',
             });
         });
       return function () {
         cancelled = true;
+        // Drop an unfinished fetch's placeholder so the next visit refetches.
+        setMapData(function (p) {
+          return p.key === mapKey && !p.shapes
+            ? { key: '', shapes: null, ward: null, msg: '' }
+            : p;
+        });
       };
     },
     [tab, mapKey],
