@@ -107,8 +107,9 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
       <div>
         <span class="text-sm font-semibold text-brand-deep-purple">What changed from version {{ comparison.earlier|slice:"1:" }} to version {{ comparison.later|slice:"1:" }}</span>
         <div class="text-[12px] text-gray-500 mt-0.5">
-          {{ comparison.moved|length }} recommendation{{ comparison.moved|length|pluralize }} changed{% if comparison.mean_shift is not None %} · scores moved {% if comparison.mean_shift >= 0 %}+{% endif %}{{ comparison.mean_shift|floatformat:1 }} on average across {{ comparison.compared }}{% endif %}.
+          {{ comparison.moved|length }} recommendation{{ comparison.moved|length|pluralize }} changed{% if comparison.mean_shift is not None %} · scores moved {% if comparison.mean_shift >= 0 %}+{% endif %}{{ comparison.mean_shift|floatformat:1 }} points out of 100 on average, across {{ comparison.compared }} applicants{% endif %}.
         </div>
+        <div class="text-[12px] text-gray-500 mt-0.5" data-testid="comparison-note">A recommendation follows the round's rules on places, budget and geography as well as the score, so it can move the other way to the score.</div>
       </div>
       {% if history|length > 2 %}
         <form method="get" class="text-[11px] text-gray-500 flex items-center gap-1.5">
@@ -132,10 +133,12 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
             {% for m in comparison.moved %}
               <tr class="hover:bg-gray-50 cursor-pointer" data-href="{% url 'solicitations:response_detail' m.applicant.response.pk %}">
                 <td class="px-4 sm:px-5 py-2 text-[13px] text-brand-deep-purple font-medium">{{ m.applicant.name }}</td>
-                <td class="px-3 py-2 whitespace-nowrap text-[11.5px]">
-                  <span class="inline-flex px-2 py-0.5 rounded-full font-semibold {{ m.from_style }}">{{ m.from }}</span>
-                  <span class="text-gray-400 mx-1">→</span>
-                  <span class="inline-flex px-2 py-0.5 rounded-full font-semibold {{ m.to_style }}">{{ m.to }}</span>
+                <td class="px-3 py-2 text-[11.5px]">
+                  <span class="inline-flex flex-wrap items-center gap-1">
+                    <span class="inline-flex px-2 py-0.5 rounded-full font-semibold whitespace-nowrap {{ m.from_style }}">{{ m.from }}</span>
+                    <span class="text-gray-400">→</span>
+                    <span class="inline-flex px-2 py-0.5 rounded-full font-semibold whitespace-nowrap {{ m.to_style }}">{{ m.to }}</span>
+                  </span>
                 </td>
                 <td class="px-4 sm:px-5 py-2 text-right text-[12.5px] text-gray-700 tabular-nums whitespace-nowrap">{{ m.score_from|default_if_none:"—" }} → {{ m.score_to|default_if_none:"—" }}</td>
               </tr>
@@ -150,8 +153,8 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
           <thead class="bg-gray-50"><tr>
             <th class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Criterion</th>
             <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Weight</th>
-            <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Mean</th>
-            <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Shortlist mean minus everyone else's, in each version. Near zero: the criterion did not decide who was shortlisted.">Difference</th>
+            <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Average score on this criterion, out of 10.">Mean of 10</th>
+            <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="How far the shortlist's mean is above everyone else's, in each version. Near zero: the criterion did not decide who was shortlisted.">Shortlist lead</th>
           </tr></thead>
           <tbody class="divide-y divide-gray-100">
             {% for c in comparison.criteria %}
@@ -190,7 +193,7 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
           <th class="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="How many applicants got each score, 1 on the left to 10 on the right">Spread 1–10</th>
           <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Mean score of applicants recommended or kept as backup">Shortlist</th>
           <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Everyone else</th>
-          <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Shortlist mean minus everyone else's. Near zero: this criterion did not decide who was shortlisted.">Difference</th>
+          <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="How far the shortlist's mean is above everyone else's. Near zero: this criterion did not decide who was shortlisted.">Shortlist lead</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
