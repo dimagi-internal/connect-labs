@@ -55,5 +55,7 @@ runs:
         labels: |
           labs.base_digest=${{ inputs.base_digest }}
           labs.node_digest=${{ inputs.node_digest }}
-        cache-from: type=registry,ref=${{ inputs.registry }}/${{ inputs.repository }}:buildcache
-        cache-to: type=registry,ref=${{ inputs.registry }}/${{ inputs.repository }}:buildcache,mode=max
+        # GitHub's cache, not ECR: a registry cache read from a GitHub-hosted
+        # runner is pulled out of AWS (internet egress) on every build.
+        cache-from: type=gha,scope=app
+        cache-to: type=gha,scope=app,mode=max

@@ -64,6 +64,16 @@ runs:
           done
         done
 
+    - name: Log in to GHCR
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      # Not fatal: without it the GHCR lookups below miss and the build falls
+      # back to ECR, which is slower to pay for but just as correct.
+      run: |
+        echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin \
+          || echo "::warning::GHCR login failed; base/node will be pulled from ECR."
+
     - name: Resolve base-latest and node-latest
       id: resolve
       shell: bash
@@ -75,13 +85,26 @@ runs:
         # describe-images on one tag, not list-images over the whole repository:
         # the repo holds thousands of SHA-tagged images and the old filter
         # paginated through all of them (~10s per tag) to answer a yes/no.
+        # The digest always comes from ECR (the source of truth). The image REF
+        # handed to the build is the GHCR copy of that exact digest when it is
+        # there: the build runs on a GitHub-hosted runner, and pulling the FROM
+        # image out of ECR is AWS internet egress (~1.5 TB/month, Oct 2026),
+        # while GHCR pulls are free. Same digest, so the deploy's
+        # foundations check is unchanged. No copy yet -> ECR, as before.
         resolve() {  # <tag> <from-scratch fallback> <output prefix>
           DIGEST=$(aws ecr describe-images --repository-name "$REPO" \
                      --image-ids imageTag="$1" \
                      --query 'imageDetails[0].imageDigest' --output text 2>/dev/null || true)
           if [ -n "$DIGEST" ] && [ "$DIGEST" != "None" ]; then
             echo "$1 -> $DIGEST"
-            echo "${3}_image=${REGISTRY}/${REPO}:$1" >> "$GITHUB_OUTPUT"
+            MIRROR="ghcr.io/dimagi-internal/connect-labs-${3}@${DIGEST}"
+            if docker buildx imagetools inspect "$MIRROR" >/dev/null 2>&1; then
+              echo "  using the GHCR copy: $MIRROR"
+              echo "${3}_image=${MIRROR}" >> "$GITHUB_OUTPUT"
+            else
+              echo "::notice::No GHCR copy of $1 ($DIGEST) yet; building FROM ECR. Rerun the matching Build workflow to publish one."
+              echo "${3}_image=${REGISTRY}/${REPO}:$1" >> "$GITHUB_OUTPUT"
+            fi
             echo "${3}_digest=${DIGEST}" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::$1 not found in ECR — falling back to $2, a from-scratch build. Run the matching Build workflow."
