@@ -186,14 +186,16 @@ firm's behalf).
   the sheet could not be read.
 - `/labs/marketplace/rounds/<slug>/` is the round page (`views.round_detail`).
   Its owner sees the responses. **Start reviewing** (**Next to check** once
-  people have reviewed) opens the next response, and **Compare scores** appears
+  people have reviewed) opens the next response, and **Scores** appears
   once the round has criteria.
 - `/labs/marketplace/rounds/<slug>/scores/?version=vN&compare=vM` is the Scores
   page (`views.round_scores`; 404 to anyone who cannot read the round's
   responses). It shows every applicant against every criterion. `version` defaults
-  to the current one. `compare` may name any other version: the two are ordered
-  by version history before `compare_at` runs, and with no `compare` the version
-  before the shown one is used. Earlier versions can be deleted from this page
+  to the current one. With no `compare` the page shows that version alone (no
+  "What changed" block); a **Compare with** select beside the version picker, its
+  first option **No comparison**, adds one. `compare` may name any other version:
+  the two are ordered by version history before `compare_at` runs, and a `compare`
+  that names no other existing version is ignored. Earlier versions can be deleted from this page
   (`rounds/<slug>/versions/<v>/delete/`), and `rounds/<slug>/summary/` sets the
   summary link.
 - `/solicitations/response/<pk>/` is a response with its reviews. For a directory round

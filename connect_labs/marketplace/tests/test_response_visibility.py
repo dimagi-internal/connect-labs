@@ -816,7 +816,7 @@ class TestVersions:
         client.force_login(member)
         context = client.get(reverse("marketplace:round_scores", args=["battery-2026"]), {"version": "v1"}).context
         assert not context["is_current"] and context["summary"]["outcomes"]["pick"] == 1
-        current = client.get(reverse("marketplace:round_scores", args=["battery-2026"])).context
+        current = client.get(reverse("marketplace:round_scores", args=["battery-2026"]), {"compare": "v1"}).context
         moved = current["comparison"]["moved"]
         assert [(m["applicant"]["name"], m["from"], m["to"]) for m in moved] == [
             ("Fenwick Trust", "Recommended", "Recommended backup")
@@ -826,10 +826,32 @@ class TestVersions:
 
     def test_the_comparison_says_what_its_numbers_are(self, client, rescored, member):
         client.force_login(member)
-        page = client.get(reverse("marketplace:round_scores", args=["battery-2026"])).content.decode()
+        page = client.get(
+            reverse("marketplace:round_scores", args=["battery-2026"]), {"compare": "v1"}
+        ).content.decode()
         assert "points out of 100 on average" in page and "Mean of 10" in page
         assert "Shortlist lead" in page and ">Difference<" not in page
         assert 'data-testid="comparison-note"' in page
+
+    def test_the_page_shows_the_latest_alone_until_a_comparison_is_asked_for(self, client, rescored, member):
+        client.force_login(member)
+        url = reverse("marketplace:round_scores", args=["battery-2026"])
+        response = client.get(url)
+        page = response.content.decode()
+        assert response.context["shown_version"] == "v2" and response.context["comparison"] is None
+        assert 'data-testid="comparison"' not in page
+        assert 'data-testid="compare-picker"' in page and '<option value="" selected>No comparison</option>' in page
+
+        response = client.get(url, {"compare": "v1"})
+        page = response.content.decode()
+        assert response.context["compare_with"] == "v1" and response.context["comparison"] is not None
+        assert 'data-testid="comparison"' in page and 'data-testid="compare-picker"' not in page
+        assert '<option value="">No comparison</option>' in page, "a comparison can be turned off"
+
+        for bogus in ("bogus", "v2", ""):
+            response = client.get(url, {"compare": bogus})
+            assert response.context["comparison"] is None, bogus
+            assert 'data-testid="comparison"' not in response.content.decode()
 
     def test_the_mcp_tools_carry_versions_and_the_comparison(self, rescored, ace):
         versions = tools.marketplace_round_versions(ace, "battery-2026")
