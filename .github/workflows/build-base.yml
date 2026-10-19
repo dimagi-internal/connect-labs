@@ -66,12 +66,15 @@ jobs:
           HASH_TAG=$(aws ecr describe-images --repository-name "${{ env.ECR_REPOSITORY }}" \
                        --image-ids imageDigest="$DIGEST" --query 'imageDetails[0].imageTags' --output json \
                      | jq -r '[.[] | select(startswith("base-") and . != "base-latest")][0] // empty')
-          TAGS=(--tag ghcr.io/dimagi-internal/connect-labs-base:base-latest)
-          [ -n "$HASH_TAG" ] && TAGS+=(--tag "ghcr.io/dimagi-internal/connect-labs-base:$HASH_TAG")
-          docker buildx imagetools create "${TAGS[@]}" "$SRC"
-          GOT=$(docker buildx imagetools inspect ghcr.io/dimagi-internal/connect-labs-base:base-latest --format '{{json .Manifest}}' | jq -r .digest)
-          echo "ECR $DIGEST -> GHCR $GOT"
-          [ "$GOT" = "$DIGEST" ]
+          # skopeo, not `imagetools create`: imagetools wraps a single manifest in a
+          # new index, which changes the digest (seen on the first run).
+          for TAG in base-latest $HASH_TAG; do
+            skopeo copy --all --preserve-digests "docker://$SRC" \
+              "docker://ghcr.io/dimagi-internal/connect-labs-base:$TAG"
+          done
+          GOT=$(skopeo inspect --raw docker://ghcr.io/dimagi-internal/connect-labs-base:base-latest | sha256sum | cut -d' ' -f1)
+          echo "ECR $DIGEST -> GHCR sha256:$GOT"
+          [ "sha256:$GOT" = "$DIGEST" ]
 
       - name: Set up Docker Buildx
         if: ${{ !inputs.mirror_only }}
