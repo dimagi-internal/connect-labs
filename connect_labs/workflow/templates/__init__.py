@@ -98,6 +98,7 @@ SANDBOX_CHECKED = frozenset(
         "photo_audit_report",
         "program_admin_report",
         "program_audit_creator",
+        "r2_revisit_analysis",
         "rutf_ciff_kpis",
         "sam_followup",
         "supply_stock_forecast",
@@ -529,6 +530,8 @@ TEMPLATE_GROUP_OF: dict[str, str] = {
     "supply_stock_review": "reports",
     # Where that stock is heading: children in treatment and to come, against it.
     "supply_stock_forecast": "reports",
+    # Which work areas a second revisit round should cover, per ward, with a map.
+    "r2_revisit_analysis": "reports",
     # Automatic reports: run themselves on a schedule, no statuses.
     "flw_weekly_audit_report": "automatic",
     "flw_daily_indicator_report": "automatic",
