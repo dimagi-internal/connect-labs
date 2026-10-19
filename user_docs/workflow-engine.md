@@ -200,15 +200,15 @@ These labels are set up by your program administrator in the report's registry. 
 
 ### R2 Revisit Analysis
 
-The **R2 Revisit Analysis** report — the CHC study's second-revisit planning table — has two tabs: **Table** and **Map**.
+The **R2 Revisit Analysis** report — the CHC study's second-revisit planning table — has three tabs: **Table**, **Map**, and **Download CSV**.
 
 #### Table tab
 
-The planning table is unchanged. It lists work areas and their R2 selection status for the organisation and ward you choose.
+The planning table lists work areas and their R2 selection status for the organisation and ward you choose. Two additional columns appear for each ward:
+
+- **EVC per building** — the ward's total expected visit count divided by its total number of buildings in the original opportunity.
+- **Expected visits (R2 work areas)** — the sum of each R2 work area's expected visit count, calculated as its building count multiplied by the ward's EVC per building, rounded to the nearest whole number.
 
 #### Map tab
 
-The **Map** tab sits next to the Table tab and gives you a spatial view of the same selection data. To use it:
-
-1. Choose an **organisation** and a **ward** from the selectors at the top of the report — the map then draws the ward's boundary and plots every work area within it.
-2. Alternatively, click the **map icon** beside any ward row in the Table tab to jump straight to that ward on the Map tab.
+The **Map** tab sits next to the Table tab and
