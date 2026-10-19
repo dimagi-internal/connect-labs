@@ -239,10 +239,10 @@ You can ask Claude to add or update a `values` map for any field in your registr
 
 ---
 
-## Solicitations
+## Synthetic Demo Data: Multi-Form App Support
 
-Solicitations (Expressions of Interest and Requests for Proposal) are calls for partners that organisations post when they are looking for implementing teams. MCP can read solicitation data through both the restricted and full-access addresses.
+Synthetic demo data can now faithfully simulate programmes that use several forms — for example, a registration form followed by one or more follow-up or service forms.
 
-### Public directory
+### How it worked before
 
-The solicitations directory at `/solicitations/` is public — no login is required. It lists every open call, showing the organisation behind each one.
+Previously, every generated beneficiary appeared as a series of unrelated visits. Each visit answered every question in the app and was paid under the same unit, regardless of which form it
