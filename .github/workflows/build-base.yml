@@ -10,6 +10,11 @@ on:
       - 'docker/*'
 
   workflow_dispatch:
+    inputs:
+      mirror_only:
+        description: 'Copy the CURRENT ECR base-latest to GHCR (same digest) without rebuilding'
+        type: boolean
+        default: false
 
 env:
   AWS_REGION: us-east-1
@@ -48,7 +53,28 @@ jobs:
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
+      # Publishes the GHCR copy resolve-base-images looks for, without a rebuild:
+      # the digest stays the same, so every image already built on it still
+      # matches the deploy's foundations check. Also the way out when a rebuild
+      # is blocked (public.ecr.aws 429s anonymous pulls from GitHub runners).
+      - name: Copy base-latest to GHCR without rebuilding
+        if: inputs.mirror_only
+        run: |
+          set -euo pipefail
+          SRC="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:base-latest"
+          DIGEST=$(docker buildx imagetools inspect "$SRC" --format '{{json .Manifest}}' | jq -r .digest)
+          HASH_TAG=$(aws ecr describe-images --repository-name "${{ env.ECR_REPOSITORY }}" \
+                       --image-ids imageDigest="$DIGEST" --query 'imageDetails[0].imageTags' --output json \
+                     | jq -r '[.[] | select(startswith("base-") and . != "base-latest")][0] // empty')
+          TAGS=(--tag ghcr.io/dimagi-internal/connect-labs-base:base-latest)
+          [ -n "$HASH_TAG" ] && TAGS+=(--tag "ghcr.io/dimagi-internal/connect-labs-base:$HASH_TAG")
+          docker buildx imagetools create "${TAGS[@]}" "$SRC"
+          GOT=$(docker buildx imagetools inspect ghcr.io/dimagi-internal/connect-labs-base:base-latest --format '{{json .Manifest}}' | jq -r .digest)
+          echo "ECR $DIGEST -> GHCR $GOT"
+          [ "$GOT" = "$DIGEST" ]
+
       - name: Set up Docker Buildx
+        if: ${{ !inputs.mirror_only }}
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       # Also published to GHCR (same build, so the same digest): app builds run on
@@ -56,6 +82,7 @@ jobs:
       # ECR is AWS internet egress (~1.5 TB/month, Oct 2026). Pulls from GHCR are
       # free. ECR stays the source of truth resolve-base-images reads digests from.
       - name: Build and push base image
+        if: ${{ !inputs.mirror_only }}
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
