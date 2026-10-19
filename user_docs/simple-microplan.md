@@ -169,7 +169,4 @@ Simple Microplan uses the **context picker** (the organization, program and oppo
 
 ### In a program with workspace roles (for example Auto-Connect or CLP Stage 4)
 
-Programs with workspace roles (such as Auto-Connect and CLP Stage 4) keep their microplans inside Simple Microplan, and only there. With such a program picked in the context picker, the Microplans page shows just the **Simple Microplan** tile, and it opens that program's own list. (CHC Microplan and CHC WA Revisit are not offered there; their links bring you to Simple Microplan.)
-
-- A microplan you create there belongs to the program and to your team. If you are on more than one team, pick the team when you create it.
-- **Network Managers** see only their own team's micropl
+Programs with workspace roles (such as Auto-Connect and CLP Stage 4) keep their microplans inside Simple Microplan, and only there. With such a program picked in the context
