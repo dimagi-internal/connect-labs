@@ -398,7 +398,7 @@ class TestReviewingARound:
         review = {k: fenwick["review"][k] for k in ("outcome", "label", "by_person", "people", "has_ai")}
         assert review == {
             "outcome": "waitlist",
-            "label": "Keep in view",
+            "label": "Waitlist",
             "by_person": True,
             "people": 2,
             "has_ai": True,
@@ -819,7 +819,7 @@ class TestVersions:
         current = client.get(reverse("marketplace:round_scores", args=["battery-2026"])).context
         moved = current["comparison"]["moved"]
         assert [(m["applicant"]["name"], m["from"], m["to"]) for m in moved] == [
-            ("Fenwick Trust", "Recommended", "Backup")
+            ("Fenwick Trust", "Recommended", "Recommended backup")
         ]
         weights = {c["id"]: (c["weight_from"], c["weight_to"]) for c in current["comparison"]["criteria"]}
         assert weights == {"reach": (60.0, 70.0), "cost": (40.0, 30.0)}
