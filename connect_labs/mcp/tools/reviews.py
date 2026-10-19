@@ -142,10 +142,11 @@ _REVIEW_PUBLIC_WARNING = (
             "public_record_acknowledged": {
                 "type": "boolean",
                 "description": (
-                    "Must be true. Confirms you understand this record will be publicly "
-                    "readable by the reviewed organisation and that the 'notes' field "
-                    "contains no PII (patient names, dates of birth, phone numbers, "
-                    "addresses, clinical observations, or health data)."
+                    "Must be true. Confirms you understand this review is a durable record, "
+                    "read by the call's owning organisation and platform support (never by the "
+                    "reviewed organisation), and that the 'notes' field contains no PII "
+                    "(patient names, dates of birth, phone numbers, addresses, clinical "
+                    "observations, or health data)."
                 ),
             },
             "response_id": {
@@ -169,8 +170,8 @@ _REVIEW_PUBLIC_WARNING = (
             "notes": {
                 "type": "string",
                 "description": (
-                    "Reviewer notes. "
-                    "Do NOT include PII — this field is publicly readable by the reviewed organisation."
+                    "Reviewer notes. Read by the call's owning organisation and platform support. "
+                    "Do NOT include PII."
                 ),
             },
             "criteria_scores": {

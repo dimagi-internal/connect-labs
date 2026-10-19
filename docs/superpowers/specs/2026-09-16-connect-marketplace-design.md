@@ -1,5 +1,17 @@
 # Connect Marketplace — org registry, EOI history, and directory
 
+> **Superseded in part / current state (note added 2026-10-19).** This is a
+> point-in-time record and is left as written. Three things in it no longer
+> hold. Rounds and responses are not `SolicitationRecord` / `ResponseRecord`
+> proxies over prod LabsRecords: they are labs-database tables told apart by
+> `Solicitation.source`. Live program solicitations do not go through the prod
+> LabsRecord API. And a round's `evaluation_criteria` is no longer empty for
+> historical rounds: criteria are written after its submissions are read, and
+> versioned. For the current intake, criteria and review system see
+> [`docs/marketplace-round-review.md`](../../marketplace-round-review.md). For
+> ownership and access see
+> [`2026-10-15-solicitations-owned-by-organisations-design.md`](2026-10-15-solicitations-owned-by-organisations-design.md).
+
 **Status:** phase 1 SHIPPED 2026-09-16 — all five steps are live at
 `/labs/marketplace/`. All steps were executed directly against the landed code;
 no separate plan doc was kept.

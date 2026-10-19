@@ -377,17 +377,19 @@ the per-setting review.
 The permission rules above block Claude Code from calling dangerous *local* tools.
 The `connect_labs` MCP server also enforces policy server-side on write operations:
 
-- **`create_solicitation`** — raises `POLICY_VIOLATION` if the caller attempts to
-  set `is_public: true`. Solicitation records must remain private.
-- **`create_fund` / `create_review`** — these records are legitimately public (orgs
-  read their own fund and review data). However, both tools require the caller to
-  pass `public_record_acknowledged: true`. Passing `false` raises `POLICY_VIOLATION`.
-  The tool description, individual field descriptions, and the return value all
-  name the specific free-text fields that must not contain PII (`description` for
-  funds, `notes` for reviews).
-- **`award_response`** — sets the response record to `public=True` so the awarded
-  organisation can read their own status. The tool logs a `logger.warning()` and
-  returns a `_warning` key in the response naming the risk fields.
+- **`create_solicitation`** — `is_public: true` lists the call in the public
+  `/solicitations/` directory, so the tool description says its content must hold
+  no PII or pipeline-derived data. Responses to a call stay confidential to its
+  owning organisation (`connect_labs/solicitations/access.py`).
+- **`create_fund`** — a fund is a public prod LabsRecord (readable by any authenticated
+  Connect user), so the tool requires `public_record_acknowledged: true` (`false` raises
+  `POLICY_VIOLATION`) and names `description` as the field that must not hold PII.
+- **`create_review`** — a review lives in the labs database and is read only by the
+  call's owning organisation and platform support (`access.can_read_reviews`), never
+  by the reviewed organisation. It keeps the same `public_record_acknowledged: true`
+  requirement as a PII check on `notes`.
+- **`award_response`** — marks the response awarded and, when labs email is on,
+  emails the awardee a selection notice that carries no review content.
 - **`update_fund` / `update_review` / `update_solicitation`** — strip `is_public`
   and `public` from the update payload before merging, preventing an injection from
   flipping visibility on an existing record.
