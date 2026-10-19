@@ -2993,8 +2993,8 @@
           ' remaining)',
       );
 
-    // minimum buildings per work area: short cells join a neighbouring cell
-    let areas = keptCells.map((c) => ({ cells: [c], fill: [] }));
+    // minimum buildings per work area: cells under it are left out; every work
+    // area stays one square cell of the chosen size
     const minB = params.minBldgs > 0 && buildings.length ? params.minBldgs : 0;
     if (params.minBldgs > 0 && !buildings.length) {
       log(
@@ -3002,74 +3002,28 @@
         'warn',
       );
     }
+    let cells = keptCells;
     if (minB) {
-      const byKey = new Map(keptCells.map((c) => [c.ix + ',' + c.iy, c]));
-      const m = window.SimpleMicroplanGrouping.mergeSmallCells(
-        keptCells.map((c) => ({
-          id: c.ix + ',' + c.iy,
-          ix: c.ix,
-          iy: c.iy,
-          count: c.count || 0,
-        })),
-        minB,
-      );
-      areas = m.groups.map((ids, g) => ({
-        cells: ids.map((id) => byKey.get(id)),
-        fill: m.fill[g],
-      }));
+      cells = keptCells.filter((c) => (c.count || 0) >= minB);
       log(
-        '[grid] Minimum ' +
+        '[grid] Left out ' +
+          (keptCells.length - cells.length) +
+          ' cells with fewer than ' +
           minB +
-          ' buildings per work area: ' +
-          keptCells.length +
-          ' cells → ' +
-          areas.length +
-          ' work areas',
+          ' buildings (' +
+          cells.length +
+          ' remaining)',
       );
-      if (m.short)
-        log(
-          '[grid] ' +
-            m.short +
-            ' work areas still have fewer than ' +
-            minB +
-            ' buildings: no neighbouring cell to join.',
-          'warn',
-        );
     }
-    // merged outlines come from exact lattice corners, so neighbours line up
-    const cs = params.cellSize;
-    const square = (ix, iy) => {
-      const x0 = grid.minX + ix * cs,
-        y0 = grid.minY + iy * cs,
-        x1 = grid.minX + (ix + 1) * cs,
-        y1 = grid.minY + (iy + 1) * cs;
-      return [
-        [
-          [x0, y0],
-          [x1, y0],
-          [x1, y1],
-          [x0, y1],
-          [x0, y0],
-        ],
-      ];
-    };
 
     const out = [];
-    for (const area of areas) {
-      const bc = area.cells.reduce((s, c) => s + (c.count || 0), 0);
-      let ringProj, ccx, ccy;
-      if (area.cells.length === 1 && !area.fill.length) {
-        [ccx, ccy] = multiPolyCentroid(area.cells[0].poly);
-        ringProj = largestExterior(area.cells[0].poly);
-      } else {
-        const squares = area.cells
-          .map((c) => square(c.ix, c.iy))
-          .concat(area.fill.map(([ix, iy]) => square(ix, iy)));
-        ringProj = largestExterior(polygonClipping.union(...squares));
-        [ccx, ccy] = multiPolyCentroid([[ringProj]]);
-      }
+    for (const cell of cells) {
+      const bc = cell.count || 0;
+      const [ccx, ccy] = multiPolyCentroid(cell.poly);
       const [clon, clat] = conv.inverse([ccx, ccy]);
-      const ring = ringProj.map((pt) => conv.inverse([pt[0], pt[1]]));
+      const ring = largestExterior(cell.poly).map((pt) =>
+        conv.inverse([pt[0], pt[1]]),
+      );
       out.push({
         'Area Slug': genSlug(prefix, usedSlugs),
         Ward: ward,

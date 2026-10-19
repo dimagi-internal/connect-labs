@@ -67,7 +67,7 @@ Splits the boundary into square cells and counts the buildings in each one (from
 
 - **Cell size (m)**: the side of each square.
 - **Visit ratio**: Expected Visit Count = buildings × ratio.
-- **Minimum buildings per work area** (0 = off): a cell with fewer buildings than this joins a cell it shares a side with, smallest first, until every work area has at least this many. No building is left out; merged work areas are a few cells joined into one shape. A cell with no neighbour left to join stays as it is, and the log says how many are still under the minimum. With **Drop empty cells** on, empty cells are dropped first.
+- **Minimum buildings per work area** (0 = off): leaves out cells with fewer buildings than this, so every work area that is made has at least this many. Work areas stay one square cell of the chosen size; nothing is merged. The log says how many cells were left out.
 - **Grid base point** (optional): makes the cell corners line up with a GPS point. Type it or click **Pick** and click the map.
 - **Drop empty cells**: leaves out cells with no buildings.
 - **Add singleton columns**: adds the keepSingleton columns for cells with only one building.
