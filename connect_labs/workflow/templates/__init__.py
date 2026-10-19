@@ -529,6 +529,8 @@ TEMPLATE_GROUP_OF: dict[str, str] = {
     "supply_stock_review": "reports",
     # Where that stock is heading: children in treatment and to come, against it.
     "supply_stock_forecast": "reports",
+    # Which work areas a second revisit round should cover, per ward, with a map.
+    "r2_revisit_analysis": "reports",
     # Automatic reports: run themselves on a schedule, no statuses.
     "flw_weekly_audit_report": "automatic",
     "flw_daily_indicator_report": "automatic",
