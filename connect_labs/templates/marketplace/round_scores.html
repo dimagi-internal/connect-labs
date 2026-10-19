@@ -28,6 +28,15 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
                 {% for v in history %}<option value="{{ v.version }}" {% if v.version == shown_version %}selected{% endif %}>Criteria version {{ v.number }}{% if v.current %} (current){% endif %}</option>{% endfor %}
               </select>
             </form>
+            {% if not comparison %}
+              <form method="get" class="inline-flex items-center gap-1.5 text-[11px] text-gray-500" data-testid="compare-picker">
+                <input type="hidden" name="version" value="{{ shown_version }}">
+                <select name="compare" onchange="this.form.submit()" title="Set these scores against another version of the criteria, to see what changed." class="border border-brand-border-light rounded-full px-2 py-0.5 text-[12px] text-gray-700 bg-white">
+                  <option value="" selected>No comparison</option>
+                  {% for v in history %}{% if v.version != shown_version %}<option value="{{ v.version }}">Compare with version {{ v.number }}</option>{% endif %}{% endfor %}
+                </select>
+              </form>
+            {% endif %}
           {% elif shown_version %}<a href="{% url 'marketplace:round' round.slug %}#criteria" title="The scores are given against this version of the round's criteria. Each time the criteria are rewritten, the version goes up." class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-semibold bg-indigo-50 text-brand-indigo">Criteria version {{ shown_version|slice:"1:" }}</a>{% endif %}
         </div>
         {% if not is_current %}
@@ -111,11 +120,12 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
         </div>
         <div class="text-[12px] text-gray-500 mt-0.5" data-testid="comparison-note">A recommendation follows the round's rules on places, budget and geography as well as the score, so it can move the other way to the score.</div>
       </div>
-      {% if history|length > 2 %}
+      {% if history|length > 1 %}
         <form method="get" class="text-[11px] text-gray-500 flex items-center gap-1.5">
           <input type="hidden" name="version" value="{{ shown_version }}">
           COMPARE WITH
           <select name="compare" onchange="this.form.submit()" class="border border-brand-border-light rounded-lg px-2 py-1 text-[12.5px] text-gray-800 bg-white">
+            <option value="">No comparison</option>
             {% for v in history %}{% if v.version != shown_version %}<option value="{{ v.version }}" {% if v.version == compare_with %}selected{% endif %}>Version {{ v.number }}</option>{% endif %}{% endfor %}
           </select>
         </form>

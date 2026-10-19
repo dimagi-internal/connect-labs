@@ -465,11 +465,9 @@ def round_scores(request, slug):
     shown = request.GET.get("version") if request.GET.get("version") in names else round_.rubric_version
     first_service = queries.first_service_by_org_name()
     applicants, reviewed, summary, _ = queries.scores_at(round_, shown, first_service)
-    # Compared with the version before the one shown, unless another is asked for.
+    # The shown version alone, unless `?compare=` names another version to set it against.
     earlier = [n for n in names if n != shown]
     compare_with = request.GET.get("compare") if request.GET.get("compare") in earlier else None
-    if compare_with is None and shown in names and names.index(shown) > 0:
-        compare_with = names[names.index(shown) - 1]
     comparison = None
     if compare_with:
         first, second = sorted([compare_with, shown], key=names.index)
