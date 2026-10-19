@@ -198,12 +198,17 @@ Case and visit fields can now display human-readable labels in place of the raw 
 
 These labels are set up by your program administrator in the report's registry. If a stored code has no label defined, the raw code continues to show as before. If a field has no labels configured at all, nothing changes.
 
-### MUAC/Age Plausibility report
+### R2 Revisit Analysis
 
-The MUAC/Age Plausibility report has three updates.
+The **R2 Revisit Analysis** report — the CHC study's second-revisit planning table — has two tabs: **Table** and **Map**.
 
-#### "Too high" and "below −2SD" thresholds now use WHO 2007 values by exact month of age
+#### Table tab
 
-A reading is flagged as **too high** when it exceeds WHO's +3 standard deviations for the child's completed month of age and sex — a threshold that about 1 healthy child in 750 exceeds. Previously, a single fixed ceiling applied to all children within a broad age band, which could hold the oldest children in that band to as little as +2 SD. **Below −2SD** is now calculated the same way, using the WHO value for the child's exact month.
+The planning table is unchanged. It lists work areas and their R2 selection status for the organisation and ward you choose.
 
-6–11 month olds are now included in the
+#### Map tab
+
+The **Map** tab sits next to the Table tab and gives you a spatial view of the same selection data. To use it:
+
+1. Choose an **organisation** and a **ward** from the selectors at the top of the report — the map then draws the ward's boundary and plots every work area within it.
+2. Alternatively, click the **map icon** beside any ward row in the Table tab to jump straight to that ward on the Map tab.
