@@ -32,6 +32,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      packages: write # the GHCR copy of the image
 
     steps:
       - name: Checkout code
@@ -55,9 +56,16 @@ jobs:
             -type f 2>/dev/null | sort | xargs cat | sha256sum | cut -c1-12)
           echo "hash=$HASH" >> "$GITHUB_OUTPUT"
 
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
+      # Also published to GHCR (same build, so the same digest): app builds run on
+      # GitHub-hosted runners and pull these as FROM images, and pulling them from
+      # ECR is AWS internet egress (~1.5 TB/month, Oct 2026). Pulls from GHCR are
+      # free. ECR stays the source of truth resolve-base-images reads digests from.
       - name: Build and push node image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -68,5 +76,9 @@ jobs:
           tags: |
             ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:node-latest
             ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:node-${{ steps.fe-hash.outputs.hash }}
-          cache-from: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:cache-node
-          cache-to: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:cache-node,mode=max
+            ghcr.io/dimagi-internal/connect-labs-node:node-latest
+            ghcr.io/dimagi-internal/connect-labs-node:node-${{ steps.fe-hash.outputs.hash }}
+          # Cache in GitHub's cache, not ECR: a registry cache read from a
+          # GitHub-hosted runner is pulled out of AWS on every build.
+          cache-from: type=gha,scope=node
+          cache-to: type=gha,scope=node,mode=max

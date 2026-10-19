@@ -197,6 +197,7 @@ jobs:
       id-token: write
       contents: read
       actions: read # gh run list/watch in resolve-base-images
+      packages: read # the GHCR copies of base/node (resolve-base-images)
     env:
       AWS_REGION: us-east-1
       ECR_REPOSITORY: labs-jj-commcare-connect

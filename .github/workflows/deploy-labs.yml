@@ -123,6 +123,7 @@ jobs:
       # no Actions scope, `gh run list` 403s, and the old `2>/dev/null || true`
       # around it read that as "no base build running" — silently.
       actions: read
+      packages: read # the GHCR copies of base/node (resolve-base-images)
 
     steps:
       - name: Checkout code
