@@ -2325,6 +2325,11 @@ function bulkAssessmentInterface() {
       if (this.storageOpportunityId) {
         formData.append('storage_opportunity_id', this.storageOpportunityId);
       }
+      // The complete endpoint writes the linked run's state and completes it;
+      // a program-owned run is only found with its owning program as a hint.
+      if (owningProgramId) {
+        formData.append('owning_program_id', owningProgramId);
+      }
       return formData;
     },
     async saveAudit() {
@@ -2465,34 +2470,11 @@ function bulkAssessmentInterface() {
           }
           this.hasUnsavedChanges = false;
 
-          // Update workflow run state if launched from a workflow
-          if (workflowRunId) {
-            const totalAssessed = this.stats.pass + this.stats.fail + (this.stats.duplicateFake || 0);
-            const avgPassed = totalAssessed > 0 ? Math.round(this.stats.pass / totalAssessed * 100) : null;
-            try {
-              await fetch('/labs/workflow/api/run/' + workflowRunId + '/state/', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'X-CSRFToken': this.csrfToken,
-                },
-                body: JSON.stringify({
-                  owning_program_id: owningProgramId,
-                  state: {
-                    phase: 'completed',
-                    status: 'completed',
-                    avg_passed: avgPassed,
-                    flw_count: new Set(this.allAssessments.map(a => a.username)).size,
-                    period_start: this.bulkStartDate,
-                    period_end: this.bulkEndDate,
-                    completion: { completed_at: new Date().toISOString() },
-                  }
-                }),
-              });
-            } catch (e) {
-              console.warn('Failed to update workflow state:', e);
-            }
-          }
+          // The linked workflow run's state (avg_passed, flw_count, phase,
+          // completion) is written by the complete endpoint itself, across ALL
+          // of the run's sessions and before it completes the run. Don't write
+          // it from here: this page only knows its own session, and by now the
+          // run may already be completed (its state then refuses the write).
 
           // Redirect to workflow or audit list
           const redirectUrl = (workflowRunId && opportunityId)

@@ -97,11 +97,15 @@ def test_the_read_carries_the_hint_on_the_querystring():
 def test_every_state_write_carries_the_hint_in_its_body():
     """POSTs cannot use the querystring: the middleware only decorates GETs, and
     a redirect cannot preserve a POST body. Both write sites -- task creation and
-    completion -- were losing their write silently, so both are pinned."""
+    completion -- were losing their write silently, so both are pinned.
+
+    Completion no longer writes run state from the page: the complete endpoint
+    writes it server-side, so the hint rides on the complete POST instead."""
     html = TEMPLATE_PATH.read_text()
     state_writes = html.count("/state/'")
-    assert state_writes == 2, f"expected 2 state-write call sites, found {state_writes}"
+    assert state_writes == 1, f"expected 1 state-write call site (task creation), found {state_writes}"
     assert html.count("owning_program_id: owningProgramId,") == state_writes
+    assert "formData.append('owning_program_id', owningProgramId);" in html
 
 
 def test_no_workflow_run_call_is_left_unscoped():

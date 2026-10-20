@@ -739,10 +739,17 @@ class ExperimentAuditCompleteView(LoginRequiredMixin, View):
         page to finish: an empty snapshot on a completed run is unrecoverable,
         an open run is not.
 
+        Every session completion also writes the run's run-level figures
+        (``run_level_audit_state``, plus ``phase``/``completion`` once the last
+        session is done) BEFORE any completion. The review page used to write
+        them itself, after this request returned: from one session's numbers,
+        and -- for the last session -- onto a run this request had already
+        completed, where the write was refused and lost.
+
         Best-effort: any failure here is logged and swallowed so it never
         breaks the (already-successful) session completion.
         """
-        from connect_labs.audit.data_access import all_sessions_completed
+        from connect_labs.audit.data_access import all_sessions_completed, run_level_audit_state
         from connect_labs.workflow.data_access import WorkflowDataAccess
         from connect_labs.workflow.snapshot_runtime import SnapshotBuildError, build_snapshot_for_run
 
@@ -750,13 +757,31 @@ class ExperimentAuditCompleteView(LoginRequiredMixin, View):
         if not run_id:
             return
         try:
-            sessions = data_access.get_sessions_by_workflow_run(run_id)
-            if not all_sessions_completed(sessions):
-                return
+            # This page's ambient scope is an opportunity, which cannot see a
+            # PROGRAM-owned run; the page hands the owning program back as a hint,
+            # as its state writes always did (see test_workflow_run_program_scope).
+            raw_hint = str(request.POST.get("owning_program_id") or "")
+            program_hint = int(raw_hint) if raw_hint.isdigit() else None
             workflow_data_access = WorkflowDataAccess(request=request)
             try:
-                run = workflow_data_access.get_run(run_id)
+                run = workflow_data_access.get_run(run_id, program_hint=program_hint)
                 if run is None or run.is_completed:
+                    return
+                if run.program_id and not workflow_data_access.program_id:
+                    # Program-owned: its definition is only readable program-scoped.
+                    workflow_data_access.close()
+                    workflow_data_access = WorkflowDataAccess(request=request, program_id=run.program_id)
+                sessions = self._run_sessions(request, data_access, workflow_data_access, run)
+                if not sessions:
+                    return
+                done = all_sessions_completed(sessions)
+                run_state = run_level_audit_state(sessions)
+                if done:
+                    run_state["phase"] = "completed"
+                    run_state["completion"] = {"completed_at": timezone.now().isoformat()}
+                # complete_run below writes the run as given, so hand it the updated one.
+                run = workflow_data_access.update_run_state(run_id, run_state, run=run) or run
+                if not done:
                     return
                 built = None
                 try:
@@ -795,6 +820,32 @@ class ExperimentAuditCompleteView(LoginRequiredMixin, View):
                 workflow_data_access.close()
         except Exception:
             logger.warning("Failed to complete workflow run %s after session completion", run_id, exc_info=True)
+
+    @staticmethod
+    def _run_sessions(request, data_access, workflow_data_access, run):
+        """Every audit session linked to ``run``.
+
+        A multi-opp run's sessions are filed per opportunity and an opp-scoped
+        read sees only its own, so those are read once per opportunity the run
+        spans; reading only the ambient scope both under-counted the run-level
+        figures and could see "every session done" while another opportunity's
+        were still open. A single-opp run keeps the ambient read. A failed read
+        raises (nothing is written, nothing completes).
+        """
+        from connect_labs.workflow.templates import resolve_snapshot_opp_scope
+
+        definition = workflow_data_access.get_definition(run.definition_id) if run.definition_id else None
+        opp_ids = resolve_snapshot_opp_scope(run, definition)[1] if definition else []
+        if len(opp_ids) <= 1:
+            return data_access.get_sessions_by_workflow_run(run.id)
+        sessions = []
+        for opp_id in dict.fromkeys(opp_ids):
+            opp_access = AuditDataAccess(request=request, opportunity_id=opp_id)
+            try:
+                sessions.extend(opp_access.get_sessions_by_workflow_run(run.id))
+            finally:
+                opp_access.close()
+        return sessions
 
 
 class ExperimentAuditUncompleteView(LoginRequiredMixin, View):
