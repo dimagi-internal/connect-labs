@@ -94,7 +94,8 @@ const wa = (c, ward, status, owner, x, evc, bld) => ({
 // Ward A: c1 kept by the algorithm (2 of 10 HSD), c2 out (8/10 > 40%), c3 out
 // (MUAC on 3/3), c4 out (NCF, 1 building), c5 kept (NCF, 3 buildings).
 // Ward_B: c6 suspended + inaccessible (EVC 0, so not the algorithm), c7 in R1,
-// c8 rejected (9/10 HSD, so not the algorithm). c9 is Excluded: left out.
+// c8 rejected (9/10 HSD, so not the algorithm), c10 meets R1's thresholds but
+// Ward B has R1 work areas, so they are not applied. c9 is Excluded: left out.
 function fixture(ctx) {
   const main = [
     wa('c1', 'A', 'VISITED', 'u1', 1, 10, 5),
@@ -106,6 +107,7 @@ function fixture(ctx) {
     wa('c7', 'Ward_B', 'VISITED', 'u2', 7, 10, 5),
     wa('c8', 'Ward_B', 'VISITED', 'u2', 8, 10, 5),
     wa('c9', 'Ward_B', 'EXCLUDED', 'u2', 9, 10, 5),
+    wa('c10', 'Ward_B', 'VISITED', 'u2', 10, 10, 5),
   ];
   const r1 = [
     wa('', 'Ward B', 'VISITED', 'x', 7, 10, 5),
@@ -119,6 +121,7 @@ function fixture(ctx) {
     ['c5', 0, 0, 0, 1],
     ['c7', 1, 0, 0, 0],
     ['c8', 9, 0, 0, 0],
+    ['c10', 1, 0, 0, 0],
   ].map(([c, hsd, muac, dw, ncf]) => ({ wa_case_id: c, hsd, muac, dw, ncf }));
   return {
     wa_main: ctx.rrCompact('wa_main', main),
@@ -140,18 +143,19 @@ test('rrClassifyOrg counts every column per ward', () => {
   const head = (w) => row(w).split('|').slice(0, 9).join('|');
   // main|r1|algo|susp|susp_not_r1|inacc_not_r1|rejected|rejected_not_r1|total
   assert.strictEqual(head('A'), '5|0|2|1|1|0|0|0|2');
-  assert.strictEqual(head('Ward B'), '3|1|0|1|1|1|1|1|2');
+  // c10 meets the thresholds, but Ward B has R1 work areas: not an R2 Work-Area.
+  assert.strictEqual(head('Ward B'), '4|1|0|1|1|1|1|1|2');
   assert.strictEqual(head('C'), '0|1|0|0|0|0|0|0|0');
   // A: 50 EVC over 19 buildings; R2 = c1 (5 bld -> 13) + c5 (3 bld -> 8).
   assert.strictEqual(byWard['A'].evc_ratio.toFixed(4), (50 / 19).toFixed(4));
   assert.strictEqual(byWard['A'].evc_r2, 21);
-  // Ward B: 20 EVC over 12 buildings; R2 = c6 (2 -> 3) + c8 (5 -> 8); c7 is in R1.
-  assert.strictEqual(byWard['Ward B'].evc_r2, 11);
+  // Ward B: 30 EVC over 17 buildings; R2 = c6 (2 -> 4) + c8 (5 -> 9); c7 is in R1.
+  assert.strictEqual(byWard['Ward B'].evc_r2, 13);
   assert.strictEqual(byWard['C'].evc_r2, 0);
   // Totals recompute the ratio rather than adding ratios up.
   const t = ctx.rrSum(out.wards, COLS);
-  assert.strictEqual(t.evc_ratio.toFixed(4), (70 / 31).toFixed(4));
-  assert.strictEqual(t.evc_r2, 32);
+  assert.strictEqual(t.evc_ratio.toFixed(4), (80 / 36).toFixed(4));
+  assert.strictEqual(t.evc_r2, 34);
   assert.deepStrictEqual(Object.keys(byWard['Ward B'].raws), ['Ward_B']);
 });
 
@@ -170,7 +174,10 @@ test('each work area gets the first category that applies', () => {
     c6: 'susp',
     c7: 'r1',
     c8: 'rej',
+    c10: 'none',
   });
+  assert.strictEqual(was.c10.thr, true);
+  assert.strictEqual(was.c10.algo, false);
 });
 
 test('rrWorkAreaFeatures keeps classified shapes with a geometry', () => {
@@ -199,6 +206,17 @@ test('rrWorkAreaFeatures keeps classified shapes with a geometry', () => {
   assert.strictEqual(fc.features[0].properties.cat, 'algo');
   assert.strictEqual(fc.features[0].properties.color, '#3b82f6');
   assert.match(ctx.rrPopupHtml(fc.features[0].properties), /S5/);
+});
+
+test('rrWardSlug puts underscores for spaces', () => {
+  const ctx = load(makeReact());
+  assert.strictEqual(ctx.rrWardSlug('Banganje South'), 'Banganje_South');
+  assert.strictEqual(
+    ctx.rrWardSlug(' Birin  Fulani West '),
+    'Birin_Fulani_West',
+  );
+  assert.strictEqual(ctx.rrWardSlug('Boh (non-RCT)'), 'Boh_(non-RCT)');
+  assert.strictEqual(ctx.rrWardSlug('Kamo'), 'Kamo');
 });
 
 test('rrWardFeature matches ward names loosely', () => {
@@ -268,7 +286,7 @@ test('rrConnectCsv writes the Connect upload columns for the chosen rules', () =
   const shape = (c, slug, extra = {}) => ({
     wa_case_id: c,
     slug,
-    ward: c === 'c6' ? 'Ward_B' : 'A',
+    ward: c === 'c6' ? 'Ward  B ' : 'A',
     boundary: JSON.stringify(square),
     centroid: '{"type":"Point","coordinates":[2.5,3.25]}',
     lga: 'L',
@@ -304,7 +322,7 @@ test('rrConnectCsv writes the Connect upload columns for the chosen rules', () =
   const lines = out.csv.trim().split('\n');
   assert.strictEqual(
     lines[0],
-    'Area Slug,Present in R1,Ward,Centroid,Boundary,Building Count,Expected Visit Count,Target Population,LGA,State,' +
+    'Area Slug,Ward has R1 work areas,Ward,Centroid,Boundary,Building Count,Expected Visit Count,Target Population,LGA,State,' +
       'Implementation Area,Work Area Group Name,R2 Reason,Original Expected Visit Count',
   );
   assert.strictEqual(
@@ -314,10 +332,11 @@ test('rrConnectCsv writes the Connect upload columns for the chosen rules', () =
   );
   assert.strictEqual(
     lines[2],
-    'AA00006,Yes,Ward_B,2.5 3.25,"POLYGON ((1 2, 3 2, 3 4, 1 2))",2,3,0,L,S,Ward_B,"G, 1",' +
+    // Ward column: spaces become underscores; Implementation Area keeps Connect's name.
+    'AA00006,Yes,Ward_B,2.5 3.25,"POLYGON ((1 2, 3 2, 3 4, 1 2))",2,4,0,L,S,Ward  B ,"G, 1",' +
       'Suspended worker; Approved inaccessible,0',
   );
-  assert.strictEqual(out.visits, 16);
+  assert.strictEqual(out.visits, 17);
 });
 
 test('the Download tab renders before and after the data loads', () => {
@@ -336,4 +355,32 @@ test('the Download tab renders before and after the data loads', () => {
   // Ward B has an R1 work area (c7); A does not.
   assert.match(text, /R1 · 1/);
   assert.match(text, /Only wards in R1/);
+});
+
+test('a ward treated as not done in R1 gets the thresholds and its R1 work areas', () => {
+  const ctx = load(makeReact());
+  const was = ctx.rrClassifyOrg(fixture(ctx), COLS).was;
+  const rules = { algo: true, susp: false, inacc: false, rej: false };
+  const ids = (sel) => JSON.parse(JSON.stringify(sel.map((f) => f.c))).sort();
+  const wards = { A: true, 'Ward B': true };
+  assert.deepStrictEqual(ids(ctx.rrSelectWorkAreas(was, wards, rules)), [
+    'c1',
+    'c5',
+  ]);
+  const ov = { 'Ward B': true };
+  // c7 (in R1, 1/10 HSD) and c10 now meet the thresholds; c6 (EVC 0) and c8 (9/10) do not.
+  assert.deepStrictEqual(ids(ctx.rrSelectWorkAreas(was, wards, rules, ov)), [
+    'c1',
+    'c10',
+    'c5',
+    'c7',
+  ]);
+  assert.strictEqual(
+    ctx.rrReasonText(was.c7, rules, true),
+    'R2 Work-Area (R1 thresholds); In R1 opp (ward overridden)',
+  );
+  assert.strictEqual(
+    ctx.rrReasonText(was.c10, rules, true),
+    'R2 Work-Area (R1 thresholds); Ward overridden',
+  );
 });
