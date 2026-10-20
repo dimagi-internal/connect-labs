@@ -358,6 +358,52 @@ class TestRenameRunView:
         assert response.status_code == 400
 
 
+class TestUpdateStateOnACompletedRun:
+    """A completed run's state is immutable -- except the follow-up links the bulk
+    review page records after the review (the task it opened for a worker), which
+    were otherwise lost: the run had just been completed by that same review."""
+
+    def _post(self, rf, dimagi_user, state):
+        import json
+
+        from connect_labs.workflow.data_access import WorkflowRunRecord
+        from connect_labs.workflow.views import update_state_api
+
+        request = rf.post(
+            "/labs/workflow/api/run/9/state/", data=json.dumps({"state": state}), content_type="application/json"
+        )
+        request.user = dimagi_user
+        completed = WorkflowRunRecord(
+            {
+                "id": 9,
+                "experiment": "workflow",
+                "type": "workflow_run",
+                "data": {"definition_id": 3, "status": "completed", "state": {}},
+                "opportunity_id": 700,
+            }
+        )
+        with (
+            patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA,
+            patch("connect_labs.workflow.views.s3_export"),
+        ):
+            mock_wda = MockWDA.return_value
+            mock_wda.get_run.return_value = completed
+            mock_wda.update_run_state.return_value = completed
+            return update_state_api(request, run_id=9), mock_wda
+
+    def test_task_links_are_written_to_a_completed_run(self, dimagi_user, rf: RequestFactory):
+        response, mock_wda = self._post(rf, dimagi_user, {"tasks_created": 1, "flw_tasks": {"flw_a": 42}})
+
+        assert response.status_code == 200
+        mock_wda.update_run_state.assert_called_once()
+
+    def test_anything_else_is_still_refused(self, dimagi_user, rf: RequestFactory):
+        response, mock_wda = self._post(rf, dimagi_user, {"flw_tasks": {"flw_a": 42}, "phase": "config"})
+
+        assert response.status_code == 409
+        mock_wda.update_run_state.assert_not_called()
+
+
 class TestUpdateAuditBatchConfigView:
     def _request(self, rf, dimagi_user, body):
         import json
@@ -453,6 +499,55 @@ class TestUpdateAuditBatchConfigView:
             per_opp = saved_data["config"]["audit_batch"]["per_opp"]
             assert per_opp["700"]["muac_image_paths"] == ["a/new"]
             assert per_opp["825"]["muac_image_paths"] == ["b/old"]  # untouched opp preserved
+
+    def test_preserves_per_opp_keys_the_render_does_not_send(self, dimagi_user, rf: RequestFactory):
+        """The render's Save / auto-save sends only paths + classifiers. A key set on
+        the opp's entry by hand -- muac_reading_field, the per-opp MUAC reading path
+        -- must survive that save instead of being dropped with the old entry."""
+        request = self._request(
+            rf,
+            dimagi_user,
+            {
+                "per_opp": {
+                    "700": {
+                        "muac_image_paths": ["a/new_muac"],
+                        "rest_image_paths": [],
+                        "classifiers": {"a/new_muac": ["hyperzoom"]},
+                    }
+                }
+            },
+        )
+
+        with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
+            mock_wda = MagicMock()
+            MockWDA.return_value = mock_wda
+            mock_wda.get_definition.return_value = MagicMock(
+                data={
+                    "config": {
+                        "audit_batch": {
+                            "per_opp": {
+                                "700": {
+                                    "muac_image_paths": ["a/old_muac"],
+                                    "classifiers": {"a/old_muac": ["muac_mismatch"]},
+                                    "muac_reading_field": "anthropometric_appetite/muac_measurement/muac_cm",
+                                }
+                            }
+                        }
+                    }
+                }
+            )
+            mock_wda.update_definition.return_value = MagicMock(data={"config": {"audit_batch": {}}})
+
+            from connect_labs.workflow.views import UpdateAuditBatchConfigView
+
+            UpdateAuditBatchConfigView.as_view()(request, definition_id=1)
+
+            saved = mock_wda.update_definition.call_args[0][1]["config"]["audit_batch"]["per_opp"]["700"]
+            assert saved["muac_reading_field"] == "anthropometric_appetite/muac_measurement/muac_cm"
+            # ...while every key the save DID send replaces its old value outright.
+            assert saved["muac_image_paths"] == ["a/new_muac"]
+            assert saved["rest_image_paths"] == []
+            assert saved["classifiers"] == {"a/new_muac": ["hyperzoom"]}
 
     def test_rejects_unauthorized_opportunity_in_per_opp(self, dimagi_user, rf: RequestFactory):
         request = self._request(rf, dimagi_user, {"per_opp": {"9999": {"muac_image_paths": ["x"]}}})

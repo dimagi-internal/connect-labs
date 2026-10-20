@@ -470,6 +470,43 @@ def all_sessions_completed(sessions) -> bool:
     return bool(sessions) and all(getattr(s, "status", None) == "completed" for s in sessions)
 
 
+def _js_round(x: float) -> int:
+    """Math.round for the non-negative percentages below (Python's round() is banker's)."""
+    return int(x + 0.5)
+
+
+def run_level_audit_state(sessions) -> dict:
+    """The run-state figures that describe a run's audit sessions AS A WHOLE.
+
+    Written by the server whenever one of the run's sessions is completed. The
+    review page used to write these itself from the ONE session it had just
+    completed, so every completion overwrote the run's figures with that session's
+    (a run of per-worker sessions read "1 FLW", at one session's pass rate), and
+    the last session's write never landed at all: the server completes the run
+    first and a completed run's state is immutable.
+
+    - ``avg_passed``: the mean of each session's pass rate, pass / (pass + fail +
+      duplicate_fake) -- the per-session rate the review page has always written --
+      over the sessions with anything reviewed; averaged per session, as
+      bulk_image_audit's run screen averages them. None when nothing is reviewed.
+    - ``flw_count``: distinct field workers across every session.
+    """
+    sessions = list(sessions)
+    rates = []
+    usernames = set()
+    for s in sessions:
+        stats = s.get_assessment_stats() or {}
+        reviewed = stats.get("pass", 0) + stats.get("fail", 0) + stats.get("duplicate_fake", 0)
+        if reviewed:
+            rates.append(_js_round(stats.get("pass", 0) / reviewed * 100))
+        for images in ((getattr(s, "data", None) or {}).get("visit_images") or {}).values():
+            usernames.update(img.get("username") for img in images or [] if img.get("username"))
+    return {
+        "avg_passed": _js_round(sum(rates) / len(rates)) if rates else None,
+        "flw_count": len(usernames),
+    }
+
+
 def prior_audit_pairs(all_visit_images: dict, only_visits: set | None = None) -> list[tuple]:
     """The ``(visit_id, blob_id)`` pairs ``filter_out_prior_audited`` will test.
 

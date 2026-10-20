@@ -105,3 +105,48 @@ class TestNameProxy:
 
     def test_name_is_empty_string_when_unset(self):
         assert _make_record().name == ""
+
+
+class TestStateWritesAfterCompletion:
+    """update_run_state refuses a completed run -- except a write of nothing but the
+    follow-up links (POST_COMPLETION_STATE_KEYS), which leaves the run completed."""
+
+    def _wda(self):
+        from unittest import mock
+
+        from connect_labs.workflow.data_access import WorkflowDataAccess
+
+        wda = WorkflowDataAccess(access_token="t", opportunity_id=42)
+        wda.labs_api = mock.Mock()
+        wda.labs_api.update_record.return_value = mock.Mock(
+            id=1, experiment="workflow", type="workflow_run", data={}, opportunity_id=42
+        )
+        return wda
+
+    def _completed(self):
+        return _make_record(
+            definition_id=3,
+            status=RUN_STATUS_COMPLETED,
+            completed_at="2026-10-19T09:00:00Z",
+            snapshot={"audit_summary": {"by_tag": {}}},
+            state={"avg_passed": 80},
+        )
+
+    def test_task_links_are_merged_into_a_completed_run_without_reopening_it(self):
+        wda = self._wda()
+
+        result = wda.update_run_state(1, {"flw_tasks": {"flw_a": 42}, "tasks_created": 1}, run=self._completed())
+
+        assert result is not None
+        written = wda.labs_api.update_record.call_args.kwargs["data"]
+        assert written["status"] == RUN_STATUS_COMPLETED
+        assert written["completed_at"] == "2026-10-19T09:00:00Z"
+        assert written["snapshot"] == {"audit_summary": {"by_tag": {}}}
+        assert written["state"] == {"avg_passed": 80, "flw_tasks": {"flw_a": 42}, "tasks_created": 1}
+
+    def test_any_other_key_on_a_completed_run_is_refused(self):
+        wda = self._wda()
+
+        assert wda.update_run_state(1, {"flw_tasks": {}, "avg_passed": 10}, run=self._completed()) is None
+        assert wda.update_run_state(1, {}, run=self._completed()) is None
+        wda.labs_api.update_record.assert_not_called()
