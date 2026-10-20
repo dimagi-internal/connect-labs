@@ -99,6 +99,7 @@
                     <dt class="text-gray-500">Awarded</dt>
                     <dd class="font-medium text-gray-900">
                         {{ response.awarded_at|date:"j M Y H:i T" }}
+                        {% if response.demonstration_award %}<span class="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">Demonstration award (synthetic response)</span>{% endif %}
                         {% if response.awardee_notified %}<span class="text-green-700"><i class="fa-solid fa-envelope-circle-check ml-1 mr-1"></i>award email sent</span>{% else %}<span class="text-gray-500">— no email sent</span>{% endif %}
                     </dd>
                 </div>

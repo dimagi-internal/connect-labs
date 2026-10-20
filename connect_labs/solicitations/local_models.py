@@ -401,6 +401,12 @@ class SolicitationResponse(models.Model):
     )
     selected_plan_ids = models.JSONField(default=list, blank=True)
     selected_plan_names = models.JSONField(default=list, blank=True)
+    # Invented by the call's owner to exercise the call end to end (an agent's
+    # test run): never a real firm's answer. Set only when the owner enters the
+    # response on an unlisted call, at creation, and never changed after. Only
+    # a synthetic response may be given a demonstration award, and it is never
+    # given any other kind.
+    synthetic = models.BooleanField(default=False)
     # Per-criterion AI suggestions, hidden until the reviewer scores that
     # criterion: {criterion_id: {"score": 1-10, "rationale": str}}.
     ai_proposed_scores = models.JSONField(default=dict, blank=True)
@@ -411,6 +417,11 @@ class SolicitationResponse(models.Model):
     awarded_at = models.DateTimeField(null=True, blank=True)
     # True only when the award email was actually handed to the mail path.
     awardee_notified = models.BooleanField(default=False)
+    # A demonstration award: an owner's explicitly requested award of a
+    # `synthetic` response on an unlisted call, the one award allowed on the
+    # awarder's own side (`access.can_demonstrate`). It sends no mail and
+    # allocates no fund; it says so wherever the award is shown.
+    demonstration_award = models.BooleanField(default=False)
     # The Connect organisation id the awarder named for the contract.
     org_id = models.CharField(max_length=120, blank=True, default="")
 
@@ -528,6 +539,8 @@ class SolicitationResponse(models.Model):
             "award_stage": self.award_stage,
             "awarded_at": _iso(self.awarded_at),
             "awardee_notified": self.awardee_notified,
+            "demonstration_award": self.demonstration_award,
+            "synthetic": self.synthetic,
             "ai_proposed_scores": self.ai_proposed_scores or {},
         }
         if not owner_view:
@@ -650,6 +663,9 @@ class SolicitationReview(models.Model):
     # is history: read only through `all_versions`, never by the round's pages
     # or tools unless they ask for that version.
     superseded_at = models.DateTimeField(null=True, blank=True)
+    # A demonstration review: of a `synthetic` response on the reviewer's own
+    # side, explicitly requested (`access.can_demonstrate`).
+    demonstration = models.BooleanField(default=False)
 
     # The first manager is the default, so related managers (`response.reviews`)
     # and every query see only the reviews that stand.
@@ -706,6 +722,7 @@ class SolicitationReview(models.Model):
             "flags": list(self.flags or []),
             "provenance": self.provenance or {},
             "claims": list(self.claims or []),
+            "demonstration": self.demonstration,
         }
 
     def to_record_dict(self) -> dict:

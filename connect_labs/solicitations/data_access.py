@@ -595,12 +595,22 @@ class SolicitationsDataAccess:
 
         `on_behalf=True` is for an owner or operator entering a firm's response
         (seeding, a paper submission): it has no respondent user, may name any
-        organisation, and ignores the deadline.
+        organisation, and ignores the deadline. Such a response may be marked
+        `synthetic` (invented, for a demonstration) -- only then, only on an
+        unlisted call, and only here: the mark is never changed afterwards.
         """
         data = dict(data or {})
+        synthetic = bool(data.pop("synthetic", False))
+        if synthetic and not on_behalf:
+            raise ValidationError(
+                {"synthetic": "Only the call's owner, entering a response for a firm, may mark it synthetic."}
+            )
         solicitation = self.get_solicitation_by_id(solicitation_id)
         if solicitation is None:
             raise Solicitation.DoesNotExist(f"Solicitation {solicitation_id} not found")
+        if synthetic:
+            if solicitation.listed or access.is_directory_round(solicitation):
+                raise ValidationError({"synthetic": "A synthetic response may be entered only on an unlisted call."})
         if on_behalf:
             access.require(
                 access.can_manage(self.caller, solicitation),
@@ -639,6 +649,8 @@ class SolicitationsDataAccess:
                             response.ai_proposed_scores = data["ai_proposed_scores"] or {}
                         if data.get("org_id"):
                             response.org_id = str(data["org_id"])
+                        if synthetic:
+                            response.synthetic = True
                     response.status = status
                     if status == "submitted" or data.get("submission_date"):
                         response.submission_date = _parse_datetime(data.get("submission_date")) or timezone.now()
@@ -785,6 +797,7 @@ class SolicitationsDataAccess:
         *,
         fund_id: int | None = None,
         allocate_fund: bool = True,
+        demonstration: bool = False,
     ) -> SolicitationResponse:
         """Award a response: record the decision and tell the awardee.
 
@@ -795,14 +808,32 @@ class SolicitationsDataAccess:
         from `fund_id`, or the call's own fund when `allocate_fund`; a failed
         allocation is logged and never undoes the award. `program_id` on the
         allocation is the call's, and may be None.
+
+        `demonstration=True` makes it a demonstration award (`access.can_demonstrate`):
+        flagged on the response, no email to anyone, no fund allocated (a
+        `fund_id` is refused).
         """
         response = self._response_or_missing(response_id)
         solicitation = response.solicitation
-        access.require(
-            access.can_award(self.caller, response),
-            "Only the organisation that owns this call (or platform support) can award it, "
-            "and never a response from your own side.",
-        )
+        if demonstration:
+            if fund_id:
+                raise ValidationError({"fund_id": "A demonstration award allocates no fund; leave fund_id out."})
+            access.require(
+                access.can_award(self.caller, response, demonstration=True),
+                "A demonstration award needs a synthetic response (entered by the call's owner and marked "
+                "synthetic when created) on an unlisted call, awarded by someone who manages the call.",
+            )
+        elif getattr(response, "synthetic", False):
+            access.require(
+                False,
+                "This response is synthetic: it can only be given a demonstration award (demonstration=true).",
+            )
+        else:
+            access.require(
+                access.can_award(self.caller, response),
+                "Only the organisation that owns this call (or platform support) can award it, "
+                "and never a response from your own side.",
+            )
         new_budget = _int_or_none(reward_budget)
         with transaction.atomic():
             # Check and write under a row lock, so two concurrent awards (a
@@ -827,6 +858,7 @@ class SolicitationsDataAccess:
             response.award_stage = award_stage if award_stage in AWARD_STAGES else "verification"
             response.awarded_at = timezone.now()
             response.awardee_notified = False
+            response.demonstration_award = bool(demonstration)
             response.save()
             if solicitation.status in ("active", "closed"):
                 solicitation.status = "awarded"
@@ -835,6 +867,9 @@ class SolicitationsDataAccess:
             target_fund = fund_id or (solicitation.fund_id if allocate_fund else None)
             if upgrading and new_budget is None:
                 target_fund = None  # no new budget, nothing new to allocate
+            if demonstration:
+                # No money and no mail for a demonstration: nobody real was selected.
+                return response
             # Mail and money only once the award is committed: never a "you were
             # selected" email, or an allocation, for an award that rolled back.
             transaction.on_commit(lambda: self._after_award(response, solicitation, target_fund), robust=True)
@@ -903,10 +938,20 @@ class SolicitationsDataAccess:
         person's account is kept apart from that person's own review.
         """
         response = self._response_or_missing(response_id)
+        demonstration = bool(data.get("demonstration"))
         access.require(
-            access.can_review(self.caller, response),
-            "Only the organisation that owns this call (or platform support) can review it, "
-            "and never a response from your own side.",
+            access.can_review(self.caller, response, demonstration=demonstration),
+            (
+                (
+                    "A demonstration review needs a synthetic response (entered by the call's owner and marked "
+                    "synthetic when created) on an unlisted call, reviewed by someone who manages the call."
+                )
+                if demonstration
+                else (
+                    "Only the organisation that owns this call (or platform support) can review it, "
+                    "and never a response from your own side."
+                )
+            ),
         )
         kind = REVIEW_AI if data.get("kind") == REVIEW_AI else REVIEW_HUMAN
         review = response.reviews.filter(reviewer_id=self.caller.user_pk, kind=kind).first() if self.user else None
@@ -922,6 +967,7 @@ class SolicitationsDataAccess:
         if review is None:
             review = SolicitationReview(response=response, reviewer=self.user, kind=kind)
         self._apply_review_fields(review, dict(data), response)
+        review.demonstration = demonstration
         review.save()
         if response.status == "submitted":
             response.status = "under_review"
@@ -933,7 +979,7 @@ class SolicitationsDataAccess:
         if review is None:
             raise SolicitationReview.DoesNotExist(f"Review {review_id} not found")
         access.require(
-            access.can_review(self.caller, review.response)
+            access.can_review(self.caller, review.response, demonstration=review.demonstration)
             and (review.reviewer_id == self.caller.user_pk or self.caller.is_operator),
             "Only the reviewer (or platform support) can change this review.",
         )
@@ -951,7 +997,7 @@ class SolicitationsDataAccess:
         if review is None:
             raise SolicitationReview.DoesNotExist(f"Review {review_id} not found")
         access.require(
-            access.can_review(self.caller, review.response)
+            access.can_review(self.caller, review.response, demonstration=review.demonstration)
             and (review.reviewer_id == self.caller.user_pk or self.caller.is_operator),
             "Only the reviewer (or platform support) can delete this review.",
         )

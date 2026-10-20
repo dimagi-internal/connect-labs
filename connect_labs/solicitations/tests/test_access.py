@@ -234,3 +234,89 @@ def test_round_responses_rule_never_covers_an_owned_call():
     from connect_labs.supply_chain.runner import dimagi_org
 
     assert not access.can_read_round_responses(make_user("d", email="d@dimagi.com"), make_call(dimagi_org()))
+
+
+# --- demonstration awards: an owner's own synthetic response -----------------------
+
+
+@pytest.fixture
+def demo(world):
+    """ACE's labs_e2e shape: one person manages the call AND belongs to the
+    organisation its seeded winner answers as, and entered that answer itself."""
+    owner = world["owner"]
+    winner_org = make_org("winner-org")
+    grant(owner, winner_org)
+    call = make_call(world["owner_org"], listed=False)
+    response = make_response(call, None, llo_entity=winner_org, synthetic=True)
+    return {**world, "winner_org": winner_org, "demo_call": call, "synthetic": response}
+
+
+def test_own_side_synthetic_response_is_refused_without_the_flag(demo):
+    owner, response = demo["owner"], demo["synthetic"]
+    assert not access.can_review(owner, response)
+    assert not access.can_award(owner, response)
+
+
+def test_demonstration_review_and_award_allowed_when_every_condition_holds(demo):
+    owner, response = demo["owner"], demo["synthetic"]
+    assert access.can_demonstrate(owner, response)
+    assert access.can_review(owner, response, demonstration=True)
+    assert access.can_award(owner, response, demonstration=True)
+    # Platform support may run one too.
+    assert access.can_award(demo["staff"], response, demonstration=True)
+
+
+def test_demonstration_refused_on_a_listed_call(demo):
+    response = demo["synthetic"]
+    response.solicitation.listed = True
+    response.solicitation.save()
+    assert not access.can_review(demo["owner"], response, demonstration=True)
+    assert not access.can_award(demo["owner"], response, demonstration=True)
+
+
+def test_demonstration_refused_for_a_real_response(demo):
+    """A response not marked synthetic at creation -- the owner's own side stays refused."""
+    real = make_response(demo["demo_call"], None, llo_entity=demo["winner_org"])
+    assert not access.can_review(demo["owner"], real, demonstration=True)
+    assert not access.can_award(demo["owner"], real, demonstration=True)
+    assert not access.can_award(demo["owner"], real)
+
+
+def test_demonstration_refused_for_a_response_with_a_respondent(demo):
+    """Synthetic is an owner-entered answer; one a signed-in person submitted never qualifies."""
+    submitted = make_response(demo["demo_call"], demo["owner"], llo_entity=demo["winner_org"], synthetic=True)
+    assert not access.can_award(demo["owner"], submitted, demonstration=True)
+
+
+def test_demonstration_refused_to_a_caller_who_cannot_manage_the_call(demo):
+    member_only = make_user("member-only")
+    grant(member_only, demo["winner_org"])
+    assert not access.can_review(member_only, demo["synthetic"], demonstration=True)
+    assert not access.can_award(member_only, demo["synthetic"], demonstration=True)
+    assert not access.can_award(demo["outsider"], demo["synthetic"], demonstration=True)
+
+
+def test_demonstration_refused_on_a_directory_round(demo):
+    from connect_labs.solicitations.local_models import SOURCE_DIRECTORY
+
+    call = demo["synthetic"].solicitation
+    call.source = SOURCE_DIRECTORY
+    call.save()
+    assert not access.can_award(demo["owner"], demo["synthetic"], demonstration=True)
+    assert not access.can_review(demo["owner"], demo["synthetic"], demonstration=True)
+
+
+def test_a_synthetic_response_is_awarded_only_as_a_demonstration(demo):
+    """Even by someone not on its side: an invented answer never becomes a real award."""
+    staff = demo["staff"]
+    assert not access.can_award(staff, demo["synthetic"])
+    assert access.can_award(staff, demo["synthetic"], demonstration=True)
+    # Reviewing it normally is unchanged for someone not on its side.
+    assert access.can_review(staff, demo["synthetic"])
+
+
+def test_real_behaviour_unchanged_by_the_demonstration_path(world):
+    """Owner and staff still review and award a real response as before."""
+    assert access.can_review(world["owner"], world["response"])
+    assert access.can_award(world["owner"], world["response"])
+    assert not access.can_award(world["owner"], world["response"], demonstration=True)
