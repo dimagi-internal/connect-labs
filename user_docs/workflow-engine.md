@@ -209,6 +209,6 @@ The planning table lists work areas and their R2 selection status for the organi
 - **EVC per building** — the ward's total expected visit count divided by its total number of buildings in the original opportunity.
 - **Expected visits (R2 work areas)** — the sum of each R2 work area's expected visit count, calculated as its building count multiplied by the ward's EVC per building, rounded to the nearest whole number.
 
-#### Map tab
+**How R1 wards are handled**
 
-The **Map** tab sits next to the Table tab and
+R2 work-
