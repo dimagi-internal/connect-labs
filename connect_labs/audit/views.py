@@ -649,6 +649,12 @@ class ExperimentAuditDeleteView(LoginRequiredMixin, View):
             return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
+# SnapshotBuildError codes meaning "this run's workflow has no completion contract"
+# (an action-shaped run): such a run is completed with an empty snapshot. Every
+# other code means the contract exists but its snapshot could not be built now.
+_NO_COMPLETION_CONTRACT = frozenset({"no_definition_id", "no_contract", "unknown_template", "template_not_saved_runs"})
+
+
 class ExperimentAuditCompleteView(LoginRequiredMixin, View):
     """Complete an experiment-based audit session"""
 
@@ -718,11 +724,27 @@ class ExperimentAuditCompleteView(LoginRequiredMixin, View):
     def _maybe_complete_workflow_run(self, request, data_access, session):
         """Complete the linked workflow run once all its sessions are done.
 
+        Finalised the way the run page's own completion (``complete_run_api``)
+        does it: the snapshot comes from the workflow's completion contract --
+        for weekly_dual_track_audit, the build_snapshot hook that freezes
+        ``audit_summary`` -- and the cohort auto-publish and per-opportunity
+        hand-down are queued after. Completing with ``snapshot={}`` regardless
+        froze such runs with no summary, and the run page cannot redo it: a
+        completed run is terminal.
+
+        A run whose workflow declares NO completion contract (action-shaped
+        runs such as bulk_image_audit) still completes with an empty snapshot,
+        as before. Any other build failure -- the hook's gate, an unreadable
+        definition, a cold cache -- leaves the run in progress for the run
+        page to finish: an empty snapshot on a completed run is unrecoverable,
+        an open run is not.
+
         Best-effort: any failure here is logged and swallowed so it never
         breaks the (already-successful) session completion.
         """
         from connect_labs.audit.data_access import all_sessions_completed
         from connect_labs.workflow.data_access import WorkflowDataAccess
+        from connect_labs.workflow.snapshot_runtime import SnapshotBuildError, build_snapshot_for_run
 
         run_id = getattr(session, "labs_record_id", None)
         if not run_id:
@@ -733,10 +755,42 @@ class ExperimentAuditCompleteView(LoginRequiredMixin, View):
                 return
             workflow_data_access = WorkflowDataAccess(request=request)
             try:
-                # Action-shaped audit runs have no snapshot contract; an empty
-                # snapshot is correct. complete_run is idempotent (returns None
-                # if the run is already completed).
-                workflow_data_access.complete_run(run_id, snapshot={})
+                run = workflow_data_access.get_run(run_id)
+                if run is None or run.is_completed:
+                    return
+                built = None
+                try:
+                    built = build_snapshot_for_run(
+                        workflow_data_access,
+                        run,
+                        request=request,
+                        program_id=getattr(workflow_data_access, "program_id", None),
+                    )
+                except SnapshotBuildError as e:
+                    if e.code not in _NO_COMPLETION_CONTRACT:
+                        logger.info("Workflow run %s left in progress: snapshot not built (%s)", run_id, e.message)
+                        return
+                except ValueError as e:
+                    # A build_snapshot hook's gate (e.g. audits still open in another
+                    # opportunity of a multi-opp run).
+                    logger.info("Workflow run %s left in progress: %s", run_id, e)
+                    return
+
+                completed = workflow_data_access.complete_run(run_id, built["payload"] if built else {}, run=run)
+                if completed is None or built is None:
+                    return
+                # Same post-completion steps as complete_run_api.
+                from connect_labs.benchmarks.tasks import queue_auto_publish
+                from connect_labs.workflow.hand_down import queue_hand_down
+
+                queue_auto_publish(workflow_data_access, workflow_id=run.definition_id, run_id=run_id)
+                queue_hand_down(
+                    workflow_data_access,
+                    workflow_id=run.definition_id,
+                    run_id=run_id,
+                    template_type=built["contract"].get("template_key")
+                    or getattr(built["definition"], "template_type", None),
+                )
             finally:
                 workflow_data_access.close()
         except Exception:
