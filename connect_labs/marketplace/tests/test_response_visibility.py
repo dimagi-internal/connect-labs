@@ -642,6 +642,12 @@ class TestScores:
         select = body.split('data-filter="review"', 1)[1].split("</select>", 1)[0]
         assert re.findall(r'<option value="([^"]*)"', select) == ["", "ai", "none"], "nobody was reviewed by a person"
 
+    def test_the_filters_count_each_country_and_leave_criteria_to_the_column_sort(self, client, two_scored, member):
+        body = _page(client, member, "marketplace:round_scores", "battery-2026")
+        assert 'data-filter="criterion"' not in body
+        country = client.get(reverse("marketplace:round_scores", args=["battery-2026"])).context["countries"]
+        assert all(isinstance(count, int) and count > 0 for _, count in country)
+
     def test_the_applicants_come_before_the_criterion_breakdown(self, client, two_scored, member):
         body = _page(client, member, "marketplace:round_scores", "battery-2026")
         assert body.index('data-testid="scores"') < body.index('data-testid="criteria-summary"')

@@ -20,6 +20,7 @@ how many answered it.
 from __future__ import annotations
 
 import datetime
+from collections import Counter
 
 from canopy_sdk.django.pages import panel_context as canopy_panel_context
 from django.conf import settings
@@ -486,7 +487,7 @@ def round_scores(request, slug):
         }
         for c in summary["criteria"]
     ]
-    countries = sorted({a["country"] for a in applicants if a["country"]})
+    countries = sorted(Counter(a["country"] for a in applicants if a["country"]).items())
     return render(
         request,
         "marketplace/round_scores.html",
