@@ -110,6 +110,22 @@ The default is **flag-only** (all checkboxes unticked), so nothing is pre-tagged
 
 ---
 
+## Reviewing an Audit Session
+
+### Notes and Flagging a Worker to the LLO
+
+While reviewing an open (not yet completed) session, two fields are available beneath the image assessment area:
+
+- **Notes** — a free-text box where you can record observations about the session, for example details of a specific image concern or context for a failed assessment.
+- **Flagged to LLO** — a tick box you check when you have raised the field worker's case with the LLO (Local Liaison Officer). Ticking this records that the escalation has taken place.
+
+Both the notes and the Flagged to LLO tick are saved automatically as you work (autosave), when you click **Save Progress**, and when you complete the audit. Once a session is marked complete it becomes read-only, so neither field can be changed after that point.
+
+!!! note "Available in reports"
+    The notes text and the Flagged to LLO status for each completed audit can be read by Labs reports. This means a report can automatically build the completed-audit log — including duplicates, MUAC misreadings, auditor notes, and whether the worker was flagged to the LLO — without anyone having to copy the information into a spreadsheet by hand.
+
+---
+
 ## Guided Audit Workflows
 
 In addition to the standard audit creation page, Labs includes purpose-built guided workflows for common audit patterns. These workflows walk through the same steps as the standard page but pre-configure certain options and add extra filtering tools suited to specific program needs.
@@ -155,18 +171,4 @@ Workflow runs can be interrupted mid-way — most often during AI review, which 
 - **A run cannot be resumed while it is still running.** If a run is already active, Labs will refuse a second resume attempt. This prevents duplicate audit sessions from being created by two overlapping jobs.
 - **Settings are preserved on resume.** If you started a run manually with specific settings — such as a custom pass threshold, visit status filters, FLW cap, or sampling rate — those settings are kept when the run is resumed. They are not silently replaced by the workflow's saved defaults.
 
-!!! tip "If a run appears stuck"
-    Check whether it is still actively running before attempting to resume. If the run screen shows no progress after several minutes and no **Stop** button is visible, it is safe to resume.
-
-**Viewing clustering parameters for a saved run:**
-
-When you reopen a run that used Visit Clustering, the run screen now shows the exact time-gap and distance-grouping values that were used when that run was created. This reflects the settings that were actually applied, rather than the current template defaults, so you have an accurate record of how visits were grouped.
-
-!!! note "Program-owned runs"
-    Program-owned instances of this workflow — those that span multiple opportunities under one program — work end-to-end. Earlier issues that caused a generic error or a "Failed to update state" error when clicking **Create Audits** have been resolved.
-
-### Muac Picture Audit
-
-The **Muac Picture Audit** workflow is a full audit-creation tool scoped to the CHC PRE-RCT opportunities in program 176. It covers the same ground as the standard audit creation page — opportunity selection, granularity, criteria, FLW preview and selection, field configuration, and metadata — with two differences from the standard workflow:
-
-- **Date and day-of-week filter** —
+!!! tip "If a run
