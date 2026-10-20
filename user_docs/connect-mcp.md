@@ -239,10 +239,6 @@ You can ask Claude to add or update a `values` map for any field in your registr
 
 ---
 
-## Synthetic Demo Data: Multi-Form App Support
+## Demonstration Awards on Calls
 
-Synthetic demo data can now faithfully simulate programmes that use several forms — for example, a registration form followed by one or more follow-up or service forms.
-
-### How it worked before
-
-Previously, every generated beneficiary appeared as a series of unrelated visits. Each visit answered every question in the app and was paid under the same unit, regardless of which form it
+A call's owner can run a **demonstration award**: an award (and review) of an invented, owner-entered response on an unlisted call, even when the person awarding belongs to the same organisation that submitted the response. This exists so that automated end-to-end tests of a call can complete a full cycle — seeding a response and awarding it — without needing a

@@ -15,7 +15,7 @@ Every call belongs to an **organisation** — the one that posted it. That organ
 | **A call** | `/solicitations/<number>/` | Anyone, for a listed call. Shows who posted it, the deadline, what it asks and how responses are scored. Long calls have a key-facts strip and an **On this page** index. |
 | **An organisation's calls** | `/solicitations/o/<organisation>/` | Anyone. The organisation's open calls and its past ones (Dimagi's page also lists the past marketplace calls). The marketplace page for an organisation links here when it has listed calls. |
 | **Manage calls** | `/solicitations/o/<organisation>/manage/` | Members of that organisation, and platform support. Every call the organisation owns, including drafts and unlisted calls, with how many responses each has, and a **New call** button. |
-| **Responses, scoring and award** | from the Manage page | Members of the owning organisation, and platform support. Never someone scoring or awarding a response from their own organisation. |
+| **Responses, scoring and award** | from the Manage page | Members of the owning organisation, and platform support. Never someone scoring or awarding a response from their own organisation — except on a demonstration award (see below). |
 | **Your response** | linked from the call | The person who submitted it. |
 
 **Solicitations** is in the left-hand menu for everyone. **Manage calls** (`/solicitations/manage/`) lists the organisations you can manage calls for; if there is only one, it takes you straight there. If there are none, it explains how to get access: you are a member of an organisation either through CommCare Connect (when the organisation is registered in labs) or because someone who manages it in labs added you. Seeing an organisation's programme in the context selector does not make you a member of it.
@@ -169,6 +169,17 @@ Scoring is always blind. The responses list shows each submission only as **Resp
 
 The responding organisation's name is revealed at the award step, so you can confirm you are awarding the response you meant to. Where it is active, the **Rubric locked before publishing** badge on the responses list also confirms that scoring conditions were set before any applications were received.
 
+#### Demonstration Reviews and Awards
+
+Labs supports a **demonstration award**: a review and award of an invented, owner-entered response on an unlisted call, carried out by a member of the call's own organisation. This exists so that end-to-end testing of a call can run to completion without needing a separate responding organisation.
+
+A demonstration award is clearly labelled as one on the award page. It sends no email and allocates no funds. It has no effect on real procurement records.
+
+Demonstration responses can only be created by the call's owner, only on unlisted calls, and only at the time the response is submitted — they cannot be converted to or from a real response later.
+
+!!! warning "Demonstration awards are not real awards"
+Nothing about a demonstration review or award reflects a genuine procurement decision. If you see a **Demonstration award** label on the award page, you are looking at test data, not a live process. Real responses — submitted by outside organisations — are never affected by this feature, and the normal rule still applies: you cannot review or award a response from your own organisation in a real procurement.
+
 #### Reading Round Responses with ACE
 
 Dimagi's members (including associates) and platform support can ask ACE to summarise the submissions to any past EOI/RFP round and recommend a shortlist. ACE reads each applicant's answers and the directory organisation it matched, then returns a structured summary.
@@ -176,15 +187,4 @@ Dimagi's members (including associates) and platform support can ask ACE to summ
 !!! info "Contact details are not included by default"
 ACE leaves out the contact person's name, email, phone number and signature unless you explicitly ask for them. If you need that information for a specific applicant, ask ACE to include it in your follow-up question.
 
-Everyone outside Dimagi's organisation and platform support is refused access to round responses through ACE.
-
-### Awarding a Response
-
-When the team agrees on a winner:
-
-1. On the responses list, click **Award** on the winning response's row
-2. The award page names the organisation (for the first time) and shows its best review score, so you can confirm you are awarding the intended response
-3. Enter the award budget, if any. It is shown in the call's own currency (for example, "500,000 NGN"); a call with no currency set shows the number alone
-4. Click **Award**. If the call is linked to a fund, the award is allocated from it
-
-A response can be awarded once, with one exception: a **verification** award can be upgraded once to the **full** engagement (see Staged-Contract Award below), which allocates the new budget you enter and emails the organisation again. Any other second award is refused with a message saying it was already awarded, so the fund is never allocated twice for the same award and the organisation is never emailed twice. Once awarded, a response's status can no longer be
+Everyone
