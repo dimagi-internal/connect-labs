@@ -37,6 +37,7 @@ download, which is not one request.
 
 from __future__ import annotations
 
+import functools
 import logging
 from collections.abc import Callable
 from datetime import timedelta
@@ -107,16 +108,52 @@ def warm_images(access_token: str | None, opportunity_id: int, hold_minutes: int
     return {"visits": len(rows or []), "held_minutes": hold_minutes}
 
 
-def _default_slot(access_token: str | None, owner_scope: dict[str, Any], sources=None):
-    """The production wiring: a cache manager, a raw fetch and a pipeline run per slot."""
+def _default_slot(
+    access_token: str | None, owner_scope: dict[str, Any], sources=None, *, cchq_access_token: str | None = None
+):
+    """The production wiring: a cache manager, a raw fetch and a pipeline run per slot.
+
+    `cchq_access_token` lets a headless caller (a schedule, an MCP tool) fetch the
+    workflow's CommCare HQ pipelines (cchq_forms / cchq_cases); without it those slots
+    fail with CCHQHeadlessError outside a browser session.
+    """
     from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
     from connect_labs.labs.analysis.pipeline import AnalysisPipeline
     from connect_labs.workflow.data_access import PipelineDataAccess
 
-    analysis = AnalysisPipeline(access_token=access_token)
+    analysis = AnalysisPipeline(access_token=access_token, cchq_access_token=cchq_access_token)
+    configs: dict[int, Any] = {}
+
+    def pipeline_config(pipeline_id: int):
+        # A manager built without a config counts and holds the shared user_visits raw
+        # slot (cache.py, #1921). For a pipeline on another source -- cchq_forms,
+        # cchq_cases -- that is the WRONG slot: the held-cache check then sees Connect
+        # rows and calls a missing CommCare HQ slot "held" (so a sync that carries the
+        # HQ token is skipped), and the hold extends Connect rows while the HQ rows,
+        # which registry lookups read, expire mid-rebuild. Resolving the pipeline's own
+        # config gives each pipeline its own slot. Any failure keeps the old slot.
+        if pipeline_id not in configs:
+            configs[pipeline_id] = None
+            pda = PipelineDataAccess(access_token=access_token, **owner_scope)
+            pda.use_sources(sources)
+            try:
+                definition = pda.get_definition(pipeline_id)
+                if definition is not None and definition.schema:
+                    configs[pipeline_id] = pda._schema_to_config(definition.schema, pipeline_id)
+            except Exception:  # noqa: BLE001 -- best effort; the old shared slot still works for visits
+                logger.warning("could not resolve pipeline %s's cache slot; using the visits slot", pipeline_id)
+            finally:
+                pda.close()
+        return configs[pipeline_id]
 
     def manager(opp: int, pipeline_id: int):
-        return SQLCacheManager(opp, pipeline_id=pipeline_id)
+        config = pipeline_config(pipeline_id)
+        mgr = SQLCacheManager(opp, config, pipeline_id=pipeline_id)
+        # False when the pipeline's own slot could not be resolved: the manager then
+        # reads the shared visits slot, which a sync can use but a "still held?" check
+        # must not trust (extend_if_held).
+        mgr.slot_resolved = config is not None
+        return mgr
 
     def fetch_raw(opp: int, pipeline_id: int) -> int:
         # The backend's own path decides hit / delta / full rebuild; the return is
@@ -136,7 +173,7 @@ def _default_slot(access_token: str | None, owner_scope: dict[str, Any], sources
         # THAT scope while the data runs for `opp` -- the same shape a multi-opp
         # workflow's own read has.
         # A referenced pipeline is read where it lives (its source's home_scope).
-        pda = PipelineDataAccess(access_token=access_token, **owner_scope)
+        pda = PipelineDataAccess(access_token=access_token, cchq_access_token=cchq_access_token, **owner_scope)
         pda.use_sources(sources)
         try:
             return pda.execute_pipeline(pipeline_id, opp)
@@ -158,6 +195,7 @@ def ensure_visit_cache(
     include_images: bool = False,
     progress: Callable | None = None,
     slot_factory: Callable | None = None,
+    cchq_access_token: str | None = None,
 ) -> dict:
     """Make every (opportunity, pipeline) slot a workflow reads valid, and hold it.
 
@@ -192,7 +230,8 @@ def ensure_visit_cache(
         raise VisitCacheError("no_opportunities", f"workflow {definition_id} spans no opportunities")
 
     owner_scope = {"program_id": program_id} if program_id is not None else {"opportunity_id": opportunity_id}
-    manager, fetch_raw, run_pipeline = (slot_factory or _default_slot)(
+    factory = slot_factory or functools.partial(_default_slot, cchq_access_token=cchq_access_token)
+    manager, fetch_raw, run_pipeline = factory(
         getattr(data_access, "access_token", None),
         owner_scope,
         getattr(definition, "pipeline_sources", None) or (definition.data or {}).get("pipeline_sources"),
@@ -237,12 +276,18 @@ def ensure_visit_cache(
                 after = mgr.get_raw_visit_count()
                 slot["raw"] = "held" if before and before == after else "refreshed"
                 mgr.extend_raw_cache_ttl(int(hold_minutes))
+                # A slot on another source (CommCare HQ) is filled by the pipeline run
+                # itself, not by the visits fetch above, so the hold just taken found
+                # nothing to extend; hold it again once the run has filled it.
+                filled_by_run = not mgr.get_raw_visit_count()
                 result = run_pipeline(opp, pid) or {}
                 error = (result.get("metadata") or {}).get("error")
                 if error:
                     raise RuntimeError(f"pipeline {pid} failed: {error}")
                 slot["computed"] = "held" if (result.get("metadata") or {}).get("from_cache") else "recomputed"
                 slot["rows"] = len(result.get("rows") or [])
+                if filled_by_run:
+                    mgr.extend_raw_cache_ttl(int(hold_minutes))
                 mgr.hold_computed_caches(int(hold_minutes))
             except Exception as e:  # noqa: BLE001 -- one opportunity must not cost the rest
                 logger.warning("visit cache for opp %s pipeline %s failed", opp, pid, exc_info=True)
@@ -299,7 +344,9 @@ def extend_if_held(
         for opp in opps:
             for pid in pipeline_ids:
                 mgr = manager(opp, pid)
-                if not mgr.get_raw_visit_count():
+                # A slot that could not be resolved to the pipeline's own source is not
+                # known to be held (its count would be the shared visits slot's): sync.
+                if not getattr(mgr, "slot_resolved", True) or not mgr.get_raw_visit_count():
                     return None
                 managers.append(mgr)
         for mgr in managers:

@@ -218,6 +218,7 @@ def run_default_for_definition(definition, *, access_token, request=None, **kwar
             cadence=kwargs.get("cadence"),
             opportunity_id=kwargs.get("opportunity_id"),
             program_id=kwargs.get("program_id"),
+            cchq_access_token=kwargs.get("cchq_access_token"),
         )
     raise ValueError(f"Workflow {getattr(definition, 'id', '?')} (template {key!r}) does not support default-run.")
 

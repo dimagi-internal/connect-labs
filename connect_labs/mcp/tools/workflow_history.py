@@ -49,6 +49,21 @@ def _wda_for_user(user, opportunity_id: int | None = None, program_id: int | Non
     return WorkflowDataAccess(opportunity_id=opportunity_id, program_id=program_id, access_token=token)
 
 
+def _cchq_token_for_user(user) -> str | None:
+    """The caller's CommCare HQ token, or None -- best effort, as workflow_run_default does.
+
+    A workflow whose pipelines read CommCare HQ (cchq_forms / cchq_cases) can only
+    have its cache warmed or its history rebuilt headless with this; every other
+    workflow ignores it, so a missing or expired HQ login must never block the call.
+    """
+    from connect_labs.labs.integrations.commcare.cchq_tokens import CCHQTokenError, get_valid_cchq_access_token
+
+    try:
+        return get_valid_cchq_access_token(user)
+    except CCHQTokenError:
+        return None
+
+
 def _parse_date(value: str | None, field: str) -> dt.date | None:
     if not value:
         return None
@@ -243,6 +258,7 @@ def workflow_rebuild_history(
                 dry_run=dry_run,
                 limit=limit,
                 progress=progress,
+                cchq_access_token=_cchq_token_for_user(user),
             )
         except HistoryRebuildError as e:
             raise _mcp_error(e) from e
@@ -403,6 +419,7 @@ def workflow_preview_as_of(
                 program_id=program_id,
                 include_opportunities=include_opportunities,
                 progress=progress,
+                cchq_access_token=_cchq_token_for_user(user),
             )
         except HistoryRebuildError as e:
             raise _mcp_error(e) from e
@@ -503,6 +520,7 @@ def workflow_ensure_visit_cache(
                 hold_minutes=hold_minutes or DEFAULT_HOLD_MINUTES,
                 include_images=include_images,
                 progress=progress,
+                cchq_access_token=_cchq_token_for_user(user),
             )
         except VisitCacheError as e:
             raise MCPToolError("NOT_FOUND" if e.code == "no_definition" else "INVALID_SCHEMA", e.message) from e

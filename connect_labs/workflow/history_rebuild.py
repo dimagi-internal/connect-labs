@@ -190,7 +190,9 @@ def _case_index_rows(data_access, definition, contract, definition_id, opportuni
     return ((pipelines or {}).get(alias) or {}).get("rows") or []
 
 
-def _ensure_cache(data_access, definition_id, *, opportunity_id, program_id, progress, hold_minutes):
+def _ensure_cache(
+    data_access, definition_id, *, opportunity_id, program_id, progress, hold_minutes, cchq_access_token=None
+):
     """Make every opportunity's visit data present and held before anything reads it.
 
     The indicators read the raw visit cache, which expires in an hour and is then
@@ -213,6 +215,10 @@ def _ensure_cache(data_access, definition_id, *, opportunity_id, program_id, pro
     )
     if held is not None:
         return held
+    # The owner's CommCare HQ token, when the caller has one (a schedule mints it from
+    # the stored UserCCHQToken): without it a cchq_forms / cchq_cases slot cannot be
+    # fetched headless, so a report whose lookups read CommCare HQ could only ever be
+    # saved by someone signed in to HQ in a browser.
     report = ensure_visit_cache(
         data_access,
         definition_id,
@@ -220,6 +226,7 @@ def _ensure_cache(data_access, definition_id, *, opportunity_id, program_id, pro
         program_id=program_id,
         hold_minutes=hold_minutes,
         progress=progress,
+        cchq_access_token=cchq_access_token,
     )
     if report.get("failed"):
         raise HistoryRebuildError(
@@ -251,6 +258,7 @@ def rebuild_history(
     request=None,
     today: date | None = None,
     ensure_cache: bool = True,
+    cchq_access_token: str | None = None,
 ) -> dict:
     """Write one completed run per period, each computed as of that period's end.
 
@@ -351,6 +359,7 @@ def rebuild_history(
             program_id=program_id,
             progress=progress,
             hold_minutes=DEFAULT_HOLD_MINUTES,
+            cchq_access_token=cchq_access_token,
         )["hold_until"]
 
     # ONE load per batch. Every period in this batch is graded from the same held
@@ -512,6 +521,7 @@ def save_latest_period(
     program_id: int | None = None,
     today: date | None = None,
     data_access=None,
+    cchq_access_token: str | None = None,
 ) -> dict:
     """The framework's default-run for a periodic report: save its latest complete periods.
 
@@ -568,6 +578,7 @@ def save_latest_period(
             program_id=program_id,
             replace=False,
             today=today,
+            cchq_access_token=cchq_access_token,
         )
     except HistoryRebuildError as e:
         return {"status": "failed", "error": e.message, "code": e.code, "period_end": end.isoformat()}
@@ -698,6 +709,7 @@ def preview_as_of(
     request=None,
     progress=None,
     ensure_cache: bool = True,
+    cchq_access_token: str | None = None,
 ) -> dict:
     """Grade a workflow's registry as of `as_of`, exactly as a rebuilt run would, and persist nothing.
 
@@ -731,6 +743,7 @@ def preview_as_of(
             program_id=program_id,
             progress=progress,
             hold_minutes=DEFAULT_HOLD_MINUTES,
+            cchq_access_token=cchq_access_token,
         )
 
     run = _EphemeralRun(definition_id, as_of, opportunity_id)
