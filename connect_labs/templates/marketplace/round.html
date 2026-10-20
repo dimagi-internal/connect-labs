@@ -12,105 +12,63 @@
     <span class="text-gray-900">{{ round.title }}</span>
   </div>
 
-  <div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-6 py-5 sm:py-[22px] mb-4.5">
-    <div class="flex flex-wrap items-start justify-between gap-5 sm:gap-7">
-      <div class="w-full xl:max-w-xl xl:flex-1">
-        <div class="flex items-center gap-2.5 mb-2">
-          <span class="text-[10px] font-semibold tracking-wider px-1.5 py-0.5 rounded {% if round.solicitation_type == 'rfp' %}bg-red-50 text-red-800{% else %}bg-indigo-50 text-brand-indigo{% endif %}">{{ round.solicitation_type|upper }}</span>
-          {% if round.status == 'active' %}
-            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold tracking-wider bg-green-100 text-green-800">OPEN</span>
-          {% else %}
-            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold tracking-wider bg-gray-100 text-gray-600 border border-brand-border-light">CLOSED</span>
-          {% endif %}
-        </div>
-        <div class="flex items-center gap-2.5 flex-wrap">
-          <span class="text-xl sm:text-2xl font-semibold text-brand-deep-purple">{{ round.title }}</span>
-          {% if round.program_label %}
-            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-semibold bg-indigo-50 text-brand-indigo">{{ round.program_label }}</span>
-          {% endif %}
-        </div>
-        {% if round.target_countries %}
-          <div class="text-[13px] text-gray-600 mt-1.5 leading-relaxed">{{ round.target_countries }}</div>
-        {% endif %}
-        {% if trend %}
-          {% comment %}
-          Server-rendered bars rather than a chart library: it is one series with
-          no interaction. Heights are percentages of the busiest bucket, so the
-          shape survives any column width.
-          {% endcomment %}
-          {% comment %}
-          Bars are a fixed width and the row only as wide as they need: a
-          six-day round stretched across the header reads as a flat line. The
-          height is inline because an arbitrary Tailwind height is not in the
-          compiled stylesheet unless some template already used it.
-          {% endcomment %}
-          <div class="mt-4 inline-block max-w-full" data-testid="arrivals">
-            <div class="text-[11px] text-gray-400 tracking-wide mb-1.5">SUBMISSIONS PER {% if trend.0.days == 1 %}DAY{% else %}WEEK{% endif %}</div>
-            <div class="flex items-end gap-1 overflow-x-auto">
-              {% for bucket in trend %}
-                <div class="flex flex-col items-center shrink-0" style="width: {% if trend|length > 16 %}12px{% else %}30px{% endif %}"
-                     title="{{ bucket.count }} submission{{ bucket.count|pluralize }} {% if bucket.days == 1 %}on{% else %}in the week from{% endif %} {{ bucket.start|date:'j M Y' }}">
-                  {% if trend|length <= 16 %}<span class="text-[10.5px] text-gray-500 tabular-nums mb-1" style="line-height:1">{{ bucket.count|default:"" }}</span>{% endif %}
-                  <div class="w-full flex items-end" style="height: 44px">
-                    <div class="w-full rounded-t-sm {% if bucket.count %}bg-brand-indigo/70{% else %}bg-gray-100{% endif %}"
-                         style="height: {% if bucket.count %}{{ bucket.pct }}%{% else %}2px{% endif %}; min-height: 2px;"></div>
-                  </div>
-                  {% if trend|length <= 16 %}<span class="text-[10px] text-gray-400 mt-1 whitespace-nowrap" style="line-height:1">{% if bucket.days == 1 %}{{ bucket.start|date:"j M" }}{% else %}{{ bucket.start|date:"j M" }}{% endif %}</span>{% endif %}
+  <div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-6 py-5 mb-4.5">
+    {% include "marketplace/_round_header.html" with tab="overview" %}
+    {% if can_read %}
+    {% comment %}What only this page answers: what became of the applicants, and when they arrived.{% endcomment %}
+    <div class="flex flex-wrap items-end gap-x-7 gap-y-4 sm:gap-x-8 mt-4 pt-4 border-t border-brand-border-light" data-testid="round-outcomes">
+      <div title="Applicants whose first verified delivery on Connect came after this round{% if since %} closed ({{ since|date:'j M Y' }}){% endif %}. It says which came first, not that the round caused it.">
+        <div class="text-[22px] sm:text-[25px] font-semibold {% if after_count %}text-green-700{% else %}text-gray-300{% endif %} tabular-nums">{{ after_count }}</div>
+        <div class="text-[11px] text-gray-400 tracking-wide">NOW DELIVERING</div>
+        <div class="text-[11px] text-gray-400 mt-0.5">started on Connect after this round{% if before_count %} · {{ before_count }} already were{% endif %}</div>
+      </div>
+      {% if unresolved_count %}
+      <div>
+        <div class="text-[22px] sm:text-[25px] font-semibold text-brand-sunset tabular-nums">{{ unresolved_count }}</div>
+        <div class="text-[11px] text-gray-400 tracking-wide">UNIDENTIFIED</div>
+        <a href="{% url 'marketplace:unmatched' %}" class="text-[11px] text-brand-indigo hover:text-brand-deep-purple mt-0.5 block">not linked to a directory org · match</a>
+      </div>
+      {% endif %}
+      <div title="No sign the organization was in the network before this round opened">
+        <div class="text-[22px] sm:text-[25px] font-semibold text-brand-indigo tabular-nums">{{ mix.new }}</div>
+        <div class="text-[11px] text-gray-400 tracking-wide">NEW TO THE NETWORK</div>
+      </div>
+      <div title="Answered an earlier round, joined the directory earlier, or was already delivering on Connect">
+        <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ mix.returning }}</div>
+        <div class="text-[11px] text-gray-400 tracking-wide">RETURNING</div>
+      </div>
+      {% if trend %}
+        {% comment %}
+        Server-rendered bars rather than a chart library: it is one series with
+        no interaction. Heights are percentages of the busiest bucket, so the
+        shape survives any column width.
+        {% endcomment %}
+        {% comment %}
+        Bars are a fixed width and the row only as wide as they need: a
+        six-day round stretched across the header reads as a flat line. The
+        height is inline because an arbitrary Tailwind height is not in the
+        compiled stylesheet unless some template already used it.
+        {% endcomment %}
+        <div class="inline-block max-w-full" data-testid="arrivals">
+          <div class="text-[11px] text-gray-400 tracking-wide mb-1.5">SUBMISSIONS PER {% if trend.0.days == 1 %}DAY{% else %}WEEK{% endif %}</div>
+          <div class="flex items-end gap-1 overflow-x-auto">
+            {% for bucket in trend %}
+              <div class="flex flex-col items-center shrink-0" style="width: {% if trend|length > 16 %}12px{% else %}30px{% endif %}"
+                   title="{{ bucket.count }} submission{{ bucket.count|pluralize }} {% if bucket.days == 1 %}on{% else %}in the week from{% endif %} {{ bucket.start|date:'j M Y' }}">
+                {% if trend|length <= 16 %}<span class="text-[10.5px] text-gray-500 tabular-nums mb-1" style="line-height:1">{{ bucket.count|default:"" }}</span>{% endif %}
+                <div class="w-full flex items-end" style="height: 44px">
+                  <div class="w-full rounded-t-sm {% if bucket.count %}bg-brand-indigo/70{% else %}bg-gray-100{% endif %}"
+                       style="height: {% if bucket.count %}{{ bucket.pct }}%{% else %}2px{% endif %}; min-height: 2px;"></div>
                 </div>
-              {% endfor %}
-            </div>
-            {% if trend|length > 16 %}<div class="text-[10.5px] text-gray-400 mt-1">{{ trend.0.start|date:"j M" }} – {{ span_end|date:"j M Y" }}</div>{% endif %}
+                {% if trend|length <= 16 %}<span class="text-[10px] text-gray-400 mt-1 whitespace-nowrap" style="line-height:1">{% if bucket.days == 1 %}{{ bucket.start|date:"j M" }}{% else %}{{ bucket.start|date:"j M" }}{% endif %}</span>{% endif %}
+              </div>
+            {% endfor %}
           </div>
-        {% endif %}
-      </div>
-
-      <div class="flex flex-wrap gap-x-7 gap-y-4 sm:gap-8 w-full xl:w-auto xl:shrink-0">
-        <div>
-          <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ round.organisations }}</div>
-          <div class="text-[11px] text-gray-400 tracking-wide">ORGANIZATIONS</div>
-          {% if round.applications != round.organisations %}
-            {% comment %}
-            Shown only when the two differ. Some organizations sent the form
-            more than once — counting submissions as applicants overstated this
-            round by 14.
-            {% endcomment %}
-            <div class="text-[11px] text-gray-400 mt-0.5">from {{ round.applications }} submissions</div>
-          {% endif %}
+          {% if trend|length > 16 %}<div class="text-[10.5px] text-gray-400 mt-1">{{ trend.0.start|date:"j M" }} – {{ span_end|date:"j M Y" }}</div>{% endif %}
         </div>
-        {% if can_read %}
-        <div title="Applicants whose first verified delivery on Connect came after this round{% if since %} closed ({{ since|date:'j M Y' }}){% endif %}. It says which came first, not that the round caused it.">
-          <div class="text-[22px] sm:text-[25px] font-semibold {% if after_count %}text-green-700{% else %}text-gray-300{% endif %} tabular-nums">{{ after_count }}</div>
-          <div class="text-[11px] text-gray-400 tracking-wide">NOW DELIVERING</div>
-          <div class="text-[11px] text-gray-400 mt-0.5">started on Connect after this round{% if before_count %} · {{ before_count }} already were{% endif %}</div>
-        </div>
-        {% if unresolved_count %}
-        <div>
-          <div class="text-[22px] sm:text-[25px] font-semibold text-brand-sunset tabular-nums">{{ unresolved_count }}</div>
-          <div class="text-[11px] text-gray-400 tracking-wide">UNIDENTIFIED</div>
-          <a href="{% url 'marketplace:unmatched' %}" class="text-[11px] text-brand-indigo hover:text-brand-deep-purple mt-0.5 block">not linked to a directory org · match</a>
-        </div>
-        {% endif %}
-        <div title="Applicants a person has reviewed; the rest have only the AI first pass, or nothing">
-          <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ reviewed.people }}<span class="text-gray-300 text-[16px]">/{{ applicants|length }}</span></div>
-          <div class="text-[11px] text-gray-400 tracking-wide">CHECKED BY A PERSON</div>
-          {% if reviewed.ai_only %}<div class="text-[11px] text-gray-400 mt-0.5">{{ reviewed.ai_only }} AI only</div>{% endif %}
-        </div>
-        <div title="No sign the organization was in the network before this round opened">
-          <div class="text-[22px] sm:text-[25px] font-semibold text-brand-indigo tabular-nums">{{ mix.new }}</div>
-          <div class="text-[11px] text-gray-400 tracking-wide">NEW TO THE NETWORK</div>
-        </div>
-        <div title="Answered an earlier round, joined the directory earlier, or was already delivering on Connect">
-          <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ mix.returning }}</div>
-          <div class="text-[11px] text-gray-400 tracking-wide">RETURNING</div>
-        </div>
-        <div>
-          <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ mix.country_count }}</div>
-          <div class="text-[11px] text-gray-400 tracking-wide">COUNTR{{ mix.country_count|pluralize:"Y,IES" }}</div>
-        </div>
-        {% endif %}
-      </div>
+      {% endif %}
     </div>
-
+    {% endif %}
   </div>
 
   <div class="grid grid-cols-1 xl:grid-cols-[1fr_296px] gap-4.5 items-start">
@@ -133,11 +91,6 @@
           </div>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-        {% if round.evaluation_criteria %}
-          <a href="{% url 'marketplace:round_scores' round.slug %}" data-testid="scores-link" class="inline-flex items-center px-3.5 py-2 border border-brand-border-light text-brand-indigo text-[13px] font-medium rounded-lg hover:bg-gray-50">
-            <i class="fa-solid fa-table-cells mr-2 text-[11px]"></i> Scores
-          </a>
-        {% endif %}
         {% if reviewed.next_pk %}
           <a href="{% url 'solicitations:response_detail' reviewed.next_pk %}" class="inline-flex items-center px-3.5 py-2 bg-indigo-600 text-white text-[13px] font-medium rounded-lg hover:bg-indigo-700">
             {% if reviewed.people %}Next to check{% else %}Start reviewing{% endif %} <i class="fa-solid fa-arrow-right ml-2 text-[11px]"></i>

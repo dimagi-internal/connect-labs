@@ -648,6 +648,19 @@ class TestScores:
         country = client.get(reverse("marketplace:round_scores", args=["battery-2026"])).context["countries"]
         assert all(isinstance(count, int) and count > 0 for _, count in country)
 
+    def test_both_pages_share_one_header_with_the_same_figures(self, client, two_scored, member):
+        overview = _page(client, member, "marketplace:round", "battery-2026")
+        scores = _page(client, member, "marketplace:round_scores", "battery-2026")
+
+        def figures(body):
+            after = body.split('data-testid="round-figures"', 1)[1]
+            block = re.split(r'data-testid="(?:round-outcomes|scores-extras)"', after, maxsplit=1)[0]
+            return " ".join(re.sub(r"<[^>]+>", " ", block).split())
+
+        assert 'data-testid="round-tabs"' in overview and 'data-testid="round-tabs"' in scores
+        assert figures(overview) == figures(scores)
+        assert 'data-testid="scores-extras"' in scores and 'data-testid="scores-extras"' not in overview
+
     def test_the_applicants_come_before_the_criterion_breakdown(self, client, two_scored, member):
         body = _page(client, member, "marketplace:round_scores", "battery-2026")
         assert body.index('data-testid="scores"') < body.index('data-testid="criteria-summary"')

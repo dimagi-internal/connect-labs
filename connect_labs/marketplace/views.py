@@ -306,6 +306,13 @@ def rounds(request):
     )
 
 
+def _outcome_figures(counts, undecided):
+    """The four recommendations and the undecided, with their counts: the figures both of a round's pages show."""
+    return [{"key": key, **meaning, "count": counts.get(key, 0)} for key, meaning in vocabulary.OUTCOMES.items()] + [
+        {"key": "", **vocabulary.NO_OUTCOME, "count": undecided}
+    ]
+
+
 @login_required
 @MARKETPLACE_CHROME
 def round_detail(request, slug):
@@ -338,6 +345,11 @@ def round_detail(request, slug):
             "unresolved_count": sum(1 for a in applicants if a["outcome"] == "unresolved"),
             "mix": mix,
             "reviewed": reviewed,
+            # The header both of the round's pages share.
+            "outcomes": _outcome_figures(
+                reviewed.get("outcomes", {}), len(applicants) - sum(reviewed.get("outcomes", {}).values())
+            ),
+            "country_count": mix.get("country_count", 0),
             # Its public page on Solicitations, once it has stopped taking
             # applications: anyone can read that one, so it is the link to send.
             "public_call_url": (
@@ -517,11 +529,10 @@ def round_scores(request, slug):
                 {**chip, "count": count}
                 for chip, (_, count) in zip(_flag_chips([k for k, _ in summary["flags"]]), summary["flags"])
             ],
-            "outcomes": [
-                {"key": key, **meaning, "count": summary["outcomes"][key]}
-                for key, meaning in vocabulary.OUTCOMES.items()
-            ]
-            + [{"key": "", **vocabulary.NO_OUTCOME, "count": summary["outcomes"]["undecided"]}],
+            "outcomes": _outcome_figures(summary["outcomes"], summary["outcomes"]["undecided"]),
+            # Counted as the round page counts it, so the shared header agrees on both.
+            "country_count": queries.round_mix(round_, applicants)["country_count"],
+            "can_read": True,
             "flag_vocabulary": list(vocabulary.FLAGS.items()),
             # The same shades for the figures the filter recomputes in the page.
             "shade_scale": {str(score): list(shade) for score, shade in _SHADES.items()},
