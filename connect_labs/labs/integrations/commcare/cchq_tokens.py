@@ -241,7 +241,13 @@ def _exchange_refresh_token(refresh_token: str, *, token_id: int | None = None, 
             raise CCHQTokenError(f"CommCare HQ refresh-token exchange failed after retries: {last_error}") from exc
 
         if response.status_code == 200:
-            return response.json()
+            try:
+                return response.json()
+            except ValueError as exc:
+                # A 200 whose body is not JSON (an HTML page from a proxy, say) must
+                # surface as a token error like every other refresh failure: callers
+                # (the scheduler, the MCP tools) catch CCHQTokenError and degrade.
+                raise CCHQTokenError("CommCare HQ returned invalid JSON from the refresh-token exchange") from exc
 
         # CommCare HQ rejected the refresh. Log enough to diagnose without leaking the token itself.
         logger.warning(
