@@ -247,8 +247,7 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
       <label class="text-[11px] text-gray-500 flex flex-col gap-1">RECOMMENDATION
         <select data-filter="outcome" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800 bg-white">
           <option value="">Any</option>
-          <option value="kept">Shortlist (recommended or backup)</option>
-          {% for o in outcomes %}<option value="{{ o.key|default:'none' }}">{{ o.label }}</option>{% endfor %}
+          {% for o in outcomes %}{% if o.key or o.count %}<option value="{{ o.key|default:'none' }}">{{ o.label }}</option>{% endif %}{% endfor %}
         </select>
       </label>
       <label class="text-[11px] text-gray-500 flex flex-col gap-1">REVIEWED BY
@@ -423,9 +422,8 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
         var text = v("text").trim().toLowerCase();
         if (text && row.dataset.name.indexOf(text) === -1) return false;
         var outcome = v("outcome");
-        if (outcome === "kept" && KEPT.indexOf(row.dataset.outcome) === -1) return false;
         if (outcome === "none" && row.dataset.outcome) return false;
-        if (outcome && outcome !== "kept" && outcome !== "none" && row.dataset.outcome !== outcome) return false;
+        if (outcome && outcome !== "none" && row.dataset.outcome !== outcome) return false;
         if (v("review") && row.dataset.review !== v("review")) return false;
         if (v("country") && row.dataset.country !== v("country")) return false;
         var flags = row.dataset.flags ? row.dataset.flags.split("|") : [];

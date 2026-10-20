@@ -6,6 +6,7 @@ still sees the call and how many answered it.
 """
 
 import json
+import re
 
 import pytest
 from django.urls import reverse
@@ -629,6 +630,12 @@ class TestScores:
         assert body.count('data-href="/solicitations/response/') == 3
         assert 'data-scores="8|5"' in body and 'data-scores="4|5"' in body and 'data-scores="|"' in body
         assert "Reach to households" in body and 'data-flags="padded"' in body and "Long but thin" in body
+
+    def test_the_recommendation_filter_offers_the_four_outcomes(self, client, two_scored, member):
+        body = _page(client, member, "marketplace:round_scores", "battery-2026")
+        select = body.split('data-filter="outcome"', 1)[1].split("</select>", 1)[0]
+        values = re.findall(r'<option value="([^"]*)"', select)
+        assert values == ["", "pick", "backup", "waitlist", "pass", "none"], "no combined shortlist option"
 
     def test_it_says_when_reviews_predate_the_current_criteria(self, client, two_scored, member, ace):
         from connect_labs.solicitations.data_access import SolicitationsDataAccess
