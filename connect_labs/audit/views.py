@@ -466,6 +466,11 @@ class ExperimentBulkAssessmentView(LoginRequiredMixin, DetailView):
         return context
 
 
+def _posted_bool(value) -> bool:
+    """A form checkbox posted as "true"/"false" (or "on"/"1")."""
+    return str(value or "").strip().lower() in ("true", "on", "1", "yes")
+
+
 def _session_opportunity_hint(request) -> int | None:
     """The storage opportunity the client already knows this session lives in.
 
@@ -571,6 +576,9 @@ class ExperimentSaveAuditView(LoginRequiredMixin, View):
                 for field in ("notes", "kpi_notes"):
                     if field in request.POST:
                         session.data[field] = request.POST.get(field, "")
+                # Same presence rule for the "Flagged to LLO" tick box.
+                if "flagged_to_llo" in request.POST:
+                    session.data["flagged_to_llo"] = _posted_bool(request.POST.get("flagged_to_llo"))
 
                 # Save session (keeps status as in_progress)
                 session = data_access.save_audit_session(session)
@@ -700,6 +708,8 @@ class ExperimentAuditCompleteView(LoginRequiredMixin, View):
                     session=session, overall_result=overall_result, notes=notes, kpi_notes=kpi_notes
                 )
                 session.data["completed_at"] = timezone.now().isoformat()
+                if "flagged_to_llo" in request.POST:
+                    session.data["flagged_to_llo"] = _posted_bool(request.POST.get("flagged_to_llo"))
                 session = data_access.save_audit_session(session)
                 s3_export.upsert_audit_session(session)
                 sync_after_save(session, request, data_access)
