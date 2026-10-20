@@ -358,6 +358,52 @@ class TestRenameRunView:
         assert response.status_code == 400
 
 
+class TestUpdateStateOnACompletedRun:
+    """A completed run's state is immutable -- except the follow-up links the bulk
+    review page records after the review (the task it opened for a worker), which
+    were otherwise lost: the run had just been completed by that same review."""
+
+    def _post(self, rf, dimagi_user, state):
+        import json
+
+        from connect_labs.workflow.data_access import WorkflowRunRecord
+        from connect_labs.workflow.views import update_state_api
+
+        request = rf.post(
+            "/labs/workflow/api/run/9/state/", data=json.dumps({"state": state}), content_type="application/json"
+        )
+        request.user = dimagi_user
+        completed = WorkflowRunRecord(
+            {
+                "id": 9,
+                "experiment": "workflow",
+                "type": "workflow_run",
+                "data": {"definition_id": 3, "status": "completed", "state": {}},
+                "opportunity_id": 700,
+            }
+        )
+        with (
+            patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA,
+            patch("connect_labs.workflow.views.s3_export"),
+        ):
+            mock_wda = MockWDA.return_value
+            mock_wda.get_run.return_value = completed
+            mock_wda.update_run_state.return_value = completed
+            return update_state_api(request, run_id=9), mock_wda
+
+    def test_task_links_are_written_to_a_completed_run(self, dimagi_user, rf: RequestFactory):
+        response, mock_wda = self._post(rf, dimagi_user, {"tasks_created": 1, "flw_tasks": {"flw_a": 42}})
+
+        assert response.status_code == 200
+        mock_wda.update_run_state.assert_called_once()
+
+    def test_anything_else_is_still_refused(self, dimagi_user, rf: RequestFactory):
+        response, mock_wda = self._post(rf, dimagi_user, {"flw_tasks": {"flw_a": 42}, "phase": "config"})
+
+        assert response.status_code == 409
+        mock_wda.update_run_state.assert_not_called()
+
+
 class TestUpdateAuditBatchConfigView:
     def _request(self, rf, dimagi_user, body):
         import json

@@ -369,6 +369,20 @@ RUN_STATUS_IN_PROGRESS = "in_progress"
 RUN_STATUS_COMPLETED = "completed"
 RUN_STATUSES = frozenset({RUN_STATUS_IN_PROGRESS, RUN_STATUS_COMPLETED})
 
+# State keys a COMPLETED run still accepts: links to follow-up work opened after
+# the review, not results of it. The bulk review page records the task it opens
+# for a field worker who failed the audit as flw_tasks / tasks_created (read back
+# by the page and by Audit of Audits). Refusing them once the run completed lost
+# the link -- the task existed, but the page offered to create it again. The write
+# leaves the run completed and its snapshot untouched; no snapshot reads them.
+POST_COMPLETION_STATE_KEYS = frozenset({"flw_tasks", "tasks_created"})
+
+
+def accepted_after_completion(new_state) -> bool:
+    """True iff ``new_state`` writes only POST_COMPLETION_STATE_KEYS."""
+    return isinstance(new_state, dict) and bool(new_state) and set(new_state) <= POST_COMPLETION_STATE_KEYS
+
+
 # Defensive mapping: any prod row that the (now-reverted) 04-30 migration
 # touched will read back through the proxy as the canonical value.
 _LEGACY_STATUS_MAP = {
@@ -1392,7 +1406,9 @@ class WorkflowDataAccess(BaseDataAccess):
     def update_run_state(
         self, run_id: int, new_state: dict, run: WorkflowRunRecord | None = None
     ) -> WorkflowRunRecord | None:
-        """Merge new_state into run.data['state']. In-progress runs only.
+        """Merge new_state into run.data['state']. In-progress runs only -- except
+        a write of nothing but POST_COMPLETION_STATE_KEYS, which a completed run
+        also takes (it stays completed, its snapshot untouched).
 
         Returns None if the run doesn't exist or is already completed (caller
         view turns that into a 409). Status and period_* are not accepted in
@@ -1402,7 +1418,7 @@ class WorkflowDataAccess(BaseDataAccess):
             run = self.get_run(run_id)
         if not run:
             return None
-        if run.is_completed:
+        if run.is_completed and not accepted_after_completion(new_state):
             # Caller is responsible for translating this into a 409 response.
             return None
 

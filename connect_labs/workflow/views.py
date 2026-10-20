@@ -36,6 +36,7 @@ from connect_labs.workflow.data_access import (
     PIPELINE_LOAD_VALUES,
     PipelineDataAccess,
     WorkflowDataAccess,
+    accepted_after_completion,
     on_demand_placeholder,
     pipeline_read_targets,
     program_drive_scope,
@@ -2263,7 +2264,9 @@ def update_state_api(request, run_id):
     """API endpoint to update workflow run state.
 
     Refuses with 409 if the run is already completed — completed runs are
-    immutable artifacts.
+    immutable artifacts — unless the write carries only follow-up links
+    (``POST_COMPLETION_STATE_KEYS``, e.g. the task opened for a worker), which
+    a completed run still takes without reopening.
     """
     try:
         data = json.loads(request.body)
@@ -2283,7 +2286,7 @@ def update_state_api(request, run_id):
         no = declared_reads.run_refusal(request, run)
         if no is not None:
             return no
-        if run.is_completed:
+        if run.is_completed and not accepted_after_completion(new_state):
             return JsonResponse(
                 {"error": "Run is completed; state is immutable. Start a new run."},
                 status=409,
