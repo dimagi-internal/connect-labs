@@ -112,17 +112,14 @@ The default is **flag-only** (all checkboxes unticked), so nothing is pre-tagged
 
 ## Reviewing an Audit Session
 
-### Notes and Flagging a Worker to the LLO
+### Notes
 
-While reviewing an open (not yet completed) session, two fields are available beneath the image assessment area:
+While reviewing an open (not yet completed) session, a **Notes** field is available beneath the image assessment area. This is a free-text box where you can record observations about the session, for example details of a specific image concern or context for a failed assessment.
 
-- **Notes** — a free-text box where you can record observations about the session, for example details of a specific image concern or context for a failed assessment.
-- **Flagged to LLO** — a tick box you check when you have raised the field worker's case with the LLO (Local Liaison Officer). Ticking this records that the escalation has taken place.
-
-Both the notes and the Flagged to LLO tick are saved automatically as you work (autosave), when you click **Save Progress**, and when you complete the audit. Once a session is marked complete it becomes read-only, so neither field can be changed after that point.
+Notes are saved automatically as you work (autosave), when you click **Save Progress**, and when you complete the audit. Once a session is marked complete it becomes read-only, so the notes cannot be changed after that point.
 
 !!! note "Available in reports"
-    The notes text and the Flagged to LLO status for each completed audit can be read by Labs reports. This means a report can automatically build the completed-audit log — including duplicates, MUAC misreadings, auditor notes, and whether the worker was flagged to the LLO — without anyone having to copy the information into a spreadsheet by hand.
+    The notes text for each completed audit can be read by the **Completed image audits (duplicates & MUAC misreadings)** report. This means the report can automatically build the completed-audit log — including duplicates, MUAC misreadings, and auditor notes — without anyone having to copy the information into a spreadsheet by hand. The report also has its own **Flagged to LLO** tick box on each row, which is where you record that a field worker's case has been escalated to the LLO.
 
 ---
 
