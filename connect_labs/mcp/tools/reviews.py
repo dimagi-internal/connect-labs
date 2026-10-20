@@ -128,7 +128,8 @@ _REVIEW_PUBLIC_WARNING = (
     description=(
         "Create (or, for a reviewer who already reviewed it, update) your review of a solicitation "
         "response. Only the call's owning organisation and platform support review, and never a "
-        "response from their own side; for a marketplace EOI round that is the round's owner "
+        "response from their own side (except a demonstration review, `demonstration=true`, of a synthetic "
+        "response on an unlisted call you manage); for a marketplace EOI round that is the round's owner "
         "(responses come from `marketplace_round_responses`, which gives each `response_id`). "
         "When the call has weighted evaluation criteria and you send criteria_scores, the overall "
         "score is computed from them. An AI first pass is `kind='ai'`: one per response per caller, "
@@ -233,6 +234,16 @@ _REVIEW_PUBLIC_WARNING = (
                 ),
                 "items": {"type": "object", "additionalProperties": True},
             },
+            "demonstration": {
+                "type": "boolean",
+                "default": False,
+                "description": (
+                    "Make this a demonstration review: the one way to review a response from your own side. "
+                    "Honoured only when the response was created synthetic (create_response synthetic=true, "
+                    "by the call's owner), the call is unlisted, and you manage the call; otherwise refused "
+                    "(PERMISSION_DENIED). The review is recorded with demonstration=true."
+                ),
+            },
             "program_id": {
                 "type": ["integer", "string"],
                 "description": "Accepted for compatibility; not needed.",
@@ -271,6 +282,7 @@ def create_review(
     claims: list | None = None,
     program_id: str | int | None = None,
     organization_id: str | int | None = None,
+    demonstration: bool = False,
 ) -> dict:
     """Create a review for a response."""
     if not public_record_acknowledged:
@@ -306,6 +318,8 @@ def create_review(
     ):
         if value:
             data[name] = value
+    if demonstration:
+        data["demonstration"] = True
     try:
         record = SolicitationsDataAccess(user=user).create_review(response_id, data)
     except (PermissionDenied, SolicitationResponse.DoesNotExist) as e:

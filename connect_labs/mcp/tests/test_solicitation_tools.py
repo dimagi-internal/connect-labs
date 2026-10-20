@@ -458,3 +458,54 @@ def test_directory_rounds_stay_out_of_the_solicitation_tools(world):
         if token is not staff_pat:
             # Platform support may read a round's submissions (to review them); nobody else here.
             assert err(call_tool(token, "get_response", {"response_id": submission.pk})) == "NOT_FOUND"
+
+
+# --- demonstration awards ----------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_schema_exposes_synthetic_and_demonstration():
+    assert "synthetic" in get_tool("create_response").input_schema["properties"]
+    assert "demonstration" in get_tool("award_response").input_schema["properties"]
+    assert "demonstration" in get_tool("create_review").input_schema["properties"]
+
+
+@pytest.mark.django_db
+def test_owner_seeds_and_demonstration_awards_its_own_side(world):
+    winner = make_org("winner-org", name="Winner Org")
+    grant(world["owner"], winner)
+    call = make_call(world["owner_org"], listed=False)
+    seeded = ok(
+        call_tool(
+            world["owner_pat"],
+            "create_response",
+            {"solicitation_id": call.pk, "llo_entity_id": "winner-org", "responses": {"q1": "x"}, "synthetic": True},
+        )
+    )
+    assert seeded["synthetic"] is True
+    args = {"response_id": seeded["id"], "reward_budget": 5, "org_id": "399"}
+    assert err(call_tool(world["owner_pat"], "award_response", args)) == "PERMISSION_DENIED"
+    review_args = {"public_record_acknowledged": True, "response_id": seeded["id"], "llo_entity_id": "winner-org"}
+    assert err(call_tool(world["owner_pat"], "create_review", review_args)) == "PERMISSION_DENIED"
+    review = ok(call_tool(world["owner_pat"], "create_review", {**review_args, "demonstration": True}))
+    assert review["demonstration"] is True
+    awarded = ok(call_tool(world["owner_pat"], "award_response", {**args, "demonstration": True}))
+    assert awarded["status"] == "awarded"
+    assert awarded["demonstration_award"] is True
+    assert awarded["awardee_notified"] is False
+
+
+@pytest.mark.django_db
+def test_demonstration_award_refused_for_a_real_or_listed_response(world):
+    winner = make_org("winner-org", name="Winner Org")
+    grant(world["owner"], winner)
+    real = make_response(make_call(world["owner_org"], listed=False), None, llo_entity=winner)
+    args = {"response_id": real.pk, "reward_budget": 5, "org_id": "399", "demonstration": True}
+    assert err(call_tool(world["owner_pat"], "award_response", args)) == "PERMISSION_DENIED"
+    listed = make_call(world["owner_org"], listed=True)
+    envelope = call_tool(
+        world["owner_pat"],
+        "create_response",
+        {"solicitation_id": listed.pk, "llo_entity_id": "winner-org", "synthetic": True},
+    )
+    assert envelope["result"]["isError"] is True

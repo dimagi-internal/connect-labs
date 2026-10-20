@@ -216,6 +216,27 @@ respondent cannot read reviews: `get_reviews_for_response` returns `[]` for
 them, and the award email (`data_access._notify_awarded`) carries no review
 content. `can_review` additionally refuses a reviewer's own side.
 
+### Demonstration reviews and awards (the one own-side exception)
+
+An agent that exercises a call end to end with one identity (ACE's `labs_e2e`
+run: the same account manages the call, belongs to the invented winning
+organisation, and entered that organisation's answer) is always on the
+winner's side, so `can_review` / `can_award` refuse it. `access.can_demonstrate`
+is the narrow exception, used only when the caller asks for it
+(`create_review demonstration=true`, `award_response demonstration=true`) and
+only when ALL hold:
+
+- the response is `synthetic`: the call's owner entered it on the firm's behalf
+  and marked it invented at creation (`create_response synthetic=true`, allowed
+  only on an unlisted call; it has no respondent user and is never changed);
+- the call is unlisted (`is_public` false) and not a directory round;
+- the caller manages the call (owner or platform support).
+
+Otherwise it is refused -- it never falls back to a real award. The review is
+stored with `demonstration=true`; the award with `demonstration_award=true`, no
+awardee email and no fund allocation. A synthetic response can be awarded only
+as a demonstration, and a real response is never one.
+
 ## MCP tools
 
 Marketplace (`connect_labs/mcp/tools/marketplace.py`):
@@ -242,5 +263,7 @@ Solicitations (`mcp/tools/solicitations.py`):
 - `list_solicitations` / `get_solicitation`: calls the caller owns, plus listed calls.
 - `create_solicitation` / `update_solicitation` / `delete_solicitation`: labs calls, owner only.
 - `list_responses` / `get_response`: responses, for the owner or the respondent.
-- `create_response`: respond, or (as the call's manager) enter a response on a firm's behalf.
-- `award_response`: award a labs call's response; never a directory round.
+- `create_response`: respond, or (as the call's manager) enter a response on a firm's behalf
+  (`synthetic=true` marks an entered response invented, on an unlisted call only).
+- `award_response`: award a labs call's response; never a directory round. `demonstration=true`
+  for a synthetic response (see above).

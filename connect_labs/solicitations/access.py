@@ -14,6 +14,11 @@ On a response there is one more: the **respondent**, the user who submitted it.
 They read their own response and edit it until it is submitted; they never
 review or award it, whatever else they are.
 
+Nobody reviews or awards a response from their own side, with one narrow
+exception: a **demonstration** (`can_demonstrate`) -- an explicitly requested
+review or award of a `synthetic` response the owner entered on an unlisted
+call, flagged on the record, with no mail and no money.
+
 Membership is Supply's (`supply_chain.runner.is_member`): an `OrgMembership`
 granted for the organisation, Connect's own membership of an organisation
 Connect knows, or a Dimagi address for Dimagi. An organisation being *visible*
@@ -228,17 +233,47 @@ def _is_own_side(subject, response) -> bool:
     return False
 
 
+def can_demonstrate(subject, response) -> bool:
+    """Review or award a response as a DEMONSTRATION -- the one exception to "never your own side".
+
+    For an agent exercising a call end to end with one identity (ACE's
+    `labs_e2e` run: the same person manages the call, belongs to the invented
+    winning organisation, and entered its answer). Allowed only when all hold:
+
+    - the response is `synthetic`: the owner entered it and marked it invented
+      when it was created (never a response a signed-in person submitted);
+    - the call is unlisted, and is not a directory round;
+    - the caller manages the call (owner or platform support).
+
+    The caller asks for it explicitly (`demonstration=True` on the review or
+    award), the record carries the flag, and a demonstration award sends no
+    mail and allocates no fund (`data_access.award_response`).
+    """
+    solicitation = response.solicitation
+    return (
+        bool(getattr(response, "synthetic", False))
+        and response.submitted_by_id is None
+        and not is_directory_round(solicitation)
+        and not solicitation.listed
+        and can_manage(subject, solicitation)
+    )
+
+
 def can_read_reviews(subject, solicitation) -> bool:
     """See the reviews of a call's responses: whoever may review them."""
     return can_manage(subject, solicitation) or can_read_round_responses(subject, solicitation)
 
 
-def can_review(subject, response) -> bool:
+def can_review(subject, response, *, demonstration: bool = False) -> bool:
     """Owner or operator of the call -- and never on their own response.
 
     A directory round is reviewed by whoever may read its responses: the round
     is decided outside labs, but the reading and scoring happen here.
+    `demonstration=True` asks for a demonstration review instead, allowed only
+    as `can_demonstrate` says (and then whichever side the caller is on).
     """
+    if demonstration:
+        return can_demonstrate(subject, response)
     if is_directory_round(response.solicitation):
         allowed = can_read_round_responses(subject, response.solicitation)
     else:
@@ -251,8 +286,17 @@ def can_set_round_criteria(subject, solicitation) -> bool:
     return can_read_round_responses(subject, solicitation)
 
 
-def can_award(subject, response) -> bool:
-    """Never on a directory round: those are decided, and contracted, outside labs."""
+def can_award(subject, response, *, demonstration: bool = False) -> bool:
+    """Never on a directory round: those are decided, and contracted, outside labs.
+
+    `demonstration=True` asks for a demonstration award (`can_demonstrate`). A
+    synthetic response is never given any other kind: an invented answer must
+    not become a real award, whoever awards it.
+    """
+    if demonstration:
+        return can_demonstrate(subject, response)
+    if getattr(response, "synthetic", False):
+        return False
     return can_manage(subject, response.solicitation) and not _is_own_side(subject, response)
 
 

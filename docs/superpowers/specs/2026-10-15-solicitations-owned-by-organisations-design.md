@@ -59,7 +59,10 @@ anything downstream being rewritten". This change does that migration.
    | `respondent` | the user who submitted a response | read and edit their own response (until submitted), see its status |
    | everyone else | signed in or not | read listed solicitations; respond as their own organisation |
 
-   A respondent can never review or award their own response. Visibility of the
+   A respondent can never review or award their own response. (One later
+   exception, explicit and flagged: a demonstration review/award of an owner-entered
+   `synthetic` response on an unlisted call -- `access.can_demonstrate`, see
+   `docs/marketplace-round-review.md`.) Visibility of the
    org in a user's labs context is NOT membership (the same rule Supply uses).
    There is no Dimagi fallback for an unowned historical round: only staff
    manage those.

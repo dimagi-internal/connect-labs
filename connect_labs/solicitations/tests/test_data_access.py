@@ -673,3 +673,99 @@ def test_staged_upgrade_keeps_budget_and_org_id_it_was_not_given(world):
     assert (response.award_stage, response.reward_budget, response.org_id) == ("full", 10, "77")
     # No new budget, nothing new to allocate.
     assert fda.return_value.add_allocation.call_count == 1
+
+
+# --- demonstration awards ------------------------------------------------------------
+
+
+@pytest.fixture
+def demo(world):
+    owner = world["owner"]
+    winner_org = make_org("winner-org", name="Winner Org")
+    grant(owner, winner_org)
+    call = make_call(world["owner_org"], listed=False, fund_id=42)
+    return {**world, "winner_org": winner_org, "demo_call": call}
+
+
+def _seed_synthetic(demo):
+    return da(demo["owner"]).create_response(
+        demo["demo_call"].pk,
+        "winner-org",
+        {"responses": {"q1": "x"}, "submitted_by_email": "seed@example.org", "synthetic": True},
+        on_behalf=True,
+    )
+
+
+def test_owner_marks_an_entered_response_synthetic_at_creation(demo):
+    response = _seed_synthetic(demo)
+    assert response.synthetic is True
+    assert response.submitted_by_id is None
+    assert response.to_data(owner_view=True)["synthetic"] is True
+
+
+def test_only_an_owner_entered_response_can_be_synthetic(demo):
+    call = demo["demo_call"]
+    with pytest.raises(ValidationError, match="synthetic"):
+        da(demo["applicant"]).create_response(call.pk, "firm-org", {"synthetic": True})
+
+
+def test_synthetic_response_refused_on_a_listed_call(demo):
+    listed = make_call(demo["owner_org"], listed=True)
+    with pytest.raises(ValidationError, match="unlisted"):
+        da(demo["owner"]).create_response(listed.pk, "winner-org", {"synthetic": True}, on_behalf=True)
+
+
+@override_settings(LABS_EMAIL_ENABLED=True)
+def test_demonstration_award_is_flagged_and_sends_no_mail_and_allocates_nothing(demo):
+    response = _seed_synthetic(demo)
+    with (
+        patch("connect_labs.utils.email.send_labs_email", return_value=MagicMock()) as send,
+        patch.object(SolicitationsDataAccess, "_allocate") as allocate,
+    ):
+        awarded = da(demo["owner"], access_token="tok").award_response(
+            response.pk, reward_budget=100, org_id="399", demonstration=True
+        )
+    assert awarded.status == "awarded"
+    assert awarded.demonstration_award is True
+    assert awarded.awardee_notified is False
+    assert awarded.to_data(owner_view=True)["demonstration_award"] is True
+    send.assert_not_called()
+    allocate.assert_not_called()
+
+
+def test_demonstration_award_refuses_a_fund(demo):
+    response = _seed_synthetic(demo)
+    with pytest.raises(ValidationError, match="fund"):
+        da(demo["owner"]).award_response(response.pk, reward_budget=1, fund_id=7, demonstration=True)
+
+
+def test_own_side_synthetic_award_without_the_flag_is_refused(demo):
+    response = _seed_synthetic(demo)
+    with pytest.raises(PermissionDenied):
+        da(demo["owner"]).award_response(response.pk, reward_budget=1)
+
+
+def test_demonstration_award_of_a_real_response_is_refused(demo):
+    real = make_response(demo["demo_call"], None, llo_entity=demo["winner_org"])
+    with pytest.raises(PermissionDenied, match="demonstration"):
+        da(demo["owner"]).award_response(real.pk, reward_budget=1, demonstration=True)
+    real.refresh_from_db()
+    assert real.status == "submitted"
+
+
+def test_demonstration_review_is_flagged_and_its_reviewer_may_change_it(demo):
+    response = _seed_synthetic(demo)
+    with pytest.raises(PermissionDenied):
+        da(demo["owner"]).create_review(response.pk, {"score": 50})
+    review = da(demo["owner"]).create_review(response.pk, {"score": 50, "demonstration": True})
+    assert review.demonstration is True
+    assert review.to_data()["demonstration"] is True
+    updated = da(demo["owner"]).update_review(review.pk, {"notes": "seen"})
+    assert updated.notes == "seen"
+    da(demo["owner"]).delete_review(review.pk)
+
+
+def test_demonstration_review_of_a_real_response_is_refused(demo):
+    real = make_response(demo["demo_call"], None, llo_entity=demo["winner_org"])
+    with pytest.raises(PermissionDenied):
+        da(demo["owner"]).create_review(real.pk, {"score": 50, "demonstration": True})

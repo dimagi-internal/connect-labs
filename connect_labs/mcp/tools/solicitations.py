@@ -513,6 +513,17 @@ def create_solicitation(
             },
             "selected_plan_ids": {"type": "array", "items": {"type": ["integer", "string"]}},
             "selected_plan_names": {"type": "array", "items": {"type": "string"}},
+            "synthetic": {
+                "type": "boolean",
+                "default": False,
+                "description": (
+                    "Mark this response as INVENTED (a synthetic response for an end-to-end test or demo), "
+                    "never a real firm's answer. Allowed only when the call's owner (or platform support) "
+                    "enters the response on an UNLISTED call; set at creation and never changed. A synthetic "
+                    "response can only ever receive a demonstration award (award_response demonstration=true), "
+                    "and is the only kind that can receive one."
+                ),
+            },
         },
         "required": ["solicitation_id"],
         "additionalProperties": False,
@@ -534,6 +545,7 @@ def create_response(
     submission_date: str = "",
     selected_plan_ids: list | None = None,
     selected_plan_names: list | None = None,
+    synthetic: bool = False,
 ) -> dict:
     data = {
         "responses": responses or {},
@@ -548,6 +560,8 @@ def create_response(
         data["selected_plan_ids"] = selected_plan_ids
     if selected_plan_names:
         data["selected_plan_names"] = selected_plan_names
+    if synthetic:
+        data["synthetic"] = True
     da = _da(user)
     solicitation = da.get_solicitation_by_id(solicitation_id)
     if solicitation is None:
@@ -684,7 +698,11 @@ def delete_solicitation(
     description=(
         "Award a solicitation response: marks it awarded with reward_budget and org_id, and emails the "
         "awardee when labs email is on (awardee_notified says whether it was sent). Only the call's "
-        "owning organisation or platform support may award, and never a response from their own side. "
+        "owning organisation or platform support may award, and never a response from their own side -- "
+        "except a DEMONSTRATION award (demonstration=true): an explicitly requested award of a synthetic "
+        "response (create_response synthetic=true) on an unlisted call, by someone who manages the call, "
+        "even when the awarder is on that response's side. It is flagged demonstration_award, emails nobody "
+        "and allocates no fund. A synthetic response can be awarded only that way. "
         "A response that is already awarded is refused (FAILED_PRECONDITION): no second allocation or email. "
         "If fund_id is provided, appends an allocation entry to that fund's allocations array: the fund "
         "is checked first (NOT_FOUND, nothing awarded), and if the allocation fails after the award the "
@@ -716,7 +734,18 @@ def delete_solicitation(
                 "description": (
                     "Optional fund ID. When provided, an allocation entry is appended to the fund's "
                     "allocations array. The fund_id is explicit (not derived from the solicitation) "
-                    "so callers have full control."
+                    "so callers have full control. Refused with demonstration=true."
+                ),
+            },
+            "demonstration": {
+                "type": "boolean",
+                "default": False,
+                "description": (
+                    "Make this a demonstration award. Honoured only when ALL hold: the response was created "
+                    "synthetic (create_response synthetic=true, by the call's owner), the call is unlisted "
+                    "(is_public false), and you manage the call; otherwise refused (PERMISSION_DENIED) -- it "
+                    "never falls back to a real award. The award is recorded with demonstration_award=true, "
+                    "sends no awardee email and allocates no fund. Required to award a synthetic response."
                 ),
             },
             "program_id": {
@@ -741,6 +770,7 @@ def award_response(
     fund_id: int | None = None,
     program_id: str | None = None,
     organization_id: str | None = None,
+    demonstration: bool = False,
 ) -> dict:
     """Award a response, and allocate from `fund_id` (a prod fund record) when given.
 
@@ -749,15 +779,21 @@ def award_response(
     `allocation_error` rather than raised: a retry would be refused as already
     awarded, so raising would leave the caller believing the award failed.
     """
+    if demonstration and fund_id:
+        raise MCPToolError("BAD_REQUEST", "A demonstration award allocates no fund; leave fund_id out.")
     client = LabsRecordAPIClient(access_token=require_connect_token(user)) if fund_id else None
     try:
         if client is not None and client.get_record_by_id(fund_id, type=FUND_TYPE) is None:
             raise MCPToolError("NOT_FOUND", f"No fund with id {fund_id}")
         try:
             response = _da(user).award_response(
-                response_id, reward_budget=reward_budget, org_id=org_id, allocate_fund=False
+                response_id,
+                reward_budget=reward_budget,
+                org_id=org_id,
+                allocate_fund=False,
+                demonstration=bool(demonstration),
             )
-        except (PermissionDenied, SolicitationResponse.DoesNotExist, AlreadyAwarded) as e:
+        except (PermissionDenied, SolicitationResponse.DoesNotExist, AlreadyAwarded, ValidationError) as e:
             raise _mcp_error(e) from e
 
         allocation_error = None
