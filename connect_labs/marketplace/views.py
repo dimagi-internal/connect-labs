@@ -502,6 +502,16 @@ def round_scores(request, slug):
             "comparison": comparison,
             "criteria_rows": criteria_rows,
             "countries": countries,
+            # Only the kinds of review some applicant has: an option that matches nobody is noise.
+            "review_options": [
+                {"value": value, "label": label, "count": reviewed[key]}
+                for value, label, key in (
+                    ("person", "A person", "people"),
+                    ("ai", "The AI only", "ai_only"),
+                    ("none", "Not reviewed", "none"),
+                )
+                if reviewed[key]
+            ],
             "flag_counts": [
                 {**chip, "count": count}
                 for chip, (_, count) in zip(_flag_chips([k for k, _ in summary["flags"]]), summary["flags"])

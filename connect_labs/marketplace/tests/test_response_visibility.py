@@ -637,6 +637,15 @@ class TestScores:
         values = re.findall(r'<option value="([^"]*)"', select)
         assert values == ["", "pick", "backup", "waitlist", "pass", "none"], "no combined shortlist option"
 
+    def test_the_reviewed_by_filter_offers_only_the_kinds_some_applicant_has(self, client, two_scored, member):
+        body = _page(client, member, "marketplace:round_scores", "battery-2026")
+        select = body.split('data-filter="review"', 1)[1].split("</select>", 1)[0]
+        assert re.findall(r'<option value="([^"]*)"', select) == ["", "ai", "none"], "nobody was reviewed by a person"
+
+    def test_the_applicants_come_before_the_criterion_breakdown(self, client, two_scored, member):
+        body = _page(client, member, "marketplace:round_scores", "battery-2026")
+        assert body.index('data-testid="scores"') < body.index('data-testid="criteria-summary"')
+
     def test_it_says_when_reviews_predate_the_current_criteria(self, client, two_scored, member, ace):
         from connect_labs.solicitations.data_access import SolicitationsDataAccess
 

@@ -70,12 +70,12 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
       </div>
       <div class="w-full xl:w-auto">
         <div class="flex flex-wrap gap-x-7 gap-y-4 sm:gap-8" data-testid="outcomes">
-          {% for o in outcomes %}
+          {% for o in outcomes %}{% if o.key or o.count %}
             <div title="{{ o.definition }}">
               <div class="text-[22px] sm:text-[25px] font-semibold tabular-nums {% if o.key == 'pick' %}text-green-700{% elif not o.key %}text-gray-400{% else %}text-gray-900{% endif %}" data-count="{{ o.key }}">{{ o.count }}</div>
               <div class="text-[11px] text-gray-400 tracking-wide">{{ o.label|upper }}</div>
             </div>
-          {% endfor %}
+          {% endif %}{% endfor %}
           <div title="Mean overall score (0–100) of the applicants shown">
             <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums" data-stat="total-mean">{{ summary.total_mean|floatformat:0|default:"—" }}</div>
             <div class="text-[11px] text-gray-400 tracking-wide">MEAN SCORE</div>
@@ -185,56 +185,6 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
   </div>
   {% endif %}
 
-  {% if summary.criteria %}
-  <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-4.5">
-    <div class="px-4 sm:px-5 py-3.5 border-b border-brand-border-light">
-      <span class="text-sm font-semibold text-brand-deep-purple">By criterion</span>
-      <div class="text-[12px] text-gray-500 mt-0.5">For the applicants shown below.</div>
-    </div>
-    <div class="overflow-x-auto">
-    <table class="min-w-full divide-y divide-gray-200" data-testid="criteria-summary">
-      <thead class="bg-gray-50">
-        <tr>
-          <th class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Criterion</th>
-          <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Weight</th>
-          <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Applicants given a score on this criterion">Scored</th>
-          <th class="px-3 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Mean</th>
-          <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Median</th>
-          <th class="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="How many applicants got each score, 1 on the left to 10 on the right">Spread 1–10</th>
-          <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Mean score of applicants recommended or kept as backup">Shortlist</th>
-          <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Everyone else</th>
-          <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="How far the shortlist's mean is above everyone else's. Near zero: this criterion did not decide who was shortlisted.">Shortlist lead</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-gray-100">
-        {% for c in criteria_rows %}
-          <tr data-criterion="{{ c.id }}">
-            <td class="px-4 sm:px-5 py-2.5 text-[13px] text-gray-800 font-medium">
-              {{ c.name }}
-              {% if c.scoring_guide %}<details class="text-[11.5px] text-gray-500 font-normal leading-snug mt-0.5"><summary class="cursor-pointer text-gray-400 hover:text-brand-indigo">How it is scored</summary><p class="mt-1 whitespace-pre-line" style="max-width: 36rem">{{ c.scoring_guide }}</p></details>{% endif %}
-            </td>
-            <td class="px-3 py-2.5 text-right text-[12.5px] text-gray-500 tabular-nums">{{ c.weight|floatformat:"-1" }}%</td>
-            <td class="px-3 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="scored">{{ c.scored }}</td>
-            <td class="px-3 py-2.5 text-center"><span class="inline-block rounded text-[12.5px] font-semibold tabular-nums" style="min-width: 2.75rem; padding: 2px 0; {{ c.mean_style }}" data-stat="mean">{{ c.mean|floatformat:1|default:"—" }}</span></td>
-            <td class="px-3 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="median">{{ c.median|floatformat:"-1"|default:"—" }}</td>
-            <td class="px-3 py-2.5">
-              <div class="flex items-end" style="gap: 2px; height: 24px" data-stat="spread">
-                {% for b in c.spread %}
-                  <div title="{{ b.count }} scored {{ b.score }}" data-score="{{ b.score }}" style="width: 7px; height: {% if b.count %}{{ b.pct }}%{% else %}2px{% endif %}; min-height: 2px; border-radius: 1px 1px 0 0; background: {{ b.colour }}"></div>
-                {% endfor %}
-              </div>
-            </td>
-            <td class="px-3 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="kept">{{ c.kept_mean|floatformat:1|default:"—" }}</td>
-            <td class="px-3 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="rest">{{ c.rest_mean|floatformat:1|default:"—" }}</td>
-            <td class="px-4 sm:px-5 py-2.5 text-right text-[12.5px] font-medium tabular-nums" data-stat="gap">{% if c.gap is not None %}{% if c.gap >= 0 %}+{% endif %}{{ c.gap|floatformat:1 }}{% else %}—{% endif %}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    </div>
-  </div>
-  {% endif %}
-
   <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
     <div class="px-4 sm:px-5 pt-3.5 flex flex-wrap items-baseline gap-x-3">
       <span class="text-sm font-semibold text-brand-deep-purple">Applicants</span>
@@ -247,17 +197,17 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
       <label class="text-[11px] text-gray-500 flex flex-col gap-1">RECOMMENDATION
         <select data-filter="outcome" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800 bg-white">
           <option value="">Any</option>
-          {% for o in outcomes %}{% if o.key or o.count %}<option value="{{ o.key|default:'none' }}">{{ o.label }}</option>{% endif %}{% endfor %}
+          {% for o in outcomes %}{% if o.key or o.count %}<option value="{{ o.key|default:'none' }}">{{ o.label }} ({{ o.count }})</option>{% endif %}{% endfor %}
         </select>
       </label>
+      {% if review_options|length > 1 %}
       <label class="text-[11px] text-gray-500 flex flex-col gap-1">REVIEWED BY
         <select data-filter="review" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800 bg-white">
           <option value="">Anyone</option>
-          <option value="person">A person</option>
-          <option value="ai">The AI only</option>
-          <option value="none">Not reviewed</option>
+          {% for r in review_options %}<option value="{{ r.value }}">{{ r.label }} ({{ r.count }})</option>{% endfor %}
         </select>
       </label>
+      {% endif %}
       {% if countries %}
       <label class="text-[11px] text-gray-500 flex flex-col gap-1">COUNTRY
         <select data-filter="country" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800 bg-white">
@@ -302,9 +252,9 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
           <th data-sort="text" class="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Sorts recommended first">Recommendation</th>
           <th data-sort="number" class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="The criteria weighted, out of 100">Score</th>
           {% for c in summary.criteria %}
-            <th data-sort="number" class="px-2 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider" style="max-width: 7rem; white-space: normal; line-height: 1.2" title="{{ c.name }} · {{ c.weight|floatformat:'-1' }}% of the score">{{ c.name }}<div class="text-[10px] text-gray-400 font-normal normal-case">{{ c.weight|floatformat:"-1" }}%</div></th>
+            <th data-sort="number" class="hidden sm:table-cell px-2 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider" style="width: 7.5rem; min-width: 6rem; white-space: normal; line-height: 1.25; vertical-align: bottom" title="{{ c.name }} · {{ c.weight|floatformat:'-1' }}% of the score"><div style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden">{{ c.name }}</div><div class="text-[10px] text-gray-400 font-normal normal-case">{{ c.weight|floatformat:"-1" }}%</div></th>
           {% endfor %}
-          <th class="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Things to check before relying on the response; not penalties">Flags</th>
+          <th class="hidden sm:table-cell px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" style="vertical-align: bottom" title="Things to check before relying on the response; not penalties">Flags</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
@@ -335,11 +285,11 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
             </td>
             <td class="px-3 py-2.5 text-right text-[13px] font-semibold text-gray-900 tabular-nums" data-sort-value="{{ a.review.score|default_if_none:'' }}">{{ a.review.score|default_if_none:"—" }}</td>
             {% for cell in a.cells %}
-              <td class="px-1 py-1 text-center" data-sort-value="{{ cell.score|default_if_none:'' }}">
+              <td class="hidden sm:table-cell px-1 py-1 text-center" data-sort-value="{{ cell.score|default_if_none:'' }}">
                 {% if cell.score is not None %}<span class="inline-block rounded text-[12px] font-semibold tabular-nums" style="min-width: 2.25rem; padding: 3px 0; {{ cell.style }}">{{ cell.score|floatformat:"-1" }}</span>{% else %}<span class="text-[12px] text-gray-300">—</span>{% endif %}
               </td>
             {% endfor %}
-            <td class="px-3 py-2.5">
+            <td class="hidden sm:table-cell px-3 py-2.5">
               <div class="flex flex-wrap gap-1">{% for flag in a.flag_chips %}<span class="px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-800" title="{{ flag.definition }}">{{ flag.label }}</span>{% endfor %}</div>
             </td>
           </tr>
@@ -350,6 +300,53 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
     </table>
     </div>
   </div>
+
+  {% if summary.criteria %}
+  <details class="bg-white border border-brand-border-light rounded-lg overflow-hidden mt-4.5" data-testid="by-criterion">
+    <summary class="cursor-pointer px-4 sm:px-5 py-3 text-[13px] font-semibold text-brand-deep-purple">By criterion <span class="text-[12px] font-normal text-gray-500">· how each criterion scored, for the applicants shown above</span></summary>
+    <div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-gray-200" data-testid="criteria-summary">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Criterion</th>
+          <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Weight</th>
+          <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Applicants given a score on this criterion">Scored</th>
+          <th class="px-3 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Mean</th>
+          <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Median</th>
+          <th class="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="How many applicants got each score, 1 on the left to 10 on the right">Spread 1–10</th>
+          <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Mean score of applicants recommended or kept as backup">Shortlist</th>
+          <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Everyone else</th>
+          <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="How far the shortlist's mean is above everyone else's. Near zero: this criterion did not decide who was shortlisted.">Shortlist lead</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for c in criteria_rows %}
+          <tr data-criterion="{{ c.id }}">
+            <td class="px-4 sm:px-5 py-2.5 text-[13px] text-gray-800 font-medium">
+              {{ c.name }}
+              {% if c.scoring_guide %}<details class="text-[11.5px] text-gray-500 font-normal leading-snug mt-0.5"><summary class="cursor-pointer text-gray-400 hover:text-brand-indigo">How it is scored</summary><p class="mt-1 whitespace-pre-line" style="max-width: 36rem">{{ c.scoring_guide }}</p></details>{% endif %}
+            </td>
+            <td class="px-3 py-2.5 text-right text-[12.5px] text-gray-500 tabular-nums">{{ c.weight|floatformat:"-1" }}%</td>
+            <td class="px-3 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="scored">{{ c.scored }}</td>
+            <td class="px-3 py-2.5 text-center"><span class="inline-block rounded text-[12.5px] font-semibold tabular-nums" style="min-width: 2.75rem; padding: 2px 0; {{ c.mean_style }}" data-stat="mean">{{ c.mean|floatformat:1|default:"—" }}</span></td>
+            <td class="px-3 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="median">{{ c.median|floatformat:"-1"|default:"—" }}</td>
+            <td class="px-3 py-2.5">
+              <div class="flex items-end" style="gap: 2px; height: 24px" data-stat="spread">
+                {% for b in c.spread %}
+                  <div title="{{ b.count }} scored {{ b.score }}" data-score="{{ b.score }}" style="width: 7px; height: {% if b.count %}{{ b.pct }}%{% else %}2px{% endif %}; min-height: 2px; border-radius: 1px 1px 0 0; background: {{ b.colour }}"></div>
+                {% endfor %}
+              </div>
+            </td>
+            <td class="px-3 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="kept">{{ c.kept_mean|floatformat:1|default:"—" }}</td>
+            <td class="px-3 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="rest">{{ c.rest_mean|floatformat:1|default:"—" }}</td>
+            <td class="px-4 sm:px-5 py-2.5 text-right text-[12.5px] font-medium tabular-nums" data-stat="gap">{% if c.gap is not None %}{% if c.gap >= 0 %}+{% endif %}{{ c.gap|floatformat:1 }}{% else %}—{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </details>
+  {% endif %}
 
   {% if can_edit and history %}
     <details class="bg-white border border-brand-border-light rounded-lg mt-4.5 px-4 sm:px-5 py-3" data-testid="versions">
