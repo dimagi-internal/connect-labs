@@ -18,76 +18,58 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
   </div>
 
   <div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-6 py-5 mb-4.5">
-    <div class="flex flex-wrap items-start justify-between gap-5 sm:gap-7">
-      <div class="w-full xl:max-w-xl xl:flex-1">
-        <div class="flex items-center gap-2.5 flex-wrap">
-          <h1 class="text-xl sm:text-2xl font-semibold text-brand-deep-purple">How applicants scored</h1>
-          {% if history|length > 1 %}
-            <form method="get" class="inline-flex items-center" data-testid="version-picker">
-              <select name="version" onchange="this.form.submit()" title="The scores are given against this version of the round's criteria. Each time the criteria are rewritten, the version goes up." class="rounded-full text-[12px] font-semibold bg-indigo-50 text-brand-indigo" style="border: 0; padding: 2px 28px 2px 10px">
-                {% for v in history %}<option value="{{ v.version }}" {% if v.version == shown_version %}selected{% endif %}>Criteria version {{ v.number }}{% if v.current %} (current){% endif %}</option>{% endfor %}
-              </select>
-            </form>
-            {% if not comparison %}
-              <form method="get" class="inline-flex items-center gap-1.5 text-[11px] text-gray-500" data-testid="compare-picker">
-                <input type="hidden" name="version" value="{{ shown_version }}">
-                <select name="compare" onchange="this.form.submit()" title="Set these scores against another version of the criteria, to see what changed." class="border border-brand-border-light rounded-full px-2 py-0.5 text-[12px] text-gray-700 bg-white">
-                  <option value="" selected>No comparison</option>
-                  {% for v in history %}{% if v.version != shown_version %}<option value="{{ v.version }}">Compare with version {{ v.number }}</option>{% endif %}{% endfor %}
-                </select>
-              </form>
-            {% endif %}
-          {% elif shown_version %}<a href="{% url 'marketplace:round' round.slug %}#criteria" title="The scores are given against this version of the round's criteria. Each time the criteria are rewritten, the version goes up." class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-semibold bg-indigo-50 text-brand-indigo">Criteria version {{ shown_version|slice:"1:" }}</a>{% endif %}
-        </div>
-        {% if not is_current %}
-          <div class="text-[12.5px] text-amber-800 bg-amber-50 rounded-lg px-3 py-2 mt-2" data-testid="earlier-version">
-            An earlier version of the criteria. These are the reviews scored on version {{ shown_version|slice:"1:" }}; the round now uses version {{ round.rubric_version|slice:"1:" }}.
-            <a href="{% url 'marketplace:round_scores' round.slug %}" class="text-brand-indigo hover:text-brand-deep-purple ml-1">See the current scores →</a>
-          </div>
-        {% endif %}
-        <div class="text-[13px] text-gray-600 mt-1.5 leading-relaxed">
-          Every applicant against every criterion. Where a person has reviewed an applicant, their review is shown; otherwise the AI's.
-        </div>
-        <div class="flex flex-wrap items-center gap-2 mt-3" data-testid="summary">
-          {% if round.summary_url %}
-            <a href="{{ round.summary_url }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center px-3.5 py-2 bg-indigo-600 text-white text-[13px] font-medium rounded-lg hover:bg-indigo-700">
-              <i class="fa-regular fa-file-lines mr-2 text-[12px]"></i> Read the round's summary
-            </a>
-          {% endif %}
-          {% if can_edit %}
-            <details class="text-[12px]">
-              <summary class="cursor-pointer text-brand-indigo hover:text-brand-deep-purple py-2">{% if round.summary_url %}Change the summary link{% else %}Link the round's summary{% endif %}</summary>
-              <form method="post" action="{% url 'marketplace:round_summary' round.slug %}" class="flex flex-wrap items-center gap-2 mt-1.5">
-                {% csrf_token %}
-                <input type="hidden" name="next" value="{{ request.path }}">
-                <input type="url" name="summary_url" value="{{ round.summary_url }}" placeholder="https://docs.google.com/…" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800" style="width: 22rem; max-width: 100%">
-                <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-brand-border-light text-brand-indigo text-[12.5px] font-medium rounded-lg hover:bg-gray-50">Save</button>
-              </form>
-            </details>
-          {% endif %}
-        </div>
-        {% if messages %}{% for message in messages %}<div class="text-[12px] {% if message.tags == 'error' %}text-red-800{% else %}text-green-800{% endif %} mt-1.5">{{ message }}</div>{% endfor %}{% endif %}
+    {% include "marketplace/_round_header.html" with tab="scores" %}
+    {% comment %}What only this page has: which criteria the scores are on, a comparison with another version, and the mean.{% endcomment %}
+    <div class="flex flex-wrap items-end gap-x-7 gap-y-4 sm:gap-x-8 mt-4 pt-4 border-t border-brand-border-light" data-testid="scores-extras">
+      <div title="Mean overall score (0–100) of the applicants shown below">
+        <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums" data-stat="total-mean">{{ summary.total_mean|floatformat:0|default:"—" }}</div>
+        <div class="text-[11px] text-gray-400 tracking-wide">MEAN SCORE</div>
+        <div class="text-[11px] text-gray-400 mt-0.5">median <span data-stat="total-median">{{ summary.total_median|floatformat:0|default:"—" }}</span> of 100</div>
       </div>
-      <div class="w-full xl:w-auto">
-        <div class="flex flex-wrap gap-x-7 gap-y-4 sm:gap-8" data-testid="outcomes">
-          {% for o in outcomes %}{% if o.key or o.count %}
-            <div title="{{ o.definition }}">
-              <div class="text-[22px] sm:text-[25px] font-semibold tabular-nums {% if o.key == 'pick' %}text-green-700{% elif not o.key %}text-gray-400{% else %}text-gray-900{% endif %}" data-count="{{ o.key }}">{{ o.count }}</div>
-              <div class="text-[11px] text-gray-400 tracking-wide">{{ o.label|upper }}</div>
-            </div>
-          {% endif %}{% endfor %}
-          <div title="Mean overall score (0–100) of the applicants shown">
-            <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums" data-stat="total-mean">{{ summary.total_mean|floatformat:0|default:"—" }}</div>
-            <div class="text-[11px] text-gray-400 tracking-wide">MEAN SCORE</div>
-            <div class="text-[11px] text-gray-400 mt-0.5">median <span data-stat="total-median">{{ summary.total_median|floatformat:0|default:"—" }}</span> of 100</div>
-          </div>
-        </div>
-        <div class="text-[11.5px] text-gray-500 mt-2" data-testid="who-decided">
-          {% if set_by_people %}{{ set_by_people }} recommendation{{ set_by_people|pluralize }} set by a person, the rest by the AI.{% else %}All recommendations are the AI's; no person has set one yet.{% endif %}
-          {{ reviewed.people }} of {{ applicants|length }} checked by a person.
-        </div>
+      <div class="flex items-center gap-2.5 flex-wrap pb-1">
+      {% if history|length > 1 %}
+        <form method="get" class="inline-flex items-center" data-testid="version-picker">
+          <select name="version" onchange="this.form.submit()" title="The scores are given against this version of the round's criteria. Each time the criteria are rewritten, the version goes up." class="rounded-full text-[12px] font-semibold bg-indigo-50 text-brand-indigo" style="border: 0; padding: 2px 28px 2px 10px">
+            {% for v in history %}<option value="{{ v.version }}" {% if v.version == shown_version %}selected{% endif %}>Criteria version {{ v.number }}{% if v.current %} (current){% endif %}</option>{% endfor %}
+          </select>
+        </form>
+        {% if not comparison %}
+          <form method="get" class="inline-flex items-center gap-1.5 text-[11px] text-gray-500" data-testid="compare-picker">
+            <input type="hidden" name="version" value="{{ shown_version }}">
+            <select name="compare" onchange="this.form.submit()" title="Set these scores against another version of the criteria, to see what changed." class="border border-brand-border-light rounded-full px-2 py-0.5 text-[12px] text-gray-700 bg-white">
+              <option value="" selected>No comparison</option>
+              {% for v in history %}{% if v.version != shown_version %}<option value="{{ v.version }}">Compare with version {{ v.number }}</option>{% endif %}{% endfor %}
+            </select>
+          </form>
+        {% endif %}
+      {% elif shown_version %}<a href="{% url 'marketplace:round' round.slug %}#criteria" title="The scores are given against this version of the round's criteria. Each time the criteria are rewritten, the version goes up." class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-semibold bg-indigo-50 text-brand-indigo">Criteria version {{ shown_version|slice:"1:" }}</a>{% endif %}
+      </div>
+      <div class="flex flex-wrap items-center gap-2" data-testid="summary">
+        {% if round.summary_url %}
+          <a href="{{ round.summary_url }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center px-3.5 py-2 bg-indigo-600 text-white text-[13px] font-medium rounded-lg hover:bg-indigo-700">
+            <i class="fa-regular fa-file-lines mr-2 text-[12px]"></i> Read the round's summary
+          </a>
+        {% endif %}
+        {% if can_edit %}
+          <details class="text-[12px]">
+            <summary class="cursor-pointer text-brand-indigo hover:text-brand-deep-purple py-2">{% if round.summary_url %}Change the summary link{% else %}Link the round's summary{% endif %}</summary>
+            <form method="post" action="{% url 'marketplace:round_summary' round.slug %}" class="flex flex-wrap items-center gap-2 mt-1.5">
+              {% csrf_token %}
+              <input type="hidden" name="next" value="{{ request.path }}">
+              <input type="url" name="summary_url" value="{{ round.summary_url }}" placeholder="https://docs.google.com/…" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800" style="width: 22rem; max-width: 100%">
+              <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-brand-border-light text-brand-indigo text-[12.5px] font-medium rounded-lg hover:bg-gray-50">Save</button>
+            </form>
+          </details>
+        {% endif %}
       </div>
     </div>
+    {% if not is_current %}
+      <div class="text-[12.5px] text-amber-800 bg-amber-50 rounded-lg px-3 py-2 mt-2" data-testid="earlier-version">
+        An earlier version of the criteria. These are the reviews scored on version {{ shown_version|slice:"1:" }}; the round now uses version {{ round.rubric_version|slice:"1:" }}.
+        <a href="{% url 'marketplace:round_scores' round.slug %}" class="text-brand-indigo hover:text-brand-deep-purple ml-1">See the current scores →</a>
+      </div>
+    {% endif %}
+    {% if messages %}{% for message in messages %}<div class="text-[12px] {% if message.tags == 'error' %}text-red-800{% else %}text-green-800{% endif %} mt-1.5">{{ message }}</div>{% endfor %}{% endif %}
     <details class="mt-4 text-[12px] text-gray-600" data-testid="glossary">
       <summary class="cursor-pointer text-brand-indigo hover:text-brand-deep-purple">What the recommendations, colours and flags mean</summary>
       <div class="grid grid-cols-1 xl:grid-cols-[1fr_1fr] gap-x-8 gap-y-3 mt-2.5">
@@ -430,10 +412,6 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
         var totals = shown.map(function (r) { return r.dataset.total; }).filter(function (t) { return t !== ""; }).map(Number);
         setText(document, "total-mean", fmt(mean(totals), 0));
         setText(document, "total-median", fmt(median(totals), 0));
-        document.querySelectorAll("[data-count]").forEach(function (el) {
-          var key = el.dataset.count;
-          el.textContent = shown.filter(function (r) { return r.dataset.outcome === key; }).length;
-        });
         document.querySelectorAll("tr[data-criterion]").forEach(function (line, i) {
           var scored = [], kept = [], rest = [];
           shown.forEach(function (r) {

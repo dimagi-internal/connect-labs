@@ -1,0 +1,54 @@
+{% comment %}
+The top of a round's two pages, the overview and its scores: the same title,
+tags, tabs and figures on both, so moving between them changes only what is
+below. `tab` names the page; each page adds its own figures after this.
+{% endcomment %}
+<div class="flex items-center gap-2 flex-wrap mb-1.5">
+  <span class="text-[10px] font-semibold tracking-wider px-1.5 py-0.5 rounded {% if round.solicitation_type == 'rfp' %}bg-red-50 text-red-800{% else %}bg-indigo-50 text-brand-indigo{% endif %}">{{ round.solicitation_type|upper }}</span>
+  {% if round.status == 'active' %}
+    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold tracking-wider bg-green-100 text-green-800">OPEN</span>
+  {% else %}
+    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold tracking-wider bg-gray-100 text-gray-600 border border-brand-border-light">CLOSED</span>
+  {% endif %}
+  {% if round.program_label %}
+    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-semibold bg-indigo-50 text-brand-indigo">{{ round.program_label }}</span>
+  {% endif %}
+</div>
+<h1 class="text-xl sm:text-2xl font-semibold text-brand-deep-purple">{{ round.title }}</h1>
+{% if round.target_countries %}
+  <div class="text-[13px] text-gray-600 mt-1 leading-relaxed">{{ round.target_countries }}</div>
+{% endif %}
+
+{% if can_read %}
+  <div class="flex gap-6 mt-3.5 border-b border-brand-border-light text-[13px] font-medium" data-testid="round-tabs">
+    <a href="{% url 'marketplace:round' round.slug %}" class="pb-2 {% if tab == 'overview' %}text-brand-deep-purple{% else %}text-gray-500 hover:text-brand-indigo{% endif %}" {% if tab == 'overview' %}style="border-bottom: 2px solid currentColor; margin-bottom: -1px" aria-current="page"{% endif %}>Overview</a>
+    {% if round.evaluation_criteria %}
+      <a href="{% url 'marketplace:round_scores' round.slug %}" data-testid="scores-link" class="pb-2 {% if tab == 'scores' %}text-brand-deep-purple{% else %}text-gray-500 hover:text-brand-indigo{% endif %}" {% if tab == 'scores' %}style="border-bottom: 2px solid currentColor; margin-bottom: -1px" aria-current="page"{% endif %}>Scores</a>
+    {% endif %}
+  </div>
+
+  <div class="flex flex-wrap gap-x-7 gap-y-4 sm:gap-x-8 mt-4" data-testid="round-figures">
+    <div>
+      <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ round.organisations }}</div>
+      <div class="text-[11px] text-gray-400 tracking-wide">ORGANIZATIONS</div>
+      {% if round.applications != round.organisations %}
+        {% comment %}Only when the two differ: some organizations sent the form more than once.{% endcomment %}
+        <div class="text-[11px] text-gray-400 mt-0.5">from {{ round.applications }} submissions</div>
+      {% endif %}
+    </div>
+    {% for o in outcomes %}{% if o.key or o.count %}
+      <div title="{{ o.definition }}" data-testid="outcome-{{ o.key|default:'none' }}">
+        <div class="text-[22px] sm:text-[25px] font-semibold tabular-nums {% if o.key == 'pick' %}text-green-700{% elif not o.key %}text-gray-400{% else %}text-gray-900{% endif %}">{{ o.count }}</div>
+        <div class="text-[11px] text-gray-400 tracking-wide">{{ o.label|upper }}</div>
+      </div>
+    {% endif %}{% endfor %}
+    <div title="Applicants a person has reviewed; the rest have only the AI first pass, or nothing">
+      <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ reviewed.people }}<span class="text-gray-300 text-[16px]">/{{ applicants|length }}</span></div>
+      <div class="text-[11px] text-gray-400 tracking-wide">CHECKED BY A PERSON</div>
+    </div>
+    <div>
+      <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ country_count }}</div>
+      <div class="text-[11px] text-gray-400 tracking-wide">COUNTR{{ country_count|pluralize:"Y,IES" }}</div>
+    </div>
+  </div>
+{% endif %}
