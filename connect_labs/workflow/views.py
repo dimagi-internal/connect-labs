@@ -7487,7 +7487,12 @@ class UpdateAuditBatchConfigView(LoginRequiredMixin, View):
                 audit_batch["track_b"] = track_b
             if per_opp is not None:
                 existing_per_opp = dict(audit_batch.get("per_opp") or {})
-                existing_per_opp.update(per_opp)
+                # Merge each opp's entry key by key, not wholesale: the render only
+                # ever sends the keys it edits (paths + classifiers), so replacing the
+                # entry dropped anything else set on it -- a hand-set
+                # muac_reading_field was wiped by the next Save or auto-save.
+                for key, cfg in per_opp.items():
+                    existing_per_opp[key] = {**(existing_per_opp.get(key) or {}), **cfg}
                 audit_batch["per_opp"] = existing_per_opp
 
             new_config["audit_batch"] = audit_batch

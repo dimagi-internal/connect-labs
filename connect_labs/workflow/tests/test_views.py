@@ -454,6 +454,55 @@ class TestUpdateAuditBatchConfigView:
             assert per_opp["700"]["muac_image_paths"] == ["a/new"]
             assert per_opp["825"]["muac_image_paths"] == ["b/old"]  # untouched opp preserved
 
+    def test_preserves_per_opp_keys_the_render_does_not_send(self, dimagi_user, rf: RequestFactory):
+        """The render's Save / auto-save sends only paths + classifiers. A key set on
+        the opp's entry by hand -- muac_reading_field, the per-opp MUAC reading path
+        -- must survive that save instead of being dropped with the old entry."""
+        request = self._request(
+            rf,
+            dimagi_user,
+            {
+                "per_opp": {
+                    "700": {
+                        "muac_image_paths": ["a/new_muac"],
+                        "rest_image_paths": [],
+                        "classifiers": {"a/new_muac": ["hyperzoom"]},
+                    }
+                }
+            },
+        )
+
+        with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
+            mock_wda = MagicMock()
+            MockWDA.return_value = mock_wda
+            mock_wda.get_definition.return_value = MagicMock(
+                data={
+                    "config": {
+                        "audit_batch": {
+                            "per_opp": {
+                                "700": {
+                                    "muac_image_paths": ["a/old_muac"],
+                                    "classifiers": {"a/old_muac": ["muac_mismatch"]},
+                                    "muac_reading_field": "anthropometric_appetite/muac_measurement/muac_cm",
+                                }
+                            }
+                        }
+                    }
+                }
+            )
+            mock_wda.update_definition.return_value = MagicMock(data={"config": {"audit_batch": {}}})
+
+            from connect_labs.workflow.views import UpdateAuditBatchConfigView
+
+            UpdateAuditBatchConfigView.as_view()(request, definition_id=1)
+
+            saved = mock_wda.update_definition.call_args[0][1]["config"]["audit_batch"]["per_opp"]["700"]
+            assert saved["muac_reading_field"] == "anthropometric_appetite/muac_measurement/muac_cm"
+            # ...while every key the save DID send replaces its old value outright.
+            assert saved["muac_image_paths"] == ["a/new_muac"]
+            assert saved["rest_image_paths"] == []
+            assert saved["classifiers"] == {"a/new_muac": ["hyperzoom"]}
+
     def test_rejects_unauthorized_opportunity_in_per_opp(self, dimagi_user, rf: RequestFactory):
         request = self._request(rf, dimagi_user, {"per_opp": {"9999": {"muac_image_paths": ["x"]}}})
 
