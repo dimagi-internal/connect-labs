@@ -198,6 +198,10 @@ Case and visit fields can now display human-readable labels in place of the raw 
 
 These labels are set up by your program administrator in the report's registry. If a stored code has no label defined, the raw code continues to show as before. If a field has no labels configured at all, nothing changes.
 
+### MUAC image audit runs
+
+The weekly **dual-track MUAC image audit** run can now be completed as expected. Previously, finishing the last field worker's review — or pressing **Mark Run Complete** — failed silently: the run stayed "in progress" and no summary was produced. Both actions now complete the run correctly and display the run summary.
+
 ### R2 Revisit Analysis
 
 The **R2 Revisit Analysis** report — the CHC study's second-revisit planning table — has three tabs: **Table**, **Map**, and **Download CSV**.
@@ -206,9 +210,4 @@ The **R2 Revisit Analysis** report — the CHC study's second-revisit planning t
 
 The planning table lists work areas and their R2 selection status for the organisation and ward you choose. Two additional columns appear for each ward:
 
-- **EVC per building** — the ward's total expected visit count divided by its total number of buildings in the original opportunity.
-- **Expected visits (R2 work areas)** — the sum of each R2 work area's expected visit count, calculated as its building count multiplied by the ward's EVC per building, rounded to the nearest whole number.
-
-**How R1 wards are handled**
-
-R2 work-
+- **EVC per building** — the ward's total expected visit count divided by its

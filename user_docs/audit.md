@@ -154,6 +154,10 @@ The raw response from the duplicate-detection API is saved against each visit cl
 
 Leave this option unticked if you only want the standard time-and-location grouping without the additional image-similarity check.
 
+**Completing a dual-track run:**
+
+When you finish reviewing the last field worker in a MUAC image audit run, or click **Mark Run Complete**, the run now correctly closes and displays its summary. Previously, this step failed silently — the run stayed marked "in progress" with no summary appearing. If you have any older dual-track runs that appear stuck in progress despite all reviews being done, open the run and click **Mark Run Complete** to finalise them.
+
 **Stopping a run in progress:**
 
 While audit creation or AI review is running, a **Stop** button appears on the run screen. Clicking it halts the remaining work immediately. Any sessions that have already been created and any images that have already been reviewed are kept — only the work that had not yet started is cancelled. This is useful if you realise you have selected a sample that is larger than intended and want to stop before it completes.
@@ -166,6 +170,4 @@ Workflow runs can be interrupted mid-way — most often during AI review, which 
 - **Partially-reviewed sessions are completed.** If a session was created but its AI review was cut short, resuming picks up image-by-image from where the review stopped, rather than skipping that session as already done.
 - **Already-finished work is not repeated.** When a multi-opportunity run is resumed, opportunities that were fully completed are skipped. Only the work that was not yet finished is picked back up.
 - **A run cannot be resumed while it is still running.** If a run is already active, Labs will refuse a second resume attempt. This prevents duplicate audit sessions from being created by two overlapping jobs.
-- **Settings are preserved on resume.** If you started a run manually with specific settings — such as a custom pass threshold, visit status filters, FLW cap, or sampling rate — those settings are kept when the run is resumed. They are not silently replaced by the workflow's saved defaults.
-
-!!! tip "If a run
+- **Settings are preserved
