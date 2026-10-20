@@ -263,15 +263,20 @@ def _incomplete_audit_count(sessions):
     return total, total - done
 
 
-def _audit_rollup_snapshot(sessions, opportunity_id):
-    """Per-FLW rollup for the frozen snapshot. image_count for images; ai_no_match = AI-flagged."""
+def _audit_rollup_snapshot(sessions, opportunity_ids):
+    """Per-FLW rollup for the frozen snapshot. image_count for images; ai_no_match = AI-flagged.
+
+    ``opportunity_ids`` is the run's whole opportunity set, not one opportunity:
+    filtering on the primary opportunity alone froze a multi-opp run's summary
+    with every other opportunity's sessions missing."""
+    opp_set = set(opportunity_ids or [])
     rows = {}
     by_tag = {
         "muac": {"images": 0, "pass": 0, "fail": 0, "ai_flagged": 0},
         "rest": {"images": 0, "pass": 0, "fail": 0, "ai_flagged": 0},
     }
     for s in sessions:
-        if s.opportunity_id != opportunity_id:  # defensive: sessions are opp-scoped already
+        if s.opportunity_id not in opp_set:  # defensive: sessions are opp-scoped already
             continue
         tag = s.tag if s.tag in by_tag else None
         if tag is None:
@@ -299,20 +304,35 @@ def _audit_rollup_snapshot(sessions, opportunity_id):
     return {"by_tag": by_tag, "flw_rows": list(rows.values())}
 
 
-def build_snapshot(*, pipelines, state, opportunity_id, run_id=None, request=None, access_token=None, **_):
-    """Saved-runs completion hook. GATE: raises until every audit session is completed."""
-    ada = AuditDataAccess(request=request, access_token=access_token, opportunity_id=opportunity_id)
-    try:
-        sessions = ada.get_sessions_by_workflow_run(run_id) if run_id else []
-    finally:
-        ada.close()
+def build_snapshot(
+    *, pipelines, state, opportunity_id, run_id=None, request=None, access_token=None, opportunity_ids=None, **_
+):
+    """Saved-runs completion hook. GATE: raises until every audit session is completed.
+
+    Reads the run's sessions from EVERY opportunity the run spans
+    (``opportunity_ids``, the definition's set -- see resolve_snapshot_opp_scope),
+    one opportunity-scoped read each: sessions are filed per opportunity, and an
+    opp-scoped read cannot see another opportunity's. Reading only the primary
+    opportunity both froze a summary missing every other opportunity and let the
+    gate pass while their audits were still open. A failed read raises, so the run
+    stays in progress rather than completing on a partial count.
+    """
+    scope = list(dict.fromkeys(opportunity_ids or [opportunity_id]))
+    sessions = []
+    if run_id:
+        for oid in scope:
+            ada = AuditDataAccess(request=request, access_token=access_token, opportunity_id=oid)
+            try:
+                sessions.extend(ada.get_sessions_by_workflow_run(run_id))
+            finally:
+                ada.close()
     total, incomplete = _incomplete_audit_count(sessions)
     if incomplete > 0:
         raise ValueError(
             f"{incomplete} of {total} audits still open — complete every audit before marking this run complete."
         )
     return {
-        "audit_summary": _audit_rollup_snapshot(sessions, opportunity_id),
+        "audit_summary": _audit_rollup_snapshot(sessions, scope),
         "completed_counts": {"total": total, "incomplete": incomplete},
         "window_start": state.get("window_start"),
         "window_end": state.get("window_end"),

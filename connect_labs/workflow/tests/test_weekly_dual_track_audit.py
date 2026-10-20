@@ -663,6 +663,59 @@ def test_build_snapshot_returns_rollup_when_all_complete():
     assert "flw1" in {r["flw_id"] for r in snap["audit_summary"]["flw_rows"]}
 
 
+def _per_opp_audit_data_access(sessions_by_opp):
+    """An AuditDataAccess stand-in that, like the real one, only sees the sessions
+    filed under the opportunity it is scoped to."""
+
+    def make(*, opportunity_id=None, **_):
+        ada = mock.Mock()
+        ada.get_sessions_by_workflow_run.return_value = sessions_by_opp.get(opportunity_id, [])
+        return ada
+
+    return make
+
+
+def _opp_sess(opp_id, status, tag, stats, fid):
+    s = _sess(status, tag, stats, fid=fid)
+    s.opportunity_id = opp_id
+    return s
+
+
+def test_build_snapshot_rolls_up_every_opportunity_of_a_multi_opp_run():
+    """A program-owned (or any multi-opp) run's sessions are filed per opportunity.
+    The summary must cover all of them, not only the primary opportunity's."""
+    from connect_labs.workflow.templates import weekly_dual_track_audit as m
+
+    sessions_by_opp = {
+        814: [_opp_sess(814, "completed", "muac", {"pass": 8, "fail": 2, "ai_no_match": 1}, "flw_a")],
+        822: [_opp_sess(822, "completed", "muac", {"pass": 3, "fail": 1, "ai_no_match": 0}, "flw_b")],
+    }
+    with mock.patch.object(m, "AuditDataAccess", side_effect=_per_opp_audit_data_access(sessions_by_opp)):
+        snap = m.build_snapshot(
+            pipelines={}, state={}, opportunity_id=814, opportunity_ids=[814, 822], run_id=55, access_token="t"
+        )
+
+    assert snap["completed_counts"] == {"total": 2, "incomplete": 0}
+    assert {r["flw_id"] for r in snap["audit_summary"]["flw_rows"]} == {"flw_a", "flw_b"}
+    assert snap["audit_summary"]["by_tag"]["muac"]["pass"] == 11
+    assert snap["audit_summary"]["by_tag"]["muac"]["fail"] == 3
+
+
+def test_build_snapshot_gate_counts_open_audits_in_every_opportunity():
+    """The gate must not pass while a non-primary opportunity still has open audits."""
+    from connect_labs.workflow.templates import weekly_dual_track_audit as m
+
+    sessions_by_opp = {
+        814: [_opp_sess(814, "completed", "muac", None, "flw_a")],
+        822: [_opp_sess(822, "in_progress", "rest", None, "flw_b")],
+    }
+    with mock.patch.object(m, "AuditDataAccess", side_effect=_per_opp_audit_data_access(sessions_by_opp)):
+        with pytest.raises(ValueError, match="1 of 2 audits still open"):
+            m.build_snapshot(
+                pipelines={}, state={}, opportunity_id=814, opportunity_ids=[814, 822], run_id=55, access_token="t"
+            )
+
+
 def test_applies_visit_clustering_filters_identically_to_every_track():
     calls = build_track_audit_calls(
         opportunity_ids=[101],
