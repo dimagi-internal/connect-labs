@@ -133,12 +133,20 @@ function rrAlgo(w, v, al) {
 
 // One organisation: every main work area with its flags, and the per-ward rows.
 // d = {wa_main, wa_r1, workers, rejected, visits} (rrCompact output).
+//
+// R1's thresholds select an R2 Work-Area only in wards with no work areas in
+// the R1 opportunity: R1 already ran them over its wards, so a work area it
+// left there was judged covered. `thr` keeps the bare threshold result for the
+// Download tab's per-ward override. The other rules (suspended, inaccessible,
+// rejected) apply in every ward: R1 never used them.
 function rrClassifyOrg(d, columns, al) {
   var inR1 = {};
+  var r1Wards = {};
   var wards = {};
   var was = {};
   d.wa_r1.forEach(function (w) {
     if (w.k) inR1[w.k] = 1;
+    r1Wards[w.w] = true;
   });
   function row(name) {
     if (!wards[name]) {
@@ -166,8 +174,10 @@ function rrClassifyOrg(d, columns, al) {
       susp: !!d.workers[w.o],
       inacc: w.st === 'INACCESSIBLE',
       rej: !!d.rejected[w.c],
-      algo: !hit && rrAlgo(w, v, al),
+      wr1: !!r1Wards[w.w],
+      thr: rrAlgo(w, v, al),
     };
+    f.algo = !hit && !f.wr1 && f.thr;
     r.raws[w.raw] = 1;
     r.main++;
     r.tot_bld += w.b;
@@ -197,7 +207,8 @@ function rrClassifyOrg(d, columns, al) {
   });
   Object.keys(was).forEach(function (id) {
     var f = was[id];
-    f.evc2 = f.r2 ? Math.round(f.b * wards[f.ward].evc_ratio) : 0;
+    f.evcNew = Math.round(f.b * wards[f.ward].evc_ratio);
+    f.evc2 = f.r2 ? f.evcNew : 0;
     wards[f.ward].evc_r2 = (wards[f.ward].evc_r2 || 0) + f.evc2;
   });
   return {
@@ -358,7 +369,7 @@ function rrPopupHtml(p) {
 
 var RR_CSV_HEADERS = [
   'Area Slug',
-  'Present in R1',
+  'Ward has R1 work areas',
   'Ward',
   'Centroid',
   'Boundary',
@@ -425,17 +436,27 @@ function rrCsvCell(v) {
   return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
-// The work areas the file should carry: not in R1, in a chosen ward, and
-// selected by at least one chosen rule.
-function rrSelectWorkAreas(was, wardOn, rules) {
+// Whether a rule selects a work area. In a ward the person treats as not done
+// in R1 (`override`), R1's thresholds apply again and a work area that is in
+// the R1 opportunity may be chosen.
+function rrRuleHits(f, key, override) {
+  if (key === 'algo') return override ? f.thr : f.algo;
+  return !!f[key];
+}
+
+// The work areas the file should carry: in a chosen ward, not in R1 (unless
+// its ward is overridden), and selected by at least one chosen rule.
+function rrSelectWorkAreas(was, wardOn, rules, overrides) {
+  overrides = overrides || {};
   return Object.keys(was)
     .map(function (id) {
       return was[id];
     })
     .filter(function (f) {
-      if (f.r1 || !wardOn[f.ward]) return false;
+      var ov = !!overrides[f.ward];
+      if (!wardOn[f.ward] || (f.r1 && !ov)) return false;
       return RR_RULES.some(function (r) {
-        return rules[r.key] && f[r.key];
+        return rules[r.key] && rrRuleHits(f, r.key, ov);
       });
     })
     .sort(function (a, b) {
@@ -443,22 +464,24 @@ function rrSelectWorkAreas(was, wardOn, rules) {
     });
 }
 
-function rrReasonText(f, rules) {
-  return RR_RULES.filter(function (r) {
-    return rules[r.key] && f[r.key];
-  })
-    .map(function (r) {
-      return r.label;
-    })
-    .join('; ');
+function rrReasonText(f, rules, override) {
+  var out = RR_RULES.filter(function (r) {
+    return rules[r.key] && rrRuleHits(f, r.key, override);
+  }).map(function (r) {
+    return r.label;
+  });
+  if (override)
+    out.push(f.r1 ? 'In R1 opp (ward overridden)' : 'Ward overridden');
+  return out.join('; ');
 }
 
 // selected: rrSelectWorkAreas output; shapes: wa_shapes rows keyed by case id;
-// wardInR1: {ward: true} for wards with work areas in the R1 opportunity (a
-// work area in the file is never itself in R1, so "Present in R1" is its ward's).
+// wardInR1: {ward: true} for wards with work areas in the R1 opportunity;
+// overrides: {ward: true} for wards the person treats as not done in R1.
 // Returns {csv, count, visits, skipped: [{slug, why}]}.
-function rrConnectCsv(selected, shapes, rules, wardInR1) {
+function rrConnectCsv(selected, shapes, rules, wardInR1, overrides) {
   wardInR1 = wardInR1 || {};
+  overrides = overrides || {};
   var rows = [];
   var skipped = [];
   selected.forEach(function (f) {
@@ -477,7 +500,7 @@ function rrConnectCsv(selected, shapes, rules, wardInR1) {
   var lines = [RR_CSV_HEADERS.map(rrCsvCell).join(',')];
   rows.forEach(function (r) {
     var ward = r.s.ward || r.f.raw;
-    visits += r.f.evc2;
+    visits += r.f.evcNew;
     lines.push(
       [
         r.s.slug,
@@ -486,13 +509,13 @@ function rrConnectCsv(selected, shapes, rules, wardInR1) {
         rrCentroidText(r.s.centroid),
         r.wkt,
         r.f.b,
-        r.f.evc2,
+        r.f.evcNew,
         0,
         r.s.lga || '',
         r.s.state || '',
         ward,
         groups ? r.s.grp : '',
-        rrReasonText(r.f, rules),
+        rrReasonText(r.f, rules, !!overrides[r.f.ward]),
         r.f.e,
       ]
         .map(rrCsvCell)
@@ -969,6 +992,11 @@ function RRDownloadTab(props) {
   var PS = React.useState({ key: '', state: 'idle' }),
     prep = PS[0],
     setPrep = PS[1];
+  // Wards the person treats as not done in R1 (e.g. R1 work areas were made
+  // there but never used): R1's thresholds apply, and R1 work areas may be chosen.
+  var OVS = React.useState({}),
+    overrides = OVS[0],
+    setOverrides = OVS[1];
 
   var o = props.orgs.filter(function (x) {
     return x.org === org;
@@ -988,14 +1016,25 @@ function RRDownloadTab(props) {
   });
   // Counts per ward for the chosen rules, whether or not the ward is ticked.
   if (info)
-    rrSelectWorkAreas(info.was, allWards, rules).forEach(function (f) {
-      perWard[f.ward]++;
-    });
-  var selected = info ? rrSelectWorkAreas(info.was, wardOn, rules) : [];
+    rrSelectWorkAreas(info.was, allWards, rules, overrides).forEach(
+      function (f) {
+        perWard[f.ward]++;
+      },
+    );
+  var selected = info
+    ? rrSelectWorkAreas(info.was, wardOn, rules, overrides)
+    : [];
   var visits = selected.reduce(function (n, f) {
-    return n + f.evc2;
+    return n + f.evcNew;
   }, 0);
-  var key = org + '|' + JSON.stringify(wardOff) + '|' + JSON.stringify(rules);
+  var key =
+    org +
+    '|' +
+    JSON.stringify(wardOff) +
+    '|' +
+    JSON.stringify(rules) +
+    '|' +
+    JSON.stringify(overrides);
   var ready = prep.key === key && prep.state === 'ready';
   var busy = prep.key === key && prep.state === 'loading';
 
@@ -1041,7 +1080,7 @@ function RRDownloadTab(props) {
     }
     step(0)
       .then(function () {
-        var out = rrConnectCsv(selected, shapes, rules, wardR1);
+        var out = rrConnectCsv(selected, shapes, rules, wardR1, overrides);
         setPrep(Object.assign({ key: key, state: 'ready' }, out));
       })
       .catch(function (e) {
@@ -1102,15 +1141,20 @@ function RRDownloadTab(props) {
         One organisation’s R2 work areas in the file Connect’s “Upload work
         areas” takes (Area Slug, Ward, Centroid, Boundary, Building Count,
         Expected Visit Count, Target Population, LGA, State, Implementation
-        Area, Work Area Group Name). Work areas already in R1 are never
-        included. Expected Visit Count is the work area’s buildings × its ward’s
-        EVC per building in the main opportunity. Slugs, wards, LGA, State and
-        group names are the original opportunity’s, except that the Ward column
-        has underscores for spaces (Banganje South → Banganje_South). Wards
-        tagged R1 have work areas in the R1 revisit opportunity; the file says
-        so in its second column, Present in R1 (Yes/No). That column and the
-        last two (R2 Reason, Original Expected Visit Count) are for review;
-        Connect reads columns by name and ignores them.
+        Area, Work Area Group Name). Work areas already in R1 are left out, and
+        in wards with R1 work areas (tagged R1) R1’s thresholds are not applied
+        again: R1 already ran them there. Suspended, inaccessible and rejected
+        apply in every ward. Tick “Treat as not done in R1” on a ward whose R1
+        work areas were never used to apply the thresholds there and include its
+        R1 work areas too. Expected Visit Count is the work area’s buildings ×
+        its ward’s EVC per building in the main opportunity. Slugs, wards, LGA,
+        State and group names are the original opportunity’s, except that the
+        Ward column has underscores for spaces (Banganje South →
+        Banganje_South). Wards tagged R1 have work areas in the R1 revisit
+        opportunity; the file says so in its second column, Ward has R1 work
+        areas (Yes/No). That column and the last two (R2 Reason, Original
+        Expected Visit Count) are for review; Connect reads columns by name and
+        ignores them.
       </p>
       <div className="flex flex-wrap items-end gap-4">
         <RRSelect
@@ -1119,6 +1163,7 @@ function RRDownloadTab(props) {
           onPick={function (v) {
             setOrg(v);
             setWardOff({});
+            setOverrides({});
           }}
           options={orgNames.map(function (n) {
             return [n, n];
@@ -1190,39 +1235,61 @@ function RRDownloadTab(props) {
               })}
             </span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-1 px-4 py-3 text-sm">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 px-4 py-3 text-sm">
             {Object.keys(perWard)
               .sort()
               .map(function (w) {
                 return (
-                  <label
-                    key={w}
-                    className="inline-flex items-center gap-2 cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={!!wardOn[w]}
-                      onChange={function () {
-                        toggleWard(w);
-                      }}
-                    />
-                    <span>{w}</span>
-                    <span className="text-gray-500 tabular-nums">
-                      {'(' + rrFmt(perWard[w]) + ')'}
-                    </span>
-                    {wardR1[w] ? (
-                      <span
-                        className="px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-200 text-amber-900"
-                        title={
-                          'This ward has ' +
-                          rrFmt(wardR1[w]) +
-                          ' work areas in the R1 revisit opportunity'
-                        }
-                      >
-                        {'R1 · ' + rrFmt(wardR1[w])}
+                  <div key={w} className="flex flex-wrap items-center gap-x-3">
+                    <label className="inline-flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!wardOn[w]}
+                        onChange={function () {
+                          toggleWard(w);
+                        }}
+                      />
+                      <span>{w}</span>
+                      <span className="text-gray-500 tabular-nums">
+                        {'(' + rrFmt(perWard[w]) + ')'}
                       </span>
+                      {wardR1[w] ? (
+                        <span
+                          className="px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-200 text-amber-900"
+                          title={
+                            'This ward has ' +
+                            rrFmt(wardR1[w]) +
+                            ' work areas in the R1 revisit opportunity'
+                          }
+                        >
+                          {'R1 · ' + rrFmt(wardR1[w])}
+                        </span>
+                      ) : null}
+                    </label>
+                    {wardR1[w] ? (
+                      <label
+                        className={
+                          'inline-flex items-center gap-1 text-xs cursor-pointer ' +
+                          (overrides[w]
+                            ? 'text-indigo-700 font-medium'
+                            : 'text-gray-500')
+                        }
+                        title="R1 work areas here were not used: apply R1's thresholds in this ward and allow its R1 work areas into R2"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={!!overrides[w]}
+                          onChange={function () {
+                            var next = Object.assign({}, overrides);
+                            if (next[w]) delete next[w];
+                            else next[w] = true;
+                            setOverrides(next);
+                          }}
+                        />
+                        Treat as not done in R1
+                      </label>
                     ) : null}
-                  </label>
+                  </div>
                 );
               })}
           </div>

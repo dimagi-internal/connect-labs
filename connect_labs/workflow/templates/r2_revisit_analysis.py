@@ -45,7 +45,8 @@ COLUMNS = [
     [
         "algo_add",
         "R2 Work-Area",
-        "Work areas of the primary opportunity, not already in R1, that none of these rules exclude: "
+        "Work areas of the primary opportunity, not already in R1 and in a ward with no work areas in R1 "
+        "(R1 already applied these thresholds in its wards), that none of these rules exclude: "
         "HSD visits over 40% of EVC (or EVC of 0); MUAC recorded on over 70% of HSD visits; deworming "
         "delivered on over 40% of HSD visits; an NCF visit with only 1 building. Visits count at every "
         "review status except duplicate and trial.",
@@ -142,7 +143,8 @@ DEFINITION = {
             "notes": [
                 "Rows tinted amber with an R1 tag are wards that have work areas in the R1 revisit " "opportunity.",
                 "R2 Work-Area thresholds (40% of EVC, 70% MUAC, 40% deworming, 1 building) are in the "
-                "workflow settings (config.algo).",
+                "workflow settings (config.algo). They are not applied in wards with R1 work areas; the "
+                "Download CSV tab can treat a ward as not done in R1.",
                 "Not in R1: the work area’s exact location does not appear in the R1 opportunity (R1 work "
                 "areas were uploaded with the original boundary unchanged).",
             ],
