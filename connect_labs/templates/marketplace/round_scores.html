@@ -248,9 +248,9 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
       <thead class="bg-gray-50">
         <tr>
           <th data-sort="text" class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Organization</th>
+          <th data-sort="number" class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="The criteria weighted, out of 100">Score</th>
           <th data-sort="text" class="hidden sm:table-cell px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Country</th>
           <th data-sort="text" class="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Sorts recommended first">Recommendation</th>
-          <th data-sort="number" class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="The criteria weighted, out of 100">Score</th>
           {% for c in summary.criteria %}
             <th data-sort="number" class="hidden sm:table-cell px-2 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider" style="width: 7.5rem; min-width: 6rem; white-space: normal; line-height: 1.25; vertical-align: bottom" title="{{ c.name }} · {{ c.weight|floatformat:'-1' }}% of the score"><div style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden">{{ c.name }}</div><div class="text-[10px] text-gray-400 font-normal normal-case">{{ c.weight|floatformat:"-1" }}%</div></th>
           {% endfor %}
@@ -276,6 +276,7 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
                 <span class="text-[11px] text-indigo-600 ml-1" title="The AI's review; no person has checked it yet"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
               {% endif %}
             </td>
+            <td class="px-3 py-2.5 text-right text-[13px] font-semibold text-gray-900 tabular-nums" data-sort-value="{{ a.review.score|default_if_none:'' }}">{{ a.review.score|default_if_none:"—" }}</td>
             <td class="hidden sm:table-cell px-3 py-2.5 text-[12.5px] text-gray-600">{{ a.country|default:"—"|truncatechars:24 }}</td>
             <td class="px-3 py-2.5 whitespace-nowrap" data-sort-value="{{ a.review.sort }}">
               {% if a.review.outcome %}
@@ -283,7 +284,6 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
                   {% if a.review.outcome == 'pick' %}bg-green-100 text-green-800{% elif a.review.outcome == 'backup' %}bg-teal-100 text-teal-800{% elif a.review.outcome == 'waitlist' %}bg-amber-50 text-amber-800{% else %}bg-gray-100 text-gray-600{% endif %}">{{ a.review.label }}</span>
               {% else %}<span class="text-[11.5px] text-gray-300">—</span>{% endif %}
             </td>
-            <td class="px-3 py-2.5 text-right text-[13px] font-semibold text-gray-900 tabular-nums" data-sort-value="{{ a.review.score|default_if_none:'' }}">{{ a.review.score|default_if_none:"—" }}</td>
             {% for cell in a.cells %}
               <td class="hidden sm:table-cell px-1 py-1 text-center" data-sort-value="{{ cell.score|default_if_none:'' }}">
                 {% if cell.score is not None %}<span class="inline-block rounded text-[12px] font-semibold tabular-nums" style="min-width: 2.25rem; padding: 3px 0; {{ cell.style }}">{{ cell.score|floatformat:"-1" }}</span>{% else %}<span class="text-[12px] text-gray-300">—</span>{% endif %}
