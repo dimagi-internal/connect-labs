@@ -170,11 +170,6 @@ class AuditSessionRecord(LocalLabsRecord):
         return self.data.get("kpi_notes", "")
 
     @property
-    def flagged_to_llo(self) -> bool:
-        """The auditor ticked "Flagged to LLO": this FLW's case was raised with their LLO."""
-        return bool(self.data.get("flagged_to_llo"))
-
-    @property
     def visit_ids(self):
         """List of UserVisit IDs to audit."""
         return self.data.get("visit_ids", [])
@@ -844,8 +839,7 @@ class AuditSessionRecord(LocalLabsRecord):
             "pass_threshold": self.pass_threshold,
             "by_question": self.get_assessment_stats_by_question(),
             "assessment_stats": self.get_assessment_stats(),
-            # What the auditor wrote and ticked, so a report can compile the audit log without opening each session.
+            # What the auditor wrote, so a report can compile the audit log without opening each session.
             "notes": self.notes,
             "kpi_notes": self.kpi_notes,
-            "flagged_to_llo": self.flagged_to_llo,
         }

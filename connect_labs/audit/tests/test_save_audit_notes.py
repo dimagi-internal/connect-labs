@@ -113,34 +113,7 @@ def test_caller_that_omits_notes_does_not_blank_them(labs_client, monkeypatch):
     assert saved[0]["kpi_notes"] == "original kpi note"
 
 
-def test_progress_save_persists_flagged_to_llo(labs_client, monkeypatch):
-    session, saved = _make_session(), []
-    _patch_data_access(monkeypatch, session, saved)
-
-    labs_client.post(f"/audit/api/{session.id}/save/", {"visit_results": "{}", "flagged_to_llo": "true"})
-
-    assert saved[0]["flagged_to_llo"] is True
-
-
-def test_progress_save_can_untick_flagged_to_llo(labs_client, monkeypatch):
-    session, saved = _make_session(flagged_to_llo=True), []
-    _patch_data_access(monkeypatch, session, saved)
-
-    labs_client.post(f"/audit/api/{session.id}/save/", {"visit_results": "{}", "flagged_to_llo": "false"})
-
-    assert saved[0]["flagged_to_llo"] is False
-
-
-def test_caller_that_omits_flagged_to_llo_does_not_clear_it(labs_client, monkeypatch):
-    session, saved = _make_session(flagged_to_llo=True), []
-    _patch_data_access(monkeypatch, session, saved)
-
-    labs_client.post(f"/audit/api/{session.id}/save/", {"visit_results": "{}"})
-
-    assert saved[0]["flagged_to_llo"] is True
-
-
-def test_completion_persists_flagged_to_llo(labs_client, monkeypatch):
+def test_completion_persists_notes(labs_client, monkeypatch):
     from connect_labs.audit import views
 
     session, saved = _make_session(), []
@@ -168,19 +141,16 @@ def test_completion_persists_flagged_to_llo(labs_client, monkeypatch):
 
     response = labs_client.post(
         f"/audit/api/{session.id}/complete/",
-        {"overall_result": "fail", "notes": "Needs to change the MUAC tape", "flagged_to_llo": "true"},
+        {"overall_result": "fail", "notes": "Needs to change the MUAC tape"},
     )
 
     assert response.status_code == 200
-    assert saved[-1]["flagged_to_llo"] is True
     assert saved[-1]["notes"] == "Needs to change the MUAC tape"
 
 
-def test_question_summary_carries_notes_and_llo_flag():
-    """The sessions-summary endpoint is what reports read; the audit log report needs both."""
-    summary = _make_session(flagged_to_llo=True).to_question_summary_dict()
+def test_question_summary_carries_notes():
+    """The sessions-summary endpoint is what reports read; the completed-audit log shows the auditor's note."""
+    summary = _make_session().to_question_summary_dict()
 
     assert summary["notes"] == "original note"
     assert summary["kpi_notes"] == "original kpi note"
-    assert summary["flagged_to_llo"] is True
-    assert _make_session().to_question_summary_dict()["flagged_to_llo"] is False
