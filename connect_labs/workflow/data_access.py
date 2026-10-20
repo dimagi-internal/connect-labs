@@ -2474,6 +2474,15 @@ class PipelineDataAccess(BaseDataAccess):
     # execution, cached reads and config building all honour it.
     pipeline_homes: dict[int, dict] = {}
 
+    # CommCare HQ token for executing cchq_forms / cchq_cases pipelines with no browser
+    # session (passed by headless callers such as the visit-cache warm). None keeps the
+    # old behaviour: such pipelines need `request`.
+    cchq_access_token: str | None = None
+
+    def __init__(self, *args, cchq_access_token: str | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.cchq_access_token = cchq_access_token
+
     def use_sources(self, sources) -> "PipelineDataAccess":
         """Read each referenced pipeline in its home scope. Returns self, for chaining."""
         self.pipeline_homes = pipeline_homes_for(sources)
@@ -2990,7 +2999,7 @@ class PipelineDataAccess(BaseDataAccess):
             if self.request is not None:
                 pipeline = AnalysisPipeline(self.request)
             else:
-                pipeline = AnalysisPipeline(access_token=self.access_token)
+                pipeline = AnalysisPipeline(access_token=self.access_token, cchq_access_token=self.cchq_access_token)
             result = pipeline.stream_analysis_ignore_events(config, opportunity_id)
 
             rows = self._serialize_pipeline_rows(result)

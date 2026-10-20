@@ -129,7 +129,7 @@ def test_execute_pipeline_works_without_request(mock_pipeline_cls):
     assert "rows" in result
 
     # AnalysisPipeline was constructed with access_token kwarg, no positional request
-    mock_pipeline_cls.assert_called_once_with(access_token="mcp-token")
+    mock_pipeline_cls.assert_called_once_with(access_token="mcp-token", cchq_access_token=None)
 
 
 @pytest.mark.django_db
