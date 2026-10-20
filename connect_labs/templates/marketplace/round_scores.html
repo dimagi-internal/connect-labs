@@ -206,7 +206,7 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
       {% if countries %}
       <select data-filter="country" aria-label="Country" class="border border-brand-border-light rounded-lg px-2 py-1.5 text-[12.5px] text-gray-800 bg-white">
         <option value="">Any country</option>
-        {% for country in countries %}<option value="{{ country }}">{{ country }}</option>{% endfor %}
+        {% for country, count in countries %}<option value="{{ country }}">{{ country }} ({{ count }})</option>{% endfor %}
       </select>
       {% endif %}
       {% if flag_counts %}
@@ -215,19 +215,6 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
         <option value="__none">No flags</option>
         {% for f in flag_counts %}<option value="{{ f.key }}" title="{{ f.definition }}">{{ f.label }} ({{ f.count }})</option>{% endfor %}
       </select>
-      {% endif %}
-      {% if summary.criteria %}
-      <span class="flex items-center gap-1">
-        <select data-filter="criterion" aria-label="Criterion" class="border border-brand-border-light rounded-lg px-2 py-1.5 text-[12.5px] text-gray-800 bg-white" style="max-width: 9rem">
-          <option value="">Any criterion</option>
-          {% for c in summary.criteria %}<option value="{{ forloop.counter0 }}">{{ c.name }}</option>{% endfor %}
-        </select>
-        <select data-filter="op" aria-label="At least or at most" class="border border-brand-border-light rounded-lg px-2 py-1.5 text-[12.5px] text-gray-800 bg-white">
-          <option value="min">≥</option>
-          <option value="max">≤</option>
-        </select>
-        <input type="number" min="0" max="10" step="1" value="7" data-filter="threshold" aria-label="Score" class="border border-brand-border-light rounded-lg px-2 py-1.5 text-[13px] text-gray-800" style="width: 3.25rem">
-      </span>
       {% endif %}
       <button type="button" data-filter="reset" class="text-[12.5px] text-brand-indigo hover:text-brand-deep-purple py-1.5 px-1">Clear</button>
     </div>
@@ -278,8 +265,8 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
               </td>
             {% endfor %}
             <td class="hidden sm:table-cell px-3 py-2.5">
-              {% comment %}A count, the flags named on hover: chips made every row three lines tall.{% endcomment %}
-              {% if a.flag_chips %}<span class="text-[12px] font-medium text-amber-800 whitespace-nowrap" title="{% for flag in a.flag_chips %}{{ flag.label }}{% if not forloop.last %} · {% endif %}{% endfor %}"><i class="fa-solid fa-flag mr-1 text-[11px]"></i>{{ a.flag_chips|length }}</span>{% endif %}
+              {% comment %}Written out as plain text, not chips: chips made every row three lines tall.{% endcomment %}
+              <div class="text-[11.5px] leading-snug text-amber-800">{% for flag in a.flag_chips %}<span title="{{ flag.definition }}">{{ flag.label }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}</div>
             </td>
           </tr>
         {% empty %}
@@ -415,12 +402,6 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
         var flags = row.dataset.flags ? row.dataset.flags.split("|") : [];
         if (v("flag") === "__none" && flags.length) return false;
         if (v("flag") && v("flag") !== "__none" && flags.indexOf(v("flag")) === -1) return false;
-        if (v("criterion") !== "") {
-          var score = scoresOf(row)[Number(v("criterion"))];
-          var threshold = Number(v("threshold"));
-          if (score === null) return false;
-          if (v("op") === "max" ? score > threshold : score < threshold) return false;
-        }
         return true;
       }
       function mean(xs) { return xs.length ? xs.reduce(function (a, b) { return a + b; }, 0) / xs.length : null; }
