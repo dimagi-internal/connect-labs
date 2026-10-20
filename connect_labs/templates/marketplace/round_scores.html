@@ -190,57 +190,46 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
       <span class="text-sm font-semibold text-brand-deep-purple">Applicants</span>
       <span class="text-[12px] text-gray-500" data-testid="shown"><span data-stat="shown">{{ applicants|length }}</span> of {{ applicants|length }} shown · click a row to read the response and its review</span>
     </div>
-    <div class="px-4 sm:px-5 pt-2.5 pb-3.5 border-b border-brand-border-light flex flex-wrap items-end gap-3" data-testid="filters">
-      <label class="text-[11px] text-gray-500 flex flex-col gap-1">SEARCH
-        <input type="search" data-filter="text" placeholder="Organization" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800" style="width: 12rem">
-      </label>
-      <label class="text-[11px] text-gray-500 flex flex-col gap-1">RECOMMENDATION
-        <select data-filter="outcome" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800 bg-white">
-          <option value="">Any</option>
-          {% for o in outcomes %}{% if o.key or o.count %}<option value="{{ o.key|default:'none' }}">{{ o.label }} ({{ o.count }})</option>{% endif %}{% endfor %}
-        </select>
-      </label>
+    {% comment %}One line of filters: each names itself in its first option, so no label row above.{% endcomment %}
+    <div class="px-4 sm:px-5 pt-2.5 pb-3 border-b border-brand-border-light flex flex-wrap items-center gap-2" data-testid="filters">
+      <input type="search" data-filter="text" placeholder="Search" aria-label="Search organizations" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800" style="width: 7.5rem">
+      <select data-filter="outcome" aria-label="Recommendation" class="border border-brand-border-light rounded-lg px-2 py-1.5 text-[12.5px] text-gray-800 bg-white" style="max-width: 11rem">
+        <option value="">Any recommendation</option>
+        {% for o in outcomes %}{% if o.key or o.count %}<option value="{{ o.key|default:'none' }}">{{ o.label }} ({{ o.count }})</option>{% endif %}{% endfor %}
+      </select>
       {% if review_options|length > 1 %}
-      <label class="text-[11px] text-gray-500 flex flex-col gap-1">REVIEWED BY
-        <select data-filter="review" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800 bg-white">
-          <option value="">Anyone</option>
-          {% for r in review_options %}<option value="{{ r.value }}">{{ r.label }} ({{ r.count }})</option>{% endfor %}
-        </select>
-      </label>
+      <select data-filter="review" aria-label="Reviewed by" class="border border-brand-border-light rounded-lg px-2 py-1.5 text-[12.5px] text-gray-800 bg-white">
+        <option value="">Reviewed by anyone</option>
+        {% for r in review_options %}<option value="{{ r.value }}">{{ r.label }} ({{ r.count }})</option>{% endfor %}
+      </select>
       {% endif %}
       {% if countries %}
-      <label class="text-[11px] text-gray-500 flex flex-col gap-1">COUNTRY
-        <select data-filter="country" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800 bg-white">
-          <option value="">Any</option>
-          {% for country in countries %}<option value="{{ country }}">{{ country }}</option>{% endfor %}
-        </select>
-      </label>
+      <select data-filter="country" aria-label="Country" class="border border-brand-border-light rounded-lg px-2 py-1.5 text-[12.5px] text-gray-800 bg-white">
+        <option value="">Any country</option>
+        {% for country in countries %}<option value="{{ country }}">{{ country }}</option>{% endfor %}
+      </select>
       {% endif %}
       {% if flag_counts %}
-      <label class="text-[11px] text-gray-500 flex flex-col gap-1">FLAG
-        <select data-filter="flag" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800 bg-white">
-          <option value="">Any</option>
-          <option value="__none">No flags</option>
-          {% for f in flag_counts %}<option value="{{ f.key }}" title="{{ f.definition }}">{{ f.label }} ({{ f.count }})</option>{% endfor %}
-        </select>
-      </label>
+      <select data-filter="flag" aria-label="Flag" class="border border-brand-border-light rounded-lg px-2 py-1.5 text-[12.5px] text-gray-800 bg-white" style="max-width: 8.5rem">
+        <option value="">Any flag</option>
+        <option value="__none">No flags</option>
+        {% for f in flag_counts %}<option value="{{ f.key }}" title="{{ f.definition }}">{{ f.label }} ({{ f.count }})</option>{% endfor %}
+      </select>
       {% endif %}
       {% if summary.criteria %}
-      <label class="text-[11px] text-gray-500 flex flex-col gap-1">CRITERION
-        <span class="flex items-center gap-1.5">
-          <select data-filter="criterion" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800 bg-white">
-            <option value="">Any</option>
-            {% for c in summary.criteria %}<option value="{{ forloop.counter0 }}">{{ c.name }}</option>{% endfor %}
-          </select>
-          <select data-filter="op" class="border border-brand-border-light rounded-lg px-2 py-1.5 text-[13px] text-gray-800 bg-white">
-            <option value="min">at least</option>
-            <option value="max">at most</option>
-          </select>
-          <input type="number" min="0" max="10" step="1" value="7" data-filter="threshold" class="border border-brand-border-light rounded-lg px-2 py-1.5 text-[13px] text-gray-800" style="width: 4rem">
-        </span>
-      </label>
+      <span class="flex items-center gap-1">
+        <select data-filter="criterion" aria-label="Criterion" class="border border-brand-border-light rounded-lg px-2 py-1.5 text-[12.5px] text-gray-800 bg-white" style="max-width: 9rem">
+          <option value="">Any criterion</option>
+          {% for c in summary.criteria %}<option value="{{ forloop.counter0 }}">{{ c.name }}</option>{% endfor %}
+        </select>
+        <select data-filter="op" aria-label="At least or at most" class="border border-brand-border-light rounded-lg px-2 py-1.5 text-[12.5px] text-gray-800 bg-white">
+          <option value="min">≥</option>
+          <option value="max">≤</option>
+        </select>
+        <input type="number" min="0" max="10" step="1" value="7" data-filter="threshold" aria-label="Score" class="border border-brand-border-light rounded-lg px-2 py-1.5 text-[13px] text-gray-800" style="width: 3.25rem">
+      </span>
       {% endif %}
-      <button type="button" data-filter="reset" class="text-[12.5px] text-brand-indigo hover:text-brand-deep-purple py-1.5">Clear filters</button>
+      <button type="button" data-filter="reset" class="text-[12.5px] text-brand-indigo hover:text-brand-deep-purple py-1.5 px-1">Clear</button>
     </div>
 
     <div class="overflow-x-auto">
@@ -249,10 +238,9 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
         <tr>
           <th data-sort="text" class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Organization</th>
           <th data-sort="number" class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="The criteria weighted, out of 100">Score</th>
-          <th data-sort="text" class="hidden sm:table-cell px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Country</th>
           <th data-sort="text" class="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Sorts recommended first">Recommendation</th>
           {% for c in summary.criteria %}
-            <th data-sort="number" class="hidden sm:table-cell px-2 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider" style="width: 7.5rem; min-width: 6rem; white-space: normal; line-height: 1.25; vertical-align: bottom" title="{{ c.name }} · {{ c.weight|floatformat:'-1' }}% of the score"><div style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden">{{ c.name }}</div><div class="text-[10px] text-gray-400 font-normal normal-case">{{ c.weight|floatformat:"-1" }}%</div></th>
+            <th data-sort="number" class="hidden sm:table-cell px-2 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider" style="max-width: 5.25rem; white-space: normal; line-height: 1.2; vertical-align: bottom" title="{{ c.name }} · {{ c.weight|floatformat:'-1' }}% of the score"><div style="display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden">{{ c.name }}</div><div class="text-[10px] text-gray-400 font-normal normal-case">{{ c.weight|floatformat:"-1" }}%</div></th>
           {% endfor %}
           <th class="hidden sm:table-cell px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" style="vertical-align: bottom" title="Things to check before relying on the response; not penalties">Flags</th>
         </tr>
@@ -275,9 +263,9 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
               {% elif a.review.has_ai %}
                 <span class="text-[11px] text-indigo-600 ml-1" title="The AI's review; no person has checked it yet"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
               {% endif %}
+              {% if a.country %}<div class="text-[11.5px] text-gray-500">{{ a.country|truncatechars:24 }}</div>{% endif %}
             </td>
             <td class="px-3 py-2.5 text-right text-[13px] font-semibold text-gray-900 tabular-nums" data-sort-value="{{ a.review.score|default_if_none:'' }}">{{ a.review.score|default_if_none:"—" }}</td>
-            <td class="hidden sm:table-cell px-3 py-2.5 text-[12.5px] text-gray-600">{{ a.country|default:"—"|truncatechars:24 }}</td>
             <td class="px-3 py-2.5 whitespace-nowrap" data-sort-value="{{ a.review.sort }}">
               {% if a.review.outcome %}
                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-semibold
@@ -290,11 +278,12 @@ and flag word comes from solicitations/vocabulary.py, with its definition.
               </td>
             {% endfor %}
             <td class="hidden sm:table-cell px-3 py-2.5">
-              <div class="flex flex-wrap gap-1">{% for flag in a.flag_chips %}<span class="px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-800" title="{{ flag.definition }}">{{ flag.label }}</span>{% endfor %}</div>
+              {% comment %}A count, the flags named on hover: chips made every row three lines tall.{% endcomment %}
+              {% if a.flag_chips %}<span class="text-[12px] font-medium text-amber-800 whitespace-nowrap" title="{% for flag in a.flag_chips %}{{ flag.label }}{% if not forloop.last %} · {% endif %}{% endfor %}"><i class="fa-solid fa-flag mr-1 text-[11px]"></i>{{ a.flag_chips|length }}</span>{% endif %}
             </td>
           </tr>
         {% empty %}
-          <tr><td colspan="{{ summary.criteria|length|add:5 }}" class="px-4 sm:px-5 py-12 text-center text-sm text-gray-500">No applications recorded for this round.</td></tr>
+          <tr><td colspan="{{ summary.criteria|length|add:4 }}" class="px-4 sm:px-5 py-12 text-center text-sm text-gray-500">No applications recorded for this round.</td></tr>
         {% endfor %}
       </tbody>
     </table>
