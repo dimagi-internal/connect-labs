@@ -247,6 +247,13 @@ def run_this_week_batch(
     Used by the no-UI cron/default-run path. Returns
     ``{"run_id", "sessions_created", "status"}`` (``status`` is ``"failed"`` if the
     batch errored). NOT idempotent — every call creates + fires a new run.
+
+    The batch job does not raise when an individual (opportunity, track) call
+    fails -- it logs it, counts it in ``failed`` and carries on with the rest.
+    That count is surfaced here as ``errors`` (which the scheduler records as the
+    schedule's ``last_error``), and a batch in which EVERY attempted call failed
+    is ``"failed"``, not ``"ready"``: dropping it made a schedule whose audits
+    never got created look healthy with 0 sessions, night after night.
     """
     owner_kwargs, run, job_config = create_batch_run(
         definition,
@@ -262,11 +269,20 @@ def run_this_week_batch(
     )
     succeeded = eager.successful()
     res = eager.result if (succeeded and isinstance(eager.result, dict)) else {}
-    return {
+    result = {
         "run_id": run.id,
         "sessions_created": (res or {}).get("sessions_created", 0),
         "status": "ready" if succeeded else "failed",
     }
+    if not succeeded and isinstance(eager.result, BaseException):
+        result["error"] = f"audit batch for run {run.id} failed: {eager.result}"
+    failed = res.get("failed") or 0
+    if failed:
+        attempted = failed + (res.get("successful") or 0)
+        result["errors"] = [f"{failed} of {attempted} audit call(s) failed for run {run.id}; see the worker log"]
+        if failed == attempted:
+            result["status"] = "failed"
+    return result
 
 
 # Per-run criteria the handler persists onto run state before it starts work

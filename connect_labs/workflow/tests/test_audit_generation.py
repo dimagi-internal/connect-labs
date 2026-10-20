@@ -287,6 +287,99 @@ def test_creator_run_default_reports_failed_status(monkeypatch):
     assert result == {"run_id": 801, "sessions_created": 0, "status": "failed"}
 
 
+def _run_default_with_job_result(monkeypatch, job_result):
+    from connect_labs.workflow import audit_generation as g
+    from connect_labs.workflow.templates import run_default_for_definition
+
+    wda = mock.Mock()
+    wda.create_run.return_value = _run(802, None)
+    monkeypatch.setattr(g, "WorkflowDataAccess", mock.Mock(return_value=wda))
+    fake_job = mock.Mock()
+    fake_job.apply.return_value.result = job_result
+    fake_job.apply.return_value.successful.return_value = True
+    monkeypatch.setattr(g, "run_workflow_job", fake_job)
+    return run_default_for_definition(_creator_def(), access_token="t", window=("2026-06-21", "2026-06-27"))
+
+
+def test_creator_run_default_fails_when_every_audit_call_failed(monkeypatch):
+    """The batch job logs and COUNTS a failed (opportunity, track) call rather than
+    raising, so the job itself "succeeds". A batch where every call failed created
+    nothing, and must come back failed with a reason -- not "ready" with 0 sessions,
+    which is how a scheduled run that never audited anything looked healthy."""
+    result = _run_default_with_job_result(monkeypatch, {"successful": 0, "failed": 4, "sessions_created": 0})
+
+    assert result["status"] == "failed"
+    assert result["sessions_created"] == 0
+    assert result["errors"] == ["4 of 4 audit call(s) failed for run 802; see the worker log"]
+
+
+def test_creator_run_default_reports_partial_failures_without_failing_the_run(monkeypatch):
+    """Some calls failed, some created audits: still a usable run ("ready"), but the
+    failures ride along as errors so the schedule's last_error says so."""
+    result = _run_default_with_job_result(monkeypatch, {"successful": 3, "failed": 1, "sessions_created": 9})
+
+    assert result["status"] == "ready"
+    assert result["sessions_created"] == 9
+    assert result["errors"] == ["1 of 4 audit call(s) failed for run 802; see the worker log"]
+
+
+def test_creator_run_default_reports_why_the_batch_job_raised(monkeypatch):
+    """A batch job that raised is "failed" already; its exception is the reason."""
+    from connect_labs.workflow import audit_generation as g
+    from connect_labs.workflow.templates import run_default_for_definition
+
+    wda = mock.Mock()
+    wda.create_run.return_value = _run(803, None)
+    monkeypatch.setattr(g, "WorkflowDataAccess", mock.Mock(return_value=wda))
+    fake_job = mock.Mock()
+    fake_job.apply.return_value.successful.return_value = False
+    fake_job.apply.return_value.result = ValueError("definition 42 not found")
+    monkeypatch.setattr(g, "run_workflow_job", fake_job)
+
+    result = run_default_for_definition(_creator_def(), access_token="t", window=("2026-06-21", "2026-06-27"))
+
+    assert result["status"] == "failed"
+    assert result["error"] == "audit batch for run 803 failed: definition 42 not found"
+
+
+def test_scheduled_run_records_failed_audit_calls_as_last_error(monkeypatch, db):
+    """End to end through the scheduler: a weekly dual-track schedule whose audit
+    calls all failed is recorded as FAILED with a last_error -- it no longer reads
+    "OK" with an empty error while creating nothing."""
+    from connect_labs.labs.models import WorkflowSchedule
+    from connect_labs.users.models import User
+    from connect_labs.workflow import audit_generation as g
+    from connect_labs.workflow import tasks
+
+    sched = WorkflowSchedule.objects.create(
+        owner=User.objects.create(username="sched-owner"),
+        definition_id=42,
+        opportunity_id=1973,
+        definition_name="Weekly Dual-Track Image Audit",
+        cadence="weekly",
+        hour=6,
+        enabled=True,
+    )
+    monkeypatch.setattr(tasks, "get_valid_access_token", lambda user: "t")
+    monkeypatch.setattr(tasks, "get_valid_cchq_access_token", lambda user: None)
+    sched_wda = mock.Mock()
+    sched_wda.get_definition.return_value = _creator_def()
+    monkeypatch.setattr(tasks, "WorkflowDataAccess", mock.Mock(return_value=sched_wda))
+    run_wda = mock.Mock()
+    run_wda.create_run.return_value = _run(804, None)
+    monkeypatch.setattr(g, "WorkflowDataAccess", mock.Mock(return_value=run_wda))
+    fake_job = mock.Mock()
+    fake_job.apply.return_value.successful.return_value = True
+    fake_job.apply.return_value.result = {"successful": 0, "failed": 2, "sessions_created": 0}
+    monkeypatch.setattr(g, "run_workflow_job", fake_job)
+
+    tasks.run_scheduled_workflow(sched.id)
+
+    sched.refresh_from_db()
+    assert sched.last_status == WorkflowSchedule.STATUS_FAILED
+    assert "2 of 2 audit call(s) failed" in sched.last_error
+
+
 def test_creator_run_default_defaults_window_to_last_week(monkeypatch):
     """With no explicit window, the hook resolves last_week and creates a run."""
     from connect_labs.workflow import audit_generation as g
