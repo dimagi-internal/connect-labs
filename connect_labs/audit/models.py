@@ -141,6 +141,11 @@ class AuditSessionRecord(LocalLabsRecord):
         return self.data.get("pass_threshold", 100)
 
     @property
+    def image_count(self):
+        """Number of images in the session, as stored when the session was created."""
+        return self.data.get("image_count", 0)
+
+    @property
     def completed_at(self):
         """When the image review was completed (None while in progress).
 

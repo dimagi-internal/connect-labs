@@ -1465,3 +1465,33 @@ def test_render_code_offers_the_per_path_classifier_ids_the_backend_knows():
     assert "'hyperzoom'" in rc
     assert "'muac_mismatch'" in rc
     assert "'kmc_scale'" in rc
+
+
+def test_audit_rollup_snapshot_reads_image_count_from_a_real_session_record():
+    # The other snapshot tests use mock sessions that carry image_count as an
+    # attribute; a real AuditSessionRecord only had it inside .data, so every
+    # dual-track run completion crashed with AttributeError.
+    from connect_labs.audit.models import AuditSessionRecord
+    from connect_labs.workflow.templates import weekly_dual_track_audit as m
+
+    session = AuditSessionRecord(
+        {
+            "id": 7,
+            "experiment": "audit",
+            "type": "AuditSession",
+            "opportunity_id": 1973,
+            "data": {
+                "tag": "muac",
+                "status": "completed",
+                "image_count": 12,
+                "flw_username": "flw1",
+                "opportunity_id": 1973,
+            },
+        }
+    )
+    with mock.patch.object(AuditSessionRecord, "get_assessment_stats", return_value={"pass": 9, "fail": 3}):
+        summary = m._audit_rollup_snapshot([session], [1973])
+
+    assert session.image_count == 12
+    assert summary["by_tag"]["muac"]["images"] == 12
+    assert summary["by_tag"]["muac"]["pass"] == 9
