@@ -1012,6 +1012,16 @@
                     rows="4"></textarea>
         </div>
 
+        <label class="flex items-center gap-2 text-sm font-medium text-gray-700"
+               :class="isReadOnly ? 'cursor-not-allowed' : 'cursor-pointer'">
+          <input type="checkbox"
+                 x-model="flaggedToLlo"
+                 @change="hasUnsavedChanges = true; scheduleAutoSave()"
+                 :disabled="isReadOnly"
+                 class="rounded border-gray-300 text-brand-indigo focus:ring-brand-indigo">
+          Flagged to LLO
+        </label>
+
         <div class="flex items-center gap-3">
           <button @click="saveImageReview()"
                   x-show="!isReadOnly"
@@ -1359,6 +1369,7 @@ function bulkAssessmentInterface() {
     overallResult: '{{ session.overall_result|default:"" }}',
     completionNotes: '{{ session.notes|default:""|escapejs }}',
     kpiNotes: '{{ session.kpi_notes|default:""|escapejs }}',
+    flaggedToLlo: {{ session.flagged_to_llo|yesno:"true,false" }},
     submittingCompletion: false,
     // Completed reports stay locked until reopened -- for every workflow, with no
     // exception since #1385. The server enforces the same rule unconditionally
@@ -2321,6 +2332,7 @@ function bulkAssessmentInterface() {
       formData.append('visit_results', JSON.stringify(this.visitResults));
       formData.append('notes', this.completionNotes);
       formData.append('kpi_notes', this.kpiNotes);
+      formData.append('flagged_to_llo', this.flaggedToLlo ? 'true' : 'false');
       formData.append('csrfmiddlewaretoken', this.csrfToken);
       if (this.storageOpportunityId) {
         formData.append('storage_opportunity_id', this.storageOpportunityId);
