@@ -942,8 +942,10 @@ Resources:
   # Threshold sized off measured history (2026-08-11..18): a quiet day totals
   # ~22 timeouts across the WHOLE day, while the bad episodes did 464 (08-14)
   # and 136 (08-17) in a few hours. 25 in a 15-minute window sits far above the
-  # baseline and well below the failure shape. See #1231 -- the cause is that
+  # baseline and well below the failure shape. See #1231 -- one cause is that
   # concurrent runs each get their own pool, so overlapping runs multiply load.
+  # It is not the only one: the first firing (2026-10-20 21:24Z) had exactly one
+  # run in flight, so the description sends responders to count runs first.
   WorkerClassifierTimeoutMetricFilter:
     Type: AWS::Logs::MetricFilter
     Properties:
@@ -973,8 +975,12 @@ Resources:
       AlarmDescription: >-
         The AI classifier gateway is timing out in bulk — an image audit running
         now is producing errors instead of verdicts, and each timeout costs a
-        full 60s. Most likely several AI-review runs are overlapping (see
-        #1231); check how many [AIReview:<id>] runs started recently.
+        full 60s. First count how many [AIReview:<id>] runs were in flight
+        (python3 tools/classifier_outcomes.py). Two or more overlapping is
+        #1231. ONE run means the gateway itself was slow, not the load: the
+        first firing (2026-10-20, a weekly KMC audit at concurrency 1, same
+        size as prior weeks but 5-6x slower) was this case. Then compare the
+        timed-out agent's elapsed_ms with other agents' in the same hours.
       Namespace: Labs/AIReview
       MetricName: ClassifierTimeout
       Statistic: Sum
