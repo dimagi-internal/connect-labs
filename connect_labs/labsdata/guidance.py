@@ -1,10 +1,10 @@
-"""How an agent should answer from the explorer -- shipped IN the tool output.
+"""How an agent should answer from labs data -- shipped IN the tool output.
 
 The canopy SDK proxies a host's MCP tools to the agent and nothing else: no host
 resources, no prompts (canopy-web ``host_gateway``). So the only way labs can
-teach an arbitrary agent -- the in-page canopy panel, Claude Desktop on the labs
-MCP, a script -- what this data means and how to answer from it is to return it
-from the tool it calls first. ``explorer_describe`` does.
+teach an arbitrary agent -- the labsdata agent in the canopy panel, Claude Desktop
+on the labs MCP, a script -- what this data means and how to answer from it is to
+return it from the tool it calls first. ``data_describe`` does.
 
 Adapted from Scout's base system prompt (dimagi-rad/scout
 ``apps/agents/prompts/base_system.py``): provenance, governed-measures-first,
@@ -34,7 +34,15 @@ You are answering questions about live CommCare Connect program data for the opp
    an opportunity has 0 cached_visits say it is not loaded rather than reporting zero.
 8. Never fabricate. If the data cannot answer the question, say so and say what would.
 9. Ask when ambiguous (which opportunities, which date range, visits vs cases) instead of picking silently.
-10. Small results as a table; large ones summarised (total, top rows, the pattern). Percentages to 1 dp.
+10. Up to 20 rows as a table; more, summarised (total, min/max/median, top and bottom rows, the pattern).
+    Percentages to 1 dp. Explain every query in plain words: what it counts, how, from what.
+11. Row level is allowed and often the point: to check a number, look at the visits behind it. Read whole
+    visits (every column and the full form_json) with data_visits; select specific form fields in SQL.
+12. Errors carry `category`, `retryable` and `recovery_action`. Fix the query for a `sql` error; narrow or
+    aggregate for `capacity`; retry an `internal` error once. Never try more than two alternative names for
+    a field or column -- search `fields` instead -- and stop and tell the person after three failures in a
+    row. Never probe system catalogs.
+13. Read `notes` on every result: they say when rows were cut and what to do about it.
 """
 
 #: For an agent (a canopy call) over REAL opportunities. It writes the SQL; it never sees
@@ -46,16 +54,33 @@ semantic registries, and SQL validation. The person runs the query on the page a
 
 1. Find the field in `fields` (search with `field_search`); never guess a form_json path. Answer values are
    withheld here, so if a filter needs a value (e.g. 'hospital'), ask the person, or check it on a synthetic
-   opportunity (explorer_describe / explorer_query work fully on synthetic ones).
+   opportunity (data_describe / data_query work fully on synthetic ones).
 2. Governed measures first: if a registry covers the program and defines the metric, read it with
    semantic_registry_explain and follow its definition.
 3. Count the right thing: DISTINCT entity_id for cases, DISTINCT username for workers, COUNT(*) for visits.
    Say which. State whether rejected visits are excluded (`status`).
 4. "By LLO" means GROUP BY llo; "by opportunity" means GROUP BY opportunity_name.
-5. Before handing it over, run explorer_validate on the SQL: it checks it end to end over zero rows.
-6. Hand it to the page with page_explorer_set_query (sql, and run: true to run it for them). Then tell the
-   person, in plain words, what the query counts, what it filters and how to read the result. You will not
-   see the numbers; do not guess them.
+5. Before handing it over, run data_validate on the SQL: it checks it end to end over zero rows.
+6. On the Data page, hand it over with page_data_set_query (sql, and run: true to run it for them);
+   elsewhere, give the person the SQL to run at /labs/data/. Then tell the person, in plain words, what the
+   query counts, what it filters and how to read the result. You will not see the numbers; do not guess them.
+"""
+
+#: How to check that a workflow shows what it should. Returned by data_describe and
+#: data_workflow_context, because "is this workflow right?" is what this is mostly for.
+VERIFYING_A_WORKFLOW = """\
+To check a workflow (a report, dashboard or audit) against the raw data:
+1. data_workflow_context: the workflow's opportunities, each pipeline's fields (the form paths each reads,
+   the aggregation, the filters) and `visits_sql` -- a query that extracts the pipeline's fields per visit
+   from `visits`, the same way the pipeline does.
+2. Recompute what the workflow shows from `visits` with that SQL (aggregate it the way the pipeline does:
+   `aggregation` per field, grouped by `grouping_key`), and compare with what the person sees
+   (workflow_run_indicators / workflow_run_context for a run's numbers).
+3. Where they differ, go to row level: find the visits that disagree and read them whole with data_visits.
+   Common causes: an app version that moved a field (a path missing from `paths`), a filter value spelled
+   differently, rejected visits counted, a repeat group read as one value, a stale cache.
+4. Report what matches, what does not, the visits that show it, and the fix (a path to add, a filter to
+   change) -- you cannot change the workflow yourself.
 """
 
 SQL_NOTES = """\

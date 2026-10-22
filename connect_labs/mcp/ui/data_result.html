@@ -1,0 +1,843 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Query result</title>
+    <!--
+  ui://labs/data-result — an MCP Apps View (SEP-1865, 2026-01-26).
+
+  Rendered by a host (canopy) for a data_query result: the rows as a table, a chart of
+  them, and the SQL that produced them, with a link that opens the query on Labs' Data
+  page. When the result reached the View without its rows (a host that keeps no tool
+  results for a sensitive session), it asks the same question again AS THE VIEWER.
+
+  When Labs withheld real rows from the agent (`withheld`), the View shows none
+  either: rows travel through canopy only for an agent Labs has cleared for real data.
+  It offers the Data page instead, where the person runs the query inside Labs.
+
+  Self-contained on purpose: no network load of any kind. Every call goes to the host
+  over postMessage. The chart is drawn here, as SVG, so no library has to load.
+-->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --color-background-primary: light-dark(#ffffff, #171717);
+        --color-background-secondary: light-dark(#f6f7f9, #222326);
+        --color-text-primary: light-dark(#171717, #f2f2f2);
+        --color-text-secondary: light-dark(#5b6470, #a8b0ba);
+        --color-text-warning: light-dark(#7a5300, #f3c969);
+        --color-border-primary: light-dark(#d9dde3, #3a3d42);
+        --color-border-secondary: light-dark(#eceff3, #2c2f33);
+        --brand: light-dark(#16006d, #a99bff);
+        --brand-soft: light-dark(#eef2ff, #24204a);
+        --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+        --s1: light-dark(#3f4fa0, #9aa8ff);
+        --s2: light-dark(#c26a1e, #f0a560);
+        --s3: light-dark(#1d6b3a, #8fdcaa);
+        --s4: light-dark(#9b2c6f, #f29ccc);
+        --s5: light-dark(#5b6470, #a8b0ba);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: var(--font-sans);
+        font-size: 13px;
+        line-height: 1.4;
+        color: var(--color-text-primary);
+        background: var(--color-background-primary);
+      }
+      #app {
+        padding: 10px 12px 12px;
+      }
+      .bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 10px;
+        margin-bottom: 8px;
+      }
+      .title {
+        font-weight: 600;
+      }
+      .sub {
+        color: var(--color-text-secondary);
+        font-size: 12px;
+      }
+      .warn {
+        color: var(--color-text-warning);
+      }
+      .err {
+        color: #b42318;
+      }
+      .spacer {
+        flex: 1;
+      }
+      .tabs {
+        display: inline-flex;
+        border: 1px solid var(--color-border-primary);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      .tabs button {
+        font: inherit;
+        font-size: 12px;
+        padding: 3px 10px;
+        border: 0;
+        background: none;
+        color: var(--color-text-secondary);
+        cursor: pointer;
+      }
+      .tabs button[aria-selected='true'] {
+        background: var(--brand-soft);
+        color: var(--brand);
+        font-weight: 600;
+      }
+      .btn {
+        font: inherit;
+        font-size: 12px;
+        padding: 3px 10px;
+        border-radius: 6px;
+        border: 1px solid var(--color-border-primary);
+        background: var(--color-background-primary);
+        color: var(--brand);
+        cursor: pointer;
+      }
+      .btn.primary {
+        background: var(--brand);
+        border-color: var(--brand);
+        color: var(--color-background-primary);
+      }
+      .wrap {
+        overflow: auto;
+        max-height: 70vh;
+        border: 1px solid var(--color-border-secondary);
+        border-radius: 6px;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 12px;
+      }
+      th {
+        position: sticky;
+        top: 0;
+        background: var(--color-background-secondary);
+        text-align: left;
+        font-weight: 600;
+        padding: 5px 8px;
+        border-bottom: 1px solid var(--color-border-primary);
+        white-space: nowrap;
+      }
+      td {
+        padding: 4px 8px;
+        border-bottom: 1px solid var(--color-border-secondary);
+        vertical-align: top;
+        max-width: 360px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+      }
+      td.num {
+        text-align: right;
+      }
+      td.null {
+        color: var(--color-text-secondary);
+      }
+      pre {
+        margin: 0;
+        padding: 10px;
+        font: 12px/1.5 var(--font-mono);
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: var(--color-background-secondary);
+        border-radius: 6px;
+      }
+      .notes {
+        margin: 8px 0 0;
+        padding-left: 18px;
+        color: var(--color-text-secondary);
+        font-size: 12px;
+      }
+      .chart-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 12px;
+        margin-bottom: 6px;
+        font-size: 12px;
+        color: var(--color-text-secondary);
+      }
+      select {
+        font: inherit;
+        font-size: 12px;
+      }
+      svg text {
+        fill: var(--color-text-secondary);
+        font-size: 11px;
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 12px;
+        font-size: 12px;
+        margin-top: 4px;
+      }
+      .legend i {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+        margin-right: 4px;
+        vertical-align: -1px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"><div class="sub">Loading…</div></div>
+    <script>
+      (function () {
+        'use strict';
+
+        var QUERY_TOOL = 'data_query';
+        var PROTOCOL_VERSION = '2026-01-26';
+        var SERIES = ['--s1', '--s2', '--s3', '--s4', '--s5'];
+        var MAX_BARS = 30;
+
+        // ---------------------------------------------------------------- transport
+        var nextId = 1;
+        var pending = {};
+        function post(message) {
+          window.parent.postMessage(message, '*');
+        }
+        function request(method, params) {
+          var id = nextId++;
+          return new Promise(function (resolve, reject) {
+            pending[id] = { resolve: resolve, reject: reject };
+            post({
+              jsonrpc: '2.0',
+              id: id,
+              method: method,
+              params: params || {},
+            });
+          });
+        }
+        function notify(method, params) {
+          post({ jsonrpc: '2.0', method: method, params: params || {} });
+        }
+        window.addEventListener('message', function (event) {
+          if (event.source !== window.parent) return;
+          var msg = event.data;
+          if (!msg || typeof msg !== 'object' || msg.jsonrpc !== '2.0') return;
+          if (
+            msg.method === undefined &&
+            msg.id !== undefined &&
+            pending[msg.id]
+          ) {
+            var p = pending[msg.id];
+            delete pending[msg.id];
+            if (msg.error)
+              p.reject(
+                new Error((msg.error && msg.error.message) || 'Request failed'),
+              );
+            else p.resolve(msg.result);
+            return;
+          }
+          if (typeof msg.method !== 'string') return;
+          if (msg.id !== undefined) {
+            if (msg.method === 'ui/resource-teardown' || msg.method === 'ping')
+              post({ jsonrpc: '2.0', id: msg.id, result: {} });
+            else
+              post({
+                jsonrpc: '2.0',
+                id: msg.id,
+                error: { code: -32601, message: 'Method not found' },
+              });
+            return;
+          }
+          var handler = notifications[msg.method];
+          if (handler) handler(msg.params || {});
+        });
+
+        // ---------------------------------------------------------------- state
+        var state = {
+          canAct: false,
+          args: null, // the agent's arguments: opportunity_ids, sql, max_rows
+          result: null,
+          tab: 'table',
+          x: null,
+          ys: [],
+          error: '',
+          busy: false,
+        };
+
+        function esc(v) {
+          return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+            return {
+              '&': '&amp;',
+              '<': '&lt;',
+              '>': '&gt;',
+              '"': '&quot;',
+              "'": '&#39;',
+            }[c];
+          });
+        }
+        function parseText(result) {
+          var text = ((result && result.content) || [])
+            .map(function (c) {
+              return c && c.text;
+            })
+            .filter(Boolean)
+            .join('');
+          try {
+            return JSON.parse(text);
+          } catch (e) {
+            return null;
+          }
+        }
+        function cellText(v) {
+          if (v === null || v === undefined) return 'null';
+          if (typeof v === 'object') return JSON.stringify(v);
+          if (typeof v === 'number') return v.toLocaleString();
+          return String(v);
+        }
+        function isNum(v) {
+          return typeof v === 'number' && isFinite(v);
+        }
+        function looksLikeDate(v) {
+          return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v);
+        }
+
+        // ---------------------------------------------------------------- reading
+        function hasRows(sc) {
+          return sc && Array.isArray(sc.columns) && Array.isArray(sc.rows);
+        }
+        function accept(sc) {
+          state.result = sc;
+          state.error = '';
+          pickAxes();
+          render();
+        }
+        function pickAxes() {
+          var r = state.result;
+          state.x = null;
+          state.ys = [];
+          if (!hasRows(r) || !r.rows.length) return;
+          var numeric = r.columns.map(function (_c, i) {
+            return r.rows.every(function (row) {
+              return row[i] === null || isNum(row[i]);
+            });
+          });
+          var x = numeric.indexOf(false);
+          state.x = x >= 0 ? x : 0;
+          numeric.forEach(function (n, i) {
+            if (n && i !== state.x && state.ys.length < SERIES.length)
+              state.ys.push(i);
+          });
+          if (state.ys.length && r.rows.length > 1)
+            state.tab = state.tab || 'table';
+        }
+
+        // ---------------------------------------------------------------- chart (SVG)
+        function chart() {
+          var r = state.result;
+          if (!hasRows(r) || state.x === null || !state.ys.length)
+            return '<div class="sub">Nothing to chart: the result needs a numeric column.</div>';
+          var rows = r.rows.slice(0, 500);
+          var line =
+            rows.length > 1 &&
+            rows.every(function (row) {
+              return looksLikeDate(row[state.x]);
+            });
+          if (!line && rows.length > MAX_BARS) rows = rows.slice(0, MAX_BARS);
+          var w = Math.max(
+            320,
+            Math.min(document.documentElement.clientWidth - 30, 1100),
+          );
+          var h = 240;
+          var pad = { l: 48, r: 10, t: 10, b: line ? 30 : 70 };
+          var iw = w - pad.l - pad.r;
+          var ih = h - pad.t - pad.b;
+          var max = 0;
+          rows.forEach(function (row) {
+            state.ys.forEach(function (i) {
+              if (isNum(row[i]) && row[i] > max) max = row[i];
+            });
+          });
+          if (max <= 0) max = 1;
+          // Round gridlines: a step of 1, 2 or 5 times a power of ten, and an axis that
+          // ends on one.
+          var raw = max / 4;
+          var mag = Math.pow(10, Math.floor(Math.log10(raw)));
+          var step = [1, 2, 5, 10]
+            .map(function (k) {
+              return k * mag;
+            })
+            .filter(function (v) {
+              return v >= raw;
+            })[0];
+          var ticks = Math.ceil(max / step);
+          max = ticks * step;
+          function yPos(v) {
+            return pad.t + ih - (ih * (isNum(v) ? v : 0)) / max;
+          }
+          var out = [
+            '<svg width="' +
+              w +
+              '" height="' +
+              h +
+              '" role="img" aria-label="Chart of the result">',
+          ];
+          for (var g = 0; g <= ticks; g++) {
+            var gv = step * g;
+            var gy = yPos(gv);
+            out.push(
+              '<line x1="' +
+                pad.l +
+                '" x2="' +
+                (w - pad.r) +
+                '" y1="' +
+                gy +
+                '" y2="' +
+                gy +
+                '" stroke="var(--color-border-secondary)"/>',
+              '<text x="' +
+                (pad.l - 6) +
+                '" y="' +
+                (gy + 4) +
+                '" text-anchor="end">' +
+                esc(
+                  gv >= 1000 ? Math.round(gv).toLocaleString() : +gv.toFixed(2),
+                ) +
+                '</text>',
+            );
+          }
+          var n = rows.length;
+          if (line) {
+            state.ys.forEach(function (col, s) {
+              var pts = rows.map(function (row, i) {
+                var px = pad.l + (n === 1 ? iw / 2 : (iw * i) / (n - 1));
+                return px.toFixed(1) + ',' + yPos(row[col]).toFixed(1);
+              });
+              out.push(
+                '<polyline fill="none" stroke-width="2" stroke="var(' +
+                  SERIES[s] +
+                  ')" points="' +
+                  pts.join(' ') +
+                  '"/>',
+              );
+            });
+            [0, Math.floor((n - 1) / 2), n - 1].forEach(function (i, k, all) {
+              if (k && i === all[k - 1]) return;
+              var px = pad.l + (n === 1 ? iw / 2 : (iw * i) / (n - 1));
+              out.push(
+                '<text x="' +
+                  px +
+                  '" y="' +
+                  (h - 10) +
+                  '" text-anchor="middle">' +
+                  esc(String(rows[i][state.x]).slice(0, 10)) +
+                  '</text>',
+              );
+            });
+          } else {
+            var band = iw / n;
+            var bw = Math.max(2, (band * 0.8) / state.ys.length);
+            rows.forEach(function (row, i) {
+              state.ys.forEach(function (col, s) {
+                var bx = pad.l + band * i + band * 0.1 + bw * s;
+                var by = yPos(row[col]);
+                out.push(
+                  '<rect x="' +
+                    bx.toFixed(1) +
+                    '" y="' +
+                    by.toFixed(1) +
+                    '" width="' +
+                    bw.toFixed(1) +
+                    '" height="' +
+                    Math.max(0, pad.t + ih - by).toFixed(1) +
+                    '" fill="var(' +
+                    SERIES[s] +
+                    ')"><title>' +
+                    esc(
+                      cellText(row[state.x]) +
+                        ' · ' +
+                        r.columns[col] +
+                        ': ' +
+                        cellText(row[col]),
+                    ) +
+                    '</title></rect>',
+                );
+              });
+              var lx = pad.l + band * i + band / 2;
+              out.push(
+                '<text transform="translate(' +
+                  lx.toFixed(1) +
+                  ',' +
+                  (pad.t + ih + 10) +
+                  ') rotate(40)" text-anchor="start">' +
+                  esc(cellText(row[state.x]).slice(0, 18)) +
+                  '</text>',
+              );
+            });
+          }
+          out.push('</svg>');
+          var legend = state.ys
+            .map(function (col, s) {
+              return (
+                '<span><i style="background:var(' +
+                SERIES[s] +
+                ')"></i>' +
+                esc(r.columns[col]) +
+                '</span>'
+              );
+            })
+            .join('');
+          var cut =
+            r.rows.length > rows.length
+              ? '<div class="sub">Charting the first ' +
+                rows.length +
+                ' rows.</div>'
+              : '';
+          return (
+            controls() +
+            out.join('') +
+            '<div class="legend">' +
+            legend +
+            '</div>' +
+            cut
+          );
+        }
+        function controls() {
+          var r = state.result;
+          var xs = r.columns
+            .map(function (c, i) {
+              return (
+                '<option value="' +
+                i +
+                '"' +
+                (i === state.x ? ' selected' : '') +
+                '>' +
+                esc(c) +
+                '</option>'
+              );
+            })
+            .join('');
+          var ys = r.columns
+            .map(function (c, i) {
+              if (i === state.x) return '';
+              var on = state.ys.indexOf(i) >= 0;
+              return (
+                '<label><input type="checkbox" data-y="' +
+                i +
+                '"' +
+                (on ? ' checked' : '') +
+                '> ' +
+                esc(c) +
+                '</label>'
+              );
+            })
+            .join(' ');
+          return (
+            '<div class="chart-controls"><label>x <select id="x">' +
+            xs +
+            '</select></label>' +
+            ys +
+            '</div>'
+          );
+        }
+
+        // ---------------------------------------------------------------- render
+        function table() {
+          var r = state.result;
+          var head = r.columns
+            .map(function (c) {
+              return '<th>' + esc(c) + '</th>';
+            })
+            .join('');
+          var body = r.rows
+            .map(function (row) {
+              return (
+                '<tr>' +
+                row
+                  .map(function (v) {
+                    var cls = v === null ? 'null' : isNum(v) ? 'num' : '';
+                    return (
+                      '<td class="' +
+                      cls +
+                      '" title="' +
+                      esc(cellText(v)) +
+                      '">' +
+                      esc(cellText(v)) +
+                      '</td>'
+                    );
+                  })
+                  .join('') +
+                '</tr>'
+              );
+            })
+            .join('');
+          return (
+            '<div class="wrap"><table><thead><tr>' +
+            head +
+            '</tr></thead><tbody>' +
+            body +
+            '</tbody></table></div>'
+          );
+        }
+        function render() {
+          var app = document.getElementById('app');
+          var r = state.result;
+          if (state.error) {
+            app.innerHTML =
+              '<div class="sub err">' + esc(state.error) + '</div>';
+            return reportSize();
+          }
+          if (!r) {
+            app.innerHTML =
+              '<div class="sub">' +
+              (state.busy ? 'Running the query…' : 'Waiting for the result…') +
+              '</div>';
+            return reportSize();
+          }
+          var open = r.open_on_page
+            ? '<button class="btn' +
+              (r.withheld ? ' primary' : '') +
+              '" id="open">Open on the Data page</button>'
+            : '';
+          if (r.withheld) {
+            app.innerHTML =
+              '<div class="bar"><span class="title">Real data stays in Labs</span></div>' +
+              '<div class="sub">' +
+              esc(r.message || '') +
+              '</div>' +
+              '<div class="bar" style="margin-top:8px">' +
+              open +
+              '</div>' +
+              (r.sql_executed || (state.args && state.args.sql)
+                ? '<pre>' + esc(r.sql_executed || state.args.sql) + '</pre>'
+                : '');
+            return reportSize();
+          }
+          if (!hasRows(r)) {
+            app.innerHTML = '<div class="sub">No rows to show.</div>';
+            return reportSize();
+          }
+          var shown = r.rows_returned != null ? r.rows_returned : r.rows.length;
+          var summary =
+            shown.toLocaleString() +
+            ' row' +
+            (shown === 1 ? '' : 's') +
+            (r.truncated
+              ? ' <span class="warn">(cut at the row cap)</span>'
+              : '') +
+            (r.elapsed_ms != null ? ' · ' + r.elapsed_ms + ' ms' : '') +
+            (r.opportunities && r.opportunities.length
+              ? ' · ' +
+                esc(
+                  r.opportunities
+                    .map(function (o) {
+                      return o.name;
+                    })
+                    .join(', '),
+                )
+              : '');
+          var tabs =
+            '<span class="tabs" role="tablist">' +
+            ['table', 'chart', 'sql']
+              .map(function (t) {
+                return (
+                  '<button role="tab" data-tab="' +
+                  t +
+                  '" aria-selected="' +
+                  (state.tab === t) +
+                  '">' +
+                  { table: 'Table', chart: 'Chart', sql: 'SQL' }[t] +
+                  '</button>'
+                );
+              })
+              .join('') +
+            '</span>';
+          var body =
+            state.tab === 'chart'
+              ? chart()
+              : state.tab === 'sql'
+                ? '<pre>' + esc(r.sql_executed || '') + '</pre>'
+                : table();
+          var notes = (r.notes || []).length
+            ? '<ul class="notes">' +
+              r.notes
+                .map(function (n) {
+                  return '<li>' + esc(n) + '</li>';
+                })
+                .join('') +
+              '</ul>'
+            : '';
+          app.innerHTML =
+            '<div class="bar">' +
+            tabs +
+            '<span class="sub">' +
+            summary +
+            '</span><span class="spacer"></span>' +
+            '<button class="btn" id="expand" title="Show larger">Expand</button>' +
+            open +
+            '</div>' +
+            body +
+            notes;
+          reportSize();
+        }
+
+        document.addEventListener('click', function (e) {
+          var t = e.target;
+          if (!(t instanceof Element)) return;
+          var tab = t.closest('[data-tab]');
+          if (tab) {
+            state.tab = tab.getAttribute('data-tab');
+            render();
+          } else if (t.closest('#open')) {
+            request('ui/open-link', { url: state.result.open_on_page }).catch(
+              function () {},
+            );
+          } else if (t.closest('#expand')) {
+            request('ui/request-display-mode', { mode: 'fullscreen' }).catch(
+              function () {},
+            );
+          }
+        });
+        document.addEventListener('change', function (e) {
+          var t = e.target;
+          if (!(t instanceof Element)) return;
+          if (t.id === 'x') {
+            state.x = Number(t.value);
+            state.ys = state.ys.filter(function (i) {
+              return i !== state.x;
+            });
+            render();
+          } else if (t.hasAttribute('data-y')) {
+            var i = Number(t.getAttribute('data-y'));
+            state.ys = t.checked
+              ? state.ys.concat([i]).slice(-SERIES.length)
+              : state.ys.filter(function (y) {
+                  return y !== i;
+                });
+            render();
+          }
+        });
+
+        // ---------------------------------------------------------------- theme + size
+        function applyHostContext(ctx) {
+          if (!ctx) return;
+          var root = document.documentElement;
+          var vars = ctx.styles && ctx.styles.variables;
+          if (vars)
+            Object.keys(vars).forEach(function (k) {
+              if (vars[k] != null && k.indexOf('--') === 0)
+                root.style.setProperty(k, String(vars[k]));
+            });
+          if (ctx.theme === 'light' || ctx.theme === 'dark')
+            root.style.colorScheme = ctx.theme;
+          if (ctx.displayMode && state.result && state.tab === 'chart')
+            render();
+        }
+        var lastSize = '';
+        var initialized = false;
+        function reportSize() {
+          if (!initialized) return;
+          var w = Math.ceil(document.documentElement.scrollWidth);
+          var hgt = Math.ceil(document.documentElement.scrollHeight);
+          var key = w + 'x' + hgt;
+          if (key === lastSize) return;
+          lastSize = key;
+          notify('ui/notifications/size-changed', { width: w, height: hgt });
+        }
+        if (typeof ResizeObserver === 'function')
+          new ResizeObserver(reportSize).observe(document.documentElement);
+
+        // ---------------------------------------------------------------- lifecycle
+        // The result is the source when it arrives whole. A host that keeps no tool
+        // results for a sensitive session passes it on without its rows; then the
+        // View asks the same question again as the viewer -- which Labs answers with
+        // rows only where the agent itself was allowed them.
+        function askAgain() {
+          if (!state.canAct || !state.args || state.busy) return;
+          state.busy = true;
+          render();
+          var args = {};
+          ['opportunity_ids', 'sql', 'max_rows'].forEach(function (k) {
+            if (state.args[k] != null) args[k] = state.args[k];
+          });
+          request('tools/call', { name: QUERY_TOOL, arguments: args }).then(
+            function (res) {
+              state.busy = false;
+              var sc =
+                res &&
+                !res.isError &&
+                (res.structuredContent || parseText(res));
+              if (sc) accept(sc);
+              else {
+                state.error =
+                  (res && parseText(res) && parseText(res).message) ||
+                  'The query could not be run.';
+                render();
+              }
+            },
+            function (err) {
+              state.busy = false;
+              state.error = 'Could not run the query: ' + err.message;
+              render();
+            },
+          );
+        }
+        var gotResult = false;
+        var notifications = {
+          'ui/notifications/tool-input': function (params) {
+            if (!state.args) state.args = params.arguments || {};
+            if (gotResult && !state.result) askAgain();
+          },
+          'ui/notifications/tool-result': function (params) {
+            gotResult = true;
+            var sc = params && (params.structuredContent || parseText(params));
+            if (sc && (hasRows(sc) || sc.withheld)) accept(sc);
+            else if (params && params.isError) {
+              state.error = (sc && sc.message) || 'The query failed.';
+              render();
+            } else askAgain();
+          },
+          'ui/notifications/host-context-changed': function (params) {
+            applyHostContext(params);
+          },
+        };
+
+        request('ui/initialize', {
+          protocolVersion: PROTOCOL_VERSION,
+          appCapabilities: { availableDisplayModes: ['inline', 'fullscreen'] },
+          clientInfo: { name: 'labs-data-result', version: '1.0.0' },
+        }).then(
+          function (result) {
+            result = result || {};
+            applyHostContext(result.hostContext || {});
+            state.canAct = !!(
+              result.hostCapabilities && result.hostCapabilities.serverTools
+            );
+            notify('ui/notifications/initialized', {});
+            initialized = true;
+            render();
+          },
+          function (err) {
+            document.getElementById('app').innerHTML =
+              '<div class="sub err">Could not start: ' +
+              esc(err.message) +
+              '</div>';
+          },
+        );
+      })();
+    </script>
+  </body>
+</html>

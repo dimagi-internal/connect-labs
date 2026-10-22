@@ -11,13 +11,12 @@ from unittest import mock
 import pytest
 from django.utils import timezone
 
-from connect_labs.explorer import guidance, scope, service
-from connect_labs.explorer.engine import QueryError, validate_query
-from connect_labs.explorer.scope import Opportunity
 from connect_labs.labs.access import scopes
 from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
 from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT
-from connect_labs.mcp.tool_registry import MCPToolError
+from connect_labs.labsdata import guidance, scope, service
+from connect_labs.labsdata.engine import QueryError, validate_query
+from connect_labs.labsdata.scope import Opportunity
 
 pytestmark = pytest.mark.django_db
 
@@ -111,7 +110,7 @@ def test_validate_returns_no_rows_even_for_an_aggregate(real_visits):
 
 
 def test_mcp_tools_apply_the_boundary_for_canopy_calls(real_visits, resolved):
-    from connect_labs.mcp.tools import explorer as tools
+    from connect_labs.mcp.tools import labsdata as tools
 
     user = mock.Mock(username="visitor")
     with (
@@ -119,17 +118,16 @@ def test_mcp_tools_apply_the_boundary_for_canopy_calls(real_visits, resolved):
         mock.patch.object(tools, "_from_canopy", return_value=True),
         mock.patch.object(service, "related_registries", return_value=[]),
     ):
-        with pytest.raises(MCPToolError) as e:
-            tools.explorer_query(user, [REAL.id], "SELECT COUNT(*) FROM visits")
-        described = tools.explorer_describe(user, [REAL.id])
-    assert e.value.code == "PERMISSION_DENIED"
+        withheld = tools.query(user, [REAL.id], "SELECT COUNT(*) FROM visits")
+        described = tools.describe(user, [REAL.id])
+    assert withheld["withheld"] is True and "rows" not in withheld
     assert all("values" not in f for f in described["fields"])
-    assert tools.explorer_validate(user, "SELECT 1 AS one FROM visits")["valid"] is True
-    assert tools.explorer_validate(user, "DELETE FROM visits")["valid"] is False
+    assert tools.validate(user, "SELECT 1 AS one FROM visits")["valid"] is True
+    assert tools.validate(user, "DELETE FROM visits")["valid"] is False
 
 
 def test_a_persons_own_mcp_call_is_not_canopy():
-    from connect_labs.mcp.tools import explorer as tools
+    from connect_labs.mcp.tools import labsdata as tools
 
     assert tools._from_canopy() is False  # no delegated token in this context
 
@@ -138,6 +136,7 @@ def test_validate_is_reachable_and_scoped():
     from connect_labs.labs.canopy import SCOPE_TOOLS
     from connect_labs.mcp import token_scopes
 
-    assert "explorer_validate" in SCOPE_TOOLS["explorer:read"]
-    assert "explorer_validate" in token_scopes.NO_USERVISIT_DATA_TOOLS
-    assert "explorer_validate" not in token_scopes.USERVISIT_DATA_TOOLS
+    assert "data_validate" in SCOPE_TOOLS["data:read"]
+    for name in ("explorer_validate", "data_validate", "data_workflow_context"):
+        assert name in token_scopes.NO_USERVISIT_DATA_TOOLS
+        assert name not in token_scopes.USERVISIT_DATA_TOOLS

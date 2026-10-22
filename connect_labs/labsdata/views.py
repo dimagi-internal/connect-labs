@@ -1,4 +1,4 @@
-"""The explorer page at /labs/explorer/ and its two JSON endpoints.
+"""The Data page at /labs/data/ and its JSON endpoints.
 
 The endpoints are thin: they build a ``Caller`` from the request and call the
 same ``service`` functions the MCP tools call, so the page, the in-page agent and
@@ -37,8 +37,8 @@ def _selected(request) -> list[int]:
     return [int(x) for x in raw.split(",") if x.strip().isdigit()]
 
 
-class ExplorerView(LoginRequiredMixin, TemplateView):
-    template_name = "explorer/index.html"
+class DataView(LoginRequiredMixin, TemplateView):
+    template_name = "labsdata/index.html"
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -48,22 +48,24 @@ class ExplorerView(LoginRequiredMixin, TemplateView):
             {
                 "opportunities": opps,
                 "selected": selected,
-                "example_sql": EXAMPLE_SQL,
+                # A link from the agent's result View opens the page on its query; it is
+                # put in the editor, never run on load.
+                "example_sql": (self.request.GET.get("sql") or "")[:20000] or EXAMPLE_SQL,
                 "default_max_rows": DEFAULT_MAX_ROWS,
             }
         )
         from connect_labs.labs import canopy_panel
 
-        # Ids, never rows: the agent reads data through explorer_* as the visitor.
+        # Ids, never rows: the agent reads data itself through the data_* tools, as
+        # the visitor, and those tools decide whether it may see real rows
+        # (service.agent_sees_real_rows). Until labs clears the agent for real data
+        # it gets structure and hands SQL back to this page, so the page shows it no
+        # visit data by itself.
         ctx["canopy_panel"] = canopy_panel.panel(
             self.request,
-            # Through canopy the explorer returns structure only, and runs queries
-            # only on generated opps (explorer/service.py, `for_agent`): no rows.
             reads=canopy_panel.NO_VISIT_DATA,
-            resource=(
-                "labs-explorer://opportunities/" + ",".join(map(str, selected)) if selected else "labs-explorer://"
-            ),
-            backing_tool="explorer_describe",
+            resource="labs-data://opportunities/" + ",".join(map(str, selected)) if selected else "labs-data://",
+            backing_tool="data_describe",
             visible_ids=selected,
             filters={"opportunity_ids": selected},
             path=self.request.path,
@@ -86,7 +88,7 @@ class _JsonView(LoginRequiredMixin, View):
             status = 503 if e.code == "scopes_unavailable" else 403 if e.code == "not_held" else 400
             return JsonResponse({"error": e.code, "message": e.message}, status=status)
         except QueryError as e:
-            return JsonResponse({"error": e.code, "message": e.message}, status=400)
+            return JsonResponse(e.as_dict(), status=400)
 
 
 class DescribeView(_JsonView):
@@ -107,3 +109,8 @@ class QueryView(_JsonView):
         return service.query(
             _caller(request), body.get("opportunity_ids"), body.get("sql") or "", int(body.get("max_rows") or 500)
         )
+
+
+class VisitsView(_JsonView):
+    def handle(self, request, body):
+        return service.visits(_caller(request), body.get("opportunity_ids"), body.get("visit_ids") or [])

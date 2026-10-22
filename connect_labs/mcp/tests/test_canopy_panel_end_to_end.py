@@ -282,7 +282,7 @@ def test_a_workflows_agent_is_granted_the_run_scopes(enabled, canopy_redeem, vis
 
     arrival = _mint(panel, visitor)
     id_jag = arrival[contract.ARRIVAL_ID_JAG_FIELD]
-    assert _scopes(id_jag) == {"workflow:read", "workflow:act"}
+    assert _scopes(id_jag) == {"workflow:read", "workflow:act", "data:read"}
 
     token = _redeem(canopy_redeem, id_jag)
 
@@ -301,6 +301,7 @@ def test_a_workflows_agent_is_granted_the_run_scopes(enabled, canopy_redeem, vis
     tools, page = _run_mcp(build_application(), {"Authorization": f"DPoP {token}"}, add_proof, work)
     listed = {t.name for t in tools}
     # The run's scopes' tools that the MCP lists to a model (an app-only View tool is not).
-    assert listed <= SCOPE_TOOLS["workflow:read"] | SCOPE_TOOLS["workflow:act"]
+    assert listed <= SCOPE_TOOLS["workflow:read"] | SCOPE_TOOLS["workflow:act"] | SCOPE_TOOLS["data:read"]
     assert {"workflow_run_context", "workflow_run_indicators", "workflow_run_action"} <= listed
+    assert {"data_workflow_context", "data_query", "data_visits"} <= listed
     assert page.is_error  # not a page's tool

@@ -99,6 +99,9 @@ NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
     {
         # Runs SQL over a zero-row relation; returns column names or a validation error.
         "explorer_validate",
+        "data_validate",
+        # Workflow and pipeline definitions and the pipelines' SQL: no visit rows.
+        "data_workflow_context",
         # Workflow definitions: config, statuses, render code, pipeline wiring.
         "workflow_list",
         "workflow_get",
@@ -193,6 +196,9 @@ GENERATED_ONLY_TOOLS: frozenset[str] = frozenset(
         "custom_analysis_run",
         "explorer_describe",
         "explorer_query",
+        "data_describe",
+        "data_query",
+        "data_visits",
         "synthetic_local_record_dump",
         "synthetic_reload_fixtures",
         "synthetic_disable",
@@ -230,6 +236,9 @@ USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         "custom_analysis_run",
         "explorer_describe",
         "explorer_query",
+        "data_describe",
+        "data_query",
+        "data_visits",
         "get_sample_ids",
         # A page's workflow sources: their runs' snapshot summaries can carry indicator
         # values computed from visits. Deliberately NOT in RESTRICTED_TOOLS.

@@ -33,6 +33,10 @@ WORKFLOW_ACTION_PREVIEW_URI = "ui://labs/workflow-action-preview"
 #: in the PMC explorer -- recomputed as the viewer through targeting_pmc_rank.
 PMC_STATES_URI = "ui://labs/pmc-states"
 
+#: A data_query result: its rows as a table and a chart, its SQL, and a link that
+#: opens the query on the Data page.
+DATA_RESULT_URI = "ui://labs/data-result"
+
 _HERE = Path(__file__).resolve().parent
 
 
@@ -74,6 +78,16 @@ RESOURCES: tuple[UIResource, ...] = (
             "them, then open the selection in the PMC explorer."
         ),
         filename="pmc_states.html",
+        meta={"prefersBorder": True},
+    ),
+    UIResource(
+        uri=DATA_RESULT_URI,
+        name="data_result",
+        description=(
+            "A query over labs data: the rows as a table and a chart, the SQL that produced them, and a "
+            "link that opens the query on the Data page. Rows withheld from the agent are withheld here too."
+        ),
+        filename="data_result.html",
         meta={"prefersBorder": True},
     ),
 )

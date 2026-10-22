@@ -1,9 +1,9 @@
-// SQL explorer page. Talks to /labs/explorer/api/{describe,query}/ -- the same
-// service the explorer_* MCP tools call -- and keeps the canopy panel's page
+// The Data page (/labs/data/). Talks to /labs/data/api/{describe,query,visits}/ --
+// the same service the data_* MCP tools call -- and keeps the canopy panel's page
 // state on the selected opportunities so the agent works on what you see.
 (function () {
   'use strict';
-  const cfg = window.EXPLORER;
+  const cfg = window.LABSDATA;
   const $ = (id) => document.getElementById(id);
   let lastResult = null;
   let described = null;
@@ -54,7 +54,7 @@
     window.history.replaceState(null, '', url);
     if (window.canopyHost && window.canopyHost.updatePageState) {
       window.canopyHost.updatePageState({
-        resource: 'labs-explorer://opportunities/' + ids.join(','),
+        resource: 'labs-data://opportunities/' + ids.join(','),
         visible_ids: ids,
         filters: { opportunity_ids: ids },
       });
@@ -204,12 +204,13 @@
       ),
     );
     const tbody = el('tbody');
+    const visitCol = data.columns.indexOf('visit_id');
     data.rows.forEach((r) =>
       tbody.append(
         el(
           'tr',
           {},
-          r.map((v) =>
+          r.map((v, i) =>
             el(
               'td',
               {
@@ -220,11 +221,21 @@
               },
               v === null
                 ? el('span', { class: 'ex-muted' }, 'null')
-                : typeof v === 'object'
-                  ? JSON.stringify(v)
-                  : typeof v === 'number'
-                    ? v.toLocaleString()
-                    : v,
+                : i === visitCol
+                  ? el(
+                      'button',
+                      {
+                        class: 'ex-link',
+                        title: 'Open this visit, form and all',
+                        onclick: () => openVisit(String(v)),
+                      },
+                      String(v),
+                    )
+                  : typeof v === 'object'
+                    ? JSON.stringify(v)
+                    : typeof v === 'number'
+                      ? v.toLocaleString()
+                      : v,
             ),
           ),
         ),
@@ -247,6 +258,56 @@
       ),
     );
     $('ex-csv').disabled = !data.rows.length;
+  }
+
+  // Row level: the whole visit -- every column and the full submitted form -- so a
+  // number can be checked against the visits behind it.
+  async function openVisit(visitId) {
+    const box = $('ex-visit');
+    box.replaceChildren(
+      el('p', { class: 'text-sm ex-muted' }, 'Loading visit…'),
+    );
+    box.hidden = false;
+    try {
+      const data = await post(cfg.visitsUrl, {
+        // The opportunities the shown result came from, not the current ticks: the
+        // person may have changed the selection since running it.
+        opportunity_ids:
+          lastResult && lastResult.opportunities
+            ? lastResult.opportunities.map((o) => o.id)
+            : selected(),
+        visit_ids: [visitId],
+      });
+      const visit = data.visits[0];
+      box.replaceChildren(
+        el(
+          'div',
+          { class: 'ex-bar' },
+          el('b', {}, `Visit ${visitId}`),
+          el('span', { class: 'flex-1' }),
+          el(
+            'button',
+            { class: 'ex-btn ghost', onclick: () => (box.hidden = true) },
+            'Close',
+          ),
+        ),
+        visit
+          ? el('pre', { class: 'ex-json' }, JSON.stringify(visit, null, 2))
+          : el(
+              'div',
+              { class: 'ex-error' },
+              'Not in these opportunities’ cached visits.',
+            ),
+      );
+    } catch (e) {
+      box.replaceChildren(
+        el(
+          'div',
+          { class: 'ex-error' },
+          e.message || 'Could not load the visit.',
+        ),
+      );
+    }
   }
 
   async function run() {
@@ -300,7 +361,7 @@
       href: URL.createObjectURL(
         new Blob([lines.join('\n')], { type: 'text/csv' }),
       ),
-      download: 'explorer.csv',
+      download: 'labs-data.csv',
     });
     a.click();
   }
@@ -326,13 +387,13 @@
   if (selected().length) describe(false);
 
   // The agent's way to hand SQL back to Labs. canopy turns this into the agent tool
-  // `page_explorer_set_query`; the callback runs in THIS tab. It returns only an
+  // `page_data_set_query`; the callback runs in THIS tab. It returns only an
   // acknowledgement -- never rows, counts or answers: real data stays in the
   // person's browser and never travels back through canopy.
   function registerAgentActions(host) {
     if (!host || !host.widget || !host.widget.registerAction) return;
     host.widget.registerAction(
-      'explorer_set_query',
+      'data_set_query',
       async ({ sql, opportunity_ids, run: runIt }) => {
         if (typeof sql !== 'string' || !sql.trim())
           throw new Error('sql is required');
@@ -356,7 +417,7 @@
       },
       {
         description:
-          'Put a SQL query into the explorer editor for the person (and optionally run it in their browser). ' +
+          'Put a SQL query into the Data page editor for the person (and optionally run it in their browser). ' +
           'Returns only an acknowledgement: the result is shown to the person, never returned to you.',
         parameters: {
           type: 'object',
@@ -364,7 +425,7 @@
             sql: {
               type: 'string',
               description:
-                'One SELECT over `visits`. Validate it with explorer_validate first.',
+                'One SELECT over `visits`. Validate it with data_validate first.',
             },
             opportunity_ids: {
               type: 'array',

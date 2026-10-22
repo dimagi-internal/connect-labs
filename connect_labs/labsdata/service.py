@@ -1,9 +1,18 @@
-"""The explorer's two operations, shared by the MCP tools and the page.
+"""Labs data's operations, shared by the MCP tools, the page and the labsdata agent.
 
 ``describe`` tells a person or an agent what they can query and how to answer
-from it; ``query`` runs SQL. Both start at ``scope.resolve``, so neither surface
-can forget the access check, and every query is written to the audit trail with
-the opportunities it read and a hash of the SQL it ran.
+from it; ``query`` runs SQL; ``visits`` reads whole visits down to their form
+JSON; ``workflow_context`` explains how a workflow turns those visits into what
+it shows. Each starts at ``scope.resolve``, so no surface can forget the access
+check, and every read is written to the audit trail with the opportunities it
+read (and, for SQL, a hash of the statement).
+
+**Who sees real rows.** A person (the page, their own MCP sign-in) sees everything
+they hold. An agent calling through canopy as a visitor (``for_agent``) sees real
+rows only when labs has cleared it for real data (``labs/canopy_panel.py``:
+``real_data_clearance`` -- a PHI-declared agent, on ZDR runners, vouched for by
+canopy on the call). Until then it gets structure, validation and synthetic data,
+and hands SQL to the page, where the person runs it.
 """
 
 from __future__ import annotations
@@ -22,6 +31,7 @@ from .validator import DEFAULT_MAX_ROWS, HARD_MAX_ROWS
 logger = logging.getLogger(__name__)
 
 RESOURCE_TYPE = "explorer_query"
+VISITS_RESOURCE_TYPE = "labsdata_visits"
 
 
 def _token(caller: Caller) -> str | None:
@@ -95,14 +105,70 @@ def related_registries(caller: Caller, opps: list[scope.Opportunity]) -> list[di
 
 
 class RealDataRefused(Exception):
-    """An agent asked for real rows. It may write SQL; only the person sees results."""
+    """An agent asked for real rows it is not cleared for. It may write SQL; the person runs it."""
 
     code = "real_data_stays_in_labs"
     message = (
-        "Real visit data never leaves Labs for an agent. Validate the SQL with explorer_validate, try it on "
-        "a synthetic opportunity, then hand it to the page with page_explorer_set_query -- the person runs "
-        "it there and sees the result."
+        "Real visit data reaches an agent only when Labs has cleared it for real data, and this one is not. "
+        "Validate the SQL with data_validate, try it on a synthetic opportunity, then give the person the "
+        "SQL to run on the Data page (/labs/data/) -- they see the result there."
     )
+
+
+def agent_sees_real_rows(for_agent: bool, opps) -> bool:
+    """Whether this call may return real rows: always for a person; for an agent only when cleared."""
+    if not for_agent or all_generated([o.id for o in opps]):
+        return True
+    from connect_labs.labs import canopy_panel
+
+    return canopy_panel.real_data_clearance().granted
+
+
+#: What an agent receives from one call, at most. A visit's form_json alone can run to
+#: tens of kilobytes; past these the result is cut (and says so) rather than flooding
+#: the model's context. A person on the page gets the result whole.
+AGENT_CELL_CHARS = 4000
+AGENT_RESULT_CHARS = 200_000
+
+
+def shape_for_agent(result: dict) -> dict:
+    """Cap long cells and the whole result, with notes written for the model (Scout's rule)."""
+    import json
+
+    rows, cut_cells, size = [], 0, 0
+    for row in result.get("rows") or []:
+        shaped = []
+        for cell in row:
+            text = (
+                cell
+                if isinstance(cell, str)
+                else json.dumps(cell, default=str) if isinstance(cell, dict | list) else None
+            )
+            if text is not None and len(text) > AGENT_CELL_CHARS:
+                cell = text[:AGENT_CELL_CHARS] + f"... [cut: {len(text)} chars]"
+                cut_cells += 1
+            shaped.append(cell)
+        size += len(json.dumps(shaped, default=str))
+        if size > AGENT_RESULT_CHARS:
+            break
+        rows.append(shaped)
+    notes = list(result.get("notes") or [])
+    if result.get("truncated"):
+        notes.append(
+            "These rows hit the row cap: do not present them as complete. To answer from all of the data, "
+            "aggregate further (GROUP BY, COUNT, percentiles) or filter, then query again."
+        )
+    if len(rows) < len(result.get("rows") or []):
+        notes.append(
+            f"Only the first {len(rows)} of {result['row_count']} rows fit in your context. Select fewer "
+            "columns (form_json is large) or aggregate."
+        )
+    if cut_cells:
+        notes.append(
+            f"{cut_cells} long cell(s) were cut at {AGENT_CELL_CHARS} characters. Read whole visits, form JSON "
+            "and all, with data_visits; or select the specific fields with form_json #>> '{form,...}'."
+        )
+    return {**result, "rows": rows, "rows_returned": len(rows), "notes": notes}
 
 
 #: Field-index keys computed from real answers. An agent gets structure only.
@@ -126,10 +192,11 @@ def describe(
 
     ``for_agent`` (a canopy call): STRUCTURE only -- form paths, types, the SQL that
     reads each, the registries -- with no answer values, fill rates or row counts,
-    unless every opportunity is synthetic. The person on the page gets everything.
+    unless every opportunity is synthetic or labs has cleared the agent for real data.
+    The person on the page gets everything.
     """
     opps = scope.resolve(caller, opportunity_ids)
-    real = for_agent and not all_generated([o.id for o in opps])
+    real = not agent_sees_real_rows(for_agent, opps)
     loaded = warm(caller, opps) if load_missing and not real else []
     described = fields.search_fields(fields.describe_fields(opps), field_search)
     status = fields.cache_status(opps)
@@ -154,6 +221,7 @@ def describe(
         "field_search": field_search,
         "registries": related_registries(caller, opps) if include_registries else [],
         "answering_rules": guidance.AGENT_RULES if real else guidance.ANSWERING_RULES,
+        "verifying_a_workflow": guidance.VERIFYING_A_WORKFLOW,
         "sql_notes": guidance.SQL_NOTES,
         "max_rows": {"default": DEFAULT_MAX_ROWS, "max": HARD_MAX_ROWS},
     }
@@ -167,10 +235,13 @@ def validate(sql: str) -> dict:
 def query(
     caller: Caller, opportunity_ids, sql: str, max_rows: int = DEFAULT_MAX_ROWS, *, for_agent: bool = False
 ) -> dict:
-    """Run SQL. ``for_agent`` (a canopy call) runs only over synthetic opportunities:
-    real rows go to the person's browser, never back through canopy."""
+    """Run SQL. ``for_agent`` (a canopy call) gets real rows only when cleared
+    (``agent_sees_real_rows``), and its result is shaped for a model's context."""
     opps = scope.resolve(caller, opportunity_ids)
-    if for_agent and not all_generated([o.id for o in opps]):
+    if not agent_sees_real_rows(for_agent, opps):
+        # Still tell the agent whether its SQL would run: that is what it needs to hand
+        # the query to the person, and it reads no data.
+        engine.validate_query(sql)
         raise RealDataRefused()
     # Never the SQL itself: the audit log carries no PHI content (docs/AUDIT_LOGGING.md),
     # and a query can hold a name or an answer as a literal. The hash still ties an
@@ -202,4 +273,56 @@ def query(
             metadata=meta,
             user=caller.user,
         )
-    return {**result.as_dict(), "opportunities": [{"id": o.id, "name": o.name, "llo": o.llo} for o in opps]}
+    out = {
+        **result.as_dict(),
+        "opportunities": [{"id": o.id, "name": o.name, "llo": o.llo} for o in opps],
+        "open_on_page": open_on_page_url([o.id for o in opps], sql),
+    }
+    return shape_for_agent(out) if for_agent else out
+
+
+def open_on_page_url(opportunity_ids, sql: str = "") -> str:
+    """The Data page with these opportunities selected and this SQL in the editor (not run)."""
+    from urllib.parse import urlencode
+
+    from django.conf import settings
+    from django.urls import reverse
+
+    params = {"opps": ",".join(str(int(o)) for o in opportunity_ids or [])}
+    if sql:
+        params["sql"] = sql
+    base = (getattr(settings, "LABS_PUBLIC_URL", "") or "").rstrip("/")
+    return f"{base}{reverse('labsdata:index')}?{urlencode(params)}"
+
+
+def visits(caller: Caller, opportunity_ids, visit_ids, *, for_agent: bool = False) -> dict:
+    """Whole visits by id -- every column and the full form_json -- from the caller's opportunities."""
+    opps = scope.resolve(caller, opportunity_ids)
+    if not agent_sees_real_rows(for_agent, opps):
+        raise RealDataRefused()
+    found = engine.fetch_visits(opps, visit_ids)
+    missing = sorted({str(v) for v in visit_ids} - {str(r["visit_id"]) for r in found})
+    by_opp: dict[int, int] = {}
+    for r in found:
+        by_opp[r["opportunity_id"]] = by_opp.get(r["opportunity_id"], 0) + 1
+    for oid, count in by_opp.items():
+        record(
+            Action.READ,
+            resource_type=VISITS_RESOURCE_TYPE,
+            opportunity_id=oid,
+            record_count=count,
+            metadata={"visits": count},
+            user=caller.user,
+        )
+    return {
+        "visits": found,
+        "not_found": missing,
+        "notes": (
+            [
+                "Not found means not in these opportunities' cached visits: check the visit_id and the "
+                "opportunity, or whether the cache is fresh (data_describe shows cached_at)."
+            ]
+            if missing
+            else []
+        ),
+    }

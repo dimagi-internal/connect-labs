@@ -159,9 +159,10 @@ def test_every_delegated_tool_that_reads_visits_is_judged_or_returns_no_rows():
     from connect_labs.mcp.token_scopes import USERVISIT_DATA_TOOLS
     from connect_labs.mcp.visit_access import DELEGATED_READS
 
-    # The explorer's own rule (explorer/service.py, `for_agent`): through canopy it
-    # returns structure only and runs queries only on generated opps.
-    returns_no_rows = {"explorer_describe", "explorer_query"}
+    # Labs data judges itself (labsdata/service.py, `agent_sees_real_rows`): through
+    # canopy it returns real rows only to an agent labs has cleared for real data, and
+    # otherwise structure only, running queries only on generated opps.
+    returns_no_rows = {"explorer_describe", "explorer_query", "data_describe", "data_query", "data_visits"}
     reachable = set().union(*canopy.SCOPE_TOOLS.values())
     unjudged = (reachable & USERVISIT_DATA_TOOLS) - set(DELEGATED_READS) - returns_no_rows
     assert not unjudged, sorted(unjudged)
