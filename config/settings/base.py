@@ -761,6 +761,8 @@ CANOPY_PHI_AGENTS = env.list("CANOPY_PHI_AGENTS", default=[])
 # to it). Must be allow-listed on canopy's connect-labs site first, or the panel's mint
 # is refused. Empty = data pages offer the site's agent, as every other page does.
 CANOPY_DATA_AGENT_SLUG = env("CANOPY_DATA_AGENT_SLUG", default="")
+# Further agents a workflow may choose for its runs (default for Labs Admin › Canopy agents).
+CANOPY_OFFERED_AGENTS = env.list("CANOPY_OFFERED_AGENTS", default=[])
 # What the canopy SDK (`canopy_sdk.django`) reads. Not a second copy of the
 # values above: a callable the SDK resolves on every read, so it sees them (and
 # LABS_PUBLIC_URL, which later settings modules override) as they are NOW, plus

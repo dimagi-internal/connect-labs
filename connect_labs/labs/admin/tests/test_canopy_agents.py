@@ -123,3 +123,32 @@ def test_a_dimagi_user_without_the_staff_bit_can_save(env, client, dimagi_user):
     assert page.status_code == 200 and b"Only Dimagi staff" not in page.content
     client.post(reverse(URL), {"site_agent": "site-bot", "phi_agents": "data-bot"})
     assert CanopyAgentSettings.objects.get().phi_agents == ["data-bot"]
+
+
+def test_workflows_choose_from_the_site_agent_the_data_agent_and_the_others_listed(env, staff):
+    canopy_settings.save(
+        staff,
+        site_agent="site-bot",
+        data_agent="data-bot",
+        phi_agents=["data-bot", "deep-bot"],
+        runner_requirements=[],
+        offered_agents=["coach-bot", "deep-bot", "site-bot"],
+    )
+    offered = {o.value: o for o in canopy_settings.choices()}
+    assert list(offered) == ["site", "data", "coach-bot", "deep-bot"]  # the site's first, no repeats
+    assert not offered["site"].read_only and not offered["coach-bot"].read_only
+    # The data agent, and any agent allowed over real data, is offered read-only.
+    assert offered["data"].read_only and offered["data"].real_data
+    assert offered["deep-bot"].read_only and offered["deep-bot"].real_data
+    # A slug that is a role's agent resolves to that role; one not offered, to nothing.
+    assert canopy_settings.resolve("data-bot").value == "data"
+    assert canopy_settings.resolve("other-bot") is None
+
+
+def test_the_page_saves_the_agents_workflows_may_choose(env, client, staff):
+    from django.test import override_settings as _override
+
+    with _override(**LABS_SETTINGS):
+        client.force_login(staff)
+        client.post(reverse(URL), {"site_agent": "site-bot", "offered_agents": "coach-bot, deep-bot"})
+    assert CanopyAgentSettings.objects.get().offered_agents == ["coach-bot", "deep-bot"]

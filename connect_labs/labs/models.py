@@ -657,6 +657,8 @@ class CanopyAgentSettings(models.Model):
     data_agent = models.CharField(max_length=100, blank=True, default="")
     phi_agents = models.JSONField(default=list, blank=True)
     runner_requirements = models.JSONField(default=list, blank=True)
+    #: Further agents a workflow may choose for its runs, beside the site and data agents.
+    offered_agents = models.JSONField(default=list, blank=True)
     note = models.CharField(max_length=500, blank=True, default="")
     changed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
     changed_at = models.DateTimeField(auto_now_add=True)

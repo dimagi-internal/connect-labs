@@ -134,7 +134,7 @@ def test_the_catalog_describes_the_thresholds_the_run_was_graded_with():
     assert catalog[0]["target"] == 80
 
 
-def test_a_workflow_names_its_agent_by_role_with_a_brief():
+def test_a_workflow_names_its_agent_by_role_or_slug_with_a_brief():
     from types import SimpleNamespace
 
     from connect_labs.workflow.agent_sharing import AgentConfig, agent_config
@@ -146,7 +146,8 @@ def test_a_workflow_names_its_agent_by_role_with_a_brief():
     assert of({"share": True, "agent": "data", "brief": "Weights in grams."}) == AgentConfig(
         True, "data", "Weights in grams."
     )
-    assert of({"share": True, "agent": "something-else"}).agent == "site"
+    assert of({"share": True, "agent": "coach-bot"}).agent == "coach-bot"
+    assert of({"share": True, "agent": "Not A Slug"}).agent == "site"
     assert of(None) == AgentConfig()
 
 
@@ -160,5 +161,10 @@ def test_a_persons_choice_is_checked():
     }
     with pytest.raises(ValueError):
         clean_agent_config(share=True, agent="labsdata", brief="")
+    # An agent labs offers (canopy_settings.choices) may be named by its slug.
+    offered = ["site", "data", "coach-bot"]
+    assert clean_agent_config(share=True, agent="coach-bot", brief="", offered=offered).agent == "coach-bot"
+    with pytest.raises(ValueError):
+        clean_agent_config(share=True, agent="other-bot", brief="", offered=offered)
     with pytest.raises(ValueError):
         clean_agent_config(share=True, agent="data", brief="x" * (BRIEF_MAX_CHARS + 1))

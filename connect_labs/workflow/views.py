@@ -1056,7 +1056,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
           visitor's own access), not the page state's.
         """
         from connect_labs.workflow.actions import definition_actions
-        from connect_labs.workflow.agent_sharing import DATA_AGENT, agent_config, worker_key
+        from connect_labs.workflow.agent_sharing import agent_config, worker_key
 
         run_id = run_data["id"]
         context["workflow_data"]["actions"] = [
@@ -1070,15 +1070,15 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
 
         from connect_labs.labs import canopy, canopy_panel
 
-        # The workflow's choice of agent (config.agent.agent): the site's, or the data
-        # agent -- read-only, on ZDR runners, its token signed for the run's read scopes
-        # only. Asked for the data agent with none configured: no panel, not the site's.
-        page_agent, page_key = None, ""
-        if offered.agent == DATA_AGENT:
-            page_agent = canopy_panel.data_agent()
-            if not page_agent.agent:
-                return
-            page_key = canopy.RUN_FOR_DATA_AGENT
+        # The workflow's choice of agent (config.agent.agent), from those Labs Admin
+        # offers. A read-only one (the data agent, or any allowed over real data) runs on
+        # ZDR runners, its token signed for the run's read scopes only. A choice labs no
+        # longer offers: no panel, not the site's agent in its place.
+        chosen = canopy_panel.chosen_agent(offered.agent)
+        if chosen is None:
+            return
+        page_agent, read_only = chosen
+        page_key = canopy.RUN_FOR_DATA_AGENT if read_only else ""
         scope = (
             {"opportunity_id": run_data["opportunity_id"]}
             if run_data.get("opportunity_id")
@@ -1102,18 +1102,16 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
 
     def _add_agent_settings(self, context, definition):
         """What the run page's "Agent" box shows and saves (``UpdateAgentConfigView``):
-        this workflow's ``config.agent``, and which agents labs names for each role
-        (Labs Admin › Canopy agents)."""
+        this workflow's ``config.agent``, and the agents labs offers workflows
+        (Labs Admin › Canopy agents, ``canopy_settings.choices``)."""
         from django.urls import reverse
 
         from connect_labs.labs import canopy_settings
         from connect_labs.workflow.agent_sharing import BRIEF_MAX_CHARS, agent_config
 
-        agents = canopy_settings.current()
         context["agent_settings"] = {
             **agent_config(definition).as_config(),
-            "site_agent": agents.site_agent,
-            "data_agent": agents.data_agent,
+            "choices": [o.as_dict() for o in canopy_settings.choices()],
             "brief_max": BRIEF_MAX_CHARS,
             "url": reverse("labs:workflow:api_update_agent_config", args=[definition.id]),
         }
@@ -7557,15 +7555,17 @@ class UpdateAuditBatchConfigView(LoginRequiredMixin, View):
 
 class UpdateAgentConfigView(LoginRequiredMixin, View):
     """The run page's "Agent" box: whether this workflow offers an embedded agent, which
-    one (the site's, or the read-only data agent), and the author's brief for it --
+    one (from those Labs Admin offers, ``canopy_settings.choices``), and the author's
+    brief for it --
     ``config.agent`` (workflow/agent_sharing.py), in place of hand-editing it through
     ``workflow_update_definition``. Saved as the person, under the workflow's own
     LabsRecord ACL, like every definition write.
 
-    POST JSON body: {"share": bool, "agent": "site" | "data", "brief": str}.
+    POST JSON body: {"share": bool, "agent": "site" | "data" | <an offered slug>, "brief": str}.
     """
 
     def post(self, request, definition_id):
+        from connect_labs.labs import canopy_settings
         from connect_labs.workflow.agent_sharing import clean_agent_config
 
         try:
@@ -7576,7 +7576,10 @@ class UpdateAgentConfigView(LoginRequiredMixin, View):
             return JsonResponse({"error": "Expected an object"}, status=400)
         try:
             wanted = clean_agent_config(
-                share=body.get("share"), agent=body.get("agent", "site"), brief=body.get("brief", "")
+                share=body.get("share"),
+                agent=body.get("agent", "site"),
+                brief=body.get("brief", ""),
+                offered=[o.value for o in canopy_settings.choices()],
             )
         except ValueError as e:
             return JsonResponse({"error": str(e)}, status=400)

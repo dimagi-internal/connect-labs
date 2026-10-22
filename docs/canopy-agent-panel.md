@@ -80,11 +80,11 @@ launcher.
 
 **Labs' side is set in the UI**, at Labs Admin › Canopy agents
 (`/labs/admin/canopy-agents/`, `labs/canopy_settings.py`): the site agent, the Data pages'
-agent, the agents allowed over real data, and the runner flags every conversation must
-run on. Labs Admin users can read it; Dimagi staff (a Dimagi sign-in, `is_dimagi_staff`) change it. Each change is a new
+agent, the other agents workflows may choose, the agents allowed over real data, and the runner
+flags every conversation must run on. Labs Admin users can read it; Dimagi staff (a Dimagi sign-in, `is_dimagi_staff`) change it. Each change is a new
 `CanopyAgentSettings` row (who, when, why, audited) and any earlier one can be restored.
-The `CANOPY_AGENT_SLUG` / `CANOPY_DATA_AGENT_SLUG` / `CANOPY_PHI_AGENTS` /
-`CANOPY_RUNNER_REQUIREMENTS` environment settings are only the defaults until someone
+The `CANOPY_AGENT_SLUG` / `CANOPY_DATA_AGENT_SLUG` / `CANOPY_OFFERED_AGENTS` /
+`CANOPY_PHI_AGENTS` / `CANOPY_RUNNER_REQUIREMENTS` environment settings are only the defaults until someone
 saves there. The page also lists labs' checks for the Data pages' agent and the last
 delegated `data_*` calls with what canopy's statement said about each -- where to look
 when testing from the Data page.
@@ -148,10 +148,13 @@ host grant to that agent, so an ACE turn cannot spend the `data:read` grant the 
 minted, and the conversation runs only on ZDR runners. Unset (the default), the page offers
 the site's agent as before.
 
-A workflow can offer the same agent on its run pages: `config.agent.agent: "data"` (the run
-page's **Agent** box; WORKFLOW_REFERENCE.md §14), signed for the page key
-`labs:workflow:run:data` (`workflow:read` + `data:read`, never `workflow:act`), with the
-author's `brief` handed to it through `data_workflow_context`.
+A workflow chooses which agent its run pages offer (`config.agent.agent`, the run page's
+**Agent** box; WORKFLOW_REFERENCE.md §14): the site agent, the data agent, or any other agent
+Labs Admin lists under "Other agents workflows may choose" (`canopy_settings.choices`), so
+different workflows can offer different agents. The data agent, and any agent allowed over
+real data, is offered read-only: ZDR runners, page key `labs:workflow:run:data`
+(`workflow:read` + `data:read`, never `workflow:act`). Every agent gets the author's `brief`
+through `data_workflow_context`. A choice Labs Admin no longer lists offers no panel.
 
 Set it only after `labsdata` is allow-listed on canopy's connect-labs site, or the mint is
 refused (403). Offering it is not clearing it: real rows still need

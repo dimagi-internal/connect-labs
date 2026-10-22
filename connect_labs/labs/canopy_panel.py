@@ -205,6 +205,23 @@ def data_agent() -> PageAgent:
     return PageAgent(agent=slug, runner_requirements=(ZDR,), panel=dict(DATA_PANEL))
 
 
+def chosen_agent(choice: str) -> tuple[PageAgent, bool] | None:
+    """The agent a workflow chose (``config.agent.agent``: a role or a slug), as its page
+    offers it, and whether it is read-only -- or None when labs does not offer it.
+
+    A read-only agent (the data agent, or any agent allowed over real data) runs on ZDR
+    runners in the data panel; the site agent is the page's default (an empty
+    ``PageAgent``); any other agent is named, on the site's runner requirements."""
+    offered = canopy_settings.resolve(choice)
+    if offered is None or not offered.slug:
+        return None
+    if offered.read_only:
+        return PageAgent(agent=offered.slug, runner_requirements=(ZDR,), panel=dict(DATA_PANEL)), True
+    if offered.value == canopy_settings.SITE_ROLE:
+        return PageAgent(), False
+    return PageAgent(agent=offered.slug, runner_requirements=canopy_settings.current().runner_requirements), False
+
+
 def data_agent_clearance() -> Clearance:
     """Whether the data pages may offer their agent over real data (the page-level check)."""
     page = data_agent()

@@ -104,6 +104,7 @@ class CanopyAgentsView(AdminRequiredMixin, TemplateView):
                     data_agent=request.POST.get("data_agent", ""),
                     phi_agents=request.POST.get("phi_agents", "").replace(",", " ").split(),
                     runner_requirements=request.POST.getlist("runner_requirements"),
+                    offered_agents=request.POST.get("offered_agents", "").replace(",", " ").split(),
                     note=request.POST.get("note", ""),
                 )
                 messages.success(request, "Saved. It is in force now.")

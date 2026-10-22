@@ -15,10 +15,12 @@ Which agent, and what its author tells it, ride on the same key:
 
     "config": {"agent": {"share": True, "agent": "data", "brief": "..."}}
 
-* ``agent`` -- ``"site"`` (the default: the agent every labs page offers) or ``"data"``
-  (the agent Labs Admin › Canopy agents names for data, ``labsdata``: read-only, on ZDR
-  runners, with the run's read scopes and never ``workflow:act``). A role, not a slug,
-  so swapping the agent is one change in one place.
+* ``agent`` -- which agent: ``"site"`` (the default: the agent every labs page offers),
+  ``"data"`` (the agent Labs Admin › Canopy agents names for data, ``labsdata``), or the
+  slug of any other agent Labs Admin lists for workflows to choose
+  (``canopy_settings.choices``). A role follows whatever agent Labs Admin names for it;
+  a slug pins one. The data agent, and any agent allowed over real data, is offered
+  read-only: on ZDR runners, with the run's read scopes and never ``workflow:act``.
 * ``brief`` -- what the workflow is for, what correct looks like, what to check first.
   The agent reads it with the workflow (``data_workflow_context``, as the visitor).
 
@@ -35,6 +37,7 @@ run.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -71,6 +74,7 @@ SITE_AGENT = "site"
 DATA_AGENT = "data"
 AGENT_ROLES = (SITE_AGENT, DATA_AGENT)
 BRIEF_MAX_CHARS = 4000
+_AGENT_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,99}$")
 
 
 @dataclass(frozen=True)
@@ -84,8 +88,8 @@ class AgentConfig:
 
 
 def agent_config(definition) -> AgentConfig:
-    """A workflow's ``config.agent``, read as ``shares_with_agent`` reads it; an unknown
-    role reads as the site agent's."""
+    """A workflow's ``config.agent``, read as ``shares_with_agent`` reads it; a value that
+    is neither a role nor an agent slug reads as the site agent's."""
     from connect_labs.workflow.templates import with_inherited_config_flags
 
     data = with_inherited_config_flags(
@@ -94,15 +98,17 @@ def agent_config(definition) -> AgentConfig:
     raw = (data.get("config") or {}).get("agent")
     if not isinstance(raw, dict):
         return AgentConfig()
-    role = raw.get("agent") if raw.get("agent") in AGENT_ROLES else SITE_AGENT
+    wanted = raw.get("agent")
+    role = wanted if isinstance(wanted, str) and _AGENT_SLUG.match(wanted) else SITE_AGENT
     brief = raw.get("brief") if isinstance(raw.get("brief"), str) else ""
     return AgentConfig(share=bool(raw.get("share")), agent=role, brief=brief[:BRIEF_MAX_CHARS])
 
 
-def clean_agent_config(*, share, agent, brief) -> AgentConfig:
-    """What a person asked for, checked: a known role, a brief within bounds."""
-    if agent not in AGENT_ROLES:
-        raise ValueError(f"agent must be one of {', '.join(AGENT_ROLES)}")
+def clean_agent_config(*, share, agent, brief, offered=AGENT_ROLES) -> AgentConfig:
+    """What a person asked for, checked: an agent labs offers (``offered``: the values of
+    ``canopy_settings.choices``), a brief within bounds."""
+    if agent not in offered:
+        raise ValueError(f"agent must be one of {', '.join(offered)}")
     brief = (brief or "").strip()
     if len(brief) > BRIEF_MAX_CHARS:
         raise ValueError(f"the brief is {len(brief)} characters; at most {BRIEF_MAX_CHARS}")
