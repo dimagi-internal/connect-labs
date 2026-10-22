@@ -323,10 +323,14 @@ def test_a_workflow_that_offers_the_data_agent_grants_it_the_runs_reads_and_no_a
         mock.patch("connect_labs.workflow.views.get_org_data", return_value={}),
         mock.patch("connect_labs.labs.synthetic.provenance.all_generated", return_value=True),
     ):
-        _response, panel = _panel(
+        response, panel = _panel(
             WorkflowRunView, _request(path, visitor, {"program_id": 25}), DATA_AGENT_WORKFLOW, definition_id=47
         )
     assert panel and panel["ready"] and panel["agent"] == "labsdata"
+    # The run page draws its Agent box (it once sat inside the edit-mode block, so
+    # no run page ever showed it).
+    box = _json_script(response.content.decode(), "agent-settings")
+    assert box["agent"] == "data" and box["share"] is True
     arrival = _mint(panel, visitor)
     id_jag = arrival[contract.ARRIVAL_ID_JAG_FIELD]
     # The run's reads and the raw data behind it -- never workflow:act -- for labsdata, on ZDR.

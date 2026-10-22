@@ -135,7 +135,6 @@
     </div>
     {% endif %}
 
-    {% if is_edit_mode %}
     {% comment %} The workflow's embedded agent (config.agent, workflow/agent_sharing.py):
        whether its runs offer one, which, and the author's brief -- saved by
        UpdateAgentConfigView. Absent on presentation links and in edit mode. {% endcomment %}
@@ -222,6 +221,7 @@
     </div>
     {% endif %}
 
+    {% if is_edit_mode %}
     <!-- Edit Mode Banner -->
     <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-4">
         <div class="flex items-center">
