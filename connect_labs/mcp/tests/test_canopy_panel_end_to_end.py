@@ -264,6 +264,9 @@ def test_a_workflows_agent_is_granted_the_run_scopes(enabled, canopy_redeem, vis
     with (
         override_settings(LABS_WORKFLOW_SANDBOX="opt_in"),
         mock.patch("connect_labs.workflow.views.get_org_data", return_value={}),
+        # Generated synthetic data: over real data no agent is offered at all
+        # (labs/canopy_panel.py; test_canopy_clearance.py).
+        mock.patch("connect_labs.labs.synthetic.provenance.all_generated", return_value=True),
     ):
         response, panel = _panel(
             WorkflowRunView, _request(path, visitor, {"program_id": 25}), SHARING_WORKFLOW, definition_id=47

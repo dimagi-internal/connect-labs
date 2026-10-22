@@ -213,3 +213,26 @@ def test_a_persons_own_agent_is_not_judged_by_the_canopy_rule():
         patch("connect_labs.labs.synthetic.access.labs_only_scope_denied_reason", return_value=None),
     ):
         assert policy_denial("workflow_run_indicators", {"run_id": 1}, MagicMock(), False) is None
+
+
+def test_page_context_refuses_canopy_over_real_sources(monkeypatch):
+    from connect_labs.mcp.tool_registry import MCPToolError
+    from connect_labs.mcp.tools import page_context as tool
+    from connect_labs.mcp.tools import workflow_run
+    from connect_labs.scope_config import service
+    from connect_labs.workflow.tests.test_page_mode import PAGE, _definition
+
+    page = _definition({**PAGE, "config": {"agent": {"share": True}}})
+    monkeypatch.setattr(tool, "require_connect_token", lambda u: "t")
+    monkeypatch.setattr(service, "refusal", lambda caller, scope: None)
+    monkeypatch.setattr("connect_labs.labs.synthetic.access.labs_only_scope_denied_reason", lambda *a, **k: None)
+    monkeypatch.setattr(workflow_run, "_delegated_token", lambda: object())
+    monkeypatch.setattr(canopy_panel, "page_reads", lambda definition, token: canopy_panel.visits([501]))
+    with (
+        patch("connect_labs.workflow.data_access.WorkflowDataAccess") as WDA,
+        _generated(False),
+        pytest.raises(MCPToolError) as refused,
+    ):
+        WDA.return_value.get_definition.return_value = page
+        tool.page_context(MagicMock(), definition_id=47, scope_type="program", scope_key="25", program_id=25)
+    assert refused.value.code == "PERMISSION_DENIED" and "Through canopy" in refused.value.message
