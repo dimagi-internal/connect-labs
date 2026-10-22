@@ -1,6 +1,6 @@
 """labsdata end to end: the Data page's grant, and real rows only on a call canopy vouched for.
 
-Through labs' real code and the real canopy SDK (>= 0.12): the Data page mints a grant
+Through labs' real code and the real canopy SDK (>= 0.13): the Data page mints a grant
 for ``labsdata`` on ZDR runners, canopy redeems it at ``/o/token/`` and calls labs' MCP
 as the visitor over DPoP -- and with a ``Canopy-Execution`` statement signed by canopy's
 client key (``consumer.execution_statement``) the call gets real rows; with none, or with
@@ -33,12 +33,10 @@ enabled = _panel_e2e.enabled
 visitor = _panel_e2e.visitor
 
 REAL = Opportunity(id=961, name="Opp Real", llo="LLO Real")
-SHA = "0123abcd"
 PHI_DECLARED = {
     "agent": "labsdata",
-    "agent_sha": SHA,
     "capability": "data",
-    "declaration": {"data": "phi", "sha": SHA, "capability": "data", "declared_by": "an author", "declared_at": "t"},
+    "declaration": {"data": "phi", "capability": "data", "declared_by": "an author", "declared_at": "t"},
     "runner": {"id": 1, "name": "zdr-box", "flags": [{"flag": "zdr", "declared_by": "a person", "declared_at": "t"}]},
     "runner_posture": {"data_mode": "zdr", "config_hash": "h"},
     "requirements": ["zdr"],
@@ -132,7 +130,7 @@ def test_a_vouched_phi_zdr_call_reads_real_rows_and_is_audited(labsdata, canopy_
     assert not result.get("withheld"), result
     assert [r[0] for r in result["rows"]] == ["rv0", "rv1", "rv2"]
     row = MCPAuditLog.objects.filter(tool_name="data_query").latest("id")
-    assert row.execution["agent"] == "labsdata" and row.execution["agent_sha"] == SHA
+    assert row.execution["agent"] == "labsdata"
     assert row.execution["runner"]["flags"] == ["zdr"]
     assert row.execution["declaration"]["declared_by"] == "an author"
 
@@ -143,11 +141,10 @@ def test_a_vouched_phi_zdr_call_reads_real_rows_and_is_audited(labsdata, canopy_
     [
         (None, "no_statement"),
         ({**PHI_DECLARED, "declaration": None}, None),  # not declared PHI-safe
-        ({**PHI_DECLARED, "agent_sha": "fedcba98"}, None),  # a commit nobody declared
         ({**PHI_DECLARED, "runner": {"id": 2, "name": "plain", "flags": []}}, None),  # not a ZDR runner
         ({**PHI_DECLARED, "agent": "ace"}, None),  # an agent labs has not allowed
     ],
-    ids=["no-statement", "undeclared", "other-commit", "not-zdr", "other-agent"],
+    ids=["no-statement", "undeclared", "not-zdr", "other-agent"],
 )
 def test_anything_short_of_that_withholds_the_rows(labsdata, canopy_redeem, visitor, real_visits, facts, refused):
     from connect_labs.mcp.models import MCPAuditLog

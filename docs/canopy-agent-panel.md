@@ -69,7 +69,7 @@ claims it PHI-safe and labs accepts that); `zdr` is in `CANOPY_RUNNER_REQUIREMEN
 zero-data-retention runners); and canopy vouches on each call for the agent's
 declaration and the runner executing it, in a signed `Canopy-Execution` statement
 (canopy-web spec `2026-10-22-phi-agents-on-zdr-runners` §6). Labs verifies that
-statement once per delegated tool call (`mcp/execution.py`, dimagi-canopy >= 0.12) and
+statement once per delegated tool call (`mcp/execution.py`, dimagi-canopy >= 0.13) and
 holds the call to it (`canopy_panel.call_real_data_clearance`): the agent it names is
 allow-listed, declared PHI-safe at the commit actually running, on a runner with `zdr`
 in force in ZDR mode, in a conversation that requires `zdr`. Each delegated call's

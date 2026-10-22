@@ -2,9 +2,9 @@
 
 When canopy acts for a visitor, its gateway adds a signed statement to every request
 (canopy-web spec ``2026-10-22-phi-agents-on-zdr-runners`` §6): which agent is calling,
-at which commit, under which PHI-safe declaration, on which runner and its flags in
+whether its capability is set PHI-safe (`data: phi`, and who set it), on which runner and its flags in
 force, in a conversation with which requirements. The canopy SDK verifies it
-(``canopy_sdk.django.execution.verify_execution``, dimagi-canopy >= 0.12): signature,
+(``canopy_sdk.django.execution.verify_execution``, dimagi-canopy >= 0.13): signature,
 issuer, audience, a 60-second life, a single-use ``jti``, and binding to the DPoP key
 and access token of THIS request.
 
@@ -43,9 +43,8 @@ class CallExecution:
         decl = e.declaration or {}
         return {
             "agent": e.agent,
-            "agent_sha": e.agent_sha,
             "declaration": (
-                {k: decl.get(k) for k in ("data", "sha", "capability", "declared_by", "declared_at")} if decl else None
+                {k: decl.get(k) for k in ("data", "capability", "declared_by", "declared_at")} if decl else None
             ),
             "runner": {"id": e.runner.get("id"), "name": e.runner.get("name"), "flags": sorted(e.runner_flags)},
             "runner_data_mode": (e.runner_posture or {}).get("data_mode"),
@@ -59,7 +58,7 @@ _CURRENT: ContextVar[CallExecution | None] = ContextVar("labs_canopy_execution",
 
 
 def supported() -> bool:
-    """Whether the installed canopy SDK can verify execution statements (dimagi-canopy >= 0.12)."""
+    """Whether the installed canopy SDK can verify execution statements (dimagi-canopy >= 0.13)."""
     try:
         from canopy_sdk.django import execution  # noqa: F401
     except ImportError:

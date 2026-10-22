@@ -56,7 +56,7 @@ def _execution_statements_supported() -> bool:
 
 
 #: Whether labs can verify canopy's per-call ``Canopy-Execution`` statement (the SDK
-#: has ``verify_execution``, dimagi-canopy >= 0.12). Without it no agent is ever
+#: has ``verify_execution``, dimagi-canopy >= 0.13). Without it no agent is ever
 #: cleared for real data. With it, a page may offer a cleared agent, and every call is
 #: still held to its own verified statement (``call_real_data_clearance``).
 CANOPY_EXECUTION_STATEMENTS = _execution_statements_supported()
