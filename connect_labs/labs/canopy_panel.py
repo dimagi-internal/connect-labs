@@ -117,8 +117,8 @@ def real_data_clearance(agent: str = "", runner_requirements=()) -> Clearance:
     if ZDR not in required:
         return Clearance(
             False,
-            f"conversations with {agent} here are not held to zero-data-retention runners: offer it "
-            f"read-only, or tick zdr, in {ADMIN_PAGE} (CANOPY_RUNNER_REQUIREMENTS)",
+            f"conversations with {agent} here are not held to ZDR (zero-data-retention) runners: "
+            f"offer it read-only, or tick zdr, in {ADMIN_PAGE} (CANOPY_RUNNER_REQUIREMENTS)",
         )
     if not CANOPY_EXECUTION_STATEMENTS:
         return Clearance(False, "canopy does not yet vouch for the agent's declaration and its runner on each call")
