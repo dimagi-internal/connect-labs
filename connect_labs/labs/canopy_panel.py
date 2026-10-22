@@ -21,12 +21,15 @@ token minted before a workflow's data class changed is refused too.
 
 **Clearance** needs all three, and fails closed on each:
 
-1. labs allows the agent it offers on real data: ``CANOPY_AGENT_SLUG`` is in
-   ``CANOPY_PHI_AGENTS`` (labs' own list; empty by default). The agent's author
-   claims it is PHI-safe; labs decides whether to accept that claim.
-2. every visitor conversation must run on ZDR runners: ``zdr`` is in
-   ``CANOPY_RUNNER_REQUIREMENTS``, which the SDK signs into every visitor assertion and
-   canopy enforces when a runner claims the turn.
+1. labs allows the agent it offers on real data: it is in labs' ``phi_agents`` (empty
+   by default). The agent's author claims it is PHI-safe; labs decides whether to
+   accept that claim.
+2. every visitor conversation must run on ZDR runners: ``zdr`` is in the conversation's
+   runner requirements, which the SDK signs into every visitor assertion and canopy
+   enforces when a runner claims the turn.
+
+Labs' side of both is set at Labs Admin › Canopy agents (``labs/canopy_settings.py``;
+the ``CANOPY_*`` environment settings are only its defaults).
 3. canopy vouches, on each call, for the agent's PHI-safe declaration and the runner
    that is executing it, in a ``Canopy-Execution`` statement labs verifies
    (``mcp/execution.py``; canopy-web spec ``2026-10-22-phi-agents-on-zdr-runners`` §6).
@@ -43,7 +46,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from django.conf import settings
+from connect_labs.labs import canopy_settings
 
 
 def _execution_statements_supported() -> bool:
@@ -99,12 +102,20 @@ def real_data_clearance(agent: str = "", runner_requirements=()) -> Clearance:
     ``runner_requirements`` are the page's own, which add to the site's (canopy SDK
     0.11: a page can raise the floor, never lower it).
     """
-    agent = agent or getattr(settings, "CANOPY_AGENT_SLUG", "") or ""
-    if agent not in set(getattr(settings, "CANOPY_PHI_AGENTS", ()) or ()):
-        return Clearance(False, f"labs has not allowed the agent {agent!r} on real data (CANOPY_PHI_AGENTS)")
-    required = set(getattr(settings, "CANOPY_RUNNER_REQUIREMENTS", ()) or ()) | set(runner_requirements or ())
+    configured = canopy_settings.current()
+    agent = agent or configured.site_agent
+    if agent not in set(configured.phi_agents):
+        return Clearance(
+            False,
+            f"labs has not allowed the agent {agent!r} on real data (CANOPY_PHI_AGENTS, Labs Admin › Canopy agents)",
+        )
+    required = set(configured.runner_requirements) | set(runner_requirements or ())
     if ZDR not in required:
-        return Clearance(False, "labs does not require ZDR runners of this conversation (CANOPY_RUNNER_REQUIREMENTS)")
+        return Clearance(
+            False,
+            "labs does not require ZDR runners of this conversation "
+            "(CANOPY_RUNNER_REQUIREMENTS, Labs Admin › Canopy agents)",
+        )
     if not CANOPY_EXECUTION_STATEMENTS:
         return Clearance(False, "canopy does not yet vouch for the agent's declaration and its runner on each call")
     return Clearance(True)
@@ -131,7 +142,7 @@ def call_real_data_clearance() -> Clearance:
     if not labs_side.granted:
         return labs_side
     refusal = stated.phi_clearance(
-        agents=set(getattr(settings, "CANOPY_PHI_AGENTS", ()) or ()),
+        agents=set(canopy_settings.current().phi_agents),
         require=(ZDR,),
     )
     if refusal:
@@ -186,9 +197,9 @@ DATA_PANEL = {"mode": "docked", "width": 560, "expandable": True}
 
 
 def data_agent() -> PageAgent:
-    """The agent labs' data pages offer: ``CANOPY_DATA_AGENT_SLUG`` (``labsdata``) on ZDR
-    runners only, or -- when unset -- the site's agent, as on every other page."""
-    slug = getattr(settings, "CANOPY_DATA_AGENT_SLUG", "") or ""
+    """The agent labs' data pages offer: ``data_agent`` (``labsdata``) on ZDR runners only,
+    or -- when unset -- the site's agent, as on every other page."""
+    slug = canopy_settings.current().data_agent
     if not slug:
         return PageAgent()
     return PageAgent(agent=slug, runner_requirements=(ZDR,), panel=dict(DATA_PANEL))

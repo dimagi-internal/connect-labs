@@ -78,6 +78,17 @@ older than 0.12, or `CANOPY_PHI_AGENTS` empty (the default), **no agent is offer
 real data** -- a sharing workflow over production opps shows its own buttons and no
 launcher.
 
+**Labs' side is set in the UI**, at Labs Admin › Canopy agents
+(`/labs/admin/canopy-agents/`, `labs/canopy_settings.py`): the site agent, the Data pages'
+agent, the agents allowed over real data, and the runner flags every conversation must
+run on. Dimagi users can read it; only Django staff can change it. Each change is a new
+`CanopyAgentSettings` row (who, when, why, audited) and any earlier one can be restored.
+The `CANOPY_AGENT_SLUG` / `CANOPY_DATA_AGENT_SLUG` / `CANOPY_PHI_AGENTS` /
+`CANOPY_RUNNER_REQUIREMENTS` environment settings are only the defaults until someone
+saves there. The page also lists labs' checks for the Data pages' agent and the last
+delegated `data_*` calls with what canopy's statement said about each -- where to look
+when testing from the Data page.
+
 Not drawn means no page token, no grant and no ID-JAG. Labs' MCP holds canopy's calls to
 the same rule independently (`mcp/visit_access.py:delegated_denied_reason`, every tool
 under `canopy.VISIT_SCOPES`), so a token minted before an opportunity's data changed is
@@ -128,7 +139,8 @@ user sees" is the access story, and keeping it true belongs to the page.
 ## The data agent (labsdata) on the Data page
 
 The Data page (`/labs/data/`, `connect_labs/labsdata`) can offer a different agent from
-every other page: `CANOPY_DATA_AGENT_SLUG` (`labsdata`, the read-only data agent). When it
+every other page: the Data pages' agent at Labs Admin › Canopy agents (`labsdata`, the
+read-only data agent; default `CANOPY_DATA_AGENT_SLUG`). When it
 is set, the page passes `canopy_panel.data_agent()` -- that agent, `runner_requirements:
 ["zdr"]` and a docked, expandable panel -- and the SDK (dimagi-canopy >= 0.11) signs the
 agent and the requirement into the page token. Canopy then binds the visitor's token and the

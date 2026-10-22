@@ -643,3 +643,27 @@ class WorkspaceAccess(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user} seen in {self.workspace} as {self.role}"
+
+
+class CanopyAgentSettings(models.Model):
+    """Which canopy agents labs offers, and which it allows over real data: one row per change.
+
+    Append-only. The newest row is in force (``labs/canopy_settings.py``); with none,
+    the ``CANOPY_*`` environment settings are. Changed at Labs Admin › Canopy agents,
+    by Django staff. Undo is a new row carrying an earlier row's values, so the
+    history is never rewritten."""
+
+    site_agent = models.CharField(max_length=100)
+    data_agent = models.CharField(max_length=100, blank=True, default="")
+    phi_agents = models.JSONField(default=list, blank=True)
+    runner_requirements = models.JSONField(default=list, blank=True)
+    note = models.CharField(max_length=500, blank=True, default="")
+    changed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
+    changed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "labs_canopy_agent_settings"
+        ordering = ["-id"]
+
+    def __str__(self) -> str:
+        return f"canopy agents #{self.pk} by {self.changed_by} at {self.changed_at:%Y-%m-%d %H:%M}"

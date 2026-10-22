@@ -745,6 +745,8 @@ CANOPY_SIGNING_KEY = env("CANOPY_SIGNING_KEY", default="").replace("\\n", "\n")
 # Unset = the grant is off: no ID-JAG is issued, /o/token/ refuses the grant,
 # and nothing else changes. Needs LABS_PUBLIC_URL and CANOPY_SIGNING_KEY too.
 CANOPY_CLIENT_ID = env("CANOPY_CLIENT_ID", default="")
+# CANOPY_AGENT_SLUG above and the three agent settings below are DEFAULTS: labs reads
+# them through labs/canopy_settings.py, where Labs Admin › Canopy agents overrides them.
 # Runner flags every visitor conversation must run on (`zdr`: zero-data-retention
 # boxes only). Signed into every visitor assertion; canopy enforces it at claim.
 # Empty = no requirement, and so no agent over real data (labs/canopy_panel.py).
