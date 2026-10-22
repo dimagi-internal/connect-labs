@@ -241,7 +241,8 @@ def refusal(access, held: Standing) -> str:
         return (
             f"program {getattr(access, 'program_id', '?')} has no running organisation yet, so nobody acts as the "
             "program. A member of the organisation that manages it in Connect declares one "
-            "(supply_chain_programme_runner_set); platform support can too."
+            "(supply_chain_programme_runner_set); on a synthetic labs-only program, a Dimagi member who can open "
+            "it declares Dimagi; platform support can too."
         )
     return (
         f"only {who}, which runs program {getattr(access, 'program_id', '?')}, can change it. You can read it; "
